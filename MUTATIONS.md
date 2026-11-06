@@ -137,3 +137,9 @@
 | TK0017-M12 | packages/shell/src/process.ts | sent the grace SIGKILL without checking that the group still exists | `runLine > the grace SIGKILL is not sent to a group that ended` |
 | TK0017-M13 | packages/shell/src/index.ts | ignored the injected clock for `shell/command` | `shell/command > a timeout is a failure that says so` |
 | TK0017-M14 | packages/shell/src/index.ts | passed no timeout to a `shell/check` line | `shell/check > a line that exceeds the timeout fails and names it` |
+
+## TK0017 — rework 5: the group cannot end before the grace SIGKILL
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0017-M15 | packages/shell/src/process.ts | dropped the sentinel from the wrapper, so the group ends when the line exits | `runLine > the group outlives a finished line until the grace SIGKILL` |

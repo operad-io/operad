@@ -12,6 +12,21 @@ import { messageOf, type PluginLogger } from "@operad-io/engine";
 export const KILL_GRACE_MS = 500;
 
 /**
+ * A background member of the command's group that survives SIGTERM. While it
+ * runs the group cannot end, so its numeric id cannot be reused, and every
+ * `kill(-pgid)` signal reaches a group this command started. The stop always
+ * ends with SIGKILL, which takes the sentinel too.
+ */
+const SENTINEL = 'trap ":" TERM; while :; do sleep 1; done';
+
+/**
+ * The shell that starts a line. It puts the sentinel in its own process group,
+ * then replaces itself with the line's shell, so the group leader is the line
+ * itself and its exit status is the line's. The sentinel writes nothing.
+ */
+const WRAPPER = 'sh -c "$1" >/dev/null 2>&1 & exec sh -c "$2"';
+
+/**
  * How long the pipes get to close after the group was stopped. A process that
  * left the group keeps its inherited descriptors open, and the command must
  * not wait for it: reading stops after this.
@@ -157,11 +172,14 @@ type First = { readonly kind: "exit"; readonly value: Exit } | {
 };
 
 /**
- * Runs one line. Cancellation and the timeout signal the process group with
- * SIGTERM and, after the grace period, SIGKILL. The group is always stopped
- * after the main process exits too, so a child it forked cannot outlive it.
- * A process that leaves the group on purpose cannot be signaled without
- * risking an unrelated process, so the line stops reading its output instead.
+ * Runs one line in a process group of its own. Cancellation and the timeout
+ * signal the group with SIGTERM and, after the grace period, SIGKILL. The group
+ * is always stopped after the line exits too, so a child it forked cannot
+ * outlive it. A sentinel keeps the group alive until that SIGKILL, so its
+ * numeric id can never be reused by an unrelated group in between: the plugin
+ * only ever signals processes it started. A process that leaves the group on
+ * purpose cannot be signaled without risking an unrelated process, so the line
+ * stops reading its output instead.
  */
 export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
   if (options.signal.aborted) {
@@ -180,7 +198,7 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
   const output = new Output(options.logger);
   let child: ChildProcess;
   try {
-    child = spawn("sh", ["-c", options.line], {
+    child = spawn("sh", ["-c", WRAPPER, "operad-shell", SENTINEL, options.line], {
       cwd: options.cwd,
       ...(options.env === undefined
         ? {}
@@ -230,31 +248,31 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
     const pid = child.pid;
     return pid === undefined ? false : killGroup(pid, signal);
   };
-  const groupExists = (): boolean => {
-    const pid = child.pid;
-    return pid === undefined ? false : killGroup(pid, 0);
-  };
   const stop = (): Promise<void> => {
     stopping ??= (async () => {
       if (!signalGroup("SIGTERM")) return;
       await clock.sleep(KILL_GRACE_MS);
-      // The group may have ended during the grace, and its numeric id may then
-      // belong to an unrelated group. Only signal a group that still exists.
-      if (groupExists()) signalGroup("SIGKILL");
+      // The sentinel ignores SIGTERM, so the group still exists and its id is
+      // still this command's: no unrelated group can have taken it. SIGKILL
+      // ends the sentinel and any child that ignored SIGTERM.
+      signalGroup("SIGKILL");
     })();
     return stopping;
   };
 
+  let finished = false;
   let timedOut = false;
   let cancelled = false;
   let timer: unknown;
   if (options.timeoutMs !== undefined) {
     timer = clock.setTimeout(() => {
+      if (finished) return;
       timedOut = true;
       void stop();
     }, options.timeoutMs);
   }
   const onAbort = (): void => {
+    if (finished) return;
     cancelled = true;
     void stop();
   };
@@ -264,26 +282,29 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
     exited.then((value) => ({ kind: "exit", value })),
     failed.then((message) => ({ kind: "error", message })),
   ]);
+  finished = true;
 
   if (timer !== undefined) clock.clearTimeout(timer);
   options.signal.removeEventListener("abort", onAbort);
 
-  // The main process is done; stop whatever it left behind in the group.
+  // Stop the group the line left behind: the sentinel and any forked child.
   await stop();
+  // The leader is the line itself; after the stop it has exited.
+  await Promise.race([exited, failed]);
 
   // The pipes normally close with the group. A process that left the group
   // keeps them open, so give them a bounded time and then stop reading: the
   // command must end even when such a process runs on.
-  const finished = Promise.all(drained).then(() => undefined);
+  const drainedOutput = Promise.all(drained).then(() => undefined);
   let drainTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
   const drainLimit = new Promise<void>((resolve) => {
     drainTimer = globalThis.setTimeout(resolve, DRAIN_GRACE_MS);
   });
-  await Promise.race([finished, drainLimit]);
+  await Promise.race([drainedOutput, drainLimit]);
   if (drainTimer !== undefined) globalThis.clearTimeout(drainTimer);
   if (stdout !== null) stdout.destroy();
   if (stderr !== null) stderr.destroy();
-  await finished;
+  await drainedOutput;
   await output.end();
 
   return {

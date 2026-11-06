@@ -15,7 +15,7 @@ import {
   type PluginStepResult,
 } from "@operad-io/engine";
 import shell, { createShellPlugin } from "../src/index.ts";
-import { runLine } from "../src/process.ts";
+import { runLine, type Clock } from "../src/process.ts";
 import {
   cleanupTempRoots,
   manualClock,
@@ -305,7 +305,46 @@ describe("shell/check", () => {
 });
 
 describe("runLine", () => {
-  test("the grace SIGKILL is not sent to a group that ended", async () => {
+  test("the group outlives a finished line until the grace SIGKILL", async () => {
+    const { root } = await fixture();
+    const pidFile = join(root, "leader.pid");
+    const groupsSeen: boolean[] = [];
+    let sleeps = 0;
+    const clock: Clock = {
+      setTimeout: (handler, ms) => globalThis.setTimeout(handler, ms),
+      clearTimeout: (handle) =>
+        globalThis.clearTimeout(handle as ReturnType<typeof globalThis.setTimeout>),
+      sleep: async () => {
+        sleeps += 1;
+        // Read the leader the line wrote, then ask whether its numeric group id
+        // still names a live group. Without the sentinel the group would have
+        // ended when the line exited, and the id could be reused before the
+        // SIGKILL.
+        const pid = Number(readFileSync(pidFile, "utf8").trim());
+        try {
+          process.kill(-pid, 0);
+          groupsSeen.push(true);
+        } catch {
+          groupsSeen.push(false);
+        }
+      },
+    };
+
+    const outcome = await runLine({
+      line: `echo $$ > '${pidFile}'`,
+      cwd: root,
+      signal: new AbortController().signal,
+      clock,
+    });
+
+    expect(outcome.exitCode).toBe(0);
+    // The stop waited the grace before SIGKILL, and the group still existed
+    // then: the group id could not have been reused by another command.
+    expect(sleeps).toBe(1);
+    expect(groupsSeen).toEqual([true]);
+  });
+
+  test("a spawned line is stopped with SIGTERM and then SIGKILL", async () => {
     const { root } = await fixture();
     const signals: (string | number)[] = [];
     const clock = manualClock();
@@ -314,16 +353,15 @@ describe("runLine", () => {
       cwd: root,
       signal: new AbortController().signal,
       clock,
-      // The group was there for SIGTERM; by the end of the grace it is gone.
       killGroup: (_pgid, signal) => {
         signals.push(signal);
-        return signal === "SIGTERM";
+        return true;
       },
     });
 
     expect(outcome.exitCode).toBe(0);
     expect(clock.sleeps).toBe(1);
-    expect(signals).toEqual(["SIGTERM", 0]);
+    expect(signals).toEqual(["SIGTERM", "SIGKILL"]);
   });
 });
 
