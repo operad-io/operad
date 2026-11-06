@@ -30,7 +30,7 @@ export function createDevPlugin() {
     steps: [
       {
         name: "worktree",
-        results: ["ready", "conflict", "failed"],
+        results: ["ready", "conflict", "blocked", "failed"],
         run: runWorktree,
       },
       {

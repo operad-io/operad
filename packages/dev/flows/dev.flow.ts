@@ -17,6 +17,7 @@ export default defineFlow({
       next: {
         ready: "work",
         conflict: "work",
+        blocked: "wait",
         failed: "end_failed",
       },
     },

@@ -59,7 +59,7 @@ section and the task goes back to the worktree.
 
 | step | results | what it does |
 |---|---|---|
-| `dev/worktree` | `ready`, `conflict`, `failed` | fetches, creates `worktreeRoot/<task id>` on `work/<task id>` from `<remote>/<mainBranch>`, and on a later attempt reuses it after merging the latest main |
+| `dev/worktree` | `ready`, `conflict`, `blocked`, `failed` | fetches, creates `worktreeRoot/<task id>` on `work/<task id>` from `<remote>/<mainBranch>`, and on a later attempt reuses it after merging the latest main; a start that carries a `blockedBy` dependency records the person wait instead |
 | `dev/work` | `done`, `nothing`, `failed` | builds the worker prompt, runs the configured harness step in the worktree, then requires new commits, a clean tree and a pushed branch |
 | `dev/verify` | `pass`, `fail` | recreates `<worktreeRoot>/<task id>-gate` detached at the branch head, runs `gate.commands` through `shell/check`, and records the verified commit |
 | `dev/review` | `pass`, `fail`, `failed` | runs the reviewer harness step in the gate worktree on the diff from the merge base to the verified commit; a finding on a file the change did not touch is pre-existing and does not count |
@@ -102,15 +102,21 @@ is reported finished once. Every change prints one line:
 tick, whatever its plan's auto level is. The task's dependencies and both
 concurrency limits still hold, so an ineligible task waits for a later tick.
 
+A task whose dependency was cancelled starts no work. The scheduler starts its
+flow into the person wait instead, so the task is a real pending item: `merge`
+and `reject` answer it like any other wait, and `cancel` stops the run. The task
+is counted as waiting, not running, so it does not hold a concurrency slot.
+
 ## Flow
 
 `dev` is the coding flow: worktree → work → verify → review → a person decides
-`merge` or `reject`. A failing verify or review goes to `rework`, which sends the
-task back to the worktree until `maxAutoRework` automatic reworks have run in a
-row; then it waits for a person. `nothing` and `failed` from `work` also wait for
-a person. `merge` builds the candidate on main and pushes it, then cleanup
-removes the worktrees and branches. A plan is finished when every task is merged
-or cancelled.
+`merge` or `reject`. A task whose dependency was cancelled enters the same
+person wait directly from the worktree step. A failing verify or review goes to
+`rework`, which sends the task back to the worktree until `maxAutoRework`
+automatic reworks have run in a row; then it waits for a person. `nothing` and
+`failed` from `work` also wait for a person. `merge` builds the candidate on main
+and pushes it, then cleanup removes the worktrees and branches. A plan is
+finished when every task is merged or cancelled.
 
 ## Review diff size
 

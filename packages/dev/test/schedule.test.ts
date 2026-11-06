@@ -1,13 +1,21 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { PluginRegistry } from "@operad-io/engine";
+import { fileURLToPath } from "node:url";
+import {
+  listPending,
+  openLog,
+  parseObjectKey,
+  PluginRegistry,
+  readStoredStart,
+  Runner,
+  serveOnce,
+} from "@operad-io/engine";
 import plugin from "../src/index.ts";
 import {
   addPlan,
   addRepository,
   addTask,
-  claimTaskStart,
   confirmPlan,
   getPlan,
   getTask,
@@ -41,7 +49,12 @@ guardLockHandles();
 
 const ACTOR = { via: "test", id: "tester" } as const;
 
+const CRASH_CHILD = fileURLToPath(
+  new URL("./fixtures/schedule-crash-child.ts", import.meta.url),
+);
+
 interface Fixture {
+  readonly root: string;
   readonly repositoryPath: string;
   readonly store: ReturnType<typeof storeAt>;
   readonly registry: PluginRegistry;
@@ -80,7 +93,7 @@ async function setup(
   }
   const lines: string[] = [];
   schedulerTestHooks.write = (line) => lines.push(line);
-  return { repositoryPath, store, registry, repository, answers, cancelled, lines };
+  return { root, repositoryPath, store, registry, repository, answers, cancelled, lines };
 }
 
 interface PlanOptions {
@@ -370,11 +383,24 @@ describe("dev scheduling", () => {
     const task = await makeTask(fixture, plan.key, "task");
     await confirm(fixture, plan.key);
 
-    // The crash window: the claim is written, the kernel never saw the start.
-    await claimTaskStart(fixture.store, task.key);
-    expect(taskData((await getTask(fixture.store, task.key)).data).phase).toBe(
-      "running",
-    );
+    // A real child runs one tick and kills itself inside the kernel's start
+    // handler: the claim is on disk, the queued start never became a run.
+    const child = Bun.spawn({
+      cmd: [
+        process.execPath,
+        CRASH_CHILD,
+        fixture.store.root,
+        fixture.repositoryPath,
+      ],
+      cwd: fixture.repositoryPath,
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    await child.exited;
+    expect(child.signalCode).toBe("SIGKILL");
+    const claimed = taskData((await getTask(fixture.store, task.key)).data);
+    expect(claimed.phase).toBe("running");
+    expect(claimed.run).toBeNull();
 
     const started = await tick(fixture);
     expect(started.length).toBe(1);
@@ -426,14 +452,16 @@ describe("dev scheduling", () => {
     );
 
     await phase(fixture, first.key, "cancelled");
-    expect(await tick(fixture)).toEqual([]);
-    expect(taskData((await getTask(fixture.store, second.key)).data).phase).toBe(
-      "waiting",
+    const blocked = await tick(fixture);
+    expect(blocked.length).toBe(1);
+    expect(startedId(blocked[0] as { object?: { id: string } })).toBe(
+      second.key,
     );
+    expect(blocked[0]?.params).toEqual({ blockedBy: first.id });
     expect(fixture.lines).toEqual([`${second.id} ready -> waiting`]);
   });
 
-  test("a cancelled dependency leaves the dependent task waiting", async () => {
+  test("a cancelled dependency leaves the dependent task as a person wait", async () => {
     const fixture = await setup({ concurrency: 2 });
     const plan = await makePlan(fixture, {
       slug: "plan",
@@ -445,11 +473,104 @@ describe("dev scheduling", () => {
     await confirm(fixture, plan.key);
     await phase(fixture, first.key, "cancelled");
 
-    expect(await tick(fixture)).toEqual([]);
-    expect(taskData((await getTask(fixture.store, second.key)).data).phase).toBe(
-      "waiting",
+    const started = await tick(fixture);
+    expect(started.length).toBe(1);
+    expect(startedId(started[0] as { object?: { id: string } })).toBe(
+      second.key,
     );
+    expect(started[0]?.params).toEqual({ blockedBy: first.id });
     expect(fixture.lines).toEqual([`${second.id} ready -> waiting`]);
+
+    // The flow's worktree step turns that start into a logged person wait.
+    const stopped = await fixture.registry.runStep("dev/worktree", {}, {
+      runId: "run-blocked",
+      object: { type: "task", id: second.key, data: {} },
+      params: { blockedBy: first.id },
+    });
+    expect(stopped.result).toBe("blocked");
+    const waiting = taskData((await getTask(fixture.store, second.key)).data);
+    expect(waiting.phase).toBe("waiting");
+    expect(waiting.run).toBe("run-blocked");
+    expect(await tick(fixture)).toEqual([]);
+  });
+
+  test("a cancelled dependency is a pending item a person can answer", async () => {
+    const fixture = await setup({ concurrency: 2 });
+    const log = openLog({ backend: "jsonl", path: join(fixture.root, "log") });
+    try {
+      const plan = await makePlan(fixture, {
+        slug: "plan",
+        auto: "run",
+        concurrency: 2,
+      });
+      const first = await makeTask(fixture, plan.key, "first");
+      const second = await makeTask(fixture, plan.key, "second", [first.id]);
+      await confirm(fixture, plan.key);
+      await phase(fixture, first.key, "cancelled");
+
+      const spawned: string[] = [];
+      await serveOnce({
+        log,
+        registry: fixture.registry,
+        lockRoot: fixture.store.root,
+        storeRoot: fixture.store.root,
+        home: fixture.root,
+        spawnRun: async (runId) => {
+          spawned.push(runId);
+          const found = fixture.registry.flow("dev");
+          if (found === undefined) throw new Error("the dev flow is missing");
+          const run = (await log.runs()).find(
+            (candidate) => candidate.runId === runId,
+          );
+          if (run === undefined) throw new Error(`no run ${runId}`);
+          const object = parseObjectKey(run.object);
+          const startInput = readStoredStart(fixture.store.root, runId);
+          await new Runner({
+            log,
+            flow: found.flow,
+            runId,
+            registry: fixture.registry,
+            lockRoot: fixture.store.root,
+            ...(object === undefined ? {} : { object }),
+            ...(startInput === undefined ? {} : { startInput }),
+          }).run();
+        },
+      });
+
+      expect(spawned).toHaveLength(1);
+      const pending = await listPending(log, fixture.registry);
+      expect(pending).toHaveLength(1);
+      const item = pending[0];
+      if (item === undefined) throw new Error("no pending item");
+      expect(item.choices).toEqual(["merge", "reject"]);
+      expect(
+        item.actions.map((action) => `${action.plugin}:${action.action}`),
+      ).toEqual(["dev:cancel", "dev:merge", "dev:reject"]);
+
+      // The normal task action reaches the run: the wait has an answer handler.
+      const answers: string[] = [];
+      const answering = new PluginRegistry([plugin], {
+        home: fixture.root,
+        cwd: fixture.repositoryPath,
+        store: fixture.store,
+        storeRoot: fixture.store.root,
+        onAnswer: async (runId, choice) => {
+          answers.push(`${runId}:${choice}`);
+        },
+      });
+      await answering.runAction(
+        "dev/reject",
+        { note: "start it" },
+        {
+          object: await getTask(fixture.store, second.key),
+          runId: item.runId,
+          actor: ACTOR,
+        },
+      );
+      expect(answers).toEqual([`${item.runId}:reject`]);
+    } finally {
+      await log.close();
+    }
   });
 
   test("a finished plan is reported once", async () => {

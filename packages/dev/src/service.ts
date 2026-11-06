@@ -867,35 +867,6 @@ export async function recordAutoMerge(
   });
 }
 
-/**
- * A ready task with a cancelled dependency waits for a person instead of
- * starting. Returns undefined when the task is no longer ready.
- */
-export async function waitTaskForDependency(
-  store: ObjectStore,
-  id: string,
-  dependency: string,
-): Promise<StoredObject | undefined> {
-  const initial = await getTask(store, id);
-  const data = taskData(initial.data);
-  return withRepoLock(store, data.repository, async () => {
-    const current = await getTask(store, id);
-    const latest = taskData(current.data);
-    if (latest.phase !== "ready") return undefined;
-    return writeTask(
-      store,
-      id,
-      {
-        ...latest,
-        phase: "waiting",
-        run: null,
-        brief: appendChange(latest.brief, `waiting: ${dependency} cancelled`),
-      },
-      "dev:task-wait-dependency",
-    );
-  });
-}
-
 /** Appends the owner's rework section and leaves the task for the flow. */
 export async function rejectTask(
   store: ObjectStore,

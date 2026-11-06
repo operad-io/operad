@@ -25,7 +25,6 @@ import {
   listRepositories,
   recordAutoMerge,
   releaseTaskClaim,
-  waitTaskForDependency,
 } from "./service.ts";
 import { readDevSettings, type DevSettings } from "./settings.ts";
 
@@ -118,14 +117,15 @@ function repositoryConcurrency(settings: DevSettings): number {
 async function startOne(
   ctx: TickContext,
   object: StoredObject,
+  params?: Readonly<Record<string, string>>,
 ): Promise<boolean> {
   const claimed = await claimTaskStart(ctx.store, object.id);
   if (claimed === undefined) return false;
   await ctx.start({
     flow: "dev",
     object: { type: "task", id: object.id },
+    ...(params === undefined ? {} : { params }),
   });
-  writeSchedulerLine(`${bareId(object.id)} ready -> running`);
   return true;
 }
 
@@ -212,20 +212,21 @@ async function scheduleRepository(
     if (task.phase !== "ready") return;
     const dependencies = dependencyState(task, byId);
     if (dependencies.cancelled !== undefined) {
-      const blocked = await waitTaskForDependency(
-        ctx.store,
-        object.id,
-        dependencies.cancelled,
-      );
-      if (blocked !== undefined) {
-        writeSchedulerLine(`${bareId(object.id)} ready -> waiting`);
+      // A cancelled dependency makes the task a person wait. The run starts at
+      // the worktree step, which recognises the parameter and logs a real
+      // `waiting_person` run instead of preparing a worktree.
+      if (!(await startOne(ctx, object, { blockedBy: dependencies.cancelled }))) {
+        return;
       }
+      writeSchedulerLine(`${bareId(object.id)} ready -> waiting`);
+      started.add(object.id);
       return;
     }
     if (!dependencies.ready) return;
     if (planConcurrency(plan) - (planActive.get(planId) ?? 0) <= 0) return;
     if (repositoryActive >= repositoryConcurrency(settings)) return;
     if (!(await startOne(ctx, object))) return;
+    writeSchedulerLine(`${bareId(object.id)} ready -> running`);
     planActive.set(planId, (planActive.get(planId) ?? 0) + 1);
     repositoryActive += 1;
     started.add(object.id);

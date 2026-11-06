@@ -13,6 +13,7 @@ import {
   type StepRunOptions,
 } from "@operad-io/engine";
 import {
+  appendChange,
   bareId,
   DevError,
   listAll,
@@ -373,11 +374,44 @@ export async function saveTask(
   await ctx.store.put("task", key, data, cause);
 }
 
+/** The cancelled dependency a blocked start names, when the flow carries one. */
+function blockedDependency(params: unknown): string | undefined {
+  if (typeof params !== "object" || params === null || Array.isArray(params)) {
+    return undefined;
+  }
+  const value = (params as Record<string, unknown>).blockedBy;
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
 /** Step `dev/worktree`: make the task's worktree ready or report a conflict. */
 export async function runWorktree(
   ctx: StepContext,
 ): Promise<PluginStepResult> {
   const context = await taskContext(ctx);
+  const blockedBy = blockedDependency(ctx.params);
+  if (blockedBy !== undefined && context.task.run === null) {
+    // A cancelled dependency made the scheduler start this run only to log a
+    // real person wait. The claim has no run yet; this step records the wait
+    // so the kernel's pending view and the task's normal actions both see it.
+    await saveTask(
+      ctx,
+      context.taskKey,
+      {
+        ...context.task,
+        phase: "waiting",
+        run: ctx.runId,
+        brief: appendChange(
+          context.task.brief,
+          `waiting: ${blockedBy} cancelled`,
+        ),
+      },
+      "dev:task-wait-dependency",
+    );
+    return {
+      result: "blocked",
+      data: { reason: "cancelled_dependency", dependency: blockedBy },
+    };
+  }
   const { attempt, attempts } = attemptFor(ctx, context.task);
   const prepared = prepareWorktree(
     context.repository,
