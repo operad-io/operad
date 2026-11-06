@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://operad.io/schemas/config.schema.json",
+  "title": "operad home config",
+  "description": "The operad home config. This schema covers the key the engine reads today.",
+  "type": "object",
+  "properties": {
+    "plugins": {
+      "description": "Plugin modules or paths loaded when the engine starts.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": true
+}
