@@ -1,2 +1,4 @@
-/** The operad graph engine. Empty until the first engine task lands. */
+/** The operad graph engine. */
 export const ENGINE_VERSION = "0.0.0";
+
+export * from "./log/index.ts";
