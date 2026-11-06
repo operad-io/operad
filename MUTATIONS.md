@@ -375,3 +375,10 @@
 |---|---|---|---|
 | TK0027-M7 | packages/engine/src/trigger/rules.ts | cast a rule's `start.params` without the log's JSON-value check | `trigger rules > a plugin rule whose params are not JSON is refused at load with the plugin name and index` |
 | TK0027-M8 | packages/engine/src/trigger/rules.ts | joined source and type with a NUL instead of a JSON pair | `trigger rules > distinct source and type pairs are not confused when they contain a NUL` |
+
+## TK0027 — rework 3: a plugin rule params is read once and checked when present
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0027-M9 | packages/engine/src/trigger/rules.ts | treated an explicitly undefined `start.params` as if the key were absent | `trigger rules > a plugin rule with an explicitly undefined params is refused at load` |
+| TK0027-M10 | packages/engine/src/trigger/rules.ts | checked `start.params` through a second property read instead of the captured value | `trigger rules > a plugin rule's params are read once and the checked value is the one kept` |

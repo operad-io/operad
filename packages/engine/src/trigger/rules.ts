@@ -63,14 +63,18 @@ function readStart(value: unknown, at: string): TriggerRule["start"] {
   }
   checkKeys(value, START_KEYS, `${at}: start`);
   const flow = requireText(value.flow, `${at}: start.flow`, "flow");
-  if (value.params === undefined) return { flow };
+  // An absent key means "no params"; a present key must be JSON even when its
+  // value is `undefined`. Read the property once so a getter cannot pass the
+  // check with one value and hand back another.
+  if (!Object.hasOwn(value, "params")) return { flow };
+  const params: unknown = value.params;
   try {
-    assertJsonValue(value.params, "start.params");
+    assertJsonValue(params, "start.params");
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new TriggerError(`${at}: ${detail}`, { cause: error });
   }
-  return { flow, params: value.params };
+  return { flow, params };
 }
 
 function readRule(value: unknown, index: number, file: string): TriggerRule {

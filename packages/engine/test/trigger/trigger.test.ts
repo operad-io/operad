@@ -1781,6 +1781,46 @@ describe("trigger rules", () => {
     }
   });
 
+  test("a plugin rule with an explicitly undefined params is refused at load", async () => {
+    const root = await tempRoot();
+    const invalid = {
+      source: "cron",
+      type: "tick",
+      start: { flow: "bad:done", params: undefined },
+      object: "job:1",
+      mode: "auto",
+    } as unknown as TriggerRule;
+    expect(() =>
+      registryWithRules([pluginWithRules("bad", [invalid])], root),
+    ).toThrow(/plugin "bad": rules: rule 0: start\.params/);
+  });
+
+  test("a plugin rule's params are read once and the checked value is the one kept", async () => {
+    const root = await tempRoot();
+    let reads = 0;
+    const start: { flow: string; params?: unknown } = {
+      flow: "good:done",
+      get params() {
+        reads += 1;
+        return reads === 1 ? { value: 1 } : () => {};
+      },
+    };
+    const declared = {
+      source: "cron",
+      type: "tick",
+      start,
+      object: "job:1",
+      mode: "auto",
+    } as unknown as TriggerRule;
+
+    const registry = registryWithRules(
+      [pluginWithRules("good", [declared])],
+      root,
+    );
+    expect(reads).toBe(1);
+    expect(registry.triggerRules()[0]?.rule.start.params).toEqual({ value: 1 });
+  });
+
   test("distinct source and type pairs are not confused when they contain a NUL", async () => {
     const root = await tempRoot();
     const registry = registryWithRules(
