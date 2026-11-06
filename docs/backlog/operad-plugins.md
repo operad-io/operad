@@ -21,7 +21,7 @@
 7. 插件文件有历史，可回退到任一版本；引擎记录每个运行用的是哪个版本。
 8. **技能是 `SKILL.md`**：助理和 flow 用的 skill 采用 Agent Skills 的 `SKILL.md` 格式，和 pi、Claude Code 互通；operad 只把技能的文本给 agent 读，不执行技能目录里的代码；不做技能市场。
 
-9. **插件可以启用和禁用**：`config.json` 的 `plugins.<名字>.enabled`（布尔，默认 `true`）。`operad init` 默认装 `shell`、`harness-radian` 和 `dev`。禁用的插件不加载：它的命令、动作、视图、默认规则都不出现，已存的对象和历史留着不动，重新启用后照常可见；依赖它的插件（`requires`）一并不加载并说明原因；它的步骤还在跑的运行不能被禁用，命令说出是哪些运行。命令行 `operad plugin list`（名字、版本、启用与否）、`operad plugin enable <名字>`、`operad plugin disable <名字>`，在下一次 `operad` 命令或 `serve` 重载时生效。
+9. **插件可以启用和禁用**：`config.json` 的 `plugins.<名字>.enabled`（布尔，默认 `true`）。`operad init` 默认装 `shell` 和 `dev`。禁用的插件不加载：它的命令、动作、视图、默认规则都不出现，已存的对象和历史留着不动，重新启用后照常可见；依赖它的插件（`requires`）一并不加载并说明原因；它的步骤还在跑的运行不能被禁用，命令说出是哪些运行。命令行 `operad plugin list`（名字、版本、启用与否）、`operad plugin enable <名字>`、`operad plugin disable <名字>`，在下一次 `operad` 命令或 `serve` 重载时生效。
 
 ## 待决问题（未定）
 
