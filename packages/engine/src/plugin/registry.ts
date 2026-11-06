@@ -1501,6 +1501,17 @@ export class PluginRegistry {
             await this.onStartRun(request);
           }
         },
+        answer: async (runId, choice, note) => {
+          if (this.onAnswer === undefined) {
+            throw new PluginError(
+              `plugin "${plugin.name}": answer: no answer handler is installed`,
+            );
+          }
+          await this.onAnswer(runId, choice, note, {
+            via: "plugin",
+            id: plugin.name,
+          });
+        },
       };
       try {
         await plugin.onTick(ctx);

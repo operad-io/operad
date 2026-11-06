@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import {
   chmodSync,
   existsSync,
@@ -20,6 +20,9 @@ import {
   getPlan,
   planData,
   planState,
+  schedulerTestHooks,
+  setAuto,
+  setTaskPhase,
   taskData,
   type IntegrationStyle,
   type TaskData,
@@ -40,6 +43,9 @@ import {
 } from "./support.ts";
 
 afterAll(cleanupTempRoots);
+afterEach(() => {
+  schedulerTestHooks.write = undefined;
+});
 guardLockHandles();
 
 const CHILD = fileURLToPath(
@@ -170,6 +176,48 @@ function cleanup(state: Fixture, runId = "cleanup-run") {
     runId,
     object: { type: "task", id: state.taskKey, data: {} },
   });
+}
+
+interface SchedulerState {
+  readonly scheduler: PluginRegistry;
+  readonly answers: { readonly runId: string; readonly choice: string }[];
+  readonly lines: string[];
+}
+
+/** Puts the verified task at the person wait a passed review reaches, at auto merge. */
+async function autoMergeScheduler(state: Fixture): Promise<SchedulerState> {
+  await setAuto(state.store, state.planKey, "merge");
+  await setTaskPhase(state.store, state.taskKey, "waiting", {
+    run: "verify-run",
+  });
+  const object = await state.store.get("task", state.taskKey);
+  if (object === undefined) throw new Error("task disappeared");
+  const task = taskData(object.data);
+  await state.store.put(
+    "task",
+    state.taskKey,
+    {
+      ...task,
+      attempt: {
+        ...task.attempt,
+        run: "verify-run",
+        review: { result: "pass", run: "verify-run" },
+      },
+    },
+    "test",
+  );
+  const answers: { readonly runId: string; readonly choice: string }[] = [];
+  const lines: string[] = [];
+  schedulerTestHooks.write = (line) => lines.push(line);
+  const scheduler = new PluginRegistry([createDevPlugin()], {
+    home: state.root,
+    cwd: state.remote.repository,
+    store: state.store,
+    onAnswer: async (runId, choice) => {
+      answers.push({ runId, choice });
+    },
+  });
+  return { scheduler, answers, lines };
 }
 
 async function taskOf(state: Fixture): Promise<TaskData> {
@@ -487,5 +535,52 @@ describe("dev/cleanup", () => {
     expect(failures[0]?.line).toBe(1);
     expect(failures[0]?.message).toContain("exited 7");
     expect((await taskOf(state)).phase).toBe("merged");
+  });
+});
+
+describe("dev scheduling reports the integration transition", () => {
+  test("a refused push prints integrating -> waiting, never merged", async () => {
+    const state = await fixture({ style: "merge" });
+    const hooks = join(state.remote.origin, "hooks");
+    mkdirSync(hooks, { recursive: true });
+    const hook = join(hooks, "pre-receive");
+    writeFileSync(hook, "#!/bin/sh\necho 'refused' >&2\nexit 1\n");
+    chmodSync(hook, 0o755);
+
+    const { scheduler, answers, lines } = await autoMergeScheduler(state);
+    await scheduler.tick();
+    expect(answers).toEqual([{ runId: "verify-run", choice: "merge" }]);
+    expect(lines).toEqual([`${state.taskId} waiting -> integrating`]);
+
+    const result = await integrate(state);
+    expect(result.result).toBe("failed");
+    expect((await taskOf(state)).phase).toBe("waiting");
+
+    await scheduler.tick();
+    expect(lines).toEqual([
+      `${state.taskId} waiting -> integrating`,
+      `${state.taskId} integrating -> waiting`,
+    ]);
+    expect(lines.some((line) => line.includes("merged"))).toBe(false);
+  });
+
+  test("a conflict prints integrating -> running, never merged", async () => {
+    const state = await fixture({ style: "merge" });
+    await advanceMain(state.remote, "code.txt", "main line\n", "main moves");
+
+    const { scheduler, answers, lines } = await autoMergeScheduler(state);
+    await scheduler.tick();
+    expect(answers).toEqual([{ runId: "verify-run", choice: "merge" }]);
+
+    const result = await integrate(state);
+    expect(result.result).toBe("conflict");
+    expect((await taskOf(state)).phase).toBe("running");
+
+    await scheduler.tick();
+    expect(lines).toEqual([
+      `${state.taskId} waiting -> integrating`,
+      `${state.taskId} integrating -> running`,
+    ]);
+    expect(lines.some((line) => line.includes("merged"))).toBe(false);
   });
 });

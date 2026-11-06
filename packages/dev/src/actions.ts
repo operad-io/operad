@@ -5,10 +5,8 @@ import {
   bareId,
   DevError,
   planData,
-  priorityIndex,
+  PRIORITIES,
   taskData,
-  type AutoMode,
-  type Priority,
 } from "./model.ts";
 import {
   cancelPlan,
@@ -16,24 +14,27 @@ import {
   confirmPlan,
   confirmTask,
   getTask,
-  lowerPriorityOf,
-  raisePriority,
   rejectTask,
   setAuto,
+  setPriority,
 } from "./service.ts";
 
-function planAuto(name: string, auto: AutoMode): ActionTypeDefinition {
-  return {
-    name,
-    on: "plan",
-    when(state) {
-      const plan = planData(state);
-      return plan.status !== "cancelled" && plan.auto !== auto;
-    },
-    async run(ctx) {
-      await setAuto(ctx.store, ctx.object.id, auto);
-    },
-  };
+const AUTO_LEVELS = ["off", "run", "merge"] as const;
+
+/** Reads a required enum argument; the kernel checks it first, this is for types. */
+function enumArgument<T extends string>(
+  args: unknown,
+  field: string,
+  allowed: readonly T[],
+): T {
+  if (typeof args !== "object" || args === null) {
+    throw new DevError(field, `must be one of ${allowed.join(", ")}`);
+  }
+  const raw = (args as Record<string, unknown>)[field];
+  if (typeof raw !== "string" || !(allowed as readonly string[]).includes(raw)) {
+    throw new DevError(field, `must be one of ${allowed.join(", ")}`);
+  }
+  return raw as T;
 }
 
 /**
@@ -162,44 +163,53 @@ export const actions: readonly ActionTypeDefinition[] = [
       await cancelTask(ctx.store, ctx.object.id, { runs: ctx.runs });
     },
   },
-  planAuto("auto-off", "off"),
-  planAuto("auto-run", "run"),
-  planAuto("auto-merge", "merge"),
+  {
+    name: "auto",
+    on: "plan",
+    args: {
+      type: "object",
+      properties: {
+        level: {
+          type: "string",
+          enum: [...AUTO_LEVELS],
+          description: "How far the plan may run without a person.",
+        },
+      },
+      required: ["level"],
+      additionalProperties: false,
+    },
+    when(state) {
+      return planData(state).status !== "cancelled";
+    },
+    async run(ctx, args) {
+      const level = enumArgument(args, "level", AUTO_LEVELS);
+      await setAuto(ctx.store, ctx.object.id, level);
+    },
+  },
   mergeTask,
   rejectTaskAction,
   {
-    name: "priority-up",
+    name: "priority",
     on: "plan",
+    args: {
+      type: "object",
+      properties: {
+        level: {
+          type: "string",
+          enum: [...PRIORITIES],
+          description: "The plan's priority, P0 (most urgent) to P5.",
+        },
+      },
+      required: ["level"],
+      additionalProperties: false,
+    },
     when(state) {
-      const plan = planData(state);
-      return plan.status !== "cancelled" && priorityIndex(plan.priority) > 0;
+      return planData(state).status !== "cancelled";
     },
-    async run(ctx) {
-      await raisePriority(ctx.store, ctx.object.id);
-    },
-  },
-  {
-    name: "priority-down",
-    on: "plan",
-    when(state) {
-      const plan = planData(state);
-      const index = priorityIndex(plan.priority);
-      return plan.status !== "cancelled" && index >= 0 && index < 5;
-    },
-    async run(ctx) {
-      await lowerPriorityOf(ctx.store, ctx.object.id);
+    async run(ctx, args) {
+      const level = enumArgument(args, "level", PRIORITIES);
+      await setPriority(ctx.store, ctx.object.id, level);
     },
   },
 ];
 
-/** The priorities the actions can reach, for a caller that wants to check. */
-export function nextPriority(
-  priority: Priority,
-  direction: "up" | "down",
-): Priority | undefined {
-  const index = priorityIndex(priority);
-  const offset = direction === "up" ? -1 : 1;
-  return ["P0", "P1", "P2", "P3", "P4", "P5"][index + offset] as
-    | Priority
-    | undefined;
-}

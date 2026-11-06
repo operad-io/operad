@@ -511,6 +511,12 @@ export interface TickContext extends PluginBaseContext {
     object?: ObjectRef,
     access?: JsonValue,
   ): Promise<void>;
+  /**
+   * Answers the current person wait of a run this plugin owns. The kernel's
+   * configured answer handler records the answer; a run that no longer waits
+   * rejects with a `StateError`.
+   */
+  answer(runId: string, choice: string, note?: string): Promise<void>;
 }
 
 /** A plugin's declared dependencies: plugins and the plugin API version. */

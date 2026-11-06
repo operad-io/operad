@@ -31,6 +31,7 @@ operad plan add --slug <slug> --title <title> [--repo <name>]   # request on std
 operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--repo <name>]   # brief on stdin
 operad task edit <id>      # $EDITOR on the brief body; proposed or ready only
 operad task update <id> [--title <title>] [--after <task>]...
+operad start <task>        # start one ready task now, whatever its plan's auto level
 ```
 
 Inside a registered repository the repository is inferred; elsewhere pass
@@ -46,11 +47,8 @@ Every action is also a command: `operad dev:<action> <id>`.
 | `dev:merge` | task | | answer the task's wait with `merge`; asks first |
 | `dev:reject` | task | | answer the task's wait with `reject` and append `## Rework <n> (owner)` with the note |
 | `dev:cancel` | plan, task | `x` | cancel a plan and its open tasks, or one task; asks first |
-| `dev:auto-off` | plan | | set auto to off |
-| `dev:auto-run` | plan | | set auto to run |
-| `dev:auto-merge` | plan | | set auto to merge |
-| `dev:priority-up` | plan | | move one step towards P0 |
-| `dev:priority-down` | plan | | move one step towards P5 |
+| `dev:auto` | plan | | set auto: `--level off`, `--level run` or `--level merge` |
+| `dev:priority` | plan | | set the priority: `--level P0` (most urgent) to `--level P5` |
 
 `merge` and `reject` answer the task's person wait. They appear in `pending`
 only while the task is waiting, and are refused with a clear message otherwise.
@@ -61,7 +59,7 @@ section and the task goes back to the worktree.
 
 | step | results | what it does |
 |---|---|---|
-| `dev/worktree` | `ready`, `conflict`, `failed` | fetches, creates `worktreeRoot/<task id>` on `work/<task id>` from `<remote>/<mainBranch>`, and on a later attempt reuses it after merging the latest main |
+| `dev/worktree` | `ready`, `conflict`, `blocked`, `failed` | fetches, creates `worktreeRoot/<task id>` on `work/<task id>` from `<remote>/<mainBranch>`, and on a later attempt reuses it after merging the latest main; a start that carries a `blockedBy` dependency records the person wait instead |
 | `dev/work` | `done`, `nothing`, `failed` | builds the worker prompt, runs the configured harness step in the worktree, then requires new commits, a clean tree and a pushed branch |
 | `dev/verify` | `pass`, `fail` | recreates `<worktreeRoot>/<task id>-gate` detached at the branch head, runs `gate.commands` through `shell/check`, and records the verified commit |
 | `dev/review` | `pass`, `fail`, `failed` | runs the reviewer harness step in the gate worktree on the diff from the merge base to the verified commit; a finding on a file the change did not touch is pre-existing and does not count |
@@ -83,15 +81,42 @@ asking the worker to resolve it. A failed attempt names the uncommitted files.
 The task records its attempt count, phase, session id and cost while these steps
 run.
 
+## Scheduling
+
+On every tick of the kernel loop, `dev` starts ready tasks whose dependencies
+have merged. A task starts only while its plan is at auto `run` or `merge`, the
+plan's running count is under its `concurrency`, and the repository's running
+count is under its `concurrency` setting. Plans are considered most urgent
+first, and each registered repository is scheduled on its own. A task the
+scheduler claimed but whose run never recorded itself (a crash between the two)
+returns to `ready` on the next tick, so the scheduler can start it again.
+
+At auto `merge`, a waiting task whose review passed in this attempt is answered
+with `merge`. A wait that follows `nothing`, `failed` or the rework limit is
+never answered. A task whose dependency was cancelled waits for a person
+instead of starting, and a plan whose tasks have all merged or been cancelled
+is reported finished once. Every change prints one line:
+`TK0003-kernel ready -> running`.
+
+`operad start <task>` asks the scheduler to start one ready task on its next
+tick, whatever its plan's auto level is. The task's dependencies and both
+concurrency limits still hold, so an ineligible task waits for a later tick.
+
+A task whose dependency was cancelled starts no work. The scheduler starts its
+flow into the person wait instead, so the task is a real pending item: `merge`
+and `reject` answer it like any other wait, and `cancel` stops the run. The task
+is counted as waiting, not running, so it does not hold a concurrency slot.
+
 ## Flow
 
 `dev` is the coding flow: worktree → work → verify → review → a person decides
-`merge` or `reject`. A failing verify or review goes to `rework`, which sends the
-task back to the worktree until `maxAutoRework` automatic reworks have run in a
-row; then it waits for a person. `nothing` and `failed` from `work` also wait for
-a person. `merge` builds the candidate on main and pushes it, then cleanup
-removes the worktrees and branches. A plan is finished when every task is merged
-or cancelled.
+`merge` or `reject`. A task whose dependency was cancelled enters the same
+person wait directly from the worktree step. A failing verify or review goes to
+`rework`, which sends the task back to the worktree until `maxAutoRework`
+automatic reworks have run in a row; then it waits for a person. `nothing` and
+`failed` from `work` also wait for a person. `merge` builds the candidate on main
+and pushes it, then cleanup removes the worktrees and branches. A plan is
+finished when every task is merged or cancelled.
 
 ## Review diff size
 
@@ -115,6 +140,7 @@ The file holds the repository's work settings:
 | `remote` | `origin` | the remote a task branch is fetched from and pushed to |
 | `mainBranch` | `main` | the branch a task starts from and merges on each attempt |
 | `worktreeRoot` | `.operad-worktrees` | where task worktrees live, relative to the repository and inside it |
+| `concurrency` | `1` | how many tasks this repository may run at once; each plan also has its own limit |
 | `worker.use` | `harness-radian/agent` | the harness step that works a task |
 | `worker.args` | `[]` | extra arguments for that harness step |
 | `worker.wallTimeSecs`, `worker.stallSecs` | harness defaults | the worker's time limits |

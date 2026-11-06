@@ -6,6 +6,7 @@ import { actions } from "./actions.ts";
 import { commands } from "./commands.ts";
 import { runRework, runReview, runVerify } from "./gate.ts";
 import { runCleanup, runIntegrate } from "./integrate.ts";
+import { runScheduler } from "./schedule.ts";
 import { resolveDevKey } from "./service.ts";
 import { runWork, runWorktree } from "./steps.ts";
 import { planViews, taskViews } from "./views.ts";
@@ -29,43 +30,44 @@ export function createDevPlugin() {
     steps: [
       {
         name: "worktree",
-        results: ["ready", "conflict", "failed"],
+        results: ["ready", "conflict", "blocked", "failed", "cancelled"],
         run: runWorktree,
       },
       {
         name: "work",
-        results: ["done", "nothing", "failed"],
+        results: ["done", "nothing", "failed", "cancelled"],
         run: runWork,
       },
       {
         name: "verify",
-        results: ["pass", "fail"],
+        results: ["pass", "fail", "cancelled"],
         run: runVerify,
       },
       {
         name: "review",
-        results: ["pass", "fail", "failed"],
+        results: ["pass", "fail", "failed", "cancelled"],
         run: runReview,
       },
       {
         name: "rework",
-        results: ["again", "ask"],
+        results: ["again", "ask", "cancelled"],
         run: runRework,
       },
       {
         name: "integrate",
-        results: ["merged", "conflict", "fail", "failed"],
+        results: ["merged", "conflict", "fail", "failed", "cancelled"],
         run: runIntegrate,
       },
       {
         name: "cleanup",
-        results: ["done"],
+        results: ["done", "cancelled"],
         run: runCleanup,
       },
     ],
     flows: [devFlow],
     actions,
     commands,
+    onTick: runScheduler,
     views: {
       plan: planViews,
       task: taskViews,
@@ -87,6 +89,7 @@ export * from "./commands.ts";
 export * from "./gate.ts";
 export * from "./integrate.ts";
 export * from "./model.ts";
+export * from "./schedule.ts";
 export * from "./service.ts";
 export * from "./settings.ts";
 export * from "./steps.ts";

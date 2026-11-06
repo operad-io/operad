@@ -16,6 +16,7 @@ import {
   getTask,
   listRepositories,
   removeRepository,
+  requestTaskStart,
   resolveRepository,
   updateTask,
 } from "./service.ts";
@@ -175,8 +176,7 @@ function editable(task: StoredObject): void {
 async function runTask(
   ctx: CommandContext,
   argv: readonly string[],
-): Promise<string> {
-  const parsed = parseArguments(argv, [
+): Promise<string> {  const parsed = parseArguments(argv, [
     "--repo",
     "--plan",
     "--slug",
@@ -246,6 +246,21 @@ async function runTask(
   );
 }
 
+async function runStart(
+  ctx: CommandContext,
+  argv: readonly string[],
+): Promise<string> {
+  const parsed = parseArguments(argv, ["--repo"]);
+  const id = parsed.positionals[0];
+  if (id === undefined) throw new DevError("id", "start needs a task id");
+  if (parsed.positionals.length > 1) {
+    throw new DevError("id", "start takes one task id");
+  }
+  const repository = await objectByPlan(parsed, ctx.store, ctx.cwd);
+  await requestTaskStart(ctx.store, storeKey(repository.name, id));
+  return `start requested for ${id}`;
+}
+
 export const commands: readonly CommandDefinition[] = [
   {
     name: "repo",
@@ -262,5 +277,10 @@ export const commands: readonly CommandDefinition[] = [
     args:
       "add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--repo <name>] | edit <id> [--repo <name>] | update <id> [--title <title>] [--after <task>]... [--repo <name>]",
     run: runTask,
+  },
+  {
+    name: "start",
+    args: "<task> [--repo <name>]",
+    run: runStart,
   },
 ];

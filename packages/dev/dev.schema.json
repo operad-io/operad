@@ -38,6 +38,12 @@
       "minLength": 1,
       "deprecated": true
     },
+    "concurrency": {
+      "description": "How many tasks this repository may run at once.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 1
+    },
     "sandbox": {
       "description": "Deprecated and ignored; kept so settings written by an earlier version still validate.",
       "type": "string",

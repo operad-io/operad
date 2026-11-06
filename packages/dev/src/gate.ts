@@ -43,10 +43,12 @@ import {
 } from "./settings.ts";
 import {
   briefText,
+  cancelledStep,
+  claimAllows,
   git,
   headOf,
   isRegistered,
-  saveTask,
+  saveTaskGuarded,
   taskContext,
   workBranch,
   type TaskContext,
@@ -196,6 +198,7 @@ export async function runVerify(
   ctx: StepContext,
 ): Promise<PluginStepResult> {
   const context = await taskContext(ctx);
+  if (!claimAllows(ctx, context.task)) return cancelledStep();
   const task = context.task;
   const attempt = attemptOf(ctx, task);
   const previous = attempt.verify;
@@ -241,12 +244,12 @@ export async function runVerify(
       run: ctx.runId,
       message,
     };
-    await saveTask(
+    const written = await saveTaskGuarded(
       ctx,
       context.taskKey,
       {
         ...task,
-        phase: "running",
+        phase: "review",
         run: ctx.runId,
         attempts: Math.max(task.attempts, attempt.number),
         attempt: recordVerify(
@@ -256,6 +259,7 @@ export async function runVerify(
       },
       "dev:verify",
     );
+    if (!written) return cancelledStep();
     return {
       result: "fail",
       data: verifyData(record, {
@@ -331,18 +335,19 @@ export async function runVerify(
     run: ctx.runId,
     verified: sha,
   };
-  await saveTask(
+  const written = await saveTaskGuarded(
     ctx,
     context.taskKey,
     {
       ...task,
-      phase: result === "pass" ? "review" : "running",
+      phase: "review",
       run: ctx.runId,
       attempts: Math.max(task.attempts, attempt.number),
       attempt: nextAttempt,
     },
     "dev:verify",
   );
+  if (!written) return cancelledStep();
   return {
     result,
     data: verifyData(record, {
@@ -847,9 +852,9 @@ async function saveReview(
   attempt: TaskAttempt,
   record: ReviewRecord,
   reviews: number,
-): Promise<void> {
+): Promise<boolean> {
   const passed = record.result === "pass";
-  await saveTask(
+  return saveTaskGuarded(
     ctx,
     context.taskKey,
     {
@@ -876,6 +881,7 @@ export async function runReview(
   ctx: StepContext,
 ): Promise<PluginStepResult> {
   const context = await taskContext(ctx);
+  if (!claimAllows(ctx, context.task)) return cancelledStep();
   const task = context.task;
   const attempt = attemptOf(ctx, task);
   const reviews =
@@ -909,7 +915,9 @@ export async function runReview(
       reason: "no_verified_commit",
       message: "the verify step recorded no commit to review",
     };
-    await saveReview(ctx, context, task, attempt, record, reviews + 1);
+    if (!(await saveReview(ctx, context, task, attempt, record, reviews + 1))) {
+      return cancelledStep();
+    }
     return {
       result: "failed",
       data: reviewData("failed", "", {
@@ -925,7 +933,7 @@ export async function runReview(
     record: ReviewRecord,
     extra: Readonly<Record<string, unknown>>,
   ): Promise<PluginStepResult> => {
-    await saveReview(
+    const written = await saveReview(
       ctx,
       context,
       task,
@@ -933,6 +941,7 @@ export async function runReview(
       record,
       reviews + 1,
     );
+    if (!written) return cancelledStep();
     return {
       result,
       data: reviewData(result, sha, {
@@ -1183,6 +1192,7 @@ export async function runRework(
   ctx: StepContext,
 ): Promise<PluginStepResult> {
   const context = await taskContext(ctx);
+  if (!claimAllows(ctx, context.task)) return cancelledStep();
   const task = context.task;
   const attempt = attemptOf(ctx, task);
   // A rework that saved its task but lost its step result is replayed by the
@@ -1259,13 +1269,15 @@ export async function runRework(
   };
   const next: TaskData = {
     ...withRework,
-    phase: again ? "running" : "waiting",
+    phase: again ? "review" : "waiting",
     run: ctx.runId,
     attempts: Math.max(task.attempts, attempt.number),
     reworkStreak: streak,
     attempt: { ...attempt, run: ctx.runId, rework: record },
   };
-  await saveTask(ctx, context.taskKey, next, "dev:rework");
+  if (!(await saveTaskGuarded(ctx, context.taskKey, next, "dev:rework"))) {
+    return cancelledStep();
+  }
   return {
     result: again ? "again" : "ask",
     data: {

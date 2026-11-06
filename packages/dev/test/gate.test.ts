@@ -18,6 +18,7 @@ import {
   readDevSettings,
   taskData,
   validateDevSettings,
+  workBranch,
   type DevSettings,
   type FixLevel,
   type TaskData,
@@ -380,7 +381,22 @@ describe("dev/verify", () => {
     const task = await taskOf(state);
     expect(task.attempt?.verify?.command).toBe("echo nope >&2; exit 4");
     expect(task.attempt?.verify?.log).toBe(result.data?.log as string);
-    expect(task.phase).toBe("running");
+    expect(task.phase).toBe("review");
+  });
+
+  test("a verify with no branch still records the review phase", async () => {
+    const state = await fixture();
+    // Remove the work branch so `branchHead` finds nothing: verify fails before
+    // any gate command runs and must not fall back to `running`.
+    gitOrThrow(state.remote.repository, [
+      "update-ref",
+      "-d",
+      `refs/heads/${workBranch(state.taskId)}`,
+    ]);
+    const result = await verify(state);
+    expect(result.result).toBe("fail");
+    expect(String(result.data?.message)).toContain("no branch");
+    expect((await taskOf(state)).phase).toBe("review");
   });
 
   test("a hanging command fails with a timeout", async () => {
@@ -824,14 +840,24 @@ describe("the dev flow", () => {
       done: "verify",
       nothing: "wait",
       failed: "wait",
+      cancelled: "end_cancelled",
     });
-    expect(nextOf("verify")).toEqual({ pass: "review", fail: "rework" });
+    expect(nextOf("verify")).toEqual({
+      pass: "review",
+      fail: "rework",
+      cancelled: "end_cancelled",
+    });
     expect(nextOf("review")).toEqual({
       pass: "wait",
       fail: "rework",
       failed: "wait",
+      cancelled: "end_cancelled",
     });
-    expect(nextOf("rework")).toEqual({ again: "worktree", ask: "wait" });
+    expect(nextOf("rework")).toEqual({
+      again: "worktree",
+      ask: "wait",
+      cancelled: "end_cancelled",
+    });
     expect(nextOf("wait")).toEqual({
       merge: "integrate",
       reject: "worktree",
@@ -842,7 +868,11 @@ describe("the dev flow", () => {
       conflict: "worktree",
       fail: "worktree",
       failed: "wait",
+      cancelled: "end_cancelled",
     });
-    expect(nextOf("cleanup")).toEqual({ done: "end_done" });
+    expect(nextOf("cleanup")).toEqual({
+      done: "end_done",
+      cancelled: "end_cancelled",
+    });
   });
 });

@@ -13,6 +13,7 @@ import {
   type StepRunOptions,
 } from "@operad-io/engine";
 import {
+  appendChange,
   bareId,
   DevError,
   listAll,
@@ -24,7 +25,7 @@ import {
   type TaskAttempt,
   type TaskData,
 } from "./model.ts";
-import { findRepository } from "./service.ts";
+import { findRepository, withRepoLock } from "./service.ts";
 import {
   assertInsideRepository,
   readDevSettings,
@@ -373,11 +374,121 @@ export async function saveTask(
   await ctx.store.put("task", key, data, cause);
 }
 
+/** The claim token the scheduler put in the run's start parameters. */
+export function runToken(ctx: StepContext): string | undefined {
+  const params = ctx.params;
+  if (typeof params !== "object" || params === null || Array.isArray(params)) {
+    return undefined;
+  }
+  const token = (params as Record<string, unknown>).token;
+  return typeof token === "string" && token.length > 0 ? token : undefined;
+}
+
+/**
+ * True while a step may write its task: the task is not cancelled, the run
+ * carries the claim's token, and a step that runs before the run recorded
+ * itself still finds the phase the claim wrote. A task without a claim was not
+ * started by the scheduler (a step test or a direct call), so it is allowed.
+ */
+export function claimAllows(ctx: StepContext, task: TaskData): boolean {
+  if (task.phase === "cancelled") return false;
+  const claim = task.claim;
+  if (claim === undefined || claim === null) return true;
+  if (runToken(ctx) !== claim.token) return false;
+  if (task.run === null && task.phase !== claim.phase) return false;
+  return true;
+}
+
+/** The task as it is now, when the current step may still write it. */
+export async function guardTask(
+  ctx: StepContext,
+  key: string,
+): Promise<TaskData | undefined> {
+  const object = await ctx.store.get("task", key);
+  if (object === undefined) return undefined;
+  const task = taskData(object.data);
+  return claimAllows(ctx, task) ? task : undefined;
+}
+
+/**
+ * Test-only hook, run by a guarded write after its caller built the new data
+ * and before the write takes the repository lock. A test uses it to cancel the
+ * task from another process in that window.
+ */
+export const stepTestHooks: {
+  beforeGuardedWrite?:
+    | ((ctx: StepContext, key: string) => Promise<void> | void)
+    | undefined;
+} = {};
+
+/**
+ * Writes the task only while the step still owns its claim. The check reads the
+ * task again under the repository lock, so a `cancel` that landed after the
+ * caller's own guard cannot be overwritten by the data built from stale task
+ * state.
+ */
+export async function saveTaskGuarded(
+  ctx: StepContext,
+  key: string,
+  data: TaskData,
+  cause: string,
+): Promise<boolean> {
+  await stepTestHooks.beforeGuardedWrite?.(ctx, key);
+  return withRepoLock(ctx.store, data.repository, async () => {
+    const object = await ctx.store.get("task", key);
+    if (object === undefined) return false;
+    if (!claimAllows(ctx, taskData(object.data))) return false;
+    await saveTask(ctx, key, data, cause);
+    return true;
+  });
+}
+
+/** The result a step returns when its task was cancelled under it. */
+export function cancelledStep(): PluginStepResult {
+  return { result: "cancelled", data: { reason: "cancelled" } };
+}
+
+/** The cancelled dependency a blocked start names, when the flow carries one. */
+function blockedDependency(params: unknown): string | undefined {
+  if (typeof params !== "object" || params === null || Array.isArray(params)) {
+    return undefined;
+  }
+  const value = (params as Record<string, unknown>).blockedBy;
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
 /** Step `dev/worktree`: make the task's worktree ready or report a conflict. */
 export async function runWorktree(
   ctx: StepContext,
 ): Promise<PluginStepResult> {
   const context = await taskContext(ctx);
+  if (!claimAllows(ctx, context.task)) return cancelledStep();
+  const blockedBy = blockedDependency(ctx.params);
+  if (blockedBy !== undefined && context.task.run === null) {
+    // A cancelled dependency made the scheduler start this run only to log a
+    // real person wait. The claim has no run yet; this step records the wait
+    // so the kernel's pending view and the task's normal actions both see it.
+    const written = await saveTaskGuarded(
+      ctx,
+      context.taskKey,
+      {
+        ...context.task,
+        phase: "waiting",
+        run: ctx.runId,
+        startRequested: false,
+        brief: appendChange(
+          context.task.brief,
+          `waiting: ${blockedBy} cancelled`,
+        ),
+      },
+      "dev:task-wait-dependency",
+    );
+    if (!written) return cancelledStep();
+    return {
+      result: "blocked",
+      data: { reason: "cancelled_dependency", dependency: blockedBy },
+    };
+  }
   const { attempt, attempts } = attemptFor(ctx, context.task);
   const prepared = prepareWorktree(
     context.repository,
@@ -408,10 +519,14 @@ export async function runWorktree(
     ...context.task,
     phase: "running",
     run: ctx.runId,
+    // The run now names the task, so the manual start request has been met.
+    startRequested: false,
     attempts,
     attempt: nextAttempt,
   };
-  await saveTask(ctx, context.taskKey, next, "dev:worktree");
+  if (!(await saveTaskGuarded(ctx, context.taskKey, next, "dev:worktree"))) {
+    return cancelledStep();
+  }
   const data = {
     attempt: attempts,
     worktree: nextAttempt.worktree,
@@ -525,6 +640,7 @@ function harnessParams(
 /** Step `dev/work`: run the configured harness step and decide what it left. */
 export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   const context = await taskContext(ctx);
+  if (!claimAllows(ctx, context.task)) return cancelledStep();
   const task = context.task;
   const path =
     task.attempt?.worktree ??
@@ -547,7 +663,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       result: "failed",
       worked: true,
     };
-    await saveTask(
+    const written = await saveTaskGuarded(
       ctx,
       context.taskKey,
       {
@@ -559,6 +675,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       },
       "dev:work",
     );
+    if (!written) return cancelledStep();
     return {
       result: "failed",
       data: resultData(nextAttempt, harnessReading({}), {
@@ -584,7 +701,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       result: "failed",
       worked: true,
     };
-    await saveTask(
+    const written = await saveTaskGuarded(
       ctx,
       context.taskKey,
       {
@@ -596,6 +713,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       },
       "dev:work",
     );
+    if (!written) return cancelledStep();
     return {
       result: "failed",
       data: resultData(nextAttempt, harnessReading({}), {
@@ -650,7 +768,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     extra: Readonly<Record<string, unknown>>,
   ): Promise<PluginStepResult> => {
     nextAttempt = { ...nextAttempt, result };
-    await saveTask(
+    const written = await saveTaskGuarded(
       ctx,
       context.taskKey,
       {
@@ -665,6 +783,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       },
       "dev:work",
     );
+    if (!written) return cancelledStep();
     return {
       result,
       data: resultData(nextAttempt, reading, {

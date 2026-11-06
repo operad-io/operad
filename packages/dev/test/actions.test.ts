@@ -80,11 +80,13 @@ describe("dev actions", () => {
     const names = pending[0]?.actions.map((action) => action.action) ?? [];
     expect(names).toContain("confirm");
     expect(names).toContain("cancel");
-    expect(names).toContain("auto-run");
-    expect(names).toContain("auto-merge");
+    expect(names).toContain("auto");
+    expect(names).toContain("priority");
     expect(names).not.toContain("auto-off");
-    expect(names).toContain("priority-up");
-    expect(names).toContain("priority-down");
+    expect(names).not.toContain("auto-run");
+    expect(names).not.toContain("auto-merge");
+    expect(names).not.toContain("priority-up");
+    expect(names).not.toContain("priority-down");
 
     const keys = new Map(
       registry.keyBindings().map((binding) => [binding.name, binding.key]),
@@ -101,14 +103,61 @@ describe("dev actions", () => {
   test("auto and priority actions move the plan", async () => {
     const { store, registry, repository } = await setup();
     const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
-    await registry.runAction("dev/auto-run", {}, { object: await getPlan(store, plan.id), actor: ACTOR });
-    expect(planData((await getPlan(store, plan.id)).data).auto).toBe("run");
-    await registry.runAction("dev/auto-off", {}, { object: await getPlan(store, plan.id), actor: ACTOR });
-    expect(planData((await getPlan(store, plan.id)).data).auto).toBe("off");
-    await registry.runAction("dev/priority-up", {}, { object: await getPlan(store, plan.id), actor: ACTOR });
-    expect(planData((await getPlan(store, plan.id)).data).priority).toBe("P2");
-    await registry.runAction("dev/priority-down", {}, { object: await getPlan(store, plan.id), actor: ACTOR });
-    expect(planData((await getPlan(store, plan.id)).data).priority).toBe("P3");
+    const object = async () => getPlan(store, plan.id);
+
+    for (const level of ["off", "run", "merge"] as const) {
+      await registry.runAction("dev/auto", { level }, { object: await object(), actor: ACTOR });
+      expect(planData((await object()).data).auto).toBe(level);
+    }
+
+    for (const level of ["P0", "P1", "P2", "P3", "P4", "P5"] as const) {
+      await registry.runAction("dev/priority", { level }, { object: await object(), actor: ACTOR });
+      expect(planData((await object()).data).priority).toBe(level);
+    }
+  });
+
+  test("auto and priority refuse a bad value with the allowed ones", async () => {
+    const { store, registry, repository } = await setup();
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    const object = await getPlan(store, plan.id);
+
+    await expect(
+      registry.runAction("dev/auto", { level: "sometimes" }, { object, actor: ACTOR }),
+    ).rejects.toThrow(/"off", "run", "merge"/);
+    await expect(
+      registry.runAction("dev/priority", { level: "P9" }, { object, actor: ACTOR }),
+    ).rejects.toThrow(/"P0", "P1", "P2", "P3", "P4", "P5"/);
+  });
+
+  test("auto and priority need their level argument", async () => {
+    const { store, registry, repository } = await setup();
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    const object = await getPlan(store, plan.id);
+
+    await expect(
+      registry.runAction("dev/auto", {}, { object, actor: ACTOR }),
+    ).rejects.toThrow(/args\.level: is required/);
+    await expect(
+      registry.runAction("dev/priority", {}, { object, actor: ACTOR }),
+    ).rejects.toThrow(/args\.level: is required/);
+  });
+
+  test("the old auto and priority action names are unknown", async () => {
+    const { store, registry, repository } = await setup();
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    const object = await getPlan(store, plan.id);
+
+    for (const name of [
+      "dev/auto-off",
+      "dev/auto-run",
+      "dev/auto-merge",
+      "dev/priority-up",
+      "dev/priority-down",
+    ]) {
+      await expect(
+        registry.runAction(name, {}, { object, actor: ACTOR }),
+      ).rejects.toThrow(/no loaded plugin declares it/);
+    }
   });
 
   test("cancel of a plan asks the kernel to cancel a running task's run", async () => {
