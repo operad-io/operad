@@ -176,6 +176,37 @@ const hang = defineFlow({
   ],
 });
 
+const throwing = defineFlow({
+  name: "throwing",
+  entry: "work",
+  steps: [
+    {
+      id: "work",
+      kind: "plugin",
+      params: { use: "test/fragile", params: {} },
+      replay: "safe",
+      next: { ok: "done" },
+    },
+    { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+  ],
+});
+
+const brokenCheck = defineFlow({
+  name: "broken-check",
+  entry: "check",
+  steps: [
+    {
+      id: "check",
+      kind: "wait",
+      params: { check: "test/broken-ready" },
+      replay: "safe",
+      next: { ready: "done", interrupted: "failed" },
+    },
+    { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+    { id: "failed", kind: "end", params: { status: "failed" }, replay: "safe" },
+  ],
+});
+
 /** The runner fixture: one blocking step, one slow step, a noisy step and a wait. */
 export default definePlugin({
   name: "test",
@@ -249,8 +280,22 @@ export default definePlugin({
         return { result: "ok" as const };
       },
     },
+    {
+      name: "fragile",
+      results: ["ok"],
+      run() {
+        throw new Error("boom");
+      },
+    },
+    {
+      name: "broken-ready",
+      results: ["ready", "waiting"],
+      run() {
+        throw new Error("check boom");
+      },
+    },
   ],
-  flows: [echo, timed, polled, pause, noisy, ask, crash, retry, hang],
+  flows: [echo, timed, polled, pause, noisy, ask, crash, retry, hang, throwing, brokenCheck],
   async onTick(ctx) {
     const flag = join(ctx.home, "tick-start");
     if (!existsSync(flag)) return;

@@ -380,6 +380,55 @@ describe("runner", () => {
     }
   });
 
+  test("a step that throws is not recorded as its success result", async () => {
+    const run = await setup("throwing");
+    try {
+      const runner = new Runner({
+        log: run.log,
+        flow: run.flow,
+        runId: run.runId,
+        registry: run.registry,
+        lockRoot: join(run.root, "store"),
+      });
+      expect(await runner.run()).toBe("ended");
+
+      const state = await readState(run.log, run.runId);
+      expect(state.endedStatus).toBe("failed");
+      expect(Object.values(state.results).map((value) => value.result)).not.toContain(
+        "ok",
+      );
+    } finally {
+      await run.close();
+    }
+  });
+
+  test("a check that throws is not recorded as ready", async () => {
+    const run = await setup("broken-check");
+    try {
+      const runner = new Runner({
+        log: run.log,
+        flow: run.flow,
+        runId: run.runId,
+        registry: run.registry,
+        lockRoot: join(run.root, "store"),
+      });
+      expect(await runner.run()).toBe("ended");
+
+      const state = await readState(run.log, run.runId);
+      expect(state.endedStatus).toBe("failed");
+      expect(Object.values(state.results).map((value) => value.result)).not.toContain(
+        "ready",
+      );
+      const entries = [];
+      for await (const entry of historyEntries(run.log.read(run.runId))) {
+        entries.push(entry);
+      }
+      expect(entries.some((entry) => entry.what === "check interrupted")).toBe(true);
+    } finally {
+      await run.close();
+    }
+  });
+
   test("an input recorded before a crash is applied on recovery", async () => {
     const root = await tempRoot();
     const home = join(root, "home");

@@ -53,11 +53,35 @@ function resultsOf(registry: PluginRegistry, use: string): readonly string[] {
   return registry.stepResults(use) ?? [];
 }
 
-function chooseFailure(use: string, registry: PluginRegistry): string {
+function chooseFailure(
+  use: string,
+  registry: PluginRegistry,
+  preferInterrupted: boolean,
+): string {
+  // A check reports through the wait step, which accepts only "interrupted"
+  // as a failure; a plugin step uses the failure result it declares.
+  if (preferInterrupted) return "interrupted";
   const results = resultsOf(registry, use);
   if (results.includes("failed")) return "failed";
   if (results.includes("interrupted")) return "interrupted";
-  return results[0] ?? "failed";
+  // No declared failure result: name the failure anyway, so the kernel turns
+  // it into an interrupted step instead of advancing on a success result.
+  return "failed";
+}
+
+/**
+ * The plugin specifiers when every plugin has one, or undefined when a plugin
+ * was registered in memory and cannot be reloaded in a worker.
+ */
+function allSources(
+  sources: readonly (string | undefined)[],
+): readonly string[] | undefined {
+  const resolved: string[] = [];
+  for (const source of sources) {
+    if (source === undefined) return undefined;
+    resolved.push(source);
+  }
+  return resolved;
 }
 
 export class Runner {
@@ -257,11 +281,11 @@ export class Runner {
     }
 
     const object = await this.runObject();
-    const sources = this.registry.pluginSources();
-    if (
-      this.registry.store.kind === "file" &&
-      sources.every((source): source is string => source !== undefined)
-    ) {
+    const sources =
+      this.registry.store.kind === "file"
+        ? allSources(this.registry.pluginSources())
+        : undefined;
+    if (sources !== undefined) {
       return this.executeInWorker(
         use,
         params,
@@ -427,11 +451,9 @@ export class Runner {
     preferInterrupted: boolean,
     data: { readonly reason: string; readonly message: string },
   ): PluginStepResult {
-    const results = resultsOf(this.registry, use);
-    let result = chooseFailure(use, this.registry);
-    if (preferInterrupted && results.includes("interrupted")) {
-      result = "interrupted";
-    }
-    return { result, data };
+    return {
+      result: chooseFailure(use, this.registry, preferInterrupted),
+      data,
+    };
   }
 }
