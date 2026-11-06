@@ -548,7 +548,6 @@
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| TK0024-M3 | packages/engine/src/config/config.ts | left `harness-radian` out of the plugins a new home installs | `operad config > the default plugins are shell, the radian harness and dev` |
 | TK0024-M4 | packages/cli/src/main.ts | skipped resolving a scoped object id before reading history, so a task keyed by its repository had no run | `dogfood end to end > a task survives a killed run and reaches a merge with a history of every step` |
 
 ## TK0024 — rework 2: an event wait and the whole user output
@@ -573,3 +572,11 @@
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0032-M5 | packages/dev/src/check.ts | reported only the first line of git's stderr for an unreachable remote | `dev init check > an unreachable remote keeps every line of git's stderr` |
+
+## TK0032 — rework 4: the decided default plugins
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0032-M6 | packages/engine/src/config/config.ts | added `harness-radian` to the plugins a new home installs | `operad config > the default plugins are shell and dev` |
+| TK0032-M7 | packages/engine/src/plugin/load.ts | skipped loading a shipped plugin that a configured plugin requires, so `init` checks neither the harness nor dev | `operad command > init creates the home and prints each plugin check` |
+| TK0032-M8 | packages/engine/src/plugin/load.ts | loaded a shipped dependency the config switches off | `operad command > a disabled radian harness keeps dev from loading and says why` |

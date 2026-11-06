@@ -2,7 +2,11 @@ import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { readConfig, type PluginConfigEntry } from "../config/config.ts";
+import {
+  defaultPluginModule,
+  readConfig,
+  type PluginConfigEntry,
+} from "../config/config.ts";
 import { messageOf, PluginError } from "./errors.ts";
 import { defaultOperadHome } from "./home.ts";
 import { keysPathFor, readKeysFile } from "./keys.ts";
@@ -108,6 +112,18 @@ function definitionName(value: unknown): string | undefined {
   return undefined;
 }
 
+/** The plugin names a definition says it needs loaded beside it. */
+function requiredPluginNames(definition: unknown): readonly string[] {
+  if (typeof definition !== "object" || definition === null) return [];
+  const requires = (definition as { requires?: unknown }).requires;
+  if (typeof requires !== "object" || requires === null) return [];
+  const plugins = (requires as { plugins?: unknown }).plugins;
+  if (typeof plugins !== "object" || plugins === null || Array.isArray(plugins)) {
+    return [];
+  }
+  return Object.keys(plugins);
+}
+
 function isMissingFileError(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -171,6 +187,40 @@ export async function loadConfiguredPlugins(
       }
     }
     loaded.push({ entry, definition });
+  }
+
+  // A configured plugin may name a shipped plugin it needs. The config lists
+  // what `init` installed, so a shipped dependency is loaded from its package
+  // rather than required to be listed. A dependency the config switches off
+  // stays off; the registry then refuses the plugin that needs it.
+  const present = new Set<string>();
+  for (const { definition } of loaded) {
+    const name = definitionName(definition);
+    if (name !== undefined) present.add(name);
+  }
+  const switchedOff = new Set(disabled);
+  let added = true;
+  while (added) {
+    added = false;
+    for (const { definition } of [...loaded]) {
+      for (const name of requiredPluginNames(definition)) {
+        if (present.has(name) || switchedOff.has(name)) continue;
+        const module = defaultPluginModule(name);
+        let dependency: unknown;
+        try {
+          dependency = await loadPlugin(module, home);
+        } catch {
+          // Not a shipped plugin: the registry names the dependency as missing.
+          continue;
+        }
+        loaded.push({
+          entry: { name, module, enabled: true, settings: {} },
+          definition: dependency,
+        });
+        present.add(name);
+        added = true;
+      }
+    }
   }
 
   return { entries: config.plugins, loaded, disabled, errors };

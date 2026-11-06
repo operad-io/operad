@@ -12,7 +12,7 @@ import {
   Runner,
   serveOnce,
 } from "@operad-io/engine";
-import plugin from "../src/index.ts";
+import { createDevPlugin } from "../src/index.ts";
 import {
   addPlan,
   addRepository,
@@ -77,7 +77,7 @@ async function setup(
   const store = storeAt(root);
   const answers: { readonly runId: string; readonly choice: string }[] = [];
   const cancelled: string[] = [];
-  const registry = new PluginRegistry([plugin], {
+  const registry = new PluginRegistry([createDevPlugin()], {
     home: root,
     cwd: repositoryPath,
     store,
@@ -709,7 +709,7 @@ describe("dev scheduling", () => {
 
       // The normal task action reaches the run: the wait has an answer handler.
       const answers: string[] = [];
-      const answering = new PluginRegistry([plugin], {
+      const answering = new PluginRegistry([createDevPlugin()], {
         home: fixture.root,
         cwd: fixture.repositoryPath,
         store: fixture.store,

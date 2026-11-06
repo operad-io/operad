@@ -15,8 +15,8 @@ import { cleanupTempRoots, tempRoot } from "./plugin/support.ts";
 afterAll(cleanupTempRoots);
 
 describe("operad config", () => {
-  test("the default plugins are shell, the radian harness and dev", async () => {
-    expect(DEFAULT_PLUGINS).toEqual(["shell", "harness-radian", "dev"]);
+  test("the default plugins are shell and dev", async () => {
+    expect(DEFAULT_PLUGINS).toEqual(["shell", "dev"]);
     const root = await tempRoot();
     const home = join(root, "home");
     await ensureConfig(home);
@@ -25,10 +25,6 @@ describe("operad config", () => {
     ) as { plugins: Record<string, { module: string; enabled: boolean }> };
     expect(text.plugins).toEqual({
       shell: { module: "@operad-io/shell", enabled: true },
-      "harness-radian": {
-        module: "@operad-io/harness-radian",
-        enabled: true,
-      },
       dev: { module: "@operad-io/dev", enabled: true },
     });
   });
