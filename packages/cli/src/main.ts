@@ -968,8 +968,6 @@ async function commandRunInternal(
     throw new StateError(`run "${runId}": flow "${run.flow}" is not loaded`);
   }
   const object = parseObjectKey(run.object);
-  const startInput = readStoredStart(context.storeRoot, runId);
-  const trigger = readStoredTrigger(context.storeRoot, runId);
   let rules: readonly TriggerRule[] = [];
   try {
     rules = await loadTriggerRules({
@@ -981,6 +979,11 @@ async function commandRunInternal(
     io.error(`${error instanceof Error ? error.message : String(error)}\n`);
   }
   const kernel = kernelFor(context, io, rules);
+  // A start that died after creating its run left no start files; restore
+  // them so this runner starts from the input and event that were recorded.
+  kernel.adoptStart(run);
+  const startInput = readStoredStart(context.storeRoot, runId);
+  const trigger = readStoredTrigger(context.storeRoot, runId);
   const runner = new Runner({
     log: context.log,
     flow: found.flow,

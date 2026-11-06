@@ -125,6 +125,7 @@ export class Kernel {
         : { ...request.trigger, hops: request.trigger.hops ?? 0 };
     const triggerHops = trigger?.hops ?? 0;
     let inputId = request.inputId;
+    let view: TriggerView | undefined;
 
     if (trigger !== undefined) {
       if (!isRecord(trigger) || typeof trigger.source !== "string" || typeof trigger.key !== "string") {
@@ -157,7 +158,7 @@ export class Kernel {
       if (inputId === undefined) {
         throw new Error("start: trigger recording returned no input id");
       }
-      this.store.writeEventFiles(inputId, trigger);
+      view = this.store.writeEventFiles(inputId, trigger);
     }
 
     if (trigger !== undefined && inputId !== undefined) {
@@ -176,10 +177,42 @@ export class Kernel {
       }
     }
 
+    const start: StartInput = {
+      kind: "start",
+      ...(request.params === undefined ? {} : { params: request.params }),
+      hops: triggerHops,
+      ...(trigger === undefined
+        ? {}
+        : {
+            trigger: {
+              source: trigger.source,
+              type: trigger.type,
+              key: trigger.key,
+            },
+          }),
+      ...(inputId === undefined ? {} : { inputId }),
+    };
+
+    // The run id only exists after `startRun`, so a process that dies between
+    // creating the run and writing its start files would leave an idle run
+    // with no record of the event that made it. The start is written under a
+    // pending id first; `adoptStart` restores it on recovery.
+    const pendingId = this.store.writePendingStart({
+      flow: request.flow,
+      object: request.object,
+      ...(inputId === undefined ? {} : { inputId }),
+      start,
+      ...(view === undefined ? {} : { view }),
+    });
+
     let info: RunInfo;
     try {
       info = await this.log.startRun(request.flow, request.object);
     } catch (error) {
+      if (error instanceof ActiveRunError) {
+        // This start created no run; the record must not be adopted later.
+        this.store.dropPendingStart(pendingId);
+      }
       if (error instanceof ActiveRunError && trigger !== undefined && inputId !== undefined) {
         const active = (await this.log.runs()).find((run) => run.runId === error.runId);
         if (active !== undefined) {
@@ -198,30 +231,11 @@ export class Kernel {
       throw error;
     }
 
-    const view =
-      trigger === undefined
-        ? undefined
-        : this.store.writeEventFiles(inputId ?? "", trigger);
-    if (view !== undefined && inputId !== undefined) {
-      this.store.writeRunTrigger(info.runId, view);
-    }
-
-    const start: StartInput = {
-      kind: "start",
-      ...(request.params === undefined ? {} : { params: request.params }),
-      hops: triggerHops,
-      ...(trigger === undefined
-        ? {}
-        : {
-            trigger: {
-              source: trigger.source,
-              type: trigger.type,
-              key: trigger.key,
-            },
-          }),
-      ...(inputId === undefined ? {} : { inputId }),
-    };
+    // `start.json` is the commit point: it is written last, so a crash before
+    // it lets `adoptStart` redo both files.
+    if (view !== undefined) this.store.writeRunTrigger(info.runId, view);
     this.store.writeRunStart(info.runId, start);
+    this.store.dropPendingStart(pendingId);
 
     if (trigger !== undefined && inputId !== undefined) {
       this.store.setResult(inputId, {
@@ -234,6 +248,23 @@ export class Kernel {
       });
     }
     return { kind: "started", runId: info.runId, duplicate: false };
+  }
+
+  /**
+   * Restores the start metadata of a run whose creator died between creating
+   * the run and writing it. `serve` does this before it spawns a child, so the
+   * child starts from the same input and sees the same event.
+   */
+  adoptStart(run: RunInfo): boolean {
+    if (this.store.readRunStart(run.runId) !== undefined) return false;
+    const pending = this.store.pendingStart(run.flow, run.object, run.startedAt);
+    if (pending === undefined) return false;
+    if (pending.view !== undefined) {
+      this.store.writeRunTrigger(run.runId, pending.view);
+    }
+    this.store.writeRunStart(run.runId, pending.start);
+    this.store.dropPendingStart(pending.id);
+    return true;
   }
 
   /** Sends one outside event through the rules. */

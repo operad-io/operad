@@ -103,6 +103,7 @@ class CrashLog implements LogBackend {
   constructor(
     private readonly inner: LogBackend,
     private readonly crashAt: (method: string, call: number) => boolean,
+    private readonly crashAfterStart = false,
   ) {}
 
   private check(method: string): void {
@@ -115,7 +116,10 @@ class CrashLog implements LogBackend {
 
   async startRun(flow: string, object: string): Promise<RunInfo> {
     this.check("startRun");
-    return this.inner.startRun(flow, object);
+    const info = await this.inner.startRun(flow, object);
+    // A crash after the run exists but before its start files are written.
+    if (this.crashAfterStart) throw new Error("injected crash after startRun");
+    return info;
   }
 
   async endRun(runId: string): Promise<void> {
@@ -297,6 +301,80 @@ describe("the kernel start entry", () => {
       for await (const fact of env.log.read(result.runId)) facts.push(fact);
       expect(facts[0]?.kind).toBe("run_started");
       expect(facts[0]?.cause).toBe(result.inputId);
+    } finally {
+      await env.close();
+    }
+  });
+
+  test("a crash after the run is created keeps the event that started it", async () => {
+    const env = await setup([]);
+    try {
+      const crashing = new Kernel({
+        log: new CrashLog(env.log, () => false, true),
+        registry: env.registry,
+        home: env.root,
+        storeRoot: env.storeRoot,
+        onLog: () => undefined,
+      });
+      await expect(
+        crashing.start({
+          flow: "one",
+          object: "job:1",
+          trigger: event({ hops: 2 }),
+        }),
+      ).rejects.toThrow("injected crash after startRun");
+
+      const active = await env.log.runs({ active: true });
+      expect(active).toHaveLength(1);
+      const run = active[0];
+      if (run === undefined) throw new Error("no run");
+      // The run exists, but its creator died before writing its start files.
+      expect(readStoredStart(env.storeRoot, run.runId)).toBeUndefined();
+      expect(readStoredTrigger(env.storeRoot, run.runId)).toBeUndefined();
+      const recorded = env.kernel.store
+        .unrouted()
+        .find((item) => item.event.type === "tick");
+      if (recorded === undefined) throw new Error("the event was not recorded");
+
+      // Recovery restores the start files before it hands the run to a child.
+      await serveOnce({
+        log: env.log,
+        registry: env.registry,
+        lockRoot: env.storeRoot,
+        kernel: env.kernel,
+        spawnRun: (runId) => drive(env, runId),
+      });
+
+      expect(readStoredStart(env.storeRoot, run.runId)).toMatchObject({
+        kind: "start",
+        inputId: recorded.inputId,
+        hops: 2,
+        trigger: { source: "cron", type: "tick", key: event().key },
+      });
+      expect(readStoredTrigger(env.storeRoot, run.runId)).toMatchObject({
+        source: "cron",
+        type: "tick",
+        key: event().key,
+        hops: 2,
+      });
+
+      const facts: {
+        readonly kind: string;
+        readonly cause: number | string;
+        readonly payload: unknown;
+      }[] = [];
+      for await (const fact of env.log.read(run.runId)) facts.push(fact);
+      const started = facts.find((fact) => fact.kind === "run_started");
+      expect(started?.cause).toBe(recorded.inputId);
+      expect(started?.payload).toMatchObject({
+        hops: 2,
+        trigger: { source: "cron", type: "tick", key: event().key },
+      });
+      const state = await readState(env.log, run.runId);
+      expect(state.status).toBe("ended");
+      expect(state.results["work:1"]?.data).toMatchObject({
+        trigger: { source: "cron", hops: 2 },
+      });
     } finally {
       await env.close();
     }

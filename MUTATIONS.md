@@ -227,3 +227,9 @@
 |---|---|---|---|
 | TK0025-M19 | packages/engine/test/fixtures/append-fact-child.ts | made the child write a different object, so only an in-process write could satisfy the reader | `presentation views > events reach a reader when another sqlite log appends` |
 
+
+## TK0026 — rework 10: a start survives a crash after its run exists
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0026-M15 | packages/engine/src/loop/serve.ts | stopped adopting a pending start before spawning a run | `the kernel start entry > a crash after the run is created keeps the event that started it` |

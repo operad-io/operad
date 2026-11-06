@@ -1,10 +1,13 @@
 /** The event journal: what each source sent, and what the kernel did with it. */
 
+import { randomUUID } from "node:crypto";
 import {
   appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -31,6 +34,21 @@ export interface StoredTriggerResult extends TriggerResult {
 export interface UnroutedEvent {
   readonly inputId: string;
   readonly event: TriggerEvent;
+}
+
+/**
+ * A start whose run metadata may not be written yet. It is written before the
+ * run exists, so a process that dies between `startRun` and the run's own
+ * start files loses nothing: whoever finds the idle run adopts this record.
+ */
+export interface PendingStart {
+  readonly id: string;
+  readonly flow: string;
+  readonly object: string;
+  readonly at: number;
+  readonly inputId?: string;
+  readonly start: StartInput;
+  readonly view?: TriggerView;
 }
 
 interface StoredRecord {
@@ -242,6 +260,69 @@ export class TriggerStore {
       ...(summary === undefined ? {} : { summary }),
       ...(data === undefined ? {} : { data }),
     };
+  }
+
+  /**
+   * Writes a start before the run exists and returns its id. The caller drops
+   * it once the run's own `start.json` and `trigger.json` are written.
+   */
+  writePendingStart(
+    record: Omit<PendingStart, "id" | "at">,
+  ): string {
+    const id = randomUUID();
+    const pending: PendingStart = { ...record, id, at: this.clock() };
+    const directory = join(this.root, "pending");
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(
+      join(directory, `${id}.json`),
+      `${JSON.stringify(pending)}\n`,
+      "utf8",
+    );
+    return id;
+  }
+
+  /**
+   * The pending start for a flow and object. A record written no later than
+   * `notAfter`, the run's own start time, wins, so an attempt that never made
+   * a run cannot be mistaken for the one that did. Under a clock skew between
+   * the store and the log the newest record is still the best answer.
+   */
+  pendingStart(
+    flow: string,
+    object: string,
+    notAfter?: number,
+  ): PendingStart | undefined {
+    const directory = join(this.root, "pending");
+    let names: string[];
+    try {
+      names = readdirSync(directory).filter((name) => name.endsWith(".json"));
+    } catch {
+      return undefined;
+    }
+    let before: PendingStart | undefined;
+    let latest: PendingStart | undefined;
+    for (const name of names.sort()) {
+      let value: unknown;
+      try {
+        value = JSON.parse(readFileSync(join(directory, name), "utf8"));
+      } catch {
+        continue;
+      }
+      if (!isRecord(value)) continue;
+      if (typeof value.id !== "string") continue;
+      if (value.flow !== flow || value.object !== object) continue;
+      if (typeof value.at !== "number") continue;
+      if (!isRecord(value.start) || value.start.kind !== "start") continue;
+      const pending = value as unknown as PendingStart;
+      if (latest === undefined || pending.at >= latest.at) latest = pending;
+      if (notAfter !== undefined && pending.at > notAfter) continue;
+      if (before === undefined || pending.at >= before.at) before = pending;
+    }
+    return before ?? latest;
+  }
+
+  dropPendingStart(id: string): void {
+    rmSync(join(this.root, "pending", `${id}.json`), { force: true });
   }
 
   /** Persist a run's trigger view so a recovered step sees the same files. */

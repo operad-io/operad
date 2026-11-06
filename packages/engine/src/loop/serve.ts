@@ -126,6 +126,11 @@ export async function serveOnce(
     if (isRunnerAlive(run.runId)) continue;
     if (options.isRecentlySpawned?.(run.runId) === true) continue;
 
+    // A start that died after creating its run must not become a run with no
+    // record of the event that made it: restore the start files first, so the
+    // child starts from the intended input and sees the same event.
+    kernel.adoptStart(run);
+
     await options.spawnRun(run.runId, {
       recover: state.status === "running",
     });
