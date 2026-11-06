@@ -569,3 +569,11 @@
 | TK0024-M9 | packages/dev/src/check.ts | pushed the scratch ref without first asking the remote to delete a ref that does not exist | `dev init check > a URL remote that refuses the delete is a failed check that leaves no scratch ref` |
 | TK0024-M10 | packages/dev/src/check.ts | ignored a refused delete probe and pushed the scratch ref anyway | `dev init check > a URL remote that refuses the delete is a failed check that leaves no scratch ref` |
 | TK0024-M11 | packages/dev/src/check.ts | skipped the direct local cleanup after the second delete was refused | `dev init check > a local remote that refuses only an existing delete is cleaned directly` |
+
+## TK0024 — rework 4: push only where the scratch ref can be removed
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0024-M12 | packages/dev/src/check.ts | pushed the scratch ref to a remote reachable only over the wire instead of asking what a push would do, so a remote that refuses the delete kept it | `dev init check > a URL remote that refuses an existing delete is never written to` |
+| TK0024-M13 | packages/dev/src/check.ts | skipped the direct removal after a local remote refused the wire delete, leaving its scratch ref behind | `dev init check > a local remote that refuses the delete is a failed check that leaves no scratch ref` |
+| TK0024-M14 | packages/dev/src/check.ts | returned a passing check when the wire delete was refused instead of failing it | `dev init check > a local remote that refuses the delete is a failed check that leaves no scratch ref` |

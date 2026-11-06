@@ -1,11 +1,13 @@
 /**
  * The dev plugin's `init` check: every registered repository has a remote that
- * answers, accepts a push to a scratch ref and deletes that ref again. The
- * check writes nothing into the repository and leaves no ref behind on the
- * remote: before it pushes, it asks the remote to delete a scratch ref that
- * does not exist, so a remote that refuses deletions fails with nothing
- * written. A remote that answers that probe but refuses the real delete is
- * cleaned directly when it is a path on this machine.
+ * answers and accepts a push to a scratch ref. The check leaves no ref on the
+ * remote. It pushes the scratch ref only to a remote whose repository is a path
+ * on this machine, because only there can it remove the ref when the remote
+ * refuses the delete: it removes the ref from that repository directly and
+ * fails the check. A remote this process can only reach over the wire gets a
+ * dry-run push, which reaches and authenticates the remote and writes nothing,
+ * so a remote that would refuse the delete never receives a ref it cannot
+ * remove.
  */
 
 import { randomUUID } from "node:crypto";
@@ -64,35 +66,48 @@ function localGitDir(cwd: string, remote: string): string | undefined {
 }
 
 /**
- * Asks the remote to delete a scratch ref that does not exist. The remote's
- * hooks see a deletion without anything being created, so a remote that refuses
- * deletions fails the check before the scratch ref is pushed and no ref is left
- * behind.
+ * Removes a scratch ref from the repository of a remote that is a path on this
+ * machine, without asking the remote over the wire. Returns false when the ref
+ * may remain.
  */
-function checkDeletesScratch(
-  cwd: string,
-  remote: string,
-  name: string,
-  ref: string,
-): void {
-  const deleted = git(cwd, ["push", "--quiet", remote, "--delete", ref]);
-  if (deleted.ok) return;
-  throw new Error(
-    `remote "${name}" refused to delete the scratch ref: ${firstLine(deleted.err)}`,
-  );
+function removeScratchDirect(gitDir: string, ref: string): boolean {
+  const removed = git(gitDir, ["update-ref", "-d", ref]);
+  if (!removed.ok) return false;
+  const remaining = git(gitDir, ["show-ref", "--verify", "--quiet", ref]);
+  return !remaining.ok;
 }
 
 /**
- * Removes a scratch ref after a push. The wire delete is the ordinary path; a
- * remote that refuses it can still be a local repository, so remove the ref
- * directly there. Returns false when the ref may remain.
+ * Pushes the head commit to a scratch ref of a remote that is a path on this
+ * machine and deletes that ref again. A remote that refuses the wire delete is
+ * still clean: the ref is removed from that repository directly, and the check
+ * fails with what the remote said.
  */
-function removeScratch(cwd: string, remote: string, ref: string): boolean {
-  const deleted = git(cwd, ["push", "--quiet", remote, "--delete", ref]);
-  if (deleted.ok) return true;
-  const gitDir = localGitDir(cwd, remote);
-  if (gitDir === undefined) return false;
-  return git(gitDir, ["update-ref", "-d", ref]).ok;
+function pushAndRemove(
+  cwd: string,
+  remoteUrl: string,
+  name: string,
+  head: string,
+  ref: string,
+  gitDir: string,
+): void {
+  const pushed = git(cwd, ["push", "--quiet", remoteUrl, `${head}:${ref}`]);
+  if (!pushed.ok) {
+    removeScratchDirect(gitDir, ref);
+    throw new Error(
+      `remote "${name}" refused a push: ${firstLine(pushed.err)}`,
+    );
+  }
+  const deleted = git(cwd, ["push", "--quiet", remoteUrl, "--delete", ref]);
+  if (deleted.ok) return;
+  if (!removeScratchDirect(gitDir, ref)) {
+    throw new Error(
+      `remote "${name}" accepted a push but refused to delete the scratch ref ${ref}: ${firstLine(deleted.err)}`,
+    );
+  }
+  throw new Error(
+    `remote "${name}" accepted a push but refused to delete the scratch ref; it was removed from ${gitDir}: ${firstLine(deleted.err)}`,
+  );
 }
 
 /** Checks one repository and returns the remote it used. */
@@ -127,31 +142,32 @@ async function checkRepository(
   }
 
   const ref = `refs/operad/check/${randomUUID()}`;
-  checkDeletesScratch(repository.path, remoteUrl, settings.remote, ref);
-  const pushed = git(repository.path, [
+  const gitDir = localGitDir(repository.path, remoteUrl);
+  if (gitDir !== undefined) {
+    pushAndRemove(
+      repository.path,
+      remoteUrl,
+      settings.remote,
+      head.out,
+      ref,
+      gitDir,
+    );
+    return settings.remote;
+  }
+
+  // Nothing can remove a ref from a remote this process can only reach over the
+  // wire, so the check must not leave one there: ask what a push would do and
+  // write nothing.
+  const dryRun = git(repository.path, [
     "push",
+    "--dry-run",
     "--quiet",
     remoteUrl,
     `${head.out}:${ref}`,
   ]);
-  if (!pushed.ok) {
-    removeScratch(repository.path, remoteUrl, ref);
+  if (!dryRun.ok) {
     throw new Error(
-      `remote "${settings.remote}" refused a push: ${firstLine(pushed.err)}`,
-    );
-  }
-  const deleted = git(repository.path, [
-    "push",
-    "--quiet",
-    remoteUrl,
-    "--delete",
-    ref,
-  ]);
-  if (!deleted.ok) {
-    const removed = removeScratch(repository.path, remoteUrl, ref);
-    const leftover = removed ? "" : `; the scratch ref ${ref} remains`;
-    throw new Error(
-      `remote "${settings.remote}" accepted a push but refused to delete the scratch ref: ${firstLine(deleted.err)}${leftover}`,
+      `remote "${settings.remote}" refused a push: ${firstLine(dryRun.err)}`,
     );
   }
   return settings.remote;

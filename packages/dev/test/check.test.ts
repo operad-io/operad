@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PluginRegistry } from "@operad-io/engine";
 import { createDevPlugin } from "../src/index.ts";
@@ -61,11 +61,17 @@ function scratchRefs(remote: string): string {
   ]);
 }
 
-/** A remote hook that refuses the deletion of a scratch ref. */
-function refuseScratchDeletes(remote: string, existingOnly: boolean): void {
-  const condition = existingOnly
-    ? '[ "$new" = "$zero" ] && [ "$old" != "$zero" ]'
-    : '[ "$new" = "$zero" ]';
+/** A remote hook that refuses scratch refs at the named kind of update. */
+function refuseScratch(
+  remote: string,
+  on: "create" | "delete" | "existing-delete",
+): void {
+  const condition =
+    on === "create"
+      ? '[ "$old" = "$zero" ] && [ "$new" != "$zero" ]'
+      : on === "delete"
+        ? '[ "$new" = "$zero" ]'
+        : '[ "$new" = "$zero" ] && [ "$old" != "$zero" ]';
   const hook = join(remote, "hooks", "pre-receive");
   writeFileSync(
     hook,
@@ -75,7 +81,7 @@ function refuseScratchDeletes(remote: string, existingOnly: boolean): void {
       "while read -r old new ref; do",
       `  if ${condition}; then`,
       '    case "$ref" in',
-      "      refs/operad/*) echo 'scratch deletes are refused'; exit 1 ;;",
+      "      refs/operad/*) echo 'scratch refs are refused'; exit 1 ;;",
       "    esac",
       "  fi",
       "done",
@@ -86,10 +92,13 @@ function refuseScratchDeletes(remote: string, existingOnly: boolean): void {
   chmodSync(hook, 0o755);
 }
 
-/** A stand-in for ssh that runs the git command it is handed on this machine. */
+/** A stand-in for ssh that records the command and runs it on this machine. */
 function fakeSsh(root: string): string {
   const path = join(root, "fake-ssh");
-  writeFileSync(path, '#!/bin/sh\nfor last do :; done\nexec sh -c "$last"\n');
+  writeFileSync(
+    path,
+    '#!/bin/sh\nfor last do :; done\necho "$last" >> "$(dirname "$0")/ssh-calls"\nexec sh -c "$last"\n',
+  );
   chmodSync(path, 0o755);
   return path;
 }
@@ -136,9 +145,9 @@ describe("dev init check", () => {
     expect(await listRepositories(store)).toHaveLength(1);
   });
 
-  test("a remote that refuses the delete is a failed check that leaves no scratch ref", async () => {
+  test("a local remote that refuses the push is a failed check that leaves no scratch ref", async () => {
     const { root, remote, repositoryPath } = await setup();
-    refuseScratchDeletes(remote, false);
+    refuseScratch(remote, "create");
     const store = storeAt(root);
     await addRepository(store, { path: repositoryPath });
     const registry = new PluginRegistry([createDevPlugin()], {
@@ -149,15 +158,36 @@ describe("dev init check", () => {
 
     const [check] = await registry.checks();
     expect(check?.ok).toBe(false);
-    expect(check?.message).toContain("refused to delete the scratch ref");
-    // The check asked the remote to delete a ref that does not exist, so the
-    // refused probe wrote nothing and there is no ref to clean up.
+    expect(check?.message).toContain('remote "origin" refused a push');
     expect(scratchRefs(remote)).toBe("");
   });
 
-  test("a URL remote that refuses the delete is a failed check that leaves no scratch ref", async () => {
+  test("a local remote that refuses the delete is a failed check that leaves no scratch ref", async () => {
     const { root, remote, repositoryPath } = await setup();
-    refuseScratchDeletes(remote, false);
+    refuseScratch(remote, "delete");
+    const store = storeAt(root);
+    await addRepository(store, { path: repositoryPath });
+    const registry = new PluginRegistry([createDevPlugin()], {
+      home: root,
+      cwd: root,
+      store,
+    });
+
+    const [check] = await registry.checks();
+    expect(check?.ok).toBe(false);
+    expect(check?.message).toContain(
+      "accepted a push but refused to delete the scratch ref",
+    );
+    // The remote is a path on this machine, so the refused wire delete is
+    // followed by a direct removal of the pushed ref.
+    expect(scratchRefs(remote)).toBe("");
+  });
+
+  test("a URL remote that refuses an existing delete is never written to", async () => {
+    const { root, remote, repositoryPath } = await setup();
+    // The hook accepts the creation of a scratch ref but refuses to delete one
+    // that exists, so a check that pushed first could not undo it.
+    refuseScratch(remote, "existing-delete");
     git(repositoryPath, ["config", "core.sshCommand", fakeSsh(root)]);
     git(repositoryPath, [
       "remote",
@@ -173,33 +203,17 @@ describe("dev init check", () => {
       store,
     });
 
-    const [check] = await registry.checks();
-    expect(check?.ok).toBe(false);
-    expect(check?.message).toContain("refused to delete the scratch ref");
-    // The remote is reachable only over the wire, so only the probe protects it
-    // from a leftover ref: it runs before the scratch ref is pushed.
+    const checks = await registry.checks();
+    expect(checks).toEqual([
+      { plugin: "dev", ok: true, message: "1 repositories checked" },
+    ]);
+    // Nothing can remove a ref from a remote this process can only reach over
+    // the wire, so the check asks what a push would do instead of writing. The
+    // remote was still asked: the fake ssh records the receive-pack call.
     expect(scratchRefs(remote)).toBe("");
-  });
-
-  test("a local remote that refuses only an existing delete is cleaned directly", async () => {
-    const { root, remote, repositoryPath } = await setup();
-    refuseScratchDeletes(remote, true);
-    const store = storeAt(root);
-    await addRepository(store, { path: repositoryPath });
-    const registry = new PluginRegistry([createDevPlugin()], {
-      home: root,
-      cwd: root,
-      store,
-    });
-
-    const [check] = await registry.checks();
-    expect(check?.ok).toBe(false);
-    expect(check?.message).toContain(
-      "accepted a push but refused to delete the scratch ref",
+    expect(readFileSync(join(root, "ssh-calls"), "utf8")).toContain(
+      "receive-pack",
     );
-    // The probe passed and the pushed ref was refused by the second delete, so
-    // the check removes it from the local repository directly.
-    expect(scratchRefs(remote)).toBe("");
   });
 
   test("no registered repository passes with a note", async () => {

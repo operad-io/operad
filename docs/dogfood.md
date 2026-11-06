@@ -18,10 +18,12 @@ the checks are:
 
 - `shell` is ready.
 - `harness-radian` finds `radian` on `PATH`.
-- `dev` finds each registered repository's remote and checks that it accepts a
-  scratch ref and deletes it again. It first asks the remote to delete a scratch
-  ref that does not exist, so a remote that refuses the delete fails the check
-  before anything is pushed and no scratch ref is left behind.
+- `dev` finds each registered repository's remote and checks that it answers
+  and would accept a push. When the remote's repository is a path on this
+  machine it really pushes a scratch ref and deletes it again, and removes the
+  ref directly if the remote refuses the delete. A remote that is only
+  reachable over the network gets a dry-run push instead, so a check never
+  leaves a ref on a remote it cannot clean.
 
 Then register the checkout:
 
