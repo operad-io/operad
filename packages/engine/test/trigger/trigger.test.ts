@@ -1821,6 +1821,43 @@ describe("trigger rules", () => {
     expect(registry.triggerRules()[0]?.rule.start.params).toEqual({ value: 1 });
   });
 
+  test("a nested getter's params are frozen into a plain JSON snapshot at load", async () => {
+    const root = await tempRoot();
+    let reads = 0;
+    const params: Record<string, unknown> = {};
+    Object.defineProperty(params, "value", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        reads += 1;
+        return reads === 1 ? 1 : () => {};
+      },
+    });
+    const declared = {
+      source: "cron",
+      type: "tick",
+      start: { flow: "good:done", params },
+      object: "job:1",
+      mode: "auto",
+    } as unknown as TriggerRule;
+
+    const registry = registryWithRules(
+      [pluginWithRules("good", [declared])],
+      root,
+    );
+    expect(reads).toBe(1);
+    const kept = registry.triggerRules()[0]?.rule.start.params as Record<
+      string,
+      unknown
+    >;
+    expect(kept).toEqual({ value: 1 });
+    expect(kept).not.toBe(params);
+    expect(Object.getOwnPropertyDescriptor(kept, "value")?.get).toBeUndefined();
+    // Reading the kept rule again, as the log does, must not reach the getter.
+    expect(registry.triggerRules()[0]?.rule.start.params).toEqual({ value: 1 });
+    expect(reads).toBe(1);
+  });
+
   test("distinct source and type pairs are not confused when they contain a NUL", async () => {
     const root = await tempRoot();
     const registry = registryWithRules(

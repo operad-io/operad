@@ -2,7 +2,7 @@
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { assertJsonValue } from "../log/json-value.ts";
+import type { JsonValue } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import { CronError, parseCron } from "./cron.ts";
 import type { TriggerMode, TriggerRule } from "./types.ts";
@@ -57,6 +57,78 @@ function readMode(value: unknown, at: string): TriggerMode {
   );
 }
 
+/**
+ * A plain JSON copy of a rule's params. Each property is read once while the
+ * copy is built, so a getter cannot pass the check with one value and hand
+ * back another, and the rule keeps the snapshot rather than a live object.
+ */
+function snapshotJsonValue(value: unknown, path: string): JsonValue {
+  const seen = new WeakSet<object>();
+
+  function walk(current: unknown, at: string): JsonValue {
+    if (current === null) return null;
+    switch (typeof current) {
+      case "string":
+      case "boolean":
+        return current;
+      case "number":
+        if (!Number.isFinite(current)) {
+          throw new Error(`${at} is not a finite JSON number`);
+        }
+        return current;
+      case "object":
+        break;
+      default:
+        throw new Error(`${at} is not JSON (${typeof current})`);
+    }
+
+    if (seen.has(current)) {
+      throw new Error(`${at} contains a cycle`);
+    }
+    seen.add(current);
+
+    // `JSON.stringify` calls `toJSON` even when it is not enumerable, so the
+    // value it would store differs from the value inspected here.
+    if (typeof (current as { toJSON?: unknown }).toJSON === "function") {
+      throw new Error(
+        `${at} has a toJSON method, so its JSON form is not the value inspected`,
+      );
+    }
+
+    let copy: JsonValue;
+    if (Array.isArray(current)) {
+      const items: JsonValue[] = [];
+      for (let index = 0; index < current.length; index += 1) {
+        if (!(index in current)) {
+          throw new Error(`${at}[${index}] is a hole, not a JSON value`);
+        }
+        items.push(walk(current[index], `${at}[${index}]`));
+      }
+      copy = items;
+    } else {
+      const prototype = Object.getPrototypeOf(current);
+      if (prototype !== Object.prototype && prototype !== null) {
+        throw new Error(`${at} is not a plain JSON object`);
+      }
+      const record: { [key: string]: JsonValue } = {};
+      for (const [key, item] of Object.entries(current)) {
+        Object.defineProperty(record, key, {
+          value: walk(item, `${at}.${key}`),
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
+      }
+      copy = record;
+    }
+
+    seen.delete(current);
+    return copy;
+  }
+
+  return walk(value, path);
+}
+
 function readStart(value: unknown, at: string): TriggerRule["start"] {
   if (!isRecord(value)) {
     throw new TriggerError(`${at}: start: must be an object`);
@@ -64,17 +136,14 @@ function readStart(value: unknown, at: string): TriggerRule["start"] {
   checkKeys(value, START_KEYS, `${at}: start`);
   const flow = requireText(value.flow, `${at}: start.flow`, "flow");
   // An absent key means "no params"; a present key must be JSON even when its
-  // value is `undefined`. Read the property once so a getter cannot pass the
-  // check with one value and hand back another.
+  // value is `undefined`. The snapshot freezes every nested value at load.
   if (!Object.hasOwn(value, "params")) return { flow };
-  const params: unknown = value.params;
   try {
-    assertJsonValue(params, "start.params");
+    return { flow, params: snapshotJsonValue(value.params, "start.params") };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new TriggerError(`${at}: ${detail}`, { cause: error });
   }
-  return { flow, params };
 }
 
 function readRule(value: unknown, index: number, file: string): TriggerRule {

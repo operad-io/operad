@@ -382,3 +382,9 @@
 |---|---|---|---|
 | TK0027-M9 | packages/engine/src/trigger/rules.ts | treated an explicitly undefined `start.params` as if the key were absent | `trigger rules > a plugin rule with an explicitly undefined params is refused at load` |
 | TK0027-M10 | packages/engine/src/trigger/rules.ts | checked `start.params` through a second property read instead of the captured value | `trigger rules > a plugin rule's params are read once and the checked value is the one kept` |
+
+## TK0027 — rework 4: a plugin rule's params are kept as a JSON snapshot
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0027-M11 | packages/engine/src/trigger/rules.ts | checked the params but returned the original, accessor-bearing object | `trigger rules > a nested getter's params are frozen into a plain JSON snapshot at load` |
