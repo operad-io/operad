@@ -1,7 +1,7 @@
 import type {
-  Fact,
   FactInput,
   ObjectData,
+  PluginFact,
   PluginStore,
   StoredObject,
 } from "./types.ts";
@@ -28,7 +28,7 @@ export class MemoryPluginStore implements PluginStore {
   readonly root: string;
   private readonly clock: () => number;
   private readonly objects = new Map<string, StoredObject>();
-  private readonly entries: Fact[] = [];
+  private readonly entries: PluginFact[] = [];
 
   constructor(options: MemoryPluginStoreOptions) {
     this.root = options.root;
@@ -68,14 +68,14 @@ export class MemoryPluginStore implements PluginStore {
     return [...this.objects.values()].filter((object) => object.type === type);
   }
 
-  append(input: FactInput): Fact {
+  append(input: FactInput): PluginFact {
     requireName(input.type, "fact type");
     const cause = input.cause;
     if (cause === undefined) {
       throw new Error("cause: must be a non-empty string");
     }
     requireName(cause, "cause");
-    const fact: Fact = {
+    const fact: PluginFact = {
       sequence: this.entries.length + 1,
       type: input.type,
       object: input.object,
@@ -88,7 +88,7 @@ export class MemoryPluginStore implements PluginStore {
   }
 
   /** Every fact in append order. The kernel's history view reads this. */
-  facts(): readonly Fact[] {
+  facts(): readonly PluginFact[] {
     return this.entries;
   }
 

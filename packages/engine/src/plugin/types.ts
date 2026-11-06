@@ -39,8 +39,11 @@ export interface StoredObject extends RunObject {
   readonly at: number;
 }
 
-/** One fact in the log. Facts hold data and paths, never process output. */
-export interface Fact {
+/**
+ * One fact a plugin sees. Facts hold data and paths, never process output.
+ * The name stays apart from the storage backend's `Fact`, which is run-scoped.
+ */
+export interface PluginFact {
   readonly sequence: number;
   readonly type: string;
   readonly object: ObjectRef | undefined;
@@ -80,7 +83,7 @@ export interface ObjectStore {
 
 /** Appends facts that are not an object change, such as a step's output path. */
 export interface FactWriter {
-  append(input: FactInput): MaybePromise<Fact>;
+  append(input: FactInput): MaybePromise<PluginFact>;
 }
 
 /** The store a plugin sees: objects plus its own facts. */
