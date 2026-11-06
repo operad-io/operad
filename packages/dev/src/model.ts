@@ -53,6 +53,8 @@ export type PlanData = {
   readonly taskCount: number;
   readonly mergedCount: number;
   readonly cancelledCount: number;
+  /** True once the scheduler has reported that every task ended. */
+  readonly finishedReported?: boolean | undefined;
 };
 
 /** What the verify step found when it ran the gate commands. */
@@ -201,6 +203,10 @@ export type TaskData = {
   readonly cost?: number | string | undefined;
   /** How many automatic reworks ran in a row; a passing gate resets it. */
   readonly reworkStreak?: number | undefined;
+  /** The owner asked the scheduler to start this ready task. */
+  readonly startRequested?: boolean | undefined;
+  /** The attempt whose review the scheduler already answered for auto merge. */
+  readonly autoMergeAttempt?: number | undefined;
 };
 
 /** A repository registered with the dev plugin. */

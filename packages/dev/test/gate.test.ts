@@ -380,7 +380,7 @@ describe("dev/verify", () => {
     const task = await taskOf(state);
     expect(task.attempt?.verify?.command).toBe("echo nope >&2; exit 4");
     expect(task.attempt?.verify?.log).toBe(result.data?.log as string);
-    expect(task.phase).toBe("running");
+    expect(task.phase).toBe("review");
   });
 
   test("a hanging command fails with a timeout", async () => {

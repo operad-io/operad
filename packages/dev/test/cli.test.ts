@@ -177,6 +177,47 @@ describe("operad with the dev plugin", () => {
     expect(page.rows.length).toBe(2);
   });
 
+  test("dev:auto and dev:priority take --level on the command line", async () => {
+    const { home, repository } = await setup();
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const plan = await run(
+      home,
+      repository,
+      ["plan", "add", "--slug", "level", "--title", "Level"],
+      "a request\n",
+    );
+    const planId = plan.out.trim();
+
+    const auto = await run(home, repository, [
+      "dev:auto",
+      planId,
+      "--level",
+      "merge",
+    ]);
+    expect(auto.code).toBe(0);
+
+    const priority = await run(home, repository, [
+      "dev:priority",
+      planId,
+      "--level",
+      "P1",
+    ]);
+    expect(priority.code).toBe(0);
+
+    const bad = await run(home, repository, [
+      "dev:auto",
+      planId,
+      "--level",
+      "sometimes",
+    ]);
+    expect(bad.code).toBe(2);
+    expect(bad.err).toContain('"off", "run", "merge"');
+
+    const missing = await run(home, repository, ["dev:auto", planId]);
+    expect(missing.code).toBe(2);
+    expect(missing.err).toContain("is required");
+  });
+
   test("a command outside the repository takes --repo and edit opens $EDITOR", async () => {
     const { root, home, repository } = await setup();
     const name = repository.split("/").pop() ?? "repository";

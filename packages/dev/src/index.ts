@@ -6,6 +6,7 @@ import { actions } from "./actions.ts";
 import { commands } from "./commands.ts";
 import { runRework, runReview, runVerify } from "./gate.ts";
 import { runCleanup, runIntegrate } from "./integrate.ts";
+import { runScheduler } from "./schedule.ts";
 import { resolveDevKey } from "./service.ts";
 import { runWork, runWorktree } from "./steps.ts";
 import { planViews, taskViews } from "./views.ts";
@@ -66,6 +67,7 @@ export function createDevPlugin() {
     flows: [devFlow],
     actions,
     commands,
+    onTick: runScheduler,
     views: {
       plan: planViews,
       task: taskViews,
@@ -87,6 +89,7 @@ export * from "./commands.ts";
 export * from "./gate.ts";
 export * from "./integrate.ts";
 export * from "./model.ts";
+export * from "./schedule.ts";
 export * from "./service.ts";
 export * from "./settings.ts";
 export * from "./steps.ts";

@@ -265,6 +265,7 @@ function writeSettings(repositoryPath: string, name: string): void {
         remote: DEFAULT_DEV_SETTINGS.remote,
         mainBranch: DEFAULT_DEV_SETTINGS.mainBranch,
         worktreeRoot: DEFAULT_DEV_SETTINGS.worktreeRoot,
+        concurrency: DEFAULT_DEV_SETTINGS.concurrency,
         worker: DEFAULT_DEV_SETTINGS.worker,
         workerBrief: DEFAULT_DEV_SETTINGS.workerBrief,
       },
@@ -476,6 +477,10 @@ export async function refreshPlanCounts(
     taskCount,
     mergedCount,
     cancelledCount,
+    // A new task reopens a plan the scheduler already called finished.
+    ...(taskCount > 0 && mergedCount + cancelledCount === taskCount
+      ? {}
+      : { finishedReported: false }),
   };
   return writePlan(store, plan.id, next, "dev:refresh-plan");
 }
@@ -754,6 +759,115 @@ export async function setTaskPhase(
     );
     await refreshPlanCounts(store, plan);
     return written;
+  });
+}
+
+/**
+ * Marks a ready task as running before the kernel starts its flow, so the next
+ * tick does not start it a second time. The worktree step sets the run id when
+ * the child process reaches it.
+ */
+export async function claimTaskStart(
+  store: ObjectStore,
+  id: string,
+): Promise<TaskData | undefined> {
+  const initial = await getTask(store, id);
+  const data = taskData(initial.data);
+  return withRepoLock(store, data.repository, async () => {
+    const current = await getTask(store, id);
+    const latest = taskData(current.data);
+    if (latest.phase !== "ready") return undefined;
+    const next: TaskData = {
+      ...latest,
+      phase: "running",
+      run: null,
+      brief: appendChange(latest.brief, "running"),
+      startRequested: false,
+    };
+    await writeTask(store, id, next, "dev:task-start");
+    return next;
+  });
+}
+
+/** Asks the scheduler to start this ready task on its next tick. */
+export async function requestTaskStart(
+  store: ObjectStore,
+  id: string,
+): Promise<StoredObject> {
+  const initial = await getTask(store, id);
+  const data = taskData(initial.data);
+  const at = `task "${bareId(id)}"`;
+  if (data.phase !== "ready") {
+    throw new DevError(
+      "phase",
+      `${at} is ${data.phase}; only a ready task can be started`,
+    );
+  }
+  return withRepoLock(store, data.repository, async () => {
+    const current = await getTask(store, id);
+    const latest = taskData(current.data);
+    if (latest.phase !== "ready") {
+      throw new DevError(
+        "phase",
+        `${at} is ${latest.phase}; only a ready task can be started`,
+      );
+    }
+    if (latest.startRequested === true) return current;
+    return writeTask(
+      store,
+      id,
+      { ...latest, startRequested: true },
+      "dev:task-start-request",
+    );
+  });
+}
+
+/** Records that the scheduler answered this attempt's review with `merge`. */
+export async function recordAutoMerge(
+  store: ObjectStore,
+  id: string,
+  attempt: number,
+): Promise<StoredObject> {
+  const initial = await getTask(store, id);
+  const data = taskData(initial.data);
+  return withRepoLock(store, data.repository, async () => {
+    const current = await getTask(store, id);
+    const latest = taskData(current.data);
+    return writeTask(
+      store,
+      id,
+      { ...latest, autoMergeAttempt: attempt },
+      "dev:task-auto-merge",
+    );
+  });
+}
+
+/**
+ * A ready task with a cancelled dependency waits for a person instead of
+ * starting. Returns undefined when the task is no longer ready.
+ */
+export async function waitTaskForDependency(
+  store: ObjectStore,
+  id: string,
+  dependency: string,
+): Promise<StoredObject | undefined> {
+  const initial = await getTask(store, id);
+  const data = taskData(initial.data);
+  return withRepoLock(store, data.repository, async () => {
+    const current = await getTask(store, id);
+    const latest = taskData(current.data);
+    if (latest.phase !== "ready") return undefined;
+    return writeTask(
+      store,
+      id,
+      {
+        ...latest,
+        phase: "waiting",
+        run: null,
+        brief: appendChange(latest.brief, `waiting: ${dependency} cancelled`),
+      },
+      "dev:task-wait-dependency",
+    );
   });
 }
 

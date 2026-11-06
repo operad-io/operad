@@ -336,7 +336,7 @@ export async function runVerify(
     context.taskKey,
     {
       ...task,
-      phase: result === "pass" ? "review" : "running",
+      phase: "review",
       run: ctx.runId,
       attempts: Math.max(task.attempts, attempt.number),
       attempt: nextAttempt,
@@ -1259,7 +1259,7 @@ export async function runRework(
   };
   const next: TaskData = {
     ...withRework,
-    phase: again ? "running" : "waiting",
+    phase: again ? "review" : "waiting",
     run: ctx.runId,
     attempts: Math.max(task.attempts, attempt.number),
     reworkStreak: streak,

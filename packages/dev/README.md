@@ -31,6 +31,7 @@ operad plan add --slug <slug> --title <title> [--repo <name>]   # request on std
 operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--repo <name>]   # brief on stdin
 operad task edit <id>      # $EDITOR on the brief body; proposed or ready only
 operad task update <id> [--title <title>] [--after <task>]...
+operad start <task>        # start one ready task now, whatever its plan's auto level
 ```
 
 Inside a registered repository the repository is inferred; elsewhere pass
@@ -46,11 +47,8 @@ Every action is also a command: `operad dev:<action> <id>`.
 | `dev:merge` | task | | answer the task's wait with `merge`; asks first |
 | `dev:reject` | task | | answer the task's wait with `reject` and append `## Rework <n> (owner)` with the note |
 | `dev:cancel` | plan, task | `x` | cancel a plan and its open tasks, or one task; asks first |
-| `dev:auto-off` | plan | | set auto to off |
-| `dev:auto-run` | plan | | set auto to run |
-| `dev:auto-merge` | plan | | set auto to merge |
-| `dev:priority-up` | plan | | move one step towards P0 |
-| `dev:priority-down` | plan | | move one step towards P5 |
+| `dev:auto` | plan | | set auto: `--level off`, `--level run` or `--level merge` |
+| `dev:priority` | plan | | set the priority: `--level P0` (most urgent) to `--level P5` |
 
 `merge` and `reject` answer the task's person wait. They appear in `pending`
 only while the task is waiting, and are refused with a clear message otherwise.
@@ -82,6 +80,24 @@ A conflict leaves the worktree mid-merge. The next `dev/work` prompt starts by
 asking the worker to resolve it. A failed attempt names the uncommitted files.
 The task records its attempt count, phase, session id and cost while these steps
 run.
+
+## Scheduling
+
+On every tick of the kernel loop, `dev` starts ready tasks whose dependencies
+have merged. A task starts only while its plan is at auto `run` or `merge`, the
+plan's running count is under its `concurrency`, and the repository's running
+count is under its `concurrency` setting. Plans are considered most urgent
+first, and each registered repository is scheduled on its own.
+
+At auto `merge`, a waiting task whose review passed in this attempt is answered
+with `merge`. A wait that follows `nothing`, `failed` or the rework limit is
+never answered. A task whose dependency was cancelled waits for a person
+instead of starting, and a plan whose tasks have all merged or been cancelled
+is reported finished once. Every change prints one line:
+`TK0003-kernel ready -> running`.
+
+`operad start <task>` asks the scheduler to start one ready task on its next
+tick, whatever its plan's auto level is.
 
 ## Flow
 
@@ -115,6 +131,7 @@ The file holds the repository's work settings:
 | `remote` | `origin` | the remote a task branch is fetched from and pushed to |
 | `mainBranch` | `main` | the branch a task starts from and merges on each attempt |
 | `worktreeRoot` | `.operad-worktrees` | where task worktrees live, relative to the repository and inside it |
+| `concurrency` | `1` | how many tasks this repository may run at once; each plan also has its own limit |
 | `worker.use` | `harness-radian/agent` | the harness step that works a task |
 | `worker.args` | `[]` | extra arguments for that harness step |
 | `worker.wallTimeSecs`, `worker.stallSecs` | harness defaults | the worker's time limits |

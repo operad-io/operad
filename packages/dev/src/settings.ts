@@ -77,6 +77,8 @@ export interface DevSettings {
   readonly remote: string;
   readonly mainBranch: string;
   readonly worktreeRoot: string;
+  /** How many tasks this repository may run at once. */
+  readonly concurrency: number;
   readonly worker: WorkerSettings;
   readonly workerBrief: string;
   readonly gate: GateSettings;
@@ -114,6 +116,7 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
   remote: "origin",
   mainBranch: "main",
   worktreeRoot: ".operad-worktrees",
+  concurrency: 1,
   worker: {
     use: DEFAULT_WORKER_USE,
     args: [],
@@ -151,6 +154,7 @@ const KNOWN_FIELDS = new Set([
   // `worktreeRoot`, `sandbox` is no longer used at all.
   "worktrees",
   "sandbox",
+  "concurrency",
   "worker",
   "workerBrief",
   "gate",
@@ -473,6 +477,10 @@ export function validateDevSettings(value: unknown): DevSettings {
         ? DEFAULT_DEV_SETTINGS.mainBranch
         : nonEmptyString(value.mainBranch, "mainBranch"),
     worktreeRoot: worktreeRoot.root,
+    concurrency:
+      value.concurrency === undefined
+        ? DEFAULT_DEV_SETTINGS.concurrency
+        : positiveInteger(value.concurrency, "concurrency"),
     worker:
       value.worker === undefined
         ? DEFAULT_DEV_SETTINGS.worker
