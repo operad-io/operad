@@ -5,7 +5,7 @@
  * process while that step is in flight. Test-only: no production path loads it.
  */
 
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, watch, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   definePlugin,
@@ -46,6 +46,26 @@ function recordDir(cwd: string): string {
   return process.env.FAKE_HARNESS_DIR ?? cwd;
 }
 
+/**
+ * Holds the first review open until the test ends it: it resolves when the test
+ * writes `review-release`, and the run process is killed before that. No timer
+ * decides when the review may finish.
+ */
+function holdForKill(directory: string): Promise<void> {
+  const release = join(directory, "review-release");
+  return new Promise((resolve) => {
+    const handle = watch(directory, () => {
+      if (!existsSync(release)) return;
+      handle.close();
+      resolve();
+    });
+    handle.on("error", () => {
+      handle.close();
+      resolve();
+    });
+  });
+}
+
 export function createFakeHarnessPlugin() {
   return definePlugin({
     name: "harness-fake",
@@ -69,11 +89,9 @@ export function createFakeHarnessPlugin() {
             const once = join(directory, "review-once");
             if (!existsSync(once)) {
               writeFileSync(once, "started\n");
-              // Long enough for the test to kill this process; a recovered
-              // review finds the marker and returns at once.
-              await new Promise((resolve) => {
-                globalThis.setTimeout(resolve, 10_000);
-              });
+              // The test kills the run while this review is in flight; a
+              // recovered review finds the marker and returns at once.
+              await holdForKill(directory);
             }
             writeFileSync(
               resultPath,
