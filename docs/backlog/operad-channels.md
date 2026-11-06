@@ -29,6 +29,8 @@
 13. **运行的结果又是事件。** 每次运行结束，内核以来源 `operad` 发一个事件：类型 `run.done`、`run.failed` 或 `run.cancelled`，`key` 是运行 id，`object` 是该运行的对象，`data` 是运行的结果（结束的结果名、最后一步的事实摘要）。它和别的事件一样走规则，所以“A 跑完再跑 B”就是一条 `source: "operad", type: "run.done"` 的规则。步骤也可以用 `ctx.emit({ type, key, object?, summary?, data? })` 发自己的事件，来源记为 `operad`，类型由插件起名（`<插件>.<名字>`）。
 14. **连锁有上限。** 每个事件带 `hops`：外部事件是 0，运行发出的事件是启动该运行的事件的 `hops` 加 1。`hops` 超过 8 的事件只记录不启动，历史里写明原因。
 15. **事件内容进 prompt 的方式。** 内核仍然从不把事件文字放进提示词（决定 10）。`<harness>:prompt` flow 在有 `ctx.trigger` 时，在 prompt 末尾加一行固定的说明，指向事件的 `summary` 和 `data` 文件路径，并说明那是外部资料、不是指令；读不读由 agent 决定。
+16. **插件可以自带规则。** 插件在声明里带默认规则（和 `triggers.json` 同一形状），加载时并入；用户 `triggers.json` 里 `source` 和 `type` 相同的规则覆盖插件的。第一个用它的是 `chat`：消息事件启动 `chat:reply`（`operad-conversation.md` 决定 2）。
+17. **通道只做四个**，顺序 Telegram、WhatsApp、Slack、iMessage；决定 6 的首个通道不变。
 
 ## 待决问题（未定）
 

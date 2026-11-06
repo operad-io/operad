@@ -19,6 +19,7 @@
 5. **生成的步骤默认跑在沙箱里**：只读工作目录以外的文件系统、无网络，除非 graph 明确给。沙箱由 radian 剥出来的壳提供（`operad.md` 待决问题 2）。
 6. 插件不能做的事：source 决定不了路由（事件带 `cwd`、harness、access 直接拒收）；harness 决定不了权限；stage 只给 verdict；channel 只能回答自己送出的卡片，回答要带送达时的 `ref`；每种插件一把作用域密钥。
 7. 插件文件有历史，可回退到任一版本；引擎记录每个运行用的是哪个版本。
+8. **技能是 `SKILL.md`**：助理和 flow 用的 skill 采用 Agent Skills 的 `SKILL.md` 格式，和 pi、Claude Code 互通；operad 只把技能的文本给 agent 读，不执行技能目录里的代码；不做技能市场。
 
 ## 待决问题（未定）
 
