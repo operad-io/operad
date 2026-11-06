@@ -151,4 +151,10 @@
 | TK0017-M16 | packages/shell/src/process.ts | left the line's stderr out of the log instead of folding it into the command's output | `shell/command > a non-zero exit is a failure with its code and output path` |
 | TK0017-M17 | packages/shell/src/process.ts | passed only the step's `env` to the command, dropping the host environment | `shell/command > the host environment is still there when env is given` |
 | TK0017-M18 | packages/shell/src/index.ts | stopped passing the step's `env` to the line runner | `shell/command > env is added to the command's environment` |
-| TK0017-M19 | packages/shell/src/process.ts | removed the sentinel's TERM trap, so the stop's SIGTERM ends the group before the grace | `runLine > the group outlives a finished line until the grace SIGKILL` |
+| TK0017-M19 | packages/shell/src/process.ts | removed the sentinel's TERM trap, so the stop's SIGTERM ends the group before the grace | `runLine > the sentinel survives the stop's SIGTERM` |
+
+## TK0017 — rework 15: the stop's order and the trap have teeth
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0017-M20 | packages/shell/src/process.ts | removed the wait for the sentinel's `ready` before the stop's first signal | `runLine > a stop before ready waits for the sentinel's trap` |

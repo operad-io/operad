@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   FilePluginStore,
@@ -52,6 +52,25 @@ function alive(pid: number): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Waits for an observable condition with a bounded poll. Only the two tests
+ * that exercise a real signal and a delayed sentinel use it: the sentinel's
+ * `ready` arrival is what the order assertion needs, not a fixed sleep.
+ */
+async function waitUntil(
+  predicate: () => boolean,
+  timeoutMs = 2000,
+  stepMs = 20,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) {
+      throw new Error("timed out waiting for a condition");
+    }
+    await new Promise((resolve) => globalThis.setTimeout(resolve, stepMs));
   }
 }
 
@@ -412,6 +431,120 @@ describe("runLine", () => {
     expect(outcome.exitCode).toBe(0);
     const pid = Number(readFileSync(pidFile, "utf8").trim());
     expect(alive(pid)).toBe(false);
+  });
+
+  test("the sentinel survives the stop's SIGTERM", async () => {
+    const { root } = await fixture();
+    const sentinelFile = join(root, "sentinel.pid");
+    const marker = join(root, "got-term");
+    let releaseGrace: (() => void) | undefined;
+    const grace = new Promise<void>((resolve) => {
+      releaseGrace = resolve;
+    });
+    const clock: Clock = {
+      setTimeout: (handler, ms) => globalThis.setTimeout(handler, ms),
+      clearTimeout: (handle) =>
+        globalThis.clearTimeout(handle as ReturnType<typeof globalThis.setTimeout>),
+      // The test decides when the grace ends, so the sentinel is observed
+      // while the SIGTERM is the only signal it has received.
+      sleep: async () => {
+        await grace;
+      },
+    };
+    const controller = new AbortController();
+    const signals: (string | number)[] = [];
+    const running = runLine({
+      line: `trap 'echo got-term > "${marker}"' TERM; echo $PPID > '${sentinelFile}'; sleep 60`,
+      cwd: root,
+      signal: controller.signal,
+      clock,
+      killGroup: (pgid, signal) => {
+        signals.push(signal);
+        try {
+          process.kill(-pgid, signal);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    });
+
+    let sentinelPid: number | undefined;
+    try {
+      await waitForFile(sentinelFile);
+      sentinelPid = Number(readFileSync(sentinelFile, "utf8").trim());
+      controller.abort();
+
+      // Wait for the line's own shell to report the TERM. The signal is only
+      // delivered after this point, so the check on the sentinel below is not
+      // a same-tick race.
+      await waitUntil(() => existsSync(marker));
+      expect(signals).toEqual(["SIGTERM"]);
+      expect(alive(sentinelPid)).toBe(true);
+
+      releaseGrace?.();
+      await running;
+      expect(alive(sentinelPid)).toBe(false);
+    } finally {
+      releaseGrace?.();
+      await running.catch(() => undefined);
+      if (sentinelPid !== undefined && alive(sentinelPid)) {
+        try {
+          process.kill(-sentinelPid, "SIGKILL");
+        } catch {
+          // The group ended after all.
+        }
+      }
+    }
+  });
+
+  test("a stop before ready waits for the sentinel's trap", async () => {
+    const { root } = await fixture();
+    const sentinelFile = join(root, "sentinel.pid");
+    const readyFile = join(root, "ready");
+    // The sentinel records its pid at once, then delays the trap and the
+    // announcement, so the stop below starts before `ready` can arrive.
+    const sentinelScript = [
+      `echo $$ > '${sentinelFile}'`,
+      "sleep 0.3",
+      "trap ':' TERM",
+      `touch '${readyFile}'`,
+      "printf 'ready\\n' >&2",
+      'sh -c "$1" 2>&1',
+      "status=$?",
+      "printf 'end %s\\n' \"$status\" >&2",
+      "while :; do sleep 1; done",
+    ].join("\n");
+    const controller = new AbortController();
+    const signals: { readonly signal: string | number; readonly ready: boolean }[] = [];
+    const running = runLine({
+      line: "sleep 60",
+      cwd: root,
+      signal: controller.signal,
+      sentinelScript,
+      killGroup: (pgid, signal) => {
+        signals.push({ signal, ready: existsSync(readyFile) });
+        try {
+          process.kill(-pgid, signal);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    });
+    // runLine is at its startup await now: the stop starts before the
+    // sentinel's delayed `ready`.
+    controller.abort();
+
+    const outcome = await running;
+    expect(outcome.cancelled).toBe(true);
+    expect(signals.map((entry) => entry.signal)).toEqual(["SIGTERM", "SIGKILL"]);
+    // Every signal was sent only after the sentinel had installed its trap and
+    // announced `ready`; the signal that follows the announcement reaches a
+    // sentinel that ignores it.
+    expect(signals.every((entry) => entry.ready)).toBe(true);
+    const sentinelPid = Number(readFileSync(sentinelFile, "utf8").trim());
+    expect(alive(sentinelPid)).toBe(false);
   });
 });
 

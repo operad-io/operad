@@ -75,6 +75,12 @@ export interface LineRunOptions {
   readonly signal: AbortSignal;
   readonly logger?: PluginLogger | undefined;
   readonly clock?: Clock | undefined;
+  /**
+   * Test-only seam: replaces the sentinel script, so a test can delay the
+   * `ready` announcement and exercise a stop that arrives before it. A
+   * production run never sets it.
+   */
+  readonly sentinelScript?: string | undefined;
   /** Sends a signal to one process group; a test replaces it to watch signals. */
   readonly killGroup?:
     | ((pgid: number, signal: NodeJS.Signals | 0) => boolean)
@@ -301,14 +307,18 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
   const output = new Output(options.logger);
   let child: ChildProcess;
   try {
-    child = spawn("sh", ["-c", SENTINEL, "operad-shell", options.line], {
-      cwd: options.cwd,
-      ...(options.env === undefined
-        ? {}
-        : { env: { ...process.env, ...options.env } }),
-      detached: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    child = spawn(
+      "sh",
+      ["-c", options.sentinelScript ?? SENTINEL, "operad-shell", options.line],
+      {
+        cwd: options.cwd,
+        ...(options.env === undefined
+          ? {}
+          : { env: { ...process.env, ...options.env } }),
+        detached: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
   } catch (error) {
     const spawnError = messageOf(error);
     await output.end();
