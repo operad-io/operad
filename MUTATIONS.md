@@ -135,5 +135,6 @@
 | TK0026-M10 | packages/engine/src/loop/serve.ts, packages/engine/src/trigger/kernel.ts | emitted the run-end event before ending the run, and stopped ending it inside the emitter | `the kernel start entry > a recovered run emits its end event once and starts the chained flow` |
 | TK0026-M11 | packages/engine/src/trigger/kernel.ts | dropped the global `trigger_observed` fact for an observed event | `the kernel start entry > observe records what it would have started` |
 | TK0026-M12 | packages/engine/src/log/sqlite.ts | disabled the migration of a legacy `inputs.run_id TEXT NOT NULL` table | `a store from before global inputs is migrated on open` |
+| TK0026-M13 | packages/engine/src/loop/serve.ts | skipped loading `triggers.json` for a kernel built inside `serveOnce` | `serve loop > recovery starts a run-end chain without a kernel argument` |
 
 

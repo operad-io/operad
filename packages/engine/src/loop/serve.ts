@@ -5,6 +5,7 @@ import type { LogBackend } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { StartRunRequest } from "../plugin/types.ts";
 import { Kernel } from "../trigger/kernel.ts";
+import { loadTriggerRules } from "../trigger/rules.ts";
 import type { TriggerRule } from "../trigger/types.ts";
 import { acquireLock, lockHeld, runLockPath, serveLockPath } from "../runner/lock.ts";
 import { objectKey, parseObjectKey, readState } from "../runner/service.ts";
@@ -59,14 +60,24 @@ export async function serveOnce(
   const isRunnerAlive =
     options.isRunnerAlive ??
     ((runId: string) => lockHeld(runLockPath(options.lockRoot, runId)));
+  const home = options.home ?? options.registry.home;
+  let rules = options.rules;
+  if (options.kernel === undefined && rules === undefined) {
+    try {
+      rules = await loadTriggerRules({ home, registry: options.registry });
+    } catch {
+      // A broken rule file must not stop the loop; the CLI reports it.
+      rules = [];
+    }
+  }
   const kernel =
     options.kernel ??
     new Kernel({
       log: options.log,
       registry: options.registry,
-      home: options.home ?? options.registry.home,
+      home,
       storeRoot: options.storeRoot ?? options.lockRoot,
-      rules: options.rules ?? [],
+      rules: rules ?? [],
     });
   const started: string[] = [];
   const spawned: string[] = [];

@@ -23,6 +23,7 @@ import {
   storeRootOf,
 } from "../../src/index.ts";
 import plugin from "../fixtures/plugins/runner.ts";
+import triggerPlugin from "../fixtures/plugins/trigger.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
 
 afterAll(cleanupTempRoots);
@@ -238,6 +239,48 @@ describe("serve loop", () => {
         type: "go",
         hops: 0,
       });
+    } finally {
+      await log.close();
+    }
+  });
+
+  test("recovery starts a run-end chain without a kernel argument", async () => {
+    const home = await makeHome();
+    await Bun.write(
+      join(home.home, "triggers.json"),
+      JSON.stringify([
+        {
+          source: "operad",
+          type: "run.done",
+          start: { flow: "one" },
+          object: "$event.object",
+          mode: "auto",
+        },
+      ]),
+    );
+    const log = openConfigLog(home.config);
+    const registry = new PluginRegistry([triggerPlugin], {
+      home: home.home,
+      storeRoot: home.storeRoot,
+      store: new MemoryPluginStore({ root: home.storeRoot }),
+    });
+    try {
+      const first = await log.startRun("one", "job:1");
+      await log.append(first.runId, 0, [
+        { kind: "run_started", payload: { flow: "one", hops: 0 }, cause: "seed" },
+        { kind: "run_ended", payload: { status: "done", reason: null }, cause: "seed" },
+      ]);
+
+      await serveOnce({
+        log,
+        registry,
+        lockRoot: home.storeRoot,
+        spawnRun: () => undefined,
+      });
+
+      const runs = await log.runs();
+      expect(runs.filter((run) => run.flow === "one")).toHaveLength(2);
+      expect(runs.find((run) => run.runId === first.runId)?.active).toBe(false);
     } finally {
       await log.close();
     }
