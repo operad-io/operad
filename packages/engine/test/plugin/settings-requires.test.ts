@@ -1,11 +1,18 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
+  loadPluginRegistry,
   MemoryPluginStore,
   PluginRegistry,
   PLUGIN_API_VERSION,
 } from "../../src/index.ts";
 import { cleanupTempRoots, def, tempRoot } from "./support.ts";
+
+const configuredPath = fileURLToPath(
+  new URL("../fixtures/plugins/configured.ts", import.meta.url),
+);
 
 afterAll(cleanupTempRoots);
 
@@ -76,6 +83,28 @@ describe("plugin settings", () => {
     expect(loaded.names()).toEqual(["healthy"]);
     expect(logs.join("\n")).toContain('plugin "broken"');
     expect(logs.join("\n")).toContain("settings.token");
+  });
+
+  test("a null settings section refuses the plugin instead of becoming an empty object", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    await mkdir(home, { recursive: true });
+    await writeFile(
+      join(home, "config.json"),
+      JSON.stringify({
+        plugins: { configured: { module: configuredPath, settings: null } },
+        store: { backend: "jsonl", path: join(root, "store") },
+      }),
+    );
+    const logs: string[] = [];
+    const loaded = await loadPluginRegistry({
+      home,
+      store: new MemoryPluginStore({ root: join(root, "store") }),
+      onLog: (message) => logs.push(message),
+    });
+    expect(loaded.names()).toEqual([]);
+    expect(logs.join("\n")).toContain('plugin "configured"');
+    expect(logs.join("\n")).toContain("settings: must be an object");
   });
 
   test("a plugin without a settings schema gets an empty read-only object", async () => {

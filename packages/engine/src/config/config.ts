@@ -129,7 +129,7 @@ function readPlugins(value: unknown, file: string): readonly PluginConfigEntry[]
       name,
       module: module ?? name,
       enabled: enabled !== false,
-      settings: raw.settings ?? {},
+      settings: raw.settings === undefined ? {} : raw.settings,
     });
   }
   return entries;

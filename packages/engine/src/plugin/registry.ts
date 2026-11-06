@@ -927,7 +927,7 @@ export class PluginRegistry {
    * kernel never interprets a field; it only makes sure one step applies it.
    */
   checkAccess(flowName: string, access: JsonValue | undefined): void {
-    if (access === undefined || access === null) return;
+    if (access === undefined) return;
     if (!isRecord(access)) {
       throw new PluginError(`access: must be an object`);
     }

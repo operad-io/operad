@@ -1134,10 +1134,12 @@ async function commandPluginList(context: Context, io: CliIo): Promise<number> {
   }
   for (const entry of context.config.plugins) {
     let definition: unknown;
-    try {
-      definition = await loadPlugin(entry.module, context.home);
-    } catch {
-      definition = undefined;
+    if (entry.enabled) {
+      try {
+        definition = await loadPlugin(entry.module, context.home);
+      } catch {
+        definition = undefined;
+      }
     }
     const name = definitionName(definition) ?? entry.name ?? entry.module;
     const version = definitionVersion(definition) ?? "-";

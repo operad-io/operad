@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -376,7 +376,7 @@ describe("operad command", () => {
 
     const listed = capture();
     expect(await main(["plugin", "list"], { home, io: listed.io })).toBe(0);
-    expect(listed.text()).toContain("notes  0.0.1  disabled");
+    expect(listed.text()).toContain("notes  -  disabled");
 
     const command = capture();
     expect(await main(["notes", "add", "hello"], { home, io: command.io })).toBe(3);
@@ -393,6 +393,30 @@ describe("operad command", () => {
     const disabled = capture();
     expect(await main(["plugin", "disable", "notes"], { home, io: disabled.io })).toBe(0);
     expect(disabled.text()).toContain("notes: disabled");
+  });
+
+  test("plugin list does not import a disabled plugin", async () => {
+    const { root, home } = await makeNamedHome({});
+    const marker = join(root, "loaded.marker");
+    const modulePath = join(root, "side-effect.ts");
+    await Bun.write(
+      modulePath,
+      `import { writeFileSync } from "node:fs";\n` +
+        `writeFileSync(${JSON.stringify(marker)}, "ran");\n` +
+        `export default { name: "lazy", kind: "domain", version: "0.0.1" };\n`,
+    );
+    await Bun.write(
+      join(home, "config.json"),
+      JSON.stringify({
+        plugins: { lazy: { module: modulePath, enabled: false } },
+        store: { backend: "jsonl", path: join(root, "store") },
+      }),
+    );
+
+    const listed = capture();
+    expect(await main(["plugin", "list"], { home, io: listed.io })).toBe(0);
+    expect(listed.text()).toContain("lazy  -  disabled");
+    expect(existsSync(marker)).toBe(false);
   });
 
   test("plugin check validates a declaration without starting a run", async () => {

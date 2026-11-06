@@ -833,9 +833,15 @@ function ensureSchema(directory: string): void {
     );
   }
   if (version < SCHEMA_VERSION) {
-    throw new SchemaVersionError(
-      `store ${directory} uses schema_version ${version}, but this build requires ${SCHEMA_VERSION}`,
-    );
+    // Version 2 added an optional `access` field to the run header; every
+    // version-1 record stays readable, so only the marker changes.
+    if (version !== 1) {
+      throw new SchemaVersionError(
+        `store ${directory} uses schema_version ${version}, but this build requires ${SCHEMA_VERSION}`,
+      );
+    }
+    writeFileSynced(path, `${JSON.stringify({ schema_version: SCHEMA_VERSION })}\n`);
+    fsyncDirectory(directory);
   }
 }
 

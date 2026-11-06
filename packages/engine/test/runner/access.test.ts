@@ -169,4 +169,28 @@ describe("run access profile", () => {
       await run.close();
     }
   });
+
+  test("refuses a null profile, which is not an access object", async () => {
+    const run = await setup();
+    try {
+      const flow = run.registry.flow("guarded")?.flow;
+      if (flow === undefined) throw new Error("missing flow");
+      const info = await run.log.startRun("guarded", "job:1");
+      let message = "";
+      try {
+        await new Runner({
+          log: run.log,
+          flow,
+          runId: info.runId,
+          registry: run.registry,
+          access: null,
+        }).run();
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      expect(message).toContain("access: must be an object");
+    } finally {
+      await run.close();
+    }
+  });
 });

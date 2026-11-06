@@ -224,10 +224,41 @@ function ensureSchema(database: Database, path: string): void {
     );
   }
   if (version < SCHEMA_VERSION) {
+    version = migrateSchema(database, path, version);
+  }
+  if (version < SCHEMA_VERSION) {
     throw new SchemaVersionError(
       `store ${path} uses schema_version ${version}, but this build requires ${SCHEMA_VERSION}`,
     );
   }
+}
+
+/**
+ * Upgrades an older store in place, one version at a time. Version 1 had no
+ * `runs.access` column; the column is additive, so the existing runs and
+ * history stay exactly as they were.
+ */
+function migrateSchema(database: Database, path: string, from: number): number {
+  let version = from;
+  while (version < SCHEMA_VERSION) {
+    if (version === 1) {
+      database.transaction(() => {
+        const columns = database
+          .query<{ readonly name: string }, []>("PRAGMA table_info(runs)")
+          .all();
+        if (!columns.some((column) => column.name === "access")) {
+          database.run("ALTER TABLE runs ADD COLUMN access TEXT");
+        }
+        database.run("UPDATE schema_version SET version = ? WHERE id = 1", [2]);
+      }).immediate();
+      version = 2;
+      continue;
+    }
+    throw new SchemaVersionError(
+      `store ${path} uses schema_version ${version}, but this build requires ${SCHEMA_VERSION}`,
+    );
+  }
+  return version;
 }
 
 class SqliteLogBackend implements LogBackend {

@@ -2,18 +2,28 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
+  FilePluginStore,
   FileSecretStore,
-  MemoryPluginStore,
+  formatHistoryEntry,
+  historyEntries,
   openLog,
   PluginRegistry,
+  Runner,
   Secret,
   SecretSerializationError,
   secretsDirectory,
   secretsPathFor,
+  type FlowDefinition,
   type JsonValue,
 } from "../../src/index.ts";
-import { cleanupTempRoots, def, tempRoot } from "./support.ts";
+import secretPlugin from "../fixtures/plugins/secret-notes.ts";
+import { cleanupTempRoots, tempRoot } from "./support.ts";
+
+const secretPluginPath = fileURLToPath(
+  new URL("../fixtures/plugins/secret-notes.ts", import.meta.url),
+);
 
 afterAll(cleanupTempRoots);
 
@@ -50,43 +60,60 @@ describe("plugin secrets", () => {
     expect(await store.get("token")).toBeUndefined();
   });
 
-  test("a step can read a secret without it reaching facts, history or the log files", async () => {
+  test("a run that uses a secret leaves it out of facts, history, environment and log files", async () => {
     const root = await tempRoot();
     const home = join(root, "home");
     const storeRoot = join(root, "store");
     const value = "never-store-this-value";
-    await new FileSecretStore({ home, plugin: "notes" }).set("token", value);
+    await new FileSecretStore({ home, plugin: "secret-notes" }).set("token", value);
 
-    const plugin = def({
-      name: "notes",
+    const flow: FlowDefinition = {
+      name: "secret-flow",
+      entry: "use",
       steps: [
         {
-          name: "use",
-          results: ["ok"],
-          async run(ctx) {
-            const secret = await ctx.secrets.get("token");
-            await ctx.facts.append({
-              type: "secret_used",
-              data: { present: secret !== undefined },
-            });
-            return { result: "ok" };
-          },
+          id: "use",
+          kind: "plugin",
+          params: { use: "secret-notes/use", params: {} },
+          replay: "safe",
+          next: { ok: "end" },
         },
       ],
-    });
-    const stores = new MemoryPluginStore({ root: storeRoot });
-    const registry = new PluginRegistry([plugin], {
+    };
+    const store = new FilePluginStore({ root: join(storeRoot, "plugins") });
+    const registry = new PluginRegistry([secretPlugin], {
       home,
-      store: stores,
+      storeRoot,
+      store,
+      sources: [secretPluginPath],
       onLog: () => undefined,
     });
-    await registry.runStep("notes/use", {}, { runId: "run-1" });
+    const log = openLog({ backend: "jsonl", path: storeRoot });
+    try {
+      const info = await log.startRun(flow.name, "job:1");
+      await new Runner({ log, flow, runId: info.runId, registry }).run();
 
-    expect(process.env[value]).toBeUndefined();
-    expect(JSON.stringify(stores.facts())).not.toContain(value);
-    for (const file of await filesUnder(storeRoot)) {
-      if (!/\.(jsonl|json|txt|log)$/.test(file)) continue;
-      expect(await readFile(file, "utf8")).not.toContain(value);
+      const facts: unknown[] = [];
+      for await (const fact of log.read(info.runId)) facts.push(fact);
+      const stored = JSON.stringify(facts);
+      expect(stored).not.toContain(value);
+      const pluginFacts = JSON.stringify(store.allFacts());
+      expect(pluginFacts).toContain('"present":true');
+      expect(pluginFacts).toContain('"leakedInEnv":false');
+      expect(pluginFacts).not.toContain(value);
+
+      let history = "";
+      for await (const entry of historyEntries(log.read(info.runId))) {
+        history += `${formatHistoryEntry(entry)}\n`;
+      }
+      expect(history).not.toContain(value);
+
+      expect(Object.values(process.env).some((item) => item === value)).toBe(false);
+      for (const file of await filesUnder(storeRoot)) {
+        expect(await readFile(file, "utf8")).not.toContain(value);
+      }
+    } finally {
+      await log.close();
     }
   });
 
