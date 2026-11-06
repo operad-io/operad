@@ -1,0 +1,255 @@
+import type { FlowDefinition } from "../flow/types.ts";
+
+/** The plugin API version a module declares with `operadPlugin`. */
+export const OPERAD_PLUGIN_VERSION = 1 as const;
+
+/**
+ * The plugin kinds the kernel recognises. These names are internal: user text
+ * never names a kind.
+ */
+export type PluginKind =
+  | "domain"
+  | "harness"
+  | "stage"
+  | "channel"
+  | "source"
+  | "action";
+
+/** A synchronous value, or a promise of one. Plugin hooks may use either. */
+export type MaybePromise<T> = T | Promise<T>;
+
+/** The data of an object: JSON-shaped and owned by the plugin that declares it. */
+export type ObjectData = Readonly<Record<string, unknown>>;
+
+/** Names an object without carrying its state. */
+export interface ObjectRef {
+  readonly type: string;
+  readonly id: string;
+}
+
+/** An object as a run sees it. */
+export interface RunObject extends ObjectRef {
+  readonly data: ObjectData;
+}
+
+/** An object after it was stored, with the fact that produced this version. */
+export interface StoredObject extends RunObject {
+  readonly version: number;
+  readonly cause: string;
+  readonly at: number;
+}
+
+/** One fact in the log. Facts hold data and paths, never process output. */
+export interface Fact {
+  readonly sequence: number;
+  readonly type: string;
+  readonly object: ObjectRef | undefined;
+  readonly cause: string;
+  readonly at: number;
+  readonly data: ObjectData;
+}
+
+/** A fact a plugin appends for itself, outside the objects it owns. */
+export interface FactInput {
+  readonly type: string;
+  readonly data: ObjectData;
+  readonly object?: ObjectRef | undefined;
+  readonly cause?: string | undefined;
+}
+
+/**
+ * The object side of the store. A plugin reads and writes objects here and
+ * never touches the storage backend.
+ */
+export interface ObjectStore {
+  /** The directory that holds this store's files, such as logs. */
+  readonly root: string;
+
+  /** Stores a new version of an object and appends the change as a fact. */
+  put(
+    type: string,
+    id: string,
+    data: ObjectData,
+    cause: string,
+  ): MaybePromise<StoredObject>;
+
+  get(type: string, id: string): MaybePromise<StoredObject | undefined>;
+
+  list(type: string): MaybePromise<readonly StoredObject[]>;
+}
+
+/** Appends facts that are not an object change, such as a step's output path. */
+export interface FactWriter {
+  append(input: FactInput): MaybePromise<Fact>;
+}
+
+/** The store a plugin sees: objects plus its own facts. */
+export interface PluginStore extends ObjectStore, FactWriter {}
+
+/** Writes text to a file under the store and returns its path. */
+export interface PluginLogger {
+  readonly path: string;
+  write(text: string): Promise<string>;
+}
+
+/** Fields every plugin hook receives. */
+export interface PluginBaseContext {
+  readonly plugin: string;
+  readonly home: string;
+  readonly cwd: string;
+  readonly store: ObjectStore;
+  readonly facts: FactWriter;
+  readonly logger: PluginLogger;
+  readonly signal: AbortSignal;
+}
+
+/** The context a step run receives. */
+export interface StepContext extends PluginBaseContext {
+  readonly runId: string;
+  readonly object: RunObject | undefined;
+}
+
+/** What a step returns. `result` must be one of the step type's results. */
+export interface PluginStepResult {
+  readonly result: string;
+  readonly data?: ObjectData | undefined;
+}
+
+/** Options for running a step through the registry. */
+export interface StepRunOptions {
+  readonly runId: string;
+  readonly object?: RunObject | undefined;
+  readonly cwd?: string | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+/** A step type a plugin declares. The use name is `<plugin>/<name>`. */
+export interface StepTypeDefinition {
+  readonly name: string;
+  readonly results: readonly string[];
+  readonly run: (
+    ctx: StepContext,
+    params: unknown,
+  ) => MaybePromise<PluginStepResult>;
+}
+
+/** An object type a plugin owns, such as `task`. */
+export interface ObjectTypeDefinition {
+  readonly name: string;
+  readonly schema?: unknown;
+}
+
+/** An action a plugin offers on an object type. */
+export interface ActionTypeDefinition {
+  readonly name: string;
+  readonly on: string;
+  readonly when: (state: ObjectData) => MaybePromise<boolean>;
+  readonly run: (ctx: ActionContext, args: unknown) => MaybePromise<void>;
+}
+
+/** The context an action receives. `runId` is set when it answers a person wait. */
+export interface ActionContext extends PluginBaseContext {
+  readonly runId: string | undefined;
+  readonly object: RunObject;
+}
+
+/** Options for running an action through the registry. */
+export interface ActionRunOptions {
+  readonly object: RunObject | StoredObject;
+  readonly runId?: string | undefined;
+  readonly cwd?: string | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+/** A CLI verb a plugin declares. */
+export interface CommandDefinition {
+  readonly name: string;
+  /** Usage text for the verb's arguments, such as `"<id> [--force]"`. */
+  readonly args: string;
+  readonly run: (
+    ctx: CommandContext,
+    argv: readonly string[],
+  ) => MaybePromise<unknown>;
+}
+
+/** The context a command verb receives. */
+export interface CommandContext extends PluginBaseContext {}
+
+/** Options for running a command through the registry. */
+export interface CommandRunOptions {
+  readonly cwd?: string | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+/** Where a command resolved: always `<plugin> <verb>`, optionally `<verb>`. */
+export interface ResolvedCommand {
+  readonly plugin: string;
+  readonly command: string;
+  readonly argv: readonly string[];
+}
+
+/** A command that ran, with the value its plugin returned. */
+export interface CommandRun extends ResolvedCommand {
+  readonly value: unknown;
+}
+
+/** An action that ran, with the value its plugin returned. */
+export interface ActionRun {
+  readonly plugin: string;
+  readonly action: string;
+  readonly value: unknown;
+}
+
+/** Asks the kernel to start a run of one of the plugin's flows. */
+export interface StartRunRequest {
+  readonly plugin: string;
+  readonly flow: string;
+  readonly object?: ObjectRef | undefined;
+}
+
+/** The context the kernel loop passes to a plugin's `onTick`. */
+export interface TickContext extends PluginBaseContext {
+  /** Starts a run of a flow this plugin declares. */
+  start(flow: string, object?: ObjectRef): Promise<void>;
+}
+
+/** The shape `definePlugin` accepts. The version is added by the helper. */
+export interface PluginShape {
+  readonly name: string;
+  readonly kind: PluginKind;
+  readonly version: string;
+  readonly objects?: readonly ObjectTypeDefinition[] | undefined;
+  readonly actions?: readonly ActionTypeDefinition[] | undefined;
+  readonly steps?: readonly StepTypeDefinition[] | undefined;
+  readonly flows?: readonly FlowDefinition[] | undefined;
+  readonly commands?: readonly CommandDefinition[] | undefined;
+  readonly onTick?: ((ctx: TickContext) => MaybePromise<void>) | undefined;
+}
+
+/** A plugin definition ready for the registry. */
+export interface PluginDefinition extends PluginShape {
+  readonly operadPlugin: typeof OPERAD_PLUGIN_VERSION;
+}
+
+/** A run waiting for a person. The kernel supplies these to the pending view. */
+export interface WaitingRun {
+  readonly runId: string;
+  readonly object: ObjectRef;
+  readonly prompt?: string | undefined;
+  readonly choices?: readonly string[] | undefined;
+}
+
+/** One action the pending view offers for a waiting run. */
+export interface PendingActionView {
+  readonly plugin: string;
+  readonly action: string;
+}
+
+/** An entry in the pending view: a waiting run, its object and its actions. */
+export interface PendingEntry {
+  readonly runId: string;
+  readonly prompt: string | undefined;
+  readonly choices: readonly string[] | undefined;
+  readonly object: StoredObject;
+  readonly actions: readonly PendingActionView[];
+}
