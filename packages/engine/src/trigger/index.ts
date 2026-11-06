@@ -9,13 +9,15 @@ export {
 } from "./cron.ts";
 export type { CronField, CronSchedule } from "./cron.ts";
 export {
+  loadSourcedTriggerRules,
   loadTriggerRules,
+  mergeTriggerRules,
   parseTriggerRules,
   TRIGGERS_FILE,
   TriggerError,
   triggersPath,
 } from "./rules.ts";
-export type { LoadTriggerRulesOptions } from "./rules.ts";
+export type { LoadTriggerRulesOptions, SourcedTriggerRule } from "./rules.ts";
 export {
   readStoredStart,
   readStoredTrigger,

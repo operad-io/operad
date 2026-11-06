@@ -1,11 +1,13 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   Kernel,
   MemoryPluginStore,
   PluginRegistry,
   Runner,
+  defineFlow,
   definePlugin,
   formatHistoryEntry,
   historyEntry,
@@ -124,6 +126,49 @@ function rule(overrides: Partial<TriggerRule>): TriggerRule {
     mode: "auto",
     ...overrides,
   };
+}
+
+/** A plugin with one end-only flow and the rules a test gives it. */
+function pluginWithRules(name: string, rules: readonly TriggerRule[]) {
+  return definePlugin({
+    name,
+    kind: "domain",
+    version: "0.0.1",
+    flows: [
+      defineFlow({
+        name: `${name}:done`,
+        entry: "done",
+        steps: [
+          {
+            id: "done",
+            kind: "end",
+            params: { status: "done" },
+            replay: "safe",
+          },
+        ],
+      }),
+    ],
+    rules,
+  });
+}
+
+function registryWithRules(
+  plugins: readonly ReturnType<typeof pluginWithRules>[],
+  root: string,
+): PluginRegistry {
+  return new PluginRegistry([...plugins], {
+    home: root,
+    storeRoot: join(root, "store"),
+    store: new MemoryPluginStore({ root: join(root, "store") }),
+  });
+}
+
+async function homeWithRules(rules: unknown): Promise<string> {
+  const root = await tempRoot();
+  const home = join(root, "home");
+  await mkdir(home, { recursive: true });
+  await writeFile(join(home, "triggers.json"), JSON.stringify(rules));
+  return home;
 }
 
 function event(overrides: Partial<TriggerEvent> = {}): TriggerEvent {
@@ -1604,6 +1649,248 @@ describe("trigger rules", () => {
     } finally {
       await env.close();
     }
+  });
+
+  test("a plugin's own rules are the rules in force", async () => {
+    const root = await tempRoot();
+    const registry = registryWithRules(
+      [
+        pluginWithRules("alpha", [
+          rule({ start: { flow: "alpha:done" } }),
+        ]),
+      ],
+      root,
+    );
+
+    const rules = await loadTriggerRules({
+      home: join(root, "home"),
+      registry,
+    });
+    expect(rules).toHaveLength(1);
+    expect(rules[0]).toMatchObject({
+      source: "cron",
+      type: "tick",
+      object: "job:1",
+      mode: "auto",
+    });
+    expect(rules[0]?.start.flow).toBe("alpha:done");
+  });
+
+  test("a user rule replaces every plugin rule with the same source and type", async () => {
+    const home = await homeWithRules([
+      {
+        source: "cron",
+        type: "tick",
+        start: { flow: "alpha:done" },
+        object: "job:user",
+        mode: "candidate",
+      },
+    ]);
+    const registry = registryWithRules(
+      [
+        pluginWithRules("alpha", [
+          rule({ start: { flow: "alpha:done" }, object: "job:1" }),
+          rule({ start: { flow: "alpha:done" }, object: "job:2" }),
+          rule({
+            source: "manual",
+            type: "go",
+            start: { flow: "alpha:done" },
+            object: "job:3",
+          }),
+        ]),
+      ],
+      home,
+    );
+
+    const rules = await loadTriggerRules({ home, registry });
+    expect(rules).toHaveLength(2);
+    expect(rules[0]).toMatchObject({
+      source: "manual",
+      type: "go",
+      object: "job:3",
+    });
+    expect(rules[1]).toMatchObject({
+      source: "cron",
+      type: "tick",
+      object: "job:user",
+      mode: "candidate",
+    });
+  });
+
+  test("a later plugin's rule for the same pair is skipped and both are named", async () => {
+    const root = await tempRoot();
+    const logs: string[] = [];
+    const registry = registryWithRules(
+      [
+        pluginWithRules("alpha", [
+          rule({ start: { flow: "alpha:done" } }),
+        ]),
+        pluginWithRules("beta", [
+          rule({ start: { flow: "beta:done" } }),
+        ]),
+      ],
+      root,
+    );
+
+    const rules = await loadTriggerRules({
+      home: join(root, "home"),
+      registry,
+      onLog: (message) => logs.push(message),
+    });
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.start.flow).toBe("alpha:done");
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain('"alpha"');
+    expect(logs[0]).toContain('"beta"');
+  });
+
+  test("an invalid plugin rule is refused at load with the plugin name and index", async () => {
+    const root = await tempRoot();
+    const invalid = {
+      source: "cron",
+      type: "tick",
+      start: { flow: "bad:done" },
+      object: "job:1",
+      mode: "sometimes",
+    } as unknown as TriggerRule;
+    expect(() =>
+      registryWithRules([pluginWithRules("bad", [invalid])], root),
+    ).toThrow(/plugin "bad": rules: rule 0: mode/);
+  });
+
+  test("a plugin rule whose params are not JSON is refused at load with the plugin name and index", async () => {
+    const root = await tempRoot();
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const cases: readonly unknown[] = [
+      { value: () => {} },
+      { value: Infinity },
+      cyclic,
+    ];
+    for (const params of cases) {
+      const invalid = {
+        source: "cron",
+        type: "tick",
+        start: { flow: "bad:done", params },
+        object: "job:1",
+        mode: "auto",
+      } as unknown as TriggerRule;
+      expect(() =>
+        registryWithRules([pluginWithRules("bad", [invalid])], root),
+      ).toThrow(/plugin "bad": rules: rule 0: start\.params/);
+    }
+  });
+
+  test("a plugin rule with an explicitly undefined params is refused at load", async () => {
+    const root = await tempRoot();
+    const invalid = {
+      source: "cron",
+      type: "tick",
+      start: { flow: "bad:done", params: undefined },
+      object: "job:1",
+      mode: "auto",
+    } as unknown as TriggerRule;
+    expect(() =>
+      registryWithRules([pluginWithRules("bad", [invalid])], root),
+    ).toThrow(/plugin "bad": rules: rule 0: start\.params/);
+  });
+
+  test("a plugin rule's params are read once and the checked value is the one kept", async () => {
+    const root = await tempRoot();
+    let reads = 0;
+    const start: { flow: string; params?: unknown } = {
+      flow: "good:done",
+      get params() {
+        reads += 1;
+        return reads === 1 ? { value: 1 } : () => {};
+      },
+    };
+    const declared = {
+      source: "cron",
+      type: "tick",
+      start,
+      object: "job:1",
+      mode: "auto",
+    } as unknown as TriggerRule;
+
+    const registry = registryWithRules(
+      [pluginWithRules("good", [declared])],
+      root,
+    );
+    expect(reads).toBe(1);
+    expect(registry.triggerRules()[0]?.rule.start.params).toEqual({ value: 1 });
+  });
+
+  test("a nested getter's params are frozen into a plain JSON snapshot at load", async () => {
+    const root = await tempRoot();
+    let reads = 0;
+    const params: Record<string, unknown> = {};
+    Object.defineProperty(params, "value", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        reads += 1;
+        return reads === 1 ? 1 : () => {};
+      },
+    });
+    const declared = {
+      source: "cron",
+      type: "tick",
+      start: { flow: "good:done", params },
+      object: "job:1",
+      mode: "auto",
+    } as unknown as TriggerRule;
+
+    const registry = registryWithRules(
+      [pluginWithRules("good", [declared])],
+      root,
+    );
+    expect(reads).toBe(1);
+    const kept = registry.triggerRules()[0]?.rule.start.params as Record<
+      string,
+      unknown
+    >;
+    expect(kept).toEqual({ value: 1 });
+    expect(kept).not.toBe(params);
+    expect(Object.getOwnPropertyDescriptor(kept, "value")?.get).toBeUndefined();
+    // Reading the kept rule again, as the log does, must not reach the getter.
+    expect(registry.triggerRules()[0]?.rule.start.params).toEqual({ value: 1 });
+    expect(reads).toBe(1);
+  });
+
+  test("distinct source and type pairs are not confused when they contain a NUL", async () => {
+    const root = await tempRoot();
+    const registry = registryWithRules(
+      [
+        pluginWithRules("alpha", [
+          rule({ source: "a\u0000b", type: "c", start: { flow: "alpha:done" } }),
+        ]),
+        pluginWithRules("beta", [
+          rule({ source: "a", type: "b\u0000c", start: { flow: "beta:done" } }),
+        ]),
+      ],
+      root,
+    );
+
+    const rules = await loadTriggerRules({
+      home: join(root, "home"),
+      registry,
+    });
+    expect(rules).toHaveLength(2);
+  });
+
+  test("a plugin rule whose flow does not exist is refused at load", async () => {
+    const root = await tempRoot();
+    expect(() =>
+      registryWithRules(
+        [
+          pluginWithRules("bad", [
+            rule({ start: { flow: "absent" } }),
+          ]),
+        ],
+        root,
+      ),
+    ).toThrow(/plugin "bad": rules: rule 0: start.flow: unknown flow "absent"/);
   });
 });
 
