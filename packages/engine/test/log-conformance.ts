@@ -7,6 +7,7 @@ import {
 import { join, resolve } from "node:path";
 import {
   ActiveRunError,
+  InvalidPayloadError,
   RunEndedError,
   RunNotFoundError,
   SCHEMA_VERSION,
@@ -76,10 +77,6 @@ async function captureError(action: () => unknown): Promise<unknown> {
     return error;
   }
   throw new Error("expected the action to fail");
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
@@ -531,6 +528,34 @@ export function runLogConformance(factory: LogConformanceFactory): void {
       }
     });
 
+    test("a payload with a toJSON method is refused and writes nothing", async () => {
+      const directory = tempDirectory("to-json");
+      let backend = await openStore(factory, directory, { clock: fixedClock() });
+      try {
+        const run = await backend.startRun("flow", "object");
+        const payload: Record<string, JsonValue> = { looks: "plain" };
+        Object.defineProperty(payload, "toJSON", {
+          value: () => undefined,
+          enumerable: false,
+        });
+
+        const error = await captureError(() =>
+          backend.append(run.runId, 0, [
+            { kind: "sneaky", payload: payload as JsonValue, cause: 1 },
+          ]),
+        );
+        expect(error).toBeInstanceOf(InvalidPayloadError);
+        expect(await collect(backend.read(run.runId))).toEqual([]);
+
+        await backend.close();
+        backend = await openStore(factory, directory);
+        expect(await collect(backend.read(run.runId))).toEqual([]);
+      } finally {
+        await backend.close();
+        cleanup(directory);
+      }
+    });
+
     test("a newer schema_version is refused with a clear error", async () => {
       const directory = tempDirectory("schema");
       const backend = await openStore(factory, directory);
@@ -647,7 +672,8 @@ export function runLogConformance(factory: LogConformanceFactory): void {
             if (next === null) break;
           }
 
-          await delay(Math.floor(random() * 3));
+          // The kill point is the number of batch lines the parent has read,
+          // chosen from the fixed seed. No sleep: the signal follows the event.
           proc.kill("SIGKILL");
           await proc.exited;
           await lines.cancel();

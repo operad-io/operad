@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { open as openAsync } from "node:fs/promises";
+import { join } from "node:path";
 import {
   closeSync,
   existsSync,
@@ -14,9 +16,7 @@ import {
   rmSync,
   statSync,
   writeSync,
-} from "node:fs";
-import { open as openAsync } from "node:fs/promises";
-import { join } from "node:path";
+} from "./file-system.ts";
 import {
   ActiveRunError,
   CorruptLogError,
@@ -715,12 +715,16 @@ class JsonlLogBackend implements LogBackend {
       this.#inputBytes = 0;
       return;
     }
-    const text = readFileSync(this.#inputsPath, "utf8");
-    this.#consumeInputLines(text);
-    this.#inputBytes = statSync(this.#inputsPath).size;
+    // Count the bytes actually consumed, not a later stat: an append between a
+    // read and a stat must stay visible to the next refresh.
+    const buffer = readFileSync(this.#inputsPath);
+    this.#consumeInputLines(buffer.toString("utf8"));
+    this.#inputBytes = buffer.length;
   }
 
   #recover(): void {
+    // Rebuild inside the lock: a writer that appends during the rebuild would
+    // otherwise let the rebuild miss a line and record the larger size.
     this.#withLock(() => {
       for (const name of readdirSync(this.#runsDirectory)) {
         const path = join(this.#runsDirectory, name);
@@ -731,8 +735,8 @@ class JsonlLogBackend implements LogBackend {
         }
       }
       truncateTornLine(this.#inputsPath);
+      this.#rebuildInputs();
     });
-    this.#rebuildInputs();
   }
 
   recover(): void {

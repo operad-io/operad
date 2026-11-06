@@ -35,6 +35,14 @@ export function assertJsonValue(value: unknown, path = "payload"): asserts value
     }
     seen.add(current);
 
+    // `JSON.stringify` calls `toJSON` even when it is not enumerable, so the
+    // value it would store differs from the value inspected here.
+    if (typeof (current as { toJSON?: unknown }).toJSON === "function") {
+      throw new InvalidPayloadError(
+        `${at} has a toJSON method, so its JSON form is not the value inspected`,
+      );
+    }
+
     if (Array.isArray(current)) {
       for (let index = 0; index < current.length; index += 1) {
         if (!(index in current)) {
