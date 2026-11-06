@@ -21,6 +21,13 @@
         "@operad-io/shell": "workspace:*",
       },
     },
+    "packages/dev": {
+      "name": "@operad-io/dev",
+      "version": "0.0.0",
+      "dependencies": {
+        "@operad-io/engine": "workspace:*",
+      },
+    },
     "packages/engine": {
       "name": "@operad-io/engine",
       "version": "0.0.0",
@@ -35,6 +42,8 @@
   },
   "packages": {
     "@operad-io/cli": ["@operad-io/cli@workspace:packages/cli"],
+
+    "@operad-io/dev": ["@operad-io/dev@workspace:packages/dev"],
 
     "@operad-io/engine": ["@operad-io/engine@workspace:packages/engine"],
 

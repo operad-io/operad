@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/engine" },
     { "path": "packages/shell" },
+    { "path": "packages/dev" },
     { "path": "packages/cli" }
   ]
 }

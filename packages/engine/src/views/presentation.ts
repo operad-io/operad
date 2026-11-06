@@ -616,14 +616,18 @@ export class Views {
 
     const info = this.registry
       .actions()
-      .find((entry) => entry.name === `${target.plugin}:${target.action}`);
-    if (info === undefined || info.on !== type) {
+      .find(
+        (entry) =>
+          entry.name === `${target.plugin}:${target.action}` &&
+          entry.on === type,
+      );
+    if (info === undefined) {
       throw new ViewError(
         "action",
         `action "${name}" is not available for objects of type "${type}"`,
       );
     }
-    const found = this.actionDefinition(target.plugin, target.action);
+    const found = this.actionDefinition(target.plugin, target.action, type);
     if (found === undefined) {
       throw new ViewError("action", `action "${name}" is not loaded`);
     }
@@ -633,8 +637,9 @@ export class Views {
   private actionDefinition(
     pluginName: string,
     actionName: string,
+    objectType?: string | undefined,
   ): ActionTypeDefinition | undefined {
-    return this.registry.actionDefinition(pluginName, actionName);
+    return this.registry.actionDefinition(pluginName, actionName, objectType);
   }
 
   private async availableActions(
@@ -645,7 +650,11 @@ export class Views {
     const actions: ViewAction[] = [];
     for (const info of this.registry.actions()) {
       if (info.on !== type) continue;
-      const action = this.registry.actionDefinition(info.plugin, info.action);
+      const action = this.registry.actionDefinition(
+        info.plugin,
+        info.action,
+        info.on,
+      );
       if (action === undefined) continue;
       let holds: unknown;
       try {

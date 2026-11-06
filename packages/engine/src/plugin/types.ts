@@ -167,10 +167,18 @@ export interface PluginBaseContext {
   readonly facts: FactWriter;
   readonly logger: PluginLogger;
   readonly signal: AbortSignal;
+  /** Set when the kernel can cancel a run for this plugin. */
+  readonly runs?: RunControl | undefined;
 }
 
 /** The answer a plugin action gives to the person wait it is answering. */
 export type Answer = (choice: string, note?: string) => MaybePromise<void>;
+
+/** What a plugin may ask the kernel to do with a run it owns. */
+export interface RunControl {
+  /** Cancels a run through the kernel; an ended run is left alone. */
+  cancel(runId: string): MaybePromise<void>;
+}
 
 /** The result of one plugin's optional `check`. */
 export interface PluginCheck {

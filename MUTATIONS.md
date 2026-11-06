@@ -198,3 +198,13 @@
 |---|---|---|---|
 | TK0025-M19 | packages/engine/test/fixtures/append-fact-child.ts | made the child write a different object, so only an in-process write could satisfy the reader | `presentation views > events reach a reader when another sqlite log appends` |
 
+## TK0019 — dev objects, commands and actions
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0019-M1 | packages/dev/src/model.ts | stopped skipping headings inside a fenced block | `dev model > a fenced Rework heading is text, not a section` |
+| TK0019-M2 | packages/dev/src/service.ts | took no repository lock, so two adds read the same next number | `dev plans and tasks > two task adds at once get distinct ids and lose nothing` |
+| TK0019-M3 | packages/dev/src/service.ts | allowed a plan with no tasks to be confirmed | `dev plans and tasks > confirming a plan readies its proposed tasks; an empty plan is refused` |
+| TK0019-M4 | packages/engine/src/plugin/registry.ts | made the action name alone its identity, so plan and task actions clashed | `dev actions > confirm is one name on a plan and on a task` |
+| TK0019-M5 | packages/dev/src/service.ts | stopped collecting a running task's run id when a plan was cancelled | `dev plans and tasks > cancelling a plan cancels a running task and asks the kernel to cancel its run` |
+
