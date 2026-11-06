@@ -446,3 +446,9 @@
 | TK0020-M12 | packages/dev/src/steps.ts | returned `ready` after checking out a remote work branch without merging the fetched main | `dev/worktree > a remote work/<id> branch is reused after merging the latest main` |
 | TK0020-M13 | packages/dev/src/steps.ts | omitted an empty `worker.args` from the harness params, so the flow's args were used | `dev/work > an empty worker.args is passed, not the flow's args` |
 | TK0020-M14 | packages/dev/src/steps.ts | read the changed files only when the harness reported `done` | `dev/work > failed: a failed harness still names the files it left` |
+
+## TK0030 — the holder's commit waits like the backend on a busy store
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0030-M1 | `packages/engine/test/fixtures/sqlite-hold.ts` | removed the holder's busy timeout, so its `COMMIT` returned `SQLITE_BUSY` when the opener's busy handler briefly held a shared lock | `opening waits while another process holds the store` (1 failure in 50 runs under load) |
