@@ -198,3 +198,17 @@
 |---|---|---|---|
 | TK0025-M19 | packages/engine/test/fixtures/append-fact-child.ts | made the child write a different object, so only an in-process write could satisfy the reader | `presentation views > events reach a reader when another sqlite log appends` |
 
+## TK0018 — the radian harness plugin
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0018-M1 | packages/harness-radian/src/index.ts | skipped the non-zero exit check, so exit 1 became `done` | `harness-radian/agent > a non-zero exit is a failure that says so` |
+| TK0018-M2 | packages/harness-radian/src/index.ts | defaulted an absent Result cost to `{ micros: 0 }` instead of `null` | `harness-radian/agent > a Result record without a cost leaves the cost unknown, not zero` |
+| TK0018-M3 | packages/harness-radian/src/process.ts | marked the wall-time stop as a stall | `harness-radian/agent > wallTimeSecs stops a run that never ends` |
+| TK0018-M4 | packages/harness-radian/src/index.ts | sent a 1 MB prompt through argv instead of stdin | `harness-radian/agent > a prompt over 1 MB goes through stdin unchanged` |
+| TK0018-M5 | packages/engine/src/runner/runner.ts | passed no flow params to a step | `harness-radian:prompt > runs the fake once with the prompt unchanged and ends with its result` |
+| TK0018-M6 | packages/harness-radian/src/process.ts | skipped the PATH lookup, so a missing radian became a spawn failure | `harness-radian/agent > a radian that is not on PATH fails with a clear reason` |
+| TK0018-M7 | packages/harness-radian/src/index.ts | treated a zero exit without a Result as success | `harness-radian/agent > a zero exit without a Result record is a failure that says so` |
+| TK0018-M8 | packages/harness-radian/src/index.ts | classified a cancelled run as a failure instead of `interrupted` | `harness-radian/agent > cancel stops the process group and reports interrupted` |
+| TK0018-M9 | packages/harness-radian/src/process.ts | stopped resetting the stall timer on each output line | `harness-radian/agent > no new output line for stallSecs stops the group` |
+

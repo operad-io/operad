@@ -8,6 +8,7 @@ import type {
   PendingWait,
   PersonAnsweredPayload,
   RunEndedPayload,
+  RunStartedPayload,
   StepEnteredPayload,
   StepInterruptedPayload,
   StepResultPayload,
@@ -23,6 +24,7 @@ export function initialState(): KernelState {
   return {
     status: "idle",
     started: false,
+    params: null,
     step: null,
     stepKind: null,
     endedStatus: null,
@@ -62,7 +64,14 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
   switch (fact.kind) {
     case "run_started": {
       if (state.started) return { ...state, lastSeq };
-      return { ...state, started: true, status: "running", lastSeq };
+      const payload = read<RunStartedPayload>(fact);
+      return {
+        ...state,
+        started: true,
+        status: "running",
+        params: payload.params ?? null,
+        lastSeq,
+      };
     }
 
     case "step_entered": {

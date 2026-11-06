@@ -25,6 +25,13 @@
       "name": "@operad-io/engine",
       "version": "0.0.0",
     },
+    "packages/harness-radian": {
+      "name": "@operad-io/harness-radian",
+      "version": "0.0.0",
+      "dependencies": {
+        "@operad-io/engine": "workspace:*",
+      },
+    },
     "packages/shell": {
       "name": "@operad-io/shell",
       "version": "0.0.0",
@@ -37,6 +44,8 @@
     "@operad-io/cli": ["@operad-io/cli@workspace:packages/cli"],
 
     "@operad-io/engine": ["@operad-io/engine@workspace:packages/engine"],
+
+    "@operad-io/harness-radian": ["@operad-io/harness-radian@workspace:packages/harness-radian"],
 
     "@operad-io/shell": ["@operad-io/shell@workspace:packages/shell"],
 
