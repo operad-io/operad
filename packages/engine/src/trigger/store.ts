@@ -1,40 +1,17 @@
-/** The event journal: what each source sent, and what the kernel did with it. */
+/** The trigger metadata a run needs: its event files and its pending start. */
 
 import { randomUUID } from "node:crypto";
 import {
-  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { JsonValue } from "../log/types.ts";
 import type { StartInput } from "../kernel/types.ts";
-import type {
-  TriggerCandidate,
-  TriggerEvent,
-  TriggerResult,
-  TriggerView,
-} from "./types.ts";
-
-export type CandidateStatus = "pending" | "started" | "dismissed";
-
-/** A result as stored: the view fields plus what a candidate needs later. */
-export interface StoredTriggerResult extends TriggerResult {
-  readonly params?: JsonValue;
-  readonly status?: CandidateStatus;
-  readonly at: number;
-}
-
-/** A recorded event that no routing outcome has claimed yet. */
-export interface UnroutedEvent {
-  readonly inputId: string;
-  readonly event: TriggerEvent;
-}
+import type { TriggerEvent, TriggerView } from "./types.ts";
 
 /**
  * A start whose run metadata may not be written yet. It is written before the
@@ -49,14 +26,6 @@ export interface PendingStart {
   readonly inputId?: string;
   readonly start: StartInput;
   readonly view?: TriggerView;
-}
-
-interface StoredRecord {
-  readonly type: "event" | "result";
-  readonly inputId: string;
-  readonly at: number;
-  readonly event?: TriggerEvent;
-  readonly result?: StoredTriggerResult;
 }
 
 /** Reads a run's start metadata without opening a store. */
@@ -106,150 +75,49 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseRecord(value: unknown): StoredRecord | undefined {
-  if (!isRecord(value)) return undefined;
-  if (value.type !== "event" && value.type !== "result") return undefined;
-  if (typeof value.inputId !== "string") return undefined;
-  if (typeof value.at !== "number") return undefined;
-  if (value.type === "event") {
-    if (!isRecord(value.event)) return undefined;
-    return value as unknown as StoredRecord;
-  }
-  if (!isRecord(value.result)) return undefined;
-  return value as unknown as StoredRecord;
+/** The paths an event's summary and data files use inside the store. */
+export interface EventFilePaths {
+  readonly summary: string;
+  readonly data: string;
 }
 
 /**
- * Keeps events and their results in one append-only file under the store. A
- * duplicated `source`+`key` is already refused by the log's input store; this
- * journal remembers what the first one did so a second call can report it.
+ * The files a run or a step reads. The log holds the event itself; this store
+ * holds only material that cannot live in a JSON log: summary and data files,
+ * a run's start metadata and the pending start of a run being created.
  */
 export class TriggerStore {
   readonly root: string;
   private readonly clock: () => number;
-  private readonly path: string;
-  private readonly events = new Map<string, TriggerEvent>();
-  private readonly results = new Map<string, StoredTriggerResult>();
-  private offset = 0;
 
   constructor(options: TriggerStoreOptions) {
     this.root = options.root;
     this.clock = options.clock ?? (() => Date.now());
-    this.path = join(options.root, "events.jsonl");
     mkdirSync(options.root, { recursive: true });
-    this.refresh();
   }
 
-  /** Writes the event and returns it, without deciding anything. */
-  recordEvent(inputId: string, event: TriggerEvent): void {
-    this.refresh();
-    const record: StoredRecord = {
-      type: "event",
-      inputId,
-      event,
-      at: this.clock(),
-    };
-    appendFileSync(this.path, `${JSON.stringify(record)}\n`, "utf8");
-    this.events.set(inputId, event);
-  }
-
-  setResult(inputId: string, result: Omit<StoredTriggerResult, "at">): void {
-    this.refresh();
-    const stored: StoredTriggerResult = { ...result, at: this.clock() };
-    const record: StoredRecord = {
-      type: "result",
-      inputId,
-      result: stored,
-      at: stored.at,
-    };
-    appendFileSync(this.path, `${JSON.stringify(record)}\n`, "utf8");
-    this.results.set(inputId, stored);
-  }
-
-  event(inputId: string): TriggerEvent | undefined {
-    this.refresh();
-    return this.events.get(inputId);
-  }
-
-  result(inputId: string): StoredTriggerResult | undefined {
-    this.refresh();
-    return this.results.get(inputId);
-  }
-
-  /** Events the journal recorded that have no result yet. */
-  unrouted(): readonly UnroutedEvent[] {
-    this.refresh();
-    const list: UnroutedEvent[] = [];
-    for (const [inputId, event] of this.events) {
-      if (this.results.has(inputId)) continue;
-      list.push({ inputId, event });
-    }
-    return list;
-  }
-
-  /** The latest status of a candidate, by its pending id. */
-  candidate(pendingId: string): TriggerCandidate | undefined {
-    this.refresh();
-    for (const [inputId, result] of this.results) {
-      if (result.kind !== "candidate" || result.pendingId !== pendingId) continue;
-      const event = this.events.get(inputId);
-      if (event === undefined || result.flow === undefined || result.object === undefined) {
-        continue;
-      }
-      return {
-        pendingId,
-        inputId,
-        flow: result.flow,
-        ...(result.params === undefined ? {} : { params: result.params }),
-        object: result.object,
-        event,
-        status: result.status ?? "pending",
-        ...(result.runId === undefined ? {} : { runId: result.runId }),
-        at: result.at,
-      };
-    }
-    return undefined;
-  }
-
-  /** Candidates that are still waiting for a person, oldest first. */
-  candidates(): readonly TriggerCandidate[] {
-    this.refresh();
-    const list: TriggerCandidate[] = [];
-    for (const [inputId, result] of this.results) {
-      if (result.kind !== "candidate") continue;
-      if ((result.status ?? "pending") !== "pending") continue;
-      const event = this.events.get(inputId);
-      if (event === undefined || result.flow === undefined || result.object === undefined) {
-        continue;
-      }
-      list.push({
-        pendingId: result.pendingId ?? inputId,
-        inputId,
-        flow: result.flow,
-        ...(result.params === undefined ? {} : { params: result.params }),
-        object: result.object,
-        event,
-        status: "pending",
-        at: result.at,
-      });
-    }
-    return list.sort((left, right) => left.at - right.at);
-  }
-
-  /** Writes summary and data under the store and returns the step-visible view. */
-  writeEventFiles(inputId: string, event: TriggerEvent): TriggerView {
+  eventPaths(inputId: string): EventFilePaths {
     const directory = join(this.root, "events", inputId);
-    let summary: string | undefined;
-    let data: string | undefined;
-    if (event.summary !== undefined) {
-      mkdirSync(directory, { recursive: true });
-      summary = join(directory, "summary.txt");
-      writeFileSync(summary, event.summary, "utf8");
+    return {
+      summary: join(directory, "summary.txt"),
+      data: join(directory, "data.json"),
+    };
+  }
+
+  /**
+   * Writes the summary and data files of an event and returns the step-visible
+   * view. An existing file is kept: the first event for an input wins, exactly
+   * as the log's `recordInput` keeps the first payload.
+   */
+  writeEventFiles(inputId: string, event: TriggerEvent): TriggerView {
+    const paths = this.eventPaths(inputId);
+    if (event.summary !== undefined && !existsSync(paths.summary)) {
+      mkdirSync(join(this.root, "events", inputId), { recursive: true });
+      writeFileSync(paths.summary, event.summary, "utf8");
     }
-    if (event.data !== undefined) {
-      mkdirSync(directory, { recursive: true });
-      data = join(directory, "data.json");
-      writeFileSync(data, `${JSON.stringify(event.data, null, 2)}\n`, "utf8");
+    if (event.data !== undefined && !existsSync(paths.data)) {
+      mkdirSync(join(this.root, "events", inputId), { recursive: true });
+      writeFileSync(paths.data, `${JSON.stringify(event.data, null, 2)}\n`, "utf8");
     }
     return {
       source: event.source,
@@ -257,8 +125,8 @@ export class TriggerStore {
       type: event.type,
       ...(event.link === undefined ? {} : { link: event.link }),
       hops: event.hops,
-      ...(summary === undefined ? {} : { summary }),
-      ...(data === undefined ? {} : { data }),
+      ...(event.summary === undefined ? {} : { summary: paths.summary }),
+      ...(event.data === undefined ? {} : { data: paths.data }),
     };
   }
 
@@ -363,33 +231,6 @@ export class TriggerStore {
       return JSON.parse(readFileSync(path, "utf8")) as unknown;
     } catch {
       return undefined;
-    }
-  }
-
-  private refresh(): void {
-    if (!existsSync(this.path)) return;
-    const size = statSync(this.path).size;
-    if (size <= this.offset) return;
-    const text = readFileSync(this.path).subarray(this.offset).toString("utf8");
-    const end = text.lastIndexOf("\n");
-    if (end < 0) return;
-    const complete = text.slice(0, end + 1);
-    this.offset += Buffer.byteLength(complete, "utf8");
-    for (const line of complete.split("\n")) {
-      if (line.length === 0) continue;
-      let raw: unknown;
-      try {
-        raw = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      const record = parseRecord(raw);
-      if (record === undefined) continue;
-      if (record.type === "event" && record.event !== undefined) {
-        this.events.set(record.inputId, record.event);
-      } else if (record.type === "result" && record.result !== undefined) {
-        this.results.set(record.inputId, record.result);
-      }
     }
   }
 }

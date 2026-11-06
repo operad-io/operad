@@ -17,6 +17,7 @@ import {
   secret,
   type Fact,
   type GlobalFact,
+  type InputOutcome,
   type JsonValue,
   type LogBackend,
   type LogBackendFactory,
@@ -86,6 +87,14 @@ async function collectGlobal(
 ): Promise<GlobalFact[]> {
   const result: GlobalFact[] = [];
   for await (const fact of facts) result.push(fact);
+  return result;
+}
+
+async function collectOutcomes(
+  outcomes: AsyncIterable<InputOutcome>,
+): Promise<InputOutcome[]> {
+  const result: InputOutcome[] = [];
+  for await (const outcome of outcomes) result.push(outcome);
   return result;
 }
 
@@ -373,6 +382,58 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         expect(other.duplicate).toBe(false);
         expect((await first.recordInput(run.runId, "github", "issue:10", {})).duplicate).toBe(true);
         expect(factory.countInputRecords(directory)).toBe(2);
+      } finally {
+        await first.close();
+        await second.close();
+        cleanup(directory);
+      }
+    });
+
+    test("recordOutcome keeps the first outcome per (inputId, kind)", async () => {
+      const directory = tempDirectory("outcomes");
+      let backend = await openStore(factory, directory, { clock: fixedClock() });
+      try {
+        const input = await backend.recordInput(null, "github", "issue:1", {});
+        const first = await backend.recordOutcome(input.inputId, "observed", { at: 1 });
+        expect(first.duplicate).toBe(false);
+        expect(first.outcome.payload).toEqual({ at: 1 });
+
+        const duplicate = await backend.recordOutcome(input.inputId, "observed", { at: 2 });
+        expect(duplicate.duplicate).toBe(true);
+        expect(duplicate.outcome.payload).toEqual({ at: 1 });
+
+        // A different kind is a later outcome for the same input.
+        const candidate = await backend.recordOutcome(input.inputId, "candidate", { flow: "one" });
+        expect(candidate.duplicate).toBe(false);
+        expect((await collectOutcomes(backend.readOutcomes())).map((item) => item.kind).sort()).toEqual(
+          ["candidate", "observed"],
+        );
+
+        await backend.close();
+        backend = await openStore(factory, directory, { clock: fixedClock() });
+        const afterReopen = await backend.recordOutcome(input.inputId, "observed", { at: 3 });
+        expect(afterReopen.duplicate).toBe(true);
+        expect(afterReopen.outcome.payload).toEqual({ at: 1 });
+        expect(await collectOutcomes(backend.readOutcomes())).toHaveLength(2);
+      } finally {
+        await backend.close();
+        cleanup(directory);
+      }
+    });
+
+    test("recordOutcome keeps one outcome across two open backends", async () => {
+      const directory = tempDirectory("outcomes-live");
+      const first = await openStore(factory, directory, { clock: fixedClock() });
+      const second = await openStore(factory, directory, { clock: fixedClock() });
+      try {
+        const input = await first.recordInput(null, "github", "issue:9", {});
+        const stored = await first.recordOutcome(input.inputId, "observed", { by: "first" });
+        expect(stored.duplicate).toBe(false);
+
+        const duplicate = await second.recordOutcome(input.inputId, "observed", { by: "second" });
+        expect(duplicate.duplicate).toBe(true);
+        expect(duplicate.outcome.payload).toEqual({ by: "first" });
+        expect(await collectOutcomes(second.readOutcomes())).toHaveLength(1);
       } finally {
         await first.close();
         await second.close();

@@ -50,6 +50,9 @@ const crashing: LogBackend = {
   appendGlobal: (fact) => log.appendGlobal(fact),
   readGlobal: () => log.readGlobal(),
   readInputs: () => log.readInputs(),
+  recordOutcome: (inputId, kind, payload) =>
+    log.recordOutcome(inputId, kind, payload),
+  readOutcomes: () => log.readOutcomes(),
   close: () => log.close(),
 };
 

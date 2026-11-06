@@ -22,10 +22,9 @@ export {
   TriggerStore,
 } from "./store.ts";
 export type {
-  CandidateStatus,
-  StoredTriggerResult,
+  EventFilePaths,
+  PendingStart,
   TriggerStoreOptions,
-  UnroutedEvent,
 } from "./store.ts";
 export { Kernel, start } from "./kernel.ts";
 export type { KernelOptions } from "./kernel.ts";

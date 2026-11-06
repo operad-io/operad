@@ -38,6 +38,7 @@ import type {
   FactCause,
   GlobalFact,
   InputRecord,
+  InputOutcome,
   JsonValue,
   LogBackend,
   LogBackendFactory,
@@ -45,6 +46,7 @@ import type {
   LogChange,
   NewFact,
   RecordInputResult,
+  RecordOutcomeResult,
   RunInfo,
   RunsOptions,
 } from "./types.ts";
@@ -95,6 +97,14 @@ const SCHEMA = `
     cause   TEXT NOT NULL,
     time    INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS outcomes (
+    input_id TEXT NOT NULL,
+    kind     TEXT NOT NULL,
+    payload  TEXT NOT NULL,
+    seq      INTEGER NOT NULL UNIQUE,
+    time     INTEGER NOT NULL,
+    PRIMARY KEY (input_id, kind)
+  );
 `;
 
 interface RunRow {
@@ -122,6 +132,24 @@ interface FactRow {
   readonly payload: string;
   readonly cause: string;
   readonly time: number;
+}
+
+interface OutcomeRow {
+  readonly input_id: string;
+  readonly kind: string;
+  readonly payload: string;
+  readonly seq: number;
+  readonly time: number;
+}
+
+function outcomeOfRow(row: OutcomeRow): InputOutcome {
+  return {
+    inputId: row.input_id,
+    kind: row.kind,
+    payload: JSON.parse(row.payload) as JsonValue,
+    seq: row.seq,
+    time: row.time,
+  };
 }
 
 /** One run as a watcher last saw it, to tell a real change from a read. */
@@ -302,7 +330,9 @@ function ensureSchema(database: Database, path: string): void {
   // and an older runs table that could not name the input that made the run.
   database.transaction(() => {
     if (inputsNeedMigration(database)) migrateInputs(database);
-    if (!hasTable(database, "global_facts")) database.exec(SCHEMA);
+    if (!hasTable(database, "global_facts") || !hasTable(database, "outcomes")) {
+      database.exec(SCHEMA);
+    }
     const runsHaveStartInput = tableColumns(database, "runs").some(
       (item) => item.name === "start_input_id",
     );
@@ -544,6 +574,61 @@ class SqliteLogBackend implements LogBackend {
     } finally {
       statement.finalize();
     }
+  }
+
+  async recordOutcome(
+    inputId: string,
+    kind: string,
+    payload: JsonValue,
+  ): Promise<RecordOutcomeResult> {
+    assertName(inputId, "inputId");
+    assertName(kind, "outcome kind");
+    assertJsonValue(payload, "outcome payload");
+    this.#assertOpen();
+    return this.#database.transaction(() => {
+      const existing = this.#outcomeRow(inputId, kind);
+      if (existing !== undefined) {
+        return { duplicate: true, outcome: outcomeOfRow(existing) };
+      }
+      const next = this.#database
+        .query<{ next: number }, []>(
+          "SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM outcomes",
+        )
+        .get();
+      const seq = next?.next ?? 1;
+      const time = this.#clock();
+      this.#database.run(
+        "INSERT INTO outcomes (input_id, kind, payload, seq, time) VALUES (?, ?, ?, ?, ?)",
+        [inputId, kind, JSON.stringify(payload), seq, time],
+      );
+      return {
+        duplicate: false,
+        outcome: { inputId, kind, payload, seq, time },
+      };
+    }).immediate();
+  }
+
+  async *readOutcomes(): AsyncGenerator<InputOutcome> {
+    this.#assertOpen();
+    const statement = this.#database.prepare<OutcomeRow, []>(
+      "SELECT input_id, kind, payload, seq, time FROM outcomes ORDER BY seq",
+    );
+    try {
+      for (const row of statement.iterate()) {
+        yield outcomeOfRow(row);
+      }
+    } finally {
+      statement.finalize();
+    }
+  }
+
+  #outcomeRow(inputId: string, kind: string): OutcomeRow | undefined {
+    return this.#database
+      .query<OutcomeRow, [string, string]>(
+        "SELECT input_id, kind, payload, seq, time FROM outcomes " +
+          "WHERE input_id = ? AND kind = ?",
+      )
+      .get(inputId, kind) ?? undefined;
   }
 
   async *#readGlobal(): AsyncGenerator<GlobalFact> {

@@ -41,6 +41,7 @@ import type {
   AppendResult,
   Fact,
   GlobalFact,
+  InputOutcome,
   InputRecord,
   JsonValue,
   LogBackend,
@@ -49,6 +50,7 @@ import type {
   LogChange,
   NewFact,
   RecordInputResult,
+  RecordOutcomeResult,
   RunInfo,
   RunsOptions,
 } from "./types.ts";
@@ -56,6 +58,7 @@ import type {
 const SCHEMA_FILE = "schema.json";
 const LOCK_FILE = ".lock";
 const INPUTS_FILE = "inputs.jsonl";
+const OUTCOMES_FILE = "outcomes.jsonl";
 const GLOBAL_FACTS_FILE = "global-facts.jsonl";
 const RUNS_DIR = "runs";
 const NEWLINE = 0x0a;
@@ -87,6 +90,37 @@ interface StoredGlobalFact {
   readonly payload: JsonValue;
   readonly cause: string | number;
   readonly time: number;
+}
+
+interface StoredOutcome {
+  readonly type: "outcome";
+  readonly inputId: string;
+  readonly kind: string;
+  readonly payload: JsonValue;
+  readonly seq: number;
+  readonly time: number;
+}
+
+function outcomeKey(inputId: string, kind: string): string {
+  return `${inputId}\u0000${kind}`;
+}
+
+function parseOutcomeLine(line: string): StoredOutcome | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Partial<StoredOutcome>;
+  if (record.type !== "outcome" || typeof record.inputId !== "string") {
+    return undefined;
+  }
+  if (typeof record.kind !== "string" || record.kind.length === 0) return undefined;
+  if (typeof record.seq !== "number" || !Number.isInteger(record.seq)) return undefined;
+  if (typeof record.time !== "number") return undefined;
+  return record as StoredOutcome;
 }
 
 interface EndMarker {
@@ -392,12 +426,16 @@ class JsonlLogBackend implements LogBackend {
   readonly #directory: string;
   readonly #runsDirectory: string;
   readonly #inputsPath: string;
+  readonly #outcomesPath: string;
   readonly #globalFactsPath: string;
   readonly #lockPath: string;
   readonly #clock: () => number;
   readonly #subscriptionWatch: SubscriptionWatch;
   readonly #inputIds = new Set<string>();
   #inputBytes = 0;
+  readonly #outcomes = new Map<string, StoredOutcome>();
+  #outcomeSeq = 0;
+  #outcomeBytes = 0;
   #closed = false;
   #stopWatch: (() => void) | undefined;
   #stopPoll: (() => void) | undefined;
@@ -408,6 +446,7 @@ class JsonlLogBackend implements LogBackend {
     this.#directory = directory;
     this.#runsDirectory = join(directory, RUNS_DIR);
     this.#inputsPath = join(directory, INPUTS_FILE);
+    this.#outcomesPath = join(directory, OUTCOMES_FILE);
     this.#globalFactsPath = join(directory, GLOBAL_FACTS_FILE);
     this.#lockPath = join(directory, LOCK_FILE);
     this.#clock = clock;
@@ -542,6 +581,49 @@ class JsonlLogBackend implements LogBackend {
     }
   }
 
+  async recordOutcome(
+    inputId: string,
+    kind: string,
+    payload: JsonValue,
+  ): Promise<RecordOutcomeResult> {
+    assertName(inputId, "inputId");
+    assertName(kind, "outcome kind");
+    assertJsonValue(payload, "outcome payload");
+    return this.#withLock(() => {
+      this.#refreshOutcomesUnlocked();
+      const key = outcomeKey(inputId, kind);
+      const existing = this.#outcomes.get(key);
+      if (existing !== undefined) {
+        return { duplicate: true, outcome: this.#asOutcome(existing) };
+      }
+      this.#outcomeSeq += 1;
+      const stored: StoredOutcome = {
+        type: "outcome",
+        inputId,
+        kind,
+        payload,
+        seq: this.#outcomeSeq,
+        time: this.#clock(),
+      };
+      appendLineSynced(this.#outcomesPath, `${JSON.stringify(stored)}\n`);
+      this.#outcomes.set(key, stored);
+      this.#outcomeBytes = statSync(this.#outcomesPath).size;
+      return { duplicate: false, outcome: this.#asOutcome(stored) };
+    });
+  }
+
+  async *readOutcomes(): AsyncGenerator<InputOutcome> {
+    this.#assertOpen();
+    if (!existsSync(this.#outcomesPath)) return;
+    const text = readFileSync(this.#outcomesPath).toString("utf8");
+    for (const line of text.split("\n")) {
+      if (line.length === 0) continue;
+      const stored = parseOutcomeLine(line);
+      if (stored === undefined) continue;
+      yield this.#asOutcome(stored);
+    }
+  }
+
   async append(
     runId: string,
     expectedSeq: number,
@@ -622,6 +704,7 @@ class JsonlLogBackend implements LogBackend {
     this.#closed = true;
     this.#stopNotifications();
     this.#inputIds.clear();
+    this.#outcomes.clear();
     this.#listeners.clear();
   }
 
@@ -951,6 +1034,60 @@ class JsonlLogBackend implements LogBackend {
     this.#inputBytes = buffer.length;
   }
 
+  #asOutcome(stored: StoredOutcome): InputOutcome {
+    return {
+      inputId: stored.inputId,
+      kind: stored.kind,
+      payload: stored.payload,
+      seq: stored.seq,
+      time: stored.time,
+    };
+  }
+
+  #refreshOutcomesUnlocked(): void {
+    truncateTornLine(this.#outcomesPath);
+    const size = existsSync(this.#outcomesPath) ? statSync(this.#outcomesPath).size : 0;
+    if (size < this.#outcomeBytes) {
+      this.#rebuildOutcomes();
+      return;
+    }
+    if (size === this.#outcomeBytes) return;
+
+    const fd = openSync(this.#outcomesPath, "r");
+    try {
+      const buffer = Buffer.allocUnsafe(size - this.#outcomeBytes);
+      readAllAtSync(fd, buffer, this.#outcomeBytes);
+      this.#consumeOutcomeLines(buffer.toString("utf8"));
+    } finally {
+      closeSync(fd);
+    }
+    this.#outcomeBytes = size;
+  }
+
+  #consumeOutcomeLines(text: string): void {
+    for (const line of text.split("\n")) {
+      if (line.length === 0) continue;
+      const stored = parseOutcomeLine(line);
+      if (stored === undefined) {
+        throw new CorruptLogError("outcomes", "an outcome line is not valid");
+      }
+      this.#outcomes.set(outcomeKey(stored.inputId, stored.kind), stored);
+      this.#outcomeSeq = Math.max(this.#outcomeSeq, stored.seq);
+    }
+  }
+
+  #rebuildOutcomes(): void {
+    this.#outcomes.clear();
+    this.#outcomeSeq = 0;
+    if (!existsSync(this.#outcomesPath)) {
+      this.#outcomeBytes = 0;
+      return;
+    }
+    const buffer = readFileSync(this.#outcomesPath);
+    this.#consumeOutcomeLines(buffer.toString("utf8"));
+    this.#outcomeBytes = buffer.length;
+  }
+
   #recover(): void {
     // Rebuild inside the lock: a writer that appends during the rebuild would
     // otherwise let the rebuild miss a line and record the larger size.
@@ -964,8 +1101,10 @@ class JsonlLogBackend implements LogBackend {
         }
       }
       truncateTornLine(this.#inputsPath);
+      truncateTornLine(this.#outcomesPath);
       truncateTornLine(this.#globalFactsPath);
       this.#rebuildInputs();
+      this.#rebuildOutcomes();
     });
   }
 

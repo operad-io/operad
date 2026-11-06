@@ -8,7 +8,6 @@ import {
   Runner,
   StateError,
   TriggerError,
-  TriggerStore,
   ViewError,
   createViews,
   defaultOperadHome,
@@ -129,7 +128,6 @@ interface Context {
   readonly registry: PluginRegistry;
   readonly log: LogBackend;
   readonly storeRoot: string;
-  readonly triggerStore: TriggerStore;
   readonly views: Views;
 }
 
@@ -151,7 +149,6 @@ async function openContext(home: string, io: CliIo): Promise<Context> {
     registry,
     log,
     storeRoot,
-    triggerStore: new TriggerStore({ root: join(storeRoot, "triggers") }),
     views: createViews({
       registry,
       store,
@@ -243,7 +240,7 @@ async function commandPending(
   const pending = await listPending(
     context.log,
     context.registry,
-    context.triggerStore,
+    kernelFor(context, io, []),
   );
   if (json) {
     io.write(`${JSON.stringify(pending, null, 2)}\n`);
@@ -753,7 +750,7 @@ async function commandKernelAction(
   if (argv.length > 1) throw new UsageError(`${action} takes one pending id`);
   const kernel = kernelFor(context, io, []);
   if (action === "dismiss") {
-    kernel.dismiss(id);
+    await kernel.dismiss(id);
     io.write(`dismissed ${id}\n`);
     return;
   }

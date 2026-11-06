@@ -4,7 +4,12 @@ import type { LogBackend, RunInfo } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { PendingActionView } from "../plugin/types.ts";
 import { parseObjectKey, readState } from "../runner/service.ts";
-import type { TriggerStore } from "../trigger/store.ts";
+import type { TriggerCandidate } from "../trigger/types.ts";
+
+/** Where the pending view gets candidates the kernel derived from the log. */
+export interface CandidateSource {
+  candidates(): Promise<readonly TriggerCandidate[]> | readonly TriggerCandidate[];
+}
 
 export interface PendingItem {
   /** A run id, or the pending id of a candidate event. */
@@ -22,7 +27,7 @@ export interface PendingItem {
 export async function listPending(
   log: LogBackend,
   registry: PluginRegistry,
-  triggers?: TriggerStore,
+  triggers?: CandidateSource,
 ): Promise<readonly PendingItem[]> {
   const runs = (await log.runs({ active: true })).sort(
     (left, right) => left.startedAt - right.startedAt,
@@ -45,7 +50,9 @@ export async function listPending(
     });
   }
 
-  for (const candidate of triggers?.candidates() ?? []) {
+  const candidates =
+    triggers === undefined ? [] : await triggers.candidates();
+  for (const candidate of candidates) {
     items.push({
       runId: candidate.pendingId,
       flow: candidate.flow,

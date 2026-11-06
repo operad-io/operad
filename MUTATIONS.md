@@ -239,3 +239,9 @@
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0026-M16 | packages/engine/src/trigger/kernel.ts | removed the log lookup that finds the run an input started | `event receipt recovery > a crash after startRun in auto mode keeps one outcome` |
+
+## TK0026 — rework 15: one outcome per input, no sidecar
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0026-M17 | packages/engine/src/log/jsonl.ts | made `recordOutcome` always append instead of returning the stored outcome | `event receipt recovery > two concurrent receives in observe mode keep one outcome` |

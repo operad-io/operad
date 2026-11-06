@@ -62,6 +62,24 @@ export interface RecordInputResult {
   readonly inputId: string;
 }
 
+/**
+ * What the kernel decided to do with a recorded input, keyed by
+ * `(inputId, kind)`. The first write for a kind wins, so concurrent callers
+ * cannot record two different outcomes for one event.
+ */
+export interface InputOutcome {
+  readonly inputId: string;
+  readonly kind: string;
+  readonly payload: JsonValue;
+  readonly seq: number;
+  readonly time: number;
+}
+
+export interface RecordOutcomeResult {
+  readonly duplicate: boolean;
+  readonly outcome: InputOutcome;
+}
+
 export interface AppendResult {
   readonly lastSeq: number;
   readonly facts: readonly Fact[];
@@ -152,6 +170,18 @@ export interface LogBackend extends Partial<LogSubscription> {
   readGlobal(): AsyncIterable<GlobalFact>;
   /** Stream every recorded input, oldest first. */
   readInputs(): AsyncIterable<InputRecord>;
+  /**
+   * Record the kernel's outcome for an input. A repeated `(inputId, kind)` is
+   * a duplicate: `duplicate` is true, nothing is written, and the stored
+   * outcome is returned. Concurrent callers therefore agree on one outcome.
+   */
+  recordOutcome(
+    inputId: string,
+    kind: string,
+    payload: JsonValue,
+  ): Promise<RecordOutcomeResult>;
+  /** Stream every recorded outcome in the order it was written. */
+  readOutcomes(): AsyncIterable<InputOutcome>;
   close(): Promise<void>;
 }
 
