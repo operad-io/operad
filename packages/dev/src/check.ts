@@ -2,8 +2,10 @@
  * The dev plugin's `init` check: every registered repository has a remote that
  * answers, accepts a push to a scratch ref and deletes that ref again. The
  * check writes nothing into the repository and leaves no ref behind on the
- * remote: a remote that refuses the wire delete but is a path on this machine
- * is cleaned directly.
+ * remote: before it pushes, it asks the remote to delete a scratch ref that
+ * does not exist, so a remote that refuses deletions fails with nothing
+ * written. A remote that answers that probe but refuses the real delete is
+ * cleaned directly when it is a path on this machine.
  */
 
 import { randomUUID } from "node:crypto";
@@ -62,6 +64,25 @@ function localGitDir(cwd: string, remote: string): string | undefined {
 }
 
 /**
+ * Asks the remote to delete a scratch ref that does not exist. The remote's
+ * hooks see a deletion without anything being created, so a remote that refuses
+ * deletions fails the check before the scratch ref is pushed and no ref is left
+ * behind.
+ */
+function checkDeletesScratch(
+  cwd: string,
+  remote: string,
+  name: string,
+  ref: string,
+): void {
+  const deleted = git(cwd, ["push", "--quiet", remote, "--delete", ref]);
+  if (deleted.ok) return;
+  throw new Error(
+    `remote "${name}" refused to delete the scratch ref: ${firstLine(deleted.err)}`,
+  );
+}
+
+/**
  * Removes a scratch ref after a push. The wire delete is the ordinary path; a
  * remote that refuses it can still be a local repository, so remove the ref
  * directly there. Returns false when the ref may remain.
@@ -106,6 +127,7 @@ async function checkRepository(
   }
 
   const ref = `refs/operad/check/${randomUUID()}`;
+  checkDeletesScratch(repository.path, remoteUrl, settings.remote, ref);
   const pushed = git(repository.path, [
     "push",
     "--quiet",

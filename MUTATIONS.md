@@ -561,3 +561,11 @@
 | TK0024-M6 | packages/cli/src/main.ts | wrote an internal word into the loop's own output | `dogfood end to end > a task survives a killed run and reaches a merge with a history of every step` |
 | TK0024-M7 | packages/cli/src/main.ts | wrote an internal word into a `pending --json` page | `dogfood end to end > a task survives a killed run and reaches a merge with a history of every step` |
 | TK0024-M8 | packages/cli/test/e2e.test.ts | installed no store watcher, so the wait only looked once instead of on each change | `dogfood end to end > a task survives a killed run and reaches a merge with a history of every step` |
+
+## TK0024 — rework 3: refuse the delete before pushing the scratch ref
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0024-M9 | packages/dev/src/check.ts | pushed the scratch ref without first asking the remote to delete a ref that does not exist | `dev init check > a URL remote that refuses the delete is a failed check that leaves no scratch ref` |
+| TK0024-M10 | packages/dev/src/check.ts | ignored a refused delete probe and pushed the scratch ref anyway | `dev init check > a URL remote that refuses the delete is a failed check that leaves no scratch ref` |
+| TK0024-M11 | packages/dev/src/check.ts | skipped the direct local cleanup after the second delete was refused | `dev init check > a local remote that refuses only an existing delete is cleaned directly` |
