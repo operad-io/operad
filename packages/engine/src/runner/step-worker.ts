@@ -9,14 +9,14 @@ import { messageOf } from "../plugin/errors.ts";
 import { FilePluginStore } from "../plugin/file-store.ts";
 import { loadPlugin } from "../plugin/load.ts";
 import { PluginRegistry } from "../plugin/registry.ts";
-import { SqlitePluginStore } from "../plugin/sqlite-store.ts";
+import type { PluginStepResult, RunObject } from "../plugin/types.ts";
 import type { JsonValue } from "../log/types.ts";
+import { SqlitePluginStore } from "../plugin/sqlite-store.ts";
 import type {
-  PluginStepResult,
   PluginStore,
   PluginStoreLocation,
-  RunObject,
 } from "../plugin/types.ts";
+import type { StepEvent, TriggerView } from "../trigger/types.ts";
 
 interface StepWorkerRequest {
   readonly sources: readonly string[];
@@ -28,13 +28,21 @@ interface StepWorkerRequest {
   readonly use: string;
   readonly params: unknown;
   readonly flowParams: JsonValue;
+  readonly trigger?: TriggerView | undefined;
   readonly runId: string;
   readonly object?: RunObject | undefined;
 }
 
 type StepWorkerReply =
-  | { readonly ok: true; readonly result: PluginStepResult }
-  | { readonly ok: false; readonly error: string };
+  | { readonly kind: "result"; readonly ok: true; readonly result: PluginStepResult }
+  | { readonly kind: "result"; readonly ok: false; readonly error: string };
+
+interface EmitAck {
+  readonly kind: "emit-result";
+  readonly id: number;
+  readonly ok: boolean;
+  readonly error?: string;
+}
 
 /** Opens the store the run configured, so a worker writes where the views read. */
 function openWorkerStore(request: StepWorkerRequest): PluginStore {
@@ -53,6 +61,36 @@ async function main(request: StepWorkerRequest): Promise<void> {
   for (const source of request.sources) {
     definitions.push(await loadPlugin(source, request.home));
   }
+
+  const pendingAcks = new Map<
+    number,
+    { resolve: () => void; reject: (error: Error) => void }
+  >();
+  let nextEmitId = 1;
+
+  parentPort?.on("message", (message: unknown) => {
+    if (typeof message !== "object" || message === null) return;
+    if ((message as { kind?: unknown }).kind === "emit-result") {
+      const ack = message as EmitAck;
+      const pending = pendingAcks.get(ack.id);
+      if (pending === undefined) return;
+      pendingAcks.delete(ack.id);
+      if (ack.ok) pending.resolve();
+      else pending.reject(new Error(ack.error ?? "the event was refused"));
+    }
+  });
+
+  const emit = (plugin: string, event: StepEvent): Promise<void> => {
+    const port = parentPort;
+    if (port === null) return Promise.reject(new Error("no event destination"));
+    const id = nextEmitId;
+    nextEmitId += 1;
+    return new Promise<void>((resolve, reject) => {
+      pendingAcks.set(id, { resolve, reject });
+      port.postMessage({ kind: "emit", id, plugin, event });
+    });
+  };
+
   const registry = new PluginRegistry(definitions, {
     home: request.home,
     cwd: request.cwd,
@@ -70,14 +108,17 @@ async function main(request: StepWorkerRequest): Promise<void> {
     params: request.flowParams,
     cwd: request.cwd,
     ...(request.object === undefined ? {} : { object: request.object }),
+    ...(request.trigger === undefined ? {} : { trigger: request.trigger }),
+    emit,
     signal: controller.signal,
   });
-  parentPort?.postMessage({ ok: true, result } satisfies StepWorkerReply);
+  parentPort?.postMessage({ kind: "result", ok: true, result } satisfies StepWorkerReply);
 }
 
 const request = workerData as StepWorkerRequest;
 main(request).catch((error: unknown) => {
   parentPort?.postMessage({
+    kind: "result",
     ok: false,
     error: messageOf(error),
   } satisfies StepWorkerReply);

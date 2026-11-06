@@ -9,3 +9,4 @@ export * from "./config/index.ts";
 export * from "./runner/index.ts";
 export * from "./views/index.ts";
 export * from "./loop/index.ts";
+export * from "./trigger/index.ts";

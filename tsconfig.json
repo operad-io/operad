@@ -4,6 +4,7 @@
     { "path": "packages/engine" },
     { "path": "packages/shell" },
     { "path": "packages/harness-radian" },
-    { "path": "packages/cli" }
+    { "path": "packages/cli" },
+    { "path": "packages/source-cron" }
   ]
 }
