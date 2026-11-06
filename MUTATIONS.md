@@ -127,3 +127,4 @@
 | TK0017-M7 | packages/engine/src/kernel/decide.ts | dropped the check params from the poll effect | `decide: tick > keeps a check's params in the poll effect` |
 | TK0017-M8 | packages/engine/src/runner/runner.ts | ran a wait check without its params | `a flow through the runner > waits on shell/probe with its params` |
 | TK0017-M9 | packages/shell/src/process.ts | signaled only the process group leader, not the group | `shell/command > a child that outlives the line is in the group and is stopped` |
+| TK0017-M10 | packages/engine/src/runner/runner.ts | terminated a cancelled worker without asking it to stop its processes | `a flow through the runner > a run cancel stops the command's process group in a worker` |

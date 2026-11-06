@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  FilePluginStore,
   MemoryPluginStore,
   PluginRegistry,
   Runner,
@@ -357,6 +358,67 @@ describe("a flow through the runner", () => {
       writeFileSync(flag, "1");
       expect(await runner.run()).toBe("ended");
       expect((await readState(log, info.runId)).endedStatus).toBe("done");
+    } finally {
+      await log.close();
+    }
+  });
+
+  test("a run cancel stops the command's process group in a worker", async () => {
+    const root = await tempRoot();
+    const source = new URL("../src/index.ts", import.meta.url).href;
+    const registry = new PluginRegistry([shell], {
+      home: root,
+      cwd: root,
+      store: new FilePluginStore({ root: join(root, "store") }),
+      sources: [source],
+    });
+    const marker = join(root, "started");
+    const stored = validateFlow(
+      defineFlow({
+        name: "cancel-flow",
+        entry: "run",
+        steps: [
+          {
+            id: "run",
+            kind: "plugin",
+            params: {
+              use: "shell/command",
+              params: { line: `trap '' TERM; echo $$ > '${marker}'; sleep 5` },
+            },
+            replay: "safe",
+            next: { pass: "done", fail: "failed", interrupted: "failed" },
+          },
+          { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+          {
+            id: "failed",
+            kind: "end",
+            params: { status: "failed" },
+            replay: "safe",
+          },
+        ],
+      }),
+      registry.stepTypes(),
+    ) as FlowDefinition;
+
+    const log = openLog({ backend: "jsonl", path: join(root, "log") });
+    try {
+      const info = await log.startRun("cancel-flow", "job:1");
+      const controller = new AbortController();
+      const running = new Runner({
+        log,
+        flow: stored,
+        runId: info.runId,
+        registry,
+        signal: controller.signal,
+      }).run();
+
+      await waitForFile(marker);
+      const pid = Number(readFileSync(marker, "utf8").trim());
+      controller.abort();
+
+      expect(await running).toBe("ended");
+      expect((await readState(log, info.runId)).endedStatus).toBe("failed");
+      expect(alive(pid)).toBe(false);
     } finally {
       await log.close();
     }

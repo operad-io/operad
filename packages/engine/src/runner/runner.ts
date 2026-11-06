@@ -14,6 +14,9 @@ import { applyInput, parseObjectKey, readState } from "./service.ts";
 /** The wall time a plugin step may take before the run records a failure. */
 export const DEFAULT_STEP_TIMEOUT_MS = 5 * 60 * 1000;
 
+/** How long a worker gets to stop what it started before it is terminated. */
+const WORKER_ABORT_GRACE_MS = 1000;
+
 const STEP_WORKER = new URL("./step-worker.ts", import.meta.url);
 
 interface StepWorkerReply {
@@ -333,34 +336,64 @@ export class Runner {
 
       let settled = false;
       let timer: ReturnType<typeof setTimeout> | undefined;
-      const finish = (result: PluginStepResult): void => {
+      let stopTimer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (result: PluginStepResult, terminate = true): void => {
         if (settled) return;
         settled = true;
         if (timer !== undefined) clearTimeout(timer);
         this.signal?.removeEventListener("abort", onAbort);
-        void worker.terminate();
-        resolve(result);
+        if (terminate) {
+          void worker.terminate();
+          resolve(result);
+        } else {
+          // Give the step a moment to stop the processes it started; the
+          // worker is killed anyway when it does not answer in time. The run
+          // waits for that cleanup so it never leaves a process behind.
+          stopTimer = setTimeout(() => {
+            void worker.terminate();
+          }, WORKER_ABORT_GRACE_MS);
+          worker.once("exit", () => {
+            if (stopTimer !== undefined) clearTimeout(stopTimer);
+            resolve(result);
+          });
+        }
+      };
+      const abortWorker = (): void => {
+        try {
+          worker.postMessage("abort");
+        } catch {
+          // The worker ended between the abort and this message.
+        }
       };
       const onAbort = (): void => {
+        abortWorker();
         finish(
           this.failure(use, preferInterrupted, {
             reason: "aborted",
             message: "the step was cancelled",
           }),
+          false,
         );
       };
 
       timer = setTimeout(() => {
+        abortWorker();
         finish(
           this.failure(use, preferInterrupted, {
             reason: "timeout",
             message: `the step took longer than ${this.stepTimeoutMs} ms`,
           }),
+          false,
         );
       }, this.stepTimeoutMs);
       this.signal?.addEventListener("abort", onAbort, { once: true });
 
       worker.once("message", (message: unknown) => {
+        if (settled) {
+          // The step answered after an abort: it has stopped what it started.
+          void worker.terminate();
+          return;
+        }
         if (isStepWorkerReply(message) && message.ok && message.result) {
           finish(message.result);
           return;
@@ -384,6 +417,7 @@ export class Runner {
         );
       });
       worker.once("exit", () => {
+        if (stopTimer !== undefined) clearTimeout(stopTimer);
         finish(
           this.failure(use, preferInterrupted, {
             reason: "error",
