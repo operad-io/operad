@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { mkdir } from "node:fs/promises";
+import { chmod, mkdir } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import {
@@ -90,21 +90,6 @@ function alive(pid: number): boolean {
     return true;
   } catch {
     return false;
-  }
-}
-
-/** Waits for a real process to disappear; only a signal test needs this. */
-async function waitUntil(
-  predicate: () => boolean,
-  timeoutMs = 3000,
-  stepMs = 20,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() >= deadline) {
-      throw new Error("timed out waiting for a condition");
-    }
-    await new Promise((resolve) => globalThis.setTimeout(resolve, stepMs));
   }
 }
 
@@ -217,14 +202,14 @@ describe("harness-radian/agent", () => {
     });
 
     await waitForFile(env.marker);
-    await waitUntil(() => env.clock.clears > 0);
+    await env.clock.when(() => env.clock.clears > 0);
     const pid = Number(readFileSync(env.marker, "utf8"));
     env.clock.fireUpTo(1000);
 
     const result = await running;
     expect(result.result).toBe("failed");
     expect(dataOf(result).reason).toBe("stall");
-    await waitUntil(() => !alive(pid));
+    expect(alive(pid)).toBe(false);
   });
 
   test("wallTimeSecs stops a run that never ends", async () => {
@@ -243,7 +228,7 @@ describe("harness-radian/agent", () => {
     const result = await running;
     expect(result.result).toBe("failed");
     expect(dataOf(result).reason).toBe("wall");
-    await waitUntil(() => !alive(pid));
+    expect(alive(pid)).toBe(false);
   });
 
   test("cancel stops the process group and reports interrupted", async () => {
@@ -265,9 +250,9 @@ describe("harness-radian/agent", () => {
     const result = await running;
     expect(result.result).toBe("interrupted");
     expect(dataOf(result).reason).toBe("cancelled");
-    await waitUntil(() => !alive(pids.pid));
+    expect(alive(pids.pid)).toBe(false);
     if (typeof pids.child === "number") {
-      await waitUntil(() => !alive(pids.child));
+      expect(alive(pids.child)).toBe(false);
     }
   });
 
@@ -311,6 +296,41 @@ describe("harness-radian/agent", () => {
     const data = dataOf(result);
     expect(data.reason).toBe("cwd");
     expect(String(data.message)).toContain("cwd does not exist");
+  });
+
+  const rootUser = process.getuid?.() === 0;
+  const spawnFailureTest = rootUser ? test.skip : test;
+
+  spawnFailureTest(
+    "a spawn failure after the cwd check settles as a failure, not a hang",
+    async () => {
+      const env = await setup("done");
+      const locked = join(env.root, "locked");
+      await mkdir(locked);
+      await chmod(locked, 0o000);
+      try {
+        const result = await runAgent(env, { prompt: "hello", cwd: locked });
+        expect(result.result).toBe("failed");
+        const data = dataOf(result);
+        expect(data.reason).toBe("spawn");
+        expect(String(data.message)).toContain("EACCES");
+      } finally {
+        await chmod(locked, 0o700);
+      }
+    },
+  );
+
+  test("an unterminated output stream is stopped, not buffered forever", async () => {
+    const env = await setup("flood");
+    const result = await runAgent(env, {
+      prompt: "hello",
+      cwd: env.root,
+      wallTimeSecs: 300,
+      stallSecs: 300,
+    });
+
+    expect(result.result).toBe("failed");
+    expect(dataOf(result).reason).toBe("line_too_long");
   });
 });
 

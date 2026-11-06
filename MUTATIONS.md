@@ -212,3 +212,11 @@
 | TK0018-M8 | packages/harness-radian/src/index.ts | classified a cancelled run as a failure instead of `interrupted` | `harness-radian/agent > cancel stops the process group and reports interrupted` |
 | TK0018-M9 | packages/harness-radian/src/process.ts | stopped resetting the stall timer on each output line | `harness-radian/agent > no new output line for stallSecs stops the group` |
 
+## TK0018 — rework 2: a failed spawn settles and output stays bounded
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0018-M10 | packages/harness-radian/src/process.ts | `finish()` waited only for `exit`, which a failed spawn never emits | `harness-radian/agent > a spawn failure after the cwd check settles as a failure, not a hang` (timed out after 5000ms) |
+| TK0018-M11 | packages/harness-radian/src/process.ts | multiplied the longest-line bound by 1024, removing any practical bound on an unterminated stream | `harness-radian/agent > an unterminated output stream is stopped, not buffered forever` (never settled; the buffer kept growing) |
+| TK0018-M12 | packages/harness-radian/src/index.ts | recorded an over-long line as a signal exit instead of `line_too_long` | `harness-radian/agent > an unterminated output stream is stopped, not buffered forever` (`exit` instead of `line_too_long`) |
+

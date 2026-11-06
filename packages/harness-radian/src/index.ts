@@ -18,6 +18,7 @@ import {
 } from "@operad-io/engine";
 import {
   findCommand,
+  MAX_LINE_CHARS,
   runAgent,
   systemClock,
   type AgentRunOutcome,
@@ -271,6 +272,15 @@ function resultFor(
       data: failureData(outcome, result, log, durationMs, {
         reason: "stall",
         message: `the harness printed no new line for ${stallSecs}s`,
+      }),
+    };
+  }
+  if (outcome.lineTooLong) {
+    return {
+      result: "failed",
+      data: failureData(outcome, result, log, durationMs, {
+        reason: "line_too_long",
+        message: `the harness printed a line longer than ${MAX_LINE_CHARS} characters`,
       }),
     };
   }

@@ -1,5 +1,12 @@
 import { existsSync, watch, writeFileSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Clock } from "../src/process.ts";
 
@@ -16,7 +23,25 @@ export async function tempRoot(): Promise<string> {
 
 export async function cleanupTempRoots(): Promise<void> {
   for (const root of roots.splice(0)) {
-    await rm(root, { recursive: true, force: true });
+    try {
+      await rm(root, { recursive: true, force: true });
+    } catch {
+      // A test that timed out can leave a directory it locked; unlock and retry.
+      await unlock(root);
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+}
+
+async function unlock(path: string): Promise<void> {
+  try {
+    await chmod(path, 0o700);
+    const entries = await readdir(path, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) await unlock(join(path, entry.name));
+    }
+  } catch {
+    // The path may already be gone, or not be a directory.
   }
 }
 
@@ -43,6 +68,8 @@ export function waitForFile(path: string): Promise<void> {
 export interface ManualClock extends Clock {
   /** Fires every timeout whose requested delay is at most `maxMs`. */
   fireUpTo(maxMs?: number): number;
+  /** Resolves once `predicate` holds; every timer change rechecks it. */
+  when(predicate: () => boolean): Promise<void>;
   /** How many grace waits were requested. */
   readonly sleeps: number;
   /** How many timers were cancelled, which shows a stall timer was reset. */
@@ -54,23 +81,42 @@ interface Timer {
   readonly ms: number;
 }
 
+interface Waiter {
+  readonly predicate: () => boolean;
+  readonly resolve: () => void;
+}
+
 /**
  * A clock a test drives: timeouts run only when the test fires them, and a
- * grace wait returns at once. No test waits for real time.
+ * grace wait returns at once. No test waits for real time: a test that needs
+ * to know a timer exists asks `when` and is woken by a timer change.
  */
 export function manualClock(): ManualClock {
   const timers = new Set<Timer>();
+  const waiters: Waiter[] = [];
   let sleeps = 0;
   let clears = 0;
+
+  const notify = (): void => {
+    for (let index = waiters.length - 1; index >= 0; index -= 1) {
+      const waiter = waiters[index];
+      if (waiter === undefined || !waiter.predicate()) continue;
+      waiters.splice(index, 1);
+      waiter.resolve();
+    }
+  };
+
   return {
     setTimeout(handler, ms) {
       const timer = { handler, ms };
       timers.add(timer);
+      notify();
       return timer;
     },
     clearTimeout(handle) {
       clears += 1;
       timers.delete(handle as Timer);
+      notify();
     },
     sleep() {
       sleeps += 1;
@@ -80,7 +126,14 @@ export function manualClock(): ManualClock {
       const due = [...timers].filter((timer) => timer.ms <= maxMs);
       for (const timer of due) timers.delete(timer);
       for (const timer of due) timer.handler();
+      notify();
       return due.length;
+    },
+    when(predicate) {
+      if (predicate()) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        waiters.push({ predicate, resolve });
+      });
     },
     get sleeps() {
       return sleeps;
@@ -170,6 +223,15 @@ if (mode === "stall") {
   line({ type: "journal", event: "TurnStarted" });
   if (marker) writeFileSync(marker, String(process.pid));
   await new Promise(() => {});
+}
+
+if (mode === "flood") {
+  const chunk = Buffer.alloc(256 * 1024, 120);
+  for (;;) {
+    if (!process.stdout.write(chunk)) {
+      await new Promise((resolve) => process.stdout.once("drain", resolve));
+    }
+  }
 }
 
 if (mode === "wall") {

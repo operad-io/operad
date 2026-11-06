@@ -68,6 +68,13 @@ export function lastLines(text: string, count: number): readonly string[] {
 /** How much of the harness's own stderr the fact keeps. */
 const STDERR_LIMIT = 64 * 1024;
 
+/**
+ * The longest single output line the run holds. A harness that never writes a
+ * newline must not be able to grow the buffer until the stall or wall limit
+ * fires: past this a line is a malformed stream and the group is stopped.
+ */
+export const MAX_LINE_CHARS = 8 * 1024 * 1024;
+
 /** Finds an executable on PATH, or returns undefined. */
 export async function findCommand(command: string): Promise<string | undefined> {
   if (command.includes("/")) {
@@ -116,6 +123,7 @@ export interface AgentRunOutcome {
   readonly cancelled: boolean;
   readonly wall: boolean;
   readonly stall: boolean;
+  readonly lineTooLong: boolean;
   readonly missing: boolean;
   readonly spawnError: string | undefined;
   readonly stderrTail: readonly string[];
@@ -146,13 +154,19 @@ function endStatus(line: string | null): number | undefined {
   return match === null ? undefined : Number(match[1]);
 }
 
-/** Splits a stream into complete lines, holding the unterminated tail. */
+/**
+ * Splits a stream into complete lines, holding the unterminated tail up to
+ * `MAX_LINE_CHARS`. The tail is dropped and `onOverflow` is called when a line
+ * grows past the limit, so no input can exhaust memory.
+ */
 class Lines {
   private buffer = "";
   private readonly onLine: (line: string) => void;
+  private readonly onOverflow: () => void;
 
-  constructor(onLine: (line: string) => void) {
+  constructor(onLine: (line: string) => void, onOverflow: () => void) {
     this.onLine = onLine;
+    this.onOverflow = onOverflow;
   }
 
   push(text: string): void {
@@ -163,6 +177,10 @@ class Lines {
       this.onLine(this.buffer.slice(0, newline));
       this.buffer = this.buffer.slice(newline + 1);
       newline = this.buffer.indexOf("\n");
+    }
+    if (this.buffer.length > MAX_LINE_CHARS) {
+      this.buffer = "";
+      this.onOverflow();
     }
   }
 
@@ -305,6 +323,7 @@ export async function runAgent(
     cancelled: false,
     wall: false,
     stall: false,
+    lineTooLong: false,
     missing: false,
     spawnError: undefined,
     stderrTail: [],
@@ -322,10 +341,14 @@ export async function runAgent(
 
   const clock = options.clock ?? systemClock;
   let resetStallForLine: () => void = () => {};
-  const stdoutLines = new Lines((line) => {
-    resetStallForLine();
-    options.onLine(line);
-  });
+  let onLineOverflow: () => void = () => {};
+  const stdoutLines = new Lines(
+    (line) => {
+      resetStallForLine();
+      options.onLine(line);
+    },
+    () => onLineOverflow(),
+  );
   const stderrTail = new Tail(undefined);
 
   let child: ChildProcess;
@@ -359,6 +382,12 @@ export async function runAgent(
       resolve({ code, signal });
     });
   });
+  // A failed spawn emits `error` and never `exit`. Anything that waits for the
+  // process to be gone must settle on either, or the step would hang forever.
+  const settled = Promise.race<Exit>([
+    exited,
+    failed.then((): Exit => ({ code: null, signal: null })),
+  ]);
 
   const stdout = child.stdout;
   const stderr = child.stderr;
@@ -404,6 +433,8 @@ export async function runAgent(
   const stop = (): Promise<void> => {
     stopping ??= (async () => {
       if (sentinelExited) return;
+      const pid = child.pid;
+      if (pid === undefined) return;
       let ready = true;
       if (!readySeen) {
         const outcome = await Promise.race<"ready" | "grace">([
@@ -413,8 +444,6 @@ export async function runAgent(
         ready = outcome === "ready";
       }
       if (sentinelExited) return;
-      const pid = child.pid;
-      if (pid === undefined) return;
       if (!ready) {
         killGroup(pid, "SIGKILL");
         return;
@@ -428,12 +457,13 @@ export async function runAgent(
   };
 
   let finished = false;
-  let stoppingFor: "cancel" | "wall" | "stall" | undefined;
-  const beginStop = (kind: "cancel" | "wall" | "stall"): void => {
+  let stoppingFor: "cancel" | "wall" | "stall" | "line" | undefined;
+  const beginStop = (kind: "cancel" | "wall" | "stall" | "line"): void => {
     if (finished || stoppingFor !== undefined) return;
     stoppingFor = kind;
     void stop();
   };
+  onLineOverflow = () => beginStop("line");
 
   let wallTimer: unknown;
   if (options.wallMs > 0) {
@@ -486,7 +516,7 @@ export async function runAgent(
     control?.destroy();
     await drainedOutput;
     stdoutLines.end();
-    return { tail: stderrTail.lines(20), exit: await exited };
+    return { tail: stderrTail.lines(20), exit: await settled };
   };
 
   if (startup.kind !== "ready") {
@@ -510,6 +540,7 @@ export async function runAgent(
       cancelled: stoppingFor === "cancel",
       wall: stoppingFor === "wall",
       stall: stoppingFor === "stall",
+      lineTooLong: stoppingFor === "line",
       missing: false,
       spawnError,
       stderrTail: tail,
@@ -548,6 +579,7 @@ export async function runAgent(
     cancelled: stoppingFor === "cancel",
     wall: stoppingFor === "wall",
     stall: stoppingFor === "stall",
+    lineTooLong: stoppingFor === "line",
     missing: false,
     spawnError: undefined,
     stderrTail: tail,
