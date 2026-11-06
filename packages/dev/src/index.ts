@@ -12,21 +12,12 @@ import { resolveDevKey } from "./service.ts";
 import { runWork, runWorktree } from "./steps.ts";
 import { planViews, taskViews } from "./views.ts";
 
-/** Options for building the plugin; tests use the defaults. */
-export interface DevPluginOptions {
-  /** Whether the shipped plugin declares the radian harness it defaults to. */
-  readonly requiresHarness?: boolean | undefined;
-}
-
 /** Builds the dev plugin. Tests build it directly when they need a fake host. */
-export function createDevPlugin(options: DevPluginOptions = {}) {
+export function createDevPlugin() {
   return definePlugin({
     name: "dev",
     kind: "domain",
     version: "0.0.0",
-    ...(options.requiresHarness === true
-      ? { requires: { plugins: { "harness-radian": ">=0.0.0" } } }
-      : {}),
     objects: [
       {
         name: "plan",
@@ -92,7 +83,7 @@ export function createDevPlugin(options: DevPluginOptions = {}) {
   });
 }
 
-export default createDevPlugin({ requiresHarness: true });
+export default createDevPlugin();
 
 export * from "./actions.ts";
 export * from "./check.ts";

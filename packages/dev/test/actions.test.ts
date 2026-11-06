@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { PluginRegistry } from "@operad-io/engine";
-import { createDevPlugin } from "../src/index.ts";
+import plugin from "../src/index.ts";
 import {
   addPlan,
   addRepository,
@@ -28,7 +28,7 @@ async function setup(
   const root = await tempRoot();
   const repositoryPath = await makeGitRepository(root);
   const store = storeAt(root);
-  const registry = new PluginRegistry([createDevPlugin()], {
+  const registry = new PluginRegistry([plugin], {
     store,
     storeRoot: store.root,
     ...(onCancelRun === undefined ? {} : { onCancelRun }),

@@ -11,9 +11,10 @@ The examples use this repository and the settings in `.operad/dev.json`.
 operad init
 ```
 
-`init` creates `~/.operad` when it is missing and checks the plugins it loads.
-The config it writes names `shell` and `dev`; `dev` loads the radian harness it
-defaults to, so the checks are:
+`init` creates `~/.operad` when it is missing and checks the installed plugins.
+A failed check says what is wrong and the command exits non-zero; it never
+registers a repository and never writes to a remote. In this repository the
+checks are:
 
 - `shell` is ready.
 - `harness-radian` finds `radian` on `PATH`.
@@ -22,9 +23,6 @@ defaults to, so the checks are:
   published there and fails when the remote does not exist, cannot be reached
   (with git's own message) or has no main branch. It pushes nothing, so no ref
   can be left behind.
-
-A failed check says what is wrong and the command exits non-zero; it never
-registers a repository and never writes to a remote.
 
 Then register the checkout:
 

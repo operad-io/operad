@@ -147,12 +147,17 @@ describe("operad command", () => {
       expect(first.text()).toContain("shell: ready");
       expect(first.text()).toContain("harness-radian: radian is available");
       expect(first.text()).toContain("dev: no repositories registered");
-      const created = JSON.parse(
-        readFileSync(join(fresh, "config.json"), "utf8"),
-      ) as { plugins: Record<string, unknown> };
-      expect(created.plugins).toEqual({
-        shell: { module: "@operad-io/shell", enabled: true },
-        dev: { module: "@operad-io/dev", enabled: true },
+      expect(
+        JSON.parse(readFileSync(join(fresh, "config.json"), "utf8")),
+      ).toMatchObject({
+        plugins: {
+          shell: { module: "@operad-io/shell", enabled: true },
+          "harness-radian": {
+            module: "@operad-io/harness-radian",
+            enabled: true,
+          },
+          dev: { module: "@operad-io/dev", enabled: true },
+        },
       });
       const config = JSON.parse(
         readFileSync(join(fresh, "config.json"), "utf8"),
@@ -239,33 +244,12 @@ describe("operad command", () => {
       plugins: Record<string, { enabled: boolean }>;
       store: { backend: string };
     };
-    expect(config.plugins.shell?.enabled).toBe(true);
-    expect(config.plugins.dev?.enabled).toBe(true);
-    expect(config.plugins["harness-radian"]).toBeUndefined();
+    expect(config.plugins["harness-radian"]?.enabled).toBe(true);
     expect(config.store.backend).toBe("jsonl");
 
     const list = capture();
     expect(await main(["repo", "list"], { home, io: list.io })).toBe(0);
     expect(list.text()).toContain("no repositories");
-  });
-
-  test("a disabled radian harness keeps dev from loading and says why", async () => {
-    const { home } = await makeNamedHome({
-      shell: { module: "@operad-io/shell" },
-      dev: { module: devPluginPath },
-      "harness-radian": {
-        module: "@operad-io/harness-radian",
-        enabled: false,
-      },
-    });
-
-    const output = capture();
-    expect(await main(["init"], { home, io: output.io })).toBe(0);
-    expect(output.text()).toContain("shell: ready");
-    expect(output.text()).not.toContain("harness-radian");
-    expect(output.text()).not.toContain("dev:");
-    expect(output.errors()).toContain('requires plugin "harness-radian"');
-    expect(output.errors()).toContain("is disabled");
   });
 
   test("repo add refuses a directory with no remote and writes nothing", async () => {
