@@ -2,7 +2,7 @@
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { JsonValue } from "../log/types.ts";
+import { assertJsonValue } from "../log/json-value.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import { CronError, parseCron } from "./cron.ts";
 import type { TriggerMode, TriggerRule } from "./types.ts";
@@ -64,7 +64,13 @@ function readStart(value: unknown, at: string): TriggerRule["start"] {
   checkKeys(value, START_KEYS, `${at}: start`);
   const flow = requireText(value.flow, `${at}: start.flow`, "flow");
   if (value.params === undefined) return { flow };
-  return { flow, params: value.params as JsonValue };
+  try {
+    assertJsonValue(value.params, "start.params");
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new TriggerError(`${at}: ${detail}`, { cause: error });
+  }
+  return { flow, params: value.params };
 }
 
 function readRule(value: unknown, index: number, file: string): TriggerRule {
@@ -137,7 +143,7 @@ export interface LoadTriggerRulesOptions {
 }
 
 function ruleKey(rule: TriggerRule): string {
-  return `${rule.source}\u0000${rule.type}`;
+  return JSON.stringify([rule.source, rule.type]);
 }
 
 /**

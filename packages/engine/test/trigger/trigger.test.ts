@@ -1758,6 +1758,50 @@ describe("trigger rules", () => {
     ).toThrow(/plugin "bad": rules: rule 0: mode/);
   });
 
+  test("a plugin rule whose params are not JSON is refused at load with the plugin name and index", async () => {
+    const root = await tempRoot();
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const cases: readonly unknown[] = [
+      { value: () => {} },
+      { value: Infinity },
+      cyclic,
+    ];
+    for (const params of cases) {
+      const invalid = {
+        source: "cron",
+        type: "tick",
+        start: { flow: "bad:done", params },
+        object: "job:1",
+        mode: "auto",
+      } as unknown as TriggerRule;
+      expect(() =>
+        registryWithRules([pluginWithRules("bad", [invalid])], root),
+      ).toThrow(/plugin "bad": rules: rule 0: start\.params/);
+    }
+  });
+
+  test("distinct source and type pairs are not confused when they contain a NUL", async () => {
+    const root = await tempRoot();
+    const registry = registryWithRules(
+      [
+        pluginWithRules("alpha", [
+          rule({ source: "a\u0000b", type: "c", start: { flow: "alpha:done" } }),
+        ]),
+        pluginWithRules("beta", [
+          rule({ source: "a", type: "b\u0000c", start: { flow: "beta:done" } }),
+        ]),
+      ],
+      root,
+    );
+
+    const rules = await loadTriggerRules({
+      home: join(root, "home"),
+      registry,
+    });
+    expect(rules).toHaveLength(2);
+  });
+
   test("a plugin rule whose flow does not exist is refused at load", async () => {
     const root = await tempRoot();
     expect(() =>

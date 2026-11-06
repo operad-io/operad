@@ -368,3 +368,10 @@
 | TK0027-M4 | packages/engine/src/plugin/registry.ts | stopped checking that a plugin rule's flow is loaded | `trigger rules > a plugin rule whose flow does not exist is refused at load` |
 | TK0027-M5 | packages/harness-radian/src/index.ts | dropped the event note from a triggered prompt | `harness-radian:prompt > a trigger with summary and data appends one note that names both files` |
 | TK0027-M6 | packages/cli/src/main.ts | printed `user` as the origin of every rule in the listing | `operad trigger rules > lists each rule with where it came from` |
+
+## TK0027 — rework 2: a plugin rule's params are checked as JSON
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0027-M7 | packages/engine/src/trigger/rules.ts | cast a rule's `start.params` without the log's JSON-value check | `trigger rules > a plugin rule whose params are not JSON is refused at load with the plugin name and index` |
+| TK0027-M8 | packages/engine/src/trigger/rules.ts | joined source and type with a NUL instead of a JSON pair | `trigger rules > distinct source and type pairs are not confused when they contain a NUL` |
