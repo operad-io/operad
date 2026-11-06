@@ -218,7 +218,7 @@ export class Runner {
 
     if (effect.kind === "poll_check") {
       if (effect.check === null) return "blocked";
-      const outcome = await this.execute(effect.check, null, true);
+      const outcome = await this.execute(effect.check, effect.params, true);
       if (outcome.result === "ready" || outcome.result === "interrupted") {
         await this.recordResult(state, effect.id, outcome.result, outcome.data);
         return "progress";

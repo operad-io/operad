@@ -131,6 +131,9 @@ function checkStep(
         if (resolveStepType(registry, check) === undefined) {
           throw new FlowError(at(`params.check: unknown plugin step type "${check}"`));
         }
+        if (hasOwn(params, "params") && !isRecord(params.params)) {
+          throw new FlowError(at("params.params: must be an object"));
+        }
       }
       results = ["ready", "interrupted"];
       break;

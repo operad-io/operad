@@ -5,5 +5,5 @@
   "type": "module",
   "repository": { "type": "git", "url": "git+https://github.com/operad-io/operad.git", "directory": "packages/cli" },
   "bin": { "operad": "bin/operad.ts" },
-  "dependencies": { "@operad-io/engine": "workspace:*" }
+  "dependencies": { "@operad-io/engine": "workspace:*", "@operad-io/shell": "workspace:*" }
 }

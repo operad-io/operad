@@ -29,7 +29,7 @@ export class ConfigError extends Error {
 }
 
 /** The plugins installed by `operad init`: the base plugin that runs commands. */
-export const DEFAULT_PLUGINS: readonly string[] = ["@operad-io/engine/shell"];
+export const DEFAULT_PLUGINS: readonly string[] = ["@operad-io/shell"];
 
 export function configPath(home: string): string {
   return join(home, "config.json");
