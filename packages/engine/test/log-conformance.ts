@@ -24,8 +24,8 @@ import {
 
 /**
  * What a backend must expose to be checked by the suite. The extra methods are
- * test hooks: deleting a run file and reading a schema version have no place in
- * the backend interface, but the suite has to simulate them.
+ * test hooks: deleting a run and reading a schema version have no place in the
+ * backend interface, but the suite has to simulate them.
  */
 export interface LogConformanceFactory extends LogBackendFactory {
   /** The module a child process can import; its default export is the factory. */
@@ -34,9 +34,19 @@ export interface LogConformanceFactory extends LogBackendFactory {
   writeSchemaVersion(directory: string, version: number): void;
   removeRun(directory: string, runId: string): void;
   countInputRecords(directory: string): number;
-  runFileSize(directory: string, runId: string): number;
-  runFileText(directory: string, runId: string): string;
-  appendRawRun(directory: string, runId: string, text: string): void;
+  /** All text the backend stored, so a test can look for a leaked secret. */
+  storedText(directory: string, runId: string): string;
+  /**
+   * Fault injection into a backend that stores one append-only file per run.
+   * A backend whose storage cannot hold a torn record (sqlite) leaves this
+   * out, and the torn-line test is not registered for it.
+   */
+  readonly rawRun?: RawRunFile;
+}
+
+export interface RawRunFile {
+  size(directory: string, runId: string): number;
+  append(directory: string, runId: string, text: string): void;
 }
 
 const CHILD = join(import.meta.dir, "fixtures", "log-child.ts");
@@ -457,27 +467,33 @@ export function runLogConformance(factory: LogConformanceFactory): void {
       }
     });
 
-    test("a torn last line is cut off on open", async () => {
-      const directory = tempDirectory("torn-line");
-      let backend = await openStore(factory, directory, { clock: fixedClock() });
-      try {
-        const run = await backend.startRun("flow", "object");
-        await backend.append(run.runId, 0, [{ kind: "whole", payload: {}, cause: 1 }]);
-        await backend.close();
+    // Only a backend that stores one append-only file per run can hold a torn
+    // record. sqlite's transactions cannot, and the SIGKILL test below covers
+    // the same whole-batch guarantee for it.
+    const rawRun = factory.rawRun;
+    if (rawRun) {
+      test("a torn last line is cut off on open", async () => {
+        const directory = tempDirectory("torn-line");
+        let backend = await openStore(factory, directory, { clock: fixedClock() });
+        try {
+          const run = await backend.startRun("flow", "object");
+          await backend.append(run.runId, 0, [{ kind: "whole", payload: {}, cause: 1 }]);
+          await backend.close();
 
-        const before = factory.runFileSize(directory, run.runId);
-        factory.appendRawRun(directory, run.runId, '{"type":"batch","facts":[{"runId":');
-        expect(factory.runFileSize(directory, run.runId)).toBeGreaterThan(before);
+          const before = rawRun.size(directory, run.runId);
+          rawRun.append(directory, run.runId, '{"type":"batch","facts":[{"runId":');
+          expect(rawRun.size(directory, run.runId)).toBeGreaterThan(before);
 
-        backend = await openStore(factory, directory);
-        const facts = await collect(backend.read(run.runId));
-        expect(facts.map((fact) => fact.kind)).toEqual(["whole"]);
-        expect(factory.runFileSize(directory, run.runId)).toBe(before);
-      } finally {
-        await backend.close();
-        cleanup(directory);
-      }
-    });
+          backend = await openStore(factory, directory);
+          const facts = await collect(backend.read(run.runId));
+          expect(facts.map((fact) => fact.kind)).toEqual(["whole"]);
+          expect(rawRun.size(directory, run.runId)).toBe(before);
+        } finally {
+          await backend.close();
+          cleanup(directory);
+        }
+      });
+    }
 
     test("a Secret never reaches the log", async () => {
       const directory = tempDirectory("secrets");
@@ -515,7 +531,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         expect((await collect(backend.read(run.runId))).map((fact) => fact.kind)).toEqual([
           "safe",
         ]);
-        expect(factory.runFileText(directory, run.runId)).not.toContain("hunter2");
+        expect(factory.storedText(directory, run.runId)).not.toContain("hunter2");
 
         await backend.close();
         backend = await openStore(factory, directory);
