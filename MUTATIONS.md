@@ -221,3 +221,13 @@
 | TK0019-M12 | packages/dev/src/service.ts | skipped the takeover of a lock whose pid is dead | `the dev lock survives a dead holder > a lock left by a dead pid is taken over` (timed out) |
 | TK0019-M13 | packages/dev/src/service.ts | removed the source-checkout wording from `repo add`'s refusal | `repo add never writes into the operad checkout > the operad source checkout is refused` |
 
+## TK0019 — rework 4: the lock protocol and scoped bare ids
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0019-M14 | packages/dev/src/lock.ts | release deleted the renamed lock before checking whose nonce it held | `the repository lock > release never deletes another process's lock` |
+| TK0019-M15 | packages/dev/src/lock.ts | takeover deleted the renamed lock without comparing its nonce with the dead record's | `the repository lock > a newer live lock renamed during a takeover is put back` |
+| TK0019-M16 | packages/dev/src/lock.ts | wrote the record to `dev.lock` before the link, so a crash between the two left a lock | `the repository lock > a crash between the tmp write and the link leaves no lock` |
+| TK0019-M17 | packages/engine/src/views/presentation.ts | skipped the plugin's `resolve` hook before the suffix lookup | `operad with the dev plugin > a bare id resolves in the repository of the current directory` |
+| TK0019-M18 | packages/dev/src/lock.ts | treated an unreadable lock as dead immediately instead of after 30 s | `the repository lock > an unparsable lock is live until its mtime is 30 seconds old` |
+

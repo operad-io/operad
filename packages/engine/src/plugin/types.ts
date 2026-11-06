@@ -217,10 +217,26 @@ export interface StepTypeDefinition {
   ) => MaybePromise<PluginStepResult>;
 }
 
+/** What an object type's `resolve` receives. `cwd` is where the person is. */
+export interface ObjectResolveContext {
+  readonly cwd: string;
+  readonly store: ObjectStore;
+}
+
 /** An object type a plugin owns, such as `task`. */
 export interface ObjectTypeDefinition {
   readonly name: string;
   readonly schema?: unknown;
+  /**
+   * Turns a bare id into the object's store key, or undefined when this type
+   * does not claim it. The kernel asks this before its own suffix lookup, so a
+   * plugin can scope an id to a repository or another namespace.
+   */
+  readonly resolve?: (
+    ctx: ObjectResolveContext,
+    type: string,
+    id: string,
+  ) => MaybePromise<string | undefined>;
 }
 
 /** Whether an action asks the person for a note. */

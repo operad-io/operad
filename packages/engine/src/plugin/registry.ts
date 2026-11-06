@@ -236,9 +236,20 @@ function normalizeObjects(
       throw new PluginError(`${at}: duplicate object type "${name}"`);
     }
     names.add(name);
-    objects.push(
-      entry.schema === undefined ? { name } : { name, schema: entry.schema },
-    );
+    if (entry.resolve !== undefined && typeof entry.resolve !== "function") {
+      throw new PluginError(`${at}[${index}]: resolve: must be a function`);
+    }
+    objects.push({
+      name,
+      ...(entry.schema === undefined ? {} : { schema: entry.schema }),
+      ...(entry.resolve === undefined
+        ? {}
+        : {
+            resolve: entry.resolve as NonNullable<
+              ObjectTypeDefinition["resolve"]
+            >,
+          }),
+    });
   });
   return objects;
 }
@@ -720,15 +731,17 @@ export class PluginRegistry {
     return this.plugins.map((plugin) => this.sourceByPlugin.get(plugin.name));
   }
 
-  /** Every object type the loaded plugins declare, with its plugin. */
+  /** Every object type the loaded plugins declare, with its plugin and definition. */
   objectTypes(): readonly {
     readonly plugin: string;
     readonly type: string;
+    readonly definition: ObjectTypeDefinition;
   }[] {
     return this.plugins.flatMap((plugin) =>
       plugin.objects.map((object) => ({
         plugin: plugin.name,
         type: object.name,
+        definition: object,
       })),
     );
   }

@@ -284,4 +284,82 @@ describe("operad with the dev plugin", () => {
     expect(updated.code).toBe(0);
     expect(updated.out.trim()).toBe(taskId);
   });
+
+  test("a bare id resolves in the repository of the current directory", async () => {
+    const { root, home, repository } = await setup();
+    const other = await makeGitRepository(root, "other");
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    expect((await run(home, other, ["repo", "add", "."])).code).toBe(0);
+
+    const planA = await run(
+      home,
+      repository,
+      ["plan", "add", "--slug", "work", "--title", "A"],
+      "request A\n",
+    );
+    const taskA = await run(
+      home,
+      repository,
+      [
+        "task",
+        "add",
+        "--plan",
+        planA.out.trim(),
+        "--slug",
+        "work",
+        "--title",
+        "A task",
+      ],
+      "brief A\n",
+    );
+    expect(taskA.out.trim()).toBe("TK0001-work");
+
+    const planB = await run(
+      home,
+      other,
+      ["plan", "add", "--slug", "work", "--title", "B"],
+      "request B\n",
+    );
+    const taskB = await run(
+      home,
+      other,
+      [
+        "task",
+        "add",
+        "--plan",
+        planB.out.trim(),
+        "--slug",
+        "work",
+        "--title",
+        "B task",
+      ],
+      "brief B\n",
+    );
+    expect(taskB.out.trim()).toBe("TK0001-work");
+
+    const shown = await run(home, repository, [
+      "show",
+      "TK0001-work",
+      "--section",
+      "brief",
+      "--raw",
+    ]);
+    expect(shown.code).toBe(0);
+    expect(shown.out).toContain("brief A");
+    expect(shown.out).not.toContain("brief B");
+
+    const confirmed = await run(home, repository, [
+      "dev:confirm",
+      "PL0001-work",
+    ]);
+    expect(confirmed.code).toBe(0);
+    const shownA = await run(home, repository, ["show", "TK0001-work"]);
+    expect(shownA.out).toContain("TK0001-work  ready  A task");
+    const shownB = await run(home, other, ["show", "TK0001-work"]);
+    expect(shownB.out).toContain("TK0001-work  proposed  B task");
+
+    const ambiguous = await run(home, home, ["show", "TK0001-work"]);
+    expect(ambiguous.code).toBe(2);
+    expect(ambiguous.err).toContain("ambiguous");
+  });
 });

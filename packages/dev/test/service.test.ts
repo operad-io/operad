@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -23,7 +23,6 @@ import {
   setPriority,
   setTaskPhase,
   updateTask,
-  withRepositoryLock,
 } from "../src/service.ts";
 import {
   bareId,
@@ -403,16 +402,6 @@ describe("dev plans and tasks", () => {
     expect(tasks).toHaveLength(2);
     expect((await getPlan(store, plan.id)).data.taskCount).toBe(2);
   });
-
-  test("a repository lock is released after a failed job", async () => {
-    const { repositoryPath } = await setup();
-    await expect(
-      withRepositoryLock(repositoryPath, () => {
-        throw new Error("boom");
-      }),
-    ).rejects.toThrow("boom");
-    expect(existsSync(join(repositoryPath, ".operad", "dev.lock"))).toBe(false);
-  });
 });
 
 describe("dev per-repository ids", () => {
@@ -506,73 +495,6 @@ describe("dev checks inside the lock", () => {
     await expect(
       addPlan(store, { repository, slug: "again", title: "Again" }),
     ).rejects.toThrow(/was removed/);
-  });
-});
-
-describe("the dev lock survives a dead holder", () => {
-  async function deadPid(): Promise<number> {
-    const child = Bun.spawn({
-      cmd: [process.execPath, "-e", "0"],
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const pid = child.pid;
-    await child.exited;
-    return pid;
-  }
-
-  function leaveLock(repositoryPath: string, pid: number): string {
-    mkdirSync(join(repositoryPath, ".operad"), { recursive: true });
-    const path = join(repositoryPath, ".operad", "dev.lock");
-    writeFileSync(path, JSON.stringify({ pid, start: null }), "utf8");
-    return path;
-  }
-
-  test("a lock left by a dead pid is taken over", async () => {
-    const { repositoryPath } = await setup();
-    leaveLock(repositoryPath, await deadPid());
-    let ran = false;
-    await withRepositoryLock(repositoryPath, () => {
-      ran = true;
-    });
-    expect(ran).toBe(true);
-    expect(existsSync(join(repositoryPath, ".operad", "dev.lock"))).toBe(false);
-  });
-
-  test("two waiters on a dead holder never enter together", async () => {
-    const { repositoryPath } = await setup();
-    leaveLock(repositoryPath, await deadPid());
-    let active = 0;
-    let most = 0;
-    let done = 0;
-    const work = async (): Promise<void> => {
-      active += 1;
-      most = Math.max(most, active);
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      active -= 1;
-      done += 1;
-    };
-    await Promise.all([
-      withRepositoryLock(repositoryPath, work),
-      withRepositoryLock(repositoryPath, work),
-    ]);
-    expect(done).toBe(2);
-    expect(most).toBe(1);
-  });
-
-  test("a live holder blocks until the deadline and names its pid", async () => {
-    const { repositoryPath } = await setup();
-    const lock = leaveLock(repositoryPath, process.pid);
-    let tick = 0;
-    await expect(
-      withRepositoryLock(repositoryPath, () => undefined, {
-        clock: () => (tick === 0 ? 0 : 10_001),
-        wait: async () => {
-          tick += 1;
-        },
-      }),
-    ).rejects.toThrow(new RegExp(`pid ${process.pid}`));
-    expect(existsSync(lock)).toBe(true);
   });
 });
 

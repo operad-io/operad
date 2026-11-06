@@ -3,20 +3,16 @@
 import {
   existsSync,
   appendFileSync,
-  closeSync,
   mkdirSync,
-  openSync,
   readFileSync,
   realpathSync,
   statSync,
-  unlinkSync,
-  watch,
   writeFileSync,
-  type FSWatcher,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ObjectStore, StoredObject } from "@operad-io/engine";
+import { withRepositoryLock } from "./lock.ts";
 import {
   appendChange,
   appendRework,
@@ -28,6 +24,7 @@ import {
   keyRepository,
   lowerPriority,
   nextId,
+  parseId,
   planData,
   PRIORITIES,
   priorityIndex,
@@ -66,12 +63,6 @@ const PLAN_TYPE = "plan";
 const TASK_TYPE = "task";
 
 const EXCLUDES = [".operad-worktrees/", ".radian-sandbox/"] as const;
-
-/** How long a waiter accepts a live holder before it gives up. */
-const LOCK_TIMEOUT_MS = 10_000;
-
-/** The fallback check interval when no watch event arrives. */
-const LOCK_POLL_MS = 200;
 
 /**
  * The operad source checkout this module was loaded from, when it came from
@@ -126,165 +117,6 @@ function git(cwd: string, args: readonly string[]): GitResult {
     out: result.stdout.toString().trim(),
     err: result.stderr.toString().trim(),
   };
-}
-
-/** What a waiter may inject: the clock and how it waits between checks. */
-export interface RepositoryLockOptions {
-  readonly clock?: (() => number) | undefined;
-  readonly wait?: ((ms: number) => Promise<void>) | undefined;
-}
-
-interface LockRecord {
-  readonly pid: number;
-  readonly start: number | null;
-}
-
-function errorCode(error: unknown): unknown {
-  return typeof error === "object" && error !== null && "code" in error
-    ? error.code
-    : undefined;
-}
-
-function readLock(path: string): LockRecord | undefined {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(readFileSync(path, "utf8"));
-  } catch {
-    // A writer between create and write, or a torn file, is not a holder yet.
-    return undefined;
-  }
-  if (!isRecord(raw)) return undefined;
-  const pid = raw.pid;
-  const start = raw.start;
-  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
-    return undefined;
-  }
-  return { pid, start: typeof start === "number" ? start : null };
-}
-
-/** True while a process with this pid exists; `EPERM` means it exists too. */
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return errorCode(error) !== "ESRCH";
-  }
-}
-
-/** The start time of a process, when the platform will say; for the record. */
-function processStart(pid: number): number | null {
-  try {
-    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-    const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-    const ticks = Number(fields[19]);
-    if (Number.isFinite(ticks)) return ticks;
-  } catch {
-    // Not Linux.
-  }
-  try {
-    const result = Bun.spawnSync({
-      cmd: ["ps", "-p", String(pid), "-o", "lstart="],
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const at = Date.parse(result.stdout.toString().trim());
-    return Number.isFinite(at) ? at : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Waits for the lock directory to change, or for one fallback interval. The
- * directory is watched because the lock file is unlinked and recreated.
- */
-function waitForLock(path: string, ms: number): Promise<void> {
-  return new Promise((done) => {
-    let watcher: FSWatcher | undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let finished = false;
-    const finish = (): void => {
-      if (finished) return;
-      finished = true;
-      watcher?.close();
-      if (timer !== undefined) clearTimeout(timer);
-      done();
-    };
-    timer = setTimeout(finish, Math.max(1, ms));
-    try {
-      watcher = watch(dirname(path), (_event, filename) => {
-        if (filename === null || filename === basename(path)) finish();
-      });
-      watcher.on("error", finish);
-    } catch {
-      // The timer is the fallback when watching is unavailable.
-    }
-  });
-}
-
-/**
- * Holds one repository's lock while ids and counts change. The lock file makes
- * two commands in two processes take turns; commands in one process wait too.
- * A lock whose pid is dead is taken over by removing it; the atomic `wx` create
- * then decides which waiter wins.
- */
-export async function withRepositoryLock<T>(
-  repositoryPath: string,
-  work: () => Promise<T> | T,
-  options: RepositoryLockOptions = {},
-): Promise<T> {
-  const directory = join(repositoryPath, ".operad");
-  mkdirSync(directory, { recursive: true });
-  const lockPath = join(directory, "dev.lock");
-  const clock = options.clock ?? (() => Date.now());
-  const wait = options.wait ?? ((ms: number) => waitForLock(lockPath, ms));
-  const started = clock();
-  let handle: number | undefined;
-  for (;;) {
-    try {
-      handle = openSync(lockPath, "wx");
-      break;
-    } catch (error) {
-      if (errorCode(error) !== "EEXIST") throw error;
-      const holder = readLock(lockPath);
-      if (holder !== undefined && !isAlive(holder.pid)) {
-        // The holder died. The next `wx` decides which waiter takes over.
-        try {
-          unlinkSync(lockPath);
-        } catch (removeError) {
-          if (errorCode(removeError) !== "ENOENT") throw removeError;
-        }
-        continue;
-      }
-      if (clock() - started > LOCK_TIMEOUT_MS) {
-        const who =
-          holder === undefined ? "unknown pid" : `pid ${holder.pid}`;
-        throw new DevError(
-          "lock",
-          `another dev command holds ${lockPath} (${who})`,
-        );
-      }
-      await wait(LOCK_POLL_MS);
-    }
-  }
-  try {
-    writeFileSync(
-      handle,
-      JSON.stringify({ pid: process.pid, start: processStart(process.pid) }),
-    );
-  } finally {
-    closeSync(handle);
-  }
-  try {
-    return await work();
-  } finally {
-    try {
-      unlinkSync(lockPath);
-    } catch {
-      // A writer that died may have removed it already.
-    }
-  }
 }
 
 /**
@@ -369,6 +201,35 @@ export async function resolveRepository(
     );
   }
   return found;
+}
+
+/**
+ * Resolves a bare plan or task id in the repository the current directory
+ * belongs to. The kernel calls this for `show` and `dev:<action>`; without a
+ * repository the id falls back to the kernel's suffix lookup, which reports an
+ * ambiguity when more than one repository has it.
+ *
+ * A known repository returns the key even when no object is stored there: the
+ * lookup stays inside that repository instead of reaching into another one.
+ */
+export async function resolveDevKey(
+  store: ObjectStore,
+  type: string,
+  id: string,
+  cwd: string,
+): Promise<string | undefined> {
+  const prefix =
+    type === PLAN_TYPE ? "PL" : type === TASK_TYPE ? "TK" : undefined;
+  if (prefix === undefined) return undefined;
+  if (parseId(id, prefix) === undefined) return undefined;
+  let repository: RepositoryData;
+  try {
+    repository = await resolveRepository(store, { cwd });
+  } catch (error) {
+    if (error instanceof DevError) return undefined;
+    throw error;
+  }
+  return storeKey(repository.name, id);
 }
 
 function ensureExcludes(repositoryPath: string): void {

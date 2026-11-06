@@ -709,6 +709,16 @@ export class Views {
     const only = matches[0];
     if (only !== undefined) return only;
 
+    // A plugin may scope a bare id to a namespace of its own (the dev plugin
+    // scopes plans and tasks to a repository). A returned key is the answer
+    // even when no object is stored there, so the lookup cannot fall through to
+    // another namespace; the kernel's suffix lookup runs only when none claims
+    // the id.
+    if (!id.includes("/") && !id.includes(":")) {
+      const scoped = await this.resolveWithPlugins(id);
+      if (scoped !== undefined) return scoped;
+    }
+
     // An object key may carry a namespace before a slash (a plugin's objects
     // can be scoped, such as one plan per repository). A bare id then still
     // names the object when exactly one key ends with `/<id>`.
@@ -744,6 +754,49 @@ export class Views {
     }
 
     throw new ViewError("not-found", `no object "${id}"`);
+  }
+
+  /**
+   * Asks each object type's `resolve` hook for the key of a bare id. More than
+   * one type claiming the id is ambiguous, and the typed form is the answer.
+   */
+  private async resolveWithPlugins(
+    id: string,
+  ): Promise<ResolvedObject | undefined> {
+    const matches: ResolvedObject[] = [];
+    for (const entry of this.registry.objectTypes()) {
+      const resolve = entry.definition.resolve;
+      if (resolve === undefined) continue;
+      let key: unknown;
+      try {
+        key = await resolve(
+          { cwd: this.cwd, store: this.store },
+          entry.type,
+          id,
+        );
+      } catch (error) {
+        this.onLog(
+          `plugin "${entry.plugin}": resolve failed for "${entry.type}:${id}": ${messageOf(error)}`,
+        );
+        continue;
+      }
+      if (typeof key !== "string" || key.length === 0) continue;
+      matches.push({
+        type: entry.type,
+        id: key,
+        object: await this.store.get(entry.type, key),
+      });
+    }
+    if (matches.length > 1) {
+      throw new ViewError(
+        "ambiguous",
+        `"${id}" is ambiguous: use ${matches
+          .map((match) => `${match.type}:${match.id}`)
+          .sort()
+          .join(", ")}`,
+      );
+    }
+    return matches[0];
   }
 
   private async hasRun(type: string, id: string): Promise<boolean> {

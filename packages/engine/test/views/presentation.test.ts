@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import {
   createViews,
   defineFlow,
@@ -436,6 +436,58 @@ describe("presentation views", () => {
     });
     expect(registry.names()).toEqual(["demo"]);
     await log.close();
+  });
+
+  test("a plugin's resolve hook scopes a bare id before the suffix lookup", async () => {
+    const root = await tempRoot();
+    const store = new MemoryPluginStore({ root: join(root, "plugins") });
+    const scoped = definePlugin({
+      name: "scoped",
+      kind: "domain",
+      version: "0.0.1",
+      objects: [
+        {
+          name: "task",
+          resolve(ctx, type, id) {
+            if (type !== "task" || !id.startsWith("TK")) return undefined;
+            const scope = basename(ctx.cwd);
+            if (scope !== "a" && scope !== "b") return undefined;
+            return `${scope}/${id}`;
+          },
+        },
+      ],
+      views: {
+        task: {
+          row: (object) => ({
+            id: object.id,
+            title: String(object.data.title ?? ""),
+            state: "new",
+          }),
+          sections: () => [],
+          load: () => ({ markdown: "" }),
+        },
+      },
+    });
+    store.put("task", "a/TK0001-work", { title: "A" }, "seed");
+    store.put("task", "b/TK0001-work", { title: "B" }, "seed");
+
+    const inside = createViews({
+      registry: new PluginRegistry([scoped], { store }),
+      store,
+      cwd: join(root, "a"),
+    });
+    const object = await inside.get("TK0001-work");
+    expect(object.id).toBe("a/TK0001-work");
+    expect(object.row.title).toBe("A");
+
+    const outside = createViews({
+      registry: new PluginRegistry([scoped], { store }),
+      store,
+      cwd: root,
+    });
+    await expect(outside.get("TK0001-work")).rejects.toMatchObject({
+      kind: "ambiguous",
+    });
   });
 
   test("events reach a reader when another store writes the object", async () => {
