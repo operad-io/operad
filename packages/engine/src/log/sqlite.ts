@@ -31,7 +31,7 @@ import {
 } from "./facts.ts";
 import { assertJsonValue } from "./json-value.ts";
 import { SCHEMA_VERSION } from "./schema.ts";
-import { watchDirectory } from "../watch.ts";
+import { resolveSubscriptionWatch, type SubscriptionWatch } from "./poll.ts";
 import type {
   AppendResult,
   Fact,
@@ -113,6 +113,10 @@ interface RunSnapshot {
 
 interface VersionRow {
   readonly version: number;
+}
+
+interface DataVersionRow {
+  readonly data_version: number;
 }
 
 function openFailure(path: string, error: unknown): LogBackendError {
@@ -228,15 +232,24 @@ class SqliteLogBackend implements LogBackend {
   readonly #database: Database;
   readonly #clock: () => number;
   readonly #path: string;
+  readonly #subscriptionWatch: SubscriptionWatch;
   readonly #listeners = new Set<(change: LogChange) => void>();
   #stopWatch: (() => void) | undefined;
+  #stopPoll: (() => void) | undefined;
+  #dataVersion: number | undefined;
   #snapshot: Map<string, RunSnapshot> | undefined;
   #closed = false;
 
-  constructor(database: Database, clock: () => number, path: string) {
+  constructor(
+    database: Database,
+    clock: () => number,
+    path: string,
+    subscriptionWatch: SubscriptionWatch,
+  ) {
     this.#database = database;
     this.#clock = clock;
     this.#path = path;
+    this.#subscriptionWatch = subscriptionWatch;
   }
 
   async startRun(flow: string, object: string): Promise<RunInfo> {
@@ -387,8 +400,7 @@ class SqliteLogBackend implements LogBackend {
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
-    this.#stopWatch?.();
-    this.#stopWatch = undefined;
+    this.#stopNotifications();
     this.#listeners.clear();
     this.#database.close();
   }
@@ -397,23 +409,59 @@ class SqliteLogBackend implements LogBackend {
   subscribe(listener: (change: LogChange) => void): () => void {
     this.#listeners.add(listener);
     if (this.#stopWatch === undefined) {
+      // Read the version before the snapshot: a write between the two is
+      // already in the snapshot and needs no event.
+      this.#dataVersion = this.#readDataVersion();
       this.#snapshot = this.#takeSnapshot();
-      this.#stopWatch = watchDirectory(dirname(this.#path), () => {
+      this.#stopWatch = this.#subscriptionWatch.watch(dirname(this.#path), () => {
         this.#notifyExternal();
+      });
+      this.#stopPoll = this.#subscriptionWatch.repeat(this.#subscriptionWatch.pollMs, () => {
+        this.#poll();
       });
     }
     return () => {
       this.#listeners.delete(listener);
-      if (this.#listeners.size === 0) {
-        this.#stopWatch?.();
-        this.#stopWatch = undefined;
-        this.#snapshot = undefined;
-      }
+      if (this.#listeners.size === 0) this.#stopNotifications();
     };
+  }
+
+  #stopNotifications(): void {
+    this.#stopWatch?.();
+    this.#stopWatch = undefined;
+    this.#stopPoll?.();
+    this.#stopPoll = undefined;
+    this.#snapshot = undefined;
+    this.#dataVersion = undefined;
   }
 
   #notify(change: LogChange): void {
     for (const listener of this.#listeners) listener(change);
+  }
+
+  /**
+   * The fallback check. `PRAGMA data_version` changes whenever another
+   * connection commits, including a commit the directory watch never reported.
+   */
+  #poll(): void {
+    if (this.#closed || this.#listeners.size === 0) return;
+    let version: number;
+    try {
+      version = this.#readDataVersion();
+    } catch {
+      return;
+    }
+    if (version === this.#dataVersion) return;
+    this.#dataVersion = version;
+    this.#notifyExternal();
+  }
+
+  #readDataVersion(): number {
+    return (
+      this.#database
+        .query<DataVersionRow, []>("PRAGMA data_version")
+        .get()?.data_version ?? 0
+    );
   }
 
   /** Reports runs another connection changed since the last event. */
@@ -548,7 +596,12 @@ export function openSqliteLogBackend(
     throw openFailure(path, error);
   }
 
-  return new SqliteLogBackend(database, options.clock ?? Date.now, path);
+  return new SqliteLogBackend(
+    database,
+    options.clock ?? Date.now,
+    path,
+    resolveSubscriptionWatch(options),
+  );
 }
 
 export const sqliteBackend: LogBackendFactory = {

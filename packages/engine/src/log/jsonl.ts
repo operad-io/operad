@@ -36,7 +36,7 @@ import {
 import { withFileLock } from "./file-lock.ts";
 import { assertJsonValue } from "./json-value.ts";
 import { SCHEMA_VERSION } from "./schema.ts";
-import { watchDirectory } from "../watch.ts";
+import { resolveSubscriptionWatch, type SubscriptionWatch } from "./poll.ts";
 import type {
   AppendResult,
   Fact,
@@ -350,19 +350,22 @@ class JsonlLogBackend implements LogBackend {
   readonly #inputsPath: string;
   readonly #lockPath: string;
   readonly #clock: () => number;
+  readonly #subscriptionWatch: SubscriptionWatch;
   readonly #inputIds = new Set<string>();
   #inputBytes = 0;
   #closed = false;
   #stopWatch: (() => void) | undefined;
+  #stopPoll: (() => void) | undefined;
   #snapshot: Map<string, { readonly size: number; readonly ended: boolean }> | undefined;
   readonly #listeners = new Set<(change: LogChange) => void>();
 
-  constructor(directory: string, clock: () => number) {
+  constructor(directory: string, clock: () => number, subscriptionWatch: SubscriptionWatch) {
     this.#directory = directory;
     this.#runsDirectory = join(directory, RUNS_DIR);
     this.#inputsPath = join(directory, INPUTS_FILE);
     this.#lockPath = join(directory, LOCK_FILE);
     this.#clock = clock;
+    this.#subscriptionWatch = subscriptionWatch;
   }
 
   async startRun(flow: string, object: string): Promise<RunInfo> {
@@ -502,9 +505,7 @@ class JsonlLogBackend implements LogBackend {
 
   async close(): Promise<void> {
     this.#closed = true;
-    this.#stopWatch?.();
-    this.#stopWatch = undefined;
-    this.#snapshot = undefined;
+    this.#stopNotifications();
     this.#inputIds.clear();
     this.#listeners.clear();
   }
@@ -514,18 +515,27 @@ class JsonlLogBackend implements LogBackend {
     this.#listeners.add(listener);
     if (this.#stopWatch === undefined) {
       this.#snapshot = this.#takeRunSnapshot();
-      this.#stopWatch = watchDirectory(this.#runsDirectory, () => {
+      this.#stopWatch = this.#subscriptionWatch.watch(this.#runsDirectory, () => {
+        this.#notifyExternal();
+      });
+      // The watch is the fast path. This timer also stats the run files, so a
+      // change the platform does not report still reaches a listener.
+      this.#stopPoll = this.#subscriptionWatch.repeat(this.#subscriptionWatch.pollMs, () => {
         this.#notifyExternal();
       });
     }
     return () => {
       this.#listeners.delete(listener);
-      if (this.#listeners.size === 0) {
-        this.#stopWatch?.();
-        this.#stopWatch = undefined;
-        this.#snapshot = undefined;
-      }
+      if (this.#listeners.size === 0) this.#stopNotifications();
     };
+  }
+
+  #stopNotifications(): void {
+    this.#stopWatch?.();
+    this.#stopWatch = undefined;
+    this.#stopPoll?.();
+    this.#stopPoll = undefined;
+    this.#snapshot = undefined;
   }
 
   #notify(change: LogChange): void {
@@ -833,7 +843,11 @@ export function openJsonlLogBackend(
   const lockPath = join(directory, LOCK_FILE);
   closeSync(openSync(lockPath, "a"));
 
-  const backend = new JsonlLogBackend(directory, options.clock ?? Date.now);
+  const backend = new JsonlLogBackend(
+    directory,
+    options.clock ?? Date.now,
+    resolveSubscriptionWatch(options),
+  );
   backend.recover();
   return backend;
 }

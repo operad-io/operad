@@ -9,6 +9,7 @@ import {
   openSqliteLogBackend,
   type Fact,
   type LogBackendOptions,
+  type LogChange,
 } from "../src/index.ts";
 import { runLogConformance, type LogConformanceFactory } from "./log-conformance.ts";
 
@@ -213,6 +214,47 @@ test("the store runs in WAL mode", async () => {
     expect(mode?.journal_mode).toBe("wal");
   } finally {
     await backend.close();
+  }
+});
+
+test("a subscription learns of a write when the watch never fires", async () => {
+  const directory = tracked("poll-fallback");
+  let tick: (() => void) | undefined;
+  let stopped = false;
+  const reader = await openSqliteLogBackend(dbPath(directory), {
+    clock: () => 1_000,
+    watch: () => () => undefined,
+    repeat: (ms, callback) => {
+      expect(ms).toBe(500);
+      tick = callback;
+      return () => {
+        stopped = true;
+      };
+    },
+  });
+  const writer = await openSqliteLogBackend(dbPath(directory));
+  try {
+    const changes: LogChange[] = [];
+    const subscribe = reader.subscribe;
+    if (subscribe === undefined) throw new Error("the sqlite log does not subscribe");
+    const unsubscribe = subscribe.call(reader, (change) => changes.push(change));
+
+    const run = await writer.startRun("flow", "object");
+    await writer.append(run.runId, 0, [
+      { kind: "run_started", payload: { flow: "flow" }, cause: "test" },
+    ]);
+    // The stubbed watch never fires, so nothing has been reported yet.
+    expect(changes).toEqual([]);
+
+    if (tick === undefined) throw new Error("the poll did not start");
+    tick();
+    expect(changes).toEqual([{ runId: run.runId, object: "object" }]);
+
+    unsubscribe();
+    expect(stopped).toBe(true);
+  } finally {
+    await reader.close();
+    await writer.close();
   }
 });
 

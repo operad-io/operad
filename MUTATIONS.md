@@ -138,3 +138,11 @@
 | TK0025-M13 | packages/engine/src/log/sqlite.ts | stopped watching the database directory, leaving subscriptions process-local | `presentation views > events reach a reader when another sqlite log appends` |
 | TK0025-M14 | packages/engine/src/views/presentation.ts | measured a row with `Date.now` instead of the injected clock | `presentation views > a Promise or a slow row becomes an error row, not a crash` |
 | TK0025-M15 | packages/engine/src/views/presentation.ts | sliced the section at an arbitrary byte instead of a UTF-8 boundary | `presentation views > a truncated section keeps every multibyte character whole` |
+
+## TK0025 — rework 4: a poll fallback when no watch event arrives
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0025-M16 | packages/engine/src/log/sqlite.ts | never started the `PRAGMA data_version` poll | `sqlite.test.ts > a subscription learns of a write when the watch never fires` |
+| TK0025-M17 | packages/engine/src/log/jsonl.ts | never started the run-file poll | `jsonl.test.ts > a subscription learns of a write when the watch never fires` |
+| TK0025-M18 | packages/engine/src/log/sqlite.ts | reported every poll as unchanged instead of comparing `data_version` | `sqlite.test.ts > a subscription learns of a write when the watch never fires` |

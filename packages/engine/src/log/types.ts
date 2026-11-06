@@ -56,6 +56,26 @@ export interface RunsOptions {
 export interface LogBackendOptions {
   /** The clock every stored time comes from. Defaults to `Date.now`. */
   readonly clock?: () => number;
+  /**
+   * How often an open subscription re-reads storage for another process's
+   * write, in milliseconds. Defaults to 500. The watch is the fast path; this
+   * check is the one that cannot miss a write the watch does not report.
+   */
+  readonly pollMs?: number;
+  /**
+   * Starts a repeating timer that calls `callback` every `ms` and returns a
+   * stop function. Defaults to `setInterval`. A test passes a stub it fires by
+   * hand, so no test waits on wall time.
+   */
+  readonly repeat?: (ms: number, callback: () => void) => () => void;
+  /**
+   * Watches a directory for another process's write and returns a stop
+   * function. Defaults to `fs.watch`. A test passes a stub that never fires.
+   */
+  readonly watch?: (
+    directory: string,
+    onChange: (filename: string | null) => void,
+  ) => () => void;
 }
 
 /** A change to a run: a start, an end, or one appended batch. */
