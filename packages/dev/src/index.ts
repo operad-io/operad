@@ -30,37 +30,37 @@ export function createDevPlugin() {
     steps: [
       {
         name: "worktree",
-        results: ["ready", "conflict", "blocked", "failed"],
+        results: ["ready", "conflict", "blocked", "failed", "cancelled"],
         run: runWorktree,
       },
       {
         name: "work",
-        results: ["done", "nothing", "failed"],
+        results: ["done", "nothing", "failed", "cancelled"],
         run: runWork,
       },
       {
         name: "verify",
-        results: ["pass", "fail"],
+        results: ["pass", "fail", "cancelled"],
         run: runVerify,
       },
       {
         name: "review",
-        results: ["pass", "fail", "failed"],
+        results: ["pass", "fail", "failed", "cancelled"],
         run: runReview,
       },
       {
         name: "rework",
-        results: ["again", "ask"],
+        results: ["again", "ask", "cancelled"],
         run: runRework,
       },
       {
         name: "integrate",
-        results: ["merged", "conflict", "fail", "failed"],
+        results: ["merged", "conflict", "fail", "failed", "cancelled"],
         run: runIntegrate,
       },
       {
         name: "cleanup",
-        results: ["done"],
+        results: ["done", "cancelled"],
         run: runCleanup,
       },
     ],

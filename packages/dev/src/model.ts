@@ -188,6 +188,17 @@ export type TaskAttempt = {
   readonly cleanup?: CleanupRecord | null;
 };
 
+/**
+ * The claim a scheduler start holds on a task until its run records itself.
+ * The token lets a step prove that its run is the one that made the claim.
+ */
+export interface TaskClaim {
+  readonly [key: string]: unknown;
+  readonly token: string;
+  /** The phase the claim wrote; the first step expects to find it there. */
+  readonly phase: TaskPhase;
+}
+
 /** The data of a task object. */
 export type TaskData = {
   readonly [key: string]: unknown;
@@ -205,8 +216,12 @@ export type TaskData = {
   readonly reworkStreak?: number | undefined;
   /** The owner asked the scheduler to start this ready task. */
   readonly startRequested?: boolean | undefined;
+  /** What the scheduler claimed while it waits for the run to record itself. */
+  readonly claim?: TaskClaim | null | undefined;
   /** The attempt whose review the scheduler already answered for auto merge. */
   readonly autoMergeAttempt?: number | undefined;
+  /** The attempt whose integration result the scheduler already reported. */
+  readonly mergeReportedAttempt?: number | undefined;
 };
 
 /** A repository registered with the dev plugin. */

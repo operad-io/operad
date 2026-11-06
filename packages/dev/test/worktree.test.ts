@@ -120,6 +120,58 @@ describe("dev/worktree", () => {
     expect(result.data?.base).toBe(task.attempt?.base);
   });
 
+  test("the run records itself and clears the manual start request", async () => {
+    const state = await fixture();
+    const current = await taskDataOf(state);
+    await state.store.put(
+      "task",
+      state.taskKey,
+      {
+        ...current,
+        phase: "running",
+        run: null,
+        startRequested: true,
+        claim: { token: "claim-token", phase: "running" },
+      },
+      "test",
+    );
+
+    const result = await state.registry.runStep("dev/worktree", {}, {
+      runId: "run-1",
+      object: { type: "task", id: state.taskKey, data: {} },
+      params: { token: "claim-token" },
+    });
+    expect(result.result).toBe("ready");
+    const task = await taskDataOf(state);
+    expect(task.run).toBe("run-1");
+    expect(task.startRequested).toBe(false);
+  });
+
+  test("a run whose token does not match the claim writes nothing", async () => {
+    const state = await fixture();
+    const current = await taskDataOf(state);
+    await state.store.put(
+      "task",
+      state.taskKey,
+      {
+        ...current,
+        phase: "running",
+        run: null,
+        claim: { token: "current-token", phase: "running" },
+      },
+      "test",
+    );
+
+    const result = await state.registry.runStep("dev/worktree", {}, {
+      runId: "run-stale",
+      object: { type: "task", id: state.taskKey, data: {} },
+      params: { token: "stale-token" },
+    });
+    expect(result.result).toBe("cancelled");
+    expect((await taskDataOf(state)).phase).toBe("running");
+    expect(existsSync(worktreeOf(state))).toBe(false);
+  });
+
   test("reuses the worktree and merges the latest main into it", async () => {
     const state = await fixture();
     await runWorktree(state, "run-1");

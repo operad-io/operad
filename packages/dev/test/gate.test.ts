@@ -840,14 +840,24 @@ describe("the dev flow", () => {
       done: "verify",
       nothing: "wait",
       failed: "wait",
+      cancelled: "end_cancelled",
     });
-    expect(nextOf("verify")).toEqual({ pass: "review", fail: "rework" });
+    expect(nextOf("verify")).toEqual({
+      pass: "review",
+      fail: "rework",
+      cancelled: "end_cancelled",
+    });
     expect(nextOf("review")).toEqual({
       pass: "wait",
       fail: "rework",
       failed: "wait",
+      cancelled: "end_cancelled",
     });
-    expect(nextOf("rework")).toEqual({ again: "worktree", ask: "wait" });
+    expect(nextOf("rework")).toEqual({
+      again: "worktree",
+      ask: "wait",
+      cancelled: "end_cancelled",
+    });
     expect(nextOf("wait")).toEqual({
       merge: "integrate",
       reject: "worktree",
@@ -858,7 +868,11 @@ describe("the dev flow", () => {
       conflict: "worktree",
       fail: "worktree",
       failed: "wait",
+      cancelled: "end_cancelled",
     });
-    expect(nextOf("cleanup")).toEqual({ done: "end_done" });
+    expect(nextOf("cleanup")).toEqual({
+      done: "end_done",
+      cancelled: "end_cancelled",
+    });
   });
 });

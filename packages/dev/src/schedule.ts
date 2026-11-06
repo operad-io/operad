@@ -24,6 +24,7 @@ import {
   claimTaskStart,
   listRepositories,
   recordAutoMerge,
+  recordMergeReported,
   releaseTaskClaim,
 } from "./service.ts";
 import { readDevSettings, type DevSettings } from "./settings.ts";
@@ -121,12 +122,45 @@ async function startOne(
 ): Promise<boolean> {
   const claimed = await claimTaskStart(ctx.store, object.id);
   if (claimed === undefined) return false;
+  const token = claimed.claim?.token;
+  const startParams: Readonly<Record<string, string>> | undefined =
+    token === undefined
+      ? params
+      : { ...(params ?? {}), token };
   await ctx.start({
     flow: "dev",
     object: { type: "task", id: object.id },
-    ...(params === undefined ? {} : { params }),
+    ...(startParams === undefined ? {} : { params: startParams }),
   });
   return true;
+}
+
+/**
+ * Reports what the integrate step did to a task whose merge the scheduler
+ * answered. The task's phase is the real one when this runs, so a failure and
+ * a conflict each print their own transition; only a landed merge prints
+ * `merged`. Each attempt is reported once.
+ */
+async function reportIntegrationResults(
+  store: ObjectStore,
+  tasks: readonly StoredObject[],
+): Promise<void> {
+  for (const object of tasks) {
+    const task = taskData(object.data);
+    const attempt = task.attempt;
+    if (attempt === undefined || task.autoMergeAttempt !== attempt.number) {
+      continue;
+    }
+    if (task.mergeReportedAttempt === attempt.number) continue;
+    const result = attempt.integration?.result;
+    let phase: string | undefined;
+    if (result === "merged") phase = "merged";
+    else if (result === "failed") phase = "waiting";
+    else if (result === "conflict" || result === "fail") phase = "running";
+    if (phase === undefined) continue;
+    await recordMergeReported(store, object.id, attempt.number);
+    writeSchedulerLine(`${bareId(object.id)} integrating -> ${phase}`);
+  }
 }
 
 /** Marks a plan finished once, when every task has merged or been cancelled. */
@@ -184,6 +218,7 @@ async function scheduleRepository(
     current.map((object) => [bareId(object.id), taskData(object.data)]),
   );
 
+  await reportIntegrationResults(ctx.store, current);
   await reportFinishedPlans(ctx.store, plans, current);
 
   const planActive = new Map<string, number>();
@@ -256,7 +291,7 @@ async function scheduleRepository(
         continue;
       }
       await recordAutoMerge(ctx.store, object.id, attempt.number);
-      writeSchedulerLine(`${bareId(object.id)} waiting -> merged`);
+      writeSchedulerLine(`${bareId(object.id)} waiting -> integrating`);
     }
   }
 

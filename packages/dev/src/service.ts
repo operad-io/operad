@@ -764,8 +764,10 @@ export async function setTaskPhase(
 
 /**
  * Marks a ready task as running before the kernel starts its flow, so the next
- * tick does not start it a second time. The worktree step sets the run id when
- * the child process reaches it.
+ * tick does not start it a second time. The claim carries a token that the
+ * flow's steps check before writing the task, and the worktree step records
+ * the run id when the child process reaches it. A manual start request stays
+ * on the task so a crash before the run records itself does not lose it.
  */
 export async function claimTaskStart(
   store: ObjectStore,
@@ -782,7 +784,7 @@ export async function claimTaskStart(
       phase: "running",
       run: null,
       brief: appendChange(latest.brief, "running"),
-      startRequested: false,
+      claim: { token: crypto.randomUUID(), phase: "running" },
     };
     await writeTask(store, id, next, "dev:task-start");
     return next;
@@ -792,7 +794,8 @@ export async function claimTaskStart(
 /**
  * Gives back a claim whose start never became a run. A task that is `running`
  * with no run id has nothing to recover or cancel, so it returns to `ready`
- * and the next tick can start it again.
+ * with no claim and the next tick can start it again. A manual start request is
+ * kept: the owner's start survives the crash that lost the run.
  */
 export async function releaseTaskClaim(
   store: ObjectStore,
@@ -807,10 +810,31 @@ export async function releaseTaskClaim(
     const next: TaskData = {
       ...latest,
       phase: "ready",
+      claim: null,
       brief: appendChange(latest.brief, "ready"),
     };
     await writeTask(store, id, next, "dev:task-claim-released");
     return next;
+  });
+}
+
+/** Records that the scheduler printed this attempt's integration result. */
+export async function recordMergeReported(
+  store: ObjectStore,
+  id: string,
+  attempt: number,
+): Promise<StoredObject> {
+  const initial = await getTask(store, id);
+  const data = taskData(initial.data);
+  return withRepoLock(store, data.repository, async () => {
+    const current = await getTask(store, id);
+    const latest = taskData(current.data);
+    return writeTask(
+      store,
+      id,
+      { ...latest, mergeReportedAttempt: attempt },
+      "dev:task-merge-reported",
+    );
   });
 }
 
@@ -1018,6 +1042,7 @@ async function cancelTasks(
         ...data,
         phase: "cancelled",
         run: null,
+        claim: null,
         brief: appendChange(data.brief, "cancelled"),
       },
       "dev:task-cancel",
@@ -1093,6 +1118,7 @@ export async function cancelTask(
           ...data,
           phase: "cancelled",
           run: null,
+          claim: null,
           brief: appendChange(data.brief, "cancelled"),
         },
         "dev:task-cancel",

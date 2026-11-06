@@ -19,6 +19,7 @@ export default defineFlow({
         conflict: "work",
         blocked: "wait",
         failed: "end_failed",
+        cancelled: "end_cancelled",
       },
     },
     {
@@ -30,6 +31,7 @@ export default defineFlow({
         done: "verify",
         nothing: "wait",
         failed: "wait",
+        cancelled: "end_cancelled",
       },
     },
     {
@@ -40,6 +42,7 @@ export default defineFlow({
       next: {
         pass: "review",
         fail: "rework",
+        cancelled: "end_cancelled",
       },
     },
     {
@@ -51,6 +54,7 @@ export default defineFlow({
         pass: "wait",
         fail: "rework",
         failed: "wait",
+        cancelled: "end_cancelled",
       },
     },
     {
@@ -61,6 +65,7 @@ export default defineFlow({
       next: {
         again: "worktree",
         ask: "wait",
+        cancelled: "end_cancelled",
       },
     },
     {
@@ -87,6 +92,7 @@ export default defineFlow({
         conflict: "worktree",
         fail: "worktree",
         failed: "wait",
+        cancelled: "end_cancelled",
       },
     },
     {
@@ -96,6 +102,7 @@ export default defineFlow({
       replay: "safe",
       next: {
         done: "end_done",
+        cancelled: "end_cancelled",
       },
     },
     {

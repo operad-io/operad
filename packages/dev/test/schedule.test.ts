@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -7,6 +7,7 @@ import {
   openLog,
   parseObjectKey,
   PluginRegistry,
+  readState,
   readStoredStart,
   Runner,
   serveOnce,
@@ -51,6 +52,10 @@ const ACTOR = { via: "test", id: "tester" } as const;
 
 const CRASH_CHILD = fileURLToPath(
   new URL("./fixtures/schedule-crash-child.ts", import.meta.url),
+);
+
+const CANCEL_CHILD = fileURLToPath(
+  new URL("./fixtures/schedule-cancel-child.ts", import.meta.url),
 );
 
 interface Fixture {
@@ -314,10 +319,34 @@ describe("dev scheduling", () => {
 
     await tick(passed);
     expect(passed.answers).toEqual([{ runId: "run-1", choice: "merge" }]);
-    expect(passed.lines).toEqual([`${task.id} waiting -> merged`]);
+    expect(passed.lines).toEqual([`${task.id} waiting -> integrating`]);
     expect(
       taskData((await getTask(passed.store, task.key)).data).autoMergeAttempt,
     ).toBe(1);
+
+    // The integrate step records the landed merge; the next tick reports it,
+    // and no later tick reports it again.
+    await putTask(passed, task.key, {
+      phase: "merged",
+      attempt: {
+        number: 1,
+        run: "run-1",
+        review: { result: "pass" },
+        integration: { result: "merged" },
+      },
+    });
+    await tick(passed);
+    expect(passed.lines).toEqual([
+      `${task.id} waiting -> integrating`,
+      `${task.id} integrating -> merged`,
+      `${plan.id} confirmed -> finished`,
+    ]);
+    await tick(passed);
+    expect(passed.lines).toEqual([
+      `${task.id} waiting -> integrating`,
+      `${task.id} integrating -> merged`,
+      `${plan.id} confirmed -> finished`,
+    ]);
 
     await tick(passed);
     expect(passed.answers.length).toBe(1);
@@ -418,6 +447,125 @@ describe("dev scheduling", () => {
     expect(await tick(fixture)).toEqual([]);
   });
 
+  test("a manual start survives a crash before the run records itself", async () => {
+    const fixture = await setup();
+    const plan = await makePlan(fixture, { slug: "plan", auto: "off" });
+    const task = await makeTask(fixture, plan.key, "task");
+    await confirm(fixture, plan.key);
+    await fixture.registry.runCommand(["dev", "start", task.id]);
+
+    // The child claims the task and dies in the kernel's start handler: the
+    // owner's request is still on the task and the run was never recorded.
+    const child = Bun.spawn({
+      cmd: [
+        process.execPath,
+        CRASH_CHILD,
+        fixture.store.root,
+        fixture.repositoryPath,
+      ],
+      cwd: fixture.repositoryPath,
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    await child.exited;
+    expect(child.signalCode).toBe("SIGKILL");
+    const claimed = taskData((await getTask(fixture.store, task.key)).data);
+    expect(claimed.phase).toBe("running");
+    expect(claimed.run).toBeNull();
+    expect(claimed.startRequested).toBe(true);
+
+    // Recovery gives the claim back and the request starts the task once, even
+    // though the plan is at auto off.
+    const started = await tick(fixture);
+    expect(started.length).toBe(1);
+    expect(startedId(started[0] as { object?: { id: string } })).toBe(task.key);
+    expect(fixture.lines).toEqual([
+      `${task.id} running -> ready`,
+      `${task.id} ready -> running`,
+    ]);
+
+    // Once the run records itself the request has been met: no third start.
+    await putTask(fixture, task.key, { run: "run-1" });
+    expect(await tick(fixture)).toEqual([]);
+  });
+
+  test("a cancelled task never starts work", async () => {
+    const fixture = await setup();
+    const log = openLog({ backend: "jsonl", path: join(fixture.root, "log") });
+    try {
+      const plan = await makePlan(fixture, { slug: "plan", auto: "run" });
+      const task = await makeTask(fixture, plan.key, "task");
+      await confirm(fixture, plan.key);
+
+      // A tick writes the claim and queues the start; it is not drained, so
+      // the run does not exist yet when the other process cancels.
+      await fixture.registry.tick();
+      const claimed = taskData((await getTask(fixture.store, task.key)).data);
+      expect(claimed.phase).toBe("running");
+      expect(claimed.run).toBeNull();
+      expect(claimed.claim?.token).toBeString();
+
+      const child = Bun.spawn({
+        cmd: [
+          process.execPath,
+          CANCEL_CHILD,
+          fixture.store.root,
+          fixture.repositoryPath,
+          task.key,
+        ],
+        cwd: fixture.repositoryPath,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      expect(await child.exited).toBe(0);
+
+      const spawned: string[] = [];
+      await serveOnce({
+        log,
+        registry: fixture.registry,
+        lockRoot: fixture.store.root,
+        storeRoot: fixture.store.root,
+        home: fixture.root,
+        spawnRun: async (runId) => {
+          spawned.push(runId);
+          const found = fixture.registry.flow("dev");
+          if (found === undefined) throw new Error("the dev flow is missing");
+          const run = (await log.runs()).find(
+            (candidate) => candidate.runId === runId,
+          );
+          if (run === undefined) throw new Error(`no run ${runId}`);
+          const object = parseObjectKey(run.object);
+          const startInput = readStoredStart(fixture.store.root, runId);
+          await new Runner({
+            log,
+            flow: found.flow,
+            runId,
+            registry: fixture.registry,
+            lockRoot: fixture.store.root,
+            ...(object === undefined ? {} : { object }),
+            ...(startInput === undefined ? {} : { startInput }),
+          }).run();
+        },
+      });
+
+      expect(spawned).toHaveLength(1);
+      const runId = spawned[0] as string;
+      const state = await readState(log, runId);
+      expect(state.status).toBe("ended");
+      expect(state.endedStatus).toBe("cancelled");
+
+      const cancelled = taskData(
+        (await getTask(fixture.store, task.key)).data,
+      );
+      expect(cancelled.phase).toBe("cancelled");
+      expect(
+        existsSync(join(fixture.repositoryPath, ".operad-worktrees", task.id)),
+      ).toBe(false);
+    } finally {
+      await log.close();
+    }
+  });
+
   test("start still respects the repository concurrency", async () => {
     const fixture = await setup({ concurrency: 1 });
     const plan = await makePlan(fixture, { slug: "plan", auto: "off" });
@@ -457,7 +605,10 @@ describe("dev scheduling", () => {
     expect(startedId(blocked[0] as { object?: { id: string } })).toBe(
       second.key,
     );
-    expect(blocked[0]?.params).toEqual({ blockedBy: first.id });
+    expect(blocked[0]?.params).toEqual({
+      blockedBy: first.id,
+      token: expect.any(String),
+    });
     expect(fixture.lines).toEqual([`${second.id} ready -> waiting`]);
   });
 
@@ -478,14 +629,23 @@ describe("dev scheduling", () => {
     expect(startedId(started[0] as { object?: { id: string } })).toBe(
       second.key,
     );
-    expect(started[0]?.params).toEqual({ blockedBy: first.id });
+    expect(started[0]?.params).toEqual({
+      blockedBy: first.id,
+      token: expect.any(String),
+    });
     expect(fixture.lines).toEqual([`${second.id} ready -> waiting`]);
 
     // The flow's worktree step turns that start into a logged person wait.
+    const claimed = taskData((await getTask(fixture.store, second.key)).data);
     const stopped = await fixture.registry.runStep("dev/worktree", {}, {
       runId: "run-blocked",
       object: { type: "task", id: second.key, data: {} },
-      params: { blockedBy: first.id },
+      params: {
+        blockedBy: first.id,
+        ...(claimed.claim === undefined || claimed.claim === null
+          ? {}
+          : { token: claimed.claim.token }),
+      },
     });
     expect(stopped.result).toBe("blocked");
     const waiting = taskData((await getTask(fixture.store, second.key)).data);

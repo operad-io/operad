@@ -28,11 +28,13 @@ import {
 } from "./gate.ts";
 import { getPlan, refreshPlanCounts } from "./service.ts";
 import {
+  cancelledStep,
+  claimAllows,
   conflictedFiles,
   git,
   headOf,
   mergeInProgress,
-  saveTask,
+  saveTaskGuarded,
   taskContext,
   worktreePath,
   type TaskContext,
@@ -155,7 +157,7 @@ async function writeIntegration(
   attempt: TaskAttempt,
   record: IntegrationRecord,
   options: SaveOptions = {},
-): Promise<TaskData> {
+): Promise<TaskData | undefined> {
   const brief =
     options.change === undefined
       ? task.brief
@@ -168,8 +170,13 @@ async function writeIntegration(
     attempt: { ...attempt, run: ctx.runId, integration: record },
     brief,
   };
-  await saveTask(ctx, context.taskKey, next, "dev:integrate");
-  return next;
+  const written = await saveTaskGuarded(
+    ctx,
+    context.taskKey,
+    next,
+    "dev:integrate",
+  );
+  return written ? next : undefined;
 }
 
 async function refreshPlan(
@@ -213,6 +220,7 @@ export async function runIntegrate(
   ctx: StepContext,
 ): Promise<PluginStepResult> {
   const context = await taskContext(ctx);
+  if (!claimAllows(ctx, context.task)) return cancelledStep();
   const task = context.task;
   const settings = context.settings;
   const attempt = task.attempt ?? {
@@ -244,9 +252,13 @@ export async function runIntegrate(
       ...(verified === undefined ? {} : { headMoved: head !== verified }),
       message,
     };
-    await writeIntegration(ctx, context, task, attempt, record, {
-      phase: "waiting",
-    });
+    if (
+      (await writeIntegration(ctx, context, task, attempt, record, {
+        phase: "waiting",
+      })) === undefined
+    ) {
+      return cancelledStep();
+    }
     return {
       result: "failed",
       data: integrationData(record, attempt, { message, ...extra }),
@@ -258,10 +270,14 @@ export async function runIntegrate(
     sha: string,
     extra: Readonly<Record<string, unknown>> = {},
   ): Promise<PluginStepResult> => {
-    await writeIntegration(ctx, context, task, attempt, record, {
-      phase: "merged",
-      change: `merged ${shortSha(sha)}`,
-    });
+    if (
+      (await writeIntegration(ctx, context, task, attempt, record, {
+        phase: "merged",
+        change: `merged ${shortSha(sha)}`,
+      })) === undefined
+    ) {
+      return cancelledStep();
+    }
     await refreshPlan(ctx, context);
     return { result: "merged", data: integrationData(record, attempt, extra) };
   };
@@ -300,10 +316,14 @@ export async function runIntegrate(
         pushed: true,
         style: settings.integration.style,
       };
-      await writeIntegration(ctx, context, task, attempt, record, {
-        phase: "merged",
-        change: `merged ${shortSha(previous.candidate)}`,
-      });
+      if (
+        (await writeIntegration(ctx, context, task, attempt, record, {
+          phase: "merged",
+          change: `merged ${shortSha(previous.candidate)}`,
+        })) === undefined
+      ) {
+        return cancelledStep();
+      }
       await refreshPlan(ctx, context);
       return {
         result: "merged",
@@ -357,7 +377,7 @@ export async function runIntegrate(
         headMoved,
         files,
       };
-      await saveTask(
+      const written = await saveTaskGuarded(
         ctx,
         context.taskKey,
         {
@@ -369,6 +389,7 @@ export async function runIntegrate(
         },
         "dev:integrate",
       );
+      if (!written) return cancelledStep();
       return {
         result: "conflict",
         data: integrationData(record, attempt, { files, rework: true }),
@@ -432,7 +453,7 @@ export async function runIntegrate(
           ...(lineNumber === undefined ? {} : { lineNumber }),
           message: detail,
         };
-        await saveTask(
+        const written = await saveTaskGuarded(
           ctx,
           context.taskKey,
           {
@@ -444,6 +465,7 @@ export async function runIntegrate(
           },
           "dev:integrate",
         );
+        if (!written) return cancelledStep();
         return {
           result: "fail",
           data: integrationData(record, attempt, { rework: true }),
@@ -464,7 +486,9 @@ export async function runIntegrate(
       headMoved,
       pushed: false,
     };
-    await writeIntegration(ctx, context, task, attempt, pending);
+    if ((await writeIntegration(ctx, context, task, attempt, pending)) === undefined) {
+      return cancelledStep();
+    }
 
     const push = git(gate, [
       "push",
@@ -511,6 +535,7 @@ export async function runCleanup(
   ctx: StepContext,
 ): Promise<PluginStepResult> {
   const context = await taskContext(ctx);
+  if (!claimAllows(ctx, context.task)) return cancelledStep();
   const task = context.task;
   const settings: DevSettings = context.settings;
   const attempt = task.attempt ?? {
@@ -579,7 +604,9 @@ export async function runCleanup(
         ? task.brief
         : appendChange(task.brief, `cleanup: ${failures.length} hook(s) failed`),
   };
-  await saveTask(ctx, context.taskKey, next, "dev:cleanup");
+  if (!(await saveTaskGuarded(ctx, context.taskKey, next, "dev:cleanup"))) {
+    return cancelledStep();
+  }
   await refreshPlan(ctx, context);
   return {
     result: "done",
