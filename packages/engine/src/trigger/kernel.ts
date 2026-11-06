@@ -558,7 +558,8 @@ export class Kernel {
     );
     const resolved = valueOf(recorded.outcome);
     if (resolved === "started") {
-      const runId = field(recorded.outcome.payload, "runId");
+      const started = await this.startedRun(pendingId);
+      const runId = field(recorded.outcome.payload, "runId") ?? started?.runId;
       throw new Error(
         `pending item "${pendingId}" is already started${runId === undefined ? "" : ` as ${runId}`}`,
       );
