@@ -2,10 +2,10 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cleanupTempRoots, makeGitRepository, tempRoot } from "./support.ts";
-import { openLockHandleCount } from "../src/lock.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
+guardLockHandles();
 
 const CLI_ENTRY = fileURLToPath(new URL("../../cli/bin/operad.ts", import.meta.url));
 const PLUGIN = fileURLToPath(new URL("../src/index.ts", import.meta.url));
@@ -363,12 +363,5 @@ describe("operad with the dev plugin", () => {
     const ambiguous = await run(home, home, ["show", "TK0001-work"]);
     expect(ambiguous.code).toBe(2);
     expect(ambiguous.err).toContain("ambiguous");
-  });
-
-  // This is the last dev test file the runner executes, so the count is final
-  // here. A lock wait that forgot to close its directory watch or fallback
-  // timer leaves it above zero and fails instead of disturbing a later file.
-  test("no dev lock watcher or timer is left open", () => {
-    expect(openLockHandleCount()).toBe(0);
   });
 });

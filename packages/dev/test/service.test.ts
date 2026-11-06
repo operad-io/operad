@@ -33,9 +33,10 @@ import {
   taskData,
   type RepositoryData,
 } from "../src/model.ts";
-import { cleanupTempRoots, makeGitRepository, storeAt, tempRoot } from "./support.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
+guardLockHandles();
 
 async function setup(): Promise<{
   readonly root: string;
@@ -440,6 +441,35 @@ describe("dev per-repository ids", () => {
     expect(secondTask.id).toBe(storeKey("two", "TK0001-work"));
     expect((await getTask(store, firstTask.id)).data.title).toBe("First");
     expect((await getTask(store, secondTask.id)).data.title).toBe("Second");
+  });
+
+  test("ids count up across different slugs in one repository", async () => {
+    const { repository, store } = await setup();
+    const alpha = await addPlan(store, {
+      repository,
+      slug: "alpha",
+      title: "Alpha",
+    });
+    const beta = await addPlan(store, {
+      repository,
+      slug: "beta",
+      title: "Beta",
+    });
+    expect(bareId(alpha.id)).toBe("PL0001-alpha");
+    expect(bareId(beta.id)).toBe("PL0002-beta");
+
+    const first = await addTask(store, {
+      plan: beta.id,
+      slug: "one",
+      title: "One",
+    });
+    const second = await addTask(store, {
+      plan: beta.id,
+      slug: "two",
+      title: "Two",
+    });
+    expect(bareId(first.id)).toBe("TK0001-one");
+    expect(bareId(second.id)).toBe("TK0002-two");
   });
 });
 

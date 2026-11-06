@@ -290,3 +290,9 @@
 | TK0028-M12 | packages/cli/src/main.ts | restored the id-shaped-value heuristic in the action flag parser | `operad presentation commands > schema flags accept values that look like ids or negative numbers` |
 | TK0028-M13 | packages/engine/src/plugin/action-schema.ts | accepted a `role: "note"` property without type `"string"` | `plugin registry validation > rejects a note property that is not a string` |
 | TK0028-M14 | packages/engine/src/plugin/registry.ts | left the actor out of the action context | `plugin registry > an action receives the person's actor` |
+
+## TK0019 — rework 7: per-repository numbering and an order-independent leak guard
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0019-M21 | packages/dev/src/model.ts | parsed the namespaced store key instead of the bare id when choosing the next number | `dev per-repository ids > ids count up across different slugs in one repository` |

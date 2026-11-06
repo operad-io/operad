@@ -172,7 +172,8 @@ function numberById(
 ): number {
   let highest = 0;
   for (const object of objects) {
-    const parsed = parseId(object.id, prefix);
+    // The store key carries the repository; the number lives in the bare id.
+    const parsed = parseId(bareId(object.id), prefix);
     if (parsed !== undefined && parsed.number > highest) {
       highest = parsed.number;
     }

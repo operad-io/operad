@@ -10,9 +10,10 @@ import {
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { lockTestHooks, openLockHandleCount, withRepositoryLock } from "../src/lock.ts";
-import { cleanupTempRoots, makeGitRepository, tempRoot } from "./support.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
+guardLockHandles();
 
 const HOLDER = fileURLToPath(
   new URL("./fixtures/lock-holder.ts", import.meta.url),

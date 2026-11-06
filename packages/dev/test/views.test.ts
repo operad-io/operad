@@ -10,9 +10,10 @@ import {
 } from "../src/service.ts";
 import { planViews, taskViews } from "../src/views.ts";
 import { bareId, taskData } from "../src/model.ts";
-import { cleanupTempRoots, makeGitRepository, storeAt, tempRoot } from "./support.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
+guardLockHandles();
 
 async function setup() {
   const root = await tempRoot();

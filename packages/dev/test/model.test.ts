@@ -13,6 +13,9 @@ import {
   validateSlug,
   type PlanData,
 } from "../src/model.ts";
+import { guardLockHandles } from "./support.ts";
+
+guardLockHandles();
 
 function plan(overrides: Partial<PlanData> = {}): PlanData {
   return {

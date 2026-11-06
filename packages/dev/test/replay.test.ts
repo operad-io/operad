@@ -23,9 +23,10 @@ import {
   type AutoMode,
   type TaskPhase,
 } from "../src/model.ts";
-import { cleanupTempRoots, makeGitRepository, storeAt, tempRoot } from "./support.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
+guardLockHandles();
 
 function random(seed: number): () => number {
   let state = seed >>> 0;
