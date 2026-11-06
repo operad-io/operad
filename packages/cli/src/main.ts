@@ -1120,11 +1120,21 @@ async function commandHistory(
   id: string,
   json: boolean,
 ): Promise<void> {
-  const runs = await findHistoryRuns(
-    context.log,
-    context.registry.objectTypes().map((entry) => entry.type),
-    id,
-  );
+  const types = context.registry.objectTypes().map((entry) => entry.type);
+  let runs = await findHistoryRuns(context.log, types, id);
+  if (runs.length === 0) {
+    // A plugin may scope a bare id to a namespace of its own, as `dev` does for
+    // a repository. Resolve through the views so the run's object key matches.
+    let resolved: string | undefined;
+    try {
+      resolved = (await context.views.get(id)).id;
+    } catch {
+      resolved = undefined;
+    }
+    if (resolved !== undefined && resolved !== id) {
+      runs = await findHistoryRuns(context.log, types, resolved);
+    }
+  }
   if (runs.length === 0) {
     // An observed event belongs to no run; its fact is in the global log.
     const globals: GlobalFact[] = [];

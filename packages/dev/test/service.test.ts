@@ -1,7 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   addPlan,
   addRepository,
@@ -108,6 +107,9 @@ describe("dev repositories", () => {
     await expect(
       addRepository(store, { path: noRemote }),
     ).rejects.toThrow(/has no remote/);
+    // A refused add writes nothing: no registration and no settings file.
+    expect(await findRepository(store, "no-remote")).toBeUndefined();
+    expect(existsSync(join(noRemote, ".operad", "dev.json"))).toBe(false);
   });
 
   test("the current directory selects its repository, or --repo names one", async () => {
@@ -526,16 +528,5 @@ describe("dev checks inside the lock", () => {
     await expect(
       addPlan(store, { repository, slug: "again", title: "Again" }),
     ).rejects.toThrow(/was removed/);
-  });
-});
-
-describe("repo add never writes into the operad checkout", () => {
-  test("the operad source checkout is refused", async () => {
-    const root = await tempRoot();
-    const store = storeAt(root);
-    const source = fileURLToPath(new URL("../../..", import.meta.url));
-    await expect(addRepository(store, { path: source })).rejects.toThrow(
-      /operad source checkout/,
-    );
   });
 });

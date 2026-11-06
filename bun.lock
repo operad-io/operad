@@ -6,6 +6,7 @@
       "name": "operad-workspace",
       "dependencies": {
         "@operad-io/engine": "workspace:*",
+        "@operad-io/harness-radian": "workspace:*",
         "@operad-io/source-cron": "workspace:*",
       },
       "devDependencies": {
@@ -24,6 +25,7 @@
       "dependencies": {
         "@operad-io/dev": "workspace:*",
         "@operad-io/engine": "workspace:*",
+        "@operad-io/harness-radian": "workspace:*",
         "@operad-io/shell": "workspace:*",
       },
     },

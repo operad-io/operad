@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@operad-io/engine": "workspace:*",
+    "@operad-io/harness-radian": "workspace:*",
     "@operad-io/source-cron": "workspace:*"
   }
 }

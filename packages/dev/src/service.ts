@@ -9,8 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import type { ObjectStore, StoredObject } from "@operad-io/engine";
 import { withRepositoryLock } from "./lock.ts";
 import {
@@ -20,7 +19,6 @@ import {
   DevError,
   editBrief,
   isOpenTask,
-  isRecord,
   keyRepository,
   listAll,
   lowerPriority,
@@ -65,33 +63,6 @@ const PLAN_TYPE = "plan";
 const TASK_TYPE = "task";
 
 const EXCLUDES = [".operad-worktrees/", ".radian-sandbox/"] as const;
-
-/**
- * The operad source checkout this module was loaded from, when it came from
- * source. `repo add` never registers it: a test that uses it would write into
- * the repository it is testing.
- */
-const SOURCE_CHECKOUT = findSourceCheckout();
-
-function findSourceCheckout(): string | undefined {
-  let directory = dirname(fileURLToPath(import.meta.url));
-  for (;;) {
-    const manifest = join(directory, "package.json");
-    if (existsSync(manifest)) {
-      try {
-        const parsed: unknown = JSON.parse(readFileSync(manifest, "utf8"));
-        if (isRecord(parsed) && parsed.name === "operad-workspace") {
-          return realpathSync(directory);
-        }
-      } catch {
-        // Not this directory's manifest; keep walking.
-      }
-    }
-    const parent = dirname(directory);
-    if (parent === directory) return undefined;
-    directory = parent;
-  }
-}
 
 /**
  * Test-only hook, set by a test to pause between a command's first read and
@@ -294,12 +265,6 @@ export async function addRepository(
     throw new DevError(
       "path",
       `"${from}" is not the root of a git work tree`,
-    );
-  }
-  if (SOURCE_CHECKOUT !== undefined && path === SOURCE_CHECKOUT) {
-    throw new DevError(
-      "path",
-      `"${path}" is the operad source checkout; register a work tree of your own`,
     );
   }
   const bare = git(path, ["rev-parse", "--is-bare-repository"]);

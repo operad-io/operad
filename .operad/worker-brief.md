@@ -1,0 +1,26 @@
+# Working on operad
+
+Read `AGENTS.md` before you change anything. It names the backlog items to read
+and the boundary the kernel keeps.
+
+- Do not contradict a decided point in `docs/backlog/`. A change that needs one
+  reversed changes that item first, in its own docs-only commit.
+- The kernel stays small. A feature a plugin could provide belongs in a plugin.
+  A user of the kernel sees three words: flow, pending, history. Every other
+  user-visible word belongs to a plugin.
+- Use Bun and TypeScript directly; there is no build step. Use `bun:test`, and
+  add a runtime dependency only when a task says so. The engine has none.
+- Configuration files are JSON, each with a JSON Schema in the package that
+  reads it. Flows and plugins are TypeScript.
+- Strict TypeScript: no `any`, no `@ts-ignore`, no non-null `!` to silence the
+  checker.
+- Every behaviour has a test. A test that needs time uses an injected clock; a
+  test that needs a crash kills a real child process. Wait for the event, do not
+  sleep for it.
+- Repository text is English.
+
+Before you finish, run `bash scripts/verify.sh` and make it pass. It installs
+with the lockfile, type-checks and runs the tests.
+
+Commit each whole piece of work as you finish it and leave the worktree clean.
+Never write under `.git`. Never kill, signal or stop a process you did not start.

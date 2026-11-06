@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   FilePluginStore,
@@ -11,8 +11,10 @@ import {
   readConfig,
   storeRootOf,
 } from "@operad-io/engine";
+import { addRepository } from "../../dev/src/service.ts";
 import { main, type CliIo } from "../src/main.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
+import { fakeRadian } from "../../harness-radian/test/support.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -23,6 +25,21 @@ const pluginPath = fileURLToPath(
 const notesPath = fileURLToPath(
   new URL("../../engine/test/fixtures/plugins/notes.ts", import.meta.url),
 );
+
+const devPluginPath = fileURLToPath(
+  new URL("../../dev/src/index.ts", import.meta.url),
+);
+
+function runGit(cwd: string, args: readonly string[]): void {
+  const result = Bun.spawnSync({
+    cmd: ["git", "-C", cwd, ...args],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (result.exitCode !== 0) {
+    throw new Error(`git ${args.join(" ")}: ${result.stderr.toString()}`);
+  }
+}
 
 interface Output {
   readonly io: CliIo;
@@ -120,26 +137,86 @@ describe("operad command", () => {
   test("init creates the home and prints each plugin check", async () => {
     const { root, home } = await makeHome();
     const fresh = join(root, "fresh");
-    const first = capture();
-    expect(await main(["init"], { home: fresh, io: first.io })).toBe(0);
-    expect(first.text()).toContain("created");
-    expect(first.text()).toContain("shell: ready");
-    expect(
-      JSON.parse(readFileSync(join(fresh, "config.json"), "utf8")),
-    ).toMatchObject({
-      plugins: {
-        shell: { module: "@operad-io/shell", enabled: true },
-        dev: { module: "@operad-io/dev", enabled: true },
-      },
-    });
-    const config = JSON.parse(
-      readFileSync(join(fresh, "config.json"), "utf8"),
-    ) as unknown;
-    expect(config).toMatchObject({ store: { backend: "jsonl" } });
+    const bin = await fakeRadian(root);
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${bin}${delimiter}${previousPath ?? ""}`;
+    try {
+      const first = capture();
+      expect(await main(["init"], { home: fresh, io: first.io })).toBe(0);
+      expect(first.text()).toContain("created");
+      expect(first.text()).toContain("shell: ready");
+      expect(first.text()).toContain("harness-radian: radian is available");
+      expect(first.text()).toContain("dev: no repositories registered");
+      expect(
+        JSON.parse(readFileSync(join(fresh, "config.json"), "utf8")),
+      ).toMatchObject({
+        plugins: {
+          shell: { module: "@operad-io/shell", enabled: true },
+          "harness-radian": {
+            module: "@operad-io/harness-radian",
+            enabled: true,
+          },
+          dev: { module: "@operad-io/dev", enabled: true },
+        },
+      });
+      const config = JSON.parse(
+        readFileSync(join(fresh, "config.json"), "utf8"),
+      ) as unknown;
+      expect(config).toMatchObject({ store: { backend: "jsonl" } });
 
-    const second = capture();
-    expect(await main(["init"], { home, io: second.io })).toBe(0);
-    expect(second.text()).toContain("test: ready");
+      const second = capture();
+      expect(await main(["init"], { home, io: second.io })).toBe(0);
+      expect(second.text()).toContain("test: ready");
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    }
+  });
+
+  test("init reports an unreachable registered remote as a failed check", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    const storeRoot = join(root, "store");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({
+        plugins: { dev: { module: devPluginPath } },
+        store: { backend: "jsonl", path: storeRoot },
+      }),
+    );
+
+    const remote = join(root, "origin.git");
+    runGit(root, ["init", "--bare", "-q", remote]);
+    const repository = join(root, "repository");
+    runGit(root, ["init", "-q", "-b", "main", repository]);
+    writeFileSync(join(repository, "README.md"), "# test\n");
+    runGit(repository, ["add", "README.md"]);
+    runGit(repository, [
+      "-c",
+      "user.name=test",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "-qm",
+      "start",
+    ]);
+    runGit(repository, ["remote", "add", "origin", remote]);
+    runGit(repository, ["push", "-q", "-u", "origin", "main"]);
+
+    const store = new FilePluginStore({ root: join(storeRoot, "plugins") });
+    await addRepository(store, { path: repository });
+    runGit(repository, [
+      "remote",
+      "set-url",
+      "origin",
+      join(root, "missing.git"),
+    ]);
+
+    const output = capture();
+    expect(await main(["init"], { home, io: output.io })).toBe(1);
+    expect(output.text()).toContain('dev: repository "repository"');
+    expect(output.text()).toContain('cannot reach remote "origin"');
   });
 
   test("flows lists the loaded flows and their plugin", async () => {

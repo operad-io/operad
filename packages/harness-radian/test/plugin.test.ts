@@ -482,6 +482,38 @@ describe("harness-radian:prompt", () => {
   });
 });
 
+describe("harness-radian check", () => {
+  test("passes when radian is on PATH", async () => {
+    const env = await setup("done");
+    const [check] = await env.registry.checks();
+    expect(check?.plugin).toBe("harness-radian");
+    expect(check?.ok).toBe(true);
+    expect(check?.message).toContain("radian is available");
+  });
+
+  test("names a missing radian as a failed check", async () => {
+    const root = await tempRoot();
+    const empty = join(root, "empty");
+    await mkdir(empty, { recursive: true });
+    const previous = process.env.PATH;
+    process.env.PATH = empty;
+    restores.push(() => {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    });
+    const registry = new PluginRegistry([createRadianHarnessPlugin()], {
+      home: root,
+      cwd: root,
+      store: new MemoryPluginStore({ root: join(root, "store") }),
+    });
+
+    const [check] = await registry.checks();
+    expect(check?.plugin).toBe("harness-radian");
+    expect(check?.ok).toBe(false);
+    expect(check?.message).toContain("radian was not found on PATH");
+  });
+});
+
 const realTest = process.env.OPERAD_TEST_RADIAN === "1" ? test : test.skip;
 
 realTest(

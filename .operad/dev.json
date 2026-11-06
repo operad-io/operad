@@ -1,0 +1,30 @@
+{
+  "$schema": "../packages/dev/dev.schema.json",
+  "name": "operad",
+  "concurrency": 1,
+  "maxAutoRework": 2,
+  "worker": {
+    "use": "harness-radian/agent",
+    "args": ["--provider", "opencode-go", "--model", "deepseek-v4.1-flash"]
+  },
+  "reviewer": {
+    "use": "harness-radian/agent",
+    "args": ["--provider", "opencode-go", "--model", "deepseek-v4.1-flash"],
+    "firstArgs": [
+      "--provider",
+      "chatgpt",
+      "--model",
+      "gpt-5.6-terra",
+      "--thinking",
+      "medium"
+    ],
+    "fixLevel": "major",
+    "timeoutSecs": 1800
+  },
+  "gate": {
+    "commands": ["bash scripts/verify.sh"]
+  },
+  "integration": {
+    "keyCommands": ["bash scripts/verify.sh"]
+  }
+}

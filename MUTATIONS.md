@@ -543,3 +543,12 @@
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0023-M21 | packages/dev/src/steps.ts | checked the caller's stale task data instead of re-reading the task under the repository lock, so a concurrent cancel was overwritten | `dev/worktree > a cancel that lands between the guard and the write is not overwritten` |
+
+## TK0024 — dogfood switch
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0024-M1 | packages/dev/src/check.ts | kept going after `git ls-remote` failed, so an unreachable remote became a refused push instead of its own check | `dev init check > an unreachable remote is a failed check that names it` |
+| TK0024-M2 | packages/dev/src/check.ts | skipped the delete of the scratch ref after an accepted push | `dev init check > a repository with a reachable remote passes and leaves no scratch ref` |
+| TK0024-M3 | packages/engine/src/config/config.ts | left `harness-radian` out of the plugins a new home installs | `operad config > the default plugins are shell, the radian harness and dev` |
+| TK0024-M4 | packages/cli/src/main.ts | skipped resolving a scoped object id before reading history, so a task keyed by its repository had no run | `dogfood end to end > a task survives a killed run and reaches a merge with a history of every step` |

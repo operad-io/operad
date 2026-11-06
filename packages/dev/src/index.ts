@@ -3,6 +3,7 @@
 import { definePlugin } from "@operad-io/engine";
 import devFlow from "../flows/dev.flow.ts";
 import { actions } from "./actions.ts";
+import { checkDev } from "./check.ts";
 import { commands } from "./commands.ts";
 import { runRework, runReview, runVerify } from "./gate.ts";
 import { runCleanup, runIntegrate } from "./integrate.ts";
@@ -76,8 +77,8 @@ export function createDevPlugin() {
       c: "dev:confirm",
       x: "dev:cancel",
     },
-    check() {
-      return "ready";
+    check(ctx) {
+      return checkDev(ctx);
     },
   });
 }
@@ -85,6 +86,7 @@ export function createDevPlugin() {
 export default createDevPlugin();
 
 export * from "./actions.ts";
+export * from "./check.ts";
 export * from "./commands.ts";
 export * from "./gate.ts";
 export * from "./integrate.ts";
