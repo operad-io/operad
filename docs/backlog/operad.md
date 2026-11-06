@@ -3,7 +3,7 @@
 - 状态：decided（方向；各项设计见五个子项）
 - 涉及 ADR：0032、0043、0048、0049、0024、0045、0034
 - 来源：`research/2026-11-04-agent-autoloop.md`；`research/2026-11-05-noop.md`；`research/2026-10-20-arc-competitors.md`
-- 子项：`operad-engine.md`、`operad-plugins.md`、`operad-harness.md`、`operad-channels.md`、`operad-assistant.md`；`hub-event-inlet.md` 归入 `operad-channels.md`
+- 子项：`operad-engine.md`、`operad-plugins.md`、`operad-harness.md`、`operad-channels.md`、`operad-contract.md`、`operad-presentation.md`、`operad-conversation.md`、`operad-sandbox.md`、`operad-assistant.md`；`hub-event-inlet.md` 归入 `operad-channels.md`
 
 ## 背景
 
@@ -19,7 +19,7 @@ arc 今天住在 radian 二进制里（ADR 0032、0043、0048），worker 只有
 4. **flow 引擎是新核心，今天的 arc 流水线由 `dev` 插件表达为第一个 flow。** 迁移不是移植代码，是用新引擎表达现有流水线跑到 parity；现有测试当验收规格。引擎内部把 flow 的结构叫 graph，用户只看到 flow。
 5. **flow 的结构是数据，步骤里的定制逻辑是 TS 文件。** 步骤由插件提供，其余写 TS。手机看 flow 和运行状态，不在手机上编辑。
 6. **第一个垂直场景是编码流程**，验证 gate 和 forge 在这里；个人助理是同一个引擎长出来的第二个场景，排在后面。
-7. **生成的步骤默认跑在沙箱里。** 沙箱从 radian 的 agent 里剥出来，变成包任何命令的壳；它是 arc 层的能力，不是某个 harness 的能力。
+7. **生成的步骤默认跑在沙箱里。** 沙箱从 radian 的 agent 里剥出来，变成包任何命令的壳；它是 operad 层的能力，不是某个 harness 的能力。
 8. **事件是资料、规则是指令**：来源送进来的字进不了提示词，决定不了路由、目录、权限；每种插件一把作用域密钥。
 9. **会话的统一协议是 ACP**，hub 是每个 harness 的 ACP 客户端；一种 harness 是一个描述文件，任务和会话同一份。
 10. 从同行**不拿**的：模型替 owner 决定（影子 judge 只量准确率）；agent 直接改自己的提示词和策略；必需的云会合点；没有 gate 的"信自报加 CI"。
@@ -39,13 +39,13 @@ arc 今天住在 radian 二进制里（ADR 0032、0043、0048），worker 只有
 
 ## 顺序
 
-`operad-engine` → `operad-plugins` → `operad-harness` → `operad-channels` → `operad-assistant`。前两项是新核心，后三项可以在引擎有第一张 graph 之后并行。
+`operad-engine` → `operad-plugins` → `operad-harness` → `operad-channels` → `operad-assistant`。前两项是新核心，后三项可以在引擎有第一张 graph 之后并行。dogfood（PL0002）之后按场景走：`operad-conversation`（含 iOS 后端）→ `operad-sandbox` 第一版 → Telegram 通道 → `operad-assistant` 的 `brain` 与 `digest`；`operad-harness` 的 ACP 会话在对话跑通后接第二种 harness。
 
 ## 待决问题（未定）
 
 1. 分发方式（npm 之外是否上 Homebrew）；`operad.run` 是否注册。
-2. 沙箱壳的形态：radian 二进制里的子命令（`radian sandbox -- <命令>`），还是独立的小程序。
-3. iOS app 的后端：hub 整体随 arc 迁出，还是会话路由留一段时间。
+2. 沙箱壳的形态：radian 二进制里的子命令（`radian sandbox -- <命令>`），还是独立的小程序。第一版的护栏（访问档：禁入目录、危险命令、询问）已在 `operad-sandbox.md` 定下，不等壳。
+3. iOS app 的后端：已定为 operad 自己的 HTTP 层（`operad-conversation.md` 决定 10）；hub 的会话路由留到对话跑通为止。
 4. 订阅条款：用 Claude Code 订阅账号跑全自动流水线，厂商建议高频自动化用 API key；哪些 flow 允许订阅账号、哪些要求 API key。交互会话不受此限。
 5. 远程机器：push（daemon 拨回）还是 pull。
 
