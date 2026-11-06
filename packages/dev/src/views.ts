@@ -15,6 +15,7 @@ import {
   planState,
   splitBrief,
   taskData,
+  type TaskData,
 } from "./model.ts";
 
 function costNote(cost: unknown): string | undefined {
@@ -23,6 +24,22 @@ function costNote(cost: unknown): string | undefined {
   }
   if (typeof cost === "string" && cost.trim().length > 0) return cost.trim();
   return undefined;
+}
+
+/**
+ * The short note a waiting task shows. A refused push leaves the integration
+ * message that names the remote, the branch and git's own words; the person
+ * sees it next to the task before deciding what to do.
+ */
+function waitNote(task: TaskData): string | undefined {
+  if (task.phase !== "waiting") return undefined;
+  const integration = task.attempt?.integration;
+  if (integration === undefined || integration === null) return undefined;
+  if (integration.result !== "failed") return undefined;
+  const message = integration.message;
+  return typeof message === "string" && message.trim().length > 0
+    ? message.trim()
+    : undefined;
 }
 
 function cell(text: string): string {
@@ -91,7 +108,7 @@ export const planViews: ObjectViews = {
 export const taskViews: ObjectViews = {
   row(object: StoredObject): ObjectRow {
     const task = taskData(object.data);
-    const note = costNote(task.cost);
+    const note = waitNote(task) ?? costNote(task.cost);
     return {
       id: bareId(object.id),
       title: task.title,

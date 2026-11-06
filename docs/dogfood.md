@@ -13,17 +13,16 @@ operad init
 
 `init` creates `~/.operad` when it is missing and checks the installed plugins.
 A failed check says what is wrong and the command exits non-zero; it never
-registers a repository and never leaves a scratch ref behind. In this repository
-the checks are:
+registers a repository and never writes to a remote. In this repository the
+checks are:
 
 - `shell` is ready.
 - `harness-radian` finds `radian` on `PATH`.
-- `dev` finds each registered repository's remote and checks that it answers
-  and would accept a push. When the remote's repository is a path on this
-  machine it really pushes a scratch ref and deletes it again, and removes the
-  ref directly if the remote refuses the delete. A remote that is only
-  reachable over the network gets a dry-run push instead, so a check never
-  leaves a ref on a remote it cannot clean.
+- `dev` finds each registered repository's remote and asks it, read-only, for
+  its branches through the remote's name. It passes when the main branch is
+  published there and fails when the remote does not exist, cannot be reached
+  (with git's own message) or has no main branch. It pushes nothing, so no ref
+  can be left behind.
 
 Then register the checkout:
 
@@ -93,7 +92,9 @@ For a task that passed verify and review, the actions are `dev:merge`,
 `dev:reject` and `dev:cancel`.
 
 - `operad dev:merge TK0001-switch --yes` lands the verified commit on main,
-  runs the integration checks and cleans the task's worktrees and branches.
+  runs the integration checks and cleans the task's worktrees and branches. If
+  the remote refuses the push, nothing is written: the task waits for a person
+  with a note that names the remote, the branch and git's message.
 - `operad dev:reject TK0001-switch --note "explain what to change"` sends the
   task back to its worker with that note.
 - `operad dev:cancel TK0001-switch --yes` stops the task.

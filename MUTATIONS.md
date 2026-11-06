@@ -548,32 +548,22 @@
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| TK0024-M1 | packages/dev/src/check.ts | kept going after `git ls-remote` failed, so an unreachable remote became a refused push instead of its own check | `dev init check > an unreachable remote is a failed check that names it` |
-| TK0024-M2 | packages/dev/src/check.ts | skipped the delete of the scratch ref after an accepted push | `dev init check > a repository with a reachable remote passes and leaves no scratch ref` |
 | TK0024-M3 | packages/engine/src/config/config.ts | left `harness-radian` out of the plugins a new home installs | `operad config > the default plugins are shell, the radian harness and dev` |
 | TK0024-M4 | packages/cli/src/main.ts | skipped resolving a scoped object id before reading history, so a task keyed by its repository had no run | `dogfood end to end > a task survives a killed run and reaches a merge with a history of every step` |
 
-## TK0024 — rework 2: a clean scratch ref, an event wait and the whole user output
+## TK0024 — rework 2: an event wait and the whole user output
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| TK0024-M5 | packages/dev/src/check.ts | skipped the direct cleanup after a remote refused the wire delete, leaving its scratch ref behind | `dev init check > a remote that refuses the delete is a failed check that leaves no scratch ref` |
 | TK0024-M6 | packages/cli/src/main.ts | wrote an internal word into the loop's own output | `dogfood end to end > a task survives a killed run and reaches a merge with a history of every step` |
 | TK0024-M7 | packages/cli/src/main.ts | wrote an internal word into a `pending --json` page | `dogfood end to end > a task survives a killed run and reaches a merge with a history of every step` |
 | TK0024-M8 | packages/cli/test/e2e.test.ts | installed no store watcher, so the wait only looked once instead of on each change | `dogfood end to end > a task survives a killed run and reaches a merge with a history of every step` |
 
-## TK0024 — rework 3: refuse the delete before pushing the scratch ref
+## TK0032 — a read-only remote check and a refused push
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| TK0024-M9 | packages/dev/src/check.ts | pushed the scratch ref without first asking the remote to delete a ref that does not exist | `dev init check > a URL remote that refuses the delete is a failed check that leaves no scratch ref` |
-| TK0024-M10 | packages/dev/src/check.ts | ignored a refused delete probe and pushed the scratch ref anyway | `dev init check > a URL remote that refuses the delete is a failed check that leaves no scratch ref` |
-| TK0024-M11 | packages/dev/src/check.ts | skipped the direct local cleanup after the second delete was refused | `dev init check > a local remote that refuses only an existing delete is cleaned directly` |
-
-## TK0024 — rework 4: push only where the scratch ref can be removed
-
-| id | file | mutation | failing test |
-|---|---|---|---|
-| TK0024-M12 | packages/dev/src/check.ts | pushed the scratch ref to a remote reachable only over the wire instead of asking what a push would do, so a remote that refuses the delete kept it | `dev init check > a URL remote that refuses an existing delete is never written to` |
-| TK0024-M13 | packages/dev/src/check.ts | skipped the direct removal after a local remote refused the wire delete, leaving its scratch ref behind | `dev init check > a local remote that refuses the delete is a failed check that leaves no scratch ref` |
-| TK0024-M14 | packages/dev/src/check.ts | returned a passing check when the wire delete was refused instead of failing it | `dev init check > a local remote that refuses the delete is a failed check that leaves no scratch ref` |
+| TK0032-M1 | packages/dev/src/check.ts | ignored a failed `git ls-remote` and reported a missing branch instead of an unreachable remote | `dev init check > an unreachable remote is a failed check with git's message` |
+| TK0032-M2 | packages/dev/src/check.ts | treated a reachable remote with any branch as having the main branch | `dev init check > a reachable remote without the main branch is a failed check that writes nothing` |
+| TK0032-M3 | packages/dev/src/check.ts | passed the fetch URL to `git ls-remote` instead of the remote name | `dev init check > the check asks through the remote name, not its URL` |
+| TK0032-M4 | packages/dev/src/views.ts | left the failed integration out of the task's note while it waits | `dev/integrate > a remote that refuses the push is failed with git's message` |

@@ -24,6 +24,7 @@ import {
   setAuto,
   setTaskPhase,
   taskData,
+  taskViews,
   type IntegrationStyle,
   type TaskData,
 } from "../src/index.ts";
@@ -230,6 +231,13 @@ function remoteMain(state: Fixture): string {
   return gitOrThrow(state.remote.origin, ["rev-parse", "refs/heads/main"]);
 }
 
+function remoteRefs(state: Fixture): string {
+  return gitOrThrow(state.remote.origin, [
+    "for-each-ref",
+    "--format=%(refname) %(objectname)",
+  ]);
+}
+
 describe("dev/integrate", () => {
   test("merge style lands a merge commit with the documented message", async () => {
     const state = await fixture({ style: "merge" });
@@ -368,15 +376,26 @@ describe("dev/integrate", () => {
       "#!/bin/sh\necho 'the remote refused this push' >&2\nexit 1\n",
     );
     chmodSync(hook, 0o755);
-    const before = remoteMain(state);
+    const before = remoteRefs(state);
 
     const result = await integrate(state);
     expect(result.result).toBe("failed");
     expect(String(result.data?.message)).toContain(
       "the remote refused this push",
     );
-    expect((await taskOf(state)).phase).toBe("waiting");
-    expect(remoteMain(state)).toBe(before);
+
+    const object = await state.store.get("task", state.taskKey);
+    if (object === undefined) throw new Error("task disappeared");
+    const task = taskData(object.data);
+    expect(task.phase).toBe("waiting");
+    expect(task.attempt?.integration?.result).toBe("failed");
+    // The person sees the wait note next to the task: what failed, where, and
+    // what git said. Nothing was pushed, so every remote ref is unchanged.
+    const note = taskViews.row(object).note ?? "";
+    expect(note).toContain('"origin"');
+    expect(note).toContain('"main"');
+    expect(note).toContain("the remote refused this push");
+    expect(remoteRefs(state)).toBe(before);
   });
 
   test("a push that lands and reports an error is not pushed again", async () => {

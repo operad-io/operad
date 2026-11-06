@@ -219,6 +219,58 @@ describe("operad command", () => {
     expect(output.text()).toContain('cannot reach remote "origin"');
   });
 
+  test("init reports a missing radian and leaves a complete config", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    const empty = join(root, "empty");
+    mkdirSync(empty, { recursive: true });
+    const previous = process.env.PATH;
+    process.env.PATH = empty;
+    try {
+      const output = capture();
+      expect(await main(["init"], { home, io: output.io })).toBe(1);
+      expect(output.text()).toContain(
+        "harness-radian: radian was not found on PATH",
+      );
+    } finally {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    }
+
+    // The home and its config are complete; the failed check wrote nothing else.
+    const config = JSON.parse(
+      readFileSync(join(home, "config.json"), "utf8"),
+    ) as {
+      plugins: Record<string, { enabled: boolean }>;
+      store: { backend: string };
+    };
+    expect(config.plugins["harness-radian"]?.enabled).toBe(true);
+    expect(config.store.backend).toBe("jsonl");
+
+    const list = capture();
+    expect(await main(["repo", "list"], { home, io: list.io })).toBe(0);
+    expect(list.text()).toContain("no repositories");
+  });
+
+  test("repo add refuses a directory with no remote and writes nothing", async () => {
+    const { root, home } = await makeNamedHome({
+      dev: { module: devPluginPath },
+    });
+    const noRemote = join(root, "no-remote");
+    runGit(root, ["init", "-q", "-b", "main", noRemote]);
+
+    const output = capture();
+    expect(await main(["repo", "add", noRemote], { home, io: output.io })).toBe(
+      1,
+    );
+    expect(output.errors()).toContain("has no remote");
+    expect(existsSync(join(noRemote, ".operad", "dev.json"))).toBe(false);
+
+    const list = capture();
+    expect(await main(["repo", "list"], { home, io: list.io })).toBe(0);
+    expect(list.text()).toContain("no repositories");
+  });
+
   test("flows lists the loaded flows and their plugin", async () => {
     const { home } = await makeHome();
     const output = capture();

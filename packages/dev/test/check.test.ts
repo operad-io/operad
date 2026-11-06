@@ -1,14 +1,10 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { delimiter, join } from "node:path";
 import { PluginRegistry } from "@operad-io/engine";
 import { createDevPlugin } from "../src/index.ts";
 import { addRepository, listRepositories } from "../src/service.ts";
-import {
-  cleanupTempRoots,
-  storeAt,
-  tempRoot,
-} from "./support.ts";
+import { cleanupTempRoots, storeAt, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -30,8 +26,13 @@ interface Fixture {
   readonly repositoryPath: string;
 }
 
-/** A bare remote and a work tree that has pushed its one commit to it. */
-async function setup(): Promise<Fixture> {
+interface FixtureOptions {
+  /** Whether the work tree already pushed its main branch to the remote. */
+  readonly pushMain?: boolean;
+}
+
+/** A bare remote and a work tree with one commit. */
+async function setup(options: FixtureOptions = {}): Promise<Fixture> {
   const root = await tempRoot();
   const remote = join(root, "origin.git");
   git(root, ["init", "--bare", "-q", remote]);
@@ -49,80 +50,101 @@ async function setup(): Promise<Fixture> {
     "start",
   ]);
   git(repositoryPath, ["remote", "add", "origin", remote]);
-  git(repositoryPath, ["push", "-q", "-u", "origin", "main"]);
+  if (options.pushMain !== false) {
+    git(repositoryPath, ["push", "-q", "-u", "origin", "main"]);
+  }
   return { root, remote, repositoryPath };
 }
 
-function scratchRefs(remote: string): string {
-  return git(remote, [
-    "for-each-ref",
-    "--format=%(refname)",
-    "refs/operad",
-  ]);
+/** The full ref list of a remote, with each ref's commit, for a before/after. */
+function refs(remote: string): string {
+  return git(remote, ["for-each-ref", "--format=%(refname) %(objectname)"]);
 }
 
-/** A remote hook that refuses scratch refs at the named kind of update. */
-function refuseScratch(
-  remote: string,
-  on: "create" | "delete" | "existing-delete",
+function writeSettings(
+  repositoryPath: string,
+  value: Readonly<Record<string, unknown>>,
 ): void {
-  const condition =
-    on === "create"
-      ? '[ "$old" = "$zero" ] && [ "$new" != "$zero" ]'
-      : on === "delete"
-        ? '[ "$new" = "$zero" ]'
-        : '[ "$new" = "$zero" ] && [ "$old" != "$zero" ]';
-  const hook = join(remote, "hooks", "pre-receive");
+  mkdirSync(join(repositoryPath, ".operad"), { recursive: true });
   writeFileSync(
-    hook,
+    join(repositoryPath, ".operad", "dev.json"),
+    `${JSON.stringify(value, null, 2)}\n`,
+  );
+}
+
+function registryAt(
+  root: string,
+  store: ReturnType<typeof storeAt>,
+  repositoryPath: string,
+): PluginRegistry {
+  return new PluginRegistry([createDevPlugin()], {
+    home: root,
+    cwd: repositoryPath,
+    store,
+  });
+}
+
+/**
+ * A `git` first on PATH that records its arguments and then runs the real one.
+ * It proves which form the check invoked: the remote name or a raw URL.
+ */
+function recordGit(root: string): {
+  readonly calls: string;
+  restore(): void;
+} {
+  const real = Bun.which("git");
+  if (real === undefined) throw new Error("git is not on PATH");
+  const bin = join(root, "git-bin");
+  mkdirSync(bin, { recursive: true });
+  const calls = join(root, "git-calls");
+  const wrapper = join(bin, "git");
+  writeFileSync(
+    wrapper,
     [
       "#!/bin/sh",
-      'zero="0000000000000000000000000000000000000000"',
-      "while read -r old new ref; do",
-      `  if ${condition}; then`,
-      '    case "$ref" in',
-      "      refs/operad/*) echo 'scratch refs are refused'; exit 1 ;;",
-      "    esac",
-      "  fi",
-      "done",
-      "exit 0",
+      `printf '%s\\n' "$*" >> '${calls}'`,
+      `exec '${real}' "$@"`,
       "",
     ].join("\n"),
   );
-  chmodSync(hook, 0o755);
-}
-
-/** A stand-in for ssh that records the command and runs it on this machine. */
-function fakeSsh(root: string): string {
-  const path = join(root, "fake-ssh");
-  writeFileSync(
-    path,
-    '#!/bin/sh\nfor last do :; done\necho "$last" >> "$(dirname "$0")/ssh-calls"\nexec sh -c "$last"\n',
-  );
-  chmodSync(path, 0o755);
-  return path;
+  chmodSync(wrapper, 0o755);
+  const previous = process.env.PATH;
+  process.env.PATH = `${bin}${delimiter}${previous ?? ""}`;
+  return {
+    calls,
+    restore() {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    },
+  };
 }
 
 describe("dev init check", () => {
-  test("a repository with a reachable remote passes and leaves no scratch ref", async () => {
-    const { root, remote, repositoryPath } = await setup();
+  test("a repository with a reachable remote and its main branch passes", async () => {
+    const { root, repositoryPath } = await setup();
     const store = storeAt(root);
     await addRepository(store, { path: repositoryPath });
-    const registry = new PluginRegistry([createDevPlugin()], {
-      home: root,
-      cwd: root,
-      store,
-    });
 
-    const checks = await registry.checks();
+    const checks = await registryAt(root, store, repositoryPath).checks();
     expect(checks).toEqual([
       { plugin: "dev", ok: true, message: "1 repositories checked" },
     ]);
-    expect(scratchRefs(remote)).toBe("");
   });
 
-  test("an unreachable remote is a failed check that names it", async () => {
-    const { root, remote, repositoryPath } = await setup();
+  test("an unknown remote name is a failed check that names it", async () => {
+    const { root, repositoryPath } = await setup();
+    const store = storeAt(root);
+    await addRepository(store, { path: repositoryPath });
+    writeSettings(repositoryPath, { remote: "upstream" });
+
+    const [check] = await registryAt(root, store, repositoryPath).checks();
+    expect(check?.plugin).toBe("dev");
+    expect(check?.ok).toBe(false);
+    expect(check?.message).toContain('remote "upstream" does not exist');
+  });
+
+  test("an unreachable remote is a failed check with git's message", async () => {
+    const { root, repositoryPath } = await setup();
     const store = storeAt(root);
     await addRepository(store, { path: repositoryPath });
     git(repositoryPath, [
@@ -131,96 +153,57 @@ describe("dev init check", () => {
       "origin",
       join(root, "missing.git"),
     ]);
-    const registry = new PluginRegistry([createDevPlugin()], {
-      home: root,
-      cwd: root,
-      store,
-    });
 
-    const [check] = await registry.checks();
-    expect(check?.plugin).toBe("dev");
+    const [check] = await registryAt(root, store, repositoryPath).checks();
     expect(check?.ok).toBe(false);
     expect(check?.message).toContain('cannot reach remote "origin"');
-    expect(scratchRefs(remote)).toBe("");
+    expect(check?.message).toContain("missing.git");
     expect(await listRepositories(store)).toHaveLength(1);
   });
 
-  test("a local remote that refuses the push is a failed check that leaves no scratch ref", async () => {
-    const { root, remote, repositoryPath } = await setup();
-    refuseScratch(remote, "create");
+  test("a reachable remote without the main branch is a failed check that writes nothing", async () => {
+    const { root, remote, repositoryPath } = await setup({ pushMain: false });
     const store = storeAt(root);
     await addRepository(store, { path: repositoryPath });
-    const registry = new PluginRegistry([createDevPlugin()], {
-      home: root,
-      cwd: root,
-      store,
-    });
+    // The remote answers and holds a branch, just not the configured main one.
+    git(repositoryPath, ["push", "-q", "origin", "HEAD:refs/heads/other"]);
+    const before = refs(remote);
 
-    const [check] = await registry.checks();
+    const [check] = await registryAt(root, store, repositoryPath).checks();
     expect(check?.ok).toBe(false);
-    expect(check?.message).toContain('remote "origin" refused a push');
-    expect(scratchRefs(remote)).toBe("");
+    expect(check?.message).toContain('remote "origin" has no branch "main"');
+    expect(refs(remote)).toBe(before);
   });
 
-  test("a local remote that refuses the delete is a failed check that leaves no scratch ref", async () => {
-    const { root, remote, repositoryPath } = await setup();
-    refuseScratch(remote, "delete");
+  test("the check asks through the remote name, not its URL", async () => {
+    const { root, repositoryPath } = await setup();
     const store = storeAt(root);
     await addRepository(store, { path: repositoryPath });
-    const registry = new PluginRegistry([createDevPlugin()], {
-      home: root,
-      cwd: root,
-      store,
-    });
+    // A push would go elsewhere. A read-only check must reach the fetch URL
+    // through the name, exactly as any other command would.
+    const pushUrl = join(root, "push-only.git");
+    git(repositoryPath, ["remote", "set-url", "--push", "origin", pushUrl]);
 
-    const [check] = await registry.checks();
-    expect(check?.ok).toBe(false);
-    expect(check?.message).toContain(
-      "accepted a push but refused to delete the scratch ref",
-    );
-    // The remote is a path on this machine, so the refused wire delete is
-    // followed by a direct removal of the pushed ref.
-    expect(scratchRefs(remote)).toBe("");
-  });
+    const recorded = recordGit(root);
+    try {
+      const checks = await registryAt(root, store, repositoryPath).checks();
+      expect(checks).toEqual([
+        { plugin: "dev", ok: true, message: "1 repositories checked" },
+      ]);
+    } finally {
+      recorded.restore();
+    }
 
-  test("a URL remote that refuses an existing delete is never written to", async () => {
-    const { root, remote, repositoryPath } = await setup();
-    // The hook accepts the creation of a scratch ref but refuses to delete one
-    // that exists, so a check that pushed first could not undo it.
-    refuseScratch(remote, "existing-delete");
-    git(repositoryPath, ["config", "core.sshCommand", fakeSsh(root)]);
-    git(repositoryPath, [
-      "remote",
-      "set-url",
-      "origin",
-      `ssh://operad-test${remote}`,
-    ]);
-    const store = storeAt(root);
-    await addRepository(store, { path: repositoryPath });
-    const registry = new PluginRegistry([createDevPlugin()], {
-      home: root,
-      cwd: root,
-      store,
-    });
-
-    const checks = await registry.checks();
-    expect(checks).toEqual([
-      { plugin: "dev", ok: true, message: "1 repositories checked" },
-    ]);
-    // Nothing can remove a ref from a remote this process can only reach over
-    // the wire, so the check asks what a push would do instead of writing. The
-    // remote was still asked: the fake ssh records the receive-pack call.
-    expect(scratchRefs(remote)).toBe("");
-    expect(readFileSync(join(root, "ssh-calls"), "utf8")).toContain(
-      "receive-pack",
-    );
+    const calls = readFileSync(recorded.calls, "utf8");
+    expect(calls).toContain("ls-remote --heads origin main");
+    expect(calls).not.toContain(pushUrl);
   });
 
   test("no registered repository passes with a note", async () => {
-    const { root } = await setup();
+    const { root, repositoryPath } = await setup();
     const registry = new PluginRegistry([createDevPlugin()], {
       home: root,
-      cwd: root,
+      cwd: repositoryPath,
       store: storeAt(root),
     });
 
