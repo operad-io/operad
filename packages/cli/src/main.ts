@@ -195,16 +195,44 @@ async function commandPending(
   }
 }
 
+/**
+ * Resolves what `history <id>` names: a run id, a typed plugin object such as
+ * `task:42`, or an untyped object id. A bare id that only one declared object
+ * type owns resolves to that type; one owned by several is ambiguous.
+ */
 async function findHistoryRuns(
   log: LogBackend,
+  objectTypes: readonly string[],
   id: string,
 ): Promise<readonly RunInfo[]> {
   const runs = await log.runs();
   const exact = runs.find((run) => run.runId === id);
   if (exact !== undefined) return [exact];
-  return runs.filter(
-    (run) => run.object === id || run.object.endsWith(`:${id}`),
-  );
+
+  const parsed = parseObjectKey(id);
+  if (parsed !== undefined) {
+    return runs.filter((run) => run.object === `${parsed.type}:${parsed.id}`);
+  }
+
+  const plain = runs.filter((run) => run.object === id);
+  if (plain.length > 0) return plain;
+
+  const byType = new Map<string, RunInfo[]>();
+  for (const run of runs) {
+    const key = parseObjectKey(run.object);
+    if (key === undefined || key.id !== id) continue;
+    if (!objectTypes.includes(key.type)) continue;
+    const list = byType.get(key.type) ?? [];
+    list.push(run);
+    byType.set(key.type, list);
+  }
+  if (byType.size > 1) {
+    const names = [...byType.keys()].sort();
+    throw new Error(
+      `"${id}" is ambiguous: use ${names.map((type) => `${type}:${id}`).join(", ")}`,
+    );
+  }
+  return byType.values().next().value ?? [];
 }
 
 async function streamEntriesJson(
@@ -234,7 +262,11 @@ async function commandHistory(
   id: string,
   json: boolean,
 ): Promise<void> {
-  const runs = await findHistoryRuns(context.log, id);
+  const runs = await findHistoryRuns(
+    context.log,
+    context.registry.objectTypes().map((entry) => entry.type),
+    id,
+  );
   if (runs.length === 0) {
     throw new Error(`no run or object "${id}"`);
   }
@@ -468,6 +500,7 @@ export async function main(
     }
 
     if (command === "serve") {
+      if (args.length > 1) throw new UsageError("serve takes no arguments");
       const context = await openContext(home, io);
       try {
         await commandServe(context, io, args.slice(1));
