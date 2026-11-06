@@ -6,6 +6,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { PluginRegistry } from "@operad-io/engine";
 import {
@@ -14,6 +15,7 @@ import {
   addTask,
   createDevPlugin,
   mergeInProgress,
+  stepTestHooks,
   storeKey,
   taskData,
   validateDevSettings,
@@ -36,6 +38,10 @@ import {
 
 afterAll(cleanupTempRoots);
 guardLockHandles();
+
+const CANCEL_CHILD = fileURLToPath(
+  new URL("./fixtures/schedule-cancel-child.ts", import.meta.url),
+);
 
 interface Fixture {
   readonly root: string;
@@ -170,6 +176,55 @@ describe("dev/worktree", () => {
     expect(result.result).toBe("cancelled");
     expect((await taskDataOf(state)).phase).toBe("running");
     expect(existsSync(worktreeOf(state))).toBe(false);
+  });
+
+  test("a cancel that lands between the guard and the write is not overwritten", async () => {
+    const state = await fixture();
+    const current = await taskDataOf(state);
+    await state.store.put(
+      "task",
+      state.taskKey,
+      {
+        ...current,
+        phase: "running",
+        run: null,
+        claim: { token: "claim-token", phase: "running" },
+      },
+      "test",
+    );
+
+    // The step already passed its own claim check when the other process
+    // cancels; the guarded write must re-read the task under the lock and
+    // refuse instead of writing the stale `running` data back.
+    stepTestHooks.beforeGuardedWrite = async () => {
+      const child = Bun.spawn({
+        cmd: [
+          process.execPath,
+          CANCEL_CHILD,
+          state.store.root,
+          state.remote.repository,
+          state.taskKey,
+        ],
+        cwd: state.remote.repository,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      expect(await child.exited).toBe(0);
+    };
+    try {
+      const result = await state.registry.runStep("dev/worktree", {}, {
+        runId: "run-1",
+        object: { type: "task", id: state.taskKey, data: {} },
+        params: { token: "claim-token" },
+      });
+      expect(result.result).toBe("cancelled");
+    } finally {
+      stepTestHooks.beforeGuardedWrite = undefined;
+    }
+
+    const task = await taskDataOf(state);
+    expect(task.phase).toBe("cancelled");
+    expect(task.run).toBeNull();
   });
 
   test("reuses the worktree and merges the latest main into it", async () => {

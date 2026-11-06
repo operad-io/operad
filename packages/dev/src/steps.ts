@@ -25,7 +25,7 @@ import {
   type TaskAttempt,
   type TaskData,
 } from "./model.ts";
-import { findRepository } from "./service.ts";
+import { findRepository, withRepoLock } from "./service.ts";
 import {
   assertInsideRepository,
   readDevSettings,
@@ -410,16 +410,37 @@ export async function guardTask(
   return claimAllows(ctx, task) ? task : undefined;
 }
 
-/** Writes the task only while the step still owns its claim. */
+/**
+ * Test-only hook, run by a guarded write after its caller built the new data
+ * and before the write takes the repository lock. A test uses it to cancel the
+ * task from another process in that window.
+ */
+export const stepTestHooks: {
+  beforeGuardedWrite?:
+    | ((ctx: StepContext, key: string) => Promise<void> | void)
+    | undefined;
+} = {};
+
+/**
+ * Writes the task only while the step still owns its claim. The check reads the
+ * task again under the repository lock, so a `cancel` that landed after the
+ * caller's own guard cannot be overwritten by the data built from stale task
+ * state.
+ */
 export async function saveTaskGuarded(
   ctx: StepContext,
   key: string,
   data: TaskData,
   cause: string,
 ): Promise<boolean> {
-  if ((await guardTask(ctx, key)) === undefined) return false;
-  await saveTask(ctx, key, data, cause);
-  return true;
+  await stepTestHooks.beforeGuardedWrite?.(ctx, key);
+  return withRepoLock(ctx.store, data.repository, async () => {
+    const object = await ctx.store.get("task", key);
+    if (object === undefined) return false;
+    if (!claimAllows(ctx, taskData(object.data))) return false;
+    await saveTask(ctx, key, data, cause);
+    return true;
+  });
 }
 
 /** The result a step returns when its task was cancelled under it. */
