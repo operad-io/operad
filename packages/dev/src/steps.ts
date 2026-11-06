@@ -32,13 +32,13 @@ import {
   type DevSettings,
 } from "./settings.ts";
 
-interface GitResult {
+export interface GitResult {
   readonly ok: boolean;
   readonly out: string;
   readonly err: string;
 }
 
-function git(cwd: string, args: readonly string[]): GitResult {
+export function git(cwd: string, args: readonly string[]): GitResult {
   const result = Bun.spawnSync({
     cmd: ["git", "-C", cwd, ...args],
     stdout: "pipe",
@@ -77,7 +77,7 @@ export function workBranch(taskId: string): string {
   return `work/${taskId}`;
 }
 
-interface TaskContext {
+export interface TaskContext {
   readonly task: TaskData;
   readonly repository: RepositoryData;
   readonly taskKey: string;
@@ -85,7 +85,7 @@ interface TaskContext {
   readonly settings: DevSettings;
 }
 
-async function taskContext(ctx: StepContext): Promise<TaskContext> {
+export async function taskContext(ctx: StepContext): Promise<TaskContext> {
   const object = ctx.object;
   if (object === undefined || object.type !== "task") {
     throw new DevError("object", "this step runs on a task");
@@ -157,7 +157,7 @@ function listWorktrees(repositoryPath: string): readonly string[] {
   return paths;
 }
 
-function isRegistered(repositoryPath: string, path: string): boolean {
+export function isRegistered(repositoryPath: string, path: string): boolean {
   const wanted = resolvePath(path);
   return listWorktrees(repositoryPath).some(
     (candidate) => resolvePath(candidate) === wanted,
@@ -175,7 +175,7 @@ function currentBranch(path: string): string | undefined {
   return result.ok && result.out.length > 0 ? result.out : undefined;
 }
 
-function headOf(path: string): string | undefined {
+export function headOf(path: string): string | undefined {
   const result = git(path, ["rev-parse", "HEAD"]);
   return result.ok && result.out.length > 0 ? result.out : undefined;
 }
@@ -364,7 +364,7 @@ function prepareWorktree(
   return { kind: "ready", base: headOf(path) };
 }
 
-async function saveTask(
+export async function saveTask(
   ctx: StepContext,
   key: string,
   data: TaskData,
@@ -396,6 +396,11 @@ export async function runWorktree(
     branch: workBranch(context.taskId),
     base,
     result: prepared.kind,
+    // A new attempt starts with no gate results; the branch may have moved.
+    verified: null,
+    verify: null,
+    review: null,
+    reviews: 0,
   };
   const next: TaskData = {
     ...context.task,
@@ -417,7 +422,7 @@ export async function runWorktree(
   return { result: prepared.kind, data };
 }
 
-function briefText(task: TaskData): string {
+export function briefText(task: TaskData): string {
   const parts = splitBrief(task.brief);
   const pieces = [parts.body, parts.reworks].filter(
     (piece) => piece.trim().length > 0,

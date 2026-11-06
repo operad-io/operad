@@ -33,6 +33,29 @@ export interface WorkerSettings {
   readonly stallSecs?: number | undefined;
 }
 
+/** How serious a review finding must be before it fails the gate. */
+export type FixLevel = "critical" | "major" | "minor";
+
+/** The commands a task's gate runs and how long each may take. */
+export interface GateSettings {
+  readonly commands: readonly string[];
+  readonly commandTimeoutSecs: number;
+}
+
+/** What a repository may configure for the review harness step. */
+export interface ReviewerSettings {
+  readonly use: string;
+  readonly args: readonly string[];
+  /** The arguments of the first review of an attempt, when they differ. */
+  readonly firstArgs?: readonly string[] | undefined;
+  readonly timeoutSecs: number;
+  readonly fixLevel: FixLevel;
+  /** The largest diff one file may put in the review prompt. */
+  readonly maxFileDiffBytes: number;
+  /** The largest diff the whole review prompt may carry. */
+  readonly maxDiffBytes: number;
+}
+
 /** The whole `.operad/dev.json` document, with every default filled. */
 export interface DevSettings {
   readonly name?: string | undefined;
@@ -41,6 +64,9 @@ export interface DevSettings {
   readonly worktreeRoot: string;
   readonly worker: WorkerSettings;
   readonly workerBrief: string;
+  readonly gate: GateSettings;
+  readonly reviewer: ReviewerSettings;
+  readonly maxAutoRework: number;
 }
 
 /**
@@ -63,6 +89,19 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
     args: [],
   },
   workerBrief: WORKER_BRIEF_FILE,
+  gate: {
+    commands: [],
+    commandTimeoutSecs: 1800,
+  },
+  reviewer: {
+    use: DEFAULT_WORKER_USE,
+    args: [],
+    timeoutSecs: 600,
+    fixLevel: "major",
+    maxFileDiffBytes: 200_000,
+    maxDiffBytes: 1_000_000,
+  },
+  maxAutoRework: 2,
 };
 
 const KNOWN_FIELDS = new Set([
@@ -77,6 +116,9 @@ const KNOWN_FIELDS = new Set([
   "sandbox",
   "worker",
   "workerBrief",
+  "gate",
+  "reviewer",
+  "maxAutoRework",
 ]);
 
 function nonEmptyString(value: unknown, field: string): string {
@@ -192,6 +234,116 @@ function workerSettings(value: unknown, field: string): WorkerSettings {
   };
 }
 
+function positiveInteger(value: unknown, field: string): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    !Number.isInteger(value) ||
+    value <= 0
+  ) {
+    throw new DevError(field, "must be a positive integer");
+  }
+  return value;
+}
+
+function nonNegativeInteger(value: unknown, field: string): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    !Number.isInteger(value) ||
+    value < 0
+  ) {
+    throw new DevError(field, "must be zero or a positive integer");
+  }
+  return value;
+}
+
+function commandList(value: unknown, field: string): readonly string[] {
+  const commands = stringList(value, field);
+  commands.forEach((command, index) => {
+    if (command.trim().length === 0) {
+      throw new DevError(`${field}[${index}]`, "must be a non-empty string");
+    }
+  });
+  return commands;
+}
+
+function gateSettings(value: unknown, field: string): GateSettings {
+  if (!isRecord(value)) {
+    throw new DevError(field, "must be an object");
+  }
+  for (const key of Object.keys(value)) {
+    if (key !== "commands" && key !== "commandTimeoutSecs") {
+      throw new DevError(`${field}.${key}`, "is not a gate setting");
+    }
+  }
+  return {
+    commands:
+      value.commands === undefined
+        ? DEFAULT_DEV_SETTINGS.gate.commands
+        : commandList(value.commands, `${field}.commands`),
+    commandTimeoutSecs:
+      value.commandTimeoutSecs === undefined
+        ? DEFAULT_DEV_SETTINGS.gate.commandTimeoutSecs
+        : positiveSeconds(value.commandTimeoutSecs, `${field}.commandTimeoutSecs`),
+  };
+}
+
+function fixLevelOf(value: unknown, field: string): FixLevel {
+  if (value === undefined) return DEFAULT_DEV_SETTINGS.reviewer.fixLevel;
+  if (value !== "critical" && value !== "major" && value !== "minor") {
+    throw new DevError(field, 'must be "critical", "major" or "minor"');
+  }
+  return value;
+}
+
+function reviewerSettings(value: unknown, field: string): ReviewerSettings {
+  if (!isRecord(value)) {
+    throw new DevError(field, "must be an object");
+  }
+  for (const key of Object.keys(value)) {
+    if (
+      key !== "use" &&
+      key !== "args" &&
+      key !== "firstArgs" &&
+      key !== "timeoutSecs" &&
+      key !== "fixLevel" &&
+      key !== "maxFileDiffBytes" &&
+      key !== "maxDiffBytes"
+    ) {
+      throw new DevError(`${field}.${key}`, "is not a reviewer setting");
+    }
+  }
+  const firstArgs =
+    value.firstArgs === undefined
+      ? undefined
+      : stringList(value.firstArgs, `${field}.firstArgs`);
+  return {
+    use:
+      value.use === undefined
+        ? DEFAULT_DEV_SETTINGS.reviewer.use
+        : nonEmptyString(value.use, `${field}.use`),
+    args:
+      value.args === undefined
+        ? []
+        : stringList(value.args, `${field}.args`),
+    ...(firstArgs === undefined ? {} : { firstArgs }),
+    timeoutSecs:
+      value.timeoutSecs === undefined
+        ? DEFAULT_DEV_SETTINGS.reviewer.timeoutSecs
+        : positiveSeconds(value.timeoutSecs, `${field}.timeoutSecs`),
+    fixLevel: fixLevelOf(value.fixLevel, `${field}.fixLevel`),
+    maxFileDiffBytes:
+      value.maxFileDiffBytes === undefined
+        ? DEFAULT_DEV_SETTINGS.reviewer.maxFileDiffBytes
+        : positiveInteger(value.maxFileDiffBytes, `${field}.maxFileDiffBytes`),
+    maxDiffBytes:
+      value.maxDiffBytes === undefined
+        ? DEFAULT_DEV_SETTINGS.reviewer.maxDiffBytes
+        : positiveInteger(value.maxDiffBytes, `${field}.maxDiffBytes`),
+  };
+}
+
 /**
  * The root task worktrees live in. Settings written before the step work used
  * `worktrees`; it is read as the same setting so an upgrade needs no edit.
@@ -247,6 +399,18 @@ export function validateDevSettings(value: unknown): DevSettings {
       value.workerBrief === undefined
         ? DEFAULT_DEV_SETTINGS.workerBrief
         : nonEmptyString(value.workerBrief, "workerBrief"),
+    gate:
+      value.gate === undefined
+        ? DEFAULT_DEV_SETTINGS.gate
+        : gateSettings(value.gate, "gate"),
+    reviewer:
+      value.reviewer === undefined
+        ? DEFAULT_DEV_SETTINGS.reviewer
+        : reviewerSettings(value.reviewer, "reviewer"),
+    maxAutoRework:
+      value.maxAutoRework === undefined
+        ? DEFAULT_DEV_SETTINGS.maxAutoRework
+        : nonNegativeInteger(value.maxAutoRework, "maxAutoRework"),
   };
 }
 

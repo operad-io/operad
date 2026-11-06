@@ -79,6 +79,88 @@
       "type": "string",
       "minLength": 1,
       "default": ".operad/worker-brief.md"
+    },
+    "gate": {
+      "description": "The commands a task's gate runs on its commit and how long each may take.",
+      "type": "object",
+      "properties": {
+        "commands": {
+          "description": "The commands the verify step runs, in order, in a detached checkout of the task commit.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": []
+        },
+        "commandTimeoutSecs": {
+          "description": "The longest one gate command may run, in seconds.",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 1800
+        }
+      },
+      "additionalProperties": false,
+      "default": { "commands": [], "commandTimeoutSecs": 1800 }
+    },
+    "reviewer": {
+      "description": "The harness step that reviews a task's diff and the limits it runs under.",
+      "type": "object",
+      "properties": {
+        "use": {
+          "description": "The harness step, such as harness-radian/agent.",
+          "type": "string",
+          "minLength": 1,
+          "default": "harness-radian/agent"
+        },
+        "args": {
+          "description": "Extra arguments the harness step passes to its command.",
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "firstArgs": {
+          "description": "Arguments used for the first review of an attempt, when they differ from args.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "timeoutSecs": {
+          "description": "The longest a review may run, in seconds.",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 600
+        },
+        "fixLevel": {
+          "description": "The lowest finding severity that fails the gate.",
+          "type": "string",
+          "enum": ["critical", "major", "minor"],
+          "default": "major"
+        },
+        "maxFileDiffBytes": {
+          "description": "The largest diff one file may put in the review prompt; a larger file is left out and listed.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 200000
+        },
+        "maxDiffBytes": {
+          "description": "The largest diff the review prompt may carry; a larger change fails the review before a reviewer starts.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 1000000
+        }
+      },
+      "additionalProperties": false,
+      "default": {
+        "use": "harness-radian/agent",
+        "args": [],
+        "timeoutSecs": 600,
+        "fixLevel": "major",
+        "maxFileDiffBytes": 200000,
+        "maxDiffBytes": 1000000
+      }
+    },
+    "maxAutoRework": {
+      "description": "How many automatic reworks in a row are allowed before the flow waits for a person.",
+      "type": "integer",
+      "minimum": 0,
+      "default": 2
     }
   },
   "additionalProperties": false

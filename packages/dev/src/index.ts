@@ -1,8 +1,10 @@
 /** The dev plugin: repositories, plans, tasks and their commands and views. */
 
 import { definePlugin } from "@operad-io/engine";
+import devFlow from "../flows/dev.flow.ts";
 import { actions } from "./actions.ts";
 import { commands } from "./commands.ts";
+import { runRework, runReview, runVerify } from "./gate.ts";
 import { resolveDevKey } from "./service.ts";
 import { runWork, runWorktree } from "./steps.ts";
 import { planViews, taskViews } from "./views.ts";
@@ -34,7 +36,23 @@ export function createDevPlugin() {
         results: ["done", "nothing", "failed"],
         run: runWork,
       },
+      {
+        name: "verify",
+        results: ["pass", "fail"],
+        run: runVerify,
+      },
+      {
+        name: "review",
+        results: ["pass", "fail", "failed"],
+        run: runReview,
+      },
+      {
+        name: "rework",
+        results: ["again", "ask"],
+        run: runRework,
+      },
     ],
+    flows: [devFlow],
     actions,
     commands,
     views: {
@@ -55,6 +73,7 @@ export default createDevPlugin();
 
 export * from "./actions.ts";
 export * from "./commands.ts";
+export * from "./gate.ts";
 export * from "./model.ts";
 export * from "./service.ts";
 export * from "./settings.ts";

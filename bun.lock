@@ -33,6 +33,9 @@
       "dependencies": {
         "@operad-io/engine": "workspace:*",
       },
+      "devDependencies": {
+        "@operad-io/shell": "workspace:*",
+      },
     },
     "packages/engine": {
       "name": "@operad-io/engine",

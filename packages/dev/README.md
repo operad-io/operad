@@ -50,7 +50,8 @@ Every action is also a command: `operad dev:<action> <id>`.
 | `dev:priority-up` | plan | | move one step towards P0 |
 | `dev:priority-down` | plan | | move one step towards P5 |
 
-`merge` and `reject` arrive with the review part of the plan.
+The gate waits for `merge` or `reject`; the `merge` action itself arrives with
+the merge part of the plan. `reject` is only a flow choice for now.
 
 ## Steps
 
@@ -58,11 +59,31 @@ Every action is also a command: `operad dev:<action> <id>`.
 |---|---|---|
 | `dev/worktree` | `ready`, `conflict`, `failed` | fetches, creates `worktreeRoot/<task id>` on `work/<task id>` from `<remote>/<mainBranch>`, and on a later attempt reuses it after merging the latest main |
 | `dev/work` | `done`, `nothing`, `failed` | builds the worker prompt, runs the configured harness step in the worktree, then requires new commits, a clean tree and a pushed branch |
+| `dev/verify` | `pass`, `fail` | recreates `<worktreeRoot>/<task id>-gate` detached at the branch head, runs `gate.commands` through `shell/check`, and records the verified commit |
+| `dev/review` | `pass`, `fail`, `failed` | runs the reviewer harness step in the gate worktree on the diff from the merge base to the verified commit; a finding on a file the change did not touch is pre-existing and does not count |
+| `dev/rework` | `again`, `ask` | appends `## Rework <n> (verify|review)` with the failed command or the counted findings and sends the task back to the worker; after `maxAutoRework` in a row it asks a person instead |
 
 A conflict leaves the worktree mid-merge. The next `dev/work` prompt starts by
 asking the worker to resolve it. A failed attempt names the uncommitted files.
 The task records its attempt count, phase, session id and cost while these steps
 run.
+
+## Flow
+
+`dev` is the coding flow: worktree → work → verify → review → a person decides
+`merge` or `reject`. A failing verify or review goes to `rework`, which sends the
+task back to the worktree until `maxAutoRework` automatic reworks have run in a
+row; then it waits for a person. `nothing` and `failed` from `work` also wait for
+a person. The merge itself comes in a later part of the plugin.
+
+## Review diff size
+
+Before building the review prompt, the step leaves out files marked
+`linguist-vendored`, `linguist-generated`, `-diff` or `binary` in
+`.gitattributes`, and every file whose own diff is over `maxFileDiffBytes`. Each
+left-out file is listed with its added/removed line counts and the reason. If
+the remaining diff is over `maxDiffBytes`, no reviewer starts and the step fails
+with the size and the largest files, so a person sees why.
 
 ## Settings
 
@@ -81,6 +102,16 @@ The file holds the repository's work settings:
 | `worker.args` | `[]` | extra arguments for that harness step |
 | `worker.wallTimeSecs`, `worker.stallSecs` | harness defaults | the worker's time limits |
 | `workerBrief` | `.operad/worker-brief.md` | the brief a worker reads first; a missing file means the built-in text |
+| `gate.commands` | `[]` | the commands the verify step runs on the task commit |
+| `gate.commandTimeoutSecs` | `1800` | the longest one gate command may run |
+| `reviewer.use` | `harness-radian/agent` | the harness step that reviews the diff |
+| `reviewer.args` | `[]` | the arguments every review gets |
+| `reviewer.firstArgs` | none | the arguments the first review of an attempt gets instead |
+| `reviewer.timeoutSecs` | `600` | the longest a review may run |
+| `reviewer.fixLevel` | `major` | the lowest finding severity that fails the gate: `critical`, `major` or `minor` |
+| `reviewer.maxFileDiffBytes` | `200000` | the largest diff one file may put in the review prompt |
+| `reviewer.maxDiffBytes` | `1000000` | the largest diff the review prompt may carry |
+| `maxAutoRework` | `2` | how many automatic reworks in a row are allowed before waiting for a person |
 
 The built-in brief says to work only in the worktree, commit whole pieces, run
 the repository's verify command and end with a summary.

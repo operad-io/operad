@@ -8,5 +8,8 @@
   },
   "dependencies": {
     "@operad-io/engine": "workspace:*"
+  },
+  "devDependencies": {
+    "@operad-io/shell": "workspace:*"
   }
 }
