@@ -42,13 +42,12 @@ function normalizeRegistry(registry: StepTypeRegistry): readonly StepType[] {
   return entries;
 }
 
+/**
+ * A use name matches one declaration exactly, so a step type from another
+ * plugin is never accepted under the same short name.
+ */
 function resolveStepType(registry: readonly StepType[], use: string): StepType | undefined {
-  const exact = registry.find((entry) => entry.name === use);
-  if (exact !== undefined) return exact;
-  const slash = use.indexOf("/");
-  if (slash < 0) return undefined;
-  const short = use.slice(slash + 1);
-  return registry.find((entry) => entry.name === short);
+  return registry.find((entry) => entry.name === use);
 }
 
 interface CheckedStep extends StepShape {

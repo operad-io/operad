@@ -130,6 +130,47 @@ describe("validateFlow", () => {
     expect(error.message).toContain('"dev/nope"');
   });
 
+  test("matches a plugin step type by its full name only", () => {
+    const pluginFlow = (use: string) => ({
+      name: "deploy",
+      entry: "run",
+      steps: [
+        {
+          id: "run",
+          kind: "plugin",
+          params: { use, params: {} },
+          replay: "safe",
+          next: { ok: "end" },
+        },
+      ],
+    });
+    const waitFlow = (check: string) => ({
+      name: "ci",
+      entry: "watch",
+      steps: [
+        {
+          id: "watch",
+          kind: "wait",
+          params: { check },
+          replay: "safe",
+          next: { ready: "end", interrupted: "end" },
+        },
+      ],
+    });
+    const other = [{ name: "other/command", results: ["ok"] }];
+
+    expect(errorOf(() => validateFlow(pluginFlow("dev/command"), other)).message).toContain(
+      'params.use: unknown plugin step type "dev/command"',
+    );
+    expect(errorOf(() => validateFlow(waitFlow("dev/command"), other)).message).toContain(
+      'params.check: unknown plugin step type "dev/command"',
+    );
+    expect(
+      errorOf(() => validateFlow(pluginFlow("dev/command"), [{ name: "command", results: ["ok"] }]))
+        .message,
+    ).toContain('unknown plugin step type "dev/command"');
+  });
+
   test("takes plugin result names from the registry", () => {
     const flow = {
       name: "deploy",

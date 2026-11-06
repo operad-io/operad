@@ -76,7 +76,7 @@ export type Step = PluginStep | WaitPersonStep | WaitStep | EndStep;
 
 /** One step type a plugin declares. */
 export interface StepType {
-  /** The full use name, such as `dev/command`; `<step type>` also works. */
+  /** The full use name, such as `dev/command`, matched exactly. */
   readonly name: string;
   /** The result names the step can produce. */
   readonly results: readonly string[];
