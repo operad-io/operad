@@ -17,6 +17,8 @@ import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
 
 afterAll(cleanupTempRoots);
 
+const ACTOR = { via: "test", id: "tester" } as const;
+
 /** The child that writes a fact from another process. */
 const APPEND_CHILD = join(
   import.meta.dir,
@@ -157,6 +159,7 @@ describe("presentation views", () => {
     expect(object.actions.map((action) => action.name)).toEqual([
       "demo:approve",
       "demo:auto",
+      "demo:label",
       "demo:drop",
     ]);
     const approve = object.actions.find((action) => action.name === "demo:approve");
@@ -219,23 +222,30 @@ describe("presentation views", () => {
     const { store, registry, log } = await fixture();
     const views = createViews({ registry, store, log });
 
-    await expect(views.act("demo:approve", "item:one")).rejects.toMatchObject({
+    await expect(
+      views.act("demo:approve", "item:one", { actor: ACTOR }),
+    ).rejects.toMatchObject({
       kind: "note",
     });
     const run = await views.act("demo:approve", "item:one", {
       note: "looks good",
+      actor: ACTOR,
     });
     expect(run.name).toBe("demo:approve");
     expect(store.get("item", "one")?.data.approved).toBe(true);
     expect(store.get("item", "one")?.data.approvedNote).toBe("looks good");
 
-    await expect(views.act("demo:drop", "item:two")).rejects.toMatchObject({
+    await expect(
+      views.act("demo:drop", "item:two", { actor: ACTOR }),
+    ).rejects.toMatchObject({
       kind: "confirm",
     });
-    await views.act("demo:drop", "item:two", { yes: true });
+    await views.act("demo:drop", "item:two", { yes: true, actor: ACTOR });
     expect(store.get("item", "two")?.data.dropped).toBe(true);
 
-    await expect(views.act("demo:hidden", "item:one")).rejects.toMatchObject({
+    await expect(
+      views.act("demo:hidden", "item:one", { actor: ACTOR }),
+    ).rejects.toMatchObject({
       kind: "action",
     });
     await log.close();
@@ -358,7 +368,7 @@ describe("presentation views", () => {
 
     store.put("other", "1", {}, "seed");
     const views = createViews({ registry, store });
-    await views.act("two:go", "other:1");
+    await views.act("two:go", "other:1", { actor: ACTOR });
     expect(store.get("other", "1")?.data.ran).toBe(true);
   });
 

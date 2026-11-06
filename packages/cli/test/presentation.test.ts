@@ -389,6 +389,38 @@ describe("operad presentation commands", () => {
     expect(freshStore(home).get("item", "one")?.data.auto).toBe("merge");
   });
 
+  test("schema flags accept values that look like ids or negative numbers", async () => {
+    const { home } = await makeHome();
+    seed(home, { title: "One", state: "new" }, "one");
+
+    const idLike = capture();
+    expect(
+      await main(["demo:label", "item:one", "--text", "x:y"], {
+        home,
+        io: idLike.io,
+      }),
+    ).toBe(0);
+    expect(freshStore(home).get("item", "one")?.data.label).toBe("x:y");
+
+    const numericText = capture();
+    expect(
+      await main(["demo:label", "item:one", "--text", "123"], {
+        home,
+        io: numericText.io,
+      }),
+    ).toBe(0);
+    expect(freshStore(home).get("item", "one")?.data.label).toBe("123");
+
+    const negative = capture();
+    expect(
+      await main(["demo:label", "item:one", "--count", "-1"], {
+        home,
+        io: negative.io,
+      }),
+    ).toBe(0);
+    expect(freshStore(home).get("item", "one")?.data.count).toBe(-1);
+  });
+
   test("a required note outside a terminal is a usage error", async () => {
     const { home } = await makeHome();
     seed(home, { title: "One", state: "new" }, "one");

@@ -184,6 +184,33 @@ export default definePlugin({
       },
     },
     {
+      name: "label",
+      on: "item",
+      args: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "A label" },
+          count: { type: "integer", description: "How many" },
+        },
+        additionalProperties: false,
+      },
+      when: () => true,
+      async run(ctx, args) {
+        const values = typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
+        const current = await ctx.store.get("item", ctx.object.id);
+        await ctx.store.put(
+          "item",
+          ctx.object.id,
+          {
+            ...(current?.data ?? {}),
+            label: values.text,
+            count: values.count,
+          },
+          "label",
+        );
+      },
+    },
+    {
       name: "drop",
       on: "item",
       confirm: true,

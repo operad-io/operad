@@ -224,6 +224,32 @@ describe("plugin registry validation", () => {
     expect(error.message).toContain('unknown keyword "pattern"');
   });
 
+  test("rejects a note property that is not a string", () => {
+    const error = errorOf(
+      () =>
+        new PluginRegistry([
+          def({
+            name: "a",
+            objects: [{ name: "note" }],
+            actions: [
+              {
+                name: "go",
+                on: "note",
+                args: {
+                  type: "object",
+                  properties: { reason: { role: "note" } },
+                  required: ["reason"],
+                } as never,
+                when: () => true,
+                run: () => undefined,
+              },
+            ],
+          }),
+        ]),
+    );
+    expect(error.message).toContain('a note property must have type "string"');
+  });
+
   test("rejects the old action note field and points at args", () => {
     const error = errorOf(
       () =>
@@ -327,6 +353,7 @@ describe("plugin registry validation", () => {
     await expect(
       registry.runAction("go", undefined, {
         object: { type: "one", id: "x", data: {} },
+        actor: { via: "test", id: "tester" },
       }),
     ).rejects.toThrow(/declared by plugins "a" and "b"/);
   });

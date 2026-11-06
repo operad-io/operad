@@ -92,7 +92,7 @@ async function endRun(home: string, runId: string, choice: string): Promise<void
   });
   const found = registry.flow("ask");
   if (found === undefined) throw new Error("missing ask flow");
-  await answerRun({ log, flow: found.flow, runId, choice });
+  await answerRun({ log, flow: found.flow, runId, choice, actor: { via: "test", id: "tester" } });
   await log.close();
 }
 

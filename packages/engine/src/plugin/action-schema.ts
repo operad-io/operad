@@ -73,7 +73,7 @@ function normalizeSchema(value: unknown, at: string): ActionArgSchema {
   if (role !== undefined && role !== "note") {
     throw new Error(`${at}.role: must be "note"`);
   }
-  if (role === "note" && type !== undefined && type !== "string") {
+  if (role === "note" && type !== "string") {
     throw new Error(`${at}.role: a note property must have type "string"`);
   }
 

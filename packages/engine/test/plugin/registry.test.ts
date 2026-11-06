@@ -10,7 +10,7 @@ import {
   PluginRegistry,
 } from "../../src/index.ts";
 import notes from "../fixtures/plugins/notes.ts";
-import { cleanupTempRoots, tempRoot } from "./support.ts";
+import { cleanupTempRoots, def, tempRoot } from "./support.ts";
 
 const notesPlugin = fileURLToPath(
   new URL("../fixtures/plugins/notes.ts", import.meta.url),
@@ -129,6 +129,7 @@ describe("plugin registry", () => {
     const action = await registry.runAction("notes/archive", {}, {
       object: entry.object,
       runId: "run-2",
+      actor: { via: "test", id: "tester" },
     });
     expect(action).toEqual({
       plugin: "notes",
@@ -145,6 +146,45 @@ describe("plugin registry", () => {
     ]);
     expect(after[0]?.actions).toEqual([]);
     expect(logs).toEqual([]);
+  });
+
+  test("an action receives the person's actor", async () => {
+    const root = await tempRoot();
+    const store = new MemoryPluginStore({ root: join(root, "store") });
+    const registry = new PluginRegistry(
+      [
+        def({
+          name: "a",
+          objects: [{ name: "note" }],
+          actions: [
+            {
+              name: "who",
+              on: "note",
+              when: () => true,
+              async run(ctx) {
+                await ctx.store.put(
+                  "note",
+                  ctx.object.id,
+                  { actor: ctx.actor },
+                  "who",
+                );
+              },
+            },
+          ],
+        }),
+      ],
+      { store },
+    );
+    await store.put("note", "n1", { text: "one" }, "seed");
+
+    await registry.runAction("who", {}, {
+      object: { type: "note", id: "n1", data: {} },
+      actor: { via: "telegram", id: "owner" },
+    });
+    expect(store.get("note", "n1")?.data.actor).toEqual({
+      via: "telegram",
+      id: "owner",
+    });
   });
 
   test("records who asked in the action's fact", async () => {

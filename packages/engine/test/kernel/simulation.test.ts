@@ -153,10 +153,23 @@ function chooseInput(
     if (roll < 0.6) {
       const index = Math.floor(rand() * wait.choices.length);
       const choice = wait.choices[index] ?? wait.choices[0] ?? "cancel";
-      return { kind: "person_answer", waitId: wait.id, choice, note: "sim", inputId: id };
+      return {
+        kind: "person_answer",
+        waitId: wait.id,
+        choice,
+        note: "sim",
+        actor: { via: "sim", id: "bot" },
+        inputId: id,
+      };
     }
     if (roll < 0.7) {
-      return { kind: "person_answer", waitId: wait.id, choice: "bogus", inputId: id };
+      return {
+        kind: "person_answer",
+        waitId: wait.id,
+        choice: "bogus",
+        actor: { via: "sim", id: "bot" },
+        inputId: id,
+      };
     }
     if (roll < 0.8 && runner.lastInput !== null) return runner.lastInput;
     if (roll < 0.9) return { kind: "recover", inputId: id };
@@ -246,11 +259,20 @@ function inputFor(
     }
     case "answer": {
       const wait = state.wait;
-      if (wait === null) return { kind: "person_answer", waitId: "missing", choice: "stop", inputId: id };
+      if (wait === null) {
+        return {
+          kind: "person_answer",
+          waitId: "missing",
+          choice: "stop",
+          actor: { via: "sim", id: "bot" },
+          inputId: id,
+        };
+      }
       return {
         kind: "person_answer",
         waitId: wait.id,
         choice: wait.choices[0] ?? "stop",
+        actor: { via: "sim", id: "bot" },
         inputId: id,
       };
     }

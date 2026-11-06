@@ -149,7 +149,7 @@ async function openContext(home: string, io: CliIo): Promise<Context> {
         runId,
         choice,
         ...(note === undefined ? {} : { note }),
-        ...(actor === undefined ? {} : { actor }),
+        actor,
       });
     },
   });
@@ -505,14 +505,44 @@ interface ActionArguments {
   readonly yes: boolean;
 }
 
-function looksLikeId(value: string): boolean {
-  return value.includes(":") || /^[0-9]+$/.test(value);
+/** The action an argv names, found before its flags are classified. */
+function actionInfoForArgv(
+  context: Context,
+  argv: readonly string[],
+): ActionInfo | undefined {
+  const actions = context.registry.actions();
+  const tokens = argv.filter((arg) => !arg.startsWith("--"));
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    const split = splitActionName(token);
+    if (split !== undefined) {
+      const found = actions.find(
+        (info) => info.plugin === split.plugin && info.action === split.action,
+      );
+      if (found !== undefined) return found;
+    }
+    const next = tokens[index + 1];
+    if (next !== undefined) {
+      const found = actions.find(
+        (info) => info.plugin === token && info.action === next,
+      );
+      if (found !== undefined) return found;
+    }
+    const candidates = actions.filter((info) => info.action === token);
+    if (candidates.length === 1) return candidates[0];
+  }
+  return undefined;
 }
 
 /** Reads `--flag value`, `--flag=value` and a bare boolean `--flag`. */
-function parseActionArguments(argv: readonly string[]): ActionArguments {
+function parseActionArguments(
+  argv: readonly string[],
+  args?: ActionArgsSchema,
+): ActionArguments {
   const positionals: string[] = [];
   const values = new Map<string, string | true>();
+  const properties = args?.properties ?? {};
+  const note = noteField(args);
   let yes = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index] ?? "";
@@ -531,11 +561,24 @@ function parseActionArguments(argv: readonly string[]): ActionArguments {
       continue;
     }
     const next = argv[index + 1];
-    if (
-      next === undefined ||
-      next.startsWith("-") ||
-      looksLikeId(next)
-    ) {
+    const property = properties[body];
+    if (property?.type === "boolean") {
+      if (next === "true" || next === "false") {
+        values.set(body, next);
+        index += 1;
+      } else {
+        values.set(body, true);
+      }
+      continue;
+    }
+    const takesValue = property !== undefined || (note !== undefined && body === "note");
+    if (!takesValue) {
+      // An unknown flag stays bare, so a following object id is not swallowed.
+      values.set(body, true);
+      continue;
+    }
+    // A schema value may look like an object id or a negative number.
+    if (next === undefined || next.startsWith("--")) {
       values.set(body, true);
       continue;
     }
@@ -707,30 +750,6 @@ async function promptConfirm(io: CliIo, name: string): Promise<boolean> {
   return /^y(es)?$/i.test((answer ?? "").trim());
 }
 
-function actionInfoFromArgs(
-  context: Context,
-  positionals: readonly string[],
-): ActionInfo | undefined {
-  const actions = context.registry.actions();
-  const first = positionals[0];
-  if (first === undefined) return undefined;
-  const split = splitActionName(first);
-  if (split !== undefined) {
-    return actions.find(
-      (info) => info.plugin === split.plugin && info.action === split.action,
-    );
-  }
-  const second = positionals[1];
-  if (second !== undefined) {
-    const direct = actions.find(
-      (info) => info.plugin === first && info.action === second,
-    );
-    if (direct !== undefined) return direct;
-  }
-  const candidates = actions.filter((info) => info.action === first);
-  return candidates.length === 1 ? candidates[0] : undefined;
-}
-
 function actionUsage(action: ActionInfo): string {
   const flags = actionArgFlags(action);
   if (action.confirm) flags.push("--yes");
@@ -746,14 +765,14 @@ async function commandAction(
 ): Promise<boolean> {
   const help = splitFlag(argv, "--help");
   if (help.present) {
-    const parsed = parseActionArguments(help.args);
-    const info = actionInfoFromArgs(context, parsed.positionals);
+    const info = actionInfoForArgv(context, help.args);
     if (info === undefined) return false;
     io.write(actionUsage(info));
     return true;
   }
 
-  const args = parseActionArguments(argv);
+  const info = actionInfoForArgv(context, argv);
+  const args = parseActionArguments(argv, info?.args);
   const request = resolveActionRequest(context, args.positionals);
   if (request === undefined) return false;
 

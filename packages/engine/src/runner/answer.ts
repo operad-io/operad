@@ -13,7 +13,7 @@ export interface AnswerOptions {
   readonly runId: string;
   readonly choice: string;
   readonly note?: string | undefined;
-  readonly actor?: Actor | undefined;
+  readonly actor: Actor;
   readonly clock?: (() => number) | undefined;
 }
 
@@ -43,7 +43,7 @@ export async function answerRun(options: AnswerOptions): Promise<KernelState> {
       waitId: wait.id,
       choice: options.choice,
       ...(options.note === undefined ? {} : { note: options.note }),
-      ...(options.actor === undefined ? {} : { actor: options.actor }),
+      actor: options.actor,
     },
     now,
     "person",

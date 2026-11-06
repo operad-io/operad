@@ -202,6 +202,14 @@ export interface FactWriter {
   append(input: FactInput): MaybePromise<PluginFact>;
 }
 
+/** How a worker reopens the store its run uses. */
+export interface PluginStoreLocation {
+  readonly backend: "jsonl" | "sqlite";
+  readonly root: string;
+  /** The SQLite file, when the backend keeps one file. */
+  readonly file?: string | undefined;
+}
+
 /** The store a plugin sees: objects plus its own facts. */
 export interface PluginStore extends ObjectStore, FactWriter {
   /**
@@ -209,6 +217,9 @@ export interface PluginStore extends ObjectStore, FactWriter {
    * data; `memory` stores exist only in this process.
    */
   readonly kind: "file" | "memory";
+
+  /** How a worker opens the same store; absent for an in-memory store. */
+  readonly location?: PluginStoreLocation | undefined;
 }
 
 /** Writes text to a file under the store and returns its path. */
@@ -328,8 +339,8 @@ export interface ActionTypeDefinition {
 export interface ActionContext extends PluginBaseContext {
   readonly runId: string | undefined;
   readonly object: RunObject;
-  /** Who asked for the action, when it came from a person. */
-  readonly actor?: Actor | undefined;
+  /** Who asked for the action: a person through a client. */
+  readonly actor: Actor;
   /** Answers the run's current person wait; set when the action runs for a run. */
   readonly answer?: Answer | undefined;
 }
@@ -341,7 +352,7 @@ export interface ActionRunOptions {
   readonly cwd?: string | undefined;
   readonly signal?: AbortSignal | undefined;
   readonly args?: unknown;
-  readonly actor?: Actor | undefined;
+  readonly actor: Actor;
 }
 
 /** A CLI verb a plugin declares. */

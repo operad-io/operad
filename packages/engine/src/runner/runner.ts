@@ -327,6 +327,9 @@ export class Runner {
           home: this.registry.home,
           cwd: this.cwd ?? this.registry.workdir,
           storeRoot: this.registry.store.root,
+          ...(this.registry.store.location === undefined
+            ? {}
+            : { store: this.registry.store.location }),
           use,
           params,
           runId: this.runId,

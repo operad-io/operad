@@ -1,6 +1,16 @@
 /** A plugin store that keeps its facts in one append-only JSONL file. */
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeSync,
+} from "node:fs";
 import { join } from "node:path";
 import { watchDirectory } from "../watch.ts";
 import {
@@ -22,13 +32,19 @@ import type {
   ObjectRef,
   PluginFact,
   PluginStore,
+  PluginStoreLocation,
   StoredObject,
 } from "./types.ts";
 
 export interface FilePluginStoreOptions {
   readonly root: string;
   readonly clock?: (() => number) | undefined;
+  /** Starts the directory watcher; tests replace it to count stops. */
+  readonly watch?: typeof watchDirectory | undefined;
 }
+
+/** A lock older than this belongs to a writer that died while holding it. */
+const LOCK_STALE_MS = 10_000;
 
 interface FactSubscription {
   readonly key: string;
@@ -44,6 +60,11 @@ function requireName(value: string, field: string): void {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Waits without spinning the CPU; appends hold the lock for microseconds. */
+function sleepSync(ms: number): void {
+  Bun.sleepSync(ms);
 }
 
 function parseFact(value: unknown): PluginFact | undefined {
@@ -79,8 +100,11 @@ function parseFact(value: unknown): PluginFact | undefined {
 export class FilePluginStore implements PluginStore {
   readonly kind = "file" as const;
   readonly root: string;
+  readonly location: PluginStoreLocation;
   private readonly clock: () => number;
+  private readonly watch: typeof watchDirectory;
   private readonly factsPath: string;
+  private readonly lockPath: string;
   private readonly objects = new Map<string, Map<string, StoredObject>>();
   private readonly indexes = new Map<string, readonly string[]>();
   private readonly entries: PluginFact[] = [];
@@ -94,8 +118,11 @@ export class FilePluginStore implements PluginStore {
 
   constructor(options: FilePluginStoreOptions) {
     this.root = options.root;
+    this.location = { backend: "jsonl", root: options.root };
     this.clock = options.clock ?? (() => Date.now());
+    this.watch = options.watch ?? watchDirectory;
     this.factsPath = join(options.root, "facts.jsonl");
+    this.lockPath = join(options.root, "facts.lock");
     mkdirSync(options.root, { recursive: true });
     this.refresh();
   }
@@ -247,18 +274,10 @@ export class FilePluginStore implements PluginStore {
       return this.subscribeFacts(objectOrListener, options, factListener);
     }
     this.listeners.add(objectOrListener);
-    if (this.stopWatch === undefined) {
-      this.stopWatch = watchDirectory(this.root, (filename) => {
-        if (filename !== null && filename !== "facts.jsonl") return;
-        this.refresh();
-      });
-    }
+    this.ensureWatch();
     return () => {
       this.listeners.delete(objectOrListener);
-      if (this.listeners.size === 0) {
-        this.stopWatch?.();
-        this.stopWatch = undefined;
-      }
+      this.releaseWatch();
     };
   }
 
@@ -279,15 +298,27 @@ export class FilePluginStore implements PluginStore {
     }
     const subscription: FactSubscription = { key, after, listener };
     this.factListeners.add(subscription);
-    if (this.stopWatch === undefined) {
-      this.stopWatch = watchDirectory(this.root, (filename) => {
-        if (filename !== null && filename !== "facts.jsonl") return;
-        this.refresh();
-      });
-    }
+    this.ensureWatch();
     return () => {
       this.factListeners.delete(subscription);
+      this.releaseWatch();
     };
+  }
+
+  /** Starts the shared directory watcher on the first listener of either kind. */
+  private ensureWatch(): void {
+    if (this.stopWatch !== undefined) return;
+    this.stopWatch = this.watch(this.root, (filename) => {
+      if (filename !== null && filename !== "facts.jsonl") return;
+      this.refresh();
+    });
+  }
+
+  /** Stops the watcher once no ordinary and no fact listener remains. */
+  private releaseWatch(): void {
+    if (this.listeners.size > 0 || this.factListeners.size > 0) return;
+    this.stopWatch?.();
+    this.stopWatch = undefined;
   }
 
   append(input: FactInput): PluginFact {
@@ -297,18 +328,65 @@ export class FilePluginStore implements PluginStore {
       throw new Error("cause: must be a non-empty string");
     }
     requireName(cause, "cause");
-    this.refresh();
-    const fact: PluginFact = {
-      sequence: this.entries.length + 1,
-      type: input.type,
-      object: input.object,
-      cause,
-      at: this.clock(),
-      data: { ...input.data },
-    };
-    appendFileSync(this.factsPath, `${JSON.stringify(fact)}\n`, "utf8");
-    this.refresh();
-    return fact;
+    const release = this.lockFacts();
+    try {
+      // Another writer may have appended since this store last read, so the
+      // next sequence is chosen under the lock that the append also holds.
+      this.refresh();
+      const fact: PluginFact = {
+        sequence: (this.entries.at(-1)?.sequence ?? 0) + 1,
+        type: input.type,
+        object: input.object,
+        cause,
+        at: this.clock(),
+        data: { ...input.data },
+      };
+      appendFileSync(this.factsPath, `${JSON.stringify(fact)}\n`, "utf8");
+      this.refresh();
+      return fact;
+    } finally {
+      release();
+    }
+  }
+
+  /**
+   * Serializes appends across processes, so two writers never pick the same
+   * sequence number. The lock is a file created exclusively next to the facts.
+   */
+  private lockFacts(): () => void {
+    const started = Date.now();
+    for (;;) {
+      try {
+        const fd = openSync(this.lockPath, "wx");
+        try {
+          writeSync(fd, JSON.stringify({ pid: process.pid, at: Date.now() }));
+        } finally {
+          closeSync(fd);
+        }
+        return () => {
+          rmSync(this.lockPath, { force: true });
+        };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+
+      // A writer that died while holding the lock must not block the store.
+      let stale = Date.now() - started > LOCK_STALE_MS;
+      try {
+        const raw: unknown = JSON.parse(readFileSync(this.lockPath, "utf8"));
+        const at = isRecord(raw) ? raw.at : undefined;
+        if (typeof at === "number" && Date.now() - at > LOCK_STALE_MS) {
+          stale = true;
+        }
+      } catch {
+        // A lock being written is not stale on that alone; keep waiting.
+      }
+      if (stale) {
+        rmSync(this.lockPath, { force: true });
+        continue;
+      }
+      sleepSync(1);
+    }
   }
 
   /**

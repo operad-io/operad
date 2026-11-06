@@ -100,7 +100,7 @@ export interface PersonAnswerInput extends InputBase {
   readonly choice: string;
   readonly note?: string;
   /** Who answered: a person through a client. */
-  readonly actor?: Actor;
+  readonly actor: Actor;
 }
 
 export interface TickInput extends InputBase {

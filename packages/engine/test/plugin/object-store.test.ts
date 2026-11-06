@@ -1,9 +1,12 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { join } from "node:path";
+import { existsSync, mkdirSync, watch, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import {
   CursorError,
+  FilePluginStore,
   type ListOptions,
   openPluginStore,
+  SqlitePluginStore,
   WhereError,
   type PluginStore,
   type PluginStoreBackend,
@@ -11,6 +14,33 @@ import {
 import { cleanupTempRoots, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
+
+const APPEND_CHILD = join(
+  import.meta.dir,
+  "..",
+  "fixtures",
+  "append-facts-child.ts",
+);
+
+/** Resolves when the file exists, without polling: watches its directory. */
+function waitForFile(path: string): Promise<void> {
+  if (existsSync(path)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const watcher = watch(dirname(path), () => {
+      if (!existsSync(path)) return;
+      watcher.close();
+      resolve();
+    });
+    watcher.on("error", (error) => {
+      watcher.close();
+      reject(error);
+    });
+    if (existsSync(path)) {
+      watcher.close();
+      resolve();
+    }
+  });
+}
 
 const BACKENDS: readonly PluginStoreBackend[] = ["jsonl", "sqlite"];
 
@@ -125,6 +155,113 @@ describe("object list", () => {
       }
     });
   }
+});
+
+describe("store lifecycle and concurrency", () => {
+  test("stops the watcher when the last fact subscription ends", async () => {
+    const root = await tempRoot();
+    let stops = 0;
+    const store = new FilePluginStore({
+      root: join(root, "store"),
+      watch: () => () => {
+        stops += 1;
+      },
+    });
+    const object = { type: "note", id: "n1" } as const;
+
+    const first = store.subscribeFacts(object, {}, () => undefined);
+    const second = store.subscribeFacts(object, {}, () => undefined);
+    expect(stops).toBe(0);
+    first();
+    expect(stops).toBe(0);
+    second();
+    expect(stops).toBe(1);
+
+    const ordinary = store.subscribe(() => undefined);
+    const facts = store.subscribeFacts(object, {}, () => undefined);
+    ordinary();
+    expect(stops).toBe(1);
+    facts();
+    expect(stops).toBe(2);
+  });
+
+  test("refuses any filter when the type declares an empty index (jsonl)", async () => {
+    const store = await open("jsonl");
+    store.declare?.("note", []);
+    store.put("note", "a", { title: "One" }, "seed");
+    expect(() => store.list("note", { where: { title: "One" } })).toThrow(WhereError);
+  });
+
+  test("refuses any filter when the type declares an empty index (sqlite)", async () => {
+    const store = await open("sqlite");
+    store.declare?.("note", []);
+    store.put("note", "a", { title: "One" }, "seed");
+    expect(() => store.list("note", { where: { title: "One" } })).toThrow(WhereError);
+    try {
+      store.list("note", { where: { title: "One" } });
+    } catch (error) {
+      expect((error as Error).message).toContain("this type declares no index");
+    }
+  });
+
+  test("a sqlite subscription sees a fact another connection appended", async () => {
+    const root = join(await tempRoot(), "sqlite");
+    const first = new SqlitePluginStore({ root });
+    const second = new SqlitePluginStore({ root });
+    try {
+      const object = { type: "note", id: "n1" } as const;
+      const seen: number[] = [];
+      let resolve = (): void => undefined;
+      const got = new Promise<void>((done) => {
+        resolve = done;
+      });
+      const stop = first.subscribeFacts(object, {}, (fact) => {
+        seen.push(fact.sequence);
+        resolve();
+      });
+
+      second.put("note", "n1", { text: "one" }, "edit");
+      await Promise.race([
+        got,
+        new Promise<never>((_done, reject) => {
+          setTimeout(() => reject(new Error("no fact arrived")), 1_000);
+        }),
+      ]);
+      expect(seen).toEqual([1]);
+      stop();
+    } finally {
+      first.close();
+      second.close();
+    }
+  });
+
+  test("two jsonl writers assign unique, contiguous sequences", async () => {
+    const root = join(await tempRoot(), "store");
+    mkdirSync(root, { recursive: true });
+    const children = ["a", "b"].map((name) =>
+      Bun.spawn([process.execPath, APPEND_CHILD, root, name, "100"], {
+        cwd: root,
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+    );
+    await Promise.all([
+      waitForFile(join(root, "ready-a")),
+      waitForFile(join(root, "ready-b")),
+    ]);
+    writeFileSync(join(root, "go"), "");
+    const exits = await Promise.all(children.map((child) => child.exited));
+    expect(exits).toEqual([0, 0]);
+
+    const store = new FilePluginStore({ root });
+    const sequences = store
+      .facts()
+      .map((fact) => fact.sequence)
+      .sort((left, right) => left - right);
+    expect(sequences).toEqual(
+      Array.from({ length: 200 }, (_value, index) => index + 1),
+    );
+  });
 });
 
 describe("object facts", () => {

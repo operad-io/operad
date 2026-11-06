@@ -135,7 +135,7 @@ export interface ActOptions {
   readonly note?: string | undefined;
   readonly yes?: boolean | undefined;
   /** Who asked; the CLI passes `{ via: "cli", id: <user> }`. */
-  readonly actor?: Actor | undefined;
+  readonly actor: Actor;
 }
 
 /** One page of rows and where to continue. */
@@ -535,7 +535,7 @@ export class Views {
   async act(
     name: string,
     id: string,
-    options: ActOptions = {},
+    options: ActOptions,
   ): Promise<ViewActionRun> {
     const resolved = await this.resolve(id);
     const object = resolved.object;
@@ -615,7 +615,7 @@ export class Views {
       {
         object,
         ...(runId === undefined ? {} : { runId }),
-        ...(options.actor === undefined ? {} : { actor: options.actor }),
+        actor: options.actor,
         cwd: this.cwd,
       },
     );

@@ -64,8 +64,8 @@ export interface PluginRegistryOptions {
     | ((
         runId: string,
         choice: string,
-        note?: string,
-        actor?: Actor,
+        note: string | undefined,
+        actor: Actor,
       ) => MaybePromise<void>)
     | undefined;
   /** The specifier each definition was loaded from, aligned with it. */
@@ -579,8 +579,8 @@ export class PluginRegistry {
     | ((
         runId: string,
         choice: string,
-        note?: string,
-        actor?: Actor,
+        note: string | undefined,
+        actor: Actor,
       ) => MaybePromise<void>)
     | undefined;
   private readonly plugins: readonly LoadedPlugin[];
@@ -867,7 +867,7 @@ export class PluginRegistry {
       cause,
       data: {
         action: `${found.plugin.name}/${found.action.name}`,
-        ...(actor === undefined ? {} : { actor: { via: actor.via, id: actor.id } }),
+        actor: { via: actor.via, id: actor.id },
       },
     });
 
@@ -886,7 +886,7 @@ export class PluginRegistry {
       signal: options.signal ?? new AbortController().signal,
       runId,
       object: options.object,
-      ...(actor === undefined ? {} : { actor }),
+      actor,
       answer,
     };
     const value = await found.action.run(ctx, personArgs);

@@ -22,6 +22,7 @@ import type {
   ObjectRef,
   PluginFact,
   PluginStore,
+  PluginStoreLocation,
   StoredObject,
 } from "./types.ts";
 
@@ -83,6 +84,9 @@ const SCHEMA = `
     field TEXT NOT NULL,
     PRIMARY KEY (type, field)
   );
+  CREATE TABLE IF NOT EXISTS declared_types (
+    type TEXT PRIMARY KEY
+  );
 `;
 
 const SCHEMA_FILE = "plugin.sqlite";
@@ -110,21 +114,29 @@ function parseData(text: string): ObjectData {
 export class SqlitePluginStore implements PluginStore {
   readonly kind = "file" as const;
   readonly root: string;
+  readonly location: PluginStoreLocation;
   private readonly db: Database;
   private readonly clock: () => number;
   private readonly listeners = new Set<(object: ObjectRef) => void>();
   private readonly factListeners = new Set<Subscription>();
+  /** The last sequence any subscription has been told about. */
+  private polledSequence = 0;
+  private pollTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(options: SqlitePluginStoreOptions) {
     this.root = options.root;
     this.clock = options.clock ?? (() => Date.now());
     const file = options.file ?? join(options.root, SCHEMA_FILE);
+    this.location = { backend: "sqlite", root: options.root, file };
     mkdirSync(dirname(file), { recursive: true });
     this.db = new Database(file);
     this.db.exec(SCHEMA);
   }
 
   declare(type: string, index: readonly string[]): void {
+    this.db
+      .query("INSERT OR IGNORE INTO declared_types (type) VALUES (?)")
+      .run(type);
     this.db.query("DELETE FROM declared_index WHERE type = ?").run(type);
     const insert = this.db.query(
       "INSERT OR IGNORE INTO declared_index (type, field) VALUES (?, ?)",
@@ -291,8 +303,10 @@ export class SqlitePluginStore implements PluginStore {
       return this.subscribeFacts(objectOrListener, options, factListener);
     }
     this.listeners.add(objectOrListener);
+    this.ensurePolling();
     return () => {
       this.listeners.delete(objectOrListener);
+      this.releasePolling();
     };
   }
 
@@ -319,11 +333,19 @@ export class SqlitePluginStore implements PluginStore {
          ORDER BY sequence`,
       )
       .all(object.type, object.id, after) as FactRow[];
-    for (const row of existing) listener(this.factOf(row));
+    let replayed = 0;
+    for (const row of existing) {
+      const fact = this.factOf(row);
+      listener(fact);
+      replayed = Math.max(replayed, fact.sequence);
+    }
+    this.polledSequence = Math.max(this.polledSequence, replayed);
     const subscription: Subscription = { key, after, listener };
     this.factListeners.add(subscription);
+    this.ensurePolling();
     return () => {
       this.factListeners.delete(subscription);
+      this.releasePolling();
     };
   }
 
@@ -358,13 +380,63 @@ export class SqlitePluginStore implements PluginStore {
     if (fact.object !== undefined) {
       for (const listener of this.listeners) listener(fact.object);
     }
+    this.polledSequence = Math.max(this.polledSequence, fact.sequence);
     this.notifyFacts(fact);
     return fact;
   }
 
   /** Closes the database; tests open many homes. */
   close(): void {
+    if (this.pollTimer !== undefined) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = undefined;
+    }
     this.db.close();
+  }
+
+  /** Polls for facts another connection committed; SQLite has no notification. */
+  private ensurePolling(): void {
+    if (this.factListeners.size === 0 && this.listeners.size === 0) return;
+    if (this.pollTimer !== undefined) return;
+    if (this.factListeners.size === 0) {
+      this.polledSequence = Math.max(this.polledSequence, this.maxSequence());
+    }
+    this.pollTimer = setInterval(() => this.pollFacts(), 25);
+    (this.pollTimer as { unref?: () => void }).unref?.();
+  }
+
+  private releasePolling(): void {
+    if (this.factListeners.size > 0 || this.listeners.size > 0) return;
+    if (this.pollTimer !== undefined) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = undefined;
+    }
+  }
+
+  private maxSequence(): number {
+    const row = this.db
+      .query("SELECT COALESCE(MAX(sequence), 0) AS sequence FROM facts")
+      .get() as { sequence: number };
+    return row.sequence;
+  }
+
+  private pollFacts(): void {
+    const rows = this.db
+      .query(
+        `SELECT sequence, type, object_type, object_id, cause, at, data
+         FROM facts
+         WHERE sequence > ?
+         ORDER BY sequence`,
+      )
+      .all(this.polledSequence) as FactRow[];
+    for (const row of rows) {
+      const fact = this.factOf(row);
+      this.polledSequence = Math.max(this.polledSequence, fact.sequence);
+      if (fact.object !== undefined && fact.type === fact.object.type) {
+        for (const listener of this.listeners) listener(fact.object);
+      }
+      this.notifyFacts(fact);
+    }
   }
 
   private notifyFacts(fact: PluginFact): void {
@@ -413,10 +485,13 @@ export class SqlitePluginStore implements PluginStore {
   }
 
   private declaredIndex(type: string): readonly string[] | undefined {
+    const declared = this.db
+      .query("SELECT 1 AS present FROM declared_types WHERE type = ?")
+      .get(type);
+    if (declared === null) return undefined;
     const rows = this.db
       .query("SELECT field FROM declared_index WHERE type = ? ORDER BY field")
       .all(type) as { field: string }[];
-    if (rows.length === 0) return undefined;
     return rows.map((row) => row.field);
   }
 

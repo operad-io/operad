@@ -176,6 +176,21 @@ const hang = defineFlow({
   ],
 });
 
+const write = defineFlow({
+  name: "write",
+  entry: "work",
+  steps: [
+    {
+      id: "work",
+      kind: "plugin",
+      params: { use: "test/write", params: {} },
+      replay: "unsafe",
+      next: { ok: "done" },
+    },
+    { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+  ],
+});
+
 const throwing = defineFlow({
   name: "throwing",
   entry: "work",
@@ -281,6 +296,14 @@ export default definePlugin({
       },
     },
     {
+      name: "write",
+      results: ["ok"],
+      async run(ctx) {
+        await ctx.store.put("job", "1", { wrote: true }, "test");
+        return { result: "ok" };
+      },
+    },
+    {
       name: "fragile",
       results: ["ok"],
       run() {
@@ -295,7 +318,20 @@ export default definePlugin({
       },
     },
   ],
-  flows: [echo, timed, polled, pause, noisy, ask, crash, retry, hang, throwing, brokenCheck],
+  flows: [
+    echo,
+    timed,
+    polled,
+    pause,
+    noisy,
+    ask,
+    crash,
+    retry,
+    hang,
+    write,
+    throwing,
+    brokenCheck,
+  ],
   async onTick(ctx) {
     const flag = join(ctx.home, "tick-start");
     if (!existsSync(flag)) return;
