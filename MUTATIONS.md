@@ -114,6 +114,35 @@
 | TK0016-M17 | packages/engine/src/runner/runner.ts | made `chooseFailure` fall back to the step's first declared result instead of naming the failure | `runner > a step that throws is not recorded as its success result` |
 | TK0016-M18 | packages/engine/src/runner/runner.ts | removed the `preferInterrupted` early return, so a failed check reported its declared success result | `runner > a check that throws is not recorded as ready` |
 
+## TK0026 — trigger core: one start entry and event rules
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0026-M1 | packages/engine/src/trigger/kernel.ts | ignored the stored result of a duplicate event and routed it again | `the kernel start entry > the same event twice records one input and starts one run` |
+| TK0026-M2 | packages/engine/src/trigger/kernel.ts | stopped writing the event into the active run's history | `the kernel start entry > an event for an object with an active run goes into that run's history` |
+| TK0026-M3 | packages/engine/src/trigger/kernel.ts | used the literal `$event.object` instead of the event's object | `the kernel start entry > a rule takes the event's object and its params reach the flow` |
+| TK0026-M4 | packages/engine/src/plugin/registry.ts, packages/engine/src/trigger/kernel.ts | removed the step event type prefix check in both places | `the kernel start entry > ctx.emit starts a matched flow and a bad type is refused` |
+| TK0026-M5 | packages/engine/src/kernel/decide.ts | disabled the hop-limit skip fact when a run ends | `the kernel start entry > hops stop after the ninth event and the history says why` |
+| TK0026-M6 | packages/source-cron/src/index.ts | returned the minute after the last tick instead of the latest due minute | `the cron source > a three-hour gap emits only the latest tick` |
+| TK0026-M7 | packages/engine/src/trigger/rules.ts | disabled the flow-exists check at load | `trigger rules > a rule whose flow does not exist is refused at load` |
+| TK0026-M8 | packages/engine/src/trigger/kernel.ts | dropped the input id from the start metadata | `the kernel start entry > the start fact is caused by the recorded event` |
+
+## TK0026 — rework 2: review fixes
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0026-M9 | packages/engine/src/loop/serve.ts | started the tick request with `log.startRun` instead of the kernel entry | `serve loop > starts a run a plugin asks for on tick` |
+| TK0026-M10 | packages/engine/src/loop/serve.ts, packages/engine/src/trigger/kernel.ts | emitted the run-end event before ending the run, and stopped ending it inside the emitter | `the kernel start entry > a recovered run emits its end event once and starts the chained flow` |
+| TK0026-M11 | packages/engine/src/trigger/kernel.ts | dropped the global `trigger_observed` fact for an observed event | `the kernel start entry > observe records what it would have started` |
+| TK0026-M12 | packages/engine/src/log/sqlite.ts | disabled the migration of a legacy `inputs.run_id TEXT NOT NULL` table | `a store from before global inputs is migrated on open` |
+| TK0026-M13 | packages/engine/src/loop/serve.ts | skipped loading `triggers.json` for a kernel built inside `serveOnce` | `serve loop > recovery starts a run-end chain without a kernel argument` |
+
+## TK0026 — rework 7: a run-end event survives the end of its run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0026-M14 | packages/engine/src/runner/service.ts | marked the run ended before recording its end event | `run-end recovery > a crash after the run is ended still records its end event` |
+
 ## TK0017 — the base shell plugin is a package of its own
 
 | id | file | mutation | failing test |
@@ -238,6 +267,30 @@
 | TK0019-M19 | packages/engine/src/plugin/file-store.ts | kept only the directory watch in a subscription and dropped the poll fallback | `the file plugin store > a subscription still reports a write the watch does not` |
 | TK0019-M20 | packages/dev/src/lock.ts | left the wait's directory watch and fallback timer open when it finished | `the repository lock > a real wait closes its watch and its timer` |
 
+## TK0026 — rework 10: a start survives a crash after its run exists
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0026-M15 | packages/engine/src/loop/serve.ts | stopped adopting a pending start before spawning a run | `the kernel start entry > a crash after the run is created keeps the event that started it` |
+
+## TK0026 — rework 14: the log alone decides an event's outcome
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0026-M16 | packages/engine/src/trigger/kernel.ts | removed the log lookup that finds the run an input started | `event receipt recovery > a crash after startRun in auto mode keeps one outcome` |
+
+## TK0026 — rework 15: one outcome per input, no sidecar
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0026-M17 | packages/engine/src/log/jsonl.ts | made `recordOutcome` always append instead of returning the stored outcome | `event receipt recovery > two concurrent receives in observe mode keep one outcome` |
+
+## TK0026 — rework 16: claim first, act second
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0026-M18 | packages/engine/src/trigger/kernel.ts | moved a candidate's start before its resolve claim | `event receipt recovery > dismiss and startCandidate race; exactly one wins` |
+
 ## TK0018 — the radian harness plugin
 
 | id | file | mutation | failing test |
@@ -296,3 +349,11 @@
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0019-M21 | packages/dev/src/model.ts | parsed the namespaced store key instead of the bare id when choosing the next number | `dev per-repository ids > ids count up across different slugs in one repository` |
+
+## TK0026 — rework 18: the step plugin and a unique global fact
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0026-M19 | packages/engine/src/trigger/kernel.ts | derived the emitting plugin from the event type instead of the caller | `the kernel start entry > emitStep checks the type against the caller's plugin, not the type` |
+| TK0026-M20 | packages/engine/src/log/jsonl.ts | skipped the unique-key lookup, so a duplicate observe appended a second fact | `event receipt recovery > two processes delivering the same observe event write one fact (jsonl)` |
+| TK0026-M21 | packages/engine/src/log/sqlite.ts | skipped the unique-key lookup, so a duplicate observe hit the unique index | `event receipt recovery > two processes delivering the same observe event write one fact (sqlite)` |

@@ -13,5 +13,9 @@
     "@operad-io/shell": "workspace:*",
     "@types/bun": "1.3.1",
     "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "@operad-io/engine": "workspace:*",
+    "@operad-io/source-cron": "workspace:*"
   }
 }

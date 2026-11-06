@@ -29,6 +29,12 @@ export interface Fact extends NewFact {
   readonly time: number;
 }
 
+/** A fact that belongs to no run, such as an event the kernel only observed. */
+export interface GlobalFact extends NewFact {
+  readonly seq: number;
+  readonly time: number;
+}
+
 export interface RunInfo {
   readonly runId: string;
   readonly flow: string;
@@ -37,11 +43,41 @@ export interface RunInfo {
   readonly startedAt: number;
   readonly endedAt: number | null;
   readonly lastSeq: number;
+  /** The input whose start created this run, or null for a plain start. */
+  readonly startInputId: string | null;
+}
+
+/** One recorded input, as the log keeps it. */
+export interface InputRecord {
+  readonly inputId: string;
+  readonly runId: string | null;
+  readonly source: string;
+  readonly sourceKey: string;
+  readonly payload: JsonValue;
+  readonly time: number;
 }
 
 export interface RecordInputResult {
   readonly duplicate: boolean;
   readonly inputId: string;
+}
+
+/**
+ * What the kernel decided to do with a recorded input, keyed by
+ * `(inputId, kind)`. The first write for a kind wins, so concurrent callers
+ * cannot record two different outcomes for one event.
+ */
+export interface InputOutcome {
+  readonly inputId: string;
+  readonly kind: string;
+  readonly payload: JsonValue;
+  readonly seq: number;
+  readonly time: number;
+}
+
+export interface RecordOutcomeResult {
+  readonly duplicate: boolean;
+  readonly outcome: InputOutcome;
 }
 
 export interface AppendResult {
@@ -91,16 +127,25 @@ export interface LogSubscription {
 }
 
 export interface LogBackend extends Partial<LogSubscription> {
-  /** Start a run, unless the same flow/object pair already has an active one. */
-  startRun(flow: string, object: string): Promise<RunInfo>;
+  /**
+   * Start a run, unless the same flow/object pair already has an active one.
+   * `startInputId` records the input that caused the start, so the log alone
+   * can answer which run an event started.
+   */
+  startRun(
+    flow: string,
+    object: string,
+    startInputId?: string | null,
+  ): Promise<RunInfo>;
   /** End an active run. Ending an ended run is a no-op. */
   endRun(runId: string): Promise<void>;
   /**
-   * Record one input for a run. A repeated (source, sourceKey) is a duplicate:
-   * `duplicate` is true and nothing is written.
+   * Record one input for a run, or a global input when `runId` is null. A
+   * repeated (source, sourceKey) is a duplicate: `duplicate` is true and
+   * nothing is written.
    */
   recordInput(
-    runId: string,
+    runId: string | null,
     source: string,
     sourceKey: string,
     payload: JsonValue,
@@ -119,6 +164,28 @@ export interface LogBackend extends Partial<LogSubscription> {
   read(runId: string): AsyncIterable<Fact>;
   /** List runs, optionally only the active ones. */
   runs(options?: RunsOptions): Promise<RunInfo[]>;
+  /**
+   * Append one fact that belongs to no run. Global facts keep their order.
+   * With a `uniqueKey`, the first fact for that key wins: a later call writes
+   * nothing and returns the stored fact.
+   */
+  appendGlobal(fact: NewFact, uniqueKey?: string): Promise<GlobalFact>;
+  /** Stream the global facts in sequence order. */
+  readGlobal(): AsyncIterable<GlobalFact>;
+  /** Stream every recorded input, oldest first. */
+  readInputs(): AsyncIterable<InputRecord>;
+  /**
+   * Record the kernel's outcome for an input. A repeated `(inputId, kind)` is
+   * a duplicate: `duplicate` is true, nothing is written, and the stored
+   * outcome is returned. Concurrent callers therefore agree on one outcome.
+   */
+  recordOutcome(
+    inputId: string,
+    kind: string,
+    payload: JsonValue,
+  ): Promise<RecordOutcomeResult>;
+  /** Stream every recorded outcome in the order it was written. */
+  readOutcomes(): AsyncIterable<InputOutcome>;
   close(): Promise<void>;
 }
 

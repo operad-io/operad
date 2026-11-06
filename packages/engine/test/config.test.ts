@@ -14,15 +14,23 @@ import { cleanupTempRoots, tempRoot } from "./plugin/support.ts";
 afterAll(cleanupTempRoots);
 
 describe("operad config", () => {
-  test("the default plugins are the shell plugin and dev", async () => {
-    expect(DEFAULT_PLUGINS).toEqual(["@operad-io/shell", "@operad-io/dev"]);
+  test("the default plugins are the shell plugin, dev and the cron source", async () => {
+    expect(DEFAULT_PLUGINS).toEqual([
+      "@operad-io/shell",
+      "@operad-io/dev",
+      "@operad-io/source-cron",
+    ]);
     const root = await tempRoot();
     const home = join(root, "home");
     await ensureConfig(home);
     const text = JSON.parse(
       await readFile(join(home, "config.json"), "utf8"),
     ) as { plugins: string[] };
-    expect(text.plugins).toEqual(["@operad-io/shell", "@operad-io/dev"]);
+    expect(text.plugins).toEqual([
+      "@operad-io/shell",
+      "@operad-io/dev",
+      "@operad-io/source-cron",
+    ]);
   });
 
   test("a missing config means jsonl at <home>/store", async () => {

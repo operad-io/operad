@@ -1,7 +1,14 @@
 /** The history view: one line per recorded step, in order, in words. */
 
-import type { Fact } from "../log/types.ts";
+import type { JsonValue } from "../log/types.ts";
 import type { Actor } from "../plugin/types.ts";
+
+/** The facts a history entry needs; run facts and global facts both fit. */
+export interface HistoryFact {
+  readonly kind: string;
+  readonly payload: JsonValue;
+  readonly time: number;
+}
 
 export interface HistoryEntry {
   readonly time: number;
@@ -45,19 +52,28 @@ function reasonOf(data: Record<string, unknown>): string {
  * Turns facts into user words. Nothing here prints a fact kind, an effect, a
  * node, a graph or a decision; those are internal names.
  */
-export function historyEntry(fact: Fact): HistoryEntry {
+export function historyEntry(fact: HistoryFact): HistoryEntry {
   const payload = record(fact.payload);
   const step = text(payload.step) ?? null;
   const time = fact.time;
 
   switch (fact.kind) {
-    case "run_started":
+    case "run_started": {
+      const flow = text(payload.flow) ?? "unknown";
+      const trigger = record(payload.trigger);
+      const source = text(trigger.source);
+      const type = text(trigger.type);
+      const why =
+        source !== undefined && type !== undefined
+          ? `flow "${flow}", started by ${source} ${type}`
+          : `flow "${flow}"`;
       return {
         time,
         step,
         what: "run started",
-        why: `flow "${text(payload.flow) ?? "unknown"}"`,
+        why,
       };
+    }
 
     case "step_entered":
       return {
@@ -177,6 +193,39 @@ export function historyEntry(fact: Fact): HistoryEntry {
         why: `waiting for you after ${number(payload.recoveries) ?? 0} attempts`,
       };
 
+    case "trigger_received": {
+      const source = text(payload.source) ?? "an outside source";
+      const type = text(payload.type) ?? "event";
+      return {
+        time,
+        step,
+        what: `event ${type} from ${source}`,
+        why: text(payload.summary) ?? text(payload.link) ?? "recorded while the run was active",
+      };
+    }
+
+    case "trigger_observed": {
+      const flow = text(payload.flow) ?? "a flow";
+      const object = text(payload.object) ?? "an object";
+      return {
+        time,
+        step,
+        what: `would start ${flow} on ${object}`,
+        why: "",
+      };
+    }
+
+    case "trigger_skipped": {
+      const source = text(payload.source) ?? "an outside source";
+      const type = text(payload.type) ?? "event";
+      return {
+        time,
+        step,
+        what: `event ${type} from ${source} not started`,
+        why: text(payload.reason) ?? "the chain is too deep",
+      };
+    }
+
     case "visit_limit_reached":
       return {
         time,
@@ -197,7 +246,7 @@ export function formatHistoryEntry(entry: HistoryEntry): string {
 }
 
 export async function* historyEntries(
-  facts: AsyncIterable<Fact>,
+  facts: AsyncIterable<HistoryFact>,
 ): AsyncGenerator<HistoryEntry> {
   for await (const fact of facts) {
     yield historyEntry(fact);
