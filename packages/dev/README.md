@@ -106,7 +106,7 @@ The file holds the repository's work settings:
 | `gate.commandTimeoutSecs` | `1800` | the longest one gate command may run |
 | `reviewer.use` | `harness-radian/agent` | the harness step that reviews the diff |
 | `reviewer.args` | `[]` | the arguments every review gets |
-| `reviewer.firstArgs` | none | the arguments the first review of an attempt gets instead |
+| `reviewer.firstArgs` | none | the arguments the first review of an attempt gets instead, including its one retry after an invalid report |
 | `reviewer.timeoutSecs` | `600` | the longest a review may run |
 | `reviewer.fixLevel` | `major` | the lowest finding severity that fails the gate: `critical`, `major` or `minor` |
 | `reviewer.maxFileDiffBytes` | `200000` | the largest diff one file may put in the review prompt |

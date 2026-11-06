@@ -1075,6 +1075,9 @@ export async function runReview(
     ok: false,
     message: "the reviewer did not run",
   };
+  // The retry is the same review round, not a new review, so it keeps the
+  // round's arguments: the first review of an attempt still gets `firstArgs`
+  // on its retry, and every later review still gets `args` on its retry.
   for (let attemptNumber = 0; attemptNumber < 2; attemptNumber += 1) {
     last = await callReviewer(
       ctx,

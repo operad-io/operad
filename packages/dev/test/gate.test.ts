@@ -96,8 +96,14 @@ interface FakeReviewer {
   readonly calls: ReviewCall[];
 }
 
-function fakeReviewer(): FakeReviewer {
+interface FakeReviewerOptions {
+  /** Write an invalid report on the first call of every review round. */
+  readonly retryInvalid?: boolean;
+}
+
+function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
   const calls: ReviewCall[] = [];
+  const seenResults = new Set<string>();
   let count = 0;
   const plugin = definePlugin({
     name: "fake-reviewer",
@@ -121,6 +127,14 @@ function fakeReviewer(): FakeReviewer {
             args: input.args ?? [],
             resultPath: input.resultPath,
           });
+          if (
+            options.retryInvalid === true &&
+            !seenResults.has(input.resultPath)
+          ) {
+            seenResults.add(input.resultPath);
+            writeFileSync(input.resultPath, "this is not JSON\n");
+            return { result: "done", data: {} };
+          }
           const mode = input.args?.[0] ?? "none";
           if (mode === "fifo") {
             const made = Bun.spawnSync({
@@ -204,6 +218,8 @@ interface FixtureOptions {
   readonly maxAutoRework?: number;
   readonly maxFileDiffBytes?: number;
   readonly maxDiffBytes?: number;
+  /** Make the fake reviewer write an invalid report on every round's first call. */
+  readonly retryInvalid?: boolean;
   /** Add one small committed file after the worktree is created. */
   readonly commit?: boolean;
   readonly clock?: ManualClock;
@@ -266,7 +282,9 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
     title: "Task",
     brief: "Make the code do the thing.",
   });
-  const reviewer = fakeReviewer();
+  const reviewer = fakeReviewer({
+    retryInvalid: options.retryInvalid === true,
+  });
   const registry = new PluginRegistry(
     [
       createDevPlugin(),
@@ -525,6 +543,31 @@ describe("dev/review", () => {
     const second = await review(state, "review-run-2");
     expect(second.result).toBe("pass");
     expect(state.reviewer.calls[1]?.args).toEqual(["none"]);
+  });
+
+  test("the retry after an invalid report keeps the round's arguments", async () => {
+    const state = await fixture({
+      reviewerArgs: ["later"],
+      firstArgs: ["initial"],
+      retryInvalid: true,
+    });
+    await verify(state);
+
+    const first = await review(state, "review-run-1");
+    expect(first.result).toBe("pass");
+    expect(state.reviewer.calls.map((call) => call.args)).toEqual([
+      ["initial"],
+      ["initial"],
+    ]);
+
+    const second = await review(state, "review-run-2");
+    expect(second.result).toBe("pass");
+    expect(state.reviewer.calls.map((call) => call.args)).toEqual([
+      ["initial"],
+      ["initial"],
+      ["later"],
+      ["later"],
+    ]);
   });
 
   test("an empty diff passes without starting a reviewer", async () => {
