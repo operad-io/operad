@@ -299,6 +299,18 @@ export interface StepContext extends PluginBaseContext {
   readonly trigger: TriggerView | undefined;
   /** Sends an event; the type must begin with this plugin's name. */
   emit(event: StepEvent): Promise<void>;
+  /**
+   * Runs another loaded step in this run. The kernel offers it when a plugin
+   * step delegates to a harness or another plugin; a direct call to a step's
+   * `run` has no host and leaves it undefined.
+   */
+  readonly runStep?:
+    | ((
+        use: string,
+        params: unknown,
+        options: StepRunOptions,
+      ) => MaybePromise<PluginStepResult>)
+    | undefined;
 }
 
 /** What a step returns. `result` must be one of the step type's results. */
