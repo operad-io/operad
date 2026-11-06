@@ -14,6 +14,7 @@ import {
   createRadianHarnessPlugin,
   type RadianHarnessSettings,
 } from "../src/index.ts";
+import { runAgent as runProcess } from "../src/process.ts";
 import {
   cleanupTempRoots,
   fakeRadian,
@@ -331,6 +332,48 @@ describe("harness-radian/agent", () => {
 
     expect(result.result).toBe("failed");
     expect(dataOf(result).reason).toBe("line_too_long");
+  });
+
+  test("a line handler that is still busy stops the reader from reading ahead", async () => {
+    const env = await setup("lines");
+    let openGate: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      openGate = resolve;
+    });
+    let firstSeen: () => void = () => {};
+    const first = new Promise<void>((resolve) => {
+      firstSeen = resolve;
+    });
+    const seen: string[] = [];
+    let busy = false;
+
+    const running = runProcess({
+      command: "radian",
+      args: ["exec"],
+      cwd: env.root,
+      wallMs: 0,
+      stallMs: 0,
+      signal: new AbortController().signal,
+      clock: manualClock(),
+      onLine(line) {
+        seen.push(line);
+        firstSeen();
+        if (busy) return undefined;
+        busy = true;
+        return gate;
+      },
+    });
+
+    await first;
+    // All lines arrive in one write; the second line may not be delivered
+    // while the handler's answer is unanswered.
+    expect(seen).toHaveLength(1);
+
+    openGate();
+    const outcome = await running;
+    expect(outcome.exitCode).toBe(0);
+    expect(seen).toHaveLength(5);
+    expect(seen[seen.length - 1]).toContain('"Result"');
   });
 });
 

@@ -109,8 +109,11 @@ export interface AgentRunOptions {
   readonly stallMs: number;
   readonly signal: AbortSignal;
   readonly clock?: Clock | undefined;
-  /** Receives each complete stdout line, in order. */
-  readonly onLine: (line: string) => void;
+  /**
+   * Receives each complete stdout line, in order. Reading waits for the answer:
+   * a handler that is still busy writes before the next line is taken.
+   */
+  readonly onLine: (line: string) => void | Promise<void>;
   /** Sends a signal to one process group; a test replaces it to watch signals. */
   readonly killGroup?:
     | ((pgid: number, signal: NodeJS.Signals | 0) => boolean)
@@ -156,26 +159,32 @@ function endStatus(line: string | null): number | undefined {
 
 /**
  * Splits a stream into complete lines, holding the unterminated tail up to
- * `MAX_LINE_CHARS`. The tail is dropped and `onOverflow` is called when a line
- * grows past the limit, so no input can exhaust memory.
+ * `MAX_LINE_CHARS`. Each line is handed over before the next is read: a busy
+ * handler holds the stream, so the pipe cannot fill memory. The tail is dropped
+ * and `onOverflow` is called when a line grows past the limit, so no input can
+ * exhaust memory.
  */
 class Lines {
   private buffer = "";
-  private readonly onLine: (line: string) => void;
+  private readonly onLine: (line: string) => void | Promise<void>;
   private readonly onOverflow: () => void;
 
-  constructor(onLine: (line: string) => void, onOverflow: () => void) {
+  constructor(
+    onLine: (line: string) => void | Promise<void>,
+    onOverflow: () => void,
+  ) {
     this.onLine = onLine;
     this.onOverflow = onOverflow;
   }
 
-  push(text: string): void {
+  async push(text: string): Promise<void> {
     if (text.length === 0) return;
     this.buffer += text;
     let newline = this.buffer.indexOf("\n");
     while (newline >= 0) {
-      this.onLine(this.buffer.slice(0, newline));
+      const line = this.buffer.slice(0, newline);
       this.buffer = this.buffer.slice(newline + 1);
+      await this.onLine(line);
       newline = this.buffer.indexOf("\n");
     }
     if (this.buffer.length > MAX_LINE_CHARS) {
@@ -184,11 +193,11 @@ class Lines {
     }
   }
 
-  end(): void {
+  async end(): Promise<void> {
     if (this.buffer.length === 0) return;
     const rest = this.buffer;
     this.buffer = "";
-    this.onLine(rest);
+    await this.onLine(rest);
   }
 }
 
@@ -292,11 +301,11 @@ function consume(
     try {
       for await (const chunk of stream) {
         const text = decoder.decode(chunk as Uint8Array, { stream: true });
-        if (tail === undefined) lines.push(text);
+        if (tail === undefined) await lines.push(text);
         else tail.push(text);
       }
       const rest = decoder.decode();
-      if (tail === undefined) lines.push(rest);
+      if (tail === undefined) await lines.push(rest);
       else tail.push(rest);
     } catch {
       // A process that failed to start has no output; its streams may error.
@@ -345,7 +354,7 @@ export async function runAgent(
   const stdoutLines = new Lines(
     (line) => {
       resetStallForLine();
-      options.onLine(line);
+      return options.onLine(line);
     },
     () => onLineOverflow(),
   );
@@ -515,7 +524,7 @@ export async function runAgent(
     if (extra !== null && extra !== undefined) extra.destroy();
     control?.destroy();
     await drainedOutput;
-    stdoutLines.end();
+    await stdoutLines.end();
     return { tail: stderrTail.lines(20), exit: await settled };
   };
 

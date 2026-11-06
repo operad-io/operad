@@ -220,3 +220,10 @@
 | TK0018-M11 | packages/harness-radian/src/process.ts | multiplied the longest-line bound by 1024, removing any practical bound on an unterminated stream | `harness-radian/agent > an unterminated output stream is stopped, not buffered forever` (never settled; the buffer kept growing) |
 | TK0018-M12 | packages/harness-radian/src/index.ts | recorded an over-long line as a signal exit instead of `line_too_long` | `harness-radian/agent > an unterminated output stream is stopped, not buffered forever` (`exit` instead of `line_too_long`) |
 
+## TK0018 — rework 3: the JSONL log applies backpressure
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0018-M13 | packages/harness-radian/src/jsonl-log.ts | `push` flushed a full buffer without returning the pending write, so the caller never waited | `jsonl log > a full buffer returns the write the caller must wait for` |
+| TK0018-M14 | packages/harness-radian/src/process.ts | `Lines.push` delivered every line of a chunk without waiting for the line handler | `harness-radian/agent > a line handler that is still busy stops the reader from reading ahead` |
+

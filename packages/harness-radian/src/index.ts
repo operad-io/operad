@@ -12,10 +12,10 @@ import {
   type AgentResultData,
   type HarnessCost,
   type HarnessUsage,
-  type PluginLogger,
   type PluginStepResult,
   type StepContext,
 } from "@operad-io/engine";
+import { JsonlLog } from "./jsonl-log.ts";
 import {
   findCommand,
   MAX_LINE_CHARS,
@@ -100,41 +100,6 @@ async function directoryError(cwd: string): Promise<string | undefined> {
     return info.isDirectory() ? undefined : `cwd is not a directory: ${cwd}`;
   } catch {
     return `cwd does not exist: ${cwd}`;
-  }
-}
-
-/** Appends complete JSONL lines to the step's log without holding them all. */
-class JsonlLog {
-  private buffer = "";
-  private chain: Promise<void> = Promise.resolve();
-  private wrote = false;
-  private readonly logger: PluginLogger;
-
-  constructor(logger: PluginLogger) {
-    this.logger = logger;
-  }
-
-  push(line: string): void {
-    this.buffer += `${line}\n`;
-    if (this.buffer.length >= 16 * 1024) this.flush();
-  }
-
-  async end(): Promise<void> {
-    this.flush();
-    if (!this.wrote) {
-      this.chain = this.chain.then(() => this.logger.write("")).then(() => undefined);
-    }
-    await this.chain;
-  }
-
-  private flush(): void {
-    if (this.buffer.length === 0) return;
-    const text = this.buffer;
-    this.buffer = "";
-    this.wrote = true;
-    this.chain = this.chain
-      .then(() => this.logger.write(text))
-      .then(() => undefined);
   }
 }
 
@@ -417,9 +382,10 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             signal: ctx.signal,
             clock: resolved.clock,
             onLine(line) {
-              jsonl.push(line);
+              const writing = jsonl.push(line);
               const parsed = parseResult(line);
               if (parsed !== undefined) result = parsed;
+              return writing;
             },
           });
           await jsonl.end();

@@ -225,6 +225,16 @@ if (mode === "stall") {
   await new Promise(() => {});
 }
 
+if (mode === "lines") {
+  const records = [];
+  for (let index = 0; index < 4; index += 1) {
+    records.push(JSON.stringify({ type: "journal", event: "Line", index }));
+  }
+  records.push(JSON.stringify(result()));
+  await new Promise((resolve) => process.stdout.write(records.join("\n") + "\n", resolve));
+  process.exit(0);
+}
+
 if (mode === "flood") {
   const chunk = Buffer.alloc(256 * 1024, 120);
   for (;;) {
