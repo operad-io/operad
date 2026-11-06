@@ -485,3 +485,8 @@
 | TK0022-M4 | packages/dev/src/actions.ts | removed the waiting-phase check from `merge` and `reject` | `dev actions > merge and reject refuse a running task` |
 | TK0022-M5 | packages/dev/src/integrate.ts | stopped recording a failing cleanup hook | `dev/cleanup > a failing hook is recorded and the task stays merged` |
 
+## TK0030 — the holder's commit waits like the backend on a busy store
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0030-M1 | `packages/engine/test/fixtures/sqlite-hold.ts` | removed the holder's busy timeout, so its `COMMIT` returned `SQLITE_BUSY` when the opener's busy handler briefly held a shared lock | `opening waits while another process holds the store` (1 failure in 50 runs under load) |
