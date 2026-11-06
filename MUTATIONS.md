@@ -80,3 +80,36 @@
 | TK0015-M5 | packages/engine/src/plugin/registry.ts | disabled the short-command clash check between plugins | `plugin registry validation > rejects two plugins that declare the same short command` |
 | TK0015-M6 | packages/engine/src/plugin/registry.ts | skipped the check that a step returned a declared result | `plugin registry validation > rejects a step that returns a result it did not declare` |
 | TK0015-M7 | packages/engine/src/plugin/store.ts | stopped appending a fact when an object is put | `plugin registry > runs the test plugin's step, command and action end to end` |
+
+## TK0016 — runner and views
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0016-M1 | packages/engine/src/runner/service.ts | dropped the run id from the input key, so the second run's start was a duplicate | `operad command > pending, running and history answer in user words` |
+| TK0016-M2 | packages/engine/src/runner/runner.ts | returned `ok` from the wall-time branch instead of a declared failure | `runner > a step that never ends becomes a failed result` |
+| TK0016-M3 | packages/engine/src/runner/lock.ts | treated every existing lock as held, ignoring a dead PID | `runner > the run lock keeps one runner per run and clears a stale pid` |
+| TK0016-M4 | packages/engine/src/loop/serve.ts | removed the due-time check, so a wait was woken early | `serve loop > does not wake a wait before it is due` |
+| TK0016-M5 | packages/engine/src/views/history.ts | dropped the words for an interrupted unsafe step | `serve loop > recovers an unsafe run into a person wait, and an action ends it` |
+| TK0016-M6 | packages/engine/src/views/pending.ts | suppressed the plugin actions on a waiting run | `operad command > pending, running and history answer in user words` |
+| TK0016-M7 | packages/engine/src/config/config.ts | ignored the sqlite backend and always chose jsonl | `operad config > reads plugins and a sqlite store with a relative path` |
+| TK0016-M8 | packages/engine/src/runner/service.ts | stopped ending the log run when the run ended | `runner > drives a run to the end, one batch per input` |
+
+## TK0016 — rework 2: crash consistency, bounded steps, defaults and history
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0016-M9 | packages/engine/src/runner/service.ts | treated every recorded input as applied, even when no fact used it | `runner > an input recorded before a crash is applied on recovery` |
+| TK0016-M10 | packages/engine/src/runner/runner.ts | replaced the wall-time message with a generic one | `runner > a synchronous step is stopped by the wall time` |
+| TK0016-M11 | packages/engine/src/config/config.ts | installed no default plugin | `operad command > init creates the home and prints each plugin check` |
+| TK0016-M12 | packages/engine/src/loop/serve.ts | stopped listening for the abort while sleeping | `serve loop > a sleeping loop ends as soon as the signal aborts` |
+| TK0016-M13 | packages/cli/src/main.ts | dropped the ambiguity check for an untyped object id | `operad command > history resolves a plugin object without mixing object types` |
+| TK0016-M14 | packages/cli/src/main.ts | accepted arguments to `serve` | `operad command > serve rejects arguments as a usage error` |
+| TK0016-M15 | packages/engine/src/plugin/file-store.ts | stopped refreshing a reader from the file | `the file plugin store > a second reader sees facts another writer appended` |
+| TK0016-M16 | packages/engine/src/plugin/builtin/shell.ts | reported a non-zero exit as success | `the base shell plugin > a command that exits non-zero is a failed result` |
+
+## TK0016 — rework 4: a failure is never recorded as a success result
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0016-M17 | packages/engine/src/runner/runner.ts | made `chooseFailure` fall back to the step's first declared result instead of naming the failure | `runner > a step that throws is not recorded as its success result` |
+| TK0016-M18 | packages/engine/src/runner/runner.ts | removed the `preferInterrupted` early return, so a failed check reported its declared success result | `runner > a check that throws is not recorded as ready` |

@@ -87,7 +87,13 @@ export interface FactWriter {
 }
 
 /** The store a plugin sees: objects plus its own facts. */
-export interface PluginStore extends ObjectStore, FactWriter {}
+export interface PluginStore extends ObjectStore, FactWriter {
+  /**
+   * `file` stores live under one directory and a worker step sees the same
+   * data; `memory` stores exist only in this process.
+   */
+  readonly kind: "file" | "memory";
+}
 
 /** Writes text to a file under the store and returns its path. */
 export interface PluginLogger {
@@ -104,6 +110,16 @@ export interface PluginBaseContext {
   readonly facts: FactWriter;
   readonly logger: PluginLogger;
   readonly signal: AbortSignal;
+}
+
+/** The answer a plugin action gives to the person wait it is answering. */
+export type Answer = (choice: string, note?: string) => MaybePromise<void>;
+
+/** The result of one plugin's optional `check`. */
+export interface PluginCheck {
+  readonly plugin: string;
+  readonly ok: boolean;
+  readonly message: string;
 }
 
 /** The context a step run receives. */
@@ -154,6 +170,8 @@ export interface ActionTypeDefinition {
 export interface ActionContext extends PluginBaseContext {
   readonly runId: string | undefined;
   readonly object: RunObject;
+  /** Answers the run's current person wait; set when the action runs for a run. */
+  readonly answer?: Answer | undefined;
 }
 
 /** Options for running an action through the registry. */
@@ -227,6 +245,8 @@ export interface PluginShape {
   readonly flows?: readonly FlowDefinition[] | undefined;
   readonly commands?: readonly CommandDefinition[] | undefined;
   readonly onTick?: ((ctx: TickContext) => MaybePromise<void>) | undefined;
+  /** Runs when `operad init` checks the plugin; a string is the check's note. */
+  readonly check?: ((ctx: PluginBaseContext) => MaybePromise<string | void>) | undefined;
 }
 
 /** A plugin definition ready for the registry. */

@@ -25,6 +25,7 @@ function requireName(value: string, field: string): void {
  * history the kernel's views will read.
  */
 export class MemoryPluginStore implements PluginStore {
+  readonly kind = "memory" as const;
   readonly root: string;
   private readonly clock: () => number;
   private readonly objects = new Map<string, StoredObject>();
