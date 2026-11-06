@@ -166,8 +166,8 @@ export class Runner {
     try {
       let state = await readState(this.log, this.runId);
       if (state.status === "ended") {
-        await this.onEnded?.(this.runId, state);
         await this.log.endRun(this.runId);
+        await this.onEnded?.(this.runId, state);
         return "ended";
       }
       let pendingRecovery = this.recover;

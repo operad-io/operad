@@ -7,12 +7,16 @@ import {
   PluginRegistry,
   Runner,
   answerRun,
+  defineFlow,
+  definePlugin,
   historyEntries,
   listPending,
   loadPluginRegistry,
   openConfigLog,
   readConfig,
   readState,
+  readStoredStart,
+  readStoredTrigger,
   serve,
   serveOnce,
   sleepUntilAborted,
@@ -175,6 +179,65 @@ describe("serve loop", () => {
       const active = await log.runs({ active: true });
       expect(active.map((run) => run.flow)).toEqual(["ask"]);
       expect(spawned).toEqual(active.map((run) => run.runId));
+      const started = active[0];
+      if (started === undefined) throw new Error("no started run");
+      // The tick start went through the kernel entry: its start metadata exists.
+      expect(readStoredStart(home.storeRoot, started.runId)).toBeDefined();
+    } finally {
+      await log.close();
+    }
+  });
+
+  test("a tick trigger sent twice starts one run and keeps the event", async () => {
+    const home = await makeHome();
+    const log = openConfigLog(home.config);
+    const flow = defineFlow({
+      name: "tick-flow",
+      entry: "done",
+      steps: [
+        { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+      ],
+    });
+    const plugin = definePlugin({
+      name: "ticking",
+      kind: "domain",
+      version: "0.0.1",
+      flows: [flow],
+      async onTick(ctx) {
+        await ctx.start({
+          flow: "tick-flow",
+          object: { type: "job", id: "1" },
+          trigger: { source: "manual", key: "tick-1", type: "go", hops: 0 },
+        });
+      },
+    });
+    const registry = new PluginRegistry([plugin], {
+      home: home.home,
+      storeRoot: home.storeRoot,
+      store: new MemoryPluginStore({ root: home.storeRoot }),
+    });
+    try {
+      const options = {
+        log,
+        registry,
+        lockRoot: home.storeRoot,
+        spawnRun: () => undefined,
+      };
+      await serveOnce(options);
+      await serveOnce(options);
+
+      const active = await log.runs({ active: true });
+      expect(active).toHaveLength(1);
+      const run = active[0];
+      if (run === undefined) throw new Error("no run");
+      const start = readStoredStart(home.storeRoot, run.runId);
+      expect(start?.inputId).toBeDefined();
+      expect(readStoredTrigger(home.storeRoot, run.runId)).toMatchObject({
+        source: "manual",
+        key: "tick-1",
+        type: "go",
+        hops: 0,
+      });
     } finally {
       await log.close();
     }

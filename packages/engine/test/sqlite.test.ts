@@ -216,6 +216,72 @@ test("the store runs in WAL mode", async () => {
   }
 });
 
+test("a store from before global inputs is migrated on open", async () => {
+  const directory = tracked("legacy-inputs");
+  const legacy = new Database(dbPath(directory));
+  try {
+    legacy.exec(`
+      CREATE TABLE schema_version (
+        id      INTEGER PRIMARY KEY CHECK (id = 1),
+        version INTEGER NOT NULL
+      );
+      CREATE TABLE runs (
+        run_id     TEXT PRIMARY KEY,
+        flow       TEXT NOT NULL,
+        object     TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        ended_at   INTEGER
+      );
+      CREATE UNIQUE INDEX runs_one_active
+        ON runs (flow, object) WHERE ended_at IS NULL;
+      CREATE TABLE facts (
+        run_id  TEXT NOT NULL REFERENCES runs (run_id),
+        seq     INTEGER NOT NULL,
+        kind    TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        cause   TEXT NOT NULL,
+        time    INTEGER NOT NULL,
+        PRIMARY KEY (run_id, seq)
+      );
+      CREATE TABLE inputs (
+        input_id   TEXT PRIMARY KEY,
+        run_id     TEXT NOT NULL REFERENCES runs (run_id),
+        source     TEXT NOT NULL,
+        source_key TEXT NOT NULL,
+        payload    TEXT NOT NULL,
+        time       INTEGER NOT NULL,
+        UNIQUE (source, source_key)
+      );
+      INSERT INTO schema_version (id, version) VALUES (1, 1);
+    `);
+  } finally {
+    legacy.close();
+  }
+
+  const backend = await open(directory);
+  try {
+    const run = await backend.startRun("flow", "object");
+    const global = await backend.recordInput(null, "cron", "tick:1", {});
+    expect(global.duplicate).toBe(false);
+    const scoped = await backend.recordInput(run.runId, "github", "issue:1", {});
+    expect(scoped.duplicate).toBe(false);
+    await backend.appendGlobal({
+      kind: "trigger_observed",
+      payload: { reason: "would start one on object" },
+      cause: global.inputId,
+    });
+  } finally {
+    await backend.close();
+  }
+
+  const columns = withDatabase(directory, (database) =>
+    database
+      .query<{ name: string; notnull: number }, []>("PRAGMA table_info(inputs)")
+      .all(),
+  );
+  expect(columns.find((column) => column.name === "run_id")?.notnull).toBe(0);
+});
+
 test.skipIf(process.getuid?.() === 0)(
   "opening a store in a read-only directory fails with a clear error",
   async () => {

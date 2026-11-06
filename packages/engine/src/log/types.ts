@@ -29,6 +29,12 @@ export interface Fact extends NewFact {
   readonly time: number;
 }
 
+/** A fact that belongs to no run, such as an event the kernel only observed. */
+export interface GlobalFact extends NewFact {
+  readonly seq: number;
+  readonly time: number;
+}
+
 export interface RunInfo {
   readonly runId: string;
   readonly flow: string;
@@ -88,6 +94,10 @@ export interface LogBackend {
   read(runId: string): AsyncIterable<Fact>;
   /** List runs, optionally only the active ones. */
   runs(options?: RunsOptions): Promise<RunInfo[]>;
+  /** Append one fact that belongs to no run. Global facts keep their order. */
+  appendGlobal(fact: NewFact): Promise<GlobalFact>;
+  /** Stream the global facts in sequence order. */
+  readGlobal(): AsyncIterable<GlobalFact>;
   close(): Promise<void>;
 }
 

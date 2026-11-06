@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   cronMatches,
@@ -126,6 +127,7 @@ describe("cron schedules", () => {
   test("an invalid schedule is refused with the rule index", async () => {
     const root = await tempRoot();
     const home = join(root, "home");
+    mkdirSync(home, { recursive: true });
     await Bun.write(
       join(home, "triggers.json"),
       JSON.stringify([

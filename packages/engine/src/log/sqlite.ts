@@ -35,6 +35,7 @@ import type {
   AppendResult,
   Fact,
   FactCause,
+  GlobalFact,
   JsonValue,
   LogBackend,
   LogBackendFactory,
@@ -83,6 +84,13 @@ const SCHEMA = `
     time       INTEGER NOT NULL,
     UNIQUE (source, source_key)
   );
+  CREATE TABLE IF NOT EXISTS global_facts (
+    seq     INTEGER PRIMARY KEY,
+    kind    TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    cause   TEXT NOT NULL,
+    time    INTEGER NOT NULL
+  );
 `;
 
 interface RunRow {
@@ -104,6 +112,56 @@ interface FactRow {
 
 interface VersionRow {
   readonly version: number;
+}
+
+interface TableColumn {
+  readonly name: string;
+  readonly notnull: number;
+}
+
+function tableColumns(database: Database, table: string): TableColumn[] {
+  try {
+    return database
+      .query<TableColumn, []>(`PRAGMA table_info(${table})`)
+      .all();
+  } catch {
+    return [];
+  }
+}
+
+function hasTable(database: Database, table: string): boolean {
+  return (
+    database
+      .query<{ name: string }, [string]>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+      .get(table) !== null
+  );
+}
+
+/** True for a store written before trigger inputs could be global. */
+function inputsNeedMigration(database: Database): boolean {
+  const column = tableColumns(database, "inputs").find((item) => item.name === "run_id");
+  return column !== undefined && column.notnull === 1;
+}
+
+/** Rebuild `inputs` so `run_id` may be null; the old table cannot be altered. */
+function migrateInputs(database: Database): void {
+  database.exec(`
+    CREATE TABLE inputs_global (
+      input_id   TEXT PRIMARY KEY,
+      run_id     TEXT REFERENCES runs (run_id),
+      source     TEXT NOT NULL,
+      source_key TEXT NOT NULL,
+      payload    TEXT NOT NULL,
+      time       INTEGER NOT NULL,
+      UNIQUE (source, source_key)
+    );
+    INSERT OR IGNORE INTO inputs_global (input_id, run_id, source, source_key, payload, time)
+      SELECT input_id, run_id, source, source_key, payload, time FROM inputs;
+    DROP TABLE inputs;
+    ALTER TABLE inputs_global RENAME TO inputs;
+  `);
 }
 
 function openFailure(path: string, error: unknown): LogBackendError {
@@ -213,6 +271,13 @@ function ensureSchema(database: Database, path: string): void {
       `store ${path} uses schema_version ${version}, but this build requires ${SCHEMA_VERSION}`,
     );
   }
+
+  // Tables added after a store was created are created here; the same
+  // transaction migrates an older inputs table whose run id could not be null.
+  database.transaction(() => {
+    if (inputsNeedMigration(database)) migrateInputs(database);
+    if (!hasTable(database, "global_facts")) database.exec(SCHEMA);
+  }).immediate();
 }
 
 class SqliteLogBackend implements LogBackend {
@@ -373,6 +438,54 @@ class SqliteLogBackend implements LogBackend {
     if (this.#closed) return;
     this.#closed = true;
     this.#database.close();
+  }
+
+  async appendGlobal(fact: NewFact): Promise<GlobalFact> {
+    validateNewFact(fact);
+    this.#assertOpen();
+    return this.#database.transaction(() => {
+      const row = this.#database
+        .query<{ seq: number | null }, []>("SELECT MAX(seq) AS seq FROM global_facts")
+        .get();
+      const seq = (row?.seq ?? 0) + 1;
+      const time = this.#clock();
+      this.#database.run(
+        "INSERT INTO global_facts (seq, kind, payload, cause, time) VALUES (?, ?, ?, ?, ?)",
+        [seq, fact.kind, JSON.stringify(fact.payload), JSON.stringify(fact.cause), time],
+      );
+      return {
+        seq,
+        kind: fact.kind,
+        payload: fact.payload,
+        cause: fact.cause,
+        time,
+      };
+    }).immediate();
+  }
+
+  readGlobal(): AsyncIterable<GlobalFact> {
+    return this.#readGlobal();
+  }
+
+  async *#readGlobal(): AsyncGenerator<GlobalFact> {
+    this.#assertOpen();
+    const statement = this.#database.prepare<
+      { seq: number; kind: string; payload: string; cause: string; time: number },
+      []
+    >("SELECT seq, kind, payload, cause, time FROM global_facts ORDER BY seq");
+    try {
+      for (const row of statement.iterate()) {
+        yield {
+          seq: row.seq,
+          kind: row.kind,
+          payload: JSON.parse(row.payload) as JsonValue,
+          cause: JSON.parse(row.cause) as FactCause,
+          time: row.time,
+        };
+      }
+    } finally {
+      statement.finalize();
+    }
   }
 
   async *#read(runId: string): AsyncGenerator<Fact> {

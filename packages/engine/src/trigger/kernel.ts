@@ -273,6 +273,17 @@ export class Kernel {
 
     if (event.hops > MAX_TRIGGER_HOPS) {
       const reason = `the chain is ${event.hops} hops deep; at most ${MAX_TRIGGER_HOPS} are followed`;
+      await this.log.appendGlobal({
+        kind: "trigger_skipped",
+        payload: {
+          source: event.source,
+          type: event.type,
+          key: event.key,
+          hops: event.hops,
+          reason,
+        },
+        cause: inputId,
+      });
       this.store.setResult(inputId, {
         kind: "skipped",
         inputId,
@@ -327,13 +338,26 @@ export class Kernel {
     }
 
     if (rule.mode === "observe") {
+      const reason = `would start ${rule.start.flow} on ${object}`;
+      await this.log.appendGlobal({
+        kind: "trigger_observed",
+        payload: {
+          source: event.source,
+          type: event.type,
+          key: event.key,
+          flow: rule.start.flow,
+          object,
+          reason,
+        },
+        cause: inputId,
+      });
       this.store.setResult(inputId, {
         kind: "observed",
         inputId,
         duplicate: false,
         flow: rule.start.flow,
         object,
-        reason: `would start ${rule.start.flow} on ${object}`,
+        reason,
       });
       return {
         kind: "observed",
@@ -456,6 +480,10 @@ export class Kernel {
         summary: lastStepSummary(state),
       },
     };
+    // Finish the run before its event goes back through the rules: the event
+    // must be able to start the same flow on the same object, and a run that
+    // is still active would receive the event instead.
+    await this.log.endRun(runId);
     try {
       await this.receive(event);
     } catch (error) {

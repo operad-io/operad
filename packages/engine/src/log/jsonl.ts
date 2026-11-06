@@ -39,6 +39,7 @@ import { SCHEMA_VERSION } from "./schema.ts";
 import type {
   AppendResult,
   Fact,
+  GlobalFact,
   JsonValue,
   LogBackend,
   LogBackendFactory,
@@ -52,6 +53,7 @@ import type {
 const SCHEMA_FILE = "schema.json";
 const LOCK_FILE = ".lock";
 const INPUTS_FILE = "inputs.jsonl";
+const GLOBAL_FACTS_FILE = "global-facts.jsonl";
 const RUNS_DIR = "runs";
 const NEWLINE = 0x0a;
 
@@ -71,6 +73,15 @@ interface StoredInput {
   readonly source: string;
   readonly sourceKey: string;
   readonly payload: JsonValue;
+  readonly time: number;
+}
+
+interface StoredGlobalFact {
+  readonly type: "global_fact";
+  readonly seq: number;
+  readonly kind: string;
+  readonly payload: JsonValue;
+  readonly cause: string | number;
   readonly time: number;
 }
 
@@ -342,10 +353,40 @@ function parseLine(line: string, runId: string): RunHeader | Fact[] {
   throw new CorruptLogError(runId, `unknown record type ${String(type)}`);
 }
 
+function parseGlobalFactLine(line: string): StoredGlobalFact {
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    throw new CorruptLogError("global", "a global fact line is not JSON");
+  }
+  if (typeof value !== "object" || value === null) {
+    throw new CorruptLogError("global", "a global fact line is not an object");
+  }
+  const record = value as Partial<StoredGlobalFact>;
+  if (record.type !== "global_fact") {
+    throw new CorruptLogError("global", "a global fact line has no type");
+  }
+  if (!Number.isInteger(record.seq) || (record.seq as number) < 1) {
+    throw new CorruptLogError("global", "a global fact has no valid sequence number");
+  }
+  if (typeof record.kind !== "string" || record.kind.length === 0) {
+    throw new CorruptLogError("global", "a global fact has no kind");
+  }
+  if (typeof record.cause !== "number" && typeof record.cause !== "string") {
+    throw new CorruptLogError("global", "a global fact has no cause");
+  }
+  if (typeof record.time !== "number" || !Number.isFinite(record.time)) {
+    throw new CorruptLogError("global", "a global fact has no time");
+  }
+  return record as StoredGlobalFact;
+}
+
 class JsonlLogBackend implements LogBackend {
   readonly #directory: string;
   readonly #runsDirectory: string;
   readonly #inputsPath: string;
+  readonly #globalFactsPath: string;
   readonly #lockPath: string;
   readonly #clock: () => number;
   readonly #inputIds = new Set<string>();
@@ -356,6 +397,7 @@ class JsonlLogBackend implements LogBackend {
     this.#directory = directory;
     this.#runsDirectory = join(directory, RUNS_DIR);
     this.#inputsPath = join(directory, INPUTS_FILE);
+    this.#globalFactsPath = join(directory, GLOBAL_FACTS_FILE);
     this.#lockPath = join(directory, LOCK_FILE);
     this.#clock = clock;
   }
@@ -489,6 +531,34 @@ class JsonlLogBackend implements LogBackend {
     return this.#read(runId);
   }
 
+  async appendGlobal(fact: NewFact): Promise<GlobalFact> {
+    validateNewFact(fact);
+    return this.#withLock(() => {
+      truncateTornLine(this.#globalFactsPath);
+      const lastSeq = this.#lastGlobalSeqUnlocked();
+      const stored: StoredGlobalFact = {
+        type: "global_fact",
+        seq: lastSeq + 1,
+        kind: fact.kind,
+        payload: fact.payload,
+        cause: fact.cause,
+        time: this.#clock(),
+      };
+      appendLineSynced(this.#globalFactsPath, `${JSON.stringify(stored)}\n`);
+      return {
+        seq: stored.seq,
+        kind: stored.kind,
+        payload: stored.payload,
+        cause: stored.cause,
+        time: stored.time,
+      };
+    });
+  }
+
+  readGlobal(): AsyncIterable<GlobalFact> {
+    return this.#readGlobal();
+  }
+
   async runs(options: RunsOptions = {}): Promise<RunInfo[]> {
     return this.#withLock(() => this.#listRunsUnlocked(options.active === true));
   }
@@ -555,6 +625,65 @@ class JsonlLogBackend implements LogBackend {
     } finally {
       await handle.close();
     }
+  }
+
+  async *#readGlobal(): AsyncGenerator<GlobalFact> {
+    this.#assertOpen();
+    let handle: Awaited<ReturnType<typeof openAsync>>;
+    try {
+      handle = await openAsync(this.#globalFactsPath, "r");
+    } catch (error) {
+      if (isErrno(error, "ENOENT")) return;
+      throw error;
+    }
+
+    try {
+      const buffer = Buffer.allocUnsafe(64 * 1024);
+      const decoder = new TextDecoder();
+      let pending = "";
+      let position = 0;
+      let expectedSeq = 1;
+
+      while (true) {
+        const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+        if (bytesRead === 0) break;
+        position += bytesRead;
+        pending += decoder.decode(buffer.subarray(0, bytesRead), { stream: true });
+
+        while (true) {
+          const newline = pending.indexOf("\n");
+          if (newline < 0) break;
+          const line = pending.slice(0, newline);
+          pending = pending.slice(newline + 1);
+          if (line.length === 0) continue;
+
+          const fact = parseGlobalFactLine(line);
+          if (fact.seq !== expectedSeq) {
+            throw new CorruptLogError(
+              "global",
+              `sequence ${fact.seq} follows ${expectedSeq - 1}`,
+            );
+          }
+          expectedSeq += 1;
+          yield {
+            seq: fact.seq,
+            kind: fact.kind,
+            payload: fact.payload,
+            cause: fact.cause,
+            time: fact.time,
+          };
+        }
+      }
+    } finally {
+      await handle.close();
+    }
+  }
+
+  #lastGlobalSeqUnlocked(): number {
+    if (!existsSync(this.#globalFactsPath)) return 0;
+    const line = readLastLine(this.#globalFactsPath);
+    if (line === null) return 0;
+    return parseGlobalFactLine(line).seq;
   }
 
   #runPath(runId: string): string {
@@ -698,6 +827,7 @@ class JsonlLogBackend implements LogBackend {
         }
       }
       truncateTornLine(this.#inputsPath);
+      truncateTornLine(this.#globalFactsPath);
       this.#rebuildInputs();
     });
   }

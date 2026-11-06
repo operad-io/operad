@@ -16,6 +16,7 @@ import {
   readState,
   readStoredStart,
   readStoredTrigger,
+  serveOnce,
   type LogBackend,
   type TriggerEvent,
   type TriggerRule,
@@ -175,6 +176,13 @@ describe("the kernel start entry", () => {
       expect(result.object).toBe("job:1");
       expect(await env.log.runs()).toHaveLength(0);
       expect(env.kernel.store.result(result.inputId)?.kind).toBe("observed");
+      const facts: { readonly kind: string; readonly payload: unknown }[] = [];
+      for await (const fact of env.log.readGlobal()) facts.push(fact);
+      const observed = facts.find((fact) => fact.kind === "trigger_observed");
+      expect(observed).toBeDefined();
+      expect(JSON.stringify(observed?.payload)).toContain(
+        "would start one on job:1",
+      );
     } finally {
       await env.close();
     }
@@ -314,6 +322,51 @@ describe("the kernel start entry", () => {
       await env.kernel.emitRunEnd(first.runId, firstState);
       runs = await env.log.runs();
       expect(runs.filter((run) => run.flow === "two")).toHaveLength(1);
+    } finally {
+      await env.close();
+    }
+  });
+
+  test("a recovered run emits its end event once and starts the chained flow", async () => {
+    const env = await setup([
+      rule({
+        source: "operad",
+        type: "run.done",
+        start: { flow: "one" },
+        object: "$event.object",
+      }),
+    ]);
+    try {
+      const first = await env.log.startRun("one", "job:1");
+      // A crash after the terminal facts but before the run was marked ended.
+      await env.log.append(first.runId, 0, [
+        { kind: "run_started", payload: { flow: "one", hops: 0 }, cause: "seed" },
+        { kind: "run_ended", payload: { status: "done", reason: null }, cause: "seed" },
+      ]);
+
+      const spawnRun = () => undefined;
+      await serveOnce({
+        log: env.log,
+        registry: env.registry,
+        lockRoot: env.storeRoot,
+        kernel: env.kernel,
+        spawnRun,
+      });
+
+      const runs = await env.log.runs();
+      expect(runs.filter((run) => run.flow === "one")).toHaveLength(2);
+      expect(runs.find((run) => run.runId === first.runId)?.active).toBe(false);
+
+      await serveOnce({
+        log: env.log,
+        registry: env.registry,
+        lockRoot: env.storeRoot,
+        kernel: env.kernel,
+        spawnRun,
+      });
+      expect(
+        (await env.log.runs()).filter((run) => run.flow === "one"),
+      ).toHaveLength(2);
     } finally {
       await env.close();
     }

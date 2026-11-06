@@ -127,3 +127,13 @@
 | TK0026-M7 | packages/engine/src/trigger/rules.ts | disabled the flow-exists check at load | `trigger rules > a rule whose flow does not exist is refused at load` |
 | TK0026-M8 | packages/engine/src/trigger/kernel.ts | dropped the input id from the start metadata | `the kernel start entry > the start fact is caused by the recorded event` |
 
+## TK0026 — rework 2: review fixes
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0026-M9 | packages/engine/src/loop/serve.ts | started the tick request with `log.startRun` instead of the kernel entry | `serve loop > starts a run a plugin asks for on tick` |
+| TK0026-M10 | packages/engine/src/loop/serve.ts, packages/engine/src/trigger/kernel.ts | emitted the run-end event before ending the run, and stopped ending it inside the emitter | `the kernel start entry > a recovered run emits its end event once and starts the chained flow` |
+| TK0026-M11 | packages/engine/src/trigger/kernel.ts | dropped the global `trigger_observed` fact for an observed event | `the kernel start entry > observe records what it would have started` |
+| TK0026-M12 | packages/engine/src/log/sqlite.ts | disabled the migration of a legacy `inputs.run_id TEXT NOT NULL` table | `a store from before global inputs is migrated on open` |
+
+

@@ -16,6 +16,7 @@ import {
   SeqConflictError,
   secret,
   type Fact,
+  type GlobalFact,
   type JsonValue,
   type LogBackend,
   type LogBackendFactory,
@@ -76,6 +77,14 @@ async function openStore(
 
 async function collect(facts: AsyncIterable<Fact>): Promise<Fact[]> {
   const result: Fact[] = [];
+  for await (const fact of facts) result.push(fact);
+  return result;
+}
+
+async function collectGlobal(
+  facts: AsyncIterable<GlobalFact>,
+): Promise<GlobalFact[]> {
+  const result: GlobalFact[] = [];
   for await (const fact of facts) result.push(fact);
   return result;
 }
@@ -345,6 +354,36 @@ export function runLogConformance(factory: LogConformanceFactory): void {
       } finally {
         await first.close();
         await second.close();
+        cleanup(directory);
+      }
+    });
+
+    test("global facts keep their order across reopen", async () => {
+      const directory = tempDirectory("global-facts");
+      let backend = await openStore(factory, directory, { clock: fixedClock() });
+      try {
+        const first = await backend.appendGlobal({
+          kind: "trigger_observed",
+          payload: { reason: "would start one on job:1" },
+          cause: "input-one",
+        });
+        expect(first.seq).toBe(1);
+        await backend.appendGlobal({
+          kind: "trigger_skipped",
+          payload: { reason: "too deep" },
+          cause: "input-two",
+        });
+
+        await backend.close();
+        backend = await openStore(factory, directory, { clock: fixedClock() });
+        const facts = await collectGlobal(backend.readGlobal());
+        expect(facts.map((fact) => fact.kind)).toEqual([
+          "trigger_observed",
+          "trigger_skipped",
+        ]);
+        expect(facts.map((fact) => fact.seq)).toEqual([1, 2]);
+      } finally {
+        await backend.close();
         cleanup(directory);
       }
     });
