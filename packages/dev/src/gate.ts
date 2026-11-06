@@ -4,7 +4,18 @@
  * steps run git here; the kernel never runs a command or a harness itself.
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  constants as fsConstants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
   messageOf,
@@ -18,6 +29,7 @@ import {
   type ReviewFinding,
   type ReviewRecord,
   type ReviewResult,
+  type ReworkRecord,
   type TaskAttempt,
   type TaskData,
   type VerifyRecord,
@@ -592,16 +604,18 @@ function parseFinding(value: unknown): FindingShape | undefined {
   ) {
     return undefined;
   }
-  const line =
-    typeof value.line === "number" && Number.isFinite(value.line)
-      ? value.line
-      : 0;
+  // Every field the prompt asks for is required: a finding without them is a
+  // malformed report, and the step retries instead of recording a blank one.
+  const line = value.line;
+  if (typeof line !== "number" || !Number.isFinite(line)) return undefined;
+  if (typeof value.summary !== "string") return undefined;
+  if (typeof value.trigger !== "string") return undefined;
   return {
     file: value.file,
     line,
     severity,
-    summary: typeof value.summary === "string" ? value.summary : "",
-    trigger: typeof value.trigger === "string" ? value.trigger : "",
+    summary: value.summary,
+    trigger: value.trigger,
   };
 }
 
@@ -679,6 +693,78 @@ interface ReviewerAttempt {
   readonly message: string;
 }
 
+/** The largest review report the gate reads; anything bigger is not a report. */
+const MAX_REPORT_BYTES = 1_000_000;
+
+interface ReportRead {
+  readonly text?: string;
+  readonly message?: string;
+}
+
+/**
+ * Reads a reviewer report without trusting the path. The reviewer owns the
+ * gate worktree and can leave a FIFO or a link at the report path; the file is
+ * opened non-blocking without following a link, and the descriptor must still
+ * be a bounded regular file before anything is read.
+ */
+function readReport(resultPath: string): ReportRead {
+  let details;
+  try {
+    details = lstatSync(resultPath);
+  } catch {
+    return { message: `the reviewer wrote no report at ${resultPath}` };
+  }
+  if (!details.isFile()) {
+    return {
+      message: `the review report at ${resultPath} is not a regular file`,
+    };
+  }
+  if (details.size > MAX_REPORT_BYTES) {
+    return {
+      message: `the review report at ${resultPath} is over ${MAX_REPORT_BYTES} bytes`,
+    };
+  }
+  let fd: number;
+  try {
+    fd = openSync(
+      resultPath,
+      fsConstants.O_RDONLY | fsConstants.O_NONBLOCK | fsConstants.O_NOFOLLOW,
+    );
+  } catch (error) {
+    return { message: `cannot read ${resultPath}: ${String(error)}` };
+  }
+  try {
+    // The path may have changed between `lstat` and `open`; the descriptor is
+    // what is read, so a swap to a FIFO is caught here and cannot block.
+    const opened = fstatSync(fd);
+    if (!opened.isFile()) {
+      return {
+        message: `the review report at ${resultPath} is not a regular file`,
+      };
+    }
+    if (opened.size > MAX_REPORT_BYTES) {
+      return {
+        message: `the review report at ${resultPath} is over ${MAX_REPORT_BYTES} bytes`,
+      };
+    }
+    const buffer = Buffer.alloc(opened.size);
+    let offset = 0;
+    while (offset < buffer.length) {
+      let count: number;
+      try {
+        count = readSync(fd, buffer, offset, buffer.length - offset, offset);
+      } catch (error) {
+        return { message: `cannot read ${resultPath}: ${String(error)}` };
+      }
+      if (count === 0) break;
+      offset += count;
+    }
+    return { text: buffer.subarray(0, offset).toString("utf8") };
+  } finally {
+    closeSync(fd);
+  }
+}
+
 async function callReviewer(
   ctx: StepContext,
   context: TaskContext,
@@ -729,19 +815,14 @@ async function callReviewer(
           : `the reviewer ended "${outcome.result}"`,
     };
   }
-  if (!existsSync(resultPath)) {
+  const read = readReport(resultPath);
+  if (read.text === undefined) {
     return {
       ok: false,
-      message: `the reviewer wrote no report at ${resultPath}`,
+      message: read.message ?? `cannot read ${resultPath}`,
     };
   }
-  let text: string;
-  try {
-    text = readFileSync(resultPath, "utf8");
-  } catch (error) {
-    return { ok: false, message: `cannot read ${resultPath}: ${String(error)}` };
-  }
-  const report = parseReport(text);
+  const report = parseReport(read.text);
   if (report === undefined) {
     return {
       ok: false,
@@ -1098,7 +1179,28 @@ export async function runRework(
 ): Promise<PluginStepResult> {
   const context = await taskContext(ctx);
   const task = context.task;
-  const attempt = task.attempt;
+  const attempt = attemptOf(ctx, task);
+  // A rework that saved its task but lost its step result is replayed by the
+  // runner; the section and the streak are already recorded, so reuse them.
+  const previous = attempt.rework;
+  if (
+    previous !== undefined &&
+    previous !== null &&
+    previous.run === ctx.runId
+  ) {
+    return {
+      result: previous.result,
+      data: {
+        attempt: attempt.number,
+        source: previous.source,
+        rework: previous.streak,
+        streak: previous.streak,
+        maxAutoRework: context.settings.maxAutoRework,
+        brief: task.brief,
+        replayed: true,
+      },
+    };
+  }
   const source = gateSource(task);
   const pieces: string[] = [];
 
@@ -1144,18 +1246,25 @@ export async function runRework(
   const withRework = appendRework(task, source, pieces.join("\n\n"));
   const streak = (task.reworkStreak ?? 0) + 1;
   const again = streak <= context.settings.maxAutoRework;
+  const record: ReworkRecord = {
+    run: ctx.runId,
+    source,
+    streak,
+    result: again ? "again" : "ask",
+  };
   const next: TaskData = {
     ...withRework,
     phase: again ? "running" : "waiting",
     run: ctx.runId,
-    attempts: Math.max(task.attempts, attempt?.number ?? 0),
+    attempts: Math.max(task.attempts, attempt.number),
     reworkStreak: streak,
+    attempt: { ...attempt, run: ctx.runId, rework: record },
   };
   await saveTask(ctx, context.taskKey, next, "dev:rework");
   return {
     result: again ? "again" : "ask",
     data: {
-      attempt: attempt?.number ?? task.attempts,
+      attempt: attempt.number,
       source,
       rework: streak,
       streak,

@@ -122,6 +122,34 @@ function fakeReviewer(): FakeReviewer {
             resultPath: input.resultPath,
           });
           const mode = input.args?.[0] ?? "none";
+          if (mode === "fifo") {
+            const made = Bun.spawnSync({
+              cmd: ["mkfifo", input.resultPath],
+              stdout: "ignore",
+              stderr: "ignore",
+            });
+            if (made.exitCode !== 0) {
+              throw new Error(`mkfifo failed for ${input.resultPath}`);
+            }
+            return { result: "done", data: {} };
+          }
+          if (mode === "malformed") {
+            writeFileSync(
+              input.resultPath,
+              JSON.stringify({
+                findings: [
+                  {
+                    file: "code.txt",
+                    severity: "major",
+                    summary: "no line",
+                    trigger: "always",
+                  },
+                ],
+                verified: [],
+              }),
+            );
+            return { result: "done", data: {} };
+          }
           if (mode === "invalid" || (mode === "invalid-then-valid" && count === 1)) {
             writeFileSync(input.resultPath, "this is not JSON\n");
             return { result: "done", data: {} };
@@ -435,6 +463,25 @@ describe("dev/review", () => {
     expect((await taskOf(state)).attempt?.review?.result).toBe("failed");
   });
 
+  test("a finding without a line is an invalid report and is retried", async () => {
+    const state = await fixture({ reviewerArgs: ["malformed"] });
+    await verify(state);
+    const result = await review(state);
+    expect(result.result).toBe("failed");
+    expect(result.data?.reason).toBe("invalid_json");
+    expect(state.reviewer.calls).toHaveLength(2);
+    expect((await taskOf(state)).attempt?.review?.findings).toBeUndefined();
+  });
+
+  test("a FIFO at the report path fails instead of blocking the gate", async () => {
+    const state = await fixture({ reviewerArgs: ["fifo"] });
+    await verify(state);
+    const result = await review(state);
+    expect(result.result).toBe("failed");
+    expect(String(result.data?.message)).toContain("not a regular file");
+    expect(state.reviewer.calls).toHaveLength(2);
+  });
+
   test("a finding on a file the change did not touch is pre-existing and does not count", async () => {
     const state = await fixture({
       reviewerArgs: ["pre-existing"],
@@ -606,6 +653,47 @@ describe("dev/rework", () => {
     expect(task.brief).toContain(
       "Fix them and nothing else, append commits to the branch, and do not rebase.",
     );
+  });
+
+  test("a replay of the same rework run appends and counts nothing", async () => {
+    const state = await fixture({ commands: ["false"], maxAutoRework: 2 });
+    await verify(state, "gate-run");
+    const first = await rework(state, "rework-run");
+    expect(first.result).toBe("again");
+    expect(first.data?.rework).toBe(1);
+
+    const replayed = await rework(state, "rework-run");
+    expect(replayed.result).toBe("again");
+    expect(replayed.data?.rework).toBe(1);
+    expect(replayed.data?.replayed).toBe(true);
+
+    const task = await taskOf(state);
+    expect(task.reworkStreak).toBe(1);
+    expect(task.brief.match(/## Rework 1 \(verify\)/g)).toHaveLength(1);
+    expect(task.brief).not.toContain("## Rework 2");
+  });
+
+  test("a new attempt in the same flow run appends the next rework", async () => {
+    const state = await fixture({ commands: ["false"], maxAutoRework: 3 });
+    const run = "flow-run";
+    const start = () =>
+      state.registry.runStep("dev/worktree", {}, {
+        runId: run,
+        object: { type: "task", id: state.taskKey, data: {} },
+      });
+    expect((await start()).result).toBe("ready");
+    await verify(state, run);
+    expect((await rework(state, run)).data?.rework).toBe(1);
+
+    expect((await start()).result).toBe("ready");
+    await verify(state, run);
+    const second = await rework(state, run);
+    expect(second.data?.rework).toBe(2);
+    expect(second.data?.replayed).toBeUndefined();
+
+    const task = await taskOf(state);
+    expect(task.reworkStreak).toBe(2);
+    expect(task.brief.match(/## Rework 2 \(verify\)/g)).toHaveLength(1);
   });
 
   test("a review failure appends the findings at or above the fix level", async () => {

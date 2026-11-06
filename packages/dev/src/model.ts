@@ -102,6 +102,15 @@ export interface ReviewRecord {
   readonly sha?: string | null;
 }
 
+/** One rework section the step appended; a replay reads it and appends nothing. */
+export interface ReworkRecord {
+  readonly [key: string]: unknown;
+  readonly run?: string | null;
+  readonly source: string;
+  readonly streak: number;
+  readonly result: "again" | "ask";
+}
+
 /** One run of a task's worker, with what the worktree step learned. */
 export type TaskAttempt = {
   readonly [key: string]: unknown;
@@ -124,6 +133,8 @@ export type TaskAttempt = {
   readonly review?: ReviewRecord | null;
   /** How many review steps this attempt has started. */
   readonly reviews?: number | null;
+  /** The rework this run appended; a replay of the same run reads it. */
+  readonly rework?: ReworkRecord | null;
 };
 
 /** The data of a task object. */

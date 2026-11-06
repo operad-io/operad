@@ -401,6 +401,8 @@ export async function runWorktree(
     verify: null,
     review: null,
     reviews: 0,
+    // The next gate failure appends a fresh rework even in the same flow run.
+    rework: null,
   };
   const next: TaskData = {
     ...context.task,
