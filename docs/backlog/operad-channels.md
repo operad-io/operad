@@ -17,6 +17,14 @@
 5. 来源分三档：observe（只记录"本会接受"）、候选、自动；归属已有运行的事件直通该运行，不开新运行。
 6. 首个通道是 Telegram，首个来源是 cron 加 HTTP。
 
+## trigger 的内核接口（已定，dogfood 期间先落地内核部分）
+
+7. **所有运行都从同一个入口启动**：`start({ flow, object, trigger? })`。dev 插件的调度、命令行、来源事件都走它；`trigger` 是 `{ source, key, type, summary?, link?, data? }`，带 trigger 的启动先记一条输入（同一 `source`+`key` 只记一次，重复时什么也不做并返回第一次的结果），`run_started` 的原因指向这条输入，所以历史能说出“由哪个事件启动”。
+8. **路由由用户的规则决定，不由事件决定**：`~/.operad/triggers.json` 是一组规则 `{ source, type, flow, object, mode }`（JSON，带 Schema）；`object` 可以是固定的，也可以取事件里的 `object` 字段，但只能取这一个字段；事件里其余内容只是资料。没有规则匹配的事件只记录。
+9. **三档**：`observe` 只记一条“本会启动 X”；`candidate` 在待处理里出现一项，带内核的两个动作 `operad:start` 和 `operad:dismiss`；`auto` 直接启动。同一对象已有该 flow 的运行在跑时，事件记在那个运行的历史里，不开新运行。
+10. **步骤怎么看到事件**：`ctx.trigger` 只读，`summary` 和 `data` 写成文件，步骤自己决定读不读；内核从不把事件文字放进任何提示词。
+11. **来源是 `source` 插件**：`start(ctx) → { stop }`，用 `ctx.emit(event)` 送事件；`operad serve` 启动和停止它。内置的第一个来源是 `cron`（`triggers.json` 里的规则带 `schedule`，五段 cron 表达式，按本机时区），HTTP 和 webhook 验签以后再做。命令行 `operad trigger <source> <key> [--type] [--object] [--data <file>]` 手工送一个事件，给测试和脚本用。
+
 ## 待决问题（未定）
 
 1. 通道怎么显示一个会话的直播（不只是卡片）：是否把 `session/update` 流也送到通道，还是通道只管卡片。
