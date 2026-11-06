@@ -40,6 +40,9 @@ import { resolveSubscriptionWatch, type SubscriptionWatch } from "./poll.ts";
 import type {
   AppendResult,
   Fact,
+  GlobalFact,
+  InputOutcome,
+  InputRecord,
   JsonValue,
   LogBackend,
   LogBackendFactory,
@@ -47,6 +50,7 @@ import type {
   LogChange,
   NewFact,
   RecordInputResult,
+  RecordOutcomeResult,
   RunInfo,
   RunsOptions,
 } from "./types.ts";
@@ -54,6 +58,8 @@ import type {
 const SCHEMA_FILE = "schema.json";
 const LOCK_FILE = ".lock";
 const INPUTS_FILE = "inputs.jsonl";
+const OUTCOMES_FILE = "outcomes.jsonl";
+const GLOBAL_FACTS_FILE = "global-facts.jsonl";
 const RUNS_DIR = "runs";
 const NEWLINE = 0x0a;
 
@@ -65,16 +71,58 @@ interface RunHeader {
   readonly object: string;
   readonly startedAt: number;
   readonly access?: JsonValue | undefined;
+  readonly startInputId?: string | null;
 }
 
 interface StoredInput {
   readonly type: "input";
   readonly inputId: string;
-  readonly runId: string;
+  readonly runId: string | null;
   readonly source: string;
   readonly sourceKey: string;
   readonly payload: JsonValue;
   readonly time: number;
+}
+
+interface StoredGlobalFact {
+  readonly type: "global_fact";
+  readonly seq: number;
+  readonly kind: string;
+  readonly payload: JsonValue;
+  readonly cause: string | number;
+  readonly time: number;
+  readonly uniqueKey?: string;
+}
+
+interface StoredOutcome {
+  readonly type: "outcome";
+  readonly inputId: string;
+  readonly kind: string;
+  readonly payload: JsonValue;
+  readonly seq: number;
+  readonly time: number;
+}
+
+function outcomeKey(inputId: string, kind: string): string {
+  return `${inputId}\u0000${kind}`;
+}
+
+function parseOutcomeLine(line: string): StoredOutcome | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Partial<StoredOutcome>;
+  if (record.type !== "outcome" || typeof record.inputId !== "string") {
+    return undefined;
+  }
+  if (typeof record.kind !== "string" || record.kind.length === 0) return undefined;
+  if (typeof record.seq !== "number" || !Number.isInteger(record.seq)) return undefined;
+  if (typeof record.time !== "number") return undefined;
+  return record as StoredOutcome;
 }
 
 interface EndMarker {
@@ -292,6 +340,8 @@ function parseHeader(value: unknown, runId: string): RunHeader {
     ...(record.access === undefined
       ? {}
       : { access: record.access as JsonValue }),
+    startInputId:
+      typeof record.startInputId === "string" ? record.startInputId : null,
   };
 }
 
@@ -348,15 +398,62 @@ function parseLine(line: string, runId: string): RunHeader | Fact[] {
   throw new CorruptLogError(runId, `unknown record type ${String(type)}`);
 }
 
+function parseGlobalFactLine(line: string): StoredGlobalFact {
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    throw new CorruptLogError("global", "a global fact line is not JSON");
+  }
+  if (typeof value !== "object" || value === null) {
+    throw new CorruptLogError("global", "a global fact line is not an object");
+  }
+  const record = value as Partial<StoredGlobalFact>;
+  if (record.type !== "global_fact") {
+    throw new CorruptLogError("global", "a global fact line has no type");
+  }
+  if (!Number.isInteger(record.seq) || (record.seq as number) < 1) {
+    throw new CorruptLogError("global", "a global fact has no valid sequence number");
+  }
+  if (typeof record.kind !== "string" || record.kind.length === 0) {
+    throw new CorruptLogError("global", "a global fact has no kind");
+  }
+  if (typeof record.cause !== "number" && typeof record.cause !== "string") {
+    throw new CorruptLogError("global", "a global fact has no cause");
+  }
+  if (typeof record.time !== "number" || !Number.isFinite(record.time)) {
+    throw new CorruptLogError("global", "a global fact has no time");
+  }
+  if (record.uniqueKey !== undefined && typeof record.uniqueKey !== "string") {
+    throw new CorruptLogError("global", "a global fact has an invalid unique key");
+  }
+  return record as StoredGlobalFact;
+}
+
+function globalFactOf(stored: StoredGlobalFact): GlobalFact {
+  return {
+    seq: stored.seq,
+    kind: stored.kind,
+    payload: stored.payload,
+    cause: stored.cause,
+    time: stored.time,
+  };
+}
+
 class JsonlLogBackend implements LogBackend {
   readonly #directory: string;
   readonly #runsDirectory: string;
   readonly #inputsPath: string;
+  readonly #outcomesPath: string;
+  readonly #globalFactsPath: string;
   readonly #lockPath: string;
   readonly #clock: () => number;
   readonly #subscriptionWatch: SubscriptionWatch;
   readonly #inputIds = new Set<string>();
   #inputBytes = 0;
+  readonly #outcomes = new Map<string, StoredOutcome>();
+  #outcomeSeq = 0;
+  #outcomeBytes = 0;
   #closed = false;
   #stopWatch: (() => void) | undefined;
   #stopPoll: (() => void) | undefined;
@@ -367,12 +464,19 @@ class JsonlLogBackend implements LogBackend {
     this.#directory = directory;
     this.#runsDirectory = join(directory, RUNS_DIR);
     this.#inputsPath = join(directory, INPUTS_FILE);
+    this.#outcomesPath = join(directory, OUTCOMES_FILE);
+    this.#globalFactsPath = join(directory, GLOBAL_FACTS_FILE);
     this.#lockPath = join(directory, LOCK_FILE);
     this.#clock = clock;
     this.#subscriptionWatch = subscriptionWatch;
   }
 
-  async startRun(flow: string, object: string, access?: JsonValue): Promise<RunInfo> {
+  async startRun(
+    flow: string,
+    object: string,
+    startInputId: string | null = null,
+    access?: JsonValue,
+  ): Promise<RunInfo> {
     assertName(flow, "flow");
     assertName(object, "object");
     if (access !== undefined) assertJsonValue(access, "run access");
@@ -392,6 +496,7 @@ class JsonlLogBackend implements LogBackend {
         object,
         startedAt,
         ...(access === undefined ? {} : { access }),
+        startInputId,
       };
       if (!createExclusive(this.#runPath(runId), `${JSON.stringify(header)}\n`)) {
         throw new Error(`run id ${runId} already exists`);
@@ -407,6 +512,7 @@ class JsonlLogBackend implements LogBackend {
         endedAt: null,
         lastSeq: 0,
         ...(access === undefined ? {} : { access }),
+        startInputId,
       };
     });
   }
@@ -427,18 +533,20 @@ class JsonlLogBackend implements LogBackend {
   }
 
   async recordInput(
-    runId: string,
+    runId: string | null,
     source: string,
     sourceKey: string,
     payload: JsonValue,
   ): Promise<RecordInputResult> {
-    assertRunId(runId);
+    if (runId !== null) assertRunId(runId);
     assertName(source, "source");
     assertName(sourceKey, "sourceKey");
     assertJsonValue(payload, "input payload");
     return this.#withLock(() => {
-      const info = this.#runInfoUnlocked(runId);
-      if (!info.active) throw new RunEndedError(runId);
+      if (runId !== null) {
+        const info = this.#runInfoUnlocked(runId);
+        if (!info.active) throw new RunEndedError(runId);
+      }
       this.#refreshInputsUnlocked();
 
       const inputId = inputIdFor(source, sourceKey);
@@ -460,6 +568,82 @@ class JsonlLogBackend implements LogBackend {
       this.#inputBytes = statSync(this.#inputsPath).size;
       return { duplicate: false, inputId };
     });
+  }
+
+  async *readInputs(): AsyncGenerator<InputRecord> {
+    this.#assertOpen();
+    if (!existsSync(this.#inputsPath)) return;
+    const text = readFileSync(this.#inputsPath).toString("utf8");
+    for (const line of text.split("\n")) {
+      if (line.length === 0) continue;
+      let value: unknown;
+      try {
+        value = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (typeof value !== "object" || value === null) continue;
+      const record = value as Partial<StoredInput>;
+      if (
+        record.type !== "input" ||
+        typeof record.inputId !== "string" ||
+        typeof record.source !== "string" ||
+        typeof record.sourceKey !== "string"
+      ) {
+        continue;
+      }
+      yield {
+        inputId: record.inputId,
+        runId: typeof record.runId === "string" ? record.runId : null,
+        source: record.source,
+        sourceKey: record.sourceKey,
+        payload: (record.payload ?? null) as JsonValue,
+        time: typeof record.time === "number" ? record.time : 0,
+      };
+    }
+  }
+
+  async recordOutcome(
+    inputId: string,
+    kind: string,
+    payload: JsonValue,
+  ): Promise<RecordOutcomeResult> {
+    assertName(inputId, "inputId");
+    assertName(kind, "outcome kind");
+    assertJsonValue(payload, "outcome payload");
+    return this.#withLock(() => {
+      this.#refreshOutcomesUnlocked();
+      const key = outcomeKey(inputId, kind);
+      const existing = this.#outcomes.get(key);
+      if (existing !== undefined) {
+        return { duplicate: true, outcome: this.#asOutcome(existing) };
+      }
+      this.#outcomeSeq += 1;
+      const stored: StoredOutcome = {
+        type: "outcome",
+        inputId,
+        kind,
+        payload,
+        seq: this.#outcomeSeq,
+        time: this.#clock(),
+      };
+      appendLineSynced(this.#outcomesPath, `${JSON.stringify(stored)}\n`);
+      this.#outcomes.set(key, stored);
+      this.#outcomeBytes = statSync(this.#outcomesPath).size;
+      return { duplicate: false, outcome: this.#asOutcome(stored) };
+    });
+  }
+
+  async *readOutcomes(): AsyncGenerator<InputOutcome> {
+    this.#assertOpen();
+    if (!existsSync(this.#outcomesPath)) return;
+    const text = readFileSync(this.#outcomesPath).toString("utf8");
+    for (const line of text.split("\n")) {
+      if (line.length === 0) continue;
+      const stored = parseOutcomeLine(line);
+      if (stored === undefined) continue;
+      yield this.#asOutcome(stored);
+    }
   }
 
   async append(
@@ -506,6 +690,46 @@ class JsonlLogBackend implements LogBackend {
     return this.#read(runId);
   }
 
+  async appendGlobal(fact: NewFact, uniqueKey?: string): Promise<GlobalFact> {
+    validateNewFact(fact);
+    if (uniqueKey !== undefined) assertName(uniqueKey, "uniqueKey");
+    return this.#withLock(() => {
+      truncateTornLine(this.#globalFactsPath);
+      if (uniqueKey !== undefined) {
+        const existing = this.#globalFactWithKeyUnlocked(uniqueKey);
+        if (existing !== undefined) return globalFactOf(existing);
+      }
+      const lastSeq = this.#lastGlobalSeqUnlocked();
+      const stored: StoredGlobalFact = {
+        type: "global_fact",
+        seq: lastSeq + 1,
+        kind: fact.kind,
+        payload: fact.payload,
+        cause: fact.cause,
+        time: this.#clock(),
+        ...(uniqueKey === undefined ? {} : { uniqueKey }),
+      };
+      appendLineSynced(this.#globalFactsPath, `${JSON.stringify(stored)}\n`);
+      return globalFactOf(stored);
+    });
+  }
+
+  /** The global fact a unique key already holds, read under the append lock. */
+  #globalFactWithKeyUnlocked(uniqueKey: string): StoredGlobalFact | undefined {
+    if (!existsSync(this.#globalFactsPath)) return undefined;
+    const text = readFileSync(this.#globalFactsPath).toString("utf8");
+    for (const line of text.split("\n")) {
+      if (line.length === 0) continue;
+      const stored = parseGlobalFactLine(line);
+      if (stored.uniqueKey === uniqueKey) return stored;
+    }
+    return undefined;
+  }
+
+  readGlobal(): AsyncIterable<GlobalFact> {
+    return this.#readGlobal();
+  }
+
   async runs(options: RunsOptions = {}): Promise<RunInfo[]> {
     return this.#withLock(() => this.#listRunsUnlocked(options.active === true));
   }
@@ -514,6 +738,7 @@ class JsonlLogBackend implements LogBackend {
     this.#closed = true;
     this.#stopNotifications();
     this.#inputIds.clear();
+    this.#outcomes.clear();
     this.#listeners.clear();
   }
 
@@ -655,6 +880,65 @@ class JsonlLogBackend implements LogBackend {
     }
   }
 
+  async *#readGlobal(): AsyncGenerator<GlobalFact> {
+    this.#assertOpen();
+    let handle: Awaited<ReturnType<typeof openAsync>>;
+    try {
+      handle = await openAsync(this.#globalFactsPath, "r");
+    } catch (error) {
+      if (isErrno(error, "ENOENT")) return;
+      throw error;
+    }
+
+    try {
+      const buffer = Buffer.allocUnsafe(64 * 1024);
+      const decoder = new TextDecoder();
+      let pending = "";
+      let position = 0;
+      let expectedSeq = 1;
+
+      while (true) {
+        const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+        if (bytesRead === 0) break;
+        position += bytesRead;
+        pending += decoder.decode(buffer.subarray(0, bytesRead), { stream: true });
+
+        while (true) {
+          const newline = pending.indexOf("\n");
+          if (newline < 0) break;
+          const line = pending.slice(0, newline);
+          pending = pending.slice(newline + 1);
+          if (line.length === 0) continue;
+
+          const fact = parseGlobalFactLine(line);
+          if (fact.seq !== expectedSeq) {
+            throw new CorruptLogError(
+              "global",
+              `sequence ${fact.seq} follows ${expectedSeq - 1}`,
+            );
+          }
+          expectedSeq += 1;
+          yield {
+            seq: fact.seq,
+            kind: fact.kind,
+            payload: fact.payload,
+            cause: fact.cause,
+            time: fact.time,
+          };
+        }
+      }
+    } finally {
+      await handle.close();
+    }
+  }
+
+  #lastGlobalSeqUnlocked(): number {
+    if (!existsSync(this.#globalFactsPath)) return 0;
+    const line = readLastLine(this.#globalFactsPath);
+    if (line === null) return 0;
+    return parseGlobalFactLine(line).seq;
+  }
+
   #runPath(runId: string): string {
     return join(this.#runsDirectory, `${runId}.jsonl`);
   }
@@ -701,6 +985,7 @@ class JsonlLogBackend implements LogBackend {
       endedAt: active ? null : this.#endedAt(endPath),
       lastSeq: this.#lastSeqUnlocked(path, runId),
       ...(header.access === undefined ? {} : { access: header.access }),
+      startInputId: header.startInputId ?? null,
     };
   }
 
@@ -784,6 +1069,60 @@ class JsonlLogBackend implements LogBackend {
     this.#inputBytes = buffer.length;
   }
 
+  #asOutcome(stored: StoredOutcome): InputOutcome {
+    return {
+      inputId: stored.inputId,
+      kind: stored.kind,
+      payload: stored.payload,
+      seq: stored.seq,
+      time: stored.time,
+    };
+  }
+
+  #refreshOutcomesUnlocked(): void {
+    truncateTornLine(this.#outcomesPath);
+    const size = existsSync(this.#outcomesPath) ? statSync(this.#outcomesPath).size : 0;
+    if (size < this.#outcomeBytes) {
+      this.#rebuildOutcomes();
+      return;
+    }
+    if (size === this.#outcomeBytes) return;
+
+    const fd = openSync(this.#outcomesPath, "r");
+    try {
+      const buffer = Buffer.allocUnsafe(size - this.#outcomeBytes);
+      readAllAtSync(fd, buffer, this.#outcomeBytes);
+      this.#consumeOutcomeLines(buffer.toString("utf8"));
+    } finally {
+      closeSync(fd);
+    }
+    this.#outcomeBytes = size;
+  }
+
+  #consumeOutcomeLines(text: string): void {
+    for (const line of text.split("\n")) {
+      if (line.length === 0) continue;
+      const stored = parseOutcomeLine(line);
+      if (stored === undefined) {
+        throw new CorruptLogError("outcomes", "an outcome line is not valid");
+      }
+      this.#outcomes.set(outcomeKey(stored.inputId, stored.kind), stored);
+      this.#outcomeSeq = Math.max(this.#outcomeSeq, stored.seq);
+    }
+  }
+
+  #rebuildOutcomes(): void {
+    this.#outcomes.clear();
+    this.#outcomeSeq = 0;
+    if (!existsSync(this.#outcomesPath)) {
+      this.#outcomeBytes = 0;
+      return;
+    }
+    const buffer = readFileSync(this.#outcomesPath);
+    this.#consumeOutcomeLines(buffer.toString("utf8"));
+    this.#outcomeBytes = buffer.length;
+  }
+
   #recover(): void {
     // Rebuild inside the lock: a writer that appends during the rebuild would
     // otherwise let the rebuild miss a line and record the larger size.
@@ -797,7 +1136,10 @@ class JsonlLogBackend implements LogBackend {
         }
       }
       truncateTornLine(this.#inputsPath);
+      truncateTornLine(this.#outcomesPath);
+      truncateTornLine(this.#globalFactsPath);
       this.#rebuildInputs();
+      this.#rebuildOutcomes();
     });
   }
 

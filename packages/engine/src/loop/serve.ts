@@ -4,6 +4,9 @@ import { ActiveRunError } from "../log/errors.ts";
 import type { LogBackend } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { StartRunRequest } from "../plugin/types.ts";
+import { Kernel } from "../trigger/kernel.ts";
+import { loadTriggerRules } from "../trigger/rules.ts";
+import type { TriggerRule } from "../trigger/types.ts";
 import { acquireLock, lockHeld, runLockPath, serveLockPath } from "../runner/lock.ts";
 import { objectKey, parseObjectKey, readState } from "../runner/service.ts";
 
@@ -26,6 +29,14 @@ export interface ServePassOptions {
   readonly isRunnerAlive?: ((runId: string) => boolean) | undefined;
   readonly isRecentlySpawned?: ((runId: string) => boolean) | undefined;
   readonly shouldStop?: (() => boolean) | undefined;
+  /** When given, every start request goes through this kernel entry point. */
+  readonly kernel?: Kernel | undefined;
+  /** The operad home; defaults to the registry's home. */
+  readonly home?: string | undefined;
+  /** Where trigger metadata lives; defaults to `lockRoot`. */
+  readonly storeRoot?: string | undefined;
+  /** Rules for a kernel built when `kernel` is omitted. */
+  readonly rules?: readonly TriggerRule[] | undefined;
 }
 
 export interface ServePassResult {
@@ -49,6 +60,25 @@ export async function serveOnce(
   const isRunnerAlive =
     options.isRunnerAlive ??
     ((runId: string) => lockHeld(runLockPath(options.lockRoot, runId)));
+  const home = options.home ?? options.registry.home;
+  let rules = options.rules;
+  if (options.kernel === undefined && rules === undefined) {
+    try {
+      rules = await loadTriggerRules({ home, registry: options.registry });
+    } catch {
+      // A broken rule file must not stop the loop; the CLI reports it.
+      rules = [];
+    }
+  }
+  const kernel =
+    options.kernel ??
+    new Kernel({
+      log: options.log,
+      registry: options.registry,
+      home,
+      storeRoot: options.storeRoot ?? options.lockRoot,
+      rules: rules ?? [],
+    });
   const started: string[] = [];
   const spawned: string[] = [];
 
@@ -56,13 +86,17 @@ export async function serveOnce(
   const requests = options.registry.takeStartedRuns();
   for (const request of requests) {
     if (options.shouldStop?.() === true) break;
+    const object = startObjectKey(request);
     try {
-      const info = await options.log.startRun(
-        request.flow,
-        startObjectKey(request),
-        request.access,
-      );
-      started.push(info.runId);
+      const result = await kernel.start({
+        flow: request.flow,
+        object,
+        ...(request.params === undefined ? {} : { params: request.params }),
+        ...(request.trigger === undefined ? {} : { trigger: request.trigger }),
+        ...(request.inputId === undefined ? {} : { inputId: request.inputId }),
+        ...(request.access === undefined ? {} : { access: request.access }),
+      });
+      if (result.kind === "started") started.push(result.runId);
     } catch (error) {
       if (!(error instanceof ActiveRunError)) throw error;
     }
@@ -74,7 +108,9 @@ export async function serveOnce(
     const state = await readState(options.log, run.runId);
 
     if (state.status === "ended") {
-      await options.log.endRun(run.runId);
+      // Recording the end event comes first; `emitRunEnd` ends the run before
+      // routing it, so a recovered run can start the same flow on the object.
+      await kernel.emitRunEnd(run.runId, state);
       continue;
     }
     if (state.status === "waiting_person") continue;
@@ -91,10 +127,21 @@ export async function serveOnce(
     if (isRunnerAlive(run.runId)) continue;
     if (options.isRecentlySpawned?.(run.runId) === true) continue;
 
+    // A start that died after creating its run must not become a run with no
+    // record of the event that made it: restore the start files first, so the
+    // child starts from the intended input and sees the same event.
+    kernel.adoptStart(run);
+
     await options.spawnRun(run.runId, {
       recover: state.status === "running",
     });
     spawned.push(run.runId);
+  }
+
+  // A recorded event whose routing was interrupted is routed again. Outcomes
+  // are derived from the log by input id, so a second pass cannot repeat one.
+  if (options.shouldStop?.() !== true) {
+    await kernel.recoverUnrouted();
   }
 
   return { started, spawned };

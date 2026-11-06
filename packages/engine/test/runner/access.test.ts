@@ -109,7 +109,7 @@ describe("run access profile", () => {
     try {
       const flow = run.registry.flow("plain")?.flow;
       if (flow === undefined) throw new Error("missing flow");
-      const info = await run.log.startRun("plain", "job:1", { network: "all" });
+      const info = await run.log.startRun("plain", "job:1", null, { network: "all" });
       const runner = new Runner({
         log: run.log,
         flow,
@@ -137,7 +137,7 @@ describe("run access profile", () => {
       const flow = run.registry.flow("guarded")?.flow;
       if (flow === undefined) throw new Error("missing flow");
       const access = { network: "all", cwd: "/tmp/work" };
-      const info = await run.log.startRun("guarded", "job:1", access);
+      const info = await run.log.startRun("guarded", "job:1", null, access);
       await new Runner({
         log: run.log,
         flow,
@@ -157,7 +157,7 @@ describe("run access profile", () => {
       const flow = run.registry.flow("guarded")?.flow;
       if (flow === undefined) throw new Error("missing flow");
       const access = { network: "all" };
-      const info = await run.log.startRun("guarded", "job:1", access);
+      const info = await run.log.startRun("guarded", "job:1", null, access);
       await new Runner({
         log: run.log,
         flow,

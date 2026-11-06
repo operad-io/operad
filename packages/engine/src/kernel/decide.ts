@@ -1,5 +1,6 @@
 import { END, type FlowDefinition, type Step } from "../flow/types.ts";
 import type { FactCause, JsonValue } from "../log/types.ts";
+import { MAX_TRIGGER_HOPS } from "../trigger/types.ts";
 import type {
   Decision,
   Effect,
@@ -9,6 +10,7 @@ import type {
   KernelFact,
   KernelState,
   PendingEffect,
+  RunStartedPayload,
   StepInterruptedPayload,
 } from "./types.ts";
 import { inputCause } from "./types.ts";
@@ -110,6 +112,19 @@ export function decide(
   }
 
   function endRun(status: "done" | "failed" | "cancelled", reason: string | null, causedBy: FactCause): void {
+    if (state.hops + 1 > MAX_TRIGGER_HOPS) {
+      push(
+        "trigger_skipped",
+        {
+          source: "operad",
+          type: `run.${status}`,
+          key: "",
+          hops: state.hops + 1,
+          reason: `the chain is ${state.hops + 1} hops deep; at most ${MAX_TRIGGER_HOPS} are followed`,
+        },
+        causedBy,
+      );
+    }
     push("run_ended", { status, reason }, causedBy);
   }
 
@@ -274,15 +289,14 @@ export function decide(
   switch (input.kind) {
     case "start": {
       if (state.started || state.status !== "idle") return { facts, effects };
-      const startedSeq = push(
-        "run_started",
-        {
-          flow: flow.name,
-          ...(input.params === undefined ? {} : { params: input.params }),
-          ...(input.access === undefined ? {} : { access: input.access }),
-        },
-        cause,
-      );
+      const payload: RunStartedPayload = {
+        flow: flow.name,
+        ...(input.params === undefined ? {} : { params: input.params }),
+        ...(input.access === undefined ? {} : { access: input.access }),
+        ...(input.hops === undefined ? {} : { hops: input.hops }),
+        ...(input.trigger === undefined ? {} : { trigger: input.trigger }),
+      };
+      const startedSeq = push("run_started", payload, cause);
       enter(flow.entry, startedSeq);
       return { facts, effects };
     }

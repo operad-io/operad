@@ -1,15 +1,16 @@
 /** Drives one run: inputs to `decide`, facts to the log, effects to plugins. */
 
 import type { FlowDefinition } from "../flow/types.ts";
-import type { Input, KernelState } from "../kernel/types.ts";
+import type { Input, KernelState, StartInput } from "../kernel/types.ts";
 import type { JsonValue, LogBackend } from "../log/types.ts";
 import type { PluginStepResult, RunObject } from "../plugin/types.ts";
 import { PluginRegistry } from "../plugin/registry.ts";
 import type { ObjectRef } from "../plugin/types.ts";
 import { messageOf } from "../plugin/errors.ts";
+import type { StepEvent, TriggerView } from "../trigger/types.ts";
 import { Worker } from "node:worker_threads";
 import { acquireLock, runLockPath, type LockHandle } from "./lock.ts";
-import { applyInput, parseObjectKey, readState } from "./service.ts";
+import { appendInput, applyInput, parseObjectKey, readState } from "./service.ts";
 
 /** The wall time a plugin step may take before the run records a failure. */
 export const DEFAULT_STEP_TIMEOUT_MS = 5 * 60 * 1000;
@@ -20,17 +21,38 @@ const WORKER_ABORT_GRACE_MS = 1000;
 const STEP_WORKER = new URL("./step-worker.ts", import.meta.url);
 
 interface StepWorkerReply {
+  readonly kind: "result";
   readonly ok: boolean;
   readonly result?: PluginStepResult | undefined;
   readonly error?: string | undefined;
+}
+
+interface StepWorkerEmit {
+  readonly kind: "emit";
+  readonly id: number;
+  readonly plugin: string;
+  readonly event: StepEvent;
 }
 
 function isStepWorkerReply(value: unknown): value is StepWorkerReply {
   return (
     typeof value === "object" &&
     value !== null &&
+    "kind" in value &&
+    (value as { kind?: unknown }).kind === "result" &&
     "ok" in value &&
     typeof (value as { ok: unknown }).ok === "boolean"
+  );
+}
+
+function isStepWorkerEmit(value: unknown): value is StepWorkerEmit {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { kind?: unknown }).kind === "emit" &&
+    typeof (value as { id?: unknown }).id === "number" &&
+    typeof (value as { plugin?: unknown }).plugin === "string" &&
+    typeof (value as { event?: unknown }).event === "object"
   );
 }
 
@@ -54,6 +76,18 @@ export interface RunnerOptions {
   readonly access?: JsonValue | undefined;
   /** Treat an outstanding step as a crash and recover it first. */
   readonly recover?: boolean | undefined;
+  /** The event that started the run, read-only for its steps. */
+  readonly trigger?: TriggerView | undefined;
+  /** The start fact to use for an idle run, written by the start entry. */
+  readonly startInput?: StartInput | undefined;
+  /** Sends an event a step emitted, from the plugin that registered it. */
+  readonly emit?:
+    | ((plugin: string, event: StepEvent) => Promise<void>)
+    | undefined;
+  /** Called once when the run ends, before the log marks it ended. */
+  readonly onEnded?:
+    | ((runId: string, state: KernelState) => Promise<void>)
+    | undefined;
 }
 
 function resultsOf(registry: PluginRegistry, use: string): readonly string[] {
@@ -101,8 +135,16 @@ export class Runner {
   private readonly signal: AbortSignal | undefined;
   private readonly lockRoot: string | undefined;
   private readonly object: ObjectRef | undefined;
+  private readonly trigger: TriggerView | undefined;
+  private readonly startInput: StartInput | undefined;
   private readonly params: JsonValue | undefined;
   private readonly access: JsonValue | undefined;
+  private readonly emitEvent:
+    | ((plugin: string, event: StepEvent) => Promise<void>)
+    | undefined;
+  private readonly onEnded:
+    | ((runId: string, state: KernelState) => Promise<void>)
+    | undefined;
   private readonly recover: boolean;
   readonly runId: string;
 
@@ -117,6 +159,10 @@ export class Runner {
     this.signal = options.signal;
     this.lockRoot = options.lockRoot;
     this.object = options.object;
+    this.trigger = options.trigger;
+    this.startInput = options.startInput;
+    this.emitEvent = options.emit;
+    this.onEnded = options.onEnded;
     this.params = options.params;
     this.access = options.access;
     this.recover = options.recover === true;
@@ -137,6 +183,9 @@ export class Runner {
     try {
       let state = await readState(this.log, this.runId);
       if (state.status === "ended") {
+        // Record the end event before ending the run: a crash in between leaves
+        // the run active, and the next pass records the same event again.
+        await this.onEnded?.(this.runId, state);
         await this.log.endRun(this.runId);
         return "ended";
       }
@@ -158,24 +207,14 @@ export class Runner {
             this.clock(),
             "runner",
             `recover:${state.lastSeq}`,
+            this.hooks(),
           );
           state = result.state;
         }
       }
 
       if (state.status === "idle") {
-        const access = await this.initialAccess();
-        this.registry.checkAccess(this.flow.name, access);
-        const result = await applyInput(
-          this.log,
-          this.flow,
-          this.runId,
-          state,
-          this.startInput(access),
-          this.clock(),
-          "runner",
-          "start",
-        );
+        const result = await this.startIdle(state);
         state = result.state;
       }
 
@@ -198,18 +237,7 @@ export class Runner {
     if (state.status === "ended") return "ended";
     if (state.status === "waiting_person") return "waiting";
     if (state.status === "idle") {
-      const access = await this.initialAccess();
-      this.registry.checkAccess(this.flow.name, access);
-      const result = await applyInput(
-        this.log,
-        this.flow,
-        this.runId,
-        state,
-        this.startInput(access),
-        this.clock(),
-        "runner",
-        "start",
-      );
+      const result = await this.startIdle(state);
       return result.duplicate ? "blocked" : "progress";
     }
 
@@ -227,6 +255,7 @@ export class Runner {
         this.clock(),
         "runner",
         `tick:${state.lastSeq}`,
+        this.hooks(),
       );
       return result.duplicate ? "blocked" : "progress";
     }
@@ -245,6 +274,72 @@ export class Runner {
     const outcome = await this.execute(effect.use, effect.params, false, state.params, state.access);
     await this.recordResult(state, effect.id, outcome.result, outcome.data);
     return "progress";
+  }
+
+  private hooks(): {
+    readonly beforeEnd: (runId: string, state: KernelState) => Promise<void>;
+  } {
+    return {
+      beforeEnd: async (runId, state) => {
+        await this.onEnded?.(runId, state);
+      },
+    };
+  }
+
+  /** Applies the run's start fact, using the start entry's metadata when present. */
+  private async startIdle(
+    state: KernelState,
+  ): Promise<{ readonly state: KernelState; readonly duplicate: boolean }> {
+    const meta = this.startInput;
+    const provided = meta?.access ?? this.access;
+    const access =
+      provided ?? (meta === undefined ? await this.initialAccess() : undefined);
+    this.registry.checkAccess(this.flow.name, access);
+    if (meta !== undefined && meta.inputId !== undefined) {
+      const start: Input =
+        access === undefined || meta.access !== undefined
+          ? meta
+          : { ...meta, access };
+      const result = await appendInput(
+        this.log,
+        this.flow,
+        this.runId,
+        state,
+        start,
+        this.clock(),
+      );
+      if (result.state.status === "ended") {
+        await this.onEnded?.(this.runId, result.state);
+        await this.log.endRun(this.runId);
+      }
+      return { state: result.state, duplicate: false };
+    }
+    const input: Input =
+      meta === undefined
+        ? {
+            kind: "start",
+            ...(this.params === undefined ? {} : { params: this.params }),
+            ...(access === undefined ? {} : { access }),
+          }
+        : {
+            kind: "start",
+            ...(meta.params === undefined ? {} : { params: meta.params }),
+            ...(meta.hops === undefined ? {} : { hops: meta.hops }),
+            ...(meta.trigger === undefined ? {} : { trigger: meta.trigger }),
+            ...(access === undefined ? {} : { access }),
+          };
+    const result = await applyInput(
+      this.log,
+      this.flow,
+      this.runId,
+      state,
+      input,
+      this.clock(),
+      "runner",
+      "start",
+      this.hooks(),
+    );
+    return { state: result.state, duplicate: result.duplicate };
   }
 
   private async recordResult(
@@ -271,6 +366,7 @@ export class Runner {
       this.clock(),
       "runner",
       `result:${effectId}`,
+      this.hooks(),
     );
   }
 
@@ -323,7 +419,7 @@ export class Runner {
     );
   }
 
-  private startInput(access: JsonValue | undefined): Input {
+  private startInputFor(access: JsonValue | undefined): Input {
     return {
       kind: "start",
       ...(this.params === undefined ? {} : { params: this.params }),
@@ -375,6 +471,7 @@ export class Runner {
           flowParams,
           access,
           settings: this.registry.pluginSettings(),
+          ...(this.trigger === undefined ? {} : { trigger: this.trigger }),
           runId: this.runId,
           ...(object === undefined ? {} : { object }),
         },
@@ -434,10 +531,29 @@ export class Runner {
       }, this.stepTimeoutMs);
       this.signal?.addEventListener("abort", onAbort, { once: true });
 
-      worker.once("message", (message: unknown) => {
+      worker.on("message", (message: unknown) => {
         if (settled) {
           // The step answered after an abort: it has stopped what it started.
           void worker.terminate();
+          return;
+        }
+        if (isStepWorkerEmit(message)) {
+          void (async () => {
+            try {
+              if (this.emitEvent === undefined) {
+                throw new Error("no event destination is configured");
+              }
+              await this.emitEvent(message.plugin, message.event);
+              worker.postMessage({ kind: "emit-result", id: message.id, ok: true });
+            } catch (error) {
+              worker.postMessage({
+                kind: "emit-result",
+                id: message.id,
+                ok: false,
+                error: messageOf(error),
+              });
+            }
+          })();
           return;
         }
         if (isStepWorkerReply(message) && message.ok && message.result) {
@@ -501,6 +617,8 @@ export class Runner {
       ...(object === undefined ? {} : { object }),
       params: flowParams,
       access,
+      ...(this.trigger === undefined ? {} : { trigger: this.trigger }),
+      ...(this.emitEvent === undefined ? {} : { emit: this.emitEvent }),
       signal: controller.signal,
     });
     // After a timeout the plugin may still reject; that rejection is no

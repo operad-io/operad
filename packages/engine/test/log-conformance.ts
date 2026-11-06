@@ -16,6 +16,8 @@ import {
   SeqConflictError,
   secret,
   type Fact,
+  type GlobalFact,
+  type InputOutcome,
   type JsonValue,
   type LogBackend,
   type LogBackendFactory,
@@ -77,6 +79,22 @@ async function openStore(
 async function collect(facts: AsyncIterable<Fact>): Promise<Fact[]> {
   const result: Fact[] = [];
   for await (const fact of facts) result.push(fact);
+  return result;
+}
+
+async function collectGlobal(
+  facts: AsyncIterable<GlobalFact>,
+): Promise<GlobalFact[]> {
+  const result: GlobalFact[] = [];
+  for await (const fact of facts) result.push(fact);
+  return result;
+}
+
+async function collectOutcomes(
+  outcomes: AsyncIterable<InputOutcome>,
+): Promise<InputOutcome[]> {
+  const result: InputOutcome[] = [];
+  for await (const outcome of outcomes) result.push(outcome);
   return result;
 }
 
@@ -266,6 +284,28 @@ export function runLogConformance(factory: LogConformanceFactory): void {
       }
     });
 
+    test("startRun keeps the input that made the run", async () => {
+      const directory = tempDirectory("start-input");
+      const backend = await openStore(factory, directory, { clock: fixedClock() });
+      try {
+        const run = await backend.startRun("flow", "object", "input_event");
+        expect(run.startInputId).toBe("input_event");
+
+        const listed = (await backend.runs()).find(
+          (candidate) => candidate.runId === run.runId,
+        );
+        expect(listed?.startInputId).toBe("input_event");
+
+        const plain = await backend.startRun("flow", "plain", "input_plain");
+        expect(plain.startInputId).toBe("input_plain");
+        const second = await backend.startRun("flow", "other");
+        expect(second.startInputId).toBeNull();
+      } finally {
+        await backend.close();
+        cleanup(directory);
+      }
+    });
+
     test("endRun is idempotent, unknown runs fail, and an ended run takes no facts", async () => {
       const directory = tempDirectory("end-run");
       const backend = await openStore(factory, directory, { clock: fixedClock() });
@@ -342,6 +382,121 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         expect(other.duplicate).toBe(false);
         expect((await first.recordInput(run.runId, "github", "issue:10", {})).duplicate).toBe(true);
         expect(factory.countInputRecords(directory)).toBe(2);
+      } finally {
+        await first.close();
+        await second.close();
+        cleanup(directory);
+      }
+    });
+
+    test("recordOutcome keeps the first outcome per (inputId, kind)", async () => {
+      const directory = tempDirectory("outcomes");
+      let backend = await openStore(factory, directory, { clock: fixedClock() });
+      try {
+        const input = await backend.recordInput(null, "github", "issue:1", {});
+        const first = await backend.recordOutcome(input.inputId, "observed", { at: 1 });
+        expect(first.duplicate).toBe(false);
+        expect(first.outcome.payload).toEqual({ at: 1 });
+
+        const duplicate = await backend.recordOutcome(input.inputId, "observed", { at: 2 });
+        expect(duplicate.duplicate).toBe(true);
+        expect(duplicate.outcome.payload).toEqual({ at: 1 });
+
+        // A different kind is a later outcome for the same input.
+        const candidate = await backend.recordOutcome(input.inputId, "candidate", { flow: "one" });
+        expect(candidate.duplicate).toBe(false);
+        expect((await collectOutcomes(backend.readOutcomes())).map((item) => item.kind).sort()).toEqual(
+          ["candidate", "observed"],
+        );
+
+        await backend.close();
+        backend = await openStore(factory, directory, { clock: fixedClock() });
+        const afterReopen = await backend.recordOutcome(input.inputId, "observed", { at: 3 });
+        expect(afterReopen.duplicate).toBe(true);
+        expect(afterReopen.outcome.payload).toEqual({ at: 1 });
+        expect(await collectOutcomes(backend.readOutcomes())).toHaveLength(2);
+      } finally {
+        await backend.close();
+        cleanup(directory);
+      }
+    });
+
+    test("recordOutcome keeps one outcome across two open backends", async () => {
+      const directory = tempDirectory("outcomes-live");
+      const first = await openStore(factory, directory, { clock: fixedClock() });
+      const second = await openStore(factory, directory, { clock: fixedClock() });
+      try {
+        const input = await first.recordInput(null, "github", "issue:9", {});
+        const stored = await first.recordOutcome(input.inputId, "observed", { by: "first" });
+        expect(stored.duplicate).toBe(false);
+
+        const duplicate = await second.recordOutcome(input.inputId, "observed", { by: "second" });
+        expect(duplicate.duplicate).toBe(true);
+        expect(duplicate.outcome.payload).toEqual({ by: "first" });
+        expect(await collectOutcomes(second.readOutcomes())).toHaveLength(1);
+      } finally {
+        await first.close();
+        await second.close();
+        cleanup(directory);
+      }
+    });
+
+    test("global facts keep their order across reopen", async () => {
+      const directory = tempDirectory("global-facts");
+      let backend = await openStore(factory, directory, { clock: fixedClock() });
+      try {
+        const first = await backend.appendGlobal({
+          kind: "trigger_observed",
+          payload: { reason: "would start one on job:1" },
+          cause: "input-one",
+        });
+        expect(first.seq).toBe(1);
+        await backend.appendGlobal({
+          kind: "trigger_skipped",
+          payload: { reason: "too deep" },
+          cause: "input-two",
+        });
+
+        await backend.close();
+        backend = await openStore(factory, directory, { clock: fixedClock() });
+        const facts = await collectGlobal(backend.readGlobal());
+        expect(facts.map((fact) => fact.kind)).toEqual([
+          "trigger_observed",
+          "trigger_skipped",
+        ]);
+        expect(facts.map((fact) => fact.seq)).toEqual([1, 2]);
+      } finally {
+        await backend.close();
+        cleanup(directory);
+      }
+    });
+
+    test("appendGlobal with a uniqueKey writes once and returns the stored fact", async () => {
+      const directory = tempDirectory("global-unique");
+      const first = await openStore(factory, directory, { clock: fixedClock() });
+      const second = await openStore(factory, directory, { clock: fixedClock() });
+      try {
+        const stored = await first.appendGlobal(
+          {
+            kind: "trigger_observed",
+            payload: { reason: "would start one on job:1" },
+            cause: "input-one",
+          },
+          "trigger_observed:input-one",
+        );
+        const duplicate = await second.appendGlobal(
+          {
+            kind: "trigger_observed",
+            payload: { reason: "a second writer" },
+            cause: "input-one",
+          },
+          "trigger_observed:input-one",
+        );
+        expect(duplicate.seq).toBe(stored.seq);
+        expect(duplicate.payload).toEqual({
+          reason: "would start one on job:1",
+        });
+        expect(await collectGlobal(first.readGlobal())).toHaveLength(1);
       } finally {
         await first.close();
         await second.close();

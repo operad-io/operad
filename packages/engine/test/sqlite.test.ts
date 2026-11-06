@@ -260,7 +260,7 @@ test("opens a schema_version 1 store and adds the access column", async () => {
         .get(),
     )?.version).toBe(SCHEMA_VERSION);
 
-    const started = await backend.startRun("other", "object", { network: "all" });
+    const started = await backend.startRun("other", "object", null, { network: "all" });
     expect(started.access).toEqual({ network: "all" });
     const stored = (await backend.runs()).find((run) => run.runId === started.runId);
     expect(stored?.access).toEqual({ network: "all" });
@@ -282,6 +282,110 @@ test("the store runs in WAL mode", async () => {
   } finally {
     await backend.close();
   }
+});
+
+test("a store from before global inputs is migrated on open", async () => {
+  const directory = tracked("legacy-inputs");
+  const legacy = new Database(dbPath(directory));
+  try {
+    legacy.exec(`
+      CREATE TABLE schema_version (
+        id      INTEGER PRIMARY KEY CHECK (id = 1),
+        version INTEGER NOT NULL
+      );
+      CREATE TABLE runs (
+        run_id     TEXT PRIMARY KEY,
+        flow       TEXT NOT NULL,
+        object     TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        ended_at   INTEGER
+      );
+      CREATE UNIQUE INDEX runs_one_active
+        ON runs (flow, object) WHERE ended_at IS NULL;
+      CREATE TABLE facts (
+        run_id  TEXT NOT NULL REFERENCES runs (run_id),
+        seq     INTEGER NOT NULL,
+        kind    TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        cause   TEXT NOT NULL,
+        time    INTEGER NOT NULL,
+        PRIMARY KEY (run_id, seq)
+      );
+      CREATE TABLE inputs (
+        input_id   TEXT PRIMARY KEY,
+        run_id     TEXT NOT NULL REFERENCES runs (run_id),
+        source     TEXT NOT NULL,
+        source_key TEXT NOT NULL,
+        payload    TEXT NOT NULL,
+        time       INTEGER NOT NULL,
+        UNIQUE (source, source_key)
+      );
+      CREATE TABLE global_facts (
+        seq     INTEGER PRIMARY KEY,
+        kind    TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        cause   TEXT NOT NULL,
+        time    INTEGER NOT NULL
+      );
+      INSERT INTO schema_version (id, version) VALUES (1, 1);
+    `);
+  } finally {
+    legacy.close();
+  }
+
+  const backend = await open(directory);
+  try {
+    const run = await backend.startRun("flow", "object");
+    const withInput = await backend.startRun("flow", "with-input", "input_x");
+    expect(withInput.startInputId).toBe("input_x");
+    const global = await backend.recordInput(null, "cron", "tick:1", {});
+    expect(global.duplicate).toBe(false);
+    const scoped = await backend.recordInput(run.runId, "github", "issue:1", {});
+    expect(scoped.duplicate).toBe(false);
+    await backend.appendGlobal({
+      kind: "trigger_observed",
+      payload: { reason: "would start one on object" },
+      cause: global.inputId,
+    });
+    const unique = await backend.appendGlobal(
+      {
+        kind: "trigger_observed",
+        payload: { reason: "would start one on object" },
+        cause: global.inputId,
+      },
+      "trigger_observed:one",
+    );
+    const duplicate = await backend.appendGlobal(
+      {
+        kind: "trigger_observed",
+        payload: { reason: "a second writer" },
+        cause: global.inputId,
+      },
+      "trigger_observed:one",
+    );
+    expect(duplicate.seq).toBe(unique.seq);
+  } finally {
+    await backend.close();
+  }
+
+  const columns = withDatabase(directory, (database) =>
+    database
+      .query<{ name: string; notnull: number }, []>("PRAGMA table_info(inputs)")
+      .all(),
+  );
+  expect(columns.find((column) => column.name === "run_id")?.notnull).toBe(0);
+  const runColumns = withDatabase(directory, (database) =>
+    database
+      .query<{ name: string }, []>("PRAGMA table_info(runs)")
+      .all(),
+  );
+  expect(runColumns.some((column) => column.name === "start_input_id")).toBe(true);
+  const globalColumns = withDatabase(directory, (database) =>
+    database
+      .query<{ name: string }, []>("PRAGMA table_info(global_facts)")
+      .all(),
+  );
+  expect(globalColumns.some((column) => column.name === "unique_key")).toBe(true);
 });
 
 test("a subscription learns of a write when the watch never fires", async () => {

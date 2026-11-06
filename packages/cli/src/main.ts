@@ -1,4 +1,4 @@
-import { closeSync, mkdirSync, openSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,28 +6,34 @@ import {
   answerRun,
   ConfigError,
   FileSecretStore,
+  Kernel,
   LockHeldError,
   MemoryPluginStore,
   PluginRegistry,
   Runner,
   StateError,
+  TriggerError,
   ViewError,
   createViews,
   defaultOperadHome,
   ensureConfig,
   formatHistoryEntry,
+  historyEntry,
   historyEntries,
   listPending,
   listRunning,
   loadConfiguredPlugins,
   loadPlugin,
   loadPluginRegistry,
+  loadTriggerRules,
   messageOf,
   openConfigLog,
   openPluginStore,
   parseObjectKey,
   readConfig,
   readState,
+  readStoredStart,
+  readStoredTrigger,
   serve,
   setPluginEnabled,
   splitActionName,
@@ -38,8 +44,11 @@ import {
   type ActionInfo,
   type Actor,
   type LogBackend,
+  type GlobalFact,
   type OperadConfig,
   type RunInfo,
+  type TriggerEvent,
+  type TriggerRule,
   type ViewAction,
   type ViewObject,
   type ViewRow,
@@ -87,12 +96,15 @@ const KERNEL_VERBS = [
   "history",
   "running",
   "flows",
+  "trigger",
   "list",
   "show",
   "plugin",
   "secret",
   "run-internal",
 ] as const;
+
+const KERNEL_ACTIONS = ["operad:start", "operad:dismiss"] as const;
 
 const HELP = [
   "usage: operad <command> [options]",
@@ -112,6 +124,10 @@ const HELP = [
   "  secret set <plugin> <name>   store a secret (value from the terminal or stdin)",
   "  secret list <plugin>         secret names, never values",
   "  secret delete <plugin> <name>",
+  "  trigger <source> <key> [--type t] [--object o] [--summary text] [--data file]",
+  "                       send one event through the rules",
+  "  operad:start <id>    start a pending event",
+  "  operad:dismiss <id>  dismiss a pending event",
   "  <plugin>:<action>    an action on one object",
   "  <plugin> <verb>      a verb a loaded plugin declares",
   "",
@@ -190,6 +206,21 @@ async function openContext(home: string, io: CliIo): Promise<Context> {
   };
 }
 
+function kernelFor(
+  context: Context,
+  io: CliIo,
+  rules: readonly TriggerRule[],
+): Kernel {
+  return new Kernel({
+    log: context.log,
+    registry: context.registry,
+    home: context.home,
+    storeRoot: context.storeRoot,
+    rules,
+    onLog: (message) => io.error(`${message}\n`),
+  });
+}
+
 function splitFlag(
   argv: readonly string[],
   flag: string,
@@ -254,7 +285,11 @@ async function commandPending(
   io: CliIo,
   json: boolean,
 ): Promise<void> {
-  const pending = await listPending(context.log, context.registry);
+  const pending = await listPending(
+    context.log,
+    context.registry,
+    kernelFor(context, io, []),
+  );
   if (json) {
     io.write(`${JSON.stringify(pending, null, 2)}\n`);
     return;
@@ -908,6 +943,127 @@ async function streamEntriesJson(
   }
 }
 
+async function commandTrigger(
+  context: Context,
+  io: CliIo,
+  argv: readonly string[],
+): Promise<void> {
+  const flags = parseValueFlags(argv, ["--type", "--object", "--summary", "--data"]);
+  const source = flags.positionals[0];
+  const key = flags.positionals[1];
+  if (source === undefined || key === undefined) {
+    throw new UsageError("trigger needs a source and a key");
+  }
+  if (flags.positionals.length > 2) {
+    throw new UsageError("trigger takes one source and one key");
+  }
+  if (source === "operad") {
+    throw new UsageError('trigger: the source "operad" is reserved');
+  }
+
+  const dataFile = flags.values.get("--data");
+  let data: string | undefined;
+  if (dataFile !== undefined) {
+    try {
+      data = readFileSync(dataFile, "utf8");
+    } catch (error) {
+      throw new UsageError(`trigger: cannot read ${dataFile}: ${String(error)}`);
+    }
+  }
+
+  const rules = await loadTriggerRules({
+    home: context.home,
+    registry: context.registry,
+  });
+  const kernel = kernelFor(context, io, rules);
+  const type = flags.values.get("--type") ?? "event";
+  const object = flags.values.get("--object");
+  const summary = flags.values.get("--summary");
+  const event: TriggerEvent = {
+    source,
+    key,
+    type,
+    hops: 0,
+    ...(object === undefined ? {} : { object }),
+    ...(summary === undefined ? {} : { summary }),
+    ...(data === undefined ? {} : { data }),
+  };
+  const result = await kernel.receive(event);
+  if (result.kind === "started" && result.runId !== undefined) {
+    io.write(`started ${result.runId}\n`);
+  } else if (result.kind === "candidate" && result.pendingId !== undefined) {
+    io.write(`waiting ${result.pendingId}\n`);
+  } else if (result.kind === "active" && result.runId !== undefined) {
+    io.write(`recorded in ${result.runId}\n`);
+  } else if (result.kind === "observed") {
+    io.write(`observed ${result.flow ?? ""} on ${result.object ?? ""}\n`);
+  } else if (result.kind === "skipped") {
+    io.write(`not started: ${result.reason ?? "the chain is too deep"}\n`);
+  } else {
+    io.write(`recorded ${result.inputId}\n`);
+  }
+}
+
+interface ValueFlags {
+  readonly positionals: readonly string[];
+  readonly values: ReadonlyMap<string, string>;
+}
+
+function parseValueFlags(argv: readonly string[], allowed: readonly string[]): ValueFlags {
+  const positionals: string[] = [];
+  const values = new Map<string, string>();
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === undefined) continue;
+    if (!arg.startsWith("--")) {
+      positionals.push(arg);
+      continue;
+    }
+    if (!allowed.includes(arg)) {
+      throw new UsageError(`unknown option "${arg}"`);
+    }
+    const value = argv[index + 1];
+    if (value === undefined) {
+      throw new UsageError(`${arg} needs a value`);
+    }
+    values.set(arg, value);
+    index += 1;
+  }
+  return { positionals, values };
+}
+
+function kernelAction(
+  command: string,
+  registry: PluginRegistry,
+): "start" | "dismiss" | undefined {
+  if (command === "operad:start") return "start";
+  if (command === "operad:dismiss") return "dismiss";
+  if (command !== "start" && command !== "dismiss") return undefined;
+  return registry.resolveCommand([command]) === undefined ? command : undefined;
+}
+
+async function commandKernelAction(
+  context: Context,
+  io: CliIo,
+  action: "start" | "dismiss",
+  argv: readonly string[],
+): Promise<void> {
+  const id = argv[0];
+  if (id === undefined) throw new UsageError(`${action} needs a pending id`);
+  if (argv.length > 1) throw new UsageError(`${action} takes one pending id`);
+  const kernel = kernelFor(context, io, []);
+  if (action === "dismiss") {
+    await kernel.dismiss(id);
+    io.write(`dismissed ${id}\n`);
+    return;
+  }
+  const result = await kernel.startCandidate(id);
+  if (result.kind !== "started") {
+    throw new StateError(`pending item "${id}" could not be started`);
+  }
+  io.write(`started ${result.runId}\n`);
+}
+
 async function commandHistory(
   context: Context,
   io: CliIo,
@@ -920,6 +1076,34 @@ async function commandHistory(
     id,
   );
   if (runs.length === 0) {
+    // An observed event belongs to no run; its fact is in the global log.
+    const globals: GlobalFact[] = [];
+    for await (const fact of context.log.readGlobal()) {
+      if (fact.cause === id) globals.push(fact);
+    }
+    if (globals.length > 0) {
+      if (json) {
+        io.write("[\n");
+        for (const [index, fact] of globals.entries()) {
+          if (index > 0) io.write(",\n");
+          const entry = historyEntry(fact);
+          io.write(
+            `  ${JSON.stringify({
+              time: new Date(entry.time).toISOString(),
+              step: entry.step,
+              what: entry.what,
+              why: entry.why,
+            })}`,
+          );
+        }
+        io.write("\n]\n");
+        return;
+      }
+      for (const fact of globals) {
+        io.write(`${formatHistoryEntry(historyEntry(fact))}\n`);
+      }
+      return;
+    }
     throw new Error(`no run or object "${id}"`);
   }
   const ordered = [...runs].sort(
@@ -1056,6 +1240,25 @@ async function commandServe(
   };
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
+
+  let rules: readonly TriggerRule[] = [];
+  let sourcesAllowed = true;
+  try {
+    rules = await loadTriggerRules({
+      home: context.home,
+      registry: context.registry,
+    });
+  } catch (error) {
+    sourcesAllowed = false;
+    io.error(
+      `operad: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+  }
+  const kernel = kernelFor(context, io, rules);
+  if (sourcesAllowed) {
+    await kernel.startSources();
+  }
+
   try {
     io.write(`serving ${context.home}\n`);
     await serve({
@@ -1063,12 +1266,14 @@ async function commandServe(
       log: context.log,
       registry: context.registry,
       lockRoot: context.storeRoot,
+      kernel,
       spawnRun: spawnChild(context.home, context.storeRoot),
       intervalMs: Number.isFinite(parsed) && parsed > 0 ? parsed : 1_000,
       signal: controller.signal,
       clock: () => Date.now(),
     });
   } finally {
+    await kernel.stopSources();
     process.removeListener("SIGINT", stop);
     process.removeListener("SIGTERM", stop);
   }
@@ -1076,6 +1281,7 @@ async function commandServe(
 
 async function commandRunInternal(
   context: Context,
+  io: CliIo,
   argv: readonly string[],
 ): Promise<void> {
   const { args, present } = splitFlag(argv, "--recover");
@@ -1090,6 +1296,22 @@ async function commandRunInternal(
     throw new StateError(`run "${runId}": flow "${run.flow}" is not loaded`);
   }
   const object = parseObjectKey(run.object);
+  let rules: readonly TriggerRule[] = [];
+  try {
+    rules = await loadTriggerRules({
+      home: context.home,
+      registry: context.registry,
+    });
+  } catch (error) {
+    // The run still has to finish; a broken rule file is not a run error.
+    io.error(`${error instanceof Error ? error.message : String(error)}\n`);
+  }
+  const kernel = kernelFor(context, io, rules);
+  // A start that died after creating its run left no start files; restore
+  // them so this runner starts from the input and event that were recorded.
+  kernel.adoptStart(run);
+  const startInput = readStoredStart(context.storeRoot, runId);
+  const trigger = readStoredTrigger(context.storeRoot, runId);
   const runner = new Runner({
     log: context.log,
     flow: found.flow,
@@ -1099,6 +1321,14 @@ async function commandRunInternal(
     recover: present,
     ...(run.access === undefined ? {} : { access: run.access }),
     ...(object === undefined ? {} : { object }),
+    ...(startInput === undefined ? {} : { startInput }),
+    ...(trigger === undefined ? {} : { trigger }),
+    onEnded: async (endedRunId, state) => {
+      await kernel.emitRunEnd(endedRunId, state);
+    },
+    emit: async (plugin, event) => {
+      await kernel.emitStep(runId, plugin, event, run.object);
+    },
   });
   await runner.run();
 }
@@ -1383,7 +1613,7 @@ export async function main(
     if (command === "run-internal") {
       const context = await openContext(home, io);
       try {
-        await commandRunInternal(context, args.slice(1));
+        await commandRunInternal(context, io, args.slice(1));
       } finally {
         context.views.close();
         await context.log.close();
@@ -1398,6 +1628,16 @@ export async function main(
         await commandServe(context, io, args.slice(1));
       } finally {
         context.views.close();
+        await context.log.close();
+      }
+      return 0;
+    }
+
+    if (command === "trigger") {
+      const context = await openContext(home, io);
+      try {
+        await commandTrigger(context, io, args.slice(1));
+      } finally {
         await context.log.close();
       }
       return 0;
@@ -1473,6 +1713,11 @@ export async function main(
 
     const context = await openContext(home, io);
     try {
+      const action = kernelAction(command, context.registry);
+      if (action !== undefined) {
+        await commandKernelAction(context, io, action, args.slice(1));
+        return 0;
+      }
       if (await commandAction(context, io, args, tty)) return 0;
       if (await commandPlugin(context, io, args)) return 0;
       const attempted = splitActionName(command ?? "")?.plugin ?? command ?? "";

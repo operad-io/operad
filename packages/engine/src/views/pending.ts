@@ -4,20 +4,30 @@ import type { LogBackend, RunInfo } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { PendingActionView } from "../plugin/types.ts";
 import { parseObjectKey, readState } from "../runner/service.ts";
+import type { TriggerCandidate } from "../trigger/types.ts";
+
+/** Where the pending view gets candidates the kernel derived from the log. */
+export interface CandidateSource {
+  candidates(): Promise<readonly TriggerCandidate[]> | readonly TriggerCandidate[];
+}
 
 export interface PendingItem {
+  /** A run id, or the pending id of a candidate event. */
   readonly runId: string;
   readonly flow: string;
   readonly step: string | null;
   readonly prompt: string;
   readonly choices: readonly string[];
   readonly actions: readonly PendingActionView[];
+  readonly kind?: "run" | "candidate";
+  readonly pendingId?: string;
 }
 
 /** Runs waiting for a person, in the order they started. */
 export async function listPending(
   log: LogBackend,
   registry: PluginRegistry,
+  triggers?: CandidateSource,
 ): Promise<readonly PendingItem[]> {
   const runs = (await log.runs({ active: true })).sort(
     (left, right) => left.startedAt - right.startedAt,
@@ -36,6 +46,25 @@ export async function listPending(
       prompt: state.wait.prompt,
       choices: state.wait.choices,
       actions,
+      kind: "run",
+    });
+  }
+
+  const candidates =
+    triggers === undefined ? [] : await triggers.candidates();
+  for (const candidate of candidates) {
+    items.push({
+      runId: candidate.pendingId,
+      flow: candidate.flow,
+      step: null,
+      prompt: `would start ${candidate.flow} on ${candidate.object}`,
+      choices: [],
+      actions: [
+        { plugin: "operad", action: "start" },
+        { plugin: "operad", action: "dismiss" },
+      ],
+      kind: "candidate",
+      pendingId: candidate.pendingId,
     });
   }
 

@@ -40,7 +40,7 @@ export class ConfigError extends Error {
 }
 
 /** The plugins `operad init` installs, in load order. */
-export const DEFAULT_PLUGINS: readonly string[] = ["shell", "dev"];
+export const DEFAULT_PLUGINS: readonly string[] = ["shell", "dev", "source-cron"];
 
 /** The package name of a plugin shipped with operad. */
 export function defaultPluginModule(name: string): string {

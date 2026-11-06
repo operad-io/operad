@@ -1,6 +1,13 @@
 import type { FlowDefinition } from "../flow/types.ts";
 import type { Secret } from "../log/secret.ts";
 import type { JsonValue } from "../log/types.ts";
+import type {
+  SourceEvent,
+  StepEvent,
+  TriggerEvent,
+  TriggerRule,
+  TriggerView,
+} from "../trigger/types.ts";
 
 /** The plugin API version a module declares with `operadPlugin`. */
 export const OPERAD_PLUGIN_VERSION = 1 as const;
@@ -280,6 +287,10 @@ export interface StepContext extends PluginBaseContext {
   readonly params: JsonValue;
   /** The run's access profile, opaque to the kernel; null when it has none. */
   readonly access: JsonValue;
+  /** The event that started the run, with paths to its text. */
+  readonly trigger: TriggerView | undefined;
+  /** Sends an event; the type must begin with this plugin's name. */
+  emit(event: StepEvent): Promise<void>;
 }
 
 /** What a step returns. `result` must be one of the step type's results. */
@@ -297,6 +308,11 @@ export interface StepRunOptions {
   readonly params?: JsonValue | undefined;
   /** The run's access profile; the kernel only checks who enforces it. */
   readonly access?: JsonValue | undefined;
+  readonly trigger?: TriggerView | undefined;
+  /** Sends a step event; the plugin is the one that registered the step. */
+  readonly emit?:
+    | ((plugin: string, event: StepEvent) => MaybePromise<void>)
+    | undefined;
 }
 
 /** A step type a plugin declares. The use name is `<plugin>/<name>`. */
@@ -435,18 +451,50 @@ export interface StartRunRequest {
   readonly object?: ObjectRef | undefined;
   /** The access profile the run starts with, opaque to the kernel. */
   readonly access?: JsonValue | undefined;
+  readonly params?: JsonValue | undefined;
+  readonly trigger?: TriggerEvent | undefined;
+  /** Internal: an event already recorded as a global input. */
+  readonly inputId?: string | undefined;
+}
+
+/** What `ctx.start` accepts on a tick: a flow name, or a full request. */
+export interface TickStartRequest {
+  readonly flow: string;
+  readonly params?: JsonValue | undefined;
+  readonly object?: ObjectRef | string | undefined;
+  readonly trigger?: TriggerEvent | undefined;
+  /** The access profile the run starts with, opaque to the kernel. */
+  readonly access?: JsonValue | undefined;
 }
 
 /** The context the kernel loop passes to a plugin's `onTick`. */
 export interface TickContext extends PluginBaseContext {
   /** Starts a run of a flow this plugin declares. */
-  start(flow: string, object?: ObjectRef, access?: JsonValue): Promise<void>;
+  start(
+    flowOrRequest: string | TickStartRequest,
+    object?: ObjectRef,
+    access?: JsonValue,
+  ): Promise<void>;
 }
 
 /** A plugin's declared dependencies: plugins and the plugin API version. */
 export interface PluginRequires {
   readonly plugins?: Readonly<Record<string, string>> | undefined;
   readonly api?: string | undefined;
+}
+
+/** A running source plugin. */
+export interface SourceHandle {
+  stop(): MaybePromise<void>;
+}
+
+/** The context a source plugin's `start` receives. */
+export interface SourceContext extends PluginBaseContext {
+  /** The routing rules, already checked. */
+  readonly rules: readonly TriggerRule[];
+  readonly clock: () => number;
+  /** Sends one event through the kernel's rules. */
+  emit(event: SourceEvent): Promise<void>;
 }
 
 /** The shape `definePlugin` accepts. The version is added by the helper. */
@@ -470,6 +518,8 @@ export interface PluginShape {
   readonly enforces?: readonly string[] | undefined;
   /** What this plugin needs loaded before it can be used. */
   readonly requires?: PluginRequires | undefined;
+  /** Starts a source; `operad serve` stops it on exit. */
+  readonly start?: ((ctx: SourceContext) => MaybePromise<SourceHandle> | SourceHandle) | undefined;
   /** Runs when `operad init` checks the plugin; a string is the check's note. */
   readonly check?: ((ctx: PluginBaseContext) => MaybePromise<string | void>) | undefined;
 }

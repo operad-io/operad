@@ -36,6 +36,9 @@ import type {
   AppendResult,
   Fact,
   FactCause,
+  GlobalFact,
+  InputRecord,
+  InputOutcome,
   JsonValue,
   LogBackend,
   LogBackendFactory,
@@ -43,6 +46,7 @@ import type {
   LogChange,
   NewFact,
   RecordInputResult,
+  RecordOutcomeResult,
   RunInfo,
   RunsOptions,
 } from "./types.ts";
@@ -59,12 +63,13 @@ const SCHEMA = `
     version INTEGER NOT NULL
   );
   CREATE TABLE IF NOT EXISTS runs (
-    run_id     TEXT PRIMARY KEY,
-    flow       TEXT NOT NULL,
-    object     TEXT NOT NULL,
-    started_at INTEGER NOT NULL,
-    ended_at   INTEGER,
-    access     TEXT
+    run_id         TEXT PRIMARY KEY,
+    flow           TEXT NOT NULL,
+    object         TEXT NOT NULL,
+    started_at     INTEGER NOT NULL,
+    ended_at       INTEGER,
+    start_input_id TEXT,
+    access         TEXT
   );
   CREATE UNIQUE INDEX IF NOT EXISTS runs_one_active
     ON runs (flow, object) WHERE ended_at IS NULL;
@@ -79,12 +84,28 @@ const SCHEMA = `
   );
   CREATE TABLE IF NOT EXISTS inputs (
     input_id   TEXT PRIMARY KEY,
-    run_id     TEXT NOT NULL REFERENCES runs (run_id),
+    run_id     TEXT REFERENCES runs (run_id),
     source     TEXT NOT NULL,
     source_key TEXT NOT NULL,
     payload    TEXT NOT NULL,
     time       INTEGER NOT NULL,
     UNIQUE (source, source_key)
+  );
+  CREATE TABLE IF NOT EXISTS global_facts (
+    seq        INTEGER PRIMARY KEY,
+    kind       TEXT NOT NULL,
+    payload    TEXT NOT NULL,
+    cause      TEXT NOT NULL,
+    time       INTEGER NOT NULL,
+    unique_key TEXT
+  );
+  CREATE TABLE IF NOT EXISTS outcomes (
+    input_id TEXT NOT NULL,
+    kind     TEXT NOT NULL,
+    payload  TEXT NOT NULL,
+    seq      INTEGER NOT NULL UNIQUE,
+    time     INTEGER NOT NULL,
+    PRIMARY KEY (input_id, kind)
   );
 `;
 
@@ -96,6 +117,16 @@ interface RunRow {
   readonly ended_at: number | null;
   readonly last_seq: number;
   readonly access: string | null;
+  readonly start_input_id: string | null;
+}
+
+interface InputRow {
+  readonly input_id: string;
+  readonly run_id: string | null;
+  readonly source: string;
+  readonly source_key: string;
+  readonly payload: string;
+  readonly time: number;
 }
 
 interface FactRow {
@@ -104,6 +135,42 @@ interface FactRow {
   readonly payload: string;
   readonly cause: string;
   readonly time: number;
+}
+
+interface OutcomeRow {
+  readonly input_id: string;
+  readonly kind: string;
+  readonly payload: string;
+  readonly seq: number;
+  readonly time: number;
+}
+
+interface GlobalFactRow {
+  readonly seq: number;
+  readonly kind: string;
+  readonly payload: string;
+  readonly cause: string;
+  readonly time: number;
+}
+
+function globalFactOfRow(row: GlobalFactRow): GlobalFact {
+  return {
+    seq: row.seq,
+    kind: row.kind,
+    payload: JSON.parse(row.payload) as JsonValue,
+    cause: JSON.parse(row.cause) as FactCause,
+    time: row.time,
+  };
+}
+
+function outcomeOfRow(row: OutcomeRow): InputOutcome {
+  return {
+    inputId: row.input_id,
+    kind: row.kind,
+    payload: JSON.parse(row.payload) as JsonValue,
+    seq: row.seq,
+    time: row.time,
+  };
 }
 
 /** One run as a watcher last saw it, to tell a real change from a read. */
@@ -115,6 +182,56 @@ interface RunSnapshot {
 
 interface VersionRow {
   readonly version: number;
+}
+
+interface TableColumn {
+  readonly name: string;
+  readonly notnull: number;
+}
+
+function tableColumns(database: Database, table: string): TableColumn[] {
+  try {
+    return database
+      .query<TableColumn, []>(`PRAGMA table_info(${table})`)
+      .all();
+  } catch {
+    return [];
+  }
+}
+
+function hasTable(database: Database, table: string): boolean {
+  return (
+    database
+      .query<{ name: string }, [string]>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+      .get(table) !== null
+  );
+}
+
+/** True for a store written before trigger inputs could be global. */
+function inputsNeedMigration(database: Database): boolean {
+  const column = tableColumns(database, "inputs").find((item) => item.name === "run_id");
+  return column !== undefined && column.notnull === 1;
+}
+
+/** Rebuild `inputs` so `run_id` may be null; the old table cannot be altered. */
+function migrateInputs(database: Database): void {
+  database.exec(`
+    CREATE TABLE inputs_global (
+      input_id   TEXT PRIMARY KEY,
+      run_id     TEXT REFERENCES runs (run_id),
+      source     TEXT NOT NULL,
+      source_key TEXT NOT NULL,
+      payload    TEXT NOT NULL,
+      time       INTEGER NOT NULL,
+      UNIQUE (source, source_key)
+    );
+    INSERT OR IGNORE INTO inputs_global (input_id, run_id, source, source_key, payload, time)
+      SELECT input_id, run_id, source, source_key, payload, time FROM inputs;
+    DROP TABLE inputs;
+    ALTER TABLE inputs_global RENAME TO inputs;
+  `);
 }
 
 interface DataVersionRow {
@@ -231,6 +348,33 @@ function ensureSchema(database: Database, path: string): void {
       `store ${path} uses schema_version ${version}, but this build requires ${SCHEMA_VERSION}`,
     );
   }
+
+  // Tables added after a store was created are created here; the same
+  // transaction migrates an older inputs table whose run id could not be null
+  // and an older runs table that could not name the input that made the run.
+  database.transaction(() => {
+    if (inputsNeedMigration(database)) migrateInputs(database);
+    if (!hasTable(database, "global_facts") || !hasTable(database, "outcomes")) {
+      database.exec(SCHEMA);
+    }
+    const runsHaveStartInput = tableColumns(database, "runs").some(
+      (item) => item.name === "start_input_id",
+    );
+    if (!runsHaveStartInput) {
+      database.exec("ALTER TABLE runs ADD COLUMN start_input_id TEXT");
+    }
+    // A store written before global facts could be unique gains the column.
+    const globalHasUniqueKey = tableColumns(database, "global_facts").some(
+      (item) => item.name === "unique_key",
+    );
+    if (!globalHasUniqueKey) {
+      database.exec("ALTER TABLE global_facts ADD COLUMN unique_key TEXT");
+    }
+    database.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS global_facts_unique_key " +
+        "ON global_facts (unique_key) WHERE unique_key IS NOT NULL",
+    );
+  }).immediate();
 }
 
 /**
@@ -285,7 +429,12 @@ class SqliteLogBackend implements LogBackend {
     this.#subscriptionWatch = subscriptionWatch;
   }
 
-  async startRun(flow: string, object: string, access?: JsonValue): Promise<RunInfo> {
+  async startRun(
+    flow: string,
+    object: string,
+    startInputId: string | null = null,
+    access?: JsonValue,
+  ): Promise<RunInfo> {
     assertName(flow, "flow");
     assertName(object, "object");
     if (access !== undefined) assertJsonValue(access, "run access");
@@ -301,8 +450,16 @@ class SqliteLogBackend implements LogBackend {
       const runId = randomUUID();
       const startedAt = this.#clock();
       this.#database.run(
-        "INSERT INTO runs (run_id, flow, object, started_at, ended_at, access) VALUES (?, ?, ?, ?, NULL, ?)",
-        [runId, flow, object, startedAt, access === undefined ? null : JSON.stringify(access)],
+        "INSERT INTO runs (run_id, flow, object, started_at, ended_at, start_input_id, access) " +
+          "VALUES (?, ?, ?, ?, NULL, ?, ?)",
+        [
+          runId,
+          flow,
+          object,
+          startedAt,
+          startInputId,
+          access === undefined ? null : JSON.stringify(access),
+        ],
       );
       this.#notify({ runId, object });
       return {
@@ -314,6 +471,7 @@ class SqliteLogBackend implements LogBackend {
         endedAt: null,
         lastSeq: 0,
         ...(access === undefined ? {} : { access }),
+        startInputId,
       };
     }).immediate();
   }
@@ -334,20 +492,22 @@ class SqliteLogBackend implements LogBackend {
   }
 
   async recordInput(
-    runId: string,
+    runId: string | null,
     source: string,
     sourceKey: string,
     payload: JsonValue,
   ): Promise<RecordInputResult> {
-    assertRunId(runId);
+    if (runId !== null) assertRunId(runId);
     assertName(source, "source");
     assertName(sourceKey, "sourceKey");
     assertJsonValue(payload, "input payload");
     this.#assertOpen();
     return this.#database.transaction(() => {
-      const row = this.#runRow(runId);
-      if (!row) throw new RunNotFoundError(runId);
-      if (row.ended_at !== null) throw new RunEndedError(runId);
+      if (runId !== null) {
+        const row = this.#runRow(runId);
+        if (!row) throw new RunNotFoundError(runId);
+        if (row.ended_at !== null) throw new RunEndedError(runId);
+      }
 
       const inputId = inputIdFor(source, sourceKey);
       const result = this.#database.run(
@@ -420,7 +580,7 @@ class SqliteLogBackend implements LogBackend {
     const activeOnly = options.active === true ? 1 : 0;
     const rows = this.#database
       .query<RunRow, [number]>(
-        "SELECT r.run_id, r.flow, r.object, r.started_at, r.ended_at, r.access, " +
+        "SELECT r.run_id, r.flow, r.object, r.started_at, r.ended_at, r.start_input_id, r.access, " +
           "COALESCE(f.last_seq, 0) AS last_seq " +
           "FROM runs r LEFT JOIN (" +
           "  SELECT run_id, MAX(seq) AS last_seq FROM facts GROUP BY run_id" +
@@ -438,6 +598,149 @@ class SqliteLogBackend implements LogBackend {
     this.#stopNotifications();
     this.#listeners.clear();
     this.#database.close();
+  }
+
+  async appendGlobal(fact: NewFact, uniqueKey?: string): Promise<GlobalFact> {
+    validateNewFact(fact);
+    if (uniqueKey !== undefined) assertName(uniqueKey, "uniqueKey");
+    this.#assertOpen();
+    return this.#database.transaction(() => {
+      if (uniqueKey !== undefined) {
+        const existing = this.#database
+          .query<GlobalFactRow, [string]>(
+            "SELECT seq, kind, payload, cause, time FROM global_facts " +
+              "WHERE unique_key = ?",
+          )
+          .get(uniqueKey) ?? undefined;
+        if (existing !== undefined) return globalFactOfRow(existing);
+      }
+      const row = this.#database
+        .query<{ seq: number | null }, []>("SELECT MAX(seq) AS seq FROM global_facts")
+        .get();
+      const seq = (row?.seq ?? 0) + 1;
+      const time = this.#clock();
+      this.#database.run(
+        "INSERT INTO global_facts (seq, kind, payload, cause, time, unique_key) " +
+          "VALUES (?, ?, ?, ?, ?, ?)",
+        [
+          seq,
+          fact.kind,
+          JSON.stringify(fact.payload),
+          JSON.stringify(fact.cause),
+          time,
+          uniqueKey ?? null,
+        ],
+      );
+      return {
+        seq,
+        kind: fact.kind,
+        payload: fact.payload,
+        cause: fact.cause,
+        time,
+      };
+    }).immediate();
+  }
+
+  readGlobal(): AsyncIterable<GlobalFact> {
+    return this.#readGlobal();
+  }
+
+  async *readInputs(): AsyncGenerator<InputRecord> {
+    this.#assertOpen();
+    const statement = this.#database.prepare<InputRow, []>(
+      "SELECT input_id, run_id, source, source_key, payload, time " +
+        "FROM inputs ORDER BY time, input_id",
+    );
+    try {
+      for (const row of statement.iterate()) {
+        yield {
+          inputId: row.input_id,
+          runId: row.run_id,
+          source: row.source,
+          sourceKey: row.source_key,
+          payload: JSON.parse(row.payload) as JsonValue,
+          time: row.time,
+        };
+      }
+    } finally {
+      statement.finalize();
+    }
+  }
+
+  async recordOutcome(
+    inputId: string,
+    kind: string,
+    payload: JsonValue,
+  ): Promise<RecordOutcomeResult> {
+    assertName(inputId, "inputId");
+    assertName(kind, "outcome kind");
+    assertJsonValue(payload, "outcome payload");
+    this.#assertOpen();
+    return this.#database.transaction(() => {
+      const existing = this.#outcomeRow(inputId, kind);
+      if (existing !== undefined) {
+        return { duplicate: true, outcome: outcomeOfRow(existing) };
+      }
+      const next = this.#database
+        .query<{ next: number }, []>(
+          "SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM outcomes",
+        )
+        .get();
+      const seq = next?.next ?? 1;
+      const time = this.#clock();
+      this.#database.run(
+        "INSERT INTO outcomes (input_id, kind, payload, seq, time) VALUES (?, ?, ?, ?, ?)",
+        [inputId, kind, JSON.stringify(payload), seq, time],
+      );
+      return {
+        duplicate: false,
+        outcome: { inputId, kind, payload, seq, time },
+      };
+    }).immediate();
+  }
+
+  async *readOutcomes(): AsyncGenerator<InputOutcome> {
+    this.#assertOpen();
+    const statement = this.#database.prepare<OutcomeRow, []>(
+      "SELECT input_id, kind, payload, seq, time FROM outcomes ORDER BY seq",
+    );
+    try {
+      for (const row of statement.iterate()) {
+        yield outcomeOfRow(row);
+      }
+    } finally {
+      statement.finalize();
+    }
+  }
+
+  #outcomeRow(inputId: string, kind: string): OutcomeRow | undefined {
+    return this.#database
+      .query<OutcomeRow, [string, string]>(
+        "SELECT input_id, kind, payload, seq, time FROM outcomes " +
+          "WHERE input_id = ? AND kind = ?",
+      )
+      .get(inputId, kind) ?? undefined;
+  }
+
+  async *#readGlobal(): AsyncGenerator<GlobalFact> {
+    this.#assertOpen();
+    const statement = this.#database.prepare<
+      { seq: number; kind: string; payload: string; cause: string; time: number },
+      []
+    >("SELECT seq, kind, payload, cause, time FROM global_facts ORDER BY seq");
+    try {
+      for (const row of statement.iterate()) {
+        yield {
+          seq: row.seq,
+          kind: row.kind,
+          payload: JSON.parse(row.payload) as JsonValue,
+          cause: JSON.parse(row.cause) as FactCause,
+          time: row.time,
+        };
+      }
+    } finally {
+      statement.finalize();
+    }
   }
 
   /** Tells a listener in this process when a run changes. */
@@ -580,7 +883,7 @@ class SqliteLogBackend implements LogBackend {
     return (
       this.#database
         .query<RunRow, [string]>(
-          "SELECT r.run_id, r.flow, r.object, r.started_at, r.ended_at, " +
+          "SELECT r.run_id, r.flow, r.object, r.started_at, r.ended_at, r.start_input_id, r.access, " +
             "COALESCE((SELECT MAX(seq) FROM facts WHERE run_id = r.run_id), 0) AS last_seq " +
             "FROM runs r WHERE r.run_id = ?",
         )
@@ -606,6 +909,7 @@ class SqliteLogBackend implements LogBackend {
       endedAt: row.ended_at,
       lastSeq: row.last_seq,
       ...(access === undefined ? {} : { access }),
+      startInputId: row.start_input_id,
     };
   }
 }
