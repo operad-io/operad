@@ -29,9 +29,9 @@ function git(cwd: string, args: readonly string[]): GitResult {
   };
 }
 
-function firstLine(text: string): string {
-  const line = text.split("\n")[0]?.trim();
-  return line === undefined || line.length === 0 ? "no detail" : line;
+/** Git's own explanation, every line of it, or a plain note when it said nothing. */
+function detail(text: string): string {
+  return text.length === 0 ? "no detail" : text;
 }
 
 /** True when `git ls-remote` listed the branch under its full ref name. */
@@ -64,7 +64,7 @@ async function checkRepository(
   ]);
   if (!listed.ok) {
     throw new Error(
-      `cannot reach remote "${settings.remote}": ${firstLine(listed.err)}`,
+      `cannot reach remote "${settings.remote}": ${detail(listed.err)}`,
     );
   }
   if (!listsBranch(listed.out, settings.mainBranch)) {

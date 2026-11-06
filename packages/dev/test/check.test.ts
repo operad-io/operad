@@ -161,6 +161,42 @@ describe("dev init check", () => {
     expect(await listRepositories(store)).toHaveLength(1);
   });
 
+  test("an unreachable remote keeps every line of git's stderr", async () => {
+    const { root, repositoryPath } = await setup();
+    const store = storeAt(root);
+    await addRepository(store, { path: repositoryPath });
+    // A remote helper that explains its failure on more than one line.
+    const bin = join(root, "helper-bin");
+    mkdirSync(bin, { recursive: true });
+    const helper = join(bin, "git-remote-boom");
+    writeFileSync(
+      helper,
+      [
+        "#!/bin/sh",
+        "echo 'boom: the helper cannot open the tunnel' >&2",
+        "echo 'boom: ask the operator to rotate the key' >&2",
+        "exit 1",
+        "",
+      ].join("\n"),
+    );
+    chmodSync(helper, 0o755);
+    git(repositoryPath, ["remote", "set-url", "origin", "boom::example"]);
+
+    const previous = process.env.PATH;
+    process.env.PATH = `${bin}${delimiter}${previous ?? ""}`;
+    try {
+      const [check] = await registryAt(root, store, repositoryPath).checks();
+      expect(check?.ok).toBe(false);
+      expect(check?.message).toContain('cannot reach remote "origin"');
+      expect(check?.message).toContain("the helper cannot open the tunnel");
+      // The second line is git's too; reporting only the first hides it.
+      expect(check?.message).toContain("ask the operator to rotate the key");
+    } finally {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    }
+  });
+
   test("a reachable remote without the main branch is a failed check that writes nothing", async () => {
     const { root, remote, repositoryPath } = await setup({ pushMain: false });
     const store = storeAt(root);
