@@ -43,6 +43,7 @@ import type {
   LogBackend,
   LogBackendFactory,
   LogBackendOptions,
+  LogChange,
   NewFact,
   RecordInputResult,
   RunInfo,
@@ -351,6 +352,7 @@ class JsonlLogBackend implements LogBackend {
   readonly #inputIds = new Set<string>();
   #inputBytes = 0;
   #closed = false;
+  readonly #listeners = new Set<(change: LogChange) => void>();
 
   constructor(directory: string, clock: () => number) {
     this.#directory = directory;
@@ -383,6 +385,7 @@ class JsonlLogBackend implements LogBackend {
         throw new Error(`run id ${runId} already exists`);
       }
       fsyncDirectory(this.#runsDirectory);
+      this.#notify({ runId, object });
       return {
         runId,
         flow,
@@ -402,9 +405,11 @@ class JsonlLogBackend implements LogBackend {
       if (!existsSync(path)) throw new RunNotFoundError(runId);
       const endPath = this.#endPath(runId);
       if (existsSync(endPath)) return;
+      const info = this.#runInfoUnlocked(runId);
       const marker: EndMarker = { endedAt: this.#clock() };
       writeFileSynced(endPath, `${JSON.stringify(marker)}\n`);
       fsyncDirectory(this.#runsDirectory);
+      this.#notify({ runId, object: info.object });
     });
   }
 
@@ -478,6 +483,7 @@ class JsonlLogBackend implements LogBackend {
       }));
       const line = `${JSON.stringify({ type: "batch", facts: stored })}\n`;
       appendLineSynced(path, line);
+      this.#notify({ runId, object: info.object });
       return { lastSeq: lastSeq + stored.length, facts: stored };
     });
   }
@@ -494,6 +500,19 @@ class JsonlLogBackend implements LogBackend {
   async close(): Promise<void> {
     this.#closed = true;
     this.#inputIds.clear();
+    this.#listeners.clear();
+  }
+
+  /** Tells a listener in this process when a run changes. */
+  subscribe(listener: (change: LogChange) => void): () => void {
+    this.#listeners.add(listener);
+    return () => {
+      this.#listeners.delete(listener);
+    };
+  }
+
+  #notify(change: LogChange): void {
+    for (const listener of this.#listeners) listener(change);
   }
 
   async *#read(runId: string): AsyncGenerator<Fact> {

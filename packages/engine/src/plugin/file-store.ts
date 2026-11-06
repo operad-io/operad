@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type {
   FactInput,
   ObjectData,
+  ObjectRef,
   PluginFact,
   PluginStore,
   StoredObject,
@@ -62,6 +63,7 @@ export class FilePluginStore implements PluginStore {
   private readonly factsPath: string;
   private readonly objects = new Map<string, StoredObject>();
   private readonly entries: PluginFact[] = [];
+  private readonly listeners = new Set<(object: ObjectRef) => void>();
   /** Bytes of the facts file already read; a torn final line stays unread. */
   private offset = 0;
 
@@ -133,6 +135,14 @@ export class FilePluginStore implements PluginStore {
     return this.entries;
   }
 
+  /** Tells a listener when an object gains a fact, including another writer's. */
+  subscribe(listener: (object: ObjectRef) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
   /**
    * Reads the lines another process appended since the last read. A worker
    * step writes its facts here, so the run's process has to see them too.
@@ -173,6 +183,7 @@ export class FilePluginStore implements PluginStore {
       cause: fact.cause,
       at: fact.at,
     });
+    for (const listener of this.listeners) listener(object);
   }
 
   private key(type: string, id: string): string {

@@ -39,6 +39,7 @@ import type {
   LogBackend,
   LogBackendFactory,
   LogBackendOptions,
+  LogChange,
   NewFact,
   RecordInputResult,
   RunInfo,
@@ -218,6 +219,7 @@ function ensureSchema(database: Database, path: string): void {
 class SqliteLogBackend implements LogBackend {
   readonly #database: Database;
   readonly #clock: () => number;
+  readonly #listeners = new Set<(change: LogChange) => void>();
   #closed = false;
 
   constructor(database: Database, clock: () => number) {
@@ -243,6 +245,7 @@ class SqliteLogBackend implements LogBackend {
         "INSERT INTO runs (run_id, flow, object, started_at, ended_at) VALUES (?, ?, ?, ?, NULL)",
         [runId, flow, object, startedAt],
       );
+      this.#notify({ runId, object });
       return {
         runId,
         flow,
@@ -266,6 +269,7 @@ class SqliteLogBackend implements LogBackend {
         this.#clock(),
         runId,
       ]);
+      this.#notify({ runId, object: row.object });
     }).immediate();
   }
 
@@ -341,6 +345,7 @@ class SqliteLogBackend implements LogBackend {
       } finally {
         insert.finalize();
       }
+      this.#notify({ runId, object: row.object });
       return { lastSeq: row.last_seq + stored.length, facts: stored };
     }).immediate();
   }
@@ -370,7 +375,20 @@ class SqliteLogBackend implements LogBackend {
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
+    this.#listeners.clear();
     this.#database.close();
+  }
+
+  /** Tells a listener in this process when a run changes. */
+  subscribe(listener: (change: LogChange) => void): () => void {
+    this.#listeners.add(listener);
+    return () => {
+      this.#listeners.delete(listener);
+    };
+  }
+
+  #notify(change: LogChange): void {
+    for (const listener of this.#listeners) listener(change);
   }
 
   async *#read(runId: string): AsyncGenerator<Fact> {

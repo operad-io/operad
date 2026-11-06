@@ -1,6 +1,7 @@
 import type {
   FactInput,
   ObjectData,
+  ObjectRef,
   PluginFact,
   PluginStore,
   StoredObject,
@@ -30,6 +31,7 @@ export class MemoryPluginStore implements PluginStore {
   private readonly clock: () => number;
   private readonly objects = new Map<string, StoredObject>();
   private readonly entries: PluginFact[] = [];
+  private readonly listeners = new Set<(object: ObjectRef) => void>();
 
   constructor(options: MemoryPluginStoreOptions) {
     this.root = options.root;
@@ -85,7 +87,18 @@ export class MemoryPluginStore implements PluginStore {
       data: { ...input.data },
     };
     this.entries.push(fact);
+    if (fact.object !== undefined) {
+      this.notify(fact.object);
+    }
     return fact;
+  }
+
+  /** Tells a listener when an object gains a fact. */
+  subscribe(listener: (object: ObjectRef) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   /** Every fact in append order. The kernel's history view reads this. */
@@ -95,5 +108,9 @@ export class MemoryPluginStore implements PluginStore {
 
   private key(type: string, id: string): string {
     return `${type}\u0000${id}`;
+  }
+
+  private notify(object: ObjectRef): void {
+    for (const listener of this.listeners) listener(object);
   }
 }

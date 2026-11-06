@@ -9,6 +9,7 @@ import { MemoryPluginStore } from "./store.ts";
 import {
   OPERAD_PLUGIN_VERSION,
   type ActionContext,
+  type ActionNote,
   type ActionRun,
   type ActionRunOptions,
   type ActionTypeDefinition,
@@ -21,6 +22,8 @@ import {
   type FactWriter,
   type MaybePromise,
   type ObjectTypeDefinition,
+  type ObjectViews,
+  type KeyBindings,
   type PendingActionView,
   type PendingEntry,
   type PluginBaseContext,
@@ -44,6 +47,8 @@ export interface PluginRegistryOptions {
   readonly store?: PluginStore | undefined;
   readonly storeRoot?: string | undefined;
   readonly clock?: (() => number) | undefined;
+  /** The person's key overrides; a key here wins over every plugin default. */
+  readonly keys?: KeyBindings | undefined;
   /** Verbs the kernel itself owns; a plugin cannot take them as a short form. */
   readonly kernelVerbs?: readonly string[] | undefined;
   /** Where load-time and runtime plugin errors go. Defaults to stderr. */
@@ -69,6 +74,8 @@ interface NormalizedPlugin {
   readonly steps: readonly StepTypeDefinition[];
   readonly flows: readonly unknown[];
   readonly commands: readonly CommandDefinition[];
+  readonly views: Readonly<Record<string, ObjectViews>>;
+  readonly keys: KeyBindings;
   readonly onTick: ((ctx: TickContext) => MaybePromise<void>) | undefined;
   readonly check:
     | ((ctx: PluginBaseContext) => MaybePromise<string | void>)
@@ -88,6 +95,45 @@ const KINDS: readonly PluginKind[] = [
   "action",
 ];
 
+/** One action a client may offer, with what it needs from the person. */
+export interface ActionInfo {
+  readonly plugin: string;
+  readonly action: string;
+  /** The object type the action works on. */
+  readonly on: string;
+  /** Addressed as `<plugin>:<action>`. */
+  readonly name: string;
+  /** The plugin's declaration: true, false, or `{ required }`. */
+  readonly note?: ActionNote | undefined;
+  readonly noteRequired: boolean;
+  readonly confirm: boolean;
+}
+
+/** Where a key binding came from. */
+export interface KeyBinding {
+  readonly key: string;
+  readonly plugin: string;
+  readonly action: string;
+  readonly name: string;
+  readonly source: "plugin" | "user";
+}
+
+function noteRequired(note: ActionNote | undefined): boolean {
+  if (note === true) return true;
+  return typeof note === "object" && note !== null && note.required === true;
+}
+
+/** Splits `<plugin>:<action>` or `<plugin>/<action>` without splitting an id. */
+export function splitActionName(
+  name: string,
+): { readonly plugin: string; readonly action: string } | undefined {
+  const colon = name.indexOf(":");
+  const slash = name.indexOf("/");
+  const at = colon > 0 ? colon : slash > 0 ? slash : -1;
+  if (at <= 0 || at === name.length - 1) return undefined;
+  return { plugin: name.slice(0, at), action: name.slice(at + 1) };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -101,6 +147,60 @@ function isPluginKind(value: unknown): value is PluginKind {
     value === "source" ||
     value === "action"
   );
+}
+
+function normalizeViews(
+  value: unknown,
+  at: string,
+  objects: readonly ObjectTypeDefinition[],
+): Readonly<Record<string, ObjectViews>> {
+  if (value === undefined) return {};
+  if (!isRecord(value)) {
+    throw new PluginError(`${at}: must be an object`);
+  }
+  const known = new Set(objects.map((object) => object.name));
+  const views: Record<string, ObjectViews> = {};
+  for (const [type, raw] of Object.entries(value)) {
+    if (!known.has(type)) {
+      throw new PluginError(`${at}.${type}: the plugin declares no object type "${type}"`);
+    }
+    if (!isRecord(raw)) {
+      throw new PluginError(`${at}.${type}: must be an object`);
+    }
+    if (typeof raw.row !== "function") {
+      throw new PluginError(`${at}.${type}: row: must be a function`);
+    }
+    if (typeof raw.sections !== "function") {
+      throw new PluginError(`${at}.${type}: sections: must be a function`);
+    }
+    if (typeof raw.load !== "function") {
+      throw new PluginError(`${at}.${type}: load: must be a function`);
+    }
+    views[type] = {
+      row: raw.row as ObjectViews["row"],
+      sections: raw.sections as ObjectViews["sections"],
+      load: raw.load as ObjectViews["load"],
+    };
+  }
+  return views;
+}
+
+function normalizeKeys(value: unknown, at: string): KeyBindings {
+  if (value === undefined) return {};
+  if (!isRecord(value)) {
+    throw new PluginError(`${at}: must be an object`);
+  }
+  const keys: Record<string, string> = {};
+  for (const [key, target] of Object.entries(value)) {
+    if (key.trim().length === 0) {
+      throw new PluginError(`${at}: a key must be a non-empty string`);
+    }
+    if (typeof target !== "string" || target.trim().length === 0) {
+      throw new PluginError(`${at}.${key}: must name an action as "<plugin>:<action>"`);
+    }
+    keys[key] = target;
+  }
+  return keys;
 }
 
 function requireName(value: unknown, at: string): string {
@@ -190,6 +290,22 @@ function normalizeSteps(
   return steps;
 }
 
+function normalizeActionNote(
+  value: unknown,
+  at: string,
+): ActionNote | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "boolean") return value;
+  if (isRecord(value)) {
+    const required = value.required;
+    if (typeof required !== "boolean") {
+      throw new PluginError(`${at}.required: must be a boolean`);
+    }
+    return { required };
+  }
+  throw new PluginError(`${at}: must be a boolean or { required: boolean }`);
+}
+
 function normalizeActions(
   value: unknown,
   at: string,
@@ -213,9 +329,16 @@ function normalizeActions(
     if (typeof entry.run !== "function") {
       throw new PluginError(`${at}[${index}]: run: must be a function`);
     }
+    const note = normalizeActionNote(entry.note, `${at}[${index}]: note`);
+    const confirm = entry.confirm;
+    if (confirm !== undefined && typeof confirm !== "boolean") {
+      throw new PluginError(`${at}[${index}]: confirm: must be a boolean`);
+    }
     actions.push({
       name,
       on,
+      ...(note === undefined ? {} : { note }),
+      ...(confirm === undefined ? {} : { confirm }),
       when: entry.when as ActionTypeDefinition["when"],
       run: entry.run as ActionTypeDefinition["run"],
     });
@@ -296,15 +419,19 @@ function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     ) => MaybePromise<string | void>;
   }
 
+  const objects = normalizeObjects(raw.objects, `${at}: objects`);
+
   return {
     name,
     kind,
     version,
-    objects: normalizeObjects(raw.objects, `${at}: objects`),
+    objects,
     actions: normalizeActions(raw.actions, `${at}: actions`),
     steps: normalizeSteps(raw.steps, `${at}: steps`),
     flows: optionalArray(raw.flows, `${at}: flows`),
     commands: normalizeCommands(raw.commands, `${at}: commands`),
+    views: normalizeViews(raw.views, `${at}: views`, objects),
+    keys: normalizeKeys(raw.keys, `${at}: keys`),
     onTick,
     check,
   };
@@ -420,6 +547,9 @@ export class PluginRegistry {
     | undefined;
   private readonly plugins: readonly LoadedPlugin[];
   private readonly byName: ReadonlyMap<string, LoadedPlugin>;
+  private readonly viewByType: ReadonlyMap<string, { readonly plugin: LoadedPlugin; readonly views: ObjectViews }>;
+  private readonly actionInfos: readonly ActionInfo[];
+  private readonly bindingByKey: ReadonlyMap<string, KeyBinding>;
   private readonly sourceByPlugin: ReadonlyMap<string, string>;
   private readonly stepIndex: ReadonlyMap<
     string,
@@ -455,6 +585,31 @@ export class PluginRegistry {
 
     this.byName = new Map(this.plugins.map((plugin) => [plugin.name, plugin]));
 
+    const viewByType = new Map<
+      string,
+      { readonly plugin: LoadedPlugin; readonly views: ObjectViews }
+    >();
+    const actionInfos: ActionInfo[] = [];
+    for (const plugin of this.plugins) {
+      for (const [type, views] of Object.entries(plugin.views)) {
+        viewByType.set(type, { plugin, views });
+      }
+      for (const action of plugin.actions) {
+        actionInfos.push({
+          plugin: plugin.name,
+          action: action.name,
+          on: action.on,
+          name: `${plugin.name}:${action.name}`,
+          ...(action.note === undefined ? {} : { note: action.note }),
+          noteRequired: noteRequired(action.note),
+          confirm: action.confirm === true,
+        });
+      }
+    }
+    this.viewByType = viewByType;
+    this.actionInfos = actionInfos;
+    this.bindingByKey = this.resolveKeys(options.keys ?? {});
+
     const sources = new Map<string, string>();
     for (const [index, plugin] of this.plugins.entries()) {
       const source = options.sources?.[index];
@@ -472,6 +627,34 @@ export class PluginRegistry {
       }
     }
     this.stepIndex = stepIndex;
+  }
+
+  /** Every action the loaded plugins declare, addressed as `plugin:action`. */
+  actions(): readonly ActionInfo[] {
+    return this.actionInfos;
+  }
+
+  /** The default and user key bindings in force, by key. */
+  keyBindings(): readonly KeyBinding[] {
+    return [...this.bindingByKey.values()];
+  }
+
+  /** The views a plugin gives an object type, or undefined. */
+  viewsFor(
+    type: string,
+  ): { readonly plugin: string; readonly views: ObjectViews } | undefined {
+    const found = this.viewByType.get(type);
+    return found === undefined
+      ? undefined
+      : { plugin: found.plugin.name, views: found.views };
+  }
+
+  /** The definition of one action, or undefined when it is not loaded. */
+  actionDefinition(
+    plugin: string,
+    action: string,
+  ): ActionTypeDefinition | undefined {
+    return this.byName.get(plugin)?.actions.find((item) => item.name === action);
   }
 
   /** The plugin names in load order. */
@@ -626,6 +809,7 @@ export class PluginRegistry {
       signal: options.signal ?? new AbortController().signal,
       runId,
       object: options.object,
+      ...(options.note === undefined ? {} : { note: options.note }),
       answer,
     };
     const value = await found.action.run(ctx, args);
@@ -857,10 +1041,10 @@ export class PluginRegistry {
     name: string,
     objectType: string,
   ): { readonly plugin: LoadedPlugin; readonly action: ActionTypeDefinition } {
-    const slash = name.indexOf("/");
-    if (slash > 0) {
-      const pluginName = name.slice(0, slash);
-      const actionName = name.slice(slash + 1);
+    const named = splitActionName(name);
+    if (named !== undefined) {
+      const pluginName = named.plugin;
+      const actionName = named.action;
       const plugin = this.byName.get(pluginName);
       if (plugin !== undefined) {
         const action = plugin.actions.find((item) => item.name === actionName);
@@ -902,6 +1086,59 @@ export class PluginRegistry {
         `plugin "${plugin.name}": action "${action.name}": on: expected object type "${action.on}", got "${objectType}"`,
       );
     }
+  }
+
+  private resolveKeys(
+    userKeys: KeyBindings,
+  ): ReadonlyMap<string, KeyBinding> {
+    const known = new Map(
+      this.actionInfos.map((info) => [info.name, info] as const),
+    );
+    const bindings = new Map<string, KeyBinding>();
+
+    for (const plugin of this.plugins) {
+      for (const [key, target] of Object.entries(plugin.keys)) {
+        const info = known.get(target);
+        if (info === undefined) {
+          throw new PluginError(
+            `plugin "${plugin.name}": keys.${key}: "${target}" is not a loaded action`,
+          );
+        }
+        const existing = bindings.get(key);
+        if (existing !== undefined) {
+          this.log(
+            `key "${key}": plugin "${plugin.name}" would bind "${target}", but "${existing.name}" already uses it; keeping "${existing.name}"`,
+          );
+          continue;
+        }
+        bindings.set(key, {
+          key,
+          plugin: info.plugin,
+          action: info.action,
+          name: info.name,
+          source: "plugin",
+        });
+      }
+    }
+
+    for (const [key, target] of Object.entries(userKeys)) {
+      const info = known.get(target);
+      if (info === undefined) {
+        this.log(
+          `key "${key}": "${target}" is not a loaded action; the key is ignored`,
+        );
+        continue;
+      }
+      bindings.set(key, {
+        key,
+        plugin: info.plugin,
+        action: info.action,
+        name: info.name,
+        source: "user",
+      });
+    }
+
+    return bindings;
   }
 
   private factsFor(cause: string): FactWriter {

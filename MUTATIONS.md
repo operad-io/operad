@@ -113,3 +113,17 @@
 |---|---|---|---|
 | TK0016-M17 | packages/engine/src/runner/runner.ts | made `chooseFailure` fall back to the step's first declared result instead of naming the failure | `runner > a step that throws is not recorded as its success result` |
 | TK0016-M18 | packages/engine/src/runner/runner.ts | removed the `preferInterrupted` early return, so a failed check reported its declared success result | `runner > a check that throws is not recorded as ready` |
+
+## TK0025 — presentation views
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0025-M1 | packages/engine/src/views/presentation.ts | disabled the Promise check on `row` | `presentation views > a Promise or a slow row becomes an error row, not a crash` |
+| TK0025-M2 | packages/engine/src/views/presentation.ts | wrapped a timed-out `load` in a generic section error | `presentation views > a section over the timeout and over the cap is reported` |
+| TK0025-M3 | packages/engine/src/views/presentation.ts | removed the required-note check in `act` | `presentation views > runs actions with a required note and with confirmation` |
+| TK0025-M4 | packages/engine/src/views/presentation.ts | removed the confirmation check in `act` | `presentation views > runs actions with a required note and with confirmation` |
+| TK0025-M5 | packages/engine/src/plugin/registry.ts | dropped the warning for two plugins' clashing default keys | `presentation views > a key clash drops the later default and the action still runs` |
+| TK0025-M6 | packages/engine/src/views/presentation.ts | removed the event stream's bound | `presentation views > events coalesce a repeated id and stay bounded for a slow consumer` |
+| TK0025-M7 | packages/cli/src/main.ts | printed pending actions with `/` instead of `:` | `operad presentation commands > pending lists actions as plugin:action` |
+| TK0025-M8 | packages/cli/src/main.ts | stopped colouring the two kernel flags | `operad presentation commands > colours follow only waiting and running` |
+| TK0025-M9 | packages/engine/src/views/presentation.ts | only added the kernel history section when the plugin was loaded | `presentation views > an unknown id and an unloaded plugin's object are clear` |

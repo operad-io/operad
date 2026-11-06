@@ -58,7 +58,19 @@ export interface LogBackendOptions {
   readonly clock?: () => number;
 }
 
-export interface LogBackend {
+/** A change to a run: a start, an end, or one appended batch. */
+export interface LogChange {
+  readonly runId: string;
+  /** The run's object key, such as `task:42`; undefined when it cannot be read. */
+  readonly object: string | undefined;
+}
+
+/** Options for a log backend that can notify a local listener. */
+export interface LogSubscription {
+  subscribe(listener: (change: LogChange) => void): () => void;
+}
+
+export interface LogBackend extends Partial<LogSubscription> {
   /** Start a run, unless the same flow/object pair already has an active one. */
   startRun(flow: string, object: string): Promise<RunInfo>;
   /** End an active run. Ending an ended run is a no-op. */
