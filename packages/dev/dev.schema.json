@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://operad.io/schemas/dev.schema.json",
+  "title": "operad dev repository settings",
+  "description": "The settings in <repository>/.operad/dev.json, owned by the dev plugin.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "description": "The schema this file follows.",
+      "type": "string"
+    },
+    "name": {
+      "description": "The name this repository is registered under.",
+      "type": "string",
+      "minLength": 1
+    },
+    "remote": {
+      "description": "The git remote task branches are fetched from and pushed to.",
+      "type": "string",
+      "minLength": 1,
+      "default": "origin"
+    },
+    "mainBranch": {
+      "description": "The branch a task branch starts from and merges before each attempt.",
+      "type": "string",
+      "minLength": 1,
+      "default": "main"
+    },
+    "worktreeRoot": {
+      "description": "The directory task worktrees are kept in, relative to the repository.",
+      "type": "string",
+      "minLength": 1,
+      "default": ".operad-worktrees"
+    },
+    "worker": {
+      "description": "The harness step that works a task and the limits it runs under.",
+      "type": "object",
+      "properties": {
+        "use": {
+          "description": "The harness step, such as harness-radian/agent.",
+          "type": "string",
+          "minLength": 1,
+          "default": "harness-radian/agent"
+        },
+        "args": {
+          "description": "Extra arguments the harness step passes to its command.",
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "wallTimeSecs": {
+          "description": "The longest a worker may run, in seconds.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "stallSecs": {
+          "description": "How long a worker may go without a new output line, in seconds.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "default": { "use": "harness-radian/agent", "args": [] }
+    },
+    "workerBrief": {
+      "description": "The Markdown a worker reads before the task brief; a missing file means the built-in text.",
+      "type": "string",
+      "minLength": 1,
+      "default": ".operad/worker-brief.md"
+    }
+  },
+  "additionalProperties": false
+}

@@ -42,6 +42,7 @@ import {
   type TaskData,
   type TaskPhase,
 } from "./model.ts";
+import { DEFAULT_DEV_SETTINGS } from "./settings.ts";
 
 /** An optional way for the dev plugin to ask the kernel to cancel a run. */
 export interface DevRunControl {
@@ -261,8 +262,11 @@ function writeSettings(repositoryPath: string, name: string): void {
     `${JSON.stringify(
       {
         name,
-        worktrees: ".operad-worktrees/",
-        sandbox: ".radian-sandbox/",
+        remote: DEFAULT_DEV_SETTINGS.remote,
+        mainBranch: DEFAULT_DEV_SETTINGS.mainBranch,
+        worktreeRoot: DEFAULT_DEV_SETTINGS.worktreeRoot,
+        worker: DEFAULT_DEV_SETTINGS.worker,
+        workerBrief: DEFAULT_DEV_SETTINGS.workerBrief,
       },
       null,
       2,

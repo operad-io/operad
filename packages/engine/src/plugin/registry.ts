@@ -1157,6 +1157,8 @@ export class PluginRegistry {
       access: options.access ?? null,
       trigger: options.trigger,
       emit,
+      runStep: (nestedUse, nestedParams, nestedOptions) =>
+        this.runStep(nestedUse, nestedParams, nestedOptions),
     };
 
     const outcome: unknown = await found.step.run(ctx, params);

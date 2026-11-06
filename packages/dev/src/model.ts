@@ -55,6 +55,22 @@ export type PlanData = {
   readonly cancelledCount: number;
 };
 
+/** One run of a task's worker, with what the worktree step learned. */
+export type TaskAttempt = {
+  readonly [key: string]: unknown;
+  readonly number: number;
+  readonly run?: string | null;
+  readonly worktree?: string | null;
+  readonly branch?: string | null;
+  readonly base?: string | null;
+  readonly sessionId?: string | null;
+  /** The cost in dollars, when the harness reported one. */
+  readonly cost?: number | null;
+  /** The same cost in micros, as the harness reports it. */
+  readonly costMicros?: number | null;
+  readonly result?: string | null;
+};
+
 /** The data of a task object. */
 export type TaskData = {
   readonly [key: string]: unknown;
@@ -66,6 +82,7 @@ export type TaskData = {
   readonly phase: TaskPhase;
   readonly attempts: number;
   readonly run: string | null;
+  readonly attempt?: TaskAttempt | undefined;
   readonly cost?: number | string | undefined;
 };
 

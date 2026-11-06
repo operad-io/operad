@@ -52,11 +52,38 @@ Every action is also a command: `operad dev:<action> <id>`.
 
 `merge` and `reject` arrive with the review part of the plan.
 
+## Steps
+
+| step | results | what it does |
+|---|---|---|
+| `dev/worktree` | `ready`, `conflict`, `failed` | fetches, creates `worktreeRoot/<task id>` on `work/<task id>` from `<remote>/<mainBranch>`, and on a later attempt reuses it after merging the latest main |
+| `dev/work` | `done`, `nothing`, `failed` | builds the worker prompt, runs the configured harness step in the worktree, then requires new commits, a clean tree and a pushed branch |
+
+A conflict leaves the worktree mid-merge. The next `dev/work` prompt starts by
+asking the worker to resolve it. A failed attempt names the uncommitted files.
+The task records its attempt count, phase, session id and cost while these steps
+run.
+
 ## Settings
 
 `operad repo add` writes `<repository>/.operad/dev.json` when it is absent (its
-schema is `schemas/dev.schema.json`) and adds `.operad-worktrees/` and
+schema is `dev.schema.json`) and adds `.operad-worktrees/` and
 `.radian-sandbox/` to the repository's `.git/info/exclude`.
+
+The file holds the repository's work settings:
+
+| field | default | what it is |
+|---|---|---|
+| `remote` | `origin` | the remote a task branch is fetched from and pushed to |
+| `mainBranch` | `main` | the branch a task starts from and merges on each attempt |
+| `worktreeRoot` | `.operad-worktrees` | where task worktrees live, relative to the repository |
+| `worker.use` | `harness-radian/agent` | the harness step that works a task |
+| `worker.args` | `[]` | extra arguments for that harness step |
+| `worker.wallTimeSecs`, `worker.stallSecs` | harness defaults | the worker's time limits |
+| `workerBrief` | `.operad/worker-brief.md` | the brief a worker reads first; a missing file means the built-in text |
+
+The built-in brief says to work only in the worktree, commit whole pieces, run
+the repository's verify command and end with a summary.
 
 ## Views
 
