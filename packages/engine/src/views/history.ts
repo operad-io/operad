@@ -1,6 +1,13 @@
 /** The history view: one line per recorded step, in order, in words. */
 
-import type { Fact } from "../log/types.ts";
+import type { JsonValue } from "../log/types.ts";
+
+/** The facts a history entry needs; run facts and global facts both fit. */
+export interface HistoryFact {
+  readonly kind: string;
+  readonly payload: JsonValue;
+  readonly time: number;
+}
 
 export interface HistoryEntry {
   readonly time: number;
@@ -42,7 +49,7 @@ function reasonOf(data: Record<string, unknown>): string {
  * Turns facts into user words. Nothing here prints a fact kind, an effect, a
  * node, a graph or a decision; those are internal names.
  */
-export function historyEntry(fact: Fact): HistoryEntry {
+export function historyEntry(fact: HistoryFact): HistoryEntry {
   const payload = record(fact.payload);
   const step = text(payload.step) ?? null;
   const time = fact.time;
@@ -182,6 +189,17 @@ export function historyEntry(fact: Fact): HistoryEntry {
       };
     }
 
+    case "trigger_observed": {
+      const flow = text(payload.flow) ?? "a flow";
+      const object = text(payload.object) ?? "an object";
+      return {
+        time,
+        step,
+        what: `would start ${flow} on ${object}`,
+        why: "",
+      };
+    }
+
     case "trigger_skipped": {
       const source = text(payload.source) ?? "an outside source";
       const type = text(payload.type) ?? "event";
@@ -213,7 +231,7 @@ export function formatHistoryEntry(entry: HistoryEntry): string {
 }
 
 export async function* historyEntries(
-  facts: AsyncIterable<Fact>,
+  facts: AsyncIterable<HistoryFact>,
 ): AsyncGenerator<HistoryEntry> {
   for await (const fact of facts) {
     yield historyEntry(fact);

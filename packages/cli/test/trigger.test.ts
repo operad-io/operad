@@ -231,4 +231,42 @@ describe("operad trigger", () => {
     ).toBe(1);
     expect(output.errors()).toContain("rule 0: mode");
   });
+
+  test("history of an observed event says what would have started", async () => {
+    const home = await makeHome([
+      {
+        source: "cron",
+        type: "tick",
+        start: { flow: "one" },
+        object: "job:1",
+        mode: "observe",
+      },
+    ]);
+    const sent = capture();
+    expect(
+      await main(["trigger", "cron", "observe:1", "--type", "tick"], {
+        home,
+        io: sent.io,
+      }),
+    ).toBe(0);
+    expect(sent.text()).toContain("observed one on job:1");
+
+    const config = await readConfig(home);
+    const log = openConfigLog(config);
+    let inputId: string | undefined;
+    try {
+      for await (const input of log.readInputs()) {
+        if (input.source === "cron" && input.sourceKey === "observe:1") {
+          inputId = input.inputId;
+        }
+      }
+    } finally {
+      await log.close();
+    }
+    if (inputId === undefined) throw new Error("the event was not recorded");
+
+    const history = capture();
+    expect(await main(["history", inputId], { home, io: history.io })).toBe(0);
+    expect(history.text()).toContain("would start one on job:1");
+  });
 });

@@ -13,6 +13,7 @@ import {
   defaultOperadHome,
   ensureConfig,
   formatHistoryEntry,
+  historyEntry,
   historyEntries,
   listPending,
   listRunning,
@@ -29,6 +30,7 @@ import {
   ENGINE_VERSION,
   FilePluginStore,
   type LogBackend,
+  type GlobalFact,
   type OperadConfig,
   type PluginRegistry,
   type RunInfo,
@@ -773,6 +775,34 @@ async function commandHistory(
     id,
   );
   if (runs.length === 0) {
+    // An observed event belongs to no run; its fact is in the global log.
+    const globals: GlobalFact[] = [];
+    for await (const fact of context.log.readGlobal()) {
+      if (fact.cause === id) globals.push(fact);
+    }
+    if (globals.length > 0) {
+      if (json) {
+        io.write("[\n");
+        for (const [index, fact] of globals.entries()) {
+          if (index > 0) io.write(",\n");
+          const entry = historyEntry(fact);
+          io.write(
+            `  ${JSON.stringify({
+              time: new Date(entry.time).toISOString(),
+              step: entry.step,
+              what: entry.what,
+              why: entry.why,
+            })}`,
+          );
+        }
+        io.write("\n]\n");
+        return;
+      }
+      for (const fact of globals) {
+        io.write(`${formatHistoryEntry(historyEntry(fact))}\n`);
+      }
+      return;
+    }
     throw new Error(`no run or object "${id}"`);
   }
   const ordered = [...runs].sort(

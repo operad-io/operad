@@ -8,6 +8,7 @@ import {
   Runner,
   definePlugin,
   formatHistoryEntry,
+  historyEntry,
   historyEntries,
   listPending,
   loadTriggerRules,
@@ -39,6 +40,33 @@ import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
 afterAll(cleanupTempRoots);
 
 const CHILD = join(import.meta.dir, "..", "fixtures", "trigger-child.ts");
+
+interface ChildOutput<T> {
+  readonly ok: boolean;
+  readonly result?: T;
+  readonly error?: string;
+}
+
+/** Runs the child fixture and returns what it printed. */
+async function runChild<T>(
+  env: Setup,
+  args: readonly string[],
+): Promise<ChildOutput<T>> {
+  const proc = Bun.spawn([process.execPath, CHILD, env.storeRoot, ...args], {
+    cwd: env.root,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const text = await new Response(proc.stdout).text();
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    const errors = await new Response(proc.stderr).text();
+    throw new Error(`child exited ${exitCode}: ${errors}`);
+  }
+  const line = text.trim().split("\n").at(-1) ?? "null";
+  return JSON.parse(line) as ChildOutput<T>;
+}
+
 
 interface Setup {
   readonly root: string;
@@ -236,8 +264,18 @@ async function outcomeFor(
   return latest;
 }
 
-async function endEventRecords(log: LogBackend, key: string): Promise<number> {
-  let count = 0;
+async function globalFacts(
+  log: LogBackend,
+  kind: string,
+): Promise<GlobalFact[]> {
+  const list: GlobalFact[] = [];
+  for await (const fact of log.readGlobal()) {
+    if (fact.kind === kind) list.push(fact);
+  }
+  return list;
+}
+
+async function endEventRecords(log: LogBackend, key: string): Promise<number> {  let count = 0;
   for await (const input of log.readInputs()) {
     const payload = input.payload;
     if (typeof payload !== "object" || payload === null) continue;
@@ -326,7 +364,7 @@ describe("the kernel start entry", () => {
     }
   });
 
-  test("observe records what it would have started", async () => {
+  test("observe records a global fact saying what it would have started", async () => {
     const env = await setup([rule({ mode: "observe" })]);
     try {
       const result = await env.kernel.receive(event());
@@ -334,13 +372,24 @@ describe("the kernel start entry", () => {
       expect(result.flow).toBe("one");
       expect(result.object).toBe("job:1");
       expect(await env.log.runs()).toHaveLength(0);
-      const outcomes: InputOutcome[] = [];
-      for await (const outcome of env.log.readOutcomes()) outcomes.push(outcome);
-      const stored = outcomes.find((outcome) => outcome.inputId === result.inputId);
-      expect(stored?.kind).toBe("observed");
-      expect(JSON.stringify(stored?.payload)).toContain(
-        "would start one on job:1",
-      );
+
+      const observed = await globalFacts(env.log, "trigger_observed");
+      expect(observed).toHaveLength(1);
+      expect(observed[0]?.cause).toBe(result.inputId);
+      expect(observed[0]?.payload).toMatchObject({
+        inputId: result.inputId,
+        flow: "one",
+        object: "job:1",
+      });
+      const fact = observed[0];
+      if (fact === undefined) throw new Error("no observed fact");
+      const line = formatHistoryEntry(historyEntry(fact));
+      expect(line).toContain("would start one on job:1");
+
+      // A duplicate delivery keeps one fact.
+      const again = await env.kernel.receive(event());
+      expect(again.kind).toBe("observed");
+      expect(await globalFacts(env.log, "trigger_observed")).toHaveLength(1);
     } finally {
       await env.close();
     }
@@ -882,7 +931,7 @@ describe("event receipt recovery", () => {
   type CrashPoint =
     | "after recordInput"
     | "after startRun"
-    | "after the outcome";
+    | "after the route claim";
 
   interface Row {
     readonly point: CrashPoint;
@@ -894,9 +943,9 @@ describe("event receipt recovery", () => {
     { point: "after recordInput", mode: "observe" },
     { point: "after recordInput", mode: "candidate" },
     { point: "after startRun", mode: "auto" },
-    { point: "after the outcome", mode: "auto" },
-    { point: "after the outcome", mode: "observe" },
-    { point: "after the outcome", mode: "candidate" },
+    { point: "after the route claim", mode: "auto" },
+    { point: "after the route claim", mode: "observe" },
+    { point: "after the route claim", mode: "candidate" },
   ];
 
   /** A kernel whose first receive crashes at one chosen write. */
@@ -907,7 +956,7 @@ describe("event receipt recovery", () => {
       row.point === "after startRun",
       (method) =>
         (row.point === "after recordInput" && method === "recordInput") ||
-        (row.point === "after the outcome" && method === "recordOutcome"),
+        (row.point === "after the route claim" && method === "recordOutcome"),
     );
     return new Kernel({
       log,
@@ -915,6 +964,18 @@ describe("event receipt recovery", () => {
       home: env.root,
       storeRoot: env.storeRoot,
       rules: [rule({ mode: row.mode })],
+      clock: () => env.clock.value,
+      onLog: () => undefined,
+    });
+  }
+
+  function restarted(env: Setup, mode: Mode): Kernel {
+    return new Kernel({
+      log: env.log,
+      registry: env.registry,
+      home: env.root,
+      storeRoot: env.storeRoot,
+      rules: [rule({ mode })],
       clock: () => env.clock.value,
       onLog: () => undefined,
     });
@@ -928,22 +989,17 @@ describe("event receipt recovery", () => {
           "injected crash",
         );
 
-        // What the first call left in the log.
+        // What the first call left in the log: a run only after `startRun`.
         const beforeRetry = await env.log.runs();
         expect(beforeRetry).toHaveLength(
-          row.mode === "auto" && row.point !== "after recordInput" ? 1 : 0,
+          row.point === "after startRun" ? 1 : 0,
         );
 
-        const restarted = new Kernel({
-          log: env.log,
-          registry: env.registry,
-          home: env.root,
-          storeRoot: env.storeRoot,
-          rules: [rule({ mode: row.mode })],
-          clock: () => env.clock.value,
-          onLog: () => undefined,
-        });
-        const result = await restarted.receive(event());
+        const again = restarted(env, row.mode);
+        // Recovery finishes a side effect the crash cut off; a resend of the
+        // same source and key reports the same result.
+        await again.recoverUnrouted();
+        const result = await again.receive(event());
         expect(result.duplicate).toBe(true);
 
         const runs = await env.log.runs();
@@ -954,21 +1010,97 @@ describe("event receipt recovery", () => {
         } else if (row.mode === "candidate") {
           expect(result.kind).toBe("candidate");
           expect(runs).toHaveLength(0);
-          expect(await restarted.candidates()).toHaveLength(1);
+          expect(await again.candidates()).toHaveLength(1);
         } else {
           expect(result.kind).toBe("observed");
           expect(runs).toHaveLength(0);
-          const observed: InputOutcome[] = [];
-          for await (const outcome of env.log.readOutcomes()) {
-            if (outcome.kind === "observed") observed.push(outcome);
-          }
-          expect(observed).toHaveLength(1);
+          expect(await globalFacts(env.log, "trigger_observed")).toHaveLength(1);
         }
       } finally {
         await env.close();
       }
     });
   }
+
+  test("a crash after the resolve claim before a candidate start leaves one run", async () => {
+    const env = await setup([rule({ mode: "candidate" })]);
+    try {
+      const queued = await env.kernel.receive(event());
+      const pendingId = queued.pendingId;
+      if (pendingId === undefined) throw new Error("no pending id");
+
+      const log = new CrashLog(
+        env.log,
+        () => false,
+        false,
+        (method) => method === "recordOutcome",
+      );
+      const crashing = new Kernel({
+        log,
+        registry: env.registry,
+        home: env.root,
+        storeRoot: env.storeRoot,
+        rules: [rule({ mode: "candidate" })],
+        clock: () => env.clock.value,
+        onLog: () => undefined,
+      });
+      await expect(crashing.startCandidate(pendingId)).rejects.toThrow(
+        "injected crash",
+      );
+      expect(await env.log.runs()).toHaveLength(0);
+
+      const again = restarted(env, "candidate");
+      await again.recoverUnrouted();
+      let runs = await env.log.runs();
+      expect(runs).toHaveLength(1);
+
+      const second = await again.startCandidate(pendingId);
+      if (second.kind !== "started") throw new Error("did not start");
+      runs = await env.log.runs();
+      expect(runs).toHaveLength(1);
+      const run = runs[0];
+      if (run === undefined) throw new Error("no run");
+      expect(second.runId).toBe(run.runId);
+    } finally {
+      await env.close();
+    }
+  });
+
+  test("a crash after the resolve claim keeps a dismissed candidate dismissed", async () => {
+    const env = await setup([rule({ mode: "candidate" })]);
+    try {
+      const queued = await env.kernel.receive(event());
+      const pendingId = queued.pendingId;
+      if (pendingId === undefined) throw new Error("no pending id");
+
+      const log = new CrashLog(
+        env.log,
+        () => false,
+        false,
+        (method) => method === "recordOutcome",
+      );
+      const crashing = new Kernel({
+        log,
+        registry: env.registry,
+        home: env.root,
+        storeRoot: env.storeRoot,
+        rules: [rule({ mode: "candidate" })],
+        clock: () => env.clock.value,
+        onLog: () => undefined,
+      });
+      await expect(crashing.dismiss(pendingId)).rejects.toThrow(
+        "injected crash",
+      );
+
+      const again = restarted(env, "candidate");
+      expect(await again.candidates()).toHaveLength(0);
+      const second = await again.dismiss(pendingId);
+      expect(second.status).toBe("dismissed");
+      expect(await env.log.runs()).toHaveLength(0);
+    } finally {
+      await env.close();
+    }
+  });
 
   for (const mode of ["observe", "candidate", "auto"] as const) {
     test(`two concurrent receives in ${mode} mode keep one outcome`, async () => {
@@ -993,11 +1125,7 @@ describe("event receipt recovery", () => {
         } else {
           expect(first.kind).toBe("observed");
           expect(runs).toHaveLength(0);
-          const observed: InputOutcome[] = [];
-          for await (const outcome of env.log.readOutcomes()) {
-            if (outcome.kind === "observed") observed.push(outcome);
-          }
-          expect(observed).toHaveLength(1);
+          expect(await globalFacts(env.log, "trigger_observed")).toHaveLength(1);
         }
       } finally {
         await env.close();
@@ -1009,52 +1137,284 @@ describe("event receipt recovery", () => {
     test(`two processes receiving the same event in ${mode} mode agree`, async () => {
       const env = await setup([rule({ mode })]);
       try {
-        const children = ["a", "b"].map(() =>
-          Bun.spawn(
-            [process.execPath, CHILD, env.storeRoot, mode, "shared-key"],
-            { cwd: env.root, stdout: "pipe", stderr: "pipe" },
+        const outputs = await Promise.all(
+          ["a", "b"].map(() =>
+            runChild<TriggerResult>(env, [mode, "shared-key"]),
           ),
         );
-        const outputs = await Promise.all(
-          children.map(async (proc) => {
-            const text = await new Response(proc.stdout).text();
-            const exitCode = await proc.exited;
-            if (exitCode !== 0) {
-              const errors = await new Response(proc.stderr).text();
-              throw new Error(`child exited ${exitCode}: ${errors}`);
-            }
-            const line = text.trim().split("\n").at(-1) ?? "null";
-            return JSON.parse(line) as TriggerResult;
-          }),
-        );
         const [first, second] = outputs;
-        if (first === undefined || second === undefined) throw new Error("no result");
-        expect(first.kind).toBe(second.kind);
+        if (first?.result === undefined || second?.result === undefined) {
+          throw new Error("no result");
+        }
+        expect(first.ok).toBe(true);
+        expect(second.ok).toBe(true);
+        expect(first.result.kind).toBe(second.result.kind);
         const runs = await env.log.runs();
         if (mode === "auto") {
-          expect(first.kind).toBe("started");
+          expect(first.result.kind).toBe("started");
           expect(runs).toHaveLength(1);
-          expect(first.runId).toBe(runs[0]?.runId);
-          expect(second.runId).toBe(runs[0]?.runId);
+          expect(first.result.runId).toBe(runs[0]?.runId);
+          expect(second.result.runId).toBe(runs[0]?.runId);
         } else if (mode === "candidate") {
-          expect(first.kind).toBe("candidate");
+          expect(first.result.kind).toBe("candidate");
           expect(runs).toHaveLength(0);
           expect(await env.kernel.candidates()).toHaveLength(1);
-          expect(first.pendingId).toBe(second.pendingId);
+          expect(first.result.pendingId).toBe(second.result.pendingId);
         } else {
-          expect(first.kind).toBe("observed");
+          expect(first.result.kind).toBe("observed");
           expect(runs).toHaveLength(0);
-          const observed: InputOutcome[] = [];
-          for await (const outcome of env.log.readOutcomes()) {
-            if (outcome.kind === "observed") observed.push(outcome);
-          }
-          expect(observed).toHaveLength(1);
+          const before = (await globalFacts(env.log, "trigger_observed")).length;
+          expect(before).toBeGreaterThanOrEqual(1);
+          // A later duplicate delivery adds no further fact.
+          await env.kernel.receive(event({ key: "shared-key" }));
+          expect(await globalFacts(env.log, "trigger_observed")).toHaveLength(
+            before,
+          );
         }
       } finally {
         await env.close();
       }
     });
   }
+
+  test("two receives for an object with an active run append one fact", async () => {
+    const env = await setup([rule({})]);
+    try {
+      const first = await env.kernel.receive(event({ key: "base" }));
+      if (first.runId === undefined) throw new Error("no run id");
+      const [left, right] = await Promise.all([
+        env.kernel.receive(event({ key: "shared" })),
+        env.kernel.receive(event({ key: "shared" })),
+      ]);
+      expect(left.kind).toBe("active");
+      expect(right.kind).toBe("active");
+      expect(left.runId).toBe(first.runId);
+      expect(right.runId).toBe(first.runId);
+
+      let received = 0;
+      for await (const fact of env.log.read(first.runId)) {
+        if (fact.kind === "trigger_received") received += 1;
+      }
+      expect(received).toBe(1);
+    } finally {
+      await env.close();
+    }
+  });
+
+  test("two processes delivering into an active run append one fact", async () => {
+    const env = await setup([rule({})]);
+    try {
+      const first = await env.kernel.receive(event({ key: "base" }));
+      if (first.runId === undefined) throw new Error("no run id");
+      const outputs = await Promise.all([
+        runChild<TriggerResult>(env, ["auto", "shared"]),
+        runChild<TriggerResult>(env, ["auto", "shared"]),
+      ]);
+      for (const output of outputs) {
+        expect(output.ok).toBe(true);
+        expect(output.result?.kind).toBe("active");
+        expect(output.result?.runId).toBe(first.runId);
+      }
+      let received = 0;
+      for await (const fact of env.log.read(first.runId)) {
+        if (fact.kind === "trigger_received") received += 1;
+      }
+      expect(received).toBe(1);
+    } finally {
+      await env.close();
+    }
+  });
+
+  test("dismiss and startCandidate race; exactly one wins", async () => {
+    const env = await setup([rule({ mode: "candidate" })]);
+    try {
+      const queued = await env.kernel.receive(event());
+      const pendingId = queued.pendingId;
+      if (pendingId === undefined) throw new Error("no pending id");
+
+      const results = await Promise.allSettled([
+        env.kernel.dismiss(pendingId),
+        env.kernel.startCandidate(pendingId),
+      ]);
+      const fulfilled = results.filter(
+        (result) => result.status === "fulfilled",
+      );
+      expect(fulfilled).toHaveLength(1);
+      expect(await env.kernel.candidates()).toHaveLength(0);
+
+      const runs = await env.log.runs();
+      expect(runs.length).toBeLessThanOrEqual(1);
+      const winner = results[0];
+      if (winner?.status === "fulfilled") {
+        expect(runs).toHaveLength(0);
+      } else {
+        expect(runs).toHaveLength(1);
+      }
+    } finally {
+      await env.close();
+    }
+  });
+
+  test("two startCandidate calls create one run", async () => {
+    const env = await setup([rule({ mode: "candidate" })]);
+    try {
+      const queued = await env.kernel.receive(event());
+      const pendingId = queued.pendingId;
+      if (pendingId === undefined) throw new Error("no pending id");
+
+      const [left, right] = await Promise.all([
+        env.kernel.startCandidate(pendingId),
+        env.kernel.startCandidate(pendingId),
+      ]);
+      expect(left.kind).toBe("started");
+      expect(right.kind).toBe("started");
+      if (left.kind !== "started" || right.kind !== "started") return;
+      const runs = await env.log.runs();
+      expect(runs).toHaveLength(1);
+      const run = runs[0];
+      if (run === undefined) throw new Error("no run");
+      expect(left.runId).toBe(run.runId);
+      expect(right.runId).toBe(run.runId);
+    } finally {
+      await env.close();
+    }
+  });
+
+  test("two processes resolving one candidate do not double a run", async () => {
+    const env = await setup([rule({ mode: "candidate" })]);
+    try {
+      const queued = await env.kernel.receive(event());
+      const pendingId = queued.pendingId;
+      if (pendingId === undefined) throw new Error("no pending id");
+
+      const outputs = await Promise.all([
+        runChild<{ readonly kind: string }>(env, ["candidate", pendingId, "start"]),
+        runChild<{ readonly kind: string }>(env, ["candidate", pendingId, "dismiss"]),
+      ]);
+      const ok = outputs.filter((output) => output.ok);
+      expect(ok).toHaveLength(1);
+      expect(await env.log.runs()).toHaveLength(
+        outputs[0]?.ok === true ? 1 : 0,
+      );
+    } finally {
+      await env.close();
+    }
+  });
+
+  test("two processes starting one candidate create one run", async () => {
+    const env = await setup([rule({ mode: "candidate" })]);
+    try {
+      const queued = await env.kernel.receive(event());
+      const pendingId = queued.pendingId;
+      if (pendingId === undefined) throw new Error("no pending id");
+
+      const outputs = await Promise.all([
+        runChild<{ readonly runId: string }>(env, ["candidate", pendingId, "start"]),
+        runChild<{ readonly runId: string }>(env, ["candidate", pendingId, "start"]),
+      ]);
+      const runs = await env.log.runs();
+      expect(runs).toHaveLength(1);
+      for (const output of outputs) {
+        expect(output.ok).toBe(true);
+        expect(output.result?.runId).toBe(runs[0]?.runId);
+      }
+    } finally {
+      await env.close();
+    }
+  });
+
+
+  test("a crash after the route claim with no matching rule still records nothing", async () => {
+    const env = await setup([]);
+    try {
+      const crashing = new Kernel({
+        log: new CrashLog(
+          env.log,
+          () => false,
+          false,
+          (method) => method === "recordOutcome",
+        ),
+        registry: env.registry,
+        home: env.root,
+        storeRoot: env.storeRoot,
+        rules: [],
+        clock: () => env.clock.value,
+        onLog: () => undefined,
+      });
+      await expect(crashing.receive(event())).rejects.toThrow("injected crash");
+
+      const again = new Kernel({
+        log: env.log,
+        registry: env.registry,
+        home: env.root,
+        storeRoot: env.storeRoot,
+        rules: [],
+        clock: () => env.clock.value,
+        onLog: () => undefined,
+      });
+      await again.recoverUnrouted();
+      const result = await again.receive(event());
+      expect(result.kind).toBe("recorded");
+      expect(result.duplicate).toBe(true);
+      expect(await env.log.runs()).toHaveLength(0);
+    } finally {
+      await env.close();
+    }
+  });
+
+  test("a crash after the in_run claim appends the event once", async () => {
+    const env = await setup([rule({})]);
+    try {
+      const first = await env.kernel.receive(event({ key: "base" }));
+      if (first.runId === undefined) throw new Error("no run id");
+
+      const crashing = new Kernel({
+        log: new CrashLog(
+          env.log,
+          () => false,
+          false,
+          (method) => method === "recordOutcome",
+        ),
+        registry: env.registry,
+        home: env.root,
+        storeRoot: env.storeRoot,
+        rules: [rule({})],
+        clock: () => env.clock.value,
+        onLog: () => undefined,
+      });
+      await expect(
+        crashing.receive(event({ key: "into-run" })),
+      ).rejects.toThrow("injected crash");
+
+      let received = 0;
+      for await (const fact of env.log.read(first.runId)) {
+        if (fact.kind === "trigger_received") received += 1;
+      }
+      expect(received).toBe(0);
+
+      const again = new Kernel({
+        log: env.log,
+        registry: env.registry,
+        home: env.root,
+        storeRoot: env.storeRoot,
+        rules: [rule({})],
+        clock: () => env.clock.value,
+        onLog: () => undefined,
+      });
+      await again.recoverUnrouted();
+      const result = await again.receive(event({ key: "into-run" }));
+      expect(result.kind).toBe("active");
+      expect(result.runId).toBe(first.runId);
+
+      received = 0;
+      for await (const fact of env.log.read(first.runId)) {
+        if (fact.kind === "trigger_received") received += 1;
+      }
+      expect(received).toBe(1);
+    } finally {
+      await env.close();
+    }
+  });
 
   test("a candidate survives a restart and starts or dismisses after it", async () => {
     const env = await setup([rule({ mode: "candidate" })]);

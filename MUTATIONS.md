@@ -245,3 +245,9 @@
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0026-M17 | packages/engine/src/log/jsonl.ts | made `recordOutcome` always append instead of returning the stored outcome | `event receipt recovery > two concurrent receives in observe mode keep one outcome` |
+
+## TK0026 — rework 16: claim first, act second
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0026-M18 | packages/engine/src/trigger/kernel.ts | moved a candidate's start before its resolve claim | `event receipt recovery > dismiss and startCandidate race; exactly one wins` |

@@ -1,4 +1,4 @@
-/** Receives one event in a child process, for the concurrent-receive test. */
+/** Receives one event or resolves one candidate in a child process. */
 
 import {
   Kernel,
@@ -9,10 +9,11 @@ import {
 } from "../../src/index.ts";
 import plugin from "./plugins/trigger.ts";
 
-const [storeRoot, mode, key] = process.argv.slice(2);
-if (storeRoot === undefined || mode === undefined || key === undefined) {
-  throw new Error("usage: trigger-child <store root> <mode> <key>");
+const [storeRoot, mode, keyOrId, actionArg] = process.argv.slice(2);
+if (storeRoot === undefined || mode === undefined || keyOrId === undefined) {
+  throw new Error("usage: trigger-child <store root> <mode> <key> [action]");
 }
+const action = actionArg ?? "receive";
 
 const log = openLog({ backend: "jsonl", path: storeRoot });
 const registry = new PluginRegistry([plugin], {
@@ -37,11 +38,25 @@ const kernel = new Kernel({
   onLog: () => undefined,
 });
 
-const result = await kernel.receive({
-  source: "cron",
-  key,
-  type: "tick",
-  hops: 0,
-});
-process.stdout.write(`${JSON.stringify(result)}\n`);
+try {
+  const result =
+    action === "start"
+      ? await kernel.startCandidate(keyOrId)
+      : action === "dismiss"
+        ? await kernel.dismiss(keyOrId)
+        : await kernel.receive({
+            source: "cron",
+            key: keyOrId,
+            type: "tick",
+            hops: 0,
+          });
+  process.stdout.write(`${JSON.stringify({ ok: true, result })}\n`);
+} catch (error) {
+  process.stdout.write(
+    `${JSON.stringify({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    })}\n`,
+  );
+}
 await log.close();
