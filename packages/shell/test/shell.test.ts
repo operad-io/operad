@@ -85,6 +85,34 @@ describe("shell/command", () => {
     expect(text).toContain("done");
   });
 
+  test("env is added to the command's environment", async () => {
+    const { registry } = await fixture();
+    const result = await registry.runStep(
+      "shell/command",
+      { line: 'printf %s "$X"', env: { X: "from-params" } },
+      { runId: "run-1" },
+    );
+
+    expect(result.result).toBe("pass");
+    expect(readFileSync(String(dataOf(result).log), "utf8").trim()).toBe(
+      "from-params",
+    );
+  });
+
+  test("the host environment is still there when env is given", async () => {
+    const { registry } = await fixture();
+    const result = await registry.runStep(
+      "shell/command",
+      { line: 'printf %s "$PATH"', env: { X: "from-params" } },
+      { runId: "run-1" },
+    );
+
+    expect(result.result).toBe("pass");
+    expect(readFileSync(String(dataOf(result).log), "utf8").trim()).toBe(
+      String(process.env.PATH),
+    );
+  });
+
   test("a non-zero exit is a failure with its code and output path", async () => {
     const { registry } = await fixture();
     const result = await registry.runStep(
@@ -316,10 +344,10 @@ describe("runLine", () => {
         globalThis.clearTimeout(handle as ReturnType<typeof globalThis.setTimeout>),
       sleep: async () => {
         sleeps += 1;
-        // Read the leader the line wrote, then ask whether its numeric group id
-        // still names a live group. Without the sentinel the group would have
-        // ended when the line exited, and the id could be reused before the
-        // SIGKILL.
+        // Read the group leader the line wrote (its parent, the sentinel),
+        // then ask whether its numeric group id still names a live group.
+        // Without the sentinel the group would have ended when the line
+        // exited, and the id could be reused before the SIGKILL.
         const pid = Number(readFileSync(pidFile, "utf8").trim());
         try {
           process.kill(-pid, 0);
@@ -331,7 +359,7 @@ describe("runLine", () => {
     };
 
     const outcome = await runLine({
-      line: `echo $$ > '${pidFile}'`,
+      line: `echo $PPID > '${pidFile}'`,
       cwd: root,
       signal: new AbortController().signal,
       clock,
@@ -353,15 +381,37 @@ describe("runLine", () => {
       cwd: root,
       signal: new AbortController().signal,
       clock,
-      killGroup: (_pgid, signal) => {
+      // Record the signals and forward them, so the real sentinel this run
+      // started does not outlive the test.
+      killGroup: (pgid, signal) => {
         signals.push(signal);
-        return true;
+        try {
+          process.kill(-pgid, signal);
+          return true;
+        } catch {
+          return false;
+        }
       },
     });
 
     expect(outcome.exitCode).toBe(0);
     expect(clock.sleeps).toBe(1);
     expect(signals).toEqual(["SIGTERM", "SIGKILL"]);
+  });
+
+  test("the sentinel does not outlive the run", async () => {
+    const { root } = await fixture();
+    const pidFile = join(root, "sentinel.pid");
+    const outcome = await runLine({
+      line: `echo $PPID > '${pidFile}'`,
+      cwd: root,
+      signal: new AbortController().signal,
+      clock: manualClock(),
+    });
+
+    expect(outcome.exitCode).toBe(0);
+    const pid = Number(readFileSync(pidFile, "utf8").trim());
+    expect(alive(pid)).toBe(false);
   });
 });
 
