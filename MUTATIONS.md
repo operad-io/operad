@@ -192,3 +192,9 @@
 | TK0025-M17 | packages/engine/src/log/jsonl.ts | never started the run-file poll | `jsonl.test.ts > a subscription learns of a write when the watch never fires` |
 | TK0025-M18 | packages/engine/src/log/sqlite.ts | reported every poll as unchanged instead of comparing `data_version` | `sqlite.test.ts > a subscription learns of a write when the watch never fires` |
 
+## TK0025 — rework 6: the cross-process event tests really cross processes
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0025-M19 | packages/engine/test/fixtures/append-fact-child.ts | made the child write a different object, so only an in-process write could satisfy the reader | `presentation views > events reach a reader when another sqlite log appends` |
+

@@ -17,6 +17,40 @@ import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
 
 afterAll(cleanupTempRoots);
 
+/** The child that writes a fact from another process. */
+const APPEND_CHILD = join(
+  import.meta.dir,
+  "..",
+  "fixtures",
+  "append-fact-child.ts",
+);
+
+/**
+ * Opens the log in a child process, appends one fact and waits for the child
+ * to exit. A broken fixture fails here with its stderr instead of making the
+ * event read time out.
+ */
+async function appendInChild(
+  backend: "sqlite" | "jsonl",
+  directory: string,
+): Promise<void> {
+  const child = Bun.spawn([process.execPath, APPEND_CHILD, backend, directory], {
+    cwd: directory,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [code, output, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  if (code !== 0) {
+    throw new Error(
+      `append-fact child exited ${code}: ${stderr || output || "no output"}`,
+    );
+  }
+}
+
 interface Fixture {
   readonly root: string;
   readonly store: MemoryPluginStore;
@@ -428,7 +462,6 @@ describe("presentation views", () => {
     const root = await tempRoot();
     const directory = join(root, "store");
     const reader = openLog({ backend: "jsonl", path: directory });
-    const writer = openLog({ backend: "jsonl", path: directory });
     const store = new MemoryPluginStore({ root: join(root, "plugins") });
     store.put("item", "one", { title: "One" }, "seed");
     const registry = new PluginRegistry([demo], { store });
@@ -436,10 +469,7 @@ describe("presentation views", () => {
     const stream = views.events()[Symbol.asyncIterator]();
     try {
       const pending = stream.next();
-      const info = await writer.startRun("demo-flow", "item:one");
-      await writer.append(info.runId, 0, [
-        { kind: "run_started", payload: { flow: "demo-flow" }, cause: "test" },
-      ]);
+      await appendInChild("jsonl", directory);
       const event = await within(pending);
       expect(event.done).toBe(false);
       if (!event.done) expect(event.value).toEqual({ id: "one" });
@@ -447,15 +477,14 @@ describe("presentation views", () => {
       await stream.return?.();
       views.close();
       await reader.close();
-      await writer.close();
     }
   });
 
   test("events reach a reader when another sqlite log appends", async () => {
     const root = await tempRoot();
-    const path = join(root, "store", "log.sqlite");
+    const directory = join(root, "store");
+    const path = join(directory, "log.sqlite");
     const reader = openSqliteLogBackend(path);
-    const writer = openSqliteLogBackend(path);
     const store = new MemoryPluginStore({ root: join(root, "plugins") });
     store.put("item", "one", { title: "One" }, "seed");
     const registry = new PluginRegistry([demo], { store });
@@ -463,10 +492,7 @@ describe("presentation views", () => {
     const stream = views.events()[Symbol.asyncIterator]();
     try {
       const pending = stream.next();
-      const info = await writer.startRun("demo-flow", "item:one");
-      await writer.append(info.runId, 0, [
-        { kind: "run_started", payload: { flow: "demo-flow" }, cause: "test" },
-      ]);
+      await appendInChild("sqlite", directory);
       const event = await within(pending);
       expect(event.done).toBe(false);
       if (!event.done) expect(event.value).toEqual({ id: "one" });
@@ -474,7 +500,6 @@ describe("presentation views", () => {
       await stream.return?.();
       views.close();
       await reader.close();
-      await writer.close();
     }
   });
 
