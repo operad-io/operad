@@ -87,7 +87,9 @@ async function waitFact(
 }
 
 /** Fails an event read instead of letting a broken stream hang the test. */
-function within<T>(promise: Promise<T>, ms = 3_000): Promise<T> {
+function within<T>(promise: Promise<T>, ms = 10_000): Promise<T> {
+  // A file watcher can report a change a few seconds late while the test
+  // runner has other files in flight; the default was too tight for that.
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error("timed out waiting for an event")),
