@@ -10,7 +10,7 @@ import {
   PluginRegistry,
 } from "../../src/index.ts";
 import notes from "../fixtures/plugins/notes.ts";
-import { cleanupTempRoots, tempRoot } from "./support.ts";
+import { cleanupTempRoots, def, tempRoot } from "./support.ts";
 
 const notesPlugin = fileURLToPath(
   new URL("../fixtures/plugins/notes.ts", import.meta.url),
@@ -87,7 +87,7 @@ describe("plugin registry", () => {
     expect(note?.version).toBe(1);
     expect(note?.data.text).toBe("hello");
     expect(note?.data.path).toBe(logPath);
-    expect(store.list("note").map((item) => item.id)).toEqual(["n1"]);
+    expect(store.list("note").objects.map((item) => item.id)).toEqual(["n1"]);
     expect(
       store.facts().some(
         (fact) => fact.type === "note" && fact.cause === "step run-1",
@@ -126,9 +126,10 @@ describe("plugin registry", () => {
     expect(entry.choices).toEqual(["yes"]);
     expect(entry.actions).toEqual([{ plugin: "notes", action: "archive" }]);
 
-    const action = await registry.runAction("notes/archive", "n1", {
+    const action = await registry.runAction("notes/archive", {}, {
       object: entry.object,
       runId: "run-2",
+      actor: { via: "test", id: "tester" },
     });
     expect(action).toEqual({
       plugin: "notes",
@@ -145,6 +146,72 @@ describe("plugin registry", () => {
     ]);
     expect(after[0]?.actions).toEqual([]);
     expect(logs).toEqual([]);
+  });
+
+  test("an action receives the person's actor", async () => {
+    const root = await tempRoot();
+    const store = new MemoryPluginStore({ root: join(root, "store") });
+    const registry = new PluginRegistry(
+      [
+        def({
+          name: "a",
+          objects: [{ name: "note" }],
+          actions: [
+            {
+              name: "who",
+              on: "note",
+              when: () => true,
+              async run(ctx) {
+                await ctx.store.put(
+                  "note",
+                  ctx.object.id,
+                  { actor: ctx.actor },
+                  "who",
+                );
+              },
+            },
+          ],
+        }),
+      ],
+      { store },
+    );
+    await store.put("note", "n1", { text: "one" }, "seed");
+
+    await registry.runAction("who", {}, {
+      object: { type: "note", id: "n1", data: {} },
+      actor: { via: "telegram", id: "owner" },
+    });
+    expect(store.get("note", "n1")?.data.actor).toEqual({
+      via: "telegram",
+      id: "owner",
+    });
+  });
+
+  test("records who asked in the action's fact", async () => {
+    const root = await tempRoot();
+    const store = new MemoryPluginStore({ root: join(root, "store") });
+    const registry = new PluginRegistry([notes], { store });
+    await store.put("note", "n1", { text: "one" }, "seed");
+
+    await registry.runAction("notes/archive", {}, {
+      object: (await store.get("note", "n1")) ?? {
+        type: "note",
+        id: "n1",
+        data: {},
+        version: 1,
+        cause: "seed",
+        at: 0,
+      },
+      actor: { via: "ios", id: "owner" },
+    });
+
+    const fact = store
+      .facts()
+      .find((entry) => entry.type === "action_invoked");
+    expect(fact?.data).toMatchObject({
+      action: "notes/archive",
+      actor: { via: "ios", id: "owner" },
+    });
   });
 
   test("passes the cancel signal to a step", async () => {

@@ -130,12 +130,13 @@ describe("serve loop", () => {
         onAnswer: async (runId, choice) => {
           const found = registry.flow("crash");
           if (found === undefined) throw new Error("flow missing");
-          await answerRun({ log, flow: found.flow, runId, choice });
+          await answerRun({ log, flow: found.flow, runId, choice, actor: { via: "test", id: "tester" } });
         },
       });
-      await withAnswer.runAction("approve", "finish", {
+      await withAnswer.runAction("approve", {}, {
         object: { type: "job", id: "1", data: {} },
         runId: info.runId,
+        actor: { via: "test", id: "tester" },
       });
       expect((await readState(log, info.runId)).endedStatus).toBe("done");
 

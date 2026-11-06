@@ -2,17 +2,19 @@ import { join } from "node:path";
 import type { FlowDefinition, StepType } from "../flow/types.ts";
 import { loadFlow as loadFlowFile } from "../flow/load.ts";
 import { FlowError, validateFlow } from "../flow/validate.ts";
+import { normalizeActionArgs, noteProperty, validateActionArgs } from "./action-schema.ts";
 import { messageOf, PluginError } from "./errors.ts";
 import { defaultOperadHome } from "./home.ts";
 import { createPluginLogger } from "./logger.ts";
 import { MemoryPluginStore } from "./store.ts";
 import {
   OPERAD_PLUGIN_VERSION,
+  type ActionArgsSchema,
   type ActionContext,
-  type ActionNote,
   type ActionRun,
   type ActionRunOptions,
   type ActionTypeDefinition,
+  type Actor,
   type Answer,
   type CommandContext,
   type CommandDefinition,
@@ -59,7 +61,12 @@ export interface PluginRegistryOptions {
     | undefined;
   /** Answers a person wait for an action; the action calls `ctx.answer`. */
   readonly onAnswer?:
-    | ((runId: string, choice: string, note?: string) => MaybePromise<void>)
+    | ((
+        runId: string,
+        choice: string,
+        note: string | undefined,
+        actor: Actor,
+      ) => MaybePromise<void>)
     | undefined;
   /** The specifier each definition was loaded from, aligned with it. */
   readonly sources?: readonly (string | undefined)[] | undefined;
@@ -103,8 +110,10 @@ export interface ActionInfo {
   readonly on: string;
   /** Addressed as `<plugin>:<action>`. */
   readonly name: string;
-  /** The plugin's declaration: true, false, or `{ required }`. */
-  readonly note?: ActionNote | undefined;
+  /** The person's input, as a JSON Schema object. */
+  readonly args?: ActionArgsSchema | undefined;
+  /** The name of the note property, when the schema declares one. */
+  readonly note?: string | undefined;
   readonly noteRequired: boolean;
   readonly confirm: boolean;
 }
@@ -118,9 +127,11 @@ export interface KeyBinding {
   readonly source: "plugin" | "user";
 }
 
-function noteRequired(note: ActionNote | undefined): boolean {
-  if (note === true) return true;
-  return typeof note === "object" && note !== null && note.required === true;
+function noteInfo(
+  args: ActionArgsSchema | undefined,
+): { readonly name: string | undefined; readonly required: boolean } {
+  const note = noteProperty(args);
+  return { name: note?.name, required: note?.required === true };
 }
 
 /** Splits `<plugin>:<action>` or `<plugin>/<action>` without splitting an id. */
@@ -233,9 +244,33 @@ function normalizeObjects(
       throw new PluginError(`${at}: duplicate object type "${name}"`);
     }
     names.add(name);
-    objects.push(
-      entry.schema === undefined ? { name } : { name, schema: entry.schema },
-    );
+
+    let fields: string[] | undefined;
+    if (entry.index !== undefined) {
+      if (!Array.isArray(entry.index)) {
+        throw new PluginError(`${at}[${index}]: index: must be an array of field names`);
+      }
+      fields = [];
+      entry.index.forEach((field: unknown, fieldIndex: number) => {
+        if (typeof field !== "string" || field.trim().length === 0) {
+          throw new PluginError(
+            `${at}[${index}]: index[${fieldIndex}]: must be a non-empty string`,
+          );
+        }
+        if (fields?.includes(field) === true) {
+          throw new PluginError(
+            `${at}[${index}]: index: duplicate field "${field}"`,
+          );
+        }
+        fields?.push(field);
+      });
+    }
+
+    objects.push({
+      name,
+      ...(entry.schema === undefined ? {} : { schema: entry.schema }),
+      ...(fields === undefined ? {} : { index: fields }),
+    });
   });
   return objects;
 }
@@ -290,22 +325,6 @@ function normalizeSteps(
   return steps;
 }
 
-function normalizeActionNote(
-  value: unknown,
-  at: string,
-): ActionNote | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value === "boolean") return value;
-  if (isRecord(value)) {
-    const required = value.required;
-    if (typeof required !== "boolean") {
-      throw new PluginError(`${at}.required: must be a boolean`);
-    }
-    return { required };
-  }
-  throw new PluginError(`${at}: must be a boolean or { required: boolean }`);
-}
-
 function normalizeActions(
   value: unknown,
   at: string,
@@ -329,7 +348,21 @@ function normalizeActions(
     if (typeof entry.run !== "function") {
       throw new PluginError(`${at}[${index}]: run: must be a function`);
     }
-    const note = normalizeActionNote(entry.note, `${at}[${index}]: note`);
+    if (entry.note !== undefined) {
+      throw new PluginError(
+        `${at}[${index}]: note: is no longer a field; declare a string property with role "note" in args`,
+      );
+    }
+
+    let args: ActionArgsSchema | undefined;
+    try {
+      args = normalizeActionArgs(entry.args, `${at}[${index}]: args`);
+    } catch (error) {
+      throw new PluginError(messageOf(error), {
+        cause: error,
+      });
+    }
+
     const confirm = entry.confirm;
     if (confirm !== undefined && typeof confirm !== "boolean") {
       throw new PluginError(`${at}[${index}]: confirm: must be a boolean`);
@@ -337,7 +370,7 @@ function normalizeActions(
     actions.push({
       name,
       on,
-      ...(note === undefined ? {} : { note }),
+      ...(args === undefined ? {} : { args }),
       ...(confirm === undefined ? {} : { confirm }),
       when: entry.when as ActionTypeDefinition["when"],
       run: entry.run as ActionTypeDefinition["run"],
@@ -543,7 +576,12 @@ export class PluginRegistry {
     | ((request: StartRunRequest) => MaybePromise<void>)
     | undefined;
   private readonly onAnswer:
-    | ((runId: string, choice: string, note?: string) => MaybePromise<void>)
+    | ((
+        runId: string,
+        choice: string,
+        note: string | undefined,
+        actor: Actor,
+      ) => MaybePromise<void>)
     | undefined;
   private readonly plugins: readonly LoadedPlugin[];
   private readonly byName: ReadonlyMap<string, LoadedPlugin>;
@@ -580,6 +618,13 @@ export class PluginRegistry {
       normalizePlugin(definition, index),
     );
     validatePluginSet(normalized);
+    if (typeof this.store.declare === "function") {
+      for (const plugin of normalized) {
+        for (const object of plugin.objects) {
+          this.store.declare(object.name, object.index ?? []);
+        }
+      }
+    }
     const stepTypes = collectStepTypes(normalized);
     this.plugins = validateFlows(normalized, stepTypes);
 
@@ -595,13 +640,15 @@ export class PluginRegistry {
         viewByType.set(type, { plugin, views });
       }
       for (const action of plugin.actions) {
+        const note = noteInfo(action.args);
         actionInfos.push({
           plugin: plugin.name,
           action: action.name,
           on: action.on,
           name: `${plugin.name}:${action.name}`,
-          ...(action.note === undefined ? {} : { note: action.note }),
-          noteRequired: noteRequired(action.note),
+          ...(action.args === undefined ? {} : { args: action.args }),
+          ...(note.name === undefined ? {} : { note: note.name }),
+          noteRequired: note.required,
           confirm: action.confirm === true,
         });
       }
@@ -716,6 +763,20 @@ export class PluginRegistry {
     );
   }
 
+  /** The object type definitions of one type, or undefined. */
+  objectType(type: string): ObjectTypeDefinition | undefined {
+    for (const plugin of this.plugins) {
+      const found = plugin.objects.find((object) => object.name === type);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+
+  /** The fields `where` may filter on for one type. */
+  indexFor(type: string): readonly string[] | undefined {
+    return this.objectType(type)?.index;
+  }
+
   /** The directory plugin steps run in when a caller names none. */
   get workdir(): string {
     return this.cwd;
@@ -788,13 +849,29 @@ export class PluginRegistry {
     options: ActionRunOptions,
   ): Promise<ActionRun> {
     const found = this.findAction(name, options.object.type);
+    const label = `action "${found.plugin.name}:${found.action.name}"`;
+    const personArgs = validateActionArgs(found.action.args, args, label);
     const cause = `action:${found.plugin.name}/${found.action.name}`;
     const runId = options.runId;
     const onAnswer = this.onAnswer;
+    const actor = options.actor;
     const answer: Answer | undefined =
       runId === undefined || onAnswer === undefined
         ? undefined
-        : (choice, note) => onAnswer(runId, choice, note);
+        : (choice, note) => onAnswer(runId, choice, note, actor);
+
+    // The action's own fact records who asked. It is not the object's type, so
+    // it never changes the object's data.
+    await this.store.append({
+      type: "action_invoked",
+      object: { type: options.object.type, id: options.object.id },
+      cause,
+      data: {
+        action: `${found.plugin.name}/${found.action.name}`,
+        actor: { via: actor.via, id: actor.id },
+      },
+    });
+
     const ctx: ActionContext = {
       plugin: found.plugin.name,
       home: this.home,
@@ -810,10 +887,10 @@ export class PluginRegistry {
       signal: options.signal ?? new AbortController().signal,
       runId,
       object: options.object,
-      ...(options.note === undefined ? {} : { note: options.note }),
+      actor,
       answer,
     };
-    const value = await found.action.run(ctx, args);
+    const value = await found.action.run(ctx, personArgs);
     return {
       plugin: found.plugin.name,
       action: found.action.name,

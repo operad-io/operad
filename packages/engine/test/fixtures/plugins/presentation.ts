@@ -48,7 +48,7 @@ export default definePlugin({
   name: "demo",
   kind: "domain",
   version: "0.0.1",
-  objects: [{ name: "item" }],
+  objects: [{ name: "item", index: ["state", "plan"] }],
   views: {
     item: {
       row(object) {
@@ -114,7 +114,18 @@ export default definePlugin({
     {
       name: "approve",
       on: "item",
-      note: { required: true },
+      args: {
+        type: "object",
+        properties: {
+          note: {
+            type: "string",
+            role: "note",
+            description: "Why this is approved",
+          },
+        },
+        required: ["note"],
+        additionalProperties: false,
+      },
       when: (state) => state.approved !== true,
       async run(ctx, args) {
         const note =
@@ -140,6 +151,63 @@ export default definePlugin({
           object: { type: "item", id: ctx.object.id },
           data: { note: note.length > 0 ? note : null },
         });
+      },
+    },
+    {
+      name: "auto",
+      on: "item",
+      args: {
+        type: "object",
+        properties: {
+          level: {
+            type: "string",
+            enum: ["off", "run", "merge"],
+            description: "How far the loop may go",
+          },
+        },
+        required: ["level"],
+        additionalProperties: false,
+      },
+      when: () => true,
+      async run(ctx, args) {
+        const level =
+          typeof args === "object" && args !== null && "level" in args
+            ? String((args as { level?: unknown }).level ?? "")
+            : "";
+        const current = await ctx.store.get("item", ctx.object.id);
+        await ctx.store.put(
+          "item",
+          ctx.object.id,
+          { ...(current?.data ?? {}), auto: level },
+          "auto",
+        );
+      },
+    },
+    {
+      name: "label",
+      on: "item",
+      args: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "A label" },
+          count: { type: "integer", description: "How many" },
+        },
+        additionalProperties: false,
+      },
+      when: () => true,
+      async run(ctx, args) {
+        const values = typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
+        const current = await ctx.store.get("item", ctx.object.id);
+        await ctx.store.put(
+          "item",
+          ctx.object.id,
+          {
+            ...(current?.data ?? {}),
+            label: values.text,
+            count: values.count,
+          },
+          "label",
+        );
       },
     },
     {

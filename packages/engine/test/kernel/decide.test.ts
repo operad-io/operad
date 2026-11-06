@@ -261,6 +261,7 @@ describe("decide: person_answer", () => {
       waitId: "ask:1",
       choice: "yes",
       note: "looks good",
+      actor: { via: "test", id: "tester" },
     });
     expect(decision.facts.map((fact) => fact.kind)).toEqual([
       "person_answered",
@@ -273,13 +274,33 @@ describe("decide: person_answer", () => {
       choice: "yes",
       note: "looks good",
       waitKind: "step",
+      actor: { via: "test", id: "tester" },
     });
     expect(runner.state.answeredWaits["ask:1"]).toBe(true);
 
     const before = runner.state;
-    const second = runner.apply({ kind: "person_answer", waitId: "ask:1", choice: "no" });
+    const second = runner.apply({
+      kind: "person_answer",
+      waitId: "ask:1",
+      choice: "no",
+      actor: { via: "test", id: "tester" },
+    });
     expect(second.facts).toEqual([]);
     expect(runner.state).toEqual(before);
+  });
+
+  test("records who answered in person_answered", () => {
+    const runner = new Runner(personFlow());
+    runner.apply({ kind: "start" });
+    const decision = runner.apply({
+      kind: "person_answer",
+      waitId: "ask:1",
+      choice: "yes",
+      actor: { via: "ios", id: "owner" },
+    });
+    expect(payloadOf(decision.facts[0] ?? {})).toMatchObject({
+      actor: { via: "ios", id: "owner" },
+    });
   });
 
   test("ignores a choice the wait did not offer", () => {
@@ -290,6 +311,7 @@ describe("decide: person_answer", () => {
       kind: "person_answer",
       waitId: "ask:1",
       choice: "maybe",
+      actor: { via: "test", id: "tester" },
     });
     expect(invalid.facts).toEqual([]);
     expect(runner.state).toEqual(before);
@@ -465,6 +487,7 @@ describe("decide: recover", () => {
       kind: "person_answer",
       waitId: "crash:run:1",
       choice: "retry",
+      actor: { via: "test", id: "tester" },
     });
     expect(retry.facts.map((fact) => fact.kind)).toEqual([
       "person_answered",
@@ -495,6 +518,7 @@ describe("decide: recover", () => {
       kind: "person_answer",
       waitId: "crash:run:1",
       choice: "cancel",
+      actor: { via: "test", id: "tester" },
     });
     expect(decision.facts.map((fact) => fact.kind)).toEqual(["person_answered", "run_ended"]);
     expect(runner.state.status).toBe("ended");

@@ -227,3 +227,26 @@
 | TK0018-M13 | packages/harness-radian/src/jsonl-log.ts | `push` flushed a full buffer without returning the pending write, so the caller never waited | `jsonl log > a full buffer returns the write the caller must wait for` |
 | TK0018-M14 | packages/harness-radian/src/process.ts | `Lines.push` delivered every line of a chunk without waiting for the line handler | `harness-radian/agent > a line handler that is still busy stops the reader from reading ahead` |
 
+## TK0028 — contract: objects, facts, action args and actor
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0028-M1 | packages/engine/src/plugin/paging.ts | made `matchesWhere` accept every object | `object list > filters on an indexed field (jsonl)` |
+| TK0028-M2 | packages/engine/src/plugin/file-store.ts | stopped comparing a list cursor`s object type | `object list > refuses a cursor from another object type (jsonl)` |
+| TK0028-M3 | packages/engine/src/plugin/action-schema.ts | skipped the enum check in `validateActionArgs` | `operad presentation commands > an enum argument is listed in help and validated` |
+| TK0028-M4 | packages/engine/src/kernel/decide.ts | wrote `actor: null` into `person_answered` | `decide: person_answer > records who answered in person_answered` |
+| TK0028-M5 | packages/engine/src/plugin/file-store.ts | made `subscribeFacts` ignore its cursor | `object facts > a subscription after a cursor gets only later facts (jsonl)` |
+| TK0028-M6 | packages/engine/src/plugin/registry.ts | left the actor out of the action`s fact | `plugin registry > records who asked in the action's fact` |
+
+## TK0028 — rework 2: store lifecycle, cross-connection facts and schema flags
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0028-M7 | packages/engine/src/plugin/file-store.ts | made a fact unsubscribe remove only the listener, never stopping the shared watcher | `store lifecycle and concurrency > stops the watcher when the last fact subscription ends` |
+| TK0028-M8 | packages/engine/src/plugin/sqlite-store.ts | treated a declared empty index as an undeclared type | `store lifecycle and concurrency > refuses any filter when the type declares an empty index (sqlite)` |
+| TK0028-M9 | packages/engine/src/runner/step-worker.ts | opened a JSONL store in the worker instead of the configured backend | `runner > a worker step writes to the configured sqlite store` |
+| TK0028-M10 | packages/engine/src/plugin/file-store.ts | removed the append lock and took the next sequence from the stale entry count | `store lifecycle and concurrency > two jsonl writers assign unique, contiguous sequences` |
+| TK0028-M11 | packages/engine/src/plugin/sqlite-store.ts | stopped polling for facts another connection committed | `store lifecycle and concurrency > a sqlite subscription sees a fact another connection appended` |
+| TK0028-M12 | packages/cli/src/main.ts | restored the id-shaped-value heuristic in the action flag parser | `operad presentation commands > schema flags accept values that look like ids or negative numbers` |
+| TK0028-M13 | packages/engine/src/plugin/action-schema.ts | accepted a `role: "note"` property without type `"string"` | `plugin registry validation > rejects a note property that is not a string` |
+| TK0028-M14 | packages/engine/src/plugin/registry.ts | left the actor out of the action context | `plugin registry > an action receives the person's actor` |
