@@ -68,7 +68,8 @@ const SCHEMA = `
     object         TEXT NOT NULL,
     started_at     INTEGER NOT NULL,
     ended_at       INTEGER,
-    start_input_id TEXT
+    start_input_id TEXT,
+    access         TEXT
   );
   CREATE UNIQUE INDEX IF NOT EXISTS runs_one_active
     ON runs (flow, object) WHERE ended_at IS NULL;
@@ -115,6 +116,7 @@ interface RunRow {
   readonly started_at: number;
   readonly ended_at: number | null;
   readonly last_seq: number;
+  readonly access: string | null;
   readonly start_input_id: string | null;
 }
 
@@ -339,6 +341,9 @@ function ensureSchema(database: Database, path: string): void {
     );
   }
   if (version < SCHEMA_VERSION) {
+    version = migrateSchema(database, path, version);
+  }
+  if (version < SCHEMA_VERSION) {
     throw new SchemaVersionError(
       `store ${path} uses schema_version ${version}, but this build requires ${SCHEMA_VERSION}`,
     );
@@ -372,6 +377,34 @@ function ensureSchema(database: Database, path: string): void {
   }).immediate();
 }
 
+/**
+ * Upgrades an older store in place, one version at a time. Version 1 had no
+ * `runs.access` column; the column is additive, so the existing runs and
+ * history stay exactly as they were.
+ */
+function migrateSchema(database: Database, path: string, from: number): number {
+  let version = from;
+  while (version < SCHEMA_VERSION) {
+    if (version === 1) {
+      database.transaction(() => {
+        const columns = database
+          .query<{ readonly name: string }, []>("PRAGMA table_info(runs)")
+          .all();
+        if (!columns.some((column) => column.name === "access")) {
+          database.run("ALTER TABLE runs ADD COLUMN access TEXT");
+        }
+        database.run("UPDATE schema_version SET version = ? WHERE id = 1", [2]);
+      }).immediate();
+      version = 2;
+      continue;
+    }
+    throw new SchemaVersionError(
+      `store ${path} uses schema_version ${version}, but this build requires ${SCHEMA_VERSION}`,
+    );
+  }
+  return version;
+}
+
 class SqliteLogBackend implements LogBackend {
   readonly #database: Database;
   readonly #clock: () => number;
@@ -400,9 +433,11 @@ class SqliteLogBackend implements LogBackend {
     flow: string,
     object: string,
     startInputId: string | null = null,
+    access?: JsonValue,
   ): Promise<RunInfo> {
     assertName(flow, "flow");
     assertName(object, "object");
+    if (access !== undefined) assertJsonValue(access, "run access");
     this.#assertOpen();
     return this.#database.transaction(() => {
       const active = this.#database
@@ -415,9 +450,16 @@ class SqliteLogBackend implements LogBackend {
       const runId = randomUUID();
       const startedAt = this.#clock();
       this.#database.run(
-        "INSERT INTO runs (run_id, flow, object, started_at, ended_at, start_input_id) " +
-          "VALUES (?, ?, ?, ?, NULL, ?)",
-        [runId, flow, object, startedAt, startInputId],
+        "INSERT INTO runs (run_id, flow, object, started_at, ended_at, start_input_id, access) " +
+          "VALUES (?, ?, ?, ?, NULL, ?, ?)",
+        [
+          runId,
+          flow,
+          object,
+          startedAt,
+          startInputId,
+          access === undefined ? null : JSON.stringify(access),
+        ],
       );
       this.#notify({ runId, object });
       return {
@@ -428,6 +470,7 @@ class SqliteLogBackend implements LogBackend {
         startedAt,
         endedAt: null,
         lastSeq: 0,
+        ...(access === undefined ? {} : { access }),
         startInputId,
       };
     }).immediate();
@@ -537,7 +580,7 @@ class SqliteLogBackend implements LogBackend {
     const activeOnly = options.active === true ? 1 : 0;
     const rows = this.#database
       .query<RunRow, [number]>(
-        "SELECT r.run_id, r.flow, r.object, r.started_at, r.ended_at, r.start_input_id, " +
+        "SELECT r.run_id, r.flow, r.object, r.started_at, r.ended_at, r.start_input_id, r.access, " +
           "COALESCE(f.last_seq, 0) AS last_seq " +
           "FROM runs r LEFT JOIN (" +
           "  SELECT run_id, MAX(seq) AS last_seq FROM facts GROUP BY run_id" +
@@ -840,7 +883,7 @@ class SqliteLogBackend implements LogBackend {
     return (
       this.#database
         .query<RunRow, [string]>(
-          "SELECT r.run_id, r.flow, r.object, r.started_at, r.ended_at, r.start_input_id, " +
+          "SELECT r.run_id, r.flow, r.object, r.started_at, r.ended_at, r.start_input_id, r.access, " +
             "COALESCE((SELECT MAX(seq) FROM facts WHERE run_id = r.run_id), 0) AS last_seq " +
             "FROM runs r WHERE r.run_id = ?",
         )
@@ -849,6 +892,14 @@ class SqliteLogBackend implements LogBackend {
   }
 
   #toRunInfo(row: RunRow): RunInfo {
+    let access: JsonValue | undefined;
+    if (row.access !== null) {
+      try {
+        access = JSON.parse(row.access) as JsonValue;
+      } catch {
+        access = undefined;
+      }
+    }
     return {
       runId: row.run_id,
       flow: row.flow,
@@ -857,6 +908,7 @@ class SqliteLogBackend implements LogBackend {
       startedAt: row.started_at,
       endedAt: row.ended_at,
       lastSeq: row.last_seq,
+      ...(access === undefined ? {} : { access }),
       startInputId: row.start_input_id,
     };
   }

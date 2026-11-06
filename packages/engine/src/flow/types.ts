@@ -82,6 +82,8 @@ export interface StepType {
   readonly name: string;
   /** The result names the step can produce. */
   readonly results: readonly string[];
+  /** Access profile fields this step applies. */
+  readonly enforces?: readonly string[] | undefined;
   /** Kept for the plugin loader that lands later; not interpreted here. */
   readonly paramsSchema?: unknown;
 }

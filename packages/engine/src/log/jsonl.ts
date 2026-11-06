@@ -70,6 +70,7 @@ interface RunHeader {
   readonly flow: string;
   readonly object: string;
   readonly startedAt: number;
+  readonly access?: JsonValue | undefined;
   readonly startInputId?: string | null;
 }
 
@@ -336,6 +337,9 @@ function parseHeader(value: unknown, runId: string): RunHeader {
     flow: record.flow,
     object: record.object,
     startedAt: record.startedAt,
+    ...(record.access === undefined
+      ? {}
+      : { access: record.access as JsonValue }),
     startInputId:
       typeof record.startInputId === "string" ? record.startInputId : null,
   };
@@ -471,9 +475,11 @@ class JsonlLogBackend implements LogBackend {
     flow: string,
     object: string,
     startInputId: string | null = null,
+    access?: JsonValue,
   ): Promise<RunInfo> {
     assertName(flow, "flow");
     assertName(object, "object");
+    if (access !== undefined) assertJsonValue(access, "run access");
     return this.#withLock(() => {
       const active = this.#listRunsUnlocked(true).find(
         (run) => run.flow === flow && run.object === object,
@@ -489,6 +495,7 @@ class JsonlLogBackend implements LogBackend {
         flow,
         object,
         startedAt,
+        ...(access === undefined ? {} : { access }),
         startInputId,
       };
       if (!createExclusive(this.#runPath(runId), `${JSON.stringify(header)}\n`)) {
@@ -504,6 +511,7 @@ class JsonlLogBackend implements LogBackend {
         startedAt,
         endedAt: null,
         lastSeq: 0,
+        ...(access === undefined ? {} : { access }),
         startInputId,
       };
     });
@@ -976,6 +984,7 @@ class JsonlLogBackend implements LogBackend {
       startedAt: header.startedAt,
       endedAt: active ? null : this.#endedAt(endPath),
       lastSeq: this.#lastSeqUnlocked(path, runId),
+      ...(header.access === undefined ? {} : { access: header.access }),
       startInputId: header.startInputId ?? null,
     };
   }
@@ -1166,9 +1175,15 @@ function ensureSchema(directory: string): void {
     );
   }
   if (version < SCHEMA_VERSION) {
-    throw new SchemaVersionError(
-      `store ${directory} uses schema_version ${version}, but this build requires ${SCHEMA_VERSION}`,
-    );
+    // Version 2 added an optional `access` field to the run header; every
+    // version-1 record stays readable, so only the marker changes.
+    if (version !== 1) {
+      throw new SchemaVersionError(
+        `store ${directory} uses schema_version ${version}, but this build requires ${SCHEMA_VERSION}`,
+      );
+    }
+    writeFileSynced(path, `${JSON.stringify({ schema_version: SCHEMA_VERSION })}\n`);
+    fsyncDirectory(directory);
   }
 }
 

@@ -89,6 +89,8 @@ export interface StartInput extends InputBase {
   readonly kind: "start";
   /** Fixed JSON the flow was started with, read by its steps. */
   readonly params?: JsonValue | undefined;
+  /** The access profile the run starts with, opaque to the kernel. */
+  readonly access?: JsonValue | undefined;
   /** Hops of the event that started the run; 0 when no event started it. */
   readonly hops?: number;
   /** Where the run came from, in words the history view can print. */
@@ -167,6 +169,8 @@ export interface KernelState {
   readonly status: RunStatus;
   /** Fixed JSON the flow was started with, or null. */
   readonly params: JsonValue;
+  /** The access profile recorded at the start; null when there is none. */
+  readonly access: JsonValue;
   /** Hops of the event that started the run; 0 when no event started it. */
   readonly hops: number;
   readonly started: boolean;
@@ -194,6 +198,7 @@ export interface Decision {
 export interface RunStartedPayload {
   readonly flow: string;
   readonly params?: JsonValue | undefined;
+  readonly access?: JsonValue | undefined;
   readonly hops?: number;
   readonly trigger?: StartTrigger;
 }

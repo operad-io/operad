@@ -292,6 +292,7 @@ export function decide(
       const payload: RunStartedPayload = {
         flow: flow.name,
         ...(input.params === undefined ? {} : { params: input.params }),
+        ...(input.access === undefined ? {} : { access: input.access }),
         ...(input.hops === undefined ? {} : { hops: input.hops }),
         ...(input.trigger === undefined ? {} : { trigger: input.trigger }),
       };

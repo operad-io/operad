@@ -24,6 +24,7 @@ export function initialState(): KernelState {
   return {
     status: "idle",
     params: null,
+    access: null,
     hops: 0,
     started: false,
     step: null,
@@ -71,6 +72,7 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
         started: true,
         status: "running",
         params: payload.params ?? null,
+        access: payload.access ?? null,
         hops: payload.hops ?? 0,
         lastSeq,
       };

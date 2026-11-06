@@ -10,7 +10,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { expect, test } from "bun:test";
-import { openJsonlLogBackend, type LogChange } from "../src/index.ts";
+import { openJsonlLogBackend, SCHEMA_VERSION, type LogChange } from "../src/index.ts";
 import { runLogConformance, type LogConformanceFactory } from "./log-conformance.ts";
 
 const schemaPath = (directory: string): string => join(directory, "schema.json");
@@ -55,6 +55,22 @@ const factory: LogConformanceFactory = {
 runLogConformance(factory);
 
 const TEST_ROOT = resolve(import.meta.dir, "..", "..", "..", ".radian", "test-tmp");
+
+test("opens a schema_version 1 store and upgrades the marker", async () => {
+  mkdirSync(TEST_ROOT, { recursive: true });
+  const directory = join(TEST_ROOT, `jsonl-migrate-${randomUUID()}`);
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(schemaPath(directory), `${JSON.stringify({ schema_version: 1 })}\n`);
+  const backend = openJsonlLogBackend(directory);
+  try {
+    const run = await backend.startRun("flow", "object");
+    expect((await backend.runs()).map((item) => item.runId)).toEqual([run.runId]);
+    expect(factory.readSchemaVersion(directory)).toBe(SCHEMA_VERSION);
+  } finally {
+    await backend.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test("a subscription learns of a write when the watch never fires", async () => {
   mkdirSync(TEST_ROOT, { recursive: true });

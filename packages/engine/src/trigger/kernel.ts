@@ -204,6 +204,7 @@ export class Kernel {
           flow: request.flow,
           object: request.object,
           ...(request.params === undefined ? {} : { params: request.params }),
+          ...(request.access === undefined ? {} : { access: request.access }),
         });
       }
       return this.startResultFor(inputId, input);
@@ -217,6 +218,7 @@ export class Kernel {
         request.params,
         request.object,
         undefined,
+        request.access,
       );
       return { kind: "started", runId: realized.runId, duplicate: false };
     }
@@ -248,6 +250,7 @@ export class Kernel {
         flow: request.flow,
         object: request.object,
         ...(request.params === undefined ? {} : { params: request.params }),
+        ...(request.access === undefined ? {} : { access: request.access }),
       });
     }
     return this.startResultFor(inputId, input, recorded.duplicate);
@@ -927,12 +930,14 @@ export class Kernel {
           return { kind: "recorded", duplicate };
         }
         const params = payloadOf(claimed).params;
+        const access = payloadOf(claimed).access;
         const realized = await this.realizeStart(
           inputId,
           flow,
           params,
           object,
           input,
+          access,
         );
         return {
           kind: realized.kind === "active" ? "active" : "started",
@@ -973,11 +978,12 @@ export class Kernel {
     params: JsonValue | undefined,
     object: string,
     input: InputRecord | undefined,
+    access?: JsonValue,
   ): Promise<{ readonly kind: "started" | "active"; readonly runId: string }> {
     if (inputId !== undefined) {
       const existing = await this.startedRun(inputId);
       if (existing !== undefined) {
-        this.ensureStartFiles(existing, inputId, params, object, input);
+        this.ensureStartFiles(existing, inputId, params, object, input, access);
         return { kind: "started", runId: existing.runId };
       }
     }
@@ -996,6 +1002,7 @@ export class Kernel {
     const start: StartInput = {
       kind: "start",
       ...(params === undefined ? {} : { params }),
+      ...(access === undefined ? {} : { access }),
       hops: view?.hops ?? 0,
       ...(event === undefined
         ? {}
@@ -1023,7 +1030,7 @@ export class Kernel {
         );
         if (active !== undefined) {
           if (inputId !== undefined && active.startInputId === inputId) {
-            this.ensureStartFiles(active, inputId, params, object, input);
+            this.ensureStartFiles(active, inputId, params, object, input, access);
             return { kind: "started", runId: active.runId };
           }
           if (event !== undefined && inputId !== undefined) {
@@ -1062,6 +1069,7 @@ export class Kernel {
     params: JsonValue | undefined,
     object: string,
     input: InputRecord | undefined,
+    access?: JsonValue,
   ): void {
     if (this.store.readRunStart(run.runId) !== undefined) return;
     if (this.adoptStart(run)) return;
@@ -1069,6 +1077,7 @@ export class Kernel {
     const start: StartInput = {
       kind: "start",
       ...(params === undefined ? {} : { params }),
+      ...(access === undefined ? {} : { access }),
       hops: view?.hops ?? 0,
       ...(view === undefined
         ? {}

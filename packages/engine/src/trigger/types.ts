@@ -54,6 +54,8 @@ export interface StartRequest {
   readonly trigger?: TriggerEvent;
   /** Internal: an event already recorded through the log's input store. */
   readonly inputId?: string;
+  /** The access profile the run starts with, opaque to the kernel. */
+  readonly access?: JsonValue;
 }
 
 /** What starting one run did. */

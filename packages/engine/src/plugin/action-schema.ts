@@ -17,6 +17,7 @@ const KEYWORDS = new Set([
   "maxLength",
   "items",
   "additionalProperties",
+  "default",
   "description",
   "role",
 ]);
@@ -153,6 +154,7 @@ function normalizeSchema(value: unknown, at: string): ActionArgSchema {
     ...(required === undefined ? {} : { required }),
     ...(items === undefined ? {} : { items }),
     ...(additional === false ? { additionalProperties: false as const } : {}),
+    ...(value.default === undefined ? {} : { default: value.default }),
     ...(description === undefined ? {} : { description }),
     ...(role === "note" ? { role } : {}),
   };
@@ -272,6 +274,19 @@ function checkObject(
     }
     checkValue(property, item, label, fieldName(field, name));
   }
+}
+
+/**
+ * Validates one value against a normalized schema. The label and field prefix
+ * the message, so a settings section names its plugin and its field.
+ */
+export function validateSchemaValue(
+  schema: ActionArgSchema,
+  value: unknown,
+  label: string,
+  field: string,
+): void {
+  checkValue(schema, value, label, field);
 }
 
 /**
