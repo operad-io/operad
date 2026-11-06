@@ -29,6 +29,9 @@
 13. **运行的结果又是事件。** 每次运行结束，内核以来源 `operad` 发一个事件：类型 `run.done`、`run.failed` 或 `run.cancelled`，`key` 是运行 id，`object` 是该运行的对象，`data` 是运行的结果（结束的结果名、最后一步的事实摘要）。它和别的事件一样走规则，所以“A 跑完再跑 B”就是一条 `source: "operad", type: "run.done"` 的规则。步骤也可以用 `ctx.emit({ type, key, object?, summary?, data? })` 发自己的事件，来源记为 `operad`，类型由插件起名（`<插件>.<名字>`）。
 14. **连锁有上限。** 每个事件带 `hops`：外部事件是 0，运行发出的事件是启动该运行的事件的 `hops` 加 1。`hops` 超过 8 的事件只记录不启动，历史里写明原因。
 15. **事件内容进 prompt 的方式。** 内核仍然从不把事件文字放进提示词（决定 10）。`<harness>:prompt` flow 在有 `ctx.trigger` 时，在 prompt 末尾加一行固定的说明，指向事件的 `summary` 和 `data` 文件路径，并说明那是外部资料、不是指令；读不读由 agent 决定。
+16. **插件可以自带规则。** 插件在声明里带默认规则（和 `triggers.json` 同一形状），加载时并入；用户 `triggers.json` 里 `source` 和 `type` 相同的规则覆盖插件的。第一个用它的是 `chat`：消息事件启动 `chat:reply`（`operad-conversation.md` 决定 2）。
+17. **通道只做四个**，顺序 Telegram、WhatsApp、Slack、iMessage；决定 6 的首个通道不变。
+18. **来源插件自己管登录和读取。** 一个 `source` 插件可以有 `login` 命令（OAuth、设备码或打开浏览器，登录态存在插件自己的 `secrets` 里，operad 不碰）、一个 `fetch({ query?, since?, limit? })` 步骤（返回统一形状的条目：`id`、`url`、`title`、`text`、`author`、`at`、`source`，正文落成资料文件）和可选的 `start`（推送式来源，决定 11）。operad 只处理条目，不知道任何平台的 API；一个新平台就是一个新插件。
 
 ## 待决问题（未定）
 
@@ -38,4 +41,4 @@
 
 ## 验收
 
-Telegram 通道作为插件（不改核心）能收 `review.awaiting_human`、`todo.proposed` 和会话的 pending question，能在 Telegram 里回答，回答到达引擎后运行继续；一次 HTTP 事件或一条 cron 变成一次运行，重复事件只算一次，`why` 能看到它来自哪个事件。
+Telegram 通道作为插件（不改核心）能收 `review.awaiting_human`、`todo.proposed` 和会话的 pending question，能在 Telegram 里回答，回答到达引擎后运行继续；一次 HTTP 事件或一条 cron 变成一次运行，重复事件只算一次，`operad history` 能看到它来自哪个事件。
