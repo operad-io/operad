@@ -31,6 +31,7 @@ import {
 } from "./facts.ts";
 import { assertJsonValue } from "./json-value.ts";
 import { SCHEMA_VERSION } from "./schema.ts";
+import { resolveSubscriptionWatch, type SubscriptionWatch } from "./poll.ts";
 import type {
   AppendResult,
   Fact,
@@ -39,6 +40,7 @@ import type {
   LogBackend,
   LogBackendFactory,
   LogBackendOptions,
+  LogChange,
   NewFact,
   RecordInputResult,
   RunInfo,
@@ -102,8 +104,19 @@ interface FactRow {
   readonly time: number;
 }
 
+/** One run as a watcher last saw it, to tell a real change from a read. */
+interface RunSnapshot {
+  readonly object: string;
+  readonly lastSeq: number;
+  readonly ended: boolean;
+}
+
 interface VersionRow {
   readonly version: number;
+}
+
+interface DataVersionRow {
+  readonly data_version: number;
 }
 
 function openFailure(path: string, error: unknown): LogBackendError {
@@ -218,11 +231,25 @@ function ensureSchema(database: Database, path: string): void {
 class SqliteLogBackend implements LogBackend {
   readonly #database: Database;
   readonly #clock: () => number;
+  readonly #path: string;
+  readonly #subscriptionWatch: SubscriptionWatch;
+  readonly #listeners = new Set<(change: LogChange) => void>();
+  #stopWatch: (() => void) | undefined;
+  #stopPoll: (() => void) | undefined;
+  #dataVersion: number | undefined;
+  #snapshot: Map<string, RunSnapshot> | undefined;
   #closed = false;
 
-  constructor(database: Database, clock: () => number) {
+  constructor(
+    database: Database,
+    clock: () => number,
+    path: string,
+    subscriptionWatch: SubscriptionWatch,
+  ) {
     this.#database = database;
     this.#clock = clock;
+    this.#path = path;
+    this.#subscriptionWatch = subscriptionWatch;
   }
 
   async startRun(flow: string, object: string): Promise<RunInfo> {
@@ -243,6 +270,7 @@ class SqliteLogBackend implements LogBackend {
         "INSERT INTO runs (run_id, flow, object, started_at, ended_at) VALUES (?, ?, ?, ?, NULL)",
         [runId, flow, object, startedAt],
       );
+      this.#notify({ runId, object });
       return {
         runId,
         flow,
@@ -266,6 +294,7 @@ class SqliteLogBackend implements LogBackend {
         this.#clock(),
         runId,
       ]);
+      this.#notify({ runId, object: row.object });
     }).immediate();
   }
 
@@ -341,6 +370,7 @@ class SqliteLogBackend implements LogBackend {
       } finally {
         insert.finalize();
       }
+      this.#notify({ runId, object: row.object });
       return { lastSeq: row.last_seq + stored.length, facts: stored };
     }).immediate();
   }
@@ -370,7 +400,113 @@ class SqliteLogBackend implements LogBackend {
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
+    this.#stopNotifications();
+    this.#listeners.clear();
     this.#database.close();
+  }
+
+  /** Tells a listener in this process when a run changes. */
+  subscribe(listener: (change: LogChange) => void): () => void {
+    this.#listeners.add(listener);
+    if (this.#stopWatch === undefined) {
+      // Read the version before the snapshot: a write between the two is
+      // already in the snapshot and needs no event.
+      this.#dataVersion = this.#readDataVersion();
+      this.#snapshot = this.#takeSnapshot();
+      this.#stopWatch = this.#subscriptionWatch.watch(dirname(this.#path), () => {
+        this.#notifyExternal();
+      });
+      this.#stopPoll = this.#subscriptionWatch.repeat(this.#subscriptionWatch.pollMs, () => {
+        this.#poll();
+      });
+    }
+    return () => {
+      this.#listeners.delete(listener);
+      if (this.#listeners.size === 0) this.#stopNotifications();
+    };
+  }
+
+  #stopNotifications(): void {
+    this.#stopWatch?.();
+    this.#stopWatch = undefined;
+    this.#stopPoll?.();
+    this.#stopPoll = undefined;
+    this.#snapshot = undefined;
+    this.#dataVersion = undefined;
+  }
+
+  #notify(change: LogChange): void {
+    for (const listener of this.#listeners) listener(change);
+  }
+
+  /**
+   * The fallback check. `PRAGMA data_version` changes whenever another
+   * connection commits, including a commit the directory watch never reported.
+   */
+  #poll(): void {
+    if (this.#closed || this.#listeners.size === 0) return;
+    let version: number;
+    try {
+      version = this.#readDataVersion();
+    } catch {
+      return;
+    }
+    if (version === this.#dataVersion) return;
+    this.#dataVersion = version;
+    this.#notifyExternal();
+  }
+
+  #readDataVersion(): number {
+    return (
+      this.#database
+        .query<DataVersionRow, []>("PRAGMA data_version")
+        .get()?.data_version ?? 0
+    );
+  }
+
+  /** Reports runs another connection changed since the last event. */
+  #notifyExternal(): void {
+    if (this.#closed) return;
+    let next: Map<string, RunSnapshot>;
+    try {
+      next = this.#takeSnapshot();
+    } catch {
+      return;
+    }
+    const previous = this.#snapshot;
+    this.#snapshot = next;
+    if (previous === undefined) return;
+    for (const [runId, run] of next) {
+      const before = previous.get(runId);
+      if (
+        before !== undefined &&
+        before.object === run.object &&
+        before.lastSeq === run.lastSeq &&
+        before.ended === run.ended
+      ) {
+        continue;
+      }
+      this.#notify({ runId, object: run.object });
+    }
+  }
+
+  #takeSnapshot(): Map<string, RunSnapshot> {
+    const rows = this.#database
+      .query<RunRow, []>(
+        "SELECT r.run_id, r.flow, r.object, r.started_at, r.ended_at, " +
+          "COALESCE((SELECT MAX(seq) FROM facts WHERE run_id = r.run_id), 0) AS last_seq " +
+          "FROM runs r",
+      )
+      .all();
+    const snapshot = new Map<string, RunSnapshot>();
+    for (const row of rows) {
+      snapshot.set(row.run_id, {
+        object: row.object,
+        lastSeq: row.last_seq,
+        ended: row.ended_at !== null,
+      });
+    }
+    return snapshot;
   }
 
   async *#read(runId: string): AsyncGenerator<Fact> {
@@ -460,7 +596,12 @@ export function openSqliteLogBackend(
     throw openFailure(path, error);
   }
 
-  return new SqliteLogBackend(database, options.clock ?? Date.now);
+  return new SqliteLogBackend(
+    database,
+    options.clock ?? Date.now,
+    path,
+    resolveSubscriptionWatch(options),
+  );
 }
 
 export const sqliteBackend: LogBackendFactory = {

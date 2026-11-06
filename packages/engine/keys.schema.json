@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://operad.io/schemas/keys.schema.json",
+  "title": "operad key bindings",
+  "description": "The key overrides in $OPERAD_HOME/keys.json: each key names an action as <plugin>:<action>.",
+  "type": "object",
+  "propertyNames": { "minLength": 1 },
+  "additionalProperties": {
+    "type": "string",
+    "pattern": "^[^\\s:]+:[^\\s:]+$"
+  }
+}

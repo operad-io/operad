@@ -1,13 +1,16 @@
 import {
   appendFileSync,
   existsSync,
+  mkdirSync,
   readFileSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
-import { openJsonlLogBackend } from "../src/index.ts";
+import { randomUUID } from "node:crypto";
+import { join, resolve } from "node:path";
+import { expect, test } from "bun:test";
+import { openJsonlLogBackend, type LogChange } from "../src/index.ts";
 import { runLogConformance, type LogConformanceFactory } from "./log-conformance.ts";
 
 const schemaPath = (directory: string): string => join(directory, "schema.json");
@@ -50,3 +53,45 @@ const factory: LogConformanceFactory = {
 };
 
 runLogConformance(factory);
+
+const TEST_ROOT = resolve(import.meta.dir, "..", "..", "..", ".radian", "test-tmp");
+
+test("a subscription learns of a write when the watch never fires", async () => {
+  mkdirSync(TEST_ROOT, { recursive: true });
+  const directory = join(TEST_ROOT, `jsonl-poll-${randomUUID()}`);
+  mkdirSync(directory, { recursive: true });
+  let tick: (() => void) | undefined;
+  const reader = openJsonlLogBackend(directory, {
+    clock: () => 1_000,
+    watch: () => () => undefined,
+    repeat: (ms, callback) => {
+      expect(ms).toBe(500);
+      tick = callback;
+      return () => undefined;
+    },
+  });
+  const writer = openJsonlLogBackend(directory);
+  try {
+    const changes: LogChange[] = [];
+    const subscribe = reader.subscribe;
+    if (subscribe === undefined) throw new Error("the jsonl log does not subscribe");
+    const unsubscribe = subscribe.call(reader, (change) => changes.push(change));
+
+    const run = await writer.startRun("flow", "object");
+    await writer.append(run.runId, 0, [
+      { kind: "run_started", payload: { flow: "flow" }, cause: "test" },
+    ]);
+    // The stubbed watch never fires, so nothing has been reported yet.
+    expect(changes).toEqual([]);
+
+    if (tick === undefined) throw new Error("the poll did not start");
+    tick();
+    expect(changes).toEqual([{ runId: run.runId, object: "object" }]);
+
+    unsubscribe();
+  } finally {
+    await reader.close();
+    await writer.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

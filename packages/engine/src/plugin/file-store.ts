@@ -2,9 +2,11 @@
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { watchDirectory } from "../watch.ts";
 import type {
   FactInput,
   ObjectData,
+  ObjectRef,
   PluginFact,
   PluginStore,
   StoredObject,
@@ -62,8 +64,11 @@ export class FilePluginStore implements PluginStore {
   private readonly factsPath: string;
   private readonly objects = new Map<string, StoredObject>();
   private readonly entries: PluginFact[] = [];
+  private readonly listeners = new Set<(object: ObjectRef) => void>();
   /** Bytes of the facts file already read; a torn final line stays unread. */
   private offset = 0;
+  /** Stops the directory watcher that reports another writer's facts. */
+  private stopWatch: (() => void) | undefined;
 
   constructor(options: FilePluginStoreOptions) {
     this.root = options.root;
@@ -133,6 +138,24 @@ export class FilePluginStore implements PluginStore {
     return this.entries;
   }
 
+  /** Tells a listener when an object gains a fact, including another writer's. */
+  subscribe(listener: (object: ObjectRef) => void): () => void {
+    this.listeners.add(listener);
+    if (this.stopWatch === undefined) {
+      this.stopWatch = watchDirectory(this.root, (filename) => {
+        if (filename !== null && filename !== "facts.jsonl") return;
+        this.refresh();
+      });
+    }
+    return () => {
+      this.listeners.delete(listener);
+      if (this.listeners.size === 0) {
+        this.stopWatch?.();
+        this.stopWatch = undefined;
+      }
+    };
+  }
+
   /**
    * Reads the lines another process appended since the last read. A worker
    * step writes its facts here, so the run's process has to see them too.
@@ -173,6 +196,7 @@ export class FilePluginStore implements PluginStore {
       cause: fact.cause,
       at: fact.at,
     });
+    for (const listener of this.listeners) listener(object);
   }
 
   private key(type: string, id: string): string {

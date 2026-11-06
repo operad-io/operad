@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { messageOf, PluginError } from "./errors.ts";
 import { defaultOperadHome } from "./home.ts";
+import { keysPathFor, readKeysFile } from "./keys.ts";
 import { PluginRegistry } from "./registry.ts";
 import type { PluginRegistryOptions } from "./registry.ts";
 
@@ -11,6 +12,8 @@ import type { PluginRegistryOptions } from "./registry.ts";
 export interface LoadPluginRegistryOptions extends PluginRegistryOptions {
   /** Defaults to `<home>/config.json`. */
   readonly configPath?: string | undefined;
+  /** Defaults to `<home>/keys.json`. */
+  readonly keysPath?: string | undefined;
 }
 
 let loadCount = 0;
@@ -141,6 +144,7 @@ export async function loadPluginRegistry(
   const home = options.home ?? defaultOperadHome();
   const configPath = options.configPath ?? join(home, "config.json");
   const specifiers = await readPluginSpecifiers(configPath);
+  const keys = await readKeysFile(options.keysPath ?? keysPathFor(home));
   const definitions: unknown[] = [];
   for (const specifier of specifiers) {
     definitions.push(await loadPlugin(specifier, home));
@@ -148,6 +152,7 @@ export async function loadPluginRegistry(
   return new PluginRegistry(definitions, {
     ...options,
     home,
+    keys: options.keys ?? keys,
     sources: specifiers,
   });
 }

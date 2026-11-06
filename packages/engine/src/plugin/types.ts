@@ -21,6 +21,54 @@ export type MaybePromise<T> = T | Promise<T>;
 /** The data of an object: JSON-shaped and owned by the plugin that declares it. */
 export type ObjectData = Readonly<Record<string, unknown>>;
 
+/** One line of a list: what the plugin shows for an object. */
+export interface ObjectRow {
+  readonly id: string;
+  readonly title: string;
+  readonly state: string;
+  /** A short tail for the row, such as a cost or a duration. */
+  readonly note?: string | undefined;
+}
+
+/** One section a detail page offers. `live` means its content still grows. */
+export interface ViewSection {
+  readonly id: string;
+  readonly title: string;
+  readonly live?: boolean | undefined;
+}
+
+/** Where a section read starts; the plugin owns the meaning of the value. */
+export interface SectionReadOptions {
+  readonly cursor?: string | undefined;
+}
+
+/** The Markdown of one section, and where to continue when it is paged. */
+export interface SectionContent {
+  readonly markdown: string;
+  readonly next?: string | undefined;
+}
+
+/** The context a `load` call receives. */
+export interface ViewContext extends PluginBaseContext {}
+
+/** How one object type appears to every client. */
+export interface ObjectViews {
+  /** Must be pure and fast: it reads the stored object and nothing else. */
+  readonly row: (object: StoredObject) => ObjectRow;
+  /** The section directory only; it reads no section content. */
+  readonly sections: (object: StoredObject) => readonly ViewSection[];
+  /** Called when a person opens a section; it may be slow and paged. */
+  readonly load: (
+    ctx: ViewContext,
+    object: StoredObject,
+    sectionId: string,
+    options: SectionReadOptions,
+  ) => MaybePromise<SectionContent>;
+}
+
+/** A key binding a plugin brings as its default. */
+export type KeyBindings = Readonly<Record<string, string>>;
+
 /** Names an object without carrying its state. */
 export interface ObjectRef {
   readonly type: string;
@@ -67,6 +115,15 @@ export interface FactInput {
 export interface ObjectStore {
   /** The directory that holds this store's files, such as logs. */
   readonly root: string;
+
+  /**
+   * Tells a listener whenever an object gains a fact. Optional: a store that
+   * cannot watch simply returns a no-op unsubscribe.
+   */
+  subscribe?(listener: (object: ObjectRef) => void): () => void;
+
+  /** Every fact in append order, when this store keeps them in memory. */
+  facts?(): readonly PluginFact[];
 
   /** Stores a new version of an object and appends the change as a fact. */
   put(
@@ -158,10 +215,17 @@ export interface ObjectTypeDefinition {
   readonly schema?: unknown;
 }
 
+/** Whether an action asks the person for a note. */
+export type ActionNote = boolean | { readonly required: boolean };
+
 /** An action a plugin offers on an object type. */
 export interface ActionTypeDefinition {
   readonly name: string;
   readonly on: string;
+  /** The action needs a note from the person (`true` and `{ required: true }`). */
+  readonly note?: ActionNote | undefined;
+  /** The action asks for confirmation before it runs. */
+  readonly confirm?: boolean | undefined;
   readonly when: (state: ObjectData) => MaybePromise<boolean>;
   readonly run: (ctx: ActionContext, args: unknown) => MaybePromise<void>;
 }
@@ -170,6 +234,8 @@ export interface ActionTypeDefinition {
 export interface ActionContext extends PluginBaseContext {
   readonly runId: string | undefined;
   readonly object: RunObject;
+  /** The note the person wrote, when the action asks for one. */
+  readonly note?: string | undefined;
   /** Answers the run's current person wait; set when the action runs for a run. */
   readonly answer?: Answer | undefined;
 }
@@ -180,6 +246,7 @@ export interface ActionRunOptions {
   readonly runId?: string | undefined;
   readonly cwd?: string | undefined;
   readonly signal?: AbortSignal | undefined;
+  readonly note?: string | undefined;
 }
 
 /** A CLI verb a plugin declares. */
@@ -244,6 +311,10 @@ export interface PluginShape {
   readonly steps?: readonly StepTypeDefinition[] | undefined;
   readonly flows?: readonly FlowDefinition[] | undefined;
   readonly commands?: readonly CommandDefinition[] | undefined;
+  /** How each object type appears in a list and a detail page. */
+  readonly views?: Readonly<Record<string, ObjectViews>> | undefined;
+  /** Default key bindings, keyed by key, valued as `<plugin>:<action>`. */
+  readonly keys?: KeyBindings | undefined;
   readonly onTick?: ((ctx: TickContext) => MaybePromise<void>) | undefined;
   /** Runs when `operad init` checks the plugin; a string is the check's note. */
   readonly check?: ((ctx: PluginBaseContext) => MaybePromise<string | void>) | undefined;

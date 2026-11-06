@@ -36,6 +36,7 @@ import {
 import { withFileLock } from "./file-lock.ts";
 import { assertJsonValue } from "./json-value.ts";
 import { SCHEMA_VERSION } from "./schema.ts";
+import { resolveSubscriptionWatch, type SubscriptionWatch } from "./poll.ts";
 import type {
   AppendResult,
   Fact,
@@ -43,6 +44,7 @@ import type {
   LogBackend,
   LogBackendFactory,
   LogBackendOptions,
+  LogChange,
   NewFact,
   RecordInputResult,
   RunInfo,
@@ -348,16 +350,22 @@ class JsonlLogBackend implements LogBackend {
   readonly #inputsPath: string;
   readonly #lockPath: string;
   readonly #clock: () => number;
+  readonly #subscriptionWatch: SubscriptionWatch;
   readonly #inputIds = new Set<string>();
   #inputBytes = 0;
   #closed = false;
+  #stopWatch: (() => void) | undefined;
+  #stopPoll: (() => void) | undefined;
+  #snapshot: Map<string, { readonly size: number; readonly ended: boolean }> | undefined;
+  readonly #listeners = new Set<(change: LogChange) => void>();
 
-  constructor(directory: string, clock: () => number) {
+  constructor(directory: string, clock: () => number, subscriptionWatch: SubscriptionWatch) {
     this.#directory = directory;
     this.#runsDirectory = join(directory, RUNS_DIR);
     this.#inputsPath = join(directory, INPUTS_FILE);
     this.#lockPath = join(directory, LOCK_FILE);
     this.#clock = clock;
+    this.#subscriptionWatch = subscriptionWatch;
   }
 
   async startRun(flow: string, object: string): Promise<RunInfo> {
@@ -383,6 +391,7 @@ class JsonlLogBackend implements LogBackend {
         throw new Error(`run id ${runId} already exists`);
       }
       fsyncDirectory(this.#runsDirectory);
+      this.#notify({ runId, object });
       return {
         runId,
         flow,
@@ -402,9 +411,11 @@ class JsonlLogBackend implements LogBackend {
       if (!existsSync(path)) throw new RunNotFoundError(runId);
       const endPath = this.#endPath(runId);
       if (existsSync(endPath)) return;
+      const info = this.#runInfoUnlocked(runId);
       const marker: EndMarker = { endedAt: this.#clock() };
       writeFileSynced(endPath, `${JSON.stringify(marker)}\n`);
       fsyncDirectory(this.#runsDirectory);
+      this.#notify({ runId, object: info.object });
     });
   }
 
@@ -478,6 +489,7 @@ class JsonlLogBackend implements LogBackend {
       }));
       const line = `${JSON.stringify({ type: "batch", facts: stored })}\n`;
       appendLineSynced(path, line);
+      this.#notify({ runId, object: info.object });
       return { lastSeq: lastSeq + stored.length, facts: stored };
     });
   }
@@ -493,7 +505,88 @@ class JsonlLogBackend implements LogBackend {
 
   async close(): Promise<void> {
     this.#closed = true;
+    this.#stopNotifications();
     this.#inputIds.clear();
+    this.#listeners.clear();
+  }
+
+  /** Tells a listener in this process when a run changes. */
+  subscribe(listener: (change: LogChange) => void): () => void {
+    this.#listeners.add(listener);
+    if (this.#stopWatch === undefined) {
+      this.#snapshot = this.#takeRunSnapshot();
+      this.#stopWatch = this.#subscriptionWatch.watch(this.#runsDirectory, () => {
+        this.#notifyExternal();
+      });
+      // The watch is the fast path. This timer also stats the run files, so a
+      // change the platform does not report still reaches a listener.
+      this.#stopPoll = this.#subscriptionWatch.repeat(this.#subscriptionWatch.pollMs, () => {
+        this.#notifyExternal();
+      });
+    }
+    return () => {
+      this.#listeners.delete(listener);
+      if (this.#listeners.size === 0) this.#stopNotifications();
+    };
+  }
+
+  #stopNotifications(): void {
+    this.#stopWatch?.();
+    this.#stopWatch = undefined;
+    this.#stopPoll?.();
+    this.#stopPoll = undefined;
+    this.#snapshot = undefined;
+  }
+
+  #notify(change: LogChange): void {
+    for (const listener of this.#listeners) listener(change);
+  }
+
+  /**
+   * Reports files another process changed. The directory is flat, so one scan
+   * after any event finds a new run, an appended batch and an end marker,
+   * whatever name the platform reports for the change.
+   */
+  #notifyExternal(): void {
+    if (this.#closed) return;
+    let next: Map<string, { readonly size: number; readonly ended: boolean }>;
+    try {
+      next = this.#takeRunSnapshot();
+    } catch {
+      return;
+    }
+    const previous = this.#snapshot;
+    this.#snapshot = next;
+    if (previous === undefined) return;
+    for (const [runId, run] of next) {
+      const before = previous.get(runId);
+      if (before !== undefined && before.size === run.size && before.ended === run.ended) {
+        continue;
+      }
+      try {
+        const info = this.#runInfoUnlocked(runId);
+        this.#notify({ runId, object: info.object });
+      } catch {
+        // Still being written; the next event or a read picks it up.
+      }
+    }
+  }
+
+  #takeRunSnapshot(): Map<string, { readonly size: number; readonly ended: boolean }> {
+    const snapshot = new Map<string, { readonly size: number; readonly ended: boolean }>();
+    for (const name of readdirSync(this.#runsDirectory)) {
+      if (!name.endsWith(".jsonl")) continue;
+      const runId = name.slice(0, -6);
+      try {
+        snapshot.set(runId, {
+          size: statSync(join(this.#runsDirectory, name)).size,
+          ended: existsSync(this.#endPath(runId)),
+        });
+      } catch {
+        // Removed between the directory read and the stat.
+      }
+    }
+    return snapshot;
   }
 
   async *#read(runId: string): AsyncGenerator<Fact> {
@@ -750,7 +843,11 @@ export function openJsonlLogBackend(
   const lockPath = join(directory, LOCK_FILE);
   closeSync(openSync(lockPath, "a"));
 
-  const backend = new JsonlLogBackend(directory, options.clock ?? Date.now);
+  const backend = new JsonlLogBackend(
+    directory,
+    options.clock ?? Date.now,
+    resolveSubscriptionWatch(options),
+  );
   backend.recover();
   return backend;
 }
