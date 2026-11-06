@@ -1,3 +1,4 @@
+import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -107,6 +108,15 @@ function definitionName(value: unknown): string | undefined {
   return undefined;
 }
 
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Imports every enabled plugin in the config. A module that fails to import is
  * reported and skipped, so one broken plugin does not keep the rest from
@@ -116,7 +126,11 @@ export async function loadConfiguredPlugins(
   options: LoadPluginRegistryOptions = {},
 ): Promise<ConfiguredPlugins> {
   const home = options.home ?? defaultOperadHome();
-  const config = await readConfig(home, options.configPath ?? join(home, "config.json"));
+  const configFile = options.configPath ?? join(home, "config.json");
+  if (!(await fileExists(configFile))) {
+    return { entries: [], loaded: [], disabled: [], errors: [] };
+  }
+  const config = await readConfig(home, configFile);
   const loaded: DefinitelyLoadedPlugin[] = [];
   const disabled: string[] = [];
   const errors: string[] = [];

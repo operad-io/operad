@@ -28,14 +28,15 @@ async function homeWithConfig(config: unknown): Promise<{
 }
 
 describe("loadPluginRegistry", () => {
-  test("loads the default plugins when the config file is missing", async () => {
+  test("loads nothing when the config file is missing", async () => {
     const root = await tempRoot();
     const registry = await loadPluginRegistry({
       home: join(root, "absent"),
       storeRoot: join(root, "store"),
       onLog: () => undefined,
     });
-    expect(registry.names()).toEqual(["shell"]);
+    expect(registry.names()).toEqual([]);
+    expect(registry.stepTypes()).toEqual([]);
   });
 
   test("loads nothing when the config has no plugins key", async () => {
