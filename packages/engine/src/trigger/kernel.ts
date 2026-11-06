@@ -793,6 +793,11 @@ export class Kernel {
   ): Promise<void> {
     if (inputId === undefined) return;
     for (let attempt = 0; attempt < 8; attempt += 1) {
+      // Read the sequence first, then look for the fact: a write that lands
+      // between the two is seen by the scan, and a write after it makes the
+      // append conflict, so two processes cannot both add the fact.
+      const state = await readState(this.log, runId);
+      if (state.status === "ended") return;
       let found = false;
       for await (const fact of this.log.read(runId)) {
         if (fact.cause === inputId && fact.kind === kind) {
@@ -801,8 +806,6 @@ export class Kernel {
         }
       }
       if (found) return;
-      const state = await readState(this.log, runId);
-      if (state.status === "ended") return;
       try {
         await this.log.append(runId, state.lastSeq, [
           { kind, payload, cause: inputId },
