@@ -64,6 +64,7 @@ interface RunHeader {
   readonly flow: string;
   readonly object: string;
   readonly startedAt: number;
+  readonly access?: JsonValue | undefined;
 }
 
 interface StoredInput {
@@ -288,6 +289,9 @@ function parseHeader(value: unknown, runId: string): RunHeader {
     flow: record.flow,
     object: record.object,
     startedAt: record.startedAt,
+    ...(record.access === undefined
+      ? {}
+      : { access: record.access as JsonValue }),
   };
 }
 
@@ -368,9 +372,10 @@ class JsonlLogBackend implements LogBackend {
     this.#subscriptionWatch = subscriptionWatch;
   }
 
-  async startRun(flow: string, object: string): Promise<RunInfo> {
+  async startRun(flow: string, object: string, access?: JsonValue): Promise<RunInfo> {
     assertName(flow, "flow");
     assertName(object, "object");
+    if (access !== undefined) assertJsonValue(access, "run access");
     return this.#withLock(() => {
       const active = this.#listRunsUnlocked(true).find(
         (run) => run.flow === flow && run.object === object,
@@ -386,6 +391,7 @@ class JsonlLogBackend implements LogBackend {
         flow,
         object,
         startedAt,
+        ...(access === undefined ? {} : { access }),
       };
       if (!createExclusive(this.#runPath(runId), `${JSON.stringify(header)}\n`)) {
         throw new Error(`run id ${runId} already exists`);
@@ -400,6 +406,7 @@ class JsonlLogBackend implements LogBackend {
         startedAt,
         endedAt: null,
         lastSeq: 0,
+        ...(access === undefined ? {} : { access }),
       };
     });
   }
@@ -693,6 +700,7 @@ class JsonlLogBackend implements LogBackend {
       startedAt: header.startedAt,
       endedAt: active ? null : this.#endedAt(endPath),
       lastSeq: this.#lastSeqUnlocked(path, runId),
+      ...(header.access === undefined ? {} : { access: header.access }),
     };
   }
 

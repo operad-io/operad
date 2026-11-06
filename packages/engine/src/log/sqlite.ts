@@ -63,7 +63,8 @@ const SCHEMA = `
     flow       TEXT NOT NULL,
     object     TEXT NOT NULL,
     started_at INTEGER NOT NULL,
-    ended_at   INTEGER
+    ended_at   INTEGER,
+    access     TEXT
   );
   CREATE UNIQUE INDEX IF NOT EXISTS runs_one_active
     ON runs (flow, object) WHERE ended_at IS NULL;
@@ -94,6 +95,7 @@ interface RunRow {
   readonly started_at: number;
   readonly ended_at: number | null;
   readonly last_seq: number;
+  readonly access: string | null;
 }
 
 interface FactRow {
@@ -252,9 +254,10 @@ class SqliteLogBackend implements LogBackend {
     this.#subscriptionWatch = subscriptionWatch;
   }
 
-  async startRun(flow: string, object: string): Promise<RunInfo> {
+  async startRun(flow: string, object: string, access?: JsonValue): Promise<RunInfo> {
     assertName(flow, "flow");
     assertName(object, "object");
+    if (access !== undefined) assertJsonValue(access, "run access");
     this.#assertOpen();
     return this.#database.transaction(() => {
       const active = this.#database
@@ -267,8 +270,8 @@ class SqliteLogBackend implements LogBackend {
       const runId = randomUUID();
       const startedAt = this.#clock();
       this.#database.run(
-        "INSERT INTO runs (run_id, flow, object, started_at, ended_at) VALUES (?, ?, ?, ?, NULL)",
-        [runId, flow, object, startedAt],
+        "INSERT INTO runs (run_id, flow, object, started_at, ended_at, access) VALUES (?, ?, ?, ?, NULL, ?)",
+        [runId, flow, object, startedAt, access === undefined ? null : JSON.stringify(access)],
       );
       this.#notify({ runId, object });
       return {
@@ -279,6 +282,7 @@ class SqliteLogBackend implements LogBackend {
         startedAt,
         endedAt: null,
         lastSeq: 0,
+        ...(access === undefined ? {} : { access }),
       };
     }).immediate();
   }
@@ -385,7 +389,7 @@ class SqliteLogBackend implements LogBackend {
     const activeOnly = options.active === true ? 1 : 0;
     const rows = this.#database
       .query<RunRow, [number]>(
-        "SELECT r.run_id, r.flow, r.object, r.started_at, r.ended_at, " +
+        "SELECT r.run_id, r.flow, r.object, r.started_at, r.ended_at, r.access, " +
           "COALESCE(f.last_seq, 0) AS last_seq " +
           "FROM runs r LEFT JOIN (" +
           "  SELECT run_id, MAX(seq) AS last_seq FROM facts GROUP BY run_id" +
@@ -554,6 +558,14 @@ class SqliteLogBackend implements LogBackend {
   }
 
   #toRunInfo(row: RunRow): RunInfo {
+    let access: JsonValue | undefined;
+    if (row.access !== null) {
+      try {
+        access = JSON.parse(row.access) as JsonValue;
+      } catch {
+        access = undefined;
+      }
+    }
     return {
       runId: row.run_id,
       flow: row.flow,
@@ -562,6 +574,7 @@ class SqliteLogBackend implements LogBackend {
       startedAt: row.started_at,
       endedAt: row.ended_at,
       lastSeq: row.last_seq,
+      ...(access === undefined ? {} : { access }),
     };
   }
 }

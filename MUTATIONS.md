@@ -250,3 +250,15 @@
 | TK0028-M12 | packages/cli/src/main.ts | restored the id-shaped-value heuristic in the action flag parser | `operad presentation commands > schema flags accept values that look like ids or negative numbers` |
 | TK0028-M13 | packages/engine/src/plugin/action-schema.ts | accepted a `role: "note"` property without type `"string"` | `plugin registry validation > rejects a note property that is not a string` |
 | TK0028-M14 | packages/engine/src/plugin/registry.ts | left the actor out of the action context | `plugin registry > an action receives the person's actor` |
+
+## TK0029 — contract: plugin declaration, settings, secrets, access and enablement
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0029-M1 | packages/engine/src/plugin/settings.ts | stopped filling declared defaults into an absent settings field | `plugin settings > fills declared defaults and gives the step a read-only section` |
+| TK0029-M2 | packages/engine/src/plugin/settings.ts | made `deepFreeze` return the value without freezing it | `plugin settings > fills declared defaults and gives the step a read-only section` |
+| TK0029-M3 | packages/engine/src/plugin/secrets.ts | wrote the secret file with mode 0644 instead of 0600 | `plugin secrets > set/get round-trips and writes 0600 in a 0700 directory` |
+| TK0029-M4 | packages/engine/src/plugin/registry.ts | skipped every `requires` check | `plugin requires > refuses a plugin whose required plugin is missing` |
+| TK0029-M5 | packages/engine/src/plugin/registry.ts | accepted every access profile field instead of refusing an unenforced one | `run access profile > refuses a field no step of the flow enforces, naming the field and step` |
+| TK0029-M6 | packages/engine/src/plugin/load.ts | loaded a plugin even when its config entry said `enabled: false` | `plugin enable and disable > a disabled plugin is not loaded and its objects return after enable` |
+| TK0029-M7 | packages/engine/src/kernel/decide.ts | dropped the access profile from the `run_started` fact | `run access profile > accepts a field one step of the flow enforces and gives it to every step` |

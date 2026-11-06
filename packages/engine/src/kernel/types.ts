@@ -87,6 +87,8 @@ export interface StartInput extends InputBase {
   readonly kind: "start";
   /** Fixed JSON the flow was started with, read by its steps. */
   readonly params?: JsonValue | undefined;
+  /** The access profile the run starts with, opaque to the kernel. */
+  readonly access?: JsonValue | undefined;
 }
 
 export interface StepResultInput extends InputBase {
@@ -155,6 +157,8 @@ export interface KernelState {
   readonly started: boolean;
   /** The fixed JSON the flow was started with; null when it was given none. */
   readonly params: JsonValue;
+  /** The access profile recorded at the start; null when there is none. */
+  readonly access: JsonValue;
   /** The one step a run is in, or null. */
   readonly step: string | null;
   readonly stepKind: StepKind | null;
@@ -179,6 +183,7 @@ export interface Decision {
 export interface RunStartedPayload {
   readonly flow: string;
   readonly params?: JsonValue | undefined;
+  readonly access?: JsonValue | undefined;
 }
 
 export interface StepEnteredPayload {

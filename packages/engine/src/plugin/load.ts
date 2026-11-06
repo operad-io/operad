@@ -1,7 +1,7 @@
-import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { readConfig, type PluginConfigEntry } from "../config/config.ts";
 import { messageOf, PluginError } from "./errors.ts";
 import { defaultOperadHome } from "./home.ts";
 import { keysPathFor, readKeysFile } from "./keys.ts";
@@ -17,19 +17,6 @@ export interface LoadPluginRegistryOptions extends PluginRegistryOptions {
 }
 
 let loadCount = 0;
-
-function isMissing(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ENOENT"
-  );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /**
  * A plugin listed as a path is resolved against the operad home; anything else
@@ -85,53 +72,80 @@ export async function loadPlugin(
   return module.default;
 }
 
-/**
- * Reads only the `plugins` key of the home config. A missing file means no
- * plugins; other keys belong to later parts of the kernel.
- */
-async function readPluginSpecifiers(
-  configPath: string,
-): Promise<readonly string[]> {
-  let text: string;
-  try {
-    text = await readFile(configPath, "utf8");
-  } catch (error) {
-    if (isMissing(error)) return [];
-    throw new PluginError(
-      `plugin config "${configPath}": ${messageOf(error)}`,
-      { cause: error },
-    );
-  }
+/** One configured plugin and the definition it resolved to, if any. */
+export interface ConfiguredPlugin {
+  readonly entry: PluginConfigEntry;
+  readonly definition?: unknown;
+  readonly error?: string | undefined;
+}
 
-  let config: unknown;
-  try {
-    config = JSON.parse(text);
-  } catch (error) {
-    throw new PluginError(
-      `plugin config "${configPath}": invalid JSON: ${messageOf(error)}`,
-      { cause: error },
-    );
-  }
-  if (!isRecord(config)) {
-    throw new PluginError(
-      `plugin config "${configPath}": must be a JSON object`,
-    );
-  }
+/** What reading the plugins list produced, before the registry validates them. */
+export interface ConfiguredPlugins {
+  readonly entries: readonly PluginConfigEntry[];
+  /** The entries that loaded, in config order. */
+  readonly loaded: readonly DefinitelyLoadedPlugin[];
+  /** The names that are switched off in the config. */
+  readonly disabled: readonly string[];
+  /** Everything that did not load, one line each. */
+  readonly errors: readonly string[];
+}
 
-  const plugins = config.plugins;
-  if (plugins === undefined) return [];
+export interface DefinitelyLoadedPlugin {
+  readonly entry: PluginConfigEntry;
+  readonly definition: unknown;
+}
+
+function definitionName(value: unknown): string | undefined {
   if (
-    !Array.isArray(plugins) ||
-    !plugins.every(
-      (item): item is string =>
-        typeof item === "string" && item.trim().length > 0,
-    )
+    typeof value === "object" &&
+    value !== null &&
+    "name" in value &&
+    typeof (value as { name?: unknown }).name === "string"
   ) {
-    throw new PluginError(
-      `plugin config "${configPath}": plugins: must be an array of module names or paths`,
-    );
+    return (value as { name: string }).name;
   }
-  return plugins;
+  return undefined;
+}
+
+/**
+ * Imports every enabled plugin in the config. A module that fails to import is
+ * reported and skipped, so one broken plugin does not keep the rest from
+ * loading. Disabled entries are returned by name and never imported.
+ */
+export async function loadConfiguredPlugins(
+  options: LoadPluginRegistryOptions = {},
+): Promise<ConfiguredPlugins> {
+  const home = options.home ?? defaultOperadHome();
+  const config = await readConfig(home, options.configPath ?? join(home, "config.json"));
+  const loaded: DefinitelyLoadedPlugin[] = [];
+  const disabled: string[] = [];
+  const errors: string[] = [];
+
+  for (const entry of config.plugins) {
+    if (!entry.enabled) {
+      if (entry.name !== undefined) disabled.push(entry.name);
+      continue;
+    }
+    let definition: unknown;
+    try {
+      definition = await loadPlugin(entry.module, home);
+    } catch (error) {
+      errors.push(messageOf(error));
+      continue;
+    }
+    if (entry.name !== undefined) {
+      const declared = definitionName(definition);
+      if (declared !== undefined && declared !== entry.name && entry.module !== entry.name) {
+        errors.push(
+          `plugin "${entry.name}": the module declares the name "${declared}"`,
+        );
+        continue;
+      }
+    }
+    loaded.push({ entry, definition });
+  }
+
+  return { entries: config.plugins, loaded, disabled, errors };
 }
 
 /**
@@ -142,17 +156,28 @@ export async function loadPluginRegistry(
   options: LoadPluginRegistryOptions = {},
 ): Promise<PluginRegistry> {
   const home = options.home ?? defaultOperadHome();
-  const configPath = options.configPath ?? join(home, "config.json");
-  const specifiers = await readPluginSpecifiers(configPath);
-  const keys = await readKeysFile(options.keysPath ?? keysPathFor(home));
+  const onLog = options.onLog ?? ((message: string) => console.error(message));
+  const config = await loadConfiguredPlugins({ ...options, home, onLog });
+
+  for (const error of config.errors) onLog(error);
+
   const definitions: unknown[] = [];
-  for (const specifier of specifiers) {
-    definitions.push(await loadPlugin(specifier, home));
+  const sources: string[] = [];
+  const settings: Record<string, unknown> = {};
+  for (const { entry, definition } of config.loaded) {
+    definitions.push(definition);
+    sources.push(entry.module);
+    const name = definitionName(definition) ?? entry.name;
+    if (name !== undefined) settings[name] = entry.settings;
   }
+
+  const keys = await readKeysFile(options.keysPath ?? keysPathFor(home));
   return new PluginRegistry(definitions, {
     ...options,
     home,
     keys: options.keys ?? keys,
-    sources: specifiers,
+    sources,
+    settings: options.settings ?? settings,
+    disabled: options.disabled ?? config.disabled,
   });
 }

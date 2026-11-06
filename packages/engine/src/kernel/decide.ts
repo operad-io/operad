@@ -276,9 +276,11 @@ export function decide(
       if (state.started || state.status !== "idle") return { facts, effects };
       const startedSeq = push(
         "run_started",
-        input.params === undefined
-          ? { flow: flow.name }
-          : { flow: flow.name, params: input.params },
+        {
+          flow: flow.name,
+          ...(input.params === undefined ? {} : { params: input.params }),
+          ...(input.access === undefined ? {} : { access: input.access }),
+        },
         cause,
       );
       enter(flow.entry, startedSeq);

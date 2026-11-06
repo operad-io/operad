@@ -60,6 +60,7 @@ export async function serveOnce(
       const info = await options.log.startRun(
         request.flow,
         startObjectKey(request),
+        request.access,
       );
       started.push(info.runId);
     } catch (error) {

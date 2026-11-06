@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   ConfigError,
-  DEFAULT_PLUGINS,
+  configJson,
   defaultConfig,
   ensureConfig,
   readConfig,
@@ -19,7 +19,7 @@ describe("operad config", () => {
     const home = join(root, "home");
     const config = await readConfig(home);
     expect(config).toEqual({
-      plugins: DEFAULT_PLUGINS,
+      plugins: defaultConfig(home).plugins,
       store: { backend: "jsonl", path: join(home, "store") },
     });
     expect(storeRootOf(config)).toBe(join(home, "store"));
@@ -33,13 +33,20 @@ describe("operad config", () => {
     await Bun.write(
       join(home, "config.json"),
       JSON.stringify({
-        plugins: ["./plugins/dev.ts"],
+        plugins: { dev: { module: "./plugins/dev.ts" } },
         store: { backend: "sqlite", path: "data/log.sqlite" },
       }),
     );
 
     const config = await readConfig(home);
-    expect(config.plugins).toEqual(["./plugins/dev.ts"]);
+    expect(config.plugins).toEqual([
+      {
+        name: "dev",
+        module: "./plugins/dev.ts",
+        enabled: true,
+        settings: {},
+      },
+    ]);
     expect(config.store).toEqual({
       backend: "sqlite",
       path: join(home, "data", "log.sqlite"),
@@ -56,7 +63,7 @@ describe("operad config", () => {
     expect(second.created).toBe(false);
     expect(second.config).toEqual(defaultConfig(home));
     const text = await readFile(join(home, "config.json"), "utf8");
-    expect(JSON.parse(text)).toEqual(defaultConfig(home));
+    expect(JSON.parse(text)).toEqual(configJson(defaultConfig(home)));
   });
 
   test("rejects an unknown backend", async () => {
@@ -70,7 +77,7 @@ describe("operad config", () => {
     await expect(readConfig(home)).rejects.toBeInstanceOf(ConfigError);
   });
 
-  test("rejects a plugins value that is not a list", async () => {
+  test("rejects a plugins value that is not a list or an object", async () => {
     const root = await tempRoot();
     const home = join(root, "home");
     await ensureConfig(home);
@@ -78,7 +85,7 @@ describe("operad config", () => {
       join(home, "config.json"),
       JSON.stringify({ plugins: "dev" }),
     );
-    await expect(readConfig(home)).rejects.toThrow(/plugins: must be an array/);
+    await expect(readConfig(home)).rejects.toThrow(/plugins: must be an object/);
   });
 
   test("ships a JSON Schema with the store keys", async () => {

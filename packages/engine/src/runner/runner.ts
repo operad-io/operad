@@ -50,6 +50,8 @@ export interface RunnerOptions {
   readonly object?: ObjectRef | undefined;
   /** Fixed JSON the flow starts with; the runner writes it in the start fact. */
   readonly params?: JsonValue | undefined;
+  /** The access profile the run starts with; recovery reads it from the log. */
+  readonly access?: JsonValue | undefined;
   /** Treat an outstanding step as a crash and recover it first. */
   readonly recover?: boolean | undefined;
 }
@@ -100,6 +102,7 @@ export class Runner {
   private readonly lockRoot: string | undefined;
   private readonly object: ObjectRef | undefined;
   private readonly params: JsonValue | undefined;
+  private readonly access: JsonValue | undefined;
   private readonly recover: boolean;
   readonly runId: string;
 
@@ -115,6 +118,7 @@ export class Runner {
     this.lockRoot = options.lockRoot;
     this.object = options.object;
     this.params = options.params;
+    this.access = options.access;
     this.recover = options.recover === true;
   }
 
@@ -160,12 +164,14 @@ export class Runner {
       }
 
       if (state.status === "idle") {
+        const access = await this.initialAccess();
+        this.registry.checkAccess(this.flow.name, access);
         const result = await applyInput(
           this.log,
           this.flow,
           this.runId,
           state,
-          this.startInput(),
+          this.startInput(access),
           this.clock(),
           "runner",
           "start",
@@ -192,12 +198,14 @@ export class Runner {
     if (state.status === "ended") return "ended";
     if (state.status === "waiting_person") return "waiting";
     if (state.status === "idle") {
+      const access = await this.initialAccess();
+      this.registry.checkAccess(this.flow.name, access);
       const result = await applyInput(
         this.log,
         this.flow,
         this.runId,
         state,
-        this.startInput(),
+        this.startInput(access),
         this.clock(),
         "runner",
         "start",
@@ -225,7 +233,7 @@ export class Runner {
 
     if (effect.kind === "poll_check") {
       if (effect.check === null) return "blocked";
-      const outcome = await this.execute(effect.check, effect.params, true, state.params);
+      const outcome = await this.execute(effect.check, effect.params, true, state.params, state.access);
       if (outcome.result === "ready" || outcome.result === "interrupted") {
         await this.recordResult(state, effect.id, outcome.result, outcome.data);
         return "progress";
@@ -234,7 +242,7 @@ export class Runner {
     }
 
     if (effect.use === null) return "blocked";
-    const outcome = await this.execute(effect.use, effect.params, false, state.params);
+    const outcome = await this.execute(effect.use, effect.params, false, state.params, state.access);
     await this.recordResult(state, effect.id, outcome.result, outcome.data);
     return "progress";
   }
@@ -280,6 +288,7 @@ export class Runner {
     params: unknown,
     preferInterrupted: boolean,
     flowParams: JsonValue,
+    access: JsonValue,
   ): Promise<PluginStepResult> {
     if (this.signal?.aborted === true) {
       return this.failure(use, preferInterrupted, {
@@ -301,15 +310,32 @@ export class Runner {
         sources,
         preferInterrupted,
         flowParams,
+        access,
       );
     }
-    return this.executeHere(use, params, object, preferInterrupted, flowParams);
+    return this.executeHere(
+      use,
+      params,
+      object,
+      preferInterrupted,
+      flowParams,
+      access,
+    );
   }
 
-  private startInput(): Input {
-    return this.params === undefined
-      ? { kind: "start" }
-      : { kind: "start", params: this.params };
+  private startInput(access: JsonValue | undefined): Input {
+    return {
+      kind: "start",
+      ...(this.params === undefined ? {} : { params: this.params }),
+      ...(access === undefined ? {} : { access }),
+    };
+  }
+
+  /** The profile given to the runner, or the one the log recorded at start. */
+  private async initialAccess(): Promise<JsonValue | undefined> {
+    if (this.access !== undefined) return this.access;
+    const runs = await this.log.runs();
+    return runs.find((run) => run.runId === this.runId)?.access;
   }
 
   private async runObject(): Promise<RunObject | undefined> {
@@ -332,6 +358,7 @@ export class Runner {
     sources: readonly string[],
     preferInterrupted: boolean,
     flowParams: JsonValue,
+    access: JsonValue,
   ): Promise<PluginStepResult> {
     return new Promise((resolve) => {
       const worker = new Worker(STEP_WORKER, {
@@ -346,6 +373,8 @@ export class Runner {
           use,
           params,
           flowParams,
+          access,
+          settings: this.registry.pluginSettings(),
           runId: this.runId,
           ...(object === undefined ? {} : { object }),
         },
@@ -451,6 +480,7 @@ export class Runner {
     object: RunObject | undefined,
     preferInterrupted: boolean,
     flowParams: JsonValue,
+    access: JsonValue,
   ): Promise<PluginStepResult> {
     const controller = new AbortController();
     const forward = (): void => controller.abort();
@@ -470,6 +500,7 @@ export class Runner {
       ...(this.cwd === undefined ? {} : { cwd: this.cwd }),
       ...(object === undefined ? {} : { object }),
       params: flowParams,
+      access,
       signal: controller.signal,
     });
     // After a timeout the plugin may still reject; that rejection is no

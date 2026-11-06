@@ -28,14 +28,14 @@ async function homeWithConfig(config: unknown): Promise<{
 }
 
 describe("loadPluginRegistry", () => {
-  test("loads nothing when the config file is missing", async () => {
+  test("loads the default plugins when the config file is missing", async () => {
     const root = await tempRoot();
     const registry = await loadPluginRegistry({
       home: join(root, "absent"),
       storeRoot: join(root, "store"),
+      onLog: () => undefined,
     });
-    expect(registry.names()).toEqual([]);
-    expect(registry.stepTypes()).toEqual([]);
+    expect(registry.names()).toEqual(["shell"]);
   });
 
   test("loads nothing when the config has no plugins key", async () => {
@@ -63,48 +63,60 @@ describe("loadPluginRegistry", () => {
     ).rejects.toThrow(configPath);
   });
 
-  test("rejects a plugins value that is not a list of names", async () => {
+  test("rejects a plugins value that is not a list or an object", async () => {
     const { home, configPath, storeRoot } = await homeWithConfig({
       plugins: "notes",
     });
     await expect(
       loadPluginRegistry({ home, configPath, storeRoot }),
-    ).rejects.toThrow(/plugins: must be an array/);
+    ).rejects.toThrow(/plugins: must be an object/);
   });
 
-  test("names the module when it cannot be imported", async () => {
+  test("names the module when it cannot be imported, and loads the rest", async () => {
     const { home, configPath, storeRoot } = await homeWithConfig({
       plugins: ["./does-not-exist.ts"],
     });
-    await expect(
-      loadPluginRegistry({ home, configPath, storeRoot }),
-    ).rejects.toThrow(/import failed/);
-    await expect(
-      loadPluginRegistry({ home, configPath, storeRoot }),
-    ).rejects.toThrow(/does-not-exist\.ts/);
+    const logs: string[] = [];
+    const registry = await loadPluginRegistry({
+      home,
+      configPath,
+      storeRoot,
+      onLog: (message) => logs.push(message),
+    });
+    expect(registry.names()).toEqual([]);
+    expect(logs.join("\n")).toContain("import failed");
+    expect(logs.join("\n")).toContain("does-not-exist.ts");
   });
 
   test("names the module when it has no default export", async () => {
     const { home, configPath, storeRoot } = await homeWithConfig({
       plugins: [noDefault],
     });
-    await expect(
-      loadPluginRegistry({ home, configPath, storeRoot }),
-    ).rejects.toThrow(/no default export/);
-    await expect(
-      loadPluginRegistry({ home, configPath, storeRoot }),
-    ).rejects.toThrow(noDefault);
+    const logs: string[] = [];
+    const registry = await loadPluginRegistry({
+      home,
+      configPath,
+      storeRoot,
+      onLog: (message) => logs.push(message),
+    });
+    expect(registry.names()).toEqual([]);
+    expect(logs.join("\n")).toContain("no default export");
+    expect(logs.join("\n")).toContain(noDefault);
   });
 
   test("names the module when it throws on import", async () => {
     const { home, configPath, storeRoot } = await homeWithConfig({
       plugins: [throws],
     });
-    await expect(
-      loadPluginRegistry({ home, configPath, storeRoot }),
-    ).rejects.toThrow(/import failed/);
-    await expect(
-      loadPluginRegistry({ home, configPath, storeRoot }),
-    ).rejects.toThrow(/explodes on import/);
+    const logs: string[] = [];
+    const registry = await loadPluginRegistry({
+      home,
+      configPath,
+      storeRoot,
+      onLog: (message) => logs.push(message),
+    });
+    expect(registry.names()).toEqual([]);
+    expect(logs.join("\n")).toContain("import failed");
+    expect(logs.join("\n")).toContain("explodes on import");
   });
 });

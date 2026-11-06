@@ -5,7 +5,10 @@ import { fileURLToPath } from "node:url";
 import {
   answerRun,
   ConfigError,
+  FileSecretStore,
   LockHeldError,
+  MemoryPluginStore,
+  PluginRegistry,
   Runner,
   StateError,
   ViewError,
@@ -16,12 +19,17 @@ import {
   historyEntries,
   listPending,
   listRunning,
+  loadConfiguredPlugins,
+  loadPlugin,
   loadPluginRegistry,
+  messageOf,
   openConfigLog,
   openPluginStore,
   parseObjectKey,
   readConfig,
+  readState,
   serve,
+  setPluginEnabled,
   splitActionName,
   storeRootOf,
   ENGINE_VERSION,
@@ -31,7 +39,6 @@ import {
   type Actor,
   type LogBackend,
   type OperadConfig,
-  type PluginRegistry,
   type RunInfo,
   type ViewAction,
   type ViewObject,
@@ -82,6 +89,8 @@ const KERNEL_VERBS = [
   "flows",
   "list",
   "show",
+  "plugin",
+  "secret",
   "run-internal",
 ] as const;
 
@@ -96,6 +105,13 @@ const HELP = [
   "  history <id> [--json] steps of a run, or of a plugin object's runs",
   "  running              runs in progress",
   "  flows                loaded flows and where they come from",
+  "  plugin list          plugins with their version and whether they are enabled",
+  "  plugin enable <name> load a plugin again at the next command",
+  "  plugin disable <name> stop loading a plugin at the next command",
+  "  plugin check <path>  validate a plugin declaration without starting it",
+  "  secret set <plugin> <name>   store a secret (value from the terminal or stdin)",
+  "  secret list <plugin>         secret names, never values",
+  "  secret delete <plugin> <name>",
   "  <plugin>:<action>    an action on one object",
   "  <plugin> <verb>      a verb a loaded plugin declares",
   "",
@@ -121,6 +137,7 @@ interface Context {
   readonly log: LogBackend;
   readonly storeRoot: string;
   readonly views: Views;
+  readonly disabled: readonly string[];
 }
 
 async function openContext(home: string, io: CliIo): Promise<Context> {
@@ -160,6 +177,10 @@ async function openContext(home: string, io: CliIo): Promise<Context> {
     registry,
     log,
     storeRoot,
+    disabled: config.plugins
+      .filter((entry) => !entry.enabled)
+      .map((entry) => entry.name)
+      .filter((name): name is string => name !== undefined),
     views: createViews({
       registry,
       store,
@@ -1076,9 +1097,229 @@ async function commandRunInternal(
     registry: context.registry,
     lockRoot: context.storeRoot,
     recover: present,
+    ...(run.access === undefined ? {} : { access: run.access }),
     ...(object === undefined ? {} : { object }),
   });
   await runner.run();
+}
+
+function definitionName(value: unknown): string | undefined {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "name" in value &&
+    typeof (value as { name?: unknown }).name === "string"
+  ) {
+    return (value as { name: string }).name;
+  }
+  return undefined;
+}
+
+function definitionVersion(value: unknown): string | undefined {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "version" in value &&
+    typeof (value as { version?: unknown }).version === "string"
+  ) {
+    return (value as { version: string }).version;
+  }
+  return undefined;
+}
+
+async function commandPluginList(context: Context, io: CliIo): Promise<number> {
+  if (context.config.plugins.length === 0) {
+    io.write("no plugins configured\n");
+    return 0;
+  }
+  for (const entry of context.config.plugins) {
+    let definition: unknown;
+    try {
+      definition = await loadPlugin(entry.module, context.home);
+    } catch {
+      definition = undefined;
+    }
+    const name = definitionName(definition) ?? entry.name ?? entry.module;
+    const version = definitionVersion(definition) ?? "-";
+    io.write(`${name}  ${version}  ${entry.enabled ? "enabled" : "disabled"}\n`);
+  }
+  return 0;
+}
+
+/**
+ * The active runs that would be affected by switching a plugin off: a run of
+ * a flow that declares one of the plugin's steps, or is in one now.
+ */
+async function activeRunsUsingPlugin(
+  context: Context,
+  name: string,
+): Promise<readonly { readonly runId: string; readonly step: string }[]> {
+  const prefix = `${name}/`;
+  const affected: { runId: string; step: string }[] = [];
+  const runs = await context.log.runs({ active: true });
+  for (const run of runs) {
+    const found = context.registry.flow(run.flow);
+    if (found === undefined) continue;
+    const state = await readState(context.log, run.runId);
+    const uses: string[] = [];
+    const effectUse = state.effect?.use;
+    if (typeof effectUse === "string" && effectUse.startsWith(prefix)) {
+      uses.push(effectUse);
+    }
+    const effectCheck = state.effect?.check;
+    if (typeof effectCheck === "string" && effectCheck.startsWith(prefix)) {
+      uses.push(effectCheck);
+    }
+    for (const step of found.flow.steps) {
+      if (step.kind !== "plugin") continue;
+      const use = (step.params as { readonly use?: unknown }).use;
+      if (typeof use === "string" && use.startsWith(prefix)) {
+        uses.push(`${step.id} (${use})`);
+      }
+    }
+    if (uses.length > 0) affected.push({ runId: run.runId, step: uses[0] ?? prefix });
+  }
+  return affected;
+}
+
+async function commandPluginAdmin(
+  context: Context,
+  io: CliIo,
+  argv: readonly string[],
+): Promise<number> {
+  const sub = argv[0];
+  if (sub === "list") {
+    if (argv.length > 1) throw new UsageError("plugin list takes no arguments");
+    return commandPluginList(context, io);
+  }
+  if (sub === "enable" || sub === "disable") {
+    const name = argv[1];
+    if (name === undefined) throw new UsageError(`plugin ${sub} needs a plugin name`);
+    if (argv.length > 2) throw new UsageError(`plugin ${sub} takes one plugin name`);
+    const entry = context.config.plugins.find((item) => item.name === name);
+    if (entry === undefined) {
+      throw new ConfigError(`plugins.${name}: no such plugin`);
+    }
+    if (sub === "disable") {
+      const affected = await activeRunsUsingPlugin(context, name);
+      if (affected.length > 0) {
+        const named = affected
+          .map((run) => `"${run.runId}" (${run.step})`)
+          .join(", ");
+        throw new StateError(`cannot disable "${name}": run ${named} is active`);
+      }
+    }
+    await setPluginEnabled(context.home, name, sub === "enable");
+    io.write(`${name}: ${sub === "enable" ? "enabled" : "disabled"}\n`);
+    return 0;
+  }
+  if (sub === "check") {
+    const path = argv[1];
+    if (path === undefined) throw new UsageError("plugin check needs a path");
+    if (argv.length > 2) throw new UsageError("plugin check takes one path");
+    const definition = await loadPlugin(path, context.home);
+    const name = definitionName(definition) ?? path;
+    const configured = await loadConfiguredPlugins({ home: context.home });
+    const others = configured.loaded
+      .map((loaded) => loaded.definition)
+      .filter((item) => definitionName(item) !== name);
+    let registry: PluginRegistry;
+    try {
+      registry = new PluginRegistry([...others, definition], {
+        home: context.home,
+        cwd: context.home,
+        store: new MemoryPluginStore({ root: join(context.storeRoot, "plugin-check") }),
+        settings: {},
+        validateSettings: false,
+        onLog: () => undefined,
+      });
+    } catch (error) {
+      io.write(`${name}: ${messageOf(error)}\n`);
+      return 1;
+    }
+    if (!registry.names().includes(name)) {
+      const refusal = registry.refusals().find((item) => item.plugin === name);
+      io.write(`${refusal?.message ?? `${name}: not loaded`}\n`);
+      return 1;
+    }
+    io.write(`${name}: ok\n`);
+    return 0;
+  }
+  throw new UsageError("plugin needs list, enable, disable or check");
+}
+
+/** Reads a secret without echo in a terminal, or the first line of stdin. */
+async function readSecretValue(io: CliIo): Promise<string> {
+  if (io.readLine !== undefined) {
+    const line = await io.readLine("secret value: ");
+    if (line === undefined) throw new UsageError("secret set: no value was read");
+    return line.replace(/\r?\n$/, "");
+  }
+  if (process.stdin.isTTY !== true) {
+    const text = await Bun.stdin.text();
+    const line = text.split(/\r?\n/, 1)[0];
+    if (line === undefined) throw new UsageError("secret set: no value was read");
+    return line;
+  }
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stderr,
+    terminal: true,
+  });
+  const muted = rl as unknown as { _writeToOutput?: (text: string) => void };
+  muted._writeToOutput = () => undefined;
+  process.stderr.write("secret value: ");
+  try {
+    return (await rl.question("")).replace(/\r?\n$/, "");
+  } finally {
+    rl.close();
+    process.stderr.write("\n");
+  }
+}
+
+async function commandSecret(
+  home: string,
+  io: CliIo,
+  argv: readonly string[],
+): Promise<number> {
+  const sub = argv[0];
+  if (sub === "set") {
+    const plugin = argv[1];
+    const name = argv[2];
+    if (plugin === undefined || name === undefined) {
+      throw new UsageError("secret set needs a plugin and a secret name");
+    }
+    if (argv.length > 3) throw new UsageError("secret set takes a plugin and a name");
+    const value = await readSecretValue(io);
+    await new FileSecretStore({ home, plugin }).set(name, value);
+    io.write(`secret "${name}" set for plugin "${plugin}"\n`);
+    return 0;
+  }
+  if (sub === "list") {
+    const plugin = argv[1];
+    if (plugin === undefined) throw new UsageError("secret list needs a plugin");
+    if (argv.length > 2) throw new UsageError("secret list takes one plugin");
+    const names = await new FileSecretStore({ home, plugin }).names();
+    if (names.length === 0) {
+      io.write(`no secrets for plugin "${plugin}"\n`);
+    } else {
+      for (const name of names) io.write(`${name}\n`);
+    }
+    return 0;
+  }
+  if (sub === "delete") {
+    const plugin = argv[1];
+    const name = argv[2];
+    if (plugin === undefined || name === undefined) {
+      throw new UsageError("secret delete needs a plugin and a secret name");
+    }
+    if (argv.length > 3) throw new UsageError("secret delete takes a plugin and a name");
+    await new FileSecretStore({ home, plugin }).delete(name);
+    io.write(`secret "${name}" deleted for plugin "${plugin}"\n`);
+    return 0;
+  }
+  throw new UsageError("secret needs set, list or delete");
 }
 
 async function commandPlugin(
@@ -1121,6 +1362,20 @@ export async function main(
 
     if (command === "init") {
       return await commandInit(home, io);
+    }
+
+    if (command === "secret") {
+      return await commandSecret(home, io, args.slice(1));
+    }
+
+    if (command === "plugin") {
+      const context = await openContext(home, io);
+      try {
+        return await commandPluginAdmin(context, io, args.slice(1));
+      } finally {
+        context.views.close();
+        await context.log.close();
+      }
     }
 
     if (command === "run-internal") {
@@ -1218,6 +1473,10 @@ export async function main(
     try {
       if (await commandAction(context, io, args, tty)) return 0;
       if (await commandPlugin(context, io, args)) return 0;
+      const attempted = splitActionName(command ?? "")?.plugin ?? command ?? "";
+      if (context.disabled.includes(attempted)) {
+        throw new StateError(`plugin "${attempted}" is disabled`);
+      }
     } finally {
       context.views.close();
       await context.log.close();

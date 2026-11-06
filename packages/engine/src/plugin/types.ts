@@ -1,8 +1,12 @@
 import type { FlowDefinition } from "../flow/types.ts";
+import type { Secret } from "../log/secret.ts";
 import type { JsonValue } from "../log/types.ts";
 
 /** The plugin API version a module declares with `operadPlugin`. */
 export const OPERAD_PLUGIN_VERSION = 1 as const;
+
+/** The plugin API version as a semver version, for `requires.api`. */
+export const PLUGIN_API_VERSION = `${OPERAD_PLUGIN_VERSION}.0.0` as const;
 
 /**
  * The plugin kinds the kernel recognises. These names are internal: user text
@@ -57,6 +61,20 @@ export interface SectionContent {
 
 /** The context a `load` call receives. */
 export interface ViewContext extends PluginBaseContext {}
+
+/**
+ * An access profile: opaque JSON the kernel hands to steps. Its shape belongs
+ * to `operad-sandbox.md`, not to the kernel.
+ */
+export type AccessProfile = Readonly<Record<string, JsonValue>>;
+
+/** A plugin's secrets, scoped to that plugin and stored outside the log. */
+export interface SecretStore {
+  get(name: string): Promise<Secret<string> | undefined>;
+  set(name: string, value: string | Secret<string>): Promise<void>;
+  delete(name: string): Promise<void>;
+  names(): Promise<readonly string[]>;
+}
 
 /** How one object type appears to every client. */
 export interface ObjectViews {
@@ -238,6 +256,10 @@ export interface PluginBaseContext {
   readonly facts: FactWriter;
   readonly logger: PluginLogger;
   readonly signal: AbortSignal;
+  /** The plugin's validated `config.json` section, with defaults filled. */
+  readonly settings: Readonly<Record<string, JsonValue>>;
+  /** The plugin's own secrets: never stored in the log. */
+  readonly secrets: SecretStore;
 }
 
 /** The answer a plugin action gives to the person wait it is answering. */
@@ -256,6 +278,8 @@ export interface StepContext extends PluginBaseContext {
   readonly object: RunObject | undefined;
   /** Fixed JSON the flow was started with; null when it was given none. */
   readonly params: JsonValue;
+  /** The run's access profile, opaque to the kernel; null when it has none. */
+  readonly access: JsonValue;
 }
 
 /** What a step returns. `result` must be one of the step type's results. */
@@ -271,12 +295,16 @@ export interface StepRunOptions {
   readonly cwd?: string | undefined;
   readonly signal?: AbortSignal | undefined;
   readonly params?: JsonValue | undefined;
+  /** The run's access profile; the kernel only checks who enforces it. */
+  readonly access?: JsonValue | undefined;
 }
 
 /** A step type a plugin declares. The use name is `<plugin>/<name>`. */
 export interface StepTypeDefinition {
   readonly name: string;
   readonly results: readonly string[];
+  /** Access profile fields this step applies, such as `denyPaths`. */
+  readonly enforces?: readonly string[] | undefined;
   readonly run: (
     ctx: StepContext,
     params: unknown,
@@ -317,6 +345,8 @@ export interface ActionArgSchema {
   readonly properties?: Readonly<Record<string, ActionArgSchema>> | undefined;
   readonly required?: readonly string[] | undefined;
   readonly additionalProperties?: false | undefined;
+  /** A value the kernel fills when the field is absent. */
+  readonly default?: unknown;
   readonly description?: string | undefined;
   /** A note is prompted for in a terminal and accepted as `--note`. */
   readonly role?: "note" | undefined;
@@ -403,12 +433,20 @@ export interface StartRunRequest {
   readonly plugin: string;
   readonly flow: string;
   readonly object?: ObjectRef | undefined;
+  /** The access profile the run starts with, opaque to the kernel. */
+  readonly access?: JsonValue | undefined;
 }
 
 /** The context the kernel loop passes to a plugin's `onTick`. */
 export interface TickContext extends PluginBaseContext {
   /** Starts a run of a flow this plugin declares. */
-  start(flow: string, object?: ObjectRef): Promise<void>;
+  start(flow: string, object?: ObjectRef, access?: JsonValue): Promise<void>;
+}
+
+/** A plugin's declared dependencies: plugins and the plugin API version. */
+export interface PluginRequires {
+  readonly plugins?: Readonly<Record<string, string>> | undefined;
+  readonly api?: string | undefined;
 }
 
 /** The shape `definePlugin` accepts. The version is added by the helper. */
@@ -426,6 +464,12 @@ export interface PluginShape {
   /** Default key bindings, keyed by key, valued as `<plugin>:<action>`. */
   readonly keys?: KeyBindings | undefined;
   readonly onTick?: ((ctx: TickContext) => MaybePromise<void>) | undefined;
+  /** The JSON Schema of this plugin's `config.json` settings section. */
+  readonly settings?: ActionArgsSchema | undefined;
+  /** Access profile fields this plugin's steps apply. */
+  readonly enforces?: readonly string[] | undefined;
+  /** What this plugin needs loaded before it can be used. */
+  readonly requires?: PluginRequires | undefined;
   /** Runs when `operad init` checks the plugin; a string is the check's note. */
   readonly check?: ((ctx: PluginBaseContext) => MaybePromise<string | void>) | undefined;
 }

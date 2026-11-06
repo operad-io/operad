@@ -37,6 +37,8 @@ export interface RunInfo {
   readonly startedAt: number;
   readonly endedAt: number | null;
   readonly lastSeq: number;
+  /** The access profile recorded when the run started, if any. */
+  readonly access?: JsonValue | undefined;
 }
 
 export interface RecordInputResult {
@@ -92,7 +94,7 @@ export interface LogSubscription {
 
 export interface LogBackend extends Partial<LogSubscription> {
   /** Start a run, unless the same flow/object pair already has an active one. */
-  startRun(flow: string, object: string): Promise<RunInfo>;
+  startRun(flow: string, object: string, access?: JsonValue): Promise<RunInfo>;
   /** End an active run. Ending an ended run is a no-op. */
   endRun(runId: string): Promise<void>;
   /**

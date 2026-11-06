@@ -39,8 +39,8 @@ describe("plugin registry", () => {
       configPath,
       JSON.stringify({
         plugins: [relative(home, notesPlugin)],
-        // The registry reads only `plugins`.
-        store: "sqlite",
+        // The registry reads the plugins and the store the kernel opens.
+        store: { backend: "jsonl", path: join(root, "store") },
       }),
     );
     const store = new MemoryPluginStore({ root: join(root, "store") });
