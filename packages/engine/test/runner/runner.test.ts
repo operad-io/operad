@@ -1,21 +1,40 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  FilePluginStore,
   MemoryPluginStore,
   Runner,
   historyEntries,
+  loadPluginRegistry,
+  openConfigLog,
   openLog,
+  readConfig,
   readState,
+  storeRootOf,
+  PluginRegistry,
   type Fact,
   type FlowDefinition,
   type LogBackend,
 } from "../../src/index.ts";
-import { PluginRegistry } from "../../src/index.ts";
 import plugin from "../fixtures/plugins/runner.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
 
 afterAll(cleanupTempRoots);
+
+const pluginPath = fileURLToPath(
+  new URL("../fixtures/plugins/runner.ts", import.meta.url),
+);
+const crashChildPath = fileURLToPath(
+  new URL("../fixtures/crash-child.ts", import.meta.url),
+);
 
 interface Setup {
   readonly root: string;
@@ -54,6 +73,54 @@ async function facts(log: LogBackend, runId: string): Promise<Fact[]> {
   const list: Fact[] = [];
   for await (const fact of log.read(runId)) list.push(fact);
   return list;
+}
+
+interface FileSetup {
+  readonly root: string;
+  readonly home: string;
+  readonly storeRoot: string;
+  readonly log: LogBackend;
+  readonly registry: PluginRegistry;
+  readonly flow: FlowDefinition;
+  readonly runId: string;
+  close(): Promise<void>;
+}
+
+/** A registry loaded from a config file, so steps can run in a worker. */
+async function fileSetup(flowName: string): Promise<FileSetup> {
+  const root = await tempRoot();
+  const home = join(root, "home");
+  mkdirSync(home, { recursive: true });
+  const storeRoot = join(root, "store");
+  await Bun.write(
+    join(home, "config.json"),
+    JSON.stringify({
+      plugins: [pluginPath],
+      store: { backend: "jsonl", path: storeRoot },
+    }),
+  );
+  const config = await readConfig(home);
+  const log = openConfigLog(config);
+  const registry = await loadPluginRegistry({
+    home,
+    cwd: home,
+    store: new FilePluginStore({ root: join(storeRoot, "plugins") }),
+  });
+  const found = registry.flow(flowName);
+  if (found === undefined) throw new Error(`missing flow ${flowName}`);
+  const info = await log.startRun(flowName, "job:1");
+  return {
+    root,
+    home,
+    storeRoot,
+    log,
+    registry,
+    flow: found.flow,
+    runId: info.runId,
+    close: async () => {
+      await log.close();
+    },
+  };
 }
 
 describe("runner", () => {
@@ -279,6 +346,91 @@ describe("runner", () => {
       expect(await lock.run()).toBe("ended");
     } finally {
       await run.close();
+    }
+  });
+
+  test("a synchronous step is stopped by the wall time", async () => {
+    const run = await fileSetup("hang");
+    try {
+      const runner = new Runner({
+        log: run.log,
+        flow: run.flow,
+        runId: run.runId,
+        registry: run.registry,
+        lockRoot: run.storeRoot,
+        stepTimeoutMs: 500,
+      });
+      expect(await runner.run()).toBe("ended");
+
+      const state = await readState(run.log, run.runId);
+      expect(state.status).toBe("ended");
+      const result = Object.values(state.results)[0];
+      expect(result?.result).toBe("failed");
+
+      const entries = [];
+      for await (const entry of historyEntries(run.log.read(run.runId))) {
+        entries.push(entry);
+      }
+      const work = entries.find(
+        (entry) => entry.step === "work" && entry.what === "work failed",
+      );
+      expect(work?.why).toContain("longer than 500 ms");
+    } finally {
+      await run.close();
+    }
+  });
+
+  test("an input recorded before a crash is applied on recovery", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    mkdirSync(home, { recursive: true });
+    const storeRoot = join(root, "store");
+    await Bun.write(
+      join(home, "config.json"),
+      JSON.stringify({
+        plugins: [pluginPath],
+        store: { backend: "jsonl", path: storeRoot },
+      }),
+    );
+    const config = await readConfig(home);
+    const opened = openConfigLog(config);
+    const info = await opened.startRun("simple", "job:1");
+    await opened.close();
+
+    const child = Bun.spawn({
+      cmd: [process.execPath, crashChildPath, home, info.runId],
+      cwd: home,
+      env: { ...process.env, OPERAD_HOME: home },
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    await child.exited;
+
+    const log = openConfigLog(config);
+    try {
+      // The input's record survived, its facts did not.
+      expect((await readState(log, info.runId)).status).toBe("idle");
+
+      const registry = await loadPluginRegistry({
+        home,
+        cwd: home,
+        store: new FilePluginStore({ root: join(storeRoot, "plugins") }),
+      });
+      const found = registry.flow("simple");
+      if (found === undefined) throw new Error("missing simple flow");
+      const outcome = await new Runner({
+        log,
+        flow: found.flow,
+        runId: info.runId,
+        registry,
+        lockRoot: storeRoot,
+        recover: true,
+      }).run();
+      expect(outcome).toBe("ended");
+      expect((await readState(log, info.runId)).endedStatus).toBe("done");
+    } finally {
+      await log.close();
     }
   });
 });

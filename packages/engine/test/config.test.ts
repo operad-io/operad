@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   ConfigError,
+  DEFAULT_PLUGINS,
   defaultConfig,
   ensureConfig,
   readConfig,
@@ -18,7 +19,7 @@ describe("operad config", () => {
     const home = join(root, "home");
     const config = await readConfig(home);
     expect(config).toEqual({
-      plugins: [],
+      plugins: DEFAULT_PLUGINS,
       store: { backend: "jsonl", path: join(home, "store") },
     });
     expect(storeRootOf(config)).toBe(join(home, "store"));

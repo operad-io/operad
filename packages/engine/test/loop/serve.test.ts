@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, rmSync, watch, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   MemoryPluginStore,
@@ -15,6 +15,7 @@ import {
   readState,
   serve,
   serveOnce,
+  sleepUntilAborted,
   storeRootOf,
 } from "../../src/index.ts";
 import plugin from "../fixtures/plugins/runner.ts";
@@ -51,17 +52,23 @@ async function makeHome(): Promise<Home> {
   return { root, home, storeRoot: storeRootOf(config), config };
 }
 
-async function waitFor(
-  check: () => boolean | Promise<boolean>,
-  label: string,
-  timeoutMs = 10_000,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await check()) return;
-    await Bun.sleep(10);
-  }
-  throw new Error(`timed out waiting for ${label}`);
+async function waitForFile(path: string): Promise<void> {
+  if (existsSync(path)) return;
+  await new Promise<void>((resolve, reject) => {
+    const watcher = watch(dirname(path), () => {
+      if (!existsSync(path)) return;
+      watcher.close();
+      resolve();
+    });
+    watcher.on("error", (error) => {
+      watcher.close();
+      reject(error);
+    });
+    if (existsSync(path)) {
+      watcher.close();
+      resolve();
+    }
+  });
 }
 
 function spawn(home: Home, runId: string, recover: boolean) {
@@ -92,7 +99,7 @@ describe("serve loop", () => {
     try {
       const info = await log.startRun("crash", "job:1");
       const first = spawn(home, info.runId, false);
-      await waitFor(() => existsSync(join(home.home, "blocked")), "the first step");
+      await waitForFile(join(home.home, "blocked"));
       first.kill("SIGKILL");
       await first.exited;
       rmSync(join(home.home, "blocked"), { force: true });
@@ -109,11 +116,8 @@ describe("serve loop", () => {
       expect(recovered).toBeDefined();
       await recovered?.exited;
 
-      await waitFor(
-        async () => (await readState(log, info.runId)).status === "waiting_person",
-        "the person wait",
-      );
       const state = await readState(log, info.runId);
+      expect(state.status).toBe("waiting_person");
       expect(state.wait?.prompt).toContain("interrupted");
 
       const pending = await listPending(log, registry);
@@ -246,10 +250,7 @@ describe("serve loop", () => {
           child = spawn(home, runId, options.recover);
         },
       });
-      await waitFor(
-        () => child !== undefined && existsSync(join(home.home, "blocked")),
-        "the child step",
-      );
+      await waitForFile(join(home.home, "blocked"));
       controller.abort();
       await loop;
 
@@ -272,7 +273,7 @@ describe("serve loop", () => {
     try {
       const info = await log.startRun("retry", "job:2");
       const first = spawn(home, info.runId, false);
-      await waitFor(() => existsSync(join(home.home, "blocked")), "the first step");
+      await waitForFile(join(home.home, "blocked"));
       first.kill("SIGKILL");
       await first.exited;
       rmSync(join(home.home, "blocked"), { force: true });
@@ -287,10 +288,7 @@ describe("serve loop", () => {
         },
       });
       expect(recovered).toBeDefined();
-      await waitFor(
-        () => existsSync(join(home.home, "blocked")),
-        "the re-run",
-      );
+      await waitForFile(join(home.home, "blocked"));
       writeFileSync(join(home.home, "release"), "go");
       await recovered?.exited;
 
@@ -303,6 +301,37 @@ describe("serve loop", () => {
         words.push(entry.what);
       }
       expect(words).toContain("re-running work after a crash");
+    } finally {
+      await log.close();
+    }
+  });
+
+  test("a sleeping loop ends as soon as the signal aborts", async () => {
+    const home = await makeHome();
+    const log = openConfigLog(home.config);
+    const registry = await loadPluginRegistry({
+      home: home.home,
+      store: new MemoryPluginStore({ root: home.storeRoot }),
+    });
+    try {
+      const controller = new AbortController();
+      const entered = Promise.withResolvers<void>();
+      const loop = serve({
+        home: home.home,
+        log,
+        registry,
+        lockRoot: home.storeRoot,
+        intervalMs: 600_000,
+        signal: controller.signal,
+        spawnRun: () => undefined,
+        sleep: async (ms, signal) => {
+          entered.resolve();
+          await sleepUntilAborted(ms, signal);
+        },
+      });
+      await entered.promise;
+      controller.abort();
+      await loop;
     } finally {
       await log.close();
     }

@@ -1,11 +1,32 @@
-import { existsSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, rmSync, watch, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { defineFlow, definePlugin } from "../../../src/index.ts";
 
 function param(params: unknown, key: string): unknown {
   return typeof params === "object" && params !== null && key in params
     ? (params as Record<string, unknown>)[key]
     : undefined;
+}
+
+/** Resolves when the file exists, without asking repeatedly: watches the directory. */
+function waitForFile(path: string): Promise<void> {
+  if (existsSync(path)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const watcher = watch(dirname(path), () => {
+      if (!existsSync(path)) return;
+      watcher.close();
+      resolve();
+    });
+    watcher.on("error", (error) => {
+      watcher.close();
+      reject(error);
+    });
+    // The file may have appeared between the check above and the watch.
+    if (existsSync(path)) {
+      watcher.close();
+      resolve();
+    }
+  });
 }
 
 const echo = defineFlow({
@@ -140,12 +161,27 @@ const retry = defineFlow({
   ],
 });
 
+const hang = defineFlow({
+  name: "hang",
+  entry: "work",
+  steps: [
+    {
+      id: "work",
+      kind: "plugin",
+      params: { use: "test/hang", params: {} },
+      replay: "safe",
+      next: { ok: "done", failed: "done", interrupted: "done" },
+    },
+    { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+  ],
+});
+
 /** The runner fixture: one blocking step, one slow step, a noisy step and a wait. */
 export default definePlugin({
   name: "test",
   kind: "domain",
   version: "0.0.1",
-  objects: [{ name: "job" }],
+  objects: [{ name: "job" }, { name: "task" }, { name: "brief" }],
   actions: [
     {
       name: "approve",
@@ -200,14 +236,21 @@ export default definePlugin({
       results: ["ok", "failed", "interrupted"],
       async run(ctx) {
         writeFileSync(join(ctx.home, "blocked"), String(process.pid));
-        while (!existsSync(join(ctx.home, "release"))) {
-          await Bun.sleep(10);
-        }
+        await waitForFile(join(ctx.home, "release"));
         return { result: "ok" };
       },
     },
+    {
+      name: "hang",
+      results: ["ok", "failed", "interrupted"],
+      run() {
+        let spin = 0;
+        while (spin >= 0) spin += 1;
+        return { result: "ok" as const };
+      },
+    },
   ],
-  flows: [echo, timed, polled, pause, noisy, ask, crash, retry],
+  flows: [echo, timed, polled, pause, noisy, ask, crash, retry, hang],
   async onTick(ctx) {
     const flag = join(ctx.home, "tick-start");
     if (!existsSync(flag)) return;

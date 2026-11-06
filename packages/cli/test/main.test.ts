@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  DEFAULT_PLUGINS,
   FilePluginStore,
   Runner,
   answerRun,
@@ -102,7 +103,10 @@ describe("operad command", () => {
     const first = capture();
     expect(await main(["init"], { home: fresh, io: first.io })).toBe(0);
     expect(first.text()).toContain("created");
-    expect(first.text()).toContain("no plugins loaded");
+    expect(first.text()).toContain("shell: ready");
+    expect(
+      JSON.parse(readFileSync(join(fresh, "config.json"), "utf8")),
+    ).toMatchObject({ plugins: DEFAULT_PLUGINS });
     const config = JSON.parse(
       readFileSync(join(fresh, "config.json"), "utf8"),
     ) as unknown;
@@ -237,6 +241,37 @@ describe("operad command", () => {
     const locked = capture();
     expect(await main(["serve"], { home, io: locked.io })).toBe(4);
     expect(locked.errors()).toContain("still alive");
+  });
+
+  test("history resolves a plugin object without mixing object types", async () => {
+    const { home } = await makeHome();
+    await startRun(home, "ask", "task:42");
+    await startRun(home, "pause", "brief:42");
+
+    const ambiguous = capture();
+    expect(await main(["history", "42"], { home, io: ambiguous.io })).toBe(1);
+    expect(ambiguous.errors()).toContain("ambiguous");
+
+    const taskOutput = capture();
+    expect(
+      await main(["history", "task:42"], { home, io: taskOutput.io }),
+    ).toBe(0);
+    expect(taskOutput.text()).toContain("waiting for you");
+    expect(taskOutput.text()).not.toContain("waiting for pause");
+
+    const briefOutput = capture();
+    expect(
+      await main(["history", "brief:42"], { home, io: briefOutput.io }),
+    ).toBe(0);
+    expect(briefOutput.text()).toContain("waiting for pause");
+    expect(briefOutput.text()).not.toContain("waiting for you");
+  });
+
+  test("serve rejects arguments as a usage error", async () => {
+    const { home } = await makeHome();
+    const output = capture();
+    expect(await main(["serve", "unexpected"], { home, io: output.io })).toBe(2);
+    expect(output.errors()).toContain("serve takes no arguments");
   });
 
   test("history of 10 000 steps streams instead of buffering", async () => {
