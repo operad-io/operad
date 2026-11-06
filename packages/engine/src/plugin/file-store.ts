@@ -36,11 +36,45 @@ import type {
   StoredObject,
 } from "./types.ts";
 
+/** How often an open subscription re-reads the file by default. */
+export const DEFAULT_STORE_POLL_MS = 500;
+
+function repeatEvery(ms: number, callback: () => void): () => void {
+  const timer = setInterval(callback, ms);
+  // A subscription must not keep the process alive by itself.
+  (timer as { unref?: () => void }).unref?.();
+  return () => {
+    clearInterval(timer);
+  };
+}
+
 export interface FilePluginStoreOptions {
   readonly root: string;
   readonly clock?: (() => number) | undefined;
-  /** Starts the directory watcher; tests replace it to count stops. */
-  readonly watch?: typeof watchDirectory | undefined;
+  /**
+   * How often an open subscription re-reads the file for another writer's
+   * facts, in milliseconds. Defaults to 500. The watch is the fast path; this
+   * check is the one that cannot miss a write the watch does not report.
+   */
+  readonly pollMs?: number | undefined;
+  /**
+   * Starts a repeating timer that calls `callback` every `ms` and returns a
+   * stop function. Defaults to `setInterval`. A test passes a stub it fires by
+   * hand, so no test waits on wall time.
+   */
+  readonly repeat?:
+    | ((ms: number, callback: () => void) => () => void)
+    | undefined;
+  /**
+   * Watches a directory for another writer's facts and returns a stop function.
+   * Defaults to `fs.watch`. A test passes a stub that never fires.
+   */
+  readonly watch?:
+    | ((
+        directory: string,
+        onChange: (filename: string | null) => void,
+      ) => () => void)
+    | undefined;
 }
 
 /** A lock older than this belongs to a writer that died while holding it. */
@@ -102,7 +136,12 @@ export class FilePluginStore implements PluginStore {
   readonly root: string;
   readonly location: PluginStoreLocation;
   private readonly clock: () => number;
-  private readonly watch: typeof watchDirectory;
+  private readonly pollMs: number;
+  private readonly repeat: (ms: number, callback: () => void) => () => void;
+  private readonly watch: (
+    directory: string,
+    onChange: (filename: string | null) => void,
+  ) => () => void;
   private readonly factsPath: string;
   private readonly lockPath: string;
   private readonly objects = new Map<string, Map<string, StoredObject>>();
@@ -115,11 +154,15 @@ export class FilePluginStore implements PluginStore {
   private offset = 0;
   /** Stops the directory watcher that reports another writer's facts. */
   private stopWatch: (() => void) | undefined;
+  /** Stops the fallback check for a write the watch did not report. */
+  private stopPoll: (() => void) | undefined;
 
   constructor(options: FilePluginStoreOptions) {
     this.root = options.root;
     this.location = { backend: "jsonl", root: options.root };
     this.clock = options.clock ?? (() => Date.now());
+    this.pollMs = options.pollMs ?? DEFAULT_STORE_POLL_MS;
+    this.repeat = options.repeat ?? repeatEvery;
     this.watch = options.watch ?? watchDirectory;
     this.factsPath = join(options.root, "facts.jsonl");
     this.lockPath = join(options.root, "facts.lock");
@@ -312,6 +355,10 @@ export class FilePluginStore implements PluginStore {
       if (filename !== null && filename !== "facts.jsonl") return;
       this.refresh();
     });
+    // A directory watch is the fast path, but it is not a promise: on macOS a
+    // write can land with no event at all while the process is loaded. This
+    // timer re-reads the file, so a listener cannot miss the write.
+    this.stopPoll = this.repeat(this.pollMs, () => this.refresh());
   }
 
   /** Stops the watcher once no ordinary and no fact listener remains. */
@@ -319,6 +366,8 @@ export class FilePluginStore implements PluginStore {
     if (this.listeners.size > 0 || this.factListeners.size > 0) return;
     this.stopWatch?.();
     this.stopWatch = undefined;
+    this.stopPoll?.();
+    this.stopPoll = undefined;
   }
 
   append(input: FactInput): PluginFact {

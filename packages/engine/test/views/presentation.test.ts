@@ -1,5 +1,5 @@
-import { afterAll, describe, expect, test } from "bun:test";
-import { join } from "node:path";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { basename, join } from "node:path";
 import {
   createViews,
   defineFlow,
@@ -16,6 +16,21 @@ import demo, { testClock } from "../fixtures/plugins/presentation.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
 
 afterAll(cleanupTempRoots);
+
+/** Every view a test opens, closed after the test even when it fails. */
+const openedViews: ReturnType<typeof createViews>[] = [];
+
+function trackedViews(
+  options: Parameters<typeof createViews>[0],
+): ReturnType<typeof createViews> {
+  const views = createViews(options);
+  openedViews.push(views);
+  return views;
+}
+
+afterEach(() => {
+  for (const views of openedViews.splice(0)) views.close();
+});
 
 const ACTOR = { via: "test", id: "tester" } as const;
 
@@ -124,7 +139,7 @@ describe("presentation views", () => {
       { kind: "run_started", payload: { flow: "other" }, cause: "test" },
     ]);
 
-    const views = createViews({ registry, store, log });
+    const views = trackedViews({ registry, store, log });
     const page = await views.list("item");
     expect(page.rows.map((row) => row.id)).toEqual(["one", "two"]);
     expect(page.rows[0]).toMatchObject({
@@ -135,6 +150,7 @@ describe("presentation views", () => {
       running: false,
     });
     expect(page.rows[1]).toMatchObject({ waiting: false, running: true });
+    views.close();
     await log.close();
   });
 
@@ -144,7 +160,7 @@ describe("presentation views", () => {
       flow: "demo-flow",
     });
 
-    const views = createViews({ registry, store, log });
+    const views = trackedViews({ registry, store, log });
     const object = await views.get("item:one");
     expect(object.row.id).toBe("one");
     expect(object.sections.map((section) => section.id)).toEqual([
@@ -172,12 +188,13 @@ describe("presentation views", () => {
     const history = await views.section("item:one", "history");
     expect(history.markdown).toContain(runId);
     expect(history.markdown).toContain("run started");
+    views.close();
     await log.close();
   });
 
   test("reads sections, pages with next and grows a live section", async () => {
     const { store, registry, log } = await fixture();
-    const views = createViews({ registry, store, log });
+    const views = trackedViews({ registry, store, log });
 
     const info = await views.section("item:one", "info");
     expect(info.markdown).toContain("```diff");
@@ -195,19 +212,20 @@ describe("presentation views", () => {
     const logTwo = await views.section("item:one", "log");
     expect(logOne.markdown).toBe("line 1");
     expect(logTwo.markdown).toBe("line 1\nline 2");
+    views.close();
     await log.close();
   });
 
   test("an unknown id and an unloaded plugin's object are clear", async () => {
     const { store, registry, log } = await fixture();
-    const views = createViews({ registry, store, log });
+    const views = trackedViews({ registry, store, log });
     await expect(views.get("item:nope")).rejects.toThrow(/no object/);
 
     const runId = await waitFact(log, "item:one", "run_started", {
       flow: "demo-flow",
     });
     const empty = new PluginRegistry([], { store });
-    const after = createViews({ registry: empty, store, log });
+    const after = trackedViews({ registry: empty, store, log });
     const object = await after.get("item:one");
     expect(object.unavailable).toContain("not loaded");
     expect(object.sections.map((section) => section.id)).toEqual(["history"]);
@@ -215,12 +233,14 @@ describe("presentation views", () => {
     expect((await after.section("item:one", "history")).markdown).toContain(
       runId,
     );
+    views.close();
+    after.close();
     await log.close();
   });
 
   test("runs actions with a required note and with confirmation", async () => {
     const { store, registry, log } = await fixture();
-    const views = createViews({ registry, store, log });
+    const views = trackedViews({ registry, store, log });
 
     await expect(
       views.act("demo:approve", "item:one", { actor: ACTOR }),
@@ -248,6 +268,7 @@ describe("presentation views", () => {
     ).rejects.toMatchObject({
       kind: "action",
     });
+    views.close();
     await log.close();
   });
 
@@ -256,7 +277,7 @@ describe("presentation views", () => {
     store.put("item", "async", { title: "Async", mode: "async" }, "seed");
     store.put("item", "slow", { title: "Slow", mode: "slow" }, "seed");
     testClock.current = 0;
-    const views = createViews({
+    const views = trackedViews({
       registry,
       store,
       log,
@@ -271,12 +292,13 @@ describe("presentation views", () => {
     expect(slowRow?.state).toBe("error");
     expect(slowRow?.error).toContain("limit");
     expect(logs.some((line) => line.includes("row failed"))).toBe(true);
+    views.close();
     await log.close();
   });
 
   test("a section over the timeout and over the cap is reported", async () => {
     const { store, registry, log } = await fixture();
-    const views = createViews({
+    const views = trackedViews({
       registry,
       store,
       log,
@@ -297,12 +319,13 @@ describe("presentation views", () => {
       full: true,
     });
     expect(full.markdown.length).toBe(300 * 1024);
+    views.close();
     await log.close();
   });
 
   test("events coalesce a repeated id and stay bounded for a slow consumer", async () => {
     const { store, registry, log } = await fixture();
-    const views = createViews({ registry, store, log, maxEventIds: 3 });
+    const views = trackedViews({ registry, store, log, maxEventIds: 3 });
     const stream = views.events()[Symbol.asyncIterator]();
 
     for (let index = 0; index < 5; index += 1) {
@@ -324,6 +347,7 @@ describe("presentation views", () => {
     expect(seen).toEqual(["c", "d", "e"]);
     await second.return?.();
     await stream.return?.();
+    views.close();
     await log.close();
   });
 
@@ -367,9 +391,10 @@ describe("presentation views", () => {
     expect(logs[0]).toContain('key "m"');
 
     store.put("other", "1", {}, "seed");
-    const views = createViews({ registry, store });
+    const views = trackedViews({ registry, store });
     await views.act("two:go", "other:1", { actor: ACTOR });
     expect(store.get("other", "1")?.data.ran).toBe(true);
+    views.close();
   });
 
   test("a user's keys.json override wins", () => {
@@ -416,11 +441,12 @@ describe("presentation views", () => {
     });
     const brokenRegistry = new PluginRegistry([broken], { store });
     store.put("broken", "1", {}, "seed");
-    const views = createViews({ registry: brokenRegistry, store, log });
+    const views = trackedViews({ registry: brokenRegistry, store, log });
     const page = await views.list("broken");
     expect(page.rows[0]?.state).toBe("error");
     expect(page.rows[0]?.note).toContain("nope");
     expect(registry.viewsFor("broken")).toBeUndefined();
+    views.close();
     await log.close();
   });
 
@@ -441,12 +467,66 @@ describe("presentation views", () => {
     });
     const both = new PluginRegistry([demo, second], { store });
     store.put("note", "one", {}, "seed");
-    const views = createViews({ registry: both, store, log });
+    const views = trackedViews({ registry: both, store, log });
     await expect(views.get("one")).rejects.toMatchObject({
       kind: "ambiguous",
     });
     expect(registry.names()).toEqual(["demo"]);
     await log.close();
+  });
+
+  test("a plugin's resolve hook scopes a bare id before the suffix lookup", async () => {
+    const root = await tempRoot();
+    const store = new MemoryPluginStore({ root: join(root, "plugins") });
+    const scoped = definePlugin({
+      name: "scoped",
+      kind: "domain",
+      version: "0.0.1",
+      objects: [
+        {
+          name: "task",
+          resolve(ctx, type, id) {
+            if (type !== "task" || !id.startsWith("TK")) return undefined;
+            const scope = basename(ctx.cwd);
+            if (scope !== "a" && scope !== "b") return undefined;
+            return `${scope}/${id}`;
+          },
+        },
+      ],
+      views: {
+        task: {
+          row: (object) => ({
+            id: object.id,
+            title: String(object.data.title ?? ""),
+            state: "new",
+          }),
+          sections: () => [],
+          load: () => ({ markdown: "" }),
+        },
+      },
+    });
+    store.put("task", "a/TK0001-work", { title: "A" }, "seed");
+    store.put("task", "b/TK0001-work", { title: "B" }, "seed");
+
+    const inside = trackedViews({
+      registry: new PluginRegistry([scoped], { store }),
+      store,
+      cwd: join(root, "a"),
+    });
+    const object = await inside.get("TK0001-work");
+    expect(object.id).toBe("a/TK0001-work");
+    expect(object.row.title).toBe("A");
+
+    const outside = trackedViews({
+      registry: new PluginRegistry([scoped], { store }),
+      store,
+      cwd: root,
+    });
+    await expect(outside.get("TK0001-work")).rejects.toMatchObject({
+      kind: "ambiguous",
+    });
+    inside.close();
+    outside.close();
   });
 
   test("events reach a reader when another store writes the object", async () => {
@@ -455,7 +535,7 @@ describe("presentation views", () => {
     const reader = new FilePluginStore({ root: directory });
     const writer = new FilePluginStore({ root: directory });
     const registry = new PluginRegistry([demo], { store: reader });
-    const views = createViews({ registry, store: reader });
+    const views = trackedViews({ registry, store: reader });
     const stream = views.events()[Symbol.asyncIterator]();
     try {
       const pending = stream.next();
@@ -476,7 +556,7 @@ describe("presentation views", () => {
     const store = new MemoryPluginStore({ root: join(root, "plugins") });
     store.put("item", "one", { title: "One" }, "seed");
     const registry = new PluginRegistry([demo], { store });
-    const views = createViews({ registry, store, log: reader });
+    const views = trackedViews({ registry, store, log: reader });
     const stream = views.events()[Symbol.asyncIterator]();
     try {
       const pending = stream.next();
@@ -499,7 +579,7 @@ describe("presentation views", () => {
     const store = new MemoryPluginStore({ root: join(root, "plugins") });
     store.put("item", "one", { title: "One" }, "seed");
     const registry = new PluginRegistry([demo], { store });
-    const views = createViews({ registry, store, log: reader });
+    const views = trackedViews({ registry, store, log: reader });
     const stream = views.events()[Symbol.asyncIterator]();
     try {
       const pending = stream.next();
@@ -533,7 +613,7 @@ describe("presentation views", () => {
     });
     store.put("blob", "1", {}, "seed");
     const registry = new PluginRegistry([plugin], { store });
-    const views = createViews({ registry, store, sectionCapBytes: 1_000 });
+    const views = trackedViews({ registry, store, sectionCapBytes: 1_000 });
     const capped = await views.section("blob:1", "body");
     expect(capped.markdown).not.toContain("\uFFFD");
     expect(Buffer.byteLength(capped.markdown, "utf8")).toBeLessThanOrEqual(1_000);

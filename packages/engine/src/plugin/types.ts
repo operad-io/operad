@@ -245,10 +245,18 @@ export interface PluginBaseContext {
   readonly facts: FactWriter;
   readonly logger: PluginLogger;
   readonly signal: AbortSignal;
+  /** Set when the kernel can cancel a run for this plugin. */
+  readonly runs?: RunControl | undefined;
 }
 
 /** The answer a plugin action gives to the person wait it is answering. */
 export type Answer = (choice: string, note?: string) => MaybePromise<void>;
+
+/** What a plugin may ask the kernel to do with a run it owns. */
+export interface RunControl {
+  /** Cancels a run through the kernel; an ended run is left alone. */
+  cancel(runId: string): MaybePromise<void>;
+}
 
 /** The result of one plugin's optional `check`. */
 export interface PluginCheck {
@@ -299,10 +307,26 @@ export interface StepTypeDefinition {
   ) => MaybePromise<PluginStepResult>;
 }
 
+/** What an object type's `resolve` receives. `cwd` is where the person is. */
+export interface ObjectResolveContext {
+  readonly cwd: string;
+  readonly store: ObjectStore;
+}
+
 /** An object type a plugin owns, such as `task`. */
 export interface ObjectTypeDefinition {
   readonly name: string;
   readonly schema?: unknown;
+  /**
+   * Turns a bare id into the object's store key, or undefined when this type
+   * does not claim it. The kernel asks this before its own suffix lookup, so a
+   * plugin can scope an id to a repository or another namespace.
+   */
+  readonly resolve?: (
+    ctx: ObjectResolveContext,
+    type: string,
+    id: string,
+  ) => MaybePromise<string | undefined>;
   /** The fields a person may filter on with `list(..., { where })`. */
   readonly index?: readonly string[] | undefined;
 }

@@ -227,6 +227,46 @@
 |---|---|---|---|
 | TK0025-M19 | packages/engine/test/fixtures/append-fact-child.ts | made the child write a different object, so only an in-process write could satisfy the reader | `presentation views > events reach a reader when another sqlite log appends` |
 
+## TK0019 — dev objects, commands and actions
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0019-M1 | packages/dev/src/model.ts | stopped skipping headings inside a fenced block | `dev model > a fenced Rework heading is text, not a section` |
+| TK0019-M2 | packages/dev/src/service.ts | took no repository lock, so two adds read the same next number | `dev plans and tasks > two task adds at once get distinct ids and lose nothing` |
+| TK0019-M3 | packages/dev/src/service.ts | allowed a plan with no tasks to be confirmed | `dev plans and tasks > confirming a plan readies its proposed tasks; an empty plan is refused` |
+| TK0019-M4 | packages/engine/src/plugin/registry.ts | made the action name alone its identity, so plan and task actions clashed | `dev actions > confirm is one name on a plan and on a task` |
+| TK0019-M5 | packages/dev/src/service.ts | stopped collecting a running task's run id when a plan was cancelled | `dev plans and tasks > cancelling a plan cancels a running task and asks the kernel to cancel its run` |
+
+## TK0019 — rework 3: default dev, per-repository ids and a durable lock
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0019-M6 | packages/engine/src/config/config.ts | installed only the shell plugin by default | `operad config > the default plugins are the shell plugin and dev` |
+| TK0019-M7 | packages/dev/src/commands.ts | looked a task up by its bare id instead of the repository's store key in `task edit`/`task update` | `operad with the dev plugin > task edit and update resolve the repository like every other command` |
+| TK0019-M8 | packages/dev/src/service.ts | dropped the cancelled-plan recheck inside `addTask`'s lock | `dev checks inside the lock > task add rechecks that its plan is not cancelled` |
+| TK0019-M9 | packages/dev/src/service.ts | dropped the open-task recheck inside `removeRepository`'s lock | `dev checks inside the lock > repo remove rechecks that no task is open` |
+| TK0019-M10 | packages/dev/src/service.ts | let `repositoryOf` return a repository marked removed | `dev checks inside the lock > a write refuses a repository that was removed` |
+| TK0019-M11 | packages/dev/src/model.ts | made `storeKey` return the bare id, so two repositories shared one key | `dev per-repository ids > two repositories may both hold TK0001-work under different keys` |
+| TK0019-M12 | packages/dev/src/service.ts | skipped the takeover of a lock whose pid is dead | `the dev lock survives a dead holder > a lock left by a dead pid is taken over` (timed out) |
+| TK0019-M13 | packages/dev/src/service.ts | removed the source-checkout wording from `repo add`'s refusal | `repo add never writes into the operad checkout > the operad source checkout is refused` |
+
+## TK0019 — rework 4: the lock protocol and scoped bare ids
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0019-M14 | packages/dev/src/lock.ts | release deleted the renamed lock before checking whose nonce it held | `the repository lock > release never deletes another process's lock` |
+| TK0019-M15 | packages/dev/src/lock.ts | takeover deleted the renamed lock without comparing its nonce with the dead record's | `the repository lock > a newer live lock renamed during a takeover is put back` |
+| TK0019-M16 | packages/dev/src/lock.ts | wrote the record to `dev.lock` before the link, so a crash between the two left a lock | `the repository lock > a crash between the tmp write and the link leaves no lock` |
+| TK0019-M17 | packages/engine/src/views/presentation.ts | skipped the plugin's `resolve` hook before the suffix lookup | `operad with the dev plugin > a bare id resolves in the repository of the current directory` |
+| TK0019-M18 | packages/dev/src/lock.ts | treated an unreadable lock as dead immediately instead of after 30 s | `the repository lock > an unparsable lock is live until its mtime is 30 seconds old` |
+
+## TK0019 — rework 5: the missed event and the lock's open handles
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0019-M19 | packages/engine/src/plugin/file-store.ts | kept only the directory watch in a subscription and dropped the poll fallback | `the file plugin store > a subscription still reports a write the watch does not` |
+| TK0019-M20 | packages/dev/src/lock.ts | left the wait's directory watch and fallback timer open when it finished | `the repository lock > a real wait closes its watch and its timer` |
+
 ## TK0026 — rework 10: a start survives a crash after its run exists
 
 | id | file | mutation | failing test |
@@ -303,6 +343,12 @@
 | TK0028-M12 | packages/cli/src/main.ts | restored the id-shaped-value heuristic in the action flag parser | `operad presentation commands > schema flags accept values that look like ids or negative numbers` |
 | TK0028-M13 | packages/engine/src/plugin/action-schema.ts | accepted a `role: "note"` property without type `"string"` | `plugin registry validation > rejects a note property that is not a string` |
 | TK0028-M14 | packages/engine/src/plugin/registry.ts | left the actor out of the action context | `plugin registry > an action receives the person's actor` |
+
+## TK0019 — rework 7: per-repository numbering and an order-independent leak guard
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0019-M21 | packages/dev/src/model.ts | parsed the namespaced store key instead of the bare id when choosing the next number | `dev per-repository ids > ids count up across different slugs in one repository` |
 
 ## TK0026 — rework 18: the step plugin and a unique global fact
 

@@ -28,9 +28,10 @@ export class ConfigError extends Error {
   }
 }
 
-/** The plugins installed by `operad init`: the base plugin that runs commands. */
+/** The plugins `operad init` installs: the base plugins, dev and the cron source. */
 export const DEFAULT_PLUGINS: readonly string[] = [
   "@operad-io/shell",
+  "@operad-io/dev",
   "@operad-io/source-cron",
 ];
 

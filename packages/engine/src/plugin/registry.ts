@@ -34,6 +34,7 @@ import {
   type PluginStepResult,
   type PluginStore,
   type ResolvedCommand,
+  type RunControl,
   type SourceContext,
   type SourceHandle,
   type StartRunRequest,
@@ -76,6 +77,8 @@ export interface PluginRegistryOptions {
         actor: Actor,
       ) => MaybePromise<void>)
     | undefined;
+  /** Cancels one run when a plugin action asks; the kernel writes the input. */
+  readonly onCancelRun?: ((runId: string) => MaybePromise<void>) | undefined;
   /** The specifier each definition was loaded from, aligned with it. */
   readonly sources?: readonly (string | undefined)[] | undefined;
   /** The routing rules, given to source plugins. */
@@ -269,6 +272,9 @@ function normalizeObjects(
       throw new PluginError(`${at}: duplicate object type "${name}"`);
     }
     names.add(name);
+    if (entry.resolve !== undefined && typeof entry.resolve !== "function") {
+      throw new PluginError(`${at}[${index}]: resolve: must be a function`);
+    }
 
     let fields: string[] | undefined;
     if (entry.index !== undefined) {
@@ -294,6 +300,13 @@ function normalizeObjects(
     objects.push({
       name,
       ...(entry.schema === undefined ? {} : { schema: entry.schema }),
+      ...(entry.resolve === undefined
+        ? {}
+        : {
+            resolve: entry.resolve as NonNullable<
+              ObjectTypeDefinition["resolve"]
+            >,
+          }),
       ...(fields === undefined ? {} : { index: fields }),
     });
   });
@@ -361,12 +374,15 @@ function normalizeActions(
       throw new PluginError(`${at}[${index}]: must be an object`);
     }
     const name = requireName(entry.name, `${at}[${index}]: name`);
-    if (names.has(name)) {
-      throw new PluginError(`${at}: duplicate action "${name}"`);
-    }
-    names.add(name);
-
     const on = requireName(entry.on, `${at}[${index}]: on`);
+    const key = `${name}\u0000${on}`;
+    if (names.has(key)) {
+      throw new PluginError(
+        `${at}: duplicate action "${name}" on object type "${on}"`,
+      );
+    }
+    names.add(key);
+
     if (typeof entry.when !== "function") {
       throw new PluginError(`${at}[${index}]: when: must be a function`);
     }
@@ -617,6 +633,9 @@ export class PluginRegistry {
         actor: Actor,
       ) => MaybePromise<void>)
     | undefined;
+  private readonly onCancelRun:
+    | ((runId: string) => MaybePromise<void>)
+    | undefined;
   private readonly rules: readonly TriggerRule[];
   private readonly onSourceEvent:
     | ((event: TriggerEvent, plugin: string) => MaybePromise<void>)
@@ -643,6 +662,7 @@ export class PluginRegistry {
     this.onLog = options.onLog ?? ((message) => console.error(message));
     this.onStartRun = options.onStartRun;
     this.onAnswer = options.onAnswer;
+    this.onCancelRun = options.onCancelRun;
     this.rules = options.rules ?? [];
     this.onSourceEvent = options.onSourceEvent;
 
@@ -740,8 +760,15 @@ export class PluginRegistry {
   actionDefinition(
     plugin: string,
     action: string,
+    objectType?: string | undefined,
   ): ActionTypeDefinition | undefined {
-    return this.byName.get(plugin)?.actions.find((item) => item.name === action);
+    return this.byName
+      .get(plugin)
+      ?.actions.find(
+        (item) =>
+          item.name === action &&
+          (objectType === undefined || item.on === objectType),
+      );
   }
 
   /** The plugin names in load order. */
@@ -790,15 +817,17 @@ export class PluginRegistry {
     return this.plugins.map((plugin) => this.sourceByPlugin.get(plugin.name));
   }
 
-  /** Every object type the loaded plugins declare, with its plugin. */
+  /** Every object type the loaded plugins declare, with its plugin and definition. */
   objectTypes(): readonly {
     readonly plugin: string;
     readonly type: string;
+    readonly definition: ObjectTypeDefinition;
   }[] {
     return this.plugins.flatMap((plugin) =>
       plugin.objects.map((object) => ({
         plugin: plugin.name,
         type: object.name,
+        definition: object,
       })),
     );
   }
@@ -944,6 +973,9 @@ export class PluginRegistry {
       object: options.object,
       actor,
       answer,
+      ...(this.onCancelRun === undefined
+        ? {}
+        : { runs: this.runControl() }),
     };
     const value = await found.action.run(ctx, personArgs);
     return {
@@ -1267,33 +1299,43 @@ export class PluginRegistry {
       const actionName = named.action;
       const plugin = this.byName.get(pluginName);
       if (plugin !== undefined) {
-        const action = plugin.actions.find((item) => item.name === actionName);
-        if (action !== undefined) {
-          this.requireActionObject(plugin, action, objectType);
-          return { plugin, action };
+        const action = plugin.actions.find(
+          (item) => item.name === actionName && item.on === objectType,
+        );
+        if (action !== undefined) return { plugin, action };
+        const other = plugin.actions.find((item) => item.name === actionName);
+        if (other !== undefined) {
+          this.requireActionObject(plugin, other, objectType);
         }
       }
     }
 
     let found:
-      | { readonly plugin: LoadedPlugin; readonly action: ActionTypeDefinition }
+      | {
+          readonly plugin: LoadedPlugin;
+          readonly actions: readonly ActionTypeDefinition[];
+        }
       | undefined;
     for (const plugin of this.plugins) {
-      for (const action of plugin.actions) {
-        if (action.name !== name) continue;
-        if (found !== undefined) {
-          throw new PluginError(
-            `action "${name}": declared by plugins "${found.plugin.name}" and "${plugin.name}", use "<plugin>/<action>"`,
-          );
-        }
-        found = { plugin, action };
+      const matches = plugin.actions.filter((action) => action.name === name);
+      if (matches.length === 0) continue;
+      if (found !== undefined) {
+        throw new PluginError(
+          `action "${name}": declared by plugins "${found.plugin.name}" and "${plugin.name}", use "<plugin>/<action>"`,
+        );
       }
+      found = { plugin, actions: matches };
     }
     if (found === undefined) {
       throw new PluginError(`action "${name}": no loaded plugin declares it`);
     }
-    this.requireActionObject(found.plugin, found.action, objectType);
-    return found;
+    const action =
+      found.actions.find((item) => item.on === objectType) ?? found.actions[0];
+    if (action === undefined) {
+      throw new PluginError(`action "${name}": no loaded plugin declares it`);
+    }
+    this.requireActionObject(found.plugin, action, objectType);
+    return { plugin: found.plugin, action };
   }
 
   private requireActionObject(
@@ -1367,6 +1409,15 @@ export class PluginRegistry {
         this.store.append(
           input.cause === undefined ? { ...input, cause } : input,
         ),
+    };
+  }
+
+  private runControl(): RunControl {
+    const onCancelRun = this.onCancelRun;
+    return {
+      cancel: async (runId) => {
+        if (onCancelRun !== undefined) await onCancelRun(runId);
+      },
     };
   }
 

@@ -11,6 +11,7 @@ import {
   StateError,
   TriggerError,
   ViewError,
+  applyInput,
   createViews,
   defaultOperadHome,
   ensureConfig,
@@ -25,6 +26,7 @@ import {
   openPluginStore,
   parseObjectKey,
   readConfig,
+  readState,
   readStoredStart,
   readStoredTrigger,
   serve,
@@ -132,6 +134,7 @@ function paintState(row: ViewRow, text: string, tty: boolean): string {
 
 interface Context {
   readonly home: string;
+  readonly cwd: string;
   readonly config: OperadConfig;
   readonly registry: PluginRegistry;
   readonly log: LogBackend;
@@ -140,6 +143,7 @@ interface Context {
 }
 
 async function openContext(home: string, io: CliIo): Promise<Context> {
+  const cwd = process.cwd();
   const config = await readConfig(home);
   const storeRoot = storeRootOf(config);
   const store = openPluginStore({ backend: config.store.backend, root: storeRoot });
@@ -147,7 +151,7 @@ async function openContext(home: string, io: CliIo): Promise<Context> {
   let loaded: PluginRegistry | undefined;
   const registry = await loadPluginRegistry({
     home,
-    cwd: home,
+    cwd,
     store,
     kernelVerbs: KERNEL_VERBS,
     onLog: (message) => io.error(`${message}\n`),
@@ -168,10 +172,32 @@ async function openContext(home: string, io: CliIo): Promise<Context> {
         actor,
       });
     },
+    onCancelRun: async (runId) => {
+      const runs = await log.runs();
+      const run = runs.find((candidate) => candidate.runId === runId);
+      if (run === undefined) return;
+      const found = loaded?.flow(run.flow);
+      if (found === undefined) {
+        throw new StateError(`run "${runId}": flow "${run.flow}" is not loaded`);
+      }
+      const state = await readState(log, runId);
+      if (state.status === "ended" || state.status === "idle") return;
+      await applyInput(
+        log,
+        found.flow,
+        runId,
+        state,
+        { kind: "cancel" },
+        Date.now(),
+        "dev",
+        `cancel:${runId}`,
+      );
+    },
   });
   loaded = registry;
   return {
     home,
+    cwd,
     config,
     registry,
     log,
@@ -180,6 +206,7 @@ async function openContext(home: string, io: CliIo): Promise<Context> {
       registry,
       store,
       log,
+      cwd,
       onLog: (message) => io.error(`${message}\n`),
     }),
   };
@@ -1317,7 +1344,7 @@ async function commandPlugin(
   argv: readonly string[],
 ): Promise<boolean> {
   const run = await context.registry.runCommand(argv, {
-    cwd: context.home,
+    cwd: context.cwd,
   });
   if (run === undefined) return false;
   printValue(io, run.value);
