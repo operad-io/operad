@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://operad.io/schemas/config.schema.json",
+  "title": "operad home config",
+  "description": "The config in $OPERAD_HOME/config.json: the plugins to load and the store the log uses.",
+  "type": "object",
+  "properties": {
+    "plugins": {
+      "description": "Plugin modules or paths loaded when the engine starts.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "store": {
+      "description": "Where the fact log lives. jsonl uses a directory, sqlite a database file.",
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": ["jsonl", "sqlite"],
+          "default": "jsonl"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Relative paths resolve against the operad home."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

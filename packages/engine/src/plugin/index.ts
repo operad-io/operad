@@ -8,4 +8,6 @@ export { PluginRegistry } from "./registry.ts";
 export type { PluginRegistryOptions } from "./registry.ts";
 export { MemoryPluginStore } from "./store.ts";
 export type { MemoryPluginStoreOptions } from "./store.ts";
+export { FilePluginStore } from "./file-store.ts";
+export type { FilePluginStoreOptions } from "./file-store.ts";
 export * from "./types.ts";

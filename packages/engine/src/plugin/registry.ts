@@ -12,6 +12,7 @@ import {
   type ActionRun,
   type ActionRunOptions,
   type ActionTypeDefinition,
+  type Answer,
   type CommandContext,
   type CommandDefinition,
   type CommandRun,
@@ -22,6 +23,8 @@ import {
   type ObjectTypeDefinition,
   type PendingActionView,
   type PendingEntry,
+  type PluginBaseContext,
+  type PluginCheck,
   type PluginKind,
   type PluginStepResult,
   type PluginStore,
@@ -49,6 +52,12 @@ export interface PluginRegistryOptions {
   readonly onStartRun?:
     | ((request: StartRunRequest) => MaybePromise<void>)
     | undefined;
+  /** Answers a person wait for an action; the action calls `ctx.answer`. */
+  readonly onAnswer?:
+    | ((runId: string, choice: string, note?: string) => MaybePromise<void>)
+    | undefined;
+  /** The specifier each definition was loaded from, aligned with it. */
+  readonly sources?: readonly (string | undefined)[] | undefined;
 }
 
 interface NormalizedPlugin {
@@ -61,6 +70,9 @@ interface NormalizedPlugin {
   readonly flows: readonly unknown[];
   readonly commands: readonly CommandDefinition[];
   readonly onTick: ((ctx: TickContext) => MaybePromise<void>) | undefined;
+  readonly check:
+    | ((ctx: PluginBaseContext) => MaybePromise<string | void>)
+    | undefined;
 }
 
 interface LoadedPlugin extends Omit<NormalizedPlugin, "flows"> {
@@ -272,6 +284,18 @@ function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     onTick = raw.onTick as (ctx: TickContext) => MaybePromise<void>;
   }
 
+  let check:
+    | ((ctx: PluginBaseContext) => MaybePromise<string | void>)
+    | undefined;
+  if (raw.check !== undefined) {
+    if (typeof raw.check !== "function") {
+      throw new PluginError(`${at}: check: must be a function`);
+    }
+    check = raw.check as (
+      ctx: PluginBaseContext,
+    ) => MaybePromise<string | void>;
+  }
+
   return {
     name,
     kind,
@@ -282,6 +306,7 @@ function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     flows: optionalArray(raw.flows, `${at}: flows`),
     commands: normalizeCommands(raw.commands, `${at}: commands`),
     onTick,
+    check,
   };
 }
 
@@ -390,8 +415,12 @@ export class PluginRegistry {
   private readonly onStartRun:
     | ((request: StartRunRequest) => MaybePromise<void>)
     | undefined;
+  private readonly onAnswer:
+    | ((runId: string, choice: string, note?: string) => MaybePromise<void>)
+    | undefined;
   private readonly plugins: readonly LoadedPlugin[];
   private readonly byName: ReadonlyMap<string, LoadedPlugin>;
+  private readonly sourceByPlugin: ReadonlyMap<string, string>;
   private readonly stepIndex: ReadonlyMap<
     string,
     { readonly plugin: LoadedPlugin; readonly step: StepTypeDefinition }
@@ -407,6 +436,7 @@ export class PluginRegistry {
     this.kernelVerbs = new Set(options.kernelVerbs ?? []);
     this.onLog = options.onLog ?? ((message) => console.error(message));
     this.onStartRun = options.onStartRun;
+    this.onAnswer = options.onAnswer;
 
     const clock = options.clock ?? (() => Date.now());
     this.store =
@@ -424,6 +454,13 @@ export class PluginRegistry {
     this.plugins = validateFlows(normalized, stepTypes);
 
     this.byName = new Map(this.plugins.map((plugin) => [plugin.name, plugin]));
+
+    const sources = new Map<string, string>();
+    for (const [index, plugin] of this.plugins.entries()) {
+      const source = options.sources?.[index];
+      if (source !== undefined) sources.set(plugin.name, source);
+    }
+    this.sourceByPlugin = sources;
 
     const stepIndex = new Map<
       string,
@@ -447,11 +484,35 @@ export class PluginRegistry {
     return collectStepTypes(this.plugins);
   }
 
-  /** Every flow a loaded plugin declares, with its plugin name. */
-  flows(): readonly { readonly plugin: string; readonly flow: FlowDefinition }[] {
+  /** Every flow a loaded plugin declares, with its plugin name and source. */
+  flows(): readonly {
+    readonly plugin: string;
+    readonly flow: FlowDefinition;
+    readonly source: string | undefined;
+  }[] {
     return this.plugins.flatMap((plugin) =>
-      plugin.flows.map((flow) => ({ plugin: plugin.name, flow })),
+      plugin.flows.map((flow) => ({
+        plugin: plugin.name,
+        flow,
+        source: this.sourceByPlugin.get(plugin.name),
+      })),
     );
+  }
+
+  /** The flow with this name, whichever plugin declares it. */
+  flow(name: string):
+    | { readonly plugin: string; readonly flow: FlowDefinition }
+    | undefined {
+    for (const plugin of this.plugins) {
+      const flow = plugin.flows.find((item) => item.name === name);
+      if (flow !== undefined) return { plugin: plugin.name, flow };
+    }
+    return undefined;
+  }
+
+  /** The result names a step type declares, or undefined when it is unknown. */
+  stepResults(use: string): readonly string[] | undefined {
+    return this.stepIndex.get(use)?.step.results;
   }
 
   /** Loads and validates a flow file against the loaded step types. */
@@ -521,6 +582,12 @@ export class PluginRegistry {
   ): Promise<ActionRun> {
     const found = this.findAction(name, options.object.type);
     const cause = `action:${found.plugin.name}/${found.action.name}`;
+    const runId = options.runId;
+    const onAnswer = this.onAnswer;
+    const answer: Answer | undefined =
+      runId === undefined || onAnswer === undefined
+        ? undefined
+        : (choice, note) => onAnswer(runId, choice, note);
     const ctx: ActionContext = {
       plugin: found.plugin.name,
       home: this.home,
@@ -534,8 +601,9 @@ export class PluginRegistry {
         found.action.name,
       ),
       signal: options.signal ?? new AbortController().signal,
-      runId: options.runId,
+      runId,
       object: options.object,
+      answer,
     };
     const value = await found.action.run(ctx, args);
     return {
@@ -543,6 +611,38 @@ export class PluginRegistry {
       action: found.action.name,
       value,
     };
+  }
+
+  /** Runs each plugin's optional `check`; a throw is a failed check, not an error. */
+  async checks(): Promise<readonly PluginCheck[]> {
+    const checks: PluginCheck[] = [];
+    for (const plugin of this.plugins) {
+      if (plugin.check === undefined) continue;
+      const ctx: PluginBaseContext = {
+        plugin: plugin.name,
+        home: this.home,
+        cwd: this.cwd,
+        store: this.store,
+        facts: this.factsFor(`check:${plugin.name}`),
+        logger: createPluginLogger(this.store.root, plugin.name, "check"),
+        signal: new AbortController().signal,
+      };
+      try {
+        const note = await plugin.check(ctx);
+        checks.push({
+          plugin: plugin.name,
+          ok: true,
+          message: typeof note === "string" ? note : "ok",
+        });
+      } catch (error) {
+        checks.push({
+          plugin: plugin.name,
+          ok: false,
+          message: messageOf(error),
+        });
+      }
+    }
+    return checks;
   }
 
   /**
@@ -705,6 +805,11 @@ export class PluginRegistry {
   /** The run starts plugins asked for on the latest ticks. */
   get startedRuns(): readonly StartRunRequest[] {
     return this.starts;
+  }
+
+  /** Removes and returns the start requests collected so far. */
+  takeStartedRuns(): StartRunRequest[] {
+    return this.starts.splice(0);
   }
 
   private actionsFor(

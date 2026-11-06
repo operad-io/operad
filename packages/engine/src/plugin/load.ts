@@ -145,5 +145,9 @@ export async function loadPluginRegistry(
   for (const specifier of specifiers) {
     definitions.push(await loadPlugin(specifier, home));
   }
-  return new PluginRegistry(definitions, { ...options, home });
+  return new PluginRegistry(definitions, {
+    ...options,
+    home,
+    sources: specifiers,
+  });
 }

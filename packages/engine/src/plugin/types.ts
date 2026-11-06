@@ -106,6 +106,16 @@ export interface PluginBaseContext {
   readonly signal: AbortSignal;
 }
 
+/** The answer a plugin action gives to the person wait it is answering. */
+export type Answer = (choice: string, note?: string) => MaybePromise<void>;
+
+/** The result of one plugin's optional `check`. */
+export interface PluginCheck {
+  readonly plugin: string;
+  readonly ok: boolean;
+  readonly message: string;
+}
+
 /** The context a step run receives. */
 export interface StepContext extends PluginBaseContext {
   readonly runId: string;
@@ -154,6 +164,8 @@ export interface ActionTypeDefinition {
 export interface ActionContext extends PluginBaseContext {
   readonly runId: string | undefined;
   readonly object: RunObject;
+  /** Answers the run's current person wait; set when the action runs for a run. */
+  readonly answer?: Answer | undefined;
 }
 
 /** Options for running an action through the registry. */
@@ -227,6 +239,8 @@ export interface PluginShape {
   readonly flows?: readonly FlowDefinition[] | undefined;
   readonly commands?: readonly CommandDefinition[] | undefined;
   readonly onTick?: ((ctx: TickContext) => MaybePromise<void>) | undefined;
+  /** Runs when `operad init` checks the plugin; a string is the check's note. */
+  readonly check?: ((ctx: PluginBaseContext) => MaybePromise<string | void>) | undefined;
 }
 
 /** A plugin definition ready for the registry. */

@@ -1,0 +1,190 @@
+/** The history view: one line per recorded step, in order, in words. */
+
+import type { Fact } from "../log/types.ts";
+
+export interface HistoryEntry {
+  readonly time: number;
+  readonly step: string | null;
+  readonly what: string;
+  readonly why: string;
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function text(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function number(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function iso(time: number): string {
+  return new Date(time).toISOString();
+}
+
+function reasonOf(data: Record<string, unknown>): string {
+  const message = text(data.message) ?? text(data.error);
+  const reason = text(data.reason);
+  const log = text(data.log) ?? text(data.path);
+  let why = message ?? reason ?? "";
+  if (log !== undefined) {
+    why = why.length > 0 ? `${why}, log at ${log}` : `log at ${log}`;
+  }
+  return why;
+}
+
+/**
+ * Turns facts into user words. Nothing here prints a fact kind, an effect, a
+ * node, a graph or a decision; those are internal names.
+ */
+export function historyEntry(fact: Fact): HistoryEntry {
+  const payload = record(fact.payload);
+  const step = text(payload.step) ?? null;
+  const time = fact.time;
+
+  switch (fact.kind) {
+    case "run_started":
+      return {
+        time,
+        step,
+        what: "run started",
+        why: `flow "${text(payload.flow) ?? "unknown"}"`,
+      };
+
+    case "step_entered":
+      return {
+        time,
+        step,
+        what: `started ${step ?? "a step"}`,
+        why: `attempt ${number(payload.visit) ?? 1}`,
+      };
+
+    case "effect_requested": {
+      if (payload.recovery === true) {
+        return {
+          time,
+          step,
+          what: `re-running ${step ?? "the step"} after a crash`,
+          why: "",
+        };
+      }
+      const kind = text(payload.effect);
+      if (kind === "schedule_wake") {
+        const due = number(payload.due);
+        return {
+          time,
+          step,
+          what: `waiting for ${step ?? "the step"}`,
+          why: due === undefined ? "" : `until ${iso(due)}`,
+        };
+      }
+      if (kind === "poll_check") {
+        return {
+          time,
+          step,
+          what: `checking ${step ?? "the step"}`,
+          why: "",
+        };
+      }
+      return {
+        time,
+        step,
+        what: `running ${step ?? "the step"}`,
+        why: "",
+      };
+    }
+
+    case "step_result": {
+      const result = text(payload.result) ?? "finished";
+      const data = record(payload.data);
+      return {
+        time,
+        step,
+        what: `${step ?? "the step"} ${result}`,
+        why: reasonOf(data),
+      };
+    }
+
+    case "edge_taken": {
+      const target = text(payload.target) ?? "the next step";
+      return {
+        time,
+        step,
+        what: target === "end" ? "moving to the end" : `moving to ${target}`,
+        why: text(payload.result) === undefined ? "" : `after ${text(payload.result) ?? ""}`,
+      };
+    }
+
+    case "waiting_for_person":
+      return {
+        time,
+        step,
+        what: "waiting for you",
+        why: text(payload.prompt) ?? "",
+      };
+
+    case "person_answered":
+      return {
+        time,
+        step,
+        what: `you chose ${text(payload.choice) ?? "an answer"}`,
+        why: text(payload.note) ?? "",
+      };
+
+    case "run_ended": {
+      const status = text(payload.status) ?? "ended";
+      const words =
+        status === "done" ? "run done" : status === "cancelled" ? "run cancelled" : "run failed";
+      return { time, step, what: words, why: text(payload.reason) ?? "" };
+    }
+
+    case "step_interrupted": {
+      const reason = text(payload.reason);
+      const why =
+        reason === "recover_unsafe"
+          ? "the run stopped and this step cannot be replayed safely"
+          : reason === "undeclared_result"
+            ? `the step returned "${text(payload.result) ?? "an unknown result"}", which the flow does not expect`
+            : "the step did not finish";
+      return { time, step, what: `${step ?? "the step"} interrupted`, why };
+    }
+
+    case "crash_loop_stopped":
+      return {
+        time,
+        step,
+        what: `${step ?? "the step"} keeps crashing`,
+        why: `waiting for you after ${number(payload.recoveries) ?? 0} attempts`,
+      };
+
+    case "visit_limit_reached":
+      return {
+        time,
+        step,
+        what: `${step ?? "the step"} ran too many times`,
+        why: `limit ${number(payload.limit) ?? 0}`,
+      };
+
+    default:
+      return { time, step, what: "something happened", why: "" };
+  }
+}
+
+/** Formats one entry for a terminal: time, what happened, and why. */
+export function formatHistoryEntry(entry: HistoryEntry): string {
+  const why = entry.why.length > 0 ? `: ${entry.why}` : "";
+  return `${iso(entry.time)}  ${entry.what}${why}`;
+}
+
+export async function* historyEntries(
+  facts: AsyncIterable<Fact>,
+): AsyncGenerator<HistoryEntry> {
+  for await (const fact of facts) {
+    yield historyEntry(fact);
+  }
+}
