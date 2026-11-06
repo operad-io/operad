@@ -709,6 +709,30 @@ export class Views {
     const only = matches[0];
     if (only !== undefined) return only;
 
+    // An object key may carry a namespace before a slash (a plugin's objects
+    // can be scoped, such as one plan per repository). A bare id then still
+    // names the object when exactly one key ends with `/<id>`.
+    if (!id.includes("/")) {
+      const suffixed: ResolvedObject[] = [];
+      for (const entry of this.registry.objectTypes()) {
+        for (const object of await this.store.list(entry.type)) {
+          if (object.id === id || !object.id.endsWith(`/${id}`)) continue;
+          suffixed.push({ type: entry.type, id: object.id, object });
+        }
+      }
+      if (suffixed.length > 1) {
+        throw new ViewError(
+          "ambiguous",
+          `"${id}" is ambiguous: use ${suffixed
+            .map((match) => `${match.type}:${match.id}`)
+            .sort()
+            .join(", ")}`,
+        );
+      }
+      const scoped = suffixed[0];
+      if (scoped !== undefined) return scoped;
+    }
+
     if (this.log !== undefined) {
       const runs = await this.log.runs();
       const found = runs.find((run) => run.object === id);

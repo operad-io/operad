@@ -9,7 +9,7 @@ import {
   setTaskPhase,
 } from "../src/service.ts";
 import { planViews, taskViews } from "../src/views.ts";
-import { taskData } from "../src/model.ts";
+import { bareId, taskData } from "../src/model.ts";
 import { cleanupTempRoots, makeGitRepository, storeAt, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
@@ -114,7 +114,7 @@ describe("dev views", () => {
     )) as { markdown: string };
     expect(table.markdown).toContain("| id | title | phase | after |");
     expect(table.markdown).toContain(
-      `| ${task.id} | JSONL | proposed | - |`,
+      `| ${bareId(task.id)} | JSONL | proposed | - |`,
     );
   });
 });

@@ -18,6 +18,7 @@ import {
 } from "../src/service.ts";
 import {
   PRIORITIES,
+  bareId,
   type AutoMode,
   type TaskPhase,
 } from "../src/model.ts";
@@ -137,7 +138,7 @@ test("2 000 random operations rebuild from history every time", async () => {
         const target = pick(tasks);
         const after = pick(tasks);
         if (target !== undefined && after !== undefined) {
-          await updateTask(store, target, { after: [after] }).catch(
+          await updateTask(store, target, { after: [bareId(after)] }).catch(
             () => undefined,
           );
         }

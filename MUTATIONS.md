@@ -208,3 +208,16 @@
 | TK0019-M4 | packages/engine/src/plugin/registry.ts | made the action name alone its identity, so plan and task actions clashed | `dev actions > confirm is one name on a plan and on a task` |
 | TK0019-M5 | packages/dev/src/service.ts | stopped collecting a running task's run id when a plan was cancelled | `dev plans and tasks > cancelling a plan cancels a running task and asks the kernel to cancel its run` |
 
+## TK0019 — rework 3: default dev, per-repository ids and a durable lock
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0019-M6 | packages/engine/src/config/config.ts | installed only the shell plugin by default | `operad config > the default plugins are the shell plugin and dev` |
+| TK0019-M7 | packages/dev/src/commands.ts | looked a task up by its bare id instead of the repository's store key in `task edit`/`task update` | `operad with the dev plugin > task edit and update resolve the repository like every other command` |
+| TK0019-M8 | packages/dev/src/service.ts | dropped the cancelled-plan recheck inside `addTask`'s lock | `dev checks inside the lock > task add rechecks that its plan is not cancelled` |
+| TK0019-M9 | packages/dev/src/service.ts | dropped the open-task recheck inside `removeRepository`'s lock | `dev checks inside the lock > repo remove rechecks that no task is open` |
+| TK0019-M10 | packages/dev/src/service.ts | let `repositoryOf` return a repository marked removed | `dev checks inside the lock > a write refuses a repository that was removed` |
+| TK0019-M11 | packages/dev/src/model.ts | made `storeKey` return the bare id, so two repositories shared one key | `dev per-repository ids > two repositories may both hold TK0001-work under different keys` |
+| TK0019-M12 | packages/dev/src/service.ts | skipped the takeover of a lock whose pid is dead | `the dev lock survives a dead holder > a lock left by a dead pid is taken over` (timed out) |
+| TK0019-M13 | packages/dev/src/service.ts | removed the source-checkout wording from `repo add`'s refusal | `repo add never writes into the operad checkout > the operad source checkout is refused` |
+

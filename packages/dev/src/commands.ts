@@ -5,7 +5,7 @@ import type {
   CommandDefinition,
   StoredObject,
 } from "@operad-io/engine";
-import { DevError, briefBody, taskData, type RepositoryData } from "./model.ts";
+import { DevError, bareId, briefBody, storeKey, taskData, type RepositoryData } from "./model.ts";
 import { readStdinText } from "./stdin.ts";
 import { editText } from "./editor.ts";
 import {
@@ -159,21 +159,7 @@ async function runPlan(
     title: required(parsed, "--title", "plan add"),
     request: await readStdinText(),
   });
-  return plan.id;
-}
-
-function ownedByRepository(
-  object: StoredObject,
-  repositoryName: string | undefined,
-): void {
-  if (repositoryName === undefined) return;
-  const task = taskData(object.data);
-  if (task.repository !== repositoryName) {
-    throw new DevError(
-      "repo",
-      `task "${object.id}" is not in repository "${repositoryName}"`,
-    );
-  }
+  return bareId(plan.id);
 }
 
 function editable(task: StoredObject): void {
@@ -205,7 +191,8 @@ async function runTask(
     }
     const repository = await objectByPlan(parsed, ctx.store, ctx.cwd);
     const plan = required(parsed, "--plan", "task add");
-    const planObject = await ctx.store.get("plan", plan);
+    const planKey = storeKey(repository.name, plan);
+    const planObject = await ctx.store.get("plan", planKey);
     if (planObject === undefined) {
       throw new DevError("plan", `no plan "${plan}"`);
     }
@@ -219,13 +206,13 @@ async function runTask(
       );
     }
     const task = await addTask(ctx.store, {
-      plan,
+      plan: planKey,
       slug: required(parsed, "--slug", "task add"),
       title: required(parsed, "--title", "task add"),
       brief: await readStdinText(),
       after: many(parsed, "--after"),
     });
-    return task.id;
+    return bareId(task.id);
   }
 
   const id = call.rest[0];
@@ -235,26 +222,28 @@ async function runTask(
   if (call.rest.length > 1) {
     throw new DevError("id", `task ${call.name} takes one task id`);
   }
-  const repositoryName = one(parsed, "--repo");
-  const task = await getTask(ctx.store, id);
-  ownedByRepository(task, repositoryName);
+  const repository = await objectByPlan(parsed, ctx.store, ctx.cwd);
+  const key = storeKey(repository.name, id);
+  const task = await getTask(ctx.store, key);
 
   if (call.name === "edit") {
     editable(task);
     const body = briefBody(taskData(task.data).brief);
     const edited = await editText(body, { root: ctx.store.root });
-    await editTaskBrief(ctx.store, id, edited);
+    await editTaskBrief(ctx.store, key, edited);
     return id;
   }
 
   const title = one(parsed, "--title");
   const after = many(parsed, "--after");
-  return (
-    await updateTask(ctx.store, id, {
-      ...(title === undefined ? {} : { title }),
-      ...(after.length === 0 ? {} : { after }),
-    })
-  ).id;
+  return bareId(
+    (
+      await updateTask(ctx.store, key, {
+        ...(title === undefined ? {} : { title }),
+        ...(after.length === 0 ? {} : { after }),
+      })
+    ).id,
+  );
 }
 
 export const commands: readonly CommandDefinition[] = [
@@ -271,7 +260,7 @@ export const commands: readonly CommandDefinition[] = [
   {
     name: "task",
     args:
-      "add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--repo <name>] | edit <id> | update <id> [--title <title>] [--after <task>]...",
+      "add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--repo <name>] | edit <id> [--repo <name>] | update <id> [--title <title>] [--after <task>]... [--repo <name>]",
     run: runTask,
   },
 ];

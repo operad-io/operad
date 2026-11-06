@@ -7,6 +7,7 @@ import type {
   ViewSection,
 } from "@operad-io/engine";
 import {
+  bareId,
   hasRework,
   planData,
   planNote,
@@ -39,7 +40,7 @@ function tasksTable(
     const data = taskData(object.data);
     const after = data.after.length === 0 ? "-" : data.after.join(", ");
     lines.push(
-      `| ${cell(object.id)} | ${cell(data.title)} | ${cell(data.phase)} | ${cell(after)} |`,
+      `| ${cell(bareId(object.id))} | ${cell(data.title)} | ${cell(data.phase)} | ${cell(after)} |`,
     );
   }
   return lines.join("\n");
@@ -49,7 +50,7 @@ export const planViews: ObjectViews = {
   row(object: StoredObject): ObjectRow {
     const plan = planData(object.data);
     return {
-      id: object.id,
+      id: bareId(object.id),
       title: plan.title,
       state: planState(plan),
       note: planNote(plan),
@@ -70,8 +71,16 @@ export const planViews: ObjectViews = {
     }
     if (sectionId === "tasks") {
       const tasks = (await ctx.store.list("task"))
-        .filter((candidate) => taskData(candidate.data).plan === object.id)
-        .sort((left, right) => left.id.localeCompare(right.id));
+        .filter((candidate) => {
+          const task = taskData(candidate.data);
+          return (
+            task.repository === plan.repository &&
+            task.plan === bareId(object.id)
+          );
+        })
+        .sort((left, right) =>
+          bareId(left.id).localeCompare(bareId(right.id)),
+        );
       return { markdown: tasksTable(tasks) };
     }
     return { markdown: "" };
@@ -83,7 +92,7 @@ export const taskViews: ObjectViews = {
     const task = taskData(object.data);
     const note = costNote(task.cost);
     return {
-      id: object.id,
+      id: bareId(object.id),
       title: task.title,
       state: task.phase,
       ...(note === undefined ? {} : { note }),

@@ -18,7 +18,8 @@ merge. It is a plugin: the kernel knows none of these words.
 | **priority** | P0 (most urgent) to P5 (least urgent), default P3 |
 
 A plan id is `PL<4 digits>-<slug>`; a task id is `TK<4 digits>-<slug>`. Numbers
-count up per repository and are never reused.
+count up per repository and are never reused, so two repositories may both have
+`TK0001-work`; a command accepts the bare id inside the repository it names.
 
 ## Commands
 

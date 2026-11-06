@@ -10,24 +10,29 @@ import {
   realpathSync,
   statSync,
   unlinkSync,
+  watch,
   writeFileSync,
+  type FSWatcher,
 } from "node:fs";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ObjectStore, StoredObject } from "@operad-io/engine";
 import {
   appendChange,
   appendRework,
+  bareId,
   DevError,
   editBrief,
   isOpenTask,
   isRecord,
+  keyRepository,
   lowerPriority,
   nextId,
   planData,
-  planState,
   PRIORITIES,
   priorityIndex,
   repositoryData,
+  storeKey,
   taskData,
   validateRepositoryName,
   validateSlug,
@@ -62,11 +67,47 @@ const TASK_TYPE = "task";
 
 const EXCLUDES = [".operad-worktrees/", ".radian-sandbox/"] as const;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((done) => {
-    setTimeout(done, ms);
-  });
+/** How long a waiter accepts a live holder before it gives up. */
+const LOCK_TIMEOUT_MS = 10_000;
+
+/** The fallback check interval when no watch event arrives. */
+const LOCK_POLL_MS = 200;
+
+/**
+ * The operad source checkout this module was loaded from, when it came from
+ * source. `repo add` never registers it: a test that uses it would write into
+ * the repository it is testing.
+ */
+const SOURCE_CHECKOUT = findSourceCheckout();
+
+function findSourceCheckout(): string | undefined {
+  let directory = dirname(fileURLToPath(import.meta.url));
+  for (;;) {
+    const manifest = join(directory, "package.json");
+    if (existsSync(manifest)) {
+      try {
+        const parsed: unknown = JSON.parse(readFileSync(manifest, "utf8"));
+        if (isRecord(parsed) && parsed.name === "operad-workspace") {
+          return realpathSync(directory);
+        }
+      } catch {
+        // Not this directory's manifest; keep walking.
+      }
+    }
+    const parent = dirname(directory);
+    if (parent === directory) return undefined;
+    directory = parent;
+  }
 }
+
+/**
+ * Test-only hook, set by a test to pause between a command's first read and
+ * its lock. Production code never sets it; the checks inside the lock must hold
+ * without it.
+ */
+export const devTestHooks: {
+  beforeLock?: ((operation: string) => Promise<void> | void) | undefined;
+} = {};
 
 interface GitResult {
   readonly ok: boolean;
@@ -87,36 +128,151 @@ function git(cwd: string, args: readonly string[]): GitResult {
   };
 }
 
+/** What a waiter may inject: the clock and how it waits between checks. */
+export interface RepositoryLockOptions {
+  readonly clock?: (() => number) | undefined;
+  readonly wait?: ((ms: number) => Promise<void>) | undefined;
+}
+
+interface LockRecord {
+  readonly pid: number;
+  readonly start: number | null;
+}
+
+function errorCode(error: unknown): unknown {
+  return typeof error === "object" && error !== null && "code" in error
+    ? error.code
+    : undefined;
+}
+
+function readLock(path: string): LockRecord | undefined {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    // A writer between create and write, or a torn file, is not a holder yet.
+    return undefined;
+  }
+  if (!isRecord(raw)) return undefined;
+  const pid = raw.pid;
+  const start = raw.start;
+  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
+    return undefined;
+  }
+  return { pid, start: typeof start === "number" ? start : null };
+}
+
+/** True while a process with this pid exists; `EPERM` means it exists too. */
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return errorCode(error) !== "ESRCH";
+  }
+}
+
+/** The start time of a process, when the platform will say; for the record. */
+function processStart(pid: number): number | null {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+    const ticks = Number(fields[19]);
+    if (Number.isFinite(ticks)) return ticks;
+  } catch {
+    // Not Linux.
+  }
+  try {
+    const result = Bun.spawnSync({
+      cmd: ["ps", "-p", String(pid), "-o", "lstart="],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const at = Date.parse(result.stdout.toString().trim());
+    return Number.isFinite(at) ? at : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Waits for the lock directory to change, or for one fallback interval. The
+ * directory is watched because the lock file is unlinked and recreated.
+ */
+function waitForLock(path: string, ms: number): Promise<void> {
+  return new Promise((done) => {
+    let watcher: FSWatcher | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let finished = false;
+    const finish = (): void => {
+      if (finished) return;
+      finished = true;
+      watcher?.close();
+      if (timer !== undefined) clearTimeout(timer);
+      done();
+    };
+    timer = setTimeout(finish, Math.max(1, ms));
+    try {
+      watcher = watch(dirname(path), (_event, filename) => {
+        if (filename === null || filename === basename(path)) finish();
+      });
+      watcher.on("error", finish);
+    } catch {
+      // The timer is the fallback when watching is unavailable.
+    }
+  });
+}
+
 /**
  * Holds one repository's lock while ids and counts change. The lock file makes
  * two commands in two processes take turns; commands in one process wait too.
+ * A lock whose pid is dead is taken over by removing it; the atomic `wx` create
+ * then decides which waiter wins.
  */
 export async function withRepositoryLock<T>(
   repositoryPath: string,
   work: () => Promise<T> | T,
+  options: RepositoryLockOptions = {},
 ): Promise<T> {
   const directory = join(repositoryPath, ".operad");
   mkdirSync(directory, { recursive: true });
   const lockPath = join(directory, "dev.lock");
-  const started = Date.now();
+  const clock = options.clock ?? (() => Date.now());
+  const wait = options.wait ?? ((ms: number) => waitForLock(lockPath, ms));
+  const started = clock();
   let handle: number | undefined;
-  while (handle === undefined) {
+  for (;;) {
     try {
       handle = openSync(lockPath, "wx");
+      break;
     } catch (error) {
-      const code =
-        typeof error === "object" && error !== null && "code" in error
-          ? error.code
-          : undefined;
-      if (code !== "EEXIST") throw error;
-      if (Date.now() - started > 10_000) {
-        throw new DevError("lock", `another dev command holds ${lockPath}`);
+      if (errorCode(error) !== "EEXIST") throw error;
+      const holder = readLock(lockPath);
+      if (holder !== undefined && !isAlive(holder.pid)) {
+        // The holder died. The next `wx` decides which waiter takes over.
+        try {
+          unlinkSync(lockPath);
+        } catch (removeError) {
+          if (errorCode(removeError) !== "ENOENT") throw removeError;
+        }
+        continue;
       }
-      await sleep(5);
+      if (clock() - started > LOCK_TIMEOUT_MS) {
+        const who =
+          holder === undefined ? "unknown pid" : `pid ${holder.pid}`;
+        throw new DevError(
+          "lock",
+          `another dev command holds ${lockPath} (${who})`,
+        );
+      }
+      await wait(LOCK_POLL_MS);
     }
   }
   try {
-    writeFileSync(handle, String(process.pid));
+    writeFileSync(
+      handle,
+      JSON.stringify({ pid: process.pid, start: processStart(process.pid) }),
+    );
   } finally {
     closeSync(handle);
   }
@@ -129,6 +285,22 @@ export async function withRepositoryLock<T>(
       // A writer that died may have removed it already.
     }
   }
+}
+
+/**
+ * The one way a command changes a repository: refuse a removed repository,
+ * take its lock, then read it and the objects again before `work` decides.
+ */
+export async function withRepoLock<T>(
+  store: ObjectStore,
+  repository: string,
+  work: (fresh: RepositoryData) => Promise<T> | T,
+): Promise<T> {
+  const initial = await repositoryOf(store, repository);
+  return withRepositoryLock(initial.path, async () => {
+    const fresh = await repositoryOf(store, repository);
+    return work(fresh);
+  });
 }
 
 /* ---------------------------------------------------------------------------
@@ -211,6 +383,8 @@ function ensureExcludes(repositoryPath: string): void {
   const present = new Set(lines.map((line) => line.trim()));
   const missing = EXCLUDES.filter((entry) => !present.has(entry));
   if (missing.length === 0) return;
+  // operad repo add owns this file: the "never write under .git" rule is for
+  // our own work as a worker in a repository, not for this command.
   const prefix = current.length === 0 || current.endsWith("\n") ? "" : "\n";
   appendFileSync(excludePath, `${prefix}${missing.join("\n")}\n`, "utf8");
 }
@@ -255,6 +429,12 @@ export async function addRepository(
       `"${from}" is not the root of a git work tree`,
     );
   }
+  if (SOURCE_CHECKOUT !== undefined && path === SOURCE_CHECKOUT) {
+    throw new DevError(
+      "path",
+      `"${path}" is the operad source checkout; register a work tree of your own`,
+    );
+  }
   const bare = git(path, ["rev-parse", "--is-bare-repository"]);
   if (bare.ok && bare.out === "true") {
     throw new DevError("path", `"${path}" is a bare repository`);
@@ -294,14 +474,25 @@ export async function removeRepository(
   store: ObjectStore,
   name: string,
 ): Promise<RepositoryData> {
-  const found = await findRepository(store, name);
-  if (found === undefined) {
-    throw new DevError("repo", `no registered repository "${name}"`);
-  }
-  const repository = repositoryData(found.data);
+  const initial = await repositoryOf(store, name);
+  await assertNoOpenTasks(store, initial.name);
+  await devTestHooks.beforeLock?.("repo-remove");
+  return withRepoLock(store, name, async (repository) => {
+    await assertNoOpenTasks(store, repository.name);
+    const data: RepositoryData = { ...repository, removed: true };
+    await store.put(REPOSITORY_TYPE, name, data, "dev:repo-remove");
+    return data;
+  });
+}
+
+/** The check that decides whether a repository may be removed. */
+async function assertNoOpenTasks(
+  store: ObjectStore,
+  name: string,
+): Promise<void> {
   const open = (await store.list(TASK_TYPE)).filter((object) => {
     const task = taskData(object.data);
-    return task.repository === repository.name && isOpenTask(task);
+    return task.repository === name && isOpenTask(task);
   });
   if (open.length > 0) {
     throw new DevError(
@@ -309,15 +500,6 @@ export async function removeRepository(
       `repository "${name}" has ${open.length} open task(s)`,
     );
   }
-  return withRepositoryLock(repository.path, async () => {
-    const current = await findRepository(store, name, { includeRemoved: true });
-    const data: RepositoryData = {
-      ...repositoryData(current?.data ?? found.data),
-      removed: true,
-    };
-    await store.put(REPOSITORY_TYPE, name, data, "dev:repo-remove");
-    return data;
-  });
 }
 
 function repositoryByName(
@@ -336,6 +518,9 @@ async function repositoryOf(
   if (found === undefined) {
     throw new DevError("repository", `no repository "${name}"`);
   }
+  if (found.removed) {
+    throw new DevError("repository", `repository "${name}" was removed`);
+  }
   return found;
 }
 
@@ -349,29 +534,35 @@ async function allTasks(store: ObjectStore): Promise<readonly StoredObject[]> {
 
 async function tasksOfPlan(
   store: ObjectStore,
-  planId: string,
+  planKey: string,
 ): Promise<readonly StoredObject[]> {
+  const repository = keyRepository(planKey);
+  const plan = bareId(planKey);
   return (await allTasks(store)).filter((object) => {
     const task = taskData(object.data);
-    return task.plan === planId;
+    return task.repository === repository && task.plan === plan;
   });
 }
 
 export async function getPlan(
   store: ObjectStore,
-  id: string,
+  key: string,
 ): Promise<StoredObject> {
-  const object = await store.get(PLAN_TYPE, id);
-  if (object === undefined) throw new DevError("plan", `no plan "${id}"`);
+  const object = await store.get(PLAN_TYPE, key);
+  if (object === undefined) {
+    throw new DevError("plan", `no plan "${bareId(key)}"`);
+  }
   return object;
 }
 
 export async function getTask(
   store: ObjectStore,
-  id: string,
+  key: string,
 ): Promise<StoredObject> {
-  const object = await store.get(TASK_TYPE, id);
-  if (object === undefined) throw new DevError("task", `no task "${id}"`);
+  const object = await store.get(TASK_TYPE, key);
+  if (object === undefined) {
+    throw new DevError("task", `no task "${bareId(key)}"`);
+  }
   return object;
 }
 
@@ -436,10 +627,10 @@ export async function addPlan(
 ): Promise<StoredObject> {
   const slug = validateSlug(options.slug);
   const title = validateTitle(options.title);
-  return withRepositoryLock(options.repository.path, async () => {
-    const id = await nextId(store, "plan", options.repository.name, slug);
+  return withRepoLock(store, options.repository.name, async (repository) => {
+    const id = await nextId(store, "plan", repository.name, slug);
     const data: PlanData = {
-      repository: options.repository.name,
+      repository: repository.name,
       title,
       request: options.request ?? "",
       status: "draft",
@@ -450,7 +641,7 @@ export async function addPlan(
       mergedCount: 0,
       cancelledCount: 0,
     };
-    return writePlan(store, id, data, "dev:plan-add");
+    return writePlan(store, storeKey(repository.name, id), data, "dev:plan-add");
   });
 }
 
@@ -465,7 +656,11 @@ function validateAfter(
   for (const id of after) {
     if (!unique.includes(id)) unique.push(id);
   }
-  const byId = new Map(tasks.map((object) => [object.id, object]));
+  const byId = new Map(
+    tasks
+      .filter((object) => taskData(object.data).repository === repository)
+      .map((object) => [bareId(object.id), object]),
+  );
   for (const id of unique) {
     if (id === taskId) throw new DevError("after", "a task cannot follow itself");
     const found = byId.get(id);
@@ -488,7 +683,8 @@ function validateAfter(
   for (const object of tasks) {
     const data = taskData(object.data);
     if (data.repository !== repository) continue;
-    follows.set(object.id, object.id === taskId ? unique : data.after);
+    const id = bareId(object.id);
+    follows.set(id, id === taskId ? unique : data.after);
   }
   follows.set(taskId, unique);
 
@@ -525,24 +721,37 @@ export async function addTask(
   const plan = await getPlan(store, options.plan);
   const planObject = planData(plan.data);
   if (planObject.status === "cancelled") {
-    throw new DevError("plan", `plan "${plan.id}" is cancelled`);
+    throw new DevError("plan", `plan "${bareId(plan.id)}" is cancelled`);
   }
-  const repository = await repositoryOf(store, planObject.repository);
-  return withRepositoryLock(repository.path, async () => {
+  await devTestHooks.beforeLock?.("task-add");
+  return withRepoLock(store, planObject.repository, async (repository) => {
     const currentPlan = await getPlan(store, options.plan);
+    const current = planData(currentPlan.data);
+    if (current.status === "cancelled") {
+      throw new DevError(
+        "plan",
+        `plan "${bareId(currentPlan.id)}" is cancelled`,
+      );
+    }
+    if (current.repository !== repository.name) {
+      throw new DevError(
+        "plan",
+        `plan "${bareId(currentPlan.id)}" is not in repository "${repository.name}"`,
+      );
+    }
     const id = await nextId(store, "task", repository.name, slug);
     const tasks = await allTasks(store);
     const after = validateAfter(
       tasks,
       repository.name,
-      currentPlan.id,
+      bareId(currentPlan.id),
       id,
       options.after ?? [],
     );
     const brief = appendChange(options.brief ?? "", "created");
     const data: TaskData = {
       repository: repository.name,
-      plan: currentPlan.id,
+      plan: bareId(currentPlan.id),
       title,
       brief,
       after,
@@ -550,7 +759,12 @@ export async function addTask(
       attempts: 0,
       run: null,
     };
-    const written = await writeTask(store, id, data, "dev:task-add");
+    const written = await writeTask(
+      store,
+      storeKey(repository.name, id),
+      data,
+      "dev:task-add",
+    );
     await refreshPlanCounts(store, currentPlan);
     return written;
   });
@@ -574,8 +788,7 @@ export async function editTaskBrief(
   const task = await getTask(store, id);
   const data = taskData(task.data);
   requireEditable(data);
-  const repository = await repositoryOf(store, data.repository);
-  return withRepositoryLock(repository.path, async () => {
+  return withRepoLock(store, data.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
     requireEditable(latest);
@@ -608,8 +821,7 @@ export async function updateTask(
   const initial = await getTask(store, id);
   const initialData = taskData(initial.data);
   requireEditable(initialData);
-  const repository = await repositoryOf(store, initialData.repository);
-  return withRepositoryLock(repository.path, async () => {
+  return withRepoLock(store, initialData.repository, async () => {
     const current = await getTask(store, id);
     const data = taskData(current.data);
     requireEditable(data);
@@ -621,7 +833,7 @@ export async function updateTask(
             tasks,
             data.repository,
             data.plan,
-            id,
+            bareId(id),
             options.after,
           );
     const lines: string[] = [];
@@ -654,8 +866,7 @@ export async function setTaskPhase(
 ): Promise<StoredObject> {
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
-  const repository = await repositoryOf(store, data.repository);
-  return withRepositoryLock(repository.path, async () => {
+  return withRepoLock(store, data.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
     const run =
@@ -671,7 +882,10 @@ export async function setTaskPhase(
       { ...latest, phase, run, brief },
       `dev:task-${phase}`,
     );
-    const plan = await getPlan(store, latest.plan);
+    const plan = await getPlan(
+      store,
+      storeKey(latest.repository, latest.plan),
+    );
     await refreshPlanCounts(store, plan);
     return written;
   });
@@ -686,8 +900,7 @@ export async function addRework(
 ): Promise<StoredObject> {
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
-  const repository = await repositoryOf(store, data.repository);
-  return withRepositoryLock(repository.path, async () => {
+  return withRepoLock(store, data.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
     return writeTask(
@@ -704,22 +917,21 @@ export async function confirmPlan(
   id: string,
 ): Promise<StoredObject> {
   const initial = await getPlan(store, id);
-  const repository = await repositoryOf(
-    store,
-    planData(initial.data).repository,
-  );
-  return withRepositoryLock(repository.path, async () => {
+  return withRepoLock(store, planData(initial.data).repository, async () => {
     const plan = await getPlan(store, id);
     const data = planData(plan.data);
     if (data.status === "confirmed") {
-      throw new DevError("confirm", `plan "${id}" is already confirmed`);
+      throw new DevError(
+        "confirm",
+        `plan "${bareId(id)}" is already confirmed`,
+      );
     }
     if (data.status === "cancelled") {
-      throw new DevError("confirm", `plan "${id}" is cancelled`);
+      throw new DevError("confirm", `plan "${bareId(id)}" is cancelled`);
     }
     const tasks = await tasksOfPlan(store, id);
     if (tasks.length === 0) {
-      throw new DevError("confirm", `plan "${id}" has no tasks`);
+      throw new DevError("confirm", `plan "${bareId(id)}" has no tasks`);
     }
     for (const object of tasks) {
       const task = taskData(object.data);
@@ -746,20 +958,22 @@ export async function confirmTask(
 ): Promise<StoredObject> {
   const initial = await getTask(store, id);
   const initialData = taskData(initial.data);
-  const repository = await repositoryOf(store, initialData.repository);
-  return withRepositoryLock(repository.path, async () => {
+  return withRepoLock(store, initialData.repository, async () => {
     const task = await getTask(store, id);
     const data = taskData(task.data);
     if (data.phase === "ready") {
-      throw new DevError("confirm", `task "${id}" is already ready`);
+      throw new DevError("confirm", `task "${bareId(id)}" is already ready`);
     }
     if (data.phase !== "proposed") {
       throw new DevError(
         "confirm",
-        `task "${id}" is ${data.phase}; only a proposed task can be confirmed`,
+        `task "${bareId(id)}" is ${data.phase}; only a proposed task can be confirmed`,
       );
     }
-    const plan = await getPlan(store, data.plan);
+    const plan = await getPlan(
+      store,
+      storeKey(data.repository, data.plan),
+    );
     if (planData(plan.data).status !== "confirmed") {
       throw new DevError(
         "confirm",
@@ -810,20 +1024,26 @@ export async function cancelPlan(
 ): Promise<{ readonly plan: StoredObject; readonly runs: readonly string[] }> {
   const initial = await getPlan(store, id);
   const initialData = planData(initial.data);
-  const repository = await repositoryOf(store, initialData.repository);
-  const cancelled = await withRepositoryLock(repository.path, async () => {
-    const plan = await getPlan(store, id);
-    const data = planData(plan.data);
-    if (data.status === "cancelled") {
-      throw new DevError("cancel", `plan "${id}" is already cancelled`);
-    }
-    const tasks = await tasksOfPlan(store, id);
-    const runs = await cancelTasks(store, tasks);
-    const next: PlanData = { ...data, status: "cancelled" };
-    const written = await writePlan(store, id, next, "dev:plan-cancel");
-    await refreshPlanCounts(store, written);
-    return { plan: written, runs };
-  });
+  const cancelled = await withRepoLock(
+    store,
+    initialData.repository,
+    async () => {
+      const plan = await getPlan(store, id);
+      const data = planData(plan.data);
+      if (data.status === "cancelled") {
+        throw new DevError(
+          "cancel",
+          `plan "${bareId(id)}" is already cancelled`,
+        );
+      }
+      const tasks = await tasksOfPlan(store, id);
+      const runs = await cancelTasks(store, tasks);
+      const next: PlanData = { ...data, status: "cancelled" };
+      const written = await writePlan(store, id, next, "dev:plan-cancel");
+      await refreshPlanCounts(store, written);
+      return { plan: written, runs };
+    },
+  );
   for (const run of cancelled.runs) {
     await options.runs?.cancel(run);
   }
@@ -837,32 +1057,41 @@ export async function cancelTask(
 ): Promise<{ readonly task: StoredObject; readonly runs: readonly string[] }> {
   const initial = await getTask(store, id);
   const initialData = taskData(initial.data);
-  const repository = await repositoryOf(store, initialData.repository);
-  const cancelled = await withRepositoryLock(repository.path, async () => {
-    const task = await getTask(store, id);
-    const data = taskData(task.data);
-    if (data.phase === "cancelled") {
-      throw new DevError("cancel", `task "${id}" is already cancelled`);
-    }
-    if (data.phase === "merged") {
-      throw new DevError("cancel", `task "${id}" is already merged`);
-    }
-    const runs = data.run === null ? [] : [data.run];
-    const written = await writeTask(
-      store,
-      id,
-      {
-        ...data,
-        phase: "cancelled",
-        run: null,
-        brief: appendChange(data.brief, "cancelled"),
-      },
-      "dev:task-cancel",
-    );
-    const plan = await getPlan(store, data.plan);
-    await refreshPlanCounts(store, plan);
-    return { task: written, runs };
-  });
+  const cancelled = await withRepoLock(
+    store,
+    initialData.repository,
+    async () => {
+      const task = await getTask(store, id);
+      const data = taskData(task.data);
+      if (data.phase === "cancelled") {
+        throw new DevError(
+          "cancel",
+          `task "${bareId(id)}" is already cancelled`,
+        );
+      }
+      if (data.phase === "merged") {
+        throw new DevError("cancel", `task "${bareId(id)}" is already merged`);
+      }
+      const runs = data.run === null ? [] : [data.run];
+      const written = await writeTask(
+        store,
+        id,
+        {
+          ...data,
+          phase: "cancelled",
+          run: null,
+          brief: appendChange(data.brief, "cancelled"),
+        },
+        "dev:task-cancel",
+      );
+      const plan = await getPlan(
+        store,
+        storeKey(data.repository, data.plan),
+      );
+      await refreshPlanCounts(store, plan);
+      return { task: written, runs };
+    },
+  );
   for (const run of cancelled.runs) {
     await options.runs?.cancel(run);
   }
@@ -877,15 +1106,18 @@ export async function setAuto(
   const initial = await getPlan(store, id);
   const data = planData(initial.data);
   if (data.status === "cancelled") {
-    throw new DevError("auto", `plan "${id}" is cancelled`);
+    throw new DevError("auto", `plan "${bareId(id)}" is cancelled`);
   }
-  const repository = await repositoryOf(store, data.repository);
-  return withRepositoryLock(repository.path, async () => {
+  return withRepoLock(store, data.repository, async () => {
     const plan = await getPlan(store, id);
+    const fresh = planData(plan.data);
+    if (fresh.status === "cancelled") {
+      throw new DevError("auto", `plan "${bareId(id)}" is cancelled`);
+    }
     return writePlan(
       store,
       id,
-      { ...planData(plan.data), auto },
+      { ...fresh, auto },
       `dev:plan-auto-${auto}`,
     );
   });
@@ -902,15 +1134,18 @@ export async function setPriority(
   const initial = await getPlan(store, id);
   const data = planData(initial.data);
   if (data.status === "cancelled") {
-    throw new DevError("priority", `plan "${id}" is cancelled`);
+    throw new DevError("priority", `plan "${bareId(id)}" is cancelled`);
   }
-  const repository = await repositoryOf(store, data.repository);
-  return withRepositoryLock(repository.path, async () => {
+  return withRepoLock(store, data.repository, async () => {
     const plan = await getPlan(store, id);
+    const fresh = planData(plan.data);
+    if (fresh.status === "cancelled") {
+      throw new DevError("priority", `plan "${bareId(id)}" is cancelled`);
+    }
     return writePlan(
       store,
       id,
-      { ...planData(plan.data), priority },
+      { ...fresh, priority },
       `dev:plan-priority-${priority}`,
     );
   });
@@ -924,7 +1159,7 @@ export async function raisePriority(
   const data = planData(plan.data);
   const next = PRIORITIES[priorityIndex(data.priority) - 1];
   if (next === undefined) {
-    throw new DevError("priority", `plan "${id}" is already P0`);
+    throw new DevError("priority", `plan "${bareId(id)}" is already P0`);
   }
   return setPriority(store, id, next);
 }
@@ -937,7 +1172,7 @@ export async function lowerPriorityOf(
   const data = planData(plan.data);
   const next = lowerPriority(data.priority);
   if (next === undefined) {
-    throw new DevError("priority", `plan "${id}" is already P5`);
+    throw new DevError("priority", `plan "${bareId(id)}" is already P5`);
   }
   return setPriority(store, id, next);
 }

@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   addPlan,
   addRepository,
@@ -10,6 +11,7 @@ import {
   cancelTask,
   confirmPlan,
   confirmTask,
+  devTestHooks,
   editTaskBrief,
   findRepository,
   getPlan,
@@ -23,7 +25,14 @@ import {
   updateTask,
   withRepositoryLock,
 } from "../src/service.ts";
-import { briefBody, changesBody, taskData, type RepositoryData } from "../src/model.ts";
+import {
+  bareId,
+  briefBody,
+  changesBody,
+  storeKey,
+  taskData,
+  type RepositoryData,
+} from "../src/model.ts";
 import { cleanupTempRoots, makeGitRepository, storeAt, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
@@ -148,7 +157,7 @@ describe("dev plans and tasks", () => {
       title: "Storage",
       request: "write it",
     });
-    expect(plan.id).toBe("PL0001-storage");
+    expect(bareId(plan.id)).toBe("PL0001-storage");
     expect(plan.data).toMatchObject({
       repository: "repository",
       title: "Storage",
@@ -160,11 +169,17 @@ describe("dev plans and tasks", () => {
       taskCount: 0,
       mergedCount: 0,
     });
-    expect((await addPlan(store, {
-      repository,
-      slug: "storage",
-      title: "Second",
-    })).id).toBe("PL0002-storage");
+    expect(
+      bareId(
+        (
+          await addPlan(store, {
+            repository,
+            slug: "storage",
+            title: "Second",
+          })
+        ).id,
+      ),
+    ).toBe("PL0002-storage");
   });
 
   test("confirming a plan readies its proposed tasks; an empty plan is refused", async () => {
@@ -245,7 +260,7 @@ describe("dev plans and tasks", () => {
         plan: plan.id,
         slug: "bad",
         title: "Bad",
-        after: [external.id],
+        after: [bareId(external.id)],
       }),
     ).rejects.toThrow(/not merged/);
 
@@ -254,19 +269,19 @@ describe("dev plans and tasks", () => {
       plan: plan.id,
       slug: "first",
       title: "First",
-      after: [external.id],
+      after: [bareId(external.id)],
     });
     const second = await addTask(store, {
       plan: plan.id,
       slug: "second",
       title: "Second",
-      after: [first.id],
+      after: [bareId(first.id)],
     });
     await expect(
-      updateTask(store, first.id, { after: [second.id] }),
+      updateTask(store, first.id, { after: [bareId(second.id)] }),
     ).rejects.toThrow(/cycle/);
     expect(taskData((await getTask(store, first.id)).data).after).toEqual([
-      external.id,
+      bareId(external.id),
     ]);
   });
 
@@ -397,5 +412,177 @@ describe("dev plans and tasks", () => {
       }),
     ).rejects.toThrow("boom");
     expect(existsSync(join(repositoryPath, ".operad", "dev.lock"))).toBe(false);
+  });
+});
+
+describe("dev per-repository ids", () => {
+  test("two repositories may both hold TK0001-work under different keys", async () => {
+    const root = await tempRoot();
+    const firstPath = await makeGitRepository(root, "one");
+    const secondPath = await makeGitRepository(root, "two");
+    const store = storeAt(root);
+    const first = await addRepository(store, { path: firstPath });
+    const second = await addRepository(store, { path: secondPath });
+    const firstPlan = await addPlan(store, {
+      repository: first,
+      slug: "work",
+      title: "One",
+    });
+    const secondPlan = await addPlan(store, {
+      repository: second,
+      slug: "work",
+      title: "Two",
+    });
+    const firstTask = await addTask(store, {
+      plan: firstPlan.id,
+      slug: "work",
+      title: "First",
+    });
+    const secondTask = await addTask(store, {
+      plan: secondPlan.id,
+      slug: "work",
+      title: "Second",
+    });
+
+    expect(bareId(firstTask.id)).toBe("TK0001-work");
+    expect(bareId(secondTask.id)).toBe("TK0001-work");
+    expect(firstTask.id).toBe(storeKey("one", "TK0001-work"));
+    expect(secondTask.id).toBe(storeKey("two", "TK0001-work"));
+    expect((await getTask(store, firstTask.id)).data.title).toBe("First");
+    expect((await getTask(store, secondTask.id)).data.title).toBe("Second");
+  });
+});
+
+describe("dev checks inside the lock", () => {
+  test("task add rechecks that its plan is not cancelled", async () => {
+    const { repository, store } = await setup();
+    const plan = await addPlan(store, {
+      repository,
+      slug: "work",
+      title: "Work",
+    });
+    devTestHooks.beforeLock = async (operation) => {
+      if (operation !== "task-add") return;
+      devTestHooks.beforeLock = undefined;
+      await cancelPlan(store, plan.id);
+    };
+    try {
+      await expect(
+        addTask(store, { plan: plan.id, slug: "late", title: "Late" }),
+      ).rejects.toThrow(/cancelled/);
+    } finally {
+      devTestHooks.beforeLock = undefined;
+    }
+    expect((await store.list("task"))).toHaveLength(0);
+  });
+
+  test("repo remove rechecks that no task is open", async () => {
+    const { repository, store } = await setup();
+    const plan = await addPlan(store, {
+      repository,
+      slug: "work",
+      title: "Work",
+    });
+    devTestHooks.beforeLock = async (operation) => {
+      if (operation !== "repo-remove") return;
+      devTestHooks.beforeLock = undefined;
+      await addTask(store, { plan: plan.id, slug: "late", title: "Late" });
+    };
+    try {
+      await expect(removeRepository(store, "repository")).rejects.toThrow(
+        /open task/,
+      );
+    } finally {
+      devTestHooks.beforeLock = undefined;
+    }
+    expect((await listRepositories(store)).map((item) => item.name)).toEqual([
+      "repository",
+    ]);
+  });
+
+  test("a write refuses a repository that was removed", async () => {
+    const { repository, store } = await setup();
+    await removeRepository(store, "repository");
+    await expect(
+      addPlan(store, { repository, slug: "again", title: "Again" }),
+    ).rejects.toThrow(/was removed/);
+  });
+});
+
+describe("the dev lock survives a dead holder", () => {
+  async function deadPid(): Promise<number> {
+    const child = Bun.spawn({
+      cmd: [process.execPath, "-e", "0"],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const pid = child.pid;
+    await child.exited;
+    return pid;
+  }
+
+  function leaveLock(repositoryPath: string, pid: number): string {
+    mkdirSync(join(repositoryPath, ".operad"), { recursive: true });
+    const path = join(repositoryPath, ".operad", "dev.lock");
+    writeFileSync(path, JSON.stringify({ pid, start: null }), "utf8");
+    return path;
+  }
+
+  test("a lock left by a dead pid is taken over", async () => {
+    const { repositoryPath } = await setup();
+    leaveLock(repositoryPath, await deadPid());
+    let ran = false;
+    await withRepositoryLock(repositoryPath, () => {
+      ran = true;
+    });
+    expect(ran).toBe(true);
+    expect(existsSync(join(repositoryPath, ".operad", "dev.lock"))).toBe(false);
+  });
+
+  test("two waiters on a dead holder never enter together", async () => {
+    const { repositoryPath } = await setup();
+    leaveLock(repositoryPath, await deadPid());
+    let active = 0;
+    let most = 0;
+    let done = 0;
+    const work = async (): Promise<void> => {
+      active += 1;
+      most = Math.max(most, active);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      active -= 1;
+      done += 1;
+    };
+    await Promise.all([
+      withRepositoryLock(repositoryPath, work),
+      withRepositoryLock(repositoryPath, work),
+    ]);
+    expect(done).toBe(2);
+    expect(most).toBe(1);
+  });
+
+  test("a live holder blocks until the deadline and names its pid", async () => {
+    const { repositoryPath } = await setup();
+    const lock = leaveLock(repositoryPath, process.pid);
+    let tick = 0;
+    await expect(
+      withRepositoryLock(repositoryPath, () => undefined, {
+        clock: () => (tick === 0 ? 0 : 10_001),
+        wait: async () => {
+          tick += 1;
+        },
+      }),
+    ).rejects.toThrow(new RegExp(`pid ${process.pid}`));
+    expect(existsSync(lock)).toBe(true);
+  });
+});
+
+describe("repo add never writes into the operad checkout", () => {
+  test("the operad source checkout is refused", async () => {
+    const root = await tempRoot();
+    const store = storeAt(root);
+    const source = fileURLToPath(new URL("../../..", import.meta.url));
+    await expect(addRepository(store, { path: source })).rejects.toThrow(
+      /operad source checkout/,
+    );
   });
 });

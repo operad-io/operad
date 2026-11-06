@@ -163,9 +163,30 @@ function numberById(
 }
 
 /**
+ * The store key of a plan or task. Ids are unique within a repository only, so
+ * the repository name namespaces the key and two repositories may both hold
+ * `TK0001-work`.
+ */
+export function storeKey(repository: string, id: string): string {
+  return `${repository}/${id}`;
+}
+
+/** The id a person sees and types: the key without its repository prefix. */
+export function bareId(key: string): string {
+  const at = key.indexOf("/");
+  return at < 0 ? key : key.slice(at + 1);
+}
+
+/** The repository part of a store key. */
+export function keyRepository(key: string): string {
+  const at = key.indexOf("/");
+  return at < 0 ? "" : key.slice(0, at);
+}
+
+/**
  * The next id for a repository. Numbers count up per repository and are never
- * reused; the scan also skips an id another repository already stores, because
- * the kernel keys an object by its type and id.
+ * reused; the scan reads only that repository's objects, because the store key
+ * namespaces them.
  */
 export async function nextId(
   store: ObjectStore,
@@ -182,7 +203,9 @@ export async function nextId(
   let number = numberById(mine, prefix) + 1;
   for (;;) {
     const id = formatId(prefix, number, slug);
-    if ((await store.get(type, id)) === undefined) return id;
+    if ((await store.get(type, storeKey(repository, id))) === undefined) {
+      return id;
+    }
     number += 1;
   }
 }

@@ -218,4 +218,70 @@ describe("operad with the dev plugin", () => {
     expect(brief.out).toContain("New body");
     expect(brief.out).not.toContain("Old body");
   });
+
+  test("task edit and update resolve the repository like every other command", async () => {
+    const { root, home, repository } = await setup();
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const other = await makeGitRepository(root, "other");
+    expect((await run(home, other, ["repo", "add", "."])).code).toBe(0);
+
+    const plan = await run(
+      home,
+      other,
+      ["plan", "add", "--slug", "p", "--title", "P"],
+      "a request\n",
+    );
+    const task = await run(
+      home,
+      other,
+      [
+        "task",
+        "add",
+        "--plan",
+        plan.out.trim(),
+        "--slug",
+        "t",
+        "--title",
+        "T",
+      ],
+      "a brief\n",
+    );
+    const taskId = task.out.trim();
+
+    const wrongEdit = await run(home, repository, ["task", "edit", taskId]);
+    expect(wrongEdit.code).toBe(1);
+    expect(wrongEdit.err).toContain(`no task "${taskId}"`);
+
+    const wrong = await run(home, repository, [
+      "task",
+      "update",
+      taskId,
+      "--title",
+      "Wrong",
+    ]);
+    expect(wrong.code).toBe(1);
+    expect(wrong.err).toContain(`no task "${taskId}"`);
+
+    const outside = await run(home, home, [
+      "task",
+      "update",
+      taskId,
+      "--title",
+      "Nowhere",
+    ]);
+    expect(outside.code).toBe(1);
+    expect(outside.err).toContain("--repo");
+
+    const updated = await run(home, home, [
+      "task",
+      "update",
+      taskId,
+      "--title",
+      "Renamed",
+      "--repo",
+      "other",
+    ]);
+    expect(updated.code).toBe(0);
+    expect(updated.out.trim()).toBe(taskId);
+  });
 });
