@@ -24,6 +24,18 @@ const LOCK_POLL_MS = 200;
 /** An unreadable lock counts as dead once its mtime is this old. */
 const STALE_UNREADABLE_MS = 30_000;
 
+/**
+ * Test-only: the directory watches and fallback timers `waitForLock` holds
+ * open. Production code never reads this; the last dev test file asserts it is
+ * zero, so a wait that forgets to close its handles fails the suite.
+ */
+export const openLockHandles = { watchers: 0, timers: 0 };
+
+/** Test-only: the number of lock wait handles still open. */
+export function openLockHandleCount(): number {
+  return openLockHandles.watchers + openLockHandles.timers;
+}
+
 /** What a waiter may inject: the clock, how it waits, and where a log goes. */
 export interface RepositoryLockOptions {
   readonly clock?: (() => number) | undefined;
@@ -148,15 +160,23 @@ function waitForLock(path: string, ms: number): Promise<void> {
     const finish = (): void => {
       if (finished) return;
       finished = true;
-      watcher?.close();
-      if (timer !== undefined) clearTimeout(timer);
+      if (watcher !== undefined) {
+        openLockHandles.watchers -= 1;
+        watcher.close();
+      }
+      if (timer !== undefined) {
+        openLockHandles.timers -= 1;
+        clearTimeout(timer);
+      }
       done();
     };
     timer = setTimeout(finish, Math.max(1, ms));
+    openLockHandles.timers += 1;
     try {
       watcher = watch(dirname(path), (_event, filename) => {
         if (filename === null || filename === basename(path)) finish();
       });
+      openLockHandles.watchers += 1;
       watcher.on("error", finish);
     } catch {
       // The timer is the fallback when watching is unavailable.

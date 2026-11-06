@@ -231,3 +231,10 @@
 | TK0019-M17 | packages/engine/src/views/presentation.ts | skipped the plugin's `resolve` hook before the suffix lookup | `operad with the dev plugin > a bare id resolves in the repository of the current directory` |
 | TK0019-M18 | packages/dev/src/lock.ts | treated an unreadable lock as dead immediately instead of after 30 s | `the repository lock > an unparsable lock is live until its mtime is 30 seconds old` |
 
+## TK0019 — rework 5: the missed event and the lock's open handles
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0019-M19 | packages/engine/src/plugin/file-store.ts | kept only the directory watch in a subscription and dropped the poll fallback | `the file plugin store > a subscription still reports a write the watch does not` |
+| TK0019-M20 | packages/dev/src/lock.ts | left the wait's directory watch and fallback timer open when it finished | `the repository lock > a real wait closes its watch and its timer` |
+

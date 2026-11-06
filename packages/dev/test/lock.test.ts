@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { lockTestHooks, withRepositoryLock } from "../src/lock.ts";
+import { lockTestHooks, openLockHandleCount, withRepositoryLock } from "../src/lock.ts";
 import { cleanupTempRoots, makeGitRepository, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
@@ -215,6 +215,33 @@ describe("the repository lock", () => {
       }),
     ).rejects.toThrow("boom");
     expect(existsSync(lockPathOf(repositoryPath))).toBe(false);
+  });
+
+  test("a real wait closes its watch and its timer", async () => {
+    const { repositoryPath } = await setup();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let reportEntered: () => void = () => undefined;
+    const entered = new Promise<void>((resolve) => {
+      reportEntered = resolve;
+    });
+
+    const holder = withRepositoryLock(repositoryPath, async () => {
+      reportEntered();
+      await held;
+    });
+    await entered;
+    // The default wait opens a directory watch and its fallback timer.
+    const waiter = withRepositoryLock(repositoryPath, () => undefined);
+    try {
+      expect(openLockHandleCount()).toBe(2);
+    } finally {
+      release();
+      await Promise.all([holder, waiter]);
+    }
+    expect(openLockHandleCount()).toBe(0);
   });
 
   test("two waiters on a dead holder never enter together", async () => {
