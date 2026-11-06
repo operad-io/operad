@@ -55,6 +55,62 @@ export type PlanData = {
   readonly cancelledCount: number;
 };
 
+/** What the verify step found when it ran the gate commands. */
+export type VerifyResult = "pass" | "fail";
+
+/** One run of a task's gate commands on a commit. */
+export interface VerifyRecord {
+  readonly [key: string]: unknown;
+  readonly result: VerifyResult;
+  readonly run?: string | null;
+  /** The command that failed, when one did. */
+  readonly command?: string | null;
+  /** The file the failed command's output was written to. */
+  readonly log?: string | null;
+  readonly message?: string | null;
+  readonly lineNumber?: number | null;
+}
+
+/** A finding the reviewer reported. */
+export interface ReviewFinding {
+  readonly [key: string]: unknown;
+  readonly file: string;
+  readonly line: number;
+  readonly severity: string;
+  readonly summary: string;
+  readonly trigger: string;
+  /** True for a finding on a file the change did not touch. */
+  readonly preExisting?: boolean;
+  /** The same mark as `preExisting`, in the wording the gate reports. */
+  readonly pre_existing?: boolean;
+}
+
+/** What the review step found. */
+export type ReviewResult = "pass" | "fail" | "failed";
+
+/** One review of a task's verified commit. */
+export interface ReviewRecord {
+  readonly [key: string]: unknown;
+  readonly result: ReviewResult;
+  readonly run?: string | null;
+  readonly findings?: readonly ReviewFinding[];
+  readonly verified?: readonly string[];
+  readonly log?: string | null;
+  readonly message?: string | null;
+  readonly reason?: string | null;
+  /** The commit the reviewer saw. */
+  readonly sha?: string | null;
+}
+
+/** One rework section the step appended; a replay reads it and appends nothing. */
+export interface ReworkRecord {
+  readonly [key: string]: unknown;
+  readonly run?: string | null;
+  readonly source: string;
+  readonly streak: number;
+  readonly result: "again" | "ask";
+}
+
 /** One run of a task's worker, with what the worktree step learned. */
 export type TaskAttempt = {
   readonly [key: string]: unknown;
@@ -71,6 +127,14 @@ export type TaskAttempt = {
   /** Whether the work step consumed this attempt; a later worktree visit is new work. */
   readonly worked?: boolean;
   readonly result?: string | null;
+  /** The branch head the gate verified; review reads this and not the branch. */
+  readonly verified?: string | null;
+  readonly verify?: VerifyRecord | null;
+  readonly review?: ReviewRecord | null;
+  /** How many review steps this attempt has started. */
+  readonly reviews?: number | null;
+  /** The rework this run appended; a replay of the same run reads it. */
+  readonly rework?: ReworkRecord | null;
 };
 
 /** The data of a task object. */
@@ -86,6 +150,8 @@ export type TaskData = {
   readonly run: string | null;
   readonly attempt?: TaskAttempt | undefined;
   readonly cost?: number | string | undefined;
+  /** How many automatic reworks ran in a row; a passing gate resets it. */
+  readonly reworkStreak?: number | undefined;
 };
 
 /** A repository registered with the dev plugin. */
