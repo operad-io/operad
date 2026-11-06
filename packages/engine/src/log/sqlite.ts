@@ -120,25 +120,32 @@ function isBusy(error: unknown): boolean {
   );
 }
 
-/** Wait a little without a timer, for a synchronous SQLite call. */
-function pause(milliseconds: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+/**
+ * Wait until another connection releases the database. SQLite's busy handler,
+ * which `busy_timeout` installs, covers ordinary lock acquisition but not a
+ * journal mode switch; an immediate transaction goes through it and blocks
+ * until the other writer commits, so nothing has to sleep and poll.
+ */
+function waitForWriter(database: Database): void {
+  database.transaction(() => undefined).immediate();
 }
 
 /**
- * Retry an open-time write that lost a race. `busy_timeout` covers most cases,
- * but switching the journal mode and creating the schema can still report
- * SQLITE_BUSY immediately while another process initializes the same file.
+ * Switch the store to WAL. Two processes opening a fresh store race for the
+ * exclusive lock the switch takes: the loser sees SQLITE_BUSY at once, waits
+ * for the winner through the busy handler, then sees the mode is already WAL.
  */
-function retryWhenBusy<T>(action: () => T): T {
-  const deadline = Date.now() + BUSY_TIMEOUT_MS;
+function setWalMode(database: Database): void {
+  if (currentJournalMode(database) === "wal") return;
   for (;;) {
     try {
-      return action();
+      database.run("PRAGMA journal_mode = WAL");
+      return;
     } catch (error) {
-      if (!isBusy(error) || Date.now() >= deadline) throw error;
-      pause(10);
+      if (!isBusy(error)) throw error;
     }
+    waitForWriter(database);
+    if (currentJournalMode(database) === "wal") return;
   }
 }
 
@@ -163,9 +170,7 @@ function configure(database: Database): void {
   database.run(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
   database.run("PRAGMA synchronous = FULL");
   database.run("PRAGMA foreign_keys = ON");
-  if (currentJournalMode(database) !== "wal") {
-    retryWhenBusy(() => database.run("PRAGMA journal_mode = WAL"));
-  }
+  setWalMode(database);
 }
 
 /** The recorded version, or undefined when the schema has not been created yet. */
@@ -183,14 +188,14 @@ function readSchemaVersion(database: Database): number | undefined {
 function ensureSchema(database: Database, path: string): void {
   let version = readSchemaVersion(database);
   if (version === undefined) {
-    retryWhenBusy(() => {
-      database.transaction(() => {
-        database.exec(SCHEMA);
-        database.run("INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, ?)", [
-          SCHEMA_VERSION,
-        ]);
-      }).immediate();
-    });
+    // One immediate transaction for the whole schema: a second process opening
+    // the file at the same time waits in the busy handler, then finds it done.
+    database.transaction(() => {
+      database.exec(SCHEMA);
+      database.run("INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, ?)", [
+        SCHEMA_VERSION,
+      ]);
+    }).immediate();
     version = readSchemaVersion(database);
   }
 

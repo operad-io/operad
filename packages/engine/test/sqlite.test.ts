@@ -14,6 +14,7 @@ import { runLogConformance, type LogConformanceFactory } from "./log-conformance
 
 const TEST_ROOT = resolve(import.meta.dir, "..", "..", "..", ".radian", "test-tmp");
 const CHILD = join(import.meta.dir, "fixtures", "log-child.ts");
+const HOLD_CHILD = join(import.meta.dir, "fixtures", "sqlite-hold.ts");
 const MODULE = new URL("../src/log/sqlite.ts", import.meta.url).href;
 
 const dbPath = (directory: string): string => join(directory, SQLITE_FILE_NAME);
@@ -51,6 +52,53 @@ async function captureError(action: () => unknown): Promise<unknown> {
     return error;
   }
   throw new Error("expected the action to fail");
+}
+
+interface LineStream {
+  next(): Promise<string | null>;
+}
+
+function lineStream(stream: ReadableStream<Uint8Array>): LineStream {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let pending = "";
+  return {
+    async next(): Promise<string | null> {
+      while (true) {
+        const newline = pending.indexOf("\n");
+        if (newline >= 0) {
+          const line = pending.slice(0, newline);
+          pending = pending.slice(newline + 1);
+          return line;
+        }
+        const { value, done } = await reader.read();
+        if (done) return pending.length === 0 ? null : pending;
+        pending += decoder.decode(value, { stream: true });
+      }
+    },
+  };
+}
+
+function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
+  return new Promise<T>((resolveTimeout, rejectTimeout) => {
+    const timer = setTimeout(() => rejectTimeout(new Error(message)), milliseconds);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolveTimeout(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        rejectTimeout(error);
+      },
+    );
+  });
+}
+
+async function nextJson(lines: LineStream, message: string): Promise<unknown> {
+  const line = await withTimeout(lines.next(), 15_000, message);
+  if (line === null) throw new Error(message);
+  return JSON.parse(line) as unknown;
 }
 
 interface ChildResult {
@@ -242,5 +290,30 @@ test("a long read sees a consistent prefix while another process appends", async
     expect(after.map((fact) => fact.kind)).toEqual([...seed.map((fact) => fact.kind), "race"]);
   } finally {
     await backend.close();
+  }
+});
+
+test("opening waits while another process holds the store", async () => {
+  const directory = tracked("open-wait");
+  const holder = Bun.spawn([process.execPath, HOLD_CHILD], {
+    cwd: TEST_ROOT,
+    env: { ...process.env, OPERAD_DB_PATH: dbPath(directory), OPERAD_HOLD_MS: "100" },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const holderLines = lineStream(holder.stdout);
+
+  try {
+    expect(await nextJson(holderLines, "the holder did not take the lock")).toEqual({ locked: true });
+
+    // The holder keeps the lock for a moment. Open has to wait for it through
+    // the busy handler; an open that gave up on SQLITE_BUSY would fail here.
+    const backend = await openSqliteLogBackend(dbPath(directory));
+    await backend.close();
+
+    expect(await nextJson(holderLines, "the holder did not commit")).toEqual({ committed: true });
+  } finally {
+    if (holder.exitCode === null) holder.kill();
+    await holder.exited;
   }
 });
