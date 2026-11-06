@@ -4,8 +4,16 @@
  * read, and this module applies the same rules when a step loads the file.
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, normalize, resolve, sep } from "node:path";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  normalize,
+  resolve,
+  sep,
+} from "node:path";
 import { DevError, isRecord } from "./model.ts";
 
 /** Where a repository keeps its dev settings. */
@@ -94,6 +102,44 @@ function repositoryRelativePath(value: unknown, field: string): string {
   return path;
 }
 
+/**
+ * The real path of `path`, resolving the symlinks of every part that exists.
+ * A tail that does not exist yet is appended unchanged, so the answer is where
+ * creating it now would land.
+ */
+function realPathOf(path: string): string {
+  const target = resolve(path);
+  let current = target;
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync(current), ...missing.reverse());
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return target;
+      missing.push(basename(current));
+      current = parent;
+    }
+  }
+}
+
+/**
+ * Refuses a path that resolves outside the repository. The lexical check in
+ * `repositoryRelativePath` cannot see a symlink; this one follows every part
+ * that exists, including a `worktreeRoot` that is a link to somewhere else.
+ */
+export function assertInsideRepository(
+  repositoryPath: string,
+  path: string,
+  field: string,
+): void {
+  const repository = realPathOf(repositoryPath);
+  const target = realPathOf(path);
+  if (target !== repository && !target.startsWith(`${repository}${sep}`)) {
+    throw new DevError(field, "must stay inside the repository");
+  }
+}
+
 function positiveSeconds(value: unknown, field: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     throw new DevError(field, "must be a positive number of seconds");
@@ -150,14 +196,23 @@ function workerSettings(value: unknown, field: string): WorkerSettings {
  * The root task worktrees live in. Settings written before the step work used
  * `worktrees`; it is read as the same setting so an upgrade needs no edit.
  */
-function worktreeRootOf(value: Record<string, unknown>): string {
+function worktreeRootOf(value: Record<string, unknown>): {
+  readonly root: string;
+  readonly field: string;
+} {
   if (value.worktreeRoot !== undefined) {
-    return repositoryRelativePath(value.worktreeRoot, "worktreeRoot");
+    return {
+      root: repositoryRelativePath(value.worktreeRoot, "worktreeRoot"),
+      field: "worktreeRoot",
+    };
   }
   if (value.worktrees !== undefined) {
-    return repositoryRelativePath(value.worktrees, "worktrees");
+    return {
+      root: repositoryRelativePath(value.worktrees, "worktrees"),
+      field: "worktrees",
+    };
   }
-  return DEFAULT_DEV_SETTINGS.worktreeRoot;
+  return { root: DEFAULT_DEV_SETTINGS.worktreeRoot, field: "worktreeRoot" };
 }
 
 /** Validates one parsed dev.json value and fills the defaults. */
@@ -170,6 +225,7 @@ export function validateDevSettings(value: unknown): DevSettings {
       throw new DevError(key, "is not a dev setting");
     }
   }
+  const worktreeRoot = worktreeRootOf(value);
   return {
     ...(value.name === undefined
       ? {}
@@ -182,7 +238,7 @@ export function validateDevSettings(value: unknown): DevSettings {
       value.mainBranch === undefined
         ? DEFAULT_DEV_SETTINGS.mainBranch
         : nonEmptyString(value.mainBranch, "mainBranch"),
-    worktreeRoot: worktreeRootOf(value),
+    worktreeRoot: worktreeRoot.root,
     worker:
       value.worker === undefined
         ? DEFAULT_DEV_SETTINGS.worker
@@ -202,7 +258,14 @@ export async function readDevSettings(
   repositoryPath: string,
 ): Promise<DevSettings> {
   const path = join(repositoryPath, DEV_SETTINGS_FILE);
-  if (!existsSync(path)) return DEFAULT_DEV_SETTINGS;
+  if (!existsSync(path)) {
+    assertInsideRepository(
+      repositoryPath,
+      resolve(repositoryPath, DEFAULT_DEV_SETTINGS.worktreeRoot),
+      "worktreeRoot",
+    );
+    return DEFAULT_DEV_SETTINGS;
+  }
   let text: string;
   try {
     text = readFileSync(path, "utf8");
@@ -215,7 +278,19 @@ export async function readDevSettings(
   } catch (error) {
     throw new DevError("dev.json", `invalid JSON in ${path}: ${String(error)}`);
   }
-  return validateDevSettings(parsed);
+  const settings = validateDevSettings(parsed);
+  const field =
+    isRecord(parsed) &&
+    parsed.worktreeRoot === undefined &&
+    parsed.worktrees !== undefined
+      ? "worktrees"
+      : "worktreeRoot";
+  assertInsideRepository(
+    repositoryPath,
+    resolve(repositoryPath, settings.worktreeRoot),
+    field,
+  );
+  return settings;
 }
 
 /** An alias for callers that name the file rather than the plugin. */

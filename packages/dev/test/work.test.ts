@@ -42,19 +42,30 @@ function fakeHarness(record: string) {
       {
         name: "agent",
         results: ["done", "failed", "interrupted"],
-        async run(_ctx, params): Promise<PluginStepResult> {
+        async run(ctx, params): Promise<PluginStepResult> {
           const input = params as {
             readonly prompt: string;
             readonly cwd: string;
             readonly args?: readonly string[];
           };
-          const mode = input.args?.[0] ?? "nothing";
+          // Mirror harness-radian: an absent args falls back to the flow's.
+          const flow =
+            typeof ctx.params === "object" &&
+            ctx.params !== null &&
+            !Array.isArray(ctx.params)
+              ? (ctx.params as Readonly<Record<string, unknown>>)
+              : undefined;
+          const flowArgs = Array.isArray(flow?.args)
+            ? (flow.args as readonly unknown[])
+            : undefined;
+          const args: readonly unknown[] = input.args ?? flowArgs ?? [];
+          const mode = typeof args[0] === "string" ? args[0] : "nothing";
           writeFileSync(
             record,
             JSON.stringify({
               prompt: input.prompt,
               cwd: input.cwd,
-              args: input.args ?? [],
+              args,
             }),
           );
           if (mode === "fail") {
@@ -64,6 +75,17 @@ function fakeHarness(record: string) {
                 sessionId: "fake-session",
                 cost: { micros: FAKE_COST_MICROS },
                 message: "the fake harness said no",
+              },
+            };
+          }
+          if (mode === "dirty-fail") {
+            writeFileSync(join(input.cwd, "dirty.txt"), "not committed\n");
+            return {
+              result: "failed",
+              data: {
+                sessionId: "fake-session",
+                cost: { micros: FAKE_COST_MICROS },
+                message: "the fake harness left work behind",
               },
             };
           }
@@ -310,6 +332,29 @@ describe("dev/work", () => {
     expect(result.data?.reason).toBe("changes");
     expect(result.data?.files).toEqual(["dirty.txt"]);
     expect(String(result.data?.message)).toContain("dirty.txt");
+  });
+
+  test("failed: a failed harness still names the files it left", async () => {
+    const state = await fixture("dirty-fail");
+    const result = await runWork(state);
+    expect(result.result).toBe("failed");
+    expect(result.data?.reason).toBe("harness");
+    expect(result.data?.files).toEqual(["dirty.txt"]);
+    expect(String(result.data?.message)).toContain("dirty.txt");
+  });
+
+  test("an empty worker.args is passed, not the flow's args", async () => {
+    const state = await fixture("nothing", { args: [] });
+    const result = await state.registry.runStep("dev/work", {}, {
+      runId: "work-run",
+      object: { type: "task", id: state.taskKey, data: {} },
+      params: { args: ["commit"] },
+    });
+    expect(result.result).toBe("nothing");
+    const record = JSON.parse(readFileSync(state.record, "utf8")) as {
+      readonly args: readonly string[];
+    };
+    expect(record.args).toEqual([]);
   });
 
   test("the prompt is the worker brief, the body and the rework sections", async () => {

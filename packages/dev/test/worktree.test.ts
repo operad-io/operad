@@ -1,5 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { PluginRegistry } from "@operad-io/engine";
 import {
@@ -178,6 +184,36 @@ describe("dev/worktree", () => {
     const result = await runWorktree(state, "run-2");
     expect(result.result).toBe("ready");
     expect(gitOrThrow(path, ["rev-parse", "HEAD"])).toBe(branchHead);
+  });
+
+  test("a remote work/<id> branch is reused after merging the latest main", async () => {
+    const state = await fixture();
+    await runWorktree(state, "run-1");
+    const path = worktreeOf(state);
+    await commitIn(path, "branch.txt", "earlier work\n", "earlier work");
+    gitOrThrow(path, ["push", "origin", `HEAD:refs/heads/work/${state.taskId}`]);
+    gitOrThrow(state.remote.repository, ["worktree", "remove", "--force", path]);
+    gitOrThrow(state.remote.repository, [
+      "branch",
+      "-D",
+      `work/${state.taskId}`,
+    ]);
+    await advanceMain(state.remote, "main.txt", "moved\n");
+
+    const result = await runWorktree(state, "run-2");
+    expect(result.result).toBe("ready");
+    expect(readFileSync(join(path, "main.txt"), "utf8")).toBe("moved\n");
+    expect(existsSync(join(path, "branch.txt"))).toBe(true);
+  });
+
+  test("a worktreeRoot that is a symlink out of the repository is refused", async () => {
+    const state = await fixture();
+    const outside = join(state.root, "outside-worktrees");
+    mkdirSync(outside, { recursive: true });
+    symlinkSync(outside, join(state.remote.repository, ".operad-worktrees"));
+
+    await expect(runWorktree(state, "run-1")).rejects.toThrow(/worktreeRoot:/);
+    expect(existsSync(join(outside, state.taskId))).toBe(false);
   });
 
   test("settings errors name the field", async () => {

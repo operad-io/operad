@@ -26,6 +26,7 @@ import {
 } from "./model.ts";
 import { findRepository } from "./service.ts";
 import {
+  assertInsideRepository,
   readDevSettings,
   readWorkerBrief,
   type DevSettings,
@@ -58,13 +59,17 @@ function resolvePath(path: string): string {
   }
 }
 
-/** The path a task's worktree occupies. */
+/** The path a task's worktree occupies, refused when it lands outside the repository. */
 export function worktreePath(
   repositoryPath: string,
   settings: DevSettings,
   taskId: string,
 ): string {
-  return resolve(repositoryPath, settings.worktreeRoot, taskId);
+  const path = resolve(repositoryPath, settings.worktreeRoot, taskId);
+  // Settings were checked when they were read, but a link can appear before the
+  // step runs; the worktree must still stay inside the repository.
+  assertInsideRepository(repositoryPath, path, "worktreeRoot");
+  return path;
 }
 
 /** The branch a task's worktree is on. */
@@ -258,6 +263,21 @@ function failed(message: string, files?: readonly string[]): Prepared {
   return { kind: "failed", message, ...(files === undefined ? {} : { files }) };
 }
 
+/** Merges the fetched main into a reused branch and reports a conflict. */
+function mergeLatest(path: string, mainRef: string): Prepared {
+  const merge = git(path, ["merge", "--no-edit", "--no-ff", mainRef]);
+  if (!merge.ok) {
+    const files = conflictedFiles(path);
+    if (files.length > 0 || mergeInProgress(path)) {
+      return { kind: "conflict", base: headOf(path), files };
+    }
+    return failed(
+      `cannot merge "${mainRef}" into the worktree: ${merge.err || merge.out}`,
+    );
+  }
+  return { kind: "ready", base: headOf(path) };
+}
+
 /** Fetches, creates the worktree when needed, and merges main into a reused one. */
 function prepareWorktree(
   repository: RepositoryData,
@@ -304,23 +324,15 @@ function prepareWorktree(
         files: conflictedFiles(path),
       };
     }
-    const merge = git(path, ["merge", "--no-edit", "--no-ff", mainRef]);
-    if (!merge.ok) {
-      const files = conflictedFiles(path);
-      if (files.length > 0 || mergeInProgress(path)) {
-        return { kind: "conflict", base: headOf(path), files };
-      }
-      return failed(
-        `cannot merge "${mainRef}" into "${branch}": ${merge.err || merge.out}`,
-      );
-    }
-    return { kind: "ready", base: headOf(path) };
+    return mergeLatest(path, mainRef);
   }
 
   mkdirSync(dirname(path), { recursive: true });
   let add: GitResult;
+  let reused = false;
   if (branchExists(repository.path, branch)) {
     add = git(repository.path, ["worktree", "add", path, branch]);
+    reused = true;
   } else if (remoteBranchExists(repository.path, settings.remote, branch)) {
     add = git(repository.path, [
       "worktree",
@@ -331,6 +343,7 @@ function prepareWorktree(
       path,
       `${settings.remote}/${branch}`,
     ]);
+    reused = true;
   } else {
     add = git(repository.path, [
       "worktree",
@@ -345,6 +358,9 @@ function prepareWorktree(
   if (!add.ok) {
     return failed(`cannot create worktree at ${path}: ${add.err || add.out}`);
   }
+  // A branch kept from an earlier attempt continues from its old base, so the
+  // freshly fetched main is merged before the worker sees it.
+  if (reused) return mergeLatest(path, mainRef);
   return { kind: "ready", base: headOf(path) };
 }
 
@@ -487,9 +503,9 @@ function harnessParams(
   return {
     prompt,
     cwd: worktree,
-    ...(settings.worker.args.length === 0
-      ? {}
-      : { args: settings.worker.args }),
+    // An empty list is still a configured value: leaving it out would let the
+    // flow's params provide the harness arguments the repository did not set.
+    args: settings.worker.args,
     ...(settings.worker.wallTimeSecs === undefined
       ? {}
       : { wallTimeSecs: settings.worker.wallTimeSecs }),
@@ -653,26 +669,36 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     };
   };
 
+  // Inspect the tree before deciding: a harness failure must still name what
+  // it left uncommitted, and a success must still fail on a dirty tree.
+  const dirty = changedFiles(path);
+
   if (hostError !== undefined) {
     return finish("failed", {
       reason: "harness",
       message: hostError,
+      ...(dirty.length === 0 ? {} : { files: dirty }),
     });
   }
 
   if (outcome === undefined || outcome.result !== "done") {
+    const message =
+      typeof outcomeData.message === "string"
+        ? outcomeData.message
+        : `the harness step ended "${outcome?.result ?? "unknown"}"`;
     return finish("failed", {
       reason: "harness",
       harnessResult: outcome?.result ?? "unknown",
+      // A failed attempt still reports the files it left behind.
       message:
-        typeof outcomeData.message === "string"
-          ? outcomeData.message
-          : `the harness step ended "${outcome?.result ?? "unknown"}"`,
+        dirty.length === 0
+          ? message
+          : `${message}; uncommitted changes: ${dirty.join(", ")}`,
+      ...(dirty.length === 0 ? {} : { files: dirty }),
       stderr: outcomeData.stderr ?? [],
     });
   }
 
-  const dirty = changedFiles(path);
   if (dirty.length > 0) {
     return finish("failed", {
       reason: "changes",

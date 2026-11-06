@@ -86,8 +86,9 @@ The built-in brief says to work only in the worktree, commit whole pieces, run
 the repository's verify command and end with a summary.
 
 A `dev.json` written by an earlier version still loads: `worktrees` is read as
-`worktreeRoot`, and `sandbox` is ignored. A `worktreeRoot` that is absolute or
-climbs out of the repository is refused when the file is read.
+`worktreeRoot`, and `sandbox` is ignored. A `worktreeRoot` that is absolute,
+climbs out of the repository, or resolves outside it through a symlink is
+refused when the file is read and again before a worktree is created.
 
 ## Views
 
