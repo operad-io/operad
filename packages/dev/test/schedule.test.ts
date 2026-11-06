@@ -7,6 +7,7 @@ import {
   addPlan,
   addRepository,
   addTask,
+  claimTaskStart,
   confirmPlan,
   getPlan,
   getTask,
@@ -188,6 +189,8 @@ describe("dev scheduling", () => {
     );
     expect(fixture.lines).toEqual([`${first.id} ready -> running`]);
 
+    // The run records itself in its worktree step; the second tick leaves it.
+    await putTask(fixture, first.key, { run: "run-1" });
     expect(await tick(fixture)).toEqual([]);
     expect(taskData((await getTask(fixture.store, second.key)).data).phase).toBe(
       "ready",
@@ -359,6 +362,75 @@ describe("dev scheduling", () => {
     expect(started.length).toBe(1);
     expect(startedId(started[0] as { object?: { id: string } })).toBe(task.key);
     expect(fixture.lines).toEqual([`${task.id} ready -> running`]);
+  });
+
+  test("a claim whose start never landed returns to ready and starts again", async () => {
+    const fixture = await setup();
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run" });
+    const task = await makeTask(fixture, plan.key, "task");
+    await confirm(fixture, plan.key);
+
+    // The crash window: the claim is written, the kernel never saw the start.
+    await claimTaskStart(fixture.store, task.key);
+    expect(taskData((await getTask(fixture.store, task.key)).data).phase).toBe(
+      "running",
+    );
+
+    const started = await tick(fixture);
+    expect(started.length).toBe(1);
+    expect(startedId(started[0] as { object?: { id: string } })).toBe(task.key);
+    expect(taskData((await getTask(fixture.store, task.key)).data).phase).toBe(
+      "running",
+    );
+    expect(fixture.lines).toEqual([
+      `${task.id} running -> ready`,
+      `${task.id} ready -> running`,
+    ]);
+
+    // A task whose run recorded itself is never claimed again.
+    await putTask(fixture, task.key, { run: "run-1" });
+    expect(await tick(fixture)).toEqual([]);
+  });
+
+  test("start still respects the repository concurrency", async () => {
+    const fixture = await setup({ concurrency: 1 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "off" });
+    const first = await makeTask(fixture, plan.key, "first");
+    const second = await makeTask(fixture, plan.key, "second");
+    await confirm(fixture, plan.key);
+    await fixture.registry.runCommand(["dev", "start", first.id]);
+    await fixture.registry.runCommand(["dev", "start", second.id]);
+
+    const one = await tick(fixture);
+    expect(one.length).toBe(1);
+    expect(startedId(one[0] as { object?: { id: string } })).toBe(first.key);
+
+    await putTask(fixture, first.key, { run: "run-1" });
+    await phase(fixture, first.key, "merged");
+    const two = await tick(fixture);
+    expect(two.length).toBe(1);
+    expect(startedId(two[0] as { object?: { id: string } })).toBe(second.key);
+  });
+
+  test("start still respects a dependency", async () => {
+    const fixture = await setup({ concurrency: 2 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "off" });
+    const first = await makeTask(fixture, plan.key, "first");
+    const second = await makeTask(fixture, plan.key, "second", [first.id]);
+    await confirm(fixture, plan.key);
+    await fixture.registry.runCommand(["dev", "start", second.id]);
+
+    expect(await tick(fixture)).toEqual([]);
+    expect(taskData((await getTask(fixture.store, second.key)).data).phase).toBe(
+      "ready",
+    );
+
+    await phase(fixture, first.key, "cancelled");
+    expect(await tick(fixture)).toEqual([]);
+    expect(taskData((await getTask(fixture.store, second.key)).data).phase).toBe(
+      "waiting",
+    );
+    expect(fixture.lines).toEqual([`${second.id} ready -> waiting`]);
   });
 
   test("a cancelled dependency leaves the dependent task waiting", async () => {

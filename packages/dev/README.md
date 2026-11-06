@@ -87,7 +87,9 @@ On every tick of the kernel loop, `dev` starts ready tasks whose dependencies
 have merged. A task starts only while its plan is at auto `run` or `merge`, the
 plan's running count is under its `concurrency`, and the repository's running
 count is under its `concurrency` setting. Plans are considered most urgent
-first, and each registered repository is scheduled on its own.
+first, and each registered repository is scheduled on its own. A task the
+scheduler claimed but whose run never recorded itself (a crash between the two)
+returns to `ready` on the next tick, so the scheduler can start it again.
 
 At auto `merge`, a waiting task whose review passed in this attempt is answered
 with `merge`. A wait that follows `nothing`, `failed` or the rework limit is
@@ -97,7 +99,8 @@ is reported finished once. Every change prints one line:
 `TK0003-kernel ready -> running`.
 
 `operad start <task>` asks the scheduler to start one ready task on its next
-tick, whatever its plan's auto level is.
+tick, whatever its plan's auto level is. The task's dependencies and both
+concurrency limits still hold, so an ineligible task waits for a later tick.
 
 ## Flow
 

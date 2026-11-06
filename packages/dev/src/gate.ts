@@ -246,7 +246,7 @@ export async function runVerify(
       context.taskKey,
       {
         ...task,
-        phase: "running",
+        phase: "review",
         run: ctx.runId,
         attempts: Math.max(task.attempts, attempt.number),
         attempt: recordVerify(

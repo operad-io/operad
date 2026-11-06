@@ -24,6 +24,7 @@ import {
   claimTaskStart,
   listRepositories,
   recordAutoMerge,
+  releaseTaskClaim,
   waitTaskForDependency,
 } from "./service.ts";
 import { readDevSettings, type DevSettings } from "./settings.ts";
@@ -163,101 +164,130 @@ async function scheduleRepository(
   initialPlans: readonly StoredObject[],
 ): Promise<void> {
   const settings = await readDevSettings(repository.path);
-  const tasks = tasksOf(initialTasks, repository.name);
-  const plans = orderPlans(plansOf(initialPlans, repository.name));
-  const planById = new Map(
-    plans.map((object) => [bareId(object.id), planData(object.data)]),
-  );
 
-  // The owner's manual start comes first, regardless of auto and concurrency.
-  for (const object of [...tasks].sort((left, right) =>
-    bareId(left.id).localeCompare(bareId(right.id)),
-  )) {
+  // A claim is not durable until the kernel records the run. A task left
+  // running with no run is a start that never landed (a crash or a kernel
+  // failure between the two writes): give it back to ready, and this tick
+  // starts it again. A run that already exists is never duplicated, because
+  // the kernel refuses a second run for an object.
+  for (const object of tasksOf(initialTasks, repository.name)) {
     const task = taskData(object.data);
-    if (task.startRequested !== true) continue;
-    const plan = planById.get(task.plan);
-    if (plan === undefined || plan.status === "cancelled") continue;
-    await startOne(ctx, object);
+    if (task.phase !== "running" || task.run !== null) continue;
+    if ((await releaseTaskClaim(ctx.store, object.id)) === undefined) continue;
+    writeSchedulerLine(`${bareId(object.id)} running -> ready`);
   }
 
-  // A manual start changes the store; read the phases again before counting.
+  // A recovered claim changes the store; read the phases again before counting.
   const current = tasksOf(await listAll(ctx.store, "task"), repository.name);
+  const plans = orderPlans(plansOf(initialPlans, repository.name));
   const byId = new Map(
     current.map((object) => [bareId(object.id), taskData(object.data)]),
   );
 
   await reportFinishedPlans(ctx.store, plans, current);
 
+  const planActive = new Map<string, number>();
+  for (const planObject of plans) {
+    const id = bareId(planObject.id);
+    planActive.set(
+      id,
+      planTasks(current, id).filter((object) =>
+        isActive(taskData(object.data)),
+      ).length,
+    );
+  }
   let repositoryActive = current.filter((object) =>
     isActive(taskData(object.data)),
   ).length;
+  const started = new Set<string>();
+
+  /** Starts one ready task when its dependencies and both limits allow it. */
+  const startEligible = async (
+    object: StoredObject,
+    plan: PlanData,
+    planId: string,
+  ): Promise<void> => {
+    if (started.has(object.id)) return;
+    const task = taskData(object.data);
+    if (task.phase !== "ready") return;
+    const dependencies = dependencyState(task, byId);
+    if (dependencies.cancelled !== undefined) {
+      const blocked = await waitTaskForDependency(
+        ctx.store,
+        object.id,
+        dependencies.cancelled,
+      );
+      if (blocked !== undefined) {
+        writeSchedulerLine(`${bareId(object.id)} ready -> waiting`);
+      }
+      return;
+    }
+    if (!dependencies.ready) return;
+    if (planConcurrency(plan) - (planActive.get(planId) ?? 0) <= 0) return;
+    if (repositoryActive >= repositoryConcurrency(settings)) return;
+    if (!(await startOne(ctx, object))) return;
+    planActive.set(planId, (planActive.get(planId) ?? 0) + 1);
+    repositoryActive += 1;
+    started.add(object.id);
+  };
 
   for (const planObject of plans) {
     const plan = planData(planObject.data);
-    if (plan.status !== "confirmed") continue;
+    if (plan.status !== "confirmed" || plan.auto !== "merge") continue;
 
-    const mine = planTasks(current, bareId(planObject.id));
-
-    if (plan.auto === "merge") {
-      for (const object of mine) {
-        const task = taskData(object.data);
-        const attempt = task.attempt;
-        if (task.phase !== "waiting" || task.run === null) continue;
-        if (attempt === undefined || attempt.review?.result !== "pass") {
-          continue;
-        }
-        // An integrate that failed is a person wait, never a second answer.
-        if (attempt.integration !== undefined && attempt.integration !== null) {
-          continue;
-        }
-        if (task.autoMergeAttempt === attempt.number) continue;
-        try {
-          await ctx.answer(task.run, "merge");
-        } catch (error) {
-          // Another client answered first; the run is no longer waiting.
-          if (!(error instanceof StateError)) throw error;
-          continue;
-        }
-        await recordAutoMerge(ctx.store, object.id, attempt.number);
-        writeSchedulerLine(`${bareId(object.id)} waiting -> merged`);
-      }
-    }
-
-    if (plan.auto === "off") continue;
-
-    let planActive = mine.filter((object) =>
-      isActive(taskData(object.data)),
-    ).length;
-    let slots = Math.min(
-      planConcurrency(plan) - planActive,
-      repositoryConcurrency(settings) - repositoryActive,
-    );
-
-    const ready = mine
-      .filter((object) => taskData(object.data).phase === "ready")
-      .sort((left, right) => bareId(left.id).localeCompare(bareId(right.id)));
-
-    for (const object of ready) {
+    for (const object of planTasks(current, bareId(planObject.id))) {
       const task = taskData(object.data);
-      const dependencies = dependencyState(task, byId);
-      if (dependencies.cancelled !== undefined) {
-        const blocked = await waitTaskForDependency(
-          ctx.store,
-          object.id,
-          dependencies.cancelled,
-        );
-        if (blocked !== undefined) {
-          writeSchedulerLine(`${bareId(object.id)} ready -> waiting`);
-        }
+      const attempt = task.attempt;
+      if (task.phase !== "waiting" || task.run === null) continue;
+      if (attempt === undefined || attempt.review?.result !== "pass") {
         continue;
       }
-      if (!dependencies.ready) continue;
-      if (slots <= 0) break;
-      const started = await startOne(ctx, object);
-      if (!started) continue;
-      slots -= 1;
-      planActive += 1;
-      repositoryActive += 1;
+      // An integrate that failed is a person wait, never a second answer.
+      if (attempt.integration !== undefined && attempt.integration !== null) {
+        continue;
+      }
+      if (task.autoMergeAttempt === attempt.number) continue;
+      try {
+        await ctx.answer(task.run, "merge");
+      } catch (error) {
+        // Another client answered first; the run is no longer waiting.
+        if (!(error instanceof StateError)) throw error;
+        continue;
+      }
+      await recordAutoMerge(ctx.store, object.id, attempt.number);
+      writeSchedulerLine(`${bareId(object.id)} waiting -> merged`);
+    }
+  }
+
+  // The owner's manual start is exempt from the auto level, not from the
+  // dependencies or the limits that keep two runs off one repository.
+  for (const planObject of plans) {
+    const plan = planData(planObject.data);
+    if (plan.status !== "confirmed") continue;
+    const planId = bareId(planObject.id);
+    const requested = planTasks(current, planId)
+      .filter((object) => {
+        const task = taskData(object.data);
+        return task.phase === "ready" && task.startRequested === true;
+      })
+      .sort((left, right) => bareId(left.id).localeCompare(bareId(right.id)));
+    for (const object of requested) {
+      await startEligible(object, plan, planId);
+    }
+  }
+
+  for (const planObject of plans) {
+    const plan = planData(planObject.data);
+    if (plan.status !== "confirmed" || plan.auto === "off") continue;
+    const planId = bareId(planObject.id);
+    const ready = planTasks(current, planId)
+      .filter((object) => {
+        const task = taskData(object.data);
+        return task.phase === "ready" && task.startRequested !== true;
+      })
+      .sort((left, right) => bareId(left.id).localeCompare(bareId(right.id)));
+    for (const object of ready) {
+      await startEligible(object, plan, planId);
     }
   }
 }

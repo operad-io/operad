@@ -789,6 +789,31 @@ export async function claimTaskStart(
   });
 }
 
+/**
+ * Gives back a claim whose start never became a run. A task that is `running`
+ * with no run id has nothing to recover or cancel, so it returns to `ready`
+ * and the next tick can start it again.
+ */
+export async function releaseTaskClaim(
+  store: ObjectStore,
+  id: string,
+): Promise<TaskData | undefined> {
+  const initial = await getTask(store, id);
+  const data = taskData(initial.data);
+  return withRepoLock(store, data.repository, async () => {
+    const current = await getTask(store, id);
+    const latest = taskData(current.data);
+    if (latest.phase !== "running" || latest.run !== null) return undefined;
+    const next: TaskData = {
+      ...latest,
+      phase: "ready",
+      brief: appendChange(latest.brief, "ready"),
+    };
+    await writeTask(store, id, next, "dev:task-claim-released");
+    return next;
+  });
+}
+
 /** Asks the scheduler to start this ready task on its next tick. */
 export async function requestTaskStart(
   store: ObjectStore,
