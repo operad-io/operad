@@ -10,7 +10,9 @@
       "opencode-go",
       "--model",
       "deepseek-v4.1-flash"
-    ]
+    ],
+    "stallSecs": 900,
+    "wallTimeSecs": 7200
   },
   "reviewer": {
     "use": "harness-radian/agent",
