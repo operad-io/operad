@@ -9,6 +9,7 @@ import { messageOf } from "../plugin/errors.ts";
 import { FilePluginStore } from "../plugin/file-store.ts";
 import { loadPlugin } from "../plugin/load.ts";
 import { PluginRegistry } from "../plugin/registry.ts";
+import type { JsonValue } from "../log/types.ts";
 import type { PluginStepResult, RunObject } from "../plugin/types.ts";
 
 interface StepWorkerRequest {
@@ -18,6 +19,7 @@ interface StepWorkerRequest {
   readonly storeRoot: string;
   readonly use: string;
   readonly params: unknown;
+  readonly flowParams: JsonValue;
   readonly runId: string;
   readonly object?: RunObject | undefined;
 }
@@ -45,6 +47,7 @@ async function main(request: StepWorkerRequest): Promise<void> {
 
   const result = await registry.runStep(request.use, request.params, {
     runId: request.runId,
+    params: request.flowParams,
     cwd: request.cwd,
     ...(request.object === undefined ? {} : { object: request.object }),
     signal: controller.signal,

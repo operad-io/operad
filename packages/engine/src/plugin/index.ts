@@ -16,3 +16,4 @@ export type { MemoryPluginStoreOptions } from "./store.ts";
 export { FilePluginStore } from "./file-store.ts";
 export type { FilePluginStoreOptions } from "./file-store.ts";
 export * from "./types.ts";
+export * from "./harness.ts";

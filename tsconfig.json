@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/engine" },
     { "path": "packages/shell" },
+    { "path": "packages/harness-radian" },
     { "path": "packages/cli" }
   ]
 }
