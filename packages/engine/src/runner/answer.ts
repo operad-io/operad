@@ -13,6 +13,10 @@ export interface AnswerOptions {
   readonly choice: string;
   readonly note?: string | undefined;
   readonly clock?: (() => number) | undefined;
+  /** Called once when the answer ends the run. */
+  readonly onEnded?:
+    | ((runId: string, state: KernelState) => Promise<void>)
+    | undefined;
 }
 
 /** Answers the run's current wait and appends the resulting facts. */
@@ -45,6 +49,11 @@ export async function answerRun(options: AnswerOptions): Promise<KernelState> {
     now,
     "person",
     `answer:${wait.id}:${options.choice}`,
+    {
+      afterEnd: async (runId, ended) => {
+        await options.onEnded?.(runId, ended);
+      },
+    },
   );
   return result.state;
 }

@@ -59,6 +59,46 @@ async function inputApplied(
  * record is not an applied input: the run has no fact caused by it, so its
  * decision still has to be taken and appended.
  */
+export interface ApplyHooks {
+  /** Runs after the ending facts are written, before the run is marked ended. */
+  readonly beforeEnd?:
+    | ((runId: string, state: KernelState) => void | Promise<void>)
+    | undefined;
+  /** Runs after the run is marked ended; a recovered call must be safe. */
+  readonly afterEnd?:
+    | ((runId: string, state: KernelState) => void | Promise<void>)
+    | undefined;
+}
+
+/**
+ * Asks `decide` for one input's facts and appends them as one batch, without
+ * recording an input. The caller supplies the input id as the cause.
+ */
+export async function appendInput(
+  log: LogBackend,
+  flow: FlowDefinition,
+  runId: string,
+  state: KernelState,
+  input: Input,
+  now: number,
+): Promise<{ readonly state: KernelState; readonly decision: Decision }> {
+  const decision = decide(flow, state, input, now);
+  let next = state;
+  if (decision.facts.length > 0) {
+    await log.append(runId, state.lastSeq, decision.facts);
+    for (const fact of decision.facts) next = evolve(next, fact);
+  }
+  return { state: next, decision };
+}
+
+/**
+ * Records one input, asks `decide` for its facts and appends them as one
+ * batch. A repeated (source, key) appends nothing.
+ *
+ * A crash can leave the input's record behind without its facts. Such a
+ * record is not an applied input: the run has no fact caused by it, so its
+ * decision still has to be taken and appended.
+ */
 export async function applyInput(
   log: LogBackend,
   flow: FlowDefinition,
@@ -68,6 +108,7 @@ export async function applyInput(
   now: number,
   source: string,
   sourceKey: string,
+  hooks: ApplyHooks = {},
 ): Promise<ApplyResult> {
   const recorded = await log.recordInput(
     runId,
@@ -90,14 +131,18 @@ export async function applyInput(
   }
 
   const withId: Input = { ...input, inputId: recorded.inputId };
-  const decision = decide(flow, state, withId, now);
-  let next = state;
-  if (decision.facts.length > 0) {
-    await log.append(runId, state.lastSeq, decision.facts);
-    for (const fact of decision.facts) next = evolve(next, fact);
-  }
+  const { state: next, decision } = await appendInput(
+    log,
+    flow,
+    runId,
+    state,
+    withId,
+    now,
+  );
   if (next.status === "ended") {
+    await hooks.beforeEnd?.(runId, next);
     await log.endRun(runId);
+    await hooks.afterEnd?.(runId, next);
   }
   return { state: next, decision, duplicate: false };
 }

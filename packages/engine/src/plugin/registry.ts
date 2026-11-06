@@ -29,6 +29,8 @@ import {
   type PluginStepResult,
   type PluginStore,
   type ResolvedCommand,
+  type SourceContext,
+  type SourceHandle,
   type StartRunRequest,
   type StepContext,
   type StepRunOptions,
@@ -36,6 +38,12 @@ import {
   type TickContext,
   type WaitingRun,
 } from "./types.ts";
+import type {
+  SourceEvent,
+  StepEvent,
+  TriggerEvent,
+  TriggerRule,
+} from "../trigger/types.ts";
 
 /** Options for building a registry from plugin definitions. */
 export interface PluginRegistryOptions {
@@ -58,6 +66,12 @@ export interface PluginRegistryOptions {
     | undefined;
   /** The specifier each definition was loaded from, aligned with it. */
   readonly sources?: readonly (string | undefined)[] | undefined;
+  /** The routing rules, given to source plugins. */
+  readonly rules?: readonly TriggerRule[] | undefined;
+  /** Called when a source plugin sends an event. */
+  readonly onSourceEvent?:
+    | ((event: TriggerEvent, plugin: string) => MaybePromise<void>)
+    | undefined;
 }
 
 interface NormalizedPlugin {
@@ -70,6 +84,9 @@ interface NormalizedPlugin {
   readonly flows: readonly unknown[];
   readonly commands: readonly CommandDefinition[];
   readonly onTick: ((ctx: TickContext) => MaybePromise<void>) | undefined;
+  readonly start:
+    | ((ctx: SourceContext) => MaybePromise<SourceHandle> | SourceHandle)
+    | undefined;
   readonly check:
     | ((ctx: PluginBaseContext) => MaybePromise<string | void>)
     | undefined;
@@ -90,6 +107,14 @@ const KINDS: readonly PluginKind[] = [
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseObjectKeyMaybe(key: string): { readonly type: string; readonly id: string } {
+  const colon = key.indexOf(":");
+  if (colon <= 0 || colon === key.length - 1) {
+    return { type: "object", id: key };
+  }
+  return { type: key.slice(0, colon), id: key.slice(colon + 1) };
 }
 
 function isPluginKind(value: unknown): value is PluginKind {
@@ -296,6 +321,14 @@ function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     ) => MaybePromise<string | void>;
   }
 
+  let start: NormalizedPlugin["start"];
+  if (raw.start !== undefined) {
+    if (typeof raw.start !== "function") {
+      throw new PluginError(`${at}: start: must be a function`);
+    }
+    start = raw.start as NormalizedPlugin["start"];
+  }
+
   return {
     name,
     kind,
@@ -306,6 +339,7 @@ function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     flows: optionalArray(raw.flows, `${at}: flows`),
     commands: normalizeCommands(raw.commands, `${at}: commands`),
     onTick,
+    start,
     check,
   };
 }
@@ -418,6 +452,10 @@ export class PluginRegistry {
   private readonly onAnswer:
     | ((runId: string, choice: string, note?: string) => MaybePromise<void>)
     | undefined;
+  private readonly rules: readonly TriggerRule[];
+  private readonly onSourceEvent:
+    | ((event: TriggerEvent, plugin: string) => MaybePromise<void>)
+    | undefined;
   private readonly plugins: readonly LoadedPlugin[];
   private readonly byName: ReadonlyMap<string, LoadedPlugin>;
   private readonly sourceByPlugin: ReadonlyMap<string, string>;
@@ -437,6 +475,8 @@ export class PluginRegistry {
     this.onLog = options.onLog ?? ((message) => console.error(message));
     this.onStartRun = options.onStartRun;
     this.onAnswer = options.onAnswer;
+    this.rules = options.rules ?? [];
+    this.onSourceEvent = options.onSourceEvent;
 
     const clock = options.clock ?? (() => Date.now());
     this.store =
@@ -558,6 +598,19 @@ export class PluginRegistry {
     }
 
     const cause = `step:${use}`;
+    const emit = async (event: StepEvent): Promise<void> => {
+      if (!event.type.startsWith(`${found.plugin.name}.`)) {
+        throw new PluginError(
+          `step "${use}": emit: type "${event.type}" must begin with "${found.plugin.name}."`,
+        );
+      }
+      if (options.emit === undefined) {
+        throw new PluginError(
+          `step "${use}": emit: no event destination is configured`,
+        );
+      }
+      await options.emit(event);
+    };
     const ctx: StepContext = {
       plugin: found.plugin.name,
       home: this.home,
@@ -574,6 +627,9 @@ export class PluginRegistry {
       signal: options.signal ?? new AbortController().signal,
       runId: options.runId,
       object: options.object,
+      params: options.params ?? null,
+      trigger: options.trigger,
+      emit,
     };
 
     const outcome: unknown = await found.step.run(ctx, params);
@@ -800,17 +856,38 @@ export class PluginRegistry {
         facts: this.factsFor(`tick:${plugin.name}`),
         logger: createPluginLogger(this.store.root, plugin.name, "tick"),
         signal: new AbortController().signal,
-        start: async (flowName, object) => {
-          const flow = plugin.flows.find((item) => item.name === flowName);
+        start: async (flowOrRequest, objectArg) => {
+          const request: StartRunRequest =
+            typeof flowOrRequest === "string"
+              ? {
+                  plugin: plugin.name,
+                  flow: flowOrRequest,
+                  ...(objectArg === undefined ? {} : { object: objectArg }),
+                }
+              : {
+                  plugin: plugin.name,
+                  flow: flowOrRequest.flow,
+                  ...(flowOrRequest.params === undefined
+                    ? {}
+                    : { params: flowOrRequest.params }),
+                  ...(flowOrRequest.object === undefined
+                    ? {}
+                    : {
+                        object:
+                          typeof flowOrRequest.object === "string"
+                            ? parseObjectKeyMaybe(flowOrRequest.object)
+                            : flowOrRequest.object,
+                      }),
+                  ...(flowOrRequest.trigger === undefined
+                    ? {}
+                    : { trigger: flowOrRequest.trigger }),
+                };
+          const flow = plugin.flows.find((item) => item.name === request.flow);
           if (flow === undefined) {
             throw new PluginError(
-              `plugin "${plugin.name}": flow "${flowName}": not declared`,
+              `plugin "${plugin.name}": flow "${request.flow}": not declared`,
             );
           }
-          const request: StartRunRequest =
-            object === undefined
-              ? { plugin: plugin.name, flow: flowName }
-              : { plugin: plugin.name, flow: flowName, object };
           this.starts.push(request);
           if (this.onStartRun !== undefined) {
             await this.onStartRun(request);
@@ -828,6 +905,72 @@ export class PluginRegistry {
   /** The run starts plugins asked for on the latest ticks. */
   get startedRuns(): readonly StartRunRequest[] {
     return this.starts;
+  }
+
+  /** The loaded source plugins, with the function that starts each one. */
+  sourcePlugins(): readonly {
+    readonly plugin: string;
+    readonly start: (ctx: SourceContext) => MaybePromise<SourceHandle> | SourceHandle;
+  }[] {
+    return this.plugins.flatMap((plugin) =>
+      plugin.kind !== "source" || plugin.start === undefined
+        ? []
+        : [{ plugin: plugin.name, start: plugin.start }],
+    );
+  }
+
+  /**
+   * Starts each source plugin. A source that throws is logged and skipped, so
+   * one broken source cannot stop the others or the loop.
+   */
+  async startSources(options: {
+    readonly rules: readonly TriggerRule[];
+    readonly clock: () => number;
+    readonly emit: (event: TriggerEvent) => MaybePromise<void>;
+    readonly signal?: AbortSignal | undefined;
+  }): Promise<readonly { readonly plugin: string; readonly handle: SourceHandle }[]> {
+    const running: { plugin: string; handle: SourceHandle }[] = [];
+    for (const plugin of this.plugins) {
+      if (plugin.kind !== "source" || plugin.start === undefined) continue;
+      const emit = async (event: SourceEvent): Promise<void> => {
+        const trigger: TriggerEvent = {
+          source: event.source ?? plugin.name,
+          key: event.key,
+          type: event.type,
+          ...(event.object === undefined ? {} : { object: event.object }),
+          ...(event.summary === undefined ? {} : { summary: event.summary }),
+          ...(event.data === undefined ? {} : { data: event.data }),
+          ...(event.link === undefined ? {} : { link: event.link }),
+          hops: 0,
+        };
+        try {
+          await options.emit(trigger);
+        } catch (error) {
+          this.log(
+            `plugin "${plugin.name}": emit failed: ${messageOf(error)}`,
+          );
+        }
+      };
+      const ctx: SourceContext = {
+        plugin: plugin.name,
+        home: this.home,
+        cwd: this.cwd,
+        store: this.store,
+        facts: this.factsFor(`source:${plugin.name}`),
+        logger: createPluginLogger(this.store.root, plugin.name, "source"),
+        signal: options.signal ?? new AbortController().signal,
+        rules: options.rules,
+        clock: options.clock,
+        emit,
+      };
+      try {
+        const handle = await plugin.start(ctx);
+        running.push({ plugin: plugin.name, handle });
+      } catch (error) {
+        this.log(`plugin "${plugin.name}": start failed: ${messageOf(error)}`);
+      }
+    }
+    return running;
   }
 
   /** Removes and returns the start requests collected so far. */

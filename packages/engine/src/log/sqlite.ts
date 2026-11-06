@@ -76,7 +76,7 @@ const SCHEMA = `
   );
   CREATE TABLE IF NOT EXISTS inputs (
     input_id   TEXT PRIMARY KEY,
-    run_id     TEXT NOT NULL REFERENCES runs (run_id),
+    run_id     TEXT REFERENCES runs (run_id),
     source     TEXT NOT NULL,
     source_key TEXT NOT NULL,
     payload    TEXT NOT NULL,
@@ -270,20 +270,22 @@ class SqliteLogBackend implements LogBackend {
   }
 
   async recordInput(
-    runId: string,
+    runId: string | null,
     source: string,
     sourceKey: string,
     payload: JsonValue,
   ): Promise<RecordInputResult> {
-    assertRunId(runId);
+    if (runId !== null) assertRunId(runId);
     assertName(source, "source");
     assertName(sourceKey, "sourceKey");
     assertJsonValue(payload, "input payload");
     this.#assertOpen();
     return this.#database.transaction(() => {
-      const row = this.#runRow(runId);
-      if (!row) throw new RunNotFoundError(runId);
-      if (row.ended_at !== null) throw new RunEndedError(runId);
+      if (runId !== null) {
+        const row = this.#runRow(runId);
+        if (!row) throw new RunNotFoundError(runId);
+        if (row.ended_at !== null) throw new RunEndedError(runId);
+      }
 
       const inputId = inputIdFor(source, sourceKey);
       const result = this.#database.run(

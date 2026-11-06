@@ -4,6 +4,7 @@ import { ActiveRunError } from "../log/errors.ts";
 import type { LogBackend } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { StartRunRequest } from "../plugin/types.ts";
+import type { Kernel } from "../trigger/kernel.ts";
 import { acquireLock, lockHeld, runLockPath, serveLockPath } from "../runner/lock.ts";
 import { objectKey, parseObjectKey, readState } from "../runner/service.ts";
 
@@ -26,6 +27,8 @@ export interface ServePassOptions {
   readonly isRunnerAlive?: ((runId: string) => boolean) | undefined;
   readonly isRecentlySpawned?: ((runId: string) => boolean) | undefined;
   readonly shouldStop?: (() => boolean) | undefined;
+  /** When given, every start request goes through the kernel entry point. */
+  readonly kernel?: Kernel | undefined;
 }
 
 export interface ServePassResult {
@@ -56,12 +59,20 @@ export async function serveOnce(
   const requests = options.registry.takeStartedRuns();
   for (const request of requests) {
     if (options.shouldStop?.() === true) break;
+    const object = startObjectKey(request);
     try {
-      const info = await options.log.startRun(
-        request.flow,
-        startObjectKey(request),
-      );
-      started.push(info.runId);
+      if (options.kernel !== undefined) {
+        const result = await options.kernel.start({
+          flow: request.flow,
+          object,
+          ...(request.params === undefined ? {} : { params: request.params }),
+          ...(request.trigger === undefined ? {} : { trigger: request.trigger }),
+        });
+        if (result.kind === "started") started.push(result.runId);
+      } else {
+        const info = await options.log.startRun(request.flow, object);
+        started.push(info.runId);
+      }
     } catch (error) {
       if (!(error instanceof ActiveRunError)) throw error;
     }
@@ -73,6 +84,9 @@ export async function serveOnce(
     const state = await readState(options.log, run.runId);
 
     if (state.status === "ended") {
+      if (options.kernel !== undefined) {
+        await options.kernel.emitRunEnd(run.runId, state);
+      }
       await options.log.endRun(run.runId);
       continue;
     }

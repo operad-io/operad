@@ -48,13 +48,22 @@ export function historyEntry(fact: Fact): HistoryEntry {
   const time = fact.time;
 
   switch (fact.kind) {
-    case "run_started":
+    case "run_started": {
+      const flow = text(payload.flow) ?? "unknown";
+      const trigger = record(payload.trigger);
+      const source = text(trigger.source);
+      const type = text(trigger.type);
+      const why =
+        source !== undefined && type !== undefined
+          ? `flow "${flow}", started by ${source} ${type}`
+          : `flow "${flow}"`;
       return {
         time,
         step,
         what: "run started",
-        why: `flow "${text(payload.flow) ?? "unknown"}"`,
+        why,
       };
+    }
 
     case "step_entered":
       return {
@@ -161,6 +170,28 @@ export function historyEntry(fact: Fact): HistoryEntry {
         what: `${step ?? "the step"} keeps crashing`,
         why: `waiting for you after ${number(payload.recoveries) ?? 0} attempts`,
       };
+
+    case "trigger_received": {
+      const source = text(payload.source) ?? "an outside source";
+      const type = text(payload.type) ?? "event";
+      return {
+        time,
+        step,
+        what: `event ${type} from ${source}`,
+        why: text(payload.summary) ?? text(payload.link) ?? "recorded while the run was active",
+      };
+    }
+
+    case "trigger_skipped": {
+      const source = text(payload.source) ?? "an outside source";
+      const type = text(payload.type) ?? "event";
+      return {
+        time,
+        step,
+        what: `event ${type} from ${source} not started`,
+        why: text(payload.reason) ?? "the chain is too deep",
+      };
+    }
 
     case "visit_limit_reached":
       return {

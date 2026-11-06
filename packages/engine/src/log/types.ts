@@ -64,11 +64,12 @@ export interface LogBackend {
   /** End an active run. Ending an ended run is a no-op. */
   endRun(runId: string): Promise<void>;
   /**
-   * Record one input for a run. A repeated (source, sourceKey) is a duplicate:
-   * `duplicate` is true and nothing is written.
+   * Record one input for a run, or a global input when `runId` is null. A
+   * repeated (source, sourceKey) is a duplicate: `duplicate` is true and
+   * nothing is written.
    */
   recordInput(
-    runId: string,
+    runId: string | null,
     source: string,
     sourceKey: string,
     payload: JsonValue,

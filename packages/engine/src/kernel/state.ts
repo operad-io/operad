@@ -2,6 +2,7 @@ import { END } from "../flow/types.ts";
 import type { NewFact } from "../log/types.ts";
 import type {
   CrashLoopStoppedPayload,
+  RunStartedPayload,
   EffectRequestedPayload,
   KernelState,
   PendingEffect,
@@ -22,6 +23,8 @@ function read<T>(fact: NewFact): T {
 export function initialState(): KernelState {
   return {
     status: "idle",
+    params: null,
+    hops: 0,
     started: false,
     step: null,
     stepKind: null,
@@ -62,7 +65,15 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
   switch (fact.kind) {
     case "run_started": {
       if (state.started) return { ...state, lastSeq };
-      return { ...state, started: true, status: "running", lastSeq };
+      const payload = read<RunStartedPayload>(fact);
+      return {
+        ...state,
+        started: true,
+        status: "running",
+        params: payload.params ?? null,
+        hops: payload.hops ?? 0,
+        lastSeq,
+      };
     }
 
     case "step_entered": {

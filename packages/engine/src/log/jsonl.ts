@@ -67,7 +67,7 @@ interface RunHeader {
 interface StoredInput {
   readonly type: "input";
   readonly inputId: string;
-  readonly runId: string;
+  readonly runId: string | null;
   readonly source: string;
   readonly sourceKey: string;
   readonly payload: JsonValue;
@@ -409,18 +409,20 @@ class JsonlLogBackend implements LogBackend {
   }
 
   async recordInput(
-    runId: string,
+    runId: string | null,
     source: string,
     sourceKey: string,
     payload: JsonValue,
   ): Promise<RecordInputResult> {
-    assertRunId(runId);
+    if (runId !== null) assertRunId(runId);
     assertName(source, "source");
     assertName(sourceKey, "sourceKey");
     assertJsonValue(payload, "input payload");
     return this.#withLock(() => {
-      const info = this.#runInfoUnlocked(runId);
-      if (!info.active) throw new RunEndedError(runId);
+      if (runId !== null) {
+        const info = this.#runInfoUnlocked(runId);
+        if (!info.active) throw new RunEndedError(runId);
+      }
       this.#refreshInputsUnlocked();
 
       const inputId = inputIdFor(source, sourceKey);

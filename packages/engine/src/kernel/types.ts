@@ -13,7 +13,9 @@ export type FactKind =
   | "run_ended"
   | "step_interrupted"
   | "crash_loop_stopped"
-  | "visit_limit_reached";
+  | "visit_limit_reached"
+  | "trigger_received"
+  | "trigger_skipped";
 
 /** One fact produced by `decide`; the log adds the run id, seq and time. */
 export interface KernelFact extends NewFact {
@@ -84,6 +86,19 @@ export interface InputBase {
 
 export interface StartInput extends InputBase {
   readonly kind: "start";
+  /** Fixed JSON the flow was started with. */
+  readonly params?: JsonValue;
+  /** Hops of the event that started the run; 0 when no event started it. */
+  readonly hops?: number;
+  /** Where the run came from, in words the history view can print. */
+  readonly trigger?: StartTrigger;
+}
+
+/** The event that started a run, without any of its text. */
+export interface StartTrigger {
+  readonly source: string;
+  readonly type: string;
+  readonly key?: string;
 }
 
 export interface StepResultInput extends InputBase {
@@ -147,6 +162,10 @@ export interface StepResultValue {
 /** Everything the kernel knows, derived from the fact log alone. */
 export interface KernelState {
   readonly status: RunStatus;
+  /** Fixed JSON the flow was started with, or null. */
+  readonly params: JsonValue;
+  /** Hops of the event that started the run; 0 when no event started it. */
+  readonly hops: number;
   readonly started: boolean;
   /** The one step a run is in, or null. */
   readonly step: string | null;
@@ -171,6 +190,26 @@ export interface Decision {
 
 export interface RunStartedPayload {
   readonly flow: string;
+  readonly params?: JsonValue;
+  readonly hops?: number;
+  readonly trigger?: StartTrigger;
+}
+
+export interface TriggerReceivedPayload {
+  readonly source: string;
+  readonly type: string;
+  readonly key: string;
+  readonly summary?: string;
+  readonly link?: string;
+  readonly hops: number;
+}
+
+export interface TriggerSkippedPayload {
+  readonly source: string;
+  readonly type: string;
+  readonly key: string;
+  readonly hops: number;
+  readonly reason: string;
 }
 
 export interface StepEnteredPayload {

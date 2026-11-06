@@ -8,7 +8,13 @@ export {
   serveLockPath,
 } from "./lock.ts";
 export type { LockHandle, LockOptions } from "./lock.ts";
-export { applyInput, objectKey, parseObjectKey, readState } from "./service.ts";
-export type { ApplyResult } from "./service.ts";
+export {
+  appendInput,
+  applyInput,
+  objectKey,
+  parseObjectKey,
+  readState,
+} from "./service.ts";
+export type { ApplyHooks, ApplyResult } from "./service.ts";
 export { DEFAULT_STEP_TIMEOUT_MS, Runner } from "./runner.ts";
 export type { RunnerOptions, RunnerOutcome } from "./runner.ts";
