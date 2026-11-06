@@ -1,0 +1,15 @@
+{
+  "name": "operad-workspace",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "bun test",
+    "verify": "bash scripts/verify.sh"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.1",
+    "typescript": "5.9.3"
+  }
+}

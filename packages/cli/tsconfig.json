@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": ".", "outDir": "../../.tsbuild/cli" },
+  "include": ["src", "bin"],
+  "references": [{ "path": "../engine" }]
+}

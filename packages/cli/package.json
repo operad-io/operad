@@ -1,0 +1,9 @@
+{
+  "name": "@operad-io/cli",
+  "version": "0.0.1",
+  "description": "operad: an open orchestration layer for coding agents (in development)",
+  "type": "module",
+  "repository": { "type": "git", "url": "git+https://github.com/operad-io/operad.git", "directory": "packages/cli" },
+  "bin": { "operad": "bin/operad.ts" },
+  "dependencies": { "@operad-io/engine": "workspace:*" }
+}
