@@ -552,3 +552,12 @@
 | TK0024-M2 | packages/dev/src/check.ts | skipped the delete of the scratch ref after an accepted push | `dev init check > a repository with a reachable remote passes and leaves no scratch ref` |
 | TK0024-M3 | packages/engine/src/config/config.ts | left `harness-radian` out of the plugins a new home installs | `operad config > the default plugins are shell, the radian harness and dev` |
 | TK0024-M4 | packages/cli/src/main.ts | skipped resolving a scoped object id before reading history, so a task keyed by its repository had no run | `dogfood end to end > a task survives a killed run and reaches a merge with a history of every step` |
+
+## TK0024 — rework 2: a clean scratch ref, an event wait and the whole user output
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0024-M5 | packages/dev/src/check.ts | skipped the direct cleanup after a remote refused the wire delete, leaving its scratch ref behind | `dev init check > a remote that refuses the delete is a failed check that leaves no scratch ref` |
+| TK0024-M6 | packages/cli/src/main.ts | wrote an internal word into the loop's own output | `dogfood end to end > a task survives a killed run and reaches a merge with a history of every step` |
+| TK0024-M7 | packages/cli/src/main.ts | wrote an internal word into a `pending --json` page | `dogfood end to end > a task survives a killed run and reaches a merge with a history of every step` |
+| TK0024-M8 | packages/cli/test/e2e.test.ts | installed no store watcher, so the wait only looked once instead of on each change | `dogfood end to end > a task survives a killed run and reaches a merge with a history of every step` |

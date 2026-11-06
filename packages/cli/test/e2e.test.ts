@@ -17,6 +17,7 @@ import {
   readFileSync,
   watch,
   writeFileSync,
+  type FSWatcher,
 } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -109,23 +110,70 @@ function waitForFile(path: string): Promise<void> {
 }
 
 /**
- * Waits for an external process to reach a state. The loop can only observe
- * the state by running the CLI, so it checks again shortly; every test run is
- * bounded.
+ * Resolves when `check` is true, re-checking whenever the store changes: a run
+ * log write or a plugin fact. The timer only bounds the wait; it never decides
+ * when to look again.
  */
-async function waitFor(
+function waitForStore(
+  storeRoot: string,
   check: () => Promise<boolean> | boolean,
   message: string,
-  timeoutMs = 30_000,
+  timeoutMs = 60_000,
 ): Promise<void> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (await check()) return;
-    await new Promise((resolve) => {
-      globalThis.setTimeout(resolve, 50);
-    });
-  }
-  throw new Error(`timed out waiting for ${message}`);
+  return new Promise((resolve, reject) => {
+    const watchers: FSWatcher[] = [];
+    let settled = false;
+    let checking = false;
+    let again = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      for (const watcher of watchers) watcher.close();
+      if (timer !== undefined) globalThis.clearTimeout(timer);
+      if (error === undefined) resolve();
+      else reject(error);
+    };
+
+    const evaluate = (): void => {
+      if (settled) return;
+      if (checking) {
+        // A change that lands during a check must not be lost.
+        again = true;
+        return;
+      }
+      checking = true;
+      void (async () => {
+        try {
+          if (await check()) finish();
+        } catch (error) {
+          finish(error instanceof Error ? error : new Error(String(error)));
+        } finally {
+          checking = false;
+          if (again && !settled) {
+            again = false;
+            evaluate();
+          }
+        }
+      })();
+    };
+
+    timer = globalThis.setTimeout(() => {
+      finish(new Error(`timed out waiting for ${message}`));
+    }, timeoutMs);
+
+    for (const directory of [
+      join(storeRoot, "runs"),
+      join(storeRoot, "plugins"),
+    ]) {
+      mkdirSync(directory, { recursive: true });
+      const watcher = watch(directory, () => evaluate());
+      watcher.on("error", (error) => finish(error));
+      watchers.push(watcher);
+    }
+    evaluate();
+  });
 }
 
 function pidOfRun(storeRoot: string, runId: string): number | undefined {
@@ -243,57 +291,51 @@ describe("dogfood end to end", () => {
       );
 
       const userOutput: string[] = [];
-      const remember = (result: RunResult): RunResult => {
+      // Every line a user would see, from every command and from the loop.
+      const cli = async (
+        args: readonly string[],
+        input?: string,
+      ): Promise<RunResult> => {
+        const result = await run(home, repository, args, input);
         userOutput.push(result.out);
         if (result.err.length > 0) userOutput.push(result.err);
         return result;
       };
 
-      const added = remember(await run(home, repository, ["repo", "add", "."]));
+      const added = await cli(["repo", "add", "."]);
       expect(added.code).toBe(0);
 
-      const plan = remember(
-        await run(
-          home,
-          repository,
-          ["plan", "add", "--slug", "e2e", "--title", "End to end"],
-          "Run the whole flow once.\n",
-        ),
+      const plan = await cli(
+        ["plan", "add", "--slug", "e2e", "--title", "End to end"],
+        "Run the whole flow once.\n",
       );
       expect(plan.code).toBe(0);
       const planId = plan.out.trim();
 
-      const task = remember(
-        await run(
-          home,
-          repository,
-          [
-            "task",
-            "add",
-            "--plan",
-            planId,
-            "--slug",
-            "flow",
-            "--title",
-            "The whole flow",
-          ],
-          "Change one file, then let the gate check it.\n",
-        ),
+      const task = await cli(
+        [
+          "task",
+          "add",
+          "--plan",
+          planId,
+          "--slug",
+          "flow",
+          "--title",
+          "The whole flow",
+        ],
+        "Change one file, then let the gate check it.\n",
       );
       expect(task.code).toBe(0);
       const taskId = task.out.trim();
 
-      const confirmed = remember(
-        await run(home, repository, ["dev:confirm", planId]),
-      );
+      const confirmed = await cli(["dev:confirm", planId]);
       expect(confirmed.code).toBe(0);
 
-      const auto = remember(
-        await run(home, repository, ["dev:auto", planId, "--level", "run"]),
-      );
+      const auto = await cli(["dev:auto", planId, "--level", "run"]);
       expect(auto.code).toBe(0);
 
-      const serveOutput = join(root, "serve.out");      const fd = openSync(serveOutput, "w");
+      const serveOutput = join(root, "serve.out");
+      const fd = openSync(serveOutput, "w");
       const serve = Bun.spawn({
         cmd: [process.execPath, CLI_ENTRY, "serve"],
         cwd: repository,
@@ -310,11 +352,23 @@ describe("dogfood end to end", () => {
       });
       closeSync(fd);
 
+      let serveStopped = false;
+      const stopServe = async (): Promise<void> => {
+        if (serveStopped) return;
+        serveStopped = true;
+        try {
+          serve.kill("SIGTERM");
+        } catch {
+          // It already ended.
+        }
+        await serve.exited;
+      };
+
       let runId: string | undefined;
       try {
         // The first review has started and is waiting to be killed.
         await waitForFile(join(state, "review-once"));
-        const running = remember(await run(home, repository, ["running", "--json"]));
+        const running = await cli(["running", "--json"]);
         const runs = JSON.parse(running.out) as { runId: string }[];
         runId = runs[0]?.runId;
         expect(runId).toBeString();
@@ -323,40 +377,53 @@ describe("dogfood end to end", () => {
         expect(pid).toBeNumber();
         process.kill(pid as number, "SIGKILL");
 
-        // The loop starts the run again from its last recorded step.
-        await waitFor(async () => {
-          const pending = await run(home, repository, ["pending", "--json"]);
-          const items = JSON.parse(pending.out) as { runId: string }[];
-          return items.some((item) => item.runId === runId);
-        }, "the recovered run to wait for a person");
+        // The loop starts the run again from its last recorded step. Every
+        // write to the run log or the plugin facts is the event to look at.
+        await waitForStore(
+          storeRoot,
+          async () => {
+            const pending = await cli(["pending", "--json"]);
+            const items = JSON.parse(pending.out) as { runId: string }[];
+            return items.some((item) => item.runId === runId);
+          },
+          "the recovered run to wait for a person",
+        );
 
-        const pending = remember(await run(home, repository, ["pending"]));
+        const pending = await cli(["pending"]);
         expect(pending.out).toContain("merge");
         expect(pending.out).toContain("reject");
 
-        const merged = remember(
-          await run(home, repository, ["dev:merge", taskId, "--yes"]),
-        );
+        const merged = await cli(["dev:merge", taskId, "--yes"]);
         expect(merged.code).toBe(0);
 
-        await waitFor(async () => {
-          const listed = await run(home, repository, ["list", "task", "--json"]);
-          const page = JSON.parse(listed.out) as {
-            rows: { id: string; state: string }[];
-          };
-          const row = page.rows.find((candidate) => candidate.id === taskId);
-          return row?.state === "merged";
-        }, "the task to merge");
+        await waitForStore(
+          storeRoot,
+          async () => {
+            const listed = await cli(["list", "task", "--json"]);
+            const page = JSON.parse(listed.out) as {
+              rows: { id: string; state: string }[];
+            };
+            const row = page.rows.find((candidate) => candidate.id === taskId);
+            return row?.state === "merged";
+          },
+          "the task to merge",
+        );
 
         // The run ends after cleanup; stop the loop only then.
-        await waitFor(async () => {
-          const runningNow = await run(home, repository, ["running", "--json"]);
-          return (JSON.parse(runningNow.out) as unknown[]).length === 0;
-        }, "the run to finish cleanup");
-
-        const history = remember(
-          await run(home, repository, ["history", taskId]),
+        await waitForStore(
+          storeRoot,
+          async () => {
+            const runningNow = await cli(["running", "--json"]);
+            return (JSON.parse(runningNow.out) as unknown[]).length === 0;
+          },
+          "the run to finish cleanup",
         );
+
+        // The loop is done; keep its output for the scan below.
+        await stopServe();
+        userOutput.push(readFileSync(serveOutput, "utf8"));
+
+        const history = await cli(["history", taskId]);
         if (history.code !== 0) {
           throw new Error(`history failed: ${history.err}`);
         }
@@ -379,12 +446,11 @@ describe("dogfood end to end", () => {
           expect(history.out).toContain(line);
         }
 
-        const shown = remember(
-          await run(home, repository, ["show", taskId, "--json"]),
-        );
+        const shown = await cli(["show", taskId, "--json"]);
         expect(shown.code).toBe(0);
 
-        // A user of the kernel never reads an internal name.
+        // A user of the kernel never reads an internal name: not in a command,
+        // not in a JSON page and not in the loop's own output.
         const text = userOutput.join("\n");
         for (const word of INTERNAL_WORDS) {
           expect(text).not.toMatch(new RegExp(`\\b${word}s?\\b`, "i"));
@@ -397,8 +463,7 @@ describe("dogfood end to end", () => {
           runGit(origin, ["for-each-ref", "--format=%(refname)", "refs/heads"]),
         ).not.toContain(`work/${taskId}`);
       } finally {
-        serve.kill("SIGTERM");
-        await serve.exited;
+        await stopServe();
         if (runId !== undefined) killRun(storeRoot, runId);
       }
     },

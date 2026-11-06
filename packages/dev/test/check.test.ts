@@ -103,7 +103,7 @@ describe("dev init check", () => {
     expect(await listRepositories(store)).toHaveLength(1);
   });
 
-  test("a remote that refuses the delete is a failed check", async () => {
+  test("a remote that refuses the delete is a failed check that leaves no scratch ref", async () => {
     const { root, remote, repositoryPath } = await setup();
     const hook = join(remote, "hooks", "pre-receive");
     writeFileSync(
@@ -134,6 +134,8 @@ describe("dev init check", () => {
     const [check] = await registry.checks();
     expect(check?.ok).toBe(false);
     expect(check?.message).toContain("refused to delete the scratch ref");
+    // The wire delete was refused, so the check removes the ref directly.
+    expect(scratchRefs(remote)).toBe("");
   });
 
   test("no registered repository passes with a note", async () => {

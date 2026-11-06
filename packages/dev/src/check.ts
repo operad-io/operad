@@ -2,10 +2,14 @@
  * The dev plugin's `init` check: every registered repository has a remote that
  * answers, accepts a push to a scratch ref and deletes that ref again. The
  * check writes nothing into the repository and leaves no ref behind on the
- * remote when it can avoid it.
+ * remote: a remote that refuses the wire delete but is a path on this machine
+ * is cleaned directly.
  */
 
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { messageOf, type PluginBaseContext } from "@operad-io/engine";
 import { listRepositories } from "./service.ts";
 import { readDevSettings } from "./settings.ts";
@@ -35,9 +39,39 @@ function firstLine(text: string): string {
   return line === undefined || line.length === 0 ? "no detail" : line;
 }
 
-/** Deletes a scratch ref after a push that may or may not have landed. */
-function deleteScratch(cwd: string, remote: string, ref: string): void {
-  git(cwd, ["push", "--quiet", remote, "--delete", ref]);
+/**
+ * The git directory of a remote that names a path on this machine, or
+ * undefined for a remote this process can only reach over the wire. A bare
+ * repository is its own git directory; a work tree's is below `.git`.
+ */
+function localGitDir(cwd: string, remote: string): string | undefined {
+  let path = remote;
+  if (path.startsWith("file://")) {
+    try {
+      path = fileURLToPath(path);
+    } catch {
+      return undefined;
+    }
+  } else if (/^[a-z][a-z0-9+.-]*:\/\//i.test(path) || /^[^/]+@[^/]+:/.test(path)) {
+    return undefined;
+  }
+  const full = isAbsolute(path) ? path : resolve(cwd, path);
+  if (!existsSync(full)) return undefined;
+  const found = git(full, ["rev-parse", "--absolute-git-dir"]);
+  return found.ok && found.out.length > 0 ? found.out : undefined;
+}
+
+/**
+ * Removes a scratch ref after a push. The wire delete is the ordinary path; a
+ * remote that refuses it can still be a local repository, so remove the ref
+ * directly there. Returns false when the ref may remain.
+ */
+function removeScratch(cwd: string, remote: string, ref: string): boolean {
+  const deleted = git(cwd, ["push", "--quiet", remote, "--delete", ref]);
+  if (deleted.ok) return true;
+  const gitDir = localGitDir(cwd, remote);
+  if (gitDir === undefined) return false;
+  return git(gitDir, ["update-ref", "-d", ref]).ok;
 }
 
 /** Checks one repository and returns the remote it used. */
@@ -53,6 +87,7 @@ async function checkRepository(
   if (!remote.ok || remote.out.length === 0) {
     throw new Error(`remote "${settings.remote}" is not configured`);
   }
+  const remoteUrl = remote.out;
 
   const reachable = git(repository.path, [
     "ls-remote",
@@ -74,11 +109,11 @@ async function checkRepository(
   const pushed = git(repository.path, [
     "push",
     "--quiet",
-    settings.remote,
+    remoteUrl,
     `${head.out}:${ref}`,
   ]);
   if (!pushed.ok) {
-    deleteScratch(repository.path, settings.remote, ref);
+    removeScratch(repository.path, remoteUrl, ref);
     throw new Error(
       `remote "${settings.remote}" refused a push: ${firstLine(pushed.err)}`,
     );
@@ -86,13 +121,15 @@ async function checkRepository(
   const deleted = git(repository.path, [
     "push",
     "--quiet",
-    settings.remote,
+    remoteUrl,
     "--delete",
     ref,
   ]);
   if (!deleted.ok) {
+    const removed = removeScratch(repository.path, remoteUrl, ref);
+    const leftover = removed ? "" : `; the scratch ref ${ref} remains`;
     throw new Error(
-      `remote "${settings.remote}" accepted a push but refused to delete the scratch ref: ${firstLine(deleted.err)}`,
+      `remote "${settings.remote}" accepted a push but refused to delete the scratch ref: ${firstLine(deleted.err)}${leftover}`,
     );
   }
   return settings.remote;
