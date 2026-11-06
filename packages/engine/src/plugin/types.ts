@@ -29,6 +29,12 @@ export type MaybePromise<T> = T | Promise<T>;
 /** The data of an object: JSON-shaped and owned by the plugin that declares it. */
 export type ObjectData = Readonly<Record<string, unknown>>;
 
+/** Who a person input came from. `via` is a client such as `cli` or `ios`. */
+export interface Actor {
+  readonly via: string;
+  readonly id: string;
+}
+
 /** One line of a list: what the plugin shows for an object. */
 export interface ObjectRow {
   readonly id: string;
@@ -117,6 +123,36 @@ export interface FactInput {
 }
 
 /**
+ * Options for reading one page of objects. `where` holds equality filters on
+ * fields the object type declared in `index`; `cursor` continues a page.
+ */
+export interface ListOptions {
+  readonly where?: Readonly<Record<string, unknown>> | undefined;
+  readonly cursor?: string | undefined;
+  readonly limit?: number | undefined;
+  /** The fields `where` may name. The store normally learns them from `declare`. */
+  readonly index?: readonly string[] | undefined;
+}
+
+/** One page of objects, ordered by id, and where to continue. */
+export interface ListPage {
+  readonly objects: readonly StoredObject[];
+  readonly next?: string | undefined;
+}
+
+/** Options for reading one object's facts. */
+export interface FactsOptions {
+  readonly cursor?: string | undefined;
+  readonly limit?: number | undefined;
+}
+
+/** One page of an object's facts in sequence order, and where to continue. */
+export interface FactsPage {
+  readonly facts: readonly PluginFact[];
+  readonly next?: string | undefined;
+}
+
+/**
  * The object side of the store. A plugin reads and writes objects here and
  * never touches the storage backend.
  */
@@ -124,14 +160,36 @@ export interface ObjectStore {
   /** The directory that holds this store's files, such as logs. */
   readonly root: string;
 
+  /** Tells the store which fields a type allows `where` to filter on. */
+  declare?(type: string, index: readonly string[]): void;
+
   /**
    * Tells a listener whenever an object gains a fact. Optional: a store that
-   * cannot watch simply returns a no-op unsubscribe.
+   * cannot watch simply returns a no-op unsubscribe. With an object and a
+   * cursor, the same call subscribes to that object's facts instead.
    */
-  subscribe?(listener: (object: ObjectRef) => void): () => void;
+  subscribe(listener: (object: ObjectRef) => void): () => void;
+  subscribe(
+    object: ObjectRef,
+    options: FactsOptions,
+    listener: (fact: PluginFact) => void,
+  ): () => void;
 
   /** Every fact in append order, when this store keeps them in memory. */
-  facts?(): readonly PluginFact[];
+  facts(): readonly PluginFact[];
+
+  /** One page of one object's facts in sequence order. */
+  facts(object: ObjectRef, options?: FactsOptions): FactsPage;
+
+  /**
+   * Calls `listener` for facts of `object` after `options.cursor`; without a
+   * cursor, only facts appended after the subscription starts.
+   */
+  subscribeFacts?(
+    object: ObjectRef,
+    options: FactsOptions,
+    listener: (fact: PluginFact) => void,
+  ): () => void;
 
   /** Stores a new version of an object and appends the change as a fact. */
   put(
@@ -143,12 +201,21 @@ export interface ObjectStore {
 
   get(type: string, id: string): MaybePromise<StoredObject | undefined>;
 
-  list(type: string): MaybePromise<readonly StoredObject[]>;
+  /** One page of objects of `type`, ordered by id and filtered by `where`. */
+  list(type: string, options?: ListOptions): MaybePromise<ListPage>;
 }
 
 /** Appends facts that are not an object change, such as a step's output path. */
 export interface FactWriter {
   append(input: FactInput): MaybePromise<PluginFact>;
+}
+
+/** How a worker reopens the store its run uses. */
+export interface PluginStoreLocation {
+  readonly backend: "jsonl" | "sqlite";
+  readonly root: string;
+  /** The SQLite file, when the backend keeps one file. */
+  readonly file?: string | undefined;
 }
 
 /** The store a plugin sees: objects plus its own facts. */
@@ -158,6 +225,9 @@ export interface PluginStore extends ObjectStore, FactWriter {
    * data; `memory` stores exist only in this process.
    */
   readonly kind: "file" | "memory";
+
+  /** How a worker opens the same store; absent for an in-memory store. */
+  readonly location?: PluginStoreLocation | undefined;
 }
 
 /** Writes text to a file under the store and returns its path. */
@@ -191,7 +261,7 @@ export interface PluginCheck {
 export interface StepContext extends PluginBaseContext {
   readonly runId: string;
   readonly object: RunObject | undefined;
-  /** Fixed JSON the flow was started with. */
+  /** Fixed JSON the flow was started with; null when it was given none. */
   readonly params: JsonValue;
   /** The event that started the run, with paths to its text. */
   readonly trigger: TriggerView | undefined;
@@ -230,17 +300,52 @@ export interface StepTypeDefinition {
 export interface ObjectTypeDefinition {
   readonly name: string;
   readonly schema?: unknown;
+  /** The fields a person may filter on with `list(..., { where })`. */
+  readonly index?: readonly string[] | undefined;
 }
 
-/** Whether an action asks the person for a note. */
-export type ActionNote = boolean | { readonly required: boolean };
+/** The value types an action argument may have. */
+export type ActionArgType =
+  | "string"
+  | "number"
+  | "integer"
+  | "boolean"
+  | "array"
+  | "object";
+
+/**
+ * One property of an action's arguments. It is the JSON Schema subset the
+ * kernel validates: `type`, `enum`, `minimum`, `maximum`, `minLength`,
+ * `maxLength`, `items`, `properties`, `required`, `additionalProperties: false`,
+ * `description` and `role`.
+ */
+export interface ActionArgSchema {
+  readonly type?: ActionArgType | undefined;
+  readonly enum?: readonly (string | number | boolean)[] | undefined;
+  readonly minimum?: number | undefined;
+  readonly maximum?: number | undefined;
+  readonly minLength?: number | undefined;
+  readonly maxLength?: number | undefined;
+  readonly items?: ActionArgSchema | undefined;
+  readonly properties?: Readonly<Record<string, ActionArgSchema>> | undefined;
+  readonly required?: readonly string[] | undefined;
+  readonly additionalProperties?: false | undefined;
+  readonly description?: string | undefined;
+  /** A note is prompted for in a terminal and accepted as `--note`. */
+  readonly role?: "note" | undefined;
+}
+
+/** The arguments of an action: a JSON Schema object. */
+export interface ActionArgsSchema extends ActionArgSchema {
+  readonly type: "object";
+}
 
 /** An action a plugin offers on an object type. */
 export interface ActionTypeDefinition {
   readonly name: string;
   readonly on: string;
-  /** The action needs a note from the person (`true` and `{ required: true }`). */
-  readonly note?: ActionNote | undefined;
+  /** The person's input, as a JSON Schema object. */
+  readonly args?: ActionArgsSchema | undefined;
   /** The action asks for confirmation before it runs. */
   readonly confirm?: boolean | undefined;
   readonly when: (state: ObjectData) => MaybePromise<boolean>;
@@ -251,8 +356,8 @@ export interface ActionTypeDefinition {
 export interface ActionContext extends PluginBaseContext {
   readonly runId: string | undefined;
   readonly object: RunObject;
-  /** The note the person wrote, when the action asks for one. */
-  readonly note?: string | undefined;
+  /** Who asked for the action: a person through a client. */
+  readonly actor: Actor;
   /** Answers the run's current person wait; set when the action runs for a run. */
   readonly answer?: Answer | undefined;
 }
@@ -263,7 +368,8 @@ export interface ActionRunOptions {
   readonly runId?: string | undefined;
   readonly cwd?: string | undefined;
   readonly signal?: AbortSignal | undefined;
-  readonly note?: string | undefined;
+  readonly args?: unknown;
+  readonly actor: Actor;
 }
 
 /** A CLI verb a plugin declares. */

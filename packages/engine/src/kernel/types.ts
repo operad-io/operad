@@ -1,5 +1,6 @@
 import type { EndStatus, Replay, StepKind } from "../flow/types.ts";
 import type { FactCause, JsonValue, NewFact } from "../log/types.ts";
+import type { Actor } from "../plugin/types.ts";
 
 /** The kinds of fact the kernel writes. */
 export type FactKind =
@@ -86,8 +87,8 @@ export interface InputBase {
 
 export interface StartInput extends InputBase {
   readonly kind: "start";
-  /** Fixed JSON the flow was started with. */
-  readonly params?: JsonValue;
+  /** Fixed JSON the flow was started with, read by its steps. */
+  readonly params?: JsonValue | undefined;
   /** Hops of the event that started the run; 0 when no event started it. */
   readonly hops?: number;
   /** Where the run came from, in words the history view can print. */
@@ -113,6 +114,8 @@ export interface PersonAnswerInput extends InputBase {
   readonly waitId: string;
   readonly choice: string;
   readonly note?: string;
+  /** Who answered: a person through a client. */
+  readonly actor: Actor;
 }
 
 export interface TickInput extends InputBase {
@@ -190,7 +193,7 @@ export interface Decision {
 
 export interface RunStartedPayload {
   readonly flow: string;
-  readonly params?: JsonValue;
+  readonly params?: JsonValue | undefined;
   readonly hops?: number;
   readonly trigger?: StartTrigger;
 }
@@ -258,6 +261,7 @@ export interface PersonAnsweredPayload {
   readonly choice: string;
   readonly note: string | null;
   readonly waitKind: WaitKind;
+  readonly actor: Actor | null;
 }
 
 export interface RunEndedPayload {

@@ -11,7 +11,7 @@
 ## 决定（已定）
 
 1. **动作就是命令，名字是 `插件:动作`。** 命令行 `operad dev:confirm <id>`（也接受 `operad dev confirm <id>`，不冲突时 `operad confirm <id>`）；TUI 里按 `:` 打开命令面板，模糊匹配 `插件:动作`，作用于当前选中的对象，只列出它能用的动作和绑定的键；iOS 在对象页的 `⋯` 菜单里列出同样的动作。不在对象上时，面板列出不需要对象的命令（如 `dev:task-add`）。
-2. **动作只声明两个可选项**：`note`（要填一段说明，如 `dev:reject`）和 `confirm`（执行前确认，如 `dev:merge`、`dev:cancel`）。命令行里 `note` 是 `--note`，终端里缺了就提示输入；`confirm` 问 `[y/N]`，`--yes` 跳过。
+2. **动作声明参数（JSON Schema）和 `confirm`**：参数里 `role: "note"` 的字符串是要填的说明（如 `dev:reject`），`confirm: true` 在执行前确认（如 `dev:merge`、`dev:cancel`）。命令行按 schema 生成 `--<名字>`，终端里缺了必填的 note 就提示输入；`confirm` 问 `[y/N]`，`--yes` 跳过。
 3. **快捷键两层**：插件可以带一份默认绑定（`{ "m": "dev:merge" }`）；用户在 `~/.operad/keys.json` 用同样的格式覆盖，用户的优先。两个插件的默认键冲突时后加载的不生效，启动时提示一行，面板里照样能用。
 4. **显示接口**，每种对象三个函数：
    - `row(object)` → `{ id, title, state, note? }`：列表里的一行。必须是纯函数且快，只读已存的对象数据，不跑 git、不起进程。`note` 是行尾的一小段（费用、耗时）。
@@ -58,6 +58,6 @@ iOS 和今天的 arc app 一个样：底部标签栏是待处理、正在跑、�
 
 ## 验收
 
-- 插件接口有 `views`（`row`、`sections`、`load`）、动作的 `note` 和 `confirm`、默认快捷键；内核有 `list`、`get`、`section`、`events`、`act`；命令行有 `operad list`、`operad show`、`operad 插件:动作`。
+- 插件接口有 `views`（`row`、`sections`、`load`）、动作的 `args`（JSON Schema）和 `confirm`、默认快捷键；内核有 `list`、`get`、`section`、`events`、`act`；命令行有 `operad list`、`operad show`、`operad 插件:动作`。
 - 一个测试插件只写声明和 `views`、不写命令，在命令行里能列出、查看分段、执行带 `note` 和 `confirm` 的动作。
 - TUI 和 iOS 接入时不为任何插件写专门代码（在各自的计划里验收）。

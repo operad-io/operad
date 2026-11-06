@@ -11,6 +11,11 @@ import { loadPlugin } from "../plugin/load.ts";
 import { PluginRegistry } from "../plugin/registry.ts";
 import type { PluginStepResult, RunObject } from "../plugin/types.ts";
 import type { JsonValue } from "../log/types.ts";
+import { SqlitePluginStore } from "../plugin/sqlite-store.ts";
+import type {
+  PluginStore,
+  PluginStoreLocation,
+} from "../plugin/types.ts";
 import type { StepEvent, TriggerView } from "../trigger/types.ts";
 
 interface StepWorkerRequest {
@@ -18,6 +23,8 @@ interface StepWorkerRequest {
   readonly home: string;
   readonly cwd: string;
   readonly storeRoot: string;
+  /** The configured store; absent for a memory store, which cannot be shared. */
+  readonly store?: PluginStoreLocation | undefined;
   readonly use: string;
   readonly params: unknown;
   readonly flowParams: JsonValue;
@@ -35,6 +42,18 @@ interface EmitAck {
   readonly id: number;
   readonly ok: boolean;
   readonly error?: string;
+}
+
+/** Opens the store the run configured, so a worker writes where the views read. */
+function openWorkerStore(request: StepWorkerRequest): PluginStore {
+  const location = request.store;
+  if (location?.backend === "sqlite") {
+    return new SqlitePluginStore({ root: location.root, file: location.file });
+  }
+  if (location?.backend === "jsonl") {
+    return new FilePluginStore({ root: location.root });
+  }
+  return new FilePluginStore({ root: request.storeRoot });
 }
 
 async function main(request: StepWorkerRequest): Promise<void> {
@@ -75,7 +94,7 @@ async function main(request: StepWorkerRequest): Promise<void> {
   const registry = new PluginRegistry(definitions, {
     home: request.home,
     cwd: request.cwd,
-    store: new FilePluginStore({ root: request.storeRoot }),
+    store: openWorkerStore(request),
     sources: request.sources,
   });
 
@@ -86,9 +105,9 @@ async function main(request: StepWorkerRequest): Promise<void> {
 
   const result = await registry.runStep(request.use, request.params, {
     runId: request.runId,
+    params: request.flowParams,
     cwd: request.cwd,
     ...(request.object === undefined ? {} : { object: request.object }),
-    params: request.flowParams,
     ...(request.trigger === undefined ? {} : { trigger: request.trigger }),
     emit,
     signal: controller.signal,

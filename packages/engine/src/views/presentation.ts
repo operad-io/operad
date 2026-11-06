@@ -9,9 +9,15 @@ import type { PluginRegistry, ActionInfo } from "../plugin/registry.ts";
 import { splitActionName } from "../plugin/registry.ts";
 import { messageOf } from "../plugin/errors.ts";
 import { createPluginLogger } from "../plugin/logger.ts";
+import { assertWhere, CursorError, WhereError } from "../plugin/paging.ts";
+import { ActionArgsError, noteProperty, validateActionArgs } from "../plugin/action-schema.ts";
 import type {
   ActionTypeDefinition,
+  Actor,
   FactWriter,
+  FactsOptions,
+  FactsPage,
+  ListOptions,
   PluginStore,
   StoredObject,
   ViewContext,
@@ -93,7 +99,10 @@ export type ViewErrorKind =
   | "action"
   | "unavailable"
   | "note"
-  | "confirm";
+  | "confirm"
+  | "args"
+  | "where"
+  | "cursor";
 
 /** A presentation call cannot do what was asked. */
 export class ViewError extends Error {
@@ -120,8 +129,19 @@ export interface ViewsOptions {
 }
 
 export interface ActOptions {
+  /** The person's values, already named as the action's schema names them. */
+  readonly args?: Readonly<Record<string, unknown>> | undefined;
+  /** `args` for the note property, kept as `--note` convenience. */
   readonly note?: string | undefined;
   readonly yes?: boolean | undefined;
+  /** Who asked; the CLI passes `{ via: "cli", id: <user> }`. */
+  readonly actor: Actor;
+}
+
+/** One page of rows and where to continue. */
+export interface ViewListPage {
+  readonly rows: readonly ViewRow[];
+  readonly next?: string | undefined;
 }
 
 /** An action that ran. */
@@ -155,11 +175,6 @@ function textOf(value: unknown): string | undefined {
 
 function objectKey(type: string, id: string): string {
   return `${type}:${id}`;
-}
-
-function noteRequired(note: ActionTypeDefinition["note"]): boolean {
-  if (note === true) return true;
-  return typeof note === "object" && note !== null && note.required === true;
 }
 
 function splitId(id: string): { readonly type: string; readonly id: string } | undefined {
@@ -308,8 +323,8 @@ export class Views {
     for (const unsubscribe of this.unsubscribe.splice(0)) unsubscribe();
   }
 
-  /** Rows for every object of a type, with the kernel's flags. */
-  async list(type: string): Promise<readonly ViewRow[]> {
+  /** One page of rows for a type, with the kernel's flags. */
+  async list(type: string, options: ListOptions = {}): Promise<ViewListPage> {
     const owner = this.registry.viewsFor(type);
     if (owner === undefined) {
       throw new ViewError(
@@ -318,10 +333,37 @@ export class Views {
       );
     }
 
-    const objects = await this.store.list(type);
+    if (options.where !== undefined) {
+      try {
+        assertWhere(
+          options.index ?? this.registry.indexFor(type) ?? Object.keys(options.where),
+          options.where,
+          `list "${type}"`,
+        );
+      } catch (error) {
+        if (error instanceof WhereError) {
+          throw new ViewError("where", error.message, { cause: error });
+        }
+        throw error;
+      }
+    }
+
+    let page;
+    try {
+      page = await this.store.list(type, options);
+    } catch (error) {
+      if (error instanceof WhereError || error instanceof CursorError) {
+        throw new ViewError(
+          error instanceof CursorError ? "cursor" : "where",
+          error.message,
+          { cause: error },
+        );
+      }
+      throw error;
+    }
     const flags = await this.allRunFlags();
     const rows: ViewRow[] = [];
-    for (const object of objects) {
+    for (const object of page.objects) {
       const row = this.guardedRow(owner.plugin, type, object);
       const flag = flags.get(objectKey(type, object.id)) ?? {
         waiting: false,
@@ -329,7 +371,13 @@ export class Views {
       };
       rows.push({ ...row, waiting: flag.waiting, running: flag.running });
     }
-    return rows;
+    return { rows, ...(page.next === undefined ? {} : { next: page.next }) };
+  }
+
+  /** One page of one object's facts in sequence order. */
+  async facts(id: string, options: FactsOptions = {}): Promise<FactsPage> {
+    const resolved = await this.resolve(id);
+    return this.store.facts({ type: resolved.type, id: resolved.id }, options);
   }
 
   /** One object: its row, its section directory and the actions available now. */
@@ -487,7 +535,7 @@ export class Views {
   async act(
     name: string,
     id: string,
-    options: ActOptions = {},
+    options: ActOptions,
   ): Promise<ViewActionRun> {
     const resolved = await this.resolve(id);
     const object = resolved.object;
@@ -518,14 +566,41 @@ export class Views {
       );
     }
 
-    const required = noteRequired(target.action.note);
-    const note = options.note;
-    if (required && (note === undefined || note.trim().length === 0)) {
+    const args: Record<string, unknown> = { ...(options.args ?? {}) };
+    const note = noteProperty(target.action.args);
+    if (
+      note !== undefined &&
+      options.note !== undefined &&
+      args[note.name] === undefined
+    ) {
+      args[note.name] = options.note;
+    }
+    if (
+      note?.required === true &&
+      (args[note.name] === undefined ||
+        (typeof args[note.name] === "string" &&
+          (args[note.name] as string).trim().length === 0))
+    ) {
       throw new ViewError(
         "note",
-        `action "${target.info.name}" needs a note; pass --note <text>`,
+        `action "${target.info.name}" needs a note; pass --${note.name} <text>`,
       );
     }
+
+    let personArgs: Record<string, unknown>;
+    try {
+      personArgs = validateActionArgs(
+        target.action.args,
+        args,
+        `action "${target.info.name}"`,
+      );
+    } catch (error) {
+      if (error instanceof ActionArgsError) {
+        throw new ViewError("args", error.message, { cause: error });
+      }
+      throw error;
+    }
+
     if (target.action.confirm === true && options.yes !== true) {
       throw new ViewError(
         "confirm",
@@ -536,11 +611,11 @@ export class Views {
     const runId = await this.waitingRunId(resolved.type, resolved.id);
     const result = await this.registry.runAction(
       `${target.plugin}/${target.action.name}`,
-      note === undefined ? {} : { note },
+      personArgs,
       {
         object,
         ...(runId === undefined ? {} : { runId }),
-        ...(note === undefined ? {} : { note }),
+        actor: options.actor,
         cwd: this.cwd,
       },
     );

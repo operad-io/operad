@@ -360,6 +360,7 @@ export function decide(
           choice: input.choice,
           note: input.note ?? null,
           waitKind: wait.kind,
+          actor: { via: input.actor.via, id: input.actor.id },
         },
         cause,
       );

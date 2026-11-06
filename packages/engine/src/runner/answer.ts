@@ -3,6 +3,7 @@
 import type { FlowDefinition } from "../flow/types.ts";
 import type { KernelState } from "../kernel/types.ts";
 import type { LogBackend } from "../log/types.ts";
+import type { Actor } from "../plugin/types.ts";
 import { StateError } from "./errors.ts";
 import { applyInput, readState } from "./service.ts";
 
@@ -12,6 +13,7 @@ export interface AnswerOptions {
   readonly runId: string;
   readonly choice: string;
   readonly note?: string | undefined;
+  readonly actor: Actor;
   readonly clock?: (() => number) | undefined;
   /** Called once when the answer ends the run. */
   readonly onEnded?:
@@ -45,6 +47,7 @@ export async function answerRun(options: AnswerOptions): Promise<KernelState> {
       waitId: wait.id,
       choice: options.choice,
       ...(options.note === undefined ? {} : { note: options.note }),
+      actor: options.actor,
     },
     now,
     "person",

@@ -68,6 +68,8 @@ export interface RunnerOptions {
   /** The store root; the run lock lives under `<root>/locks/runs`. */
   readonly lockRoot?: string | undefined;
   readonly object?: ObjectRef | undefined;
+  /** Fixed JSON the flow starts with; the runner writes it in the start fact. */
+  readonly params?: JsonValue | undefined;
   /** Treat an outstanding step as a crash and recover it first. */
   readonly recover?: boolean | undefined;
   /** The event that started the run, read-only for its steps. */
@@ -129,6 +131,7 @@ export class Runner {
   private readonly object: ObjectRef | undefined;
   private readonly trigger: TriggerView | undefined;
   private readonly startInput: StartInput | undefined;
+  private readonly params: JsonValue | undefined;
   private readonly emitEvent: ((event: StepEvent) => Promise<void>) | undefined;
   private readonly onEnded:
     | ((runId: string, state: KernelState) => Promise<void>)
@@ -151,6 +154,7 @@ export class Runner {
     this.startInput = options.startInput;
     this.emitEvent = options.emit;
     this.onEnded = options.onEnded;
+    this.params = options.params;
     this.recover = options.recover === true;
   }
 
@@ -304,7 +308,9 @@ export class Runner {
     }
     const input: Input =
       meta === undefined
-        ? { kind: "start" }
+        ? this.params === undefined
+          ? { kind: "start" }
+          : { kind: "start", params: this.params }
         : {
             kind: "start",
             ...(meta.params === undefined ? {} : { params: meta.params }),
@@ -421,6 +427,9 @@ export class Runner {
           home: this.registry.home,
           cwd: this.cwd ?? this.registry.workdir,
           storeRoot: this.registry.store.root,
+          ...(this.registry.store.location === undefined
+            ? {}
+            : { store: this.registry.store.location }),
           use,
           params,
           flowParams,

@@ -92,7 +92,7 @@ async function endRun(home: string, runId: string, choice: string): Promise<void
   });
   const found = registry.flow("ask");
   if (found === undefined) throw new Error("missing ask flow");
-  await answerRun({ log, flow: found.flow, runId, choice });
+  await answerRun({ log, flow: found.flow, runId, choice, actor: { via: "test", id: "tester" } });
   await log.close();
 }
 
@@ -181,6 +181,47 @@ describe("operad command", () => {
     for (const word of ["fact", "effect", "node", "graph", "decide"]) {
       expect(text).not.toContain(word);
     }
+  });
+
+  test("an action records its actor and history shows it", async () => {
+    const { home } = await makeHome();
+    const config = await readConfig(home);
+    const storeRoot = storeRootOf(config);
+    new FilePluginStore({ root: join(storeRoot, "plugins") }).put(
+      "job",
+      "1",
+      { title: "Fix the gate" },
+      "seed",
+    );
+    const runId = await startRun(home, "ask", "job:1");
+
+    const output = capture();
+    expect(
+      await main(["test:approve", "job:1"], { home, io: output.io }),
+    ).toBe(0);
+
+    const store = new FilePluginStore({ root: join(storeRoot, "plugins") });
+    const actionFact = store
+      .facts()
+      .find((fact) => fact.type === "action_invoked");
+    expect(actionFact?.data.actor).toMatchObject({ via: "cli" });
+    expect(
+      (actionFact?.data.actor as { readonly id?: string } | undefined)?.id,
+    ).toBeTruthy();
+
+    const history = capture();
+    expect(
+      await main(["history", runId, "--json"], { home, io: history.io }),
+    ).toBe(0);
+    const entries = JSON.parse(history.text()) as {
+      what: string;
+      actor?: { via: string; id: string };
+    }[];
+    const answered = entries.find((entry) =>
+      entry.what.startsWith("you chose"),
+    );
+    expect(answered?.actor).toMatchObject({ via: "cli" });
+    expect(answered?.actor?.id).toBeTruthy();
   });
 
   test("history by object id shows every run of that object", async () => {

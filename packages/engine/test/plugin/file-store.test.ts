@@ -19,7 +19,7 @@ describe("the file plugin store", () => {
     const object = reader.get("job", "1");
     expect(object?.data).toEqual({ title: "two" });
     expect(object?.version).toBe(2);
-    expect(reader.list("job").length).toBe(1);
+    expect(reader.list("job").objects.length).toBe(1);
     expect(reader.facts().length).toBe(2);
   });
 });
