@@ -819,25 +819,25 @@ export class Kernel {
     this.onLog(`run ${runId}: could not record ${kind} after a sequence conflict`);
   }
 
-  /** Writes the "would start" fact once per input id. */
+  /** Writes the "would start" fact once per input id, enforced by the log. */
   private async ensureObservedFact(
     inputId: string,
     flow: string,
     object: string,
   ): Promise<void> {
-    for await (const fact of this.log.readGlobal()) {
-      if (fact.kind === "trigger_observed" && fact.cause === inputId) return;
-    }
-    await this.log.appendGlobal({
-      kind: "trigger_observed",
-      payload: {
-        inputId,
-        flow,
-        object,
-        reason: `would start ${flow} on ${object}`,
+    await this.log.appendGlobal(
+      {
+        kind: "trigger_observed",
+        payload: {
+          inputId,
+          flow,
+          object,
+          reason: `would start ${flow} on ${object}`,
+        },
+        cause: inputId,
       },
-      cause: inputId,
-    });
+      `trigger_observed:${inputId}`,
+    );
   }
 
   private async recordSkip(

@@ -283,7 +283,10 @@ export interface StepRunOptions {
   readonly signal?: AbortSignal | undefined;
   readonly params?: JsonValue | undefined;
   readonly trigger?: TriggerView | undefined;
-  readonly emit?: ((event: StepEvent) => MaybePromise<void>) | undefined;
+  /** Sends a step event; the plugin is the one that registered the step. */
+  readonly emit?:
+    | ((plugin: string, event: StepEvent) => MaybePromise<void>)
+    | undefined;
 }
 
 /** A step type a plugin declares. The use name is `<plugin>/<name>`. */

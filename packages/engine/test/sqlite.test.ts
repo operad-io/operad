@@ -253,6 +253,13 @@ test("a store from before global inputs is migrated on open", async () => {
         time       INTEGER NOT NULL,
         UNIQUE (source, source_key)
       );
+      CREATE TABLE global_facts (
+        seq     INTEGER PRIMARY KEY,
+        kind    TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        cause   TEXT NOT NULL,
+        time    INTEGER NOT NULL
+      );
       INSERT INTO schema_version (id, version) VALUES (1, 1);
     `);
   } finally {
@@ -273,6 +280,23 @@ test("a store from before global inputs is migrated on open", async () => {
       payload: { reason: "would start one on object" },
       cause: global.inputId,
     });
+    const unique = await backend.appendGlobal(
+      {
+        kind: "trigger_observed",
+        payload: { reason: "would start one on object" },
+        cause: global.inputId,
+      },
+      "trigger_observed:one",
+    );
+    const duplicate = await backend.appendGlobal(
+      {
+        kind: "trigger_observed",
+        payload: { reason: "a second writer" },
+        cause: global.inputId,
+      },
+      "trigger_observed:one",
+    );
+    expect(duplicate.seq).toBe(unique.seq);
   } finally {
     await backend.close();
   }
@@ -289,6 +313,12 @@ test("a store from before global inputs is migrated on open", async () => {
       .all(),
   );
   expect(runColumns.some((column) => column.name === "start_input_id")).toBe(true);
+  const globalColumns = withDatabase(directory, (database) =>
+    database
+      .query<{ name: string }, []>("PRAGMA table_info(global_facts)")
+      .all(),
+  );
+  expect(globalColumns.some((column) => column.name === "unique_key")).toBe(true);
 });
 
 test("a subscription learns of a write when the watch never fires", async () => {

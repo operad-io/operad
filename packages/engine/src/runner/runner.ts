@@ -30,6 +30,7 @@ interface StepWorkerReply {
 interface StepWorkerEmit {
   readonly kind: "emit";
   readonly id: number;
+  readonly plugin: string;
   readonly event: StepEvent;
 }
 
@@ -50,6 +51,7 @@ function isStepWorkerEmit(value: unknown): value is StepWorkerEmit {
     value !== null &&
     (value as { kind?: unknown }).kind === "emit" &&
     typeof (value as { id?: unknown }).id === "number" &&
+    typeof (value as { plugin?: unknown }).plugin === "string" &&
     typeof (value as { event?: unknown }).event === "object"
   );
 }
@@ -76,8 +78,10 @@ export interface RunnerOptions {
   readonly trigger?: TriggerView | undefined;
   /** The start fact to use for an idle run, written by the start entry. */
   readonly startInput?: StartInput | undefined;
-  /** Sends an event a step emitted. */
-  readonly emit?: ((event: StepEvent) => Promise<void>) | undefined;
+  /** Sends an event a step emitted, from the plugin that registered it. */
+  readonly emit?:
+    | ((plugin: string, event: StepEvent) => Promise<void>)
+    | undefined;
   /** Called once when the run ends, before the log marks it ended. */
   readonly onEnded?:
     | ((runId: string, state: KernelState) => Promise<void>)
@@ -132,7 +136,9 @@ export class Runner {
   private readonly trigger: TriggerView | undefined;
   private readonly startInput: StartInput | undefined;
   private readonly params: JsonValue | undefined;
-  private readonly emitEvent: ((event: StepEvent) => Promise<void>) | undefined;
+  private readonly emitEvent:
+    | ((plugin: string, event: StepEvent) => Promise<void>)
+    | undefined;
   private readonly onEnded:
     | ((runId: string, state: KernelState) => Promise<void>)
     | undefined;
@@ -505,7 +511,7 @@ export class Runner {
               if (this.emitEvent === undefined) {
                 throw new Error("no event destination is configured");
               }
-              await this.emitEvent(message.event);
+              await this.emitEvent(message.plugin, message.event);
               worker.postMessage({ kind: "emit-result", id: message.id, ok: true });
             } catch (error) {
               worker.postMessage({

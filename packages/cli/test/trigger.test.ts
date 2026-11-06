@@ -11,6 +11,9 @@ afterAll(cleanupTempRoots);
 const pluginPath = fileURLToPath(
   new URL("../../engine/test/fixtures/plugins/trigger.ts", import.meta.url),
 );
+const devPluginPath = fileURLToPath(
+  new URL("../../engine/test/fixtures/plugins/dev-emit.ts", import.meta.url),
+);
 
 function capture(): { io: CliIo; text(): string; errors(): string } {
   let out = "";
@@ -29,14 +32,17 @@ function capture(): { io: CliIo; text(): string; errors(): string } {
   };
 }
 
-async function makeHome(rules: unknown): Promise<string> {
+async function makeHome(
+  rules: unknown,
+  plugins: readonly string[] = [pluginPath],
+): Promise<string> {
   const root = await tempRoot();
   const home = join(root, "home");
   mkdirSync(home, { recursive: true });
   writeFileSync(
     join(home, "config.json"),
     JSON.stringify({
-      plugins: [pluginPath],
+      plugins: [...plugins],
       store: { backend: "jsonl", path: join(root, "store") },
     }),
   );
@@ -51,6 +57,28 @@ async function runIds(home: string): Promise<string[]> {
   const log = openConfigLog(config);
   try {
     return (await log.runs()).map((run) => run.runId);
+  } finally {
+    await log.close();
+  }
+}
+
+async function runFlows(home: string): Promise<string[]> {
+  const config = await readConfig(home);
+  const log = openConfigLog(config);
+  try {
+    return (await log.runs()).map((run) => run.flow);
+  } finally {
+    await log.close();
+  }
+}
+
+async function runIdOfFlow(home: string, flow: string): Promise<string> {
+  const config = await readConfig(home);
+  const log = openConfigLog(config);
+  try {
+    const run = (await log.runs()).find((candidate) => candidate.flow === flow);
+    if (run === undefined) throw new Error(`no run of flow ${flow}`);
+    return run.runId;
   } finally {
     await log.close();
   }
@@ -268,5 +296,67 @@ describe("operad trigger", () => {
     const history = capture();
     expect(await main(["history", inputId], { home, io: history.io })).toBe(0);
     expect(history.text()).toContain("would start one on job:1");
+  });
+
+  test("a dev step may emit dev.ready but not another plugin's event", async () => {
+    const home = await makeHome(
+      [
+        {
+          source: "manual",
+          type: "go",
+          start: { flow: "dev-good" },
+          object: "job:1",
+          mode: "auto",
+        },
+        {
+          source: "operad",
+          type: "dev.ready",
+          start: { flow: "two" },
+          object: "$event.object",
+          mode: "auto",
+        },
+        {
+          source: "manual",
+          type: "bad",
+          start: { flow: "dev-bad" },
+          object: "job:2",
+          mode: "auto",
+        },
+        {
+          source: "operad",
+          type: "other.ready",
+          start: { flow: "one" },
+          object: "$event.object",
+          mode: "auto",
+        },
+      ],
+      [pluginPath, devPluginPath],
+    );
+
+    expect(
+      await main(
+        ["trigger", "manual", "go", "--type", "go", "--object", "job:1"],
+        { home, io: capture().io },
+      ),
+    ).toBe(0);
+    const good = await runIdOfFlow(home, "dev-good");
+    expect(await main(["run-internal", good], { home, io: capture().io })).toBe(
+      0,
+    );
+    expect((await runFlows(home)).sort()).toEqual(["dev-good", "two"]);
+
+    expect(
+      await main(
+        ["trigger", "manual", "bad", "--type", "bad", "--object", "job:2"],
+        { home, io: capture().io },
+      ),
+    ).toBe(0);
+    const bad = await runIdOfFlow(home, "dev-bad");
+    expect(await main(["run-internal", bad], { home, io: capture().io })).toBe(
+      0,
+    );
+    const flows = await runFlows(home);
+    expect(flows.sort()).toEqual(["dev-bad", "dev-good", "two"]);
+    expect(flows).not.toContain("one");
   });
 });

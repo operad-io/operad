@@ -853,7 +853,7 @@ export class PluginRegistry {
           `step "${use}": emit: no event destination is configured`,
         );
       }
-      await options.emit(event);
+      await options.emit(found.plugin.name, event);
     };
     const ctx: StepContext = {
       plugin: found.plugin.name,

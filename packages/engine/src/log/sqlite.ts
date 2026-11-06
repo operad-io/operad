@@ -91,11 +91,12 @@ const SCHEMA = `
     UNIQUE (source, source_key)
   );
   CREATE TABLE IF NOT EXISTS global_facts (
-    seq     INTEGER PRIMARY KEY,
-    kind    TEXT NOT NULL,
-    payload TEXT NOT NULL,
-    cause   TEXT NOT NULL,
-    time    INTEGER NOT NULL
+    seq        INTEGER PRIMARY KEY,
+    kind       TEXT NOT NULL,
+    payload    TEXT NOT NULL,
+    cause      TEXT NOT NULL,
+    time       INTEGER NOT NULL,
+    unique_key TEXT
   );
   CREATE TABLE IF NOT EXISTS outcomes (
     input_id TEXT NOT NULL,
@@ -140,6 +141,24 @@ interface OutcomeRow {
   readonly payload: string;
   readonly seq: number;
   readonly time: number;
+}
+
+interface GlobalFactRow {
+  readonly seq: number;
+  readonly kind: string;
+  readonly payload: string;
+  readonly cause: string;
+  readonly time: number;
+}
+
+function globalFactOfRow(row: GlobalFactRow): GlobalFact {
+  return {
+    seq: row.seq,
+    kind: row.kind,
+    payload: JSON.parse(row.payload) as JsonValue,
+    cause: JSON.parse(row.cause) as FactCause,
+    time: row.time,
+  };
 }
 
 function outcomeOfRow(row: OutcomeRow): InputOutcome {
@@ -339,6 +358,17 @@ function ensureSchema(database: Database, path: string): void {
     if (!runsHaveStartInput) {
       database.exec("ALTER TABLE runs ADD COLUMN start_input_id TEXT");
     }
+    // A store written before global facts could be unique gains the column.
+    const globalHasUniqueKey = tableColumns(database, "global_facts").some(
+      (item) => item.name === "unique_key",
+    );
+    if (!globalHasUniqueKey) {
+      database.exec("ALTER TABLE global_facts ADD COLUMN unique_key TEXT");
+    }
+    database.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS global_facts_unique_key " +
+        "ON global_facts (unique_key) WHERE unique_key IS NOT NULL",
+    );
   }).immediate();
 }
 
@@ -527,18 +557,36 @@ class SqliteLogBackend implements LogBackend {
     this.#database.close();
   }
 
-  async appendGlobal(fact: NewFact): Promise<GlobalFact> {
+  async appendGlobal(fact: NewFact, uniqueKey?: string): Promise<GlobalFact> {
     validateNewFact(fact);
+    if (uniqueKey !== undefined) assertName(uniqueKey, "uniqueKey");
     this.#assertOpen();
     return this.#database.transaction(() => {
+      if (uniqueKey !== undefined) {
+        const existing = this.#database
+          .query<GlobalFactRow, [string]>(
+            "SELECT seq, kind, payload, cause, time FROM global_facts " +
+              "WHERE unique_key = ?",
+          )
+          .get(uniqueKey) ?? undefined;
+        if (existing !== undefined) return globalFactOfRow(existing);
+      }
       const row = this.#database
         .query<{ seq: number | null }, []>("SELECT MAX(seq) AS seq FROM global_facts")
         .get();
       const seq = (row?.seq ?? 0) + 1;
       const time = this.#clock();
       this.#database.run(
-        "INSERT INTO global_facts (seq, kind, payload, cause, time) VALUES (?, ?, ?, ?, ?)",
-        [seq, fact.kind, JSON.stringify(fact.payload), JSON.stringify(fact.cause), time],
+        "INSERT INTO global_facts (seq, kind, payload, cause, time, unique_key) " +
+          "VALUES (?, ?, ?, ?, ?, ?)",
+        [
+          seq,
+          fact.kind,
+          JSON.stringify(fact.payload),
+          JSON.stringify(fact.cause),
+          time,
+          uniqueKey ?? null,
+        ],
       );
       return {
         seq,

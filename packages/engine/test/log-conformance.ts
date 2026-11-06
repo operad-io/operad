@@ -471,6 +471,39 @@ export function runLogConformance(factory: LogConformanceFactory): void {
       }
     });
 
+    test("appendGlobal with a uniqueKey writes once and returns the stored fact", async () => {
+      const directory = tempDirectory("global-unique");
+      const first = await openStore(factory, directory, { clock: fixedClock() });
+      const second = await openStore(factory, directory, { clock: fixedClock() });
+      try {
+        const stored = await first.appendGlobal(
+          {
+            kind: "trigger_observed",
+            payload: { reason: "would start one on job:1" },
+            cause: "input-one",
+          },
+          "trigger_observed:input-one",
+        );
+        const duplicate = await second.appendGlobal(
+          {
+            kind: "trigger_observed",
+            payload: { reason: "a second writer" },
+            cause: "input-one",
+          },
+          "trigger_observed:input-one",
+        );
+        expect(duplicate.seq).toBe(stored.seq);
+        expect(duplicate.payload).toEqual({
+          reason: "would start one on job:1",
+        });
+        expect(await collectGlobal(first.readGlobal())).toHaveLength(1);
+      } finally {
+        await first.close();
+        await second.close();
+        cleanup(directory);
+      }
+    });
+
     test("append assigns sequence numbers, enforces expectedSeq, and accepts an empty batch", async () => {
       const directory = tempDirectory("append");
       let backend = await openStore(factory, directory, { clock: fixedClock(1234) });

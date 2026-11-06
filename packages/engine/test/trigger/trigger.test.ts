@@ -78,10 +78,16 @@ interface Setup {
   close(): Promise<void>;
 }
 
-async function setup(rules: readonly TriggerRule[] = []): Promise<Setup> {
+async function setup(
+  rules: readonly TriggerRule[] = [],
+  backend: "jsonl" | "sqlite" = "jsonl",
+): Promise<Setup> {
   const root = await tempRoot();
   const storeRoot = join(root, "store");
-  const log = openLog({ backend: "jsonl", path: storeRoot });
+  const log = openLog({
+    backend,
+    path: backend === "sqlite" ? join(storeRoot, "log.sqlite") : storeRoot,
+  });
   const registry = new PluginRegistry([plugin], {
     home: root,
     storeRoot,
@@ -204,9 +210,9 @@ class CrashLog implements LogBackend {
     return result;
   }
 
-  async appendGlobal(fact: NewFact): Promise<GlobalFact> {
+  async appendGlobal(fact: NewFact, uniqueKey?: string): Promise<GlobalFact> {
     this.check("appendGlobal");
-    const result = await this.inner.appendGlobal(fact);
+    const result = await this.inner.appendGlobal(fact, uniqueKey);
     this.afterCheck("appendGlobal");
     return result;
   }
@@ -304,15 +310,8 @@ async function drive(env: Setup, runId: string): Promise<void> {
     onEnded: async (id, state) => {
       await env.kernel.emitRunEnd(id, state);
     },
-    emit: async (emitted) => {
-      const dot = emitted.type.indexOf(".");
-      if (dot <= 0) throw new Error(`bad type ${emitted.type}`);
-      await env.kernel.emitStep(
-        runId,
-        emitted.type.slice(0, dot),
-        emitted,
-        run.object,
-      );
+    emit: async (plugin, emitted) => {
+      await env.kernel.emitStep(runId, plugin, emitted, run.object);
     },
   }).run();
 }
@@ -732,6 +731,34 @@ describe("the kernel start entry", () => {
       expect((recorded?.data as { error?: string }).error).toContain(
         "must begin with",
       );
+    } finally {
+      await env.close();
+    }
+  });
+
+  test("emitStep checks the type against the caller's plugin, not the type", async () => {
+    const env = await setup();
+    try {
+      const started = await env.kernel.start({
+        flow: "one",
+        object: "job:1",
+      });
+      if (started.kind !== "started") throw new Error("no run");
+      await expect(
+        env.kernel.emitStep(
+          started.runId,
+          "dev",
+          { type: "other.ready", key: "ready" },
+          undefined,
+        ),
+      ).rejects.toThrow('must begin with "dev."');
+      const accepted = await env.kernel.emitStep(
+        started.runId,
+        "dev",
+        { type: "dev.ready", key: "ready" },
+        undefined,
+      );
+      expect(accepted.kind).toBe("recorded");
     } finally {
       await env.close();
     }
@@ -1164,13 +1191,38 @@ describe("event receipt recovery", () => {
           expect(first.result.kind).toBe("observed");
           expect(runs).toHaveLength(0);
           const before = (await globalFacts(env.log, "trigger_observed")).length;
-          expect(before).toBeGreaterThanOrEqual(1);
+          expect(before).toBe(1);
           // A later duplicate delivery adds no further fact.
           await env.kernel.receive(event({ key: "shared-key" }));
           expect(await globalFacts(env.log, "trigger_observed")).toHaveLength(
             before,
           );
         }
+      } finally {
+        await env.close();
+      }
+    });
+  }
+
+  for (const backend of ["jsonl", "sqlite"] as const) {
+    test(`two processes delivering the same observe event write one fact (${backend})`, async () => {
+      const env = await setup([rule({ mode: "observe" })], backend);
+      try {
+        const outputs = await Promise.all(
+          ["a", "b"].map(() =>
+            runChild<TriggerResult>(env, [
+              "observe",
+              "shared-key",
+              "receive",
+              backend,
+            ]),
+          ),
+        );
+        for (const output of outputs) {
+          expect(output.ok).toBe(true);
+          expect(output.result?.kind).toBe("observed");
+        }
+        expect(await globalFacts(env.log, "trigger_observed")).toHaveLength(1);
       } finally {
         await env.close();
       }

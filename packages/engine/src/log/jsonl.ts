@@ -90,6 +90,7 @@ interface StoredGlobalFact {
   readonly payload: JsonValue;
   readonly cause: string | number;
   readonly time: number;
+  readonly uniqueKey?: string;
 }
 
 interface StoredOutcome {
@@ -419,7 +420,20 @@ function parseGlobalFactLine(line: string): StoredGlobalFact {
   if (typeof record.time !== "number" || !Number.isFinite(record.time)) {
     throw new CorruptLogError("global", "a global fact has no time");
   }
+  if (record.uniqueKey !== undefined && typeof record.uniqueKey !== "string") {
+    throw new CorruptLogError("global", "a global fact has an invalid unique key");
+  }
   return record as StoredGlobalFact;
+}
+
+function globalFactOf(stored: StoredGlobalFact): GlobalFact {
+  return {
+    seq: stored.seq,
+    kind: stored.kind,
+    payload: stored.payload,
+    cause: stored.cause,
+    time: stored.time,
+  };
 }
 
 class JsonlLogBackend implements LogBackend {
@@ -668,10 +682,15 @@ class JsonlLogBackend implements LogBackend {
     return this.#read(runId);
   }
 
-  async appendGlobal(fact: NewFact): Promise<GlobalFact> {
+  async appendGlobal(fact: NewFact, uniqueKey?: string): Promise<GlobalFact> {
     validateNewFact(fact);
+    if (uniqueKey !== undefined) assertName(uniqueKey, "uniqueKey");
     return this.#withLock(() => {
       truncateTornLine(this.#globalFactsPath);
+      if (uniqueKey !== undefined) {
+        const existing = this.#globalFactWithKeyUnlocked(uniqueKey);
+        if (existing !== undefined) return globalFactOf(existing);
+      }
       const lastSeq = this.#lastGlobalSeqUnlocked();
       const stored: StoredGlobalFact = {
         type: "global_fact",
@@ -680,16 +699,23 @@ class JsonlLogBackend implements LogBackend {
         payload: fact.payload,
         cause: fact.cause,
         time: this.#clock(),
+        ...(uniqueKey === undefined ? {} : { uniqueKey }),
       };
       appendLineSynced(this.#globalFactsPath, `${JSON.stringify(stored)}\n`);
-      return {
-        seq: stored.seq,
-        kind: stored.kind,
-        payload: stored.payload,
-        cause: stored.cause,
-        time: stored.time,
-      };
+      return globalFactOf(stored);
     });
+  }
+
+  /** The global fact a unique key already holds, read under the append lock. */
+  #globalFactWithKeyUnlocked(uniqueKey: string): StoredGlobalFact | undefined {
+    if (!existsSync(this.#globalFactsPath)) return undefined;
+    const text = readFileSync(this.#globalFactsPath).toString("utf8");
+    for (const line of text.split("\n")) {
+      if (line.length === 0) continue;
+      const stored = parseGlobalFactLine(line);
+      if (stored.uniqueKey === uniqueKey) return stored;
+    }
+    return undefined;
   }
 
   readGlobal(): AsyncIterable<GlobalFact> {

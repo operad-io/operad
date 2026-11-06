@@ -1304,17 +1304,8 @@ async function commandRunInternal(
     onEnded: async (endedRunId, state) => {
       await kernel.emitRunEnd(endedRunId, state);
     },
-    emit: async (event) => {
-      const dot = event.type.indexOf(".");
-      if (dot <= 0) {
-        throw new Error(`emit: type "${event.type}" must begin with "<plugin>."`);
-      }
-      await kernel.emitStep(
-        runId,
-        event.type.slice(0, dot),
-        event,
-        run.object,
-      );
+    emit: async (plugin, event) => {
+      await kernel.emitStep(runId, plugin, event, run.object);
     },
   });
   await runner.run();

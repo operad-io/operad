@@ -1,5 +1,6 @@
 /** Receives one event or resolves one candidate in a child process. */
 
+import { join } from "node:path";
 import {
   Kernel,
   MemoryPluginStore,
@@ -9,13 +10,17 @@ import {
 } from "../../src/index.ts";
 import plugin from "./plugins/trigger.ts";
 
-const [storeRoot, mode, keyOrId, actionArg] = process.argv.slice(2);
+const [storeRoot, mode, keyOrId, actionArg, backendArg] = process.argv.slice(2);
 if (storeRoot === undefined || mode === undefined || keyOrId === undefined) {
-  throw new Error("usage: trigger-child <store root> <mode> <key> [action]");
+  throw new Error("usage: trigger-child <store root> <mode> <key> [action] [backend]");
 }
 const action = actionArg ?? "receive";
+const backend = backendArg === "sqlite" ? "sqlite" : "jsonl";
 
-const log = openLog({ backend: "jsonl", path: storeRoot });
+const log = openLog({
+  backend,
+  path: backend === "sqlite" ? join(storeRoot, "log.sqlite") : storeRoot,
+});
 const registry = new PluginRegistry([plugin], {
   home: storeRoot,
   storeRoot,

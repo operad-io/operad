@@ -164,8 +164,12 @@ export interface LogBackend extends Partial<LogSubscription> {
   read(runId: string): AsyncIterable<Fact>;
   /** List runs, optionally only the active ones. */
   runs(options?: RunsOptions): Promise<RunInfo[]>;
-  /** Append one fact that belongs to no run. Global facts keep their order. */
-  appendGlobal(fact: NewFact): Promise<GlobalFact>;
+  /**
+   * Append one fact that belongs to no run. Global facts keep their order.
+   * With a `uniqueKey`, the first fact for that key wins: a later call writes
+   * nothing and returns the stored fact.
+   */
+  appendGlobal(fact: NewFact, uniqueKey?: string): Promise<GlobalFact>;
   /** Stream the global facts in sequence order. */
   readGlobal(): AsyncIterable<GlobalFact>;
   /** Stream every recorded input, oldest first. */

@@ -303,3 +303,11 @@
 | TK0028-M12 | packages/cli/src/main.ts | restored the id-shaped-value heuristic in the action flag parser | `operad presentation commands > schema flags accept values that look like ids or negative numbers` |
 | TK0028-M13 | packages/engine/src/plugin/action-schema.ts | accepted a `role: "note"` property without type `"string"` | `plugin registry validation > rejects a note property that is not a string` |
 | TK0028-M14 | packages/engine/src/plugin/registry.ts | left the actor out of the action context | `plugin registry > an action receives the person's actor` |
+
+## TK0026 — rework 18: the step plugin and a unique global fact
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0026-M19 | packages/engine/src/trigger/kernel.ts | derived the emitting plugin from the event type instead of the caller | `the kernel start entry > emitStep checks the type against the caller's plugin, not the type` |
+| TK0026-M20 | packages/engine/src/log/jsonl.ts | skipped the unique-key lookup, so a duplicate observe appended a second fact | `event receipt recovery > two processes delivering the same observe event write one fact (jsonl)` |
+| TK0026-M21 | packages/engine/src/log/sqlite.ts | skipped the unique-key lookup, so a duplicate observe hit the unique index | `event receipt recovery > two processes delivering the same observe event write one fact (sqlite)` |

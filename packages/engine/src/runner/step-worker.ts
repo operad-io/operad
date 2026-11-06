@@ -80,14 +80,14 @@ async function main(request: StepWorkerRequest): Promise<void> {
     }
   });
 
-  const emit = (event: StepEvent): Promise<void> => {
+  const emit = (plugin: string, event: StepEvent): Promise<void> => {
     const port = parentPort;
     if (port === null) return Promise.reject(new Error("no event destination"));
     const id = nextEmitId;
     nextEmitId += 1;
     return new Promise<void>((resolve, reject) => {
       pendingAcks.set(id, { resolve, reject });
-      port.postMessage({ kind: "emit", id, event });
+      port.postMessage({ kind: "emit", id, plugin, event });
     });
   };
 
