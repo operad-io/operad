@@ -1,5 +1,6 @@
 import type { EndStatus, Replay, StepKind } from "../flow/types.ts";
 import type { FactCause, JsonValue, NewFact } from "../log/types.ts";
+import type { Actor } from "../plugin/types.ts";
 
 /** The kinds of fact the kernel writes. */
 export type FactKind =
@@ -98,6 +99,8 @@ export interface PersonAnswerInput extends InputBase {
   readonly waitId: string;
   readonly choice: string;
   readonly note?: string;
+  /** Who answered: a person through a client. */
+  readonly actor?: Actor;
 }
 
 export interface TickInput extends InputBase {
@@ -219,6 +222,7 @@ export interface PersonAnsweredPayload {
   readonly choice: string;
   readonly note: string | null;
   readonly waitKind: WaitKind;
+  readonly actor: Actor | null;
 }
 
 export interface RunEndedPayload {

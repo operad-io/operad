@@ -198,3 +198,14 @@
 |---|---|---|---|
 | TK0025-M19 | packages/engine/test/fixtures/append-fact-child.ts | made the child write a different object, so only an in-process write could satisfy the reader | `presentation views > events reach a reader when another sqlite log appends` |
 
+
+## TK0028 — contract: objects, facts, action args and actor
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0028-M1 | packages/engine/src/plugin/paging.ts | made `matchesWhere` accept every object | `object list > filters on an indexed field (jsonl)` |
+| TK0028-M2 | packages/engine/src/plugin/file-store.ts | stopped comparing a list cursor`s object type | `object list > refuses a cursor from another object type (jsonl)` |
+| TK0028-M3 | packages/engine/src/plugin/action-schema.ts | skipped the enum check in `validateActionArgs` | `operad presentation commands > an enum argument is listed in help and validated` |
+| TK0028-M4 | packages/engine/src/kernel/decide.ts | wrote `actor: null` into `person_answered` | `decide: person_answer > records who answered in person_answered` |
+| TK0028-M5 | packages/engine/src/plugin/file-store.ts | made `subscribeFacts` ignore its cursor | `object facts > a subscription after a cursor gets only later facts (jsonl)` |
+| TK0028-M6 | packages/engine/src/plugin/registry.ts | left the actor out of the action`s fact | `plugin registry > records who asked in the action's fact` |

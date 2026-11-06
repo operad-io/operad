@@ -1,7 +1,9 @@
 import { closeSync, mkdirSync, openSync } from "node:fs";
+import { userInfo } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  answerRun,
   ConfigError,
   LockHeldError,
   Runner,
@@ -16,13 +18,17 @@ import {
   listRunning,
   loadPluginRegistry,
   openConfigLog,
+  openPluginStore,
   parseObjectKey,
   readConfig,
   serve,
   splitActionName,
   storeRootOf,
   ENGINE_VERSION,
-  FilePluginStore,
+  type ActionArgsSchema,
+  type ActionArgSchema,
+  type ActionInfo,
+  type Actor,
   type LogBackend,
   type OperadConfig,
   type PluginRegistry,
@@ -120,15 +126,34 @@ interface Context {
 async function openContext(home: string, io: CliIo): Promise<Context> {
   const config = await readConfig(home);
   const storeRoot = storeRootOf(config);
-  const store = new FilePluginStore({ root: join(storeRoot, "plugins") });
+  const store = openPluginStore({ backend: config.store.backend, root: storeRoot });
+  const log = openConfigLog(config);
+  let loaded: PluginRegistry | undefined;
   const registry = await loadPluginRegistry({
     home,
     cwd: home,
     store,
     kernelVerbs: KERNEL_VERBS,
     onLog: (message) => io.error(`${message}\n`),
+    onAnswer: async (runId, choice, note, actor) => {
+      const runs = await log.runs();
+      const run = runs.find((candidate) => candidate.runId === runId);
+      if (run === undefined) throw new StateError(`no run "${runId}"`);
+      const found = loaded?.flow(run.flow);
+      if (found === undefined) {
+        throw new StateError(`run "${runId}": flow "${run.flow}" is not loaded`);
+      }
+      await answerRun({
+        log,
+        flow: found.flow,
+        runId,
+        choice,
+        ...(note === undefined ? {} : { note }),
+        ...(actor === undefined ? {} : { actor }),
+      });
+    },
   });
-  const log = openConfigLog(config);
+  loaded = registry;
   return {
     home,
     config,
@@ -185,7 +210,7 @@ async function commandInit(home: string, io: CliIo): Promise<number> {
   const registry = await loadPluginRegistry({
     home,
     cwd: home,
-    store: new FilePluginStore({ root: join(storeRoot, "plugins") }),
+    store: openPluginStore({ backend: config.store.backend, root: storeRoot }),
     kernelVerbs: KERNEL_VERBS,
     onLog: (message) => io.error(`${message}\n`),
   });
@@ -267,26 +292,93 @@ function takeValueFlag(
   return { args, value, present };
 }
 
+function takeRepeatedFlag(
+  argv: readonly string[],
+  flag: string,
+): { readonly args: string[]; readonly values: string[] } {
+  const args: string[] = [];
+  const values: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index] ?? "";
+    if (arg === flag) {
+      const next = argv[index + 1];
+      if (next === undefined) throw new UsageError(`${flag} needs a value`);
+      values.push(next);
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith(`${flag}=`)) {
+      values.push(arg.slice(flag.length + 1));
+      continue;
+    }
+    args.push(arg);
+  }
+  return { args, values };
+}
+
+/** A `--where` value keeps its text unless it is an obvious JSON scalar. */
+function whereValue(text: string): unknown {
+  if (text === "true") return true;
+  if (text === "false") return false;
+  if (text === "null") return null;
+  if (/^-?(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(text)) return Number(text);
+  return text;
+}
+
+function parseWhere(values: readonly string[]): Record<string, unknown> {
+  const where: Record<string, unknown> = {};
+  for (const value of values) {
+    const at = value.indexOf("=");
+    if (at <= 0) {
+      throw new UsageError(`--where needs field=value, got "${value}"`);
+    }
+    where[value.slice(0, at)] = whereValue(value.slice(at + 1));
+  }
+  return where;
+}
+
+function parseLimit(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new UsageError(`--limit needs a positive integer, got "${value}"`);
+  }
+  return parsed;
+}
+
 async function commandList(
   context: Context,
   io: CliIo,
   type: string,
   json: boolean,
   tty: boolean,
+  options: {
+    readonly where: readonly string[];
+    readonly limit: string | undefined;
+    readonly cursor: string | undefined;
+  },
 ): Promise<void> {
-  const rows = await context.views.list(type);
+  const limit = parseLimit(options.limit);
+  const page = await context.views.list(type, {
+    ...(options.where.length === 0 ? {} : { where: parseWhere(options.where) }),
+    ...(limit === undefined ? {} : { limit }),
+    ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
+  });
   if (json) {
-    io.write(`${JSON.stringify(rows, null, 2)}\n`);
+    io.write(`${JSON.stringify(page, null, 2)}\n`);
     return;
   }
-  if (rows.length === 0) {
+  if (page.rows.length === 0) {
     io.write(`no objects of type "${type}"\n`);
-    return;
+  } else {
+    for (const row of page.rows) {
+      const state = paintState(row, row.state, tty);
+      const note = row.note === undefined ? "" : `  ${row.note}`;
+      io.write(`${row.id}  ${state}  ${row.title}${note}\n`);
+    }
   }
-  for (const row of rows) {
-    const state = paintState(row, row.state, tty);
-    const note = row.note === undefined ? "" : `  ${row.note}`;
-    io.write(`${row.id}  ${state}  ${row.title}${note}\n`);
+  if (page.next !== undefined) {
+    io.write(`next: operad list ${type} --cursor ${page.next}\n`);
   }
 }
 
@@ -294,13 +386,27 @@ function firstSection(object: ViewObject): string | undefined {
   return object.sections[0]?.id;
 }
 
+function actionArgFlags(action: ViewAction | ActionInfo): string[] {
+  const args: string[] = [];
+  for (const [name, property] of Object.entries(action.args?.properties ?? {})) {
+    if (property.enum !== undefined) {
+      args.push(`--${name} ${property.enum.map((item) => String(item)).join("|")}`);
+    } else {
+      args.push(`--${name} <${property.type ?? "value"}>`);
+    }
+  }
+  return args;
+}
+
 function actionLine(action: ViewAction): string {
   const key = action.key === undefined ? "" : ` (${action.key})`;
   const needs: string[] = [];
   if (action.noteRequired) needs.push("needs a note");
   if (action.confirm) needs.push("asks to confirm");
+  const args = actionArgFlags(action);
   const suffix = needs.length === 0 ? "" : `  ${needs.join(", ")}`;
-  return `${action.name}${key}${suffix}`;
+  const list = args.length === 0 ? "" : `  ${args.join(" ")}`;
+  return `${action.name}${key}${suffix}${list}`;
 }
 
 async function commandShow(
@@ -395,18 +501,122 @@ async function commandShow(
 
 interface ActionArguments {
   readonly positionals: readonly string[];
-  readonly note: string | undefined;
+  readonly values: ReadonlyMap<string, string | true>;
   readonly yes: boolean;
 }
 
+function looksLikeId(value: string): boolean {
+  return value.includes(":") || /^[0-9]+$/.test(value);
+}
+
+/** Reads `--flag value`, `--flag=value` and a bare boolean `--flag`. */
 function parseActionArguments(argv: readonly string[]): ActionArguments {
-  const note = takeValueFlag(argv, "--note");
-  const yes = splitFlag(note.args, "--yes");
-  return {
-    positionals: yes.args,
-    note: note.value,
-    yes: yes.present,
-  };
+  const positionals: string[] = [];
+  const values = new Map<string, string | true>();
+  let yes = false;
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index] ?? "";
+    if (!arg.startsWith("--") || arg === "--") {
+      positionals.push(arg);
+      continue;
+    }
+    const body = arg.slice(2);
+    const at = body.indexOf("=");
+    if (at >= 0) {
+      values.set(body.slice(0, at), body.slice(at + 1));
+      continue;
+    }
+    if (body === "yes") {
+      yes = true;
+      continue;
+    }
+    const next = argv[index + 1];
+    if (
+      next === undefined ||
+      next.startsWith("-") ||
+      looksLikeId(next)
+    ) {
+      values.set(body, true);
+      continue;
+    }
+    values.set(body, next);
+    index += 1;
+  }
+  return { positionals, values, yes };
+}
+
+/** Turns one flag's text into the value the schema's type names. */
+function actionArgValue(
+  name: string,
+  property: ActionArgSchema,
+  raw: string | true,
+): unknown {
+  if (property.type === "boolean") {
+    if (raw === true || raw === "true") return true;
+    if (raw === "false") return false;
+    throw new UsageError(`--${name}: expected true or false, got "${String(raw)}"`);
+  }
+  if (raw === true) {
+    throw new UsageError(`--${name}: needs a value`);
+  }
+  if (property.type === "integer" || property.type === "number") {
+    const value = Number(raw);
+    if (!Number.isFinite(value) || (property.type === "integer" && !Number.isInteger(value))) {
+      throw new UsageError(`--${name}: expected a ${property.type}, got "${raw}"`);
+    }
+    return value;
+  }
+  if (property.type === "array" || property.type === "object") {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      throw new UsageError(`--${name}: expected JSON, got "${raw}"`);
+    }
+  }
+  return raw;
+}
+
+function actionArgsFromFlags(
+  action: ViewAction,
+  values: ReadonlyMap<string, string | true>,
+): Record<string, unknown> {
+  const properties = action.args?.properties ?? {};
+  const known = new Set(Object.keys(properties));
+  const copied = new Map(values);
+  const note = noteField(action.args);
+  if (note !== undefined && note !== "note" && copied.has("note") && !copied.has(note)) {
+    copied.set(note, copied.get("note") ?? true);
+    copied.delete("note");
+  }
+
+  const args: Record<string, unknown> = {};
+  for (const [name, raw] of copied) {
+    if (name === "yes") continue;
+    if (!known.has(name)) {
+      const hint =
+        note !== undefined && name === "note"
+          ? ` (the note argument is --${note})`
+          : "";
+      throw new UsageError(
+        `action "${action.name}" has no argument "--${name}"${hint}`,
+      );
+    }
+    const property = properties[name];
+    if (property === undefined) continue;
+    args[name] = actionArgValue(name, property, raw);
+  }
+  return args;
+}
+
+function noteField(args: ActionArgsSchema | undefined): string | undefined {
+  for (const [name, property] of Object.entries(args?.properties ?? {})) {
+    if (property.role === "note") return name;
+  }
+  return undefined;
+}
+
+function actorOfCli(): Actor {
+  return { via: "cli", id: userInfo().username };
 }
 
 function actionCandidates(
@@ -497,12 +707,52 @@ async function promptConfirm(io: CliIo, name: string): Promise<boolean> {
   return /^y(es)?$/i.test((answer ?? "").trim());
 }
 
+function actionInfoFromArgs(
+  context: Context,
+  positionals: readonly string[],
+): ActionInfo | undefined {
+  const actions = context.registry.actions();
+  const first = positionals[0];
+  if (first === undefined) return undefined;
+  const split = splitActionName(first);
+  if (split !== undefined) {
+    return actions.find(
+      (info) => info.plugin === split.plugin && info.action === split.action,
+    );
+  }
+  const second = positionals[1];
+  if (second !== undefined) {
+    const direct = actions.find(
+      (info) => info.plugin === first && info.action === second,
+    );
+    if (direct !== undefined) return direct;
+  }
+  const candidates = actions.filter((info) => info.action === first);
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
+function actionUsage(action: ActionInfo): string {
+  const flags = actionArgFlags(action);
+  if (action.confirm) flags.push("--yes");
+  const suffix = flags.length === 0 ? "" : ` ${flags.map((flag) => `[${flag}]`).join(" ")}`;
+  return `usage: operad ${action.name} <id>${suffix}\n`;
+}
+
 async function commandAction(
   context: Context,
   io: CliIo,
   argv: readonly string[],
   tty: boolean,
 ): Promise<boolean> {
+  const help = splitFlag(argv, "--help");
+  if (help.present) {
+    const parsed = parseActionArguments(help.args);
+    const info = actionInfoFromArgs(context, parsed.positionals);
+    if (info === undefined) return false;
+    io.write(actionUsage(info));
+    return true;
+  }
+
   const args = parseActionArguments(argv);
   const request = resolveActionRequest(context, args.positionals);
   if (request === undefined) return false;
@@ -512,23 +762,32 @@ async function commandAction(
   if (available === undefined) {
     // Let the kernel say why: unavailable now, or not declared at all.
     await context.views.act(request.name, request.id, {
-      note: args.note,
+      args: {},
       yes: args.yes,
+      actor: actorOfCli(),
     });
     return true;
   }
 
-  let note = args.note;
-  if (available.noteRequired && (note === undefined || note.trim().length === 0)) {
+  const actionArgs = actionArgsFromFlags(available, args.values);
+  const note = noteField(available.args);
+  if (
+    note !== undefined &&
+    available.noteRequired &&
+    (actionArgs[note] === undefined ||
+      (typeof actionArgs[note] === "string" &&
+        (actionArgs[note] as string).trim().length === 0))
+  ) {
     if (!tty) {
       throw new UsageError(
-        `action "${request.name}" needs a note; pass --note <text>`,
+        `action "${request.name}" needs a note; pass --${note} <text>`,
       );
     }
-    note = await promptNote(io);
-    if (note.trim().length === 0) {
+    const text = await promptNote(io);
+    if (text.trim().length === 0) {
       throw new UsageError(`action "${request.name}" needs a note`);
     }
+    actionArgs[note] = text;
   }
 
   if (available.confirm && args.yes !== true) {
@@ -544,8 +803,9 @@ async function commandAction(
   }
 
   const run = await context.views.act(request.name, request.id, {
-    note,
+    args: actionArgs,
     yes: args.yes || available.confirm,
+    actor: actorOfCli(),
   });
   printValue(io, run.value);
   return true;
@@ -602,6 +862,7 @@ async function streamEntriesJson(
         step: entry.step,
         what: entry.what,
         why: entry.why,
+        ...(entry.actor === undefined ? {} : { actor: entry.actor }),
       })}`,
     );
   }
@@ -901,11 +1162,23 @@ export async function main(
           return 0;
         }
         if (command === "list") {
-          const { args: rest, present } = splitFlag(args.slice(1), "--json");
+          let rest = args.slice(1);
+          const jsonFlag = splitFlag(rest, "--json");
+          rest = jsonFlag.args;
+          const whereFlag = takeRepeatedFlag(rest, "--where");
+          rest = whereFlag.args;
+          const limitFlag = takeValueFlag(rest, "--limit");
+          rest = limitFlag.args;
+          const cursorFlag = takeValueFlag(rest, "--cursor");
+          rest = cursorFlag.args;
           const type = rest[0];
           if (type === undefined) throw new UsageError("list needs an object type");
           if (rest.length > 1) throw new UsageError("list takes one object type");
-          await commandList(context, io, type, present, tty);
+          await commandList(context, io, type, jsonFlag.present, tty, {
+            where: whereFlag.values,
+            limit: limitFlag.value,
+            cursor: cursorFlag.value,
+          });
           return 0;
         }
         if (command === "show") {
@@ -937,7 +1210,14 @@ export async function main(
       return 2;
     }
     if (error instanceof ViewError) {
-      if (error.kind === "note" || error.kind === "confirm" || error.kind === "ambiguous") {
+      if (
+        error.kind === "note" ||
+        error.kind === "confirm" ||
+        error.kind === "ambiguous" ||
+        error.kind === "args" ||
+        error.kind === "where" ||
+        error.kind === "cursor"
+      ) {
         io.error(`operad: ${error.message}\n`);
         return 2;
       }

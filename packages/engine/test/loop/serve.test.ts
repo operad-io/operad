@@ -133,7 +133,7 @@ describe("serve loop", () => {
           await answerRun({ log, flow: found.flow, runId, choice });
         },
       });
-      await withAnswer.runAction("approve", "finish", {
+      await withAnswer.runAction("approve", {}, {
         object: { type: "job", id: "1", data: {} },
         runId: info.runId,
       });

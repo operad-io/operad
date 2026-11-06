@@ -273,6 +273,7 @@ describe("decide: person_answer", () => {
       choice: "yes",
       note: "looks good",
       waitKind: "step",
+      actor: null,
     });
     expect(runner.state.answeredWaits["ask:1"]).toBe(true);
 
@@ -280,6 +281,20 @@ describe("decide: person_answer", () => {
     const second = runner.apply({ kind: "person_answer", waitId: "ask:1", choice: "no" });
     expect(second.facts).toEqual([]);
     expect(runner.state).toEqual(before);
+  });
+
+  test("records who answered in person_answered", () => {
+    const runner = new Runner(personFlow());
+    runner.apply({ kind: "start" });
+    const decision = runner.apply({
+      kind: "person_answer",
+      waitId: "ask:1",
+      choice: "yes",
+      actor: { via: "ios", id: "owner" },
+    });
+    expect(payloadOf(decision.facts[0] ?? {})).toMatchObject({
+      actor: { via: "ios", id: "owner" },
+    });
   });
 
   test("ignores a choice the wait did not offer", () => {

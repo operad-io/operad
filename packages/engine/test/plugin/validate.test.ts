@@ -196,6 +196,68 @@ describe("plugin registry validation", () => {
     );
   });
 
+  test("rejects an action args schema with an unknown keyword", () => {
+    const error = errorOf(
+      () =>
+        new PluginRegistry([
+          def({
+            name: "a",
+            objects: [{ name: "note" }],
+            actions: [
+              {
+                name: "go",
+                on: "note",
+                args: {
+                  type: "object",
+                  properties: {
+                    title: { type: "string", pattern: "^a" },
+                  },
+                } as never,
+                when: () => true,
+                run: () => undefined,
+              },
+            ],
+          }),
+        ]),
+    );
+    expect(error.message).toContain('plugin "a"');
+    expect(error.message).toContain('unknown keyword "pattern"');
+  });
+
+  test("rejects the old action note field and points at args", () => {
+    const error = errorOf(
+      () =>
+        new PluginRegistry([
+          def({
+            name: "a",
+            objects: [{ name: "note" }],
+            actions: [
+              {
+                name: "go",
+                on: "note",
+                note: { required: true },
+                when: () => true,
+                run: () => undefined,
+              } as never,
+            ],
+          }),
+        ]),
+    );
+    expect(error.message).toContain("note: is no longer a field");
+    expect(error.message).toContain('role "note"');
+  });
+
+  test("rejects an object index that is not a field list", () => {
+    const error = errorOf(
+      () =>
+        new PluginRegistry([
+          def({ name: "a", objects: [{ name: "note", index: "tag" } as never] }),
+        ]),
+    );
+    expect(error.message).toContain("index");
+    expect(error.message).toContain("array");
+  });
+
   test("hides and logs an action whose when throws", async () => {
     const root = await tempRoot();
     const store = new MemoryPluginStore({ root: join(root, "store") });

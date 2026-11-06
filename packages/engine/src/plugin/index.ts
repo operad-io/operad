@@ -15,4 +15,29 @@ export { MemoryPluginStore } from "./store.ts";
 export type { MemoryPluginStoreOptions } from "./store.ts";
 export { FilePluginStore } from "./file-store.ts";
 export type { FilePluginStoreOptions } from "./file-store.ts";
+export { SqlitePluginStore } from "./sqlite-store.ts";
+export type { SqlitePluginStoreOptions } from "./sqlite-store.ts";
+export { openPluginStore } from "./open-store.ts";
+export type {
+  OpenPluginStoreOptions,
+  PluginStoreBackend,
+} from "./open-store.ts";
+export {
+  ActionArgsError,
+  normalizeActionArgs,
+  noteProperty,
+  validateActionArgs,
+} from "./action-schema.ts";
+export {
+  assertWhere,
+  canonical,
+  CursorError,
+  DEFAULT_PAGE_LIMIT,
+  decodeCursor,
+  encodeCursor,
+  MAX_PAGE_LIMIT,
+  pageLimit,
+  WhereError,
+  whereFingerprint,
+} from "./paging.ts";
 export * from "./types.ts";

@@ -123,16 +123,16 @@ describe("presentation views", () => {
     ]);
 
     const views = createViews({ registry, store, log });
-    const rows = await views.list("item");
-    expect(rows.map((row) => row.id)).toEqual(["one", "two"]);
-    expect(rows[0]).toMatchObject({
+    const page = await views.list("item");
+    expect(page.rows.map((row) => row.id)).toEqual(["one", "two"]);
+    expect(page.rows[0]).toMatchObject({
       title: "First",
       state: "new",
       note: "$1",
       waiting: true,
       running: false,
     });
-    expect(rows[1]).toMatchObject({ waiting: false, running: true });
+    expect(page.rows[1]).toMatchObject({ waiting: false, running: true });
     await log.close();
   });
 
@@ -156,6 +156,7 @@ describe("presentation views", () => {
     expect(object.sections.at(-1)?.title).toBe("History");
     expect(object.actions.map((action) => action.name)).toEqual([
       "demo:approve",
+      "demo:auto",
       "demo:drop",
     ]);
     const approve = object.actions.find((action) => action.name === "demo:approve");
@@ -252,9 +253,9 @@ describe("presentation views", () => {
       clock: testClock.now,
       onLog: (message) => logs.push(message),
     });
-    const rows = await views.list("item");
-    const asyncRow = rows.find((row) => row.id === "async");
-    const slowRow = rows.find((row) => row.id === "slow");
+    const page = await views.list("item");
+    const asyncRow = page.rows.find((row) => row.id === "async");
+    const slowRow = page.rows.find((row) => row.id === "slow");
     expect(asyncRow?.state).toBe("error");
     expect(asyncRow?.error).toContain("Promise");
     expect(slowRow?.state).toBe("error");
@@ -406,9 +407,9 @@ describe("presentation views", () => {
     const brokenRegistry = new PluginRegistry([broken], { store });
     store.put("broken", "1", {}, "seed");
     const views = createViews({ registry: brokenRegistry, store, log });
-    const rows = await views.list("broken");
-    expect(rows[0]?.state).toBe("error");
-    expect(rows[0]?.note).toContain("nope");
+    const page = await views.list("broken");
+    expect(page.rows[0]?.state).toBe("error");
+    expect(page.rows[0]?.note).toContain("nope");
     expect(registry.viewsFor("broken")).toBeUndefined();
     await log.close();
   });

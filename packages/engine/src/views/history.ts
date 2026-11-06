@@ -1,12 +1,15 @@
 /** The history view: one line per recorded step, in order, in words. */
 
 import type { Fact } from "../log/types.ts";
+import type { Actor } from "../plugin/types.ts";
 
 export interface HistoryEntry {
   readonly time: number;
   readonly step: string | null;
   readonly what: string;
   readonly why: string;
+  /** Who answered, when a person did. */
+  readonly actor?: Actor | undefined;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -128,13 +131,25 @@ export function historyEntry(fact: Fact): HistoryEntry {
         why: text(payload.prompt) ?? "",
       };
 
-    case "person_answered":
+    case "person_answered": {
+      const actorValue = record(payload.actor);
+      const via = text(actorValue.via);
+      const id = text(actorValue.id);
+      const whyParts: string[] = [];
+      const note = text(payload.note);
+      if (note !== undefined) whyParts.push(note);
+      if (via !== undefined) whyParts.push(`via ${via}`);
+      if (id !== undefined) whyParts.push(`as ${id}`);
       return {
         time,
         step,
         what: `you chose ${text(payload.choice) ?? "an answer"}`,
-        why: text(payload.note) ?? "",
+        why: whyParts.join(", "),
+        ...(via === undefined || id === undefined
+          ? {}
+          : { actor: { via, id } }),
       };
+    }
 
     case "run_ended": {
       const status = text(payload.status) ?? "ended";
