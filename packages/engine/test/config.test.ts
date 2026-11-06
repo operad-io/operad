@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   ConfigError,
+  DEFAULT_PLUGINS,
   configJson,
   defaultConfig,
   ensureConfig,
@@ -15,22 +16,18 @@ afterAll(cleanupTempRoots);
 
 describe("operad config", () => {
   test("the default plugins are the shell plugin, dev and the cron source", async () => {
-    expect(DEFAULT_PLUGINS).toEqual([
-      "@operad-io/shell",
-      "@operad-io/dev",
-      "@operad-io/source-cron",
-    ]);
+    expect(DEFAULT_PLUGINS).toEqual(["shell", "dev", "source-cron"]);
     const root = await tempRoot();
     const home = join(root, "home");
     await ensureConfig(home);
     const text = JSON.parse(
       await readFile(join(home, "config.json"), "utf8"),
-    ) as { plugins: string[] };
-    expect(text.plugins).toEqual([
-      "@operad-io/shell",
-      "@operad-io/dev",
-      "@operad-io/source-cron",
-    ]);
+    ) as { plugins: Record<string, { module: string; enabled: boolean }> };
+    expect(text.plugins).toEqual({
+      shell: { module: "@operad-io/shell", enabled: true },
+      dev: { module: "@operad-io/dev", enabled: true },
+      "source-cron": { module: "@operad-io/source-cron", enabled: true },
+    });
   });
 
   test("a missing config means jsonl at <home>/store", async () => {
