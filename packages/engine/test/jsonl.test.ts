@@ -38,14 +38,14 @@ const factory: LogConformanceFactory = {
       .split("\n")
       .filter((line) => line.length > 0).length;
   },
-  runFileSize(directory, runId) {
-    return statSync(runPath(directory, runId)).size;
-  },
-  runFileText(directory, runId) {
+  storedText(directory, runId) {
     return readFileSync(runPath(directory, runId), "utf8");
   },
-  appendRawRun(directory, runId, text) {
-    appendFileSync(runPath(directory, runId), text);
+  rawRun: {
+    size: (directory, runId) => statSync(runPath(directory, runId)).size,
+    append(directory, runId, text) {
+      appendFileSync(runPath(directory, runId), text);
+    },
   },
 };
 

@@ -20,15 +20,22 @@ import {
 import {
   ActiveRunError,
   CorruptLogError,
-  InvalidPayloadError,
   RunEndedError,
   RunNotFoundError,
   SchemaVersionError,
   SeqConflictError,
   StoreClosedError,
 } from "./errors.ts";
+import {
+  assertExpectedSeq,
+  assertName,
+  assertRunId,
+  inputIdFor,
+  validateNewFact,
+} from "./facts.ts";
 import { withFileLock } from "./file-lock.ts";
 import { assertJsonValue } from "./json-value.ts";
+import { SCHEMA_VERSION } from "./schema.ts";
 import type {
   AppendResult,
   Fact,
@@ -42,14 +49,11 @@ import type {
   RunsOptions,
 } from "./types.ts";
 
-export const SCHEMA_VERSION = 1;
-
 const SCHEMA_FILE = "schema.json";
 const LOCK_FILE = ".lock";
 const INPUTS_FILE = "inputs.jsonl";
 const RUNS_DIR = "runs";
 const NEWLINE = 0x0a;
-const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 interface RunHeader {
   readonly type: "run";
@@ -336,49 +340,6 @@ function parseLine(line: string, runId: string): RunHeader | Fact[] {
   if (type === "run") return parseHeader(value, runId);
   if (type === "batch") return parseBatch(value, runId);
   throw new CorruptLogError(runId, `unknown record type ${String(type)}`);
-}
-
-function assertName(value: string, label: string): void {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new InvalidPayloadError(`${label} must be a non-empty string`);
-  }
-}
-
-function assertRunId(runId: string): void {
-  if (!RUN_ID.test(runId)) {
-    throw new InvalidPayloadError(`invalid run id ${JSON.stringify(runId)}`);
-  }
-}
-
-function assertExpectedSeq(expectedSeq: number): void {
-  if (!Number.isInteger(expectedSeq) || expectedSeq < 0) {
-    throw new InvalidPayloadError("expectedSeq must be a non-negative integer");
-  }
-}
-
-function validateNewFact(fact: NewFact): void {
-  if (typeof fact !== "object" || fact === null) {
-    throw new InvalidPayloadError("a fact must be an object");
-  }
-  if (typeof fact.kind !== "string" || fact.kind.length === 0) {
-    throw new InvalidPayloadError("a fact must have a non-empty kind");
-  }
-  if (typeof fact.cause === "number") {
-    if (!Number.isInteger(fact.cause) || fact.cause < 1) {
-      throw new InvalidPayloadError("a numeric fact cause must be a positive sequence number");
-    }
-  } else if (typeof fact.cause !== "string" || fact.cause.length === 0) {
-    throw new InvalidPayloadError("a fact cause must be a sequence number or an input id");
-  }
-  assertJsonValue(fact.payload, "fact payload");
-}
-
-function inputKey(source: string, sourceKey: string): string {
-  return JSON.stringify([source, sourceKey]);
-}
-
-function inputIdFor(source: string, sourceKey: string): string {
-  return `input_${Buffer.from(inputKey(source, sourceKey), "utf8").toString("base64url")}`;
 }
 
 class JsonlLogBackend implements LogBackend {
