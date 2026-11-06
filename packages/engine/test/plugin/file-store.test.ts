@@ -22,4 +22,34 @@ describe("the file plugin store", () => {
     expect(reader.list("job").length).toBe(1);
     expect(reader.facts().length).toBe(2);
   });
+
+  test("a subscription still reports a write the watch does not", async () => {
+    const root = await tempRoot();
+    const directory = join(root, "plugins");
+    const writer = new FilePluginStore({ root: directory });
+    let fire: (() => void) | undefined;
+    const reader = new FilePluginStore({
+      root: directory,
+      watch: () => () => undefined,
+      repeat: (_ms, callback) => {
+        fire = callback;
+        return () => {
+          fire = undefined;
+        };
+      },
+    });
+
+    const seen: string[] = [];
+    const stop = reader.subscribe((object) => seen.push(`${object.type}:${object.id}`));
+    try {
+      writer.put("job", "1", { title: "one" }, "seed");
+      expect(seen).toEqual([]);
+
+      fire?.();
+      expect(seen).toEqual(["job:1"]);
+    } finally {
+      stop();
+    }
+    expect(fire).toBeUndefined();
+  });
 });
