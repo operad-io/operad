@@ -11,6 +11,28 @@ import { messageOf, type PluginLogger } from "@operad-io/engine";
 /** How long a group gets to end after SIGTERM before SIGKILL. */
 export const KILL_GRACE_MS = 500;
 
+/**
+ * How long the pipes get to close after the group was stopped. A process that
+ * left the group keeps its inherited descriptors open, and the command must
+ * not wait for it: reading stops after this.
+ */
+export const DRAIN_GRACE_MS = 1000;
+
+/** The timers a line run reads. A test injects its own to control timeouts. */
+export interface Clock {
+  setTimeout(handler: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+  sleep(ms: number): Promise<void>;
+}
+
+/** The clock a real run uses. */
+export const systemClock: Clock = {
+  setTimeout: (handler, ms) => globalThis.setTimeout(handler, ms),
+  clearTimeout: (handle) =>
+    globalThis.clearTimeout(handle as ReturnType<typeof globalThis.setTimeout>),
+  sleep: (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms)),
+};
+
 /** How much output the tail keeps; enough for the last lines of a long run. */
 const TAIL_LIMIT = 64 * 1024;
 
@@ -24,6 +46,11 @@ export interface LineRunOptions {
   readonly timeoutMs?: number | undefined;
   readonly signal: AbortSignal;
   readonly logger?: PluginLogger | undefined;
+  readonly clock?: Clock | undefined;
+  /** Sends a signal to one process group; a test replaces it to watch signals. */
+  readonly killGroup?:
+    | ((pgid: number, signal: NodeJS.Signals | 0) => boolean)
+    | undefined;
 }
 
 export interface LineOutcome {
@@ -119,10 +146,6 @@ function consume(stream: Readable, output: Output): Promise<void> {
   })();
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 interface Exit {
   readonly code: number | null;
   readonly signal: string | null;
@@ -137,6 +160,8 @@ type First = { readonly kind: "exit"; readonly value: Exit } | {
  * Runs one line. Cancellation and the timeout signal the process group with
  * SIGTERM and, after the grace period, SIGKILL. The group is always stopped
  * after the main process exits too, so a child it forked cannot outlive it.
+ * A process that leaves the group on purpose cannot be signaled without
+ * risking an unrelated process, so the line stops reading its output instead.
  */
 export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
   if (options.signal.aborted) {
@@ -151,6 +176,7 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
     };
   }
 
+  const clock = options.clock ?? systemClock;
   const output = new Output(options.logger);
   let child: ChildProcess;
   try {
@@ -190,30 +216,40 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
   if (stderr !== null) drained.push(consume(stderr, output));
 
   let stopping: Promise<void> | undefined;
+  const killGroup =
+    options.killGroup ??
+    ((pgid: number, signal: NodeJS.Signals | 0): boolean => {
+      try {
+        process.kill(-pgid, signal);
+        return true;
+      } catch {
+        return false;
+      }
+    });
   const signalGroup = (signal: NodeJS.Signals): boolean => {
     const pid = child.pid;
-    if (pid === undefined) return false;
-    try {
-      process.kill(-pid, signal);
-      return true;
-    } catch {
-      return false;
-    }
+    return pid === undefined ? false : killGroup(pid, signal);
+  };
+  const groupExists = (): boolean => {
+    const pid = child.pid;
+    return pid === undefined ? false : killGroup(pid, 0);
   };
   const stop = (): Promise<void> => {
     stopping ??= (async () => {
       if (!signalGroup("SIGTERM")) return;
-      await delay(KILL_GRACE_MS);
-      signalGroup("SIGKILL");
+      await clock.sleep(KILL_GRACE_MS);
+      // The group may have ended during the grace, and its numeric id may then
+      // belong to an unrelated group. Only signal a group that still exists.
+      if (groupExists()) signalGroup("SIGKILL");
     })();
     return stopping;
   };
 
   let timedOut = false;
   let cancelled = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timer: unknown;
   if (options.timeoutMs !== undefined) {
-    timer = setTimeout(() => {
+    timer = clock.setTimeout(() => {
       timedOut = true;
       void stop();
     }, options.timeoutMs);
@@ -229,12 +265,25 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
     failed.then((message) => ({ kind: "error", message })),
   ]);
 
-  if (timer !== undefined) clearTimeout(timer);
+  if (timer !== undefined) clock.clearTimeout(timer);
   options.signal.removeEventListener("abort", onAbort);
 
   // The main process is done; stop whatever it left behind in the group.
   await stop();
-  await Promise.all(drained);
+
+  // The pipes normally close with the group. A process that left the group
+  // keeps them open, so give them a bounded time and then stop reading: the
+  // command must end even when such a process runs on.
+  const finished = Promise.all(drained).then(() => undefined);
+  let drainTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
+  const drainLimit = new Promise<void>((resolve) => {
+    drainTimer = globalThis.setTimeout(resolve, DRAIN_GRACE_MS);
+  });
+  await Promise.race([finished, drainLimit]);
+  if (drainTimer !== undefined) globalThis.clearTimeout(drainTimer);
+  if (stdout !== null) stdout.destroy();
+  if (stderr !== null) stderr.destroy();
+  await finished;
   await output.end();
 
   return {

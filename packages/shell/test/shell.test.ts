@@ -11,10 +11,17 @@ import {
   readState,
   validateFlow,
   type FlowDefinition,
+  type PluginDefinition,
   type PluginStepResult,
 } from "@operad-io/engine";
-import shell from "../src/index.ts";
-import { cleanupTempRoots, tempRoot, waitForFile } from "./support.ts";
+import shell, { createShellPlugin } from "../src/index.ts";
+import { runLine } from "../src/process.ts";
+import {
+  cleanupTempRoots,
+  manualClock,
+  tempRoot,
+  waitForFile,
+} from "./support.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -23,11 +30,11 @@ interface Fixture {
   readonly registry: PluginRegistry;
 }
 
-async function fixture(): Promise<Fixture> {
+async function fixture(plugin: PluginDefinition = shell): Promise<Fixture> {
   const root = await tempRoot();
   return {
     root,
-    registry: new PluginRegistry([shell], {
+    registry: new PluginRegistry([plugin], {
       home: root,
       cwd: root,
       store: new MemoryPluginStore({ root: join(root, "store") }),
@@ -95,17 +102,21 @@ describe("shell/command", () => {
   });
 
   test("a timeout is a failure that says so", async () => {
-    const { registry } = await fixture();
-    const started = Date.now();
-    const result = await registry.runStep(
+    const clock = manualClock();
+    const { root, registry } = await fixture(createShellPlugin({ clock }));
+    const marker = join(root, "started");
+    const running = registry.runStep(
       "shell/command",
-      { line: "sleep 30", timeoutSecs: 0.1 },
+      { line: `trap '' TERM; echo $$ > '${marker}'; sleep 30`, timeoutSecs: 5 },
       { runId: "run-1" },
     );
 
+    await waitForFile(marker);
+    expect(clock.fireTimeouts()).toBe(1);
+
+    const result = await running;
     expect(result.result).toBe("fail");
     expect(dataOf(result).reason).toBe("timeout");
-    expect(Date.now() - started).toBeLessThan(5_000);
   });
 
   test("cancel stops the process group and reports interrupted", async () => {
@@ -158,6 +169,30 @@ describe("shell/command", () => {
     expect(alive(pid)).toBe(false);
   });
 
+  test("a child that leaves the group cannot hold the command open", async () => {
+    const { root, registry } = await fixture();
+    const pidFile = join(root, "escaped.pid");
+    const started = performance.now();
+    // Job control puts the background job in a process group of its own. It
+    // keeps the inherited output descriptors and can no longer be signaled
+    // through the command's group.
+    const result = await registry.runStep(
+      "shell/command",
+      { line: `set -m; sleep 60 & echo $! > '${pidFile}'` },
+      { runId: "run-escape" },
+    );
+    const elapsed = performance.now() - started;
+    const pid = Number(readFileSync(pidFile, "utf8").trim());
+
+    try {
+      expect(result.result).toBe("pass");
+      expect(alive(pid)).toBe(true);
+      expect(elapsed).toBeLessThan(10_000);
+    } finally {
+      process.kill(pid, "SIGKILL");
+    }
+  });
+
   test("a cwd that does not exist fails with a clear reason", async () => {
     const { root, registry } = await fixture();
     const result = await registry.runStep(
@@ -205,6 +240,33 @@ describe("shell/check", () => {
     expect(readFileSync(String(data.log), "utf8")).not.toContain("never");
   });
 
+  test("a line that exceeds the timeout fails and names it", async () => {
+    const clock = manualClock();
+    const { root, registry } = await fixture(createShellPlugin({ clock }));
+    const marker = join(root, "second-line");
+    const running = registry.runStep(
+      "shell/check",
+      {
+        lines: [
+          "echo one",
+          `trap '' TERM; echo $$ > '${marker}'; sleep 30`,
+        ],
+        timeoutSecs: 5,
+      },
+      { runId: "run-1" },
+    );
+
+    await waitForFile(marker);
+    expect(clock.fireTimeouts()).toBe(1);
+
+    const result = await running;
+    expect(result.result).toBe("fail");
+    const data = dataOf(result);
+    expect(data.reason).toBe("timeout");
+    expect(data.lineNumber).toBe(2);
+    expect(String(data.message)).toContain("check line 2 was stopped after 5s");
+  });
+
   test("an empty list passes", async () => {
     const { registry } = await fixture();
     const result = await registry.runStep(
@@ -239,6 +301,29 @@ describe("shell/check", () => {
 
     expect(result.result).toBe("fail");
     expect(dataOf(result).reason).toBe("cwd");
+  });
+});
+
+describe("runLine", () => {
+  test("the grace SIGKILL is not sent to a group that ended", async () => {
+    const { root } = await fixture();
+    const signals: (string | number)[] = [];
+    const clock = manualClock();
+    const outcome = await runLine({
+      line: "true",
+      cwd: root,
+      signal: new AbortController().signal,
+      clock,
+      // The group was there for SIGTERM; by the end of the grace it is gone.
+      killGroup: (_pgid, signal) => {
+        signals.push(signal);
+        return signal === "SIGTERM";
+      },
+    });
+
+    expect(outcome.exitCode).toBe(0);
+    expect(clock.sleeps).toBe(1);
+    expect(signals).toEqual(["SIGTERM", 0]);
   });
 });
 

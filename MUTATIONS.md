@@ -128,3 +128,12 @@
 | TK0017-M8 | packages/engine/src/runner/runner.ts | ran a wait check without its params | `a flow through the runner > waits on shell/probe with its params` |
 | TK0017-M9 | packages/shell/src/process.ts | signaled only the process group leader, not the group | `shell/command > a child that outlives the line is in the group and is stopped` |
 | TK0017-M10 | packages/engine/src/runner/runner.ts | terminated a cancelled worker without asking it to stop its processes | `a flow through the runner > a run cancel stops the command's process group in a worker` |
+
+## TK0017 — rework 3: bounded cleanup and injected time
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0017-M11 | packages/shell/src/process.ts | dropped the drain limit and waited for the output pipes to close | `shell/command > a child that leaves the group cannot hold the command open` (timed out) |
+| TK0017-M12 | packages/shell/src/process.ts | sent the grace SIGKILL without checking that the group still exists | `runLine > the grace SIGKILL is not sent to a group that ended` |
+| TK0017-M13 | packages/shell/src/index.ts | ignored the injected clock for `shell/command` | `shell/command > a timeout is a failure that says so` |
+| TK0017-M14 | packages/shell/src/index.ts | passed no timeout to a `shell/check` line | `shell/check > a line that exceeds the timeout fails and names it` |
