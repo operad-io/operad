@@ -233,3 +233,9 @@
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0026-M15 | packages/engine/src/loop/serve.ts | stopped adopting a pending start before spawning a run | `the kernel start entry > a crash after the run is created keeps the event that started it` |
+
+## TK0026 — rework 14: the log alone decides an event's outcome
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0026-M16 | packages/engine/src/trigger/kernel.ts | removed the log lookup that finds the run an input started | `event receipt recovery > a crash after startRun in auto mode keeps one outcome` |

@@ -41,6 +41,7 @@ import type {
   AppendResult,
   Fact,
   GlobalFact,
+  InputRecord,
   JsonValue,
   LogBackend,
   LogBackendFactory,
@@ -66,6 +67,7 @@ interface RunHeader {
   readonly flow: string;
   readonly object: string;
   readonly startedAt: number;
+  readonly startInputId?: string | null;
 }
 
 interface StoredInput {
@@ -299,6 +301,8 @@ function parseHeader(value: unknown, runId: string): RunHeader {
     flow: record.flow,
     object: record.object,
     startedAt: record.startedAt,
+    startInputId:
+      typeof record.startInputId === "string" ? record.startInputId : null,
   };
 }
 
@@ -410,7 +414,11 @@ class JsonlLogBackend implements LogBackend {
     this.#subscriptionWatch = subscriptionWatch;
   }
 
-  async startRun(flow: string, object: string): Promise<RunInfo> {
+  async startRun(
+    flow: string,
+    object: string,
+    startInputId: string | null = null,
+  ): Promise<RunInfo> {
     assertName(flow, "flow");
     assertName(object, "object");
     return this.#withLock(() => {
@@ -428,6 +436,7 @@ class JsonlLogBackend implements LogBackend {
         flow,
         object,
         startedAt,
+        startInputId,
       };
       if (!createExclusive(this.#runPath(runId), `${JSON.stringify(header)}\n`)) {
         throw new Error(`run id ${runId} already exists`);
@@ -442,6 +451,7 @@ class JsonlLogBackend implements LogBackend {
         startedAt,
         endedAt: null,
         lastSeq: 0,
+        startInputId,
       };
     });
   }
@@ -497,6 +507,39 @@ class JsonlLogBackend implements LogBackend {
       this.#inputBytes = statSync(this.#inputsPath).size;
       return { duplicate: false, inputId };
     });
+  }
+
+  async *readInputs(): AsyncGenerator<InputRecord> {
+    this.#assertOpen();
+    if (!existsSync(this.#inputsPath)) return;
+    const text = readFileSync(this.#inputsPath).toString("utf8");
+    for (const line of text.split("\n")) {
+      if (line.length === 0) continue;
+      let value: unknown;
+      try {
+        value = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (typeof value !== "object" || value === null) continue;
+      const record = value as Partial<StoredInput>;
+      if (
+        record.type !== "input" ||
+        typeof record.inputId !== "string" ||
+        typeof record.source !== "string" ||
+        typeof record.sourceKey !== "string"
+      ) {
+        continue;
+      }
+      yield {
+        inputId: record.inputId,
+        runId: typeof record.runId === "string" ? record.runId : null,
+        source: record.source,
+        sourceKey: record.sourceKey,
+        payload: (record.payload ?? null) as JsonValue,
+        time: typeof record.time === "number" ? record.time : 0,
+      };
+    }
   }
 
   async append(
@@ -824,6 +867,7 @@ class JsonlLogBackend implements LogBackend {
       startedAt: header.startedAt,
       endedAt: active ? null : this.#endedAt(endPath),
       lastSeq: this.#lastSeqUnlocked(path, runId),
+      startInputId: header.startInputId ?? null,
     };
   }
 

@@ -275,6 +275,28 @@ export function runLogConformance(factory: LogConformanceFactory): void {
       }
     });
 
+    test("startRun keeps the input that made the run", async () => {
+      const directory = tempDirectory("start-input");
+      const backend = await openStore(factory, directory, { clock: fixedClock() });
+      try {
+        const run = await backend.startRun("flow", "object", "input_event");
+        expect(run.startInputId).toBe("input_event");
+
+        const listed = (await backend.runs()).find(
+          (candidate) => candidate.runId === run.runId,
+        );
+        expect(listed?.startInputId).toBe("input_event");
+
+        const plain = await backend.startRun("flow", "plain", "input_plain");
+        expect(plain.startInputId).toBe("input_plain");
+        const second = await backend.startRun("flow", "other");
+        expect(second.startInputId).toBeNull();
+      } finally {
+        await backend.close();
+        cleanup(directory);
+      }
+    });
+
     test("endRun is idempotent, unknown runs fail, and an ended run takes no facts", async () => {
       const directory = tempDirectory("end-run");
       const backend = await openStore(factory, directory, { clock: fixedClock() });

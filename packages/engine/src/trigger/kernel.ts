@@ -2,12 +2,16 @@
 
 import type { KernelState, StartInput } from "../kernel/types.ts";
 import { ActiveRunError } from "../log/errors.ts";
-import type { JsonValue, LogBackend, RunInfo } from "../log/types.ts";
+import type {
+  JsonValue,
+  LogBackend,
+  RunInfo,
+} from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { SourceHandle } from "../plugin/types.ts";
 import { messageOf } from "../plugin/errors.ts";
 import { readState } from "../runner/service.ts";
-import { TriggerStore } from "./store.ts";
+import { TriggerStore, type StoredTriggerResult } from "./store.ts";
 import {
   MAX_TRIGGER_HOPS,
   type StartRequest,
@@ -29,6 +33,8 @@ export interface KernelOptions {
   readonly rules?: readonly TriggerRule[] | undefined;
   readonly clock?: (() => number) | undefined;
   readonly onLog?: ((message: string) => void) | undefined;
+  /** Overrides the event journal, for a test that places a crash in it. */
+  readonly store?: TriggerStore | undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -43,6 +49,45 @@ function objectOf(event: TriggerEvent): string | undefined {
   return typeof event.object === "string" && event.object.length > 0
     ? event.object
     : undefined;
+}
+
+/** A string field of a fact payload, if it is a non-empty string. */
+function field(payload: JsonValue, name: string): string | undefined {
+  if (!isRecord(payload)) return undefined;
+  const value = payload[name];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/** The event a recorded input payload carries, if it carries one. */
+function eventFromPayload(payload: JsonValue): TriggerEvent | undefined {
+  if (!isRecord(payload)) return undefined;
+  const source = payload.source;
+  const key = payload.key;
+  const type = payload.type;
+  if (
+    typeof source !== "string" ||
+    typeof key !== "string" ||
+    typeof type !== "string" ||
+    source.length === 0 ||
+    key.length === 0 ||
+    type.length === 0
+  ) {
+    return undefined;
+  }
+  const hops =
+    typeof payload.hops === "number" && Number.isInteger(payload.hops) && payload.hops >= 0
+      ? payload.hops
+      : 0;
+  return {
+    source,
+    key,
+    type,
+    hops,
+    ...(typeof payload.object === "string" ? { object: payload.object } : {}),
+    ...(typeof payload.summary === "string" ? { summary: payload.summary } : {}),
+    ...(typeof payload.link === "string" ? { link: payload.link } : {}),
+    ...(payload.data === undefined ? {} : { data: payload.data as JsonValue }),
+  };
 }
 
 /** The last step result in a state, as a small summary for the run-end event. */
@@ -94,10 +139,12 @@ export class Kernel {
     this.rules = options.rules ?? [];
     this.clock = options.clock ?? (() => Date.now());
     this.onLog = options.onLog ?? ((message) => console.error(message));
-    this.store = new TriggerStore({
-      root: `${options.storeRoot}/triggers`,
-      clock: this.clock,
-    });
+    this.store =
+      options.store ??
+      new TriggerStore({
+        root: `${options.storeRoot}/triggers`,
+        clock: this.clock,
+      });
   }
 
   /** The event a run sees, from the sidecar written when the run started. */
@@ -127,6 +174,23 @@ export class Kernel {
     let inputId = request.inputId;
     let view: TriggerView | undefined;
 
+    // The log is the only truth: if a run already names this input as its
+    // cause, that run is the result, even when the sidecar was lost.
+    if (inputId !== undefined) {
+      const already = await this.startedRun(inputId);
+      if (already !== undefined) {
+        this.store.setResult(inputId, {
+          kind: "started",
+          inputId,
+          duplicate: false,
+          runId: already.runId,
+          flow: already.flow,
+          object: already.object,
+        });
+        return { kind: "started", runId: already.runId, duplicate: true };
+      }
+    }
+
     if (trigger !== undefined) {
       if (!isRecord(trigger) || typeof trigger.source !== "string" || typeof trigger.key !== "string") {
         throw new Error("start: trigger needs a source and a key");
@@ -140,12 +204,27 @@ export class Kernel {
         );
         inputId = recorded.inputId;
         if (recorded.duplicate) {
-          return this.firstResult(inputId);
+          const first = await this.firstResult(inputId);
+          if (first !== undefined) return first;
+          // Recorded but never routed: route it now with this event.
         }
+      }
+      if (this.store.event(inputId) === undefined) {
         this.store.recordEvent(inputId, trigger);
       }
       if (triggerHops > MAX_TRIGGER_HOPS) {
         const reason = `the chain is ${triggerHops} hops deep; at most ${MAX_TRIGGER_HOPS} are followed`;
+        await this.log.appendGlobal({
+          kind: "trigger_skipped",
+          payload: {
+            source: trigger.source,
+            type: trigger.type,
+            key: trigger.key,
+            hops: trigger.hops,
+            reason,
+          },
+          cause: inputId,
+        });
         this.store.setResult(inputId, {
           kind: "skipped",
           inputId,
@@ -207,7 +286,7 @@ export class Kernel {
 
     let info: RunInfo;
     try {
-      info = await this.log.startRun(request.flow, request.object);
+      info = await this.log.startRun(request.flow, request.object, inputId ?? null);
     } catch (error) {
       if (error instanceof ActiveRunError) {
         // This start created no run; the record must not be adopted later.
@@ -292,11 +371,13 @@ export class Kernel {
     );
     const inputId = recorded.inputId;
     if (recorded.duplicate) {
-      const stored = this.store.result(inputId);
-      if (stored !== undefined) return this.toTriggerResult(stored, true);
-      // The first call has been recorded but has no result yet (it may still
-      // be running). A duplicate changes nothing.
-      return { kind: "recorded", inputId, duplicate: true };
+      // A duplicate with no outcome is not routed yet: route it again. The
+      // outcome is looked up by input id, so this cannot make a second run.
+      if (this.store.event(inputId) === undefined) {
+        this.store.recordEvent(inputId, event);
+      }
+      this.store.writeEventFiles(inputId, event);
+      return this.route(inputId, event, true);
     }
     this.store.recordEvent(inputId, event);
     this.store.writeEventFiles(inputId, event);
@@ -316,6 +397,14 @@ export class Kernel {
   ): Promise<TriggerResult> {
     const stored = this.store.result(inputId);
     if (stored !== undefined) return this.toTriggerResult(stored, duplicate);
+
+    // The log derives the outcome: a run whose start names this input, a
+    // receipt in a run's history, an observe or candidate fact, or a skip.
+    const derived = await this.outcome(inputId);
+    if (derived !== undefined) {
+      this.store.setResult(inputId, derived);
+      return this.toTriggerResult(derived, duplicate);
+    }
 
     if (event.hops > MAX_TRIGGER_HOPS) {
       const reason = `the chain is ${event.hops} hops deep; at most ${MAX_TRIGGER_HOPS} are followed`;
@@ -415,6 +504,17 @@ export class Kernel {
     }
 
     if (rule.mode === "candidate") {
+      // The pending item is keyed by the input id; the fact is its durable
+      // record, so a lost sidecar can rebuild the same candidate.
+      await this.log.appendGlobal({
+        kind: "trigger_candidate",
+        payload: {
+          flow: rule.start.flow,
+          ...(rule.start.params === undefined ? {} : { params: rule.start.params }),
+          object,
+        },
+        cause: inputId,
+      });
       this.store.setResult(inputId, {
         kind: "candidate",
         inputId,
@@ -551,18 +651,20 @@ export class Kernel {
   }
 
   /**
-   * Routes a recorded run-end event whose routing was interrupted after the
-   * run was already ended. `serve` calls this every pass, so a crash between
-   * the end of the run and its event reaching the rules loses nothing.
+   * Routes every recorded event whose outcome is not in the log yet. `serve`
+   * calls this once per pass, so a crash anywhere in receiving an event is
+   * picked up on the next start. The sidecar only caches outcomes.
    */
-  async recoverRunEnds(): Promise<void> {
-    for (const { inputId, event } of this.store.unrouted()) {
-      if (event.source !== "operad" || !event.type.startsWith("run.")) continue;
+  async recoverUnrouted(): Promise<void> {
+    for await (const input of this.log.readInputs()) {
+      if (input.runId !== null) continue;
+      const event = eventFromPayload(input.payload);
+      if (event === undefined) continue;
       try {
-        await this.route(inputId, event, true);
+        await this.route(input.inputId, event, true);
       } catch (error) {
         this.onLog(
-          `trigger ${inputId}: run-end event failed: ${messageOf(error)}`,
+          `trigger ${input.inputId}: event routing failed: ${messageOf(error)}`,
         );
       }
     }
@@ -695,9 +797,20 @@ export class Kernel {
     }
   }
 
-  private firstResult(inputId: string): StartResult {
+  /** The first result for an input, from the sidecar or derived from the log. */
+  private async firstResult(inputId: string): Promise<StartResult | undefined> {
     const stored = this.store.result(inputId);
-    if (stored === undefined) return { kind: "recorded", duplicate: true };
+    if (stored !== undefined) return this.toStartResult(stored, inputId);
+    const derived = await this.outcome(inputId);
+    if (derived === undefined) return undefined;
+    this.store.setResult(inputId, derived);
+    return this.toStartResult(derived, inputId);
+  }
+
+  private toStartResult(
+    stored: Omit<StoredTriggerResult, "at">,
+    inputId: string,
+  ): StartResult {
     switch (stored.kind) {
       case "started":
         return stored.runId === undefined
@@ -724,6 +837,105 @@ export class Kernel {
       default:
         return { kind: "recorded", duplicate: true };
     }
+  }
+
+  /** The run the log says this input started, if any. */
+  private async startedRun(inputId: string): Promise<RunInfo | undefined> {
+    const runs = await this.log.runs();
+    return runs.find((run) => run.startInputId === inputId);
+  }
+
+  /**
+   * The outcome of an input, derived from the log alone. A run started by the
+   * input, a receipt in a run's history, an observe or candidate fact, or a
+   * skip fact is the result; anything else has not been routed.
+   */
+  private async outcome(
+    inputId: string,
+  ): Promise<Omit<StoredTriggerResult, "at"> | undefined> {
+    const runs = await this.log.runs();
+    const started = runs.find((run) => run.startInputId === inputId);
+    if (started !== undefined) {
+      return {
+        kind: "started",
+        inputId,
+        duplicate: false,
+        runId: started.runId,
+        flow: started.flow,
+        object: started.object,
+      };
+    }
+
+    for (const run of runs) {
+      for await (const fact of this.log.read(run.runId)) {
+        if (fact.cause !== inputId) continue;
+        if (fact.kind === "run_started") {
+          return {
+            kind: "started",
+            inputId,
+            duplicate: false,
+            runId: run.runId,
+            flow: run.flow,
+            object: run.object,
+          };
+        }
+        if (fact.kind === "trigger_received") {
+          return {
+            kind: "active",
+            inputId,
+            duplicate: false,
+            runId: run.runId,
+            flow: run.flow,
+            object: run.object,
+          };
+        }
+        if (fact.kind === "trigger_skipped") {
+          return {
+            kind: "skipped",
+            inputId,
+            duplicate: false,
+            reason: field(fact.payload, "reason") ?? "the event was not followed",
+          };
+        }
+      }
+    }
+
+    for await (const fact of this.log.readGlobal()) {
+      if (fact.cause !== inputId) continue;
+      if (fact.kind === "trigger_observed") {
+        const flow = field(fact.payload, "flow");
+        const object = field(fact.payload, "object");
+        return {
+          kind: "observed",
+          inputId,
+          duplicate: false,
+          ...(flow === undefined ? {} : { flow }),
+          ...(object === undefined ? {} : { object }),
+        };
+      }
+      if (fact.kind === "trigger_candidate") {
+        const flow = field(fact.payload, "flow");
+        const object = field(fact.payload, "object");
+        if (flow === undefined || object === undefined) continue;
+        return {
+          kind: "candidate",
+          inputId,
+          duplicate: false,
+          pendingId: inputId,
+          flow,
+          object,
+        };
+      }
+      if (fact.kind === "trigger_skipped") {
+        return {
+          kind: "skipped",
+          inputId,
+          duplicate: false,
+          reason: field(fact.payload, "reason") ?? "the event was not followed",
+        };
+      }
+    }
+    return undefined;
   }
 
   private toTriggerResult(

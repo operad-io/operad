@@ -43,6 +43,18 @@ export interface RunInfo {
   readonly startedAt: number;
   readonly endedAt: number | null;
   readonly lastSeq: number;
+  /** The input whose start created this run, or null for a plain start. */
+  readonly startInputId: string | null;
+}
+
+/** One recorded input, as the log keeps it. */
+export interface InputRecord {
+  readonly inputId: string;
+  readonly runId: string | null;
+  readonly source: string;
+  readonly sourceKey: string;
+  readonly payload: JsonValue;
+  readonly time: number;
 }
 
 export interface RecordInputResult {
@@ -97,8 +109,16 @@ export interface LogSubscription {
 }
 
 export interface LogBackend extends Partial<LogSubscription> {
-  /** Start a run, unless the same flow/object pair already has an active one. */
-  startRun(flow: string, object: string): Promise<RunInfo>;
+  /**
+   * Start a run, unless the same flow/object pair already has an active one.
+   * `startInputId` records the input that caused the start, so the log alone
+   * can answer which run an event started.
+   */
+  startRun(
+    flow: string,
+    object: string,
+    startInputId?: string | null,
+  ): Promise<RunInfo>;
   /** End an active run. Ending an ended run is a no-op. */
   endRun(runId: string): Promise<void>;
   /**
@@ -130,6 +150,8 @@ export interface LogBackend extends Partial<LogSubscription> {
   appendGlobal(fact: NewFact): Promise<GlobalFact>;
   /** Stream the global facts in sequence order. */
   readGlobal(): AsyncIterable<GlobalFact>;
+  /** Stream every recorded input, oldest first. */
+  readInputs(): AsyncIterable<InputRecord>;
   close(): Promise<void>;
 }
 

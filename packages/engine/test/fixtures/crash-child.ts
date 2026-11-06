@@ -33,7 +33,7 @@ if (found === undefined) throw new Error(`no flow ${run.flow}`);
 /** The real log, except that the first append kills the process. */
 let crash = true;
 const crashing: LogBackend = {
-  startRun: (flow, object) => log.startRun(flow, object),
+  startRun: (flow, object, inputId) => log.startRun(flow, object, inputId),
   endRun: (id) => log.endRun(id),
   recordInput: (id, source, key, payload) =>
     log.recordInput(id, source, key, payload),
@@ -49,6 +49,7 @@ const crashing: LogBackend = {
   runs: (options) => log.runs(options),
   appendGlobal: (fact) => log.appendGlobal(fact),
   readGlobal: () => log.readGlobal(),
+  readInputs: () => log.readInputs(),
   close: () => log.close(),
 };
 

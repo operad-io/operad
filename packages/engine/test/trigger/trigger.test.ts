@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import {
   Kernel,
@@ -17,17 +17,21 @@ import {
   readStoredStart,
   readStoredTrigger,
   serveOnce,
+  TriggerStore,
   type AppendResult,
   type Fact,
   type GlobalFact,
+  type InputRecord,
   type JsonValue,
   type LogBackend,
   type NewFact,
   type RecordInputResult,
   type RunInfo,
   type RunsOptions,
+  type StoredTriggerResult,
   type TriggerEvent,
   type TriggerRule,
+  type TriggerStoreOptions,
 } from "../../src/index.ts";
 import plugin from "../fixtures/plugins/trigger.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
@@ -104,6 +108,7 @@ class CrashLog implements LogBackend {
     private readonly inner: LogBackend,
     private readonly crashAt: (method: string, call: number) => boolean,
     private readonly crashAfterStart = false,
+    private readonly crashAfter: (method: string) => boolean = () => false,
   ) {}
 
   private check(method: string): void {
@@ -114,9 +119,19 @@ class CrashLog implements LogBackend {
     }
   }
 
-  async startRun(flow: string, object: string): Promise<RunInfo> {
+  private afterCheck(method: string): void {
+    if (this.crashAfter(method)) {
+      throw new Error(`injected crash after ${method}`);
+    }
+  }
+
+  async startRun(
+    flow: string,
+    object: string,
+    startInputId?: string | null,
+  ): Promise<RunInfo> {
     this.check("startRun");
-    const info = await this.inner.startRun(flow, object);
+    const info = await this.inner.startRun(flow, object, startInputId ?? null);
     // A crash after the run exists but before its start files are written.
     if (this.crashAfterStart) throw new Error("injected crash after startRun");
     return info;
@@ -134,7 +149,9 @@ class CrashLog implements LogBackend {
     payload: JsonValue,
   ): Promise<RecordInputResult> {
     this.check("recordInput");
-    return this.inner.recordInput(runId, source, sourceKey, payload);
+    const result = await this.inner.recordInput(runId, source, sourceKey, payload);
+    this.afterCheck("recordInput");
+    return result;
   }
 
   async append(
@@ -152,20 +169,57 @@ class CrashLog implements LogBackend {
 
   async runs(options?: RunsOptions): Promise<RunInfo[]> {
     this.check("runs");
-    return this.inner.runs(options);
+    const result = await this.inner.runs(options);
+    this.afterCheck("runs");
+    return result;
   }
 
   async appendGlobal(fact: NewFact): Promise<GlobalFact> {
     this.check("appendGlobal");
-    return this.inner.appendGlobal(fact);
+    const result = await this.inner.appendGlobal(fact);
+    this.afterCheck("appendGlobal");
+    return result;
   }
 
   readGlobal(): AsyncIterable<GlobalFact> {
     return this.inner.readGlobal();
   }
 
+  readInputs(): AsyncIterable<InputRecord> {
+    return this.inner.readInputs();
+  }
+
   async close(): Promise<void> {
     return this.inner.close();
+  }
+}
+
+/** A journal that throws after a chosen write, to place a crash in a sidecar. */
+class CrashStore extends TriggerStore {
+  constructor(
+    options: TriggerStoreOptions,
+    private readonly crashAfter: (method: string) => boolean,
+  ) {
+    super(options);
+  }
+
+  private crash(method: string): void {
+    if (this.crashAfter(method)) {
+      throw new Error(`injected crash after ${method}`);
+    }
+  }
+
+  override recordEvent(inputId: string, event: TriggerEvent): void {
+    super.recordEvent(inputId, event);
+    this.crash("recordEvent");
+  }
+
+  override setResult(
+    inputId: string,
+    result: Omit<StoredTriggerResult, "at">,
+  ): void {
+    super.setResult(inputId, result);
+    this.crash("setResult");
   }
 }
 
@@ -820,6 +874,153 @@ describe("run-end recovery", () => {
       await serve(env);
       runs = await env.log.runs();
       expect(runs.filter((run) => run.flow === "two")).toHaveLength(1);
+    } finally {
+      await env.close();
+    }
+  });
+});
+
+describe("event receipt recovery", () => {
+  type Mode = "observe" | "candidate" | "auto";
+  type CrashPoint =
+    | "after recordInput"
+    | "after the sidecar write"
+    | "after startRun"
+    | "after the pending item"
+    | "after the outcome";
+
+  interface Row {
+    readonly point: CrashPoint;
+    readonly mode: Mode;
+    readonly lostSidecar?: boolean;
+  }
+
+  const rows: readonly Row[] = [
+    { point: "after recordInput", mode: "auto" },
+    { point: "after the sidecar write", mode: "auto" },
+    { point: "after startRun", mode: "auto" },
+    { point: "after startRun", mode: "auto", lostSidecar: true },
+    { point: "after the pending item", mode: "auto" },
+    { point: "after the outcome", mode: "observe", lostSidecar: true },
+    { point: "after the outcome", mode: "candidate" },
+  ];
+
+  /** A kernel whose first receive crashes at one chosen write. */
+  function crashingKernel(
+    env: Setup,
+    row: Row,
+    triggersRoot: string,
+  ): Kernel {
+    const store = new CrashStore(
+      { root: triggersRoot, clock: () => env.clock.value },
+      (method) =>
+        (row.point === "after the sidecar write" && method === "recordEvent") ||
+        (row.point === "after the outcome" && method === "setResult"),
+    );
+    const log = new CrashLog(
+      env.log,
+      (method) => row.point === "after the pending item" && method === "startRun",
+      row.point === "after startRun",
+      (method) => row.point === "after recordInput" && method === "recordInput",
+    );
+    return new Kernel({
+      log,
+      registry: env.registry,
+      home: env.root,
+      storeRoot: env.storeRoot,
+      rules: [rule({ mode: row.mode })],
+      clock: () => env.clock.value,
+      store,
+      onLog: () => undefined,
+    });
+  }
+
+  for (const row of rows) {
+    test(`a crash ${row.point} in ${row.mode} mode keeps one outcome`, async () => {
+      const env = await setup([rule({ mode: row.mode })]);
+      const triggersRoot = join(env.storeRoot, "triggers");
+      try {
+        await expect(
+          crashingKernel(env, row, triggersRoot).receive(event()),
+        ).rejects.toThrow("injected crash");
+
+        // What the first call left in the log, not in the sidecar.
+        const beforeRetry = await env.log.runs();
+        expect(beforeRetry).toHaveLength(row.point === "after startRun" ? 1 : 0);
+
+        if (row.lostSidecar === true) {
+          rmSync(join(triggersRoot, "events.jsonl"), { force: true });
+        }
+
+        const restarted = new Kernel({
+          log: env.log,
+          registry: env.registry,
+          home: env.root,
+          storeRoot: env.storeRoot,
+          rules: [rule({ mode: row.mode })],
+          clock: () => env.clock.value,
+          onLog: () => undefined,
+        });
+        const result = await restarted.receive(event());
+        expect(result.duplicate).toBe(true);
+
+        const runs = await env.log.runs();
+        if (row.mode === "auto") {
+          expect(result.kind).toBe("started");
+          expect(runs).toHaveLength(1);
+          expect(result.runId).toBe(runs[0]?.runId);
+        } else if (row.mode === "candidate") {
+          expect(result.kind).toBe("candidate");
+          expect(runs).toHaveLength(0);
+          expect(await restarted.store.candidates()).toHaveLength(1);
+        } else {
+          expect(result.kind).toBe("observed");
+          expect(runs).toHaveLength(0);
+          const observed: string[] = [];
+          for await (const fact of env.log.readGlobal()) {
+            if (fact.kind === "trigger_observed") observed.push(fact.kind);
+          }
+          expect(observed).toHaveLength(1);
+        }
+      } finally {
+        await env.close();
+      }
+    });
+  }
+  test("serve routes a recorded event with no outcome without a resend", async () => {
+    const env = await setup([rule({})]);
+    const triggersRoot = join(env.storeRoot, "triggers");
+    try {
+      const crashing = crashingKernel(
+        env,
+        { point: "after recordInput", mode: "auto" },
+        triggersRoot,
+      );
+      await expect(crashing.receive(event())).rejects.toThrow("injected crash");
+      expect(await env.log.runs()).toHaveLength(0);
+
+      const restarted = new Kernel({
+        log: env.log,
+        registry: env.registry,
+        home: env.root,
+        storeRoot: env.storeRoot,
+        rules: [rule({})],
+        clock: () => env.clock.value,
+        onLog: () => undefined,
+      });
+      const options = {
+        log: env.log,
+        registry: env.registry,
+        lockRoot: env.storeRoot,
+        kernel: restarted,
+        spawnRun: () => undefined,
+      };
+      await serveOnce(options);
+      expect(await env.log.runs()).toHaveLength(1);
+
+      // A second pass sees the outcome in the log and starts nothing more.
+      await serveOnce(options);
+      expect(await env.log.runs()).toHaveLength(1);
     } finally {
       await env.close();
     }

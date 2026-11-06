@@ -137,11 +137,10 @@ export async function serveOnce(
     spawned.push(run.runId);
   }
 
-  // A run ended before its end event reached the rules loses that event unless
-  // the recorded input is routed again. The run is already inactive here, so a
-  // chained flow can start on the same object.
+  // A recorded event whose routing was interrupted is routed again. Outcomes
+  // are derived from the log by input id, so a second pass cannot repeat one.
   if (options.shouldStop?.() !== true) {
-    await kernel.recoverRunEnds();
+    await kernel.recoverUnrouted();
   }
 
   return { started, spawned };

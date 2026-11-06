@@ -262,6 +262,8 @@ test("a store from before global inputs is migrated on open", async () => {
   const backend = await open(directory);
   try {
     const run = await backend.startRun("flow", "object");
+    const withInput = await backend.startRun("flow", "with-input", "input_x");
+    expect(withInput.startInputId).toBe("input_x");
     const global = await backend.recordInput(null, "cron", "tick:1", {});
     expect(global.duplicate).toBe(false);
     const scoped = await backend.recordInput(run.runId, "github", "issue:1", {});
@@ -281,6 +283,12 @@ test("a store from before global inputs is migrated on open", async () => {
       .all(),
   );
   expect(columns.find((column) => column.name === "run_id")?.notnull).toBe(0);
+  const runColumns = withDatabase(directory, (database) =>
+    database
+      .query<{ name: string }, []>("PRAGMA table_info(runs)")
+      .all(),
+  );
+  expect(runColumns.some((column) => column.name === "start_input_id")).toBe(true);
 });
 
 test("a subscription learns of a write when the watch never fires", async () => {
