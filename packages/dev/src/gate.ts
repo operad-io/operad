@@ -88,7 +88,7 @@ function gitZ(
 }
 
 /** The commit a task's branch points at, local first and then the remote. */
-function branchHead(
+export function branchHead(
   repositoryPath: string,
   settings: DevSettings,
   taskId: string,
@@ -121,8 +121,8 @@ function mergeBase(
   return result.ok && result.out.length > 0 ? result.out : undefined;
 }
 
-/** Removes whatever is at the gate path and checks the commit out detached. */
-function recreateGateWorktree(
+/** Removes whatever is at the gate path and checks a commit out detached. */
+export function recreateGateWorktree(
   repositoryPath: string,
   path: string,
   sha: string,
@@ -854,7 +854,9 @@ async function saveReview(
     context.taskKey,
     {
       ...task,
-      phase: passed ? "review" : task.phase,
+      // A pass and an infrastructure failure both go to the person wait; a
+      // failing review goes to the rework step, which sets the next phase.
+      phase: record.result === "fail" ? task.phase : "waiting",
       run: ctx.runId,
       attempts: Math.max(task.attempts, attempt.number),
       attempt: {

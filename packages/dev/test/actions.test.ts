@@ -17,7 +17,14 @@ guardLockHandles();
 
 const ACTOR = { via: "test", id: "tester" } as const;
 
-async function setup(onCancelRun?: (runId: string) => void) {
+async function setup(
+  onCancelRun?: (runId: string) => void,
+  onAnswer?: (
+    runId: string,
+    choice: string,
+    note: string | undefined,
+  ) => void,
+) {
   const root = await tempRoot();
   const repositoryPath = await makeGitRepository(root);
   const store = storeAt(root);
@@ -25,6 +32,13 @@ async function setup(onCancelRun?: (runId: string) => void) {
     store,
     storeRoot: store.root,
     ...(onCancelRun === undefined ? {} : { onCancelRun }),
+    ...(onAnswer === undefined
+      ? {}
+      : {
+          onAnswer: async (runId, choice, note) => {
+            onAnswer(runId, choice, note);
+          },
+        }),
   });
   const repository = await addRepository(store, { path: repositoryPath });
   return { store, registry, repository };
@@ -110,5 +124,109 @@ describe("dev actions", () => {
     expect(taskData((await getTask(store, task.id)).data).phase).toBe(
       "cancelled",
     );
+  });
+
+  test("merge answers the task's wait and is offered only while it waits", async () => {
+    const answers: [string, string | undefined][] = [];
+    const { store, registry, repository } = await setup(undefined, (_runId, choice, note) => {
+      answers.push([choice, note]);
+    });
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
+    await setTaskPhase(store, task.id, "waiting");
+
+    const pending = await registry.pending([
+      { runId: "run-1", object: { type: "task", id: task.id } },
+    ]);
+    const names = pending[0]?.actions.map((action) => action.action) ?? [];
+    expect(names).toContain("merge");
+    expect(names).toContain("reject");
+
+    await registry.runAction("dev/merge", {}, {
+      object: await getTask(store, task.id),
+      runId: "run-1",
+      actor: ACTOR,
+    });
+    expect(answers).toEqual([["merge", undefined]]);
+  });
+
+  test("reject appends the owner's rework before answering", async () => {
+    const answers: [string, string | undefined][] = [];
+    const { store, registry, repository } = await setup(undefined, (_runId, choice, note) => {
+      answers.push([choice, note]);
+    });
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
+    await setTaskPhase(store, task.id, "waiting");
+
+    await registry.runAction(
+      "dev/reject",
+      { note: "cover the concurrent writers" },
+      {
+        object: await getTask(store, task.id),
+        runId: "run-1",
+        actor: ACTOR,
+      },
+    );
+    expect(answers).toEqual([["reject", "cover the concurrent writers"]]);
+    const after = taskData((await getTask(store, task.id)).data);
+    expect(after.brief).toContain("## Rework 1 (owner)");
+    expect(after.brief).toContain("cover the concurrent writers");
+  });
+
+  test("merge and reject refuse a running task", async () => {
+    const answers: string[] = [];
+    const { store, registry, repository } = await setup(undefined, (_runId, choice) => {
+      answers.push(choice);
+    });
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
+    await setTaskPhase(store, task.id, "running");
+    const object = await getTask(store, task.id);
+
+    const pending = await registry.pending([
+      { runId: "run-1", object: { type: "task", id: task.id } },
+    ]);
+    const names = pending[0]?.actions.map((action) => action.action) ?? [];
+    expect(names).not.toContain("merge");
+    expect(names).not.toContain("reject");
+
+    await expect(
+      registry.runAction("dev/merge", {}, { object, runId: "run-1", actor: ACTOR }),
+    ).rejects.toThrow(/is running, not waiting/);
+    await expect(
+      registry.runAction(
+        "dev/reject",
+        { note: "no" },
+        { object, runId: "run-1", actor: ACTOR },
+      ),
+    ).rejects.toThrow(/is running, not waiting/);
+    expect(answers).toEqual([]);
+  });
+
+  test("merge and reject refuse an unknown task and a wait without a run", async () => {
+    const { store, registry, repository } = await setup();
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
+    await setTaskPhase(store, task.id, "waiting");
+    const object = await getTask(store, task.id);
+
+    await expect(
+      registry.runAction("dev/merge", {}, { object, actor: ACTOR }),
+    ).rejects.toThrow(/not waiting for a run/);
+    await expect(
+      registry.runAction(
+        "dev/reject",
+        { note: "no" },
+        { object, actor: ACTOR },
+      ),
+    ).rejects.toThrow(/not waiting for a run/);
+    await expect(
+      registry.runAction("dev/merge", {}, {
+        object: { type: "task", id: "TK9999-nope", data: {} },
+        runId: "run-1",
+        actor: ACTOR,
+      }),
+    ).rejects.toThrow(/no task/);
   });
 });

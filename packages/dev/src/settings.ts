@@ -42,6 +42,21 @@ export interface GateSettings {
   readonly commandTimeoutSecs: number;
 }
 
+/** How the integrate step lands a verified commit on main. */
+export type IntegrationStyle = "merge" | "squash";
+
+/** How the integrate step builds and lands a candidate on main. */
+export interface IntegrationSettings {
+  readonly style: IntegrationStyle;
+  /** Commands that must pass on the candidate before it is pushed. */
+  readonly keyCommands: readonly string[];
+}
+
+/** Commands the cleanup step runs after a merge. */
+export interface HookSettings {
+  readonly afterMerge: readonly string[];
+}
+
 /** What a repository may configure for the review harness step. */
 export interface ReviewerSettings {
   readonly use: string;
@@ -66,8 +81,23 @@ export interface DevSettings {
   readonly workerBrief: string;
   readonly gate: GateSettings;
   readonly reviewer: ReviewerSettings;
+  readonly integration: IntegrationSettings;
+  readonly hooks: HookSettings;
   readonly maxAutoRework: number;
 }
+
+/**
+ * The commands cleanup runs when a repository sets none. They remove the task
+ * and gate worktrees, prune a worktree that was removed by hand, and delete the
+ * task's local and remote branch. The step records a failure and keeps going.
+ */
+export const DEFAULT_AFTER_MERGE: readonly string[] = [
+  'git worktree remove --force "$OPERAD_WORKTREE"',
+  'git worktree remove --force "$OPERAD_WORKTREE-gate"',
+  "git worktree prune",
+  'git branch -D "work/$OPERAD_TASK"',
+  'git push "$OPERAD_REMOTE" --delete "work/$OPERAD_TASK"',
+];
 
 /**
  * The text a task's worker gets when the repository ships no brief of its own.
@@ -101,6 +131,13 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
     maxFileDiffBytes: 200_000,
     maxDiffBytes: 1_000_000,
   },
+  integration: {
+    style: "merge",
+    keyCommands: [],
+  },
+  hooks: {
+    afterMerge: DEFAULT_AFTER_MERGE,
+  },
   maxAutoRework: 2,
 };
 
@@ -118,6 +155,8 @@ const KNOWN_FIELDS = new Set([
   "workerBrief",
   "gate",
   "reviewer",
+  "integration",
+  "hooks",
   "maxAutoRework",
 ]);
 
@@ -344,6 +383,49 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
   };
 }
 
+function integrationStyle(value: unknown, field: string): IntegrationStyle {
+  if (value === undefined) return DEFAULT_DEV_SETTINGS.integration.style;
+  if (value !== "merge" && value !== "squash") {
+    throw new DevError(field, 'must be "merge" or "squash"');
+  }
+  return value;
+}
+
+function integrationSettings(value: unknown, field: string): IntegrationSettings {
+  if (!isRecord(value)) {
+    throw new DevError(field, "must be an object");
+  }
+  for (const key of Object.keys(value)) {
+    if (key !== "style" && key !== "keyCommands") {
+      throw new DevError(`${field}.${key}`, "is not an integration setting");
+    }
+  }
+  return {
+    style: integrationStyle(value.style, `${field}.style`),
+    keyCommands:
+      value.keyCommands === undefined
+        ? DEFAULT_DEV_SETTINGS.integration.keyCommands
+        : commandList(value.keyCommands, `${field}.keyCommands`),
+  };
+}
+
+function hookSettings(value: unknown, field: string): HookSettings {
+  if (!isRecord(value)) {
+    throw new DevError(field, "must be an object");
+  }
+  for (const key of Object.keys(value)) {
+    if (key !== "afterMerge") {
+      throw new DevError(`${field}.${key}`, "is not a hook setting");
+    }
+  }
+  return {
+    afterMerge:
+      value.afterMerge === undefined
+        ? DEFAULT_DEV_SETTINGS.hooks.afterMerge
+        : commandList(value.afterMerge, `${field}.afterMerge`),
+  };
+}
+
 /**
  * The root task worktrees live in. Settings written before the step work used
  * `worktrees`; it is read as the same setting so an upgrade needs no edit.
@@ -407,6 +489,14 @@ export function validateDevSettings(value: unknown): DevSettings {
       value.reviewer === undefined
         ? DEFAULT_DEV_SETTINGS.reviewer
         : reviewerSettings(value.reviewer, "reviewer"),
+    integration:
+      value.integration === undefined
+        ? DEFAULT_DEV_SETTINGS.integration
+        : integrationSettings(value.integration, "integration"),
+    hooks:
+      value.hooks === undefined
+        ? DEFAULT_DEV_SETTINGS.hooks
+        : hookSettings(value.hooks, "hooks"),
     maxAutoRework:
       value.maxAutoRework === undefined
         ? DEFAULT_DEV_SETTINGS.maxAutoRework

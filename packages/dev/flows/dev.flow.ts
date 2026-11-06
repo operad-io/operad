@@ -3,7 +3,7 @@ import { defineFlow } from "@operad-io/engine";
 /**
  * The dev flow: give a task a worktree, let a worker change it, gate the
  * commit, and send a failed gate back for another pass. A person decides the
- * merge; the merge itself is a later part of the dev plugin.
+ * merge; the merge lands on main and cleanup removes the worktrees and branches.
  */
 export default defineFlow({
   name: "dev",
@@ -71,9 +71,30 @@ export default defineFlow({
       },
       replay: "safe",
       next: {
-        merge: "end_done",
-        reject: "end_cancelled",
+        merge: "integrate",
+        reject: "worktree",
         interrupted: "end_cancelled",
+      },
+    },
+    {
+      id: "integrate",
+      kind: "plugin",
+      params: { use: "dev/integrate", params: {} },
+      replay: "safe",
+      next: {
+        merged: "cleanup",
+        conflict: "worktree",
+        fail: "worktree",
+        failed: "wait",
+      },
+    },
+    {
+      id: "cleanup",
+      kind: "plugin",
+      params: { use: "dev/cleanup", params: {} },
+      replay: "safe",
+      next: {
+        done: "end_done",
       },
     },
     {
