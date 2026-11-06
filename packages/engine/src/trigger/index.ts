@@ -21,6 +21,11 @@ export {
   readStoredTrigger,
   TriggerStore,
 } from "./store.ts";
-export type { CandidateStatus, StoredTriggerResult, TriggerStoreOptions } from "./store.ts";
+export type {
+  CandidateStatus,
+  StoredTriggerResult,
+  TriggerStoreOptions,
+  UnroutedEvent,
+} from "./store.ts";
 export { Kernel, start } from "./kernel.ts";
 export type { KernelOptions } from "./kernel.ts";
