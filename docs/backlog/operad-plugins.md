@@ -12,7 +12,7 @@
 
 ## 决定（已定）
 
-1. 五种插件：`harness`（谁干活）、`source`（活从哪来）、`stage`（检查，给 verdict）、`channel`（找人去哪找、答案怎么回来）、`action`（对外做事，落地代码的 forge 是其中一类）。核心只认种类，不认名字。
+1. 六种插件：`domain`（一个领域的对象、动作和 flow，如 `dev`）、`harness`（谁干活）、`source`（活从哪来）、`stage`（检查，给 verdict）、`channel`（找人去哪找、答案怎么回来）、`action`（对外做事，落地代码的 forge 是其中一类）。核心只认种类，不认名字。种类名只出现在开发文档里，用户看不到。跑命令和检查的 `shell` 是随 operad 安装的基础插件。
 2. 插件是 TS 模块，放在固定路径：项目级 `.arc/plugins/` → 用户级 `~/.arc/plugins/` → 内置。项目级只在已信任的项目装载（同 ADR 0031 的规矩）。`arc plugin add <git 地址>` 只 clone，不跑安装脚本。
 3. SDK 带版本号（`arcPlugin: 1`），每种插件一个一致性检查 `arc plugin check <路径>`，起一个临时引擎跑该种类的契约。
 4. SDK 文档以 skill 的形式随 arc 安装，给写插件的 agent 读；插件由 agent 替用户写是预期的主路径。

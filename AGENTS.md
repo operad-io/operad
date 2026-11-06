@@ -15,6 +15,26 @@ The direction, the decisions in force and the open questions are in
 change it, and do not contradict a decided point. A change that needs a decided
 point reversed changes that item first, in its own docs-only commit.
 
+## The kernel stays small
+
+`docs/backlog/operad.md` decisions 12 to 15 set the boundary. The kernel has the
+fact log (behind a storage backend interface), flow execution, four basic steps
+(call a plugin step, wait for a person, wait for a time or condition, end),
+plugin loading, and three views. Everything else is a plugin: running commands,
+scheduling, git, workers, review, merging. Do not add a feature to the kernel
+that a plugin could provide.
+
+## User vocabulary
+
+A user of the kernel sees three words: **flow**, **pending** (things waiting for
+a person, each with the actions its plugin defines) and **history** (what each
+step did and why). Every other user-visible word belongs to a plugin (the `dev`
+plugin's plan, task, brief, rework, confirm, merge, reject, cancel, auto). Internal
+names (graph, node, fact, effect, decide, evolve, runner, backend) never appear in
+command names, command output, errors meant for users, or user docs. A new
+user-visible word needs the owner's approval: say so in the final answer instead
+of adding it.
+
 ## Rules
 
 - Runtime is Bun. Run TypeScript directly; there is no build step. Use `bun:test`
