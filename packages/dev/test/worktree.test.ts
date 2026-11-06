@@ -10,6 +10,7 @@ import {
   mergeInProgress,
   storeKey,
   taskData,
+  validateDevSettings,
   type RepositoryData,
 } from "../src/index.ts";
 import {
@@ -186,6 +187,32 @@ describe("dev/worktree", () => {
       JSON.stringify({ remote: 7 }),
     );
     await expect(runWorktree(state, "run-1")).rejects.toThrow(/remote:/);
+  });
+
+  test("a worktreeRoot outside the repository is refused", () => {
+    expect(() =>
+      validateDevSettings({ worktreeRoot: "/tmp/operad-worktrees" }),
+    ).toThrow(/worktreeRoot:/);
+    expect(() =>
+      validateDevSettings({ worktreeRoot: "../../elsewhere" }),
+    ).toThrow(/worktreeRoot:/);
+  });
+
+  test("settings written by an earlier version still load", async () => {
+    const state = await fixture();
+    writeFileSync(
+      join(state.remote.repository, ".operad", "dev.json"),
+      JSON.stringify({
+        name: "repository",
+        worktrees: ".legacy-worktrees/",
+        sandbox: ".radian-sandbox/",
+      }),
+    );
+    const result = await runWorktree(state, "run-1");
+    expect(result.result).toBe("ready");
+    expect(result.data?.path).toBe(
+      join(state.remote.repository, ".legacy-worktrees", state.taskId),
+    );
   });
 
   test("a missing settings file means the documented defaults", async () => {

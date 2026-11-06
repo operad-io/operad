@@ -5,7 +5,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { DevError, isRecord } from "./model.ts";
 
 /** Where a repository keeps its dev settings. */
@@ -63,6 +63,10 @@ const KNOWN_FIELDS = new Set([
   "remote",
   "mainBranch",
   "worktreeRoot",
+  // Written by versions before the step work; `worktrees` is the old name of
+  // `worktreeRoot`, `sandbox` is no longer used at all.
+  "worktrees",
+  "sandbox",
   "worker",
   "workerBrief",
 ]);
@@ -72,6 +76,22 @@ function nonEmptyString(value: unknown, field: string): string {
     throw new DevError(field, "must be a non-empty string");
   }
   return value;
+}
+
+/**
+ * A directory setting must stay inside the repository: an absolute path or one
+ * that climbs out would put worktrees where `dev` does not own them.
+ */
+function repositoryRelativePath(value: unknown, field: string): string {
+  const path = nonEmptyString(value, field);
+  if (isAbsolute(path)) {
+    throw new DevError(field, "must be relative to the repository");
+  }
+  const normalized = normalize(path);
+  if (normalized === ".." || normalized.startsWith(`..${sep}`)) {
+    throw new DevError(field, "must stay inside the repository");
+  }
+  return path;
 }
 
 function positiveSeconds(value: unknown, field: string): number {
@@ -126,6 +146,20 @@ function workerSettings(value: unknown, field: string): WorkerSettings {
   };
 }
 
+/**
+ * The root task worktrees live in. Settings written before the step work used
+ * `worktrees`; it is read as the same setting so an upgrade needs no edit.
+ */
+function worktreeRootOf(value: Record<string, unknown>): string {
+  if (value.worktreeRoot !== undefined) {
+    return repositoryRelativePath(value.worktreeRoot, "worktreeRoot");
+  }
+  if (value.worktrees !== undefined) {
+    return repositoryRelativePath(value.worktrees, "worktrees");
+  }
+  return DEFAULT_DEV_SETTINGS.worktreeRoot;
+}
+
 /** Validates one parsed dev.json value and fills the defaults. */
 export function validateDevSettings(value: unknown): DevSettings {
   if (!isRecord(value)) {
@@ -148,10 +182,7 @@ export function validateDevSettings(value: unknown): DevSettings {
       value.mainBranch === undefined
         ? DEFAULT_DEV_SETTINGS.mainBranch
         : nonEmptyString(value.mainBranch, "mainBranch"),
-    worktreeRoot:
-      value.worktreeRoot === undefined
-        ? DEFAULT_DEV_SETTINGS.worktreeRoot
-        : nonEmptyString(value.worktreeRoot, "worktreeRoot"),
+    worktreeRoot: worktreeRootOf(value),
     worker:
       value.worker === undefined
         ? DEFAULT_DEV_SETTINGS.worker

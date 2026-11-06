@@ -127,7 +127,10 @@ function attemptFor(ctx: StepContext, task: TaskData): AttemptState {
   const replay =
     task.phase === "running" &&
     task.run === ctx.runId &&
-    previous?.run === ctx.runId;
+    previous?.run === ctx.runId &&
+    // A worktree visit that follows a `work` in the same run is a retry, not a
+    // replay: the attempt has already been used and the next one must count.
+    previous.worked !== true;
   if (replay && previous !== undefined) {
     return { attempt: previous, attempts: task.attempts, replay: true };
   }
@@ -170,6 +173,15 @@ function currentBranch(path: string): string | undefined {
 function headOf(path: string): string | undefined {
   const result = git(path, ["rev-parse", "HEAD"]);
   return result.ok && result.out.length > 0 ? result.out : undefined;
+}
+
+/** True when `ancestor` is reachable from `descendant`, so it is not new work. */
+function isAncestor(
+  path: string,
+  ancestor: string,
+  descendant: string,
+): boolean {
+  return git(path, ["merge-base", "--is-ancestor", ancestor, descendant]).ok;
 }
 
 function branchExists(repositoryPath: string, branch: string): boolean {
@@ -510,6 +522,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       branch,
       base,
       result: "failed",
+      worked: true,
     };
     await saveTask(
       ctx,
@@ -546,6 +559,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       branch,
       base,
       result: "failed",
+      worked: true,
     };
     await saveTask(
       ctx,
@@ -605,6 +619,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     sessionId: reading.sessionId,
     cost: reading.cost,
     costMicros: reading.costMicros,
+    worked: true,
   };
 
   const finish = async (
@@ -666,9 +681,16 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     });
   }
 
-  const head = headOf(path) ?? base;
-  if (head === base) {
-    return finish("nothing", { head });
+  const head = headOf(path);
+  if (
+    head === undefined ||
+    base === null ||
+    head === base ||
+    // A reset below the base, or to unrelated history, is not new work: the
+    // branch must still descend from the base before anything is pushed.
+    !isAncestor(path, base, head)
+  ) {
+    return finish("nothing", { head: head ?? base });
   }
 
   const push = git(path, [

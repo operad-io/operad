@@ -76,7 +76,7 @@ The file holds the repository's work settings:
 |---|---|---|
 | `remote` | `origin` | the remote a task branch is fetched from and pushed to |
 | `mainBranch` | `main` | the branch a task starts from and merges on each attempt |
-| `worktreeRoot` | `.operad-worktrees` | where task worktrees live, relative to the repository |
+| `worktreeRoot` | `.operad-worktrees` | where task worktrees live, relative to the repository and inside it |
 | `worker.use` | `harness-radian/agent` | the harness step that works a task |
 | `worker.args` | `[]` | extra arguments for that harness step |
 | `worker.wallTimeSecs`, `worker.stallSecs` | harness defaults | the worker's time limits |
@@ -84,6 +84,10 @@ The file holds the repository's work settings:
 
 The built-in brief says to work only in the worktree, commit whole pieces, run
 the repository's verify command and end with a summary.
+
+A `dev.json` written by an earlier version still loads: `worktrees` is read as
+`worktreeRoot`, and `sandbox` is ignored. A `worktreeRoot` that is absolute or
+climbs out of the repository is refused when the file is read.
 
 ## Views
 

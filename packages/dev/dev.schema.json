@@ -27,10 +27,22 @@
       "default": "main"
     },
     "worktreeRoot": {
-      "description": "The directory task worktrees are kept in, relative to the repository.",
+      "description": "The directory task worktrees are kept in, relative to the repository and inside it.",
       "type": "string",
       "minLength": 1,
       "default": ".operad-worktrees"
+    },
+    "worktrees": {
+      "description": "Deprecated: the old name of worktreeRoot, still read so earlier settings keep working.",
+      "type": "string",
+      "minLength": 1,
+      "deprecated": true
+    },
+    "sandbox": {
+      "description": "Deprecated and ignored; kept so settings written by an earlier version still validate.",
+      "type": "string",
+      "minLength": 1,
+      "deprecated": true
     },
     "worker": {
       "description": "The harness step that works a task and the limits it runs under.",

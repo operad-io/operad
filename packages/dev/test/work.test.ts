@@ -83,6 +83,9 @@ function fakeHarness(record: string) {
           if (mode === "dirty") {
             writeFileSync(join(input.cwd, "dirty.txt"), "not committed\n");
           }
+          if (mode === "reset") {
+            gitOrThrow(input.cwd, ["reset", "--hard", "HEAD~1"]);
+          }
           return {
             result: "done",
             data: {
@@ -246,6 +249,49 @@ describe("dev/work", () => {
     const result = await runWork(state);
     expect(result.result).toBe("nothing");
     expect((await taskDataOf(state)).attempt?.sessionId).toBe("fake-session");
+  });
+
+  test("nothing: a reset below the base is not new work", async () => {
+    const state = await fixture("reset");
+    const path = join(
+      state.remote.repository,
+      ".operad-worktrees",
+      state.taskId,
+    );
+    await commitIn(path, "branch.txt", "branch\n", "branch work");
+    await advanceMain(state.remote, "main.txt", "moved\n", "main moves");
+    const prepared = await state.registry.runStep("dev/worktree", {}, {
+      runId: "retry-run",
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+    expect(prepared.result).toBe("ready");
+    const base = (await taskDataOf(state)).attempt?.base;
+    expect(typeof base).toBe("string");
+
+    const result = await runWork(state, "retry-work");
+    expect(result.result).toBe("nothing");
+    expect(gitOrThrow(path, ["rev-parse", "HEAD"])).not.toBe(base);
+    expect(
+      git(state.remote.origin, [
+        "show-ref",
+        "--verify",
+        `refs/heads/work/${state.taskId}`,
+      ]).ok,
+    ).toBe(false);
+  });
+
+  test("a failed work and a new worktree visit in the same run count a new attempt", async () => {
+    const state = await fixture("fail");
+    const failed = await runWork(state, "retry-run");
+    expect(failed.result).toBe("failed");
+    expect((await taskDataOf(state)).attempts).toBe(1);
+
+    const again = await state.registry.runStep("dev/worktree", {}, {
+      runId: "retry-run",
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+    expect(again.result).toBe("ready");
+    expect((await taskDataOf(state)).attempts).toBe(2);
   });
 
   test("failed: the harness failed", async () => {
