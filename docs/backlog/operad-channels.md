@@ -38,4 +38,4 @@
 
 ## 验收
 
-Telegram 通道作为插件（不改核心）能收 `review.awaiting_human`、`todo.proposed` 和会话的 pending question，能在 Telegram 里回答，回答到达引擎后运行继续；一次 HTTP 事件或一条 cron 变成一次运行，重复事件只算一次，`why` 能看到它来自哪个事件。
+Telegram 通道作为插件（不改核心）能收 `review.awaiting_human`、`todo.proposed` 和会话的 pending question，能在 Telegram 里回答，回答到达引擎后运行继续；一次 HTTP 事件或一条 cron 变成一次运行，重复事件只算一次，`operad history` 能看到它来自哪个事件。
