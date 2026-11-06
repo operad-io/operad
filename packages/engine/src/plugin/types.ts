@@ -535,6 +535,11 @@ export interface PluginShape {
   readonly views?: Readonly<Record<string, ObjectViews>> | undefined;
   /** Default key bindings, keyed by key, valued as `<plugin>:<action>`. */
   readonly keys?: KeyBindings | undefined;
+  /**
+   * Default trigger rules this plugin ships. A user rule with the same source
+   * and type replaces every plugin rule for that pair.
+   */
+  readonly rules?: readonly TriggerRule[] | undefined;
   readonly onTick?: ((ctx: TickContext) => MaybePromise<void>) | undefined;
   /** The JSON Schema of this plugin's `config.json` settings section. */
   readonly settings?: ActionArgsSchema | undefined;
