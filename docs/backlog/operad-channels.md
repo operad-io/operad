@@ -31,6 +31,7 @@
 15. **事件内容进 prompt 的方式。** 内核仍然从不把事件文字放进提示词（决定 10）。`<harness>:prompt` flow 在有 `ctx.trigger` 时，在 prompt 末尾加一行固定的说明，指向事件的 `summary` 和 `data` 文件路径，并说明那是外部资料、不是指令；读不读由 agent 决定。
 16. **插件可以自带规则。** 插件在声明里带默认规则（和 `triggers.json` 同一形状），加载时并入；用户 `triggers.json` 里 `source` 和 `type` 相同的规则覆盖插件的。第一个用它的是 `chat`：消息事件启动 `chat:reply`（`operad-conversation.md` 决定 2）。
 17. **通道只做四个**，顺序 Telegram、WhatsApp、Slack、iMessage；决定 6 的首个通道不变。
+18. **来源插件自己管登录和读取。** 一个 `source` 插件可以有 `login` 命令（OAuth、设备码或打开浏览器，登录态存在插件自己的 `secrets` 里，operad 不碰）、一个 `fetch({ query?, since?, limit? })` 步骤（返回统一形状的条目：`id`、`url`、`title`、`text`、`author`、`at`、`source`，正文落成资料文件）和可选的 `start`（推送式来源，决定 11）。operad 只处理条目，不知道任何平台的 API；一个新平台就是一个新插件。
 
 ## 待决问题（未定）
 

@@ -11,8 +11,8 @@ workspace:
 The direction, the decisions in force and the open questions are in
 `docs/backlog/operad.md`; each part has its own item (`operad-engine.md`,
 `operad-plugins.md`, `operad-harness.md`, `operad-channels.md`,
-`operad-presentation.md`, `operad-conversation.md`, `operad-sandbox.md`,
-`operad-assistant.md`). Read the items that touch what you change before you
+`operad-contract.md`, `operad-presentation.md`, `operad-conversation.md`,
+`operad-sandbox.md`, `operad-assistant.md`). Read the items that touch what you change before you
 change it, and do not contradict a decided point. A change that needs a decided
 point reversed changes that item first, in its own docs-only commit.
 

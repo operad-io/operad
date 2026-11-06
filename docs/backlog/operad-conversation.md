@@ -16,7 +16,7 @@ OpenClaw 是聊天优先，operad 到现在是流程优先。第一个要满足�
 3. **`chat:reply` 只有一个步骤加一个回环**：把未回复的消息拼成 prompt，用 harness 步骤续接对话的 harness 会话（`resumeSession`），把最后一条回复记成事实，更新会话引用；结束前看一眼有没有回复期间新到的消息，有就再走一遍（`maxVisits` 封顶）。对话的上下文长度是 harness 的事（radian 自动压缩，ADR 0018）；内核不存任何提示词。
 4. **发消息就是一个带 `note` 的动作**：`chat:send <对话> --note <正文>`。iOS 的输入框、命令行、Telegram 通道都走它，客户端 API 不加新调用。附件以后再加。
 5. **iOS 看对话走已有的显示接口**：对话列表是 `list conversation`；对话页是 `transcript` 段（`live`，按 `events` 刷新，目前后台最慢半秒）加输入框。第一版按消息刷新，不做逐 token 流。
-6. **中途问人**：助理在对话里问问题或要权限（ACP `request_permission`、radian 的 `ask_user`）时，进程留着，问题成为待处理项（对象是这个对话），iOS 和 Telegram 都能答；超过 `askTimeoutSecs`（默认 10 分钟）没人答，按访问档的默认回答（拒绝一次），这一轮以"未回答"结束，问题留在对话里。这是对"等人不占进程"的有意例外：对话是交互的，几分钟的进程是正常的；跨天的等待仍走 flow 的等人步骤。
+6. **中途问人**：助理在对话里问问题或要权限（ACP `request_permission`、radian 的 `ask_user`）时走 `ctx.ask`，问题成为待处理项（对象是这个对话），iOS 和 Telegram 都能答；宽限期（可设，默认 10 分钟）内答了立刻继续；超时按 `operad-contract.md` 决定 6：步骤以 `waiting` 结束、进程退出、同一项留在待处理里，答案来了用会话续接回到同一步。只有不能续接的 harness 才在超时时拒绝一次。
 7. **一个对话可以绑定多个通道**：Telegram 的一个 chat 绑到一个对话后，那里的消息进同一个对话，回复送回来源通道，iOS 全都看得到。默认每个（通道，chat）一个对话；iOS 新建的对话不绑通道。
 8. **对话的记忆是知识库，不是引擎**：助理跨对话记得的东西写在 `operad-assistant.md` 定的 Markdown 知识库里，由 skill 规定怎么读写；引擎只存对话记录。radian 自己的 memory（ADR 0021）不参与。
 9. **每个对话有访问档**：工作目录、禁入目录、危险命令，见 `operad-sandbox.md`；危险命令触发的询问走决定 6。

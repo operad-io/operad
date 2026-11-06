@@ -12,13 +12,13 @@
 ## 决定（已定）
 
 1. **三个场景，按这个顺序**：长对话（`operad-conversation.md`）；个人知识库（second brain）；每日资料搜集（digest）。后两个是 flow 加 skill，不是新插件，取数据的步骤除外。
-2. **知识库是一个 Markdown 目录**（Obsidian 兼容：frontmatter、`[[链接]]`、一文件一主题），位置由用户定（默认 `~/brain`），用 git 做版本（每天一次自动提交的步骤），回滚免费。没有向量索引：检索靠 agent 用 grep 读原文，文件数到几千再谈索引。它同时是助理的跨对话记忆（`operad-conversation.md` 决定 8）。
+2. **知识库是一个插件**：它处理信息、归档、找回；存储是可换的后台，用户现有的 Obsidian 库是其中一个（不要求用户改目录结构），Markdown 目录加 git 是另一个。它最关键的两件事是怎么组织、怎么检索；助理的记忆是它里面的一个保留命名空间。这个插件和记忆的管理以后单独设计，合约上它需要的是外部对象、`settings`、`secrets`（`operad-contract.md` 决定 3、10、11）。
 3. **知识库是三个 flow 加一个 skill**：
    - `brain:capture`：来自 iOS、Telegram 或命令行的一条"记下"事件（文字、链接、转发），agent 按 skill 归档：选目录、写 frontmatter、补 `[[链接]]`、链接的页面抓正文存成附件；写完回一行"存到哪了"。
    - `brain:review`：每天一次 cron，整理 `inbox/`，合并重复，提出三条值得回看的，送一张卡；卡上的动作只有"看过了"和"打开"。
    - 对话里读写：`brain` skill 随 `chat` 的默认访问档一起给助理，告诉它知识库在哪、怎么写、什么不能删（删除走 ask）。
-4. **每日资料搜集是按主题配置的 cron flow** `digest:run`：配置 JSON `{ topic, schedule, sources: [...], deliver: [channel, …] }`，`sources` 的每一项是一种取数步骤：`hn`（免费 API）、`rss`（任意 feed）、`reddit`（要注册 OAuth 应用，每个 client 100 次/分，匿名 `.json` 已经关了）、`x`（只剩按量付费，每读一条 $0.005，默认不开，用不用按费用定）、`web`（给定查询词的搜索）。步骤顺序：取数（纯代码，带作用域密钥，不经过 agent）→ agent 按 skill 去重、排序、写摘要 → 写进知识库 `digests/<日期>-<主题>.md` → 送一张卡（前 N 条，各带链接）。卡上的反应（有用、没用）记成事实，下一天的 prompt 里把最近的反应当资料带上；没有模型替用户改规则。
-5. **取数步骤不让 agent 碰密钥，也不让来源内容进指令**：来源内容写成文件给 agent 读（`operad-channels.md` 决定 10、15），密钥只在取数步骤的 HTTP 调用里出现（`operad-sandbox.md` 决定 6）。
+4. **每日资料搜集是按主题配置的 cron flow** `digest:run`：配置 JSON `{ topic, schedule, sources: [...], deliver: [channel, …] }`，`sources` 的每一项指向一个来源插件（`operad-channels.md` 决定 18）：怎么登录、怎么读都归插件，operad 只拿到统一形状的条目。候选插件：`hn`（免费 API）、`rss`（任意 feed）、`reddit`（要注册 OAuth 应用，每个 client 100 次/分，匿名 `.json` 已经关了）、`x`（只剩按量付费，每读一条 $0.005，默认不开，用不用按费用定）、`web`（给定查询词的搜索）。步骤顺序：来源插件的 `fetch` 步骤取条目 → agent 按 skill 去重、排序、写摘要 → 交给知识库插件归档 → 送一张卡（前 N 条，各带链接）。卡上的反应（有用、没用）记成事实，下一天的 prompt 里把最近的反应当资料带上；没有模型替用户改规则。
+5. **来源插件不让 agent 碰密钥，也不让来源内容进指令**：条目作为资料给 agent 读（`operad-contract.md` 决定 7），登录态只在插件自己的 `secrets` 里（决定 11）。
 6. **通道只做四个**，顺序按 `operad-channels.md` 决定 17：Telegram、WhatsApp、Slack、iMessage。这三个场景的卡和消息走 Telegram 和 iOS。
 7. **技能格式**：助理和这些 flow 的 skill 用 Agent Skills 的 `SKILL.md` 格式，和 pi、Claude Code 的技能互通，只读文本、不跑技能里的代码；不做技能市场（`operad-plugins.md` 决定 8）。
 8. **不做**：语音、Canvas、摄像头和屏幕一类设备动作、暴露在公网的网关、影子 judge 之外任何"模型替人决定"。
