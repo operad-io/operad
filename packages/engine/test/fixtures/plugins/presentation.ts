@@ -4,6 +4,18 @@ import type { ObjectRow } from "../../../src/index.ts";
 let logReads = 0;
 const waiting = new Promise<never>(() => undefined);
 
+/**
+ * The clock a test moves by hand. The slow row advances it instead of waiting
+ * on wall time, so the kernel's row limit is exercised deterministically.
+ */
+export const testClock = {
+  current: 0,
+  now: (): number => testClock.current,
+  advance(ms: number): void {
+    testClock.current += ms;
+  },
+};
+
 const INFO = [
   "# Demo item",
   "",
@@ -49,10 +61,7 @@ export default definePlugin({
           }) as unknown as ObjectRow;
         }
         if (mode === "slow") {
-          const end = Date.now() + 80;
-          while (Date.now() < end) {
-            // A deliberately slow row.
-          }
+          testClock.advance(80);
         }
         const note = object.data.note;
         return {

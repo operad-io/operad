@@ -384,4 +384,49 @@ describe("operad presentation commands", () => {
     expect(waits).toContain("new");
     assertUserWords(output.text());
   });
+
+  test("show styles Markdown for a terminal and stays plain otherwise", async () => {
+    const { home } = await makeHome();
+    seed(home, { title: "One", state: "new" }, "one");
+
+    const plain = capture();
+    expect(
+      await main(["show", "item:one", "--section", "info"], {
+        home,
+        io: plain.io,
+      }),
+    ).toBe(0);
+    expect(plain.text()).not.toContain("\x1b[");
+    expect(plain.text()).toContain("DEMO ITEM");
+
+    const colour = capture();
+    expect(
+      await main(["show", "item:one", "--section", "info"], {
+        home,
+        io: colour.io,
+        isTTY: true,
+      }),
+    ).toBe(0);
+    const styled = colour.text();
+    expect(styled).toContain("\x1b[1m");
+    expect(styled).toContain("\x1b[4m");
+    expect(styled).toContain("\x1b[32m");
+    expect(styled).toContain("\x1b[31m");
+    expect(styled).toContain("\x1b[2m");
+    expect(styled).toContain("DEMO ITEM");
+    expect(styled).not.toContain("```");
+    expect(styled.replace(/\x1b\[[0-9;]*m/g, "")).toBe(plain.text());
+    assertUserWords(styled);
+
+    const raw = capture();
+    expect(
+      await main(["show", "item:one", "--section", "info", "--raw"], {
+        home,
+        io: raw.io,
+        isTTY: true,
+      }),
+    ).toBe(0);
+    expect(raw.text()).not.toContain("\x1b[");
+    expect(raw.text()).toContain("```diff");
+  });
 });

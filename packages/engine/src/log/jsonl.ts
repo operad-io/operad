@@ -36,6 +36,7 @@ import {
 import { withFileLock } from "./file-lock.ts";
 import { assertJsonValue } from "./json-value.ts";
 import { SCHEMA_VERSION } from "./schema.ts";
+import { watchDirectory } from "../watch.ts";
 import type {
   AppendResult,
   Fact,
@@ -352,6 +353,8 @@ class JsonlLogBackend implements LogBackend {
   readonly #inputIds = new Set<string>();
   #inputBytes = 0;
   #closed = false;
+  #stopWatch: (() => void) | undefined;
+  #snapshot: Map<string, { readonly size: number; readonly ended: boolean }> | undefined;
   readonly #listeners = new Set<(change: LogChange) => void>();
 
   constructor(directory: string, clock: () => number) {
@@ -499,6 +502,9 @@ class JsonlLogBackend implements LogBackend {
 
   async close(): Promise<void> {
     this.#closed = true;
+    this.#stopWatch?.();
+    this.#stopWatch = undefined;
+    this.#snapshot = undefined;
     this.#inputIds.clear();
     this.#listeners.clear();
   }
@@ -506,13 +512,71 @@ class JsonlLogBackend implements LogBackend {
   /** Tells a listener in this process when a run changes. */
   subscribe(listener: (change: LogChange) => void): () => void {
     this.#listeners.add(listener);
+    if (this.#stopWatch === undefined) {
+      this.#snapshot = this.#takeRunSnapshot();
+      this.#stopWatch = watchDirectory(this.#runsDirectory, () => {
+        this.#notifyExternal();
+      });
+    }
     return () => {
       this.#listeners.delete(listener);
+      if (this.#listeners.size === 0) {
+        this.#stopWatch?.();
+        this.#stopWatch = undefined;
+        this.#snapshot = undefined;
+      }
     };
   }
 
   #notify(change: LogChange): void {
     for (const listener of this.#listeners) listener(change);
+  }
+
+  /**
+   * Reports files another process changed. The directory is flat, so one scan
+   * after any event finds a new run, an appended batch and an end marker,
+   * whatever name the platform reports for the change.
+   */
+  #notifyExternal(): void {
+    if (this.#closed) return;
+    let next: Map<string, { readonly size: number; readonly ended: boolean }>;
+    try {
+      next = this.#takeRunSnapshot();
+    } catch {
+      return;
+    }
+    const previous = this.#snapshot;
+    this.#snapshot = next;
+    if (previous === undefined) return;
+    for (const [runId, run] of next) {
+      const before = previous.get(runId);
+      if (before !== undefined && before.size === run.size && before.ended === run.ended) {
+        continue;
+      }
+      try {
+        const info = this.#runInfoUnlocked(runId);
+        this.#notify({ runId, object: info.object });
+      } catch {
+        // Still being written; the next event or a read picks it up.
+      }
+    }
+  }
+
+  #takeRunSnapshot(): Map<string, { readonly size: number; readonly ended: boolean }> {
+    const snapshot = new Map<string, { readonly size: number; readonly ended: boolean }>();
+    for (const name of readdirSync(this.#runsDirectory)) {
+      if (!name.endsWith(".jsonl")) continue;
+      const runId = name.slice(0, -6);
+      try {
+        snapshot.set(runId, {
+          size: statSync(join(this.#runsDirectory, name)).size,
+          ended: existsSync(this.#endPath(runId)),
+        });
+      } catch {
+        // Removed between the directory read and the stat.
+      }
+    }
+    return snapshot;
   }
 
   async *#read(runId: string): AsyncGenerator<Fact> {

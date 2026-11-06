@@ -31,6 +31,7 @@ import {
 } from "./facts.ts";
 import { assertJsonValue } from "./json-value.ts";
 import { SCHEMA_VERSION } from "./schema.ts";
+import { watchDirectory } from "../watch.ts";
 import type {
   AppendResult,
   Fact,
@@ -101,6 +102,13 @@ interface FactRow {
   readonly payload: string;
   readonly cause: string;
   readonly time: number;
+}
+
+/** One run as a watcher last saw it, to tell a real change from a read. */
+interface RunSnapshot {
+  readonly object: string;
+  readonly lastSeq: number;
+  readonly ended: boolean;
 }
 
 interface VersionRow {
@@ -219,12 +227,16 @@ function ensureSchema(database: Database, path: string): void {
 class SqliteLogBackend implements LogBackend {
   readonly #database: Database;
   readonly #clock: () => number;
+  readonly #path: string;
   readonly #listeners = new Set<(change: LogChange) => void>();
+  #stopWatch: (() => void) | undefined;
+  #snapshot: Map<string, RunSnapshot> | undefined;
   #closed = false;
 
-  constructor(database: Database, clock: () => number) {
+  constructor(database: Database, clock: () => number, path: string) {
     this.#database = database;
     this.#clock = clock;
+    this.#path = path;
   }
 
   async startRun(flow: string, object: string): Promise<RunInfo> {
@@ -375,6 +387,8 @@ class SqliteLogBackend implements LogBackend {
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
+    this.#stopWatch?.();
+    this.#stopWatch = undefined;
     this.#listeners.clear();
     this.#database.close();
   }
@@ -382,13 +396,69 @@ class SqliteLogBackend implements LogBackend {
   /** Tells a listener in this process when a run changes. */
   subscribe(listener: (change: LogChange) => void): () => void {
     this.#listeners.add(listener);
+    if (this.#stopWatch === undefined) {
+      this.#snapshot = this.#takeSnapshot();
+      this.#stopWatch = watchDirectory(dirname(this.#path), () => {
+        this.#notifyExternal();
+      });
+    }
     return () => {
       this.#listeners.delete(listener);
+      if (this.#listeners.size === 0) {
+        this.#stopWatch?.();
+        this.#stopWatch = undefined;
+        this.#snapshot = undefined;
+      }
     };
   }
 
   #notify(change: LogChange): void {
     for (const listener of this.#listeners) listener(change);
+  }
+
+  /** Reports runs another connection changed since the last event. */
+  #notifyExternal(): void {
+    if (this.#closed) return;
+    let next: Map<string, RunSnapshot>;
+    try {
+      next = this.#takeSnapshot();
+    } catch {
+      return;
+    }
+    const previous = this.#snapshot;
+    this.#snapshot = next;
+    if (previous === undefined) return;
+    for (const [runId, run] of next) {
+      const before = previous.get(runId);
+      if (
+        before !== undefined &&
+        before.object === run.object &&
+        before.lastSeq === run.lastSeq &&
+        before.ended === run.ended
+      ) {
+        continue;
+      }
+      this.#notify({ runId, object: run.object });
+    }
+  }
+
+  #takeSnapshot(): Map<string, RunSnapshot> {
+    const rows = this.#database
+      .query<RunRow, []>(
+        "SELECT r.run_id, r.flow, r.object, r.started_at, r.ended_at, " +
+          "COALESCE((SELECT MAX(seq) FROM facts WHERE run_id = r.run_id), 0) AS last_seq " +
+          "FROM runs r",
+      )
+      .all();
+    const snapshot = new Map<string, RunSnapshot>();
+    for (const row of rows) {
+      snapshot.set(row.run_id, {
+        object: row.object,
+        lastSeq: row.last_seq,
+        ended: row.ended_at !== null,
+      });
+    }
+    return snapshot;
   }
 
   async *#read(runId: string): AsyncGenerator<Fact> {
@@ -478,7 +548,7 @@ export function openSqliteLogBackend(
     throw openFailure(path, error);
   }
 
-  return new SqliteLogBackend(database, options.clock ?? Date.now);
+  return new SqliteLogBackend(database, options.clock ?? Date.now, path);
 }
 
 export const sqliteBackend: LogBackendFactory = {

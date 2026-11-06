@@ -385,7 +385,7 @@ async function commandShow(
     cursorFlag.value,
     { full: full.present },
   );
-  io.write(`\n${renderMarkdown(content.markdown)}`);
+  io.write(`\n${renderMarkdown(content.markdown, { colour: tty })}`);
   if (content.next !== undefined) {
     io.write(
       `next: operad show ${id} --section ${requested} --cursor ${content.next}\n`,
@@ -848,6 +848,7 @@ export async function main(
       try {
         await commandRunInternal(context, args.slice(1));
       } finally {
+        context.views.close();
         await context.log.close();
       }
       return 0;
@@ -859,6 +860,7 @@ export async function main(
       try {
         await commandServe(context, io, args.slice(1));
       } finally {
+        context.views.close();
         await context.log.close();
       }
       return 0;
@@ -915,6 +917,7 @@ export async function main(
         commandFlows(context, io, present);
         return 0;
       } finally {
+        context.views.close();
         await context.log.close();
       }
     }
@@ -924,6 +927,7 @@ export async function main(
       if (await commandAction(context, io, args, tty)) return 0;
       if (await commandPlugin(context, io, args)) return 0;
     } finally {
+      context.views.close();
       await context.log.close();
     }
     throw new UsageError(`unknown command "${command ?? ""}"`);

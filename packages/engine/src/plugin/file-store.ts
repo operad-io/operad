@@ -2,6 +2,7 @@
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { watchDirectory } from "../watch.ts";
 import type {
   FactInput,
   ObjectData,
@@ -66,6 +67,8 @@ export class FilePluginStore implements PluginStore {
   private readonly listeners = new Set<(object: ObjectRef) => void>();
   /** Bytes of the facts file already read; a torn final line stays unread. */
   private offset = 0;
+  /** Stops the directory watcher that reports another writer's facts. */
+  private stopWatch: (() => void) | undefined;
 
   constructor(options: FilePluginStoreOptions) {
     this.root = options.root;
@@ -138,8 +141,18 @@ export class FilePluginStore implements PluginStore {
   /** Tells a listener when an object gains a fact, including another writer's. */
   subscribe(listener: (object: ObjectRef) => void): () => void {
     this.listeners.add(listener);
+    if (this.stopWatch === undefined) {
+      this.stopWatch = watchDirectory(this.root, (filename) => {
+        if (filename !== null && filename !== "facts.jsonl") return;
+        this.refresh();
+      });
+    }
     return () => {
       this.listeners.delete(listener);
+      if (this.listeners.size === 0) {
+        this.stopWatch?.();
+        this.stopWatch = undefined;
+      }
     };
   }
 

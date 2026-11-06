@@ -1,8 +1,30 @@
 /**
  * A small terminal renderer for the one content type the kernel has: Markdown
- * with GFM tables and fenced code. It draws no plugin colours; headings,
- * emphasis and links become plain readable text.
+ * with GFM tables and fenced code. With `colour` it styles headings, emphasis,
+ * links, code and tables for a terminal; without it the output is plain text.
+ * It draws no plugin colours, and it never decides layout: headings become
+ * bold, a diff gets red and green lines, every other fence stays code.
  */
+
+const ANSI = {
+  reset: "\x1b[0m",
+  bold: "\x1b[1m",
+  dim: "\x1b[2m",
+  italic: "\x1b[3m",
+  underline: "\x1b[4m",
+  red: "\x1b[31m",
+  green: "\x1b[32m",
+  cyan: "\x1b[36m",
+} as const;
+
+export interface RenderOptions {
+  /** Add ANSI styling, for a terminal; off by default. */
+  readonly colour?: boolean | undefined;
+}
+
+function styled(text: string, code: string): string {
+  return `${code}${text}${ANSI.reset}`;
+}
 
 function stripInline(text: string): string {
   return text
@@ -14,6 +36,56 @@ function stripInline(text: string): string {
     .replace(/(^|[^*])\*([^*]+)\*/g, "$1$2")
     .replace(/(^|[^_])_([^_]+)_/g, "$1$2")
     .replace(/~~([^~]+)~~/g, "$1");
+}
+
+/** Styles inline text without changing what a terminal shows. */
+function styledInline(text: string): string {
+  const parts = text.split(/(`[^`]+`)/g);
+  return parts
+    .map((part) => {
+      if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
+        return styled(part.slice(1, -1), ANSI.cyan);
+      }
+      return styledPlainInline(part);
+    })
+    .join("");
+}
+
+function styledPlainInline(text: string): string {
+  return text
+    .replace(
+      /!\[([^\]]*)\]\([^)]*\)/g,
+      (_match, alt: string) => styled(alt, ANSI.dim),
+    )
+    .replace(
+      /\[([^\]]+)\]\(([^)]+)\)/g,
+      (_match, label: string, url: string) =>
+        `${styled(label, `${ANSI.underline}${ANSI.cyan}`)} ${styled(`(${url})`, ANSI.dim)}`,
+    )
+    .replace(
+      /\*\*([^*]+)\*\*/g,
+      (_match, body: string) => styled(body, ANSI.bold),
+    )
+    .replace(
+      /__([^_]+)__/g,
+      (_match, body: string) => styled(body, ANSI.bold),
+    )
+    .replace(
+      /(^|[^*])\*([^*]+)\*/g,
+      (_match, lead: string, body: string) => `${lead}${styled(body, ANSI.italic)}`,
+    )
+    .replace(
+      /(^|[^_])_([^_]+)_/g,
+      (_match, lead: string, body: string) => `${lead}${styled(body, ANSI.italic)}`,
+    )
+    .replace(
+      /~~([^~]+)~~/g,
+      (_match, body: string) => styled(body, `\x1b[9m`),
+    );
+}
+
+function renderInline(text: string, colour: boolean): string {
+  return colour ? styledInline(text) : stripInline(text);
 }
 
 function visibleLength(text: string): number {
@@ -40,7 +112,7 @@ function isTableSeparator(line: string): boolean {
   return /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line);
 }
 
-function renderTable(rows: readonly string[]): string[] {
+function renderTable(rows: readonly string[], colour: boolean): string[] {
   const cells = rows.map(splitCells);
   const width = Math.max(1, ...cells.map((row) => row.length));
   const widths: number[] = [];
@@ -56,8 +128,9 @@ function renderTable(rows: readonly string[]): string[] {
   const draw = (row: readonly string[], separator: string): string => {
     const parts: string[] = [];
     for (let index = 0; index < width; index += 1) {
-      const text = stripInline(row[index] ?? "");
-      const length = visibleLength(text);
+      const cell = row[index] ?? "";
+      const length = visibleLength(cell);
+      const text = renderInline(cell, colour);
       parts.push(`${text}${" ".repeat(Math.max(0, (widths[index] ?? 1) - length))}`);
     }
     return `${separator} ${parts.join(` ${separator} `)} ${separator}`.replace(
@@ -69,9 +142,8 @@ function renderTable(rows: readonly string[]): string[] {
   const lines: string[] = [];
   const header = cells[0] ?? [];
   lines.push(draw(header, "|"));
-  lines.push(
-    `|${widths.map((size) => "-".repeat(size + 2)).join("|")}|`,
-  );
+  const rule = `|${widths.map((size) => "-".repeat(size + 2)).join("|")}|`;
+  lines.push(colour ? styled(rule, ANSI.dim) : rule);
   for (const row of cells.slice(1)) {
     if (isTableSeparator(row.join("|"))) continue;
     lines.push(draw(row, "|"));
@@ -79,8 +151,43 @@ function renderTable(rows: readonly string[]): string[] {
   return lines;
 }
 
-/** Renders one Markdown document as plain terminal text. */
-export function renderMarkdown(markdown: string): string {
+function renderCode(
+  language: string,
+  code: readonly string[],
+  colour: boolean,
+): string[] {
+  const lines: string[] = [];
+  if (language.length > 0) {
+    lines.push(colour ? styled(`  ${language}`, ANSI.dim) : `  ${language}`);
+  }
+  const diff = language === "diff";
+  for (const codeLine of code) {
+    const body = `  ${codeLine}`;
+    if (!colour || codeLine.length === 0) {
+      lines.push(body);
+      continue;
+    }
+    if (diff && (codeLine.startsWith("+++") || codeLine.startsWith("---"))) {
+      lines.push(styled(body, ANSI.bold));
+    } else if (diff && codeLine.startsWith("+")) {
+      lines.push(styled(body, ANSI.green));
+    } else if (diff && codeLine.startsWith("-")) {
+      lines.push(styled(body, ANSI.red));
+    } else if (diff && codeLine.startsWith("@@")) {
+      lines.push(styled(body, ANSI.cyan));
+    } else {
+      lines.push(styled(body, ANSI.dim));
+    }
+  }
+  return lines;
+}
+
+/** Renders one Markdown document as terminal text. */
+export function renderMarkdown(
+  markdown: string,
+  options: RenderOptions = {},
+): string {
+  const colour = options.colour === true;
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const output: string[] = [];
 
@@ -95,12 +202,7 @@ export function renderMarkdown(markdown: string): string {
         code.push(lines[index] ?? "");
         index += 1;
       }
-      if (language.length > 0) {
-        output.push(`  ${language}`);
-      }
-      for (const codeLine of code) {
-        output.push(`  ${codeLine}`);
-      }
+      output.push(...renderCode(language, code, colour));
       continue;
     }
 
@@ -113,44 +215,49 @@ export function renderMarkdown(markdown: string): string {
         index += 1;
       }
       index -= 1;
-      output.push(...renderTable(table));
+      output.push(...renderTable(table, colour));
       continue;
     }
 
     const heading = /^(#{1,6})\s+(.*)$/.exec(line);
     if (heading !== null) {
       const level = heading[1]?.length ?? 1;
-      const title = stripInline(heading[2] ?? "");
-      output.push(level === 1 ? title.toUpperCase() : title);
+      const raw = heading[2] ?? "";
+      const title = renderInline(level === 1 ? raw.toUpperCase() : raw, colour);
+      output.push(colour ? styled(title, ANSI.bold) : title);
       continue;
     }
 
     if (/^\s*([-*_])\s*\1\s*\1[\s\S]*$/.test(line)) {
-      output.push("─".repeat(40));
+      const rule = "─".repeat(40);
+      output.push(colour ? styled(rule, ANSI.dim) : rule);
       continue;
     }
 
     const bullet = /^(\s*)[-*+]\s+(.*)$/.exec(line);
     if (bullet !== null) {
-      output.push(`${bullet[1] ?? ""}• ${stripInline(bullet[2] ?? "")}`);
+      const marker = colour ? styled("•", ANSI.cyan) : "•";
+      output.push(`${bullet[1] ?? ""}${marker} ${renderInline(bullet[2] ?? "", colour)}`);
       continue;
     }
 
     const numbered = /^(\s*)(\d+)[.)]\s+(.*)$/.exec(line);
     if (numbered !== null) {
+      const marker = `${numbered[2] ?? "1"}.`;
       output.push(
-        `${numbered[1] ?? ""}${numbered[2] ?? "1"}. ${stripInline(numbered[3] ?? "")}`,
+        `${numbered[1] ?? ""}${colour ? styled(marker, ANSI.cyan) : marker} ${renderInline(numbered[3] ?? "", colour)}`,
       );
       continue;
     }
 
     const quote = /^\s*>\s?(.*)$/.exec(line);
     if (quote !== null) {
-      output.push(`  │ ${stripInline(quote[1] ?? "")}`);
+      const marker = colour ? styled("│", ANSI.dim) : "│";
+      output.push(`  ${marker} ${renderInline(quote[1] ?? "", colour)}`);
       continue;
     }
 
-    output.push(stripInline(line));
+    output.push(renderInline(line, colour));
   }
 
   return `${output.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()}\n`;

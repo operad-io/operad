@@ -171,7 +171,14 @@ function splitId(id: string): { readonly type: string; readonly id: string } | u
 function capBytes(markdown: string, limit: number): string {
   const bytes = Buffer.from(markdown, "utf8");
   if (bytes.length <= limit) return markdown;
-  return bytes.subarray(0, limit).toString("utf8");
+  let end = limit;
+  // A UTF-8 continuation byte at `end` means the character that started before
+  // it does not fit; back off to the boundary so decoding adds no U+FFFD and
+  // the result never grows past the limit.
+  while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) {
+    end -= 1;
+  }
+  return bytes.subarray(0, end).toString("utf8");
 }
 
 function truncationNote(id: string, sectionId: string): string {

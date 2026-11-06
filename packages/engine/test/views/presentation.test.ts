@@ -4,13 +4,15 @@ import {
   createViews,
   defineFlow,
   definePlugin,
+  FilePluginStore,
   MemoryPluginStore,
   openLog,
+  openSqliteLogBackend,
   PluginRegistry,
   ViewError,
   type LogBackend,
 } from "../../src/index.ts";
-import demo from "../fixtures/plugins/presentation.ts";
+import demo, { testClock } from "../fixtures/plugins/presentation.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
 
 afterAll(cleanupTempRoots);
@@ -48,6 +50,26 @@ async function waitFact(
     { kind, payload: payload as never, cause: "test" },
   ]);
   return info.runId;
+}
+
+/** Fails an event read instead of letting a broken stream hang the test. */
+function within<T>(promise: Promise<T>, ms = 3_000): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("timed out waiting for an event")),
+      ms,
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 describe("presentation views", () => {
@@ -188,10 +210,12 @@ describe("presentation views", () => {
     const { store, registry, log, logs } = await fixture();
     store.put("item", "async", { title: "Async", mode: "async" }, "seed");
     store.put("item", "slow", { title: "Slow", mode: "slow" }, "seed");
+    testClock.current = 0;
     const views = createViews({
       registry,
       store,
       log,
+      clock: testClock.now,
       onLog: (message) => logs.push(message),
     });
     const rows = await views.list("item");
@@ -378,5 +402,105 @@ describe("presentation views", () => {
     });
     expect(registry.names()).toEqual(["demo"]);
     await log.close();
+  });
+
+  test("events reach a reader when another store writes the object", async () => {
+    const root = await tempRoot();
+    const directory = join(root, "plugins");
+    const reader = new FilePluginStore({ root: directory });
+    const writer = new FilePluginStore({ root: directory });
+    const registry = new PluginRegistry([demo], { store: reader });
+    const views = createViews({ registry, store: reader });
+    const stream = views.events()[Symbol.asyncIterator]();
+    try {
+      const pending = stream.next();
+      writer.put("item", "remote", { title: "Remote" }, "seed");
+      const event = await within(pending);
+      expect(event.done).toBe(false);
+      if (!event.done) expect(event.value).toEqual({ id: "remote" });
+    } finally {
+      await stream.return?.();
+      views.close();
+    }
+  });
+
+  test("events reach a reader when another jsonl log appends", async () => {
+    const root = await tempRoot();
+    const directory = join(root, "store");
+    const reader = openLog({ backend: "jsonl", path: directory });
+    const writer = openLog({ backend: "jsonl", path: directory });
+    const store = new MemoryPluginStore({ root: join(root, "plugins") });
+    store.put("item", "one", { title: "One" }, "seed");
+    const registry = new PluginRegistry([demo], { store });
+    const views = createViews({ registry, store, log: reader });
+    const stream = views.events()[Symbol.asyncIterator]();
+    try {
+      const pending = stream.next();
+      const info = await writer.startRun("demo-flow", "item:one");
+      await writer.append(info.runId, 0, [
+        { kind: "run_started", payload: { flow: "demo-flow" }, cause: "test" },
+      ]);
+      const event = await within(pending);
+      expect(event.done).toBe(false);
+      if (!event.done) expect(event.value).toEqual({ id: "one" });
+    } finally {
+      await stream.return?.();
+      views.close();
+      await reader.close();
+      await writer.close();
+    }
+  });
+
+  test("events reach a reader when another sqlite log appends", async () => {
+    const root = await tempRoot();
+    const path = join(root, "store", "log.sqlite");
+    const reader = openSqliteLogBackend(path);
+    const writer = openSqliteLogBackend(path);
+    const store = new MemoryPluginStore({ root: join(root, "plugins") });
+    store.put("item", "one", { title: "One" }, "seed");
+    const registry = new PluginRegistry([demo], { store });
+    const views = createViews({ registry, store, log: reader });
+    const stream = views.events()[Symbol.asyncIterator]();
+    try {
+      const pending = stream.next();
+      const info = await writer.startRun("demo-flow", "item:one");
+      await writer.append(info.runId, 0, [
+        { kind: "run_started", payload: { flow: "demo-flow" }, cause: "test" },
+      ]);
+      const event = await within(pending);
+      expect(event.done).toBe(false);
+      if (!event.done) expect(event.value).toEqual({ id: "one" });
+    } finally {
+      await stream.return?.();
+      views.close();
+      await reader.close();
+      await writer.close();
+    }
+  });
+
+  test("a truncated section keeps every multibyte character whole", async () => {
+    const root = await tempRoot();
+    const store = new MemoryPluginStore({ root: join(root, "plugins") });
+    const body = "€".repeat(2_000);
+    const plugin = definePlugin({
+      name: "multibyte",
+      kind: "domain",
+      version: "0.0.1",
+      objects: [{ name: "blob" }],
+      views: {
+        blob: {
+          row: (object) => ({ id: object.id, title: "", state: "new" }),
+          sections: () => [{ id: "body", title: "Body" }],
+          load: () => ({ markdown: body }),
+        },
+      },
+    });
+    store.put("blob", "1", {}, "seed");
+    const registry = new PluginRegistry([plugin], { store });
+    const views = createViews({ registry, store, sectionCapBytes: 1_000 });
+    const capped = await views.section("blob:1", "body");
+    expect(capped.markdown).not.toContain("\uFFFD");
+    expect(Buffer.byteLength(capped.markdown, "utf8")).toBeLessThanOrEqual(1_000);
+    views.close();
   });
 });
