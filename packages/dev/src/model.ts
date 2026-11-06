@@ -1,0 +1,487 @@
+/** The objects the dev plugin owns, and the pure rules that change them. */
+
+import type { ObjectStore, StoredObject } from "@operad-io/engine";
+
+/**
+ * Every object of a type, following the store's pages. The store returns one
+ * page at a time; an id scan must not stop at its default limit.
+ */
+export async function listAll(
+  store: ObjectStore,
+  type: string,
+): Promise<StoredObject[]> {
+  const objects: StoredObject[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await store.list(type, cursor === undefined ? {} : { cursor });
+    objects.push(...page.objects);
+    if (page.next === undefined) return objects;
+    cursor = page.next;
+  }
+}
+
+/** A plan is a request the owner confirmed into work. */
+export type PlanStatus = "draft" | "confirmed" | "cancelled";
+
+/** How far a plan may run without a person. */
+export type AutoMode = "off" | "run" | "merge";
+
+/** The five priorities, most urgent first. */
+export const PRIORITIES = ["P0", "P1", "P2", "P3", "P4", "P5"] as const;
+export type Priority = (typeof PRIORITIES)[number];
+
+/** Where a task is. */
+export type TaskPhase =
+  | "proposed"
+  | "ready"
+  | "running"
+  | "review"
+  | "waiting"
+  | "merged"
+  | "cancelled";
+
+/** The data of a plan object. Counts are a cache over its tasks. */
+export type PlanData = {
+  readonly [key: string]: unknown;
+  readonly repository: string;
+  readonly title: string;
+  readonly request: string;
+  readonly status: PlanStatus;
+  readonly auto: AutoMode;
+  readonly priority: Priority;
+  readonly concurrency: number;
+  readonly taskCount: number;
+  readonly mergedCount: number;
+  readonly cancelledCount: number;
+};
+
+/** The data of a task object. */
+export type TaskData = {
+  readonly [key: string]: unknown;
+  readonly repository: string;
+  readonly plan: string;
+  readonly title: string;
+  readonly brief: string;
+  readonly after: readonly string[];
+  readonly phase: TaskPhase;
+  readonly attempts: number;
+  readonly run: string | null;
+  readonly cost?: number | string | undefined;
+};
+
+/** A repository registered with the dev plugin. */
+export type RepositoryData = {
+  readonly [key: string]: unknown;
+  readonly name: string;
+  readonly path: string;
+  readonly removed: boolean;
+};
+
+export const PLAN_ID = /^PL(\d{4})-([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)$/;
+export const TASK_ID = /^TK(\d{4})-([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)$/;
+
+export type IdMatch = {
+  readonly number: number;
+  readonly slug: string;
+};
+
+/** A rule of the dev plugin was broken; the message starts with the field. */
+export class DevError extends Error {
+  readonly field: string;
+
+  constructor(field: string, message: string) {
+    super(`${field}: ${message}`);
+    this.name = "DevError";
+    this.field = field;
+  }
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Reads a stored plan; the store already validated the object when it wrote it. */
+export function planData(data: Record<string, unknown>): PlanData {
+  return data as unknown as PlanData;
+}
+
+export function taskData(data: Record<string, unknown>): TaskData {
+  return data as unknown as TaskData;
+}
+
+export function repositoryData(
+  data: Record<string, unknown>,
+): RepositoryData {
+  return data as unknown as RepositoryData;
+}
+
+/** `1-48` characters of `a-z0-9-`, with no leading or trailing `-`. */
+export function validateSlug(slug: unknown): string {
+  if (typeof slug !== "string" || slug.length < 1 || slug.length > 48) {
+    throw new DevError("slug", "must be 1-48 characters of a-z, 0-9 and -");
+  }
+  if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(slug)) {
+    throw new DevError(
+      "slug",
+      "must use only a-z, 0-9 and -, with no leading or trailing -",
+    );
+  }
+  return slug;
+}
+
+export function validateTitle(title: unknown): string {
+  if (typeof title !== "string" || title.trim().length === 0) {
+    throw new DevError("title", "must be a non-empty string");
+  }
+  return title.trim();
+}
+
+export function validateRepositoryName(name: unknown): string {
+  if (typeof name !== "string" || name.trim().length === 0) {
+    throw new DevError("name", "must be a non-empty string");
+  }
+  if (name.includes("/") || name.includes("\\") || name.includes("\u0000")) {
+    throw new DevError("name", 'must not contain "/", "\\" or a NUL');
+  }
+  return name.trim();
+}
+
+export function parseId(id: string, prefix: "PL" | "TK"): IdMatch | undefined {
+  const pattern = prefix === "PL" ? PLAN_ID : TASK_ID;
+  const match = pattern.exec(id);
+  if (match === null) return undefined;
+  const number = Number(match[1]);
+  const slug = match[2] ?? "";
+  return { number, slug };
+}
+
+export function formatId(
+  prefix: "PL" | "TK",
+  number: number,
+  slug: string,
+): string {
+  if (!Number.isInteger(number) || number < 1 || number > 9999) {
+    throw new DevError("id", `no ${prefix} number is left`);
+  }
+  return `${prefix}${String(number).padStart(4, "0")}-${slug}`;
+}
+
+function numberById(
+  objects: readonly { readonly id: string }[],
+  prefix: "PL" | "TK",
+): number {
+  let highest = 0;
+  for (const object of objects) {
+    // The store key carries the repository; the number lives in the bare id.
+    const parsed = parseId(bareId(object.id), prefix);
+    if (parsed !== undefined && parsed.number > highest) {
+      highest = parsed.number;
+    }
+  }
+  return highest;
+}
+
+/**
+ * The store key of a plan or task. Ids are unique within a repository only, so
+ * the repository name namespaces the key and two repositories may both hold
+ * `TK0001-work`.
+ */
+export function storeKey(repository: string, id: string): string {
+  return `${repository}/${id}`;
+}
+
+/** The id a person sees and types: the key without its repository prefix. */
+export function bareId(key: string): string {
+  const at = key.indexOf("/");
+  return at < 0 ? key : key.slice(at + 1);
+}
+
+/** The repository part of a store key. */
+export function keyRepository(key: string): string {
+  const at = key.indexOf("/");
+  return at < 0 ? "" : key.slice(0, at);
+}
+
+/**
+ * The next id for a repository. Numbers count up per repository and are never
+ * reused; the scan reads only that repository's objects, because the store key
+ * namespaces them.
+ */
+export async function nextId(
+  store: ObjectStore,
+  type: "plan" | "task",
+  repository: string,
+  slug: string,
+): Promise<string> {
+  const prefix = type === "plan" ? "PL" : "TK";
+  const all = await listAll(store, type);
+  const mine = all.filter(
+    (object) =>
+      isRecord(object.data) && object.data.repository === repository,
+  );
+  let number = numberById(mine, prefix) + 1;
+  for (;;) {
+    const id = formatId(prefix, number, slug);
+    if ((await store.get(type, storeKey(repository, id))) === undefined) {
+      return id;
+    }
+    number += 1;
+  }
+}
+
+/** Splits an id into its prefix and slug, for a project-specific message. */
+export function idParts(id: string): { readonly prefix: string; readonly slug: string } {
+  const at = id.indexOf("-");
+  if (at < 0) return { prefix: id, slug: "" };
+  return { prefix: id.slice(0, at), slug: id.slice(at + 1) };
+}
+
+/* ---------------------------------------------------------------------------
+ * The brief: a body, rework sections and a trailing changes section.
+ * ------------------------------------------------------------------------- */
+
+interface Fence {
+  readonly char: "`" | "~";
+  readonly length: number;
+}
+
+function openingFence(line: string): Fence | undefined {
+  const match = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
+  if (match === null) return undefined;
+  const run = match[1] ?? "";
+  const char = run[0];
+  if (char !== "`" && char !== "~") return undefined;
+  return { char, length: run.length };
+}
+
+function closesFence(line: string, fence: Fence): boolean {
+  const match = /^\s{0,3}(`{3,}|~{3,})\s*$/.exec(line);
+  if (match === null) return false;
+  const run = match[1] ?? "";
+  return run[0] === fence.char && run.length >= fence.length;
+}
+
+interface BriefHeadings {
+  readonly rework: number;
+  readonly changes: number;
+}
+
+/** Finds the first rework and changes headings that are not inside a fence. */
+export function briefHeadings(brief: string): BriefHeadings {
+  const lines = brief.replace(/\r\n/g, "\n").split("\n");
+  let fence: Fence | undefined;
+  let rework = -1;
+  let changes = -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (fence !== undefined) {
+      if (closesFence(line, fence)) fence = undefined;
+      continue;
+    }
+    const opened = openingFence(line);
+    if (opened !== undefined) {
+      fence = opened;
+      continue;
+    }
+    if (rework < 0 && /^##\s+Rework(?:\s|$)/.test(line)) rework = index;
+    if (changes < 0 && /^##\s+Changes\s*$/.test(line)) changes = index;
+  }
+  return { rework, changes };
+}
+
+export interface BriefParts {
+  readonly body: string;
+  readonly reworks: string;
+  readonly changes: string;
+}
+
+export function splitBrief(brief: string): BriefParts {
+  const text = brief.replace(/\r\n/g, "\n");
+  const lines = text.split("\n");
+  const { rework, changes } = briefHeadings(text);
+  const boundaries = [rework, changes].filter((index) => index >= 0);
+  const bodyEnd = boundaries.length === 0 ? lines.length : Math.min(...boundaries);
+  const tailStart = bodyEnd;
+  const body = lines.slice(0, bodyEnd).join("\n").trimEnd();
+  const changesStart = changes;
+  const reworksEnd =
+    changesStart > tailStart ? changesStart : lines.length;
+  const reworks =
+    rework >= 0
+      ? lines.slice(rework, reworksEnd).join("\n").trim()
+      : "";
+  const changeText =
+    changes >= 0 ? lines.slice(changes).join("\n").trimEnd() : "";
+  return { body, reworks, changes: changeText };
+}
+
+export function hasRework(brief: string): boolean {
+  return briefHeadings(brief).rework >= 0;
+}
+
+function tailStartOf(brief: string): number {
+  const { rework, changes } = briefHeadings(brief);
+  const indexes = [rework, changes].filter((index) => index >= 0);
+  return indexes.length === 0 ? -1 : Math.min(...indexes);
+}
+
+/**
+ * Replaces the text before the first real `## Rework` (or, when there is none,
+ * before the trailing `## Changes`). A heading inside a fenced block is text.
+ */
+export function replaceBriefBody(brief: string, body: string): string {
+  const text = brief.replace(/\r\n/g, "\n");
+  const lines = text.split("\n");
+  const start = tailStartOf(text);
+  const tail = start < 0 ? "" : lines.slice(start).join("\n").trimEnd();
+  const next = body.replace(/\r\n/g, "\n").trimEnd();
+  if (tail.length === 0) return next;
+  return next.length === 0 ? tail : `${next}\n\n${tail}`;
+}
+
+/** Inserts a block before the trailing changes section, or at the end. */
+function insertBeforeChanges(brief: string, block: string): string {
+  const text = brief.replace(/\r\n/g, "\n").trimEnd();
+  const { changes } = briefHeadings(text);
+  if (changes < 0) {
+    if (text.length === 0) return block;
+    return `${text}\n\n${block}`;
+  }
+  const lines = text.split("\n");
+  const before = lines.slice(0, changes).join("\n").trimEnd();
+  const after = lines.slice(changes).join("\n");
+  if (before.length === 0) return `${block}\n\n${after}`;
+  return `${before}\n\n${block}\n\n${after}`;
+}
+
+/** Appends one line to the trailing `## Changes` section, creating it. */
+export function appendChange(brief: string, line: string): string {
+  const text = brief.replace(/\r\n/g, "\n").trimEnd();
+  const { changes } = briefHeadings(text);
+  const entry = `- ${line.trim()}`;
+  if (changes < 0) {
+    return text.length === 0
+      ? `## Changes\n${entry}`
+      : `${text}\n\n## Changes\n${entry}`;
+  }
+  return `${text}\n${entry}`;
+}
+
+function reworkCount(brief: string): number {
+  const lines = brief.replace(/\r\n/g, "\n").split("\n");
+  let fence: Fence | undefined;
+  let count = 0;
+  for (const line of lines) {
+    if (fence !== undefined) {
+      if (closesFence(line, fence)) fence = undefined;
+      continue;
+    }
+    const opened = openingFence(line);
+    if (opened !== undefined) {
+      fence = opened;
+      continue;
+    }
+    if (/^##\s+Rework(?:\s|$)/.test(line)) count += 1;
+  }
+  return count;
+}
+
+/** Appends `## Rework <n> (<source>)`, then records the change. */
+export function appendRework(
+  brief: string,
+  source: string,
+  text: string,
+): string;
+export function appendRework(
+  task: TaskData,
+  source: string,
+  text: string,
+): TaskData;
+export function appendRework(
+  value: string | TaskData,
+  source: string,
+  text: string,
+): string | TaskData {
+  const cleanSource = source.trim();
+  if (cleanSource.length === 0) {
+    throw new DevError("source", "must be a non-empty string");
+  }
+  const brief = typeof value === "string" ? value : value.brief;
+  const number = reworkCount(brief) + 1;
+  const body = text.trim();
+  const block = `## Rework ${number} (${cleanSource})${body.length === 0 ? "" : `\n\n${body}`}`;
+  const withRework = insertBeforeChanges(brief, block);
+  const next = appendChange(withRework, `rework ${number} (${cleanSource})`);
+  return typeof value === "string" ? next : { ...value, brief: next };
+}
+
+/** The Markdown of the brief body, without rework or changes. */
+export function briefBody(brief: string): string {
+  return splitBrief(brief).body;
+}
+
+/** The Markdown of the rework sections, without the changes section. */
+export function reworkBody(brief: string): string {
+  return splitBrief(brief).reworks;
+}
+
+/** The Markdown of the trailing changes section. */
+export function changesBody(brief: string): string {
+  return splitBrief(brief).changes;
+}
+
+/** Replaces the body and records the edit, unless the body did not change. */
+export function editBrief(brief: string, body: string): string {
+  if (briefBody(brief) === body.replace(/\r\n/g, "\n").trimEnd()) return brief;
+  return appendChange(replaceBriefBody(brief, body), "brief edited");
+}
+
+/* ---------------------------------------------------------------------------
+ * States and dependencies.
+ * ------------------------------------------------------------------------- */
+
+/** The state a plan row shows: `finished` is derived from its tasks. */
+export function planState(plan: PlanData): string {
+  if (plan.status === "cancelled") return "cancelled";
+  if (
+    plan.status === "confirmed" &&
+    plan.taskCount > 0 &&
+    plan.mergedCount + plan.cancelledCount === plan.taskCount
+  ) {
+    return "finished";
+  }
+  return plan.status;
+}
+
+export function planNote(plan: PlanData): string {
+  return `${plan.mergedCount}/${plan.taskCount}`;
+}
+
+export function planDataOf(data: Record<string, unknown>): PlanData {
+  return planData(data);
+}
+
+export function taskDataOf(data: Record<string, unknown>): TaskData {
+  return taskData(data);
+}
+
+export function priorityIndex(priority: Priority): number {
+  return PRIORITIES.indexOf(priority);
+}
+
+export function higherPriority(priority: Priority): Priority | undefined {
+  const index = priorityIndex(priority);
+  return index <= 0 ? undefined : PRIORITIES[index - 1];
+}
+
+export function lowerPriority(priority: Priority): Priority | undefined {
+  const index = priorityIndex(priority);
+  return index < 0 || index >= PRIORITIES.length - 1
+    ? undefined
+    : PRIORITIES[index + 1];
+}
+
+/** A task is open until it merged or was cancelled. */
+export function isOpenTask(task: TaskData): boolean {
+  return task.phase !== "merged" && task.phase !== "cancelled";
+}

@@ -358,6 +358,44 @@ describe("plugin registry validation", () => {
     ).rejects.toThrow(/declared by plugins "a" and "b"/);
   });
 
+  test("runs an action name that is declared for two object types", async () => {
+    const seen: string[] = [];
+    const registry = new PluginRegistry([
+      def({
+        name: "a",
+        objects: [{ name: "one" }, { name: "two" }],
+        actions: [
+          {
+            name: "go",
+            on: "one",
+            when: () => true,
+            run: () => {
+              seen.push("one");
+            },
+          },
+          {
+            name: "go",
+            on: "two",
+            when: () => true,
+            run: () => {
+              seen.push("two");
+            },
+          },
+        ],
+      }),
+    ]);
+    await registry.runAction("a/go", undefined, {
+      object: { type: "one", id: "x", data: {} },
+      actor: { via: "test", id: "tester" },
+    });
+    await registry.runAction("a/go", undefined, {
+      object: { type: "two", id: "y", data: {} },
+      actor: { via: "test", id: "tester" },
+    });
+    expect(seen).toEqual(["one", "two"]);
+    expect(registry.actionDefinition("a", "go", "two")?.on).toBe("two");
+  });
+
   test("logs an onTick that starts an undeclared flow", async () => {
     const root = await tempRoot();
     const logs: string[] = [];
