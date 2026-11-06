@@ -15,6 +15,7 @@ hub 的会话路由只认 radian 的 journal 和 control port，worker 只有 `r
 3. radian 走 `radian acp`；Codex 和 Gemini CLI 走各自的 ACP 入口；Claude Code 走已有的 ACP 适配器；没有 ACP 的（pi 一类）用一个桥进程翻译成 ACP。
 4. 任务的 command 适配器保留为兜底（提示词进、最后一条消息出，回执在消息末尾的 JSON 代码块），给只能一次性跑、不能交互的工具；它没有会话面。回执至少含 `done` | `nothing` | `failed` | `needs_decision` | `waiting`，`waiting` 带 `wait_check`。
 5. ACP 的 `request_permission` 由引擎按 graph 给的 access 档回答，或转给手机上的人；harness 碰不到权限决定。每个 harness 一张机械禁用表（Claude Code 是 `--disallowedTools`，radian 是 tier），owner 批准只对该运行解锁一次。
+6. **radian 在 operad 里只当 agent 用。** `harness-radian` 只调用 `radian exec` 和 `radian acp`；operad 不调用、不启动、不依赖 `radian hub` 和 `radian arc`，`dev` 插件不读也不写仓库里的 `.radian/arc/`。编排（计划、任务、门禁、合并、推送）只在 operad 里。目前这是 operad 一侧的约定，radian 二进制里仍带着这两个子命令；以后 radian 会去掉编排功能，operad 不需要为此改动。
 
 ## 待决问题（未定）
 
