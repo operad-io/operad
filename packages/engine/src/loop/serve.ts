@@ -103,11 +103,30 @@ export interface ServeOptions extends Omit<ServePassOptions, "shouldStop"> {
   readonly home: string;
   readonly intervalMs?: number | undefined;
   readonly signal?: AbortSignal | undefined;
-  readonly sleep?: ((ms: number) => Promise<void>) | undefined;
+  readonly sleep?:
+    | ((ms: number, signal?: AbortSignal) => Promise<void>)
+    | undefined;
 }
 
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/** Waits `ms`, but a signal abort ends the wait at once. */
+export function sleepUntilAborted(
+  ms: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted === true) {
+      resolve();
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const done = (): void => {
+      if (timer !== undefined) clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    };
+    timer = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+  });
 }
 
 /**
@@ -119,7 +138,7 @@ export async function serve(options: ServeOptions): Promise<void> {
     clock: options.clock,
   });
   const intervalMs = options.intervalMs ?? 1_000;
-  const sleep = options.sleep ?? defaultSleep;
+  const sleep = options.sleep ?? sleepUntilAborted;
   const clock = options.clock ?? (() => Date.now());
   const spawnedAt = new Map<string, number>();
   let stopped = options.signal?.aborted === true;
@@ -141,7 +160,7 @@ export async function serve(options: ServeOptions): Promise<void> {
       const now = clock();
       for (const runId of result.spawned) spawnedAt.set(runId, now);
       if (stopped) break;
-      await sleep(intervalMs);
+      await sleep(intervalMs, options.signal);
     }
   } finally {
     options.signal?.removeEventListener("abort", stop);

@@ -515,6 +515,29 @@ export class PluginRegistry {
     return this.stepIndex.get(use)?.step.results;
   }
 
+  /** The specifier each loaded plugin came from, aligned with `names()`. */
+  pluginSources(): readonly (string | undefined)[] {
+    return this.plugins.map((plugin) => this.sourceByPlugin.get(plugin.name));
+  }
+
+  /** Every object type the loaded plugins declare, with its plugin. */
+  objectTypes(): readonly {
+    readonly plugin: string;
+    readonly type: string;
+  }[] {
+    return this.plugins.flatMap((plugin) =>
+      plugin.objects.map((object) => ({
+        plugin: plugin.name,
+        type: object.name,
+      })),
+    );
+  }
+
+  /** The directory plugin steps run in when a caller names none. */
+  get workdir(): string {
+    return this.cwd;
+  }
+
   /** Loads and validates a flow file against the loaded step types. */
   async loadFlow(path: string): Promise<FlowDefinition> {
     return loadFlowFile(path, this.stepTypes());

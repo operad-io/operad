@@ -3,15 +3,33 @@
 import type { FlowDefinition } from "../flow/types.ts";
 import type { Input, KernelState } from "../kernel/types.ts";
 import type { JsonValue, LogBackend } from "../log/types.ts";
-import type { PluginStepResult } from "../plugin/types.ts";
+import type { PluginStepResult, RunObject } from "../plugin/types.ts";
 import { PluginRegistry } from "../plugin/registry.ts";
 import type { ObjectRef } from "../plugin/types.ts";
 import { messageOf } from "../plugin/errors.ts";
+import { Worker } from "node:worker_threads";
 import { acquireLock, runLockPath, type LockHandle } from "./lock.ts";
 import { applyInput, parseObjectKey, readState } from "./service.ts";
 
 /** The wall time a plugin step may take before the run records a failure. */
 export const DEFAULT_STEP_TIMEOUT_MS = 5 * 60 * 1000;
+
+const STEP_WORKER = new URL("./step-worker.ts", import.meta.url);
+
+interface StepWorkerReply {
+  readonly ok: boolean;
+  readonly result?: PluginStepResult | undefined;
+  readonly error?: string | undefined;
+}
+
+function isStepWorkerReply(value: unknown): value is StepWorkerReply {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "ok" in value &&
+    typeof (value as { ok: unknown }).ok === "boolean"
+  );
+}
 
 export type RunnerOutcome = "progress" | "waiting" | "blocked" | "ended";
 
@@ -221,6 +239,10 @@ export class Runner {
    * Runs a plugin step with a wall-time limit and the cancel signal. A step
    * that throws or overruns becomes a declared failure result; the data says
    * which in words the history view can print.
+   *
+   * A step whose plugin came from a file runs in a worker thread, so the wall
+   * time also bounds a step that never yields to the event loop. A registry
+   * built in memory has no file to reload, so its steps stay in this process.
    */
   private async execute(
     use: string,
@@ -234,6 +256,126 @@ export class Runner {
       });
     }
 
+    const object = await this.runObject();
+    const sources = this.registry.pluginSources();
+    if (
+      this.registry.store.kind === "file" &&
+      sources.every((source): source is string => source !== undefined)
+    ) {
+      return this.executeInWorker(
+        use,
+        params,
+        object,
+        sources,
+        preferInterrupted,
+      );
+    }
+    return this.executeHere(use, params, object, preferInterrupted);
+  }
+
+  private async runObject(): Promise<RunObject | undefined> {
+    if (this.object === undefined) return undefined;
+    const stored = await this.registry.store.get(
+      this.object.type,
+      this.object.id,
+    );
+    return {
+      type: this.object.type,
+      id: this.object.id,
+      data: stored?.data ?? {},
+    };
+  }
+
+  private executeInWorker(
+    use: string,
+    params: unknown,
+    object: RunObject | undefined,
+    sources: readonly string[],
+    preferInterrupted: boolean,
+  ): Promise<PluginStepResult> {
+    return new Promise((resolve) => {
+      const worker = new Worker(STEP_WORKER, {
+        workerData: {
+          sources,
+          home: this.registry.home,
+          cwd: this.cwd ?? this.registry.workdir,
+          storeRoot: this.registry.store.root,
+          use,
+          params,
+          runId: this.runId,
+          ...(object === undefined ? {} : { object }),
+        },
+      });
+
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (result: PluginStepResult): void => {
+        if (settled) return;
+        settled = true;
+        if (timer !== undefined) clearTimeout(timer);
+        this.signal?.removeEventListener("abort", onAbort);
+        void worker.terminate();
+        resolve(result);
+      };
+      const onAbort = (): void => {
+        finish(
+          this.failure(use, preferInterrupted, {
+            reason: "aborted",
+            message: "the step was cancelled",
+          }),
+        );
+      };
+
+      timer = setTimeout(() => {
+        finish(
+          this.failure(use, preferInterrupted, {
+            reason: "timeout",
+            message: `the step took longer than ${this.stepTimeoutMs} ms`,
+          }),
+        );
+      }, this.stepTimeoutMs);
+      this.signal?.addEventListener("abort", onAbort, { once: true });
+
+      worker.once("message", (message: unknown) => {
+        if (isStepWorkerReply(message) && message.ok && message.result) {
+          finish(message.result);
+          return;
+        }
+        finish(
+          this.failure(use, preferInterrupted, {
+            reason: "error",
+            message:
+              isStepWorkerReply(message) && message.error !== undefined
+                ? message.error
+                : "the step failed",
+          }),
+        );
+      });
+      worker.once("error", (error) => {
+        finish(
+          this.failure(use, preferInterrupted, {
+            reason: "error",
+            message: messageOf(error),
+          }),
+        );
+      });
+      worker.once("exit", () => {
+        finish(
+          this.failure(use, preferInterrupted, {
+            reason: "error",
+            message: "the step ended without a result",
+          }),
+        );
+      });
+    });
+  }
+
+  private async executeHere(
+    use: string,
+    params: unknown,
+    object: RunObject | undefined,
+    preferInterrupted: boolean,
+  ): Promise<PluginStepResult> {
     const controller = new AbortController();
     const forward = (): void => controller.abort();
     this.signal?.addEventListener("abort", forward, { once: true });
@@ -250,17 +392,7 @@ export class Runner {
     const step = this.registry.runStep(use, params, {
       runId: this.runId,
       ...(this.cwd === undefined ? {} : { cwd: this.cwd }),
-      ...(this.object === undefined
-        ? {}
-        : {
-            object: {
-              type: this.object.type,
-              id: this.object.id,
-              data:
-                (await this.registry.store.get(this.object.type, this.object.id))
-                  ?.data ?? {},
-            },
-          }),
+      ...(object === undefined ? {} : { object }),
       signal: controller.signal,
     });
     // After a timeout the plugin may still reject; that rejection is no

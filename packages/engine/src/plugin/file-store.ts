@@ -1,6 +1,6 @@
 /** A plugin store that keeps its facts in one append-only JSONL file. */
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type {
   FactInput,
@@ -56,18 +56,21 @@ function parseFact(value: unknown): PluginFact | undefined {
  * store opens. A torn final line is ignored, as in the log.
  */
 export class FilePluginStore implements PluginStore {
+  readonly kind = "file" as const;
   readonly root: string;
   private readonly clock: () => number;
   private readonly factsPath: string;
   private readonly objects = new Map<string, StoredObject>();
   private readonly entries: PluginFact[] = [];
+  /** Bytes of the facts file already read; a torn final line stays unread. */
+  private offset = 0;
 
   constructor(options: FilePluginStoreOptions) {
     this.root = options.root;
     this.clock = options.clock ?? (() => Date.now());
     this.factsPath = join(options.root, "facts.jsonl");
     mkdirSync(options.root, { recursive: true });
-    this.load();
+    this.refresh();
   }
 
   put(
@@ -89,16 +92,17 @@ export class FilePluginStore implements PluginStore {
       cause,
       at: this.clock(),
     };
-    this.objects.set(this.key(type, id), object);
     this.append({ type, object: { type, id }, data, cause });
-    return object;
+    return this.objects.get(this.key(type, id)) ?? object;
   }
 
   get(type: string, id: string): StoredObject | undefined {
+    this.refresh();
     return this.objects.get(this.key(type, id));
   }
 
   list(type: string): readonly StoredObject[] {
+    this.refresh();
     return [...this.objects.values()].filter((object) => object.type === type);
   }
 
@@ -109,6 +113,7 @@ export class FilePluginStore implements PluginStore {
       throw new Error("cause: must be a non-empty string");
     }
     requireName(cause, "cause");
+    this.refresh();
     const fact: PluginFact = {
       sequence: this.entries.length + 1,
       type: input.type,
@@ -117,26 +122,36 @@ export class FilePluginStore implements PluginStore {
       at: this.clock(),
       data: { ...input.data },
     };
-    this.entries.push(fact);
     appendFileSync(this.factsPath, `${JSON.stringify(fact)}\n`, "utf8");
+    this.refresh();
     return fact;
   }
 
   /** Every fact in append order. */
   facts(): readonly PluginFact[] {
+    this.refresh();
     return this.entries;
   }
 
-  private load(): void {
+  /**
+   * Reads the lines another process appended since the last read. A worker
+   * step writes its facts here, so the run's process has to see them too.
+   */
+  private refresh(): void {
     if (!existsSync(this.factsPath)) return;
-    const text = readFileSync(this.factsPath, "utf8");
-    for (const line of text.split("\n")) {
+    if (statSync(this.factsPath).size <= this.offset) return;
+    const text = readFileSync(this.factsPath).subarray(this.offset).toString("utf8");
+    const end = text.lastIndexOf("\n");
+    if (end < 0) return;
+    const complete = text.slice(0, end + 1);
+    this.offset += Buffer.byteLength(complete, "utf8");
+    for (const line of complete.split("\n")) {
       if (line.length === 0) continue;
       let raw: unknown;
       try {
         raw = JSON.parse(line);
       } catch {
-        // A torn final line from a killed writer is not a fact.
+        // A torn line from a killed writer is not a fact.
         continue;
       }
       const fact = parseFact(raw);

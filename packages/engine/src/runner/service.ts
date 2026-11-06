@@ -39,9 +39,25 @@ export interface ApplyResult {
   readonly duplicate: boolean;
 }
 
+/** True when a fact of the run already names the input as its cause. */
+async function inputApplied(
+  log: LogBackend,
+  runId: string,
+  inputId: string,
+): Promise<boolean> {
+  for await (const fact of log.read(runId)) {
+    if (fact.cause === inputId) return true;
+  }
+  return false;
+}
+
 /**
  * Records one input, asks `decide` for its facts and appends them as one
  * batch. A repeated (source, key) appends nothing.
+ *
+ * A crash can leave the input's record behind without its facts. Such a
+ * record is not an applied input: the run has no fact caused by it, so its
+ * decision still has to be taken and appended.
  */
 export async function applyInput(
   log: LogBackend,
@@ -62,11 +78,15 @@ export async function applyInput(
     },
   );
   if (recorded.duplicate) {
-    return {
-      state,
-      decision: { facts: [], effects: [] },
-      duplicate: true,
-    };
+    if (await inputApplied(log, runId, recorded.inputId)) {
+      return {
+        state,
+        decision: { facts: [], effects: [] },
+        duplicate: true,
+      };
+    }
+    // The record outlived the crash, the facts did not: decide again with the
+    // recorded input id so the batch is attributed to the same input.
   }
 
   const withId: Input = { ...input, inputId: recorded.inputId };

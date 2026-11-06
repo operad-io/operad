@@ -87,7 +87,13 @@ export interface FactWriter {
 }
 
 /** The store a plugin sees: objects plus its own facts. */
-export interface PluginStore extends ObjectStore, FactWriter {}
+export interface PluginStore extends ObjectStore, FactWriter {
+  /**
+   * `file` stores live under one directory and a worker step sees the same
+   * data; `memory` stores exist only in this process.
+   */
+  readonly kind: "file" | "memory";
+}
 
 /** Writes text to a file under the store and returns its path. */
 export interface PluginLogger {
