@@ -24,11 +24,11 @@ OpenClaw 是聊天优先，operad 到现在是流程优先。第一个要满足�
 
 ## 顺序
 
-PL0002 之后的第一个计划。前置：`harness-radian` 的 `resumeSession`、显示接口、事件与规则。先 radian 一种 harness；Claude Code 和 pi 的会话随 `operad-harness.md` 的 ACP 接法进来，对话对象不变。
+PL0002 之后的第一个计划。前置：`harness-radian` 的 `resumeSession`、显示接口、事件与规则。先 radian 一种 harness；Claude 和 pi 的会话随 `operad-harness.md` 决定 3 的接法进来，对话对象不变。
 
 ## 待决问题（未定）
 
-1. 逐 token 流：harness 的 ACP `session/update` 流由 `operad serve` 转成带游标的 live 段，还是另开一条流。
+1. 逐 token 流：harness 的事件流（ACP `session/update`、SDK `includePartialMessages`）由 `operad serve` 转成带游标的 live 段，还是另开一条流。
 2. 附件（图片、文件）怎么进消息、存哪、怎么给 harness。
 3. 一个对话切换 harness 或模型：新建对话，还是在对话里切（会话引用随之失效）。
 4. 对话的归档和删除；记录保留多久。

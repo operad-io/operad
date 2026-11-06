@@ -21,7 +21,7 @@ arc 今天住在 radian 二进制里（ADR 0032、0043、0048），worker 只有
 6. **第一个垂直场景是编码流程**，验证 gate 和 forge 在这里；个人助理是同一个引擎长出来的第二个场景，排在后面。
 7. **生成的步骤默认跑在沙箱里。** 沙箱从 radian 的 agent 里剥出来，变成包任何命令的壳；它是 operad 层的能力，不是某个 harness 的能力。
 8. **事件是资料、规则是指令**：来源送进来的字进不了提示词，决定不了路由、目录、权限；每种插件一把作用域密钥。
-9. **会话的统一协议是 ACP**，hub 是每个 harness 的 ACP 客户端；一种 harness 是一个描述文件，任务和会话同一份。
+9. **一种 harness 是一个描述文件**，任务和会话同一份；接法有两种，官方 SDK 在进程内当客户端，或 ACP 客户端（`operad-harness.md` 决定 1 到 3）。
 10. 从同行**不拿**的：模型替 owner 决定（影子 judge 只量准确率）；agent 直接改自己的提示词和策略；必需的云会合点；没有 gate 的"信自报加 CI"。
 11. 新仓库到 parity 之前，Rust arc 继续跑 dogfood；两边并行是计划内的成本。
 12. **内核尽量小。** 能放进插件的都放进插件；内核只做插件做不到、或每个插件都要重复写的事。内核只有五样：
@@ -39,7 +39,7 @@ arc 今天住在 radian 二进制里（ADR 0032、0043、0048），worker 只有
 
 ## 顺序
 
-`operad-engine` → `operad-plugins` → `operad-harness` → `operad-channels` → `operad-assistant`。前两项是新核心，后三项可以在引擎有第一张 graph 之后并行。dogfood（PL0002）之后按场景走：`operad-conversation`（含 iOS 后端）→ `operad-sandbox` 第一版 → Telegram 通道 → `operad-assistant` 的 `brain` 与 `digest`；`operad-harness` 的 ACP 会话在对话跑通后接第二种 harness。
+`operad-engine` → `operad-plugins` → `operad-harness` → `operad-channels` → `operad-assistant`。前两项是新核心，后三项可以在引擎有第一张 graph 之后并行。dogfood（PL0002）之后按场景走：`operad-conversation`（含 iOS 后端）→ `operad-sandbox` 第一版 → Telegram 通道 → `operad-assistant` 的 `brain` 与 `digest`；`operad-harness` 在对话跑通后接第二种 harness（Claude 走 Agent SDK）。
 
 ## 待决问题（未定）
 
