@@ -552,7 +552,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       context.taskKey,
       {
         ...task,
-        phase: "running",
+        phase: "waiting",
         run: ctx.runId,
         attempts,
         attempt: nextAttempt,
@@ -589,7 +589,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       context.taskKey,
       {
         ...task,
-        phase: "running",
+        phase: "waiting",
         run: ctx.runId,
         attempts,
         attempt: nextAttempt,
@@ -655,7 +655,9 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       context.taskKey,
       {
         ...task,
-        phase: "running",
+        // Only `done` continues to the gate; every other result goes to the
+        // person wait, and the task says so while it waits.
+        phase: result === "done" ? "running" : "waiting",
         run: ctx.runId,
         attempts,
         attempt: nextAttempt,

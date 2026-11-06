@@ -771,6 +771,10 @@ describe("gate settings", () => {
       maxDiffBytes: 1_000_000,
     });
     expect(settings.maxAutoRework).toBe(2);
+    expect(settings.integration).toEqual({ style: "merge", keyCommands: [] });
+    expect(settings.hooks.afterMerge).toContain(
+      'git push "$OPERAD_REMOTE" --delete "work/$OPERAD_TASK"',
+    );
   });
 
   test("a bad setting names its field", () => {
@@ -782,6 +786,18 @@ describe("gate settings", () => {
     ).toThrow(/reviewer\.fixLevel/);
     expect(() => validateDevSettings({ maxAutoRework: -1 })).toThrow(
       /maxAutoRework/,
+    );
+    expect(() =>
+      validateDevSettings({ integration: { style: "rebase" } }),
+    ).toThrow(/integration\.style/);
+    expect(() =>
+      validateDevSettings({ integration: { keyCommands: [""] } }),
+    ).toThrow(/integration\.keyCommands/);
+    expect(() => validateDevSettings({ hooks: { afterMerge: [""] } })).toThrow(
+      /hooks\.afterMerge/,
+    );
+    expect(() => validateDevSettings({ integration: { merge: true } })).toThrow(
+      /integration\.merge/,
     );
   });
 });
@@ -816,5 +832,17 @@ describe("the dev flow", () => {
       failed: "wait",
     });
     expect(nextOf("rework")).toEqual({ again: "worktree", ask: "wait" });
+    expect(nextOf("wait")).toEqual({
+      merge: "integrate",
+      reject: "worktree",
+      interrupted: "end_cancelled",
+    });
+    expect(nextOf("integrate")).toEqual({
+      merged: "cleanup",
+      conflict: "worktree",
+      fail: "worktree",
+      failed: "wait",
+    });
+    expect(nextOf("cleanup")).toEqual({ done: "end_done" });
   });
 });

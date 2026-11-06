@@ -43,6 +43,8 @@ Every action is also a command: `operad dev:<action> <id>`.
 | action | object | key | what it does |
 |---|---|---|---|
 | `dev:confirm` | plan, task | `c` | confirm a draft plan (its tasks become ready) or a proposed task |
+| `dev:merge` | task | | answer the task's wait with `merge`; asks first |
+| `dev:reject` | task | | answer the task's wait with `reject` and append `## Rework <n> (owner)` with the note |
 | `dev:cancel` | plan, task | `x` | cancel a plan and its open tasks, or one task; asks first |
 | `dev:auto-off` | plan | | set auto to off |
 | `dev:auto-run` | plan | | set auto to run |
@@ -50,8 +52,10 @@ Every action is also a command: `operad dev:<action> <id>`.
 | `dev:priority-up` | plan | | move one step towards P0 |
 | `dev:priority-down` | plan | | move one step towards P5 |
 
-The gate waits for `merge` or `reject`; the `merge` action itself arrives with
-the merge part of the plan. `reject` is only a flow choice for now.
+`merge` and `reject` answer the task's person wait. They appear in `pending`
+only while the task is waiting, and are refused with a clear message otherwise.
+`reject` takes the required note (`--note <text>`); the note becomes a rework
+section and the task goes back to the worktree.
 
 ## Steps
 
@@ -62,6 +66,17 @@ the merge part of the plan. `reject` is only a flow choice for now.
 | `dev/verify` | `pass`, `fail` | recreates `<worktreeRoot>/<task id>-gate` detached at the branch head, runs `gate.commands` through `shell/check`, and records the verified commit |
 | `dev/review` | `pass`, `fail`, `failed` | runs the reviewer harness step in the gate worktree on the diff from the merge base to the verified commit; a finding on a file the change did not touch is pre-existing and does not count |
 | `dev/rework` | `again`, `ask` | appends `## Rework <n> (verify|review)` with the failed command or the counted findings and sends the task back to the worker; after `maxAutoRework` in a row it asks a person instead |
+| `dev/integrate` | `merged`, `conflict`, `fail`, `failed` | fetches, builds the candidate in the gate worktree by merging the verified commit onto `<remote>/<mainBranch>`, runs `integration.keyCommands` through `shell/check`, and pushes plainly; a moved main starts again from the fetch, at most three times |
+| `dev/cleanup` | `done` | runs `hooks.afterMerge` with `OPERAD_TASK`, `OPERAD_WORKTREE` and `OPERAD_REMOTE` set; a failing hook is recorded, not a task failure |
+
+A conflict appends `## Rework <n> (conflict with main)` and sends the task back
+to the worktree. A failing key command appends `## Rework <n> (integration)`.
+The verified commit is merged even when the branch has moved past it, and the
+step records that the head moved. A remote that refuses the push is `failed`
+with git's message. Integrate is replay-safe: after a push it checks that the
+remote's main contains the candidate instead of pushing again. Cleanup is also
+replay-safe; the default hooks remove both worktrees and the local and remote
+`work/<task id>` branch.
 
 A conflict leaves the worktree mid-merge. The next `dev/work` prompt starts by
 asking the worker to resolve it. A failed attempt names the uncommitted files.
@@ -74,7 +89,9 @@ run.
 `merge` or `reject`. A failing verify or review goes to `rework`, which sends the
 task back to the worktree until `maxAutoRework` automatic reworks have run in a
 row; then it waits for a person. `nothing` and `failed` from `work` also wait for
-a person. The merge itself comes in a later part of the plugin.
+a person. `merge` builds the candidate on main and pushes it, then cleanup
+removes the worktrees and branches. A plan is finished when every task is merged
+or cancelled.
 
 ## Review diff size
 
@@ -112,6 +129,9 @@ The file holds the repository's work settings:
 | `reviewer.maxFileDiffBytes` | `200000` | the largest diff one file may put in the review prompt |
 | `reviewer.maxDiffBytes` | `1000000` | the largest diff the review prompt may carry |
 | `maxAutoRework` | `2` | how many automatic reworks in a row are allowed before waiting for a person |
+| `integration.style` | `merge` | `merge` lands a merge commit with `Merge work/<task id> (<short sha>)`; `squash` lands one squashed commit |
+| `integration.keyCommands` | `[]` | commands the integrate step runs on the candidate before the push; a failure sends the task back to the worker |
+| `hooks.afterMerge` | removes both worktrees and both branches | commands cleanup runs after a merge, in the repository root, with `OPERAD_TASK`, `OPERAD_WORKTREE` and `OPERAD_REMOTE` set |
 
 The built-in brief says to work only in the worktree, commit whole pieces, run
 the repository's verify command and end with a summary.

@@ -156,6 +156,54 @@
         "maxDiffBytes": 1000000
       }
     },
+    "integration": {
+      "description": "How the integrate step builds the candidate and lands it on main.",
+      "type": "object",
+      "properties": {
+        "style": {
+          "description": "Merge the verified commit with a merge commit, or squash it into one commit.",
+          "type": "string",
+          "enum": ["merge", "squash"],
+          "default": "merge"
+        },
+        "keyCommands": {
+          "description": "Commands the integrate step runs on the candidate before it pushes; the first failure sends the task back to the worker.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": []
+        }
+      },
+      "additionalProperties": false,
+      "default": { "style": "merge", "keyCommands": [] }
+    },
+    "hooks": {
+      "description": "Commands the cleanup step runs after a merge, in the repository root, with OPERAD_TASK and OPERAD_WORKTREE set.",
+      "type": "object",
+      "properties": {
+        "afterMerge": {
+          "description": "The commands cleanup runs after a merge; a failure is recorded and does not fail the task.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": [
+            "git worktree remove --force \"$OPERAD_WORKTREE\"",
+            "git worktree remove --force \"$OPERAD_WORKTREE-gate\"",
+            "git worktree prune",
+            "git branch -D \"work/$OPERAD_TASK\"",
+            "git push \"$OPERAD_REMOTE\" --delete \"work/$OPERAD_TASK\""
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "default": {
+        "afterMerge": [
+          "git worktree remove --force \"$OPERAD_WORKTREE\"",
+          "git worktree remove --force \"$OPERAD_WORKTREE-gate\"",
+          "git worktree prune",
+          "git branch -D \"work/$OPERAD_TASK\"",
+          "git push \"$OPERAD_REMOTE\" --delete \"work/$OPERAD_TASK\""
+        ]
+      }
+    },
     "maxAutoRework": {
       "description": "How many automatic reworks in a row are allowed before the flow waits for a person.",
       "type": "integer",

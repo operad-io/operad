@@ -102,6 +102,51 @@ export interface ReviewRecord {
   readonly sha?: string | null;
 }
 
+/** What the integrate step found while landing the verified commit. */
+export type IntegrationResult = "merged" | "conflict" | "fail" | "failed";
+
+/** A record written before the push says the candidate is not landed yet. */
+export type IntegrationPhase = IntegrationResult | "pending";
+
+/** One attempt at landing a task's verified commit on main. */
+export interface IntegrationRecord {
+  readonly [key: string]: unknown;
+  readonly run?: string | null;
+  readonly result: IntegrationPhase;
+  readonly style?: string | null;
+  /** The verified commit the candidate was built from. */
+  readonly verified?: string | null;
+  /** The commit built on main, before or after the push. */
+  readonly candidate?: string | null;
+  /** The main commit the candidate was built on. */
+  readonly base?: string | null;
+  /** The branch head when the step ran, which may be past the verified sha. */
+  readonly head?: string | null;
+  /** True when the branch head was no longer the verified commit. */
+  readonly headMoved?: boolean | null;
+  readonly pushed?: boolean | null;
+  readonly message?: string | null;
+  readonly command?: string | null;
+  readonly log?: string | null;
+  readonly lineNumber?: number | null;
+  readonly files?: readonly string[] | null;
+}
+
+/** One cleanup hook line that failed. */
+export interface CleanupFailure {
+  readonly [key: string]: unknown;
+  readonly line: number;
+  readonly text: string;
+  readonly message: string;
+}
+
+/** What the cleanup step ran after a merge. */
+export interface CleanupRecord {
+  readonly [key: string]: unknown;
+  readonly run?: string | null;
+  readonly failures: readonly CleanupFailure[];
+}
+
 /** One rework section the step appended; a replay reads it and appends nothing. */
 export interface ReworkRecord {
   readonly [key: string]: unknown;
@@ -135,6 +180,10 @@ export type TaskAttempt = {
   readonly reviews?: number | null;
   /** The rework this run appended; a replay of the same run reads it. */
   readonly rework?: ReworkRecord | null;
+  /** What the integrate step did on main. */
+  readonly integration?: IntegrationRecord | null;
+  /** What the cleanup step ran after the merge. */
+  readonly cleanup?: CleanupRecord | null;
 };
 
 /** The data of a task object. */

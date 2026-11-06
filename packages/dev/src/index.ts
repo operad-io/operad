@@ -5,6 +5,7 @@ import devFlow from "../flows/dev.flow.ts";
 import { actions } from "./actions.ts";
 import { commands } from "./commands.ts";
 import { runRework, runReview, runVerify } from "./gate.ts";
+import { runCleanup, runIntegrate } from "./integrate.ts";
 import { resolveDevKey } from "./service.ts";
 import { runWork, runWorktree } from "./steps.ts";
 import { planViews, taskViews } from "./views.ts";
@@ -51,6 +52,16 @@ export function createDevPlugin() {
         results: ["again", "ask"],
         run: runRework,
       },
+      {
+        name: "integrate",
+        results: ["merged", "conflict", "fail", "failed"],
+        run: runIntegrate,
+      },
+      {
+        name: "cleanup",
+        results: ["done"],
+        run: runCleanup,
+      },
     ],
     flows: [devFlow],
     actions,
@@ -74,6 +85,7 @@ export default createDevPlugin();
 export * from "./actions.ts";
 export * from "./commands.ts";
 export * from "./gate.ts";
+export * from "./integrate.ts";
 export * from "./model.ts";
 export * from "./service.ts";
 export * from "./settings.ts";

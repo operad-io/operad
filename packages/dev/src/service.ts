@@ -757,6 +757,43 @@ export async function setTaskPhase(
   });
 }
 
+/** Appends the owner's rework section and leaves the task for the flow. */
+export async function rejectTask(
+  store: ObjectStore,
+  id: string,
+  note: string,
+): Promise<StoredObject> {
+  const initial = await getTask(store, id);
+  const data = taskData(initial.data);
+  const at = `task "${bareId(id)}"`;
+  if (data.phase !== "waiting") {
+    throw new DevError(
+      "reject",
+      `${at} is ${data.phase}, not waiting; only a waiting task can be rejected`,
+    );
+  }
+  const text = note.trim();
+  if (text.length === 0) {
+    throw new DevError("note", "must be a non-empty string");
+  }
+  return withRepoLock(store, data.repository, async () => {
+    const current = await getTask(store, id);
+    const latest = taskData(current.data);
+    if (latest.phase !== "waiting") {
+      throw new DevError(
+        "reject",
+        `${at} is ${latest.phase}, not waiting; only a waiting task can be rejected`,
+      );
+    }
+    return writeTask(
+      store,
+      id,
+      { ...latest, brief: appendRework(latest.brief, "owner", text) },
+      "dev:task-reject",
+    );
+  });
+}
+
 /** Appends a rework section and records it. */
 export async function addRework(
   store: ObjectStore,
