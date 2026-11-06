@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { chmodSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,6 +64,21 @@ describe("loadPluginRegistry", () => {
       loadPluginRegistry({ home, configPath, storeRoot: join(root, "store") }),
     ).rejects.toThrow(configPath);
   });
+
+  test.skipIf(process.getuid?.() === 0)(
+    "reports an unreadable config file instead of loading nothing",
+    async () => {
+      const { home, configPath, storeRoot } = await homeWithConfig({ plugins: [] });
+      chmodSync(home, 0o000);
+      try {
+        await expect(
+          loadPluginRegistry({ home, configPath, storeRoot }),
+        ).rejects.toThrow(configPath);
+      } finally {
+        chmodSync(home, 0o755);
+      }
+    },
+  );
 
   test("rejects a plugins value that is not a list or an object", async () => {
     const { home, configPath, storeRoot } = await homeWithConfig({

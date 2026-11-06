@@ -380,3 +380,9 @@
 | TK0026-M19 | packages/engine/src/trigger/kernel.ts | derived the emitting plugin from the event type instead of the caller | `the kernel start entry > emitStep checks the type against the caller's plugin, not the type` |
 | TK0026-M20 | packages/engine/src/log/jsonl.ts | skipped the unique-key lookup, so a duplicate observe appended a second fact | `event receipt recovery > two processes delivering the same observe event write one fact (jsonl)` |
 | TK0026-M21 | packages/engine/src/log/sqlite.ts | skipped the unique-key lookup, so a duplicate observe hit the unique index | `event receipt recovery > two processes delivering the same observe event write one fact (sqlite)` |
+
+## TK0029 — rework 5: an unreadable config file is an error
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0029-M14 | packages/engine/src/plugin/load.ts | treated every access error as a missing config file, not just `ENOENT` | `loadPluginRegistry > reports an unreadable config file instead of loading nothing` |

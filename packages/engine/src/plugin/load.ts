@@ -108,12 +108,26 @@ function definitionName(value: unknown): string | undefined {
   return undefined;
 }
 
-async function fileExists(path: string): Promise<boolean> {
+function isMissingFileError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT"
+  );
+}
+
+/**
+ * False only when the config file does not exist. Any other access error means
+ * the file may exist but cannot be read, so `readConfig` gets to report it
+ * instead of the load quietly returning an empty configuration.
+ */
+async function configFileExists(path: string): Promise<boolean> {
   try {
     await access(path);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    return !isMissingFileError(error);
   }
 }
 
@@ -127,7 +141,7 @@ export async function loadConfiguredPlugins(
 ): Promise<ConfiguredPlugins> {
   const home = options.home ?? defaultOperadHome();
   const configFile = options.configPath ?? join(home, "config.json");
-  if (!(await fileExists(configFile))) {
+  if (!(await configFileExists(configFile))) {
     return { entries: [], loaded: [], disabled: [], errors: [] };
   }
   const config = await readConfig(home, configFile);
