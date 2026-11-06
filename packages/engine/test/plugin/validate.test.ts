@@ -196,6 +196,94 @@ describe("plugin registry validation", () => {
     );
   });
 
+  test("rejects an action args schema with an unknown keyword", () => {
+    const error = errorOf(
+      () =>
+        new PluginRegistry([
+          def({
+            name: "a",
+            objects: [{ name: "note" }],
+            actions: [
+              {
+                name: "go",
+                on: "note",
+                args: {
+                  type: "object",
+                  properties: {
+                    title: { type: "string", pattern: "^a" },
+                  },
+                } as never,
+                when: () => true,
+                run: () => undefined,
+              },
+            ],
+          }),
+        ]),
+    );
+    expect(error.message).toContain('plugin "a"');
+    expect(error.message).toContain('unknown keyword "pattern"');
+  });
+
+  test("rejects a note property that is not a string", () => {
+    const error = errorOf(
+      () =>
+        new PluginRegistry([
+          def({
+            name: "a",
+            objects: [{ name: "note" }],
+            actions: [
+              {
+                name: "go",
+                on: "note",
+                args: {
+                  type: "object",
+                  properties: { reason: { role: "note" } },
+                  required: ["reason"],
+                } as never,
+                when: () => true,
+                run: () => undefined,
+              },
+            ],
+          }),
+        ]),
+    );
+    expect(error.message).toContain('a note property must have type "string"');
+  });
+
+  test("rejects the old action note field and points at args", () => {
+    const error = errorOf(
+      () =>
+        new PluginRegistry([
+          def({
+            name: "a",
+            objects: [{ name: "note" }],
+            actions: [
+              {
+                name: "go",
+                on: "note",
+                note: { required: true },
+                when: () => true,
+                run: () => undefined,
+              } as never,
+            ],
+          }),
+        ]),
+    );
+    expect(error.message).toContain("note: is no longer a field");
+    expect(error.message).toContain('role "note"');
+  });
+
+  test("rejects an object index that is not a field list", () => {
+    const error = errorOf(
+      () =>
+        new PluginRegistry([
+          def({ name: "a", objects: [{ name: "note", index: "tag" } as never] }),
+        ]),
+    );
+    expect(error.message).toContain("index");
+    expect(error.message).toContain("array");
+  });
+
   test("hides and logs an action whose when throws", async () => {
     const root = await tempRoot();
     const store = new MemoryPluginStore({ root: join(root, "store") });
@@ -265,6 +353,7 @@ describe("plugin registry validation", () => {
     await expect(
       registry.runAction("go", undefined, {
         object: { type: "one", id: "x", data: {} },
+        actor: { via: "test", id: "tester" },
       }),
     ).rejects.toThrow(/declared by plugins "a" and "b"/);
   });
@@ -297,9 +386,11 @@ describe("plugin registry validation", () => {
     ]);
     await registry.runAction("a/go", undefined, {
       object: { type: "one", id: "x", data: {} },
+      actor: { via: "test", id: "tester" },
     });
     await registry.runAction("a/go", undefined, {
       object: { type: "two", id: "y", data: {} },
+      actor: { via: "test", id: "tester" },
     });
     expect(seen).toEqual(["one", "two"]);
     expect(registry.actionDefinition("a", "go", "two")?.on).toBe("two");

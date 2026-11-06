@@ -4,6 +4,7 @@
     { "path": "packages/engine" },
     { "path": "packages/shell" },
     { "path": "packages/dev" },
+    { "path": "packages/harness-radian" },
     { "path": "packages/cli" }
   ]
 }

@@ -173,7 +173,8 @@ describe("operad with the dev plugin", () => {
     expect(second.code).toBe(0);
     expect(first.out.trim()).not.toBe(second.out.trim());
     const listed = await run(home, repository, ["list", "task", "--json"]);
-    expect((JSON.parse(listed.out) as unknown[]).length).toBe(2);
+    const page = JSON.parse(listed.out) as { rows: unknown[] };
+    expect(page.rows.length).toBe(2);
   });
 
   test("a command outside the repository takes --repo and edit opens $EDITOR", async () => {

@@ -14,6 +14,8 @@ import { cleanupTempRoots, makeGitRepository, storeAt, tempRoot } from "./suppor
 
 afterAll(cleanupTempRoots);
 
+const ACTOR = { via: "test", id: "tester" } as const;
+
 async function setup(onCancelRun?: (runId: string) => void) {
   const root = await tempRoot();
   const repositoryPath = await makeGitRepository(root);
@@ -33,7 +35,7 @@ describe("dev actions", () => {
     const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
     const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
 
-    await registry.runAction("dev/confirm", {}, { object: await getPlan(store, plan.id) });
+    await registry.runAction("dev/confirm", {}, { object: await getPlan(store, plan.id), actor: ACTOR });
     expect(planData((await getPlan(store, plan.id)).data).status).toBe(
       "confirmed",
     );
@@ -45,12 +47,12 @@ describe("dev actions", () => {
     const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
     const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
     await expect(
-      registry.runAction("dev/confirm", {}, { object: await getTask(store, task.id) }),
+      registry.runAction("dev/confirm", {}, { object: await getTask(store, task.id), actor: ACTOR }),
     ).rejects.toThrow(/plan .* is not confirmed/);
-    await registry.runAction("dev/confirm", {}, { object: await getPlan(store, plan.id) });
+    await registry.runAction("dev/confirm", {}, { object: await getPlan(store, plan.id), actor: ACTOR });
     await setTaskPhase(store, task.id, "ready");
     await expect(
-      registry.runAction("dev/confirm", {}, { object: await getTask(store, task.id) }),
+      registry.runAction("dev/confirm", {}, { object: await getTask(store, task.id), actor: ACTOR }),
     ).rejects.toThrow(/already ready/);
   });
 
@@ -84,13 +86,13 @@ describe("dev actions", () => {
   test("auto and priority actions move the plan", async () => {
     const { store, registry, repository } = await setup();
     const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
-    await registry.runAction("dev/auto-run", {}, { object: await getPlan(store, plan.id) });
+    await registry.runAction("dev/auto-run", {}, { object: await getPlan(store, plan.id), actor: ACTOR });
     expect(planData((await getPlan(store, plan.id)).data).auto).toBe("run");
-    await registry.runAction("dev/auto-off", {}, { object: await getPlan(store, plan.id) });
+    await registry.runAction("dev/auto-off", {}, { object: await getPlan(store, plan.id), actor: ACTOR });
     expect(planData((await getPlan(store, plan.id)).data).auto).toBe("off");
-    await registry.runAction("dev/priority-up", {}, { object: await getPlan(store, plan.id) });
+    await registry.runAction("dev/priority-up", {}, { object: await getPlan(store, plan.id), actor: ACTOR });
     expect(planData((await getPlan(store, plan.id)).data).priority).toBe("P2");
-    await registry.runAction("dev/priority-down", {}, { object: await getPlan(store, plan.id) });
+    await registry.runAction("dev/priority-down", {}, { object: await getPlan(store, plan.id), actor: ACTOR });
     expect(planData((await getPlan(store, plan.id)).data).priority).toBe("P3");
   });
 
@@ -102,7 +104,7 @@ describe("dev actions", () => {
     const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
     const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
     await setTaskPhase(store, task.id, "running", { run: "run-3" });
-    await registry.runAction("dev/cancel", {}, { object: await getPlan(store, plan.id) });
+    await registry.runAction("dev/cancel", {}, { object: await getPlan(store, plan.id), actor: ACTOR });
     expect(cancelled).toEqual(["run-3"]);
     expect(taskData((await getTask(store, task.id)).data).phase).toBe(
       "cancelled",

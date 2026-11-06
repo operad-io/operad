@@ -22,6 +22,7 @@ import {
   isOpenTask,
   isRecord,
   keyRepository,
+  listAll,
   lowerPriority,
   nextId,
   parseId,
@@ -140,7 +141,7 @@ export async function withRepoLock<T>(
  * ------------------------------------------------------------------------- */
 
 async function repositories(store: ObjectStore): Promise<readonly StoredObject[]> {
-  return store.list(REPOSITORY_TYPE);
+  return listAll(store, REPOSITORY_TYPE);
 }
 
 export async function findRepository(
@@ -351,7 +352,7 @@ async function assertNoOpenTasks(
   store: ObjectStore,
   name: string,
 ): Promise<void> {
-  const open = (await store.list(TASK_TYPE)).filter((object) => {
+  const open = (await listAll(store, TASK_TYPE)).filter((object) => {
     const task = taskData(object.data);
     return task.repository === name && isOpenTask(task);
   });
@@ -390,7 +391,7 @@ async function repositoryOf(
  * ------------------------------------------------------------------------- */
 
 async function allTasks(store: ObjectStore): Promise<readonly StoredObject[]> {
-  return store.list(TASK_TYPE);
+  return listAll(store, TASK_TYPE);
 }
 
 async function tasksOfPlan(
@@ -1065,7 +1066,7 @@ export async function liveObjects(
 ): Promise<Map<string, Record<string, unknown>>> {
   const objects = new Map<string, Record<string, unknown>>();
   for (const type of [REPOSITORY_TYPE, PLAN_TYPE, TASK_TYPE]) {
-    for (const object of await store.list(type)) {
+    for (const object of await listAll(store, type)) {
       objects.set(`${type}:${object.id}`, { ...object.data });
     }
   }

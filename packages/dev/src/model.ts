@@ -1,6 +1,24 @@
 /** The objects the dev plugin owns, and the pure rules that change them. */
 
-import type { ObjectStore } from "@operad-io/engine";
+import type { ObjectStore, StoredObject } from "@operad-io/engine";
+
+/**
+ * Every object of a type, following the store's pages. The store returns one
+ * page at a time; an id scan must not stop at its default limit.
+ */
+export async function listAll(
+  store: ObjectStore,
+  type: string,
+): Promise<StoredObject[]> {
+  const objects: StoredObject[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await store.list(type, cursor === undefined ? {} : { cursor });
+    objects.push(...page.objects);
+    if (page.next === undefined) return objects;
+    cursor = page.next;
+  }
+}
 
 /** A plan is a request the owner confirmed into work. */
 export type PlanStatus = "draft" | "confirmed" | "cancelled";
@@ -195,7 +213,7 @@ export async function nextId(
   slug: string,
 ): Promise<string> {
   const prefix = type === "plan" ? "PL" : "TK";
-  const all = await store.list(type);
+  const all = await listAll(store, type);
   const mine = all.filter(
     (object) =>
       isRecord(object.data) && object.data.repository === repository,

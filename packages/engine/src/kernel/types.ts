@@ -1,5 +1,6 @@
 import type { EndStatus, Replay, StepKind } from "../flow/types.ts";
 import type { FactCause, JsonValue, NewFact } from "../log/types.ts";
+import type { Actor } from "../plugin/types.ts";
 
 /** The kinds of fact the kernel writes. */
 export type FactKind =
@@ -84,6 +85,8 @@ export interface InputBase {
 
 export interface StartInput extends InputBase {
   readonly kind: "start";
+  /** Fixed JSON the flow was started with, read by its steps. */
+  readonly params?: JsonValue | undefined;
 }
 
 export interface StepResultInput extends InputBase {
@@ -98,6 +101,8 @@ export interface PersonAnswerInput extends InputBase {
   readonly waitId: string;
   readonly choice: string;
   readonly note?: string;
+  /** Who answered: a person through a client. */
+  readonly actor: Actor;
 }
 
 export interface TickInput extends InputBase {
@@ -148,6 +153,8 @@ export interface StepResultValue {
 export interface KernelState {
   readonly status: RunStatus;
   readonly started: boolean;
+  /** The fixed JSON the flow was started with; null when it was given none. */
+  readonly params: JsonValue;
   /** The one step a run is in, or null. */
   readonly step: string | null;
   readonly stepKind: StepKind | null;
@@ -171,6 +178,7 @@ export interface Decision {
 
 export interface RunStartedPayload {
   readonly flow: string;
+  readonly params?: JsonValue | undefined;
 }
 
 export interface StepEnteredPayload {
@@ -219,6 +227,7 @@ export interface PersonAnsweredPayload {
   readonly choice: string;
   readonly note: string | null;
   readonly waitKind: WaitKind;
+  readonly actor: Actor | null;
 }
 
 export interface RunEndedPayload {

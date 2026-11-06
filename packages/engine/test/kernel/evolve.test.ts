@@ -41,6 +41,16 @@ describe("evolve: each fact kind", () => {
     expect(state.lastSeq).toBe(1);
   });
 
+  test("run_started keeps the fixed JSON the flow was started with", () => {
+    const params = { prompt: "from the rule", count: 2 };
+    const state = evolve(
+      initialState(),
+      fact("run_started", { flow: "deploy", params }),
+    );
+    expect(state.params).toEqual(params);
+    expect(evolve(initialState(), fact("run_started", { flow: "deploy" })).params).toBeNull();
+  });
+
   test("step_entered moves the run into one step and counts the visit", () => {
     const state = evolve(initialState(), fact("step_entered", { step: "run", visit: 2, kind: "plugin" }));
     expect(state.status).toBe("running");

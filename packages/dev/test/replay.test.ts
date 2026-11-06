@@ -19,6 +19,7 @@ import {
 import {
   PRIORITIES,
   bareId,
+  listAll,
   type AutoMode,
   type TaskPhase,
 } from "../src/model.ts";
@@ -143,7 +144,7 @@ test("2 000 random operations rebuild from history every time", async () => {
           );
         }
       } else if (operation === 13 && plans.length > 0) {
-        await store.list("plan");
+        await listAll(store, "plan");
       }
     } catch {
       // A refused operation leaves the objects as they were.

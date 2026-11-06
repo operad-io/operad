@@ -28,6 +28,7 @@ import {
   bareId,
   briefBody,
   changesBody,
+  listAll,
   storeKey,
   taskData,
   type RepositoryData,
@@ -86,7 +87,7 @@ describe("dev repositories", () => {
       /open task/,
     );
 
-    const task = (await store.list("task"))[0];
+    const [task] = await listAll(store, "task");
     if (task === undefined) throw new Error("missing task");
     await setTaskPhase(store, task.id, "merged");
     await removeRepository(store, "repository");
@@ -398,7 +399,7 @@ describe("dev plans and tasks", () => {
       addTask(store, { plan: plan.id, slug: "same", title: "Second" }),
     ]);
     expect(new Set([first.id, second.id]).size).toBe(2);
-    const tasks = await store.list("task");
+    const tasks = await listAll(store, "task");
     expect(tasks).toHaveLength(2);
     expect((await getPlan(store, plan.id)).data.taskCount).toBe(2);
   });
@@ -462,7 +463,7 @@ describe("dev checks inside the lock", () => {
     } finally {
       devTestHooks.beforeLock = undefined;
     }
-    expect((await store.list("task"))).toHaveLength(0);
+    expect(await listAll(store, "task")).toHaveLength(0);
   });
 
   test("repo remove rechecks that no task is open", async () => {

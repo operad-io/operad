@@ -238,3 +238,55 @@
 | TK0019-M19 | packages/engine/src/plugin/file-store.ts | kept only the directory watch in a subscription and dropped the poll fallback | `the file plugin store > a subscription still reports a write the watch does not` |
 | TK0019-M20 | packages/dev/src/lock.ts | left the wait's directory watch and fallback timer open when it finished | `the repository lock > a real wait closes its watch and its timer` |
 
+## TK0018 — the radian harness plugin
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0018-M1 | packages/harness-radian/src/index.ts | skipped the non-zero exit check, so exit 1 became `done` | `harness-radian/agent > a non-zero exit is a failure that says so` |
+| TK0018-M2 | packages/harness-radian/src/index.ts | defaulted an absent Result cost to `{ micros: 0 }` instead of `null` | `harness-radian/agent > a Result record without a cost leaves the cost unknown, not zero` |
+| TK0018-M3 | packages/harness-radian/src/process.ts | marked the wall-time stop as a stall | `harness-radian/agent > wallTimeSecs stops a run that never ends` |
+| TK0018-M4 | packages/harness-radian/src/index.ts | sent a 1 MB prompt through argv instead of stdin | `harness-radian/agent > a prompt over 1 MB goes through stdin unchanged` |
+| TK0018-M5 | packages/engine/src/runner/runner.ts | passed no flow params to a step | `harness-radian:prompt > runs the fake once with the prompt unchanged and ends with its result` |
+| TK0018-M6 | packages/harness-radian/src/process.ts | skipped the PATH lookup, so a missing radian became a spawn failure | `harness-radian/agent > a radian that is not on PATH fails with a clear reason` |
+| TK0018-M7 | packages/harness-radian/src/index.ts | treated a zero exit without a Result as success | `harness-radian/agent > a zero exit without a Result record is a failure that says so` |
+| TK0018-M8 | packages/harness-radian/src/index.ts | classified a cancelled run as a failure instead of `interrupted` | `harness-radian/agent > cancel stops the process group and reports interrupted` |
+| TK0018-M9 | packages/harness-radian/src/process.ts | stopped resetting the stall timer on each output line | `harness-radian/agent > no new output line for stallSecs stops the group` |
+
+## TK0018 — rework 2: a failed spawn settles and output stays bounded
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0018-M10 | packages/harness-radian/src/process.ts | `finish()` waited only for `exit`, which a failed spawn never emits | `harness-radian/agent > a spawn failure after the cwd check settles as a failure, not a hang` (timed out after 5000ms) |
+| TK0018-M11 | packages/harness-radian/src/process.ts | multiplied the longest-line bound by 1024, removing any practical bound on an unterminated stream | `harness-radian/agent > an unterminated output stream is stopped, not buffered forever` (never settled; the buffer kept growing) |
+| TK0018-M12 | packages/harness-radian/src/index.ts | recorded an over-long line as a signal exit instead of `line_too_long` | `harness-radian/agent > an unterminated output stream is stopped, not buffered forever` (`exit` instead of `line_too_long`) |
+
+## TK0018 — rework 3: the JSONL log applies backpressure
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0018-M13 | packages/harness-radian/src/jsonl-log.ts | `push` flushed a full buffer without returning the pending write, so the caller never waited | `jsonl log > a full buffer returns the write the caller must wait for` |
+| TK0018-M14 | packages/harness-radian/src/process.ts | `Lines.push` delivered every line of a chunk without waiting for the line handler | `harness-radian/agent > a line handler that is still busy stops the reader from reading ahead` |
+
+## TK0028 — contract: objects, facts, action args and actor
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0028-M1 | packages/engine/src/plugin/paging.ts | made `matchesWhere` accept every object | `object list > filters on an indexed field (jsonl)` |
+| TK0028-M2 | packages/engine/src/plugin/file-store.ts | stopped comparing a list cursor`s object type | `object list > refuses a cursor from another object type (jsonl)` |
+| TK0028-M3 | packages/engine/src/plugin/action-schema.ts | skipped the enum check in `validateActionArgs` | `operad presentation commands > an enum argument is listed in help and validated` |
+| TK0028-M4 | packages/engine/src/kernel/decide.ts | wrote `actor: null` into `person_answered` | `decide: person_answer > records who answered in person_answered` |
+| TK0028-M5 | packages/engine/src/plugin/file-store.ts | made `subscribeFacts` ignore its cursor | `object facts > a subscription after a cursor gets only later facts (jsonl)` |
+| TK0028-M6 | packages/engine/src/plugin/registry.ts | left the actor out of the action`s fact | `plugin registry > records who asked in the action's fact` |
+
+## TK0028 — rework 2: store lifecycle, cross-connection facts and schema flags
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0028-M7 | packages/engine/src/plugin/file-store.ts | made a fact unsubscribe remove only the listener, never stopping the shared watcher | `store lifecycle and concurrency > stops the watcher when the last fact subscription ends` |
+| TK0028-M8 | packages/engine/src/plugin/sqlite-store.ts | treated a declared empty index as an undeclared type | `store lifecycle and concurrency > refuses any filter when the type declares an empty index (sqlite)` |
+| TK0028-M9 | packages/engine/src/runner/step-worker.ts | opened a JSONL store in the worker instead of the configured backend | `runner > a worker step writes to the configured sqlite store` |
+| TK0028-M10 | packages/engine/src/plugin/file-store.ts | removed the append lock and took the next sequence from the stale entry count | `store lifecycle and concurrency > two jsonl writers assign unique, contiguous sequences` |
+| TK0028-M11 | packages/engine/src/plugin/sqlite-store.ts | stopped polling for facts another connection committed | `store lifecycle and concurrency > a sqlite subscription sees a fact another connection appended` |
+| TK0028-M12 | packages/cli/src/main.ts | restored the id-shaped-value heuristic in the action flag parser | `operad presentation commands > schema flags accept values that look like ids or negative numbers` |
+| TK0028-M13 | packages/engine/src/plugin/action-schema.ts | accepted a `role: "note"` property without type `"string"` | `plugin registry validation > rejects a note property that is not a string` |
+| TK0028-M14 | packages/engine/src/plugin/registry.ts | left the actor out of the action context | `plugin registry > an action receives the person's actor` |

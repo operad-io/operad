@@ -48,6 +48,8 @@ export interface RunnerOptions {
   /** The store root; the run lock lives under `<root>/locks/runs`. */
   readonly lockRoot?: string | undefined;
   readonly object?: ObjectRef | undefined;
+  /** Fixed JSON the flow starts with; the runner writes it in the start fact. */
+  readonly params?: JsonValue | undefined;
   /** Treat an outstanding step as a crash and recover it first. */
   readonly recover?: boolean | undefined;
 }
@@ -97,6 +99,7 @@ export class Runner {
   private readonly signal: AbortSignal | undefined;
   private readonly lockRoot: string | undefined;
   private readonly object: ObjectRef | undefined;
+  private readonly params: JsonValue | undefined;
   private readonly recover: boolean;
   readonly runId: string;
 
@@ -111,6 +114,7 @@ export class Runner {
     this.signal = options.signal;
     this.lockRoot = options.lockRoot;
     this.object = options.object;
+    this.params = options.params;
     this.recover = options.recover === true;
   }
 
@@ -161,7 +165,7 @@ export class Runner {
           this.flow,
           this.runId,
           state,
-          { kind: "start" },
+          this.startInput(),
           this.clock(),
           "runner",
           "start",
@@ -193,7 +197,7 @@ export class Runner {
         this.flow,
         this.runId,
         state,
-        { kind: "start" },
+        this.startInput(),
         this.clock(),
         "runner",
         "start",
@@ -221,7 +225,7 @@ export class Runner {
 
     if (effect.kind === "poll_check") {
       if (effect.check === null) return "blocked";
-      const outcome = await this.execute(effect.check, effect.params, true);
+      const outcome = await this.execute(effect.check, effect.params, true, state.params);
       if (outcome.result === "ready" || outcome.result === "interrupted") {
         await this.recordResult(state, effect.id, outcome.result, outcome.data);
         return "progress";
@@ -230,7 +234,7 @@ export class Runner {
     }
 
     if (effect.use === null) return "blocked";
-    const outcome = await this.execute(effect.use, effect.params, false);
+    const outcome = await this.execute(effect.use, effect.params, false, state.params);
     await this.recordResult(state, effect.id, outcome.result, outcome.data);
     return "progress";
   }
@@ -275,6 +279,7 @@ export class Runner {
     use: string,
     params: unknown,
     preferInterrupted: boolean,
+    flowParams: JsonValue,
   ): Promise<PluginStepResult> {
     if (this.signal?.aborted === true) {
       return this.failure(use, preferInterrupted, {
@@ -295,9 +300,16 @@ export class Runner {
         object,
         sources,
         preferInterrupted,
+        flowParams,
       );
     }
-    return this.executeHere(use, params, object, preferInterrupted);
+    return this.executeHere(use, params, object, preferInterrupted, flowParams);
+  }
+
+  private startInput(): Input {
+    return this.params === undefined
+      ? { kind: "start" }
+      : { kind: "start", params: this.params };
   }
 
   private async runObject(): Promise<RunObject | undefined> {
@@ -319,6 +331,7 @@ export class Runner {
     object: RunObject | undefined,
     sources: readonly string[],
     preferInterrupted: boolean,
+    flowParams: JsonValue,
   ): Promise<PluginStepResult> {
     return new Promise((resolve) => {
       const worker = new Worker(STEP_WORKER, {
@@ -327,8 +340,12 @@ export class Runner {
           home: this.registry.home,
           cwd: this.cwd ?? this.registry.workdir,
           storeRoot: this.registry.store.root,
+          ...(this.registry.store.location === undefined
+            ? {}
+            : { store: this.registry.store.location }),
           use,
           params,
+          flowParams,
           runId: this.runId,
           ...(object === undefined ? {} : { object }),
         },
@@ -433,6 +450,7 @@ export class Runner {
     params: unknown,
     object: RunObject | undefined,
     preferInterrupted: boolean,
+    flowParams: JsonValue,
   ): Promise<PluginStepResult> {
     const controller = new AbortController();
     const forward = (): void => controller.abort();
@@ -451,6 +469,7 @@ export class Runner {
       runId: this.runId,
       ...(this.cwd === undefined ? {} : { cwd: this.cwd }),
       ...(object === undefined ? {} : { object }),
+      params: flowParams,
       signal: controller.signal,
     });
     // After a timeout the plugin may still reject; that rejection is no

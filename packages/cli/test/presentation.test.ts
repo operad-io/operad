@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   FilePluginStore,
   openConfigLog,
+  openPluginStore,
   readConfig,
   storeRootOf,
 } from "@operad-io/engine";
@@ -123,14 +124,106 @@ describe("operad presentation commands", () => {
 
     const json = capture();
     expect(await main(["list", "item", "--json"], { home, io: json.io })).toBe(0);
-    const rows = JSON.parse(json.text()) as {
-      id: string;
-      waiting: boolean;
-      running: boolean;
-      note?: string;
-    }[];
-    expect(rows[0]).toMatchObject({ id: "one", waiting: true, note: "$1" });
-    expect(rows[1]).toMatchObject({ id: "two", waiting: false });
+    const page = JSON.parse(json.text()) as {
+      rows: {
+        id: string;
+        waiting: boolean;
+        running: boolean;
+        note?: string;
+      }[];
+      next?: string;
+    };
+    expect(page.rows[0]).toMatchObject({ id: "one", waiting: true, note: "$1" });
+    expect(page.rows[1]).toMatchObject({ id: "two", waiting: false });
+    expect(page.next).toBeUndefined();
+  });
+
+  test("list filters on indexed fields and pages with --limit and --cursor", async () => {
+    const { home } = await makeHome();
+    seed(home, { title: "One", state: "new", plan: "P1" }, "one");
+    seed(home, { title: "Two", state: "open", plan: "P1" }, "two");
+    seed(home, { title: "Three", state: "new", plan: "P1" }, "three");
+
+    const filtered = capture();
+    expect(
+      await main(["list", "item", "--where", "state=new"], {
+        home,
+        io: filtered.io,
+      }),
+    ).toBe(0);
+    expect(filtered.text()).toContain("one");
+    expect(filtered.text()).toContain("three");
+    expect(filtered.text()).not.toContain("two");
+
+    const refused = capture();
+    expect(
+      await main(["list", "item", "--where", "title=One"], {
+        home,
+        io: refused.io,
+      }),
+    ).toBe(2);
+    expect(refused.errors()).toContain('field "title"');
+    expect(refused.errors()).toContain('"state"');
+
+    const first = capture();
+    expect(
+      await main(["list", "item", "--where", "plan=P1", "--limit", "2"], {
+        home,
+        io: first.io,
+      }),
+    ).toBe(0);
+    const nextLine = first
+      .text()
+      .split("\n")
+      .find((line) => line.startsWith("next: "));
+    expect(nextLine).toBeDefined();
+    const cursor = (nextLine ?? "").replace("next: operad list item --cursor ", "");
+
+    const second = capture();
+    expect(
+      await main(["list", "item", "--where", "plan=P1", "--limit", "2", "--cursor", cursor], {
+        home,
+        io: second.io,
+      }),
+    ).toBe(0);
+    expect(second.text()).toContain("two");
+    expect(second.text()).not.toContain("one  ");
+    expect(second.text()).not.toContain("three");
+    expect(second.text()).not.toContain("next: ");
+  });
+
+  test("list and actions use the configured sqlite store", async () => {
+    const { root, home } = await makeHome();
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({
+        plugins: [pluginPath],
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
+      }),
+    );
+    const store = openPluginStore({
+      backend: "sqlite",
+      root: join(root, "store"),
+    });
+    store.put("item", "one", { title: "One", state: "new", plan: "P1" }, "seed");
+
+    const output = capture();
+    expect(
+      await main(["list", "item", "--where", "state=new"], {
+        home,
+        io: output.io,
+      }),
+    ).toBe(0);
+    expect(output.text()).toContain("one  new  One");
+
+    const action = capture();
+    expect(
+      await main(["demo:auto", "item:one", "--level", "run"], {
+        home,
+        io: action.io,
+      }),
+    ).toBe(0);
+    expect(store.get("item", "one")?.data.auto).toBe("run");
   });
 
   test("list shows a Promise row as an error row", async () => {
@@ -256,6 +349,76 @@ describe("operad presentation commands", () => {
       }),
     ).toBe(0);
     expect(freshStore(home).get("item", "three")?.data.approved).toBe(true);
+  });
+
+  test("an enum argument is listed in help and validated", async () => {
+    const { home } = await makeHome();
+    seed(home, { title: "One", state: "new" }, "one");
+
+    const shown = capture();
+    expect(await main(["show", "item:one"], { home, io: shown.io })).toBe(0);
+    expect(shown.text()).toContain("demo:auto");
+    expect(shown.text()).toContain("--level off|run|merge");
+
+    const usage = capture();
+    expect(
+      await main(["demo:auto", "--help"], { home, io: usage.io }),
+    ).toBe(0);
+    expect(usage.text()).toContain("usage: operad demo:auto <id>");
+    expect(usage.text()).toContain("--level off|run|merge");
+
+    const refused = capture();
+    expect(
+      await main(["demo:auto", "item:one", "--level", "bogus"], {
+        home,
+        io: refused.io,
+      }),
+    ).toBe(2);
+    expect(refused.errors()).toContain("level");
+    expect(refused.errors()).toContain('"off"');
+    expect(refused.errors()).toContain('"run"');
+    expect(refused.errors()).toContain('"merge"');
+
+    const accepted = capture();
+    expect(
+      await main(["demo:auto", "item:one", "--level", "merge"], {
+        home,
+        io: accepted.io,
+      }),
+    ).toBe(0);
+    expect(freshStore(home).get("item", "one")?.data.auto).toBe("merge");
+  });
+
+  test("schema flags accept values that look like ids or negative numbers", async () => {
+    const { home } = await makeHome();
+    seed(home, { title: "One", state: "new" }, "one");
+
+    const idLike = capture();
+    expect(
+      await main(["demo:label", "item:one", "--text", "x:y"], {
+        home,
+        io: idLike.io,
+      }),
+    ).toBe(0);
+    expect(freshStore(home).get("item", "one")?.data.label).toBe("x:y");
+
+    const numericText = capture();
+    expect(
+      await main(["demo:label", "item:one", "--text", "123"], {
+        home,
+        io: numericText.io,
+      }),
+    ).toBe(0);
+    expect(freshStore(home).get("item", "one")?.data.label).toBe("123");
+
+    const negative = capture();
+    expect(
+      await main(["demo:label", "item:one", "--count", "-1"], {
+        home,
+        io: negative.io,
+      }),
+    ).toBe(0);
+    expect(freshStore(home).get("item", "one")?.data.count).toBe(-1);
   });
 
   test("a required note outside a terminal is a usage error", async () => {

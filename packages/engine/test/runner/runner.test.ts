@@ -16,6 +16,7 @@ import {
   loadPluginRegistry,
   openConfigLog,
   openLog,
+  openPluginStore,
   readConfig,
   readState,
   storeRootOf,
@@ -87,7 +88,10 @@ interface FileSetup {
 }
 
 /** A registry loaded from a config file, so steps can run in a worker. */
-async function fileSetup(flowName: string): Promise<FileSetup> {
+async function fileSetup(
+  flowName: string,
+  backend: "jsonl" | "sqlite" = "jsonl",
+): Promise<FileSetup> {
   const root = await tempRoot();
   const home = join(root, "home");
   mkdirSync(home, { recursive: true });
@@ -96,7 +100,10 @@ async function fileSetup(flowName: string): Promise<FileSetup> {
     join(home, "config.json"),
     JSON.stringify({
       plugins: [pluginPath],
-      store: { backend: "jsonl", path: storeRoot },
+      store: {
+        backend,
+        path: backend === "sqlite" ? join(storeRoot, "log.sqlite") : storeRoot,
+      },
     }),
   );
   const config = await readConfig(home);
@@ -104,7 +111,7 @@ async function fileSetup(flowName: string): Promise<FileSetup> {
   const registry = await loadPluginRegistry({
     home,
     cwd: home,
-    store: new FilePluginStore({ root: join(storeRoot, "plugins") }),
+    store: openPluginStore({ backend, root: storeRoot }),
   });
   const found = registry.flow(flowName);
   if (found === undefined) throw new Error(`missing flow ${flowName}`);
@@ -375,6 +382,27 @@ describe("runner", () => {
         (entry) => entry.step === "work" && entry.what === "work failed",
       );
       expect(work?.why).toContain("longer than 500 ms");
+    } finally {
+      await run.close();
+    }
+  });
+
+  test("a worker step writes to the configured sqlite store", async () => {
+    const run = await fileSetup("write", "sqlite");
+    try {
+      const runner = new Runner({
+        log: run.log,
+        flow: run.flow,
+        runId: run.runId,
+        registry: run.registry,
+        lockRoot: run.storeRoot,
+      });
+      expect(await runner.run()).toBe("ended");
+
+      const configured = openPluginStore({ backend: "sqlite", root: run.storeRoot });
+      expect((await configured.get("job", "1"))?.data.wrote).toBe(true);
+      expect(existsSync(join(run.storeRoot, "plugins.sqlite"))).toBe(true);
+      expect(existsSync(join(run.storeRoot, "plugins", "facts.jsonl"))).toBe(false);
     } finally {
       await run.close();
     }

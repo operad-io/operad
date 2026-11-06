@@ -9,6 +9,7 @@ import type {
 import {
   bareId,
   hasRework,
+  listAll,
   planData,
   planNote,
   planState,
@@ -70,7 +71,7 @@ export const planViews: ObjectViews = {
       return { markdown: plan.request };
     }
     if (sectionId === "tasks") {
-      const tasks = (await ctx.store.list("task"))
+      const tasks = (await listAll(ctx.store, "task"))
         .filter((candidate) => {
           const task = taskData(candidate.data);
           return (
