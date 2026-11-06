@@ -266,10 +266,25 @@ export class Kernel {
       // The first call has been recorded but has no result yet (it may still
       // be running). A duplicate changes nothing.
       return { kind: "recorded", inputId, duplicate: true };
-    } else {
-      this.store.recordEvent(inputId, event);
     }
+    this.store.recordEvent(inputId, event);
     this.store.writeEventFiles(inputId, event);
+    return this.route(inputId, event, false);
+  }
+
+  /**
+   * Routes one event that the log already recorded. The result is stored, so
+   * a second call for the same input reads the first outcome and changes
+   * nothing. Recovery calls this for a recorded run-end event whose routing
+   * was interrupted.
+   */
+  private async route(
+    inputId: string,
+    event: TriggerEvent,
+    duplicate: boolean,
+  ): Promise<TriggerResult> {
+    const stored = this.store.result(inputId);
+    if (stored !== undefined) return this.toTriggerResult(stored, duplicate);
 
     if (event.hops > MAX_TRIGGER_HOPS) {
       const reason = `the chain is ${event.hops} hops deep; at most ${MAX_TRIGGER_HOPS} are followed`;
@@ -291,7 +306,7 @@ export class Kernel {
         reason,
         ...(event.object === undefined ? {} : { object: event.object }),
       });
-      return { kind: "skipped", inputId, duplicate: false, reason };
+      return { kind: "skipped", inputId, duplicate, reason };
     }
 
     const rule = this.match(event);
@@ -302,7 +317,7 @@ export class Kernel {
         duplicate: false,
         ...(event.object === undefined ? {} : { object: event.object }),
       });
-      return { kind: "recorded", inputId, duplicate: false };
+      return { kind: "recorded", inputId, duplicate };
     }
 
     const object = this.resolveObject(rule, event);
@@ -313,7 +328,7 @@ export class Kernel {
         duplicate: false,
         reason: "the rule takes the event's object, but the event has none",
       });
-      return { kind: "recorded", inputId, duplicate: false };
+      return { kind: "recorded", inputId, duplicate };
     }
 
     const active = await this.activeRun(rule.start.flow, object);
@@ -330,7 +345,7 @@ export class Kernel {
       return {
         kind: "active",
         inputId,
-        duplicate: false,
+        duplicate,
         runId: active.runId,
         flow: rule.start.flow,
         object,
@@ -362,7 +377,7 @@ export class Kernel {
       return {
         kind: "observed",
         inputId,
-        duplicate: false,
+        duplicate,
         flow: rule.start.flow,
         object,
       };
@@ -382,7 +397,7 @@ export class Kernel {
       return {
         kind: "candidate",
         inputId,
-        duplicate: false,
+        duplicate,
         pendingId: inputId,
         flow: rule.start.flow,
         object,
@@ -405,7 +420,7 @@ export class Kernel {
         flow: rule.start.flow,
         object,
       },
-      false,
+      duplicate,
     );
   }
 
@@ -480,14 +495,45 @@ export class Kernel {
         summary: lastStepSummary(state),
       },
     };
-    // Finish the run before its event goes back through the rules: the event
-    // must be able to start the same flow on the same object, and a run that
-    // is still active would receive the event instead.
+    // Record the event before ending the run: a crash in between leaves the
+    // run active, and the next pass records the same event again (the input
+    // store dedupes source+key). A run that is still active would receive the
+    // event instead of the rule starting a run on the same object, so the run
+    // is ended before the event goes back through the rules.
+    const recorded = await this.log.recordInput(
+      null,
+      event.source,
+      event.key,
+      eventPayload(event),
+    );
+    const inputId = recorded.inputId;
+    if (this.store.event(inputId) === undefined) {
+      this.store.recordEvent(inputId, event);
+    }
+    this.store.writeEventFiles(inputId, event);
     await this.log.endRun(runId);
     try {
-      await this.receive(event);
+      await this.route(inputId, event, recorded.duplicate);
     } catch (error) {
       this.onLog(`run ${runId}: run-end event failed: ${messageOf(error)}`);
+    }
+  }
+
+  /**
+   * Routes a recorded run-end event whose routing was interrupted after the
+   * run was already ended. `serve` calls this every pass, so a crash between
+   * the end of the run and its event reaching the rules loses nothing.
+   */
+  async recoverRunEnds(): Promise<void> {
+    for (const { inputId, event } of this.store.unrouted()) {
+      if (event.source !== "operad" || !event.type.startsWith("run.")) continue;
+      try {
+        await this.route(inputId, event, true);
+      } catch (error) {
+        this.onLog(
+          `trigger ${inputId}: run-end event failed: ${messageOf(error)}`,
+        );
+      }
     }
   }
 

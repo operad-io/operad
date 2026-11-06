@@ -27,6 +27,12 @@ export interface StoredTriggerResult extends TriggerResult {
   readonly at: number;
 }
 
+/** A recorded event that no routing outcome has claimed yet. */
+export interface UnroutedEvent {
+  readonly inputId: string;
+  readonly event: TriggerEvent;
+}
+
 interface StoredRecord {
   readonly type: "event" | "result";
   readonly inputId: string;
@@ -150,6 +156,17 @@ export class TriggerStore {
   result(inputId: string): StoredTriggerResult | undefined {
     this.refresh();
     return this.results.get(inputId);
+  }
+
+  /** Events the journal recorded that have no result yet. */
+  unrouted(): readonly UnroutedEvent[] {
+    this.refresh();
+    const list: UnroutedEvent[] = [];
+    for (const [inputId, event] of this.events) {
+      if (this.results.has(inputId)) continue;
+      list.push({ inputId, event });
+    }
+    return list;
   }
 
   /** The latest status of a candidate, by its pending id. */

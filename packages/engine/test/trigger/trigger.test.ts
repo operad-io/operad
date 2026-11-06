@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   Kernel,
@@ -17,7 +17,15 @@ import {
   readStoredStart,
   readStoredTrigger,
   serveOnce,
+  type AppendResult,
+  type Fact,
+  type GlobalFact,
+  type JsonValue,
   type LogBackend,
+  type NewFact,
+  type RecordInputResult,
+  type RunInfo,
+  type RunsOptions,
   type TriggerEvent,
   type TriggerRule,
 } from "../../src/index.ts";
@@ -86,6 +94,97 @@ function event(overrides: Partial<TriggerEvent> = {}): TriggerEvent {
     hops: 0,
     ...overrides,
   };
+}
+
+/** A log that throws on a chosen call, to place a crash between two writes. */
+class CrashLog implements LogBackend {
+  private readonly calls = new Map<string, number>();
+
+  constructor(
+    private readonly inner: LogBackend,
+    private readonly crashAt: (method: string, call: number) => boolean,
+  ) {}
+
+  private check(method: string): void {
+    const call = (this.calls.get(method) ?? 0) + 1;
+    this.calls.set(method, call);
+    if (this.crashAt(method, call)) {
+      throw new Error(`injected crash in ${method} call ${call}`);
+    }
+  }
+
+  async startRun(flow: string, object: string): Promise<RunInfo> {
+    this.check("startRun");
+    return this.inner.startRun(flow, object);
+  }
+
+  async endRun(runId: string): Promise<void> {
+    this.check("endRun");
+    return this.inner.endRun(runId);
+  }
+
+  async recordInput(
+    runId: string | null,
+    source: string,
+    sourceKey: string,
+    payload: JsonValue,
+  ): Promise<RecordInputResult> {
+    this.check("recordInput");
+    return this.inner.recordInput(runId, source, sourceKey, payload);
+  }
+
+  async append(
+    runId: string,
+    expectedSeq: number,
+    facts: readonly NewFact[],
+  ): Promise<AppendResult> {
+    this.check("append");
+    return this.inner.append(runId, expectedSeq, facts);
+  }
+
+  read(runId: string): AsyncIterable<Fact> {
+    return this.inner.read(runId);
+  }
+
+  async runs(options?: RunsOptions): Promise<RunInfo[]> {
+    this.check("runs");
+    return this.inner.runs(options);
+  }
+
+  async appendGlobal(fact: NewFact): Promise<GlobalFact> {
+    this.check("appendGlobal");
+    return this.inner.appendGlobal(fact);
+  }
+
+  readGlobal(): AsyncIterable<GlobalFact> {
+    return this.inner.readGlobal();
+  }
+
+  async close(): Promise<void> {
+    return this.inner.close();
+  }
+}
+
+/** How many event records the trigger journal holds for one run-end key. */
+function endEventRecords(storeRoot: string, key: string): number {
+  const path = join(storeRoot, "triggers", "events.jsonl");
+  if (!existsSync(path)) return 0;
+  let count = 0;
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    if (line.length === 0) continue;
+    const record = JSON.parse(line) as {
+      readonly type?: string;
+      readonly event?: { readonly source?: string; readonly key?: string };
+    };
+    if (
+      record.type === "event" &&
+      record.event?.source === "operad" &&
+      record.event.key === key
+    ) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 async function drive(env: Setup, runId: string): Promise<void> {
@@ -493,6 +592,156 @@ describe("the kernel start entry", () => {
       );
       expect(skipped.kind).toBe("skipped");
       expect(await env.log.runs()).toHaveLength(9);
+    } finally {
+      await env.close();
+    }
+  });
+});
+
+describe("run-end recovery", () => {
+  function chain(): TriggerRule {
+    return rule({
+      source: "operad",
+      type: "run.done",
+      start: { flow: "two" },
+      object: "$event.object",
+    });
+  }
+
+  async function seedEndedRun(env: Setup): Promise<RunInfo> {
+    const first = await env.log.startRun("one", "job:1");
+    await env.log.append(first.runId, 0, [
+      { kind: "run_started", payload: { flow: "one", hops: 0 }, cause: "seed" },
+      { kind: "run_ended", payload: { status: "done", reason: null }, cause: "seed" },
+    ]);
+    return first;
+  }
+
+  function serve(env: Setup): Promise<unknown> {
+    return serveOnce({
+      log: env.log,
+      registry: env.registry,
+      lockRoot: env.storeRoot,
+      kernel: env.kernel,
+      spawnRun: () => undefined,
+    });
+  }
+
+  test("a crash after the run is ended still records its end event", async () => {
+    const env = await setup([chain()]);
+    try {
+      const started = await env.kernel.start({ flow: "one", object: "job:1" });
+      if (started.kind !== "started") throw new Error("did not start");
+      const found = env.registry.flow("one");
+      if (found === undefined) throw new Error("missing flow");
+      // The first `runs` call is the end event looking its run up.
+      const crashLog = new CrashLog(env.log, (method) => method === "runs");
+      const crashKernel = new Kernel({
+        log: crashLog,
+        registry: env.registry,
+        home: env.root,
+        storeRoot: env.storeRoot,
+        rules: [chain()],
+        onLog: () => undefined,
+      });
+      const startInput = readStoredStart(env.storeRoot, started.runId);
+      await expect(
+        new Runner({
+          log: crashLog,
+          flow: found.flow,
+          runId: started.runId,
+          registry: env.registry,
+          lockRoot: env.storeRoot,
+          ...(startInput === undefined ? {} : { startInput }),
+          onEnded: async (id, state) => {
+            await crashKernel.emitRunEnd(id, state);
+          },
+        }).run(),
+      ).rejects.toThrow("injected crash");
+
+      // The run reached its end, but its end event was never recorded.
+      expect((await readState(env.log, started.runId)).status).toBe("ended");
+
+      await serve(env);
+
+      const runs = await env.log.runs();
+      expect(runs.filter((run) => run.flow === "two")).toHaveLength(1);
+      expect(endEventRecords(env.storeRoot, started.runId)).toBe(1);
+    } finally {
+      await env.close();
+    }
+  });
+
+  test("a crash between the event record and the end still chains once", async () => {
+    const env = await setup([chain()]);
+    try {
+      const first = await seedEndedRun(env);
+      const state = await readState(env.log, first.runId);
+      const crashing = new Kernel({
+        log: new CrashLog(env.log, (method) => method === "endRun"),
+        registry: env.registry,
+        home: env.root,
+        storeRoot: env.storeRoot,
+        rules: [chain()],
+        onLog: () => undefined,
+      });
+      await expect(crashing.emitRunEnd(first.runId, state)).rejects.toThrow(
+        "injected crash",
+      );
+      // The record happened; the run was never marked ended.
+      expect(endEventRecords(env.storeRoot, first.runId)).toBe(1);
+      expect(
+        (await env.log.runs({ active: true })).map((run) => run.runId),
+      ).toEqual([first.runId]);
+
+      await serve(env);
+
+      let runs = await env.log.runs();
+      expect(runs.filter((run) => run.flow === "two")).toHaveLength(1);
+      expect(runs.find((run) => run.runId === first.runId)?.active).toBe(false);
+      expect(endEventRecords(env.storeRoot, first.runId)).toBe(1);
+
+      await serve(env);
+      runs = await env.log.runs();
+      expect(runs.filter((run) => run.flow === "two")).toHaveLength(1);
+    } finally {
+      await env.close();
+    }
+  });
+
+  test("a crash between the end and routing still chains once", async () => {
+    const env = await setup([chain()]);
+    try {
+      const first = await seedEndedRun(env);
+      const state = await readState(env.log, first.runId);
+      const crashing = new Kernel({
+        // The first call finds the run; the second is the routing lookup.
+        log: new CrashLog(env.log, (method, call) => method === "runs" && call === 2),
+        registry: env.registry,
+        home: env.root,
+        storeRoot: env.storeRoot,
+        rules: [chain()],
+        onLog: () => undefined,
+      });
+      await crashing.emitRunEnd(first.runId, state);
+      // The run is ended, but no rule has seen its event yet.
+      expect(await env.log.runs({ active: true })).toHaveLength(0);
+      expect(
+        env.kernel.store
+          .unrouted()
+          .some((item) => item.event.key === first.runId),
+      ).toBe(true);
+      expect(endEventRecords(env.storeRoot, first.runId)).toBe(1);
+
+      await serve(env);
+
+      let runs = await env.log.runs();
+      expect(runs.filter((run) => run.flow === "two")).toHaveLength(1);
+      expect(endEventRecords(env.storeRoot, first.runId)).toBe(1);
+
+      await serve(env);
+      runs = await env.log.runs();
+      expect(runs.filter((run) => run.flow === "two")).toHaveLength(1);
     } finally {
       await env.close();
     }

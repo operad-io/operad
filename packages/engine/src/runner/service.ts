@@ -60,12 +60,12 @@ async function inputApplied(
  * decision still has to be taken and appended.
  */
 export interface ApplyHooks {
-  /** Runs after the ending facts are written, before the run is marked ended. */
+  /**
+   * Runs after the ending facts are written, before the run is marked ended.
+   * Recording the end event here keeps it recoverable: a crash before the
+   * run is ended leaves the run active, so the next pass finishes it again.
+   */
   readonly beforeEnd?:
-    | ((runId: string, state: KernelState) => void | Promise<void>)
-    | undefined;
-  /** Runs after the run is marked ended; a recovered call must be safe. */
-  readonly afterEnd?:
     | ((runId: string, state: KernelState) => void | Promise<void>)
     | undefined;
 }
@@ -142,7 +142,6 @@ export async function applyInput(
   if (next.status === "ended") {
     await hooks.beforeEnd?.(runId, next);
     await log.endRun(runId);
-    await hooks.afterEnd?.(runId, next);
   }
   return { state: next, decision, duplicate: false };
 }

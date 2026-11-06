@@ -73,7 +73,7 @@ export interface RunnerOptions {
   readonly startInput?: StartInput | undefined;
   /** Sends an event a step emitted. */
   readonly emit?: ((event: StepEvent) => Promise<void>) | undefined;
-  /** Called once when the run ends, after the log marks it ended. */
+  /** Called once when the run ends, before the log marks it ended. */
   readonly onEnded?:
     | ((runId: string, state: KernelState) => Promise<void>)
     | undefined;
@@ -166,8 +166,10 @@ export class Runner {
     try {
       let state = await readState(this.log, this.runId);
       if (state.status === "ended") {
-        await this.log.endRun(this.runId);
+        // Record the end event before ending the run: a crash in between leaves
+        // the run active, and the next pass records the same event again.
         await this.onEnded?.(this.runId, state);
+        await this.log.endRun(this.runId);
         return "ended";
       }
       let pendingRecovery = this.recover;
@@ -263,10 +265,10 @@ export class Runner {
   }
 
   private hooks(): {
-    readonly afterEnd: (runId: string, state: KernelState) => Promise<void>;
+    readonly beforeEnd: (runId: string, state: KernelState) => Promise<void>;
   } {
     return {
-      afterEnd: async (runId, state) => {
+      beforeEnd: async (runId, state) => {
         await this.onEnded?.(runId, state);
       },
     };
@@ -287,8 +289,8 @@ export class Runner {
         this.clock(),
       );
       if (result.state.status === "ended") {
-        await this.log.endRun(this.runId);
         await this.onEnded?.(this.runId, result.state);
+        await this.log.endRun(this.runId);
       }
       return { state: result.state, duplicate: false };
     }

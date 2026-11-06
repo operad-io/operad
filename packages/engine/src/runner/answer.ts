@@ -50,7 +50,7 @@ export async function answerRun(options: AnswerOptions): Promise<KernelState> {
     "person",
     `answer:${wait.id}:${options.choice}`,
     {
-      afterEnd: async (runId, ended) => {
+      beforeEnd: async (runId, ended) => {
         await options.onEnded?.(runId, ended);
       },
     },

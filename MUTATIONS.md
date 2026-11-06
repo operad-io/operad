@@ -137,4 +137,8 @@
 | TK0026-M12 | packages/engine/src/log/sqlite.ts | disabled the migration of a legacy `inputs.run_id TEXT NOT NULL` table | `a store from before global inputs is migrated on open` |
 | TK0026-M13 | packages/engine/src/loop/serve.ts | skipped loading `triggers.json` for a kernel built inside `serveOnce` | `serve loop > recovery starts a run-end chain without a kernel argument` |
 
+## TK0026 — rework 7: a run-end event survives the end of its run
 
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0026-M14 | packages/engine/src/runner/service.ts | marked the run ended before recording its end event | `run-end recovery > a crash after the run is ended still records its end event` |

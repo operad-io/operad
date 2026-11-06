@@ -107,7 +107,8 @@ export async function serveOnce(
     const state = await readState(options.log, run.runId);
 
     if (state.status === "ended") {
-      await options.log.endRun(run.runId);
+      // Recording the end event comes first; `emitRunEnd` ends the run before
+      // routing it, so a recovered run can start the same flow on the object.
       await kernel.emitRunEnd(run.runId, state);
       continue;
     }
@@ -129,6 +130,13 @@ export async function serveOnce(
       recover: state.status === "running",
     });
     spawned.push(run.runId);
+  }
+
+  // A run ended before its end event reached the rules loses that event unless
+  // the recorded input is routed again. The run is already inactive here, so a
+  // chained flow can start on the same object.
+  if (options.shouldStop?.() !== true) {
+    await kernel.recoverRunEnds();
   }
 
   return { started, spawned };
