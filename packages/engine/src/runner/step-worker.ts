@@ -10,6 +10,7 @@ import { FilePluginStore } from "../plugin/file-store.ts";
 import { loadPlugin } from "../plugin/load.ts";
 import { PluginRegistry } from "../plugin/registry.ts";
 import { SqlitePluginStore } from "../plugin/sqlite-store.ts";
+import type { JsonValue } from "../log/types.ts";
 import type {
   PluginStepResult,
   PluginStore,
@@ -26,6 +27,7 @@ interface StepWorkerRequest {
   readonly store?: PluginStoreLocation | undefined;
   readonly use: string;
   readonly params: unknown;
+  readonly flowParams: JsonValue;
   readonly runId: string;
   readonly object?: RunObject | undefined;
 }
@@ -65,6 +67,7 @@ async function main(request: StepWorkerRequest): Promise<void> {
 
   const result = await registry.runStep(request.use, request.params, {
     runId: request.runId,
+    params: request.flowParams,
     cwd: request.cwd,
     ...(request.object === undefined ? {} : { object: request.object }),
     signal: controller.signal,

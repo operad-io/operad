@@ -1,4 +1,5 @@
 import type { FlowDefinition } from "../flow/types.ts";
+import type { JsonValue } from "../log/types.ts";
 
 /** The plugin API version a module declares with `operadPlugin`. */
 export const OPERAD_PLUGIN_VERSION = 1 as const;
@@ -253,6 +254,8 @@ export interface PluginCheck {
 export interface StepContext extends PluginBaseContext {
   readonly runId: string;
   readonly object: RunObject | undefined;
+  /** Fixed JSON the flow was started with; null when it was given none. */
+  readonly params: JsonValue;
 }
 
 /** What a step returns. `result` must be one of the step type's results. */
@@ -267,6 +270,7 @@ export interface StepRunOptions {
   readonly object?: RunObject | undefined;
   readonly cwd?: string | undefined;
   readonly signal?: AbortSignal | undefined;
+  readonly params?: JsonValue | undefined;
 }
 
 /** A step type a plugin declares. The use name is `<plugin>/<name>`. */

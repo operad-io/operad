@@ -818,6 +818,7 @@ export class PluginRegistry {
       signal: options.signal ?? new AbortController().signal,
       runId: options.runId,
       object: options.object,
+      params: options.params ?? null,
     };
 
     const outcome: unknown = await found.step.run(ctx, params);
