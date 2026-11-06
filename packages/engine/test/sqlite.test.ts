@@ -133,11 +133,12 @@ async function describeChild(
   waitForExit: boolean,
 ): Promise<string> {
   if (waitForExit) await child.exited;
-  if (child.exitCode === null) {
-    return `the child is still running; stderr so far: ${JSON.stringify(stderr.text())}`;
+  const exitCode = child.exitCode;
+  if (exitCode === null) {
+    return `the child is still running; exit code: null; stderr so far: ${JSON.stringify(stderr.text())}`;
   }
   const text = await stderr.done;
-  return `the child exited ${child.exitCode}; stderr: ${JSON.stringify(text)}`;
+  return `the child exited ${exitCode}; stderr: ${JSON.stringify(text)}`;
 }
 
 async function nextJson(
