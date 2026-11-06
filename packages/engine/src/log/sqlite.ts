@@ -55,7 +55,7 @@ import type {
 export const SQLITE_FILE_NAME = "log.sqlite";
 
 /** How long a writer waits for another writer before SQLITE_BUSY. */
-const BUSY_TIMEOUT_MS = 5_000;
+export const BUSY_TIMEOUT_MS = 5_000;
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS schema_version (

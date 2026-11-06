@@ -474,3 +474,9 @@
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0021-M13 | packages/dev/src/gate.ts | counted the retry as a new review, so the first review's retry got `args` instead of `firstArgs` | `dev/review > the retry after an invalid report keeps the round's arguments` |
+
+## TK0030 — the holder's commit waits like the backend on a busy store
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0030-M1 | `packages/engine/test/fixtures/sqlite-hold.ts` | removed the holder's busy timeout, so its `COMMIT` returned `SQLITE_BUSY` when the opener's busy handler briefly held a shared lock | `opening waits while another process holds the store` (1 failure in 50 runs under load) |

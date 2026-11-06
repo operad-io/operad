@@ -97,9 +97,64 @@ function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: stri
   });
 }
 
-async function nextJson(lines: LineStream, message: string): Promise<unknown> {
-  const line = await withTimeout(lines.next(), 15_000, message);
-  if (line === null) throw new Error(message);
+interface CapturedText {
+  text(): string;
+  readonly done: Promise<string>;
+}
+
+function captureText(stream: ReadableStream<Uint8Array>): CapturedText {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let captured = "";
+  const done = (async () => {
+    while (true) {
+      const { value, done: finished } = await reader.read();
+      if (finished) break;
+      captured += decoder.decode(value, { stream: true });
+    }
+    captured += decoder.decode();
+    return captured;
+  })();
+  return { text: () => captured, done };
+}
+
+interface ChildHandle {
+  readonly exitCode: number | null;
+  readonly exited: Promise<number>;
+}
+
+/**
+ * The child's exit code and stderr, so a missing line names its own cause
+ * instead of hiding the child's error behind the message of the parent.
+ */
+async function describeChild(
+  child: ChildHandle,
+  stderr: CapturedText,
+  waitForExit: boolean,
+): Promise<string> {
+  if (waitForExit) await child.exited;
+  const exitCode = child.exitCode;
+  if (exitCode === null) {
+    return `the child is still running; exit code: null; stderr so far: ${JSON.stringify(stderr.text())}`;
+  }
+  const text = await stderr.done;
+  return `the child exited ${exitCode}; stderr: ${JSON.stringify(text)}`;
+}
+
+async function nextJson(
+  lines: LineStream,
+  message: string,
+  child: ChildHandle,
+  stderr: CapturedText,
+): Promise<unknown> {
+  const line = await withTimeout(lines.next(), 15_000, message).catch(async (error: unknown) => {
+    const detail = await describeChild(child, stderr, false);
+    throw new Error(`${message}: ${detail}`, { cause: error });
+  });
+  if (line === null) {
+    const detail = await describeChild(child, stderr, true);
+    throw new Error(`${message}: ${detail}`);
+  }
   return JSON.parse(line) as unknown;
 }
 
@@ -515,16 +570,21 @@ test("opening waits while another process holds the store", async () => {
     stderr: "pipe",
   });
   const holderLines = lineStream(holder.stdout);
+  const holderStderr = captureText(holder.stderr);
 
   try {
-    expect(await nextJson(holderLines, "the holder did not take the lock")).toEqual({ locked: true });
+    expect(
+      await nextJson(holderLines, "the holder did not take the lock", holder, holderStderr),
+    ).toEqual({ locked: true });
 
     // The holder keeps the lock for a moment. Open has to wait for it through
     // the busy handler; an open that gave up on SQLITE_BUSY would fail here.
     const backend = await openSqliteLogBackend(dbPath(directory));
     await backend.close();
 
-    expect(await nextJson(holderLines, "the holder did not commit")).toEqual({ committed: true });
+    expect(
+      await nextJson(holderLines, "the holder did not commit", holder, holderStderr),
+    ).toEqual({ committed: true });
   } finally {
     if (holder.exitCode === null) holder.kill();
     await holder.exited;
