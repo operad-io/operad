@@ -37,6 +37,8 @@ of adding it.
 
 ## Rules
 
+- Configuration files are JSON, each with a JSON Schema in the package that reads it. Flows and plugins are TypeScript; nothing else is.
+
 - Runtime is Bun. Run TypeScript directly; there is no build step. Use `bun:test`
   for tests and `bun:sqlite` rather than an npm SQLite package.
 - Add a runtime dependency only when a task says so. The engine has none.

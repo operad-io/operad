@@ -35,6 +35,7 @@ arc 今天住在 radian 二进制里（ADR 0032、0043、0048），worker 只有
 14. **用户名词尽量少。** 内核对用户只暴露三个词：flow、待处理、历史。其余名词都属于某个插件，不用那个插件的用户不必知道。新增用户可见的名词要 owner 同意。
 15. **开发是一个插件（`dev`）**，默认装上，可以不用：对象 plan、task、brief、rework；动作 confirm、merge、reject、cancel、auto（出现在待处理里，命令行也能直接用）；`dev` flow：worktree → worker → verify → review → 等人合并 → 合并到 main → 清理。有别的开发规范的用户可以另写或让 agent 生成一个开发插件。`dev` 只通过插件接口和内核打交道，它需要绕过接口时说明接口设计错了。
 16. **内核不绑定仓库。** operad 只有一个家目录（默认 `~/.operad`）：配置、存储、调度循环都在那里，命令在任何目录都能用，内核不读 git。绑定仓库的是 `dev` 插件：它登记若干仓库（`operad repo add`），每个仓库自己的设置放在仓库里；个人助理一类插件不需要仓库。
+17. **配置文件尽量用 JSON**（家目录的 `config.json`、仓库里的 `.operad/dev.json`），各带一份 JSON Schema，编辑器能补全和检查；flow 和插件才是 TypeScript。
 
 ## 顺序
 
