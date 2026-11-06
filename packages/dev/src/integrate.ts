@@ -253,6 +253,19 @@ export async function runIntegrate(
     };
   };
 
+  const recordMerged = async (
+    record: IntegrationRecord,
+    sha: string,
+    extra: Readonly<Record<string, unknown>> = {},
+  ): Promise<PluginStepResult> => {
+    await writeIntegration(ctx, context, task, attempt, record, {
+      phase: "merged",
+      change: `merged ${shortSha(sha)}`,
+    });
+    await refreshPlan(ctx, context);
+    return { result: "merged", data: integrationData(record, attempt, extra) };
+  };
+
   if (typeof verified !== "string" || verified.length === 0) {
     return fail("the task has no verified commit to integrate");
   }
@@ -465,17 +478,23 @@ export async function runIntegrate(
         result: "merged",
         pushed: true,
       };
-      await writeIntegration(ctx, context, task, attempt, record, {
-        phase: "merged",
-        change: `merged ${shortSha(sha)}`,
-      });
-      await refreshPlan(ctx, context);
-      return { result: "merged", data: integrationData(record, attempt) };
+      return recordMerged(record, sha);
     }
 
     lastError = `cannot push "${settings.mainBranch}" to "${settings.remote}": ${push.err || push.out || "git push failed"}`;
     git(repository, ["fetch", "--prune", settings.remote]);
     const now = revParse(repository, mainRef);
+    // A push can land on the remote and still report an error (the client lost
+    // the answer). The remote's main then contains the candidate: it is
+    // merged, and building and pushing a second candidate would be wrong.
+    if (now !== undefined && contains(repository, sha, now)) {
+      const record: IntegrationRecord = {
+        ...pending,
+        result: "merged",
+        pushed: true,
+      };
+      return recordMerged(record, sha, { landed: true });
+    }
     // Only a main that moved makes the same candidate worth building again; a
     // remote that refused the push for another reason is a failure.
     if (now !== undefined && now !== base) continue;

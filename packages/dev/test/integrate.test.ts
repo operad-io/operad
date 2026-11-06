@@ -331,6 +331,52 @@ describe("dev/integrate", () => {
     expect(remoteMain(state)).toBe(before);
   });
 
+  test("a push that lands and reports an error is not pushed again", async () => {
+    const state = await fixture({ style: "merge" });
+    const checks = join(state.root, "checks");
+    writeDevJson(state.remote.repository, {
+      style: "merge",
+      keyCommands: [`echo check >> '${checks}'`],
+    });
+    // The remote accepts the new main, then the client sees the push fail, as
+    // when the answer is lost after the remote updated its ref.
+    const wrapper = join(state.root, "receive-wrapper.sh");
+    writeFileSync(
+      wrapper,
+      [
+        "#!/bin/sh",
+        'git-receive-pack "$@"',
+        "status=$?",
+        "echo 'the connection dropped after the remote accepted the push' >&2",
+        "exit 1",
+        "",
+      ].join("\n"),
+    );
+    chmodSync(wrapper, 0o755);
+    gitOrThrow(state.remote.repository, [
+      "config",
+      "remote.origin.receivepack",
+      wrapper,
+    ]);
+
+    const result = await integrate(state);
+    expect(result.result).toBe("merged");
+    expect(result.data?.landed).toBe(true);
+    expect(readFileSync(checks, "utf8").trim().split("\n")).toHaveLength(1);
+
+    const task = await taskOf(state);
+    expect(task.phase).toBe("merged");
+    expect(task.attempt?.integration?.result).toBe("merged");
+    expect(task.attempt?.integration?.pushed).toBe(true);
+    expect(gitOrThrow(state.remote.origin, ["show", "main:code.txt"])).toBe(
+      "line",
+    );
+    expect(
+      gitOrThrow(state.remote.origin, ["rev-list", "--parents", "-1", "main"])
+        .split(" ").length,
+    ).toBe(3);
+  });
+
   test("a kill after the push recovers with no second push", async () => {
     const state = await fixture({ style: "merge" });
     const pushes = join(state.root, "pushes");

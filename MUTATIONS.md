@@ -490,3 +490,9 @@
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0030-M1 | `packages/engine/test/fixtures/sqlite-hold.ts` | removed the holder's busy timeout, so its `COMMIT` returned `SQLITE_BUSY` when the opener's busy handler briefly held a shared lock | `opening waits while another process holds the store` (1 failure in 50 runs under load) |
+
+## TK0022 — rework 3: a push that lands and reports an error
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0022-M6 | packages/dev/src/integrate.ts | removed the check that the remote's main contains the candidate after a failed push, so a push that landed was rebuilt and pushed again | `dev/integrate > a push that lands and reports an error is not pushed again` |
