@@ -20,7 +20,7 @@ export type CheckStep<T> = T extends { readonly id: string; readonly replay: "sa
         : { readonly error: `wait_person: not a result: ${string & Exclude<NextKeys<T>, C[number] | "interrupted">}` }
       : T extends {
             readonly kind: "wait";
-            readonly params: { readonly afterSecs: number } | { readonly check: string };
+            readonly params: { readonly afterSecs: number } | { readonly check: string; readonly params?: unknown };
           }
         ? Exclude<NextKeys<T>, "ready" | "interrupted"> extends never
           ? T

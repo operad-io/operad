@@ -9,6 +9,7 @@
         "@operad-io/source-cron": "workspace:*",
       },
       "devDependencies": {
+        "@operad-io/shell": "workspace:*",
         "@types/bun": "1.3.1",
         "typescript": "5.9.3",
       },
@@ -21,11 +22,19 @@
       },
       "dependencies": {
         "@operad-io/engine": "workspace:*",
+        "@operad-io/shell": "workspace:*",
       },
     },
     "packages/engine": {
       "name": "@operad-io/engine",
       "version": "0.0.0",
+    },
+    "packages/shell": {
+      "name": "@operad-io/shell",
+      "version": "0.0.0",
+      "dependencies": {
+        "@operad-io/engine": "workspace:*",
+      },
     },
     "packages/source-cron": {
       "name": "@operad-io/source-cron",
@@ -39,6 +48,8 @@
     "@operad-io/cli": ["@operad-io/cli@workspace:packages/cli"],
 
     "@operad-io/engine": ["@operad-io/engine@workspace:packages/engine"],
+
+    "@operad-io/shell": ["@operad-io/shell@workspace:packages/shell"],
 
     "@operad-io/source-cron": ["@operad-io/source-cron@workspace:packages/source-cron"],
 

@@ -142,3 +142,48 @@
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0026-M14 | packages/engine/src/runner/service.ts | marked the run ended before recording its end event | `run-end recovery > a crash after the run is ended still records its end event` |
+
+## TK0017 — the base shell plugin is a package of its own
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0017-M1 | packages/shell/src/index.ts | reported a non-zero exit as a pass | `shell/command > a non-zero exit is a failure with its code and output path` |
+| TK0017-M2 | packages/shell/src/index.ts | kept running check lines after the first failure | `shell/check > stops at the first failure and names the line` |
+| TK0017-M3 | packages/shell/src/index.ts | never compared a probe's exit code with the previous probe | `shell/probe > becomes ready when the exit code differs from the previous probe` |
+| TK0017-M4 | packages/shell/src/index.ts | reported a timeout as a signal failure | `shell/command > a timeout is a failure that says so` |
+| TK0017-M5 | packages/shell/src/index.ts | skipped the working-directory check, so a missing cwd became a spawn failure | `shell/command > a cwd that does not exist fails with a clear reason` (and the same check test) |
+| TK0017-M6 | packages/shell/src/process.ts | kept 20 000 lines in the fact instead of 20 | `shell/command > megabytes of output land in the log and only the tail is in the fact` |
+| TK0017-M7 | packages/engine/src/kernel/decide.ts | dropped the check params from the poll effect | `decide: tick > keeps a check's params in the poll effect` |
+| TK0017-M8 | packages/engine/src/runner/runner.ts | ran a wait check without its params | `a flow through the runner > waits on shell/probe with its params` |
+| TK0017-M9 | packages/shell/src/process.ts | signaled only the process group leader, not the group | `shell/command > a child that outlives the line is in the group and is stopped` |
+| TK0017-M10 | packages/engine/src/runner/runner.ts | terminated a cancelled worker without asking it to stop its processes | `a flow through the runner > a run cancel stops the command's process group in a worker` |
+
+## TK0017 — rework 3: bounded cleanup and injected time
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0017-M11 | packages/shell/src/process.ts | dropped the drain limit and waited for the output pipes to close | `shell/command > a child that leaves the group cannot hold the command open` (timed out) |
+| TK0017-M12 | packages/shell/src/process.ts | sent the grace SIGKILL without checking that the group still exists | `runLine > the grace SIGKILL is not sent to a group that ended` |
+| TK0017-M13 | packages/shell/src/index.ts | ignored the injected clock for `shell/command` | `shell/command > a timeout is a failure that says so` |
+| TK0017-M14 | packages/shell/src/index.ts | passed no timeout to a `shell/check` line | `shell/check > a line that exceeds the timeout fails and names it` |
+
+## TK0017 — rework 5: the group cannot end before the grace SIGKILL
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0017-M15 | packages/shell/src/process.ts | dropped the sentinel from the wrapper, so the group ends when the line exits | `runLine > the group outlives a finished line until the grace SIGKILL` |
+
+## TK0017 — rework 11: the sentinel's trap before any signal, and env coverage
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0017-M16 | packages/shell/src/process.ts | left the line's stderr out of the log instead of folding it into the command's output | `shell/command > a non-zero exit is a failure with its code and output path` |
+| TK0017-M17 | packages/shell/src/process.ts | passed only the step's `env` to the command, dropping the host environment | `shell/command > the host environment is still there when env is given` |
+| TK0017-M18 | packages/shell/src/index.ts | stopped passing the step's `env` to the line runner | `shell/command > env is added to the command's environment` |
+| TK0017-M19 | packages/shell/src/process.ts | removed the sentinel's TERM trap, so the stop's SIGTERM ends the group before the grace | `runLine > the sentinel survives the stop's SIGTERM` |
+
+## TK0017 — rework 15: the stop's order and the trap have teeth
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0017-M20 | packages/shell/src/process.ts | removed the wait for the sentinel's `ready` before the stop's first signal | `runLine > a stop before ready waits for the sentinel's trap` |

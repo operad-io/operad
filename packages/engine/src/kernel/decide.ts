@@ -215,12 +215,16 @@ export function decide(
           push("effect_requested", effectRequestedPayload(effect, false), enteredSeq);
           effects.push(describeEffect(effect));
         } else {
+          const checkParams = step.params.params;
           const effect: PendingEffect = {
             id: effectId,
             kind: "poll_check",
             step: step.id,
             use: null,
-            params: null,
+            params:
+              checkParams === undefined
+                ? null
+                : (checkParams as unknown as JsonValue),
             check: step.params.check,
             due: null,
             replay: step.replay,

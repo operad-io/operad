@@ -359,6 +359,34 @@ describe("decide: tick", () => {
     ]);
     expect(runner.state.status).toBe("ended");
   });
+
+  test("keeps a check's params in the poll effect", () => {
+    const flow = validateFlow(
+      {
+        name: "watch",
+        entry: "watch",
+        steps: [
+          {
+            id: "watch",
+            kind: "wait",
+            params: { check: "dev/command", params: { line: "test -f flag" } },
+            replay: "safe",
+            next: { ready: "end", interrupted: "end" },
+          },
+        ],
+      },
+      REGISTRY,
+    );
+    const runner = new Runner(flow);
+    const start = runner.apply({ kind: "start" });
+    const requested = start.facts.find(
+      (fact) => fact.kind === "effect_requested",
+    );
+    expect(requested?.payload).toMatchObject({
+      check: "dev/command",
+      params: { line: "test -f flag" },
+    });
+  });
 });
 
 describe("decide: recover", () => {

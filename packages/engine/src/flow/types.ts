@@ -61,7 +61,9 @@ export interface WaitPersonStep extends StepBase {
 /** Waits for a time or for a plugin step's exit to change. */
 export interface WaitStep extends StepBase {
   readonly kind: "wait";
-  readonly params: { readonly afterSecs: number } | { readonly check: string };
+  readonly params:
+    | { readonly afterSecs: number }
+    | { readonly check: string; readonly params?: unknown };
   readonly next: Readonly<Record<"ready" | "interrupted", string>>;
 }
 

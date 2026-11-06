@@ -240,6 +240,50 @@ describe("validateFlow", () => {
     expect(flow.entry).toBe("watch");
   });
 
+  test("accepts check params the check step reads", () => {
+    const flow = validateFlow(
+      {
+        name: "ci",
+        entry: "watch",
+        steps: [
+          {
+            id: "watch",
+            kind: "wait",
+            params: { check: "dev/check", params: { line: "test -f flag" } },
+            replay: "safe",
+            next: { ready: "done", interrupted: "done" },
+          },
+          endStep("done"),
+        ],
+      },
+      [{ name: "dev/check", results: ["pass", "fail"] }],
+    );
+    expect(flow.entry).toBe("watch");
+  });
+
+  test("rejects check params that are not an object", () => {
+    const error = errorOf(() =>
+      validateFlow(
+        {
+          name: "ci",
+          entry: "watch",
+          steps: [
+            {
+              id: "watch",
+              kind: "wait",
+              params: { check: "dev/check", params: "nope" },
+              replay: "safe",
+              next: { ready: "done", interrupted: "done" },
+            },
+            endStep("done"),
+          ],
+        },
+        [{ name: "dev/check", results: ["pass", "fail"] }],
+      ),
+    );
+    expect(error.message).toContain("params.params: must be an object");
+  });
+
   test("names an unknown wait check", () => {
     const error = errorOf(() =>
       validateFlow({
