@@ -43,6 +43,8 @@ export interface RunInfo {
   readonly startedAt: number;
   readonly endedAt: number | null;
   readonly lastSeq: number;
+  /** The access profile recorded when the run started, if any. */
+  readonly access?: JsonValue | undefined;
   /** The input whose start created this run, or null for a plain start. */
   readonly startInputId: string | null;
 }
@@ -130,12 +132,13 @@ export interface LogBackend extends Partial<LogSubscription> {
   /**
    * Start a run, unless the same flow/object pair already has an active one.
    * `startInputId` records the input that caused the start, so the log alone
-   * can answer which run an event started.
+   * can answer which run an event started; `access` is the run's profile.
    */
   startRun(
     flow: string,
     object: string,
     startInputId?: string | null,
+    access?: JsonValue,
   ): Promise<RunInfo>;
   /** End an active run. Ending an ended run is a no-op. */
   endRun(runId: string): Promise<void>;

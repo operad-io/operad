@@ -2,13 +2,18 @@ import { join } from "node:path";
 import type { FlowDefinition, StepType } from "../flow/types.ts";
 import { loadFlow as loadFlowFile } from "../flow/load.ts";
 import { FlowError, validateFlow } from "../flow/validate.ts";
+import type { JsonValue } from "../log/types.ts";
 import { normalizeActionArgs, noteProperty, validateActionArgs } from "./action-schema.ts";
-import { messageOf, PluginError } from "./errors.ts";
+import { AccessError, messageOf, PluginError } from "./errors.ts";
 import { defaultOperadHome } from "./home.ts";
 import { createPluginLogger } from "./logger.ts";
+import { FileSecretStore } from "./secrets.ts";
+import { isRangeSyntax, satisfiesRange } from "./semver.ts";
+import { prepareSettings } from "./settings.ts";
 import { MemoryPluginStore } from "./store.ts";
 import {
   OPERAD_PLUGIN_VERSION,
+  PLUGIN_API_VERSION,
   type ActionArgsSchema,
   type ActionContext,
   type ActionRun,
@@ -31,10 +36,12 @@ import {
   type PluginBaseContext,
   type PluginCheck,
   type PluginKind,
+  type PluginRequires,
   type PluginStepResult,
   type PluginStore,
   type ResolvedCommand,
   type RunControl,
+  type SecretStore,
   type SourceContext,
   type SourceHandle,
   type StartRunRequest,
@@ -82,12 +89,26 @@ export interface PluginRegistryOptions {
   readonly onCancelRun?: ((runId: string) => MaybePromise<void>) | undefined;
   /** The specifier each definition was loaded from, aligned with it. */
   readonly sources?: readonly (string | undefined)[] | undefined;
+  /** The raw config section of each plugin, keyed by plugin name. */
+  readonly settings?: Readonly<Record<string, unknown>> | undefined;
+  /** Plugins the config switched off; a dependent is refused with the reason. */
+  readonly disabled?: readonly string[] | undefined;
+  /** Whether to resolve `requires` against the loaded plugins. */
+  readonly requireDependencies?: boolean | undefined;
+  /** Whether to validate each plugin's settings section. */
+  readonly validateSettings?: boolean | undefined;
   /** The routing rules, given to source plugins. */
   readonly rules?: readonly TriggerRule[] | undefined;
   /** Called when a source plugin sends an event. */
   readonly onSourceEvent?:
     | ((event: TriggerEvent, plugin: string) => MaybePromise<void>)
     | undefined;
+}
+
+/** A plugin the registry left out, and the line that says why. */
+export interface PluginRefusal {
+  readonly plugin: string;
+  readonly message: string;
 }
 
 interface NormalizedPlugin {
@@ -109,6 +130,9 @@ interface NormalizedPlugin {
   readonly check:
     | ((ctx: PluginBaseContext) => MaybePromise<string | void>)
     | undefined;
+  readonly settingsSchema: ActionArgsSchema | undefined;
+  readonly enforces: readonly string[];
+  readonly requires: PluginRequires | undefined;
 }
 
 interface LoadedPlugin extends Omit<NormalizedPlugin, "flows"> {
@@ -331,6 +355,61 @@ function normalizeObjects(
   return objects;
 }
 
+function normalizeEnforces(value: unknown, at: string): readonly string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw new PluginError(`${at}: enforces: must be an array of profile field names`);
+  }
+  const fields: string[] = [];
+  value.forEach((field, index) => {
+    if (typeof field !== "string" || field.trim().length === 0) {
+      throw new PluginError(
+        `${at}: enforces[${index}]: must be a non-empty string`,
+      );
+    }
+    if (fields.includes(field)) {
+      throw new PluginError(`${at}: enforces: duplicate field "${field}"`);
+    }
+    fields.push(field);
+  });
+  return fields;
+}
+
+function normalizeRequires(value: unknown, at: string): PluginRequires | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    throw new PluginError(`${at}: requires: must be an object`);
+  }
+  let plugins: Record<string, string> | undefined;
+  if (value.plugins !== undefined) {
+    if (!isRecord(value.plugins)) {
+      throw new PluginError(`${at}: requires.plugins: must be an object`);
+    }
+    plugins = {};
+    for (const [name, range] of Object.entries(value.plugins)) {
+      if (name.trim().length === 0) {
+        throw new PluginError(`${at}: requires.plugins: a plugin name must be non-empty`);
+      }
+      if (typeof range !== "string" || !isRangeSyntax(range)) {
+        throw new PluginError(
+          `${at}: requires.plugins.${name}: must be a supported version range (^, ~, >= or exact)`,
+        );
+      }
+      plugins[name] = range;
+    }
+  }
+  let api: string | undefined;
+  if (value.api !== undefined) {
+    if (typeof value.api !== "string" || !isRangeSyntax(value.api)) {
+      throw new PluginError(
+        `${at}: requires.api: must be a supported version range (^, ~, >= or exact)`,
+      );
+    }
+    api = value.api;
+  }
+  return { ...(plugins === undefined ? {} : { plugins }), ...(api === undefined ? {} : { api }) };
+}
+
 function normalizeSteps(
   value: unknown,
   at: string,
@@ -375,6 +454,9 @@ function normalizeSteps(
     steps.push({
       name,
       results: normalizedResults,
+      ...(entry.enforces === undefined
+        ? {}
+        : { enforces: normalizeEnforces(entry.enforces, `${at}[${index}]`) }),
       run: entry.run as StepTypeDefinition["run"],
     });
   });
@@ -521,6 +603,13 @@ function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
 
   const objects = normalizeObjects(raw.objects, `${at}: objects`);
 
+  let settingsSchema: ActionArgsSchema | undefined;
+  try {
+    settingsSchema = normalizeActionArgs(raw.settings, `${at}: settings`);
+  } catch (error) {
+    throw new PluginError(messageOf(error), { cause: error });
+  }
+
   return {
     name,
     kind,
@@ -536,6 +625,9 @@ function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     onTick,
     start,
     check,
+    settingsSchema,
+    enforces: normalizeEnforces(raw.enforces, `${at}: enforces`) ?? [],
+    requires: normalizeRequires(raw.requires, at),
   };
 }
 
@@ -544,6 +636,7 @@ function collectStepTypes(plugins: readonly NormalizedPlugin[]): readonly StepTy
     plugin.steps.map((step) => ({
       name: `${plugin.name}/${step.name}`,
       results: step.results,
+      ...(step.enforces === undefined ? {} : { enforces: step.enforces }),
     })),
   );
 }
@@ -686,6 +779,12 @@ export class PluginRegistry {
     { readonly plugin: LoadedPlugin; readonly step: StepTypeDefinition }
   >;
   private readonly starts: StartRunRequest[] = [];
+  private readonly refusalList: PluginRefusal[] = [];
+  private readonly settingsByPlugin: ReadonlyMap<
+    string,
+    Readonly<Record<string, JsonValue>>
+  >;
+  private readonly disabledNames: ReadonlySet<string>;
 
   constructor(
     definitions: readonly unknown[],
@@ -712,16 +811,120 @@ export class PluginRegistry {
     const normalized = definitions.map((definition, index) =>
       normalizePlugin(definition, index),
     );
-    validatePluginSet(normalized);
-    if (typeof this.store.declare === "function") {
+    const sourceMap = new Map<string, string>();
+    for (const [index, plugin] of normalized.entries()) {
+      const source = options.sources?.[index];
+      if (source !== undefined) sourceMap.set(plugin.name, source);
+    }
+    this.sourceByPlugin = sourceMap;
+    this.disabledNames = new Set(options.disabled ?? []);
+
+    const settingsByPlugin = new Map<
+      string,
+      Readonly<Record<string, JsonValue>>
+    >();
+    const refused = new Set<string>();
+    const refuse = (plugin: string, message: string): void => {
+      if (refused.has(plugin)) return;
+      refused.add(plugin);
+      const line = message.startsWith(`plugin "${plugin}":`)
+        ? message
+        : `plugin "${plugin}": ${message}`;
+      this.refusalList.push({ plugin, message: line });
+      this.log(line);
+    };
+
+    for (const plugin of normalized) {
+      if (plugin.settingsSchema === undefined || options.validateSettings === false) {
+        settingsByPlugin.set(plugin.name, Object.freeze({}));
+        continue;
+      }
+      try {
+        settingsByPlugin.set(
+          plugin.name,
+          prepareSettings(
+            plugin.settingsSchema,
+            options.settings?.[plugin.name],
+            plugin.name,
+          ),
+        );
+      } catch (error) {
+        refuse(plugin.name, messageOf(error));
+      }
+    }
+
+    if (options.requireDependencies !== false) {
+      const versions = new Map(normalized.map((plugin) => [plugin.name, plugin.version]));
       for (const plugin of normalized) {
+        if (refused.has(plugin.name)) continue;
+        const api = plugin.requires?.api;
+        if (api === undefined) continue;
+        let ok: boolean;
+        try {
+          ok = satisfiesRange(PLUGIN_API_VERSION, api);
+        } catch (error) {
+          refuse(plugin.name, `requires api "${api}": ${messageOf(error)}`);
+          continue;
+        }
+        if (!ok) {
+          refuse(
+            plugin.name,
+            `requires api "${api}", but this engine provides ${PLUGIN_API_VERSION}`,
+          );
+        }
+      }
+
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const plugin of normalized) {
+          if (refused.has(plugin.name)) continue;
+          for (const [dependency, range] of Object.entries(
+            plugin.requires?.plugins ?? {},
+          )) {
+            let reason: string | undefined;
+            if (refused.has(dependency)) {
+              reason = `requires plugin "${dependency}" "${range}", but "${dependency}" was refused`;
+            } else if (this.disabledNames.has(dependency)) {
+              reason = `requires plugin "${dependency}" "${range}", but "${dependency}" is disabled`;
+            } else {
+              const version = versions.get(dependency);
+              if (version === undefined) {
+                reason = `requires plugin "${dependency}" "${range}", but "${dependency}" is not loaded`;
+              } else {
+                let ok: boolean;
+                try {
+                  ok = satisfiesRange(version, range);
+                } catch {
+                  ok = false;
+                }
+                if (!ok) {
+                  reason = `requires plugin "${dependency}" "${range}", but "${dependency}" is ${version}`;
+                }
+              }
+            }
+            if (reason !== undefined) {
+              refuse(plugin.name, reason);
+              changed = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    this.settingsByPlugin = settingsByPlugin;
+    const kept = normalized.filter((plugin) => !refused.has(plugin.name));
+    validatePluginSet(kept);
+    if (typeof this.store.declare === "function") {
+      for (const plugin of kept) {
         for (const object of plugin.objects) {
           this.store.declare(object.name, object.index ?? []);
         }
       }
     }
-    const stepTypes = collectStepTypes(normalized);
-    this.plugins = validateFlows(normalized, stepTypes);
+    const stepTypes = collectStepTypes(kept);
+    this.plugins = validateFlows(kept, stepTypes);
     validateRuleFlows(this.plugins);
 
     this.byName = new Map(this.plugins.map((plugin) => [plugin.name, plugin]));
@@ -752,13 +955,6 @@ export class PluginRegistry {
     this.viewByType = viewByType;
     this.actionInfos = actionInfos;
     this.bindingByKey = this.resolveKeys(options.keys ?? {});
-
-    const sources = new Map<string, string>();
-    for (const [index, plugin] of this.plugins.entries()) {
-      const source = options.sources?.[index];
-      if (source !== undefined) sources.set(plugin.name, source);
-    }
-    this.sourceByPlugin = sources;
 
     const stepIndex = new Map<
       string,
@@ -820,6 +1016,61 @@ export class PluginRegistry {
     return this.plugins.flatMap((plugin) =>
       plugin.rules.map((rule) => ({ plugin: plugin.name, rule })),
     );
+  }
+
+  /** The plugins left out at load, with the line that says why. */
+  refusals(): readonly PluginRefusal[] {
+    return this.refusalList;
+  }
+
+  /** The validated settings of one loaded plugin. */
+  settingsFor(plugin: string): Readonly<Record<string, JsonValue>> {
+    return this.settingsByPlugin.get(plugin) ?? Object.freeze({});
+  }
+
+  /** Every loaded plugin's settings, as a worker reloads them. */
+  pluginSettings(): Readonly<Record<string, Readonly<Record<string, JsonValue>>>> {
+    const settings: Record<string, Readonly<Record<string, JsonValue>>> = {};
+    for (const [name, value] of this.settingsByPlugin) settings[name] = value;
+    return settings;
+  }
+
+  /**
+   * Refuses a profile that sets a field no step of the flow enforces. The
+   * kernel never interprets a field; it only makes sure one step applies it.
+   */
+  checkAccess(flowName: string, access: JsonValue | undefined): void {
+    if (access === undefined) return;
+    if (!isRecord(access)) {
+      throw new PluginError(`access: must be an object`);
+    }
+    const fields = Object.keys(access).filter((field) => access[field] !== undefined);
+    if (fields.length === 0) return;
+    const found = this.flow(flowName);
+    if (found === undefined) {
+      throw new PluginError(`flow "${flowName}": not loaded`);
+    }
+
+    const enforced = new Set<string>();
+    const steps: string[] = [];
+    for (const step of found.flow.steps) {
+      if (step.kind !== "plugin") continue;
+      const use = (step.params as { readonly use?: unknown }).use;
+      if (typeof use !== "string") continue;
+      steps.push(`${step.id} (${use})`);
+      const type = this.stepIndex.get(use);
+      for (const field of type?.step.enforces ?? []) enforced.add(field);
+      for (const field of type?.plugin.enforces ?? []) enforced.add(field);
+    }
+
+    for (const field of fields) {
+      if (enforced.has(field)) continue;
+      const named = steps.length === 0 ? "none" : steps.join(", ");
+      throw new AccessError(
+        field,
+        `access.${field}: no step of flow "${flowName}" enforces it (steps: ${named})`,
+      );
+    }
   }
 
   /** The step type registry the flow loader and validator receive. */
@@ -944,9 +1195,12 @@ export class PluginRegistry {
         found.step.name,
       ),
       signal: options.signal ?? new AbortController().signal,
+      settings: this.settingsFor(found.plugin.name),
+      secrets: this.secretsFor(found.plugin.name),
       runId: options.runId,
       object: options.object,
       params: options.params ?? null,
+      access: options.access ?? null,
       trigger: options.trigger,
       emit,
     };
@@ -1015,6 +1269,8 @@ export class PluginRegistry {
         found.action.name,
       ),
       signal: options.signal ?? new AbortController().signal,
+      settings: this.settingsFor(found.plugin.name),
+      secrets: this.secretsFor(found.plugin.name),
       runId,
       object: options.object,
       actor,
@@ -1044,6 +1300,8 @@ export class PluginRegistry {
         facts: this.factsFor(`check:${plugin.name}`),
         logger: createPluginLogger(this.store.root, plugin.name, "check"),
         signal: new AbortController().signal,
+        settings: this.settingsFor(plugin.name),
+        secrets: this.secretsFor(plugin.name),
       };
       try {
         const note = await plugin.check(ctx);
@@ -1142,6 +1400,8 @@ export class PluginRegistry {
         command.name,
       ),
       signal: options.signal ?? new AbortController().signal,
+      settings: this.settingsFor(plugin.name),
+      secrets: this.secretsFor(plugin.name),
     };
     const value = await command.run(ctx, resolved.argv);
     return { ...resolved, value };
@@ -1195,13 +1455,16 @@ export class PluginRegistry {
         facts: this.factsFor(`tick:${plugin.name}`),
         logger: createPluginLogger(this.store.root, plugin.name, "tick"),
         signal: new AbortController().signal,
-        start: async (flowOrRequest, objectArg) => {
+        settings: this.settingsFor(plugin.name),
+        secrets: this.secretsFor(plugin.name),
+        start: async (flowOrRequest, objectArg, accessArg) => {
           const request: StartRunRequest =
             typeof flowOrRequest === "string"
               ? {
                   plugin: plugin.name,
                   flow: flowOrRequest,
                   ...(objectArg === undefined ? {} : { object: objectArg }),
+                  ...(accessArg === undefined ? {} : { access: accessArg }),
                 }
               : {
                   plugin: plugin.name,
@@ -1220,6 +1483,9 @@ export class PluginRegistry {
                   ...(flowOrRequest.trigger === undefined
                     ? {}
                     : { trigger: flowOrRequest.trigger }),
+                  ...(flowOrRequest.access === undefined
+                    ? {}
+                    : { access: flowOrRequest.access }),
                 };
           const flow = plugin.flows.find((item) => item.name === request.flow);
           if (flow === undefined) {
@@ -1227,6 +1493,7 @@ export class PluginRegistry {
               `plugin "${plugin.name}": flow "${request.flow}": not declared`,
             );
           }
+          this.checkAccess(request.flow, request.access);
           this.starts.push(request);
           if (this.onStartRun !== undefined) {
             await this.onStartRun(request);
@@ -1300,6 +1567,8 @@ export class PluginRegistry {
         signal: options.signal ?? new AbortController().signal,
         rules: options.rules,
         clock: options.clock,
+        settings: this.settingsFor(plugin.name),
+        secrets: this.secretsFor(plugin.name),
         emit,
       };
       try {
@@ -1456,6 +1725,10 @@ export class PluginRegistry {
           input.cause === undefined ? { ...input, cause } : input,
         ),
     };
+  }
+
+  private secretsFor(plugin: string): SecretStore {
+    return new FileSecretStore({ home: this.home, plugin });
   }
 
   private runControl(): RunControl {

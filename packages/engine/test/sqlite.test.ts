@@ -5,6 +5,7 @@ import { chmodSync, mkdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   LogBackendError,
+  SCHEMA_VERSION,
   SQLITE_FILE_NAME,
   openSqliteLogBackend,
   type Fact,
@@ -201,6 +202,72 @@ function tracked(label: string): string {
   directories.add(directory);
   return directory;
 }
+
+test("opens a schema_version 1 store and adds the access column", async () => {
+  const directory = tracked("migrate-v1");
+  const database = new Database(dbPath(directory));
+  try {
+    database.exec(`
+      CREATE TABLE schema_version (
+        id      INTEGER PRIMARY KEY CHECK (id = 1),
+        version INTEGER NOT NULL
+      );
+      INSERT INTO schema_version (id, version) VALUES (1, 1);
+      CREATE TABLE runs (
+        run_id     TEXT PRIMARY KEY,
+        flow       TEXT NOT NULL,
+        object     TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        ended_at   INTEGER
+      );
+      CREATE UNIQUE INDEX runs_one_active
+        ON runs (flow, object) WHERE ended_at IS NULL;
+      CREATE TABLE facts (
+        run_id  TEXT NOT NULL REFERENCES runs (run_id),
+        seq     INTEGER NOT NULL,
+        kind    TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        cause   TEXT NOT NULL,
+        time    INTEGER NOT NULL,
+        PRIMARY KEY (run_id, seq)
+      );
+      CREATE TABLE inputs (
+        input_id   TEXT PRIMARY KEY,
+        run_id     TEXT NOT NULL REFERENCES runs (run_id),
+        source     TEXT NOT NULL,
+        source_key TEXT NOT NULL,
+        payload    TEXT NOT NULL,
+        time       INTEGER NOT NULL,
+        UNIQUE (source, source_key)
+      );
+      INSERT INTO runs (run_id, flow, object, started_at, ended_at)
+        VALUES ('old', 'flow', 'object', 1000, 2000);
+      INSERT INTO facts (run_id, seq, kind, payload, cause, time)
+        VALUES ('old', 1, 'run_started', '{"flow":"flow"}', 'test', 1000);
+    `);
+  } finally {
+    database.close();
+  }
+
+  const backend = await open(directory);
+  try {
+    const runs = await backend.runs();
+    expect(runs.map((run) => run.runId)).toEqual(["old"]);
+    expect(runs[0]?.access).toBeUndefined();
+    expect(withDatabase(directory, (current) =>
+      current
+        .query<{ version: number }, []>("SELECT version FROM schema_version WHERE id = 1")
+        .get(),
+    )?.version).toBe(SCHEMA_VERSION);
+
+    const started = await backend.startRun("other", "object", null, { network: "all" });
+    expect(started.access).toEqual({ network: "all" });
+    const stored = (await backend.runs()).find((run) => run.runId === started.runId);
+    expect(stored?.access).toEqual({ network: "all" });
+  } finally {
+    await backend.close();
+  }
+});
 
 test("the store runs in WAL mode", async () => {
   const directory = tracked("wal");

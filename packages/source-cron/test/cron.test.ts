@@ -37,6 +37,8 @@ function context(
     signal: new AbortController().signal,
     rules,
     clock,
+    settings: {},
+    secrets: {} as unknown as SourceContext["secrets"],
     emit: async (event) => {
       emitted.push(event);
     },

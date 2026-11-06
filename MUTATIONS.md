@@ -344,6 +344,29 @@
 | TK0028-M13 | packages/engine/src/plugin/action-schema.ts | accepted a `role: "note"` property without type `"string"` | `plugin registry validation > rejects a note property that is not a string` |
 | TK0028-M14 | packages/engine/src/plugin/registry.ts | left the actor out of the action context | `plugin registry > an action receives the person's actor` |
 
+## TK0029 — contract: plugin declaration, settings, secrets, access and enablement
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0029-M1 | packages/engine/src/plugin/settings.ts | stopped filling declared defaults into an absent settings field | `plugin settings > fills declared defaults and gives the step a read-only section` |
+| TK0029-M2 | packages/engine/src/plugin/settings.ts | made `deepFreeze` return the value without freezing it | `plugin settings > fills declared defaults and gives the step a read-only section` |
+| TK0029-M3 | packages/engine/src/plugin/secrets.ts | wrote the secret file with mode 0644 instead of 0600 | `plugin secrets > set/get round-trips and writes 0600 in a 0700 directory` |
+| TK0029-M4 | packages/engine/src/plugin/registry.ts | skipped every `requires` check | `plugin requires > refuses a plugin whose required plugin is missing` |
+| TK0029-M5 | packages/engine/src/plugin/registry.ts | accepted every access profile field instead of refusing an unenforced one | `run access profile > refuses a field no step of the flow enforces, naming the field and step` |
+| TK0029-M6 | packages/engine/src/plugin/load.ts | loaded a plugin even when its config entry said `enabled: false` | `plugin enable and disable > a disabled plugin is not loaded and its objects return after enable` |
+| TK0029-M7 | packages/engine/src/kernel/decide.ts | dropped the access profile from the `run_started` fact | `run access profile > accepts a field one step of the flow enforces and gives it to every step` |
+
+## TK0029 — rework 2: review fixes
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0029-M8 | packages/cli/src/main.ts | imported a disabled plugin while listing plugins | `operad command > plugin list does not import a disabled plugin` |
+| TK0029-M9 | packages/engine/src/log/sqlite.ts | left a schema_version 1 store refused instead of adding `runs.access` | `opens a schema_version 1 store and adds the access column` |
+| TK0029-M10 | packages/engine/src/log/jsonl.ts | left a schema_version 1 store refused instead of upgrading the marker | `opens a schema_version 1 store and upgrades the marker` |
+| TK0029-M11 | packages/engine/src/config/config.ts | turned a null settings section into `{}` | `plugin settings > a null settings section refuses the plugin instead of becoming an empty object` |
+| TK0029-M12 | packages/engine/src/plugin/registry.ts | accepted a null access profile as absent | `run access profile > refuses a null profile, which is not an access object` |
+| TK0029-M13 | packages/engine/test/fixtures/plugins/secret-notes.ts | wrote the secret value into the step's fact | `plugin secrets > a run that uses a secret leaves it out of facts, history, environment and log files` |
+
 ## TK0019 — rework 7: per-repository numbering and an order-independent leak guard
 
 | id | file | mutation | failing test |
@@ -388,3 +411,9 @@
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0027-M11 | packages/engine/src/trigger/rules.ts | checked the params but returned the original, accessor-bearing object | `trigger rules > a nested getter's params are frozen into a plain JSON snapshot at load` |
+
+## TK0029 — rework 5: an unreadable config file is an error
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0029-M14 | packages/engine/src/plugin/load.ts | treated every access error as a missing config file, not just `ENOENT` | `loadPluginRegistry > reports an unreadable config file instead of loading nothing` |

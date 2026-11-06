@@ -94,6 +94,7 @@ export async function serveOnce(
         ...(request.params === undefined ? {} : { params: request.params }),
         ...(request.trigger === undefined ? {} : { trigger: request.trigger }),
         ...(request.inputId === undefined ? {} : { inputId: request.inputId }),
+        ...(request.access === undefined ? {} : { access: request.access }),
       });
       if (result.kind === "started") started.push(result.runId);
     } catch (error) {

@@ -72,6 +72,8 @@ export interface RunnerOptions {
   readonly object?: ObjectRef | undefined;
   /** Fixed JSON the flow starts with; the runner writes it in the start fact. */
   readonly params?: JsonValue | undefined;
+  /** The access profile the run starts with; recovery reads it from the log. */
+  readonly access?: JsonValue | undefined;
   /** Treat an outstanding step as a crash and recover it first. */
   readonly recover?: boolean | undefined;
   /** The event that started the run, read-only for its steps. */
@@ -136,6 +138,7 @@ export class Runner {
   private readonly trigger: TriggerView | undefined;
   private readonly startInput: StartInput | undefined;
   private readonly params: JsonValue | undefined;
+  private readonly access: JsonValue | undefined;
   private readonly emitEvent:
     | ((plugin: string, event: StepEvent) => Promise<void>)
     | undefined;
@@ -161,6 +164,7 @@ export class Runner {
     this.emitEvent = options.emit;
     this.onEnded = options.onEnded;
     this.params = options.params;
+    this.access = options.access;
     this.recover = options.recover === true;
   }
 
@@ -258,12 +262,7 @@ export class Runner {
 
     if (effect.kind === "poll_check") {
       if (effect.check === null) return "blocked";
-      const outcome = await this.execute(
-        effect.check,
-        effect.params,
-        true,
-        state.params,
-      );
+      const outcome = await this.execute(effect.check, effect.params, true, state.params, state.access);
       if (outcome.result === "ready" || outcome.result === "interrupted") {
         await this.recordResult(state, effect.id, outcome.result, outcome.data);
         return "progress";
@@ -272,12 +271,7 @@ export class Runner {
     }
 
     if (effect.use === null) return "blocked";
-    const outcome = await this.execute(
-      effect.use,
-      effect.params,
-      false,
-      state.params,
-    );
+    const outcome = await this.execute(effect.use, effect.params, false, state.params, state.access);
     await this.recordResult(state, effect.id, outcome.result, outcome.data);
     return "progress";
   }
@@ -297,13 +291,21 @@ export class Runner {
     state: KernelState,
   ): Promise<{ readonly state: KernelState; readonly duplicate: boolean }> {
     const meta = this.startInput;
+    const provided = meta?.access ?? this.access;
+    const access =
+      provided ?? (meta === undefined ? await this.initialAccess() : undefined);
+    this.registry.checkAccess(this.flow.name, access);
     if (meta !== undefined && meta.inputId !== undefined) {
+      const start: Input =
+        access === undefined || meta.access !== undefined
+          ? meta
+          : { ...meta, access };
       const result = await appendInput(
         this.log,
         this.flow,
         this.runId,
         state,
-        meta,
+        start,
         this.clock(),
       );
       if (result.state.status === "ended") {
@@ -314,14 +316,17 @@ export class Runner {
     }
     const input: Input =
       meta === undefined
-        ? this.params === undefined
-          ? { kind: "start" }
-          : { kind: "start", params: this.params }
+        ? {
+            kind: "start",
+            ...(this.params === undefined ? {} : { params: this.params }),
+            ...(access === undefined ? {} : { access }),
+          }
         : {
             kind: "start",
             ...(meta.params === undefined ? {} : { params: meta.params }),
             ...(meta.hops === undefined ? {} : { hops: meta.hops }),
             ...(meta.trigger === undefined ? {} : { trigger: meta.trigger }),
+            ...(access === undefined ? {} : { access }),
           };
     const result = await applyInput(
       this.log,
@@ -379,6 +384,7 @@ export class Runner {
     params: unknown,
     preferInterrupted: boolean,
     flowParams: JsonValue,
+    access: JsonValue,
   ): Promise<PluginStepResult> {
     if (this.signal?.aborted === true) {
       return this.failure(use, preferInterrupted, {
@@ -400,9 +406,32 @@ export class Runner {
         sources,
         preferInterrupted,
         flowParams,
+        access,
       );
     }
-    return this.executeHere(use, params, object, preferInterrupted, flowParams);
+    return this.executeHere(
+      use,
+      params,
+      object,
+      preferInterrupted,
+      flowParams,
+      access,
+    );
+  }
+
+  private startInputFor(access: JsonValue | undefined): Input {
+    return {
+      kind: "start",
+      ...(this.params === undefined ? {} : { params: this.params }),
+      ...(access === undefined ? {} : { access }),
+    };
+  }
+
+  /** The profile given to the runner, or the one the log recorded at start. */
+  private async initialAccess(): Promise<JsonValue | undefined> {
+    if (this.access !== undefined) return this.access;
+    const runs = await this.log.runs();
+    return runs.find((run) => run.runId === this.runId)?.access;
   }
 
   private async runObject(): Promise<RunObject | undefined> {
@@ -425,6 +454,7 @@ export class Runner {
     sources: readonly string[],
     preferInterrupted: boolean,
     flowParams: JsonValue,
+    access: JsonValue,
   ): Promise<PluginStepResult> {
     return new Promise((resolve) => {
       const worker = new Worker(STEP_WORKER, {
@@ -439,6 +469,8 @@ export class Runner {
           use,
           params,
           flowParams,
+          access,
+          settings: this.registry.pluginSettings(),
           ...(this.trigger === undefined ? {} : { trigger: this.trigger }),
           runId: this.runId,
           ...(object === undefined ? {} : { object }),
@@ -564,6 +596,7 @@ export class Runner {
     object: RunObject | undefined,
     preferInterrupted: boolean,
     flowParams: JsonValue,
+    access: JsonValue,
   ): Promise<PluginStepResult> {
     const controller = new AbortController();
     const forward = (): void => controller.abort();
@@ -583,6 +616,7 @@ export class Runner {
       ...(this.cwd === undefined ? {} : { cwd: this.cwd }),
       ...(object === undefined ? {} : { object }),
       params: flowParams,
+      access,
       ...(this.trigger === undefined ? {} : { trigger: this.trigger }),
       ...(this.emitEvent === undefined ? {} : { emit: this.emitEvent }),
       signal: controller.signal,

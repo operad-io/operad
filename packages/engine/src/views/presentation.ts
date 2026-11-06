@@ -9,6 +9,7 @@ import type { PluginRegistry, ActionInfo } from "../plugin/registry.ts";
 import { splitActionName } from "../plugin/registry.ts";
 import { messageOf } from "../plugin/errors.ts";
 import { createPluginLogger } from "../plugin/logger.ts";
+import { FileSecretStore } from "../plugin/secrets.ts";
 import { assertWhere, CursorError, WhereError } from "../plugin/paging.ts";
 import { ActionArgsError, noteProperty, validateActionArgs } from "../plugin/action-schema.ts";
 import type {
@@ -1016,6 +1017,8 @@ export class Views {
       facts: this.factsFor(`view:${plugin}`),
       logger: createPluginLogger(this.store.root, plugin, "views"),
       signal,
+      settings: this.registry.settingsFor(plugin),
+      secrets: new FileSecretStore({ home: this.registry.home, plugin }),
     };
   }
 

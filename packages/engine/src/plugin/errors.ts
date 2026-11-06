@@ -6,6 +6,17 @@ export class PluginError extends Error {
   }
 }
 
+/** A run's access profile asks for a field no step of its flow applies. */
+export class AccessError extends PluginError {
+  readonly field: string;
+
+  constructor(field: string, message: string) {
+    super(message);
+    this.name = "AccessError";
+    this.field = field;
+  }
+}
+
 /** The message of an unknown thrown value. */
 export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

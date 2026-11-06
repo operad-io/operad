@@ -1,9 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  DEFAULT_PLUGINS,
   FilePluginStore,
   Runner,
   answerRun,
@@ -19,6 +18,10 @@ afterAll(cleanupTempRoots);
 
 const pluginPath = fileURLToPath(
   new URL("../../engine/test/fixtures/plugins/runner.ts", import.meta.url),
+);
+
+const notesPath = fileURLToPath(
+  new URL("../../engine/test/fixtures/plugins/notes.ts", import.meta.url),
 );
 
 interface Output {
@@ -96,6 +99,23 @@ async function endRun(home: string, runId: string, choice: string): Promise<void
   await log.close();
 }
 
+async function makeNamedHome(plugins: Record<string, unknown>): Promise<{
+  readonly root: string;
+  readonly home: string;
+}> {
+  const root = await tempRoot();
+  const home = join(root, "home");
+  mkdirSync(home, { recursive: true });
+  await Bun.write(
+    join(home, "config.json"),
+    JSON.stringify({
+      plugins,
+      store: { backend: "jsonl", path: join(root, "store") },
+    }),
+  );
+  return { root, home };
+}
+
 describe("operad command", () => {
   test("init creates the home and prints each plugin check", async () => {
     const { root, home } = await makeHome();
@@ -106,7 +126,12 @@ describe("operad command", () => {
     expect(first.text()).toContain("shell: ready");
     expect(
       JSON.parse(readFileSync(join(fresh, "config.json"), "utf8")),
-    ).toMatchObject({ plugins: DEFAULT_PLUGINS });
+    ).toMatchObject({
+      plugins: {
+        shell: { module: "@operad-io/shell", enabled: true },
+        dev: { module: "@operad-io/dev", enabled: true },
+      },
+    });
     const config = JSON.parse(
       readFileSync(join(fresh, "config.json"), "utf8"),
     ) as unknown;
@@ -342,5 +367,98 @@ describe("operad command", () => {
       await main(["history", info.runId], { home, io: output.io }),
     ).toBe(0);
     expect(output.text().split("\n").length).toBeGreaterThan(10_000);
+  });
+
+  test("plugin list, enable and disable follow the config", async () => {
+    const { home } = await makeNamedHome({
+      notes: { module: notesPath, enabled: false },
+    });
+
+    const listed = capture();
+    expect(await main(["plugin", "list"], { home, io: listed.io })).toBe(0);
+    expect(listed.text()).toContain("notes  -  disabled");
+
+    const command = capture();
+    expect(await main(["notes", "add", "hello"], { home, io: command.io })).toBe(3);
+    expect(command.errors()).toContain('plugin "notes" is disabled');
+
+    const enabled = capture();
+    expect(await main(["plugin", "enable", "notes"], { home, io: enabled.io })).toBe(0);
+    expect(enabled.text()).toContain("notes: enabled");
+
+    const added = capture();
+    expect(await main(["notes", "add", "hello"], { home, io: added.io })).toBe(0);
+    expect(added.text()).toContain("hello");
+
+    const disabled = capture();
+    expect(await main(["plugin", "disable", "notes"], { home, io: disabled.io })).toBe(0);
+    expect(disabled.text()).toContain("notes: disabled");
+  });
+
+  test("plugin list does not import a disabled plugin", async () => {
+    const { root, home } = await makeNamedHome({});
+    const marker = join(root, "loaded.marker");
+    const modulePath = join(root, "side-effect.ts");
+    await Bun.write(
+      modulePath,
+      `import { writeFileSync } from "node:fs";\n` +
+        `writeFileSync(${JSON.stringify(marker)}, "ran");\n` +
+        `export default { name: "lazy", kind: "domain", version: "0.0.1" };\n`,
+    );
+    await Bun.write(
+      join(home, "config.json"),
+      JSON.stringify({
+        plugins: { lazy: { module: modulePath, enabled: false } },
+        store: { backend: "jsonl", path: join(root, "store") },
+      }),
+    );
+
+    const listed = capture();
+    expect(await main(["plugin", "list"], { home, io: listed.io })).toBe(0);
+    expect(listed.text()).toContain("lazy  -  disabled");
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  test("plugin check validates a declaration without starting a run", async () => {
+    const { home } = await makeNamedHome({});
+    const output = capture();
+    expect(await main(["plugin", "check", notesPath], { home, io: output.io })).toBe(0);
+    expect(output.text()).toContain("notes: ok");
+  });
+
+  test("secret set, list and delete never print the value", async () => {
+    const { home } = await makeNamedHome({});
+    const set = capture();
+    const setIo: CliIo = {
+      ...set.io,
+      readLine: async () => "s3cr3t-value",
+    };
+    expect(await main(["secret", "set", "notes", "token"], { home, io: setIo })).toBe(0);
+    expect(set.text()).toContain('secret "token" set');
+    expect(set.text()).not.toContain("s3cr3t-value");
+
+    const list = capture();
+    expect(await main(["secret", "list", "notes"], { home, io: list.io })).toBe(0);
+    expect(list.text()).toBe("token\n");
+    expect(list.text()).not.toContain("s3cr3t-value");
+
+    const remove = capture();
+    expect(await main(["secret", "delete", "notes", "token"], { home, io: remove.io })).toBe(0);
+
+    const empty = capture();
+    expect(await main(["secret", "list", "notes"], { home, io: empty.io })).toBe(0);
+    expect(empty.text()).toContain("no secrets");
+  });
+
+  test("plugin disable is refused while a run uses one of its steps", async () => {
+    const { home } = await makeNamedHome({ test: { module: pluginPath } });
+    const config = await readConfig(home);
+    const log = openConfigLog(config);
+    const info = await log.startRun("crash", "job:1");
+    await log.close();
+
+    const output = capture();
+    expect(await main(["plugin", "disable", "test"], { home, io: output.io })).toBe(3);
+    expect(output.errors()).toContain(info.runId);
   });
 });

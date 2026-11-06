@@ -28,6 +28,9 @@ interface StepWorkerRequest {
   readonly use: string;
   readonly params: unknown;
   readonly flowParams: JsonValue;
+  readonly access?: JsonValue | undefined;
+  /** The validated settings of every plugin, keyed by plugin name. */
+  readonly settings?: Readonly<Record<string, unknown>> | undefined;
   readonly trigger?: TriggerView | undefined;
   readonly runId: string;
   readonly object?: RunObject | undefined;
@@ -96,6 +99,7 @@ async function main(request: StepWorkerRequest): Promise<void> {
     cwd: request.cwd,
     store: openWorkerStore(request),
     sources: request.sources,
+    ...(request.settings === undefined ? {} : { settings: request.settings }),
   });
 
   const controller = new AbortController();
@@ -107,6 +111,7 @@ async function main(request: StepWorkerRequest): Promise<void> {
     runId: request.runId,
     params: request.flowParams,
     cwd: request.cwd,
+    access: request.access ?? null,
     ...(request.object === undefined ? {} : { object: request.object }),
     ...(request.trigger === undefined ? {} : { trigger: request.trigger }),
     emit,

@@ -2,14 +2,37 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://operad.io/schemas/config.schema.json",
   "title": "operad home config",
-  "description": "The config in $OPERAD_HOME/config.json: the plugins to load and the store the log uses.",
+  "description": "The config in $OPERAD_HOME/config.json: the plugins to load, their settings and the store the log uses.",
   "type": "object",
   "properties": {
     "plugins": {
-      "description": "Plugin modules or paths loaded when the engine starts.",
-      "type": "array",
-      "items": { "type": "string", "minLength": 1 },
-      "uniqueItems": true
+      "description": "Plugins keyed by name, each with the module to load, whether it is enabled, and its own settings.",
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string", "minLength": 1 },
+          {
+            "type": "object",
+            "properties": {
+              "module": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The module or path to import; defaults to the plugin name."
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "A disabled plugin is not loaded; its stored objects stay."
+              },
+              "settings": {
+                "type": "object",
+                "description": "This plugin's section, validated by the plugin's own settings schema."
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
     },
     "store": {
       "description": "Where the fact log lives. jsonl uses a directory, sqlite a database file.",
