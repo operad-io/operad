@@ -14,6 +14,9 @@ const pluginPath = fileURLToPath(
 const devPluginPath = fileURLToPath(
   new URL("../../engine/test/fixtures/plugins/dev-emit.ts", import.meta.url),
 );
+const rulesPluginPath = fileURLToPath(
+  new URL("../../engine/test/fixtures/plugins/rules.ts", import.meta.url),
+);
 
 function capture(): { io: CliIo; text(): string; errors(): string } {
   let out = "";
@@ -83,6 +86,45 @@ async function runIdOfFlow(home: string, flow: string): Promise<string> {
     await log.close();
   }
 }
+
+describe("operad trigger rules", () => {
+  test("a plugin's default rule alone starts its flow", async () => {
+    const home = await makeHome(undefined, [rulesPluginPath]);
+    const sent = capture();
+    expect(
+      await main(["trigger", "cron", "t1", "--type", "tick"], {
+        home,
+        io: sent.io,
+      }),
+    ).toBe(0);
+    expect(sent.text()).toContain("started");
+    expect(await runFlows(home)).toEqual(["plugin-one"]);
+  });
+
+  test("lists each rule with where it came from", async () => {
+    const home = await makeHome(
+      [
+        {
+          source: "cron",
+          type: "tick",
+          start: { flow: "plugin-two" },
+          object: "job:2",
+          mode: "candidate",
+        },
+      ],
+      [rulesPluginPath],
+    );
+    const output = capture();
+    expect(await main(["trigger", "rules"], { home, io: output.io })).toBe(0);
+
+    expect(output.text()).toContain("cron tick -> plugin-two on job:2 (candidate)  from user");
+    expect(output.text()).toContain(
+      "manual go -> plugin-two on $event.object (auto)  from rules-fixture",
+    );
+    // The user's cron rule replaced the plugin's cron rule for that pair.
+    expect(output.text()).not.toContain("plugin-one");
+  });
+});
 
 describe("operad trigger", () => {
   test("sends an event, starts a run, and history names the event", async () => {

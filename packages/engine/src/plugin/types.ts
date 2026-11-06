@@ -470,6 +470,11 @@ export interface PluginShape {
   readonly views?: Readonly<Record<string, ObjectViews>> | undefined;
   /** Default key bindings, keyed by key, valued as `<plugin>:<action>`. */
   readonly keys?: KeyBindings | undefined;
+  /**
+   * Default trigger rules this plugin ships. A user rule with the same source
+   * and type replaces every plugin rule for that pair.
+   */
+  readonly rules?: readonly TriggerRule[] | undefined;
   readonly onTick?: ((ctx: TickContext) => MaybePromise<void>) | undefined;
   /** Starts a source; `operad serve` stops it on exit. */
   readonly start?: ((ctx: SourceContext) => MaybePromise<SourceHandle> | SourceHandle) | undefined;

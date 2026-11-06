@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir } from "node:fs/promises";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import {
@@ -9,9 +9,12 @@ import {
   openLog,
   readState,
   type PluginStepResult,
+  type JsonValue,
+  type TriggerView,
 } from "@operad-io/engine";
 import {
   createRadianHarnessPlugin,
+  EVENT_NOTE_TEMPLATE,
   type RadianHarnessSettings,
 } from "../src/index.ts";
 import { runAgent as runProcess } from "../src/process.ts";
@@ -378,44 +381,104 @@ describe("harness-radian/agent", () => {
 });
 
 describe("harness-radian:prompt", () => {
-  test("runs the fake once with the prompt unchanged and ends with its result", async () => {
-    const env = await setup("done");
+  interface PromptRun {
+    readonly prompt: string;
+    readonly argv: readonly string[];
+    readonly workspace: string;
+    readonly endedStatus: string | null;
+  }
+
+  async function runPrompt(
+    env: TestEnv,
+    params: JsonValue,
+    trigger?: TriggerView,
+  ): Promise<PromptRun> {
     const found = env.registry.flow("harness-radian:prompt");
     if (found === undefined) throw new Error("the prompt flow is not loaded");
-
     const log = openLog({
       backend: "jsonl",
       path: join(env.root, "log"),
     });
     const info = await log.startRun(found.flow.name, "prompt:1");
-    const prompt = "say the word pong";
     const runner = new Runner({
       log,
       flow: found.flow,
       runId: info.runId,
       registry: env.registry,
-      params: {
-        prompt,
-        cwd: env.root,
-        args: ["--thinking", "off"],
-      },
+      params,
+      ...(trigger === undefined ? {} : { trigger }),
     });
-
     await runner.run();
     const state = await readState(log, info.runId);
-    expect(state.endedStatus).toBe("done");
-
+    await log.close();
     const record = JSON.parse(readFileSync(env.record, "utf8")) as {
-      readonly argv: readonly string[];
       readonly prompt: string;
+      readonly argv: readonly string[];
       readonly workspace: string;
     };
+    return { ...record, endedStatus: state.endedStatus };
+  }
+
+  test("runs the fake once with the prompt unchanged and ends with its result", async () => {
+    const env = await setup("done");
+    const prompt = "say the word pong";
+    const record = await runPrompt(env, {
+      prompt,
+      cwd: env.root,
+      args: ["--thinking", "off"],
+    });
+
+    expect(record.endedStatus).toBe("done");
     expect(record.prompt).toBe(prompt);
+    expect(record.prompt).not.toContain("outside material");
     expect(record.workspace).toBe(env.root);
     expect(record.argv).toContain("--thinking");
     expect(readFileSync(env.calls, "utf8").trim().split("\n")).toHaveLength(1);
+  });
 
-    await log.close();
+  test("a trigger with summary and data appends one note that names both files", async () => {
+    const env = await setup("done");
+    const summary = join(env.root, "event-summary.txt");
+    const data = join(env.root, "event-data.json");
+    const eventText = "THE EVENT TEXT MUST STAY OUT OF THE PROMPT";
+    await writeFile(summary, eventText);
+    await writeFile(data, JSON.stringify({ note: eventText }));
+
+    const prompt = "say the word pong";
+    const record = await runPrompt(
+      env,
+      { prompt, cwd: env.root },
+      {
+        source: "cron",
+        key: "tick:1",
+        type: "tick",
+        hops: 0,
+        summary,
+        data,
+      },
+    );
+
+    const note = EVENT_NOTE_TEMPLATE.replace(
+      "{files}",
+      `summary: ${summary}, data: ${data}`,
+    );
+    expect(record.prompt).toBe(`${prompt}\n\n${note}`);
+    expect(record.prompt).toContain(summary);
+    expect(record.prompt).toContain(data);
+    expect(record.prompt).not.toContain(eventText);
+  });
+
+  test("a trigger with neither file leaves the prompt unchanged", async () => {
+    const env = await setup("done");
+    const prompt = "say the word pong";
+    const record = await runPrompt(
+      env,
+      { prompt, cwd: env.root },
+      { source: "cron", key: "tick:2", type: "tick", hops: 0 },
+    );
+
+    expect(record.prompt).toBe(prompt);
+    expect(record.prompt).not.toContain("outside material");
   });
 });
 

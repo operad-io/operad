@@ -20,6 +20,7 @@ import {
   listPending,
   listRunning,
   loadPluginRegistry,
+  loadSourcedTriggerRules,
   loadTriggerRules,
   openConfigLog,
   openPluginStore,
@@ -110,6 +111,7 @@ const HELP = [
   "  flows                loaded flows and where they come from",
   "  trigger <source> <key> [--type t] [--object o] [--summary text] [--data file]",
   "                       send one event through the rules",
+  "  trigger rules        the rules in force, with where each came from",
   "  operad:start <id>    start a pending event",
   "  operad:dismiss <id>  dismiss a pending event",
   "  <plugin>:<action>    an action on one object",
@@ -927,6 +929,27 @@ async function commandTrigger(
   io: CliIo,
   argv: readonly string[],
 ): Promise<void> {
+  if (argv[0] === "rules") {
+    if (argv.length > 1) throw new UsageError("trigger rules takes no arguments");
+    const rules = await loadSourcedTriggerRules({
+      home: context.home,
+      registry: context.registry,
+      onLog: (message) => io.error(`${message}\n`),
+    });
+    if (rules.length === 0) {
+      io.write("no trigger rules\n");
+      return;
+    }
+    for (const entry of rules) {
+      const rule = entry.rule;
+      const schedule = rule.schedule === undefined ? "" : ` every ${rule.schedule}`;
+      io.write(
+        `${rule.source} ${rule.type} -> ${rule.start.flow} on ${rule.object} (${rule.mode})${schedule}  from ${entry.from}\n`,
+      );
+    }
+    return;
+  }
+
   const flags = parseValueFlags(argv, ["--type", "--object", "--summary", "--data"]);
   const source = flags.positionals[0];
   const key = flags.positionals[1];
@@ -953,6 +976,7 @@ async function commandTrigger(
   const rules = await loadTriggerRules({
     home: context.home,
     registry: context.registry,
+    onLog: (message) => io.error(`${message}\n`),
   });
   const kernel = kernelFor(context, io, rules);
   const type = flags.values.get("--type") ?? "event";
@@ -1226,6 +1250,7 @@ async function commandServe(
     rules = await loadTriggerRules({
       home: context.home,
       registry: context.registry,
+      onLog: (message) => io.error(`${message}\n`),
     });
   } catch (error) {
     sourcesAllowed = false;
@@ -1280,6 +1305,7 @@ async function commandRunInternal(
     rules = await loadTriggerRules({
       home: context.home,
       registry: context.registry,
+      onLog: (message) => io.error(`${message}\n`),
     });
   } catch (error) {
     // The run still has to finish; a broken rule file is not a run error.

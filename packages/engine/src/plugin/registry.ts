@@ -49,6 +49,7 @@ import type {
   TriggerEvent,
   TriggerRule,
 } from "../trigger/types.ts";
+import { parseTriggerRules, TriggerError } from "../trigger/rules.ts";
 
 /** Options for building a registry from plugin definitions. */
 export interface PluginRegistryOptions {
@@ -97,6 +98,7 @@ interface NormalizedPlugin {
   readonly commands: readonly CommandDefinition[];
   readonly views: Readonly<Record<string, ObjectViews>>;
   readonly keys: KeyBindings;
+  readonly rules: readonly TriggerRule[];
   readonly onTick: ((ctx: TickContext) => MaybePromise<void>) | undefined;
   readonly start:
     | ((ctx: SourceContext) => MaybePromise<SourceHandle> | SourceHandle)
@@ -237,6 +239,22 @@ function normalizeKeys(value: unknown, at: string): KeyBindings {
     keys[key] = target;
   }
   return keys;
+}
+
+/** The default rules a plugin ships, checked by the same validator as the file. */
+function normalizeRules(
+  value: unknown,
+  at: string,
+): readonly TriggerRule[] {
+  if (value === undefined) return [];
+  try {
+    return parseTriggerRules(value, `${at}: rules`);
+  } catch (error) {
+    if (error instanceof TriggerError) {
+      throw new PluginError(error.message, { cause: error });
+    }
+    throw error;
+  }
 }
 
 function requireName(value: unknown, at: string): string {
@@ -498,6 +516,7 @@ function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     commands: normalizeCommands(raw.commands, `${at}: commands`),
     views: normalizeViews(raw.views, `${at}: views`, objects),
     keys: normalizeKeys(raw.keys, `${at}: keys`),
+    rules: normalizeRules(raw.rules, at),
     onTick,
     start,
     check,
@@ -594,6 +613,22 @@ function validateFlows(
   });
 }
 
+/** A plugin's default rule must start a flow some loaded plugin declares. */
+function validateRuleFlows(plugins: readonly LoadedPlugin[]): void {
+  const flowNames = new Set(
+    plugins.flatMap((plugin) => plugin.flows.map((flow) => flow.name)),
+  );
+  for (const plugin of plugins) {
+    for (const [index, rule] of plugin.rules.entries()) {
+      if (!flowNames.has(rule.start.flow)) {
+        throw new PluginError(
+          `plugin "${plugin.name}": rules: rule ${index}: start.flow: unknown flow "${rule.start.flow}"`,
+        );
+      }
+    }
+  }
+}
+
 /**
  * Holds the loaded plugins and gives the kernel the three entry points it
  * needs: run a step, dispatch a command, and compute the pending view. The
@@ -667,6 +702,7 @@ export class PluginRegistry {
     }
     const stepTypes = collectStepTypes(normalized);
     this.plugins = validateFlows(normalized, stepTypes);
+    validateRuleFlows(this.plugins);
 
     this.byName = new Map(this.plugins.map((plugin) => [plugin.name, plugin]));
 
@@ -747,6 +783,16 @@ export class PluginRegistry {
   /** The plugin names in load order. */
   names(): readonly string[] {
     return this.plugins.map((plugin) => plugin.name);
+  }
+
+  /** The trigger rules plugins ship, in load order, with their plugin. */
+  triggerRules(): readonly {
+    readonly plugin: string;
+    readonly rule: TriggerRule;
+  }[] {
+    return this.plugins.flatMap((plugin) =>
+      plugin.rules.map((rule) => ({ plugin: plugin.name, rule })),
+    );
   }
 
   /** The step type registry the flow loader and validator receive. */

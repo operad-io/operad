@@ -123,13 +123,60 @@ export function parseTriggerRules(
   return rules;
 }
 
+/** One rule and where it came from: `user`, or the plugin that shipped it. */
+export interface SourcedTriggerRule {
+  readonly rule: TriggerRule;
+  readonly from: string;
+}
+
 export interface LoadTriggerRulesOptions {
   readonly home: string;
   readonly registry?: PluginRegistry | undefined;
+  /** Where a skipped duplicate plugin rule is reported. Defaults to stderr. */
+  readonly onLog?: ((message: string) => void) | undefined;
 }
 
-/** Reads the file; a missing file is an empty rule list, not an error. */
-export async function loadTriggerRules(
+function ruleKey(rule: TriggerRule): string {
+  return `${rule.source}\u0000${rule.type}`;
+}
+
+/**
+ * Merges the rules plugins ship with the user's rules. A user rule with the
+ * same source and type removes every plugin rule for that pair. When two
+ * plugins ship a rule for the same pair, the later one is skipped and named
+ * in one log line.
+ */
+export function mergeTriggerRules(
+  userRules: readonly TriggerRule[],
+  pluginRules: readonly { readonly plugin: string; readonly rule: TriggerRule }[],
+  onLog: (message: string) => void = (message) => console.error(message),
+): readonly SourcedTriggerRule[] {
+  const userPairs = new Set(userRules.map(ruleKey));
+  const owner = new Map<string, string>();
+  const merged: SourcedTriggerRule[] = [];
+
+  for (const entry of pluginRules) {
+    const key = ruleKey(entry.rule);
+    if (userPairs.has(key)) continue;
+    const first = owner.get(key);
+    if (first !== undefined) {
+      if (first !== entry.plugin) {
+        onLog(
+          `trigger rule ${entry.rule.source}/${entry.rule.type}: plugin "${entry.plugin}" is skipped; plugin "${first}" already declares it`,
+        );
+      }
+      continue;
+    }
+    owner.set(key, entry.plugin);
+    merged.push({ rule: entry.rule, from: entry.plugin });
+  }
+
+  for (const rule of userRules) merged.push({ rule, from: "user" });
+  return merged;
+}
+
+/** Reads the user's file; a missing file is an empty rule list, not an error. */
+async function readUserRules(
   options: LoadTriggerRulesOptions,
 ): Promise<readonly TriggerRule[]> {
   const file = triggersPath(options.home);
@@ -157,4 +204,21 @@ export async function loadTriggerRules(
     });
   }
   return parseTriggerRules(raw, file, options.registry);
+}
+
+/** The rules in force, with where each came from. */
+export async function loadSourcedTriggerRules(
+  options: LoadTriggerRulesOptions,
+): Promise<readonly SourcedTriggerRule[]> {
+  const userRules = await readUserRules(options);
+  const pluginRules = options.registry?.triggerRules() ?? [];
+  return mergeTriggerRules(userRules, pluginRules, options.onLog);
+}
+
+/** The merged rules in force: plugin defaults, then the user's rules. */
+export async function loadTriggerRules(
+  options: LoadTriggerRulesOptions,
+): Promise<readonly TriggerRule[]> {
+  const sourced = await loadSourcedTriggerRules(options);
+  return sourced.map((entry) => entry.rule);
 }

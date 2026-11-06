@@ -311,3 +311,14 @@
 | TK0026-M19 | packages/engine/src/trigger/kernel.ts | derived the emitting plugin from the event type instead of the caller | `the kernel start entry > emitStep checks the type against the caller's plugin, not the type` |
 | TK0026-M20 | packages/engine/src/log/jsonl.ts | skipped the unique-key lookup, so a duplicate observe appended a second fact | `event receipt recovery > two processes delivering the same observe event write one fact (jsonl)` |
 | TK0026-M21 | packages/engine/src/log/sqlite.ts | skipped the unique-key lookup, so a duplicate observe hit the unique index | `event receipt recovery > two processes delivering the same observe event write one fact (sqlite)` |
+
+## TK0027 — plugin default rules and the event note in a prompt
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0027-M1 | packages/engine/src/trigger/rules.ts | stopped removing plugin rules whose source and type a user rule names | `trigger rules > a user rule replaces every plugin rule with the same source and type` |
+| TK0027-M2 | packages/engine/src/trigger/rules.ts | kept a later plugin's rule for a pair an earlier plugin already owns | `trigger rules > a later plugin's rule for the same pair is skipped and both are named` |
+| TK0027-M3 | packages/engine/src/plugin/registry.ts | skipped validating the rules a plugin ships | `trigger rules > an invalid plugin rule is refused at load with the plugin name and index` |
+| TK0027-M4 | packages/engine/src/plugin/registry.ts | stopped checking that a plugin rule's flow is loaded | `trigger rules > a plugin rule whose flow does not exist is refused at load` |
+| TK0027-M5 | packages/harness-radian/src/index.ts | dropped the event note from a triggered prompt | `harness-radian:prompt > a trigger with summary and data appends one note that names both files` |
+| TK0027-M6 | packages/cli/src/main.ts | printed `user` as the origin of every rule in the listing | `operad trigger rules > lists each rule with where it came from` |
