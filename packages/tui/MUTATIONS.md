@@ -80,3 +80,6 @@ the row fields.
 | T-0031-M24 | packages/tui/src/state.ts | any text with the truncation words capped the section | `the object pane reducer > capped > the same words inside the text, or another last line, do not` |
 | T-0031-M25 | packages/tui/src/app.ts | closing the object left its section requests running | `a section request that is not finished > escape and a reopen do not leave the section loading` |
 | T-0031-M26 | packages/tui/src/state.ts | a page from an earlier open of the object appended to the new open | `a section request that is not finished > a page that lands after the object was closed and reopened is dropped` |
+| T-0035-M1 | packages/tui/src/state.ts | `LIST_WIDTH` was 30, so the divider moved off column 36 | `the TUI view > thin lines: the rules, the marker column, one divider and no boxes` |
+| T-0035-M2 | packages/tui/src/view/index.ts | `fit` returned a long text whole, so a long title pushed past the pane | `the TUI view > the object pane text starts two cells after the divider and a long title never pushes the rule` |
+| T-0035-M3 | packages/tui/src/state.ts | an error row took two lines in the list window | `the TUI reducer > the window around the cursor counts one line per row, an error row too` |
