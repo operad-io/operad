@@ -39,9 +39,10 @@ interface Run {
 
 class Child {
   readonly #process: Bun.Subprocess<"pipe", "pipe", "pipe">;
-  readonly #stdout: Promise<string>;
   readonly #waiters = new Set<() => void>();
+  #stdout = "";
   #stderr = "";
+  readonly #stdoutDone: Promise<void>;
   readonly #stderrDone: Promise<void>;
 
   constructor(
@@ -55,8 +56,19 @@ class Child {
       stderr: "pipe",
       env,
     });
-    this.#stdout = new Response(this.#process.stdout).text();
+    this.#stdoutDone = this.#readStdout(this.#process.stdout);
     this.#stderrDone = this.#readStderr(this.#process.stderr);
+  }
+
+  async #readStdout(stream: ReadableStream<Uint8Array>): Promise<void> {
+    const decoder = new TextDecoder();
+    for await (const chunk of stream) {
+      this.#stdout += decoder.decode(chunk, { stream: true });
+      for (const wake of this.#waiters) wake();
+      this.#waiters.clear();
+    }
+    for (const wake of this.#waiters) wake();
+    this.#waiters.clear();
   }
 
   async #readStderr(stream: ReadableStream<Uint8Array>): Promise<void> {
@@ -73,6 +85,35 @@ class Child {
   send(text: string): void {
     this.#process.stdin.write(text);
     void this.#process.stdin.end();
+  }
+
+  /** Writes one input line and leaves stdin open, so the host can answer later. */
+  sendLine(text: string): void {
+    this.#process.stdin.write(`${text}\n`);
+    void this.#process.stdin.flush();
+  }
+
+  endInput(): void {
+    void this.#process.stdin.end();
+  }
+
+  /** Waits for the first stdout line of this type, or the end of the child. */
+  async untilLine(type: string): Promise<Line | undefined> {
+    let ended = false;
+    void this.#process.exited.then(() => {
+      ended = true;
+      for (const wake of this.#waiters) wake();
+      this.#waiters.clear();
+    });
+    for (;;) {
+      for (const text of this.#stdout.split("\n")) {
+        if (!text.startsWith("{")) continue;
+        const parsed = JSON.parse(text) as Line;
+        if (parsed["type"] === type) return parsed;
+      }
+      if (ended) return undefined;
+      await new Promise<void>((resolve) => this.#waiters.add(resolve));
+    }
   }
 
   /** Waits until stderr holds the text, or the child ends. */
@@ -95,7 +136,8 @@ class Child {
   async finish(): Promise<Run> {
     const exitCode = await this.#process.exited;
     await this.#stderrDone;
-    const stdout = await this.#stdout;
+    await this.#stdoutDone;
+    const stdout = this.#stdout;
     const lines = stdout
       .split("\n")
       .filter((text) => text.length > 0)
@@ -486,4 +528,154 @@ test("several content blocks of one assistant message write one message_end", as
   });
 
   expect(kinds(run)).toEqual(["message_end", "message_end", "result"]);
+});
+
+// Access profile and one-time grants.
+
+const DENY_RM: FakeStep[] = [
+  { say: systemInit() },
+  { hook: "PreToolUse", toolName: "Bash", toolUseId: "tool-1", input: { command: "rm -rf build" } },
+  { ask: { toolName: "Bash", toolUseId: "tool-1", input: { command: "rm -rf build" } } },
+  { say: assistant("m1", "I could not run it") },
+  { say: result() },
+];
+
+function answerOf(run: Run): Line {
+  const reply = run.record.find((entry) => "askReply" in entry);
+  return (reply?.["answer"] ?? {}) as Line;
+}
+
+test("a Bash command that denyCommands refuses is denied with the reason, logged, and the run goes on", async () => {
+  const s = setup();
+  s.input["access"] = { denyCommands: ["rm"] };
+  const run = await runFake(s, { steps: DENY_RM });
+
+  expect(run.exitCode).toBe(0);
+  const answer = answerOf(run);
+  expect(answer["behavior"]).toBe("deny");
+  expect(String(answer["message"])).toContain('denyCommands rule "rm"');
+  expect(run.lines.slice(0, 3)).toEqual([
+    { type: "tool_execution_start", toolCallId: "tool-1", toolName: "Bash" },
+    { type: "blocked", toolName: "Bash", reason: answer["message"] },
+    { type: "tool_execution_end", toolCallId: "tool-1", toolName: "Bash", isError: true },
+  ]);
+  expect(kinds(run).slice(3)).toEqual(["message_end", "result"]);
+  expect(last(run)).toMatchObject({ result: "done" });
+});
+
+test("a command the profile does not refuse is allowed", async () => {
+  const s = setup();
+  s.input["access"] = { denyCommands: ["rm"] };
+  const run = await runFake(s, {
+    steps: [
+      { say: systemInit() },
+      { ask: { toolName: "Bash", toolUseId: "tool-1", input: { command: "ls -la" } } },
+      { say: result() },
+    ],
+  });
+
+  expect(answerOf(run)["behavior"]).toBe("allow");
+  expect(kinds(run)).not.toContain("blocked");
+});
+
+test("a Read under denyPaths is denied, and Read elsewhere is allowed", async () => {
+  const s = setup();
+  s.input["access"] = { denyPaths: ["/etc"] };
+  const run = await runFake(s, {
+    steps: [
+      { say: systemInit() },
+      { ask: { toolName: "Read", toolUseId: "tool-1", input: { file_path: "/etc/passwd" } } },
+      { say: result() },
+    ],
+  });
+
+  expect(answerOf(run)["behavior"]).toBe("deny");
+  expect(String(answerOf(run)["message"])).toContain('under denyPaths entry "/etc"');
+  expect(run.lines.find((line) => line["type"] === "blocked")).toMatchObject({ toolName: "Read" });
+});
+
+test("a tool outside the table is denied under a rule and allowed without one", async () => {
+  const steps: FakeStep[] = [
+    { say: systemInit() },
+    { ask: { toolName: "mcp__files__read", toolUseId: "tool-1", input: {} } },
+    { say: result() },
+  ];
+  const ruled = setup();
+  ruled.input["access"] = { denyPaths: ["/etc"] };
+  const denied = await runFake(ruled, { steps });
+  expect(answerOf(denied)["behavior"]).toBe("deny");
+
+  const free = await runFake(setup(), { steps });
+  expect(answerOf(free)["behavior"]).toBe("allow");
+});
+
+const GRANT_ACCESS = {
+  denyCommands: ["rm"],
+  grants: [{ waitId: "w1", kind: "command", value: "rm -rf build" }],
+};
+
+async function grantRun(ack: boolean | "none"): Promise<{ run: Run; grantLine: Line | undefined }> {
+  const s = setup();
+  s.input["access"] = GRANT_ACCESS;
+  const child = new Child(FAKE_WORKER, s.env({ steps: DENY_RM }), s.recordFile);
+  child.sendLine(JSON.stringify(s.input));
+  if (ack === "none") {
+    // The host is gone: stdin ends and no answer will come.
+    child.endInput();
+    return { run: await child.finish(), grantLine: undefined };
+  }
+  const grantLine = await child.untilLine("grant_use");
+  if (grantLine !== undefined) child.sendLine(JSON.stringify({ type: "grant_ack", id: grantLine["id"], used: ack }));
+  child.endInput();
+  return { run: await child.finish(), grantLine };
+}
+
+test("a grant that matches is asked for, and the call runs when the host says used", async () => {
+  const { run, grantLine } = await grantRun(true);
+
+  expect(grantLine).toEqual({ type: "grant_use", id: 1, waitId: "w1" });
+  expect(run.exitCode).toBe(0);
+  expect(answerOf(run)["behavior"]).toBe("allow");
+  expect(kinds(run)).not.toContain("blocked");
+  expect(kinds(run).indexOf("grant_use")).toBeLessThan(kinds(run).indexOf("message_end"));
+});
+
+test("a grant the host did not use up leaves the call denied", async () => {
+  const { run } = await grantRun(false);
+
+  expect(answerOf(run)["behavior"]).toBe("deny");
+  expect(kinds(run)).toContain("blocked");
+  expect(last(run)).toMatchObject({ result: "done" });
+});
+
+test("a grant whose answer never comes, because the host is gone, leaves the call denied", async () => {
+  const { run } = await grantRun("none");
+
+  expect(answerOf(run)["behavior"]).toBe("deny");
+  expect(kinds(run)).toContain("blocked");
+  expect(last(run)).toMatchObject({ result: "done" });
+});
+
+test("a call no grant covers never writes a grant_use line", async () => {
+  const s = setup();
+  s.input["access"] = GRANT_ACCESS;
+  const run = await runFake(s, {
+    steps: [
+      { say: systemInit() },
+      { ask: { toolName: "Bash", toolUseId: "tool-1", input: { command: "rm -rf dist" } } },
+      { say: result() },
+    ],
+  });
+
+  expect(answerOf(run)["behavior"]).toBe("deny");
+  expect(kinds(run)).not.toContain("grant_use");
+});
+
+test("an access profile the matcher cannot read is invalid input", async () => {
+  const s = setup();
+  s.input["access"] = { denyCommands: "rm" };
+  const run = await runFake(s, { steps: done });
+
+  expect(run.exitCode).toBe(2);
+  expect(last(run)).toMatchObject({ reason: "invalid_input", message: "access.denyCommands must be an array of strings" });
 });

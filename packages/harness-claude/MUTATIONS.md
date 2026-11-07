@@ -47,3 +47,20 @@ setup it depends on, in the order they were recorded. The root
 | T-0039-M12 | packages/harness-claude/src/index.ts | `tool_execution_end` no longer closed a tool call | `classifies the worker's tool lines and nothing else` |
 | T-0039-M13 | packages/harness-claude/src/claude-install.ts | the SDK version was not read | `the SDK version is a version and is only reported` |
 | T-0039-M14 | packages/harness-claude/src/index.ts | `--effort` given twice was accepted | `an effort given twice fails with invalid_args and the worker is not started` |
+
+## T-0040 — the access profile and one-time grants
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0040-M1 | packages/harness-claude/src/access.ts | `Read` read its path from `path` instead of `file_path` | `the tool table > Read: mapped to read, refused by the profile, allowed elsewhere` |
+| T-0040-M2 | packages/harness-claude/src/access.ts | `NotebookEdit` read `file_path` instead of `notebook_path` | `the tool table > NotebookEdit: mapped to edit, refused by the profile, allowed elsewhere` |
+| T-0040-M3 | packages/harness-claude/src/access.ts | `Glob` was judged as `grep` | `the tool table > Glob: mapped to find, refused by the profile, allowed elsewhere` |
+| T-0040-M4 | packages/harness-claude/src/access.ts | an unmapped tool was allowed even with a deny rule set | `tools outside the table > an unmapped tool is refused while denyPaths or denyCommands is set` |
+| T-0040-M5 | packages/harness-claude/src/access.ts | a required field that is missing was allowed | `the tool table > a tool whose target is required but missing is refused while a rule is set` |
+| T-0040-M6 | packages/harness-claude/src/access.ts | a grant the host did not use up let the call run | `one-time grants > a grant the host does not use up lets nothing through` |
+| T-0040-M7 | packages/harness-claude/src/access.ts | grants were never looked up | `one-time grants > a command grant that matches exactly is used and lets the call run` |
+| T-0040-M8 | packages/harness-claude/src/access.ts | `Task` and `Agent` dropped from the inert list | `tools outside the table > an inert tool is allowed under any profile` |
+| T-0040-M9 | packages/harness-claude/src/worker.ts | a refused call stayed open (no `tool_execution_end`) | `a Bash command that denyCommands refuses is denied with the reason, logged, and the run goes on` |
+| T-0040-M10 | packages/harness-claude/src/worker.ts | the `blocked` line was not written | `a Bash command that denyCommands refuses is denied with the reason, logged, and the run goes on` |
+| T-0040-M11 | packages/harness-claude/src/worker.ts | `canUseTool` was not given the host's `useGrant` | `a grant that matches is asked for, and the call runs when the host says used` |
+| T-0040-M12 | packages/harness-claude/src/index.ts | the step stopped declaring `enforces` | `harness-claude access > the step declares the deny fields it enforces` |

@@ -20,3 +20,12 @@ the row fields.
 | TK0009-M14 | `packages/harness-process/src/process.ts` | the sentinel did not watch its host while the harness ran | `the harness process > a harness still running when its host dies is stopped with its sentinel` |
 | T-0025-M7 | `packages/harness-process/src/ask-note.ts` | the paragraph's fixed text changed | `the paragraph is fixed and names the question and the answer` |
 | T-0025-M15 | `packages/harness-process/src/ask-note.ts` | newlines in the prompt and the choice were kept | `newlines in the prompt and the choice cannot end the paragraph` |
+
+## T-0040 — the host's side of a one-time permission
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0040-M13 | packages/harness-process/src/grants.ts | the `grant_ack` always said `used: true` | `answerGrant > replies used false when the host did not use it` |
+| T-0040-M14 | packages/harness-process/src/grants.ts | a host that throws counted as a grant used | `answerGrant > replies used false when the host throws` |
+| T-0040-M15 | packages/harness-process/src/grants.ts | `hasGrants` was true for an empty grants list | `hasGrants > is true only for a profile with at least one grant` |
+| T-0040-M16 | packages/harness-process/src/grants.ts | a `grant_use` line without a `waitId` was accepted | `grantUse > reads a grant_use line and nothing else` |

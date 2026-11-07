@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  AccessError,
   MemoryPluginStore,
   PluginRegistry,
   Runner,
@@ -466,6 +467,29 @@ describe("harness-claude/agent", () => {
     );
     expect(result.result).toBe("failed");
     expect(dataOf(result).reason).toBe("missing");
+  });
+});
+
+describe("harness-claude access", () => {
+  test("the step declares the deny fields it enforces", async () => {
+    const env = await setup("done");
+    const type = env.registry.stepTypes().find((item) => item.name === "harness-claude/agent");
+    expect(type?.enforces).toEqual(["denyPaths", "denyCommands"]);
+  });
+
+  test("a profile with askCommands is refused at start and the field is named", async () => {
+    const env = await setup("done");
+    let error: unknown;
+    try {
+      env.registry.checkAccess("harness-claude:prompt", { askCommands: ["git push"] });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(AccessError);
+    expect(String((error as Error).message)).toContain("askCommands");
+    expect(() =>
+      env.registry.checkAccess("harness-claude:prompt", { denyCommands: ["rm"], denyPaths: ["/etc"] }),
+    ).not.toThrow();
   });
 });
 
