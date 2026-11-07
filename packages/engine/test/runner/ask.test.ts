@@ -28,6 +28,8 @@ afterAll(cleanupTempRoots);
 const pluginPath = fileURLToPath(new URL("../fixtures/plugins/ask.ts", import.meta.url));
 const childPath = fileURLToPath(new URL("../fixtures/ask-child.ts", import.meta.url));
 
+const answerPath = fileURLToPath(new URL("../fixtures/answer-child.ts", import.meta.url));
+
 const ACTOR = { via: "cli", id: "me" } as const;
 
 /** Resolves when the file exists: a directory watch, re-checked on a timer. */
@@ -476,6 +478,106 @@ describe("ctx.ask", () => {
     }
   }, 30_000);
 
+  test("a step that asks with onTimeout waiting must declare waiting", async () => {
+    const env = await setup("memory");
+    try {
+      const asker = {
+        ask: async () => {
+          throw new Error("the question must not be asked");
+        },
+      };
+      const options = { runId: "bare-run", asker, params: null };
+      await expect(env.registry.runStep("ask/bare", {}, options)).rejects.toThrow(
+        /must declare it in results/,
+      );
+      // With reject_once the step needs no waiting result.
+      const taken = {
+        ask: async () => ({
+          kind: "timeout" as const,
+          waitId: "w",
+          prompt: "Bare?",
+          choices: [],
+        }),
+      };
+      const result = await env.registry.runStep(
+        "ask/bare",
+        { rejectOnce: true },
+        { ...options, asker: taken },
+      );
+      expect(result).toEqual({ result: "answered", data: { rejected: true } });
+    } finally {
+      await env.close();
+    }
+  });
+
+  test("a grace above the timer limit is refused", async () => {
+    const env = await setup("memory");
+    try {
+      const asker = {
+        ask: async () => {
+          throw new Error("the question must not be asked");
+        },
+      };
+      await expect(
+        env.registry.runStep("ask/question", {}, {
+          runId: "long-run",
+          asker,
+          params: { name: "l", dir: env.dir, graceSecs: 2_147_484 },
+        }),
+      ).rejects.toThrow(/from 0 to 2147483/);
+      await expect(
+        env.registry.runStep("ask/question", { askGraceSecs: 1e12 }, {
+          runId: "long-run",
+          asker,
+          params: { name: "l", dir: env.dir },
+        }),
+      ).rejects.toThrow(/askGraceSecs.*from 0 to 2147483/);
+    } finally {
+      await env.close();
+    }
+  });
+
+  test("a second question at once in one step is refused", async () => {
+    const env = await setup("memory");
+    try {
+      const id = await env.create("ask-wait", "d", { concurrent: true });
+      const run = env.runner(id, new FakeTimer()).run();
+      await env.opened(id);
+      const pending = await listPending(env.log, env.registry);
+      expect(pending).toHaveLength(1);
+      expect(pending[0]?.prompt).toBe("First?");
+      await recordAnswer({ log: env.log, runId: id, choice: "yes", actor: ACTOR });
+      expect(await run).toBe("ended");
+      const list = await facts(env.log, id);
+      expect(count(list.map((fact) => fact.kind), "ask_opened")).toBe(1);
+      expect(JSON.stringify(stepResult(list, "q").data)).toContain(
+        "asks one question at a time",
+      );
+    } finally {
+      await env.close();
+    }
+  }, 30_000);
+
+  test("an old open question does not change the error for an answer", async () => {
+    const env = await setup("memory");
+    try {
+      const id = await env.create("ask-hold", "o", { onTimeout: "reject_once" });
+      const timer = new FakeTimer();
+      const run = env.runner(id, timer).run();
+      await env.opened(id);
+      await timer.armed();
+      timer.fire();
+      await fileExists(join(env.dir, "holding-o"));
+      await expect(
+        recordAnswer({ log: env.log, runId: id, choice: "yes", actor: ACTOR }),
+      ).rejects.toThrow(/not waiting for a person/);
+      env.gate("o");
+      expect(await run).toBe("ended");
+    } finally {
+      await env.close();
+    }
+  }, 30_000);
+
   test("a grace of 0 does not wait", async () => {
     const env = await setup("memory");
     try {
@@ -547,6 +649,31 @@ describe("ctx.ask", () => {
 interface Child {
   readonly exited: Promise<number>;
 }
+
+describe("ctx.ask answers from two processes", () => {
+  test("of two processes answering one question exactly one wins", async () => {
+    const env = await setup("file");
+    try {
+      const id = await env.create("ask-hold", "x");
+      const run = env.runner(id, new FakeTimer()).run();
+      const waitId = await env.opened(id);
+      const answerer = (choice: string) =>
+        Bun.spawn(
+          [process.execPath, answerPath, env.home, id, waitId, choice],
+          { stdio: ["ignore", "inherit", "inherit"] },
+        ).exited;
+      const codes = await Promise.all([answerer("yes"), answerer("no")]);
+      expect([...codes].sort()).toEqual([0, 3]);
+      await fileExists(join(env.dir, "holding-x"));
+      const list = await facts(env.log, id);
+      expect(count(list.map((fact) => fact.kind), "ask_answered")).toBe(1);
+      env.gate("x");
+      expect(await run).toBe("ended");
+    } finally {
+      await env.close();
+    }
+  }, 60_000);
+});
 
 describe("ctx.ask survives a crash", () => {
   function spawnChild(

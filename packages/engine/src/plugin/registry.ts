@@ -47,6 +47,7 @@ import {
   type SourceContext,
   type SourceHandle,
   type StartRunRequest,
+  MAX_ASK_GRACE_SECS,
   type AskAnswer,
   type AskRequest,
   type StepContext,
@@ -1396,12 +1397,23 @@ export class PluginRegistry {
       ] as const) {
         if (
           value !== undefined &&
-          (typeof value !== "number" || !Number.isFinite(value) || value < 0)
+          (typeof value !== "number" ||
+            !Number.isFinite(value) ||
+            value < 0 ||
+            value > MAX_ASK_GRACE_SECS)
         ) {
           throw new PluginError(
-            `step "${use}": ask: ${name}: must be a number of seconds, 0 or more`,
+            `step "${use}": ask: ${name}: must be a number of seconds from 0 to ${MAX_ASK_GRACE_SECS}`,
           );
         }
+      }
+      if (
+        request.onTimeout !== "reject_once" &&
+        !found.step.results.includes("waiting")
+      ) {
+        throw new PluginError(
+          `step "${use}": ask: onTimeout "waiting" ends the step with the result "waiting", so the step must declare it in results (or ask with onTimeout "reject_once")`,
+        );
       }
       const graceSecs = narrowerOf(request.graceSecs, askGraceOf(params));
       const outcome = await options.asker.ask(

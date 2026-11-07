@@ -3,6 +3,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { defaultOperadHome } from "../plugin/home.ts";
+import { MAX_ASK_GRACE_SECS } from "../plugin/types.ts";
 import { openLog, type LogBackend, type LogBackendName } from "../log/index.ts";
 
 /** The storage backend the log uses. */
@@ -251,10 +252,11 @@ function readAsk(value: unknown, file: string): AskConfig {
     graceSecs !== undefined &&
     (typeof graceSecs !== "number" ||
       !Number.isFinite(graceSecs) ||
-      graceSecs < 0)
+      graceSecs < 0 ||
+      graceSecs > MAX_ASK_GRACE_SECS)
   ) {
     throw new ConfigError(
-      `${file}: ask.graceSecs: must be a number of seconds, 0 or more`,
+      `${file}: ask.graceSecs: must be a number of seconds from 0 to ${MAX_ASK_GRACE_SECS}`,
     );
   }
   return { graceSecs: graceSecs ?? DEFAULT_ASK.graceSecs };

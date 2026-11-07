@@ -102,6 +102,7 @@
         "graceSecs": {
           "type": "number",
           "minimum": 0,
+          "maximum": 2147483,
           "default": 600,
           "description": "How long a step waits for an answer, in seconds, unless the call or the step's askGraceSecs param is narrower. 0 does not wait. There is no unlimited value."
         }

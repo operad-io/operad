@@ -85,6 +85,18 @@ export default definePlugin({
           throw new Error("the flow needs { name, dir }");
         }
         mark(dir, name);
+        if (ctx.params.concurrent === true) {
+          // Two questions at once: the second is refused, the first goes on.
+          const first = ctx.ask({ prompt: "First?", choices: ["yes", "no"] });
+          let refused = "";
+          try {
+            await ctx.ask({ prompt: "Second?", choices: ["yes", "no"] });
+          } catch (error) {
+            refused = error instanceof Error ? error.message : String(error);
+          }
+          const answer = await first;
+          return { result: "answered", data: { refused, choice: answer.choice ?? null } };
+        }
         const answer = await ctx.ask({
           prompt:
             typeof ctx.params.prompt === "string"
@@ -110,6 +122,19 @@ export default definePlugin({
             actor: answer.actor === undefined ? null : { ...answer.actor },
           },
         };
+      },
+    },
+    {
+      // Asks with the default onTimeout but does not declare `waiting`.
+      name: "bare",
+      results: ["answered", "failed", "interrupted"],
+      async run(ctx, params) {
+        const rejectOnce = isRecord(params) && params.rejectOnce === true;
+        const answer = await ctx.ask({
+          prompt: "Bare?",
+          ...(rejectOnce ? { onTimeout: "reject_once" as const } : {}),
+        });
+        return { result: "answered", data: { rejected: answer.rejected === true } };
       },
     },
     {

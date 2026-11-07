@@ -4,7 +4,7 @@ import type { FlowDefinition } from "../flow/types.ts";
 import type { KernelState } from "../kernel/types.ts";
 import type { JsonValue, LogBackend } from "../log/types.ts";
 import type { Actor } from "../plugin/types.ts";
-import { answerAsk, openAskOf, scanAsks } from "./ask.ts";
+import { answerAsk, answerableAsks, scanAsks } from "./ask.ts";
 import { StateError } from "./errors.ts";
 import { applyInput, readState } from "./service.ts";
 
@@ -86,7 +86,7 @@ export async function recordAnswer(options: RecordAnswerOptions): Promise<void> 
         ? undefined
         : options.waitId !== undefined
           ? (await scanAsks(options.log, options.runId)).asks.get(options.waitId)
-          : await openAskOf(options.log, options.runId);
+          : answerableAsks((await scanAsks(options.log, options.runId)).asks, state).at(-1);
     if (ask === undefined) {
       throw new StateError(
         options.waitId === undefined || state.status === "ended"

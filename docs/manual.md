@@ -200,8 +200,21 @@ The step's own timeout does not run while it waits for an answer.
 | `"waiting"` (default) | The step ends with the result `waiting` and the data `{ waitId, prompt, choices, resume }`. The flow must have an edge `waiting` to a `wait_person` step; that step shows the same item (same wait id) and an answer to it takes the edge the choice names. |
 | `"reject_once"` | The call returns `{ choice: undefined, rejected: true }` and the step goes on. |
 
+A step that asks with `onTimeout: "waiting"` (the default) must declare
+`waiting` in its `results`. If it does not, `ctx.ask` fails at once, before
+anything is asked, with an error that says so; otherwise the question would be
+lost when the grace passed. A step that only ever uses `"reject_once"` does not
+need `waiting`.
+
 A flow where a step can end `waiting` and has no `waiting` edge to a
 `wait_person` step is refused when it loads.
+
+A step asks one question at a time. A second `ctx.ask` while the first has no
+answer yet fails at once with `a step asks one question at a time`.
+
+`graceSecs` (the call, the step's `askGraceSecs` and `ask.graceSecs` in
+`config.json`) is a number of seconds from `0` to `2147483` (about 24 days);
+anything above is refused with a message.
 
 **One answer.** The first answer to a question counts. A second one is refused
 with `already answered`. An answer that comes after the step ended, when its

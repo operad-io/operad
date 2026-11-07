@@ -306,6 +306,9 @@ export interface PluginCheck {
   readonly message: string;
 }
 
+/** The longest grace, in seconds, a timer can hold (2^31-1 ms, rounded down). */
+export const MAX_ASK_GRACE_SECS = 2_147_483;
+
 /** What a step asks a person with `ctx.ask`. */
 export interface AskRequest {
   readonly prompt: string;

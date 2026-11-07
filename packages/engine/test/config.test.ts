@@ -211,6 +211,7 @@ describe("operad config", () => {
       [{ graceSecs: -1 }, /ask.graceSecs/],
       [{ graceSecs: "10" }, /ask.graceSecs/],
       [{ graceSecs: null }, /ask.graceSecs/],
+      [{ graceSecs: 2_147_484 }, /from 0 to 2147483/],
       ["10", /ask: must be an object/],
     ] as const) {
       await Bun.write(join(home, "config.json"), JSON.stringify({ ask }));

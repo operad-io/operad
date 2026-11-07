@@ -230,18 +230,6 @@ export async function settleAsk(
   return (await scanAsks(log, runId)).asks.get(waitId);
 }
 
-/** The newest question of the run that nobody closed. */
-export async function openAskOf(
-  log: LogBackend,
-  runId: string,
-): Promise<AskRecord | undefined> {
-  let found: AskRecord | undefined;
-  for (const record of (await scanAsks(log, runId)).asks.values()) {
-    if (record.status === "open") found = record;
-  }
-  return found;
-}
-
 /** The questions a person could answer now: open, and their step is running. */
 export function answerableAsks(
   asks: ReadonlyMap<string, AskRecord>,
@@ -375,10 +363,22 @@ export class AskHost {
    */
   asker(runId: string, effectId: string, step: string | null): StepAsker {
     let count = 0;
+    let asking = false;
     return {
       ask: async (request, signal) => {
+        // One question at a time: a second would hide the first from the person.
+        if (asking) {
+          throw new Error(
+            "a step asks one question at a time; wait for the answer before asking again",
+          );
+        }
+        asking = true;
         count += 1;
-        return this.ask(runId, effectId, step, count, request, signal);
+        try {
+          return await this.ask(runId, effectId, step, count, request, signal);
+        } finally {
+          asking = false;
+        }
       },
     };
   }
