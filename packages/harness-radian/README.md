@@ -4,6 +4,17 @@ The `harness-radian` plugin: one `agent` step that runs `radian exec` in a
 directory and reads its closing result, and the `harness-radian:prompt` flow
 that runs one prompt.
 
+## Asking and resuming
+
+The step is `resumable: true`: its params may carry `resumeSession` (passed as
+`--resume`) and `askAnswer`, which adds `You asked: <prompt>. The answer is:
+<answer>. Continue.` to the prompt.
+
+radian has no hook that sees its tool calls, so this harness cannot let one call
+through and no other. A run whose access profile has a one-time permission
+(`grants`) is refused by the step with the reason `grant_unsupported`, naming
+radian; use `harness-pi` for flows that grant.
+
 ## Settings
 
 The `harness-radian` section of `config.json`.
