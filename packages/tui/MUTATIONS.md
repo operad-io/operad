@@ -95,3 +95,4 @@ the row fields.
 | T-0032-M8 | packages/tui/src/actions.ts | the note was trimmed before it was sent | `actions in the reducer > a note is sent exactly as entered` |
 | T-0032-M9 | packages/tui/src/state.ts | the person's key bindings were skipped while the key list was open | `actions in the reducer > a user binding beats the built-in keys while the key list is open` |
 | T-0032-M10 | packages/tui/src/state.ts | the person's key bindings were skipped for `enter` and `escape` | `actions in the reducer > a user binding on enter or escape beats the built-in key` |
+| T-0032-M11 | packages/tui/src/actions.ts | an optional note of only whitespace was dropped from the request | `actions in the reducer > an optional note of only whitespace is sent as entered` |

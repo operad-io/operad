@@ -159,6 +159,14 @@ describe("actions in the reducer", () => {
     expect(state.actionRequest?.note).toBe("  reason  \n");
   });
 
+  test("an optional note of only whitespace is sent as entered", () => {
+    const lone = opened([ACTIONS[2] as ViewAction]);
+    const spaces = press(lone, "a", ...typeText("  "), "enter");
+    expect(spaces.actionRequest?.note).toBe("  ");
+    const lines = press(lone, "a", { type: "key", key: "enter", shift: true }, "enter");
+    expect(lines.actionRequest?.note).toBe("\n");
+  });
+
   test("a key the object does not offer now says so in one footer line", () => {
     const bound = opened([ACTIONS[3] as ViewAction], [
       { key: "m", action: "tuitest:approve", source: "plugin" },

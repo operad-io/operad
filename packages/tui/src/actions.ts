@@ -245,14 +245,14 @@ export function inputKey(
           kind: "confirm",
           action: input.action,
           id: input.id,
-          ...(note.trim() === "" ? {} : { note }),
+          ...(note === "" ? {} : { note }),
         },
       };
     }
     return send(state, {
       action: input.action,
       id: input.id,
-      ...(note.trim() === "" ? {} : { note }),
+      ...(note === "" ? {} : { note }),
     });
   }
   if (key === "backspace") return { ...state, input: { ...input, text: dropLast(input.text) } };
