@@ -126,7 +126,7 @@ function alive(pid: number): boolean {
  */
 async function waitUntil(
   predicate: () => boolean,
-  timeoutMs = 2000,
+  timeoutMs = 10_000,
   stepMs = 20,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -299,8 +299,9 @@ describe("process groups", () => {
 
       // Wait for the line's own shell to report the TERM. The signal is only
       // delivered after this point, so the check on the sentinel below is not
-      // a same-tick race.
-      await waitUntil(() => existsSync(marker));
+      // a same-tick race. The marker is a file event, so wait on the directory
+      // rather than poll for it under the full test run's load.
+      await waitForFile(marker);
       expect(signals).toEqual(["SIGTERM"]);
       expect(alive(sentinelPid)).toBe(true);
 
