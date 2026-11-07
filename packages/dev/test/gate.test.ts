@@ -1,6 +1,6 @@
 import { chmodSync } from "node:fs";
-import { afterAll, describe, expect, test } from "bun:test";
-import { appendFileSync, existsSync, watch } from "node:fs";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { appendFileSync, existsSync, rmSync, watch } from "node:fs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -43,9 +43,15 @@ import {
   makeRemote,
   type RemoteSetup,
 } from "./git-support.ts";
-import { cleanupTempRoots, guardLockHandles, storeAt, tempRoot } from "./support.ts";
+import { cleanupTempRoots, guardLockHandles, osTempRoot, storeAt, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
+
+/** FIFOs a fake reviewer made; removed after each test, whether it passed, failed or threw. */
+const fifos: string[] = [];
+afterEach(() => {
+  for (const path of fifos) rmSync(path, { force: true });
+});
 guardLockHandles();
 
 const REVIEW_CRASH_CHILD = fileURLToPath(
@@ -239,6 +245,7 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             };
           }
           if (mode === "fifo") {
+            fifos.push(input.resultPath);
             const made = Bun.spawnSync({
               cmd: ["mkfifo", input.resultPath],
               stdout: "ignore",
@@ -352,7 +359,7 @@ interface Fixture {
 }
 
 async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
-  const root = await tempRoot();
+  const root = await osTempRoot();
   const remote = await makeRemote(root);
   for (const [file, text] of Object.entries(options.baseFiles ?? {})) {
     await advanceMain(remote, file, text, `add ${file}`);
@@ -649,6 +656,14 @@ describe("dev/review", () => {
     expect(result.result).toBe("failed");
     expect(String(result.data?.message)).toContain("not a regular file");
     expect(state.reviewer.calls).toHaveLength(2);
+  });
+
+  test("the FIFO the previous test made is gone, and it was made outside the repository", () => {
+    expect(fifos.length).toBeGreaterThan(0);
+    for (const path of fifos) {
+      expect(existsSync(path)).toBe(false);
+      expect(path.startsWith(process.cwd())).toBe(false);
+    }
   });
 
   test("a finding on a file the change did not touch is pre-existing and does not count", async () => {

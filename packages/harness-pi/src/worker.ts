@@ -14,6 +14,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { findPi, loadPi } from "./pi-install.ts";
 import {
+  DEFAULT_BASH_TIMEOUT_SECS,
   parseInput,
   type FailureReason,
   type WorkerInput,
@@ -21,6 +22,17 @@ import {
   type WorkerResult,
   type WorkerUsage,
 } from "./protocol.ts";
+
+/**
+ * The timeout, in seconds, a bash call runs under. pi's bash tool has no default
+ * timeout and takes the model's own `timeout`; a call without one, or with a
+ * longer one, gets the limit. Anything else (a bad value) is left for pi to refuse.
+ */
+export function boundedTimeout(requested: unknown, limitSecs: number): number | undefined {
+  if (requested === undefined || requested === null) return limitSecs;
+  if (typeof requested === "number" && Number.isFinite(requested) && requested > limitSecs) return limitSecs;
+  return undefined;
+}
 
 export const EXIT_FAILED = 1;
 export const EXIT_INVALID_INPUT = 2;
@@ -162,11 +174,17 @@ export async function runWorker(
 
   // The one extension operad loads. Its tool_call handler asks the access
   // matcher; a refusal blocks the call and the agent goes on.
+  const bashTimeoutSecs = input.bashTimeoutSecs ?? DEFAULT_BASH_TIMEOUT_SECS;
   const access = readProfile(input.access ?? {});
   const profile: AccessProfile = access.ok ? access.profile : {};
   const operadExtension: ExtensionFactory = (pi) => {
     pi.on("tool_call", async (event) => {
       io.log(`tool_call ${event.toolName}`);
+      if (event.toolName === "bash") {
+        // The timeout kills the command; pi gives the model a tool error and the run goes on.
+        const bounded = boundedTimeout(Reflect.get(event.input, "timeout"), bashTimeoutSecs);
+        if (bounded !== undefined) Reflect.set(event.input, "timeout", bounded);
+      }
       const verdict = match(profile, { tool: event.toolName, input: event.input, cwd: input.cwd });
       if (verdict.allow) return undefined;
       // A one-time permission covers one exact call that would be refused. The
@@ -381,6 +399,12 @@ export async function main(hooks: WorkerHooks = {}): Promise<never> {
   console.log = (...args: unknown[]): void => {
     process.stderr.write(`${args.map(String).join(" ")}\n`);
   };
+
+  // pi runs bash non-interactively (`bash -c`): no aliases or functions from the
+  // user's rc files. BASH_ENV and ENV are the two ways a non-interactive shell
+  // is made to read a file, so the agent's shell does not get them.
+  delete process.env["BASH_ENV"];
+  delete process.env["ENV"];
 
   const controller = new AbortController();
   process.on("SIGTERM", () => controller.abort());

@@ -25,7 +25,7 @@ background. A run is one foreground turn: the tools that only schedule or wait f
 work outside the turn (`Monitor`, `ScheduleWakeup`, `CronCreate`, `CronDelete`,
 `CronList`, `TaskStop`) are in `disallowedTools`, and `BASH_DEFAULT_TIMEOUT_MS` and
 `BASH_MAX_TIMEOUT_MS` are set from `bashTimeoutSecs` so a gate (a full test run)
-finishes in the foreground instead of after claude's default 120 s. If claude
+finishes in the foreground instead of after claude's default 120 s. claude's Bash tool sources a snapshot of the user's `~/.zshrc` or `~/.bashrc`, so the user's aliases apply; claude has no supported switch to turn that off, and operad does not work around it (see "The agent's shell and the user's aliases" in the manual). If claude
 starts a second session after its result (a second `system/init`), the worker
 stops, logs it and ends `failed` with reason `model_error` and a message that says
 so; the first result's usage and session id are kept. Auto compaction and tool search are left on: a long run needs
