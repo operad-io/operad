@@ -237,6 +237,28 @@ describe("dev:rework and dev:reverify", () => {
     ).rejects.toThrow(/changed since you looked/);
   });
 
+  test("an action offered a stale object loses even while the task still waits", async () => {
+    const fixture = await setup();
+    await setTaskPhase(fixture.store, fixture.task.id, "waiting");
+    await patch(fixture, { attempt: GATED });
+    const stale = await getTask(fixture.store, fixture.task.id);
+
+    // Merge leaves the task waiting, so only the version tells the two apart.
+    await fixture.registry.runAction(
+      "dev/merge",
+      {},
+      { object: stale, runId: "run-1", actor: ACTOR },
+    );
+    await expect(
+      fixture.registry.runAction(
+        "dev/rework",
+        { note: "again" },
+        { object: stale, runId: "run-1", actor: ACTOR },
+      ),
+    ).rejects.toThrow(/changed since you looked/);
+    expect(fixture.answers).toHaveLength(1);
+  });
+
   test("a cancel that lands first wins over a rework", async () => {
     const fixture = await setup();
     await setTaskPhase(fixture.store, fixture.task.id, "waiting");
