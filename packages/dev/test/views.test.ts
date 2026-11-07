@@ -40,7 +40,7 @@ describe("dev views", () => {
     const { store, plan, task } = await setup();
     const confirmed = await getPlan(store, plan.id);
     expect(planViews.row(confirmed)).toEqual({
-      id: "PL0001-storage",
+      id: "P-0001-storage",
       title: "Storage",
       state: "draft",
       note: "0/1",
@@ -53,7 +53,7 @@ describe("dev views", () => {
     const { store, task } = await setup();
     const stored = await getTask(store, task.id);
     expect(taskViews.row(stored)).toEqual({
-      id: "TK0001-jsonl",
+      id: "T-0001-jsonl",
       title: "JSONL",
       state: "proposed",
     });

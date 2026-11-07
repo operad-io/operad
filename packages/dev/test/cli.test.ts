@@ -6,6 +6,7 @@ import {
   FilePluginStore,
   loadPluginRegistry,
   openConfigLog,
+  openPluginStore,
   parseObjectKey,
   readConfig,
   readStoredStart,
@@ -102,7 +103,7 @@ describe("operad with the dev plugin", () => {
     );
     expect(plan.code).toBe(0);
     const planId = plan.out.trim();
-    expect(planId).toBe("PL0001-alpha");
+    expect(planId).toBe("P-0001-alpha");
 
     const task = await run(
       home,
@@ -121,7 +122,7 @@ describe("operad with the dev plugin", () => {
     );
     expect(task.code).toBe(0);
     const taskId = task.out.trim();
-    expect(taskId).toBe("TK0001-first");
+    expect(taskId).toBe("T-0001-first");
 
     const listed = await run(home, repository, ["list", "task"]);
     expect(listed.code).toBe(0);
@@ -156,6 +157,101 @@ describe("operad with the dev plugin", () => {
     expect(changes.code).toBe(0);
     expect(changes.out).toContain("- created");
     expect(changes.out).toContain("- ready");
+  });
+
+  test("show and dev:confirm take an old id, and an id is matched exactly", async () => {
+    const { root, home, repository } = await setup();
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const other = await makeGitRepository(root, "other");
+    expect((await run(home, other, ["repo", "add", "."])).code).toBe(0);
+    const repositoryName = repository.split("/").pop() ?? "";
+    const otherName = other.split("/").pop() ?? "";
+    const store = openPluginStore({
+      backend: "jsonl",
+      root: join(root, "store"),
+    });
+    store.put(
+      "plan",
+      `${repositoryName}/PL0001-old`,
+      {
+        repository: repositoryName,
+        title: "Old plan",
+        request: "old request",
+        status: "draft",
+        auto: "off",
+        priority: "P3",
+        concurrency: 1,
+        taskCount: 1,
+        mergedCount: 0,
+        cancelledCount: 0,
+      },
+      "seed",
+    );
+    store.put(
+      "task",
+      `${repositoryName}/TK0001-old`,
+      {
+        repository: repositoryName,
+        plan: "PL0001-old",
+        title: "Old task",
+        brief: "Old brief",
+        after: [],
+        phase: "proposed",
+        attempts: 0,
+        run: null,
+      },
+      "seed",
+    );
+    store.put(
+      "plan",
+      `${otherName}/PL0001-old`,
+      {
+        repository: otherName,
+        title: "Other old plan",
+        request: "other request",
+        status: "draft",
+        auto: "off",
+        priority: "P3",
+        concurrency: 1,
+        taskCount: 1,
+        mergedCount: 0,
+        cancelledCount: 0,
+      },
+      "seed",
+    );
+    store.put(
+      "task",
+      `${otherName}/TK0001-old`,
+      {
+        repository: otherName,
+        plan: "PL0001-old",
+        title: "Other old task",
+        brief: "Other old brief",
+        after: [],
+        phase: "proposed",
+        attempts: 0,
+        run: null,
+      },
+      "seed",
+    );
+
+    const shown = await run(home, repository, ["show", "TK0001-old"]);
+    expect(shown.code).toBe(0);
+    expect(shown.out).toContain("TK0001-old  proposed  Old task");
+    expect(shown.out).not.toContain("Other old task");
+
+    const confirmed = await run(home, repository, [
+      "dev:confirm",
+      "PL0001-old",
+    ]);
+    expect(confirmed.code).toBe(0);
+    const ready = await run(home, repository, ["show", "TK0001-old"]);
+    expect(ready.out).toContain("TK0001-old  ready  Old task");
+
+    const fuzzy = await run(home, repository, ["show", "T-0001-old"]);
+    expect(fuzzy.code).toBe(0);
+    expect(fuzzy.out).toContain("unknown");
+    expect(fuzzy.out).not.toContain("Old task");
   });
 
   test("dev:reject from the CLI records, and serve runs the next step", async () => {
@@ -534,7 +630,7 @@ describe("operad with the dev plugin", () => {
       ],
       "brief A\n",
     );
-    expect(taskA.out.trim()).toBe("TK0001-work");
+    expect(taskA.out.trim()).toBe("T-0001-work");
 
     const planB = await run(
       home,
@@ -557,11 +653,11 @@ describe("operad with the dev plugin", () => {
       ],
       "brief B\n",
     );
-    expect(taskB.out.trim()).toBe("TK0001-work");
+    expect(taskB.out.trim()).toBe("T-0001-work");
 
     const shown = await run(home, repository, [
       "show",
-      "TK0001-work",
+      "T-0001-work",
       "--section",
       "brief",
       "--raw",
@@ -572,15 +668,15 @@ describe("operad with the dev plugin", () => {
 
     const confirmed = await run(home, repository, [
       "dev:confirm",
-      "PL0001-work",
+      "P-0001-work",
     ]);
     expect(confirmed.code).toBe(0);
-    const shownA = await run(home, repository, ["show", "TK0001-work"]);
-    expect(shownA.out).toContain("TK0001-work  ready  A task");
-    const shownB = await run(home, other, ["show", "TK0001-work"]);
-    expect(shownB.out).toContain("TK0001-work  proposed  B task");
+    const shownA = await run(home, repository, ["show", "T-0001-work"]);
+    expect(shownA.out).toContain("T-0001-work  ready  A task");
+    const shownB = await run(home, other, ["show", "T-0001-work"]);
+    expect(shownB.out).toContain("T-0001-work  proposed  B task");
 
-    const ambiguous = await run(home, home, ["show", "TK0001-work"]);
+    const ambiguous = await run(home, home, ["show", "T-0001-work"]);
     expect(ambiguous.code).toBe(2);
     expect(ambiguous.err).toContain("ambiguous");
   });

@@ -48,18 +48,18 @@ text.
 operad plan add --slug dogfood --title "Run operad on operad" < request.md
 ```
 
-That prints the plan id, such as `PL0001-dogfood`. Add a task to it; its stdin is
+That prints the plan id, such as `P-0001-dogfood`. Add a task to it; its stdin is
 the task's brief.
 
 ```sh
-operad task add --plan PL0001-dogfood --slug switch --title "Switch to operad" < task.md
+operad task add --plan P-0001-dogfood --slug switch --title "Switch to operad" < task.md
 ```
 
-A task id looks like `TK0001-switch`. `--after <task>` makes a task wait until
+A task id looks like `T-0001-switch`. `--after <task>` makes a task wait until
 another task is merged. Then confirm the plan:
 
 ```sh
-operad dev:confirm PL0001-dogfood
+operad dev:confirm P-0001-dogfood
 ```
 
 Confirmation moves the plan's draft tasks to ready. A confirmed plan is what the
@@ -91,13 +91,13 @@ operad pending
 For a task that passed verify and review, the actions are `dev:merge`,
 `dev:reject` and `dev:cancel`.
 
-- `operad dev:merge TK0001-switch --yes` lands the verified commit on main,
+- `operad dev:merge T-0001-switch --yes` lands the verified commit on main,
   runs the integration checks and cleans the task's worktrees and branches. If
   the remote refuses the push, nothing is written: the task waits for a person
   with a note that names the remote, the branch and git's message.
-- `operad dev:reject TK0001-switch --note "explain what to change"` sends the
+- `operad dev:reject T-0001-switch --note "explain what to change"` sends the
   task back to its worker with that note.
-- `operad dev:cancel TK0001-switch --yes` stops the task.
+- `operad dev:cancel T-0001-switch --yes` stops the task.
 
 The action needs `--yes` because it is the person's decision; in a terminal
 without `--yes` it asks first.
@@ -109,7 +109,7 @@ person at every merge.
 ## History and what each step did
 
 ```sh
-operad history TK0001-switch
+operad history T-0001-switch
 ```
 
 `history` prints one line per step of every run of the task: what started, what

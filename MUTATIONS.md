@@ -586,3 +586,11 @@
 | TK0012-M4 | packages/dev/src/schedule.ts | stopped reconciling a waiting task with the runs in the log, so an orphaned task was never repaired | `dev scheduling > serve repairs a task whose run ended without an edge, and reject runs again` |
 | TK0012-M5 | packages/harness-radian/src/process.ts | stopped pausing the stall timer while a tool call was open | `harness-radian/agent > an open tool call pauses the stall timer until it settles` |
 | TK0012-M6 | packages/engine/src/runner/runner.ts | recorded pid 0 on the step-start fact instead of the executing process | `operad with the dev plugin > dev:reject from the CLI records, and serve runs the next step` |
+
+## TK0011 — short plan and task ids
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0011-M9 | packages/dev/src/model.ts | `parseId` rejected the old `PL`/`TK` form, so an old id in two repositories was ambiguous | `operad with the dev plugin > show and dev:confirm take an old id, and an id is matched exactly` |
+| TK0011-M10 | packages/dev/src/model.ts | `numberById` skipped ids in the old form, so allocation started from 1 instead of the highest old number | `dev per-repository ids > new ids count past old ids in either form` |
+| TK0011-M11 | packages/dev/src/model.ts | `formatId` emitted the old `PL`/`TK` form for new objects | `dev per-repository ids > ids count up across different slugs in one repository` |

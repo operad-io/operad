@@ -28,12 +28,12 @@
 
 ```
 $ operad pending
-TK0003-foo  waiting for you  Storage interface…        dev:merge · dev:reject · dev:cancel
+T-0003-foo  waiting for you  Storage interface…        dev:merge · dev:reject · dev:cancel
 $ operad list task
-TK0011-log-jsonl   merged    Storage interface, conformance…   $0.31
-TK0014-kernel      running   Pure kernel: decide and evolve…   $0.12
-$ operad show TK0014-kernel --section diff
-$ operad dev:reject TK0003-foo --note "cover concurrent writers"
+T-0011-log-jsonl   merged    Storage interface, conformance…   $0.31
+T-0014-kernel      running   Pure kernel: decide and evolve…   $0.12
+$ operad show T-0014-kernel --section diff
+$ operad dev:reject T-0003-foo --note "cover concurrent writers"
 ```
 
 TUI：
@@ -41,12 +41,12 @@ TUI：
 ```
 ┌ operad ──────────────────────────────────────────────┐
 │ 待处理                                                 │
-│ ▸ TK0003-foo   waiting for you   Storage interface…   │
-│   TK0007-bar   waiting for you   rework limit         │
+│ ▸ T-0003-foo   waiting for you   Storage interface…   │
+│   T-0007-bar   waiting for you   rework limit         │
 │ ┌ : ─────────────────────────────────────────────┐    │
 │ │ :dev:re_                                        │    │
-│ │   dev:reject   TK0003-foo   needs a note    r   │    │
-│ │   dev:retry    TK0003-foo                       │    │
+│ │   dev:reject   T-0003-foo   needs a note    r   │    │
+│ │   dev:retry    T-0003-foo                       │    │
 │ └─────────────────────────────────────────────────┘    │
 │ : 命令   ↑↓ 移动   ⏎ 打开   ? 帮助                     │
 └───────────────────────────────────────────────────────┘

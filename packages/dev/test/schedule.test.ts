@@ -741,7 +741,7 @@ describe("dev scheduling", () => {
     await confirm(fixture, plan.key);
     const log = openLog({ backend: "jsonl", path: join(fixture.root, "log") });
     try {
-      // The state TK0001 was left in: the run stopped in `work` with a result
+      // The state T-0001 was left in: the run stopped in `work` with a result
       // that had no edge, and the task still said waiting with that run id.
       const broken = await log.startRun("dev", `task:${task.key}`);
       await log.append(broken.runId, 0, [

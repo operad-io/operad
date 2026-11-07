@@ -191,10 +191,10 @@ export async function resolveDevKey(
   id: string,
   cwd: string,
 ): Promise<string | undefined> {
-  const prefix =
-    type === PLAN_TYPE ? "PL" : type === TASK_TYPE ? "TK" : undefined;
-  if (prefix === undefined) return undefined;
-  if (parseId(id, prefix) === undefined) return undefined;
+  const kind =
+    type === PLAN_TYPE ? "plan" : type === TASK_TYPE ? "task" : undefined;
+  if (kind === undefined) return undefined;
+  if (parseId(id, kind) === undefined) return undefined;
   let repository: RepositoryData;
   try {
     repository = await resolveRepository(store, { cwd });
