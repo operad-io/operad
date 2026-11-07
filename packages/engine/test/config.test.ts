@@ -43,6 +43,7 @@ describe("operad config", () => {
       store: { backend: "jsonl", path: join(home, "store") },
       http: { enabled: false, port: 7480, listen: ["127.0.0.1"] },
       notify: { command: null, on: ["waiting"] },
+      ask: { graceSecs: 600 },
     });
     expect(storeRootOf(config)).toBe(join(home, "store"));
   });
@@ -193,6 +194,27 @@ describe("operad config", () => {
       ["ntfy", /notify: must be an object/],
     ] as const) {
       await Bun.write(join(home, "config.json"), JSON.stringify({ notify }));
+      await expect(readConfig(home)).rejects.toThrow(pattern);
+    }
+  });
+
+  test("reads ask.graceSecs and rejects a malformed ask section", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    await Bun.write(join(home, "config.json"), JSON.stringify({ ask: { graceSecs: 90 } }));
+    expect((await readConfig(home)).ask).toEqual({ graceSecs: 90 });
+    await Bun.write(join(home, "config.json"), JSON.stringify({ ask: {} }));
+    expect((await readConfig(home)).ask).toEqual({ graceSecs: 600 });
+    await Bun.write(join(home, "config.json"), JSON.stringify({ ask: { graceSecs: 0 } }));
+    expect((await readConfig(home)).ask).toEqual({ graceSecs: 0 });
+    for (const [ask, pattern] of [
+      [{ graceSecs: -1 }, /ask.graceSecs/],
+      [{ graceSecs: "10" }, /ask.graceSecs/],
+      [{ graceSecs: null }, /ask.graceSecs/],
+      [{ graceSecs: 2_147_484 }, /from 0 to 2147483/],
+      ["10", /ask: must be an object/],
+    ] as const) {
+      await Bun.write(join(home, "config.json"), JSON.stringify({ ask }));
       await expect(readConfig(home)).rejects.toThrow(pattern);
     }
   });

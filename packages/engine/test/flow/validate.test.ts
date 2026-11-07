@@ -211,6 +211,37 @@ describe("validateFlow", () => {
     expect(error.message).toContain('no edge for result "failed"');
   });
 
+  test("a step that can end waiting needs a waiting edge to a wait_person step", () => {
+    const types = [{ name: "ask/question", results: ["answered", "waiting"] }];
+    const flow = (waiting: string | undefined, target: Record<string, unknown>) => ({
+      name: "asking",
+      entry: "q",
+      steps: [
+        {
+          id: "q",
+          kind: "plugin",
+          params: { use: "ask/question", params: {} },
+          replay: "safe",
+          next: {
+            answered: "done",
+            ...(waiting === undefined ? {} : { waiting }),
+          },
+        },
+        target,
+        endStep("done"),
+      ],
+    });
+    const person = waitPerson("person", { yes: "done", no: "done", interrupted: "done" });
+
+    expect(validateFlow(flow("person", person), types).name).toBe("asking");
+    expect(
+      errorOf(() => validateFlow(flow(undefined, person), types)).message,
+    ).toContain('no edge for result "waiting"');
+    expect(
+      errorOf(() => validateFlow(flow("done", endStep("spare")), types)).message,
+    ).toContain("next.waiting: must name a wait_person step");
+  });
+
   test("requires an interrupted edge for every unsafe step", () => {
     const flow = {
       name: "deploy",

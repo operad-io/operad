@@ -256,6 +256,16 @@ export function validateFlow(flow: unknown, registry: StepTypeRegistry = []): Fl
           `flow "${name}": step "${step.id}": next.${result}: "${target}" is not a step`,
         );
       }
+      // A step that asked and ran out of grace hands its question to a wait.
+      if (
+        step.kind === "plugin" &&
+        result === "waiting" &&
+        byId.get(target)?.kind !== "wait_person"
+      ) {
+        throw new FlowError(
+          `flow "${name}": step "${step.id}": next.waiting: must name a wait_person step`,
+        );
+      }
     }
   }
 

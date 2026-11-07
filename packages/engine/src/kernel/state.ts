@@ -38,6 +38,7 @@ export function initialState(): KernelState {
     effects: {},
     results: {},
     answeredWaits: {},
+    answeredAsk: null,
     lastSeq: 0,
   };
 }
@@ -107,6 +108,7 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
         check: payload.check,
         due: payload.due,
         replay: payload.replay,
+        ...(payload.grants === undefined ? {} : { grants: payload.grants }),
       };
       const recoveries = payload.recovery
         ? {
@@ -119,6 +121,9 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
         status: payload.effect === "run_plugin_step" ? "running" : "waiting",
         step: payload.step,
         effect,
+        // The step that asked is running again: the answer is delivered.
+        answeredAsk:
+          state.answeredAsk?.step === payload.step ? null : state.answeredAsk,
         effectStarted: null,
         wait: null,
         effects: { ...state.effects, [payload.effectId]: "outstanding" },
@@ -175,6 +180,7 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
         choices: payload.choices,
         kind: payload.waitKind,
         effectId: payload.effectId,
+        ...(payload.ask === undefined ? {} : { ask: payload.ask }),
       };
       return {
         ...state,
@@ -203,6 +209,17 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
         wait: null,
         recoveries,
         answeredWaits: { ...state.answeredWaits, [payload.waitId]: true },
+        answeredAsk:
+          payload.ask === undefined
+            ? state.answeredAsk
+            : {
+                waitId: payload.waitId,
+                step: payload.ask.step,
+                prompt: payload.ask.prompt,
+                resume: payload.ask.resume,
+                choice: payload.choice,
+                note: payload.note,
+              },
         lastSeq,
       };
     }

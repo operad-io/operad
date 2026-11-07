@@ -87,6 +87,8 @@ export interface StepType {
   readonly name: string;
   /** The result names the step can produce. */
   readonly results: readonly string[];
+  /** False when the step cannot run again from where a question left it. */
+  readonly resumable?: boolean | undefined;
   /** Access profile fields this step applies. */
   readonly enforces?: readonly string[] | undefined;
   /** How long one run of the step may take, in seconds; unset uses the runner default. */

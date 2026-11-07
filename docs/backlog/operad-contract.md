@@ -27,7 +27,7 @@
 6. **步骤内问人** `ctx.ask({ prompt, choices, graceSecs?, onTimeout? })`，返回答案。这是唯一的内核新原语，分三段：
    - **宽限期**：进程挂着，答案来了立刻继续。宽限期三层可设，窄的覆盖宽的：全局默认（`config.json`，默认 600 秒）、flow 或对话一级（步骤参数或对象字段）、单次询问（`ctx.ask` 的参数）。`0` 表示不等；不提供无上限。
    - **超时暂停**：步骤以结果 `waiting` 结束，数据带等待 id、harness 的会话引用、问题本身；flow 用一条边 `waiting → wait_person` 接住，等人步骤沿用**同一个等待 id**，待处理里仍是同一项。此时没有进程，等多久都行。
-   - **续接**：答案到了，流程回到同一个步骤，带 `resumeSession` 和一张一次性许可（只对这次问的那条命令或路径），prompt 加一句"你之前问 X，答案是 Y，继续"。harness 重发那次调用，许可让它直接过；它改做别的事照样要问。
+   - **续接**：答案到了，流程回到同一个步骤，带 `resumeSession` 和一张一次性许可（只对这次问的那条命令或路径），prompt 加一句"你之前问 X，答案是 Y，继续"。harness 重发那次调用，许可让它直接过；它改做别的事照样要问。落地形状：步骤的 `resume` 是 `{ session, grant: { kind, value, choice, tool? } }`（有选项的问题必须写 `choice`，只有这个选项给许可；无选项只有 `approve` 给；path 许可必须写 `tool`，只对这个工具有效；`ctx.ask` 在问人之前就拒绝不合格的写法，`grants: false` 的步骤不能带许可）；答案留在运行状态里直到发问的步骤再次运行，中间隔几个步骤也送到，流程回来时参数多 `resumeSession`、`askAnswer: { prompt, choice, note }`，访问档多 `grants: [{ waitId, kind, value }]`；许可由 `grant_used`（带等待 id）事实用掉，先写事实再放行那次调用。步骤定义里的 `resumable` 是"描述文件决定"的那一位：明写 `false` 的步骤，`ctx.ask` 被强制为 `reject_once`。harness-radian 没有看得见工具调用的钩子，不能执行一次性许可，带许可的运行被它拒绝；harness-pi 在 `tool_call` 处理器里执行。
    内核记一条带步骤 effect id 的等人事实；答案带等待 id，只被用一次，落在哪一段都对；步骤早已结束的答案拒收并记事实。崩溃语义不变：进程没了按步骤的 `replay` 处理。流程级的 `wait_person` 保留给不占进程的长等待，flow 作者只能用它，不能用 `ctx.ask`。超时后的默认行为 `onTimeout` 是 `waiting`（要求 harness 能续接）或 `reject_once`（不能续接的 harness 的唯一选项，由描述文件决定，用户不可覆盖）。
 7. **外部文字只以资料进来**。事件、消息、取回的条目、网页正文，一律是带来历（来源、时间、引用）的文件，由 `ctx.material` 给步骤；不以字符串出现在 params 里，内核从不把它放进任何提示词。这是 `operad-channels.md` 决定 10 推广到所有入口。
 8. **标准事实形状**：`usage`（harness、模型、tokens、费用）和标准结束结果名（`done` | `nothing` | `failed` | `needs_decision` | `waiting` | `interrupted`）。所有 harness 一种形状，行尾的费用、度量、预算都从它读。

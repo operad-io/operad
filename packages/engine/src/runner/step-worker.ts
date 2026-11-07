@@ -10,8 +10,10 @@ import { FilePluginStore } from "../plugin/file-store.ts";
 import { loadPlugin } from "../plugin/load.ts";
 import { PluginRegistry } from "../plugin/registry.ts";
 import type {
+  AskOutcome,
   PluginStepResult,
   RunObject,
+  StepAsker,
   StepLimiter,
 } from "../plugin/types.ts";
 import type { JsonValue } from "../log/types.ts";
@@ -56,6 +58,22 @@ interface LimitAck {
   readonly id: number;
   readonly ok: boolean;
   readonly error?: string;
+}
+
+interface GrantAck {
+  readonly kind: "grant-result";
+  readonly id: number;
+  readonly ok: boolean;
+  readonly used?: boolean | undefined;
+  readonly error?: string | undefined;
+}
+
+interface AskAck {
+  readonly kind: "ask-result";
+  readonly id: number;
+  readonly ok: boolean;
+  readonly outcome?: AskOutcome | undefined;
+  readonly error?: string | undefined;
 }
 
 /** Opens the store the run configured, so a worker writes where the views read. */
@@ -123,8 +141,85 @@ async function main(request: StepWorkerRequest): Promise<void> {
     },
   };
 
+  const pendingAsks = new Map<
+    number,
+    { resolve: (outcome: AskOutcome) => void; reject: (error: Error) => void }
+  >();
+  let nextAskId = 1;
+
+  /** Asks the run's process, which owns the log, to put a question to a person. */
+  const pendingGrants = new Map<
+    number,
+    { resolve: (used: boolean) => void; reject: (error: Error) => void }
+  >();
+  let nextGrantId = 1;
+
+  const asker: StepAsker = {
+    useGrant: (waitId) => {
+      const port = parentPort;
+      if (port === null) return Promise.reject(new Error("no one takes grants"));
+      const id = nextGrantId;
+      nextGrantId += 1;
+      return new Promise<boolean>((resolve, reject) => {
+        pendingGrants.set(id, { resolve, reject });
+        port.postMessage({ kind: "grant", id, waitId });
+      });
+    },
+    ask: (question, signal) => {
+      const port = parentPort;
+      if (port === null) return Promise.reject(new Error("no one takes questions"));
+      const id = nextAskId;
+      nextAskId += 1;
+      return new Promise<AskOutcome>((resolve, reject) => {
+        const cancel = (): void => port.postMessage({ kind: "ask-cancel", id });
+        pendingAsks.set(id, {
+          resolve: (outcome) => {
+            signal?.removeEventListener("abort", cancel);
+            resolve(outcome);
+          },
+          reject: (error) => {
+            signal?.removeEventListener("abort", cancel);
+            reject(error);
+          },
+        });
+        signal?.addEventListener("abort", cancel, { once: true });
+        port.postMessage({
+          kind: "ask",
+          id,
+          request: {
+            prompt: question.prompt,
+            ...(question.choices === undefined
+              ? {}
+              : { choices: [...question.choices] }),
+            ...(question.graceSecs === undefined
+              ? {}
+              : { graceSecs: question.graceSecs }),
+          },
+        });
+      });
+    },
+  };
+
   parentPort?.on("message", (message: unknown) => {
     if (typeof message !== "object" || message === null) return;
+    if ((message as { kind?: unknown }).kind === "grant-result") {
+      const ack = message as GrantAck;
+      const pending = pendingGrants.get(ack.id);
+      if (pending === undefined) return;
+      pendingGrants.delete(ack.id);
+      if (ack.ok) pending.resolve(ack.used === true);
+      else pending.reject(new Error(ack.error ?? "the permission was refused"));
+      return;
+    }
+    if ((message as { kind?: unknown }).kind === "ask-result") {
+      const ack = message as AskAck;
+      const pending = pendingAsks.get(ack.id);
+      if (pending === undefined) return;
+      pendingAsks.delete(ack.id);
+      if (ack.ok && ack.outcome !== undefined) pending.resolve(ack.outcome);
+      else pending.reject(new Error(ack.error ?? "the question was refused"));
+      return;
+    }
     if ((message as { kind?: unknown }).kind === "limit-result") {
       const ack = message as LimitAck;
       const pending = pendingLimits.get(ack.id);
@@ -177,6 +272,7 @@ async function main(request: StepWorkerRequest): Promise<void> {
     ...(request.trigger === undefined ? {} : { trigger: request.trigger }),
     emit,
     limits,
+    asker,
     signal: controller.signal,
   });
   parentPort?.postMessage({ kind: "result", ok: true, result } satisfies StepWorkerReply);

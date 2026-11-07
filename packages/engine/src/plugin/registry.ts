@@ -4,7 +4,7 @@ import { loadFlow as loadFlowFile } from "../flow/load.ts";
 import { FlowError, validateFlow } from "../flow/validate.ts";
 import type { JsonValue } from "../log/types.ts";
 import { normalizeActionArgs, noteProperty, validateActionArgs } from "./action-schema.ts";
-import { AccessError, messageOf, PluginError } from "./errors.ts";
+import { AccessError, AskTimeoutError, messageOf, PluginError } from "./errors.ts";
 import { defaultOperadHome } from "./home.ts";
 import { createPluginLogger } from "./logger.ts";
 import { FileSecretStore } from "./secrets.ts";
@@ -47,6 +47,9 @@ import {
   type SourceContext,
   type SourceHandle,
   type StartRunRequest,
+  MAX_ASK_GRACE_SECS,
+  type AskAnswer,
+  type AskRequest,
   type StepContext,
   type StepRunOptions,
   type StepLimitDefinition,
@@ -192,6 +195,21 @@ export function splitActionName(
   const at = colon > 0 ? colon : slash > 0 ? slash : -1;
   if (at <= 0 || at === name.length - 1) return undefined;
   return { plugin: name.slice(0, at), action: name.slice(at + 1) };
+}
+
+/** The step param `askGraceSecs`, when the step's params carry one. */
+function askGraceOf(params: unknown): unknown {
+  return isRecord(params) ? params.askGraceSecs : undefined;
+}
+
+/** The smaller of the grace seconds that are set. */
+function narrowerOf(...values: readonly unknown[]): number | undefined {
+  let result: number | undefined;
+  for (const value of values) {
+    if (typeof value !== "number") continue;
+    result = result === undefined ? value : Math.min(result, value);
+  }
+  return result;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -463,6 +481,12 @@ function normalizeSteps(
     steps.push({
       name,
       results: normalizedResults,
+      ...(entry.grants === undefined
+        ? {}
+        : { grants: normalizeFlag(entry.grants, "grants", `${at}[${index}]`) }),
+      ...(entry.resumable === undefined
+        ? {}
+        : { resumable: normalizeResumable(entry.resumable, `${at}[${index}]`) }),
       ...(entry.enforces === undefined
         ? {}
         : { enforces: normalizeEnforces(entry.enforces, `${at}[${index}]`) }),
@@ -706,11 +730,63 @@ function normalizeTimeoutSecs(value: unknown, at: string): number {
   return value;
 }
 
+/**
+ * What is wrong with the one-time permission a question asks for, if anything.
+ * It is found before the person is asked: a permission that could never be
+ * used, or that any answer would give, must not be offered.
+ */
+function grantRequestProblem(
+  request: AskRequest,
+  grants: boolean | undefined,
+): string | undefined {
+  const resume: unknown = request.resume;
+  if (!isRecord(resume) || resume.grant === undefined) return undefined;
+  const grant: unknown = resume.grant;
+  if (grants === false) {
+    return "resume.grant: this step cannot enforce a one-time permission, so it cannot ask for one";
+  }
+  if (
+    !isRecord(grant) ||
+    (grant.kind !== "command" && grant.kind !== "path") ||
+    typeof grant.value !== "string" ||
+    grant.value.length === 0
+  ) {
+    return 'resume.grant: must be { kind: "command" | "path", value, choice?, tool? }';
+  }
+  if (grant.kind === "path" && (typeof grant.tool !== "string" || grant.tool.length === 0)) {
+    return "resume.grant.tool: a path grant names the tool the person approves (such as write)";
+  }
+  const choices = request.choices ?? [];
+  if (choices.length > 0) {
+    if (typeof grant.choice !== "string") {
+      return "resume.grant.choice: a grant needs the choice that approves it";
+    }
+    if (!choices.includes(grant.choice)) {
+      return "resume.grant.choice: must be one of the choices";
+    }
+  } else if (grant.choice !== undefined && typeof grant.choice !== "string") {
+    return "resume.grant.choice: must be a string";
+  }
+  return undefined;
+}
+
+function normalizeFlag(value: unknown, field: string, at: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new PluginError(`${at}: ${field}: must be true or false`);
+  }
+  return value;
+}
+
+function normalizeResumable(value: unknown, at: string): boolean {
+  return normalizeFlag(value, "resumable", at);
+}
+
 function collectStepTypes(plugins: readonly NormalizedPlugin[]): readonly StepType[] {
   return plugins.flatMap((plugin) =>
     plugin.steps.map((step) => ({
       name: `${plugin.name}/${step.name}`,
       results: step.results,
+      ...(step.resumable === undefined ? {} : { resumable: step.resumable }),
       ...(step.enforces === undefined ? {} : { enforces: step.enforces }),
       ...(step.timeoutSecs === undefined ? {} : { timeoutSecs: step.timeoutSecs }),
     })),
@@ -1340,7 +1416,93 @@ export class PluginRegistry {
       }
       await options.emit(found.plugin.name, event);
     };
+    const ask = async (request: AskRequest): Promise<AskAnswer> => {
+      if (options.asker === undefined) {
+        throw new PluginError(
+          `step "${use}": ask: no one is configured to take questions`,
+        );
+      }
+      if (
+        !isRecord(request) ||
+        typeof request.prompt !== "string" ||
+        request.prompt.trim().length === 0
+      ) {
+        throw new PluginError(
+          `step "${use}": ask: prompt: must be a non-empty string`,
+        );
+      }
+      if (
+        request.choices !== undefined &&
+        (!Array.isArray(request.choices) ||
+          request.choices.some((choice) => typeof choice !== "string"))
+      ) {
+        throw new PluginError(
+          `step "${use}": ask: choices: must be a list of strings`,
+        );
+      }
+      if (
+        request.onTimeout !== undefined &&
+        request.onTimeout !== "waiting" &&
+        request.onTimeout !== "reject_once"
+      ) {
+        throw new PluginError(
+          `step "${use}": ask: onTimeout: must be "waiting" or "reject_once"`,
+        );
+      }
+      for (const [name, value] of [
+        ["graceSecs", request.graceSecs],
+        ["askGraceSecs", askGraceOf(params)],
+      ] as const) {
+        if (
+          value !== undefined &&
+          (typeof value !== "number" ||
+            !Number.isFinite(value) ||
+            value < 0 ||
+            value > MAX_ASK_GRACE_SECS)
+        ) {
+          throw new PluginError(
+            `step "${use}": ask: ${name}: must be a number of seconds from 0 to ${MAX_ASK_GRACE_SECS}`,
+          );
+        }
+      }
+      // A step that cannot resume has nothing to come back to: its question
+      // gets one answer or a refusal, whatever the call said.
+      const onTimeout =
+        found.step.resumable === false ? "reject_once" : request.onTimeout;
+      if (
+        onTimeout !== "reject_once" &&
+        !found.step.results.includes("waiting")
+      ) {
+        throw new PluginError(
+          `step "${use}": ask: onTimeout "waiting" ends the step with the result "waiting", so the step must declare it in results (or ask with onTimeout "reject_once")`,
+        );
+      }
+      const grantProblem = grantRequestProblem(request, found.step.grants);
+      if (grantProblem !== undefined) {
+        throw new PluginError(`step "${use}": ask: ${grantProblem}`);
+      }
+      const graceSecs = narrowerOf(request.graceSecs, askGraceOf(params));
+      const outcome = await options.asker.ask(
+        { ...request, ...(graceSecs === undefined ? {} : { graceSecs }) },
+        options.signal,
+      );
+      if (outcome.kind === "answered") return outcome.answer;
+      if (onTimeout === "reject_once") {
+        return { choice: undefined, rejected: true };
+      }
+      throw new AskTimeoutError({
+        waitId: outcome.waitId,
+        prompt: outcome.prompt,
+        choices: outcome.choices,
+        resume: request.resume ?? null,
+      });
+    };
+    const useGrant = async (waitId: string): Promise<boolean> => {
+      if (options.asker === undefined) return false;
+      return options.asker.useGrant(waitId);
+    };
     const ctx: StepContext = {
+      useGrant,
       plugin: found.plugin.name,
       home: this.home,
       cwd: options.cwd ?? this.cwd,
@@ -1362,14 +1524,31 @@ export class PluginRegistry {
       access: options.access ?? null,
       trigger: options.trigger,
       emit,
+      ask,
       runStep: (nestedUse, nestedParams, nestedOptions) =>
         this.runStepInner(nestedUse, nestedParams, {
           ...nestedOptions,
           limits: nestedOptions.limits ?? options.limits,
+          asker: nestedOptions.asker ?? options.asker,
         }, true),
     };
 
-    const outcome: unknown = await found.step.run(ctx, params);
+    let outcome: unknown;
+    try {
+      outcome = await found.step.run(ctx, params);
+    } catch (error) {
+      if (!(error instanceof AskTimeoutError)) throw error;
+      // The grace passed: the step ends, and the flow's wait carries on.
+      outcome = {
+        result: "waiting",
+        data: {
+          waitId: error.waitId,
+          prompt: error.prompt,
+          choices: [...error.choices],
+          resume: error.resume ?? null,
+        },
+      };
+    }
     if (!isRecord(outcome) || typeof outcome.result !== "string") {
       throw new PluginError(
         `step "${use}": run: must return { result, data? }`,

@@ -6,6 +6,7 @@ import type {
   Effect,
   EffectRequestedPayload,
   FactKind,
+  Grant,
   Input,
   KernelFact,
   KernelState,
@@ -54,6 +55,110 @@ function declaredResults(step: Step): readonly string[] {
   }
 }
 
+/** A question a step asked and could not wait for; the flow wait carries it on. */
+interface AskedVia {
+  readonly waitId: string;
+  readonly prompt: string;
+  readonly choices: readonly string[];
+  readonly resume: JsonValue;
+}
+
+/** A question the person answered, on the way back to the step that asked. */
+interface AnsweredAsk {
+  readonly waitId: string;
+  readonly step: string;
+  readonly prompt: string;
+  readonly resume: JsonValue;
+  readonly choice: string;
+  readonly note: string | null;
+}
+
+type EnterVia = {
+  readonly step: string;
+  readonly result: string;
+  readonly named?: string;
+  readonly ask?: AskedVia;
+  readonly answered?: AnsweredAsk;
+};
+
+function isPlainRecord(value: unknown): value is Record<string, JsonValue> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The params the step runs again with after its question was answered: the
+ * params it had, the session it left, and the answer. Anything the step did
+ * not leave is simply absent.
+ */
+function resumedParams(base: JsonValue, answered: AnsweredAsk): JsonValue {
+  const resume = answered.resume;
+  const session =
+    typeof resume === "string"
+      ? resume
+      : isPlainRecord(resume) && typeof resume.session === "string"
+        ? resume.session
+        : undefined;
+  return {
+    ...(isPlainRecord(base) ? base : {}),
+    ...(session === undefined ? {} : { resumeSession: session }),
+    askAnswer: {
+      prompt: answered.prompt,
+      choice: answered.choice,
+      ...(answered.note === null ? {} : { note: answered.note }),
+    },
+  };
+}
+
+/** The one-time permission the call the step asked about gets, if it named one. */
+function grantsFrom(answered: AnsweredAsk): readonly Grant[] | undefined {
+  const resume = answered.resume;
+  if (!isPlainRecord(resume)) return undefined;
+  const grant = resume.grant;
+  if (
+    !isPlainRecord(grant) ||
+    (grant.kind !== "command" && grant.kind !== "path") ||
+    typeof grant.value !== "string" ||
+    grant.value.length === 0
+  ) {
+    return undefined;
+  }
+  // Only the choice that approves gives the permission: the one the step
+  // named, or "approve" when it named none (`ctx.ask` refuses a question with
+  // choices that names none).
+  const approves = typeof grant.choice === "string" ? grant.choice : "approve";
+  if (answered.choice !== approves) return undefined;
+  return [
+    {
+      waitId: answered.waitId,
+      kind: grant.kind,
+      value: grant.value,
+      ...(typeof grant.tool === "string" ? { tool: grant.tool } : {}),
+    },
+  ];
+}
+
+/** The question in the data of a `waiting` result, when it is well formed. */
+function askedIn(result: string, data: unknown): AskedVia | undefined {
+  if (result !== "waiting") return undefined;
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+    return undefined;
+  }
+  const record = data as Record<string, unknown>;
+  if (typeof record.waitId !== "string" || record.waitId.length === 0) {
+    return undefined;
+  }
+  if (typeof record.prompt !== "string") return undefined;
+  const choices = Array.isArray(record.choices)
+    ? record.choices.filter((item): item is string => typeof item === "string")
+    : [];
+  return {
+    waitId: record.waitId,
+    prompt: record.prompt,
+    choices,
+    resume: (record.resume ?? null) as JsonValue,
+  };
+}
+
 /** The step a result names, when its data came from a step that stopped. */
 function stepNameOf(data: unknown): string | undefined {
   if (typeof data !== "object" || data === null || Array.isArray(data)) {
@@ -69,7 +174,7 @@ function stepNameOf(data: unknown): string | undefined {
  */
 function waitPrompt(
   params: { readonly prompt: string; readonly note?: string | undefined },
-  via: { readonly step: string; readonly result: string; readonly named?: string } | undefined,
+  via: EnterVia | undefined,
 ): string {
   if (via?.result !== "interrupted" || params.note === undefined) {
     return params.prompt;
@@ -80,6 +185,7 @@ function waitPrompt(
 
 function effectRequestedPayload(effect: PendingEffect, recovery: boolean): EffectRequestedPayload {
   return {
+    ...(effect.grants === undefined ? {} : { grants: effect.grants }),
     effectId: effect.id,
     effect: effect.kind,
     step: effect.step,
@@ -163,7 +269,7 @@ export function decide(
   function enter(
     stepId: string,
     causedBy: FactCause,
-    via?: { readonly step: string; readonly result: string; readonly named?: string },
+    via?: EnterVia,
   ): void {
     const step = findStep(flow, stepId);
     if (step === undefined) {
@@ -195,24 +301,48 @@ export function decide(
       }
       case "plugin": {
         const effectId = `${step.id}:${visit}`;
+        // The step that asked, back after the answer: it continues the same
+        // session with the answer and, for the call it asked about, a grant.
+        // The answer waits in the state, so it reaches the step whatever path
+        // the flow took from the wait back to it.
+        const answered =
+          via?.answered?.step === step.id
+            ? via.answered
+            : state.answeredAsk?.step === step.id
+              ? state.answeredAsk
+              : undefined;
+        const grants = answered === undefined ? undefined : grantsFrom(answered);
         const effect: PendingEffect = {
           id: effectId,
           kind: "run_plugin_step",
           step: step.id,
           use: step.params.use,
-          params: step.params.params as unknown as JsonValue,
+          params:
+            answered === undefined
+              ? (step.params.params as unknown as JsonValue)
+              : resumedParams(step.params.params as unknown as JsonValue, answered),
           check: null,
           due: null,
           replay: step.replay,
+          ...(grants === undefined ? {} : { grants }),
         };
         push("effect_requested", effectRequestedPayload(effect, false), enteredSeq);
         effects.push(describeEffect(effect));
         return;
       }
       case "wait_person": {
-        const waitId = `${step.id}:${visit}`;
-        const choices = [...step.params.choices];
-        const prompt = waitPrompt(step.params, via);
+        // A step that asked and ran out of grace hands its question over: the
+        // wait keeps the question's id, so nobody sees it twice.
+        const asked = via?.ask;
+        const waitId = asked?.waitId ?? `${step.id}:${visit}`;
+        const own = [...step.params.choices];
+        const choices =
+          asked !== undefined &&
+          asked.choices.length > 0 &&
+          asked.choices.every((choice) => own.includes(choice))
+            ? [...asked.choices]
+            : own;
+        const prompt = asked?.prompt ?? waitPrompt(step.params, via);
         push(
           "waiting_for_person",
           {
@@ -222,6 +352,9 @@ export function decide(
             choices,
             waitKind: "step",
             effectId: null,
+            ...(asked === undefined || via === undefined
+              ? {}
+              : { ask: { step: via.step, resume: asked.resume } }),
           },
           enteredSeq,
         );
@@ -279,6 +412,8 @@ export function decide(
     result: string,
     causedBy: FactCause,
     named?: string,
+    ask?: AskedVia,
+    answered?: AnsweredAsk,
   ): void {
     const target = edgesOf(step)[result];
     if (target === undefined) {
@@ -290,7 +425,13 @@ export function decide(
       endRun("done", null, edgeSeq);
       return;
     }
-    enter(target, edgeSeq, { step: step.id, result, ...(named === undefined ? {} : { named }) });
+    enter(target, edgeSeq, {
+      step: step.id,
+      result,
+      ...(named === undefined ? {} : { named }),
+      ...(ask === undefined ? {} : { ask }),
+      ...(answered === undefined ? {} : { answered }),
+    });
   }
 
   function requestAgain(effect: PendingEffect, causedBy: FactCause, recovery: boolean): void {
@@ -382,7 +523,13 @@ export function decide(
         },
         cause,
       );
-      takeEdge(step, input.result, resultSeq, stepNameOf(input.data));
+      takeEdge(
+        step,
+        input.result,
+        resultSeq,
+        stepNameOf(input.data),
+        askedIn(input.result, input.data),
+      );
       return { facts, effects };
     }
 
@@ -405,6 +552,15 @@ export function decide(
           note: input.note ?? null,
           waitKind: wait.kind,
           actor: { via: input.actor.via, id: input.actor.id },
+          ...(wait.ask === undefined
+            ? {}
+            : {
+                ask: {
+                  step: wait.ask.step,
+                  prompt: wait.prompt,
+                  resume: wait.ask.resume,
+                },
+              }),
         },
         cause,
       );
@@ -423,7 +579,23 @@ export function decide(
         endRun("failed", `unknown step ${wait.step}`, answerSeq);
         return { facts, effects };
       }
-      takeEdge(step, input.choice, answerSeq);
+      takeEdge(
+        step,
+        input.choice,
+        answerSeq,
+        undefined,
+        undefined,
+        wait.ask === undefined
+          ? undefined
+          : {
+              waitId: wait.id,
+              step: wait.ask.step,
+              prompt: wait.prompt,
+              resume: wait.ask.resume,
+              choice: input.choice,
+              note: input.note ?? null,
+            },
+      );
       return { facts, effects };
     }
 

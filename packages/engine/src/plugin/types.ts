@@ -306,6 +306,73 @@ export interface PluginCheck {
   readonly message: string;
 }
 
+/** The longest grace, in seconds, a timer can hold (2^31-1 ms, rounded down). */
+export const MAX_ASK_GRACE_SECS = 2_147_483;
+
+/** What a step asks a person with `ctx.ask`. */
+export interface AskRequest {
+  readonly prompt: string;
+  /** The answers offered; none means a free note only. */
+  readonly choices?: readonly string[] | undefined;
+  /**
+   * How long to wait for the answer, in seconds, while the step goes on
+   * waiting. The narrowest of this, the step's `askGraceSecs` param and the
+   * `ask.graceSecs` setting counts. `0` does not wait.
+   */
+  readonly graceSecs?: number | undefined;
+  /**
+   * What happens when the grace passes without an answer. `"waiting"` (the
+   * default) ends the step with the result `waiting`; `"reject_once"` returns
+   * to the step with `rejected: true`.
+   */
+  readonly onTimeout?: "waiting" | "reject_once" | undefined;
+  /** What the step needs to carry on later; handed back in the `waiting` data. */
+  readonly resume?: JsonValue | undefined;
+}
+
+/** The answer `ctx.ask` returns. */
+export interface AskAnswer {
+  readonly choice: string | undefined;
+  readonly note?: string | undefined;
+  /** Who answered; absent when `rejected`. */
+  readonly actor?: Actor | undefined;
+  /** True when the grace passed and `onTimeout` was `"reject_once"`. */
+  readonly rejected?: boolean | undefined;
+}
+
+/** The data of a step that ended `waiting` because an ask timed out. */
+export interface AskWaitingData {
+  readonly waitId: string;
+  readonly prompt: string;
+  readonly choices: readonly string[];
+  readonly resume: JsonValue;
+}
+
+/** What the host reports back for one question a step asked. */
+export type AskOutcome =
+  | { readonly kind: "answered"; readonly answer: AskAnswer }
+  | {
+      readonly kind: "timeout";
+      readonly waitId: string;
+      readonly prompt: string;
+      readonly choices: readonly string[];
+    };
+
+/**
+ * Where a step's questions go. `request.graceSecs` already holds the narrower of
+ * the call and the step's `askGraceSecs`; the host narrows it by its own
+ * setting.
+ */
+export interface StepAsker {
+  ask(request: AskRequest, signal?: AbortSignal): Promise<AskOutcome>;
+  /**
+   * Uses up the one-time permission an answer gave. True when this call used
+   * it; false when it was used before or the step has none by that id. The fact
+   * that records the use is written before this returns.
+   */
+  useGrant(waitId: string): Promise<boolean>;
+}
+
 /** The context a step run receives. */
 export interface StepContext extends PluginBaseContext {
   readonly runId: string;
@@ -318,6 +385,17 @@ export interface StepContext extends PluginBaseContext {
   readonly trigger: TriggerView | undefined;
   /** Sends an event; the type must begin with this plugin's name. */
   emit(event: StepEvent): Promise<void>;
+  /**
+   * Asks a person and waits for the answer while the step lives. Only steps
+   * have it; a flow cannot ask. When the grace passes, `onTimeout` decides.
+   */
+  ask(request: AskRequest): Promise<AskAnswer>;
+  /**
+   * Uses up the one-time permission an answer gave this step (see
+   * `access.grants`). True when this call used it, false when it was already
+   * used. Call it before the call the permission covers.
+   */
+  useGrant(waitId: string): Promise<boolean>;
   /**
    * Runs another loaded step in this run. The kernel offers it when a plugin
    * step delegates to a harness or another plugin; a direct call to a step's
@@ -372,6 +450,8 @@ export interface StepRunOptions {
   readonly runId: string;
   /** Limits the steps this step starts through `ctx.runStep`. */
   readonly limits?: StepLimiter | undefined;
+  /** Takes the questions the step asks with `ctx.ask`. */
+  readonly asker?: StepAsker | undefined;
   readonly object?: RunObject | undefined;
   readonly cwd?: string | undefined;
   readonly signal?: AbortSignal | undefined;
@@ -388,6 +468,18 @@ export interface StepRunOptions {
 /** A step type a plugin declares. The use name is `<plugin>/<name>`. */
 export interface StepTypeDefinition {
   readonly name: string;
+  /**
+   * True when the step can run again from where a question left it (it takes
+   * `resumeSession` and `askAnswer` in its params). A step that says `false`
+   * has every question it asks forced to `onTimeout: "reject_once"`.
+   */
+  readonly resumable?: boolean | undefined;
+  /**
+   * False when the step cannot let one call through and no other. `ctx.ask`
+   * then refuses a question that offers a one-time permission, before anyone
+   * is asked.
+   */
+  readonly grants?: boolean | undefined;
   readonly results: readonly string[];
   /** Access profile fields this step applies, such as `denyPaths`. */
   readonly enforces?: readonly string[] | undefined;

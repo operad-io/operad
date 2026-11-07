@@ -15,6 +15,7 @@ import {
 } from "@operad-io/engine";
 import {
   CONCURRENCY_SETTING,
+  askNote,
   eventNote,
   findCommand,
   flagValue,
@@ -398,6 +399,11 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
     steps: [
       {
         name: "agent",
+        // A question's answer comes back as `resumeSession` and `askAnswer`.
+        resumable: true,
+        // No hook sees radian's tool calls: `ctx.ask` refuses a question that
+        // offers a one-time permission before it asks anyone.
+        grants: false,
         results: ["done", "failed", "interrupted"],
         // The model is what the step passes to radian: `<provider>/<model>`.
         limit: modelLimit("harness-radian", (params) =>
@@ -410,15 +416,17 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
 
           const prompt = text(input.prompt ?? flow.prompt, `${at}: params.prompt`);
           const note = eventNote(ctx.trigger);
-          const promptWithNote =
-            note === undefined ? prompt : `${prompt}\n\n${note}`;
+          const answerNote = askNote(input.askAnswer ?? flow.askAnswer);
+          const promptWithNote = [prompt, note, answerNote]
+            .filter((part): part is string => part !== undefined)
+            .join("\n\n");
           const cwd = text(input.cwd ?? flow.cwd, `${at}: params.cwd`);
           const args = stringList(
             input.args === undefined ? flow.args : input.args,
             `${at}: params.args`,
           );
           const resumeSession = optionalText(
-            input.resumeSession,
+            input.resumeSession ?? flow.resumeSession,
             `${at}: params.resumeSession`,
           );
           const wallTimeSecs = secs(
@@ -438,6 +446,28 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             harness: "harness-radian",
             model: radianModel(args) ?? null,
           };
+
+          // radian has no hook that sees a tool call, so it cannot let one
+          // call through and no other: a one-time permission is refused.
+          if (isRecord(ctx.access) && Array.isArray(ctx.access.grants) && ctx.access.grants.length > 0) {
+            const message = `${at}: radian cannot enforce a one-time permission (no hook sees its tool calls); ask with harness-pi, or without a grant`;
+            const log = await ctx.logger.write(message);
+            return {
+              result: "failed",
+              data: {
+                reason: "grant_unsupported",
+                message,
+                exitCode: null,
+                signal: null,
+                sessionId: null,
+                finalMessage: null,
+                usage: standardUsage(who, undefined, null),
+                log,
+                durationMs: 0,
+                stderr: [message],
+              },
+            };
+          }
 
           const cwdProblem = await directoryError(cwd);
           if (cwdProblem !== undefined) {
@@ -482,6 +512,24 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             },
           });
           await jsonl.end();
+
+          // A resumed run continues the session it was given. Another id means
+          // radian started afresh and the earlier conversation is lost.
+          if (
+            resumeSession !== undefined &&
+            result !== undefined &&
+            !outcome.cancelled &&
+            outcome.exitCode === 0 &&
+            result.sessionId !== resumeSession
+          ) {
+            return {
+              result: "failed",
+              data: failureData(who, outcome, result, ctx.logger.path, Date.now() - started, {
+                reason: "session_missing",
+                message: `radian did not continue the session ${resumeSession}; it answered with ${result.sessionId ?? "no session"}`,
+              }),
+            };
+          }
 
           return resultFor(
             who,
