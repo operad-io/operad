@@ -29,6 +29,30 @@ const CHILD = fileURLToPath(
   new URL("./fixtures/lead-action-child.ts", import.meta.url),
 );
 
+/** Reads one line at a time from a child's stdout. */
+function lines(stream: ReadableStream<Uint8Array>): () => Promise<string> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  return async () => {
+    for (;;) {
+      const at = buffer.indexOf("\n");
+      if (at >= 0) {
+        const line = buffer.slice(0, at);
+        buffer = buffer.slice(at + 1);
+        return line;
+      }
+      const { value, done } = await reader.read();
+      if (done) {
+        const line = buffer;
+        buffer = "";
+        return line;
+      }
+      buffer += decoder.decode(value, { stream: true });
+    }
+  };
+}
+
 async function setup(failAnswer = false) {
   const answers: [string, string | undefined][] = [];
   const root = await tempRoot();
@@ -316,18 +340,33 @@ describe("dev:rework and dev:reverify", () => {
         stderr: "pipe",
       }),
     );
+    const nextLines = children.map((child) => lines(child.stdout));
+    const errors = children.map((child) => new Response(child.stderr).text());
+    // Both children read the task before either acts; once both are ready, one
+    // go line lets them claim the same version at the same time.
+    expect(await Promise.all(nextLines.map((next) => next()))).toEqual([
+      "ready",
+      "ready",
+    ]);
     for (const child of children) {
+      child.stdin.write("go\n");
       child.stdin.end();
     }
     const outputs = await Promise.all(
-      children.map(async (child) => {
-        const text = await new Response(child.stdout).text();
-        const errors = await new Response(child.stderr).text();
-        expect(await child.exited).toBe(0);
-        expect(errors).toBe("");
-        return text.trim();
+      nextLines.map(async (next) => {
+        const rest: string[] = [];
+        for (;;) {
+          const line = await next();
+          if (line.length === 0) break;
+          rest.push(line);
+        }
+        return rest.at(-1) ?? "";
       }),
     );
+    for (const [index, child] of children.entries()) {
+      expect(await child.exited).toBe(0);
+      expect(await errors[index]).toBe("");
+    }
     const answers = existsSync(answersPath)
       ? readFileSync(answersPath, "utf8").trim().split("\n")
       : [];
