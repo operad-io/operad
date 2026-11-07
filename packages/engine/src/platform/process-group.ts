@@ -1,13 +1,18 @@
 /**
- * Runs one shell line in a process group of its own, captures its output and
- * stops the group it started. A command never runs in the kernel: this helper
- * belongs to the base `shell` plugin.
+ * Process groups. A plugin that runs a command starts it in a process group of
+ * its own and stops only the group it started. This module holds the pieces
+ * that took several review rounds to get right: the sentinel that leads the
+ * group, the control pipe it reports on, and the stop that signals the group
+ * with TERM and then KILL. `runLine` is the whole thing for one shell line; the
+ * helpers it is built from are exported for a plugin that streams a command's
+ * output its own way. Nothing here runs in the kernel.
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { constants as osConstants } from "node:os";
 import { Readable } from "node:stream";
-import { messageOf, type PluginLogger } from "@operad-io/engine";
+import { messageOf } from "../plugin/errors.ts";
+import type { PluginLogger } from "../plugin/types.ts";
 
 /** How long a group gets to end after SIGTERM before SIGKILL. */
 export const KILL_GRACE_MS = 500;
@@ -180,20 +185,20 @@ function consume(stream: Readable, output: Output): Promise<void> {
   })();
 }
 
-interface Exit {
+export interface Exit {
   readonly code: number | null;
   readonly signal: string | null;
 }
 
 /** The first line the sentinel writes: it is ready, or the shell is gone. */
-type Startup =
+export type Startup =
   | { readonly kind: "ready" }
   | { readonly kind: "closed" }
   | { readonly kind: "error"; readonly message: string }
   | { readonly kind: "exit"; readonly exit: Exit };
 
 /** How the line's own shell ended. */
-type Ended =
+export type Ended =
   | { readonly kind: "end"; readonly exit: Exit }
   | { readonly kind: "exit"; readonly exit: Exit }
   | { readonly kind: "closed" };
@@ -202,7 +207,7 @@ type Ended =
  * The status a shell reports for a line that a signal ended: 128 plus the
  * signal number. A line that exits with such a code on purpose reads the same.
  */
-function exitFromStatus(status: number | null): Exit {
+export function exitFromStatus(status: number | null): Exit {
   if (status === null) return { code: null, signal: null };
   if (status > 128) {
     const signal = SIGNALS_BY_NUMBER.get(status - 128);
@@ -212,7 +217,7 @@ function exitFromStatus(status: number | null): Exit {
 }
 
 /** The exit status in a sentinel `end <status>` line, if that is what it is. */
-function endStatus(line: string | null): number | undefined {
+export function endStatus(line: string | null): number | undefined {
   if (line === null) return undefined;
   const match = /^end (\d+)$/.exec(line);
   if (match === null) return undefined;
@@ -225,7 +230,7 @@ function endStatus(line: string | null): number | undefined {
  * Anything that is not a control line (a shell message from the sentinel) is
  * ignored.
  */
-class ControlReader {
+export class ControlReader {
   private buffer = "";
   private readonly lines: string[] = [];
   private readonly waiters: Array<(line: string | null) => void> = [];
@@ -278,6 +283,72 @@ class ControlReader {
     this.closed = true;
     for (const waiter of this.waiters.splice(0)) waiter(null);
   }
+}
+
+/** Sends a signal to a whole process group. False when it could not. */
+export function killProcessGroup(
+  pgid: number,
+  signal: NodeJS.Signals | 0,
+): boolean {
+  try {
+    process.kill(-pgid, signal);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** What the stop of one sentinel-led group reads while it runs. */
+export interface GroupStopOptions {
+  readonly clock: Clock;
+  /** Sends a signal to one process group; a test replaces it to watch signals. */
+  readonly killGroup: (pgid: number, signal: NodeJS.Signals | 0) => boolean;
+  /** The sentinel's pid, which is the group id. */
+  readonly pid: () => number | undefined;
+  readonly sentinelExited: () => boolean;
+  /** True once the sentinel announced that its TERM trap is installed. */
+  readonly readySeen: () => boolean;
+  /** Settles when the sentinel announces `ready`. */
+  readonly ready: Promise<void>;
+}
+
+/**
+ * Returns the stop of a sentinel-led group: SIGTERM, then SIGKILL after the
+ * grace period. It runs once; every later call returns the same promise. A
+ * signal before `ready` could reach the sentinel before it ignores TERM, so the
+ * stop waits for the announcement, bounded by the same grace.
+ */
+export function createGroupStop(options: GroupStopOptions): () => Promise<void> {
+  let stopping: Promise<void> | undefined;
+  return () => {
+    stopping ??= (async () => {
+      if (options.sentinelExited()) return;
+      let ready = true;
+      if (!options.readySeen()) {
+        const outcome = await Promise.race<"ready" | "grace">([
+          options.ready.then(() => "ready"),
+          options.clock.sleep(KILL_GRACE_MS).then(() => "grace"),
+        ]);
+        ready = outcome === "ready";
+      }
+      if (options.sentinelExited()) return;
+      const pid = options.pid();
+      if (pid === undefined) return;
+      if (!ready) {
+        // The sentinel never announced its trap. There is no safe delay: one
+        // immediate SIGKILL while our leader is still alive is the only signal.
+        options.killGroup(pid, "SIGKILL");
+        return;
+      }
+      if (!options.killGroup(pid, "SIGTERM")) return;
+      await options.clock.sleep(KILL_GRACE_MS);
+      // The sentinel ignores SIGTERM, so its group id is still this command's
+      // unless it exited, in which case nothing is signaled at all.
+      if (options.sentinelExited()) return;
+      options.killGroup(pid, "SIGKILL");
+    })();
+    return stopping;
+  };
 }
 
 /**
@@ -358,50 +429,15 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
     openGate = resolve;
   });
 
-  const killGroup =
-    options.killGroup ??
-    ((pgid: number, signal: NodeJS.Signals | 0): boolean => {
-      try {
-        process.kill(-pgid, signal);
-        return true;
-      } catch {
-        return false;
-      }
-    });
-
   let readySeen = false;
-  let stopping: Promise<void> | undefined;
-  const stop = (): Promise<void> => {
-    stopping ??= (async () => {
-      if (sentinelExited) return;
-      // A signal before `ready` could reach the sentinel before it ignores
-      // TERM. Wait for the announcement, bounded by the same grace.
-      let ready = true;
-      if (!readySeen) {
-        const outcome = await Promise.race<"ready" | "grace">([
-          readyGate.then(() => "ready"),
-          clock.sleep(KILL_GRACE_MS).then(() => "grace"),
-        ]);
-        ready = outcome === "ready";
-      }
-      if (sentinelExited) return;
-      const pid = child.pid;
-      if (pid === undefined) return;
-      if (!ready) {
-        // The sentinel never announced its trap. There is no safe delay: one
-        // immediate SIGKILL while our leader is still alive is the only signal.
-        killGroup(pid, "SIGKILL");
-        return;
-      }
-      if (!killGroup(pid, "SIGTERM")) return;
-      await clock.sleep(KILL_GRACE_MS);
-      // The sentinel ignores SIGTERM, so its group id is still this command's
-      // unless it exited, in which case nothing is signaled at all.
-      if (sentinelExited) return;
-      killGroup(pid, "SIGKILL");
-    })();
-    return stopping;
-  };
+  const stop = createGroupStop({
+    clock,
+    killGroup: options.killGroup ?? killProcessGroup,
+    pid: () => child.pid,
+    sentinelExited: () => sentinelExited,
+    readySeen: () => readySeen,
+    ready: readyGate,
+  });
 
   let finished = false;
   let timedOut = false;
