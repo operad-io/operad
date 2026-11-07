@@ -433,7 +433,7 @@ describe("operad mcp", () => {
         name: "pending",
         arguments: {},
       });
-      const pendingItems = resultOf(pending).structuredContent as unknown as {
+      const pendingItems = structuredOf(pending).items as {
         runId: string;
         prompt: string;
         actions: { plugin: string; action: string }[];
@@ -451,7 +451,7 @@ describe("operad mcp", () => {
         name: "running",
         arguments: {},
       });
-      const runningItems = resultOf(running).structuredContent as unknown as {
+      const runningItems = structuredOf(running).items as {
         runId: string;
       }[];
       expect(runningItems.map((item) => item.runId)).toContain(runningRun);
@@ -579,7 +579,7 @@ describe("operad mcp", () => {
         name: "pending",
         arguments: {},
       });
-      const items = resultOf(pending).structuredContent as unknown as {
+      const items = structuredOf(pending).items as {
         actions: { plugin: string; action: string }[];
       }[];
       expect(items[0]?.actions).toEqual([
@@ -617,6 +617,7 @@ describe("operad mcp", () => {
         },
       });
       expect(textOf(plan).trim()).toBe("P-0001-alpha");
+      expect(String(structuredOf(plan).value).trim()).toBe("P-0001-alpha");
 
       const task = await child.request(4, "tools/call", {
         name: "command",
