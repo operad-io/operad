@@ -24,7 +24,7 @@ OpenClaw 是聊天优先，operad 到现在是流程优先。第一个要满足�
 
 ## 顺序
 
-PL0002 之后的第一个计划。前置：`harness-radian` 的 `resumeSession`、显示接口、事件与规则。先 radian 一种 harness；Claude 和 pi 的会话随 `operad-harness.md` 决定 3 的接法进来，对话对象不变。
+P-0002 之后的第一个计划。前置：`harness-radian` 的 `resumeSession`、显示接口、事件与规则。先 radian 一种 harness；Claude 和 pi 的会话随 `operad-harness.md` 决定 3 的接法进来，对话对象不变。
 
 ## 待决问题（未定）
 
