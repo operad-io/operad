@@ -11,6 +11,7 @@
     { "path": "packages/source-cron" },
     { "path": "packages/access-match" },
     { "path": "packages/harness-pi" },
-    { "path": "packages/tui" }
+    { "path": "packages/tui" },
+    { "path": "packages/harness-claude" }
   ]
 }

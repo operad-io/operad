@@ -754,6 +754,7 @@ each task: `TK0001-M1`.
 - [cli](packages/cli/MUTATIONS.md)
 - [dev](packages/dev/MUTATIONS.md)
 - [engine](packages/engine/MUTATIONS.md)
+- [harness-claude](packages/harness-claude/MUTATIONS.md)
 - [harness-pi](packages/harness-pi/MUTATIONS.md)
 - [harness-process](packages/harness-process/MUTATIONS.md)
 - [harness-radian](packages/harness-radian/MUTATIONS.md)
@@ -804,3 +805,9 @@ each task: `TK0001-M1`.
 | T-0030-M6 | packages/tui/src/view/index.ts | the view always drew both panes, ignoring the width | `the TUI view > below 100 columns the right pane is gone` |
 | T-0030-M7 | packages/cli/src/main.ts | `tui --url` dropped the URL instead of handing it to the app | `operad tui > passes the url and token to the terminal app` |
 | T-0030-M8 | packages/cli/src/main.ts | `tui` no longer refused a non-terminal without a runner | `operad tui > needs a terminal unless a runner is injected` |
+
+## T-0037 — Claude harness spike
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0037-M1 | packages/harness-claude/test/platform-packages.test.ts | inverted the `empty-npm-package` name check, so the real placeholders were reported as platform packages | `every installed Claude Agent SDK platform package is an empty placeholder` |
