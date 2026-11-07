@@ -159,6 +159,27 @@ describe("actions in the reducer", () => {
     }
   });
 
+  test("a reserved plugin default is not advertised from the action's own key", () => {
+    const withKey = ACTIONS.map((a) => (a.name === "other:ship" ? { ...a, key: "j" } : a));
+    const state = opened(withKey, [{ key: "j", action: "other:ship", source: "plugin" }]);
+    const ship = state.object?.actions.find((a) => a.name === "other:ship") as ViewAction;
+    expect(keyOf(state.bindings, ship)).toBeUndefined();
+  });
+
+  test("a bound a is not advertised as the main action's key", () => {
+    const state = opened(ACTIONS, [{ key: "a", action: "tuitest:drop", source: "user" }]);
+    expect(footerText(state)).not.toContain("a tuitest:approve");
+    expect(press(state, "a").input).toMatchObject({ kind: "confirm", action: "tuitest:drop" });
+  });
+
+  test("Ctrl and Meta chords are dropped as reserved", () => {
+    const state = opened(ACTIONS, [
+      { key: "ctrl-x", action: "other:ship", source: "user" },
+      { key: "meta-x", action: "other:ship", source: "plugin" },
+    ]);
+    expect(state.bindings).toEqual([]);
+  });
+
   test("a note is sent exactly as entered", () => {
     let state = press(opened(), "a");
     state = press(state, ...typeText("  reason  "), { type: "key", key: "enter", shift: true }, "enter");

@@ -29,8 +29,12 @@ export const RESERVED_KEYS: readonly string[] = [
 
 /** Is `key` one the TUI keeps for itself? Letters match in either case. */
 export function isReserved(key: string): boolean {
-  return RESERVED_KEYS.includes(key.toLowerCase());
+  const lowered = key.toLowerCase();
+  // handleKey ignores every Ctrl or Meta chord, so none can be bound.
+  return RESERVED_KEYS.includes(lowered) || CHORD.test(lowered);
 }
+
+const CHORD = /^(ctrl|control|meta|cmd|command|alt|option|opt|super)[-+].|^\^./;
 
 /** The bindings that may run actions, and the footer line naming those dropped. */
 export function resolveBindings(bindings: readonly TuiBinding[]): {
@@ -88,8 +92,7 @@ export function keyOf(
   const live = mine.filter((binding) => bindingFor(bindings, binding.key)?.action === action.name);
   return (
     live.find((binding) => binding.source === "user")?.key ??
-    live[0]?.key ??
-    action.key
+    live[0]?.key
   );
 }
 
@@ -104,9 +107,12 @@ export function mainAction(state: TuiState): ViewAction | undefined {
 }
 
 /** The key the footer shows for the main action. */
-export function mainKey(state: TuiState): string {
+export function mainKey(state: TuiState): string | undefined {
   const main = mainAction(state);
-  return (main === undefined ? undefined : keyOf(state.bindings, main)) ?? MAIN_KEY;
+  const own = main === undefined ? undefined : keyOf(state.bindings, main);
+  if (own !== undefined) return own;
+  // `a` runs the main action only while no binding claims it.
+  return bindingFor(state.bindings, MAIN_KEY) === undefined ? MAIN_KEY : undefined;
 }
 
 /** Does `query` match `name` as a subsequence? Lower is better; -1 is none. */

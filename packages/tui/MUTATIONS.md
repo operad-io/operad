@@ -97,3 +97,6 @@ the row fields.
 | T-0032-M10 | packages/tui/src/state.ts | the person's key bindings were skipped for `enter` and `escape` | `actions in the reducer > every reserved key is dropped whatever its source` |
 | T-0032-M11 | packages/tui/src/actions.ts | an optional note of only whitespace was dropped from the request | `actions in the reducer > an optional note of only whitespace is sent as entered` |
 | T-0032-M12 | packages/tui/src/actions.ts | `isReserved` returned false, so reserved keys stayed bindable | `actions in the reducer > every reserved key is dropped whatever its source` |
+| T-0032-M13 | packages/tui/src/actions.ts | `keyOf` fell back to the action's own key, advertising a dropped reserved key | `actions in the reducer > a reserved plugin default is not advertised from the action's own key` |
+| T-0032-M14 | packages/tui/src/actions.ts | `mainKey` returned `a` while `a` was bound to another action | `actions in the reducer > a bound a is not advertised as the main action's key` |
+| T-0032-M15 | packages/tui/src/actions.ts | Ctrl and Meta chords were not reserved | `actions in the reducer > Ctrl and Meta chords are dropped as reserved` |

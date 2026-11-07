@@ -1444,7 +1444,7 @@ export function footerText(state: TuiState): string {
   const actions =
     state.object === undefined || main === undefined
       ? ""
-      : `${mainKey(state)} ${main.name}${state.object.actions.length > 1 ? "  : more" : ""}  `;
+      : `${mainKey(state) === undefined ? "" : `${mainKey(state)} `}${main.name}${state.object.actions.length > 1 ? "  : more" : ""}  `;
   return state.keys ? `${actions}${common}  ? closes the key list` : `${actions}${common}`;
 }
 
