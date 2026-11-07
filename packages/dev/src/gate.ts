@@ -1317,13 +1317,21 @@ export async function runReview(
   const changed = new Set(prepared.files.map((file) => file.path));
   // The runs of this round survive a crash; a fresh round starts with none.
   const runs: ReviewRunRecord[] = (attempt.reviewRuns ?? []).filter(
-    (run) => run.round === round,
+    (run) =>
+      run.round === round &&
+      (run.attempt === undefined ||
+        run.attempt === null ||
+        run.attempt === attempt.number),
   );
   // The recorded unavailable round holds the runs it had when it waited. Once
   // the time has passed, a primary run starts the round again; a run saved
   // after that point is resumed instead of started twice.
   const recordedRuns = (previous?.runs ?? []).filter(
-    (run) => run.round === round,
+    (run) =>
+      run.round === round &&
+      (run.attempt === undefined ||
+        run.attempt === null ||
+        run.attempt === attempt.number),
   );
   const retryAfterWait =
     previous !== undefined &&
@@ -1365,6 +1373,7 @@ export async function runReview(
           atOrAbove(finding.severity, settings.fixLevel),
       ).length;
       runRecord = {
+        attempt: attempt.number,
         round,
         role: next.role,
         use,
@@ -1379,6 +1388,7 @@ export async function runReview(
       };
     } else {
       runRecord = {
+        attempt: attempt.number,
         round,
         role: next.role,
         use,

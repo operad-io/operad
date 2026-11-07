@@ -127,6 +127,8 @@ export type ReviewRunReason =
 /** One model run inside a review round. */
 export interface ReviewRunRecord {
   readonly [key: string]: unknown;
+  /** The task attempt this run belongs to. */
+  readonly attempt?: number | null;
   /** The review round this run belongs to. */
   readonly round: number;
   readonly role: ReviewRunRole;

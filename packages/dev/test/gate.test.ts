@@ -915,6 +915,30 @@ describe("dev/review fallback and retry", () => {
     expect(task.attempt?.reviews).toBe(1);
     expect(task.reworkStreak).toBeUndefined();
   });
+  test("a new attempt starts a fresh review round", async () => {
+    const state = await fixture({
+      reviewerArgs: ["unavailable", "--model", "primary"],
+    });
+    await verify(state);
+    const first = await review(state, "review-attempt-1");
+    expect(first.result).toBe("unavailable");
+    expect(state.reviewer.calls).toHaveLength(1);
+
+    const prepared = await state.registry.runStep("dev/worktree", {}, {
+      runId: "worktree-2",
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+    expect(prepared.result).toBe("ready");
+    await verify(state, "verify-2");
+    const second = await review(state, "review-attempt-2");
+    expect(second.result).toBe("unavailable");
+    expect(state.reviewer.calls).toHaveLength(2);
+    const task = await taskOf(state);
+    expect(task.attempt?.number).toBe(2);
+    expect(task.attempt?.reviews).toBe(0);
+    expect(task.attempt?.reviewRuns).toHaveLength(1);
+    expect(task.attempt?.reviewRuns?.[0]?.attempt).toBe(2);
+  });
 });
 
 describe("dev/review crash recovery", () => {
