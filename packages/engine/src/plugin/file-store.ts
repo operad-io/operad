@@ -12,7 +12,7 @@ import {
   writeSync,
 } from "node:fs";
 import { join } from "node:path";
-import { watchDirectory } from "../watch.ts";
+import { watchDirectory } from "../platform/index.ts";
 import {
   assertWhere,
   CursorError,
