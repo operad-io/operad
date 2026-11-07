@@ -938,6 +938,9 @@ export class Views {
         `"${id}" is in repository "${qualified[0]}", but --repo names "${this.scope}"`,
       );
     }
+    // A plugin may refuse a qualified id whose namespace is not valid (an
+    // unregistered repository) even when an object is still stored under it.
+    if (qualified.length > 1) await this.resolveWithPlugins(typed?.id ?? id);
     if (typed !== undefined) {
       const object = await this.store.get(typed.type, typed.id);
       if (object !== undefined || (await this.hasRun(typed.type, typed.id))) {

@@ -656,6 +656,30 @@ describe("operad with the dev plugin", () => {
     }
   });
 
+  test("a qualified id whose repository was removed is refused though its object is stored", async () => {
+    const { root, home, repository } = await setup();
+    const name = repository.split("/").pop() ?? "repository";
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const other = await makeGitRepository(root, "other");
+    expect((await run(home, other, ["repo", "add", "."])).code).toBe(0);
+    const plan = await run(
+      home,
+      repository,
+      ["plan", "add", "--slug", "old", "--title", "Old"],
+      "a request\n",
+    );
+    const planId = plan.out.trim();
+    expect((await run(home, other, ["repo", "remove", name])).code).toBe(0);
+    const outside = join(root, "outside");
+    mkdirSync(outside, { recursive: true });
+    for (const args of [["show", `${name}/${planId}`], ["dev:confirm", `${name}/${planId}`, "--yes"]]) {
+      const refused = await run(home, outside, args);
+      expect(refused.code).not.toBe(0);
+      expect(refused.err).toContain(`no registered repository "${name}"`);
+      expect(refused.err).toContain("  other  ");
+    }
+  });
+
   test("a qualified id with an unknown repository, or a conflicting --repo, is refused", async () => {
     const { root, home, repository } = await setup();
     const name = repository.split("/").pop() ?? "repository";
