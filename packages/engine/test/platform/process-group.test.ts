@@ -171,6 +171,37 @@ describe("process groups", () => {
     expect(signals).toEqual(["SIGKILL"]);
   });
 
+  test("the end record wins over a racing sentinel exit", async () => {
+    const root = await tempRoot();
+    const gone = join(root, "sentinel-gone");
+    const release = join(root, "release");
+    // The sentinel starts a helper that holds the control pipe and writes the
+    // record only when the test lets it, then the sentinel exits at once. The
+    // exit event therefore wins the race, while the record still holds the
+    // line's own status and must be preferred.
+    const sentinelScript = [
+      "printf 'ready\\n' >&2",
+      `( sh -c "$1" 2>&1; status=$?; while [ ! -f '${release}' ]; do sleep 0.01; done; printf 'end %s\\n' "$status" >&2 ) &`,
+      `touch '${gone}'`,
+      "exit 0",
+    ].join("\n");
+    const running = runLine({
+      line: "exit 130",
+      cwd: root,
+      signal: new AbortController().signal,
+      sentinelScript,
+      clock: manualClock(),
+    });
+
+    await waitForFile(gone);
+    writeFileSync(release, "go");
+    const outcome = await running;
+
+    expect(outcome.exitCode).toBe(130);
+    expect(outcome.signal).toBe("SIGINT");
+    expect(outcome.cancelled).toBe(false);
+  });
+
   test("a cancelled line still takes SIGTERM, the grace and SIGKILL", async () => {
     const root = await tempRoot();
     const marker = join(root, "started");
@@ -360,7 +391,7 @@ describe("exit status", () => {
 });
 
 describe("the sentinel's host", () => {
-  test("a sentinel whose host was killed ends when its line finishes", async () => {
+  test("a sentinel whose host was killed does not survive it", async () => {
     const root = await tempRoot();
     const pidFile = join(root, "sentinel.pid");
     const release = join(root, "release");
@@ -379,7 +410,8 @@ describe("the sentinel's host", () => {
       // We started this host, so its death is ours to cause.
       process.kill(child.pid, "SIGKILL");
       await child.exited;
-      // The line can now finish; the sentinel must not outlive its host.
+      // Releasing the line also gives a watcher that missed the death a way
+      // out; the blocked-line test above covers the line that never finishes.
       writeFileSync(release, "go");
       await waitUntil(() => sentinelPid === undefined || !alive(sentinelPid));
       expect(sentinelPid > 0).toBe(true);
@@ -396,6 +428,53 @@ describe("the sentinel's host", () => {
         // The host is gone.
       }
       if (sentinelPid !== undefined && sentinelPid > 0 && alive(sentinelPid)) {
+        try {
+          process.kill(-sentinelPid, "SIGKILL");
+        } catch {
+          // The group ended after all.
+        }
+      }
+    }
+  });
+
+  test("a sentinel ends a blocked line when its host dies", async () => {
+    const root = await tempRoot();
+    const sentinelFile = join(root, "sentinel.pid");
+    const lineFile = join(root, "line.pid");
+    const fixture = fileURLToPath(
+      new URL("../fixtures/run-line-blocked.ts", import.meta.url),
+    );
+    const child = Bun.spawn({
+      cmd: [process.execPath, fixture, root, sentinelFile, lineFile],
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    let sentinelPid = 0;
+    let linePid = 0;
+    try {
+      await waitForFile(lineFile);
+      sentinelPid = Number(readFileSync(sentinelFile, "utf8").trim());
+      linePid = Number(readFileSync(lineFile, "utf8").trim());
+      expect(alive(linePid)).toBe(true);
+
+      // The line is in a 3600s sleep, so it cannot finish while we wait: only
+      // the sentinel's watcher can end it after its host is gone.
+      process.kill(child.pid, "SIGKILL");
+      await child.exited;
+
+      await waitUntil(
+        () => !alive(linePid) && !alive(sentinelPid),
+        5000,
+      );
+      expect(alive(linePid)).toBe(false);
+      expect(alive(sentinelPid)).toBe(false);
+    } finally {
+      try {
+        process.kill(child.pid, "SIGKILL");
+      } catch {
+        // The host is gone.
+      }
+      if (sentinelPid > 0 && alive(sentinelPid)) {
         try {
           process.kill(-sentinelPid, "SIGKILL");
         } catch {

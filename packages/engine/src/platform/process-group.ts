@@ -26,9 +26,17 @@ export const KILL_GRACE_MS = 500;
  * stays alive, so the numeric group id cannot be reused until the stop's last
  * SIGKILL ends the sentinel together with any child that ignored the TERM.
  *
- * The sentinel also watches the process that started it (`$2`): if the host is
- * killed before it can stop the group, the sentinel ends instead of looping
- * forever over a line nobody is waiting for.
+ * A watcher started beside the line polls the process that started the
+ * sentinel (`$2`). If the host is killed before it can stop the group, the
+ * watcher kills the whole group at once, even while the line is still blocked:
+ * nothing is left behind to run a command nobody is waiting for. The watcher
+ * sends its SIGKILL to the sentinel's own group (`-$$`), so it ends with the
+ * group it guards.
+ *
+ * The sentinel never exits on its own: it stays until the stop's SIGKILL ends
+ * it. That keeps the group id reserved, and it means a line's `end` record is
+ * always written while the sentinel is alive; only an outside signal can make
+ * the process exit before its record is read.
  *
  * The control pipe is the sentinel's stderr; the line gets stderr redirected to
  * its stdout, so the two channels never mix. The line cannot write to the
@@ -37,10 +45,11 @@ export const KILL_GRACE_MS = 500;
 const SENTINEL = [
   "trap ':' TERM",
   "printf 'ready\\n' >&2",
+  'if [ -n "$2" ]; then ( while kill -0 "$2" 2>/dev/null; do sleep 1; done; kill -KILL -$$ ) >/dev/null 2>&1 & fi',
   'sh -c "$1" 2>&1',
   "status=$?",
   "printf 'end %s\\n' \"$status\" >&2",
-  'while kill -0 "$2" 2>/dev/null; do sleep 1; done',
+  "while :; do sleep 1; done",
 ].join("\n");
 
 /** The signal names by number, for the status a shell reports for a signal. */
@@ -525,8 +534,12 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
   readySeen = true;
   openGate();
 
+  // The read is kept, not only its race: a sentinel that the system killed
+  // right after writing its record could lose the race to its exit event, and
+  // the record still holds the line's own status.
+  const controlLine = nextControl();
   const ended = await Promise.race<Ended>([
-    nextControl().then((line): Ended => {
+    controlLine.then((line): Ended => {
       const status = endStatus(line);
       return status === undefined
         ? { kind: "closed" }
@@ -540,14 +553,23 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
   options.signal.removeEventListener("abort", onAbort);
 
   let exit: Exit;
-  if (ended.kind === "closed") exit = await exited;
-  else exit = ended.exit;
+  if (ended.kind === "end") {
+    exit = ended.exit;
+  } else {
+    // The sentinel writes `end <status>` before it can be killed. If its exit
+    // won the race, the record is already delivered or the pipe is about to
+    // close, so this settles at once.
+    const status = endStatus(await controlLine);
+    exit = status === undefined ? await exited : exitFromStatus(status);
+  }
 
   // Stop the group the line left behind: the sentinel and any forked child.
   // A line that reported its own status has already ended, so there is nothing
   // left to give SIGTERM time for; waiting the grace here made every successful
-  // line pay 500 ms. A cancellation or timeout still takes the TERM path.
-  if (ended.kind === "end" && !cancelled && !timedOut) {
+  // line pay 500 ms. A cancellation or timeout still takes the TERM path. A
+  // sentinel that already exited has no group left to signal: `stop` checks
+  // that before it could reuse the numeric id.
+  if (ended.kind === "end" && !cancelled && !timedOut && !sentinelExited) {
     const pid = child.pid;
     if (pid !== undefined) (options.killGroup ?? killProcessGroup)(pid, "SIGKILL");
   } else {
