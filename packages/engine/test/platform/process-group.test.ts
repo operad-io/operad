@@ -1,10 +1,17 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { watch } from "node:fs";
-import { runLine, type Clock } from "../../src/platform/index.ts";
+import { Readable } from "node:stream";
+import { fileURLToPath } from "node:url";
+import {
+  ControlReader,
+  exitFromStatus,
+  runLine,
+  type Clock,
+} from "../../src/platform/index.ts";
 
 const roots: string[] = [];
 
@@ -92,10 +99,10 @@ async function waitUntil(
 }
 
 describe("process groups", () => {
-  test("the group outlives a finished line until the grace SIGKILL", async () => {
+  test("a finished line is stopped at once, while its group still exists", async () => {
     const root = await tempRoot();
     const pidFile = join(root, "leader.pid");
-    const groupsSeen: boolean[] = [];
+    let groupsSeen: boolean | undefined;
     let sleeps = 0;
     const clock: Clock = {
       setTimeout: (handler, ms) => globalThis.setTimeout(handler, ms),
@@ -103,17 +110,6 @@ describe("process groups", () => {
         globalThis.clearTimeout(handle as ReturnType<typeof globalThis.setTimeout>),
       sleep: async () => {
         sleeps += 1;
-        // Read the group leader the line wrote (its parent, the sentinel),
-        // then ask whether its numeric group id still names a live group.
-        // Without the sentinel the group would have ended when the line
-        // exited, and the id could be reused before the SIGKILL.
-        const pid = Number(readFileSync(pidFile, "utf8").trim());
-        try {
-          process.kill(-pid, 0);
-          groupsSeen.push(true);
-        } catch {
-          groupsSeen.push(false);
-        }
       },
     };
 
@@ -122,16 +118,33 @@ describe("process groups", () => {
       cwd: root,
       signal: new AbortController().signal,
       clock,
+      // At the moment of the stop's SIGKILL, the sentinel is still the leader,
+      // so the numeric group id cannot have been reused by another command.
+      killGroup: (pgid, signal) => {
+        if (signal === "SIGKILL") {
+          try {
+            process.kill(-pgid, 0);
+            groupsSeen = true;
+          } catch {
+            groupsSeen = false;
+          }
+        }
+        try {
+          process.kill(-pgid, signal);
+          return true;
+        } catch {
+          return false;
+        }
+      },
     });
 
     expect(outcome.exitCode).toBe(0);
-    // The stop waited the grace before SIGKILL, and the group still existed
-    // then: the group id could not have been reused by another command.
-    expect(sleeps).toBe(1);
-    expect(groupsSeen).toEqual([true]);
+    // A line that already reported its status does not wait out the grace.
+    expect(sleeps).toBe(0);
+    expect(groupsSeen).toBe(true);
   });
 
-  test("a spawned line is stopped with SIGTERM and then SIGKILL", async () => {
+  test("a finished line is stopped with a single SIGKILL", async () => {
     const root = await tempRoot();
     const signals: (string | number)[] = [];
     const clock = manualClock();
@@ -154,6 +167,36 @@ describe("process groups", () => {
     });
 
     expect(outcome.exitCode).toBe(0);
+    expect(clock.sleeps).toBe(0);
+    expect(signals).toEqual(["SIGKILL"]);
+  });
+
+  test("a cancelled line still takes SIGTERM, the grace and SIGKILL", async () => {
+    const root = await tempRoot();
+    const marker = join(root, "started");
+    const signals: (string | number)[] = [];
+    const clock = manualClock();
+    const controller = new AbortController();
+    const running = runLine({
+      line: `echo $$ > '${marker}'; sleep 60`,
+      cwd: root,
+      signal: controller.signal,
+      clock,
+      killGroup: (pgid, signal) => {
+        signals.push(signal);
+        try {
+          process.kill(-pgid, signal);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    });
+    await waitForFile(marker);
+    controller.abort();
+
+    const outcome = await running;
+    expect(outcome.cancelled).toBe(true);
     expect(clock.sleeps).toBe(1);
     expect(signals).toEqual(["SIGTERM", "SIGKILL"]);
   });
@@ -285,5 +328,80 @@ describe("process groups", () => {
     expect(signals.every((entry) => entry.ready)).toBe(true);
     const sentinelPid = Number(readFileSync(sentinelFile, "utf8").trim());
     expect(alive(sentinelPid)).toBe(false);
+  });
+});
+
+describe("the control reader", () => {
+  test("destroy resolves a pending read", async () => {
+    const stream = new Readable({ read() {} });
+    const reader = new ControlReader(stream);
+    const pending = reader.next();
+    reader.destroy();
+    await expect(pending).resolves.toBeNull();
+    await expect(reader.next()).resolves.toBeNull();
+  });
+
+  test("a close resolves a pending read", async () => {
+    const stream = new Readable({ read() {} });
+    const reader = new ControlReader(stream);
+    const pending = reader.next();
+    stream.push(null);
+    await expect(pending).resolves.toBeNull();
+  });
+});
+
+describe("exit status", () => {
+  test("a status above 128 keeps its code and names the signal beside it", () => {
+    expect(exitFromStatus(130)).toEqual({ code: 130, signal: "SIGINT" });
+    expect(exitFromStatus(137)).toEqual({ code: 137, signal: "SIGKILL" });
+    expect(exitFromStatus(7)).toEqual({ code: 7, signal: null });
+    expect(exitFromStatus(null)).toEqual({ code: null, signal: null });
+  });
+});
+
+describe("the sentinel's host", () => {
+  test("a sentinel whose host was killed ends when its line finishes", async () => {
+    const root = await tempRoot();
+    const pidFile = join(root, "sentinel.pid");
+    const release = join(root, "release");
+    const fixture = fileURLToPath(
+      new URL("../fixtures/run-line-orphan.ts", import.meta.url),
+    );
+    const child = Bun.spawn({
+      cmd: [process.execPath, fixture, root, pidFile, release],
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    let sentinelPid: number | undefined;
+    try {
+      await waitForFile(pidFile);
+      sentinelPid = Number(readFileSync(pidFile, "utf8").trim());
+      // We started this host, so its death is ours to cause.
+      process.kill(child.pid, "SIGKILL");
+      await child.exited;
+      // The line can now finish; the sentinel must not outlive its host.
+      writeFileSync(release, "go");
+      await waitUntil(() => sentinelPid === undefined || !alive(sentinelPid));
+      expect(sentinelPid > 0).toBe(true);
+      expect(alive(sentinelPid)).toBe(false);
+    } finally {
+      try {
+        writeFileSync(release, "go");
+      } catch {
+        // The path may already be gone.
+      }
+      try {
+        process.kill(child.pid, "SIGKILL");
+      } catch {
+        // The host is gone.
+      }
+      if (sentinelPid !== undefined && sentinelPid > 0 && alive(sentinelPid)) {
+        try {
+          process.kill(-sentinelPid, "SIGKILL");
+        } catch {
+          // The group ended after all.
+        }
+      }
+    }
   });
 });

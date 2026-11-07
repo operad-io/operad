@@ -26,6 +26,10 @@ export const KILL_GRACE_MS = 500;
  * stays alive, so the numeric group id cannot be reused until the stop's last
  * SIGKILL ends the sentinel together with any child that ignored the TERM.
  *
+ * The sentinel also watches the process that started it (`$2`): if the host is
+ * killed before it can stop the group, the sentinel ends instead of looping
+ * forever over a line nobody is waiting for.
+ *
  * The control pipe is the sentinel's stderr; the line gets stderr redirected to
  * its stdout, so the two channels never mix. The line cannot write to the
  * control channel, and a reader that does not know a line ignores it.
@@ -36,7 +40,7 @@ const SENTINEL = [
   'sh -c "$1" 2>&1',
   "status=$?",
   "printf 'end %s\\n' \"$status\" >&2",
-  "while :; do sleep 1; done",
+  'while kill -0 "$2" 2>/dev/null; do sleep 1; done',
 ].join("\n");
 
 /** The signal names by number, for the status a shell reports for a signal. */
@@ -209,9 +213,12 @@ export type Ended =
  */
 export function exitFromStatus(status: number | null): Exit {
   if (status === null) return { code: null, signal: null };
+  // The shell keeps only one number, so a line that exits 130 on purpose and
+  // one killed by SIGINT read the same. The exit code is the fact's own
+  // value; the signal is what that number would name, recorded beside it.
   if (status > 128) {
     const signal = SIGNALS_BY_NUMBER.get(status - 128);
-    if (signal !== undefined) return { code: null, signal };
+    return { code: status, signal: signal ?? null };
   }
   return { code: status, signal: null };
 }
@@ -256,7 +263,9 @@ export class ControlReader {
   }
 
   destroy(): void {
-    this.closed = true;
+    // Resolve a pending read: `stream.destroy()` may only emit `close` later,
+    // and a waiter left until then would never settle.
+    this.finish();
     this.stream.destroy();
   }
 
@@ -323,6 +332,10 @@ export function createGroupStop(options: GroupStopOptions): () => Promise<void> 
   return () => {
     stopping ??= (async () => {
       if (options.sentinelExited()) return;
+      const pid = options.pid();
+      // A spawn that never produced a process has no group to signal or wait
+      // for; returning here keeps a failed spawn from paying the grace.
+      if (pid === undefined) return;
       let ready = true;
       if (!options.readySeen()) {
         const outcome = await Promise.race<"ready" | "grace">([
@@ -332,8 +345,6 @@ export function createGroupStop(options: GroupStopOptions): () => Promise<void> 
         ready = outcome === "ready";
       }
       if (options.sentinelExited()) return;
-      const pid = options.pid();
-      if (pid === undefined) return;
       if (!ready) {
         // The sentinel never announced its trap. There is no safe delay: one
         // immediate SIGKILL while our leader is still alive is the only signal.
@@ -380,7 +391,13 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
   try {
     child = spawn(
       "sh",
-      ["-c", options.sentinelScript ?? SENTINEL, "operad-shell", options.line],
+      [
+        "-c",
+        options.sentinelScript ?? SENTINEL,
+        "operad-shell",
+        options.line,
+        String(process.pid),
+      ],
       {
         cwd: options.cwd,
         ...(options.env === undefined
@@ -468,12 +485,12 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
 
   const finish = async (): Promise<readonly string[]> => {
     const drainedOutput = Promise.all(drained).then(() => undefined);
-    let drainTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
+    let drainTimer: unknown;
     const drainLimit = new Promise<void>((resolve) => {
-      drainTimer = globalThis.setTimeout(resolve, DRAIN_GRACE_MS);
+      drainTimer = clock.setTimeout(resolve, DRAIN_GRACE_MS);
     });
     await Promise.race([drainedOutput, drainLimit]);
-    if (drainTimer !== undefined) globalThis.clearTimeout(drainTimer);
+    if (drainTimer !== undefined) clock.clearTimeout(drainTimer);
     if (stdout !== null) stdout.destroy();
     control?.destroy();
     await drainedOutput;
@@ -527,7 +544,15 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
   else exit = ended.exit;
 
   // Stop the group the line left behind: the sentinel and any forked child.
-  await stop();
+  // A line that reported its own status has already ended, so there is nothing
+  // left to give SIGTERM time for; waiting the grace here made every successful
+  // line pay 500 ms. A cancellation or timeout still takes the TERM path.
+  if (ended.kind === "end" && !cancelled && !timedOut) {
+    const pid = child.pid;
+    if (pid !== undefined) (options.killGroup ?? killProcessGroup)(pid, "SIGKILL");
+  } else {
+    await stop();
+  }
   await Promise.race([exited, failed]);
   const tail = await finish();
 
