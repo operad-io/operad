@@ -216,3 +216,27 @@ curl -s \
 
 with `"command": "sh ~/.operad/notify.sh"`. A topic name is a password for
 anyone who guesses it; pick a long random one or use a self-hosted server.
+
+## MCP server
+
+`operad mcp` runs a read-only MCP server on stdio for a lead agent. It reads
+the same objects, pending items, running items, sections and history as the
+commands, and never runs a step or an owner action. The protocol, tools and
+error mapping are in `docs/mcp.md`; stdout carries only JSON-RPC and logs go to
+stderr.
+
+Claude Code finds the server in a project `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "operad": {
+      "command": "operad",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+The server uses `$OPERAD_HOME`, or `~/.operad` when it is unset. Set
+`OPERAD_HOME` in the entry's `env` when the agent should read another home.
