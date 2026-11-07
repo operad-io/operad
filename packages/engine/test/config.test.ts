@@ -9,6 +9,7 @@ import {
   ensureConfig,
   readConfig,
   storeRootOf,
+  writeConfig,
 } from "../src/index.ts";
 import { cleanupTempRoots, tempRoot } from "./plugin/support.ts";
 
@@ -41,6 +42,7 @@ describe("operad config", () => {
       plugins: defaultConfig(home).plugins,
       store: { backend: "jsonl", path: join(home, "store") },
       http: { enabled: false, port: 7480, listen: ["127.0.0.1"] },
+      notify: { command: null, on: ["waiting"] },
     });
     expect(storeRootOf(config)).toBe(join(home, "store"));
   });
@@ -108,6 +110,51 @@ describe("operad config", () => {
     await expect(readConfig(home)).rejects.toThrow(/plugins: must be an object/);
   });
 
+  test("reads notify and applies its defaults", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    await Bun.write(
+      join(home, "config.json"),
+      JSON.stringify({ notify: { command: "ntfy pub x" } }),
+    );
+    expect((await readConfig(home)).notify).toEqual({
+      command: "ntfy pub x",
+      on: ["waiting"],
+    });
+    await Bun.write(join(home, "config.json"), JSON.stringify({ notify: {} }));
+    expect((await readConfig(home)).notify).toEqual({
+      command: null,
+      on: ["waiting"],
+    });
+  });
+
+  test("rejects a malformed notify section", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    for (const [notify, pattern] of [
+      [{ command: 3 }, /notify.command/],
+      [{ command: "  " }, /notify.command/],
+      [{ on: ["done"] }, /notify.on/],
+      [{ on: "waiting" }, /notify.on/],
+      ["ntfy", /notify: must be an object/],
+    ] as const) {
+      await Bun.write(join(home, "config.json"), JSON.stringify({ notify }));
+      await expect(readConfig(home)).rejects.toThrow(pattern);
+    }
+  });
+
+  test("a written config keeps the notify command", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    await Bun.write(
+      join(home, "config.json"),
+      JSON.stringify({ notify: { command: "ntfy pub x" } }),
+    );
+    const config = await readConfig(home);
+    await writeConfig(home, config);
+    expect((await readConfig(home)).notify.command).toBe("ntfy pub x");
+  });
+
   test("ships a JSON Schema with the store and http keys", async () => {
     const path = new URL("../config.schema.json", import.meta.url);
     const schema = JSON.parse(await readFile(path, "utf8")) as {
@@ -116,6 +163,7 @@ describe("operad config", () => {
     expect(schema.properties?.plugins).toBeDefined();
     expect(schema.properties?.store).toBeDefined();
     expect(schema.properties?.http).toBeDefined();
+    expect(schema.properties?.notify).toBeDefined();
   });
 
   test("reads http options and applies their defaults", async () => {

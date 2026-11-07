@@ -30,6 +30,10 @@ import {
   lockHeld,
   messageOf,
   openConfigLog,
+  Notifier,
+  ensureHttpToken,
+  listenAddressKind,
+  pairLink,
   OPTIONAL_PLUGINS,
   openPluginStore,
   parseObjectKey,
@@ -63,6 +67,7 @@ import {
   type Views,
 } from "@operad-io/engine";
 import { renderMarkdown } from "./markdown.ts";
+import { QrTooLongError, encodeQr, renderQr } from "./qr.ts";
 
 /** Where a command writes. Tests pass a collector instead of the process. */
 export interface CliIo {
@@ -110,6 +115,7 @@ const KERNEL_VERBS = [
   "plugin",
   "secret",
   "http",
+  "pair",
   "run-internal",
 ] as const;
 
@@ -134,6 +140,8 @@ const HELP = [
   "  secret list <plugin>         secret names, never values",
   "  secret delete <plugin> <name>",
   "  http token rotate    replace the token the operad app uses",
+  "  pair [--url <url>] [--show-token]",
+  "                       show the address and token as a QR code for the operad app",
   "  trigger <source> <key> [--type t] [--object o] [--summary text] [--data file]",
   "                       send one event through the rules",
   "  trigger rules        the rules in force, with where each came from",
@@ -1374,6 +1382,13 @@ async function commandServe(
     );
   }
   const kernel = kernelFor(context, io, rules);
+  const notifier = new Notifier({
+    home: context.home,
+    config: context.config.notify,
+    log: context.log,
+    titleOf: async (type, id) => (await context.views.get(`${type}:${id}`)).row.title,
+    onLog: (message) => io.error(`${message}\n`),
+  });
   let http: HttpServerHandle | undefined;
   try {
     if (context.config.http.enabled) {
@@ -1403,8 +1418,15 @@ async function commandServe(
       intervalMs: Number.isFinite(parsed) && parsed > 0 ? parsed : 1_000,
       signal: controller.signal,
       clock: () => Date.now(),
+      // The command can take 30 seconds; the loop must not wait for it.
+      onPass: () => {
+        notifier.pass().catch((error: unknown) => {
+          io.error(`notify: ${error instanceof Error ? error.message : String(error)}\n`);
+        });
+      },
     });
   } finally {
+    await notifier.stop();
     if (http !== undefined) await http.stop();
     await kernel.stopSources();
     process.removeListener("SIGINT", stop);
@@ -1701,6 +1723,90 @@ async function commandHttp(
   return 0;
 }
 
+/** The base URL the app should use: `--url`, or the first address a phone can reach. */
+function pairBaseUrl(config: OperadConfig, given: string | undefined): string {
+  if (!config.http.enabled) {
+    throw new UsageError('pair needs "http.enabled" in config.json');
+  }
+  if (given !== undefined) {
+    let url: URL;
+    try {
+      url = new URL(given);
+    } catch {
+      throw new UsageError("--url must be an http or https URL");
+    }
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username !== "" ||
+      url.password !== "" ||
+      url.search !== "" ||
+      url.hash !== ""
+    ) {
+      throw new UsageError("--url must be an http or https URL without credentials or a query");
+    }
+    return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+  }
+  const address = config.http.listen.find(
+    (entry) => listenAddressKind(entry) !== "loopback",
+  );
+  if (address === undefined) {
+    throw new UsageError(
+      "http.listen has only loopback addresses, which a phone cannot reach; add one or pass --url",
+    );
+  }
+  if (config.http.port === 0) {
+    throw new UsageError('http.port is 0; set a port in config.json or pass --url');
+  }
+  const host = address.includes(":") ? `[${address}]` : address;
+  return `http://${host}:${config.http.port}`;
+}
+
+async function commandPair(
+  home: string,
+  io: CliIo,
+  argv: readonly string[],
+  terminal: boolean,
+): Promise<number> {
+  let given: string | undefined;
+  let showToken = false;
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index] ?? "";
+    if (arg === "--show-token") {
+      showToken = true;
+    } else if (arg === "--url") {
+      given = argv[index + 1];
+      index += 1;
+      if (given === undefined) throw new UsageError("--url needs a value");
+    } else if (arg.startsWith("--url=")) {
+      given = arg.slice("--url=".length);
+    } else {
+      throw new UsageError(`pair: unknown argument "${arg}"`);
+    }
+  }
+  if (!terminal && !showToken) {
+    throw new UsageError(
+      "pair prints the token and needs a terminal; pass --show-token to print it anyway",
+    );
+  }
+  const config = await readConfig(home);
+  const url = pairBaseUrl(config, given);
+  const { token } = await ensureHttpToken(home);
+  const link = pairLink(url, token);
+
+  io.write(`url ${url}\ntoken ${token}\n`);
+  if (!terminal) {
+    io.write(`link ${link}\n`);
+    return 0;
+  }
+  try {
+    io.write(`\nScan this in the operad app:\n\n${renderQr(encodeQr(link))}`);
+  } catch (error) {
+    if (!(error instanceof QrTooLongError)) throw error;
+    io.write("\nThe link is too long for a QR code; enter the url and token by hand.\n");
+  }
+  return 0;
+}
+
 async function commandPlugin(
   context: Context,
   io: CliIo,
@@ -1749,6 +1855,15 @@ export async function main(
 
     if (command === "http") {
       return await commandHttp(home, io, args.slice(1));
+    }
+
+    if (command === "pair") {
+      return await commandPair(
+        home,
+        io,
+        args.slice(1),
+        options.isTTY ?? process.stdout.isTTY === true,
+      );
     }
 
     if (command === "plugin") {

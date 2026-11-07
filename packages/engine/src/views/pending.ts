@@ -1,5 +1,6 @@
 /** The pending view: every run waiting for a person, with what can be done. */
 
+import { objectLink } from "../http/link.ts";
 import type { LogBackend, RunInfo } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { PendingActionView } from "../plugin/types.ts";
@@ -21,6 +22,10 @@ export interface PendingItem {
   readonly actions: readonly PendingActionView[];
   readonly kind?: "run" | "candidate";
   readonly pendingId?: string;
+  /** The object the run is about, as `<type>:<id>`; absent for a candidate. */
+  readonly object?: string;
+  /** The link that opens the object in the app; absent for a candidate. */
+  readonly link?: string;
 }
 
 /** Runs waiting for a person, in the order they started. */
@@ -47,6 +52,7 @@ export async function listPending(
       choices: state.wait.choices,
       actions,
       kind: "run",
+      ...objectFields(run.object),
     });
   }
 
@@ -87,4 +93,15 @@ async function actionsFor(
     },
   ]);
   return pending[0]?.actions ?? [];
+}
+
+function objectFields(
+  key: string,
+): { readonly object: string; readonly link: string } | Record<string, never> {
+  const object = parseObjectKey(key);
+  if (object === undefined) return {};
+  return {
+    object: `${object.type}:${object.id}`,
+    link: objectLink(object.type, object.id),
+  };
 }

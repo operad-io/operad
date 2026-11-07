@@ -21,7 +21,8 @@ this manual prints a secret.
     "dev": { "module": "@operad-io/dev", "enabled": true }
   },
   "store": { "backend": "jsonl", "path": "~/.operad/store" },
-  "http": { "enabled": false, "port": 7480, "listen": ["127.0.0.1"] }
+  "http": { "enabled": false, "port": 7480, "listen": ["127.0.0.1"] },
+  "notify": { "command": null, "on": ["waiting"] }
 }
 ```
 
@@ -33,6 +34,8 @@ this manual prints a secret.
   relative path resolves against the home.
 - `http`: the interface `operad serve` exposes to clients. It is off unless
   `enabled` is true; no other command opens the port.
+- `notify`: a command `serve` runs when something waits for a person; see
+  [Notifications](#notifications). It is off while `command` is `null`.
 
 ### http
 
@@ -62,6 +65,32 @@ ends the event streams opened with it. No endpoint shows the token.
 http http://127.0.0.1:7480
 ```
 
+### Pairing the app
+
+`operad pair` shows what the app needs to reach this `serve`:
+
+```text
+url http://192.168.1.20:7480
+token <the token>
+
+Scan this in the operad app:
+
+<a QR code>
+```
+
+The URL is `http://<address>:<port>` for the first non-loopback entry of
+`http.listen`. Pass `--url <base url>` to name another address, such as a
+Tailscale HTTPS name (`operad pair --url https://mac.tail1234.ts.net`); it must
+be an `http` or `https` URL without credentials or a query. The QR code encodes
+`operad://pair?url=<url>&token=<token>`. It needs `http.enabled`, and with no
+`--url` an address in `http.listen` that is not loopback.
+
+`pair` is the one command that prints the token. It refuses when its output is
+not a terminal, so a pipe or a log never receives it; `--show-token` overrides
+that and prints `url`, `token` and the pairing `link` as plain lines, with no
+QR code. If you paste the token anywhere, rotate it with `operad http token
+rotate`.
+
 ### Endpoints
 
 All endpoints are under `/v1`. Responses are JSON unless the endpoint says
@@ -72,9 +101,9 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 |---|---|
 | `GET /v1/types` | `{ "types": [{ "type": "task", "title": "Task" }] }`: the object types with views and their display names. |
 | `GET /v1/objects?type=<type>&cursor=<c>` | `{ "rows": [...], "next": "<c>" }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, plus `waiting` and `running`; an error row also carries `error`. |
-| `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. |
+| `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. An item that is about an object also carries `object` (`<type>:<id>`) and its `link`. |
 | `GET /v1/running` | The same list as `operad running`. |
-| `GET /v1/objects/<id>` | `{ "id", "type", "row", "sections", "actions" }`: the row, the section directory, and the actions available now with their `args` schema, `note` field and `confirm` flag. |
+| `GET /v1/objects/<id>` | `{ "id", "type", "link", "row", "sections", "actions" }`: the link that opens the object, the row, the section directory, and the actions available now with their `args` schema, `note` field and `confirm` flag. |
 | `GET /v1/objects/<id>/sections/<section>?cursor=<c>&full=<bool>` | `{ "markdown": "...", "next": "<c>" }`. `full=true` skips the size cap. |
 | `POST /v1/act` | Runs one action. The body is `{ "action": "plugin:action", "id": "<id>", "args": {...}, "note": "...", "confirmed": true }`; only `action` is always required, and an action that targets an object also needs `id`. An action with `confirm: true` needs `"confirmed": true`. The body is at most 1 MiB; a larger one gets `413`. |
 | `GET /v1/events` | An SSE stream of changes. |
@@ -82,6 +111,15 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 `POST /v1/act` records the caller as `{ "via": "http", "id": "operad app" }`.
 It records the action the same way the command line does, and a running
 `operad serve` carries on the steps a waiting run asks for.
+
+### Links
+
+An object link is `operad://objects/<id>`, where `<id>` is the object as `get`
+takes it, `<type>:<id>`, URL-encoded: `item:a b/c` is
+`operad://objects/item%3Aa%20b%2Fc`. `GET /v1/objects/<id>` and each pending
+item carry it as `link`, and a notification command gets it as `OPERAD_LINK`.
+Opening it in the app shows that object. Following the link's path
+(`/v1/objects/<the part after objects/>`) finds the same object.
 
 ### Events
 
@@ -122,3 +160,59 @@ Every error body is:
 | `422` | The action's plugin refused it; `message` is the plugin's own message. |
 | `504` | A section did not load in time. |
 | `500` | Anything else; the body carries no stack trace. |
+
+## Notifications
+
+`notify` in `config.json` names a command for `serve` to run when something
+starts waiting for a person:
+
+```json
+{ "notify": { "command": "sh ~/.operad/notify.sh", "on": ["waiting"] } }
+```
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `command` | string or `null` | `null` | A shell line, run with `sh -c` in the operad home. `null` turns notifications off. |
+| `on` | array | `["waiting"]` | What starts the command. `waiting` is the only value: an object now waits for a person. |
+
+The command runs once per item and wait, with these in its environment:
+
+| Variable | Value |
+|---|---|
+| `OPERAD_ID` | The object, as `<type>:<id>`. |
+| `OPERAD_TITLE` | The object's title, or its id when the title cannot be read. |
+| `OPERAD_REASON` | What it waits for: the prompt shown in `operad pending`. |
+| `OPERAD_LINK` | The object link, `operad://objects/<id>`. |
+
+For a task of the `dev` plugin the prompt names the step it stopped at; the
+specific reason (`ready to merge`, `review findings`, ...) is in the task's
+`dev.waiting` notice, which `docs/dogfood.md` lists.
+
+The token is never in the environment. A command runs for at most 30 seconds,
+then it is stopped. Any exit other than 0, a timeout, or a command that cannot
+start is logged by `serve` with its exit code and the last lines of its output,
+and is not retried.
+
+Each wait notifies once. A wait is one run reaching one step one time: the same
+item that waits again, after you answered, is a new wait and notifies again. A
+restart of `serve` does not notify again for a wait that already did. The
+notice is recorded after the command has ended, so if `serve` is killed in
+the moment between the two, the next `serve` runs the command once more for
+that wait: at most one extra notification, never a lost one. Stopping `serve`
+cancels a command that is still running, and the next `serve` runs it again.
+
+Example with [ntfy](https://ntfy.sh): a push to your phone that opens the item
+in the app when tapped.
+
+```sh
+#!/bin/sh
+# ~/.operad/notify.sh
+curl -s \
+  -H "Title: $OPERAD_TITLE" \
+  -H "Click: $OPERAD_LINK" \
+  -d "$OPERAD_REASON" \
+  https://ntfy.sh/my-operad-topic
+```
+
+with `"command": "sh ~/.operad/notify.sh"`. A topic name is a password for
+anyone who guesses it; pick a long random one or use a self-hosted server.
