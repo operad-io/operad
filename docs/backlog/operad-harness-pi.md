@@ -53,3 +53,21 @@ dogfood 跑通了 `harness-radian`。`operad-harness.md` 决定 1 说一种 harn
 ## 验收
 
 operad 仓库里一个 dogfood 任务从创建跑到 `review`，worker 是 `harness-pi/agent`，用的是用户自己的 pi 登录；它的事实里有 `usage`、以微美元计的 `cost`、会话文件路径；第二个步骤用 `resumeSession` 接上同一个会话并在日志里看到旧消息在上下文中；一次命中 `denyCommands` 的 `bash` 调用被阻断，日志有原因，agent 继续跑完；一个带 `askCommands` 的访问档在启动时被拒并说出字段名；`operad plugin check` 对 `harness-pi` 通过；worker 子进程被 `kill -9` 后步骤以 `interrupted` 结束而 `operad serve` 不受影响。
+
+## 验收的覆盖
+
+`bash scripts/verify.sh` 里的测试覆盖：
+
+- `packages/harness-pi/test/worker.test.ts`：stdin 协议的合法与非法输入、未知模型、缺失的会话文件、`done` / `failed` / `cancelled`、最后一行 Result、`usage` 与 `cost.micros` 的逐条累加、`resumeSession` 后第二条 prompt 在上下文里看到第一条。模型是测试注册的 fake provider，不打真模型。
+- `packages/harness-pi/test/spike.test.ts`：Bun 下 pi 的显式 `resourceLoader`、`SettingsManager.inMemory()`、临时 `agentDir`、`ModelRuntime.create({ authPath, modelsPath })`、`message_end.usage`、会话文件落盘与 `open(path)` 续接、`abort()`、两个进程共享 `auth.json` 时的文件锁。
+- `packages/dev/test/dogfood.test.ts`：本仓库的 `.operad/dev.json` 只把 `worker.use` 换成 `harness-pi/agent`、清空 `worker.args` 后仍通过设置校验，`dev` flow 仍能加载。
+- `packages/engine/test/runner/access.test.ts`：访问档要求一个没有步骤声明执行的字段（`askCommands`）时运行在启动时被拒，错误说出字段名。
+- 访问档那一项任务的 `packages/access-match` 测试和 `worker.ts` 的 `tool_call` 测试：`denyPaths` / `denyCommands` 的路径与命令匹配、拆链、内联代码、阻断记录，以及阻断后 agent 继续跑完（fake provider）。
+
+lead 在合并后手工验收（测试不打真模型，也不读用户凭据）：
+
+- 真实 pi 登录：用 `pi` 加 `/login` 用户自己的订阅跑一个本仓库任务到 `review`，确认事实里有 `usage`、以微美元计的 `cost` 和会话文件路径。不读、不打印 `~/.pi/agent/auth.json`。
+- 真实续接：同一任务再用 `resumeSession` 接上那个会话，日志里能看到旧消息在上下文中。
+- 真实 `kill -9`：真 worker 子进程被 `kill -9` 后步骤以 `interrupted` 结束，`operad serve` 不受影响。
+- 真 dogfood 里命中一次 `denyCommands`，看日志有原因且 agent 继续跑完；再确认 `operad plugin check` 对 `harness-pi` 通过。
+
