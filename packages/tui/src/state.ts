@@ -13,9 +13,9 @@ import type {
   ViewSectionContent,
   ViewSectionInfo,
 } from "@operad-io/engine";
-import { renderMarkdownLines } from "@operad-io/engine";
 import type { TuiTypeInfo } from "./client.ts";
-import { wrapText } from "./wrap.ts";
+import { cachedLayout, layoutMarkdown, type LayoutLine } from "./layout.ts";
+import { sanitize } from "./sanitize.ts";
 
 /** The two terminal themes the view knows. */
 export type TuiTheme = "light" | "dark";
@@ -332,13 +332,13 @@ function rowId(row: ViewRow): string {
 /** A `/v1/objects` row, unchanged except for the scope in its id. */
 export function rowFromView(row: ViewRow): TuiRow {
   return {
-    id: rowId(row),
-    title: row.title,
-    state: row.state,
-    ...(row.note === undefined ? {} : { note: row.note }),
+    id: sanitize(rowId(row)),
+    title: sanitize(row.title),
+    state: sanitize(row.state),
+    ...(row.note === undefined ? {} : { note: sanitize(row.note) }),
     waiting: row.waiting,
     running: row.running,
-    ...(row.error === undefined ? {} : { error: row.error }),
+    ...(row.error === undefined ? {} : { error: sanitize(row.error) }),
   };
 }
 
@@ -348,20 +348,20 @@ function rowFromPending(item: PendingItem): TuiRow {
   // sends no row, and the item shows its question and flow as before.
   if (item.row !== undefined) {
     return {
-      id: item.object ?? item.runId,
-      title: item.row.title,
-      state: item.row.state,
-      note: item.prompt,
+      id: sanitize(item.object ?? item.runId),
+      title: sanitize(item.row.title),
+      state: sanitize(item.row.state),
+      note: sanitize(item.prompt),
       waiting: true,
       running: false,
-      ...(item.row.error === undefined ? {} : { error: item.row.error }),
+      ...(item.row.error === undefined ? {} : { error: sanitize(item.row.error) }),
     };
   }
   return {
-    id: item.object ?? item.runId,
-    title: item.prompt,
-    state: item.flow,
-    ...(item.step === null ? {} : { note: item.step }),
+    id: sanitize(item.object ?? item.runId),
+    title: sanitize(item.prompt),
+    state: sanitize(item.flow),
+    ...(item.step === null ? {} : { note: sanitize(item.step) }),
     waiting: true,
     running: false,
   };
@@ -369,9 +369,9 @@ function rowFromPending(item: PendingItem): TuiRow {
 
 function rowFromRunning(item: RunningItem): TuiRow {
   return {
-    id: item.runId,
-    title: item.flow,
-    state: item.stepLabel ?? "-",
+    id: sanitize(item.runId),
+    title: sanitize(item.flow),
+    state: sanitize(item.stepLabel ?? "-"),
     note: formatElapsed(item.elapsedMs),
     waiting: false,
     running: true,
@@ -433,13 +433,28 @@ export function markdownLineCount(
   markdown: string,
   width = Number.POSITIVE_INFINITY,
 ): number {
-  const lines = renderMarkdownLines(markdown);
-  while (lines.length > 0 && (lines[lines.length - 1]?.text ?? "") === "") {
-    lines.pop();
-  }
-  return lines.reduce(
-    (count, line) => count + wrapText(line.text, width).length,
-    0,
+  return layoutMarkdown(
+    markdown,
+    Number.isFinite(width) ? width : undefined,
+  ).length;
+}
+
+/**
+ * The rows of a section at the pane's width. They are laid out once for each
+ * content version of each open object and width, and kept: scrolling and
+ * drawing read the same rows without wrapping the text again.
+ */
+export function sectionLayout(
+  state: TuiState,
+  section: TuiSection,
+): readonly LayoutLine[] {
+  const object = state.object;
+  const key = `${object?.version ?? 0}\u0000${object?.id ?? ""}\u0000${section.id}`;
+  return cachedLayout(
+    key,
+    section.version,
+    section.markdown,
+    sectionWidth(state),
   );
 }
 
@@ -509,11 +524,7 @@ function withSection(
 }
 
 function bottomScroll(state: TuiState, section: TuiSection): number {
-  return Math.max(
-    0,
-    markdownLineCount(section.markdown, sectionWidth(state)) -
-      sectionViewport(state),
-  );
+  return Math.max(0, sectionLayout(state, section).length - sectionViewport(state));
 }
 
 /** Asks for a section's first page or its next one, once. */
@@ -636,7 +647,10 @@ function applyObject(
   const row = rowFromView(view.row);
   const oldSections = previous?.sections ?? [];
   const sections = view.sections.map((info) =>
-    makeSection(info, oldSections.find((section) => section.id === info.id)),
+    makeSection(
+      { ...info, title: sanitize(info.title) },
+      oldSections.find((section) => section.id === info.id),
+    ),
   );
   const oldActive = previous?.sections[previous.active]?.id;
   const found =
@@ -655,7 +669,9 @@ function applyObject(
     sections,
     active,
     loading: false,
-    ...(view.unavailable === undefined ? {} : { unavailable: view.unavailable }),
+    ...(view.unavailable === undefined
+      ? {}
+      : { unavailable: sanitize(view.unavailable) }),
     version: previous?.version ?? version ?? 0,
   };
   let updated: TuiState = {
@@ -688,7 +704,7 @@ function applyObjectError(
   if (version !== undefined && version !== object.version) return state;
   return {
     ...state,
-    object: { ...object, loading: false, error: message },
+    object: { ...object, loading: false, error: sanitize(message) },
     objectRequest: undefined,
     sectionRequest: undefined,
   };
@@ -719,10 +735,6 @@ function applySection(
       ? content.markdown
       : joinMarkdown(section.markdown, content.markdown);
   const capped = !full && /\[Truncated\./.test(markdown);
-  const bottom = Math.max(
-    0,
-    markdownLineCount(markdown, sectionWidth(state)) - sectionViewport(state),
-  );
   const updated = withSection(state, sectionId, (value) => {
     const next: TuiSection = {
       ...value,
@@ -735,10 +747,10 @@ function applySection(
       error: undefined,
       version: value.version + 1,
     };
-    const following = next.following;
+    const bottom = bottomScroll(state, next);
     return {
       ...next,
-      scroll: following ? bottom : Math.min(value.scroll, bottom),
+      scroll: next.following ? bottom : Math.min(value.scroll, bottom),
     };
   });
   return {
@@ -764,7 +776,7 @@ function applySectionError(
   const updated = withSection(state, sectionId, (value) => ({
     ...value,
     loading: false,
-    error: message,
+    error: sanitize(message),
   }));
   return {
     ...updated,
@@ -1033,7 +1045,7 @@ function applyPageError(
   if (version !== undefined && version !== current.list.version) return state;
   const updated = withTab(state, tabId, (tab) => ({
     ...tab,
-    list: { ...tab.list, loading: false, error: message },
+    list: { ...tab.list, loading: false, error: sanitize(message) },
   }));
   if (updated === state) return state;
   if (state.pageRequest?.tabId === tabId) {
@@ -1121,7 +1133,10 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
         : { ...state, sectionRequest: undefined };
     case "status":
       if (stale(state, event.generation)) return state;
-      return { ...state, status: event.message };
+      return {
+        ...state,
+        status: event.message === undefined ? undefined : sanitize(event.message),
+      };
     case "key":
       return handleKey(state, event);
     case "resize":
