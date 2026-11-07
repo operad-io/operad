@@ -12,7 +12,7 @@ function blocks(): string[] {
 
 test("the plugin in docs/plugin-authoring.md is the one the suite checks", () => {
   const [plugin] = blocks();
-  expect(read("../fixtures/example-plugin/index.ts")).toBe(plugin);
+  expect(read("../fixtures/example-plugin/index.ts")).toBe(plugin ?? "");
 });
 
 test("the test in docs/plugin-authoring.md is the one the suite runs", () => {
