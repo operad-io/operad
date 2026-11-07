@@ -22,7 +22,9 @@
       "--model",
       "gpt-5.6-terra",
       "--thinking",
-      "medium"
+      "medium",
+      "--approval",
+      "auto"
     ],
     "fixLevel": "major",
     "timeoutSecs": 3600,
