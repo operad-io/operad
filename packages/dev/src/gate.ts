@@ -803,6 +803,9 @@ async function callReviewer(
         cwd: gatePath,
         args,
         wallTimeSecs: settings.timeoutSecs,
+        ...(settings.stallSecs === undefined
+          ? {}
+          : { stallSecs: settings.stallSecs }),
         resultPath,
       },
       stepOptions(ctx, gatePath),

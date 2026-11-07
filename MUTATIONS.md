@@ -574,3 +574,4 @@
 |---|---|---|---|
 | TK0032-M5 | packages/dev/src/check.ts | reported only the first line of git's stderr for an unreachable remote | `dev init check > an unreachable remote keeps every line of git's stderr` |
 | step-timeout-M1 | packages/engine/src/runner/runner.ts | `timeoutMsFor` ignored the step type's `timeoutSecs` and always used the runner's step timeout | `runner > a step's own timeoutSecs replaces the runner's step timeout` |
+| reviewer-stall-M1 | packages/dev/src/gate.ts | stopped passing `reviewer.stallSecs` to the review harness step | `dev/review > reviewer.stallSecs reaches the harness step, and is absent when unset` |

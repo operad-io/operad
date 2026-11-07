@@ -151,6 +151,7 @@ The file holds the repository's work settings:
 | `reviewer.args` | `[]` | the arguments every review gets |
 | `reviewer.firstArgs` | none | the arguments the first review of an attempt gets instead, including its one retry after an invalid report |
 | `reviewer.timeoutSecs` | `600` | the longest a review may run |
+| `reviewer.stallSecs` | harness default | how long a review may print no new line before it is stopped |
 | `reviewer.fixLevel` | `major` | the lowest finding severity that fails the gate: `critical`, `major` or `minor` |
 | `reviewer.maxFileDiffBytes` | `200000` | the largest diff one file may put in the review prompt |
 | `reviewer.maxDiffBytes` | `1000000` | the largest diff the review prompt may carry |

@@ -133,6 +133,11 @@
           "exclusiveMinimum": 0,
           "default": 600
         },
+        "stallSecs": {
+          "description": "How long a review may go without a new output line, in seconds; unset uses the harness default.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
         "fixLevel": {
           "description": "The lowest finding severity that fails the gate.",
           "type": "string",

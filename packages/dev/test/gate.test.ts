@@ -90,6 +90,7 @@ interface ReviewCall {
   readonly cwd: string;
   readonly args: readonly string[];
   readonly resultPath: string;
+  readonly stallSecs: number | undefined;
 }
 
 interface FakeReviewer {
@@ -121,11 +122,13 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             readonly cwd: string;
             readonly args?: readonly string[];
             readonly resultPath: string;
+            readonly stallSecs?: number;
           };
           calls.push({
             prompt: input.prompt,
             cwd: input.cwd,
             args: input.args ?? [],
+            stallSecs: input.stallSecs,
             resultPath: input.resultPath,
           });
           if (
@@ -215,6 +218,7 @@ interface FixtureOptions {
   readonly commandTimeoutSecs?: number;
   readonly reviewerArgs?: readonly string[];
   readonly firstArgs?: readonly string[];
+  readonly reviewerStallSecs?: number;
   readonly fixLevel?: FixLevel;
   readonly maxAutoRework?: number;
   readonly maxFileDiffBytes?: number;
@@ -261,6 +265,9 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
           ...(options.firstArgs === undefined
             ? {}
             : { firstArgs: options.firstArgs }),
+          ...(options.reviewerStallSecs === undefined
+            ? {}
+            : { stallSecs: options.reviewerStallSecs }),
           fixLevel: options.fixLevel ?? "major",
           maxFileDiffBytes: options.maxFileDiffBytes ?? 200_000,
           maxDiffBytes: options.maxDiffBytes ?? 1_000_000,
@@ -559,6 +566,18 @@ describe("dev/review", () => {
     const second = await review(state, "review-run-2");
     expect(second.result).toBe("pass");
     expect(state.reviewer.calls[1]?.args).toEqual(["none"]);
+  });
+
+  test("reviewer.stallSecs reaches the harness step, and is absent when unset", async () => {
+    const set = await fixture({ reviewerStallSecs: 900 });
+    await verify(set);
+    await review(set, "review-stall-1");
+    expect(set.reviewer.calls[0]?.stallSecs).toBe(900);
+
+    const unset = await fixture();
+    await verify(unset);
+    await review(unset, "review-stall-2");
+    expect(unset.reviewer.calls[0]?.stallSecs).toBeUndefined();
   });
 
   test("the retry after an invalid report keeps the round's arguments", async () => {

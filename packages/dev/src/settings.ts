@@ -64,6 +64,8 @@ export interface ReviewerSettings {
   /** The arguments of the first review of an attempt, when they differ. */
   readonly firstArgs?: readonly string[] | undefined;
   readonly timeoutSecs: number;
+  /** How long a review may print nothing; unset uses the harness default. */
+  readonly stallSecs?: number | undefined;
   readonly fixLevel: FixLevel;
   /** The largest diff one file may put in the review prompt. */
   readonly maxFileDiffBytes: number;
@@ -350,6 +352,7 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
       key !== "args" &&
       key !== "firstArgs" &&
       key !== "timeoutSecs" &&
+      key !== "stallSecs" &&
       key !== "fixLevel" &&
       key !== "maxFileDiffBytes" &&
       key !== "maxDiffBytes"
@@ -375,6 +378,9 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
       value.timeoutSecs === undefined
         ? DEFAULT_DEV_SETTINGS.reviewer.timeoutSecs
         : positiveSeconds(value.timeoutSecs, `${field}.timeoutSecs`),
+    ...(value.stallSecs === undefined
+      ? {}
+      : { stallSecs: positiveSeconds(value.stallSecs, `${field}.stallSecs`) }),
     fixLevel: fixLevelOf(value.fixLevel, `${field}.fixLevel`),
     maxFileDiffBytes:
       value.maxFileDiffBytes === undefined
