@@ -33,6 +33,7 @@ import {
   type RepositoryData,
 } from "../src/model.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "./support.ts";
+import { DEV_SETTINGS_SCHEMA } from "../src/settings.ts";
 
 afterAll(cleanupTempRoots);
 guardLockHandles();
@@ -57,8 +58,9 @@ describe("dev repositories", () => {
     expect(repository.path).toBe(repositoryPath);
     const settings = JSON.parse(
       readFileSync(join(repositoryPath, ".operad", "dev.json"), "utf8"),
-    ) as { name: string };
+    ) as { name: string; $schema?: string };
     expect(settings.name).toBe("repository");
+    expect(settings.$schema).toBe(DEV_SETTINGS_SCHEMA);
     const exclude = readFileSync(
       join(repositoryPath, ".git", "info", "exclude"),
       "utf8",
