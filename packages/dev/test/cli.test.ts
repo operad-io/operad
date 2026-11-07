@@ -925,4 +925,53 @@ describe("operad with the dev plugin", () => {
     ) as { rows: { scope?: string }[] };
     expect(json.rows.map((row) => row.scope).sort()).toEqual(["other", "repository"]);
   });
+  test("list task hides merged and cancelled tasks by default, and --filter and --repo narrow it", async () => {
+    const { home, repository } = await setup();
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const name = repository.split("/").pop() ?? "";
+    const plan = await run(
+      home,
+      repository,
+      ["plan", "add", "--slug", "work", "--title", "Work"],
+      "request\n",
+    );
+    const planId = plan.out.trim();
+    const ids: string[] = [];
+    for (const slug of ["one", "two"]) {
+      const task = await run(
+        home,
+        repository,
+        ["task", "add", "--plan", planId, "--slug", slug, "--title", slug],
+        "brief\n",
+      );
+      ids.push(task.out.trim());
+    }
+    const cancelled = ids[1] ?? "";
+    expect((await run(home, repository, ["dev:cancel", cancelled, "--yes"])).code).toBe(0);
+
+    const active = await run(home, repository, ["list", "task"]);
+    expect(active.out).toContain(`${ids[0] ?? ""}  proposed`);
+    expect(active.out).not.toContain(cancelled);
+    expect(active.out).toContain("1 hidden (--filter all to show)");
+
+    const all = await run(home, repository, ["list", "task", "--filter", "all"]);
+    expect(all.out).toContain(cancelled);
+    expect(all.out).not.toContain("hidden");
+
+    const only = await run(home, repository, ["list", "task", "--filter", "cancelled"]);
+    expect(only.out).toContain(cancelled);
+    expect(only.out).not.toContain(`${ids[0] ?? ""}  `);
+    expect(only.out).toContain("1 hidden");
+
+    const together = await run(home, repository, ["list", "task", "--repo", name]);
+    expect(together.err).toBe("");
+    expect(together.out).toContain(`${ids[0] ?? ""}  proposed`);
+    expect(together.out).toContain("1 hidden");
+    const nobody = await run(home, repository, ["list", "task", "--repo", "elsewhere", "--filter", "all"]);
+    expect(nobody.out).toContain('no objects of type "task"');
+
+    const bad = await run(home, repository, ["list", "task", "--filter", "nope"]);
+    expect(bad.code).not.toBe(0);
+    expect(bad.err).toContain("allowed: active, all, done, cancelled");
+  });
 });

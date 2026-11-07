@@ -1,6 +1,7 @@
 /** The dev plugin: repositories, plans, tasks and their commands and views. */
 
 import { definePlugin } from "@operad-io/engine";
+import { PLAN_FILTERS, TASK_FILTERS } from "./model.ts";
 import devFlow from "../flows/dev.flow.ts";
 import { actions } from "./actions.ts";
 import { runAnnounce } from "./announce.ts";
@@ -23,10 +24,14 @@ export function createDevPlugin() {
     objects: [
       {
         name: "plan",
+        filters: PLAN_FILTERS,
+        index: ["repository"],
         resolve: (ctx, type, id) => resolveDevKey(ctx.store, type, id, ctx.cwd, ctx.scope),
       },
       {
         name: "task",
+        filters: TASK_FILTERS,
+        index: ["repository"],
         resolve: (ctx, type, id) => resolveDevKey(ctx.store, type, id, ctx.cwd, ctx.scope),
       },
     ],

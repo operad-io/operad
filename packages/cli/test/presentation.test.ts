@@ -100,6 +100,10 @@ async function addWaitingRun(home: string, object: string): Promise<void> {
   }
 }
 
+const filteredPath = fileURLToPath(
+  new URL("../../engine/test/fixtures/plugins/filtered.ts", import.meta.url),
+);
+
 const INTERNAL = ["fact", "effect", "node", "graph", "decide", "evolve"];
 
 function assertUserWords(text: string): void {
@@ -591,5 +595,53 @@ describe("operad presentation commands", () => {
     ).toBe(0);
     expect(raw.text()).not.toContain("\x1b[");
     expect(raw.text()).toContain("```diff");
+  });
+  test("list applies the default filter, --filter all shows everything, and a hidden line counts the rest", async () => {
+    const { root, home } = await makeHome();
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({
+        plugins: [filteredPath],
+        store: { backend: "jsonl", path: join(root, "store") },
+      }),
+    );
+    const store = freshStore(home);
+    store.put("job", "a", { state: "open", title: "Alpha" }, "seed");
+    store.put("job", "b", { state: "merged", title: "Beta" }, "seed");
+    store.put("job", "c", { state: "merged", title: "Gamma" }, "seed");
+    store.put("note", "n", { state: "merged", title: "Note" }, "seed");
+
+    const byDefault = capture();
+    expect(await main(["list", "job"], { home, io: byDefault.io })).toBe(0);
+    expect(byDefault.text()).toContain("a  open  Alpha");
+    expect(byDefault.text()).not.toContain("Beta");
+    expect(byDefault.text().trimEnd().split("\n").pop()).toBe(
+      "2 hidden (--filter all to show)",
+    );
+
+    const all = capture();
+    expect(await main(["list", "job", "--filter", "all"], { home, io: all.io })).toBe(0);
+    expect(all.text()).toContain("Beta");
+    expect(all.text()).toContain("Gamma");
+    expect(all.text()).not.toContain("hidden");
+
+    const done = capture();
+    expect(await main(["list", "job", "--filter", "done"], { home, io: done.io })).toBe(0);
+    expect(done.text()).not.toContain("Alpha");
+    expect(done.text().trimEnd().split("\n").pop()).toBe("1 hidden (--filter all to show)");
+
+    const json = capture();
+    expect(await main(["list", "job", "--json"], { home, io: json.io })).toBe(0);
+    expect(JSON.parse(json.text())).toMatchObject({ hidden: 2 });
+
+    const plain = capture();
+    expect(await main(["list", "note"], { home, io: plain.io })).toBe(0);
+    expect(plain.text()).not.toContain("hidden");
+    const refused = capture();
+    expect(await main(["list", "note", "--filter", "x"], { home, io: refused.io })).not.toBe(0);
+    expect(refused.errors()).toContain("this type has no filters");
+    const unknown = capture();
+    expect(await main(["list", "job", "--filter", "x"], { home, io: unknown.io })).not.toBe(0);
+    expect(unknown.errors()).toContain("allowed: active, all, done");
   });
 });
