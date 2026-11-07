@@ -71,6 +71,11 @@ import {
 import { ChannelTypeError, runMcpServer } from "@operad-io/mcp";
 import { renderMarkdown } from "./markdown.ts";
 import { QrTooLongError, encodeQr, renderQr } from "./qr.ts";
+import {
+  DEFAULT_STOP_TIMEOUT_SECS,
+  parseStopTimeout,
+  serveStop,
+} from "./serve-stop.ts";
 
 /** Where a command writes. Tests pass a collector instead of the process. */
 export interface CliIo {
@@ -149,6 +154,8 @@ const HELP = [
   "",
   "  init                 create the operad home and check the plugins",
   "  serve                run the kernel loop for this home",
+  "  serve stop [--timeout <secs>]",
+  "                       stop this home's serve (SIGTERM; default timeout 30)",
   "  pending [--json]     things waiting for a person",
   "  list <type>          objects of one type",
   "  show <id>            one object, its sections and its actions",
@@ -2024,6 +2031,29 @@ export async function main(
         context.views.close();
         await context.log.close();
       }
+      return 0;
+    }
+
+    if (command === "serve" && args[1] === "stop") {
+      let timeoutSecs = DEFAULT_STOP_TIMEOUT_SECS;
+      const rest = args.slice(2);
+      for (let index = 0; index < rest.length; index += 1) {
+        const arg = rest[index] ?? "";
+        if (arg === "--timeout" || arg.startsWith("--timeout=")) {
+          const value =
+            arg === "--timeout" ? rest[index + 1] : arg.slice("--timeout=".length);
+          if (value === undefined) throw new UsageError("serve stop --timeout needs a value");
+          if (arg === "--timeout") index += 1;
+          try {
+            timeoutSecs = parseStopTimeout(value);
+          } catch (error) {
+            throw new UsageError(error instanceof Error ? error.message : String(error));
+          }
+          continue;
+        }
+        throw new UsageError(`serve stop does not take "${arg}"`);
+      }
+      await serveStop({ home, timeoutSecs, write: (text) => io.write(text) });
       return 0;
     }
 

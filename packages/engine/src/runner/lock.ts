@@ -21,6 +21,11 @@ export interface LockHandle {
   release(): void;
 }
 
+/** True when the OS knows the PID (it may belong to another user). */
+export function pidAlive(pid: number): boolean {
+  return defaultIsAlive(pid);
+}
+
 function defaultIsAlive(pid: number): boolean {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
@@ -55,6 +60,15 @@ function readLock(path: string): LockContents | undefined {
     // A torn or deleted lock is stale.
   }
   return undefined;
+}
+
+/**
+ * The PID a lock file names, or undefined when there is no lock or it cannot
+ * be read. It never removes a file, so a caller can look without touching.
+ */
+export function readLockPid(path: string): number | undefined {
+  if (!existsSync(path)) return undefined;
+  return readLock(path)?.pid;
 }
 
 /** True when a live process holds `path`. A stale lock is removed. */
