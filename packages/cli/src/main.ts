@@ -30,6 +30,7 @@ import {
   lockHeld,
   messageOf,
   openConfigLog,
+  OPTIONAL_PLUGINS,
   openPluginStore,
   parseObjectKey,
   readConfig,
@@ -1543,7 +1544,7 @@ async function commandPluginAdmin(
     if (name === undefined) throw new UsageError(`plugin ${sub} needs a plugin name`);
     if (argv.length > 2) throw new UsageError(`plugin ${sub} takes one plugin name`);
     const entry = context.config.plugins.find((item) => item.name === name);
-    if (entry === undefined) {
+    if (entry === undefined && !(sub === "enable" && OPTIONAL_PLUGINS.includes(name))) {
       throw new ConfigError(`plugins.${name}: no such plugin`);
     }
     if (sub === "disable") {
