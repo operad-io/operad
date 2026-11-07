@@ -1,7 +1,7 @@
 {
   "$schema": "../packages/dev/dev.schema.json",
   "name": "operad",
-  "concurrency": 1,
+  "concurrency": 3,
   "maxAutoRework": 4,
   "worker": {
     "use": "harness-radian/agent",
