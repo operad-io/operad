@@ -194,6 +194,27 @@ describe("runner", () => {
     }
   });
 
+  test("a step's own timeoutSecs replaces the runner's step timeout", async () => {
+    const run = await setup("patient");
+    try {
+      const runner = new Runner({
+        log: run.log,
+        flow: run.flow,
+        runId: run.runId,
+        registry: run.registry,
+        lockRoot: join(run.root, "store"),
+        stepTimeoutMs: 20,
+      });
+      expect(await runner.run()).toBe("ended");
+      const state = await readState(run.log, run.runId);
+      expect(state.results[Object.keys(state.results)[0] ?? ""]?.result).toBe(
+        "ok",
+      );
+    } finally {
+      await run.close();
+    }
+  });
+
   test("a noisy step writes megabytes to its log and history keeps the path", async () => {
     const run = await setup("noisy");
     try {

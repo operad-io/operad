@@ -341,6 +341,12 @@ export interface StepTypeDefinition {
   readonly results: readonly string[];
   /** Access profile fields this step applies, such as `denyPaths`. */
   readonly enforces?: readonly string[] | undefined;
+  /**
+   * How long one run of this step may take, in seconds. Default: the runner's
+   * step timeout (5 minutes). A step that runs an agent or a test suite sets
+   * it above its own limits.
+   */
+  readonly timeoutSecs?: number | undefined;
   readonly run: (
     ctx: StepContext,
     params: unknown,

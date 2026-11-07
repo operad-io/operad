@@ -84,6 +84,8 @@ export interface StepType {
   readonly results: readonly string[];
   /** Access profile fields this step applies. */
   readonly enforces?: readonly string[] | undefined;
+  /** How long one run of the step may take, in seconds; unset uses the runner default. */
+  readonly timeoutSecs?: number | undefined;
   /** Kept for the plugin loader that lands later; not interpreted here. */
   readonly paramsSchema?: unknown;
 }

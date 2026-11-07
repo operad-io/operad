@@ -434,6 +434,14 @@ export class Runner {
     return runs.find((run) => run.runId === this.runId)?.access;
   }
 
+  /** The step type's own `timeoutSecs`, or the runner's step timeout. */
+  private timeoutMsFor(use: string): number {
+    const declared = this.registry
+      .stepTypes()
+      .find((type) => type.name === use)?.timeoutSecs;
+    return declared === undefined ? this.stepTimeoutMs : declared * 1000;
+  }
+
   private async runObject(): Promise<RunObject | undefined> {
     if (this.object === undefined) return undefined;
     const stored = await this.registry.store.get(
@@ -524,11 +532,11 @@ export class Runner {
         finish(
           this.failure(use, preferInterrupted, {
             reason: "timeout",
-            message: `the step took longer than ${this.stepTimeoutMs} ms`,
+            message: `the step took longer than ${this.timeoutMsFor(use)} ms`,
           }),
           false,
         );
-      }, this.stepTimeoutMs);
+      }, this.timeoutMsFor(use));
       this.signal?.addEventListener("abort", onAbort, { once: true });
 
       worker.on("message", (message: unknown) => {
@@ -607,7 +615,7 @@ export class Runner {
       timer = setTimeout(() => {
         controller.abort();
         resolve("timeout");
-      }, this.stepTimeoutMs);
+      }, this.timeoutMsFor(use));
       if (typeof timer === "object" && "unref" in timer) timer.unref();
     });
 
@@ -633,7 +641,7 @@ export class Runner {
       if (raced.kind === "timeout") {
         return this.failure(use, preferInterrupted, {
           reason: "timeout",
-          message: `the step took longer than ${this.stepTimeoutMs} ms`,
+          message: `the step took longer than ${this.timeoutMsFor(use)} ms`,
         });
       }
       return raced.value;

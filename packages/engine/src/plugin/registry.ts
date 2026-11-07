@@ -457,6 +457,9 @@ function normalizeSteps(
       ...(entry.enforces === undefined
         ? {}
         : { enforces: normalizeEnforces(entry.enforces, `${at}[${index}]`) }),
+      ...(entry.timeoutSecs === undefined
+        ? {}
+        : { timeoutSecs: normalizeTimeoutSecs(entry.timeoutSecs, `${at}[${index}]`) }),
       run: entry.run as StepTypeDefinition["run"],
     });
   });
@@ -631,12 +634,20 @@ function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
   };
 }
 
+function normalizeTimeoutSecs(value: unknown, at: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw new PluginError(`${at}: timeoutSecs: must be a positive number of seconds`);
+  }
+  return value;
+}
+
 function collectStepTypes(plugins: readonly NormalizedPlugin[]): readonly StepType[] {
   return plugins.flatMap((plugin) =>
     plugin.steps.map((step) => ({
       name: `${plugin.name}/${step.name}`,
       results: step.results,
       ...(step.enforces === undefined ? {} : { enforces: step.enforces }),
+      ...(step.timeoutSecs === undefined ? {} : { timeoutSecs: step.timeoutSecs }),
     })),
   );
 }

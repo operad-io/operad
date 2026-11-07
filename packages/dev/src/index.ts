@@ -12,6 +12,12 @@ import { resolveDevKey } from "./service.ts";
 import { runWork, runWorktree } from "./steps.ts";
 import { planViews, taskViews } from "./views.ts";
 
+/**
+ * How long work, verify, review and integrate may take: above the worker's
+ * two-hour wall time and the reviewer's one-hour timeout in `.operad/dev.json`.
+ */
+const STEP_TIMEOUT_SECS = 3 * 60 * 60;
+
 /** Builds the dev plugin. Tests build it directly when they need a fake host. */
 export function createDevPlugin() {
   return definePlugin({
@@ -36,16 +42,19 @@ export function createDevPlugin() {
       },
       {
         name: "work",
+        timeoutSecs: STEP_TIMEOUT_SECS,
         results: ["done", "nothing", "failed", "cancelled"],
         run: runWork,
       },
       {
         name: "verify",
+        timeoutSecs: STEP_TIMEOUT_SECS,
         results: ["pass", "fail", "cancelled"],
         run: runVerify,
       },
       {
         name: "review",
+        timeoutSecs: STEP_TIMEOUT_SECS,
         results: ["pass", "fail", "failed", "cancelled"],
         run: runReview,
       },
@@ -56,6 +65,7 @@ export function createDevPlugin() {
       },
       {
         name: "integrate",
+        timeoutSecs: STEP_TIMEOUT_SECS,
         results: ["merged", "conflict", "fail", "failed", "cancelled"],
         run: runIntegrate,
       },

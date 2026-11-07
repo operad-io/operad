@@ -161,6 +161,21 @@ const retry = defineFlow({
   ],
 });
 
+const patient = defineFlow({
+  name: "patient",
+  entry: "wait",
+  steps: [
+    {
+      id: "wait",
+      kind: "plugin",
+      params: { use: "test/patient", params: {} },
+      replay: "safe",
+      next: { ok: "done", failed: "done" },
+    },
+    { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+  ],
+});
+
 const hang = defineFlow({
   name: "hang",
   entry: "work",
@@ -260,6 +275,15 @@ export default definePlugin({
       },
     },
     {
+      name: "patient",
+      results: ["ok", "failed"],
+      timeoutSecs: 5,
+      async run() {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return { result: "ok" as const };
+      },
+    },
+    {
       name: "noisy",
       results: ["ok"],
       async run(ctx) {
@@ -321,6 +345,7 @@ export default definePlugin({
   flows: [
     echo,
     timed,
+    patient,
     polled,
     pause,
     noisy,
