@@ -144,6 +144,15 @@ describe("actions in the reducer", () => {
     }
   });
 
+  test("a user binding on enter or escape beats the built-in key", () => {
+    for (const [bound, pressed] of [["enter", "enter"], ["enter", "return"], ["escape", "escape"], ["escape", "esc"]] as const) {
+      const state = opened(ACTIONS, [{ key: bound, action: "other:ship", source: "user" }]);
+      const ran = press(state, pressed);
+      expect(ran.actionRequest).toEqual({ action: "other:ship", id: "item:one" });
+      expect(ran.object).toBeDefined();
+    }
+  });
+
   test("a note is sent exactly as entered", () => {
     let state = press(opened(), "a");
     state = press(state, ...typeText("  reason  "), { type: "key", key: "enter", shift: true }, "enter");
