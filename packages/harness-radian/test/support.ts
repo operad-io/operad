@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 import type { Clock } from "@operad-io/harness-process";
 
 const roots: string[] = [];
+let current: string[] = [];
 
 /** A scratch directory under `.radian/`, removed by `cleanupTempRoots`. */
 export async function tempRoot(): Promise<string> {
@@ -18,10 +19,96 @@ export async function tempRoot(): Promise<string> {
   await mkdir(base, { recursive: true });
   const root = await mkdtemp(join(base, "harness-radian-test-"));
   roots.push(root);
+  current.push(root);
   return root;
 }
 
+/** Every scratch directory this test file created, including cleaned ones. */
+export function tempRoots(): readonly string[] {
+  return [...roots];
+}
+
+interface LiveProcess {
+  readonly pid: number;
+  readonly pgid: number;
+  readonly command: string;
+}
+
+function liveProcesses(): readonly LiveProcess[] {
+  const result = Bun.spawnSync({
+    cmd: ["ps", "-axo", "pid=,pgid=,command="],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const found: LiveProcess[] = [];
+  for (const line of result.stdout.toString().split("\n")) {
+    const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line);
+    if (match === null) continue;
+    const pid = Number(match[1]);
+    const pgid = Number(match[2]);
+    const command = match[3] ?? "";
+    if (pid > 0 && command.length > 0) found.push({ pid, pgid, command });
+  }
+  return found;
+}
+
+/** Every live process whose command line names one of `paths`. */
+export function processesUnder(paths: readonly string[]): readonly number[] {
+  return liveProcesses()
+    .filter(
+      (process) =>
+        process.pid !== globalThis.process.pid &&
+        paths.some((path) => process.command.includes(path)),
+    )
+    .map((process) => process.pid);
+}
+
+function signalProcessGroup(process: LiveProcess): void {
+  try {
+    // Only the sentinel is its own group leader. A process in the test's own
+    // group (a directly spawned child) must be signalled by pid, never by
+    // `-pgid`: that group is the test runner.
+    if (process.pid === process.pgid) globalThis.process.kill(-process.pgid, "SIGKILL");
+    else globalThis.process.kill(process.pid, "SIGKILL");
+  } catch {
+    try {
+      globalThis.process.kill(process.pid, "SIGKILL");
+    } catch {
+      // The process ended between the scan and the signal.
+    }
+  }
+}
+
+/** Resolves once no live process names one of `paths`, or after `limitMs`. */
+async function waitForGone(
+  paths: readonly string[],
+  limitMs = 2000,
+): Promise<void> {
+  const deadline = Date.now() + limitMs;
+  while (processesUnder(paths).length > 0) {
+    if (Date.now() >= deadline) return;
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 20));
+  }
+}
+
+/**
+ * Stops every process the current test started under its scratch directory.
+ * A test that fails before its own stop runs must not leave the sentinel and
+ * its fake radian behind.
+ */
+export async function stopTestProcesses(): Promise<void> {
+  const paths = current;
+  current = [];
+  if (paths.length === 0) return;
+  const matches = liveProcesses().filter((process) =>
+    paths.some((path) => process.command.includes(path)),
+  );
+  for (const process of matches) signalProcessGroup(process);
+  await waitForGone(paths);
+}
+
 export async function cleanupTempRoots(): Promise<void> {
+  await stopTestProcesses();
   for (const root of roots.splice(0)) {
     try {
       await rm(root, { recursive: true, force: true });

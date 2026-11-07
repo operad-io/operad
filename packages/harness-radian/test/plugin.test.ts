@@ -23,7 +23,10 @@ import {
   fakeRadian,
   fakeRadianNamed,
   manualClock,
+  processesUnder,
+  stopTestProcesses,
   tempRoot,
+  tempRoots,
   waitForFile,
   type ManualClock,
 } from "./support.ts";
@@ -32,7 +35,10 @@ afterAll(cleanupTempRoots);
 
 const restores: Array<() => void> = [];
 
-afterEach(() => {
+afterEach(async () => {
+  // Every test stops the group it started, even when an assertion failed
+  // before the step returned and its own stop ran.
+  await stopTestProcesses();
   while (restores.length > 0) restores.pop()?.();
 });
 
@@ -648,3 +654,25 @@ realTest(
     expect(readFileSync(String(data.log), "utf8")).toContain('"type":"Result"');
   },
 );
+
+test("the guard sees a process whose command line names a temp directory", async () => {
+  const root = await tempRoot();
+  const child = Bun.spawn({
+    cmd: [process.execPath, "-e", "await Bun.sleep(30000)", root],
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  try {
+    expect(processesUnder([root])).toContain(child.pid);
+  } finally {
+    child.kill("SIGKILL");
+    await child.exited;
+  }
+  expect(processesUnder([root])).toEqual([]);
+});
+
+test("no process started by this file's tests is left alive", () => {
+  // The scratch directories are unique to this test file, so a live command
+  // line that names one is a sentinel or fake radian this file started.
+  expect(processesUnder(tempRoots())).toEqual([]);
+});
