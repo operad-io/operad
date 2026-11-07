@@ -469,6 +469,103 @@ command such as the gate runs to its end inside the turn. The setting
 call may run, in seconds. If claude nevertheless starts a second session after it
 gave its result, the step ends `failed` with a message that says so.
 
+## Sharing agents between flows: the `pool` plugin
+
+Agent runs cost an account, not a repository: one Claude or Codex login serves
+every repository on the machine. The `pool` plugin has one step, `pool/agent`,
+that picks a worker with room, runs that worker's harness step and hands the
+result back. A flow that uses it (the `dev` flow will) describes its workers;
+the home says how many runs one harness may have in all.
+
+The plugin is shipped but not installed by `operad init`; `operad plugin enable
+pool` adds it.
+
+### Home: `settings.harnesses`
+
+```json
+{
+  "plugins": {
+    "pool": {
+      "module": "@operad-io/pool",
+      "settings": { "harnesses": { "harness-pi": 2, "harness-claude": 1 } }
+    }
+  }
+}
+```
+
+| Setting | Type | Default | What it does |
+|---|---|---|---|
+| `harnesses` | object, harness plugin name to integer | `{}` | How many runs through `pool/agent` may go at once in this home for that harness, across all repositories and flows. A run of `harness-claude/agent` counts under `harness-claude`. Each count must be an integer of 1 or more; `0`, a string or a fraction refuses the plugin when `config.json` loads, and the log names `settings.harnesses`. A harness that is not listed has no cap. |
+
+A change takes effect with the next `pool/agent` step that starts; steps already
+going keep their place. Only runs that go through `pool/agent` count: a flow
+that calls a harness step directly does not, and the per-model `concurrency`
+limit of the harness still applies to every run.
+
+### A flow: `workers` and `pools`
+
+A flow's settings, at every level it can be set, may define workers and group
+them into pools. These are the fields; the parser behind them is shared, so
+every flow refuses the same mistakes in the same words.
+
+| Field | Type | Default | What it does |
+|---|---|---|---|
+| `workers` | object, worker name to worker | required | The ways this flow can run an agent. At least one worker. |
+| `pools` | object, pool name to list of worker names | one pool named `default` with every worker in the order written | Groups of workers a step picks from. Each list is non-empty and names only workers of `workers`. |
+
+A worker has these fields; any other field is refused.
+
+| Field | Type | Default | What it does |
+|---|---|---|---|
+| `use` | string | required | The harness step to run, as `<plugin>/<step>`, such as `harness-claude/agent`. |
+| `args` | array of strings | `[]` | The arguments given to that step, such as `["--model", "sonnet"]`. |
+| `count` | integer, 1 or more | `1` | How many runs of this worker may go at once for this flow. |
+| `wallTimeSecs` | number, above 0 | unset | The wall-time limit passed to the harness step. |
+| `stallSecs` | number, above 0 | unset | The stall limit passed to the harness step. |
+| `fallback` | string | unset | Another worker of `workers` to run once when this worker's model is unavailable. |
+
+Two workers may use the same harness with different arguments (`pi-flash` and
+`pi-pro`); together they count against that harness's home cap.
+
+Each refusal names the path of the bad value, for example
+`workers.claude.fallback`:
+
+- `workers` or `pools` is not an object, `workers` is empty, `pools` is empty.
+- A worker is not an object, has a field not in the table, a `use` that is not
+  `<plugin>/<step>`, `args` that is not a list of strings, a `count` that is not
+  an integer of 1 or more, or a `wallTimeSecs` or `stallSecs` that is not above 0.
+- A pool is not a non-empty list, or names a worker that `workers` does not have
+  (`pools.default[1]`).
+- A `fallback` names an unknown worker, the worker itself, a worker that has a
+  `fallback` of its own (a chain is one step; two workers that name each other
+  are a cycle), or is not a string.
+
+### The step `pool/agent`
+
+Its params are `prompt`, `cwd`, `prefix` (the key for the flow's counts; the
+caller passes `<repository>/<pool>`), `workers` (the pool's definitions in
+order, each with its `name`), optionally `fallbacks` (workers outside the pool
+that a member's `fallback` names) and `worker` (a worker the caller requires,
+such as the one that did the first attempt), plus anything the harness step takes.
+
+1. It picks the first worker in order whose own count under `prefix` has room
+   and whose harness has room under `settings.harnesses`. With `worker` set only
+   that worker may run; a name not in `workers` ends the step `failed` with
+   `data.reason` `unknown_worker`.
+2. When none has room it waits, without an error, until a run ends. It sends
+   the event `pool.waiting` once for each reason: `data.full` is `flow` when the
+   flow's counts are full and `home` when a harness's home cap is full. A
+   stopped step leaves the line and ends `interrupted`.
+3. It runs the worker's `use` with the params, the worker's `args`,
+   `wallTimeSecs` and `stallSecs`, and returns the result unchanged, adding to
+   `data`: `worker`, `harness` and, after a fallback, `fallbackFrom` (the worker
+   that failed).
+4. When the result's `data.modelError.kind` is `unavailable` or `usage_limit`,
+   or the harness step cannot start, and the worker has a `fallback`, it runs
+   that worker once, after giving back the first worker's places and waiting for
+   the fallback's own room. A timeout (wall time or stall) never falls back, and
+   the fallback's own failure is returned as it is.
+
 ## Usage and end results
 
 Every agent step records what the run used in one field of its data, `usage`,

@@ -1,0 +1,277 @@
+/**
+ * The `pool` plugin: one step, `pool/agent`, that picks a worker with room in
+ * a pool, runs that worker's harness step and falls back to another worker
+ * when the model is unavailable. Two counts decide whether a worker may start:
+ * its own `count` in the repository and the home-wide cap on its harness.
+ */
+
+import {
+  definePlugin,
+  type PluginStepResult,
+  type StepContext,
+  type StepRunOptions,
+} from "@operad-io/engine";
+import { PlaceBook } from "./places.ts";
+import {
+  harnessOf,
+  readResolved,
+  type WorkerDefinition,
+} from "./workers.ts";
+
+export * from "./workers.ts";
+export { PlaceBook } from "./places.ts";
+
+/** The event a waiting `pool/agent` sends. */
+export const WAITING_EVENT = "pool.waiting";
+
+/** The settings a config.json section may set for this plugin. */
+export const POOL_SETTINGS = {
+  type: "object" as const,
+  properties: {
+    harnesses: {
+      type: "object" as const,
+      additionalProperties: {
+        type: "integer" as const,
+        minimum: 1,
+      },
+      default: {},
+      description:
+        'How many runs through pool/agent may go at once in this home for one harness, as { "<harness plugin>": <count> }. A harness not listed has no limit. Takes effect with the next pool/agent step that starts.',
+    },
+  },
+};
+
+/** The settings keys, for the docs test. */
+export const POOL_SETTING_NAMES: readonly string[] = Object.keys(POOL_SETTINGS.properties);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function capOf(
+  settings: Readonly<Record<string, unknown>>,
+  harness: string,
+): number | undefined {
+  const map = settings.harnesses;
+  if (!isRecord(map)) return undefined;
+  const cap = map[harness];
+  return typeof cap === "number" ? cap : undefined;
+}
+
+/** True when the harness reported its model unavailable or at its usage limit. */
+export function modelUnavailable(data: Readonly<Record<string, unknown>> | undefined): boolean {
+  const error = data?.modelError;
+  if (!isRecord(error)) return false;
+  return error.kind === "unavailable" || error.kind === "usage_limit";
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function failed(reason: string, message: string, extra: Record<string, unknown> = {}): PluginStepResult {
+  return { result: "failed", data: { reason, message, ...extra } };
+}
+
+/** The params `pool/agent` reads itself; the harness step does not get them. */
+const OWN_PARAMS = ["worker", "workers", "fallbacks", "prefix"];
+
+interface Place {
+  readonly worker: WorkerDefinition;
+  readonly release: () => void;
+}
+
+type Attempt =
+  | { readonly kind: "result"; readonly result: PluginStepResult }
+  | { readonly kind: "threw"; readonly error: unknown };
+
+export interface PoolPluginOptions {
+  /** The place counts; a test passes one to look at what is held. */
+  readonly book?: PlaceBook | undefined;
+}
+
+export function createPoolPlugin(options: PoolPluginOptions = {}) {
+  const book = options.book ?? new PlaceBook();
+
+  /**
+   * Waits for the first of `candidates` whose own count and harness cap both
+   * have room and takes its places. Undefined when the signal aborts first.
+   */
+  async function acquire(
+    ctx: StepContext,
+    prefix: string,
+    candidates: readonly WorkerDefinition[],
+  ): Promise<Place | undefined> {
+    let announced: string | undefined;
+    for (;;) {
+      if (ctx.signal.aborted) return undefined;
+      const stamp = book.stamp();
+      const blocked: { worker: string; full: "flow" | "home" }[] = [];
+      for (const worker of candidates) {
+        const own = `count:${prefix}/${worker.name}`;
+        const harness = harnessOf(worker.use);
+        const home = `harness:${harness}`;
+        if (!book.hasRoom(own, worker.count)) {
+          blocked.push({ worker: worker.name, full: "flow" });
+        } else if (!book.hasRoom(home, capOf(ctx.settings, harness))) {
+          blocked.push({ worker: worker.name, full: "home" });
+        } else {
+          return { worker, release: book.take([own, home]) };
+        }
+      }
+      const full = blocked.every((item) => item.full === "flow") ? "flow" : "home";
+      if (announced !== full) {
+        announced = full;
+        const what =
+          full === "flow"
+            ? "the flow's count of every worker is full"
+            : "the home cap of a harness is full";
+        await ctx.emit({
+          type: WAITING_EVENT,
+          key: `${ctx.runId}:${prefix}:${full}`,
+          summary: `waiting in pool ${prefix}: ${what}`,
+          data: { pool: prefix, full, workers: blocked },
+        });
+      }
+      if (!(await book.changed(stamp, ctx.signal))) return undefined;
+    }
+  }
+
+  /** One run of one worker, with its places held only for the run. */
+  async function attempt(
+    ctx: StepContext,
+    prefix: string,
+    candidates: readonly WorkerDefinition[],
+    input: Record<string, unknown>,
+    options: StepRunOptions,
+  ): Promise<
+    | { readonly kind: "aborted" }
+    | (Attempt & { readonly worker: WorkerDefinition })
+  > {
+    const place = await acquire(ctx, prefix, candidates);
+    if (place === undefined) return { kind: "aborted" };
+    const { worker } = place;
+    try {
+      const runStep = ctx.runStep;
+      if (runStep === undefined) {
+        throw new Error("the kernel did not offer a way to run the worker's harness step");
+      }
+      const rest: Record<string, unknown> = { ...input };
+      for (const key of OWN_PARAMS) delete rest[key];
+      const params = {
+        ...rest,
+        args: worker.args,
+        ...(worker.wallTimeSecs === undefined ? {} : { wallTimeSecs: worker.wallTimeSecs }),
+        ...(worker.stallSecs === undefined ? {} : { stallSecs: worker.stallSecs }),
+      };
+      const result = await runStep(worker.use, params, options);
+      return { kind: "result", result, worker };
+    } catch (error) {
+      return { kind: "threw", error, worker };
+    } finally {
+      place.release();
+    }
+  }
+
+  return definePlugin({
+    name: "pool",
+    kind: "stage",
+    version: "0.0.0",
+    settings: POOL_SETTINGS,
+    steps: [
+      {
+        name: "agent",
+        results: ["done", "failed", "interrupted"],
+        // A run waits for room and then runs an agent: as long as a harness step.
+        timeoutSecs: 8 * 3600,
+        async run(ctx, params): Promise<PluginStepResult> {
+          const at = "pool/agent";
+          if (!isRecord(params)) throw new Error(`${at}: params: must be an object`);
+          const prefix = params.prefix;
+          if (typeof prefix !== "string" || prefix.length === 0) {
+            throw new Error(`${at}: params.prefix: must be a non-empty string`);
+          }
+          const workers = readResolved(params.workers, `${at}: params.workers`);
+          if (workers.length === 0) {
+            throw new Error(`${at}: params.workers: must list at least one worker`);
+          }
+          const fallbacks =
+            params.fallbacks === undefined
+              ? []
+              : readResolved(params.fallbacks, `${at}: params.fallbacks`);
+          const asked = params.worker;
+          if (asked !== undefined && typeof asked !== "string") {
+            throw new Error(`${at}: params.worker: must be a worker name`);
+          }
+
+          let candidates = workers;
+          if (asked !== undefined) {
+            candidates = workers.filter((worker) => worker.name === asked);
+            if (candidates.length === 0) {
+              return failed(
+                "unknown_worker",
+                `the worker "${asked}" is not in pool ${prefix} (${workers.map((worker) => worker.name).join(", ")})`,
+                { requested: asked },
+              );
+            }
+          }
+
+          const options: StepRunOptions = {
+            runId: ctx.runId,
+            cwd: typeof params.cwd === "string" ? params.cwd : ctx.cwd,
+            ...(ctx.object === undefined ? {} : { object: ctx.object }),
+            params: ctx.params,
+            access: ctx.access,
+            ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
+            signal: ctx.signal,
+          };
+          const interrupted = (): PluginStepResult => ({
+            result: "interrupted",
+            data: { reason: "cancelled", message: `stopped while waiting in pool ${prefix}` },
+          });
+          const record = (
+            result: PluginStepResult,
+            worker: WorkerDefinition,
+            from: WorkerDefinition | undefined,
+          ): PluginStepResult => ({
+            result: result.result,
+            data: {
+              ...(result.data ?? {}),
+              worker: worker.name,
+              harness: harnessOf(worker.use),
+              ...(from === undefined ? {} : { fallbackFrom: from.name }),
+            },
+          });
+
+          const first = await attempt(ctx, prefix, candidates, params, options);
+          if (first.kind === "aborted") return interrupted();
+          const name = first.worker.fallback;
+          const triggered =
+            name !== undefined &&
+            !ctx.signal.aborted &&
+            (first.kind === "threw" || modelUnavailable(first.result.data));
+          if (!triggered) {
+            if (first.kind === "threw") throw first.error;
+            return record(first.result, first.worker, undefined);
+          }
+          const target = [...workers, ...fallbacks].find((worker) => worker.name === name);
+          if (target === undefined) {
+            return failed(
+              "unknown_fallback",
+              `the fallback "${name}" of "${first.worker.name}" is not in the definitions given to pool/agent`,
+              { worker: first.worker.name },
+            );
+          }
+
+          // The first worker's places are already released; wait for the fallback's.
+          const second = await attempt(ctx, prefix, [target], params, options);
+          if (second.kind === "aborted") return interrupted();
+          if (second.kind === "threw") throw second.error;
+          return record(second.result, second.worker, first.worker);
+        },
+      },
+    ],
+  });
+}
+
+export default createPoolPlugin();

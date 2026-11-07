@@ -9,6 +9,7 @@
         "@operad-io/harness-claude": "workspace:*",
         "@operad-io/harness-pi": "workspace:*",
         "@operad-io/harness-radian": "workspace:*",
+        "@operad-io/pool": "workspace:*",
         "@operad-io/source-cron": "workspace:*",
       },
       "devDependencies": {
@@ -35,6 +36,7 @@
         "@operad-io/harness-pi": "workspace:*",
         "@operad-io/harness-radian": "workspace:*",
         "@operad-io/mcp": "workspace:*",
+        "@operad-io/pool": "workspace:*",
         "@operad-io/shell": "workspace:*",
         "@operad-io/tui": "workspace:*",
       },
@@ -92,6 +94,13 @@
     },
     "packages/mcp": {
       "name": "@operad-io/mcp",
+      "version": "0.0.0",
+      "dependencies": {
+        "@operad-io/engine": "workspace:*",
+      },
+    },
+    "packages/pool": {
+      "name": "@operad-io/pool",
       "version": "0.0.0",
       "dependencies": {
         "@operad-io/engine": "workspace:*",
@@ -250,6 +259,8 @@
     "@operad-io/harness-radian": ["@operad-io/harness-radian@workspace:packages/harness-radian"],
 
     "@operad-io/mcp": ["@operad-io/mcp@workspace:packages/mcp"],
+
+    "@operad-io/pool": ["@operad-io/pool@workspace:packages/pool"],
 
     "@operad-io/shell": ["@operad-io/shell@workspace:packages/shell"],
 
