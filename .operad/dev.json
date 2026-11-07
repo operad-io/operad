@@ -22,7 +22,16 @@
     ],
     "fixLevel": "major",
     "timeoutSecs": 3600,
-    "stallSecs": 900
+    "stallSecs": 900,
+    "fallback": {
+      "use": "harness-pi/agent",
+      "args": [
+        "--model",
+        "openai-codex/gpt-5.6-terra",
+        "--thinking",
+        "medium"
+      ]
+    }
   },
   "gate": {
     "commands": [
