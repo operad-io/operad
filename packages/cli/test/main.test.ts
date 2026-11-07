@@ -564,6 +564,10 @@ describe("operad command", () => {
     expect(await main(["plugin", "list"], { home, io: listed.io })).toBe(0);
     expect(listed.text()).toContain("harness-pi  0.0.0  enabled");
 
+    const claude = capture();
+    expect(await main(["plugin", "enable", "harness-claude"], { home, io: claude.io })).toBe(0);
+    expect(claude.text()).toContain("harness-claude: enabled");
+
     const unknown = capture();
     expect(await main(["plugin", "enable", "no-such"], { home, io: unknown.io })).not.toBe(0);
     expect(unknown.errors()).toContain("no such plugin");

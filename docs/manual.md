@@ -387,7 +387,7 @@ against the profile as usual, and a different call is too.
 
 A step type that cannot run again from where it left (`resumable: false` in its
 definition) cannot be asked with `"waiting"`: its questions are forced to
-`onTimeout: "reject_once"`. `harness-pi` and `harness-radian` both resume.
+`onTimeout: "reject_once"`. `harness-pi`, `harness-claude` and `harness-radian` all resume.
 `harness-radian` cannot enforce a one-time permission (no hook sees its tool
 calls); a step type that says `grants: false` has `ctx.ask` refuse a question
 that offers one, before anyone is asked. If a run still reaches radian with one,
@@ -397,7 +397,7 @@ session than the one it was given fails with `session_missing`.
 ## Limiting runs of one model
 
 A provider may answer HTTP 429 when several runs use one model at once. The
-`harness-radian` and `harness-pi` plugins can limit that. Set `concurrency` in
+`harness-radian`, `harness-pi` and `harness-claude` plugins can limit that. Set `concurrency` in
 the plugin's `settings`:
 
 ```json
@@ -424,6 +424,7 @@ The limit is on a key, and the plugin builds it from the step's `args`:
 | Plugin | Key | Where the model comes from |
 |---|---|---|
 | `harness-pi` | `harness-pi:<model>` | the `--model` argument, else the plugin's `model` setting; with neither, the step is not limited |
+| `harness-claude` | `harness-claude:<model>` | the `--model` argument, else the plugin's `model` setting; with neither, the step is not limited |
 | `harness-radian` | `harness-radian:<provider>/<model>` | the `--provider` and `--model` arguments only (the model alone when there is no `--provider`); radian has no `model` setting, and a step without `--model` is not limited |
 
 The model is read from the step's own `args`, in either `--model value` or
@@ -480,7 +481,7 @@ A step ends with one of these results:
 The end results apply to plugins of the `harness` kind: they run an agent, and
 a flow reads any agent the same way. `operad plugin check` refuses a harness
 step that declares another name and names it. The agent steps of
-`harness-radian` and `harness-pi` declare `done`, `failed` and `interrupted`.
+`harness-radian`, `harness-pi` and `harness-claude` declare `done`, `failed` and `interrupted`.
 Plugins of other kinds name their own results. `shell` is a `stage`, not a
 harness: its steps run a command or a check and give a verdict, so they end in
 `pass` and `fail` (and `ready` or `waiting` for a check), and the end results
