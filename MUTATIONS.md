@@ -686,3 +686,13 @@
 |---|---|---|---|
 | TK0014-M1 | packages/harness-process/src/process.ts | ignored the `toolEvent` classifier, so no line counted as a tool call | `a pi tool call pauses the stall timer until its end line` |
 | TK0014-M2 | packages/harness-radian/src/index.ts | mapped radian's `ToolExecutionStarted` to `"tool-end"` | `harness-radian/agent > an open tool call pauses the stall timer until it settles` |
+
+## TK0016 — harness-pi agent step
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0016-M1 | packages/harness-pi/src/index.ts | `piToolEvent` returned `undefined` for `tool_execution_start`, so no tool call opened | `harness-pi/agent > silence with an open tool call is not a stall` |
+| TK0016-M2 | packages/harness-pi/src/index.ts | a missing Result line after a signal was `failed` instead of `interrupted` | `harness-pi/agent > a worker killed with SIGKILL ends interrupted and leaves the test alive` |
+| TK0016-M3 | packages/harness-pi/src/index.ts | `resumeSession` was left out of the worker's stdin | `harness-pi/agent > resumeSession is passed through to the worker's stdin` |
+| TK0016-M4 | packages/harness-pi/src/index.ts | a usage-limit error text was never `usage_limit` | `harness-pi/agent > a model_error failure about a usage limit is usage_limit` |
+| TK0016-M5 | packages/harness-pi/src/index.ts | the step stopped declaring `denyCommands` in `enforces` | `harness-pi/agent > the step declares the deny fields it enforces and a timeout above its wall time` |
