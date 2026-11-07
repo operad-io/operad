@@ -13,16 +13,12 @@
     "wallTimeSecs": 7200
   },
   "reviewer": {
-    "use": "harness-radian/agent",
+    "use": "harness-pi/agent",
     "args": [
-      "--provider",
-      "chatgpt",
       "--model",
-      "gpt-5.6-terra",
+      "openai-codex/gpt-5.6-terra",
       "--thinking",
-      "medium",
-      "--approval",
-      "auto"
+      "medium"
     ],
     "fixLevel": "major",
     "timeoutSecs": 3600,
