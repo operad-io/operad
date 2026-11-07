@@ -17,7 +17,7 @@ import {
   EVENT_NOTE_TEMPLATE,
   type RadianHarnessSettings,
 } from "../src/index.ts";
-import { runAgent as runProcess } from "../src/process.ts";
+import { runAgent as runProcess } from "@operad-io/harness-process";
 import {
   cleanupTempRoots,
   fakeRadian,

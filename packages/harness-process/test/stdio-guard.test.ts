@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = join(import.meta.dir, "..", "..", "..");
-const SELF = join("packages", "harness-radian", "test", "stdio-guard.test.ts");
+const SELF = join("packages", "harness-process", "test", "stdio-guard.test.ts");
 
 const EXPLANATION = [
   "Bun closes every extra pipe (stdio index 3 and up) of a child process twice:",
@@ -11,7 +11,7 @@ const EXPLANATION = [
   "between, a SQLite database can take the descriptor number, and macOS kills",
   "the process with EXC_GUARD (exit 137). Use at most three stdio entries and",
   "do not read stdio[3] or higher; send extra output to a file instead.",
-  "See commit bf3a73e and packages/harness-radian/test/descriptor-owner.test.ts.",
+  "See commit bf3a73e and packages/harness-process/test/descriptor-owner.test.ts.",
 ].join("\n");
 
 export interface Violation {

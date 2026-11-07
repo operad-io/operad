@@ -675,3 +675,10 @@
 | TK0015-M4 | packages/harness-pi/src/worker.ts | cancelled run returned exit code 0 instead of 143 | `SIGTERM during a slow fake stream writes a cancelled Result and exits 143` |
 | TK0015-M5 | packages/harness-pi/src/worker.ts | resource loader discovery on, `agentDir` set to `$HOME/.pi/agent` | `nothing under the fake HOME .pi is read or created` |
 | TK0015-M6 | packages/harness-pi/src/worker.ts | `resumeSession` ignored (always a new session) | `resume: the second run sees the first answer in the context the fake model receives` |
+
+## TK0014 — the shared harness process helper
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0014-M1 | packages/harness-process/src/process.ts | ignored the `toolEvent` classifier, so no line counted as a tool call | `a pi tool call pauses the stall timer until its end line` |
+| TK0014-M2 | packages/harness-radian/src/index.ts | mapped radian's `ToolExecutionStarted` to `"tool-end"` | `harness-radian/agent > an open tool call pauses the stall timer until it settles` |

@@ -16,7 +16,7 @@ import {
   type StepContext,
   type TriggerView,
 } from "@operad-io/engine";
-import { JsonlLog } from "./jsonl-log.ts";
+import { JsonlLog } from "@operad-io/harness-process";
 import {
   findCommand,
   MAX_LINE_CHARS,
@@ -24,7 +24,8 @@ import {
   systemClock,
   type AgentRunOutcome,
   type Clock,
-} from "./process.ts";
+  type ToolEvent,
+} from "@operad-io/harness-process";
 
 /** How long an agent may run before the step stops it. */
 export const DEFAULT_WALL_TIME_SECS = 300;
@@ -53,6 +54,24 @@ export function eventNote(trigger: TriggerView | undefined): string | undefined 
   if (trigger.data !== undefined) files.push(`data: ${trigger.data}`);
   if (files.length === 0) return undefined;
   return EVENT_NOTE_TEMPLATE.replace("{files}", files.join(", "));
+}
+
+/**
+ * Reads one radian JSONL line and reports the tool call it starts or settles.
+ * Radian writes the event under `event` and a type under `type`.
+ */
+export function radianToolEvent(line: string): ToolEvent | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(value)) return undefined;
+  const event = typeof value.event === "string" ? value.event : value.type;
+  if (event === "ToolExecutionStarted") return "tool-start";
+  if (event === "ToolExecutionSettled") return "tool-end";
+  return undefined;
 }
 
 /** Settings for one radian harness plugin. A test injects a clock. */
@@ -438,6 +457,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             stallMs: stallSecs * 1000,
             signal: ctx.signal,
             clock: defaults.clock,
+            toolEvent: radianToolEvent,
             onLine(line) {
               const writing = jsonl.push(line);
               const parsed = parseResult(line);
