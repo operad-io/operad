@@ -128,13 +128,20 @@ type Answer = NonNullable<Parameters<ActionTypeDefinition["run"]>[0]["answer"]>;
  * gives the claim back.
  */
 async function claimAndAnswer(
-  ctx: { readonly store: Parameters<typeof getTask>[0]; readonly object: { readonly id: string }; readonly answer?: Answer | undefined },
+  ctx: {
+    readonly store: Parameters<typeof getTask>[0];
+    readonly object: { readonly id: string; readonly version?: number | undefined };
+    readonly answer?: Answer | undefined;
+  },
   action: string,
   choice: string,
   change: (latest: TaskData) => TaskData,
   note?: string,
 ): Promise<void> {
   const object = await waitingTask(ctx.store, ctx.object.id);
+  // Claim at the version the action was offered on, not one read here: an
+  // action that starts after a competing one wrote must still lose.
+  const seen = ctx.object.version ?? object.version;
   if (ctx.answer === undefined) {
     throw new DevError(
       "wait",
@@ -144,7 +151,7 @@ async function claimAndAnswer(
   const { claimed, before } = await claimWaitingTask(
     ctx.store,
     ctx.object.id,
-    object.version,
+    seen,
     action,
     change,
   );

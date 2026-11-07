@@ -5,3 +5,6 @@ harness (radian, Claude Code, Codex, pi, …) through verified flows, with
 channels to reach a human and plugins an agent can write on the spot.
 
 In development. The direction and the open questions are in `docs/backlog/`.
+
+The commands and `config.json` keys are in `docs/manual.md`; a complete
+workflow is in `docs/dogfood.md`.

@@ -40,6 +40,7 @@ describe("operad config", () => {
     expect(config).toEqual({
       plugins: defaultConfig(home).plugins,
       store: { backend: "jsonl", path: join(home, "store") },
+      http: { enabled: false, port: 7480, listen: ["127.0.0.1"] },
     });
     expect(storeRootOf(config)).toBe(join(home, "store"));
   });
@@ -107,12 +108,55 @@ describe("operad config", () => {
     await expect(readConfig(home)).rejects.toThrow(/plugins: must be an object/);
   });
 
-  test("ships a JSON Schema with the store keys", async () => {
+  test("ships a JSON Schema with the store and http keys", async () => {
     const path = new URL("../config.schema.json", import.meta.url);
     const schema = JSON.parse(await readFile(path, "utf8")) as {
       properties?: Record<string, unknown>;
     };
     expect(schema.properties?.plugins).toBeDefined();
     expect(schema.properties?.store).toBeDefined();
+    expect(schema.properties?.http).toBeDefined();
+  });
+
+  test("reads http options and applies their defaults", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    await ensureConfig(home);
+    await Bun.write(
+      join(home, "config.json"),
+      JSON.stringify({
+        http: { enabled: true, port: 9000, listen: ["127.0.0.1", "100.64.0.2"] },
+      }),
+    );
+    const config = await readConfig(home);
+    expect(config.http).toEqual({
+      enabled: true,
+      port: 9000,
+      listen: ["127.0.0.1", "100.64.0.2"],
+    });
+
+    await Bun.write(join(home, "config.json"), JSON.stringify({ http: {} }));
+    expect((await readConfig(home)).http).toEqual({
+      enabled: false,
+      port: 7480,
+      listen: ["127.0.0.1"],
+    });
+  });
+
+  test("rejects a malformed http section", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    await ensureConfig(home);
+    await Bun.write(
+      join(home, "config.json"),
+      JSON.stringify({ http: { port: -1 } }),
+    );
+    await expect(readConfig(home)).rejects.toThrow(/http.port/);
+
+    await Bun.write(
+      join(home, "config.json"),
+      JSON.stringify({ http: { listen: "127.0.0.1" } }),
+    );
+    await expect(readConfig(home)).rejects.toThrow(/http.listen/);
   });
 });

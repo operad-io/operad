@@ -102,6 +102,7 @@ export type ViewErrorKind =
   | "section"
   | "timeout"
   | "action"
+  | "not-available"
   | "unavailable"
   | "note"
   | "confirm"
@@ -139,6 +140,8 @@ export interface ActOptions {
   /** `args` for the note property, kept as `--note` convenience. */
   readonly note?: string | undefined;
   readonly yes?: boolean | undefined;
+  /** Where the person asked: the command line or the HTTP interface. */
+  readonly surface?: "cli" | "http" | undefined;
   /** Who asked; the CLI passes `{ via: "cli", id: <user> }`. */
   readonly actor: Actor;
 }
@@ -607,9 +610,19 @@ export class Views {
   /** Runs one action by `<plugin>:<action>`, honouring note and confirm. */
   async act(
     name: string,
-    id: string,
+    id: string | undefined,
     options: ActOptions,
   ): Promise<ViewActionRun> {
+    // An action that targets no object names no id. The kernel has no such
+    // action today, but the HTTP body allows it, so the views say why it
+    // cannot run instead of refusing the request before looking it up.
+    if (id === undefined) {
+      const info = this.resolveActionInfo(name);
+      throw new ViewError(
+        "not-found",
+        `action "${info.name}" targets ${info.on} objects; pass the object id`,
+      );
+    }
     const resolved = await this.resolve(id);
     const object = resolved.object;
     if (object === undefined) {
@@ -628,12 +641,12 @@ export class Views {
         `plugin "${target.plugin}": action "${target.action.name}": when failed: ${messageOf(error)}`,
       );
       throw new ViewError(
-        "action",
+        "not-available",
         `action "${target.info.name}" is not available now`,
       );
     }
     if (holds !== true) {
-      throw new ViewError("action", this.refusal(target, object));
+      throw new ViewError("not-available", this.refusal(target, object));
     }
 
     const args: Record<string, unknown> = { ...(options.args ?? {}) };
@@ -672,9 +685,13 @@ export class Views {
     }
 
     if (target.action.confirm === true && options.yes !== true) {
+      const hint =
+        options.surface === "http"
+          ? 'send "confirmed": true in the request body'
+          : "pass --yes";
       throw new ViewError(
         "confirm",
-        `action "${target.info.name}" needs confirmation; pass --yes`,
+        `action "${target.info.name}" needs confirmation; ${hint}`,
       );
     }
 
@@ -725,6 +742,32 @@ export class Views {
       markdown: `${body}${suffix}`,
       ...(next === undefined ? {} : { next }),
     };
+  }
+
+  private resolveActionInfo(name: string): ActionInfo {
+    const target = splitActionName(name);
+    const candidates = this.registry.actions().filter((info) =>
+      target === undefined
+        ? info.action === name
+        : info.plugin === target.plugin && info.action === target.action,
+    );
+    if (candidates.length === 0) {
+      throw new ViewError(
+        "action",
+        `no loaded plugin declares action "${name}"`,
+      );
+    }
+    if (candidates.length > 1) {
+      throw new ViewError(
+        "ambiguous",
+        `action "${name}" is offered by ${candidates.map((info) => `"${info.name}"`).join(", ")}; use "<plugin>:<action>"`,
+      );
+    }
+    const only = candidates[0];
+    if (only === undefined) {
+      throw new ViewError("action", `no loaded plugin declares action "${name}"`);
+    }
+    return only;
   }
 
   private resolveAction(

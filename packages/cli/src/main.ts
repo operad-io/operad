@@ -38,10 +38,12 @@ import {
   readStoredStart,
   readStoredTrigger,
   recordAnswer,
+  rotateHttpToken,
   serve,
   serveLockPath,
   setPluginEnabled,
   splitActionName,
+  startHttpServer,
   storeRootOf,
   ENGINE_VERSION,
   type ActionArgsSchema,
@@ -50,6 +52,7 @@ import {
   type Actor,
   type LogBackend,
   type GlobalFact,
+  type HttpServerHandle,
   type OperadConfig,
   type RunInfo,
   type TriggerEvent,
@@ -106,6 +109,7 @@ const KERNEL_VERBS = [
   "show",
   "plugin",
   "secret",
+  "http",
   "run-internal",
 ] as const;
 
@@ -129,6 +133,7 @@ const HELP = [
   "  secret set <plugin> <name>   store a secret (value from the terminal or stdin)",
   "  secret list <plugin>         secret names, never values",
   "  secret delete <plugin> <name>",
+  "  http token rotate    replace the token the operad app uses",
   "  trigger <source> <key> [--type t] [--object o] [--summary text] [--data file]",
   "                       send one event through the rules",
   "  trigger rules        the rules in force, with where each came from",
@@ -1369,11 +1374,24 @@ async function commandServe(
     );
   }
   const kernel = kernelFor(context, io, rules);
-  if (sourcesAllowed) {
-    await kernel.startSources();
-  }
-
+  let http: HttpServerHandle | undefined;
   try {
+    if (context.config.http.enabled) {
+      http = await startHttpServer({
+        home: context.home,
+        config: context.config.http,
+        views: context.views,
+        log: context.log,
+        registry: context.registry,
+        kernel,
+        onListen: (url) => io.write(`http ${url}\n`),
+        onLog: (message) => io.error(`${message}\n`),
+      });
+    }
+    if (sourcesAllowed) {
+      await kernel.startSources();
+    }
+
     io.write(`serving ${context.home}\n`);
     await serve({
       home: context.home,
@@ -1387,6 +1405,7 @@ async function commandServe(
       clock: () => Date.now(),
     });
   } finally {
+    if (http !== undefined) await http.stop();
     await kernel.stopSources();
     process.removeListener("SIGINT", stop);
     process.removeListener("SIGTERM", stop);
@@ -1669,6 +1688,19 @@ async function commandSecret(
   throw new UsageError("secret needs set, list or delete");
 }
 
+async function commandHttp(
+  home: string,
+  io: CliIo,
+  argv: readonly string[],
+): Promise<number> {
+  if (argv.length !== 2 || argv[0] !== "token" || argv[1] !== "rotate") {
+    throw new UsageError("http needs `token rotate`");
+  }
+  await rotateHttpToken(home);
+  io.write("http token rotated\n");
+  return 0;
+}
+
 async function commandPlugin(
   context: Context,
   io: CliIo,
@@ -1713,6 +1745,10 @@ export async function main(
 
     if (command === "secret") {
       return await commandSecret(home, io, args.slice(1));
+    }
+
+    if (command === "http") {
+      return await commandHttp(home, io, args.slice(1));
     }
 
     if (command === "plugin") {
@@ -1861,7 +1897,11 @@ export async function main(
         io.error(`operad: ${error.message}\n`);
         return 2;
       }
-      if (error.kind === "action" || error.kind === "unavailable") {
+      if (
+        error.kind === "action" ||
+        error.kind === "not-available" ||
+        error.kind === "unavailable"
+      ) {
         io.error(`operad: ${error.message}\n`);
         return 3;
       }
