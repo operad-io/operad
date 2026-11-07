@@ -3,7 +3,7 @@
 - 状态：decided（方向；各项设计见五个子项）
 - 涉及 ADR：0032、0043、0048、0049、0024、0045、0034
 - 来源：`research/2026-11-04-agent-autoloop.md`；`research/2026-11-05-noop.md`；`research/2026-10-20-arc-competitors.md`
-- 子项：`operad-engine.md`、`operad-plugins.md`、`operad-harness.md`、`operad-channels.md`、`operad-contract.md`、`operad-presentation.md`、`operad-conversation.md`、`operad-sandbox.md`、`operad-assistant.md`；`hub-event-inlet.md` 归入 `operad-channels.md`
+- 子项：`operad-engine.md`、`operad-plugins.md`、`operad-harness.md`、`operad-channels.md`、`operad-contract.md`、`operad-presentation.md`、`operad-conversation.md`、`operad-sandbox.md`、`operad-assistant.md`、`operad-harness-pi.md`；`hub-event-inlet.md` 归入 `operad-channels.md`
 
 ## 背景
 
@@ -39,7 +39,7 @@ arc 今天住在 radian 二进制里（ADR 0032、0043、0048），worker 只有
 
 ## 顺序
 
-`operad-engine` → `operad-plugins` → `operad-harness` → `operad-channels` → `operad-assistant`。前两项是新核心，后三项可以在引擎有第一张 graph 之后并行。dogfood（PL0002）之后按场景走：`operad-conversation`（含 iOS 后端）→ `operad-sandbox` 第一版 → Telegram 通道 → `operad-assistant` 的 `brain` 与 `digest`；`operad-harness` 在对话跑通后接第二种 harness（Claude 走 Agent SDK）。
+`operad-engine` → `operad-plugins` → `operad-harness` → `operad-channels` → `operad-assistant`。前两项是新核心，后三项可以在引擎有第一张 graph 之后并行。dogfood（PL0002）之后按场景走：`operad-conversation`（含 iOS 后端）→ `operad-sandbox` 第一版 → Telegram 通道 → `operad-assistant` 的 `brain` 与 `digest`；`operad-harness` 的第二种 harness 是 pi（`operad-harness-pi.md`），dogfood 之后就接，不等对话；Claude 走 Agent SDK 排在它后面。
 
 ## 待决问题（未定）
 
