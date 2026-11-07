@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionManager, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import { FakeProvider } from "../spike/fake-provider.ts";
+import { FakeProvider } from "./fake-provider.ts";
 import {
   createSpikeModelRuntime,
   createSpikeSession,

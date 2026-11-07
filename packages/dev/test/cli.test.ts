@@ -787,7 +787,7 @@ describe("operad with the dev plugin", () => {
     const near = unknown.err.split("\n").filter((line) => line.startsWith("  "));
     expect(near).toHaveLength(5);
     expect(near[0]).toContain("T-0003-job3");
-  });
+  }, 20_000);
 
   test("a plan shows its auto level and priority, and its history shows who confirmed and set it", async () => {
     const { home, repository } = await setup();

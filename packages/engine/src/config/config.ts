@@ -25,10 +25,43 @@ export interface PluginConfigEntry {
   readonly settings: unknown;
 }
 
+/** The HTTP interface `serve` exposes, if it is enabled. */
+export interface HttpConfig {
+  readonly enabled: boolean;
+  readonly port: number;
+  /** IP literals to listen on; defaults to loopback only. */
+  readonly listen: readonly string[];
+}
+
+/** The HTTP defaults: off, on port 7480, on loopback only. */
+export const DEFAULT_HTTP: HttpConfig = {
+  enabled: false,
+  port: 7480,
+  listen: ["127.0.0.1"],
+};
+
+/** What can start a notification. */
+export type NotifyTrigger = "waiting";
+
+/** The command `serve` runs when something waits for a person. */
+export interface NotifyConfig {
+  /** A shell line, or null for no notifications. */
+  readonly command: string | null;
+  readonly on: readonly NotifyTrigger[];
+}
+
+/** The notify defaults: no command, and the one trigger there is. */
+export const DEFAULT_NOTIFY: NotifyConfig = {
+  command: null,
+  on: ["waiting"],
+};
+
 /** The keys of `$OPERAD_HOME/config.json` the kernel reads. */
 export interface OperadConfig {
   readonly plugins: readonly PluginConfigEntry[];
   readonly store: StoreConfig;
+  readonly http: HttpConfig;
+  readonly notify: NotifyConfig;
 }
 
 /** A config file is not usable; the message names the file and the field. */
@@ -45,6 +78,12 @@ export const DEFAULT_PLUGINS: readonly string[] = [
   "harness-radian",
   "dev",
 ];
+
+/**
+ * Plugins shipped with operad that `operad init` does not install. They are
+ * not in the default config; `plugin enable <name>` adds them.
+ */
+export const OPTIONAL_PLUGINS: readonly string[] = ["harness-pi"];
 
 /** The package name of a plugin shipped with operad. */
 export function defaultPluginModule(name: string): string {
@@ -65,6 +104,8 @@ export function defaultConfig(home: string): OperadConfig {
       settings: {},
     })),
     store: { backend: "jsonl", path: join(home, "store") },
+    http: DEFAULT_HTTP,
+    notify: DEFAULT_NOTIFY,
   };
 }
 
@@ -148,6 +189,76 @@ function readPlugins(value: unknown, file: string): readonly PluginConfigEntry[]
   return entries;
 }
 
+function readHttp(value: unknown, file: string): HttpConfig {
+  if (value === undefined) return DEFAULT_HTTP;
+  if (!isRecord(value)) {
+    throw new ConfigError(`${file}: http: must be an object`);
+  }
+
+  const enabled = value.enabled;
+  if (enabled !== undefined && typeof enabled !== "boolean") {
+    throw new ConfigError(`${file}: http.enabled: must be a boolean`);
+  }
+
+  const port = value.port;
+  if (
+    port !== undefined &&
+    (typeof port !== "number" ||
+      !Number.isInteger(port) ||
+      port < 0 ||
+      port > 65_535)
+  ) {
+    throw new ConfigError(`${file}: http.port: must be an integer from 0 to 65535`);
+  }
+
+  const listen = value.listen;
+  if (listen !== undefined) {
+    if (
+      !Array.isArray(listen) ||
+      !listen.every(
+        (entry): entry is string =>
+          typeof entry === "string" && entry.trim().length > 0,
+      )
+    ) {
+      throw new ConfigError(`${file}: http.listen: must be an array of IP addresses`);
+    }
+  }
+
+  return {
+    enabled: enabled === true,
+    port: port === undefined ? DEFAULT_HTTP.port : port,
+    listen: listen === undefined ? DEFAULT_HTTP.listen : listen,
+  };
+}
+
+function readNotify(value: unknown, file: string): NotifyConfig {
+  if (value === undefined) return DEFAULT_NOTIFY;
+  if (!isRecord(value)) {
+    throw new ConfigError(`${file}: notify: must be an object`);
+  }
+  const command = value.command;
+  if (
+    command !== undefined &&
+    command !== null &&
+    (typeof command !== "string" || command.trim().length === 0)
+  ) {
+    throw new ConfigError(
+      `${file}: notify.command: must be a non-empty string or null`,
+    );
+  }
+  const on = value.on;
+  if (
+    on !== undefined &&
+    (!Array.isArray(on) || !on.every((entry) => entry === "waiting"))
+  ) {
+    throw new ConfigError(`${file}: notify.on: must be an array of "waiting"`);
+  }
+  return {
+    command: command ?? null,
+    on: on === undefined ? DEFAULT_NOTIFY.on : [...new Set(on as NotifyTrigger[])],
+  };
+}
+
 function readStore(value: unknown, file: string, home: string): StoreConfig {
   if (value === undefined) return defaultConfig(home).store;
   if (!isRecord(value)) {
@@ -221,6 +332,8 @@ export async function readConfig(
       backend: store.backend,
       path: configured.startsWith("/") ? configured : resolve(home, configured),
     },
+    http: readHttp(raw.http, file),
+    notify: readNotify(raw.notify, file),
   };
 }
 
@@ -241,7 +354,18 @@ export function configJson(config: OperadConfig): Record<string, unknown> {
         : {}),
     };
   }
-  return { plugins, store: config.store };
+  return {
+    plugins,
+    store: config.store,
+    http: {
+      enabled: config.http.enabled,
+      port: config.http.port,
+      listen: [...config.http.listen],
+    },
+    ...(config.notify.command === null
+      ? {}
+      : { notify: { command: config.notify.command, on: [...config.notify.on] } }),
+  };
 }
 
 /** Writes a config file, replacing it atomically enough for one command. */
@@ -348,9 +472,11 @@ export async function setPluginEnabled(
   }
   const entry = plugins[name];
   if (entry === undefined) {
-    throw new ConfigError(`${file}: plugins.${name}: no such plugin`);
-  }
-  if (typeof entry === "string") {
+    if (!enabled || !OPTIONAL_PLUGINS.includes(name)) {
+      throw new ConfigError(`${file}: plugins.${name}: no such plugin`);
+    }
+    plugins[name] = { module: defaultPluginModule(name), enabled: true };
+  } else if (typeof entry === "string") {
     plugins[name] = { module: entry, enabled };
   } else if (isRecord(entry)) {
     entry.enabled = enabled;

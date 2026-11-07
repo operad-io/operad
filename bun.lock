@@ -6,6 +6,7 @@
       "name": "operad-workspace",
       "dependencies": {
         "@operad-io/engine": "workspace:*",
+        "@operad-io/harness-pi": "workspace:*",
         "@operad-io/harness-radian": "workspace:*",
         "@operad-io/source-cron": "workspace:*",
       },
@@ -16,6 +17,10 @@
         "typescript": "5.9.3",
       },
     },
+    "packages/access-match": {
+      "name": "@operad-io/access-match",
+      "version": "0.0.0",
+    },
     "packages/cli": {
       "name": "@operad-io/cli",
       "version": "0.0.1",
@@ -25,6 +30,7 @@
       "dependencies": {
         "@operad-io/dev": "workspace:*",
         "@operad-io/engine": "workspace:*",
+        "@operad-io/harness-pi": "workspace:*",
         "@operad-io/harness-radian": "workspace:*",
         "@operad-io/shell": "workspace:*",
       },
@@ -48,6 +54,16 @@
       "version": "0.0.0",
       "dependencies": {
         "@earendil-works/pi-coding-agent": "1.5.0",
+        "@operad-io/access-match": "workspace:*",
+        "@operad-io/engine": "workspace:*",
+        "@operad-io/harness-process": "workspace:*",
+      },
+    },
+    "packages/harness-process": {
+      "name": "@operad-io/harness-process",
+      "version": "0.0.0",
+      "dependencies": {
+        "@operad-io/engine": "workspace:*",
       },
     },
     "packages/harness-radian": {
@@ -55,6 +71,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@operad-io/engine": "workspace:*",
+        "@operad-io/harness-process": "workspace:*",
       },
     },
     "packages/shell": {
@@ -135,6 +152,8 @@
 
     "@isaacs/nonrecursive-glob-match": ["@isaacs/nonrecursive-glob-match@1.1.0", "", {}, "sha512-GPm/Dbvk5RLmhRnxXIa7nTpK0xtl4E0wj0MslsuNiJ1FIROU+2+9lgUC/dgF7Ey4QCWhfEsgxilMRMCdHPfDfw=="],
 
+    "@operad-io/access-match": ["@operad-io/access-match@workspace:packages/access-match"],
+
     "@operad-io/cli": ["@operad-io/cli@workspace:packages/cli"],
 
     "@operad-io/dev": ["@operad-io/dev@workspace:packages/dev"],
@@ -142,6 +161,8 @@
     "@operad-io/engine": ["@operad-io/engine@workspace:packages/engine"],
 
     "@operad-io/harness-pi": ["@operad-io/harness-pi@workspace:packages/harness-pi"],
+
+    "@operad-io/harness-process": ["@operad-io/harness-process@workspace:packages/harness-process"],
 
     "@operad-io/harness-radian": ["@operad-io/harness-radian@workspace:packages/harness-radian"],
 
