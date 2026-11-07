@@ -18,7 +18,29 @@ const recordPath = process.env["FAKE_PI_RECORD"];
 const marker = process.env["FAKE_PI_MARKER"];
 const release = process.env["FAKE_PI_RELEASE"];
 
-const input = JSON.parse(await Bun.stdin.text()) as { cwd: string };
+const reader = Bun.stdin.stream().getReader();
+let buffered = "";
+const decoder = new TextDecoder();
+/** The next stdin line; stdin stays open so the host can answer later. */
+async function stdinLine(): Promise<string> {
+  for (;;) {
+    const newline = buffered.indexOf("\n");
+    if (newline !== -1) {
+      const found = buffered.slice(0, newline);
+      buffered = buffered.slice(newline + 1);
+      return found;
+    }
+    const chunk = await reader.read();
+    if (chunk.done) {
+      const rest = buffered;
+      buffered = "";
+      return rest;
+    }
+    buffered += decoder.decode(chunk.value, { stream: true });
+  }
+}
+
+const input = JSON.parse(await stdinLine()) as { cwd: string };
 if (recordPath !== undefined) writeFileSync(recordPath, JSON.stringify(input));
 
 function line(value: unknown): void {
@@ -69,6 +91,16 @@ switch (mode) {
     line(result());
     process.exit(0);
     break;
+  case "grant": {
+    // Asks to use up a one-time permission, as the real program does before a
+    // call the profile refuses, and records the host's answer.
+    line({ type: "grant_use", id: 1, waitId: "w1" });
+    const ack = await stdinLine();
+    if (recordPath !== undefined) writeFileSync(`${recordPath}.ack`, ack);
+    line(result());
+    process.exit(0);
+    break;
+  }
   case "incomplete":
     line(result({ cost: { micros: 900, incomplete: true } }));
     process.exit(0);

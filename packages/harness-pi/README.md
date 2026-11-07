@@ -182,6 +182,22 @@ other text is `protocol`. `status` is that number when the text has one, else
 `null`; `retry_after_secs` is `null` because pi does not report it. `dev`'s
 review and work waits read `kind` and so treat both harnesses alike.
 
+### Asking and resuming
+
+The step is `resumable: true`. When the flow returns to it after a question was
+answered, its params carry `resumeSession` and `askAnswer`; the step passes
+`resumeSession` to the worker and adds `You asked: <prompt>. The answer is:
+<answer>. Continue.` to the prompt.
+
+A one-time permission arrives in the profile as `grants: [{ waitId, kind,
+value }]`. When it is present the step keeps the worker's stdin open after the
+input line. A `tool_call` the profile refuses and that equals a grant exactly
+(`bash` command text, or a path tool's path) makes the worker write
+`{"type":"grant_use","id":n,"waitId":"..."}` to stdout and wait for one stdin line
+`{"type":"grant_ack","id":n,"used":true|false}`. The host records `grant_used`
+before it answers `used: true`; only then does the call run. A second identical
+call finds the grant used and is checked against the profile as usual.
+
 ### Access profile
 
 The step declares `enforces: ["denyPaths", "denyCommands"]` and passes the run's

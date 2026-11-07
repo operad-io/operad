@@ -211,6 +211,14 @@ export function historyEntry(fact: HistoryFact): HistoryEntry {
         why: "",
       };
 
+    case "grant_used":
+      return {
+        time,
+        step,
+        what: "let one call through that you approved",
+        why: text(payload.value) ?? "",
+      };
+
     case "ask_refused":
       return {
         time,

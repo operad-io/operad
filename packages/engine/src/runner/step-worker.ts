@@ -60,6 +60,14 @@ interface LimitAck {
   readonly error?: string;
 }
 
+interface GrantAck {
+  readonly kind: "grant-result";
+  readonly id: number;
+  readonly ok: boolean;
+  readonly used?: boolean | undefined;
+  readonly error?: string | undefined;
+}
+
 interface AskAck {
   readonly kind: "ask-result";
   readonly id: number;
@@ -140,7 +148,23 @@ async function main(request: StepWorkerRequest): Promise<void> {
   let nextAskId = 1;
 
   /** Asks the run's process, which owns the log, to put a question to a person. */
+  const pendingGrants = new Map<
+    number,
+    { resolve: (used: boolean) => void; reject: (error: Error) => void }
+  >();
+  let nextGrantId = 1;
+
   const asker: StepAsker = {
+    useGrant: (waitId) => {
+      const port = parentPort;
+      if (port === null) return Promise.reject(new Error("no one takes grants"));
+      const id = nextGrantId;
+      nextGrantId += 1;
+      return new Promise<boolean>((resolve, reject) => {
+        pendingGrants.set(id, { resolve, reject });
+        port.postMessage({ kind: "grant", id, waitId });
+      });
+    },
     ask: (question, signal) => {
       const port = parentPort;
       if (port === null) return Promise.reject(new Error("no one takes questions"));
@@ -178,6 +202,15 @@ async function main(request: StepWorkerRequest): Promise<void> {
 
   parentPort?.on("message", (message: unknown) => {
     if (typeof message !== "object" || message === null) return;
+    if ((message as { kind?: unknown }).kind === "grant-result") {
+      const ack = message as GrantAck;
+      const pending = pendingGrants.get(ack.id);
+      if (pending === undefined) return;
+      pendingGrants.delete(ack.id);
+      if (ack.ok) pending.resolve(ack.used === true);
+      else pending.reject(new Error(ack.error ?? "the permission was refused"));
+      return;
+    }
     if ((message as { kind?: unknown }).kind === "ask-result") {
       const ack = message as AskAck;
       const pending = pendingAsks.get(ack.id);

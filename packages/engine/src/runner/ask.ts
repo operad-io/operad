@@ -18,7 +18,8 @@ import type {
   StepAsker,
 } from "../plugin/types.ts";
 import { StateError } from "./errors.ts";
-import type { KernelState } from "../kernel/types.ts";
+import type { Grant, KernelState } from "../kernel/types.ts";
+import { useGrant } from "./grants.ts";
 
 /** How often a waiting step looks again when no change was announced. */
 const RECHECK_MS = 1000;
@@ -361,10 +362,17 @@ export class AskHost {
    * The asker of one effect. Questions are numbered in the order the step asks
    * them, so a step that runs again after a crash gets the same ids.
    */
-  asker(runId: string, effectId: string, step: string | null): StepAsker {
+  asker(
+    runId: string,
+    effectId: string,
+    step: string | null,
+    grants: readonly Grant[] = [],
+  ): StepAsker {
     let count = 0;
     let asking = false;
     return {
+      useGrant: (waitId) =>
+        useGrant(this.log, runId, step ?? "", grants, waitId),
       ask: async (request, signal) => {
         // One question at a time: a second would hide the first from the person.
         if (asking) {

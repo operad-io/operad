@@ -482,6 +482,7 @@ describe("ctx.ask", () => {
     const env = await setup("memory");
     try {
       const asker = {
+        useGrant: async () => false,
         ask: async () => {
           throw new Error("the question must not be asked");
         },
@@ -492,6 +493,7 @@ describe("ctx.ask", () => {
       );
       // With reject_once the step needs no waiting result.
       const taken = {
+        useGrant: async () => false,
         ask: async () => ({
           kind: "timeout" as const,
           waitId: "w",
@@ -514,6 +516,7 @@ describe("ctx.ask", () => {
     const env = await setup("memory");
     try {
       const asker = {
+        useGrant: async () => false,
         ask: async () => {
           throw new Error("the question must not be asked");
         },

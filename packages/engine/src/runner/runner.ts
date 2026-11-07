@@ -19,6 +19,7 @@ import { KILL_GRACE_MS, systemClock, type Clock } from "../platform/index.ts";
 import { acquireLock, runLockPath, type LockHandle } from "./lock.ts";
 import { AskHost, type AskTimer } from "./ask.ts";
 import { StepLimits } from "./limits.ts";
+import { accessWith, usedGrants } from "./grants.ts";
 import { appendInput, applyInput, parseObjectKey, readState } from "./service.ts";
 
 /** The wall time a plugin step may take before the run records a failure. */
@@ -63,13 +64,17 @@ type StepWorkerLimit =
 /** A step in the worker asks a person, or stops asking. */
 type StepWorkerAsk =
   | { readonly kind: "ask"; readonly id: number; readonly request: AskRequest }
-  | { readonly kind: "ask-cancel"; readonly id: number };
+  | { readonly kind: "ask-cancel"; readonly id: number }
+  | { readonly kind: "grant"; readonly id: number; readonly waitId: string };
 
 function isStepWorkerAsk(value: unknown): value is StepWorkerAsk {
   if (typeof value !== "object" || value === null) return false;
   if (typeof (value as { id?: unknown }).id !== "number") return false;
   const kind = (value as { kind?: unknown }).kind;
   if (kind === "ask-cancel") return true;
+  if (kind === "grant") {
+    return typeof (value as { waitId?: unknown }).waitId === "string";
+  }
   if (kind !== "ask") return false;
   const request = (value as { request?: unknown }).request;
   return (
@@ -463,9 +468,13 @@ export class Runner {
         effect.params,
         false,
         state.params,
-        state.access,
+        accessWith(
+          state.access,
+          effect.grants,
+          await usedGrants(this.log, this.runId),
+        ),
         this.limits().limiterFor(this.runId, effect.id, effect.step, nestedBase),
-        this.asks().asker(this.runId, effect.id, effect.step),
+        this.asks().asker(this.runId, effect.id, effect.step, effect.grants ?? []),
       );
     }
     // The limit's own facts moved the run's last sequence on.
@@ -880,6 +889,25 @@ export class Runner {
   ): Promise<void> {
     if (message.kind === "ask-cancel") {
       questions.get(message.id)?.abort();
+      return;
+    }
+    if (message.kind === "grant") {
+      try {
+        if (asker === undefined) throw new Error("no one takes grants here");
+        const used = await asker.useGrant(message.waitId);
+        worker.postMessage({ kind: "grant-result", id: message.id, ok: true, used });
+      } catch (error) {
+        try {
+          worker.postMessage({
+            kind: "grant-result",
+            id: message.id,
+            ok: false,
+            error: messageOf(error),
+          });
+        } catch {
+          // The worker is gone.
+        }
+      }
       return;
     }
     const reply = (body: Record<string, unknown>): void => {

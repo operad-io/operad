@@ -19,6 +19,7 @@ export type FactKind =
   | "ask_answered"
   | "ask_timed_out"
   | "ask_refused"
+  | "grant_used"
   | "run_ended"
   | "step_interrupted"
   | "crash_loop_stopped"
@@ -149,6 +150,37 @@ export type RunStatus = "idle" | "running" | "waiting" | "waiting_person" | "end
 
 export type EffectStatus = "outstanding" | "done" | "abandoned";
 
+/**
+ * A one-time permission an answer to a question gives: the exact command or
+ * path the question was about. It lives in the effect that continues the step,
+ * never in the run's own access profile.
+ */
+export interface Grant {
+  readonly waitId: string;
+  readonly kind: "command" | "path";
+  readonly value: string;
+  /** The tool the person approved; a path grant covers that tool only. */
+  readonly tool?: string;
+}
+
+/** A question that was answered, waiting for the step that asked to run again. */
+export interface AnsweredAskState {
+  readonly waitId: string;
+  readonly step: string;
+  readonly prompt: string;
+  readonly resume: JsonValue;
+  readonly choice: string;
+  readonly note: string | null;
+}
+
+/** What a flow wait took over from a step that asked and ran out of grace. */
+export interface AskedWait {
+  /** The step that asked; the answer sends the run back to it. */
+  readonly step: string;
+  /** What the step left to carry on with: a session and the call asked about. */
+  readonly resume: JsonValue;
+}
+
 export interface PendingEffect {
   readonly id: string;
   readonly kind: PendingEffectKind;
@@ -158,6 +190,8 @@ export interface PendingEffect {
   readonly check: string | null;
   readonly due: number | null;
   readonly replay: Replay;
+  /** Permissions for this run of the step only, from an answered question. */
+  readonly grants?: readonly Grant[] | undefined;
 }
 
 export interface PendingWait {
@@ -167,6 +201,7 @@ export interface PendingWait {
   readonly choices: readonly string[];
   readonly kind: WaitKind;
   readonly effectId: string | null;
+  readonly ask?: AskedWait | undefined;
 }
 
 export interface StepResultValue {
@@ -197,6 +232,8 @@ export interface KernelState {
   readonly effects: Readonly<Record<string, EffectStatus>>;
   readonly results: Readonly<Record<string, StepResultValue>>;
   readonly answeredWaits: Readonly<Record<string, true>>;
+  /** The answer to a question, kept until the step that asked runs again. */
+  readonly answeredAsk: AnsweredAskState | null;
   readonly lastSeq: number;
 }
 
@@ -255,6 +292,7 @@ export interface EffectRequestedPayload {
   readonly params: JsonValue;
   readonly check: string | null;
   readonly due: number | null;
+  readonly grants?: readonly Grant[];
 }
 
 export interface StepResultPayload {
@@ -277,6 +315,7 @@ export interface WaitingForPersonPayload {
   readonly choices: string[];
   readonly waitKind: WaitKind;
   readonly effectId: string | null;
+  readonly ask?: AskedWait;
 }
 
 export interface PersonAnsweredPayload {
@@ -286,6 +325,12 @@ export interface PersonAnsweredPayload {
   readonly note: string | null;
   readonly waitKind: WaitKind;
   readonly actor: Actor | null;
+  /** Set when the wait took over a question a step asked. */
+  readonly ask?: {
+    readonly step: string;
+    readonly prompt: string;
+    readonly resume: JsonValue;
+  };
 }
 
 export interface RunEndedPayload {

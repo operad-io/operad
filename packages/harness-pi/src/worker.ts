@@ -6,7 +6,7 @@
  */
 
 import { existsSync, mkdirSync } from "node:fs";
-import { match, readProfile, type AccessProfile } from "@operad-io/access-match";
+import { findGrant, match, readProfile, type AccessProfile } from "@operad-io/access-match";
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -34,6 +34,11 @@ export interface WorkerIo {
   line(line: WorkerLine): void;
   /** Free text for humans; never parsed. */
   log(text: string): void;
+  /**
+   * Asks the host to use up a one-time permission. True when it did and the
+   * call may run. Absent when the host cannot answer; no grant then applies.
+   */
+  useGrant?(waitId: string): Promise<boolean>;
 }
 
 export interface WorkerHooks {
@@ -154,6 +159,20 @@ export async function runWorker(
       io.log(`tool_call ${event.toolName}`);
       const verdict = match(profile, { tool: event.toolName, input: event.input, cwd: input.cwd });
       if (verdict.allow) return undefined;
+      // A one-time permission covers one exact call that would be refused. The
+      // host writes the fact before it answers, so a crash after it cannot
+      // give the permission twice.
+      const call = { tool: event.toolName, input: event.input, cwd: input.cwd };
+      const grant = findGrant(profile, call);
+      if (grant !== undefined && io.useGrant !== undefined) {
+        let used = false;
+        try {
+          used = await io.useGrant(grant.waitId);
+        } catch {
+          used = false;
+        }
+        if (used) return undefined;
+      }
       io.line({ type: "blocked", toolName: event.toolName, reason: verdict.reason });
       return { block: true, reason: verdict.reason };
     });
@@ -275,6 +294,51 @@ export async function runWorker(
   }
 }
 
+/**
+ * Stdin as lines. The first line (or all of stdin when it has no newline) is the
+ * input; later lines are the host's answers.
+ */
+class StdinLines {
+  readonly #reader = Bun.stdin.stream().getReader();
+  readonly #decoder = new TextDecoder();
+  #buffer = "";
+  #done = false;
+
+  async #more(): Promise<boolean> {
+    if (this.#done) return false;
+    const chunk = await this.#reader.read();
+    if (chunk.done) {
+      this.#done = true;
+      this.#buffer += this.#decoder.decode();
+      return false;
+    }
+    this.#buffer += this.#decoder.decode(chunk.value, { stream: true });
+    return true;
+  }
+
+  /** The next line, or what is left at the end of stdin; undefined when nothing is. */
+  async next(): Promise<string | undefined> {
+    for (;;) {
+      const newline = this.#buffer.indexOf("\n");
+      if (newline !== -1) {
+        const line = this.#buffer.slice(0, newline);
+        this.#buffer = this.#buffer.slice(newline + 1);
+        if (line.trim().length === 0) continue;
+        return line;
+      }
+      if (!(await this.#more())) {
+        const rest = this.#buffer;
+        this.#buffer = "";
+        return rest.trim().length === 0 ? undefined : rest;
+      }
+    }
+  }
+
+  async first(): Promise<string> {
+    return (await this.next()) ?? "";
+  }
+}
+
 /** The process entry: stdin in, stdout lines out, exit code out. */
 export async function main(hooks: WorkerHooks = {}): Promise<never> {
   const write = (text: string): void => {
@@ -284,9 +348,24 @@ export async function main(hooks: WorkerHooks = {}): Promise<never> {
     new Promise((resolve) => {
       process.stdout.write("", () => resolve());
     });
+  const stdin = new StdinLines();
+  const waiting = new Map<number, (used: boolean) => void>();
+  let nextGrant = 1;
+  let hostGone = false;
   const io: WorkerIo = {
     line: (line) => write(`${JSON.stringify(line)}\n`),
     log: (text) => process.stderr.write(`${text}\n`),
+    useGrant: (waitId) =>
+      new Promise<boolean>((resolve) => {
+        if (hostGone) {
+          resolve(false);
+          return;
+        }
+        const id = nextGrant;
+        nextGrant += 1;
+        waiting.set(id, resolve);
+        write(`${JSON.stringify({ type: "grant_use", id, waitId })}\n`);
+      }),
   };
   // Anything that prints to stdout by accident would corrupt the protocol.
   console.log = (...args: unknown[]): void => {
@@ -298,7 +377,7 @@ export async function main(hooks: WorkerHooks = {}): Promise<never> {
 
   let code: number;
   try {
-    const text = await Bun.stdin.text();
+    const text = await stdin.first();
     let decoded: unknown;
     let parsedOk = true;
     try {
@@ -311,6 +390,30 @@ export async function main(hooks: WorkerHooks = {}): Promise<never> {
       io.line(failure("invalid_input", parsed.message));
       code = EXIT_INVALID_INPUT;
     } else {
+      // Later stdin lines answer `grant_use` lines.
+      void (async () => {
+        for (;;) {
+          const line = await stdin.next();
+          if (line === undefined) break;
+          try {
+            const ack: unknown = JSON.parse(line);
+            if (typeof ack === "object" && ack !== null && Reflect.get(ack, "type") === "grant_ack") {
+              const id: unknown = Reflect.get(ack, "id");
+              const used: unknown = Reflect.get(ack, "used");
+              if (typeof id === "number") {
+                waiting.get(id)?.(used === true);
+                waiting.delete(id);
+              }
+            }
+          } catch {
+            // Not a line the program understands; it is ignored.
+          }
+        }
+        // The host is gone: nothing more will be granted.
+        hostGone = true;
+        for (const resolve of waiting.values()) resolve(false);
+        waiting.clear();
+      })();
       code = await runWorker(parsed.input, io, controller.signal, hooks);
     }
   } catch (error) {

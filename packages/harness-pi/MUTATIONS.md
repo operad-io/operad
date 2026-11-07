@@ -17,3 +17,5 @@ the row fields.
 | T-0022-M7 | packages/harness-pi/src/index.ts | the usage left the model out (`model: null`) | `harness-pi/agent > the usage names the model setting when the step has no --model` |
 | T-0022-M10 | packages/harness-pi/src/worker.ts | the worker's cost did not say `incomplete` when a message had no price | `a run where one message had no price reports the priced part as incomplete` |
 | T-0022-M11 | packages/harness-pi/src/index.ts | an early failure recorded `model: null` | `harness-pi/agent > a step that fails before it starts still records the model it named` |
+| T-0025-M5 | `packages/harness-pi/src/worker.ts` | a call that matched a grant ran whether or not the host used the grant up | `a granted call runs once after the host used the grant; the same call again and another call are blocked` |
+| T-0025-M6 | `packages/harness-pi/src/index.ts` | the step answered `used: true` without asking the engine to use the grant | `harness-pi/agent > a grant in the profile is used through the host before the program goes on` |
