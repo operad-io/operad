@@ -16,7 +16,7 @@
     "use": "harness-pi/agent",
     "args": [
       "--model",
-      "opencode-go/deepseek-v4-pro",
+      "openai-codex/gpt-5.6-terra",
       "--thinking",
       "medium"
     ],
@@ -27,7 +27,7 @@
       "use": "harness-pi/agent",
       "args": [
         "--model",
-        "openai-codex/gpt-5.6-terra",
+        "opencode-go/deepseek-v4.1-flash",
         "--thinking",
         "medium"
       ]

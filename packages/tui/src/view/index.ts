@@ -15,17 +15,21 @@ import {
 } from "@opentui/core";
 import { chunksOfLine, type MarkdownPalette } from "../markdown.ts";
 import { sanitize } from "../sanitize.ts";
+import { displayWidth, graphemes } from "../wrap.ts";
 import {
   KEY_LIST,
   activeSection,
   activeTab,
+  LIST_WIDTH,
+  LIST_X,
+  RIGHT_X,
+  bodyHeight,
   footerText,
   sectionLayout,
+  sectionWidth,
   listWindow,
   sectionViewport,
   statusText,
-  rowMark,
-  tabLabel,
   twoPane,
   type TuiObject,
   type TuiRow,
@@ -92,31 +96,44 @@ function styled(chunks: readonly TextChunk[]): StyledText {
   return new StyledText([...chunks]);
 }
 
-function headerContent(state: TuiState, palette: TuiPalette): StyledText {
-  const pending = state.tabs.find((tab) => tab.kind === "pending");
-  const running = state.tabs.find((tab) => tab.kind === "running");
-  const types = state.tabs.filter((tab) => tab.kind === "type");
-  return styled([
-    chunk("operad", palette.accent, TextAttributes.BOLD),
-    chunk(" ─ Pending ", palette.weak),
-    chunk(String(pending?.list.rows.length ?? 0)),
-    chunk(" · Running ", palette.weak),
-    chunk(String(running?.list.rows.length ?? 0)),
-    ...types.flatMap((tab) => [
-      chunk(" · ", palette.weak),
-      chunk(tab.title),
-    ]),
-  ]);
+/** Cuts `text` to `width` display cells, ending in `…` when it was cut. */
+export function fit(text: string, width: number): string {
+  const clean = sanitize(text).replace(/\n/g, " ");
+  if (width <= 0) return "";
+  let total = 0;
+  const all = graphemes(clean);
+  for (const char of all) total += displayWidth(char);
+  if (total <= width) return clean;
+  let out = "";
+  let used = 0;
+  for (const char of all) {
+    const next = displayWidth(char);
+    if (used + next > width - 1) break;
+    out += char;
+    used += next;
+  }
+  return `${out}…`;
 }
 
-function tabsContent(state: TuiState, palette: TuiPalette): StyledText {
-  const chunks: TextChunk[] = [];
+/** The count a tab shows after its name, when it has one. */
+function tabCount(tab: TuiTab): number | undefined {
+  if (tab.kind === "type" && !tab.list.loaded) return undefined;
+  return tab.list.rows.length;
+}
+
+function headerContent(state: TuiState, palette: TuiPalette): StyledText {
+  const chunks: TextChunk[] = [
+    chunk(" "),
+    chunk("operad", palette.text, TextAttributes.BOLD),
+    chunk("   "),
+  ];
   state.tabs.forEach((tab, index) => {
     if (index > 0) chunks.push(chunk("   "));
     const active = index === state.active;
+    const count = tabCount(tab);
     chunks.push(
       chunk(
-        `${index + 1} ${tabLabel(tab)}`,
+        count === undefined ? tab.title : `${tab.title} ${count}`,
         active ? palette.accent : palette.weak,
         active ? TextAttributes.BOLD : TextAttributes.NONE,
       ),
@@ -125,44 +142,79 @@ function tabsContent(state: TuiState, palette: TuiPalette): StyledText {
   return styled(chunks);
 }
 
-function marker(row: TuiRow, palette: TuiPalette): TextChunk {
-  const mark = rowMark(row);
-  if (mark === "waiting") {
-    return chunk("●", palette.accent, TextAttributes.BOLD);
+/** A thin horizontal rule from column 1 to the last column but one. */
+function ruleContent(state: TuiState, palette: TuiPalette): StyledText {
+  return styled([
+    chunk(` ${"─".repeat(Math.max(0, state.width - 2))}`, palette.weak),
+  ]);
+}
+
+function dividerContent(state: TuiState, palette: TuiPalette): StyledText {
+  return styled([
+    chunk(Array.from({ length: bodyHeight(state) }, () => "│").join("\n"), palette.weak),
+  ]);
+}
+
+/** The glyph and colour of a list row. */
+function glyph(row: TuiRow, palette: TuiPalette): TextChunk {
+  if (row.error !== undefined) return chunk("✗", palette.error);
+  if (row.waiting) return chunk("!", palette.accent);
+  if (row.running) return chunk("●", palette.run);
+  if (/^(done|merged)$/i.test(row.state)) return chunk("✓", palette.weak);
+  return chunk("○", palette.weak);
+}
+
+/** The row id without its type: `item:T-1-x` is `T-1-x`. */
+function bareId(id: string): string {
+  const at = id.indexOf(":");
+  return at < 0 ? id : id.slice(at + 1);
+}
+
+/** The short id and the slug of an id like `T-0031-tui-object`. */
+function splitId(id: string): { readonly short: string; readonly slug: string } {
+  const match = /^([A-Za-z]+-\d+)-(.+)$/.exec(id);
+  if (match === null) return { short: id, slug: "" };
+  return { short: match[1] ?? id, slug: match[2] ?? "" };
+}
+
+function rowText(row: TuiRow, kind: TuiTab["kind"]): string {
+  if (kind !== "type") {
+    return row.openable === false && row.title !== "" ? row.title : row.id;
   }
-  if (mark === "running") {
-    return chunk("●", palette.run, TextAttributes.BOLD);
-  }
-  return chunk(" ");
+  const { short, slug } = splitId(bareId(row.id));
+  if (row.error !== undefined || slug === "") return short;
+  return `${short} ${slug}`;
 }
 
 function rowLine(
   row: TuiRow,
+  kind: TuiTab["kind"],
   selected: boolean,
   palette: TuiPalette,
+  width: number,
 ): TextChunk[] {
-  const note = row.note === undefined ? "" : ` · ${row.note}`;
   return [
-    chunk(selected ? "›" : " ", selected ? palette.accent : undefined),
+    chunk(selected ? "❯" : " ", palette.accent),
     chunk(" "),
-    marker(row, palette),
+    glyph(row, palette),
     chunk(" "),
-    chunk(row.id),
-    chunk("  "),
-    chunk(row.title),
-    chunk("  "),
-    chunk(`${row.state}${note}`, palette.weak),
-    ...(row.error === undefined
-      ? []
-      : [chunk(`\n    ${row.error}`, palette.error)]),
+    chunk(
+      fit(rowText(row, kind), width - 4),
+      selected ? palette.accent : undefined,
+    ),
     chunk("\n"),
   ];
 }
 
+/** The columns a list row has, marker and glyph included. */
+function listCells(state: TuiState): number {
+  return twoPane(state) ? LIST_WIDTH : Math.max(1, state.width - LIST_X - 1);
+}
+
 function listContent(
+  state: TuiState,
   tab: TuiTab | undefined,
   palette: TuiPalette,
-  available: number,
 ): StyledText {
   if (tab === undefined) return styled([chunk("no tabs", palette.weak)]);
   if (tab.list.rows.length === 0) {
@@ -171,54 +223,69 @@ function listContent(
       : "loading…";
     return styled([chunk(message, palette.weak)]);
   }
+  const width = listCells(state);
   const chunks: TextChunk[] = [];
-  const window = listWindow(tab.list, available);
+  const window = listWindow(tab.list, bodyHeight(state));
   tab.list.rows.slice(window.start, window.end).forEach((row, offset) => {
     chunks.push(
-      ...rowLine(row, window.start + offset === tab.list.cursor, palette),
+      ...rowLine(row, tab.kind, window.start + offset === tab.list.cursor, palette, width),
     );
   });
-  if (tab.list.loading) chunks.push(chunk("loading more…", palette.weak));
+  if (tab.list.loading) chunks.push(chunk("loading more…\n", palette.weak));
   if (tab.list.error !== undefined) {
-    chunks.push(chunk(`\n${tab.list.error}`, palette.error));
+    chunks.push(chunk(fit(tab.list.error, width), palette.error));
   }
   return styled(chunks);
 }
 
-function objectHeader(object: TuiObject, palette: TuiPalette): TextChunk[] {
+function objectHeader(
+  object: TuiObject,
+  palette: TuiPalette,
+  width: number,
+): TextChunk[] {
   const row = object.row;
   const note = row.note === undefined ? "" : ` · ${row.note}`;
+  const title = row.title === "" || row.title === row.id ? "" : `  ${row.title}`;
+  const third =
+    object.error !== undefined
+      ? chunk(fit(object.error, width), palette.error)
+      : row.error !== undefined
+        ? chunk(fit(row.error, width), palette.error)
+        : object.unavailable !== undefined
+        ? chunk(fit(object.unavailable, width), palette.weak)
+        : chunk("");
   return [
-    marker(row, palette),
-    chunk(" "),
-    chunk(row.id, palette.text, TextAttributes.BOLD),
-    chunk("  "),
-    chunk(row.title),
-    chunk("  "),
-    chunk(`${row.state}${note}`, palette.weak),
+    chunk(fit(`${bareId(row.id)}${title}`, width), palette.text, TextAttributes.BOLD),
     chunk("\n"),
-    ...(object.error === undefined
-      ? []
-      : [chunk(`${object.error}\n`, palette.error)]),
-    ...(object.unavailable === undefined
-      ? []
-      : [chunk(`${object.unavailable}\n`, palette.weak)]),
+    chunk(fit(`${row.state}${note}`, width), palette.weak),
+    chunk("\n"),
+    third,
+    chunk("\n"),
   ];
 }
 
-function sectionTabs(object: TuiObject, palette: TuiPalette): TextChunk[] {
+function sectionTabs(object: TuiObject, palette: TuiPalette, width: number): TextChunk[] {
   const chunks: TextChunk[] = [];
+  let rule = "";
+  let used = 0;
   object.sections.forEach((section, index) => {
-    if (index > 0) chunks.push(chunk("  "));
+    const label = `${section.title}${section.live ? " ●" : ""}`;
+    const gap = index > 0 ? "  " : "";
+    if (used + gap.length + label.length > width) return;
     const active = index === object.active;
+    chunks.push(chunk(gap));
     chunks.push(
       chunk(
-        `${active ? "[" : " "}${section.title}${section.live ? " ●" : ""}${active ? "]" : " "}`,
+        label,
         active ? palette.accent : palette.weak,
         active ? TextAttributes.BOLD : TextAttributes.NONE,
       ),
     );
+    rule += `${" ".repeat(gap.length)}${(active ? "─" : " ").repeat(label.length)}`;
+    used += gap.length + label.length;
   });
+  chunks.push(chunk("\n"));
+  chunks.push(chunk(rule.trimEnd(), palette.weak));
   chunks.push(chunk("\n"));
   return chunks;
 }
@@ -227,9 +294,10 @@ function sectionHint(
   section: TuiSection,
   following: boolean,
   palette: TuiPalette,
+  width: number,
 ): TextChunk[] {
   if (section.error !== undefined) {
-    return [chunk(`${section.error}\n`, palette.error)];
+    return [chunk(`${fit(section.error, width)}\n`, palette.error)];
   }
   if (section.loading) return [chunk("loading…\n", palette.weak)];
   if (section.capped && !section.full) {
@@ -267,14 +335,15 @@ function objectContent(state: TuiState, palette: TuiPalette): StyledText {
   const object = state.object;
   if (object === undefined) return styled([chunk("select an object", palette.weak)]);
   const section = activeSection(state);
+  const width = sectionWidth(state);
   return styled([
-    ...objectHeader(object, palette),
-    ...sectionTabs(object, palette),
+    ...objectHeader(object, palette, width),
+    ...sectionTabs(object, palette, width),
     ...(section === undefined
       ? sectionContent(state, section, palette)
       : [
           ...sectionContent(state, section, palette),
-          ...sectionHint(section, section.following, palette),
+          ...sectionHint(section, section.following, palette, width),
         ]),
   ]);
 }
@@ -291,30 +360,33 @@ function keyContent(palette: TuiPalette): StyledText {
 /** Everything one state draws, as styled text, before any terminal sees it. */
 export interface TuiDrawing {
   readonly header: StyledText;
-  readonly tabs: StyledText;
+  readonly rule: StyledText;
+  readonly divider: StyledText;
   readonly list: StyledText;
   readonly right: StyledText;
   readonly footer: StyledText;
+  /** The `?` key list, the one place a closed box is drawn. */
+  readonly overlay: StyledText | undefined;
 }
 
 /** The styled text of every area for one state; the view only places it. */
 export function drawState(state: TuiState): TuiDrawing {
   const palette = paletteFor(state.theme);
-  const wide = twoPane(state);
-  const status = statusText(state);
+  const tab = activeTab(state);
+  const rowError = tab?.list.rows[tab.list.cursor]?.error;
+  const status = statusText(state) ?? rowError;
+  const width = Math.max(1, state.width - 3);
   return {
     header: headerContent(state, palette),
-    tabs: tabsContent(state, palette),
+    rule: ruleContent(state, palette),
+    divider: dividerContent(state, palette),
     footer:
       status === undefined
-        ? styled([chunk(footerText(state), palette.weak)])
-        : styled([chunk(status, palette.error)]),
-    // The header, the tab line and the footer take three lines.
-    list:
-      state.keys && !wide
-        ? keyContent(palette)
-        : listContent(activeTab(state), palette, state.height - 3),
-    right: state.keys ? keyContent(palette) : objectContent(state, palette),
+        ? styled([chunk(` ${fit(footerText(state), width)}`, palette.weak)])
+        : styled([chunk(` ${fit(status, width)}`, palette.error)]),
+    list: listContent(state, activeTab(state), palette),
+    right: objectContent(state, palette),
+    overlay: state.keys ? keyContent(palette) : undefined,
   };
 }
 
@@ -334,20 +406,18 @@ export function createTuiView(ctx: CliRenderer): TuiView {
   });
   ctx.root.add(root);
 
-  const header = new TextRenderable(ctx, {
-    id: "operad-header",
-    height: 1,
-    flexShrink: 0,
-    wrapMode: "none",
-    truncate: true,
-  });
-  const tabs = new TextRenderable(ctx, {
-    id: "operad-tabs",
-    height: 1,
-    flexShrink: 0,
-    wrapMode: "none",
-    truncate: true,
-  });
+  const line = (id: string): TextRenderable =>
+    new TextRenderable(ctx, {
+      id,
+      height: 1,
+      flexShrink: 0,
+      wrapMode: "none",
+      truncate: true,
+    });
+  const header = line("operad-header");
+  const headerRule = line("operad-header-rule");
+  const footerRule = line("operad-footer-rule");
+  const footer = line("operad-footer");
   const body = new BoxRenderable(ctx, {
     id: "operad-body",
     width: "100%",
@@ -357,8 +427,9 @@ export function createTuiView(ctx: CliRenderer): TuiView {
   const listPane = new BoxRenderable(ctx, {
     id: "operad-list-pane",
     height: "100%",
-    width: "40%",
-    paddingX: 1,
+    width: LIST_X + LIST_WIDTH,
+    flexShrink: 0,
+    paddingLeft: LIST_X,
   });
   const list = new TextRenderable(ctx, {
     id: "operad-list",
@@ -367,14 +438,18 @@ export function createTuiView(ctx: CliRenderer): TuiView {
     wrapMode: "none",
     truncate: true,
   });
+  const divider = new TextRenderable(ctx, {
+    id: "operad-divider",
+    width: 1,
+    height: "100%",
+    flexShrink: 0,
+    wrapMode: "none",
+  });
   const rightPane = new BoxRenderable(ctx, {
     id: "operad-right-pane",
     height: "100%",
     flexGrow: 1,
-    padding: 1,
-    border: true,
-    borderStyle: "rounded",
-    borderColor: TUI_PALETTE.dark.weak,
+    paddingLeft: RIGHT_X - LIST_X - LIST_WIDTH - 1,
   });
   const right = new TextRenderable(ctx, {
     id: "operad-right",
@@ -385,22 +460,40 @@ export function createTuiView(ctx: CliRenderer): TuiView {
     wrapMode: "none",
     truncate: true,
   });
-  const footer = new TextRenderable(ctx, {
-    id: "operad-footer",
-    height: 1,
-    flexShrink: 0,
+  // The one closed box: the key list floats over the body.
+  const overlayBox = new BoxRenderable(ctx, {
+    id: "operad-keys",
+    position: "absolute",
+    left: 2,
+    top: 2,
+    width: 60,
+    height: KEY_LIST.length + 4,
+    border: true,
+    borderStyle: "rounded",
+    borderColor: TUI_PALETTE.dark.weak,
+    paddingX: 1,
+    visible: false,
+  });
+  const overlay = new TextRenderable(ctx, {
+    id: "operad-keys-text",
+    width: "100%",
+    height: "100%",
     wrapMode: "none",
     truncate: true,
   });
 
   listPane.add(list);
   rightPane.add(right);
+  overlayBox.add(overlay);
   body.add(listPane);
+  body.add(divider);
   body.add(rightPane);
   root.add(header);
-  root.add(tabs);
+  root.add(headerRule);
   root.add(body);
+  root.add(footerRule);
   root.add(footer);
+  root.add(overlayBox);
 
   return {
     render(state: TuiState): void {
@@ -409,22 +502,27 @@ export function createTuiView(ctx: CliRenderer): TuiView {
       const drawing = drawState(state);
 
       header.content = drawing.header;
-      tabs.content = drawing.tabs;
+      headerRule.content = drawing.rule;
+      footerRule.content = drawing.rule;
       footer.content = drawing.footer;
 
-      listPane.width = wide ? "40%" : "100%";
-
-      const keys = state.keys;
-      const object = state.object;
-      // On a narrow screen the open object fills the body in the same wrapping
-      // text renderable the right pane uses; the list's renderable truncates.
-      const showObject = object !== undefined && !keys;
+      listPane.width = wide ? LIST_X + LIST_WIDTH : "100%";
+      // On a narrow screen the open object takes the place of the list.
+      const showObject = state.object !== undefined;
       listPane.visible = wide || !showObject;
+      divider.visible = wide;
       rightPane.visible = wide || showObject;
-      rightPane.borderColor = palette.weak;
+      rightPane.paddingLeft = wide ? RIGHT_X - LIST_X - LIST_WIDTH - 1 : LIST_X;
 
       list.content = drawing.list;
+      divider.content = drawing.divider;
       right.content = drawing.right;
+
+      overlayBox.visible = drawing.overlay !== undefined;
+      overlayBox.borderColor = palette.weak;
+      overlayBox.width = Math.max(10, Math.min(60, state.width - 4));
+      overlayBox.height = Math.max(3, Math.min(KEY_LIST.length + 4, state.height - 3));
+      if (drawing.overlay !== undefined) overlay.content = drawing.overlay;
 
       root.requestRender();
     },
