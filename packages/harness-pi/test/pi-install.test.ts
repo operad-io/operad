@@ -149,6 +149,20 @@ describe("findPi", () => {
     expect(entryOf(undefined)).toBeUndefined();
   });
 
+  test("an exports entry that is not a file in the package is refused", async () => {
+    const root = await fresh();
+    const pi = installPi(root, "npm");
+    const manifest = join(pi.dir, "package.json");
+    for (const entry of ["./dist/missing.js", "../../../outside.js"]) {
+      writeFileSync(
+        manifest,
+        JSON.stringify({ name: PI_PACKAGE, version: "1.5.0", exports: { ".": { import: entry } } }),
+      );
+      writeFileSync(join(root, "npm", "lib", "node_modules", "outside.js"), "export {};\n");
+      expect(() => findPi("pi", { path: pi.bin })).toThrow(/not a file in the package/);
+    }
+  });
+
   test("a version below the floor is refused naming both versions", async () => {
     const root = await fresh();
     const pi = installPi(root, "npm", { version: "1.4.9" });

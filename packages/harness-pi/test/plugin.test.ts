@@ -583,6 +583,16 @@ describe("harness-pi:prompt", () => {
     expect(endedStatus).toBe("done");
   });
 
+  test("the command setting reaches the worker as piCommand; unset it is pi", async () => {
+    const set = await setup("done", { command: "/opt/pi/bin/pi" });
+    const withCommand = await runPrompt(set, { prompt: "p", cwd: set.root });
+    expect(withCommand.input.piCommand).toBe("/opt/pi/bin/pi");
+
+    const unset = await setup("done");
+    const without = await runPrompt(unset, { prompt: "p", cwd: unset.root });
+    expect(without.input.piCommand).toBe("pi");
+  });
+
   test("a failing worker ends the flow failed", async () => {
     const env = await setup("model-error-other");
     const { endedStatus } = await runPrompt(env, { prompt: "p", cwd: env.root });
