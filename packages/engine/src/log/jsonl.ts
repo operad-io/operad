@@ -7,7 +7,6 @@ import {
   fstatSync,
   ftruncateSync,
   fsyncSync,
-  linkSync,
   mkdirSync,
   openSync,
   readSync,
@@ -33,10 +32,14 @@ import {
   inputIdFor,
   validateNewFact,
 } from "./facts.ts";
-import { withFileLock } from "./file-lock.ts";
 import { assertJsonValue } from "./json-value.ts";
 import { SCHEMA_VERSION } from "./schema.ts";
-import { resolveSubscriptionWatch, type SubscriptionWatch } from "./poll.ts";
+import {
+  linkExclusive,
+  resolveSubscriptionWatch,
+  withFileLock,
+  type SubscriptionWatch,
+} from "../platform/index.ts";
 import type {
   AppendResult,
   Fact,
@@ -188,11 +191,7 @@ function createExclusive(path: string, contents: string): boolean {
   const temporary = `${path}.${randomUUID()}.tmp`;
   writeFileSynced(temporary, contents);
   try {
-    linkSync(temporary, path);
-    return true;
-  } catch (error) {
-    if (isErrno(error, "EEXIST")) return false;
-    throw error;
+    return linkExclusive(temporary, path);
   } finally {
     rmSync(temporary, { force: true });
   }

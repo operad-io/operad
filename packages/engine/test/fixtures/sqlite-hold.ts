@@ -5,7 +5,7 @@
  * opening the same store has to wait for it instead of failing at once.
  */
 import { Database } from "bun:sqlite";
-import { BUSY_TIMEOUT_MS } from "../../src/index.ts";
+import { setBusyTimeout } from "../../src/platform/index.ts";
 
 function fail(message: string): never {
   process.stderr.write(`${message}\n`);
@@ -23,7 +23,7 @@ const database = new Database(path, { create: true, readwrite: true });
 // while its busy handler waits for the write lock, so COMMIT can see
 // SQLITE_BUSY for an instant; without this the holder would exit instead of
 // retrying, and the opener would report a missing commit.
-database.run(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
+setBusyTimeout(database);
 database.run("CREATE TABLE IF NOT EXISTS held (x)");
 database.run("BEGIN IMMEDIATE");
 process.stdout.write(`${JSON.stringify({ locked: true })}\n`);

@@ -8,34 +8,25 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { access, mkdtemp, open, rm } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
-import { constants as osConstants, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { Readable } from "node:stream";
+import {
+  ControlReader,
+  DRAIN_GRACE_MS,
+  createGroupStop,
+  endStatus,
+  exitFromStatus,
+  killProcessGroup,
+  lastLines,
+  systemClock,
+  type Clock,
+  type Ended,
+  type Exit,
+  type Startup,
+} from "@operad-io/engine/platform";
 
-/** How long a group gets to end after SIGTERM before SIGKILL. */
-export const KILL_GRACE_MS = 500;
-
-/**
- * How long the pipes get to close after the group was stopped. A process that
- * left the group keeps its inherited descriptors open, and the step must not
- * wait for it: reading stops after this.
- */
-export const DRAIN_GRACE_MS = 1000;
-
-/** The timers a harness run reads. A test injects its own. */
-export interface Clock {
-  setTimeout(handler: () => void, ms: number): unknown;
-  clearTimeout(handle: unknown): void;
-  sleep(ms: number): Promise<void>;
-}
-
-/** The clock a real run uses. */
-export const systemClock: Clock = {
-  setTimeout: (handler, ms) => globalThis.setTimeout(handler, ms),
-  clearTimeout: (handle) =>
-    globalThis.clearTimeout(handle as ReturnType<typeof globalThis.setTimeout>),
-  sleep: (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms)),
-};
+export { DRAIN_GRACE_MS, KILL_GRACE_MS, lastLines, systemClock, type Clock } from "@operad-io/engine/platform";
 
 /**
  * The sentinel is the process-group leader of one harness run. Its first
@@ -65,13 +56,6 @@ const SENTINEL = [
   "printf 'end %s\\n' \"$status\" >&2",
   "while :; do sleep 1; done",
 ].join("\n");
-
-/** The last `count` lines of text, with no trailing blank line. */
-export function lastLines(text: string, count: number): readonly string[] {
-  const lines = text.split("\n");
-  while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-  return lines.slice(-count);
-}
 
 /** The tool activity a harness journal line reports, when it reports one. */
 export function toolActivity(line: string): "started" | "settled" | undefined {
@@ -158,31 +142,6 @@ export interface AgentRunOutcome {
   readonly stderrTail: readonly string[];
 }
 
-interface Exit {
-  readonly code: number | null;
-  readonly signal: string | null;
-}
-
-/** The signal names by number, for the status a shell reports for a signal. */
-const SIGNALS_BY_NUMBER = new Map<number, string>(
-  Object.entries(osConstants.signals).map(([name, number]) => [number, name]),
-);
-
-function exitFromStatus(status: number | null): Exit {
-  if (status === null) return { code: null, signal: null };
-  if (status > 128) {
-    const signal = SIGNALS_BY_NUMBER.get(status - 128);
-    if (signal !== undefined) return { code: null, signal };
-  }
-  return { code: status, signal: null };
-}
-
-function endStatus(line: string | null): number | undefined {
-  if (line === null) return undefined;
-  const match = /^end (\d+)$/.exec(line);
-  return match === null ? undefined : Number(match[1]);
-}
-
 /**
  * Splits a stream into complete lines, holding the unterminated tail up to
  * `MAX_LINE_CHARS`. Each line is handed over before the next is read: a busy
@@ -244,76 +203,6 @@ class Tail {
 
   lines(count: number): readonly string[] {
     return lastLines(this.text, count);
-  }
-}
-
-type Startup =
-  | { readonly kind: "ready" }
-  | { readonly kind: "closed" }
-  | { readonly kind: "error"; readonly message: string }
-  | { readonly kind: "exit"; readonly exit: Exit };
-
-type Ended =
-  | { readonly kind: "end"; readonly exit: Exit }
-  | { readonly kind: "exit"; readonly exit: Exit }
-  | { readonly kind: "closed" };
-
-/**
- * Reads the sentinel's control lines in order. Lines that arrive before a
- * reader asks are queued; a closed pipe answers `null` to every later read.
- */
-class ControlReader {
-  private buffer = "";
-  private readonly lines: string[] = [];
-  private readonly waiters: Array<(line: string | null) => void> = [];
-  private closed = false;
-  private readonly stream: Readable;
-
-  constructor(stream: Readable) {
-    this.stream = stream;
-    stream.setEncoding("utf8");
-    stream.on("data", (chunk: string) => this.receive(chunk));
-    stream.on("end", () => this.finish());
-    stream.on("close", () => this.finish());
-    stream.on("error", () => this.finish());
-  }
-
-  next(): Promise<string | null> {
-    const line = this.lines.shift();
-    if (line !== undefined) return Promise.resolve(line);
-    if (this.closed) return Promise.resolve(null);
-    return new Promise((resolve) => {
-      this.waiters.push(resolve);
-    });
-  }
-
-  destroy(): void {
-    this.closed = true;
-    this.stream.destroy();
-  }
-
-  private receive(text: string): void {
-    if (this.closed) return;
-    this.buffer += text;
-    let index = this.buffer.indexOf("\n");
-    while (index >= 0) {
-      const line = this.buffer.slice(0, index);
-      this.buffer = this.buffer.slice(index + 1);
-      if (line === "ready" || endStatus(line) !== undefined) this.deliver(line);
-      index = this.buffer.indexOf("\n");
-    }
-  }
-
-  private deliver(line: string): void {
-    const waiter = this.waiters.shift();
-    if (waiter !== undefined) waiter(line);
-    else this.lines.push(line);
-  }
-
-  private finish(): void {
-    if (this.closed) return;
-    this.closed = true;
-    for (const waiter of this.waiters.splice(0)) waiter(null);
   }
 }
 
@@ -480,44 +369,15 @@ export async function runAgent(
     openGate = resolve;
   });
 
-  const killGroup =
-    options.killGroup ??
-    ((pgid: number, signal: NodeJS.Signals | 0): boolean => {
-      try {
-        process.kill(-pgid, signal);
-        return true;
-      } catch {
-        return false;
-      }
-    });
-
   let readySeen = false;
-  let stopping: Promise<void> | undefined;
-  const stop = (): Promise<void> => {
-    stopping ??= (async () => {
-      if (sentinelExited) return;
-      const pid = child.pid;
-      if (pid === undefined) return;
-      let ready = true;
-      if (!readySeen) {
-        const outcome = await Promise.race<"ready" | "grace">([
-          readyGate.then(() => "ready"),
-          clock.sleep(KILL_GRACE_MS).then(() => "grace"),
-        ]);
-        ready = outcome === "ready";
-      }
-      if (sentinelExited) return;
-      if (!ready) {
-        killGroup(pid, "SIGKILL");
-        return;
-      }
-      if (!killGroup(pid, "SIGTERM")) return;
-      await clock.sleep(KILL_GRACE_MS);
-      if (sentinelExited) return;
-      killGroup(pid, "SIGKILL");
-    })();
-    return stopping;
-  };
+  const stop = createGroupStop({
+    clock,
+    killGroup: options.killGroup ?? killProcessGroup,
+    pid: () => child.pid,
+    sentinelExited: () => sentinelExited,
+    readySeen: () => readySeen,
+    ready: readyGate,
+  });
 
   let finished = false;
   let stoppingFor: "cancel" | "wall" | "stall" | "line" | undefined;
