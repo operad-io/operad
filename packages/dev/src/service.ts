@@ -25,6 +25,7 @@ import {
   nextId,
   parseId,
   planData,
+  planState,
   PRIORITIES,
   priorityIndex,
   repositoryData,
@@ -461,6 +462,26 @@ export interface AddPlanOptions {
   readonly slug: string;
   readonly title: string;
   readonly request?: string | undefined;
+  readonly concurrency?: number | undefined;
+}
+
+/** The fixed range of a plan's concurrency. */
+export const MIN_PLAN_CONCURRENCY = 1;
+export const MAX_PLAN_CONCURRENCY = 16;
+
+export function validatePlanConcurrency(value: unknown): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < MIN_PLAN_CONCURRENCY ||
+    value > MAX_PLAN_CONCURRENCY
+  ) {
+    throw new DevError(
+      "concurrency",
+      `must be an integer from ${MIN_PLAN_CONCURRENCY} to ${MAX_PLAN_CONCURRENCY}`,
+    );
+  }
+  return value;
 }
 
 export async function addPlan(
@@ -469,6 +490,10 @@ export async function addPlan(
 ): Promise<StoredObject> {
   const slug = validateSlug(options.slug);
   const title = validateTitle(options.title);
+  const concurrency =
+    options.concurrency === undefined
+      ? 1
+      : validatePlanConcurrency(options.concurrency);
   return withRepoLock(store, options.repository.name, async (repository) => {
     const id = await nextId(store, "plan", repository.name, slug);
     const data: PlanData = {
@@ -478,7 +503,7 @@ export async function addPlan(
       status: "draft",
       auto: "off",
       priority: "P3",
-      concurrency: 1,
+      concurrency,
       taskCount: 0,
       mergedCount: 0,
       cancelledCount: 0,
@@ -1312,6 +1337,32 @@ export async function setPriority(
       id,
       { ...fresh, priority },
       `dev:plan-priority-${priority}`,
+    );
+  });
+}
+
+export async function setConcurrency(
+  store: ObjectStore,
+  id: string,
+  count: number,
+): Promise<StoredObject> {
+  const concurrency = validatePlanConcurrency(count);
+  const initial = await getPlan(store, id);
+  const data = planData(initial.data);
+  if (data.status === "cancelled" || planState(data) === "finished") {
+    throw new DevError("concurrency", `plan "${bareId(id)}" is ${planState(data)}`);
+  }
+  return withRepoLock(store, data.repository, async () => {
+    const plan = await getPlan(store, id);
+    const fresh = planData(plan.data);
+    if (fresh.status === "cancelled" || planState(fresh) === "finished") {
+      throw new DevError("concurrency", `plan "${bareId(id)}" is ${planState(fresh)}`);
+    }
+    return writePlan(
+      store,
+      id,
+      { ...fresh, concurrency },
+      `dev:plan-concurrency-${concurrency}`,
     );
   });
 }

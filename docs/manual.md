@@ -24,7 +24,7 @@ this manual prints a secret.
   "http": { "enabled": true, "port": 7480, "listen": ["127.0.0.1"] },
   "notify": { "command": null, "on": ["waiting"] },
   "mcp": {
-    "actions": ["dev:rework", "dev:reverify", "dev:reject", "dev:priority"],
+    "actions": ["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency"],
     "confirmActions": []
   },
   "ask": { "graceSecs": 600 }
@@ -50,7 +50,7 @@ this manual prints a secret.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `actions` | array of `plugin:action` strings | `["dev:rework", "dev:reverify", "dev:reject", "dev:priority"]` | The actions `operad mcp` may run. Every other action is refused with a message naming it and saying the owner runs it. |
+| `actions` | array of `plugin:action` strings | `["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency"]` | The actions `operad mcp` may run. Every other action is refused with a message naming it and saying the owner runs it. |
 | `confirmActions` | array of `plugin:action` strings | `[]` | The allowed actions that also carry `confirm: true`. Such an action is refused even when `actions` names it unless this list names it too. |
 
 Both lists take effect the next time `operad mcp` starts. They do not change an
