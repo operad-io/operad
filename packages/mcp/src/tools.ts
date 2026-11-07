@@ -355,6 +355,11 @@ export async function runTool(
     case "command": {
       const plugin = String(args.plugin);
       const verb = String(args.verb);
+      if (KERNEL_VERBS.has(plugin)) {
+        return toolError(
+          `"${plugin}" is a kernel verb; it is not reachable through MCP`,
+        );
+      }
       const commandArgs = Array.isArray(args.args)
         ? args.args.map((item) => String(item))
         : [];
@@ -365,10 +370,9 @@ export async function runTool(
         resolved.plugin !== plugin ||
         resolved.command !== verb
       ) {
-        const kernel = KERNEL_VERBS.has(plugin) ? plugin : verb;
-        if (KERNEL_VERBS.has(kernel)) {
+        if (KERNEL_VERBS.has(verb)) {
           return toolError(
-            `"${kernel}" is a kernel verb; it is not reachable through MCP`,
+            `"${verb}" is a kernel verb; it is not reachable through MCP`,
           );
         }
         return toolError(

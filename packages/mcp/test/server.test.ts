@@ -28,6 +28,9 @@ const devPluginPath = fileURLToPath(
 const kernelCommandPluginPath = fileURLToPath(
   new URL("./fixtures/kernel-command.ts", import.meta.url),
 );
+const kernelNamePluginPath = fileURLToPath(
+  new URL("./fixtures/kernel-plugin-name.ts", import.meta.url),
+);
 
 interface Home {
   readonly root: string;
@@ -640,6 +643,25 @@ describe("operad mcp", () => {
       });
       expect(resultOf(shown).isError).toBeUndefined();
       expect(textOf(shown).trim()).toBe("plugin show: hello");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("command refuses a plugin whose name is also a kernel verb", async () => {
+    const { home } = await makeHome({ plugins: [kernelNamePluginPath] });
+    const child = start(home);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      const refused = await child.request(2, "tools/call", {
+        name: "command",
+        arguments: { plugin: "serve", verb: "start", args: ["hello"] },
+      });
+      expect(resultOf(refused).isError).toBe(true);
+      expect(textOf(refused)).toContain("serve");
+      expect(textOf(refused)).toContain("kernel verb");
+      expect(textOf(refused)).not.toContain("plugin start");
     } finally {
       const closed = await child.close();
       expect(closed.code).toBe(0);

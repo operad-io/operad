@@ -191,10 +191,11 @@ Result: the plugin verb's output, the same value `operad <plugin> <verb>` prints
 The call builds the CLI's `[plugin, verb, ...args]`, with `input` standing in
 for stdin, so `dev plan add` and `dev task add` take their brief from it. It
 resolves the pair against the loaded plugins, so a plugin verb runs even when
-its name matches a kernel command. A kernel verb the named plugin does not
-declare (`serve`, `init`, `plugin ...`, `secret ...`, `http ...`, and the other
-commands the CLI owns), and any other verb it does not declare, is refused with
-a tool error.
+its name matches a kernel command. A plugin whose name is itself a kernel verb
+is refused, even when the pair resolves to one of its commands. A kernel verb
+the named plugin does not declare (`serve`, `init`, `plugin ...`, `secret ...`,
+`http ...`, and the other commands the CLI owns), and any other verb it does not
+declare, is refused with a tool error.
 
 ### `act`
 

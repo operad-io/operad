@@ -18,3 +18,4 @@ the row fields.
 | T-0027-M7 | packages/mcp/src/tools.ts | `act` recorded the actor as cli/lead instead of mcp/lead | `act runs a lead rework with the mcp lead actor and refuses merge by default` |
 | T-0027-M8 | packages/mcp/src/tools.ts | `command` still refused a verb whose name is a kernel verb after the named plugin declared it | `command runs a plugin verb whose name is also a kernel verb` |
 | T-0027-M9 | packages/mcp/src/policy.ts | `splitPendingActions` kept every pending action and filtered none | `pending lists only the actions the lead may run` |
+| T-0027-M10 | packages/mcp/src/tools.ts | `command` checked only the verb for a kernel name and let a plugin namespace that is a kernel verb run | `command refuses a plugin whose name is also a kernel verb` |
