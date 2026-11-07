@@ -774,6 +774,48 @@ describe("http server", () => {
     }
   });
 
+  test("an object carries its link, URL-encoded, and so does its pending item", async () => {
+    const h = await makeHarness();
+    try {
+      const id = "a b/c#1?x=%";
+      seed(h, id, { title: "Odd id", state: "new" });
+      const link = `operad://objects/item%3A${encodeURIComponent(id)}`;
+      expect(link).toBe("operad://objects/item%3Aa%20b%2Fc%231%3Fx%3D%25");
+
+      const got = await api(h, `/v1/objects/${encodeURIComponent(id)}`);
+      expect(got.status).toBe(200);
+      const body = (await got.json()) as { id: string; link: string };
+      expect(body.id).toBe(id);
+      expect(body.link).toBe(link);
+
+      // The link is the id as `get` takes it: following it finds the object.
+      const path = link.slice("operad://objects/".length);
+      const again = await api(h, `/v1/objects/${path}`);
+      expect(again.status).toBe(200);
+      expect(((await again.json()) as { id: string }).id).toBe(id);
+
+      const run = await h.log.startRun("demo-flow", `item:${id}`);
+      await h.log.append(run.runId, 0, [
+        {
+          kind: "waiting_for_person",
+          payload: {
+            waitId: "wait:1",
+            step: "ask",
+            prompt: "Approve?",
+            choices: ["yes"],
+            waitKind: "step",
+            effectId: null,
+          },
+          cause: "test",
+        },
+      ]);
+      const pending = (await (await api(h, "/v1/pending")).json()) as { link?: string }[];
+      expect(pending[0]?.link).toBe(link);
+    } finally {
+      await h.close();
+    }
+  });
+
   test("lists pending and running runs with their actions", async () => {
     const h = await makeHarness();
     try {
@@ -807,6 +849,10 @@ describe("http server", () => {
       }[];
       expect(pendingItems).toHaveLength(1);
       expect(pendingItems[0]?.runId).toBe(waiting.runId);
+      expect(pendingItems[0]).toMatchObject({
+        object: "item:one",
+        link: "operad://objects/item%3Aone",
+      });
       expect(pendingItems[0]?.prompt).toBe("Approve?");
       expect(pendingItems[0]?.choices).toEqual(["yes"]);
       expect(pendingItems[0]?.actions).toContainEqual({

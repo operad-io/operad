@@ -4,6 +4,7 @@
  * flags and the history section the kernel itself owns.
  */
 
+import { objectLink } from "../http/link.ts";
 import type { LogBackend } from "../log/types.ts";
 import type { PluginRegistry, ActionInfo } from "../plugin/registry.ts";
 import { splitActionName } from "../plugin/registry.ts";
@@ -76,6 +77,8 @@ export interface ViewAction extends ActionInfo {
 export interface ViewObject {
   readonly id: string;
   readonly type: string;
+  /** The link that opens this object in the app. */
+  readonly link: string;
   readonly row: ViewRow;
   readonly sections: readonly ViewSectionInfo[];
   readonly actions: readonly ViewAction[];
@@ -497,6 +500,7 @@ export class Views {
     return {
       id: resolved.id,
       type: resolved.type,
+      link: objectLink(resolved.type, resolved.id),
       row,
       sections,
       actions,

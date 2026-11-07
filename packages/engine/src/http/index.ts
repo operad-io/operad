@@ -4,6 +4,7 @@ export {
   validateListenAddresses,
   type ListenAddressKind,
 } from "./address.ts";
+export { LINK_SCHEME, objectLink, pairLink } from "./link.ts";
 export {
   DEFAULT_HTTP_TOKEN_LABEL,
   ensureHttpToken,
