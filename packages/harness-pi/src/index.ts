@@ -269,7 +269,7 @@ function agentData(
     signal: outcome.signal,
     sessionId: result?.sessionId ?? null,
     finalMessage: result?.finalMessage ?? null,
-    usage: standardUsage(who, result?.usage, result?.cost?.micros ?? null),
+    usage: standardUsage(who, result?.usage, result?.cost ?? null),
     log,
     durationMs,
     stderr: outcome.stderrTail,
@@ -435,6 +435,14 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           const flags = parseStepFlags(
             stringList(input.args === undefined ? flow.args : input.args, `${at}: params.args`),
           );
+          // The model the step will use, known before anything can fail.
+          const knownModel =
+            typeof flags === "string"
+              ? flagValue(input.args === undefined ? flow.args : input.args, "--model") ??
+                (typeof ctx.settings.model === "string" ? ctx.settings.model : undefined)
+              : (flags.model ??
+                (typeof ctx.settings.model === "string" ? ctx.settings.model : undefined));
+          const early: UsageSource = { harness: "harness-pi", model: knownModel ?? null };
           if (typeof flags === "string") {
             const message = `${at}: ${flags}`;
             const log = await ctx.logger.write(message);
@@ -447,7 +455,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
                 signal: null,
                 sessionId: null,
                 finalMessage: null,
-                usage: standardUsage({ harness: "harness-pi", model: null }, undefined, null),
+                usage: standardUsage(early, undefined, null),
                 log,
                 durationMs: 0,
                 stderr: [message],
@@ -490,7 +498,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
                 signal: null,
                 sessionId: null,
                 finalMessage: null,
-                usage: standardUsage({ harness: "harness-pi", model: null }, undefined, null),
+                usage: standardUsage(early, undefined, null),
                 log,
                 durationMs: 0,
                 stderr: [cwdProblem],

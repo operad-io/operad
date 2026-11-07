@@ -119,6 +119,7 @@ describe("harness-pi/agent", () => {
       model: null,
       tokens: { input: 11, output: 7, cacheread: 0, cachewrite: 0 },
       costMicros: 1234,
+      costQuality: "exact",
     });
     expect(validateUsage(data.usage).ok).toBe(true);
     expect("cost" in data).toBe(false);
@@ -197,6 +198,33 @@ describe("harness-pi/agent", () => {
     expect(input.model).toBe("openai-codex/gpt-5.6-terra");
     expect(input.thinkingLevel).toBe("medium");
     expect((dataOf(result).usage as { model: unknown }).model).toBe("openai-codex/gpt-5.6-terra");
+  });
+
+  test("a run with an unpriced message has an incomplete cost", async () => {
+    const env = await setup("incomplete");
+    const usage = dataOf(await runAgent(env, { prompt: "hello", cwd: env.root })).usage as {
+      costMicros: unknown;
+      costQuality: unknown;
+    };
+    expect(usage.costMicros).toBe(900);
+    expect(usage.costQuality).toBe("incomplete");
+    expect(validateUsage(usage).ok).toBe(true);
+  });
+
+  test("a step that fails before it starts still records the model it named", async () => {
+    const env = await setup("done", { model: "fake/setting" });
+    const badArgs = await runAgent(env, { prompt: "hello", cwd: env.root, args: ["--bogus"] });
+    expect(badArgs.result).toBe("failed");
+    expect((dataOf(badArgs).usage as { model: unknown }).model).toBe("fake/setting");
+    const badFlag = await runAgent(env, {
+      prompt: "hello",
+      cwd: env.root,
+      args: ["--model", "a/b", "--thinking", "loud"],
+    });
+    expect((dataOf(badFlag).usage as { model: unknown }).model).toBe("a/b");
+    const badCwd = await runAgent(env, { prompt: "hello", cwd: join(env.root, "missing") });
+    expect(badCwd.result).toBe("failed");
+    expect((dataOf(badCwd).usage as { model: unknown }).model).toBe("fake/setting");
   });
 
   test("the usage names the model setting when the step has no --model", async () => {

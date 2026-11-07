@@ -28,12 +28,21 @@ export interface UsageTokens {
   readonly cachewrite: number;
 }
 
-/** What one run used. `costMicros: null` is an unknown cost; a free run is 0. */
+/** How far to trust a known cost: `incomplete` leaves some of the run unpriced. */
+export const COST_QUALITIES = ["exact", "estimated", "incomplete"] as const;
+
+export type CostQuality = (typeof COST_QUALITIES)[number];
+
+/**
+ * What one run used. `costMicros: null` is an unknown cost; a free run is 0.
+ * `costQuality` is null exactly when the cost is unknown.
+ */
 export interface Usage {
   readonly harness: string;
   readonly model: string | null;
   readonly tokens: UsageTokens;
   readonly costMicros: number | null;
+  readonly costQuality: CostQuality | null;
 }
 
 const TOKEN_FIELDS = ["input", "output", "cacheread", "cachewrite"] as const;
@@ -76,6 +85,12 @@ export function validateUsage(value: unknown): UsageCheck {
   if (value.costMicros !== null && !isCount(value.costMicros)) {
     return refuse("costMicros", "must be a non-negative integer or null");
   }
+  if (value.costQuality !== null && !COST_QUALITIES.includes(value.costQuality as CostQuality)) {
+    return refuse("costQuality", `must be ${COST_QUALITIES.join(", ")} or null`);
+  }
+  if ((value.costQuality === null) !== (value.costMicros === null)) {
+    return refuse("costQuality", "must be null exactly when costMicros is null");
+  }
   return {
     ok: true,
     usage: {
@@ -88,6 +103,7 @@ export function validateUsage(value: unknown): UsageCheck {
         cachewrite: tokens.cachewrite as number,
       },
       costMicros: value.costMicros as number | null,
+      costQuality: value.costQuality as CostQuality | null,
     },
   };
 }
@@ -103,19 +119,32 @@ function count(value: unknown): number {
  * written before it existed the old fields (`usage: { input, output,
  * cache_read, cache_write }` and `cost: { micros }`). It is the only reader of
  * the old fields and nothing writes them. Returns undefined when the data
- * carries neither.
+ * carries neither. A standard `usage` that is malformed gives undefined too,
+ * and `onProblem` gets one line naming the field.
  */
-export function readUsage(data: unknown): Usage | undefined {
+export function readUsage(
+  data: unknown,
+  onProblem?: (message: string) => void,
+): Usage | undefined {
   if (!isRecord(data)) return undefined;
   const usage = data.usage;
   if (isRecord(usage) && isRecord(usage.tokens)) {
     const checked = validateUsage(usage);
+    if (!checked.ok) onProblem?.(checked.message);
     return checked.ok ? checked.usage : undefined;
   }
   const cost = data.cost;
   if (usage === undefined && cost === undefined) return undefined;
   const old = isRecord(usage) ? usage : {};
   const micros = isRecord(cost) ? cost.micros : undefined;
+  const known = typeof micros === "number" && Number.isFinite(micros) && micros >= 0;
+  const quality: CostQuality | null = !known
+    ? null
+    : isRecord(cost) && cost.incomplete === true
+      ? "incomplete"
+      : isRecord(cost) && cost.estimated === true
+        ? "estimated"
+        : "exact";
   return {
     harness: "unknown",
     model: null,
@@ -125,9 +154,7 @@ export function readUsage(data: unknown): Usage | undefined {
       cacheread: count(old.cache_read),
       cachewrite: count(old.cache_write),
     },
-    costMicros:
-      typeof micros === "number" && Number.isFinite(micros) && micros >= 0
-        ? Math.round(micros)
-        : null,
+    costMicros: known ? Math.round(micros) : null,
+    costQuality: quality,
   };
 }

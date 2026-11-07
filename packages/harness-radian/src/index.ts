@@ -21,6 +21,7 @@ import {
   JsonlLog,
   MAX_LINE_CHARS,
   standardUsage,
+  type RawCost,
   type RawCounts,
   type UsageSource,
   modelLimit,
@@ -61,6 +62,18 @@ export function radianToolEvent(line: string): ToolEvent | undefined {
   if (event === "ToolExecutionStarted") return "tool-start";
   if (event === "ToolExecutionSettled") return "tool-end";
   return undefined;
+}
+
+/**
+ * The model a step passes to radian as `<provider>/<model>`, from `--provider`
+ * and `--model` in its args. A model that already names a provider (it has a
+ * `/`) is not prefixed again; a step without `--model` has none.
+ */
+export function radianModel(args: unknown): string | undefined {
+  const model = flagValue(args, "--model");
+  if (model === undefined) return undefined;
+  const provider = flagValue(args, "--provider");
+  return provider === undefined || model.includes("/") ? model : `${provider}/${model}`;
 }
 
 /** Settings for one radian harness plugin. A test injects a clock. */
@@ -155,7 +168,7 @@ interface ParsedResult {
   readonly finalMessage: string | null;
   /** radian's own counts and cost, as it prints them. */
   readonly counts: RawCounts;
-  readonly costMicros: number | null;
+  readonly cost: RawCost | null;
   /** The `model_error` of a run that ended on a model failure, as data. */
   readonly modelError: Readonly<Record<string, unknown>> | null;
 }
@@ -171,17 +184,21 @@ function parseResult(line: string): ParsedResult | undefined {
   if (!isRecord(value) || value.type !== "Result") return undefined;
 
   const counts = isRecord(value.usage) ? (value.usage as RawCounts) : {};
-  const costMicros =
+  const cost: RawCost | null =
     isRecord(value.cost) &&
     typeof value.cost.micros === "number" &&
     Number.isFinite(value.cost.micros)
-      ? value.cost.micros
+      ? {
+          micros: value.cost.micros,
+          incomplete: value.cost.incomplete === true,
+          estimated: value.cost.estimated === true,
+        }
       : null;
   return {
     sessionId: typeof value.session_id === "string" ? value.session_id : null,
     finalMessage: typeof value.text === "string" ? value.text : null,
     counts,
-    costMicros,
+    cost,
     modelError: isRecord(value.model_error) ? value.model_error : null,
   };
 }
@@ -220,7 +237,7 @@ function agentData(
     signal: outcome.signal,
     sessionId: result?.sessionId ?? null,
     finalMessage: result?.finalMessage ?? null,
-    usage: standardUsage(who, result?.counts, result?.costMicros),
+    usage: standardUsage(who, result?.counts, result?.cost),
     log,
     durationMs,
     stderr: outcome.stderrTail,
@@ -383,13 +400,9 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
         name: "agent",
         results: ["done", "failed", "interrupted"],
         // The model is what the step passes to radian: `<provider>/<model>`.
-        limit: modelLimit("harness-radian", (params) => {
-          if (!isRecord(params)) return undefined;
-          const model = flagValue(params.args, "--model");
-          if (model === undefined) return undefined;
-          const provider = flagValue(params.args, "--provider");
-          return provider === undefined ? model : `${provider}/${model}`;
-        }),
+        limit: modelLimit("harness-radian", (params) =>
+          isRecord(params) ? radianModel(params.args) : undefined,
+        ),
         async run(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
           const at = "harness-radian/agent";
           const input = paramsObject(params, at);
@@ -421,17 +434,9 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
               ? defaults.command
               : text(ctx.settings.command, `${at}: settings.command`);
 
-          // The model as the step names it, `<provider>/<model>`, for the usage.
-          const modelFlag = flagValue(args, "--model");
-          const providerFlag = flagValue(args, "--provider");
           const who: UsageSource = {
             harness: "harness-radian",
-            model:
-              modelFlag === undefined
-                ? null
-                : providerFlag === undefined
-                  ? modelFlag
-                  : `${providerFlag}/${modelFlag}`,
+            model: radianModel(args) ?? null,
           };
 
           const cwdProblem = await directoryError(cwd);

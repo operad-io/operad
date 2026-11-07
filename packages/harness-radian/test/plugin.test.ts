@@ -15,6 +15,7 @@ import {
 } from "@operad-io/engine";
 import {
   createRadianHarnessPlugin,
+  radianModel,
   EVENT_NOTE_TEMPLATE,
   type RadianHarnessSettings,
 } from "../src/index.ts";
@@ -136,6 +137,7 @@ describe("harness-radian/agent", () => {
       model: null,
       tokens: { input: 11, output: 7, cacheread: 0, cachewrite: 0 },
       costMicros: 1234,
+      costQuality: "exact",
     });
     expect(validateUsage(data.usage).ok).toBe(true);
     // The old fields are never written.
@@ -169,6 +171,32 @@ describe("harness-radian/agent", () => {
     expect(result.result).toBe("done");
     expect(validateUsage(dataOf(result).usage).ok).toBe(true);
     expect((dataOf(result).usage as { costMicros: unknown }).costMicros).toBeNull();
+  });
+
+  test("an incomplete or estimated cost says so in the usage", async () => {
+    for (const quality of ["incomplete", "estimated"] as const) {
+      const env = await setup(quality);
+      const usage = dataOf(await runAgent(env, { prompt: "hello", cwd: env.root })).usage as {
+        costMicros: unknown;
+        costQuality: unknown;
+      };
+      expect(usage.costMicros).toBe(900);
+      expect(usage.costQuality).toBe(quality);
+      expect(validateUsage(usage).ok).toBe(true);
+    }
+  });
+
+  test("a model that already names its provider is not prefixed again", async () => {
+    const env = await setup("done");
+    const result = await runAgent(env, {
+      prompt: "hello",
+      cwd: env.root,
+      args: ["--provider", "p", "--model", "p/m"],
+    });
+    expect((dataOf(result).usage as { model: unknown }).model).toBe("p/m");
+    expect(radianModel(["--provider", "p", "--model", "p/m"])).toBe("p/m");
+    expect(radianModel(["--provider", "p", "--model", "m"])).toBe("p/m");
+    expect(radianModel(["--provider", "p"])).toBeUndefined();
   });
 
   test("the usage names the model as <provider>/<model> when the step names it", async () => {

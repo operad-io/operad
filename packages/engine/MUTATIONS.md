@@ -182,3 +182,5 @@ the row fields.
 | T-0022-M2 | packages/engine/src/plugin/usage.ts | `readUsage` read an old fact's `cache_write` as `cacheread` | `readUsage > reads a fact stored before the standard field existed` |
 | T-0022-M3 | packages/engine/src/plugin/registry.ts | the harness result check never ran | `end results > the plugin check refuses a harness step that declares another name` |
 | T-0022-M4 | packages/engine/src/plugin/usage.ts | `END_RESULTS` lost `nothing`, so the manual's table no longer matched | `end results > the manual's table lists exactly the exported results` |
+| T-0022-M12 | packages/engine/src/plugin/usage.ts | `readUsage` did not report a malformed usage | `readUsage > a malformed standard usage is reported once, naming the field` |
+| T-0022-M13 | packages/engine/src/plugin/usage.ts | `readUsage` read an old `incomplete` cost as exact | `readUsage > reads a fact stored before the standard field existed` |

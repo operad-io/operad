@@ -29,6 +29,12 @@ interface Fixture {
   readonly registry: PluginRegistry;
 }
 
+describe("shell plugin kind", () => {
+  test("shell is a stage: its steps end in pass and fail, which a harness may not", () => {
+    expect(shell.kind).toBe("stage");
+  });
+});
+
 async function fixture(plugin: PluginDefinition = shell): Promise<Fixture> {
   const root = await tempRoot();
   return {

@@ -15,14 +15,18 @@ const standard = {
   model: "p/m",
   tokens: { input: 11, output: 7, cacheread: 3, cachewrite: 2 },
   costMicros: 1234,
+  costQuality: "exact" as const,
 };
 
 describe("validateUsage", () => {
   test("accepts the standard shape, with a null model and a null cost", () => {
     expect(validateUsage(standard)).toEqual({ ok: true, usage: standard });
-    const unknown = { ...standard, model: null, costMicros: null };
+    const unknown = { ...standard, model: null, costMicros: null, costQuality: null };
     expect(validateUsage(unknown).ok).toBe(true);
     expect(validateUsage({ ...standard, costMicros: 0 }).ok).toBe(true);
+    for (const costQuality of ["exact", "estimated", "incomplete"]) {
+      expect(validateUsage({ ...standard, costQuality }).ok).toBe(true);
+    }
   });
 
   test("refuses each wrong field and names it", () => {
@@ -40,6 +44,10 @@ describe("validateUsage", () => {
       [{ ...standard, costMicros: -5 }, "costMicros"],
       [{ ...standard, costMicros: 1.5 }, "costMicros"],
       [{ ...standard, costMicros: undefined }, "costMicros"],
+      [{ ...standard, costQuality: "rough" }, "costQuality"],
+      [{ ...standard, costQuality: undefined }, "costQuality"],
+      [{ ...standard, costQuality: null }, "costQuality"],
+      [{ ...standard, costMicros: null }, "costQuality"],
     ];
     for (const [value, field] of wrong) {
       const checked = validateUsage(value);
@@ -67,14 +75,26 @@ describe("readUsage", () => {
       model: null,
       tokens: { input: 11, output: 7, cacheread: 3, cachewrite: 0 },
       costMicros: 1234,
+      costQuality: "exact",
     });
     expect(readUsage({ usage: {}, cost: null })?.costMicros).toBeNull();
+    expect(readUsage({ usage: {}, cost: null })?.costQuality).toBeNull();
+    const quality = (cost: object) => readUsage({ usage: {}, cost })?.costQuality;
+    expect(quality({ micros: 5, incomplete: true, estimated: true })).toBe("incomplete");
+    expect(quality({ micros: 5, estimated: true })).toBe("estimated");
   });
 
   test("data without usage, or with a wrong standard field, gives none", () => {
     expect(readUsage({ log: "x" })).toBeUndefined();
     expect(readUsage(null)).toBeUndefined();
     expect(readUsage({ usage: { ...standard, costMicros: -1 } })).toBeUndefined();
+  });
+
+  test("a malformed standard usage is reported once, naming the field", () => {
+    const problems: string[] = [];
+    const bad = { usage: { ...standard, tokens: { ...standard.tokens, input: -1 } } };
+    expect(readUsage(bad, (message) => problems.push(message))).toBeUndefined();
+    expect(problems).toEqual(["usage.tokens.input: must be a non-negative integer"]);
   });
 });
 
@@ -113,6 +133,27 @@ describe("end results", () => {
     expect((error as Error).message).toContain('plugin "h"');
     expect((error as Error).message).toContain('step "agent"');
     expect((error as Error).message).toContain('"cancelled"');
+  });
+
+  test("a stage plugin ending pass and fail is accepted; a harness plugin ending so is refused", () => {
+    const stage = new PluginRegistry([
+      def({
+        name: "s",
+        kind: "stage",
+        steps: [{ name: "command", results: ["pass", "fail", "interrupted"], run: () => ({ result: "pass" }) } as never],
+      }),
+    ]);
+    expect(stage.names()).toEqual(["s"]);
+    expect(
+      () =>
+        new PluginRegistry([
+          def({
+            name: "h",
+            kind: "harness",
+            steps: [{ name: "agent", results: ["pass", "fail"], run: () => ({ result: "pass" }) } as never],
+          }),
+        ]),
+    ).toThrow('result "pass" is not an end result');
   });
 
   test("a plugin of another kind may name its results freely", () => {

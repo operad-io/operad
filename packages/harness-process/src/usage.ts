@@ -1,6 +1,6 @@
 /** Builds the engine's standard `Usage` from the counts a harness reads. */
 
-import type { Usage } from "@operad-io/engine";
+import type { CostQuality, Usage } from "@operad-io/engine";
 
 /** Who ran: the harness plugin and the model its step named, if it named one. */
 export interface UsageSource {
@@ -16,18 +16,37 @@ export interface RawCounts {
   readonly cache_write?: number | undefined;
 }
 
+/** The cost as a harness reads it; `micros` is the part of the run it priced. */
+export interface RawCost {
+  readonly micros: number;
+  readonly incomplete?: boolean | undefined;
+  readonly estimated?: boolean | undefined;
+}
+
 function count(value: number | undefined): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? Math.round(value)
     : 0;
 }
 
-/** `costMicros` is null for an unknown cost and 0 for a run known to be free. */
+/** A null `cost` is an unknown cost; a `micros` of 0 is a run known to be free. */
 export function standardUsage(
   source: UsageSource,
   counts: RawCounts | undefined,
-  costMicros: number | null | undefined,
+  cost: RawCost | null | undefined,
 ): Usage {
+  const known =
+    cost !== null &&
+    cost !== undefined &&
+    Number.isFinite(cost.micros) &&
+    cost.micros >= 0;
+  const quality: CostQuality | null = !known
+    ? null
+    : cost.incomplete === true
+      ? "incomplete"
+      : cost.estimated === true
+        ? "estimated"
+        : "exact";
   return {
     harness: source.harness,
     model: source.model,
@@ -37,9 +56,7 @@ export function standardUsage(
       cacheread: count(counts?.cache_read),
       cachewrite: count(counts?.cache_write),
     },
-    costMicros:
-      typeof costMicros === "number" && Number.isFinite(costMicros) && costMicros >= 0
-        ? Math.round(costMicros)
-        : null,
+    costMicros: known ? Math.round(cost.micros) : null,
+    costQuality: quality,
   };
 }

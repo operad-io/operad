@@ -15,3 +15,5 @@ the row fields.
 | pi-step-model-M2 | packages/harness-pi/src/index.ts | removed the "given twice" check for `--model` | `a model given twice fails with invalid_args and the worker is not started` |
 | pi-step-model-M3 | packages/harness-pi/src/index.ts | an unknown entry in `args` was skipped instead of rejected | `an unknown flag fails with invalid_args and the worker is not started` |
 | T-0022-M7 | packages/harness-pi/src/index.ts | the usage left the model out (`model: null`) | `harness-pi/agent > the usage names the model setting when the step has no --model` |
+| T-0022-M10 | packages/harness-pi/src/worker.ts | the worker's cost did not say `incomplete` when a message had no price | `a run where one message had no price reports the priced part as incomplete` |
+| T-0022-M11 | packages/harness-pi/src/index.ts | an early failure recorded `model: null` | `harness-pi/agent > a step that fails before it starts still records the model it named` |
