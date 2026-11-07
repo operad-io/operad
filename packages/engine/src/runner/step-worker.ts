@@ -9,7 +9,11 @@ import { messageOf } from "../plugin/errors.ts";
 import { FilePluginStore } from "../plugin/file-store.ts";
 import { loadPlugin } from "../plugin/load.ts";
 import { PluginRegistry } from "../plugin/registry.ts";
-import type { PluginStepResult, RunObject } from "../plugin/types.ts";
+import type {
+  PluginStepResult,
+  RunObject,
+  StepLimiter,
+} from "../plugin/types.ts";
 import type { JsonValue } from "../log/types.ts";
 import { SqlitePluginStore } from "../plugin/sqlite-store.ts";
 import type {
@@ -47,6 +51,13 @@ interface EmitAck {
   readonly error?: string;
 }
 
+interface LimitAck {
+  readonly kind: "limit-result";
+  readonly id: number;
+  readonly ok: boolean;
+  readonly error?: string;
+}
+
 /** Opens the store the run configured, so a worker writes where the views read. */
 function openWorkerStore(request: StepWorkerRequest): PluginStore {
   const location = request.store;
@@ -70,9 +81,59 @@ async function main(request: StepWorkerRequest): Promise<void> {
     { resolve: () => void; reject: (error: Error) => void }
   >();
   let nextEmitId = 1;
+  const pendingLimits = new Map<
+    number,
+    { resolve: () => void; reject: (error: Error) => void }
+  >();
+  let nextLimitId = 1;
+
+  /** Asks the run's process, which owns the log, for a place under a key. */
+  const limits: StepLimiter = {
+    acquire: (request) => {
+      const port = parentPort;
+      if (port === null) return Promise.reject(new Error("no limiter"));
+      const id = nextLimitId;
+      nextLimitId += 1;
+      const ask = new Promise<void>((resolve, reject) => {
+        pendingLimits.set(id, { resolve, reject });
+        port.postMessage({
+          kind: "limit",
+          id,
+          use: request.use,
+          key: request.key,
+          concurrent: request.concurrent,
+        });
+      });
+      const cancel = (): void => port.postMessage({ kind: "limit-cancel", id });
+      request.signal?.addEventListener("abort", cancel, { once: true });
+      return ask.then(
+        () => {
+          request.signal?.removeEventListener("abort", cancel);
+          return () =>
+            new Promise<void>((resolve, reject) => {
+              pendingLimits.set(id, { resolve, reject });
+              port.postMessage({ kind: "limit-release", id });
+            });
+        },
+        (error: unknown) => {
+          request.signal?.removeEventListener("abort", cancel);
+          throw error;
+        },
+      );
+    },
+  };
 
   parentPort?.on("message", (message: unknown) => {
     if (typeof message !== "object" || message === null) return;
+    if ((message as { kind?: unknown }).kind === "limit-result") {
+      const ack = message as LimitAck;
+      const pending = pendingLimits.get(ack.id);
+      if (pending === undefined) return;
+      pendingLimits.delete(ack.id);
+      if (ack.ok) pending.resolve();
+      else pending.reject(new Error(ack.error ?? "the place was refused"));
+      return;
+    }
     if ((message as { kind?: unknown }).kind === "emit-result") {
       const ack = message as EmitAck;
       const pending = pendingAcks.get(ack.id);
@@ -115,6 +176,7 @@ async function main(request: StepWorkerRequest): Promise<void> {
     ...(request.object === undefined ? {} : { object: request.object }),
     ...(request.trigger === undefined ? {} : { trigger: request.trigger }),
     emit,
+    limits,
     signal: controller.signal,
   });
   parentPort?.postMessage({ kind: "result", ok: true, result } satisfies StepWorkerReply);

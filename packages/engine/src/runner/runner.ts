@@ -3,20 +3,31 @@
 import type { FlowDefinition } from "../flow/types.ts";
 import type { Input, KernelState, StartInput } from "../kernel/types.ts";
 import type { JsonValue, LogBackend } from "../log/types.ts";
-import type { PluginStepResult, RunObject } from "../plugin/types.ts";
+import type {
+  PluginStepResult,
+  RunObject,
+  StepLimiter,
+} from "../plugin/types.ts";
 import { PluginRegistry } from "../plugin/registry.ts";
 import type { ObjectRef } from "../plugin/types.ts";
 import { messageOf } from "../plugin/errors.ts";
 import type { StepEvent, TriggerView } from "../trigger/types.ts";
 import { Worker } from "node:worker_threads";
+import { KILL_GRACE_MS } from "../platform/index.ts";
 import { acquireLock, runLockPath, type LockHandle } from "./lock.ts";
+import { StepLimits } from "./limits.ts";
 import { appendInput, applyInput, parseObjectKey, readState } from "./service.ts";
 
 /** The wall time a plugin step may take before the run records a failure. */
 export const DEFAULT_STEP_TIMEOUT_MS = 5 * 60 * 1000;
 
-/** How long a worker gets to stop what it started before it is terminated. */
-const WORKER_ABORT_GRACE_MS = 1000;
+/**
+ * How long a worker gets to stop what it started before it is terminated. A
+ * process-group stop may wait one grace for the sentinel's `ready` and one more
+ * after SIGTERM before it sends SIGKILL, so this exceeds both plus latency;
+ * terminating sooner would leave the sentinel and its line running.
+ */
+export const WORKER_ABORT_GRACE_MS = 2 * KILL_GRACE_MS + 1000;
 
 const STEP_WORKER = new URL("./step-worker.ts", import.meta.url);
 
@@ -32,6 +43,31 @@ interface StepWorkerEmit {
   readonly id: number;
   readonly plugin: string;
   readonly event: StepEvent;
+}
+
+/** A nested step in the worker asks for, cancels or gives back a place. */
+type StepWorkerLimit =
+  | {
+      readonly kind: "limit";
+      readonly id: number;
+      readonly use: string;
+      readonly key: string;
+      readonly concurrent: number;
+    }
+  | { readonly kind: "limit-cancel"; readonly id: number }
+  | { readonly kind: "limit-release"; readonly id: number };
+
+function isStepWorkerLimit(value: unknown): value is StepWorkerLimit {
+  if (typeof value !== "object" || value === null) return false;
+  const kind = (value as { kind?: unknown }).kind;
+  if (typeof (value as { id?: unknown }).id !== "number") return false;
+  if (kind === "limit-cancel" || kind === "limit-release") return true;
+  return (
+    kind === "limit" &&
+    typeof (value as { use?: unknown }).use === "string" &&
+    typeof (value as { key?: unknown }).key === "string" &&
+    typeof (value as { concurrent?: unknown }).concurrent === "number"
+  );
 }
 
 function isStepWorkerReply(value: unknown): value is StepWorkerReply {
@@ -271,12 +307,73 @@ export class Runner {
     }
 
     if (effect.use === null) return "blocked";
-    if (state.effectStarted !== effect.id) {
-      state = await this.markStarted(state, effect);
+
+    // A step under a limit key takes its place before it is marked started: a
+    // crash while it waits is a step that never began, not a crashed step.
+    let limited = false;
+    let refusal: PluginStepResult | undefined;
+    try {
+      const limit = this.registry.stepLimit(effect.use, effect.params);
+      if (limit !== undefined) {
+        limited = true;
+        await this.limits().acquire(
+          {
+            runId: this.runId,
+            effectId: effect.id,
+            step: effect.step,
+            key: limit.key,
+            concurrent: limit.concurrent,
+          },
+          this.signal,
+        );
+        state = await readState(this.log, this.runId);
+      }
+    } catch (error) {
+      refusal = this.failure(effect.use, false, {
+        reason: this.signal?.aborted === true ? "aborted" : "error",
+        message:
+          this.signal?.aborted === true
+            ? "the step was cancelled"
+            : messageOf(error),
+      });
     }
-    const outcome = await this.execute(effect.use, effect.params, false, state.params, state.access);
+
+    let outcome: PluginStepResult;
+    if (refusal !== undefined) {
+      outcome = refusal;
+    } else {
+      const recovering = state.effectStarted === effect.id;
+      if (!recovering) state = await this.markStarted(state, effect);
+      const nestedBase = recovering
+        ? await this.limits().resetNested(this.runId, effect.id)
+        : 0;
+      state = await readState(this.log, this.runId);
+      outcome = await this.execute(
+        effect.use,
+        effect.params,
+        false,
+        state.params,
+        state.access,
+        this.limits().limiterFor(this.runId, effect.id, effect.step, nestedBase),
+      );
+    }
+    // The limit's own facts moved the run's last sequence on.
+    state = await readState(this.log, this.runId);
     await this.recordResult(state, effect.id, outcome.result, outcome.data);
+    // The result frees the place; the next in line gets it now, or from the
+    // next pass of `serve` if this process dies first.
+    if (limited) await this.limits().grant();
     return "progress";
+  }
+
+  private stepLimits: StepLimits | undefined;
+
+  private limits(): StepLimits {
+    this.stepLimits ??= new StepLimits({
+      log: this.log,
+      lockRoot: this.lockRoot,
+    });
+    return this.stepLimits;
   }
 
   private hooks(): {
@@ -406,6 +503,7 @@ export class Runner {
     preferInterrupted: boolean,
     flowParams: JsonValue,
     access: JsonValue,
+    limiter?: StepLimiter | undefined,
   ): Promise<PluginStepResult> {
     if (this.signal?.aborted === true) {
       return this.failure(use, preferInterrupted, {
@@ -428,6 +526,7 @@ export class Runner {
         preferInterrupted,
         flowParams,
         access,
+        limiter,
       );
     }
     return this.executeHere(
@@ -437,6 +536,7 @@ export class Runner {
       preferInterrupted,
       flowParams,
       access,
+      limiter,
     );
   }
 
@@ -484,8 +584,13 @@ export class Runner {
     preferInterrupted: boolean,
     flowParams: JsonValue,
     access: JsonValue,
+    limiter: StepLimiter | undefined,
   ): Promise<PluginStepResult> {
     return new Promise((resolve) => {
+      // Waits for a place that the worker's nested steps asked for, by the id
+      // the worker gave the request; a finished worker stops them all.
+      const waits = new Map<number, AbortController>();
+      const held = new Map<number, () => Promise<void>>();
       const worker = new Worker(STEP_WORKER, {
         workerData: {
           sources,
@@ -512,6 +617,7 @@ export class Runner {
       const finish = (result: PluginStepResult, terminate = true): void => {
         if (settled) return;
         settled = true;
+        for (const wait of waits.values()) wait.abort();
         if (timer !== undefined) clearTimeout(timer);
         this.signal?.removeEventListener("abort", onAbort);
         if (terminate) {
@@ -564,6 +670,10 @@ export class Runner {
         if (settled) {
           // The step answered after an abort: it has stopped what it started.
           void worker.terminate();
+          return;
+        }
+        if (isStepWorkerLimit(message)) {
+          void this.serveLimit(message, limiter, worker, waits, held);
           return;
         }
         if (isStepWorkerEmit(message)) {
@@ -619,6 +729,62 @@ export class Runner {
     });
   }
 
+  private async serveLimit(
+    message: StepWorkerLimit,
+    limiter: StepLimiter | undefined,
+    worker: Worker,
+    waits: Map<number, AbortController>,
+    held: Map<number, () => Promise<void>>,
+  ): Promise<void> {
+    const reply = (ok: boolean, error?: string): void => {
+      try {
+        worker.postMessage({
+          kind: "limit-result",
+          id: message.id,
+          ok,
+          ...(error === undefined ? {} : { error }),
+        });
+      } catch {
+        // The worker is gone; nobody waits for the answer.
+      }
+    };
+    if (message.kind === "limit-cancel") {
+      waits.get(message.id)?.abort();
+      return;
+    }
+    if (message.kind === "limit-release") {
+      const release = held.get(message.id);
+      held.delete(message.id);
+      try {
+        await release?.();
+        reply(true);
+      } catch (error) {
+        reply(false, messageOf(error));
+      }
+      return;
+    }
+    if (limiter === undefined) {
+      reply(false, "no limiter is configured");
+      return;
+    }
+    const wait = new AbortController();
+    waits.set(message.id, wait);
+    try {
+      const release = await limiter.acquire({
+        use: message.use,
+        key: message.key,
+        concurrent: message.concurrent,
+        signal: wait.signal,
+      });
+      held.set(message.id, release);
+      reply(true);
+    } catch (error) {
+      reply(false, messageOf(error));
+    } finally {
+      waits.delete(message.id);
+    }
+  }
+
   private async executeHere(
     use: string,
     params: unknown,
@@ -626,6 +792,7 @@ export class Runner {
     preferInterrupted: boolean,
     flowParams: JsonValue,
     access: JsonValue,
+    limiter: StepLimiter | undefined,
   ): Promise<PluginStepResult> {
     const controller = new AbortController();
     const forward = (): void => controller.abort();
@@ -637,7 +804,6 @@ export class Runner {
         controller.abort();
         resolve("timeout");
       }, this.timeoutMsFor(use));
-      if (typeof timer === "object" && "unref" in timer) timer.unref();
     });
 
     const step = this.registry.runStep(use, params, {
@@ -649,6 +815,7 @@ export class Runner {
       ...(this.trigger === undefined ? {} : { trigger: this.trigger }),
       ...(this.emitEvent === undefined ? {} : { emit: this.emitEvent }),
       signal: controller.signal,
+      ...(limiter === undefined ? {} : { limits: limiter }),
     });
     // After a timeout the plugin may still reject; that rejection is no
     // longer interesting, and must not crash the process.

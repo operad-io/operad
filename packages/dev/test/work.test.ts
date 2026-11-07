@@ -11,6 +11,8 @@ import {
   addRepository,
   addTask,
   createDevPlugin,
+  MAX_WORK_WAITS,
+  reviewTestHooks,
   taskData,
 } from "../src/index.ts";
 import {
@@ -75,6 +77,16 @@ function fakeHarness(record: string) {
                 sessionId: "fake-session",
                 cost: { micros: FAKE_COST_MICROS },
                 message: "the fake harness said no",
+              },
+            };
+          }
+          if (mode === "unavailable" || mode === "usage_limit") {
+            return {
+              result: "failed",
+              data: {
+                sessionId: "fake-session",
+                message: "the model is busy",
+                modelError: { kind: mode },
               },
             };
           }
@@ -314,6 +326,61 @@ describe("dev/work", () => {
     });
     expect(again.result).toBe("ready");
     expect((await taskDataOf(state)).attempts).toBe(2);
+  });
+
+  test("unavailable: a model error waits for the model instead of a person", async () => {
+    for (const mode of ["unavailable", "usage_limit"]) {
+      const state = await fixture(mode);
+      const before = Date.now();
+      const result = await runWork(state);
+      expect(result.result).toBe("unavailable");
+      const retryAt = result.data?.retryAt;
+      expect(typeof retryAt).toBe("number");
+      expect(retryAt as number).toBeGreaterThanOrEqual(before + 120_000);
+      const task = await taskDataOf(state);
+      expect(task.phase).toBe("running");
+      expect(task.attempt?.workWaits).toBe(1);
+      expect(task.attempt?.workRetryAt).toBe(retryAt as number);
+    }
+  });
+
+  test("unavailable: after the allowed waits the failure goes to a person", async () => {
+    const state = await fixture("unavailable");
+    for (let wait = 0; wait < MAX_WORK_WAITS; wait += 1) {
+      expect((await runWork(state)).result).toBe("unavailable");
+    }
+    const last = await runWork(state);
+    expect(last.result).toBe("failed");
+    expect((await taskDataOf(state)).phase).toBe("waiting");
+  });
+
+  test("work_due holds until the recorded time, then lets the work run", async () => {
+    const state = await fixture("unavailable");
+    await runWork(state);
+    const retryAt = (await taskDataOf(state)).attempt?.workRetryAt as number;
+    const waits: number[] = [];
+    reviewTestHooks.now = () => (waits.length === 0 ? retryAt - 5_000 : retryAt);
+    reviewTestHooks.wait = async (ms) => {
+      waits.push(ms);
+      return true;
+    };
+    try {
+      const due = await state.registry.runStep("dev/work_due", {}, {
+        runId: "work-run",
+        object: { type: "task", id: state.taskKey, data: {} },
+      });
+      expect(due.result).toBe("ready");
+      expect(waits).toEqual([5_000]);
+    } finally {
+      reviewTestHooks.now = undefined;
+      reviewTestHooks.wait = undefined;
+    }
+  });
+
+  test("a plain failure is not waited for", async () => {
+    const state = await fixture("fail");
+    expect((await runWork(state)).result).toBe("failed");
+    expect((await taskDataOf(state)).attempt?.workWaits ?? 0).toBe(0);
   });
 
   test("failed: the harness failed", async () => {

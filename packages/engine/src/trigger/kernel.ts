@@ -1034,7 +1034,7 @@ export class Kernel {
 
     let info: RunInfo;
     try {
-      info = await this.log.startRun(flow, object, inputId ?? null);
+      info = await this.log.startRun(flow, object, inputId ?? null, access);
     } catch (error) {
       if (error instanceof ActiveRunError) {
         // This start created no run; the record must not be adopted later.

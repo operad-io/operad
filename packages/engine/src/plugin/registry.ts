@@ -48,6 +48,7 @@ import {
   type StartRunRequest,
   type StepContext,
   type StepRunOptions,
+  type StepLimitDefinition,
   type StepTypeDefinition,
   type TickContext,
   type WaitingRun,
@@ -467,6 +468,9 @@ function normalizeSteps(
       ...(entry.timeoutSecs === undefined
         ? {}
         : { timeoutSecs: normalizeTimeoutSecs(entry.timeoutSecs, `${at}[${index}]`) }),
+      ...(entry.limit === undefined
+        ? {}
+        : { limit: normalizeLimit(entry.limit, `${at}[${index}]`, name) }),
       run: entry.run as StepTypeDefinition["run"],
     });
   });
@@ -641,6 +645,33 @@ function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     settingsSchema,
     enforces: normalizeEnforces(raw.enforces, `${at}: enforces`) ?? [],
     requires: normalizeRequires(raw.requires, at),
+  };
+}
+
+function normalizeLimit(
+  value: unknown,
+  at: string,
+  step: string,
+): StepLimitDefinition {
+  const where = at.replace(/: steps\[\d+\]$/, "");
+  const fail = (message: string): never => {
+    throw new PluginError(`${where}: step "${step}": limit: ${message}`);
+  };
+  if (!isRecord(value)) return fail("must be { key, concurrent }");
+  for (const field of Object.keys(value)) {
+    if (field !== "key" && field !== "concurrent") {
+      return fail(`unknown field "${field}"; expected key and concurrent`);
+    }
+  }
+  if (typeof value.key !== "function") {
+    return fail("key: must be a function of (params, settings)");
+  }
+  if (typeof value.concurrent !== "function") {
+    return fail("concurrent: must be a function of (params, settings)");
+  }
+  return {
+    key: value.key as StepLimitDefinition["key"],
+    concurrent: value.concurrent as StepLimitDefinition["concurrent"],
   };
 }
 
@@ -937,6 +968,15 @@ export class PluginRegistry {
     this.settingsByPlugin = settingsByPlugin;
     const kept = normalized.filter((plugin) => !refused.has(plugin.name));
     validatePluginSet(kept);
+    for (const plugin of kept) {
+      for (const command of plugin.commands) {
+        if (this.kernelVerbs.has(command.name)) {
+          throw new PluginError(
+            `plugin "${plugin.name}": command "${command.name}" clashes with the kernel verb "${command.name}"`,
+          );
+        }
+      }
+    }
     if (typeof this.store.declare === "function") {
       for (const plugin of kept) {
         for (const object of plugin.objects) {
@@ -1174,12 +1214,84 @@ export class PluginRegistry {
     return loadFlowFile(path, this.stepTypes());
   }
 
+  /**
+   * The limit one call of a step type falls under, or undefined when the type
+   * declares none or its key function returns none for these params. A key or
+   * count that is not usable is an error naming the step type.
+   */
+  stepLimit(
+    use: string,
+    params: unknown,
+  ): { readonly key: string; readonly concurrent: number } | undefined {
+    const found = this.stepIndex.get(use);
+    if (found === undefined) {
+      throw new PluginError(`step "${use}": no loaded plugin declares it`);
+    }
+    const limit = found.step.limit;
+    if (limit === undefined) return undefined;
+    const settings = this.settingsFor(found.plugin.name);
+    let key: unknown;
+    let concurrent: unknown;
+    try {
+      key = limit.key(params, settings);
+      if (key === undefined) return undefined;
+      concurrent = limit.concurrent(params, settings);
+    } catch (error) {
+      throw new PluginError(`step "${use}": limit: ${messageOf(error)}`);
+    }
+    if (typeof key !== "string" || key.length === 0) {
+      throw new PluginError(
+        `step "${use}": limit: key must return a non-empty string or undefined`,
+      );
+    }
+    if (
+      typeof concurrent !== "number" ||
+      !Number.isInteger(concurrent) ||
+      concurrent < 1
+    ) {
+      throw new PluginError(
+        `step "${use}": limit: concurrent must return a positive integer`,
+      );
+    }
+    return { key, concurrent };
+  }
+
   /** Runs a step type by its full use name. */
   async runStep(
     use: string,
     params: unknown,
     options: StepRunOptions,
   ): Promise<PluginStepResult> {
+    return this.runStepInner(use, params, options, false);
+  }
+
+  /**
+   * `nested` is a call a step made through `ctx.runStep`: it takes a place
+   * under its limit key from the run's limiter first. The runner takes the
+   * place of the step it starts itself, before the step is marked started.
+   */
+  private async runStepInner(
+    use: string,
+    params: unknown,
+    options: StepRunOptions,
+    nested: boolean,
+  ): Promise<PluginStepResult> {
+    if (nested && options.limits !== undefined) {
+      const limit = this.stepLimit(use, params);
+      if (limit !== undefined) {
+        const release = await options.limits.acquire({
+          use,
+          key: limit.key,
+          concurrent: limit.concurrent,
+          signal: options.signal,
+        });
+        try {
+          return await this.runStepInner(use, params, options, false);
+        } finally {
+          await release();
+        }
+      }
+    }
     const found = this.stepIndex.get(use);
     if (found === undefined) {
       throw new PluginError(`step "${use}": no loaded plugin declares it`);
@@ -1225,7 +1337,10 @@ export class PluginRegistry {
       trigger: options.trigger,
       emit,
       runStep: (nestedUse, nestedParams, nestedOptions) =>
-        this.runStep(nestedUse, nestedParams, nestedOptions),
+        this.runStepInner(nestedUse, nestedParams, {
+          ...nestedOptions,
+          limits: nestedOptions.limits ?? options.limits,
+        }, true),
     };
 
     const outcome: unknown = await found.step.run(ctx, params);
@@ -1345,8 +1460,9 @@ export class PluginRegistry {
   }
 
   /**
-   * Resolves a CLI verb. `<plugin> <verb>` always wins; `<verb>` works when no
-   * kernel verb and exactly one plugin declare the name.
+   * Resolves a CLI verb. `<plugin> <verb>` always wins; `<verb>` works when
+   * exactly one plugin declares the name (a plugin command that shares a name
+   * with a kernel verb is refused when the registry is built).
    */
   resolveCommand(argv: readonly string[]): ResolvedCommand | undefined {
     const first = argv[0];
@@ -1364,8 +1480,6 @@ export class PluginRegistry {
         };
       }
     }
-
-    if (this.kernelVerbs.has(first)) return undefined;
 
     let owner:
       | { readonly plugin: LoadedPlugin; readonly command: CommandDefinition }
@@ -1438,7 +1552,27 @@ export class PluginRegistry {
     const entries: PendingEntry[] = [];
     for (const run of runs) {
       const object = await this.store.get(run.object.type, run.object.id);
-      if (object === undefined) continue;
+      if (object === undefined) {
+        // The run still waits; show it without actions instead of hiding it.
+        this.log(
+          `pending: run "${run.runId}" waits on ${run.object.type} "${run.object.id}", which is not in the store`,
+        );
+        entries.push({
+          runId: run.runId,
+          prompt: run.prompt,
+          choices: run.choices,
+          object: {
+            type: run.object.type,
+            id: run.object.id,
+            data: {},
+            version: 0,
+            cause: "missing",
+            at: 0,
+          },
+          actions: [],
+        });
+        continue;
+      }
 
       const actions: PendingActionView[] = [];
       for (const { plugin, action } of this.actionsFor(object.type)) {
@@ -1543,9 +1677,12 @@ export class PluginRegistry {
     }
   }
 
-  /** The run starts plugins asked for on the latest ticks. */
+  /**
+   * The run starts plugins asked for that nobody took yet. Reading does not
+   * drain; a loop that ticks each pass calls `takeStartedRuns()` instead.
+   */
   get startedRuns(): readonly StartRunRequest[] {
-    return this.starts;
+    return [...this.starts];
   }
 
   /** The loaded source plugins, with the function that starts each one. */
@@ -1756,9 +1893,7 @@ export class PluginRegistry {
   private factsFor(cause: string): FactWriter {
     return {
       append: (input: FactInput) =>
-        this.store.append(
-          input.cause === undefined ? { ...input, cause } : input,
-        ),
+        this.store.append({ ...input, cause: input.cause ?? cause }),
     };
   }
 

@@ -1837,6 +1837,27 @@ export async function runReviewDue(
           typeof review.retryAt === "number"
         ? review.retryAt
         : undefined;
+  return holdUntil(ctx, retryAt);
+}
+
+/**
+ * Step `dev/work_due`: the work step found its model unavailable. It holds
+ * until the recorded `workRetryAt`, then lets the flow run the work again.
+ */
+export async function runWorkDue(ctx: StepContext): Promise<PluginStepResult> {
+  const context = await taskContext(ctx);
+  if (!claimAllows(ctx, context.task)) {
+    return { result: "interrupted", data: { reason: "cancelled" } };
+  }
+  const retryAt = context.task.attempt?.workRetryAt;
+  return holdUntil(ctx, typeof retryAt === "number" ? retryAt : undefined);
+}
+
+/** Waits (in pieces below the step timeout) until `retryAt`, or until cancelled. */
+async function holdUntil(
+  ctx: StepContext,
+  retryAt: number | undefined,
+): Promise<PluginStepResult> {
   const now = reviewTestHooks.now?.() ?? Date.now();
   if (retryAt === undefined || retryAt <= now) {
     return { result: "ready", data: { at: now } };

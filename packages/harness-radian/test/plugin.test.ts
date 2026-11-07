@@ -683,3 +683,37 @@ test("no process started by this file's tests is left alive", () => {
   // line that names one is a sentinel or fake radian this file started.
   expect(processesUnder(tempRoots())).toEqual([]);
 });
+
+describe("harness-radian/agent step limit", () => {
+  function registryWith(settings: Record<string, unknown>): PluginRegistry {
+    return new PluginRegistry([createRadianHarnessPlugin({})], {
+      home: ".",
+      cwd: ".",
+      store: new MemoryPluginStore({ root: "store" }),
+      settings: { "harness-radian": settings },
+    });
+  }
+
+  test("the key is harness-radian:<provider>/<model> from the step's args", () => {
+    const registry = registryWith({ concurrency: { "opencode-go/deepseek-v4.1-flash": 2 } });
+    expect(
+      registry.stepLimit("harness-radian/agent", {
+        args: ["--provider", "opencode-go", "--model", "deepseek-v4.1-flash"],
+      }),
+    ).toEqual({ key: "harness-radian:opencode-go/deepseek-v4.1-flash", concurrent: 2 });
+  });
+
+  test("a model not in the map, or no --model, has no limit", () => {
+    const registry = registryWith({ concurrency: { "p/a": 2 } });
+    expect(
+      registry.stepLimit("harness-radian/agent", { args: ["--provider", "p", "--model", "b"] }),
+    ).toBeUndefined();
+    expect(registry.stepLimit("harness-radian/agent", { args: ["--provider", "p"] })).toBeUndefined();
+    expect(registry.stepLimit("harness-radian/agent", {})).toBeUndefined();
+  });
+
+  test("the setting is declared with the default {}", () => {
+    const registry = registryWith({});
+    expect(registry.settingsFor("harness-radian").concurrency).toEqual({});
+  });
+});

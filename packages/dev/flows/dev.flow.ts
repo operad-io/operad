@@ -50,9 +50,17 @@ export default defineFlow({
         done: "verify",
         nothing: "announce_nothing",
         failed: "announce_work_failed",
+        unavailable: "work_retry",
         cancelled: "end_cancelled",
         interrupted: "announce_work_stopped",
       },
+    },
+    {
+      id: "work_retry",
+      kind: "wait",
+      params: { check: "dev/work_due" },
+      replay: "safe",
+      next: { ready: "work", interrupted: "end_cancelled" },
     },
     {
       id: "verify",

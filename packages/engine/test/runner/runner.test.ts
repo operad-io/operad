@@ -26,12 +26,17 @@ import {
   type LogBackend,
 } from "../../src/index.ts";
 import plugin from "../fixtures/plugins/runner.ts";
+import { WORKER_ABORT_GRACE_MS } from "../../src/runner/runner.ts";
+import { KILL_GRACE_MS } from "../../src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
 
 afterAll(cleanupTempRoots);
 
 const pluginPath = fileURLToPath(
   new URL("../fixtures/plugins/runner.ts", import.meta.url),
+);
+const neverSettlesChildPath = fileURLToPath(
+  new URL("../fixtures/never-settles-child.ts", import.meta.url),
 );
 const crashChildPath = fileURLToPath(
   new URL("../fixtures/crash-child.ts", import.meta.url),
@@ -430,6 +435,27 @@ describe("runner", () => {
     }
   });
 
+  test("a step that never settles still times out in a memory-backed process", async () => {
+    const root = await tempRoot();
+    const child = Bun.spawn({
+      cmd: [process.execPath, neverSettlesChildPath, root],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [out, err] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    expect(err).toBe("");
+    expect(JSON.parse(out)).toEqual({ results: ["failed"] });
+  });
+
+  test("an aborted worker gets longer than the slowest process-group stop", () => {
+    // Up to one grace for `ready`, one more after SIGTERM, plus message latency.
+    expect(WORKER_ABORT_GRACE_MS).toBeGreaterThan(2 * KILL_GRACE_MS);
+  });
+
   test("a step that throws is not recorded as its success result", async () => {
     const run = await setup("throwing");
     try {
@@ -447,6 +473,12 @@ describe("runner", () => {
       expect(Object.values(state.results).map((value) => value.result)).not.toContain(
         "ok",
       );
+      // The step type declares no failure result, yet history still says why.
+      const lines: string[] = [];
+      for await (const entry of historyEntries(run.log.read(run.runId))) {
+        lines.push(`${entry.what} ${entry.why}`);
+      }
+      expect(lines.join("\n")).toContain("boom");
     } finally {
       await run.close();
     }

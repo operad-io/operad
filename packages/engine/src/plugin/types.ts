@@ -239,6 +239,11 @@ export interface FactWriter {
   append(input: FactInput): MaybePromise<PluginFact>;
 }
 
+/** A fact as a store takes it: the cause is always known by then. */
+export interface StoreFactInput extends FactInput {
+  readonly cause: string;
+}
+
 /** How a worker reopens the store its run uses. */
 export interface PluginStoreLocation {
   readonly backend: "jsonl" | "sqlite";
@@ -248,7 +253,10 @@ export interface PluginStoreLocation {
 }
 
 /** The store a plugin sees: objects plus its own facts. */
-export interface PluginStore extends ObjectStore, FactWriter {
+export interface PluginStore extends ObjectStore {
+  /** Appends a fact; the caller names its cause (the kernel fills it for plugins). */
+  append(input: StoreFactInput): MaybePromise<PluginFact>;
+
   /**
    * `file` stores live under one directory and a worker step sees the same
    * data; `memory` stores exist only in this process.
@@ -330,9 +338,40 @@ export interface PluginStepResult {
   readonly data?: ObjectData | undefined;
 }
 
+/**
+ * Where a step type's concurrency is limited. `key` names what is shared (a
+ * model, an account); `undefined` means this call is not limited. `concurrent`
+ * is how many calls under one key may run at once across the operad home.
+ */
+export interface StepLimitDefinition {
+  readonly key: (
+    params: unknown,
+    settings: Readonly<Record<string, JsonValue>>,
+  ) => string | undefined;
+  readonly concurrent: (
+    params: unknown,
+    settings: Readonly<Record<string, JsonValue>>,
+  ) => number;
+}
+
+/** A held place under a limit key; `release` gives it back. */
+export interface StepLimitRequest {
+  readonly use: string;
+  readonly key: string;
+  readonly concurrent: number;
+  readonly signal?: AbortSignal | undefined;
+}
+
+/** Hands out places under limit keys to steps a step starts with `runStep`. */
+export interface StepLimiter {
+  acquire(request: StepLimitRequest): Promise<() => Promise<void>>;
+}
+
 /** Options for running a step through the registry. */
 export interface StepRunOptions {
   readonly runId: string;
+  /** Limits the steps this step starts through `ctx.runStep`. */
+  readonly limits?: StepLimiter | undefined;
   readonly object?: RunObject | undefined;
   readonly cwd?: string | undefined;
   readonly signal?: AbortSignal | undefined;
@@ -358,6 +397,8 @@ export interface StepTypeDefinition {
    * it above its own limits.
    */
   readonly timeoutSecs?: number | undefined;
+  /** Limits how many runs of this step may be going at once. */
+  readonly limit?: StepLimitDefinition | undefined;
   readonly run: (
     ctx: StepContext,
     params: unknown,
@@ -367,6 +408,8 @@ export interface StepTypeDefinition {
 /** What an object type's `resolve` receives. `cwd` is where the person is. */
 export interface ObjectResolveContext {
   readonly cwd: string;
+  /** A namespace the person named explicitly (`--repo <name>`), when they did. */
+  readonly scope?: string | undefined;
   readonly store: ObjectStore;
 }
 
@@ -400,7 +443,7 @@ export type ActionArgType =
 /**
  * One property of an action's arguments. It is the JSON Schema subset the
  * kernel validates: `type`, `enum`, `minimum`, `maximum`, `minLength`,
- * `maxLength`, `items`, `properties`, `required`, `additionalProperties: false`,
+ * `maxLength`, `items`, `properties`, `required`, `additionalProperties` (`false` or a schema for the other fields),
  * `description` and `role`.
  */
 export interface ActionArgSchema {
@@ -413,7 +456,7 @@ export interface ActionArgSchema {
   readonly items?: ActionArgSchema | undefined;
   readonly properties?: Readonly<Record<string, ActionArgSchema>> | undefined;
   readonly required?: readonly string[] | undefined;
-  readonly additionalProperties?: false | undefined;
+  readonly additionalProperties?: false | ActionArgSchema | undefined;
   /** A value the kernel fills when the field is absent. */
   readonly default?: unknown;
   readonly description?: string | undefined;

@@ -191,6 +191,7 @@ export async function resolveDevKey(
   type: string,
   id: string,
   cwd: string,
+  scope?: string,
 ): Promise<string | undefined> {
   const kind =
     type === PLAN_TYPE ? "plan" : type === TASK_TYPE ? "task" : undefined;
@@ -198,7 +199,10 @@ export async function resolveDevKey(
   if (parseId(id, kind) === undefined) return undefined;
   let repository: RepositoryData;
   try {
-    repository = await resolveRepository(store, { cwd });
+    repository = await resolveRepository(
+      store,
+      scope === undefined ? { cwd } : { name: scope },
+    );
   } catch (error) {
     if (error instanceof DevError) return undefined;
     throw error;

@@ -22,3 +22,5 @@ export {
 export type { ApplyHooks, ApplyResult } from "./service.ts";
 export { DEFAULT_STEP_TIMEOUT_MS, Runner } from "./runner.ts";
 export type { RunnerOptions, RunnerOutcome } from "./runner.ts";
+export { queuedSteps, scanLimits, StepLimits } from "./limits.ts";
+export type { LimitClaim, LimitEntry, StepLimitsOptions } from "./limits.ts";

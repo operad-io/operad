@@ -16,10 +16,13 @@ import {
   type StepContext,
 } from "@operad-io/engine";
 import {
+  CONCURRENCY_SETTING,
   eventNote,
   findCommand,
+  flagValue,
   JsonlLog,
   MAX_LINE_CHARS,
+  modelLimit,
   runAgent,
   systemClock,
   type AgentRunOutcome,
@@ -93,6 +96,7 @@ const PLUGIN_SETTINGS = {
       type: "number" as const,
       description: "How long an agent may be silent between tool calls.",
     },
+    concurrency: CONCURRENCY_SETTING,
   },
   additionalProperties: false as const,
 };
@@ -376,6 +380,14 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
       {
         name: "agent",
         results: ["done", "failed", "interrupted"],
+        // The model is what the step passes to radian: `<provider>/<model>`.
+        limit: modelLimit("harness-radian", (params) => {
+          if (!isRecord(params)) return undefined;
+          const model = flagValue(params.args, "--model");
+          if (model === undefined) return undefined;
+          const provider = flagValue(params.args, "--provider");
+          return provider === undefined ? model : `${provider}/${model}`;
+        }),
         async run(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
           const at = "harness-radian/agent";
           const input = paramsObject(params, at);

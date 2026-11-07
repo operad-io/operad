@@ -222,6 +222,57 @@ describe("plugin registry validation", () => {
     );
   });
 
+  test("rejects a step that returns something other than { result, data? }", async () => {
+    const root = await tempRoot();
+    const registry = new PluginRegistry(
+      [
+        def({
+          name: "a",
+          steps: [
+            { name: "text", results: ["ok"], run: () => "ok" as never },
+            { name: "bare", results: ["ok"], run: () => ({}) as never },
+            {
+              name: "data",
+              results: ["ok"],
+              run: () => ({ result: "ok", data: "not an object" }) as never,
+            },
+          ],
+        }),
+      ],
+      { storeRoot: join(root, "store") },
+    );
+    await expect(registry.runStep("a/text", {}, { runId: "r" })).rejects.toThrow(
+      /must return \{ result, data\? \}/,
+    );
+    await expect(registry.runStep("a/bare", {}, { runId: "r" })).rejects.toThrow(
+      /must return \{ result, data\? \}/,
+    );
+    await expect(registry.runStep("a/data", {}, { runId: "r" })).rejects.toThrow(
+      /data: must be an object/,
+    );
+  });
+
+  test("runCommand returns undefined for a verb no plugin declares", async () => {
+    const registry = new PluginRegistry([def({ name: "a", commands: [command] })]);
+    expect(await registry.runCommand(["nothing"])).toBeUndefined();
+  });
+
+  test("refuses an action on an object of another type", async () => {
+    const registry = new PluginRegistry([
+      def({
+        name: "a",
+        objects: [{ name: "one" }],
+        actions: [{ name: "go", on: "one", when: () => true, run: () => undefined }],
+      }),
+    ]);
+    await expect(
+      registry.runAction("a/go", undefined, {
+        object: { type: "two", id: "y", data: {} },
+        actor: { via: "test", id: "tester" },
+      }),
+    ).rejects.toThrow(/expected object type "one", got "two"/);
+  });
+
   test("rejects an unknown step type", async () => {
     const root = await tempRoot();
     const registry = new PluginRegistry([], {
@@ -356,17 +407,28 @@ describe("plugin registry validation", () => {
     expect(logs[0]).toContain("kaboom");
   });
 
-  test("keeps the short command behind a kernel verb", () => {
-    const registry = new PluginRegistry(
-      [def({ name: "a", commands: [command] })],
-      { kernelVerbs: ["run"] },
-    );
-    expect(registry.resolveCommand(["run"])).toBeUndefined();
-    expect(registry.resolveCommand(["a", "run"])).toEqual({
-      plugin: "a",
-      command: "run",
-      argv: [],
+  test("refuses a plugin command that shares a name with a kernel verb", () => {
+    expect(
+      () =>
+        new PluginRegistry([def({ name: "a", commands: [command] })], {
+          kernelVerbs: ["run"],
+        }),
+    ).toThrow(/plugin "a".*command "run".*kernel verb "run"/);
+  });
+
+  test("pending keeps a waiting run whose object is missing from the store", async () => {
+    const logs: string[] = [];
+    const registry = new PluginRegistry([def({ name: "a", objects: [{ name: "note" }] })], {
+      onLog: (message) => logs.push(message),
     });
+    const pending = await registry.pending([
+      { runId: "r", object: { type: "note", id: "missing" }, prompt: "Go?" },
+    ]);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.runId).toBe("r");
+    expect(pending[0]?.actions).toEqual([]);
+    expect(pending[0]?.object).toMatchObject({ type: "note", id: "missing", version: 0 });
+    expect(logs.join("\n")).toContain("not in the store");
   });
 
   test("needs the plugin prefix for an action two plugins declare", async () => {
@@ -448,5 +510,94 @@ describe("plugin registry validation", () => {
     expect(logs).toHaveLength(1);
     expect(logs[0]).toContain('flow "missing"');
     expect(logs[0]).toContain("not declared");
+  });
+  describe("step limits", () => {
+    const run = () => ({ result: "ok" });
+    const declare = (limit: unknown): PluginRegistry =>
+      new PluginRegistry([
+        def({
+          name: "limited",
+          steps: [{ name: "agent", results: ["ok"], limit, run } as never],
+        }),
+      ]);
+
+    test("accepts key and concurrent functions", () => {
+      const registry = declare({ key: () => "a", concurrent: () => 2 });
+      expect(registry.stepLimit("limited/agent", {})).toEqual({ key: "a", concurrent: 2 });
+    });
+
+    test("a key function that returns nothing means no limit for that call", () => {
+      const registry = declare({ key: () => undefined, concurrent: () => 2 });
+      expect(registry.stepLimit("limited/agent", {})).toBeUndefined();
+    });
+
+    test("refuses a declaration of the wrong shape, naming plugin and step type", () => {
+      const wrong: [unknown, string][] = [
+        ["one", "must be { key, concurrent }"],
+        [{ concurrent: () => 1 }, "key: must be a function"],
+        [{ key: () => "a" }, "concurrent: must be a function"],
+        [{ key: "a", concurrent: () => 1 }, "key: must be a function"],
+        [{ key: () => "a", concurrent: 2 }, "concurrent: must be a function"],
+        [{ key: () => "a", concurrent: () => 1, extra: 1 }, 'unknown field "extra"'],
+      ];
+      for (const [limit, reason] of wrong) {
+        const error = errorOf(() => declare(limit));
+        expect(error.message).toContain('plugin "limited"');
+        expect(error.message).toContain('step "agent"');
+        expect(error.message).toContain("limit:");
+        expect(error.message).toContain(reason);
+      }
+    });
+
+    test("a key or count that is not usable fails the call, naming the step type", () => {
+      const badKey = declare({ key: () => 7, concurrent: () => 1 });
+      expect(errorOf(() => badKey.stepLimit("limited/agent", {})).message).toContain(
+        'step "limited/agent": limit: key must return a non-empty string or undefined',
+      );
+      for (const count of [0, 1.5, "2"]) {
+        const badCount = declare({ key: () => "a", concurrent: () => count });
+        expect(errorOf(() => badCount.stepLimit("limited/agent", {})).message).toContain(
+          "concurrent must return a positive integer",
+        );
+      }
+      const throwing = declare({
+        key: () => {
+          throw new Error("no model");
+        },
+        concurrent: () => 1,
+      });
+      expect(errorOf(() => throwing.stepLimit("limited/agent", {})).message).toContain(
+        "no model",
+      );
+    });
+
+    test("the key and count are computed from the params and the plugin's settings", () => {
+      const registry = new PluginRegistry(
+        [
+          def({
+            name: "limited",
+            settings: { type: "object", properties: { slots: { type: "integer" } } },
+            steps: [
+              {
+                name: "agent",
+                results: ["ok"],
+                limit: {
+                  key: (params: unknown) =>
+                    typeof params === "object" && params !== null && "model" in params
+                      ? String((params as { model: unknown }).model)
+                      : undefined,
+                  concurrent: (_params: unknown, settings: Readonly<Record<string, unknown>>) =>
+                    Number(settings.slots),
+                },
+                run,
+              } as never,
+            ],
+          }),
+        ],
+        { settings: { limited: { slots: 3 } } },
+      );
+      expect(registry.stepLimit("limited/agent", { model: "m" })).toEqual({ key: "m", concurrent: 3 });
+      expect(registry.stepLimit("limited/agent", {})).toBeUndefined();
+    });
   });
 });

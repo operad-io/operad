@@ -5,6 +5,7 @@
  */
 import { mock } from "bun:test";
 import * as realFs from "node:fs";
+import { open as openAsync } from "node:fs/promises";
 import { join } from "node:path";
 
 let armed = false;
@@ -12,6 +13,7 @@ let inject = (): void => {};
 
 mock.module("../../src/log/file-system.ts", () => ({
   ...realFs,
+  openAsync,
   readFileSync: ((path: realFs.PathLike, options?: unknown) => {
     const result = (realFs.readFileSync as (p: realFs.PathLike, o?: unknown) => unknown)(
       path,

@@ -21,6 +21,13 @@ export const REVIEW_WAIT_CHUNK_MS = (STEP_TIMEOUT_SECS - 60) * 1000;
 export const MAX_REVIEW_WAITS = 36;
 
 /**
+ * How many times one attempt's work step may wait for an unavailable model
+ * before the failure goes to a person. It equals the review bound, so one
+ * step's visits stay within `DEV_MAX_VISITS`.
+ */
+export const MAX_WORK_WAITS = MAX_REVIEW_WAITS;
+
+/**
  * The most the visits of one step may add up to in a dev run: the kernel's
  * default of ten for ordinary loops plus one visit of `review` and of
  * `review_retry` for each allowed review wait.

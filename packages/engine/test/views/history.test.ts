@@ -76,6 +76,19 @@ describe("history view", () => {
     for (const line of lines) assertUserWords(line);
   });
 
+  test("a step that stopped with an unexpected result says what it reported", async () => {
+    const facts = [
+      fact(
+        "step_interrupted",
+        { step: "work", effectId: "work:1", reason: "undeclared_result", result: "failed", message: "boom" },
+        1,
+      ),
+    ];
+    const lines: string[] = [];
+    for await (const entry of historyEntries(from(facts))) lines.push(formatHistoryEntry(entry));
+    expect(lines[0]).toContain("boom");
+  });
+
   test("streams 10 000 steps without joining the log into one string", async () => {
     const root = await tempRoot();
     const log = openLog({ backend: "jsonl", path: join(root, "store") });

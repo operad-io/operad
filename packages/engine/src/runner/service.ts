@@ -24,12 +24,17 @@ export function objectKey(object: ObjectRef | undefined): string {
     : `${object.type}:${object.id}`;
 }
 
-/** The object a run belongs to, when its key names one. */
+/**
+ * The object a run belongs to, when its key names one. A run started without
+ * an object is keyed `flow:<plugin>/<flow>`, so that one active run per flow
+ * holds; `flow` is therefore not an object type and that key names no object.
+ */
 export function parseObjectKey(
   key: string,
 ): { readonly type: string; readonly id: string } | undefined {
   const colon = key.indexOf(":");
   if (colon <= 0 || colon === key.length - 1) return undefined;
+  if (key.slice(0, colon) === "flow") return undefined;
   return { type: key.slice(0, colon), id: key.slice(colon + 1) };
 }
 

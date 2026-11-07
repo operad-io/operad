@@ -50,6 +50,10 @@ function typeOf(value: unknown): string {
   return typeof value;
 }
 
+function schemaError(message: string): never {
+  throw new Error(message);
+}
+
 function normalizeSchema(value: unknown, at: string): ActionArgSchema {
   if (!isRecord(value)) {
     throw new Error(`${at}: must be an object`);
@@ -101,10 +105,13 @@ function normalizeSchema(value: unknown, at: string): ActionArgSchema {
     numeric[key] = typeof item === "number" ? item : undefined;
   }
 
-  const additional = value.additionalProperties;
-  if (additional !== undefined && additional !== false) {
-    throw new Error(`${at}.additionalProperties: only false is supported`);
-  }
+  const additionalRaw = value.additionalProperties;
+  const additional: false | ActionArgSchema | undefined =
+    additionalRaw === undefined || additionalRaw === false
+      ? additionalRaw
+      : isRecord(additionalRaw)
+        ? normalizeSchema(additionalRaw, `${at}.additionalProperties`)
+        : schemaError(`${at}.additionalProperties: must be false or a schema`);
 
   let properties: Record<string, ActionArgSchema> | undefined;
   if (value.properties !== undefined) {
@@ -153,7 +160,7 @@ function normalizeSchema(value: unknown, at: string): ActionArgSchema {
     ...(properties === undefined ? {} : { properties }),
     ...(required === undefined ? {} : { required }),
     ...(items === undefined ? {} : { items }),
-    ...(additional === false ? { additionalProperties: false as const } : {}),
+    ...(additional === undefined ? {} : { additionalProperties: additional }),
     ...(value.default === undefined ? {} : { default: value.default }),
     ...(description === undefined ? {} : { description }),
     ...(role === "note" ? { role } : {}),
@@ -248,7 +255,10 @@ function checkValue(
     }
   }
 
-  if (isRecord(value) && schema.properties !== undefined) {
+  if (
+    isRecord(value) &&
+    (schema.properties !== undefined || typeof schema.additionalProperties === "object")
+  ) {
     checkObject(schema, value, label, field);
   }
 }
@@ -269,6 +279,9 @@ function checkObject(
     if (property === undefined) {
       if (schema.additionalProperties === false) {
         fail(label, fieldName(field, name), "is not a field of this action");
+      }
+      if (typeof schema.additionalProperties === "object") {
+        checkValue(schema.additionalProperties, item, label, fieldName(field, name));
       }
       continue;
     }

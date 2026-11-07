@@ -161,6 +161,49 @@ Every error body is:
 | `504` | A section did not load in time. |
 | `500` | Anything else; the body carries no stack trace. |
 
+## Limiting runs of one model
+
+A provider may answer HTTP 429 when several runs use one model at once. The
+`harness-radian` and `harness-pi` plugins can limit that. Set `concurrency` in
+the plugin's `settings`:
+
+```json
+{
+  "plugins": {
+    "harness-pi": {
+      "module": "@operad-io/harness-pi",
+      "settings": { "concurrency": { "opencode-go/deepseek-v4.1-flash": 2 } }
+    }
+  }
+}
+```
+
+| Setting | Type | Default | What it does |
+|---|---|---|---|
+| `concurrency` | object, model name to integer | `{}` | How many agent runs of that model may go at once in this home, across all runs. Each count must be an integer of 1 or more; `0`, a string or a fraction refuses the plugin when `config.json` loads, and the log names `settings.concurrency`. A model that is not listed has no limit. |
+
+The count covers every agent run in the home, including the ones `dev` starts.
+A change takes effect with the next agent step that starts; steps already going
+keep their place.
+
+The limit is on a key, and the plugin builds it from the step's `args`:
+
+| Plugin | Key | Where the model comes from |
+|---|---|---|
+| `harness-pi` | `harness-pi:<model>` | the `--model` argument, else the plugin's `model` setting; with neither, the step is not limited |
+| `harness-radian` | `harness-radian:<provider>/<model>` | the `--provider` and `--model` arguments only (the model alone when there is no `--provider`); radian has no `model` setting, and a step without `--model` is not limited |
+
+The model is read from the step's own `args`, in either `--model value` or
+`--model=value` form; when a flag is repeated the last one counts. A model that
+only a flow's `args` names is not seen.
+
+A step over the limit waits in line, first come first served, and
+`operad running` (and `GET /v1/running`) shows it as
+`<step> queued (<key>, <n> ahead)`, where `<n>` is how many waiting steps are in
+front of it. `operad history` shows `<step> is queued`. If the step is stopped
+while it waits (the run is cancelled), it leaves the line, never runs, and ends
+as failed with the reason that it was cancelled.
+
 ## Notifications
 
 `notify` in `config.json` names a command for `serve` to run when something

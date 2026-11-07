@@ -23,7 +23,7 @@ import {
   whereFingerprint,
 } from "./paging.ts";
 import type {
-  FactInput,
+  StoreFactInput,
   FactsOptions,
   FactsPage,
   ListOptions,
@@ -370,12 +370,9 @@ export class FilePluginStore implements PluginStore {
     this.stopPoll = undefined;
   }
 
-  append(input: FactInput): PluginFact {
+  append(input: StoreFactInput): PluginFact {
     requireName(input.type, "fact type");
     const cause = input.cause;
-    if (cause === undefined) {
-      throw new Error("cause: must be a non-empty string");
-    }
     requireName(cause, "cause");
     const release = this.lockFacts();
     try {

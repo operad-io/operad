@@ -26,3 +26,4 @@ the row fields.
 | bun-fd-guard-M3 | packages/harness-radian/src/process.ts | the fixed code with `stdio` set back to four pipes, the fourth one unused | `harness process descriptors > running 30 harness commands next to open databases never closes a descriptor twice` (child exits 137) |
 | bun-fd-guard-M4 | packages/harness-radian/src/process.ts | `stdio` set back to four pipes | `child process stdio > no source spawns with more than three stdio entries or reads stdio[3] or higher` (names `packages/harness-radian/src/process.ts:434` and bf3a73e) |
 | TK0009-M8 | packages/harness-radian/test/support.ts | `processesUnder` returned nothing | `the guard sees a process whose command line names a temp directory` |
+| T-0021-M10 | packages/harness-radian/src/index.ts | the limit key used the model alone, without `--provider` | `harness-radian/agent step limit > the key is harness-radian:<provider>/<model> from the step's args` |

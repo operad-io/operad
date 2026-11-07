@@ -129,6 +129,14 @@ export function historyEntry(fact: HistoryFact): HistoryEntry {
       };
     }
 
+    case "step_queued":
+      return {
+        time,
+        step,
+        what: `${step ?? "the step"} is queued`,
+        why: `waiting for a place under ${text(payload.key) ?? "its limit"}`,
+      };
+
     case "edge_taken": {
       const target = text(payload.target) ?? "the next step";
       return {
@@ -180,7 +188,9 @@ export function historyEntry(fact: HistoryFact): HistoryEntry {
         reason === "recover_unsafe"
           ? "the run stopped and this step cannot be replayed safely"
           : reason === "undeclared_result"
-            ? `the step returned "${text(payload.result) ?? "an unknown result"}", which the flow does not expect`
+            ? `the step returned "${text(payload.result) ?? "an unknown result"}", which the flow does not expect${
+                text(payload.message) === undefined ? "" : `: ${text(payload.message)}`
+              }`
             : "the step did not finish";
       return { time, step, what: `${step ?? "the step"} interrupted`, why };
     }
@@ -250,7 +260,13 @@ export async function* historyEntries(
 ): AsyncGenerator<HistoryEntry> {
   for await (const fact of facts) {
     // Where a step runs is kernel bookkeeping; history shows what it did.
-    if (fact.kind === "step_started") continue;
+    if (
+      fact.kind === "step_started" ||
+      fact.kind === "step_slot" ||
+      fact.kind === "step_released"
+    ) {
+      continue;
+    }
     yield historyEntry(fact);
   }
 }

@@ -194,17 +194,17 @@ describe("shell/command", () => {
     expect(alive(pid)).toBe(false);
   });
 
-  test("megabytes of output land in the log and only the tail is in the fact", async () => {
+  test("more than 8 MiB of output lands in the log and only the tail is in the fact", async () => {
     const { registry } = await fixture();
     const result = await registry.runStep(
       "shell/command",
-      { line: "yes x | head -c 3000000" },
+      { line: "yes x | head -c 12000000" },
       { runId: "run-big" },
     );
 
     expect(result.result).toBe("pass");
     const data = dataOf(result);
-    expect(statSync(String(data.log)).size).toBeGreaterThanOrEqual(3_000_000);
+    expect(statSync(String(data.log)).size).toBeGreaterThanOrEqual(12_000_000);
     const tail = data.tail as readonly string[];
     expect(tail.length).toBeLessThanOrEqual(20);
     expect(tail.join("\n")).toContain("x");

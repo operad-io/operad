@@ -176,7 +176,11 @@ interface Context {
   readonly disabled: readonly string[];
 }
 
-async function openContext(home: string, io: CliIo): Promise<Context> {
+async function openContext(
+  home: string,
+  io: CliIo,
+  scope?: string,
+): Promise<Context> {
   const cwd = process.cwd();
   const config = await readConfig(home);
   const storeRoot = storeRootOf(config);
@@ -243,6 +247,7 @@ async function openContext(home: string, io: CliIo): Promise<Context> {
       store,
       log,
       cwd,
+      ...(scope === undefined ? {} : { scope }),
       onLog: (message) => io.error(`${message}\n`),
     }),
   };
@@ -976,6 +981,8 @@ async function findHistoryRuns(
 
   const parsed = parseObjectKey(id);
   if (parsed !== undefined) {
+    // A type no loaded plugin declares is unknown, as it is for a bare id.
+    if (!objectTypes.includes(parsed.type)) return [];
     return runs.filter((run) => run.object === `${parsed.type}:${parsed.id}`);
   }
 
@@ -1286,7 +1293,7 @@ async function commandRunning(
   }
   for (const item of running) {
     io.write(
-      `${item.runId}  ${item.flow}  ${item.step ?? "-"}  ${seconds(item.elapsedMs)}\n`,
+      `${item.runId}  ${item.flow}  ${item.stepLabel ?? "-"}  ${seconds(item.elapsedMs)}\n`,
     );
   }
 }
@@ -1917,7 +1924,10 @@ export async function main(
       command === "list" ||
       command === "show"
     ) {
-      const context = await openContext(home, io);
+      // `show` accepts `--repo <name>` to say where a bare id lives.
+      const showRepo =
+        command === "show" ? takeValueFlag(args.slice(1), "--repo") : undefined;
+      const context = await openContext(home, io, showRepo?.value);
       try {
         if (command === "pending") {
           const { args: rest, present } = splitFlag(args.slice(1), "--json");
@@ -1964,7 +1974,7 @@ export async function main(
           return 0;
         }
         if (command === "show") {
-          await commandShow(context, io, args.slice(1), tty);
+          await commandShow(context, io, showRepo?.args ?? args.slice(1), tty);
           return 0;
         }
         const { args: rest, present } = splitFlag(args.slice(1), "--json");
@@ -1977,14 +1987,17 @@ export async function main(
       }
     }
 
-    const context = await openContext(home, io);
+    // An action takes `--repo <name>` to say where a bare id lives; a plugin
+    // command reads its own `--repo`, so it still gets the arguments whole.
+    const actionRepo = takeValueFlag(args, "--repo");
+    const context = await openContext(home, io, actionRepo.value);
     try {
       const action = kernelAction(command, context.registry);
       if (action !== undefined) {
         await commandKernelAction(context, io, action, args.slice(1));
         return 0;
       }
-      if (await commandAction(context, io, args, tty)) return 0;
+      if (await commandAction(context, io, actionRepo.args, tty)) return 0;
       if (await commandPlugin(context, io, args)) return 0;
       const attempted = splitActionName(command ?? "")?.plugin ?? command ?? "";
       if (context.disabled.includes(attempted)) {

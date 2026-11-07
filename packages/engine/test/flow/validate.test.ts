@@ -35,6 +35,18 @@ describe("validateFlow", () => {
     expect(flow.steps).toHaveLength(2);
   });
 
+  test("accepts a result named __proto__", () => {
+    const flow = validateFlow({
+      name: "proto",
+      entry: "ask",
+      steps: [
+        waitPerson("ask", { ["__proto__"]: "done", interrupted: "done" }, ["__proto__"]),
+        endStep("done"),
+      ],
+    });
+    expect(Object.hasOwn(flow.steps[0]?.next ?? {}, "__proto__")).toBe(true);
+  });
+
   test("accepts a flow whose entry is an end step", () => {
     const flow = validateFlow({ name: "nothing", entry: "done", steps: [endStep("done")] });
     expect(flow.entry).toBe("done");
