@@ -238,10 +238,19 @@ Switching tabs closes the object. Every key the app reads is below.
 | `g` | key | none | The first row; under 100 columns with an object open, the top of the section. |
 | `G` | key | none | The last row; under 100 columns with an object open, the end of the section (it resumes following a live section). |
 | `r` | key | none | Fetch every list again, and the open object with its live sections. |
+| `a` | key | none | Run the open object's main action, the first one the object offers now (the footer names it with its key). A key bound to an action (below) wins over `a`. With no action, one footer line says so. |
+| a bound key | key | `GET /v1/keys` | Run that action on the open object. The person's `keys.json` bindings come before every built-in key above; a plugin's default binding comes after them, so it never takes `j` or `r` away. If the object does not offer the action now, one footer line says it is not available. |
+| `:` | key | none | Open the palette: type to fuzzy match the `plugin:action` names the open object offers, each with its key and "needs a note" or "asks to confirm". `↑` / `↓` (or Ctrl-P / Ctrl-N) move, `enter` runs, `escape` closes. With no object open it lists nothing but "no object is selected". |
+| note input | key | none | An action with a note field opens a text input. Typing adds text, `backspace` deletes, `shift-enter` or `Ctrl-J` adds a line, `enter` sends and `escape` cancels. A required note cannot be sent empty. |
+| confirmation | key | none | An action that asks to confirm shows `<action> <id>? [y/N]` in red. `y` sends it with `confirmed: true`; any other key cancels. |
 | `?` | key | none | Show or hide the key list. |
 | `q` | key | none | Quit. |
 | `Ctrl-C` | key | none | Quit at once. The terminal restores itself; no other Ctrl or Meta chord does anything. |
 | `escape` | key | none | Close the key list, or close the open object and stop its requests. While the key list is open only `?`, `escape` and `q` act; the others leave the list alone. |
+
+A refused action shows the server's status and message as they came (for
+example `409 …`) in one footer line until the next key. After a success the app
+fetches the lists and the open object again.
 
 ### Endpoints
 
