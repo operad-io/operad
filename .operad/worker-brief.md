@@ -17,6 +17,9 @@ and the boundary the kernel keeps.
 - Every behaviour has a test. A test that needs time uses an injected clock; a
   test that needs a crash kills a real child process. Wait for the event, do not
   sleep for it.
+- Record each mutation check in the `MUTATIONS.md` of the package whose code it
+  broke (`packages/<name>/MUTATIONS.md`), with an id of `<task id>-M<n>`. The
+  root `MUTATIONS.md` indexes the package files.
 - Repository text is English.
 
 Before you finish, run `bash scripts/verify.sh` and make it pass. It installs

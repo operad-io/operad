@@ -1,0 +1,171 @@
+# Mutation records — `engine`
+
+Rows whose mutation broke code in `packages/engine/`, in the order they were
+recorded. The root [MUTATIONS.md](../../MUTATIONS.md) explains the format and
+the row fields.
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0013-M1 | packages/engine/src/flow/validate.ts | inverted the missing-edge check (`!hasOwn` → `hasOwn`) | `validateFlow > names a result with no edge` |
+| TK0013-M2 | packages/engine/src/flow/validate.ts | unknown plugin step type fell back to an empty result list instead of an error | `validateFlow > names an unknown plugin step type` |
+| TK0013-M3 | packages/engine/src/flow/validate.ts | disabled the unreachable-step check | `validateFlow > names an unreachable step` |
+| TK0013-M4 | packages/engine/src/flow/load.ts | dropped the file name from the import-error message | `loadFlow > names the file when a module throws on import` |
+| TK0013-M5 | packages/engine/src/flow/define-flow.ts | removed the `wait_person` result-name check | `tsc -b`: `define-flow.test.ts(51,7): Unused '@ts-expect-error' directive` |
+| TK0013-M6 | packages/engine/src/flow/validate.ts | disabled the duplicate-id check | `validateFlow > names duplicate step ids` |
+| TK0013-M7 | packages/engine/src/flow/validate.ts | restored the fallback from `dev/command` to the unqualified `command` | `validateFlow > matches a plugin step type by its full name only` |
+| TK0011-M1 | `packages/engine/src/log/jsonl.ts` | `truncateTornLine` returned immediately, so a torn final line stayed on disk | `log backend: jsonl > a torn last line is cut off on open` |
+| TK0011-M2 | `packages/engine/src/log/jsonl.ts` | `append` skipped the `expectedSeq` comparison | `log backend: jsonl > append assigns sequence numbers, enforces expectedSeq, and accepts an empty batch` |
+| TK0011-M3 | `packages/engine/src/log/secret.ts`, `packages/engine/src/log/json-value.ts` | `Secret.toJSON` returned the value and the JSON walker stopped rejecting `Secret` | `log backend: jsonl > a Secret never reaches the log` |
+| TK0011-M4 | `packages/engine/src/log/jsonl.ts` | `recordInput` ignored the dedupe index | `log backend: jsonl > recordInput stores one record per (source, sourceKey)` |
+| TK0011-M5 | `packages/engine/src/log/jsonl.ts` | `startRun` stopped refusing an active flow/object pair | `log backend: jsonl > startRun keeps one active run per flow and object` |
+| TK0011-M6 | `packages/engine/src/log/jsonl.ts` | `ensureSchema` stopped refusing a newer `schema_version` | `log backend: jsonl > a newer schema_version is refused with a clear error` |
+| TK0011-M7 | `packages/engine/src/log/jsonl.ts` | `#rebuildInputs` recorded the file size from `statSync` instead of the bytes it had read | `opening a store does not miss an input appended during the rebuild` |
+| TK0011-M8 | `packages/engine/src/log/json-value.ts` | the JSON walker stopped rejecting a callable `toJSON` | `log backend: jsonl > a payload with a toJSON method is refused and writes nothing` |
+| TK0014-M1 | `packages/engine/src/kernel/decide.ts` | made the visit limit unreachable (`visit > Number.MAX_SAFE_INTEGER`) | `decide: visits > ends the run when a step is entered past the default maxVisits` |
+| TK0014-M2 | `packages/engine/src/kernel/decide.ts` | changed the crash-loop stop from `>=` to `>` | `decide: recover > requests a safe step again and stops after three recoveries` |
+| TK0014-M3 | `packages/engine/src/kernel/decide.ts` | treated every step as replay-safe on recover | `decide: recover > interrupts an unsafe step and leaves it` |
+| TK0014-M4 | `packages/engine/src/kernel/decide.ts` | skipped the declared-result check | `decide: step_result > turns an undeclared result into an interrupted failure` |
+| TK0014-M5 | `packages/engine/src/kernel/decide.ts` | inverted the timed-wait comparison (`now > due` returned early) | `decide: tick > does nothing before a timed wait is due` |
+| TK0014-M6 | `packages/engine/src/kernel/decide.ts` | removed the step_result effect id/status/step guard | `decide: step_result > ignores a result for an unknown effect` |
+| TK0014-M7 | `packages/engine/src/kernel/state.ts` | recorded a completed result as still `outstanding` | `evolve: each fact kind > step_result records the result once` |
+| TK0012-M1 | `packages/engine/src/log/sqlite.ts` | `append` skipped the `expectedSeq` comparison | `log backend: sqlite > append assigns sequence numbers, enforces expectedSeq, and accepts an empty batch` |
+| TK0012-M2 | `packages/engine/src/log/sqlite.ts` | `startRun` stopped refusing an active flow/object pair; the partial unique index still rejected the insert | `log backend: sqlite > startRun keeps one active run per flow and object` |
+| TK0012-M3 | `packages/engine/src/log/sqlite.ts` | `ensureSchema` stopped refusing a newer `schema_version` | `log backend: sqlite > a newer schema_version is refused with a clear error` |
+| TK0012-M4 | `packages/engine/src/log/sqlite.ts` | `recordInput` used `INSERT OR REPLACE`, so a duplicate reported `duplicate: false` | `log backend: sqlite > recordInput stores one record per (source, sourceKey)` |
+| TK0012-M5 | `packages/engine/src/log/sqlite.ts` | `read` stopped reporting a missing run | `log backend: sqlite > a run file deleted by hand makes read fail without touching other runs` |
+| TK0012-M6 | `packages/engine/src/log/sqlite.ts` | `read` ordered facts newest first | `log backend: sqlite > append assigns sequence numbers, enforces expectedSeq, and accepts an empty batch` |
+| TK0012-M7 | `packages/engine/src/log/sqlite.ts` | open errors were rethrown unwrapped, so a read-only directory surfaced a raw SQLite error | `opening a store in a read-only directory fails with a clear error` |
+| TK0012-M8 | `packages/engine/src/log/sqlite.ts` | `endRun` threw on an already-ended run | `log backend: sqlite > endRun is idempotent, unknown runs fail, and an ended run takes no facts` |
+| TK0012-M9 | `packages/engine/src/platform/sqlite-open.ts` | `enableWal` rethrew `SQLITE_BUSY` instead of waiting for the other writer through the busy handler | `opening waits while another process holds the store` |
+| TK0015-M1 | packages/engine/src/plugin/registry.ts | removed the duplicate plugin-name check | `plugin registry validation > rejects two plugins with the same name` |
+| TK0015-M2 | packages/engine/src/plugin/registry.ts | removed the try/catch around an action's `when` | `plugin registry validation > hides and logs an action whose when throws` |
+| TK0015-M3 | packages/engine/src/plugin/registry.ts | called the flow loader without the loaded step types | `plugin registry > gives the flow loader the loaded step types` |
+| TK0015-M4 | packages/engine/src/plugin/registry.ts | removed the `operadPlugin` version check | `plugin registry validation > rejects a plugin with an unsupported API version` |
+| TK0015-M5 | packages/engine/src/plugin/registry.ts | disabled the short-command clash check between plugins | `plugin registry validation > rejects two plugins that declare the same short command` |
+| TK0015-M6 | packages/engine/src/plugin/registry.ts | skipped the check that a step returned a declared result | `plugin registry validation > rejects a step that returns a result it did not declare` |
+| TK0015-M7 | packages/engine/src/plugin/store.ts | stopped appending a fact when an object is put | `plugin registry > runs the test plugin's step, command and action end to end` |
+| TK0016-M1 | packages/engine/src/runner/service.ts | dropped the run id from the input key, so the second run's start was a duplicate | `operad command > pending, running and history answer in user words` |
+| TK0016-M2 | packages/engine/src/runner/runner.ts | returned `ok` from the wall-time branch instead of a declared failure | `runner > a step that never ends becomes a failed result` |
+| TK0016-M3 | packages/engine/src/runner/lock.ts | treated every existing lock as held, ignoring a dead PID | `runner > the run lock keeps one runner per run and clears a stale pid` |
+| TK0016-M4 | packages/engine/src/loop/serve.ts | removed the due-time check, so a wait was woken early | `serve loop > does not wake a wait before it is due` |
+| TK0016-M5 | packages/engine/src/views/history.ts | dropped the words for an interrupted unsafe step | `serve loop > recovers an unsafe run into a person wait, and an action ends it` |
+| TK0016-M6 | packages/engine/src/views/pending.ts | suppressed the plugin actions on a waiting run | `operad command > pending, running and history answer in user words` |
+| TK0016-M7 | packages/engine/src/config/config.ts | ignored the sqlite backend and always chose jsonl | `operad config > reads plugins and a sqlite store with a relative path` |
+| TK0016-M8 | packages/engine/src/runner/service.ts | stopped ending the log run when the run ended | `runner > drives a run to the end, one batch per input` |
+| TK0016-M9 | packages/engine/src/runner/service.ts | treated every recorded input as applied, even when no fact used it | `runner > an input recorded before a crash is applied on recovery` |
+| TK0016-M10 | packages/engine/src/runner/runner.ts | replaced the wall-time message with a generic one | `runner > a synchronous step is stopped by the wall time` |
+| TK0016-M11 | packages/engine/src/config/config.ts | installed no default plugin | `operad command > init creates the home and prints each plugin check` |
+| TK0016-M12 | packages/engine/src/loop/serve.ts | stopped listening for the abort while sleeping | `serve loop > a sleeping loop ends as soon as the signal aborts` |
+| TK0016-M15 | packages/engine/src/plugin/file-store.ts | stopped refreshing a reader from the file | `the file plugin store > a second reader sees facts another writer appended` |
+| TK0016-M16 | packages/engine/src/plugin/builtin/shell.ts | reported a non-zero exit as success | `the base shell plugin > a command that exits non-zero is a failed result` |
+| TK0016-M17 | packages/engine/src/runner/runner.ts | made `chooseFailure` fall back to the step's first declared result instead of naming the failure | `runner > a step that throws is not recorded as its success result` |
+| TK0016-M18 | packages/engine/src/runner/runner.ts | removed the `preferInterrupted` early return, so a failed check reported its declared success result | `runner > a check that throws is not recorded as ready` |
+| TK0026-M1 | packages/engine/src/trigger/kernel.ts | ignored the stored result of a duplicate event and routed it again | `the kernel start entry > the same event twice records one input and starts one run` |
+| TK0026-M2 | packages/engine/src/trigger/kernel.ts | stopped writing the event into the active run's history | `the kernel start entry > an event for an object with an active run goes into that run's history` |
+| TK0026-M3 | packages/engine/src/trigger/kernel.ts | used the literal `$event.object` instead of the event's object | `the kernel start entry > a rule takes the event's object and its params reach the flow` |
+| TK0026-M4 | packages/engine/src/plugin/registry.ts, packages/engine/src/trigger/kernel.ts | removed the step event type prefix check in both places | `the kernel start entry > ctx.emit starts a matched flow and a bad type is refused` |
+| TK0026-M5 | packages/engine/src/kernel/decide.ts | disabled the hop-limit skip fact when a run ends | `the kernel start entry > hops stop after the ninth event and the history says why` |
+| TK0026-M7 | packages/engine/src/trigger/rules.ts | disabled the flow-exists check at load | `trigger rules > a rule whose flow does not exist is refused at load` |
+| TK0026-M8 | packages/engine/src/trigger/kernel.ts | dropped the input id from the start metadata | `the kernel start entry > the start fact is caused by the recorded event` |
+| TK0026-M9 | packages/engine/src/loop/serve.ts | started the tick request with `log.startRun` instead of the kernel entry | `serve loop > starts a run a plugin asks for on tick` |
+| TK0026-M10 | packages/engine/src/loop/serve.ts, packages/engine/src/trigger/kernel.ts | emitted the run-end event before ending the run, and stopped ending it inside the emitter | `the kernel start entry > a recovered run emits its end event once and starts the chained flow` |
+| TK0026-M11 | packages/engine/src/trigger/kernel.ts | dropped the global `trigger_observed` fact for an observed event | `the kernel start entry > observe records what it would have started` |
+| TK0026-M12 | packages/engine/src/log/sqlite.ts | disabled the migration of a legacy `inputs.run_id TEXT NOT NULL` table | `a store from before global inputs is migrated on open` |
+| TK0026-M13 | packages/engine/src/loop/serve.ts | skipped loading `triggers.json` for a kernel built inside `serveOnce` | `serve loop > recovery starts a run-end chain without a kernel argument` |
+| TK0026-M14 | packages/engine/src/runner/service.ts | marked the run ended before recording its end event | `run-end recovery > a crash after the run is ended still records its end event` |
+| TK0017-M6 | packages/engine/src/platform/process-group.ts | kept 20 000 lines in the fact instead of 20 | `shell/command > megabytes of output land in the log and only the tail is in the fact` |
+| TK0017-M7 | packages/engine/src/kernel/decide.ts | dropped the check params from the poll effect | `decide: tick > keeps a check's params in the poll effect` |
+| TK0017-M8 | packages/engine/src/runner/runner.ts | ran a wait check without its params | `a flow through the runner > waits on shell/probe with its params` |
+| TK0017-M9 | packages/engine/src/platform/process-group.ts | signaled only the process group leader, not the group | `shell/command > a child that outlives the line is in the group and is stopped` |
+| TK0017-M10 | packages/engine/src/runner/runner.ts | terminated a cancelled worker without asking it to stop its processes | `a flow through the runner > a run cancel stops the command's process group in a worker` |
+| TK0017-M11 | packages/engine/src/platform/process-group.ts | dropped the drain limit and waited for the output pipes to close | `shell/command > a child that leaves the group cannot hold the command open` (timed out) |
+| TK0017-M12 | packages/engine/src/platform/process-group.ts | sent the grace SIGKILL without checking that the group still exists | `process groups > the grace SIGKILL is not sent to a group that ended` |
+| TK0017-M15 | packages/engine/src/platform/process-group.ts | dropped the sentinel from the wrapper, so the group ends when the line exits | `process groups > the group outlives a finished line until the grace SIGKILL` |
+| TK0017-M16 | packages/engine/src/platform/process-group.ts | left the line's stderr out of the log instead of folding it into the command's output | `shell/command > a non-zero exit is a failure with its code and output path` |
+| TK0017-M17 | packages/engine/src/platform/process-group.ts | passed only the step's `env` to the command, dropping the host environment | `shell/command > the host environment is still there when env is given` |
+| TK0017-M19 | packages/engine/src/platform/process-group.ts | removed the sentinel's TERM trap, so the stop's SIGTERM ends the group before the grace | `process groups > the sentinel survives the stop's SIGTERM` |
+| TK0017-M20 | packages/engine/src/platform/process-group.ts | removed the wait for the sentinel's `ready` before the stop's first signal | `process groups > a stop before ready waits for the sentinel's trap` |
+| TK0025-M1 | packages/engine/src/views/presentation.ts | disabled the Promise check on `row` | `presentation views > a Promise or a slow row becomes an error row, not a crash` |
+| TK0025-M2 | packages/engine/src/views/presentation.ts | wrapped a timed-out `load` in a generic section error | `presentation views > a section over the timeout and over the cap is reported` |
+| TK0025-M3 | packages/engine/src/views/presentation.ts | removed the required-note check in `act` | `presentation views > runs actions with a required note and with confirmation` |
+| TK0025-M4 | packages/engine/src/views/presentation.ts | removed the confirmation check in `act` | `presentation views > runs actions with a required note and with confirmation` |
+| TK0025-M5 | packages/engine/src/plugin/registry.ts | dropped the warning for two plugins' clashing default keys | `presentation views > a key clash drops the later default and the action still runs` |
+| TK0025-M6 | packages/engine/src/views/presentation.ts | removed the event stream's bound | `presentation views > events coalesce a repeated id and stay bounded for a slow consumer` |
+| TK0025-M9 | packages/engine/src/views/presentation.ts | only added the kernel history section when the plugin was loaded | `presentation views > an unknown id and an unloaded plugin's object are clear` |
+| TK0025-M11 | packages/engine/src/plugin/file-store.ts | stopped watching the store directory, leaving subscriptions process-local | `presentation views > events reach a reader when another store writes the object` |
+| TK0025-M12 | packages/engine/src/log/jsonl.ts | stopped watching the runs directory, leaving subscriptions process-local | `presentation views > events reach a reader when another jsonl log appends` |
+| TK0025-M13 | packages/engine/src/log/sqlite.ts | stopped watching the database directory, leaving subscriptions process-local | `presentation views > events reach a reader when another sqlite log appends` |
+| TK0025-M14 | packages/engine/src/views/presentation.ts | measured a row with `Date.now` instead of the injected clock | `presentation views > a Promise or a slow row becomes an error row, not a crash` |
+| TK0025-M15 | packages/engine/src/views/presentation.ts | sliced the section at an arbitrary byte instead of a UTF-8 boundary | `presentation views > a truncated section keeps every multibyte character whole` |
+| TK0025-M16 | packages/engine/src/log/sqlite.ts | never started the `PRAGMA data_version` poll | `sqlite.test.ts > a subscription learns of a write when the watch never fires` |
+| TK0025-M17 | packages/engine/src/log/jsonl.ts | never started the run-file poll | `jsonl.test.ts > a subscription learns of a write when the watch never fires` |
+| TK0025-M18 | packages/engine/src/log/sqlite.ts | reported every poll as unchanged instead of comparing `data_version` | `sqlite.test.ts > a subscription learns of a write when the watch never fires` |
+| TK0025-M19 | packages/engine/test/fixtures/append-fact-child.ts | made the child write a different object, so only an in-process write could satisfy the reader | `presentation views > events reach a reader when another sqlite log appends` |
+| TK0019-M4 | packages/engine/src/plugin/registry.ts | made the action name alone its identity, so plan and task actions clashed | `dev actions > confirm is one name on a plan and on a task` |
+| TK0019-M6 | packages/engine/src/config/config.ts | installed only the shell plugin by default | `operad config > the default plugins are the shell plugin and dev` |
+| TK0019-M14 | packages/engine/src/platform/file-lock.ts | release deleted the renamed lock before checking whose nonce it held | `the lock file > release never deletes another process's lock` |
+| TK0019-M15 | packages/engine/src/platform/file-lock.ts | takeover deleted the renamed lock without comparing its nonce with the dead record's | `the lock file > a newer live lock renamed during a takeover is put back` |
+| TK0019-M16 | packages/engine/src/platform/file-lock.ts | wrote the record to `dev.lock` before the link, so a crash between the two left a lock | `the lock file > a crash between the tmp write and the link leaves no lock` |
+| TK0019-M17 | packages/engine/src/views/presentation.ts | skipped the plugin's `resolve` hook before the suffix lookup | `operad with the dev plugin > a bare id resolves in the repository of the current directory` |
+| TK0019-M18 | packages/engine/src/platform/file-lock.ts | treated an unreadable lock as dead immediately instead of after 30 s | `the lock file > an unparsable lock is live until its mtime is 30 seconds old` |
+| TK0019-M19 | packages/engine/src/plugin/file-store.ts | kept only the directory watch in a subscription and dropped the poll fallback | `the file plugin store > a subscription still reports a write the watch does not` |
+| TK0019-M20 | packages/engine/src/platform/watch.ts | left the wait's directory watch and fallback timer open when it finished | `the lock file > a real wait closes its watch and its timer` |
+| TK0026-M15 | packages/engine/src/loop/serve.ts | stopped adopting a pending start before spawning a run | `the kernel start entry > a crash after the run is created keeps the event that started it` |
+| TK0026-M16 | packages/engine/src/trigger/kernel.ts | removed the log lookup that finds the run an input started | `event receipt recovery > a crash after startRun in auto mode keeps one outcome` |
+| TK0026-M17 | packages/engine/src/log/jsonl.ts | made `recordOutcome` always append instead of returning the stored outcome | `event receipt recovery > two concurrent receives in observe mode keep one outcome` |
+| TK0026-M18 | packages/engine/src/trigger/kernel.ts | moved a candidate's start before its resolve claim | `event receipt recovery > dismiss and startCandidate race; exactly one wins` |
+| TK0018-M5 | packages/engine/src/runner/runner.ts | passed no flow params to a step | `harness-radian:prompt > runs the fake once with the prompt unchanged and ends with its result` |
+| TK0028-M1 | packages/engine/src/plugin/paging.ts | made `matchesWhere` accept every object | `object list > filters on an indexed field (jsonl)` |
+| TK0028-M2 | packages/engine/src/plugin/file-store.ts | stopped comparing a list cursor`s object type | `object list > refuses a cursor from another object type (jsonl)` |
+| TK0028-M3 | packages/engine/src/plugin/action-schema.ts | skipped the enum check in `validateActionArgs` | `operad presentation commands > an enum argument is listed in help and validated` |
+| TK0028-M4 | packages/engine/src/kernel/decide.ts | wrote `actor: null` into `person_answered` | `decide: person_answer > records who answered in person_answered` |
+| TK0028-M5 | packages/engine/src/plugin/file-store.ts | made `subscribeFacts` ignore its cursor | `object facts > a subscription after a cursor gets only later facts (jsonl)` |
+| TK0028-M6 | packages/engine/src/plugin/registry.ts | left the actor out of the action`s fact | `plugin registry > records who asked in the action's fact` |
+| TK0028-M7 | packages/engine/src/plugin/file-store.ts | made a fact unsubscribe remove only the listener, never stopping the shared watcher | `store lifecycle and concurrency > stops the watcher when the last fact subscription ends` |
+| TK0028-M8 | packages/engine/src/plugin/sqlite-store.ts | treated a declared empty index as an undeclared type | `store lifecycle and concurrency > refuses any filter when the type declares an empty index (sqlite)` |
+| TK0028-M9 | packages/engine/src/runner/step-worker.ts | opened a JSONL store in the worker instead of the configured backend | `runner > a worker step writes to the configured sqlite store` |
+| TK0028-M10 | packages/engine/src/plugin/file-store.ts | removed the append lock and took the next sequence from the stale entry count | `store lifecycle and concurrency > two jsonl writers assign unique, contiguous sequences` |
+| TK0028-M11 | packages/engine/src/plugin/sqlite-store.ts | stopped polling for facts another connection committed | `store lifecycle and concurrency > a sqlite subscription sees a fact another connection appended` |
+| TK0028-M13 | packages/engine/src/plugin/action-schema.ts | accepted a `role: "note"` property without type `"string"` | `plugin registry validation > rejects a note property that is not a string` |
+| TK0028-M14 | packages/engine/src/plugin/registry.ts | left the actor out of the action context | `plugin registry > an action receives the person's actor` |
+| TK0029-M1 | packages/engine/src/plugin/settings.ts | stopped filling declared defaults into an absent settings field | `plugin settings > fills declared defaults and gives the step a read-only section` |
+| TK0029-M2 | packages/engine/src/plugin/settings.ts | made `deepFreeze` return the value without freezing it | `plugin settings > fills declared defaults and gives the step a read-only section` |
+| TK0029-M3 | packages/engine/src/plugin/secrets.ts | wrote the secret file with mode 0644 instead of 0600 | `plugin secrets > set/get round-trips and writes 0600 in a 0700 directory` |
+| TK0029-M4 | packages/engine/src/plugin/registry.ts | skipped every `requires` check | `plugin requires > refuses a plugin whose required plugin is missing` |
+| TK0029-M5 | packages/engine/src/plugin/registry.ts | accepted every access profile field instead of refusing an unenforced one | `run access profile > refuses a field no step of the flow enforces, naming the field and step` |
+| TK0029-M6 | packages/engine/src/plugin/load.ts | loaded a plugin even when its config entry said `enabled: false` | `plugin enable and disable > a disabled plugin is not loaded and its objects return after enable` |
+| TK0029-M7 | packages/engine/src/kernel/decide.ts | dropped the access profile from the `run_started` fact | `run access profile > accepts a field one step of the flow enforces and gives it to every step` |
+| TK0029-M9 | packages/engine/src/log/sqlite.ts | left a schema_version 1 store refused instead of adding `runs.access` | `opens a schema_version 1 store and adds the access column` |
+| TK0029-M10 | packages/engine/src/log/jsonl.ts | left a schema_version 1 store refused instead of upgrading the marker | `opens a schema_version 1 store and upgrades the marker` |
+| TK0029-M11 | packages/engine/src/config/config.ts | turned a null settings section into `{}` | `plugin settings > a null settings section refuses the plugin instead of becoming an empty object` |
+| TK0029-M12 | packages/engine/src/plugin/registry.ts | accepted a null access profile as absent | `run access profile > refuses a null profile, which is not an access object` |
+| TK0029-M13 | packages/engine/test/fixtures/plugins/secret-notes.ts | wrote the secret value into the step's fact | `plugin secrets > a run that uses a secret leaves it out of facts, history, environment and log files` |
+| TK0026-M19 | packages/engine/src/trigger/kernel.ts | derived the emitting plugin from the event type instead of the caller | `the kernel start entry > emitStep checks the type against the caller's plugin, not the type` |
+| TK0026-M20 | packages/engine/src/log/jsonl.ts | skipped the unique-key lookup, so a duplicate observe appended a second fact | `event receipt recovery > two processes delivering the same observe event write one fact (jsonl)` |
+| TK0026-M21 | packages/engine/src/log/sqlite.ts | skipped the unique-key lookup, so a duplicate observe hit the unique index | `event receipt recovery > two processes delivering the same observe event write one fact (sqlite)` |
+| TK0027-M1 | packages/engine/src/trigger/rules.ts | stopped removing plugin rules whose source and type a user rule names | `trigger rules > a user rule replaces every plugin rule with the same source and type` |
+| TK0027-M2 | packages/engine/src/trigger/rules.ts | kept a later plugin's rule for a pair an earlier plugin already owns | `trigger rules > a later plugin's rule for the same pair is skipped and both are named` |
+| TK0027-M3 | packages/engine/src/plugin/registry.ts | skipped validating the rules a plugin ships | `trigger rules > an invalid plugin rule is refused at load with the plugin name and index` |
+| TK0027-M4 | packages/engine/src/plugin/registry.ts | stopped checking that a plugin rule's flow is loaded | `trigger rules > a plugin rule whose flow does not exist is refused at load` |
+| TK0027-M7 | packages/engine/src/trigger/rules.ts | cast a rule's `start.params` without the log's JSON-value check | `trigger rules > a plugin rule whose params are not JSON is refused at load with the plugin name and index` |
+| TK0027-M8 | packages/engine/src/trigger/rules.ts | joined source and type with a NUL instead of a JSON pair | `trigger rules > distinct source and type pairs are not confused when they contain a NUL` |
+| TK0027-M9 | packages/engine/src/trigger/rules.ts | treated an explicitly undefined `start.params` as if the key were absent | `trigger rules > a plugin rule with an explicitly undefined params is refused at load` |
+| TK0027-M10 | packages/engine/src/trigger/rules.ts | checked `start.params` through a second property read instead of the captured value | `trigger rules > a plugin rule's params are read once and the checked value is the one kept` |
+| TK0027-M11 | packages/engine/src/trigger/rules.ts | checked the params but returned the original, accessor-bearing object | `trigger rules > a nested getter's params are frozen into a plain JSON snapshot at load` |
+| TK0029-M14 | packages/engine/src/plugin/load.ts | treated every access error as a missing config file, not just `ENOENT` | `loadPluginRegistry > reports an unreadable config file instead of loading nothing` |
+| TK0030-M1 | `packages/engine/test/fixtures/sqlite-hold.ts` | removed the holder's busy timeout, so its `COMMIT` returned `SQLITE_BUSY` when the opener's busy handler briefly held a shared lock | `opening waits while another process holds the store` (1 failure in 50 runs under load) |
+| TK0024-M3 | packages/engine/src/config/config.ts | left `harness-radian` out of the plugins a new home installs | `operad config > the default plugins are shell, the radian harness and dev` |
+| step-timeout-M1 | packages/engine/src/runner/runner.ts | `timeoutMsFor` ignored the step type's `timeoutSecs` and always used the runner's step timeout | `runner > a step's own timeoutSecs replaces the runner's step timeout` |
+| TK0012-M1 | packages/engine/src/flow/validate.ts | stopped counting `interrupted` as a possible result of an unsafe step | `validateFlow > requires an interrupted edge for every unsafe step` |
+| TK0012-M3 | packages/engine/src/loop/serve.ts | treated every `running` run as a crash, so a freshly requested effect was recovered instead of run | `serve loop > a recorded answer runs the next step in serve's process` |
+| TK0012-M6 | packages/engine/src/runner/runner.ts | recorded pid 0 on the step-start fact instead of the executing process | `operad with the dev plugin > dev:reject from the CLI records, and serve runs the next step` |
+| waiting-notices-M3 | packages/engine/src/views/presentation.ts | the History section skipped the actions people ran | `operad with the dev plugin > a plan shows its auto level and priority, and its history shows who confirmed and set it` |
+| waiting-notices-M5 | packages/engine/src/views/presentation.ts | `show` with no id listed the oldest changes first | `operad with the dev plugin > show without an id lists the ten latest changes; an unknown id lists the five closest` |
+| waiting-notices-M6 | packages/engine/src/views/presentation.ts | an unknown id listed the farthest ids instead of the closest | `operad with the dev plugin > show without an id lists the ten latest changes; an unknown id lists the five closest` |
+| waiting-notices-M7 | packages/engine/src/trigger/kernel.ts | an event recorded in a run lost its summary text | `dev.waiting > work did nothing: one event, once, also when the step runs again` |
+| TK0005-M1 | packages/engine/src/platform/sqlite-open.ts | `setBusyTimeout` installed no busy timeout | `the busy timeout is installed on the connection` |
+| TK0005-M3 | packages/engine/src/platform/file-lock.ts | `linkExclusive` reported success when the target already existed | `the lock file > a live holder blocks until the deadline and names its pid` (and six more in that file) |
+| TK0005-M4 | packages/engine/src/platform/process-group.ts | the shared stop never sent the grace SIGKILL | `process groups` and the harness-radian tests (timed out) |
+| TK0005-M5 | packages/engine/src/platform/sqlite-open.ts | `enableWal` rethrew `SQLITE_BUSY` instead of waiting | `switching to WAL waits while another process holds the database` |
+| TK0005-M6 | packages/engine/src/platform/watch.ts | `resolveSubscriptionWatch` ignored an injected watch | `the injected watch, timer and period replace the defaults` |
+| TK0005-M7 | packages/engine/test/platform/no-copies.test.ts | dropped the `process.kill(-` pattern from the scan | `the platform module is the only copy > the scan finds each forbidden call outside platform/` |
