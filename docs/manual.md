@@ -76,7 +76,7 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 | `GET /v1/running` | The same list as `operad running`. |
 | `GET /v1/objects/<id>` | `{ "id", "type", "row", "sections", "actions" }`: the row, the section directory, and the actions available now with their `args` schema, `note` field and `confirm` flag. |
 | `GET /v1/objects/<id>/sections/<section>?cursor=<c>&full=<bool>` | `{ "markdown": "...", "next": "<c>" }`. `full=true` skips the size cap. |
-| `POST /v1/act` | Runs one action. The body is `{ "action": "plugin:action", "id": "<id>", "args": {...}, "note": "...", "confirmed": true }`; only `action` and `id` are required. An action with `confirm: true` needs `"confirmed": true`. The body is at most 1 MiB; a larger one gets `413`. |
+| `POST /v1/act` | Runs one action. The body is `{ "action": "plugin:action", "id": "<id>", "args": {...}, "note": "...", "confirmed": true }`; only `action` is always required, and an action that targets an object also needs `id`. An action with `confirm: true` needs `"confirmed": true`. The body is at most 1 MiB; a larger one gets `413`. |
 | `GET /v1/events` | An SSE stream of changes. |
 
 `POST /v1/act` records the caller as `{ "via": "http", "id": "operad app" }`.

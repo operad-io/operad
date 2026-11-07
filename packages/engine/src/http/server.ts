@@ -476,9 +476,11 @@ function createHandler(
       if (typeof action !== "string" || action.length === 0) {
         return errorResponse(400, "args", "the body needs an action");
       }
+      // `id` is optional: an action that does not target an object names no
+      // object, and the views decide whether the action can run without one.
       const id = body.id;
-      if (typeof id !== "string" || id.length === 0) {
-        return errorResponse(400, "args", "the body needs an id");
+      if (id !== undefined && typeof id !== "string") {
+        return errorResponse(400, "args", "id must be a string");
       }
       const args = body.args === undefined ? {} : body.args;
       if (!isRecord(args)) {

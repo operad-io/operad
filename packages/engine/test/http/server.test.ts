@@ -603,6 +603,37 @@ describe("http server", () => {
     }
   });
 
+  test("accepts an act body without an id and lets the views name the missing object", async () => {
+    const h = await makeHarness();
+    try {
+      seed(h, "one", { title: "First", state: "new" });
+
+      const missing = await api(h, "/v1/act", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "webtest:approve" }),
+      });
+      expect(missing.status).toBe(404);
+      const missingError = (await json(missing)).error as {
+        kind: string;
+        message: string;
+      };
+      expect(missingError.kind).toBe("not-found");
+      expect(missingError.message).toContain("object id");
+      expect(h.store.get("item", "one")?.data.approved).toBeUndefined();
+
+      const unknown = await api(h, "/v1/act", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "nobody:nothing" }),
+      });
+      expect(unknown.status).toBe(404);
+      expect((await json(unknown)).error).toMatchObject({ kind: "action" });
+    } finally {
+      await h.close();
+    }
+  });
+
   test("streams changes, resumes from Last-Event-ID and resets an old id", async () => {
     const h = await makeHarness();
     try {

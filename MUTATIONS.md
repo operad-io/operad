@@ -683,6 +683,13 @@
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0019-http-api-M15 | packages/dev/src/actions.ts | claimed at the version read inside the action instead of the version the action was offered on, so two lead actions both won | `dev:rework and dev:reverify > an action offered a stale object loses even while the task still waits` |
+
+## T-0019-http-api — rework 5: the act body's optional id
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0019-http-api-M16 | packages/engine/src/http/server.ts | made `POST /v1/act` require an id again, so the handler answered `400` before the views could name the missing object | `http server > accepts an act body without an id and lets the views name the missing object` |
+
 ## TK0005 — the platform module
 
 | id | file | mutation | failing test |
