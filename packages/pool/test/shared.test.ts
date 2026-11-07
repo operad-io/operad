@@ -27,6 +27,25 @@ describe("FilePlaces", () => {
     expect((await two.claim([claim("b")])).kind).toBe("taken");
   });
 
+  test("places taken in the same millisecond by separate instances have distinct ids", async () => {
+    const dir = join(await tempRoot(), "pool");
+    const realNow = Date.now;
+    Date.now = () => 1_700_000_000_000;
+    try {
+      const wide = (own: string): Claim => ({ own: `count:${own}`, ownLimit: 5, home: "harness:h", homeLimit: undefined });
+      const one = await new FilePlaces(dir).claim([wide("a")]);
+      const two = await new FilePlaces(dir).claim([wide("a")]);
+      if (one.kind !== "taken" || two.kind !== "taken") throw new Error("unexpected");
+      await one.release();
+      // The other holder is still counted against a limit of one.
+      const limited: Claim = { own: "count:a", ownLimit: 1, home: "harness:h", homeLimit: undefined };
+      expect(await new FilePlaces(dir).claim([limited])).toMatchObject({ kind: "blocked", full: ["flow"] });
+      await two.release();
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
   test("the flow count is shared too", async () => {
     const dir = join(await tempRoot(), "pool");
     const wide = (own: string): Claim => ({ own: `count:${own}`, ownLimit: 1, home: "harness:h", homeLimit: undefined });

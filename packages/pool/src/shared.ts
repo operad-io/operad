@@ -8,6 +8,7 @@
  */
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { watchDirectory, withLockFile } from "@operad-io/engine/platform";
 import type { Claim, ClaimResult, Places } from "./places.ts";
@@ -112,7 +113,7 @@ export class FilePlaces implements Places {
 
   private write(book: Book): void {
     mkdirSync(this.dir, { recursive: true });
-    const tmp = `${this.file}.${process.pid}.${this.counter}.tmp`;
+    const tmp = `${this.file}.${process.pid}.${randomUUID()}.tmp`;
     writeFileSync(tmp, JSON.stringify(book));
     renameSync(tmp, this.file);
   }
@@ -166,7 +167,8 @@ export class FilePlaces implements Places {
           full.push("home");
         } else {
           this.counter += 1;
-          const id = `${process.pid}-${Date.now()}-${this.counter}`;
+          // Unique across instances: step threads share the pid and may share the millisecond.
+          const id = `${process.pid}-${randomUUID()}`;
           this.write({
             version: book.version + 1,
             held: [
