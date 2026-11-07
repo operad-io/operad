@@ -98,6 +98,7 @@ export type ViewErrorKind =
   | "section"
   | "timeout"
   | "action"
+  | "not-available"
   | "unavailable"
   | "note"
   | "confirm"
@@ -556,13 +557,13 @@ export class Views {
         `plugin "${target.plugin}": action "${target.action.name}": when failed: ${messageOf(error)}`,
       );
       throw new ViewError(
-        "action",
+        "not-available",
         `action "${target.info.name}" is not available now`,
       );
     }
     if (holds !== true) {
       throw new ViewError(
-        "action",
+        "not-available",
         `action "${target.info.name}" is not available now`,
       );
     }

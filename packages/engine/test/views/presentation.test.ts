@@ -266,7 +266,7 @@ describe("presentation views", () => {
     await expect(
       views.act("demo:hidden", "item:one", { actor: ACTOR }),
     ).rejects.toMatchObject({
-      kind: "action",
+      kind: "not-available",
     });
     views.close();
     await log.close();
