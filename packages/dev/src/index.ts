@@ -3,6 +3,7 @@
 import { definePlugin } from "@operad-io/engine";
 import devFlow from "../flows/dev.flow.ts";
 import { actions } from "./actions.ts";
+import { runAnnounce } from "./announce.ts";
 import { checkDev } from "./check.ts";
 import { commands } from "./commands.ts";
 import { runRework, runReview, runVerify } from "./gate.ts";
@@ -74,8 +75,24 @@ export function createDevPlugin() {
         results: ["done", "cancelled"],
         run: runCleanup,
       },
+      {
+        name: "announce",
+        results: ["done", "interrupted", "cancelled"],
+        run: runAnnounce,
+      },
     ],
     flows: [devFlow],
+    // Every stop that needs a person is in history; a user can route the event
+    // to a channel by replacing this rule.
+    rules: [
+      {
+        source: "operad",
+        type: "dev.waiting",
+        start: { flow: "dev" },
+        object: "$event.object",
+        mode: "observe",
+      },
+    ],
     actions,
     commands,
     onTick: runScheduler,
@@ -96,6 +113,7 @@ export function createDevPlugin() {
 export default createDevPlugin();
 
 export * from "./actions.ts";
+export * from "./announce.ts";
 export * from "./check.ts";
 export * from "./commands.ts";
 export * from "./gate.ts";

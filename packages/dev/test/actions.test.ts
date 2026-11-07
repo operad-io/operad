@@ -17,6 +17,20 @@ guardLockHandles();
 
 const ACTOR = { via: "test", id: "tester" } as const;
 
+/** Gives a waiting task the verified commit a merge needs. */
+async function verifiedHead(
+  store: ReturnType<typeof storeAt>,
+  id: string,
+): Promise<void> {
+  const current = taskData((await getTask(store, id)).data);
+  await store.put(
+    "task",
+    id,
+    { ...current, attempt: { number: 1, run: "run-1", verified: "abc123" } },
+    "test:verified",
+  );
+}
+
 async function setup(
   onCancelRun?: (runId: string) => void,
   onAnswer?: (
@@ -183,6 +197,7 @@ describe("dev actions", () => {
     const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
     const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
     await setTaskPhase(store, task.id, "waiting");
+    await verifiedHead(store, task.id);
 
     const pending = await registry.pending([
       { runId: "run-1", object: { type: "task", id: task.id } },
@@ -197,6 +212,64 @@ describe("dev actions", () => {
       actor: ACTOR,
     });
     expect(answers).toEqual([["merge", undefined]]);
+  });
+
+  test("merge refuses a task whose head was never verified, and says why", async () => {
+    const answers: string[] = [];
+    const { store, registry, repository } = await setup(undefined, (_runId, choice) => {
+      answers.push(choice);
+    });
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
+    await setTaskPhase(store, task.id, "waiting");
+    const before = await getTask(store, task.id);
+    await expect(
+      registry.runAction("dev/merge", {}, {
+        object: before,
+        runId: "run-1",
+        actor: ACTOR,
+      }),
+    ).rejects.toThrow(/has no verified commit; run operad dev:reverify T-0001-one first/);
+    expect(answers).toEqual([]);
+    expect((await getTask(store, task.id)).version).toBe(before.version);
+  });
+
+  test("a refused action names the state and the state it needs", async () => {
+    const { store, registry, repository } = await setup();
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
+    await setTaskPhase(store, task.id, "ready");
+    const why = (name: string, object: Awaited<ReturnType<typeof getTask>>) =>
+      registry
+        .actionDefinition("dev", name, object.type)
+        ?.why?.(object);
+    expect(why("confirm", await getTask(store, task.id))).toBe(
+      "T-0001-one is ready; dev:confirm needs proposed",
+    );
+    expect(why("merge", await getTask(store, task.id))).toBe(
+      "T-0001-one is ready; dev:merge needs waiting",
+    );
+  });
+
+  test("priority on a plan whose auto level is off says the scheduler will not start it", async () => {
+    const { store, registry, repository } = await setup();
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    const run = await registry.runAction("dev/priority", { level: "P1" }, {
+      object: await getPlan(store, plan.id),
+      actor: ACTOR,
+    });
+    expect(run.value).toBe(
+      "P-0001-work has auto off: the scheduler does not start its tasks; run operad dev:auto P-0001-work --level merge",
+    );
+    await registry.runAction("dev/auto", { level: "merge" }, {
+      object: await getPlan(store, plan.id),
+      actor: ACTOR,
+    });
+    const quiet = await registry.runAction("dev/priority", { level: "P2" }, {
+      object: await getPlan(store, plan.id),
+      actor: ACTOR,
+    });
+    expect(quiet.value).toBeUndefined();
   });
 
   test("reject appends the owner's rework before answering", async () => {

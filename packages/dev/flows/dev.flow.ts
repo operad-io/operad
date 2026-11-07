@@ -1,6 +1,20 @@
 import { defineFlow } from "@operad-io/engine";
 
 /**
+ * A step in front of the person wait: it tells the outside world once that the
+ * task needs a person, then goes on to the wait.
+ */
+function announce(id: string, from: string, result: string) {
+  return {
+    id,
+    kind: "plugin" as const,
+    params: { use: "dev/announce", params: { from, result } },
+    replay: "safe" as const,
+    next: { done: "wait", interrupted: "wait", cancelled: "end_cancelled" },
+  };
+}
+
+/**
  * The dev flow: give a task a worktree, let a worker change it, gate the
  * commit, and send a failed gate back for another pass. A person decides the
  * merge; the merge lands on main and cleanup removes the worktrees and branches.
@@ -17,10 +31,10 @@ export default defineFlow({
       next: {
         ready: "work",
         conflict: "work",
-        blocked: "wait",
+        blocked: "announce_blocked",
         failed: "end_failed",
         cancelled: "end_cancelled",
-        interrupted: "wait",
+        interrupted: "announce_worktree_stopped",
       },
     },
     {
@@ -30,10 +44,10 @@ export default defineFlow({
       replay: "unsafe",
       next: {
         done: "verify",
-        nothing: "wait",
-        failed: "wait",
+        nothing: "announce_nothing",
+        failed: "announce_work_failed",
         cancelled: "end_cancelled",
-        interrupted: "wait",
+        interrupted: "announce_work_stopped",
       },
     },
     {
@@ -53,9 +67,9 @@ export default defineFlow({
       params: { use: "dev/review", params: {} },
       replay: "safe",
       next: {
-        pass: "wait",
+        pass: "announce_ready",
         fail: "rework",
-        failed: "wait",
+        failed: "announce_review_failed",
         cancelled: "end_cancelled",
       },
     },
@@ -66,22 +80,33 @@ export default defineFlow({
       replay: "safe",
       next: {
         again: "worktree",
-        ask: "wait",
+        ask: "announce_rework",
         cancelled: "end_cancelled",
       },
     },
+    announce("announce_blocked", "worktree", "blocked"),
+    announce("announce_worktree_stopped", "worktree", "interrupted"),
+    announce("announce_nothing", "work", "nothing"),
+    announce("announce_work_failed", "work", "failed"),
+    announce("announce_work_stopped", "work", "interrupted"),
+    announce("announce_ready", "review", "pass"),
+    announce("announce_review_failed", "review", "failed"),
+    announce("announce_rework", "rework", "ask"),
+    announce("announce_integrate", "integrate", "failed"),
     {
       id: "wait",
       kind: "wait_person",
       params: {
-        prompt: "The task is waiting for you: merge it or reject it.",
-        choices: ["merge", "reject"],
-        note: "the run stopped during {step}; reject to run it again",
+        prompt:
+          "The task is waiting for you: merge it, reject it, or verify and review it again.",
+        choices: ["merge", "reject", "reverify"],
+        note: "the run stopped during {step}; reject to run it again, or reverify to check the same commit again",
       },
       replay: "safe",
       next: {
         merge: "integrate",
         reject: "worktree",
+        reverify: "verify",
         interrupted: "end_cancelled",
       },
     },
@@ -94,7 +119,7 @@ export default defineFlow({
         merged: "cleanup",
         conflict: "worktree",
         fail: "worktree",
-        failed: "wait",
+        failed: "announce_integrate",
         cancelled: "end_cancelled",
       },
     },
