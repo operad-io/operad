@@ -140,6 +140,8 @@ export interface ActOptions {
   /** `args` for the note property, kept as `--note` convenience. */
   readonly note?: string | undefined;
   readonly yes?: boolean | undefined;
+  /** Where the person asked: the command line or the HTTP interface. */
+  readonly surface?: "cli" | "http" | undefined;
   /** Who asked; the CLI passes `{ via: "cli", id: <user> }`. */
   readonly actor: Actor;
 }
@@ -673,9 +675,13 @@ export class Views {
     }
 
     if (target.action.confirm === true && options.yes !== true) {
+      const hint =
+        options.surface === "http"
+          ? 'send "confirmed": true in the request body'
+          : "pass --yes";
       throw new ViewError(
         "confirm",
-        `action "${target.info.name}" needs confirmation; pass --yes`,
+        `action "${target.info.name}" needs confirmation; ${hint}`,
       );
     }
 

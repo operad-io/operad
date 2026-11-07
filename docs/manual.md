@@ -53,8 +53,8 @@ The first `operad serve` with `http.enabled` creates one bearer token, 32 random
 bytes in base64url, in `secrets/http.json`. Every request must carry
 `Authorization: Bearer <token>`; a request without it, or with a token that is
 not current, gets `401`. `operad http token rotate` replaces the token at once:
-a running `serve` refuses the old one from the moment the command returns. No
-endpoint shows the token.
+a running `serve` refuses the old one from the moment the command returns and
+ends the event streams opened with it. No endpoint shows the token.
 
 `serve` prints one line per address it listens on:
 
@@ -76,7 +76,7 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 | `GET /v1/running` | The same list as `operad running`. |
 | `GET /v1/objects/<id>` | `{ "id", "type", "row", "sections", "actions" }`: the row, the section directory, and the actions available now with their `args` schema, `note` field and `confirm` flag. |
 | `GET /v1/objects/<id>/sections/<section>?cursor=<c>&full=<bool>` | `{ "markdown": "...", "next": "<c>" }`. `full=true` skips the size cap. |
-| `POST /v1/act` | Runs one action. The body is `{ "action": "plugin:action", "id": "<id>", "args": {...}, "note": "...", "confirmed": true }`; only `action` and `id` are required. An action with `confirm: true` needs `"confirmed": true`. |
+| `POST /v1/act` | Runs one action. The body is `{ "action": "plugin:action", "id": "<id>", "args": {...}, "note": "...", "confirmed": true }`; only `action` and `id` are required. An action with `confirm: true` needs `"confirmed": true`. The body is at most 1 MiB; a larger one gets `413`. |
 | `GET /v1/events` | An SSE stream of changes. |
 
 `POST /v1/act` records the caller as `{ "via": "http", "id": "operad app" }`.
@@ -89,16 +89,20 @@ It records the action the same way the command line does, and a running
 changed:
 
 ```text
-id: 7
+id: 3f9c2a1b7d4e5f60-7
 data: {"id":"T-0019-http-api"}
 
 ```
 
-The `id:` line increases on every event. A client that reconnects with
-`Last-Event-ID` receives the events it missed. When that id is older than the
-server still keeps, the server sends one `reset` event instead; the client then
+An `id:` is an opaque string. It changes on every event and starts with a
+value the process chose at boot, so an id from an earlier `serve` is not
+resumable. A client that reconnects with `Last-Event-ID` receives the events it
+missed. When that id is older than the server still keeps, or comes from an
+earlier `serve`, the server sends one `reset` event instead; the client then
 refetches the lists and the open sections. A comment line keeps the stream open
-while nothing changes.
+while nothing changes. A client that stops reading is disconnected once its
+backlog reaches the size of the resume window; it reconnects and gets a
+`reset`.
 
 ### Errors
 
@@ -114,6 +118,7 @@ Every error body is:
 | `401` | A missing or wrong bearer token. |
 | `404` | No such object, section or action, or no endpoint. |
 | `409` | The action is not available now, it needs confirmation, or its plugin is not loaded. |
+| `413` | The request body is larger than 1 MiB. |
 | `422` | The action's plugin refused it; `message` is the plugin's own message. |
 | `504` | A section did not load in time. |
 | `500` | Anything else; the body carries no stack trace. |

@@ -636,3 +636,13 @@
 | T-0019-http-api-M9 | packages/shell/src/process.ts | the stop skipped its grace SIGKILL, so a line that ignores SIGTERM kept the group alive | `shell/command > cancel stops the process group and reports interrupted` (timed out after 5000ms) |
 | bun-fd-guard-M4 | packages/harness-radian/src/process.ts | `stdio` set back to four pipes | `child process stdio > no source spawns with more than three stdio entries or reads stdio[3] or higher` (names `packages/harness-radian/src/process.ts:434` and bf3a73e) |
 | review-did-not-finish-M1 | packages/dev/src/announce.ts | named the reason `review failed` again | `dev.waiting > a review that did not finish: one event, once, also when the step runs again` |
+
+## T-0019-http-api — rework 3: SSE ids, stream limits, rotation and the HTTP confirm hint
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0019-http-api-M10 | packages/engine/src/http/server.ts | the resume check ignored the boot id, so an id from an earlier serve looked current | `http server > a Last-Event-ID from an earlier serve gets one reset` |
+| T-0019-http-api-M11 | packages/engine/src/http/server.ts | `push` accepted every event, so a client that stopped reading kept an unbounded queue | `http server > ends a client that stops reading instead of growing without bound` |
+| T-0019-http-api-M12 | packages/engine/src/http/server.ts | the token watcher noticed a rotation but did not end the open streams | `http server > rotating the token ends the event streams opened with the old one` |
+| T-0019-http-api-M13 | packages/engine/src/http/server.ts | `Bun.serve` got a body limit eight times the protocol's | `http server > refuses a request body larger than one mebibyte` |
+| T-0019-http-api-M14 | packages/engine/src/views/presentation.ts | the confirm refusal always said `pass --yes`, also over HTTP | `http server > acts with a note, refuses without one, and needs confirmed for a confirm action` |

@@ -4,6 +4,7 @@
  * starts this; no other command opens the port.
  */
 
+import { randomBytes } from "node:crypto";
 import type { HttpConfig } from "../config/config.ts";
 import type { LogBackend } from "../log/types.ts";
 import { messageOf } from "../plugin/errors.ts";
@@ -29,6 +30,12 @@ import {
 /** How long an idle event stream waits before a keep-alive comment. */
 export const DEFAULT_KEEP_ALIVE_MS = 15_000;
 
+/** How often a running server checks whether `http token rotate` replaced the token. */
+export const DEFAULT_TOKEN_CHECK_MS = 1_000;
+
+/** The largest request body `serve` accepts, in bytes. */
+export const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+
 export interface HttpServerOptions {
   readonly home: string;
   readonly config: HttpConfig;
@@ -41,6 +48,7 @@ export interface HttpServerOptions {
   readonly onListen?: ((url: string) => void) | undefined;
   readonly maxEventIds?: number | undefined;
   readonly keepAliveMs?: number | undefined;
+  readonly tokenCheckMs?: number | undefined;
   readonly clock?: (() => number) | undefined;
 }
 
@@ -51,27 +59,33 @@ export interface HttpServerHandle {
   stop(): Promise<void>;
 }
 
-interface EventEntry {
+export interface EventEntry {
+  /** The position inside this process's stream. */
   readonly seq: number;
+  /** The SSE id: `<bootId>-<seq>`, opaque to the client. */
+  readonly event: string;
+  /** The object that changed. */
   readonly id: string;
 }
 
 /** The bounded stream of ids every event client resumes from. */
-class EventHub {
+export class EventHub {
   private readonly entries: EventEntry[] = [];
   private readonly max: number;
   private readonly listeners = new Set<(entry: EventEntry) => void>();
   private readonly iterator: AsyncIterator<ViewEvent>;
+  /** Random once per process: an id from another boot never resumes here. */
+  private readonly bootId = randomBytes(8).toString("hex");
   private seq = 0;
   private stopped = false;
 
   constructor(
-    views: Views,
+    events: AsyncIterable<ViewEvent>,
     max: number,
     onLog: (message: string) => void,
   ) {
     this.max = Math.max(1, max);
-    this.iterator = views.events()[Symbol.asyncIterator]();
+    this.iterator = events[Symbol.asyncIterator]();
     void this.pump(onLog);
   }
 
@@ -81,7 +95,11 @@ class EventHub {
         const next = await this.iterator.next();
         if (next.done) break;
         this.seq += 1;
-        const entry: EventEntry = { seq: this.seq, id: next.value.id };
+        const entry: EventEntry = {
+          seq: this.seq,
+          event: `${this.bootId}-${this.seq}`,
+          id: next.value.id,
+        };
         this.entries.push(entry);
         if (this.entries.length > this.max) this.entries.shift();
         for (const listener of [...this.listeners]) listener(entry);
@@ -91,20 +109,29 @@ class EventHub {
     }
   }
 
-  snapshot(lastId: number | undefined): {
+  snapshot(lastId: string | undefined): {
     readonly reset: boolean;
     readonly replay: readonly EventEntry[];
   } {
     if (lastId === undefined) return { reset: false, replay: [] };
+    const parsed = parseEventId(lastId);
+    // An id from another boot, or one that does not parse, cannot be resumed:
+    // the client refetches instead of silently missing changes.
+    if (parsed === undefined || parsed.bootId !== this.bootId) {
+      return { reset: true, replay: [] };
+    }
     const oldest = this.entries[0]?.seq;
     const latest = this.entries.at(-1)?.seq;
     if (oldest === undefined || latest === undefined) {
       return { reset: true, replay: [] };
     }
-    if (lastId < oldest - 1 || lastId > latest) {
+    if (parsed.seq < oldest - 1 || parsed.seq > latest) {
       return { reset: true, replay: [] };
     }
-    return { reset: false, replay: this.entries.filter((entry) => entry.seq > lastId) };
+    return {
+      reset: false,
+      replay: this.entries.filter((entry) => entry.seq > parsed.seq),
+    };
   }
 
   subscribe(listener: (entry: EventEntry) => void): () => void {
@@ -117,6 +144,52 @@ class EventHub {
   stop(): void {
     this.stopped = true;
     void this.iterator.return?.();
+  }
+}
+
+function parseEventId(value: string): { bootId: string; seq: number } | undefined {
+  const match = /^([0-9a-f]+)-([0-9]+)$/i.exec(value.trim());
+  if (match === null) return undefined;
+  const bootId = match[1];
+  const text = match[2];
+  if (bootId === undefined || text === undefined) return undefined;
+  const seq = Number(text);
+  if (!Number.isSafeInteger(seq) || seq < 0) return undefined;
+  return { bootId, seq };
+}
+
+/** One open event stream, closed when its token is no longer current. */
+interface OpenStream {
+  readonly token: string;
+  readonly close: () => void;
+}
+
+/** The event streams a server has open, so a token rotation can end them. */
+class StreamRegistry {
+  private readonly streams = new Set<OpenStream>();
+
+  track(token: string, close: () => void): () => void {
+    const stream: OpenStream = { token, close };
+    this.streams.add(stream);
+    return () => {
+      this.streams.delete(stream);
+    };
+  }
+
+  /** Ends every stream opened with a token other than `token`. */
+  closeStale(token: string): void {
+    for (const stream of [...this.streams]) {
+      if (stream.token === token) continue;
+      this.streams.delete(stream);
+      stream.close();
+    }
+  }
+
+  closeAll(): void {
+    for (const stream of [...this.streams]) {
+      this.streams.delete(stream);
+      stream.close();
+    }
   }
 }
 
@@ -199,12 +272,8 @@ function trueValue(value: string | null): boolean {
   return value === "true" || value === "1";
 }
 
-function lastEventId(value: string | null): number | undefined {
-  if (value === null) return undefined;
-  const text = value.trim();
-  if (!/^(0|[1-9][0-9]*)$/.test(text)) return -1;
-  const number = Number(text);
-  return Number.isSafeInteger(number) ? number : -1;
+function lastEventId(value: string | null): string | undefined {
+  return value === null ? undefined : value;
 }
 
 async function authenticate(
@@ -227,37 +296,37 @@ function urlFor(address: string, port: number): string {
 }
 
 function formatEvent(entry: EventEntry): string {
-  return `id: ${entry.seq}\ndata: ${JSON.stringify({ id: entry.id })}\n\n`;
+  return `id: ${entry.event}\ndata: ${JSON.stringify({ id: entry.id })}\n\n`;
 }
 
 const RESET_EVENT = "event: reset\ndata: {}\n\n";
 
-function eventResponse(
+export function eventResponse(
   request: Request,
   hub: EventHub,
   keepAliveMs: number,
+  queueLimit: number,
+  token: string,
+  track: (token: string, close: () => void) => () => void,
 ): Response {
   const resumeFrom = lastEventId(request.headers.get("last-event-id"));
   const encoder = new TextEncoder();
   const queue: string[] = [];
   let closed = false;
+  let finished = false;
   let wake: (() => void) | undefined;
   let unsubscribe: (() => void) | undefined;
+  let untrack: (() => void) | undefined;
   let keepAlive: ReturnType<typeof setInterval> | undefined;
-
-  const push = (text: string): void => {
-    if (closed) return;
-    queue.push(text);
-    const resume = wake;
-    wake = undefined;
-    resume?.();
-  };
+  let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
 
   const close = (): void => {
     if (closed) return;
     closed = true;
     unsubscribe?.();
     unsubscribe = undefined;
+    untrack?.();
+    untrack = undefined;
     if (keepAlive !== undefined) clearInterval(keepAlive);
     keepAlive = undefined;
     const resume = wake;
@@ -265,14 +334,37 @@ function eventResponse(
     resume?.();
   };
 
+  /** Ends the response; an overflowed client reconnects and gets a reset. */
+  const finish = (): void => {
+    if (finished) return;
+    finished = true;
+    close();
+    controller?.close();
+  };
+
+  const push = (text: string): void => {
+    if (closed) return;
+    if (queue.length >= queueLimit) {
+      // The client is not reading. Drop it rather than grow without bound.
+      finish();
+      return;
+    }
+    queue.push(text);
+    const resume = wake;
+    wake = undefined;
+    resume?.();
+  };
+
   const stream = new ReadableStream<Uint8Array>({
-    start() {
+    start(started) {
+      controller = started;
       // `start` is synchronous, so no event can land between the snapshot and
       // the subscription.
       const snapshot = hub.snapshot(resumeFrom);
       if (snapshot.reset) push(RESET_EVENT);
       else for (const entry of snapshot.replay) push(formatEvent(entry));
       unsubscribe = hub.subscribe((entry) => push(formatEvent(entry)));
+      untrack = track(token, finish);
       // An immediate comment flushes the response headers; the client then has
       // a stream even when nothing changes for a while.
       push(": keep-alive\n\n");
@@ -280,18 +372,19 @@ function eventResponse(
       (keepAlive as { unref?: () => void }).unref?.();
       request.signal.addEventListener("abort", close, { once: true });
     },
-    async pull(controller) {
+    async pull(started) {
       while (!closed && queue.length === 0) {
         await new Promise<void>((resolve) => {
           wake = resolve;
         });
       }
+      if (finished) return;
       const chunk = queue.shift();
       if (chunk !== undefined) {
-        controller.enqueue(encoder.encode(chunk));
+        started.enqueue(encoder.encode(chunk));
         return;
       }
-      controller.close();
+      finish();
     },
     cancel() {
       close();
@@ -312,9 +405,12 @@ async function readBody(request: Request): Promise<unknown> {
 function createHandler(
   options: HttpServerOptions,
   hub: EventHub,
+  streams: StreamRegistry,
   onLog: (message: string) => void,
 ): (request: Request) => Promise<Response> {
   const keepAliveMs = options.keepAliveMs ?? DEFAULT_KEEP_ALIVE_MS;
+  // One slot past the resume window so a full replay plus the greeting fits.
+  const queueLimit = Math.max(1, options.maxEventIds ?? DEFAULT_MAX_EVENT_IDS) + 1;
 
   const handle = async (
     request: Request,
@@ -325,7 +421,14 @@ function createHandler(
     const method = request.method.toUpperCase();
 
     if (method === "GET" && path === "/v1/events") {
-      return eventResponse(request, hub, keepAliveMs);
+      return eventResponse(
+        request,
+        hub,
+        keepAliveMs,
+        queueLimit,
+        token.token,
+        (value, close) => streams.track(value, close),
+      );
     }
 
     if (method === "GET" && path === "/v1/types") {
@@ -395,6 +498,7 @@ function createHandler(
           args,
           ...(note === undefined ? {} : { note }),
           yes: confirmed === true,
+          surface: "http",
           actor,
         });
         return json(result);
@@ -461,16 +565,38 @@ export async function startHttpServer(
   options: HttpServerOptions,
 ): Promise<HttpServerHandle> {
   validateListenAddresses(options.config.listen);
-  await ensureHttpToken(options.home);
+  const token = await ensureHttpToken(options.home);
 
   const onLog = options.onLog ?? (() => undefined);
   const hub = new EventHub(
-    options.views,
+    options.views.events(),
     options.maxEventIds ?? DEFAULT_MAX_EVENT_IDS,
     onLog,
   );
-  const handler = createHandler(options, hub, onLog);
+  const streams = new StreamRegistry();
+  const handler = createHandler(options, hub, streams, onLog);
   const servers: { readonly address: string; readonly server: ReturnType<typeof Bun.serve> }[] = [];
+
+  // A rotation happens in another process (`operad http token rotate`), so the
+  // server notices it by reading the secret file again. A stream opened with the
+  // old token ends; the client reconnects and gets a reset.
+  let currentToken = token.token;
+  let checking = false;
+  const tokenCheck = setInterval(() => {
+    if (checking) return;
+    checking = true;
+    void readHttpToken(options.home)
+      .then((latest) => {
+        if (latest === undefined || latest.token === currentToken) return;
+        currentToken = latest.token;
+        streams.closeStale(currentToken);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        checking = false;
+      });
+  }, options.tokenCheckMs ?? DEFAULT_TOKEN_CHECK_MS);
+  (tokenCheck as { unref?: () => void }).unref?.();
 
   try {
     for (const address of options.config.listen) {
@@ -480,6 +606,7 @@ export async function startHttpServer(
         // An event stream is quiet by design; the 15-second comment keeps it
         // below this idle limit.
         idleTimeout: 30,
+        maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
         fetch: handler,
         error: (error) => {
           onLog(`http: ${messageOf(error)}`);
@@ -489,7 +616,9 @@ export async function startHttpServer(
       servers.push({ address, server });
     }
   } catch (error) {
+    clearInterval(tokenCheck);
     hub.stop();
+    streams.closeAll();
     for (const { server } of servers) {
       await server.stop(true).catch(() => undefined);
     }
@@ -506,7 +635,9 @@ export async function startHttpServer(
     urls,
     port: firstPort,
     async stop() {
+      clearInterval(tokenCheck);
       hub.stop();
+      streams.closeAll();
       for (const { server } of servers) {
         await server.stop(true).catch(() => undefined);
       }

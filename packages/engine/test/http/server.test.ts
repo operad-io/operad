@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_HTTP_TOKEN_LABEL,
+  DEFAULT_KEEP_ALIVE_MS,
   FilePluginStore,
   MemoryPluginStore,
   createViews,
@@ -25,8 +26,10 @@ import {
   type HttpServerHandle,
   type LogBackend,
   type PluginRegistry,
+  type ViewEvent,
   type Views,
 } from "../../src/index.ts";
+import { EventHub, eventResponse } from "../../src/http/server.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
 
 afterAll(cleanupTempRoots);
@@ -53,6 +56,7 @@ interface HarnessOptions {
   readonly memory?: boolean;
   readonly maxEventIds?: number;
   readonly keepAliveMs?: number;
+  readonly tokenCheckMs?: number;
   readonly loadTimeoutMs?: number;
 }
 
@@ -108,6 +112,9 @@ async function makeHarness(options: HarnessOptions = {}): Promise<Harness> {
     ...(options.keepAliveMs === undefined
       ? {}
       : { keepAliveMs: options.keepAliveMs }),
+    ...(options.tokenCheckMs === undefined
+      ? {}
+      : { tokenCheckMs: options.tokenCheckMs }),
     onLog: () => undefined,
   });
   const token = await readHttpToken(home);
@@ -184,25 +191,25 @@ function parseSseBlock(block: string): SseEvent | undefined {
       };
 }
 
-async function readSse(
-  response: Response,
-  count: number,
-  timeoutMs = 5_000,
-): Promise<SseEvent[]> {
+interface SseReader {
+  next(count?: number): Promise<SseEvent[]>;
+  cancel(): Promise<void>;
+}
+
+/** One reader over one event stream, so a test can read only what it wants. */
+function openSse(response: Response, timeoutMs = 5_000): SseReader {
   const body = response.body;
   if (body === null) throw new Error("the event stream has no body");
   const reader = body.getReader();
   const decoder = new TextDecoder();
-  const events: SseEvent[] = [];
   let buffer = "";
   const timer = setTimeout(() => {
     void reader.cancel();
   }, timeoutMs);
-  try {
+
+  const next = async (count = 1): Promise<SseEvent[]> => {
+    const events: SseEvent[] = [];
     while (events.length < count) {
-      const read = await reader.read();
-      if (read.done) break;
-      buffer += decoder.decode(read.value, { stream: true });
       for (;;) {
         const at = buffer.indexOf("\n\n");
         if (at < 0) break;
@@ -211,15 +218,37 @@ async function readSse(
         const event = parseSseBlock(block);
         if (event !== undefined) events.push(event);
       }
+      if (events.length >= count) break;
+      const read = await reader.read();
+      if (read.done) break;
+      buffer += decoder.decode(read.value, { stream: true });
     }
+    if (events.length < count) {
+      throw new Error(`expected ${count} events, saw ${events.length}`);
+    }
+    return events;
+  };
+
+  return {
+    next,
+    async cancel() {
+      clearTimeout(timer);
+      await reader.cancel().catch(() => undefined);
+    },
+  };
+}
+
+async function readSse(
+  response: Response,
+  count: number,
+  timeoutMs = 5_000,
+): Promise<SseEvent[]> {
+  const reader = openSse(response, timeoutMs);
+  try {
+    return await reader.next(count);
   } finally {
-    clearTimeout(timer);
-    await reader.cancel().catch(() => undefined);
+    await reader.cancel();
   }
-  if (events.length < count) {
-    throw new Error(`expected ${count} events, saw ${events.length}`);
-  }
-  return events;
 }
 
 async function readKeepAlive(response: Response, timeoutMs = 5_000): Promise<boolean> {
@@ -247,15 +276,38 @@ async function readKeepAlive(response: Response, timeoutMs = 5_000): Promise<boo
 function openStream(
   h: Harness,
   headers: Record<string, string> = {},
+  base = h.base,
 ): { readonly response: Promise<Response>; readonly abort: () => void } {
   const controller = new AbortController();
   return {
-    response: fetch(`${h.base}/v1/events`, {
+    response: fetch(`${base}/v1/events`, {
       headers: authHeaders(h, headers),
       signal: controller.signal,
     }),
     abort: () => controller.abort(),
   };
+}
+
+/** Reads until the stream ends; false when it stayed open past the timeout. */
+async function readUntilDone(
+  response: Response,
+  timeoutMs = 5_000,
+): Promise<boolean> {
+  const body = response.body;
+  if (body === null) throw new Error("the event stream has no body");
+  const reader = body.getReader();
+  const timer = new Promise<boolean>((resolve) => {
+    setTimeout(() => resolve(false), timeoutMs);
+  });
+  const drained = (async (): Promise<boolean> => {
+    for (;;) {
+      const read = await reader.read();
+      if (read.done) return true;
+    }
+  })();
+  const ended = await Promise.race([drained, timer]);
+  if (!ended) await reader.cancel().catch(() => undefined);
+  return ended;
 }
 
 function seed(h: Harness, id: string, data: Record<string, unknown>): void {
@@ -532,6 +584,8 @@ describe("http server", () => {
       };
       expect(confirmError.kind).toBe("confirm");
       expect(confirmError.message).toContain("webtest:drop");
+      expect(confirmError.message).toContain('"confirmed": true');
+      expect(confirmError.message).not.toContain("--yes");
 
       const drop = await api(h, "/v1/act", {
         method: "POST",
@@ -558,35 +612,47 @@ describe("http server", () => {
       expect(stream.headers.get("content-type")).toContain("text/event-stream");
       seed(h, "alpha", { title: "Alpha", state: "new" });
       const [event] = await readSse(stream, 1);
-      expect(event?.id).toBe("1");
+      const firstId = event?.id;
+      expect(firstId).toMatch(/^[0-9a-f]+-1$/);
       expect(event?.data).toBe(JSON.stringify({ id: "alpha" }));
       first.abort();
+      if (firstId === undefined) return;
 
       // The next two changes happen while no client is attached.
       seed(h, "beta", { title: "Beta", state: "new" });
       seed(h, "gamma", { title: "Gamma", state: "new" });
 
-      const second = openStream(h, { "last-event-id": "1" });
+      const second = openStream(h, { "last-event-id": firstId });
       const missed = await readSse(await second.response, 2);
       expect(missed.map((item) => item.data)).toEqual([
         JSON.stringify({ id: "beta" }),
         JSON.stringify({ id: "gamma" }),
       ]);
-      expect(missed.map((item) => item.id)).toEqual(["2", "3"]);
       second.abort();
 
       const small = await makeHarness({ maxEventIds: 2 });
       try {
         const window = openStream(small);
-        const windowStream = await window.response;
+        const events = openSse(await window.response);
+        const ids: string[] = [];
         for (const id of ["a", "b", "c", "d"]) {
           seed(small, id, { title: id, state: "new" });
+          const [seen] = await events.next();
+          if (seen?.id !== undefined) ids.push(seen.id);
         }
-        const seen = await readSse(windowStream, 4);
-        expect(seen.map((item) => item.id)).toEqual(["1", "2", "3", "4"]);
+        expect(ids.map((id) => id.split("-")[1])).toEqual([
+          "1",
+          "2",
+          "3",
+          "4",
+        ]);
+        await events.cancel();
         window.abort();
 
-        const reset = openStream(small, { "last-event-id": "1" });
+        const oldId = ids[0];
+        expect(oldId).toBeDefined();
+        if (oldId === undefined) return;
+        const reset = openStream(small, { "last-event-id": oldId });
         const [resetEvent] = await readSse(await reset.response, 1);
         expect(resetEvent?.event).toBe("reset");
         expect(resetEvent?.data).toBe("{}");
@@ -594,6 +660,115 @@ describe("http server", () => {
       } finally {
         await small.close();
       }
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("a Last-Event-ID from an earlier serve gets one reset", async () => {
+    const h = await makeHarness();
+    let restarted: HttpServerHandle | undefined;
+    try {
+      const first = openStream(h);
+      const firstResponse = await first.response;
+      seed(h, "alpha", { title: "Alpha", state: "new" });
+      const [event] = await readSse(firstResponse, 1);
+      first.abort();
+      const oldId = event?.id;
+      expect(oldId).toBeDefined();
+      if (oldId === undefined) return;
+
+      await h.server.stop();
+      const port = await freePort();
+      restarted = await startHttpServer({
+        home: h.home,
+        config: { enabled: true, port, listen: ["127.0.0.1"] },
+        views: h.views,
+        log: h.log,
+        registry: h.registry,
+        tokenCheckMs: 20,
+        onLog: () => undefined,
+      });
+      const base = restarted.urls[0];
+      if (base === undefined) throw new Error("the restarted server bound no port");
+
+      // The new process has events of its own, so a numeric resume would look
+      // valid and silently skip everything from the first process.
+      const probe = openStream(h, {}, base);
+      const probeSse = openSse(await probe.response);
+      seed(h, "beta", { title: "Beta", state: "new" });
+      seed(h, "gamma", { title: "Gamma", state: "new" });
+      await probeSse.next(2);
+      await probeSse.cancel();
+      probe.abort();
+
+      const resume = openStream(h, { "last-event-id": oldId }, base);
+      const [reset] = await readSse(await resume.response, 1);
+      expect(reset?.event).toBe("reset");
+      expect(reset?.data).toBe("{}");
+      resume.abort();
+    } finally {
+      if (restarted !== undefined) await restarted.stop();
+      await h.close();
+    }
+  });
+
+  test("ends a client that stops reading instead of growing without bound", async () => {
+    let pushed = (): void => undefined;
+    const allPushed = new Promise<void>((resolve) => {
+      pushed = resolve;
+    });
+    async function* feed(): AsyncGenerator<ViewEvent> {
+      for (let index = 0; index < 5; index += 1) {
+        yield { id: `e${index}` };
+      }
+      pushed();
+    }
+    const hub = new EventHub(feed(), 2, () => undefined);
+    try {
+      const response = eventResponse(
+        new Request("http://localhost/v1/events"),
+        hub,
+        DEFAULT_KEEP_ALIVE_MS,
+        3,
+        "a-token",
+        () => () => undefined,
+      );
+      // No reader until the queue has overflowed and the stream has closed.
+      await allPushed;
+      expect(await readUntilDone(response)).toBe(true);
+    } finally {
+      hub.stop();
+    }
+  });
+
+  test("rotating the token ends the event streams opened with the old one", async () => {
+    const h = await makeHarness({ tokenCheckMs: 10 });
+    try {
+      const stream = openStream(h);
+      const response = await stream.response;
+      await rotateHttpToken(h.home);
+      expect(await readUntilDone(response)).toBe(true);
+      stream.abort();
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("refuses a request body larger than one mebibyte", async () => {
+    const h = await makeHarness();
+    try {
+      const body = JSON.stringify({
+        action: "webtest:approve",
+        id: "item:one",
+        note: "x".repeat(1024 * 1024 + 1),
+      });
+      const response = await api(h, "/v1/act", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      });
+      expect(response.status).toBe(413);
     } finally {
       await h.close();
     }
