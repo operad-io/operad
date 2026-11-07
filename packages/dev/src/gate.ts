@@ -439,7 +439,62 @@ function attributesOf(
   return map;
 }
 
-/** The changed files with line counts and their own patch. */
+/** How a file changed, from `git diff --name-status`. */
+interface Change {
+  readonly status: "added" | "deleted" | "renamed" | "other";
+  /** The old path of a renamed file. */
+  readonly from: string | undefined;
+}
+
+/** The status of every changed file, keyed by its new path. */
+function changesOf(
+  repositoryPath: string,
+  base: string,
+  sha: string,
+): ReadonlyMap<string, Change> {
+  const map = new Map<string, Change>();
+  const result = gitZ(repositoryPath, [
+    "diff",
+    "--name-status",
+    "-M",
+    "-z",
+    base,
+    sha,
+  ]);
+  if (!result.ok) return map;
+  const parts = result.out.split("\0");
+  for (let index = 0; index < parts.length; ) {
+    const status = parts[index] ?? "";
+    if (status.length === 0) {
+      index += 1;
+      continue;
+    }
+    if (status.startsWith("R") || status.startsWith("C")) {
+      const from = parts[index + 1] ?? "";
+      const to = parts[index + 2] ?? "";
+      map.set(to, {
+        status: status.startsWith("R") ? "renamed" : "other",
+        from,
+      });
+      index += 3;
+      continue;
+    }
+    const path = parts[index + 1] ?? "";
+    map.set(path, {
+      status: status === "D" ? "deleted" : status === "A" ? "added" : "other",
+      from: undefined,
+    });
+    index += 2;
+  }
+  return map;
+}
+
+/**
+ * The changed files with line counts and what the prompt carries for each. A
+ * renamed file carries only its edits (one line when it has none); a deleted
+ * file carries one line, not its removed lines. The reviewer reads a deleted
+ * file with `git show <base>:<path>`.
+ */
 function diffsOf(
   repositoryPath: string,
   base: string,
@@ -448,39 +503,59 @@ function diffsOf(
   const numstat = gitZ(repositoryPath, [
     "diff",
     "--numstat",
-    "--no-renames",
+    "-M",
     "-z",
     base,
     sha,
   ]);
   if (!numstat.ok) return [];
+  const changes = changesOf(repositoryPath, base, sha);
   const files: FileDiff[] = [];
-  for (const record of numstat.out.split("\0")) {
+  const parts = numstat.out.split("\0");
+  for (let index = 0; index < parts.length; index += 1) {
+    const record = parts[index] ?? "";
     if (record.length === 0) continue;
     const first = record.indexOf("\t");
     const second = record.indexOf("\t", first + 1);
     if (first < 0 || second < 0) continue;
     const addedText = record.slice(0, first);
     const removedText = record.slice(first + 1, second);
-    const path = record.slice(second + 1);
+    let path = record.slice(second + 1);
+    let from: string | undefined;
+    if (path.length === 0) {
+      // A rename: the two paths follow as records of their own.
+      from = parts[index + 1] ?? "";
+      path = parts[index + 2] ?? "";
+      index += 2;
+    }
     if (path.length === 0) continue;
     const binary = addedText === "-" || removedText === "-";
-    const patch = binary
-      ? ""
-      : git(repositoryPath, [
-          "diff",
-          "--no-color",
-          "--no-ext-diff",
-          "--no-renames",
-          base,
-          sha,
-          "--",
-          path,
-        ]).out;
+    const added = binary ? 0 : Number(addedText) || 0;
+    const removed = binary ? 0 : Number(removedText) || 0;
+    const change = changes.get(path);
+    let patch = "";
+    if (binary) {
+      patch = "";
+    } else if (from !== undefined && added === 0 && removed === 0) {
+      patch = `renamed ${from} → ${path}, unchanged\n`;
+    } else if (change?.status === "deleted") {
+      patch = `${path}: deleted, ${removed} lines (read it with \`git show ${base}:${path}\`)\n`;
+    } else {
+      patch = git(repositoryPath, [
+        "diff",
+        "--no-color",
+        "--no-ext-diff",
+        "-M",
+        base,
+        sha,
+        "--",
+        ...(from === undefined ? [path] : [from, path]),
+      ]).out;
+    }
     files.push({
       path,
-      added: binary ? 0 : Number(addedText) || 0,
-      removed: binary ? 0 : Number(removedText) || 0,
+      added,
+      removed,
       patch,
       bytes: Buffer.byteLength(patch, "utf8"),
       leftOut: undefined,

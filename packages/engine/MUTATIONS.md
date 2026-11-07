@@ -216,3 +216,11 @@ the row fields.
 | T-0024-M19 | `packages/engine/src/runner/answer.ts` | an answer without a wait id went to the newest open question even when its step was dead | `ctx.ask survives a crash > an old open question does not change the error for an answer` |
 | T-0024-M20 | `packages/engine/src/runner/ask.ts` | a duplicate claim was not refused, so two processes could both win | `ctx.ask answers from two processes > of two processes answering one question exactly one wins` |
 | T-0024-M21 | `packages/engine/src/plugin/registry.ts` | a call's grace above the timer limit was accepted | `ctx.ask > a grace above the timer limit is refused` |
+| T-0023-M1 | `packages/engine/src/runner/runner.ts` | the in-process step timeout used real timers, not the runner's `timers` | `runFlow > with a fake clock a step timeout ends interrupted` |
+| T-0023-M2 | `packages/engine/src/testing/world.ts` | `answer` accepted any wait id | `runFlow > a person wait is answered by id, and only with a choice it offers` |
+| T-0023-M3 | `packages/engine/src/testing/clock.ts` | `advance` left out a timer due exactly at the target | `runFlow > a step timeout does not fire before the clock passes it` |
+| T-0023-M4 | `packages/engine/src/testing/index.ts` | `emit` reported an unmatched event as started | `emit > an event no rule matches starts nothing` |
+| T-0023-M5 | `packages/engine/src/testing/world.ts` | the world made one pass only, so a run started by a run's end was never run | `one world across calls > a run that ends by itself starts the next run, and it is run` |
+| T-0023-M6 | `packages/engine/src/testing/world.ts` | a plugin given by path ran against a memory store, so its steps stayed in the test's process | `isolation > a plugin given by path runs its steps in a worker, as serve does` |
+| T-0023-M7 | `packages/engine/src/testing/world.ts` | a repeated event key was reported as started | `one world across calls > the same key arriving twice starts one run` |
+| T-0023-M8 | `packages/engine/src/runner/runner.ts` | a worker step's timeout used real timers, not the runner's `timers` | `isolation > a fake clock times out a step in a worker too` |

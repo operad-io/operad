@@ -15,7 +15,7 @@ import type { ObjectRef } from "../plugin/types.ts";
 import { messageOf } from "../plugin/errors.ts";
 import type { StepEvent, TriggerView } from "../trigger/types.ts";
 import { Worker } from "node:worker_threads";
-import { KILL_GRACE_MS } from "../platform/index.ts";
+import { KILL_GRACE_MS, systemClock, type Clock } from "../platform/index.ts";
 import { acquireLock, runLockPath, type LockHandle } from "./lock.ts";
 import { AskHost, type AskTimer } from "./ask.ts";
 import { StepLimits } from "./limits.ts";
@@ -184,6 +184,12 @@ export interface RunnerOptions {
   readonly runId: string;
   readonly registry: PluginRegistry;
   readonly clock?: (() => number) | undefined;
+  /**
+   * The timers that time a step's run. A test passes a fake one to decide when
+   * a step times out; the grace a worker gets to stop after an abort stays real.
+   * @internal Used by `@operad-io/engine/testing`.
+   */
+  readonly timers?: Clock | undefined;
   readonly stepTimeoutMs?: number | undefined;
   /** `ask.graceSecs` from config.json: how long `ctx.ask` waits by default. */
   readonly askGraceSecs?: number | undefined;
@@ -256,10 +262,11 @@ export class Runner {
   private readonly flow: FlowDefinition;
   private readonly registry: PluginRegistry;
   private readonly clock: () => number;
+  private readonly timers: Clock;
   private readonly stepTimeoutMs: number;
   private readonly askGraceSecs: number | undefined;
   private readonly askTimer: AskTimer | undefined;
-  private readonly timeoutClock: TimeoutClock | undefined;
+  private readonly timeoutClock: TimeoutClock;
   /** The wall time of the step that is running now. */
   private activeTimeout: StepTimeout | undefined;
   private readonly cwd: string | undefined;
@@ -285,10 +292,15 @@ export class Runner {
     this.runId = options.runId;
     this.registry = options.registry;
     this.clock = options.clock ?? (() => Date.now());
+    this.timers = options.timers ?? systemClock;
     this.stepTimeoutMs = options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
     this.askGraceSecs = options.askGraceSecs;
     this.askTimer = options.askTimer;
-    this.timeoutClock = options.timeoutClock;
+    this.timeoutClock = options.timeoutClock ?? {
+      now: () => Date.now(),
+      set: (fire, ms) => this.timers.setTimeout(fire, ms),
+      clear: (handle) => this.timers.clearTimeout(handle),
+    };
     this.cwd = options.cwd;
     this.signal = options.signal;
     this.lockRoot = options.lockRoot;
