@@ -48,6 +48,12 @@ export interface GateSettings {
   readonly commandTimeoutSecs: number;
 }
 
+/** What a failed check does before it counts as a failure. */
+export interface CheckSettings {
+  /** How many times a failed check line list runs again; 0 turns it off. */
+  readonly rerun: number;
+}
+
 /** How the integrate step lands a verified commit on main. */
 export type IntegrationStyle = "merge" | "squash";
 
@@ -100,6 +106,7 @@ export interface DevSettings {
   readonly worker: WorkerSettings;
   readonly workerBrief: string;
   readonly gate: GateSettings;
+  readonly check: CheckSettings;
   readonly reviewer: ReviewerSettings;
   readonly integration: IntegrationSettings;
   readonly hooks: HookSettings;
@@ -144,6 +151,7 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
     commands: [],
     commandTimeoutSecs: 1800,
   },
+  check: { rerun: 1 },
   reviewer: {
     use: DEFAULT_WORKER_USE,
     args: [],
@@ -177,6 +185,7 @@ const KNOWN_FIELDS = new Set([
   "worker",
   "workerBrief",
   "gate",
+  "check",
   "reviewer",
   "integration",
   "hooks",
@@ -348,6 +357,23 @@ function gateSettings(value: unknown, field: string): GateSettings {
       value.commandTimeoutSecs === undefined
         ? DEFAULT_DEV_SETTINGS.gate.commandTimeoutSecs
         : positiveSeconds(value.commandTimeoutSecs, `${field}.commandTimeoutSecs`),
+  };
+}
+
+function checkSettings(value: unknown, field: string): CheckSettings {
+  if (!isRecord(value)) {
+    throw new DevError(field, "must be an object");
+  }
+  for (const key of Object.keys(value)) {
+    if (key !== "rerun") {
+      throw new DevError(`${field}.${key}`, "is not a check setting");
+    }
+  }
+  return {
+    rerun:
+      value.rerun === undefined
+        ? DEFAULT_DEV_SETTINGS.check.rerun
+        : nonNegativeInteger(value.rerun, `${field}.rerun`),
   };
 }
 
@@ -543,6 +569,10 @@ export function validateDevSettings(value: unknown): DevSettings {
       value.gate === undefined
         ? DEFAULT_DEV_SETTINGS.gate
         : gateSettings(value.gate, "gate"),
+    check:
+      value.check === undefined
+        ? DEFAULT_DEV_SETTINGS.check
+        : checkSettings(value.check, "check"),
     reviewer:
       value.reviewer === undefined
         ? DEFAULT_DEV_SETTINGS.reviewer

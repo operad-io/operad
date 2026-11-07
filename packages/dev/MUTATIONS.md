@@ -127,3 +127,8 @@ the row fields.
 | T-0046-M5 | packages/dev/src/service.ts | `setConcurrency` accepted a finished plan | `dev actions > concurrency is refused on a finished plan` |
 | T-0046-M6 | packages/dev/src/actions.ts | `dev:concurrency` was available on a finished plan | `dev actions > concurrency is refused on a finished plan` |
 | T-0045-M5 | packages/dev/test/gate.test.ts | the FIFO the fake reviewer made was not removed after the test | `dev/review > the FIFO the previous test made is gone, and it was made outside the repository` |
+| T-0054-M1 | packages/dev/src/rerun.ts | a timeout was rerun like any other failure | `dev/verify > a timeout is not rerun` |
+| T-0054-M2 | packages/dev/src/rerun.ts | the rerun loop ran one time too many | `dev/verify > a check that fails twice is a fail` |
+| T-0054-M3 | packages/dev/src/rerun.ts | a pass on the rerun carried no note | `dev/verify > a check that fails once and then passes is a pass with a note` |
+| T-0054-M4 | packages/dev/src/rerun.ts | the separator was not drawn between the two runs in the log | `dev/verify > a check that fails once and then passes is a pass with a note` |
+| T-0054-M5 | packages/dev/src/integrate.ts | the merged task left out the rerun note | `dev/integrate > a key command that fails once and then passes lands with a note` |
