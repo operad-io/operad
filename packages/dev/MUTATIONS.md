@@ -105,3 +105,7 @@ the row fields.
 | T-0022-M5 | packages/dev/src/steps.ts | `harnessReading` ignored the usage's cost | `dev/work > the standard usage gives the row's cost and the tokens` (and the old-fact test) |
 | T-0022-M14 | packages/dev/src/views.ts | `costNote` left the cost quality out | `dev views > a task row reads the phase and the cost` |
 | TK0009-M7 | packages/dev/src/service.ts | the generated dev.json left out `$schema` | `dev repositories > add writes settings and excludes, list reads it, remove refuses open tasks` |
+| T-0034-M1 | `packages/dev/src/gate.ts` | numstat read without rename detection | `dev/review > renames and deletions > a rename with no edit is one line` |
+| T-0034-M2 | `packages/dev/src/gate.ts` | a deleted file carried its removed lines | `dev/review > renames and deletions > a deleted file is one line with its length and how to read it` |
+| T-0034-M3 | `packages/dev/src/gate.ts` | a rename with no edit carried a patch | `dev/review > renames and deletions > a rename with no edit is one line` |
+| T-0034-M4 | `packages/dev/src/gate.ts` | a rename with edits was diffed by its new path only | `dev/review > renames and deletions > a rename with an edit carries only the edit` |
