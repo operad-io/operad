@@ -233,3 +233,5 @@ the row fields.
 | T-0025-M11 | `packages/engine/src/kernel/decide.ts` | the answer reached only a step the wait edge pointed to directly | `decide: an answered question returns to the step > the answer reaches the step that asked through a step in between` |
 | T-0025-M12 | `packages/engine/src/plugin/registry.ts` | `ctx.ask` accepted a grant with no approving choice for a question with choices | `a question that offers a permission is checked before anyone is asked > a question with choices needs the grant to name the choice that approves` |
 | T-0025-M13 | `packages/engine/src/plugin/registry.ts` | a step with `grants: false` could ask for a permission | `a question that offers a permission is checked before anyone is asked > a step that cannot enforce a permission cannot ask for one` |
+| tui-autostart-M1 | packages/engine/src/config/config.ts | `DEFAULT_HTTP` was disabled again | `operad config > a missing config means jsonl at <home>/store` |
+| tui-autostart-M2 | packages/engine/src/config/config.ts | an `http` section without `enabled` meant off | `operad config > reads http options and applies their defaults` |

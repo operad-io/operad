@@ -154,6 +154,7 @@ describe("ensureServer", () => {
       }).catch((e: unknown) => e);
       expect(error).toBeInstanceOf(TuiStartError);
       const message = (error as Error).message;
+      expect(message).toContain("exited at once");
       expect(message).toContain(join(home, "serve.log"));
       expect(message).toContain("boom: the store is locked");
     } finally {
@@ -284,6 +285,15 @@ describe("a real serve", () => {
       expect(await probeServer(url)).toBe("operad");
       expect(lines).toHaveLength(1);
       expect(readFileSync(join(home, "serve.log"), "utf8")).toContain("serving");
+
+      // Detached: its own process group, so quitting the TUI does not end it.
+      const group = (id: number): string =>
+        new TextDecoder()
+          .decode(Bun.spawnSync(["ps", "-o", "pgid=", "-p", String(id)]).stdout)
+          .trim();
+      expect(pid).toBeDefined();
+      expect(group(pid ?? 0)).not.toBe("");
+      expect(group(pid ?? 0)).not.toBe(group(process.pid));
 
       // The second call finds it running and starts nothing.
       let again = 0;
