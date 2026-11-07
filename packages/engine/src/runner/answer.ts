@@ -4,6 +4,7 @@ import type { FlowDefinition } from "../flow/types.ts";
 import type { KernelState } from "../kernel/types.ts";
 import type { JsonValue, LogBackend } from "../log/types.ts";
 import type { Actor } from "../plugin/types.ts";
+import { answerAsk, answerableAsks, scanAsks } from "./ask.ts";
 import { StateError } from "./errors.ts";
 import { applyInput, readState } from "./service.ts";
 
@@ -24,6 +25,11 @@ export interface AnswerOptions {
 export interface RecordAnswerOptions {
   readonly log: LogBackend;
   readonly runId: string;
+  /**
+   * The question the answer is for, when the person answers one by its id. An
+   * answer to a question that is closed is refused and recorded.
+   */
+  readonly waitId?: string | undefined;
   readonly choice: string;
   readonly note?: string | undefined;
   readonly actor: Actor;
@@ -70,8 +76,34 @@ function answerInput(
 export async function recordAnswer(options: RecordAnswerOptions): Promise<void> {
   const state = await readState(options.log, options.runId);
   const wait = state.wait;
-  if (state.status !== "waiting_person" || wait === null) {
-    throw new StateError(`run ${options.runId} is not waiting for a person`);
+  const named =
+    options.waitId !== undefined &&
+    !(state.status === "waiting_person" && wait?.id === options.waitId);
+  if (named || state.status !== "waiting_person" || wait === null) {
+    // A step may be waiting on its own question; its answer goes to the step.
+    const ask =
+      state.status === "ended" || state.status === "idle"
+        ? undefined
+        : options.waitId !== undefined
+          ? (await scanAsks(options.log, options.runId)).asks.get(options.waitId)
+          : answerableAsks((await scanAsks(options.log, options.runId)).asks, state).at(-1);
+    if (ask === undefined) {
+      throw new StateError(
+        options.waitId === undefined || state.status === "ended"
+          ? `run ${options.runId} is not waiting for a person`
+          : `run ${options.runId}: no question "${options.waitId}"`,
+      );
+    }
+    await answerAsk({
+      log: options.log,
+      runId: options.runId,
+      state,
+      ask,
+      choice: options.choice,
+      ...(options.note === undefined ? {} : { note: options.note }),
+      actor: options.actor,
+    });
+    return;
   }
   const payload = answerInput(
     options.runId,
