@@ -34,12 +34,18 @@ test("without options the real watch and the default period are used", () => {
 test("a change in the directory is reported with its entry name", async () => {
   const directory = mkdtempSync(join(tmpdir(), "operad-watch-test-"));
   directories.push(directory);
+  // The platform may start delivering events a moment after `watch` returns,
+  // so the entry is rewritten until the first event arrives.
   const changed = new Promise<string | null>((resolve) => {
+    let writes = 0;
+    const writer = setInterval(() => {
+      writeFileSync(join(directory, "entry.txt"), String((writes += 1)));
+    }, 20);
     const stop = watchDirectory(directory, (name) => {
+      clearInterval(writer);
       stop();
       resolve(name);
     });
-    writeFileSync(join(directory, "entry.txt"), "x");
   });
   expect(await changed).toBe("entry.txt");
 });
