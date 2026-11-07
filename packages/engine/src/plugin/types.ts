@@ -345,6 +345,25 @@ export interface AskWaitingData {
   readonly resume: JsonValue;
 }
 
+/** What the host reports back for one question a step asked. */
+export type AskOutcome =
+  | { readonly kind: "answered"; readonly answer: AskAnswer }
+  | {
+      readonly kind: "timeout";
+      readonly waitId: string;
+      readonly prompt: string;
+      readonly choices: readonly string[];
+    };
+
+/**
+ * Where a step's questions go. `request.graceSecs` already holds the narrower of
+ * the call and the step's `askGraceSecs`; the host narrows it by its own
+ * setting.
+ */
+export interface StepAsker {
+  ask(request: AskRequest, signal?: AbortSignal): Promise<AskOutcome>;
+}
+
 /** The context a step run receives. */
 export interface StepContext extends PluginBaseContext {
   readonly runId: string;
@@ -416,6 +435,8 @@ export interface StepRunOptions {
   readonly runId: string;
   /** Limits the steps this step starts through `ctx.runStep`. */
   readonly limits?: StepLimiter | undefined;
+  /** Takes the questions the step asks with `ctx.ask`. */
+  readonly asker?: StepAsker | undefined;
   readonly object?: RunObject | undefined;
   readonly cwd?: string | undefined;
   readonly signal?: AbortSignal | undefined;

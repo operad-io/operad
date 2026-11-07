@@ -4,6 +4,7 @@ import { objectLink } from "../http/link.ts";
 import type { LogBackend, RunInfo } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { PendingActionView } from "../plugin/types.ts";
+import { answerableAsks, scanAsks } from "../runner/ask.ts";
 import { parseObjectKey, readState } from "../runner/service.ts";
 import type { TriggerCandidate } from "../trigger/types.ts";
 
@@ -41,6 +42,24 @@ export async function listPending(
 
   for (const run of runs) {
     const state = await readState(log, run.runId);
+    if (state.status === "running") {
+      // A step waiting on its own question is one item, like a flow wait.
+      const { asks } = await scanAsks(log, run.runId);
+      const open = answerableAsks(asks, state).at(-1);
+      if (open !== undefined) {
+        items.push({
+          runId: run.runId,
+          flow: run.flow,
+          step: state.step,
+          prompt: open.prompt,
+          choices: open.choices,
+          actions: await actionsFor(registry, log, run),
+          kind: "run",
+          ...objectFields(run.object),
+        });
+      }
+      continue;
+    }
     if (state.status !== "waiting_person" || state.wait === null) continue;
 
     const actions = await actionsFor(registry, log, run);

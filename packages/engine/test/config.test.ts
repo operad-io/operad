@@ -43,6 +43,7 @@ describe("operad config", () => {
       store: { backend: "jsonl", path: join(home, "store") },
       http: { enabled: false, port: 7480, listen: ["127.0.0.1"] },
       notify: { command: null, on: ["waiting"] },
+      ask: { graceSecs: 600 },
     });
     expect(storeRootOf(config)).toBe(join(home, "store"));
   });

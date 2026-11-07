@@ -4,8 +4,10 @@ import type { FlowDefinition } from "../flow/types.ts";
 import type { Input, KernelState, StartInput } from "../kernel/types.ts";
 import type { JsonValue, LogBackend } from "../log/types.ts";
 import type {
+  AskRequest,
   PluginStepResult,
   RunObject,
+  StepAsker,
   StepLimiter,
 } from "../plugin/types.ts";
 import { PluginRegistry } from "../plugin/registry.ts";
@@ -15,6 +17,7 @@ import type { StepEvent, TriggerView } from "../trigger/types.ts";
 import { Worker } from "node:worker_threads";
 import { KILL_GRACE_MS } from "../platform/index.ts";
 import { acquireLock, runLockPath, type LockHandle } from "./lock.ts";
+import { AskHost, type AskTimer } from "./ask.ts";
 import { StepLimits } from "./limits.ts";
 import { appendInput, applyInput, parseObjectKey, readState } from "./service.ts";
 
@@ -56,6 +59,73 @@ type StepWorkerLimit =
     }
   | { readonly kind: "limit-cancel"; readonly id: number }
   | { readonly kind: "limit-release"; readonly id: number };
+
+/** A step in the worker asks a person, or stops asking. */
+type StepWorkerAsk =
+  | { readonly kind: "ask"; readonly id: number; readonly request: AskRequest }
+  | { readonly kind: "ask-cancel"; readonly id: number };
+
+function isStepWorkerAsk(value: unknown): value is StepWorkerAsk {
+  if (typeof value !== "object" || value === null) return false;
+  if (typeof (value as { id?: unknown }).id !== "number") return false;
+  const kind = (value as { kind?: unknown }).kind;
+  if (kind === "ask-cancel") return true;
+  if (kind !== "ask") return false;
+  const request = (value as { request?: unknown }).request;
+  return (
+    typeof request === "object" &&
+    request !== null &&
+    typeof (request as { prompt?: unknown }).prompt === "string"
+  );
+}
+
+/**
+ * A step's wall time. It stops while a question to a person is open: the
+ * person's time is not the step's.
+ */
+class StepTimeout {
+  private handle: ReturnType<typeof setTimeout> | undefined;
+  private remaining: number;
+  private startedAt = 0;
+  private paused = 0;
+  private done = false;
+
+  constructor(
+    ms: number,
+    private readonly fire: () => void,
+  ) {
+    this.remaining = ms;
+    this.start();
+  }
+
+  private start(): void {
+    this.startedAt = Date.now();
+    this.handle = setTimeout(() => {
+      this.handle = undefined;
+      if (!this.done) this.fire();
+    }, this.remaining);
+  }
+
+  pause(): void {
+    this.paused += 1;
+    if (this.paused !== 1 || this.done || this.handle === undefined) return;
+    clearTimeout(this.handle);
+    this.handle = undefined;
+    this.remaining = Math.max(0, this.remaining - (Date.now() - this.startedAt));
+  }
+
+  resume(): void {
+    if (this.paused === 0) return;
+    this.paused -= 1;
+    if (this.paused === 0 && !this.done) this.start();
+  }
+
+  clear(): void {
+    this.done = true;
+    if (this.handle !== undefined) clearTimeout(this.handle);
+    this.handle = undefined;
+  }
+}
 
 function isStepWorkerLimit(value: unknown): value is StepWorkerLimit {
   if (typeof value !== "object" || value === null) return false;
@@ -101,6 +171,10 @@ export interface RunnerOptions {
   readonly registry: PluginRegistry;
   readonly clock?: (() => number) | undefined;
   readonly stepTimeoutMs?: number | undefined;
+  /** `ask.graceSecs` from config.json: how long `ctx.ask` waits by default. */
+  readonly askGraceSecs?: number | undefined;
+  /** Starts the grace timer of a question; tests inject theirs. */
+  readonly askTimer?: AskTimer | undefined;
   readonly cwd?: string | undefined;
   readonly signal?: AbortSignal | undefined;
   /** The store root; the run lock lives under `<root>/locks/runs`. */
@@ -167,6 +241,10 @@ export class Runner {
   private readonly registry: PluginRegistry;
   private readonly clock: () => number;
   private readonly stepTimeoutMs: number;
+  private readonly askGraceSecs: number | undefined;
+  private readonly askTimer: AskTimer | undefined;
+  /** The wall time of the step that is running now. */
+  private activeTimeout: StepTimeout | undefined;
   private readonly cwd: string | undefined;
   private readonly signal: AbortSignal | undefined;
   private readonly lockRoot: string | undefined;
@@ -191,6 +269,8 @@ export class Runner {
     this.registry = options.registry;
     this.clock = options.clock ?? (() => Date.now());
     this.stepTimeoutMs = options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
+    this.askGraceSecs = options.askGraceSecs;
+    this.askTimer = options.askTimer;
     this.cwd = options.cwd;
     this.signal = options.signal;
     this.lockRoot = options.lockRoot;
@@ -355,6 +435,7 @@ export class Runner {
         state.params,
         state.access,
         this.limits().limiterFor(this.runId, effect.id, effect.step, nestedBase),
+        this.asks().asker(this.runId, effect.id, effect.step),
       );
     }
     // The limit's own facts moved the run's last sequence on.
@@ -364,6 +445,22 @@ export class Runner {
     // next pass of `serve` if this process dies first.
     if (limited) await this.limits().grant();
     return "progress";
+  }
+
+  private askHost: AskHost | undefined;
+
+  private asks(): AskHost {
+    this.askHost ??= new AskHost({
+      log: this.log,
+      graceSecs: this.askGraceSecs,
+      timer: this.askTimer,
+      pause: () => {
+        const timeout = this.activeTimeout;
+        timeout?.pause();
+        return () => timeout?.resume();
+      },
+    });
+    return this.askHost;
   }
 
   private stepLimits: StepLimits | undefined;
@@ -504,6 +601,7 @@ export class Runner {
     flowParams: JsonValue,
     access: JsonValue,
     limiter?: StepLimiter | undefined,
+    asker?: StepAsker | undefined,
   ): Promise<PluginStepResult> {
     if (this.signal?.aborted === true) {
       return this.failure(use, preferInterrupted, {
@@ -527,6 +625,7 @@ export class Runner {
         flowParams,
         access,
         limiter,
+        asker,
       );
     }
     return this.executeHere(
@@ -537,6 +636,7 @@ export class Runner {
       flowParams,
       access,
       limiter,
+      asker,
     );
   }
 
@@ -585,8 +685,10 @@ export class Runner {
     flowParams: JsonValue,
     access: JsonValue,
     limiter: StepLimiter | undefined,
+    asker: StepAsker | undefined,
   ): Promise<PluginStepResult> {
     return new Promise((resolve) => {
+      const questions = new Map<number, AbortController>();
       // Waits for a place that the worker's nested steps asked for, by the id
       // the worker gave the request; a finished worker stops them all.
       const waits = new Map<number, AbortController>();
@@ -612,13 +714,15 @@ export class Runner {
       });
 
       let settled = false;
-      let timer: ReturnType<typeof setTimeout> | undefined;
+      let timer: StepTimeout | undefined;
       let stopTimer: ReturnType<typeof setTimeout> | undefined;
       const finish = (result: PluginStepResult, terminate = true): void => {
         if (settled) return;
         settled = true;
         for (const wait of waits.values()) wait.abort();
-        if (timer !== undefined) clearTimeout(timer);
+        for (const question of questions.values()) question.abort();
+        timer?.clear();
+        if (this.activeTimeout === timer) this.activeTimeout = undefined;
         this.signal?.removeEventListener("abort", onAbort);
         if (terminate) {
           void worker.terminate();
@@ -654,7 +758,7 @@ export class Runner {
         );
       };
 
-      timer = setTimeout(() => {
+      timer = new StepTimeout(this.timeoutMsFor(use), () => {
         abortWorker();
         finish(
           this.failure(use, preferInterrupted, {
@@ -663,7 +767,8 @@ export class Runner {
           }),
           false,
         );
-      }, this.timeoutMsFor(use));
+      });
+      this.activeTimeout = timer;
       this.signal?.addEventListener("abort", onAbort, { once: true });
 
       worker.on("message", (message: unknown) => {
@@ -674,6 +779,10 @@ export class Runner {
         }
         if (isStepWorkerLimit(message)) {
           void this.serveLimit(message, limiter, worker, waits, held);
+          return;
+        }
+        if (isStepWorkerAsk(message)) {
+          void this.serveAsk(message, asker, worker, questions);
           return;
         }
         if (isStepWorkerEmit(message)) {
@@ -727,6 +836,39 @@ export class Runner {
         );
       });
     });
+  }
+
+  private async serveAsk(
+    message: StepWorkerAsk,
+    asker: StepAsker | undefined,
+    worker: Worker,
+    questions: Map<number, AbortController>,
+  ): Promise<void> {
+    if (message.kind === "ask-cancel") {
+      questions.get(message.id)?.abort();
+      return;
+    }
+    const reply = (body: Record<string, unknown>): void => {
+      try {
+        worker.postMessage({ kind: "ask-result", id: message.id, ...body });
+      } catch {
+        // The worker is gone; nobody waits for the answer.
+      }
+    };
+    if (asker === undefined) {
+      reply({ ok: false, error: "no one takes questions here" });
+      return;
+    }
+    const wait = new AbortController();
+    questions.set(message.id, wait);
+    try {
+      const outcome = await asker.ask(message.request, wait.signal);
+      reply({ ok: true, outcome });
+    } catch (error) {
+      reply({ ok: false, error: messageOf(error) });
+    } finally {
+      questions.delete(message.id);
+    }
   }
 
   private async serveLimit(
@@ -793,18 +935,20 @@ export class Runner {
     flowParams: JsonValue,
     access: JsonValue,
     limiter: StepLimiter | undefined,
+    asker: StepAsker | undefined,
   ): Promise<PluginStepResult> {
     const controller = new AbortController();
     const forward = (): void => controller.abort();
     this.signal?.addEventListener("abort", forward, { once: true });
 
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timer: StepTimeout | undefined;
     const timeout = new Promise<"timeout">((resolve) => {
-      timer = setTimeout(() => {
+      timer = new StepTimeout(this.timeoutMsFor(use), () => {
         controller.abort();
         resolve("timeout");
-      }, this.timeoutMsFor(use));
+      });
     });
+    this.activeTimeout = timer;
 
     const step = this.registry.runStep(use, params, {
       runId: this.runId,
@@ -816,6 +960,7 @@ export class Runner {
       ...(this.emitEvent === undefined ? {} : { emit: this.emitEvent }),
       signal: controller.signal,
       ...(limiter === undefined ? {} : { limits: limiter }),
+      ...(asker === undefined ? {} : { asker }),
     });
     // After a timeout the plugin may still reject; that rejection is no
     // longer interesting, and must not crash the process.
@@ -839,7 +984,8 @@ export class Runner {
         message: messageOf(error),
       });
     } finally {
-      if (timer !== undefined) clearTimeout(timer);
+      timer?.clear();
+      if (this.activeTimeout === timer) this.activeTimeout = undefined;
       this.signal?.removeEventListener("abort", forward);
     }
   }

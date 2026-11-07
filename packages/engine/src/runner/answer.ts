@@ -4,6 +4,7 @@ import type { FlowDefinition } from "../flow/types.ts";
 import type { KernelState } from "../kernel/types.ts";
 import type { JsonValue, LogBackend } from "../log/types.ts";
 import type { Actor } from "../plugin/types.ts";
+import { answerAsk, openAskOf } from "./ask.ts";
 import { StateError } from "./errors.ts";
 import { applyInput, readState } from "./service.ts";
 
@@ -71,7 +72,24 @@ export async function recordAnswer(options: RecordAnswerOptions): Promise<void> 
   const state = await readState(options.log, options.runId);
   const wait = state.wait;
   if (state.status !== "waiting_person" || wait === null) {
-    throw new StateError(`run ${options.runId} is not waiting for a person`);
+    // A step may be waiting on its own question; its answer goes to the step.
+    const ask =
+      state.status === "ended" || state.status === "idle"
+        ? undefined
+        : await openAskOf(options.log, options.runId);
+    if (ask === undefined) {
+      throw new StateError(`run ${options.runId} is not waiting for a person`);
+    }
+    await answerAsk({
+      log: options.log,
+      runId: options.runId,
+      state,
+      ask,
+      choice: options.choice,
+      ...(options.note === undefined ? {} : { note: options.note }),
+      actor: options.actor,
+    });
+    return;
   }
   const payload = answerInput(
     options.runId,

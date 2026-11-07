@@ -175,6 +175,52 @@ export function historyEntry(fact: HistoryFact): HistoryEntry {
       };
     }
 
+    case "ask_opened":
+      return {
+        time,
+        step: text(payload.step) ?? step,
+        what: "asked you",
+        why: text(payload.prompt) ?? "",
+      };
+
+    case "ask_answered": {
+      const actorValue = record(payload.actor);
+      const via = text(actorValue.via);
+      const id = text(actorValue.id);
+      const whyParts: string[] = [];
+      const note = text(payload.note);
+      if (note !== undefined) whyParts.push(note);
+      if (via !== undefined) whyParts.push(`via ${via}`);
+      if (id !== undefined) whyParts.push(`as ${id}`);
+      return {
+        time,
+        step,
+        what: `you chose ${text(payload.choice) ?? "an answer"}`,
+        why: whyParts.join(", "),
+        ...(via === undefined || id === undefined
+          ? {}
+          : { actor: { via, id } }),
+      };
+    }
+
+    case "ask_timed_out":
+      return {
+        time,
+        step,
+        what: "nobody answered in time",
+        why: "",
+      };
+
+    case "ask_refused":
+      return {
+        time,
+        step,
+        what: "an answer was refused",
+        why: [text(payload.choice), text(payload.reason)]
+          .filter((part): part is string => part !== undefined)
+          .join(": "),
+      };
+
     case "run_ended": {
       const status = text(payload.status) ?? "ended";
       const words =

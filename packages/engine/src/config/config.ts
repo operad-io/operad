@@ -56,12 +56,21 @@ export const DEFAULT_NOTIFY: NotifyConfig = {
   on: ["waiting"],
 };
 
+/** How long `ctx.ask` waits for an answer unless something narrower says. */
+export interface AskConfig {
+  readonly graceSecs: number;
+}
+
+/** The ask defaults: ten minutes. */
+export const DEFAULT_ASK: AskConfig = { graceSecs: 600 };
+
 /** The keys of `$OPERAD_HOME/config.json` the kernel reads. */
 export interface OperadConfig {
   readonly plugins: readonly PluginConfigEntry[];
   readonly store: StoreConfig;
   readonly http: HttpConfig;
   readonly notify: NotifyConfig;
+  readonly ask: AskConfig;
 }
 
 /** A config file is not usable; the message names the file and the field. */
@@ -106,6 +115,7 @@ export function defaultConfig(home: string): OperadConfig {
     store: { backend: "jsonl", path: join(home, "store") },
     http: DEFAULT_HTTP,
     notify: DEFAULT_NOTIFY,
+    ask: DEFAULT_ASK,
   };
 }
 
@@ -231,6 +241,25 @@ function readHttp(value: unknown, file: string): HttpConfig {
   };
 }
 
+function readAsk(value: unknown, file: string): AskConfig {
+  if (value === undefined) return DEFAULT_ASK;
+  if (!isRecord(value)) {
+    throw new ConfigError(`${file}: ask: must be an object`);
+  }
+  const graceSecs = value.graceSecs;
+  if (
+    graceSecs !== undefined &&
+    (typeof graceSecs !== "number" ||
+      !Number.isFinite(graceSecs) ||
+      graceSecs < 0)
+  ) {
+    throw new ConfigError(
+      `${file}: ask.graceSecs: must be a number of seconds, 0 or more`,
+    );
+  }
+  return { graceSecs: graceSecs ?? DEFAULT_ASK.graceSecs };
+}
+
 function readNotify(value: unknown, file: string): NotifyConfig {
   if (value === undefined) return DEFAULT_NOTIFY;
   if (!isRecord(value)) {
@@ -334,6 +363,7 @@ export async function readConfig(
     },
     http: readHttp(raw.http, file),
     notify: readNotify(raw.notify, file),
+    ask: readAsk(raw.ask, file),
   };
 }
 
@@ -365,6 +395,9 @@ export function configJson(config: OperadConfig): Record<string, unknown> {
     ...(config.notify.command === null
       ? {}
       : { notify: { command: config.notify.command, on: [...config.notify.on] } }),
+    ...(config.ask.graceSecs === DEFAULT_ASK.graceSecs
+      ? {}
+      : { ask: { graceSecs: config.ask.graceSecs } }),
   };
 }
 
