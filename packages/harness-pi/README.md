@@ -3,7 +3,7 @@
 The pi harness. `src/worker.ts` is the child program: it imports pi's library,
 reads one JSON object from stdin, runs one prompt and writes one JSON object per
 line to stdout. The last line is the `Result`. The hub-side step that spawns it
-is a later task. Decisions: `docs/backlog/operad-harness-pi.md` 2, 3, 5, 6.
+is a later task. Decisions: `docs/backlog/operad-harness-pi.md` 2, 3, 5, 6, 7.
 
 Run it as `bun packages/harness-pi/src/worker.ts`. stderr is free text for
 humans and is never parsed.
@@ -29,7 +29,7 @@ this table.
 | `resumeSession` | string, non-empty | no | session file path from an earlier `Result.sessionId`; the prompt is sent into it |
 | `model` | string `provider/id` | no | model to use; absent means pi's own default |
 | `thinkingLevel` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` | no | reasoning level; absent means pi's default |
-| `access` | object | no | the access profile; this version accepts and ignores it (the `tool_call` handler only logs) |
+| `access` | object | no | the access profile; `denyPaths` and `denyCommands` (arrays of strings) are enforced in the `tool_call` hook by `@operad-io/access-match`, other fields are ignored; absent means nothing is denied |
 
 An invalid object (not JSON, not an object, a required field missing or of the
 wrong type, an optional field of the wrong type) writes one `Result` line with
@@ -45,7 +45,7 @@ types appear, in the order the run produces them:
 | `message_end` | `role` (`"assistant"`), `stopReason` (string), `usage` (`{input, output, cache_read, cache_write}`, numbers), `cost` (`{total}` in USD, or `null` when pi gave no price) | an assistant message finished; only assistant messages are written |
 | `tool_execution_start` | `toolCallId`, `toolName` | a tool call began |
 | `tool_execution_end` | `toolCallId`, `toolName`, `isError` (boolean) | a tool call ended |
-| `blocked` | `toolName`, `reason` | reserved for the access matcher; never written yet |
+| `blocked` | `toolName`, `reason` | the access matcher refused a tool call; the call does not run: its `tool_execution_end` has `isError: true` and the model gets `reason` as the tool result. The run continues |
 | `agent_settled` | `aborted` (boolean) | pi has stopped for good (not `agent_end`, after which pi may continue) |
 | `result` | see below | always the last line |
 

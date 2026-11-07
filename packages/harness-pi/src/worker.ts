@@ -6,6 +6,7 @@
  */
 
 import { existsSync, mkdirSync } from "node:fs";
+import { match, readProfile, type AccessProfile } from "@operad-io/access-match";
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -139,11 +140,17 @@ export async function runWorker(
       ? SessionManager.open(input.resumeSession, input.sessionDir)
       : SessionManager.create(input.cwd, input.sessionDir);
 
-  // The one extension operad loads. Its tool_call handler only logs for now.
+  // The one extension operad loads. Its tool_call handler asks the access
+  // matcher; a refusal blocks the call and the agent goes on.
+  const access = readProfile(input.access ?? {});
+  const profile: AccessProfile = access.ok ? access.profile : {};
   const operadExtension: ExtensionFactory = (pi) => {
     pi.on("tool_call", async (event) => {
       io.log(`tool_call ${event.toolName}`);
-      return undefined;
+      const verdict = match(profile, { tool: event.toolName, input: event.input, cwd: input.cwd });
+      if (verdict.allow) return undefined;
+      io.line({ type: "blocked", toolName: event.toolName, reason: verdict.reason });
+      return { block: true, reason: verdict.reason };
     });
   };
 

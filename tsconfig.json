@@ -8,6 +8,7 @@
     { "path": "packages/harness-process" },
     { "path": "packages/cli" },
     { "path": "packages/source-cron" },
+    { "path": "packages/access-match" },
     { "path": "packages/harness-pi" }
   ]
 }
