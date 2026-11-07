@@ -91,6 +91,27 @@ that and prints `url`, `token` and the pairing `link` as plain lines, with no
 QR code. If you paste the token anywhere, rotate it with `operad http token
 rotate`.
 
+### The terminal client
+
+`operad tui` is the terminal client for the same `/v1` interface. It needs an
+`operad serve` running in this home with `http.enabled` true; it never opens the
+store and never loads a plugin. It finds the server like this:
+
+- `--url` and `--token` win over the home when they are given.
+- Without `--url`, the URL is `http://<address>:<port>` for the first entry of
+  `http.listen` and `http.port` in `config.json`. A config with no `http`
+  section is one clear error that names `http`.
+- Without `--token`, the token is the one `operad pair` reads from
+  `$OPERAD_HOME/secrets/http.json`. `operad pair --show-token` prints it.
+
+| Input | Type | Default | Allowed values |
+|---|---|---|---|
+| `--url` | string | `http://<first http.listen address>:<http.port>` | An `http` or `https` URL without credentials, a query or a fragment. |
+| `--token` | string | The token in `$OPERAD_HOME/secrets/http.json` | The bearer token of the running `serve`. |
+| `OPERAD_HOME` | environment variable | `~/.operad` | The directory holding `config.json` and `secrets/http.json`. |
+| `http.listen` | array of strings in `config.json` | `["127.0.0.1"]` | IP literals `serve` may listen on; the first one is the default TUI address. |
+| `http.port` | integer in `config.json` | `7480` | `0` to `65535`; the TUI needs the port `serve` actually uses, so `0` needs `--url`. |
+
 ### Endpoints
 
 All endpoints are under `/v1`. Responses are JSON unless the endpoint says
