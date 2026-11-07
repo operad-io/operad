@@ -4,13 +4,8 @@
   "concurrency": 3,
   "maxAutoRework": 4,
   "worker": {
-    "use": "harness-radian/agent",
-    "args": [
-      "--provider",
-      "opencode-go",
-      "--model",
-      "deepseek-v4.1-flash"
-    ],
+    "use": "harness-pi/agent",
+    "args": [],
     "stallSecs": 900,
     "wallTimeSecs": 7200
   },
