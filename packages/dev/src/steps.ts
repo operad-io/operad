@@ -549,6 +549,7 @@ export async function runWorktree(
     verified: null,
     verify: null,
     review: null,
+    reviewRuns: [],
     reviews: 0,
     // The next gate failure appends a fresh rework even in the same flow run.
     rework: null,

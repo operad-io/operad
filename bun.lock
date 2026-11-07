@@ -55,11 +55,19 @@
         "@operad-io/access-match": "workspace:*",
       },
     },
+    "packages/harness-process": {
+      "name": "@operad-io/harness-process",
+      "version": "0.0.0",
+      "dependencies": {
+        "@operad-io/engine": "workspace:*",
+      },
+    },
     "packages/harness-radian": {
       "name": "@operad-io/harness-radian",
       "version": "0.0.0",
       "dependencies": {
         "@operad-io/engine": "workspace:*",
+        "@operad-io/harness-process": "workspace:*",
       },
     },
     "packages/shell": {
@@ -149,6 +157,8 @@
     "@operad-io/engine": ["@operad-io/engine@workspace:packages/engine"],
 
     "@operad-io/harness-pi": ["@operad-io/harness-pi@workspace:packages/harness-pi"],
+
+    "@operad-io/harness-process": ["@operad-io/harness-process@workspace:packages/harness-process"],
 
     "@operad-io/harness-radian": ["@operad-io/harness-radian@workspace:packages/harness-radian"],
 

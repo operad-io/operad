@@ -342,9 +342,13 @@ async function scheduleRepository(
       const task = taskData(object.data);
       const attempt = task.attempt;
       if (task.phase !== "waiting" || task.run === null) continue;
-      if (attempt === undefined || attempt.review?.result !== "pass") {
-        continue;
-      }
+      if (attempt === undefined) continue;
+      const review = attempt.review;
+      const passed =
+        review?.decision === "passed" ||
+        review?.result === "pass" ||
+        review?.result === "passed";
+      if (!passed) continue;
       // An integrate that failed is a person wait, never a second answer.
       if (attempt.integration !== undefined && attempt.integration !== null) {
         continue;

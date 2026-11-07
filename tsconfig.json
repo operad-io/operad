@@ -5,6 +5,7 @@
     { "path": "packages/shell" },
     { "path": "packages/dev" },
     { "path": "packages/harness-radian" },
+    { "path": "packages/harness-process" },
     { "path": "packages/cli" },
     { "path": "packages/source-cron" },
     { "path": "packages/access-match" },

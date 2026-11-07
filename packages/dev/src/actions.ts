@@ -42,8 +42,35 @@ const planStateWhy = (action: string, wanted: string) =>
     needs(object, planState(planData(object.data)), action, wanted);
 
 const taskPhaseWhy = (action: string, wanted: string) =>
-  (object: StoredObject): string =>
-    needs(object, taskData(object.data).phase, action, wanted);
+  (object: StoredObject): string => {
+    const task = taskData(object.data);
+    if (wanted === "waiting" && task.phase === "waiting" && inReviewWait(task)) {
+      return `${bareId(object.id)} is waiting for the review model to come back; dev:${action} works once it needs you`;
+    }
+    return needs(object, task.phase, action, wanted);
+  };
+
+/**
+ * True while a review waits for its model to come back. The flow is not asking
+ * a person anything then, so merge, reject, rework and reverify are not offered.
+ */
+function inReviewWait(task: TaskData): boolean {
+  const review = task.attempt?.review;
+  return (
+    typeof task.retryAt === "number" &&
+    review !== undefined &&
+    review !== null &&
+    review.decision === "unavailable" &&
+    review.reason !== "exhausted" &&
+    review.reason !== "out_of_time"
+  );
+}
+
+/** A task that waits for a person, as opposed to for a review model. */
+function waitsForPerson(state: Parameters<typeof taskData>[0]): boolean {
+  const task = taskData(state);
+  return task.phase === "waiting" && !inReviewWait(task);
+}
 
 /** Reads a required enum argument; the kernel checks it first, this is for types. */
 function enumArgument<T extends string>(
@@ -134,7 +161,7 @@ const mergeTask: ActionTypeDefinition = {
   on: "task",
   confirm: true,
   when(state) {
-    return taskData(state).phase === "waiting";
+    return waitsForPerson(state);
   },
   why: taskPhaseWhy("merge", "waiting"),
   async run(ctx) {
@@ -165,7 +192,7 @@ const rejectTaskAction: ActionTypeDefinition = {
   on: "task",
   args: NOTE_ARGS("What the worker should change before the next review."),
   when(state) {
-    return taskData(state).phase === "waiting";
+    return waitsForPerson(state);
   },
   why: taskPhaseWhy("reject", "waiting"),
   async run(ctx, args) {
@@ -189,7 +216,7 @@ const reworkTaskAction: ActionTypeDefinition = {
   on: "task",
   args: NOTE_ARGS("What the worker should do in this rework."),
   when(state) {
-    return taskData(state).phase === "waiting";
+    return waitsForPerson(state);
   },
   why: taskPhaseWhy("rework", "waiting"),
   async run(ctx, args) {
@@ -213,7 +240,7 @@ const reverifyTaskAction: ActionTypeDefinition = {
   name: "reverify",
   on: "task",
   when(state) {
-    return taskData(state).phase === "waiting";
+    return waitsForPerson(state);
   },
   why: taskPhaseWhy("reverify", "waiting"),
   async run(ctx) {
@@ -236,6 +263,10 @@ const reverifyTaskAction: ActionTypeDefinition = {
           verify: null,
           review: null,
           reviews: 0,
+          // Round 1 starts again: the old round's runs and pending run must
+          // not be read back as this round's.
+          reviewRuns: [],
+          reviewPending: null,
           rework: null,
           integration: null,
         },

@@ -127,6 +127,25 @@
           "type": "array",
           "items": { "type": "string" }
         },
+        "fallback": {
+          "description": "A second harness step and arguments used when the primary reviewer is unavailable.",
+          "type": "object",
+          "properties": {
+            "use": {
+              "description": "The harness step that reviews when the primary is unavailable.",
+              "type": "string",
+              "minLength": 1
+            },
+            "args": {
+              "description": "Arguments the fallback harness step passes to its command.",
+              "type": "array",
+              "items": { "type": "string" },
+              "default": []
+            }
+          },
+          "required": ["use"],
+          "additionalProperties": false
+        },
         "timeoutSecs": {
           "description": "The longest a review may run, in seconds.",
           "type": "number",
@@ -143,6 +162,12 @@
           "type": "string",
           "enum": ["critical", "major", "minor"],
           "default": "major"
+        },
+        "retrySecs": {
+          "description": "How long a review waits before it runs again after a model was unavailable.",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 120
         },
         "maxFileDiffBytes": {
           "description": "The largest diff one file may put in the review prompt; a larger file is left out and listed.",
@@ -163,6 +188,7 @@
         "args": [],
         "timeoutSecs": 600,
         "fixLevel": "major",
+        "retrySecs": 120,
         "maxFileDiffBytes": 200000,
         "maxDiffBytes": 1000000
       }

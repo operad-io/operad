@@ -25,6 +25,9 @@ export const WORKER_BRIEF_FILE = ".operad/worker-brief.md";
 /** The harness step a repository uses when it names none. */
 export const DEFAULT_WORKER_USE = "harness-radian/agent";
 
+/** How long a review waits before it runs again after a model was unavailable. */
+export const DEFAULT_REVIEWER_RETRY_SECS = 120;
+
 /** What a repository may configure for the worker harness step. */
 export interface WorkerSettings {
   readonly use: string;
@@ -57,16 +60,26 @@ export interface HookSettings {
   readonly afterMerge: readonly string[];
 }
 
+/** A second harness step the reviewer may fall back to. */
+export interface ReviewerFallback {
+  readonly use: string;
+  readonly args: readonly string[];
+}
+
 /** What a repository may configure for the review harness step. */
 export interface ReviewerSettings {
   readonly use: string;
   readonly args: readonly string[];
   /** The arguments of the first review of an attempt, when they differ. */
   readonly firstArgs?: readonly string[] | undefined;
+  /** The step used when the primary reviewer is unavailable. */
+  readonly fallback?: ReviewerFallback | undefined;
   readonly timeoutSecs: number;
   /** How long a review may print nothing; unset uses the harness default. */
   readonly stallSecs?: number | undefined;
   readonly fixLevel: FixLevel;
+  /** How long an unavailable review waits before it runs again. */
+  readonly retrySecs: number;
   /** The largest diff one file may put in the review prompt. */
   readonly maxFileDiffBytes: number;
   /** The largest diff the whole review prompt may carry. */
@@ -133,6 +146,7 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
     args: [],
     timeoutSecs: 600,
     fixLevel: "major",
+    retrySecs: DEFAULT_REVIEWER_RETRY_SECS,
     maxFileDiffBytes: 200_000,
     maxDiffBytes: 1_000_000,
   },
@@ -342,6 +356,22 @@ function fixLevelOf(value: unknown, field: string): FixLevel {
   return value;
 }
 
+function reviewerFallback(value: unknown, field: string): ReviewerFallback {
+  if (!isRecord(value)) {
+    throw new DevError(field, "must be an object");
+  }
+  for (const key of Object.keys(value)) {
+    if (key !== "use" && key !== "args") {
+      throw new DevError(`${field}.${key}`, "is not a fallback setting");
+    }
+  }
+  return {
+    use: nonEmptyString(value.use, `${field}.use`),
+    args:
+      value.args === undefined ? [] : stringList(value.args, `${field}.args`),
+  };
+}
+
 function reviewerSettings(value: unknown, field: string): ReviewerSettings {
   if (!isRecord(value)) {
     throw new DevError(field, "must be an object");
@@ -351,9 +381,11 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
       key !== "use" &&
       key !== "args" &&
       key !== "firstArgs" &&
+      key !== "fallback" &&
       key !== "timeoutSecs" &&
       key !== "stallSecs" &&
       key !== "fixLevel" &&
+      key !== "retrySecs" &&
       key !== "maxFileDiffBytes" &&
       key !== "maxDiffBytes"
     ) {
@@ -364,6 +396,10 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
     value.firstArgs === undefined
       ? undefined
       : stringList(value.firstArgs, `${field}.firstArgs`);
+  const fallback =
+    value.fallback === undefined
+      ? undefined
+      : reviewerFallback(value.fallback, `${field}.fallback`);
   return {
     use:
       value.use === undefined
@@ -374,6 +410,7 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
         ? []
         : stringList(value.args, `${field}.args`),
     ...(firstArgs === undefined ? {} : { firstArgs }),
+    ...(fallback === undefined ? {} : { fallback }),
     timeoutSecs:
       value.timeoutSecs === undefined
         ? DEFAULT_DEV_SETTINGS.reviewer.timeoutSecs
@@ -382,6 +419,10 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
       ? {}
       : { stallSecs: positiveSeconds(value.stallSecs, `${field}.stallSecs`) }),
     fixLevel: fixLevelOf(value.fixLevel, `${field}.fixLevel`),
+    retrySecs:
+      value.retrySecs === undefined
+        ? DEFAULT_DEV_SETTINGS.reviewer.retrySecs
+        : positiveSeconds(value.retrySecs, `${field}.retrySecs`),
     maxFileDiffBytes:
       value.maxFileDiffBytes === undefined
         ? DEFAULT_DEV_SETTINGS.reviewer.maxFileDiffBytes
