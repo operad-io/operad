@@ -22,7 +22,7 @@ hub 的会话路由只认 radian 的 journal 和 control port，worker 只有 `r
 5. 任务的 command 适配器保留为兜底（提示词进、最后一条消息出，回执在消息末尾的 JSON 代码块），给只能一次性跑、不能交互的工具；它没有会话面。回执至少含 `done` | `nothing` | `failed` | `needs_decision` | `waiting`，`waiting` 带 `wait_check`。
 6. 权限请求（ACP 的 `request_permission`、SDK 的 `canUseTool`）由引擎按 graph 给的 access 档回答，或转给手机上的人；harness 碰不到权限决定。每个 harness 一张机械禁用表（Claude 是 `disallowedTools`，radian 是 tier，Codex 是 sandbox 策略加 execpolicy），owner 批准只对该运行解锁一次。
 7. **radian 在 operad 里只当 agent 用。** `harness-radian` 只调用 `radian exec` 和 `radian acp`；operad 不调用、不启动、不依赖 `radian hub` 和 `radian arc`，`dev` 插件不读也不写仓库里的 `.radian/arc/`。编排（计划、任务、门禁、合并、推送）只在 operad 里。目前这是 operad 一侧的约定，radian 二进制里仍带着这两个子命令；以后 radian 会去掉编排功能，operad 不需要为此改动。
-8. **harness 本体不随 operad 装，用用户装的那份。** radian 本来就是 PATH 上的命令；pi 从 PATH 上的 `pi` 找到它的库再 `import()`；Claude 从 PATH 上的 `claude` 起进程，operad 只带 Agent SDK 的客户端代码，八个平台二进制包用 `overrides` 换成空包。理由：登录态、自动更新、配额都属于用户装的那份，operad 不替用户再下一份几百 MB 的二进制，也不替用户登录。`sdk` 接法的版本耦合由此定形：operad 带的客户端库钉精确版本，本体有版本下限，`operad plugin check` 报两边版本，本体太旧才拒绝。落实见 `operad-harness-pi.md` 决定 9 和 `operad-harness-claude.md` 决定 2、10。
+8. **harness 本体不随 operad 装，用用户装的那份。** radian 本来就是 PATH 上的命令；pi 从 PATH 上的 `pi` 找到它的库再 `import()`；Claude 从 PATH 上的 `claude` 起进程，operad 只带 Agent SDK 的客户端代码，八个平台二进制包用 `overrides` 换成空包。理由：登录态、自动更新、配额都属于用户装的那份，operad 不替用户再下一份几百 MB 的二进制，也不替用户登录。`sdk` 接法的版本耦合由此定形：operad 带的客户端库不钉版本，`package.json` 写范围，lock 记当下测过的那一版，`bun update` 往前挪；本体有版本下限；`operad plugin check` 报两边版本，只有本体太旧或没登录才拒绝。落实见 `operad-harness-pi.md` 决定 9 和 `operad-harness-claude.md` 决定 2、10。
 
 ## 待决问题（未定）
 

@@ -23,7 +23,7 @@
 ## 决定（已定）
 
 1. **Claude 是 operad 的第三种 harness，`sdk` 接法**，包名 `@operad-io/harness-claude`，步骤 `harness-claude/agent`，流程 `harness-claude:prompt`。参数、结果名、事实形状和 `harness-pi` 完全一样；`args` 读 `--model <名字>` 和 `--effort <low|medium|high|xhigh|max>`，其余条目按 `harness-pi` 的规则拒绝。界面和文档里叫 `claude`，不叫 "Claude Code"。
-2. **两层子进程，二进制是用户装的。** hub 起 `bun worker.ts`；`worker.ts` import SDK，SDK 用 `pathToClaudeCodeExecutable` 起 PATH 上的 `claude`（设置 `command` 可改，和 `harness-radian` 一样）。operad 不自带 Claude Code：`package.json` 的 `overrides` 把八个 `@anthropic-ai/claude-agent-sdk-<平台>` 包换成 `empty-npm-package`，SDK 客户端本身钉精确版本。`operad plugin check` 跑 `claude --version` 和 `claude auth status`，报 Claude Code 版本、SDK 版本、登录方式；Claude Code 低于 worker 写时的版本下限（现在 2.1.319）或没登录时拒绝并说出来。
+2. **两层子进程，二进制是用户装的。** hub 起 `bun worker.ts`；`worker.ts` import SDK，SDK 用 `pathToClaudeCodeExecutable` 起 PATH 上的 `claude`（设置 `command` 可改，和 `harness-radian` 一样）。operad 不自带 Claude Code：`package.json` 的 `overrides` 把八个 `@anthropic-ai/claude-agent-sdk-<平台>` 包换成 `empty-npm-package`，SDK 客户端写范围（`^0.3.319`），不钉精确版本。`operad plugin check` 跑 `claude --version` 和 `claude auth status`，报 Claude Code 版本、SDK 版本、登录方式；Claude Code 低于 worker 写时的版本下限（现在 2.1.319）或没登录时拒绝并说出来，SDK 版本只报不拒。
 3. **凭据就是用户自己的 claude 登录，operad 什么都不传。** 订阅登录在 Keychain，SDK 起的进程自己读。无浏览器的机器由用户把 `claude setup-token` 的结果放进环境里的 `CLAUDE_CODE_OAUTH_TOKEN`，worker 原样透传。等合约决定 11 的 `ctx.secrets` 进了 `StepContext`，API key 走 `env: { ANTHROPIC_API_KEY }` 这条路，不换接法。政策：用户用自己的订阅跑自己的工具；operad 作为产品发给别人时不替用户做 claude.ai 登录，只走 API key。这一句写进用户文档。
 4. **子进程里的 Claude 不做发现**：`settingSources: []`，`permissionMode: 'default'` 显式给（不接受默认的 `auto` 分类器），`permissionPrompts: 'host'`，`canUseTool` 是唯一的权限面；系统提示用 SDK 自带的 `claude_code` 预设，不追加；工具集用 SDK 的默认集，operad 自己的工具第一版不接；不加载插件、技能、钩子文件。opencode 关掉自动记忆等的那串环境变量逐个核对现版本还认不认，认的照抄。
 5. **会话文件留在用户的 `~/.claude/projects/`。** 这是决定 3 的后果：换 `CLAUDE_CONFIG_DIR` 就丢登录。`sessionId` 是 SDK 的 `session_id`，续接给 `resume`；用户自己的 `claude --resume <id>` 能接上同一个会话。和 pi 相反，不另设会话目录。
@@ -31,8 +31,7 @@
 7. **事实的来源**：`usage` 从 result 的四个计数来，`cache_creation_input_tokens` 对应 `cache_write`；`cost.micros` 是 `total_cost_usd` 乘一百万取整，登录是订阅时（`accountInfo().subscriptionType` 有值）质量标 `estimated`，API key 时标 `exact`；`finalMessage` 是 result 的 `result`；`model` 是步骤的 `--model`，没有就取 `modelUsage` 的第一个键；日志行是 `PreToolUse`、`PostToolUse` 钩子写的 `tool_execution_start`、`tool_execution_end`（停滞逻辑不改），加 `message_end`（每条 assistant 消息）、`blocked`、`result`；`rate_limit_event` 转成 `modelError`，`kind` 是 `usage_limit`，`message` 带 `rateLimitType`；result 的 `is_error` 为真时步骤 `failed`，reason `model_error`。
 8. **取消和上限**：SIGTERM 到 worker 就 `abortController.abort()`，写 `cancelled` 的 Result，退出码 143。设置 `maxTurns`（默认不限）和 `budgetUsd`（默认不设，给 API key 用户）翻成 SDK 的 `maxTurns`、`maxBudgetUsd`。
 9. **问人一段随合约决定 6 一起来**，形状同 `operad-harness-pi.md` 决定 8：`canUseTool` 是 async 的，到时在里面 `await ctx.ask(...)`。
-10. **版本**：SDK 客户端钉精确版本（现在 `0.3.319`），Claude Code 是用户的、会自动更新；`plugin check` 报两边版本，worker 用 `initializationResult().claude_code_version` 记进日志。SDK 落后于 Claude Code 是常态，反过来（SDK 新、Claude Code 旧）才拒绝。
-
+10. **版本**：SDK 客户端不钉版本，`package.json` 写 `^0.3.319`，bun.lock 记当下测过的那一版，`bun update` 往前挪，verify 的 `--frozen-lockfile` 照旧可重现；SDK 的版本号跟着 Claude Code 走（0.3.319 对 2.1.319），它跳到 0.4 时手动改一次范围。Claude Code 是用户的、会自动更新，下限在它身上；`plugin check` 报两边版本，worker 用 `initializationResult().claude_code_version` 记进日志。SDK 落后于 Claude Code 是常态，不拒绝；Claude Code 低于下限才拒绝。
 ## 建议的任务切分
 
 1. **spike**：Bun 下 `worker.ts` 原型：`overrides` 换空包、`pathToClaudeCodeExecutable`、零 token 探针、一次真实请求；记下 `settingSources: []` 之外还要关什么。
@@ -44,7 +43,7 @@
 ## 待决问题（未定）
 
 1. `-p` 和 SDK 跑的量是否和交互式一样计入订阅配额；没有核实，dogfood 期间对照 `/usage`。
-2. Claude Code 自动更新到 SDK 不认识的版本时先坏的是什么；`initializationResult` 报的版本进日志，坏了再定下限怎么升。
+2. SDK 和 Claude Code 哪一边先坏：Claude Code 自动更新到 SDK 不认识的版本，或 `bun update` 把 SDK 推过了本体的下限；`initializationResult` 报的版本进日志，坏了再定下限怎么升。
 3. opencode 那串隔离用的环境变量（关自动记忆、自动压缩、工具搜索等）现版本哪些还有效，任务 1 核。
 
 ## 验收
