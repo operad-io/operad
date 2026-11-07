@@ -91,3 +91,5 @@ the row fields.
 | T-0032-M4 | packages/tui/src/actions.ts | any key answered the confirmation as yes | `actions in the reducer > a confirm action asks and only y sends, with confirmed` |
 | T-0032-M5 | packages/tui/src/actions.ts | a refusal dropped the server's status from the footer line | `actions in the reducer > a refusal shows the server's status and message until the next key` |
 | T-0032-M6 | packages/tui/src/state.ts | `:` opened no palette | `actions in the reducer > the palette filters by fuzzy match and shows key, note and confirm` |
+| T-0032-M7 | packages/tui/src/state.ts | the `:`, `?` and `q` built-ins came before the person's key bindings | `actions in the reducer > a user binding on :, ? or q beats the built-in key` |
+| T-0032-M8 | packages/tui/src/actions.ts | the note was trimmed before it was sent | `actions in the reducer > a note is sent exactly as entered` |

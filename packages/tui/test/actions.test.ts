@@ -122,6 +122,23 @@ describe("actions in the reducer", () => {
     expect(press(opened(ACTIONS, [plugin]), "m").input?.kind).toBe("note");
   });
 
+  test("a user binding on :, ? or q beats the built-in key", () => {
+    for (const key of [":", "?", "q"]) {
+      const state = opened(ACTIONS, [{ key, action: "other:ship", source: "user" }]);
+      const ran = press(state, key);
+      expect(ran.actionRequest).toEqual({ action: "other:ship", id: "item:one" });
+      expect(ran.quit).not.toBe(true);
+      expect(ran.input).toBeUndefined();
+      expect(ran.keys).toBe(false);
+    }
+  });
+
+  test("a note is sent exactly as entered", () => {
+    let state = press(opened(), "a");
+    state = press(state, ...typeText("  reason  "), { type: "key", key: "enter", shift: true }, "enter");
+    expect(state.actionRequest?.note).toBe("  reason  \n");
+  });
+
   test("a key the object does not offer now says so in one footer line", () => {
     const bound = opened([ACTIONS[3] as ViewAction], [
       { key: "m", action: "tuitest:approve", source: "plugin" },

@@ -236,8 +236,8 @@ export function inputKey(
   const newline = (enter && event.shift === true) || (event.ctrl === true && (key === "j" || key === "linefeed")) || key === "linefeed";
   if (newline) return { ...state, input: { ...input, text: `${input.text}\n` } };
   if (enter) {
-    const note = input.text.trim();
-    if (note === "" && input.required) return withNotice(state, "a note is required");
+    const note = input.text;
+    if (note.trim() === "" && input.required) return withNotice(state, "a note is required");
     if (input.confirm) {
       return {
         ...state,
@@ -245,14 +245,14 @@ export function inputKey(
           kind: "confirm",
           action: input.action,
           id: input.id,
-          ...(note === "" ? {} : { note }),
+          ...(note.trim() === "" ? {} : { note }),
         },
       };
     }
     return send(state, {
       action: input.action,
       id: input.id,
-      ...(note === "" ? {} : { note }),
+      ...(note.trim() === "" ? {} : { note }),
     });
   }
   if (key === "backspace") return { ...state, input: { ...input, text: dropLast(input.text) } };

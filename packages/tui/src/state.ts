@@ -1075,6 +1075,12 @@ function handleKey(
   const key = event.key;
   const shift = event.shift === true;
   const label = keyLabel(key, shift);
+  // The person's own bindings come before every built-in key; a plugin's
+  // default comes after them, so it never takes `j` or `r` away.
+  if (!state.keys && !isKey(key, "enter", "return", "escape", "esc")) {
+    const own = bindingFor(state.bindings, label, "user");
+    if (own !== undefined) return startAction(state, own.action);
+  }
   if (key === ":" && !state.keys) {
     return { ...state, input: { kind: "palette", query: "", cursor: 0 } };
   }
@@ -1085,12 +1091,6 @@ function handleKey(
   if (state.keys) {
     // The list behind the key list is hidden, so no other key acts on it.
     return isKey(key, "escape", "esc") ? { ...state, keys: false } : state;
-  }
-  // The person's own bindings come before the built-in keys; a plugin's
-  // default comes after them, so it never takes `j` or `r` away.
-  if (!isKey(key, "enter", "return", "escape", "esc")) {
-    const own = bindingFor(state.bindings, label, "user");
-    if (own !== undefined) return startAction(state, own.action);
   }
   if (isKey(key, "enter", "return")) return enter(state);
   if (isKey(key, "escape", "esc")) {
