@@ -52,3 +52,16 @@ the row fields.
 | T-0031-M10 | packages/tui/src/app.ts | the shell cleared the object request without launching its fetch | `the TUI object app > Enter fetches the object and its section; a change refreshes both` (timed out after 2000ms) |
 | T-0031-M11 | packages/tui/src/state.ts | the last section page kept the old `next`, so paging never stopped | `the object pane reducer > scrolling at the end asks for the section's next page once` |
 | T-0031-M12 | packages/tui/src/app.ts | a change refreshed the object but not its open live section | `the TUI object app > Enter fetches the object and its section; a change refreshes both` (timed out after 2000ms) |
+| tui-autostart-M3 | packages/tui/src/autostart.ts | a held home lock was ignored, so a second serve could be started | `ensureServer > a home lock with a silent port is an error naming http.enabled and http.port, and starts nothing` |
+| tui-autostart-M4 | packages/tui/src/autostart.ts | an answering serve was not recognised and a second one was started | `ensureServer > a serve that already answers is not started again` |
+| tui-autostart-M5 | packages/tui/src/autostart.ts | a non-operad answer was treated as silence | `ensureServer > a port that answers but is not operad is an error naming the port` |
+| tui-autostart-M6 | packages/tui/src/autostart.ts | `http.enabled` false still started a serve | `ensureServer > http.enabled false starts nothing and names the key` |
+| tui-autostart-M7 | packages/tui/src/autostart.ts | an early exit of the child was not noticed | `ensureServer > a child that exits at once is an error naming the log and showing its tail` |
+| tui-autostart-M8 | packages/tui/src/autostart.ts | the `starting operad serve` line was not printed | `ensureServer > a fresh home with no config starts serve, waits for it and returns the address` |
+| tui-autostart-M9 | packages/tui/src/autostart.ts | the child was not detached from the TUI's process group | `a real serve > a fresh home on a free port: tui starts serve, connects, and the child is stopped after` |
+| tui-autostart-M10 | packages/tui/src/app.ts | `--url` no longer skipped the start check | `runTui and the flags > --url and --no-start never start or check a serve; neither does nothing at all` |
+| tui-autostart-M11 | packages/tui/src/app.ts | `--no-start` no longer skipped the start check | `runTui and the flags > --url and --no-start never start or check a serve; neither does nothing at all` |
+| tui-autostart-M13 | packages/tui/src/autostart.ts | a `200` reply without a `types` list counted as operad | `probeServer > tells operad, a silent address and another service apart` |
+| tui-autostart-M16 | packages/tui/src/autostart.ts | an early exit of the child always failed, even when another serve held the lock | `ensureServer: races and bounds > two tui starting at once both end connected to the one serve` |
+| tui-autostart-M17 | packages/tui/src/discover.ts | `http.port` 0 no longer failed before a start | `ensureServer: races and bounds > port 0 or an empty listen fails before anything is spawned` |
+| tui-autostart-M18 | packages/tui/src/autostart.ts | the start deadline was a hundred times too far, so probe time did not bound the wait | `ensureServer: races and bounds > probe time counts against the start deadline` |

@@ -58,13 +58,13 @@
       "additionalProperties": false
     },
     "http": {
-      "description": "The HTTP interface serve exposes for clients. It listens only on addresses a person names.",
+      "description": "The HTTP interface serve exposes for clients. It listens on 127.0.0.1 unless a person names other addresses.",
       "type": "object",
       "properties": {
         "enabled": {
           "type": "boolean",
-          "default": false,
-          "description": "Only an enabled http section opens the port; serve creates the token on first use."
+          "default": true,
+          "description": "Whether serve opens the port. It is on by default, on loopback only; serve creates the token on first use. Set false to turn the interface off."
         },
         "port": {
           "type": "integer",

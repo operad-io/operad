@@ -1,5 +1,6 @@
 /** The operad terminal client: `/v1`, discovery, events, state and the view. */
 
+export * from "./autostart.ts";
 export * from "./client.ts";
 export * from "./discover.ts";
 export * from "./events.ts";

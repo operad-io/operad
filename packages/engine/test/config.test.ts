@@ -42,7 +42,7 @@ describe("operad config", () => {
     expect(config).toEqual({
       plugins: defaultConfig(home).plugins,
       store: { backend: "jsonl", path: join(home, "store") },
-      http: { enabled: false, port: 7480, listen: ["127.0.0.1"] },
+      http: { enabled: true, port: 7480, listen: ["127.0.0.1"] },
       notify: { command: null, on: ["waiting"] },
       mcp: { ...DEFAULT_MCP, actions: [...DEFAULT_MCP.actions] },
       ask: { graceSecs: 600 },
@@ -264,10 +264,16 @@ describe("operad config", () => {
 
     await Bun.write(join(home, "config.json"), JSON.stringify({ http: {} }));
     expect((await readConfig(home)).http).toEqual({
-      enabled: false,
+      enabled: true,
       port: 7480,
       listen: ["127.0.0.1"],
     });
+
+    await Bun.write(
+      join(home, "config.json"),
+      JSON.stringify({ http: { enabled: false } }),
+    );
+    expect((await readConfig(home)).http.enabled).toBe(false);
   });
 
   test("rejects a malformed http section", async () => {

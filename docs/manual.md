@@ -21,7 +21,7 @@ this manual prints a secret.
     "dev": { "module": "@operad-io/dev", "enabled": true }
   },
   "store": { "backend": "jsonl", "path": "~/.operad/store" },
-  "http": { "enabled": false, "port": 7480, "listen": ["127.0.0.1"] },
+  "http": { "enabled": true, "port": 7480, "listen": ["127.0.0.1"] },
   "notify": { "command": null, "on": ["waiting"] },
   "mcp": {
     "actions": ["dev:rework", "dev:reverify", "dev:reject", "dev:priority"],
@@ -61,7 +61,7 @@ own; `show` lists them separately so the lead can tell the owner what to run.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `enabled` | boolean | `false` | Start the HTTP interface with `operad serve`. |
+| `enabled` | boolean | `true` | Start the HTTP interface with `operad serve`. Set `false` to turn it off; `operad tui` then cannot reach a `serve`. |
 | `port` | integer | `7480` | The port to listen on; `0` asks the system for one. |
 | `listen` | array of strings | `["127.0.0.1"]` | The IP addresses to listen on. |
 
@@ -70,9 +70,11 @@ RFC 1918 address (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), a link-local
 address (`169.254.0.0/16`, `fe80::/10`) or a Tailscale address
 (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`). It refuses a wildcard (`0.0.0.0` or
 `::`) and every other address, before it opens a port, naming the entry. The
-default listens on the machine only.
+default listens on the machine only. A config with no `http` section means
+`enabled` true, port `7480`, `listen` `["127.0.0.1"]`. An `http` section without
+`enabled` turns the interface on, on the addresses in `listen`.
 
-The first `operad serve` with `http.enabled` creates one bearer token, 32 random
+The first `operad serve` with `http.enabled` true (the default) creates one bearer token, 32 random
 bytes in base64url, in `secrets/http.json`. Every request must carry
 `Authorization: Bearer <token>`; a request without it, or with a token that is
 not current, gets `401`. `operad http token rotate` replaces the token at once:
@@ -84,6 +86,9 @@ ends the event streams opened with it. No endpoint shows the token.
 ```text
 http http://127.0.0.1:7480
 ```
+
+A second `operad serve` for a home that already has one exits with code 4 before it
+reads the store or opens the port.
 
 ### Pairing the app
 
@@ -102,8 +107,10 @@ The URL is `http://<address>:<port>` for the first non-loopback entry of
 `http.listen`. Pass `--url <base url>` to name another address, such as a
 Tailscale HTTPS name (`operad pair --url https://mac.tail1234.ts.net`); it must
 be an `http` or `https` URL without credentials or a query. The QR code encodes
-`operad://pair?url=<url>&token=<token>`. It needs `http.enabled`, and with no
-`--url` an address in `http.listen` that is not loopback.
+`operad://pair?url=<url>&token=<token>`. It needs `http.enabled` true, and with no
+`--url` an address in `http.listen` that is not loopback. With the default `http`
+values, `pair` says that `http.listen` has only loopback addresses and asks for
+one or `--url`; it names `http.enabled` only when that is false.
 
 `pair` is the one command that prints the token. It refuses when its output is
 not a terminal, so a pipe or a log never receives it; `--show-token` overrides
@@ -113,22 +120,49 @@ rotate`.
 
 ### The terminal client
 
-`operad tui` is the terminal client for the same `/v1` interface. It needs an
-`operad serve` running in this home with `http.enabled` true; it never opens the
-store and never loads a plugin. It finds the server like this:
+`operad tui` is the terminal client for the same `/v1` interface. With a fresh
+`~/.operad` it needs nothing else: no config edit, no `operad serve` in another
+terminal, no token. It never opens the store and never loads a plugin. It finds
+or starts the server like this:
 
-- `--url` and `--token` win over the home when they are given.
+- `--url` and `--token` win over the home when they are given. With `--url`
+  nothing is ever started.
 - Without `--url`, the URL is `http://<address>:<port>` for the first entry of
-  `http.listen` and `http.port` in `config.json`. A config with no `http`
-  section is one clear error that names `http`.
+  `http.listen` and `http.port` in `config.json`; with no `http` section it is
+  `http://127.0.0.1:7480`.
+- It asks that address for `/v1/types`. If a `serve` answers, it goes on.
+- If nothing answers and no `serve` holds this home, it starts `operad serve`
+  for this `OPERAD_HOME`, prints `starting operad serve (log: <path>)`, waits up
+  to 15 seconds (probe time counts) for it to answer, and opens the screen. The `serve` runs with
+  the same runtime and `operad` entry as the command you typed, with
+  `$OPERAD_HOME` as its working directory, appends its output to
+  `$OPERAD_HOME/serve.log`, and keeps running after you quit the TUI,
+  because the hub keeps running flows. Stop it with `kill <pid>` (its pid is in
+  `$OPERAD_HOME/serve.lock`) or press Ctrl-C in a terminal where you ran
+  `operad serve` yourself. If it exits at once or never answers, `operad tui`
+  fails with one error that names `serve.log` and shows its last lines;
+  `serve.log` can hold plugin output, so read the lines before you paste them.
+  If another `operad tui` started the `serve` first, this one waits for that
+  `serve` to answer within the same 15 seconds.
+- If a `serve` already holds this home but nothing answers at the address
+  (`http.enabled` is false, or `http.port`/`http.listen` differ), it starts
+  nothing and says so, naming `http.enabled` and `http.port`.
+- If something answers at the address but it is not operad, it fails naming the
+  port.
+- With `http.port` 0 or an empty `http.listen` it starts nothing and says to set
+  `http.port` (or `http.listen`) or pass `--url`.
+- With `"enabled": false` in `http` it starts nothing and names `http.enabled`.
+- `--no-start` turns the start off: the screen opens as before and shows the
+  failure in its footer.
 - Without `--token`, the token is the one `operad pair` reads from
   `$OPERAD_HOME/secrets/http.json`. `operad pair --show-token` prints it.
 
 | Input | Type | Default | Allowed values |
 |---|---|---|---|
-| `--url` | string | `http://<first http.listen address>:<http.port>` | An `http` or `https` URL without credentials, a query or a fragment. |
+| `--url` | string | `http://<first http.listen address>:<http.port>`, which is `http://127.0.0.1:7480` with no `http` section | An `http` or `https` URL without credentials, a query or a fragment. |
+| `--no-start` | flag | off | Never start `operad serve`, even when none answers. |
 | `--token` | string | The token in `$OPERAD_HOME/secrets/http.json` | The bearer token of the running `serve`. |
-| `OPERAD_HOME` | environment variable | `~/.operad` | The directory holding `config.json` and `secrets/http.json`. |
+| `OPERAD_HOME` | environment variable | `~/.operad` | The directory holding `config.json`, `secrets/http.json`, `serve.lock` and the `serve.log` a started `serve` writes. |
 | `http.listen` | array of strings in `config.json` | `["127.0.0.1"]` | IP literals `serve` may listen on; the first one is the default TUI address. |
 | `http.port` | integer in `config.json` | `7480` | `0` to `65535`; the TUI needs the port `serve` actually uses, so `0` needs `--url`. |
 

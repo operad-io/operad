@@ -7,6 +7,8 @@ import {
   FileSecretStore,
   Kernel,
   LockHeldError,
+  acquireLock,
+  type LockHandle,
   MemoryPluginStore,
   PluginRegistry,
   Runner,
@@ -110,6 +112,12 @@ export interface TuiCommand {
   readonly home: string;
   readonly url?: string | undefined;
   readonly token?: string | undefined;
+  /** `--no-start`: never start `operad serve`. */
+  readonly noStart?: boolean | undefined;
+  /** The entry file a started `operad serve` runs: this process's own. */
+  readonly serveEntry?: string | undefined;
+  /** Prints a line before the full screen opens. */
+  readonly write?: ((line: string) => void) | undefined;
   readonly onError?: ((message: string) => void) | undefined;
 }
 
@@ -157,8 +165,8 @@ const HELP = [
   "  http token rotate    replace the token the operad app uses",
   "  pair [--url <url>] [--show-token]",
   "                       show the address and token as a QR code for the operad app",
-  "  tui [--url <url>] [--token <token>]",
-  "                       open the terminal client",
+  "  tui [--url <url>] [--token <token>] [--no-start]",
+  "                       open the terminal client; starts serve when none answers",
   "  mcp [--claude-channel] [--types t,...]",
   "                       run the MCP server on stdio; --claude-channel",
   "                       pushes object changes to Claude Code",
@@ -1384,6 +1392,7 @@ async function commandServe(
   context: Context,
   io: CliIo,
   argv: readonly string[],
+  lock: LockHandle,
 ): Promise<void> {
   const interval = process.env.OPERAD_SERVE_INTERVAL_MS;
   const parsed = interval === undefined ? Number.NaN : Number(interval);
@@ -1437,6 +1446,7 @@ async function commandServe(
     io.write(`serving ${context.home}\n`);
     await serve({
       home: context.home,
+      lock,
       log: context.log,
       registry: context.registry,
       lockRoot: context.storeRoot,
@@ -1835,7 +1845,7 @@ async function commandPair(
   return 0;
 }
 
-/** `operad tui [--url <url>] [--token <token>]`. */
+/** `operad tui [--url <url>] [--token <token>] [--no-start]`. */
 async function commandTui(
   home: string,
   io: CliIo,
@@ -1845,9 +1855,12 @@ async function commandTui(
 ): Promise<number> {
   let url: string | undefined;
   let token: string | undefined;
+  let noStart = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index] ?? "";
-    if (arg === "--url" || arg === "--token") {
+    if (arg === "--no-start") {
+      noStart = true;
+    } else if (arg === "--url" || arg === "--token") {
       const value = argv[index + 1];
       if (value === undefined) throw new UsageError(`${arg} needs a value`);
       if (arg === "--url") url = value;
@@ -1874,6 +1887,9 @@ async function commandTui(
     home,
     ...(url === undefined ? {} : { url }),
     ...(token === undefined ? {} : { token }),
+    ...(noStart ? { noStart } : {}),
+    serveEntry: CLI_ENTRY,
+    write: (line) => io.write(`${line}\n`),
     onError: (message) => {
       io.error(`operad: ${message}\n`);
     },
@@ -2013,12 +2029,20 @@ export async function main(
 
     if (command === "serve") {
       if (args.length > 1) throw new UsageError("serve takes no arguments");
-      const context = await openContext(home, io);
+      // The home lock comes first, before the store, the plugins or the port:
+      // a second serve fails here, with exit 4, and touches nothing. The lock
+      // is handed to `serve`, so there is no check and then act.
+      const lock = acquireLock(serveLockPath(home));
       try {
-        await commandServe(context, io, args.slice(1));
+        const context = await openContext(home, io);
+        try {
+          await commandServe(context, io, args.slice(1), lock);
+        } finally {
+          context.views.close();
+          await context.log.close();
+        }
       } finally {
-        context.views.close();
-        await context.log.close();
+        lock.release();
       }
       return 0;
     }
