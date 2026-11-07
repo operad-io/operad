@@ -7,6 +7,7 @@ export type FactKind =
   | "run_started"
   | "step_entered"
   | "effect_requested"
+  | "step_started"
   | "step_result"
   | "edge_taken"
   | "waiting_for_person"
@@ -180,6 +181,8 @@ export interface KernelState {
   readonly endedStatus: EndStatus | null;
   readonly wait: PendingWait | null;
   readonly effect: PendingEffect | null;
+  /** The effect a runner has started; null when nothing has run yet. */
+  readonly effectStarted: string | null;
   readonly visits: Readonly<Record<string, number>>;
   readonly recoveries: Readonly<Record<string, number>>;
   readonly effects: Readonly<Record<string, EffectStatus>>;
@@ -224,6 +227,13 @@ export interface StepEnteredPayload {
   readonly step: string;
   readonly visit: number;
   readonly kind: StepKind;
+}
+
+/** A runner began executing an effect; `pid` is the process that did. */
+export interface StepStartedPayload {
+  readonly step: string;
+  readonly effectId: string;
+  readonly pid: number;
 }
 
 export interface EffectRequestedPayload {

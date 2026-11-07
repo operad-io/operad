@@ -575,3 +575,14 @@
 | TK0032-M5 | packages/dev/src/check.ts | reported only the first line of git's stderr for an unreachable remote | `dev init check > an unreachable remote keeps every line of git's stderr` |
 | step-timeout-M1 | packages/engine/src/runner/runner.ts | `timeoutMsFor` ignored the step type's `timeoutSecs` and always used the runner's step timeout | `runner > a step's own timeoutSecs replaces the runner's step timeout` |
 | reviewer-stall-M1 | packages/dev/src/gate.ts | stopped passing `reviewer.stallSecs` to the review harness step | `dev/review > reviewer.stallSecs reaches the harness step, and is absent when unset` |
+
+## TK0012 — serve runs steps
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0012-M1 | packages/engine/src/flow/validate.ts | stopped counting `interrupted` as a possible result of an unsafe step | `validateFlow > requires an interrupted edge for every unsafe step` |
+| TK0012-M2 | packages/dev/flows/dev.flow.ts | removed the `worktree` step's `interrupted` edge | `the dev flow > loads with the gate and the rework edges` |
+| TK0012-M3 | packages/engine/src/loop/serve.ts | treated every `running` run as a crash, so a freshly requested effect was recovered instead of run | `serve loop > a recorded answer runs the next step in serve's process` |
+| TK0012-M4 | packages/dev/src/schedule.ts | stopped reconciling a waiting task with the runs in the log, so an orphaned task was never repaired | `dev scheduling > serve repairs a task whose run ended without an edge, and reject runs again` |
+| TK0012-M5 | packages/harness-radian/src/process.ts | stopped pausing the stall timer while a tool call was open | `harness-radian/agent > an open tool call pauses the stall timer until it settles` |
+| TK0012-M6 | packages/engine/src/runner/runner.ts | recorded pid 0 on the step-start fact instead of the executing process | `operad with the dev plugin > dev:reject from the CLI records, and serve runs the next step` |

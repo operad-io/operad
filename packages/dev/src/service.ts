@@ -756,6 +756,31 @@ export async function claimTaskStart(
   });
 }
 
+/** Clears a task's dead run so a repair run can start it again. */
+export async function reopenTask(
+  store: ObjectStore,
+  id: string,
+): Promise<TaskData | undefined> {
+  const initial = await getTask(store, id);
+  const data = taskData(initial.data);
+  return withRepoLock(store, data.repository, async () => {
+    const current = await getTask(store, id);
+    const latest = taskData(current.data);
+    if (latest.phase !== "waiting" && latest.phase !== "running") {
+      return undefined;
+    }
+    const next: TaskData = {
+      ...latest,
+      phase: "ready",
+      run: null,
+      claim: null,
+      brief: appendChange(latest.brief, "ready"),
+    };
+    await writeTask(store, id, next, "dev:task-reopen");
+    return next;
+  });
+}
+
 /**
  * Gives back a claim whose start never became a run. A task that is `running`
  * with no run id has nothing to recover or cancel, so it returns to `ready`

@@ -233,7 +233,7 @@ export class Runner {
 
   /** Performs one unit of work for the run, or reports why it cannot. */
   async step(stateInput?: KernelState): Promise<RunnerOutcome> {
-    const state = stateInput ?? (await readState(this.log, this.runId));
+    let state = stateInput ?? (await readState(this.log, this.runId));
     if (state.status === "ended") return "ended";
     if (state.status === "waiting_person") return "waiting";
     if (state.status === "idle") {
@@ -271,6 +271,9 @@ export class Runner {
     }
 
     if (effect.use === null) return "blocked";
+    if (state.effectStarted !== effect.id) {
+      state = await this.markStarted(state, effect);
+    }
     const outcome = await this.execute(effect.use, effect.params, false, state.params, state.access);
     await this.recordResult(state, effect.id, outcome.result, outcome.data);
     return "progress";
@@ -340,6 +343,24 @@ export class Runner {
       this.hooks(),
     );
     return { state: result.state, duplicate: result.duplicate };
+  }
+
+  /**
+   * Records that this process began the step. `serve` reads it to tell a
+   * crashed step from a fresh one, and the fact names the process that ran it.
+   */
+  private async markStarted(
+    state: KernelState,
+    effect: NonNullable<KernelState["effect"]>,
+  ): Promise<KernelState> {
+    await this.log.append(this.runId, state.lastSeq, [
+      {
+        kind: "step_started",
+        payload: { step: effect.step, effectId: effect.id, pid: process.pid },
+        cause: state.lastSeq,
+      },
+    ]);
+    return readState(this.log, this.runId);
   }
 
   private async recordResult(

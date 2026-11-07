@@ -2,6 +2,20 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  FilePluginStore,
+  loadPluginRegistry,
+  openConfigLog,
+  parseObjectKey,
+  readConfig,
+  readStoredStart,
+  Runner,
+  serve,
+  storeRootOf,
+} from "@operad-io/engine";
+import { withRepositoryLock } from "../src/lock.ts";
+import { bareId, listAll } from "../src/model.ts";
+import { setTaskPhase } from "../src/service.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
@@ -142,6 +156,171 @@ describe("operad with the dev plugin", () => {
     expect(changes.code).toBe(0);
     expect(changes.out).toContain("- created");
     expect(changes.out).toContain("- ready");
+  });
+
+  test("dev:reject from the CLI records, and serve runs the next step", async () => {
+    const { home, repository } = await setup();
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const plan = await run(
+      home,
+      repository,
+      ["plan", "add", "--slug", "serve", "--title", "Serve"],
+      "do it\n",
+    );
+    const planId = plan.out.trim();
+    const added = await run(
+      home,
+      repository,
+      [
+        "task",
+        "add",
+        "--plan",
+        planId,
+        "--slug",
+        "one",
+        "--title",
+        "One",
+      ],
+      "brief\n",
+    );
+    const taskId = added.out.trim();
+    expect((await run(home, repository, ["dev:confirm", planId])).code).toBe(0);
+
+    const config = await readConfig(home);
+    const storeRoot = storeRootOf(config);
+    const store = new FilePluginStore({ root: join(storeRoot, "plugins") });
+    const taskObject = (await listAll(store, "task")).find(
+      (object) => bareId(object.id) === taskId,
+    );
+    if (taskObject === undefined) throw new Error("the task is missing");
+
+    const log = openConfigLog(config);
+    const registry = await loadPluginRegistry({
+      home,
+      cwd: repository,
+      store,
+      onLog: () => undefined,
+    });
+    try {
+      // A run at the person wait, with the task agreeing that it is waiting.
+      const waiting = await log.startRun("dev", `task:${taskObject.id}`);
+      await log.append(waiting.runId, 0, [
+        { kind: "run_started", payload: { flow: "dev" }, cause: "seed" },
+        {
+          kind: "step_entered",
+          payload: { step: "wait", visit: 1, kind: "wait_person" },
+          cause: 1,
+        },
+        {
+          kind: "waiting_for_person",
+          payload: {
+            waitId: "wait:1",
+            step: "wait",
+            prompt: "merge or reject",
+            choices: ["merge", "reject"],
+            waitKind: "step",
+            effectId: null,
+          },
+          cause: 2,
+        },
+      ]);
+      await setTaskPhase(store, taskObject.id, "waiting", {
+        run: waiting.runId,
+      });
+
+      // serve runs in this process, but its sleep is manual so the test can let
+      // the CLI record first and hold the repository lock for the next step.
+      const controller = new AbortController();
+      let wake: (() => void) | undefined;
+      let asleep: (() => void) | undefined;
+      const sleeping = new Promise<void>((resolve) => {
+        asleep = resolve;
+      });
+      const sleep = (_ms: number, signal?: AbortSignal): Promise<void> =>
+        new Promise((resolve) => {
+          wake = (): void => {
+            wake = undefined;
+            resolve();
+          };
+          asleep?.();
+          signal?.addEventListener("abort", () => resolve(), { once: true });
+        });
+
+      const served = serve({
+        home,
+        log,
+        registry,
+        lockRoot: storeRoot,
+        storeRoot,
+        intervalMs: 10,
+        signal: controller.signal,
+        sleep,
+        spawnRun: async (runId, options) => {
+          const found = registry.flow("dev");
+          if (found === undefined) throw new Error("the dev flow is missing");
+          const info = (await log.runs()).find((item) => item.runId === runId);
+          if (info === undefined) throw new Error(`no run ${runId}`);
+          const object = parseObjectKey(info.object);
+          const startInput = readStoredStart(storeRoot, runId);
+          await new Runner({
+            log,
+            flow: found.flow,
+            runId,
+            registry,
+            lockRoot: storeRoot,
+            recover: options.recover,
+            ...(object === undefined ? {} : { object }),
+            ...(startInput === undefined ? {} : { startInput }),
+          }).run();
+        },
+      });
+      await sleeping;
+
+      // The CLI answers and returns while serve still sleeps; it did not run
+      // the next step.
+      const rejected = await run(home, repository, [
+        "dev:reject",
+        taskId,
+        "--note",
+        "do it again",
+      ]);
+      expect(rejected.code).toBe(0);
+      expect(rejected.out).not.toContain("recorded;");
+
+      const stepStarted = new Promise<number>((resolve) => {
+        const unsubscribe = log.subscribe?.(() => {
+          void (async () => {
+            for await (const fact of log.read(waiting.runId)) {
+              if (
+                fact.kind === "step_started" &&
+                (fact.payload as { step?: unknown }).step === "worktree"
+              ) {
+                unsubscribe?.();
+                resolve((fact.payload as { pid?: number }).pid ?? -1);
+                return;
+              }
+            }
+          })();
+        });
+      });
+      const bounded = new Promise<number>((resolve) => {
+        const timer = setTimeout(() => resolve(-2), 10_000);
+        timer.unref?.();
+      });
+
+      // Hold the repository lock so the worktree step starts (and records its
+      // pid) but cannot end until the test releases it.
+      await withRepositoryLock(repository, async () => {
+        wake?.();
+        const pid = await Promise.race([stepStarted, bounded]);
+        expect(pid).toBe(process.pid);
+      });
+
+      controller.abort();
+      await served;
+    } finally {
+      await log.close();
+    }
   });
 
   test("two task adds in two processes get distinct ids and lose nothing", async () => {

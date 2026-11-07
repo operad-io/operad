@@ -249,6 +249,8 @@ export async function* historyEntries(
   facts: AsyncIterable<HistoryFact>,
 ): AsyncGenerator<HistoryEntry> {
   for await (const fact of facts) {
+    // Where a step runs is kernel bookkeeping; history shows what it did.
+    if (fact.kind === "step_started") continue;
     yield historyEntry(fact);
   }
 }

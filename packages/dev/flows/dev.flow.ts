@@ -20,6 +20,7 @@ export default defineFlow({
         blocked: "wait",
         failed: "end_failed",
         cancelled: "end_cancelled",
+        interrupted: "wait",
       },
     },
     {
@@ -32,6 +33,7 @@ export default defineFlow({
         nothing: "wait",
         failed: "wait",
         cancelled: "end_cancelled",
+        interrupted: "wait",
       },
     },
     {
@@ -74,6 +76,7 @@ export default defineFlow({
       params: {
         prompt: "The task is waiting for you: merge it or reject it.",
         choices: ["merge", "reject"],
+        note: "the run stopped during {step}; reject to run it again",
       },
       replay: "safe",
       next: {

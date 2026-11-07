@@ -29,6 +29,7 @@ import {
   type FactWriter,
   type MaybePromise,
   type ObjectTypeDefinition,
+  type RunLookup,
   type ObjectViews,
   type KeyBindings,
   type PendingActionView,
@@ -1457,7 +1458,7 @@ export class PluginRegistry {
   }
 
   /** Runs each plugin's `onTick` once; a failure is logged, not raised. */
-  async tick(): Promise<void> {
+  async tick(runs?: RunLookup): Promise<void> {
     for (const plugin of this.plugins) {
       if (plugin.onTick === undefined) continue;
       const ctx: TickContext = {
@@ -1470,6 +1471,7 @@ export class PluginRegistry {
         signal: new AbortController().signal,
         settings: this.settingsFor(plugin.name),
         secrets: this.secretsFor(plugin.name),
+        ...(runs === undefined ? {} : { runLookup: runs }),
         start: async (flowOrRequest, objectArg, accessArg) => {
           const request: StartRunRequest =
             typeof flowOrRequest === "string"

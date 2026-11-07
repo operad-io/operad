@@ -146,7 +146,7 @@ export function manualClock(): ManualClock {
 
 /** The fake radian, written as an executable on PATH for one test. */
 export const FAKE_RADIAN = String.raw`#!/usr/bin/env bun
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, writeFileSync } from "node:fs";
 
 const argv = process.argv.slice(2);
 const mode = process.env.FAKE_RADIAN_MODE ?? "done";
@@ -225,6 +225,26 @@ if (mode === "stall") {
   await new Promise(() => {});
 }
 
+if (mode === "tool-silent") {
+  line({ type: "journal", event: "ToolExecutionStarted" });
+  if (marker) writeFileSync(marker, String(process.pid));
+  const release = process.env.FAKE_RADIAN_RELEASE;
+  if (release) {
+    while (!existsSync(release)) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+  line({ type: "journal", event: "ToolExecutionSettled" });
+  line(result());
+  process.exit(0);
+}
+
+if (mode === "tool-wall") {
+  line({ type: "journal", event: "ToolExecutionStarted" });
+  if (marker) writeFileSync(marker, String(process.pid));
+  await new Promise(() => {});
+}
+
 if (mode === "lines") {
   const records = [];
   for (let index = 0; index < 4; index += 1) {
@@ -262,6 +282,18 @@ export async function fakeRadian(root: string): Promise<string> {
   const directory = join(root, "bin");
   await mkdir(directory, { recursive: true });
   const path = join(directory, "radian");
+  await writeFile(path, FAKE_RADIAN);
+  await chmod(path, 0o755);
+  return directory;
+}
+
+/** Writes the fake radian under another name, for a settings override. */
+export async function fakeRadianNamed(
+  root: string,
+  name: string,
+): Promise<string> {
+  const directory = await fakeRadian(root);
+  const path = join(directory, name);
   await writeFile(path, FAKE_RADIAN);
   await chmod(path, 0o755);
   return directory;

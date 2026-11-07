@@ -1,6 +1,7 @@
 import type { FlowDefinition } from "../flow/types.ts";
+import type { KernelState } from "../kernel/types.ts";
 import type { Secret } from "../log/secret.ts";
-import type { JsonValue } from "../log/types.ts";
+import type { JsonValue, RunInfo } from "../log/types.ts";
 import type {
   SourceEvent,
   StepEvent,
@@ -509,6 +510,19 @@ export interface TickStartRequest {
   readonly access?: JsonValue | undefined;
 }
 
+/**
+ * What a plugin may ask the kernel about runs while it ticks. `serve` supplies
+ * it; a registry used on its own leaves it undefined.
+ */
+export interface RunLookup {
+  /** The active runs, optionally only those on one object key. */
+  active(object?: string): Promise<readonly RunInfo[]>;
+  /** The state a run's log derives, or undefined when it cannot be read. */
+  state(runId: string): Promise<KernelState | undefined>;
+  /** The last step a run entered, so a repair can name it. */
+  lastStep(runId: string): Promise<string | null>;
+}
+
 /** The context the kernel loop passes to a plugin's `onTick`. */
 export interface TickContext extends PluginBaseContext {
   /** Starts a run of a flow this plugin declares. */
@@ -523,6 +537,8 @@ export interface TickContext extends PluginBaseContext {
    * rejects with a `StateError`.
    */
   answer(runId: string, choice: string, note?: string): Promise<void>;
+  /** What the kernel knows about runs, when the loop supplies it. */
+  readonly runLookup?: RunLookup | undefined;
 }
 
 /** A plugin's declared dependencies: plugins and the plugin API version. */

@@ -30,7 +30,7 @@ import {
 export const DEFAULT_WALL_TIME_SECS = 300;
 
 /** How long an agent may go without a new output line. */
-export const DEFAULT_STALL_SECS = 60;
+export const DEFAULT_STALL_SECS = 600;
 
 /**
  * A prompt longer than this goes through stdin. It is well below the OS
@@ -72,6 +72,26 @@ interface ResolvedSettings {
   readonly stallSecs: number;
   readonly clock: Clock;
 }
+
+/** The settings a config.json section may set for this plugin. */
+const PLUGIN_SETTINGS = {
+  type: "object" as const,
+  properties: {
+    command: {
+      type: "string" as const,
+      description: "The radian executable to run.",
+    },
+    wallTimeSecs: {
+      type: "number" as const,
+      description: "The longest one agent run may take.",
+    },
+    stallSecs: {
+      type: "number" as const,
+      description: "How long an agent may be silent between tool calls.",
+    },
+  },
+  additionalProperties: false as const,
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -303,7 +323,7 @@ function resultFor(
  * its limits; a direct `agent` step may override them.
  */
 export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) {
-  const resolved: ResolvedSettings = {
+  const defaults: ResolvedSettings = {
     command: settings.command ?? "radian",
     wallTimeSecs: settings.wallTimeSecs ?? DEFAULT_WALL_TIME_SECS,
     stallSecs: settings.stallSecs ?? DEFAULT_STALL_SECS,
@@ -336,6 +356,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
     name: "harness-radian",
     kind: "harness",
     version: "0.0.0",
+    settings: PLUGIN_SETTINGS,
     steps: [
       {
         name: "agent",
@@ -359,13 +380,17 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             `${at}: params.resumeSession`,
           );
           const wallTimeSecs = secs(
-            input.wallTimeSecs ?? resolved.wallTimeSecs,
+            input.wallTimeSecs ?? ctx.settings.wallTimeSecs ?? defaults.wallTimeSecs,
             `${at}: params.wallTimeSecs`,
           );
           const stallSecs = secs(
-            input.stallSecs ?? resolved.stallSecs,
+            input.stallSecs ?? ctx.settings.stallSecs ?? defaults.stallSecs,
             `${at}: params.stallSecs`,
           );
+          const commandName =
+            ctx.settings.command === undefined
+              ? defaults.command
+              : text(ctx.settings.command, `${at}: settings.command`);
 
           const cwdProblem = await directoryError(cwd);
           if (cwdProblem !== undefined) {
@@ -394,14 +419,14 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
           let result: ParsedResult | undefined;
 
           const outcome = await runAgent({
-            command: resolved.command,
+            command: commandName,
             args: command.args,
             cwd,
             stdin: command.stdin,
             wallMs: wallTimeSecs * 1000,
             stallMs: stallSecs * 1000,
             signal: ctx.signal,
-            clock: resolved.clock,
+            clock: defaults.clock,
             onLine(line) {
               const writing = jsonl.push(line);
               const parsed = parseResult(line);
@@ -418,18 +443,22 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             Date.now() - started,
             wallTimeSecs,
             stallSecs,
-            resolved.command,
+            commandName,
           );
         },
       },
     ],
     flows: [promptFlow],
-    async check() {
-      const found = await findCommand(resolved.command);
+    async check(ctx) {
+      const command =
+        ctx.settings.command === undefined
+          ? defaults.command
+          : text(ctx.settings.command, "harness-radian: settings.command");
+      const found = await findCommand(command);
       if (found === undefined) {
-        throw new Error(`${resolved.command} was not found on PATH`);
+        throw new Error(`${command} was not found on PATH`);
       }
-      return `${resolved.command} is available`;
+      return `${command} is available`;
     },
   });
 }

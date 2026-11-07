@@ -200,7 +200,7 @@ const write = defineFlow({
       kind: "plugin",
       params: { use: "test/write", params: {} },
       replay: "unsafe",
-      next: { ok: "done" },
+      next: { ok: "done", interrupted: "done" },
     },
     { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
   ],
@@ -234,6 +234,28 @@ const brokenCheck = defineFlow({
     },
     { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
     { id: "failed", kind: "end", params: { status: "failed" }, replay: "safe" },
+  ],
+});
+
+const afterAsk = defineFlow({
+  name: "after-ask",
+  entry: "ask",
+  steps: [
+    {
+      id: "ask",
+      kind: "wait_person",
+      params: { prompt: "Go?", choices: ["go", "stop"] },
+      replay: "safe",
+      next: { go: "work", stop: "done", interrupted: "done" },
+    },
+    {
+      id: "work",
+      kind: "plugin",
+      params: { use: "test/echo", params: { text: "worked" } },
+      replay: "unsafe",
+      next: { ok: "done", failed: "done", interrupted: "done" },
+    },
+    { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
   ],
 });
 
@@ -356,6 +378,7 @@ export default definePlugin({
     write,
     throwing,
     brokenCheck,
+    afterAsk,
   ],
   async onTick(ctx) {
     const flag = join(ctx.home, "tick-start");

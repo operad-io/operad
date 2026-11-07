@@ -448,6 +448,15 @@ export function cancelledStep(): PluginStepResult {
   return { result: "cancelled", data: { reason: "cancelled" } };
 }
 
+/** The step a repair run says stopped, when the scheduler asked for one. */
+function runStoppedAt(params: unknown): string | undefined {
+  if (typeof params !== "object" || params === null || Array.isArray(params)) {
+    return undefined;
+  }
+  const value = (params as Record<string, unknown>).runStoppedAt;
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
 /** The cancelled dependency a blocked start names, when the flow carries one. */
 function blockedDependency(params: unknown): string | undefined {
   if (typeof params !== "object" || params === null || Array.isArray(params)) {
@@ -463,6 +472,35 @@ export async function runWorktree(
 ): Promise<PluginStepResult> {
   const context = await taskContext(ctx);
   if (!claimAllows(ctx, context.task)) return cancelledStep();
+  const stoppedAt = runStoppedAt(ctx.params);
+  if (stoppedAt !== undefined && context.task.run === null) {
+    // A run stopped without reaching an edge; the scheduler starts this run
+    // only to put the task in front of a person again.
+    const written = await saveTaskGuarded(
+      ctx,
+      context.taskKey,
+      {
+        ...context.task,
+        phase: "waiting",
+        run: ctx.runId,
+        startRequested: false,
+        brief: appendChange(
+          context.task.brief,
+          `waiting: ${stoppedAt} stopped`,
+        ),
+      },
+      "dev:task-run-stopped",
+    );
+    if (!written) return cancelledStep();
+    return {
+      result: "interrupted",
+      data: {
+        reason: "run_stopped",
+        step: stoppedAt,
+        message: `the run stopped during ${stoppedAt}; reject to run it again`,
+      },
+    };
+  }
   const blockedBy = blockedDependency(ctx.params);
   if (blockedBy !== undefined && context.task.run === null) {
     // A cancelled dependency made the scheduler start this run only to log a
