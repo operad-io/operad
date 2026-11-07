@@ -28,6 +28,13 @@ export interface TuiTypeInfo {
   readonly title: string;
 }
 
+/** One entry of `GET /v1/keys`. */
+export interface TuiKeyBinding {
+  readonly key: string;
+  readonly action: string;
+  readonly source: "plugin" | "user";
+}
+
 /** The body of `GET /v1/types`. */
 export interface TuiTypes {
   readonly types: readonly TuiTypeInfo[];
@@ -255,6 +262,14 @@ export class TuiClient {
   /** The types the loaded plugins show, with their display names. */
   async types(signal?: AbortSignal): Promise<TuiTypes> {
     return (await this.request("/v1/types", { signal })) as TuiTypes;
+  }
+
+  /** The key bindings in force: plugin defaults with the person's overrides. */
+  async keys(signal?: AbortSignal): Promise<readonly TuiKeyBinding[]> {
+    const body = (await this.request("/v1/keys", { signal })) as {
+      readonly keys: readonly TuiKeyBinding[];
+    };
+    return body.keys;
   }
 
   /** One page of a type's list; pass the previous page's `next` as the cursor. */

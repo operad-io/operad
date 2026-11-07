@@ -85,3 +85,18 @@ the row fields.
 | T-0035-M3 | packages/tui/src/state.ts | an error row took two lines in the list window | `the TUI reducer > the window around the cursor counts one line per row, an error row too` |
 | T-0035-M4 | packages/tui/src/view/index.ts | `rowText` returned the run id for a row without an object | `the TUI view > a row without an object shows its label; a row error shows in the footer` |
 | T-0035-M5 | packages/tui/src/view/index.ts | the footer ignored the selected row's `error` | `the TUI view > the selected row's error shows in the footer` |
+| T-0032-M1 | packages/tui/src/actions.ts | an empty required note was sent | `actions in the reducer > a note action refuses to send while a required note is empty` |
+| T-0032-M2 | packages/tui/src/state.ts | the person's key binding no longer came before the built-in keys | `actions in the reducer > a bound key runs its action; a user binding beats the plugin's and the built-in keys` |
+| T-0032-M3 | packages/tui/src/actions.ts | `y` sent `confirmed: false` | `actions in the reducer > a confirm action asks and only y sends, with confirmed` |
+| T-0032-M4 | packages/tui/src/actions.ts | any key answered the confirmation as yes | `actions in the reducer > a confirm action asks and only y sends, with confirmed` |
+| T-0032-M5 | packages/tui/src/actions.ts | a refusal dropped the server's status from the footer line | `actions in the reducer > a refusal shows the server's status and message until the next key` |
+| T-0032-M6 | packages/tui/src/state.ts | `:` opened no palette | `actions in the reducer > the palette filters by fuzzy match and shows key, note and confirm` |
+| T-0032-M7 | packages/tui/src/state.ts | the `:`, `?` and `q` built-ins came before the person's key bindings | `actions in the reducer > reserved keys are dropped from the bindings, announced once, and keep their built-in use` |
+| T-0032-M8 | packages/tui/src/actions.ts | the note was trimmed before it was sent | `actions in the reducer > a note is sent exactly as entered` |
+| T-0032-M9 | packages/tui/src/state.ts | the person's key bindings were skipped while the key list was open | `actions in the reducer > reserved keys are dropped from the bindings, announced once, and keep their built-in use` |
+| T-0032-M10 | packages/tui/src/state.ts | the person's key bindings were skipped for `enter` and `escape` | `actions in the reducer > every reserved key is dropped whatever its source` |
+| T-0032-M11 | packages/tui/src/actions.ts | an optional note of only whitespace was dropped from the request | `actions in the reducer > an optional note of only whitespace is sent as entered` |
+| T-0032-M12 | packages/tui/src/actions.ts | `isReserved` returned false, so reserved keys stayed bindable | `actions in the reducer > every reserved key is dropped whatever its source` |
+| T-0032-M13 | packages/tui/src/actions.ts | `keyOf` fell back to the action's own key, advertising a dropped reserved key | `actions in the reducer > a reserved plugin default is not advertised from the action's own key` |
+| T-0032-M14 | packages/tui/src/actions.ts | `mainKey` returned `a` while `a` was bound to another action | `actions in the reducer > a bound a is not advertised as the main action's key` |
+| T-0032-M15 | packages/tui/src/actions.ts | Ctrl and Meta chords were not reserved | `actions in the reducer > Ctrl and Meta chords are dropped as reserved` |

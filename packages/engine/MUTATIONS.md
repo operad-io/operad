@@ -240,3 +240,4 @@ the row fields.
 | pending-row-M2 | packages/engine/src/views/pending.ts | a candidate carried an object, so it got a row | `pending items carry their object's row > a candidate has no row` |
 | pending-row-M3 | packages/engine/src/views/presentation.ts | the error row for a gone object had no `no object` message | `pending items carry their object's row > an object deleted after the run started gets an error row, and the rest are listed` |
 | pending-row-M4 | packages/engine/src/views/presentation.ts | a built row lost its waiting flag, so it differed from the list's | `pending items carry their object's row > the row is the one the list shows, with the run flags` |
+| T-0032-M1 | packages/engine/src/http/server.ts | `GET /v1/keys` reported every binding as `plugin`, hiding the person's override | `http server > GET /v1/keys lists the plugin defaults and the person's overrides` |
