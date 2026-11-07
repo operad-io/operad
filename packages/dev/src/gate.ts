@@ -57,6 +57,7 @@ import {
   workBranch,
   type TaskContext,
 } from "./steps.ts";
+import { REVIEW_WAIT_CHUNK_MS } from "./timeouts.ts";
 
 /** The gate worktree of a task: `<worktreeRoot>/<task id>-gate`. */
 export function gateWorktreePath(
@@ -988,7 +989,13 @@ function nextReviewAction(
     case "report":
       return "done";
     case "unavailable":
-      if (last.role === "primary" && fallback !== undefined) {
+      // A round uses its fallback exactly once, even when it runs again after
+      // `retryAt`: a later primary failure waits instead of trying it again.
+      if (
+        last.role === "primary" &&
+        fallback !== undefined &&
+        !runs.some((run) => run.role === "fallback")
+      ) {
         return { role: "fallback", reason: "fallback" };
       }
       return "wait-unavailable";
@@ -1053,6 +1060,10 @@ function reviewMessage(
 /** Test-only hooks: a child process crashes at a named point in a review. */
 export const reviewTestHooks: {
   now?: (() => number) | undefined;
+  /** Waits instead of the real timer, so a test can move the clock. */
+  wait?:
+    | ((ms: number, signal: AbortSignal | undefined) => Promise<boolean>)
+    | undefined;
   beforeRun?:
     | ((run: { readonly role: ReviewRunRole; readonly reason: ReviewRunReason }) => void)
     | undefined;
@@ -1571,7 +1582,8 @@ function waitFor(ms: number, signal: AbortSignal | undefined): Promise<boolean> 
 /**
  * Step `dev/review_due`: the wait a review enters when its model was
  * unavailable. It holds until the recorded `retryAt`, then lets the flow run
- * the same review round again without polling.
+ * the same review round again without polling. A wait longer than one step run
+ * is split into pieces below the step timeout.
  */
 export async function runReviewDue(
   ctx: StepContext,
@@ -1594,8 +1606,16 @@ export async function runReviewDue(
   if (retryAt === undefined || retryAt <= now) {
     return { result: "ready", data: { at: now } };
   }
-  const waited = await waitFor(retryAt - now, ctx.signal);
+  const waitMs = Math.min(retryAt - now, REVIEW_WAIT_CHUNK_MS);
+  const wait = reviewTestHooks.wait ?? waitFor;
+  const waited = await wait(waitMs, ctx.signal);
   if (!waited) return { result: "interrupted", data: { reason: "cancelled" } };
+  const after = reviewTestHooks.now?.() ?? Date.now();
+  if (after < retryAt) {
+    // The piece ended early: the review step replays its unavailable round and
+    // the flow enters this wait again for the next piece.
+    return { result: "ready", data: { at: after, retryAt, waitedMs: waitMs } };
+  }
   return {
     result: "ready",
     data: { at: retryAt, waitedMs: retryAt - now },

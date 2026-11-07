@@ -125,10 +125,13 @@ A review that reports a model error (`unavailable` or `usage_limit`) or an HTTP
 `reviewer.fallback` when `.operad/dev.json` sets one. Without a fallback, or
 when the fallback is unavailable too, the task waits `reviewer.retrySecs`
 (default 120 seconds) and then runs the review again; it does not start a worker
-and does not count a rework. A review that times out is retried once with the
-same arguments; a second timeout waits for a person with the note `review timed
-out twice`. `operad history <task>` names the model that reviewed each round and
-why a fallback or a retry happened.
+and does not count a rework. A round uses its fallback at most once, so a retry
+that finds the primary unavailable again waits rather than calling the fallback
+a second time. A wait longer than one step run is split into pieces below the
+step timeout, so any positive `reviewer.retrySecs` is waited out. A review that
+times out is retried once with the same arguments; a second timeout waits for a
+person with the note `review timed out twice`. `operad history <task>` names the
+model that reviewed each round and why a fallback or a retry happened.
 
 ## When something is stuck
 

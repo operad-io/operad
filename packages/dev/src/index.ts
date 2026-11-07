@@ -10,13 +10,8 @@ import { runCleanup, runIntegrate } from "./integrate.ts";
 import { runScheduler } from "./schedule.ts";
 import { resolveDevKey } from "./service.ts";
 import { runWork, runWorktree } from "./steps.ts";
+import { STEP_TIMEOUT_SECS } from "./timeouts.ts";
 import { planViews, taskViews } from "./views.ts";
-
-/**
- * How long work, verify, review and integrate may take: above the worker's
- * two-hour wall time and the reviewer's one-hour timeout in `.operad/dev.json`.
- */
-const STEP_TIMEOUT_SECS = 3 * 60 * 60;
 
 /** Builds the dev plugin. Tests build it directly when they need a fake host. */
 export function createDevPlugin() {
@@ -120,4 +115,5 @@ export * from "./schedule.ts";
 export * from "./service.ts";
 export * from "./settings.ts";
 export * from "./steps.ts";
+export * from "./timeouts.ts";
 export * from "./views.ts";

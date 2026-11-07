@@ -19,6 +19,8 @@ import {
   gateWorktreePath,
   readDevSettings,
   reviewTestHooks,
+  REVIEW_WAIT_CHUNK_MS,
+  STEP_TIMEOUT_SECS,
   taskData,
   validateDevSettings,
   workBranch,
@@ -410,6 +412,13 @@ function verify(state: Fixture, runId = "verify-run") {
 
 function review(state: Fixture, runId = "review-run") {
   return state.registry.runStep("dev/review", {}, {
+    runId,
+    object: { type: "task", id: state.taskKey, data: {} },
+  });
+}
+
+function reviewDue(state: Fixture, runId = "review-due") {
+  return state.registry.runStep("dev/review_due", {}, {
     runId,
     object: { type: "task", id: state.taskKey, data: {} },
   });
@@ -876,6 +885,92 @@ describe("dev/review fallback and retry", () => {
     ]);
     expect(task.attempt?.reviews).toBe(0);
     expect(task.reworkStreak).toBeUndefined();
+  });
+
+  test("a retry after the wait does not use the fallback a second time", async () => {
+    const state = await fixture({
+      reviewerArgs: ["unavailable", "--model", "primary"],
+      fallback: {
+        use: "fake-reviewer/agent",
+        args: ["unavailable", "--model", "fallback"],
+      },
+      retrySecs: 30,
+    });
+    await verify(state);
+    let clock = 5_000;
+    reviewTestHooks.now = () => clock;
+    try {
+      const first = await review(state, "review-fallback-once");
+      expect(first.result).toBe("unavailable");
+      expect(state.reviewer.calls).toHaveLength(2);
+
+      // The recorded retry time has come, so the same round starts again.
+      clock = 35_000;
+      const second = await review(state, "review-fallback-once");
+      expect(second.result).toBe("unavailable");
+      // The primary ran again; the round's one fallback was already used.
+      expect(state.reviewer.calls.map((call) => call.args)).toEqual([
+        ["unavailable", "--model", "primary"],
+        ["unavailable", "--model", "fallback"],
+        ["unavailable", "--model", "primary"],
+      ]);
+      const task = await taskOf(state);
+      expect(task.attempt?.review?.runs?.map((run) => run.role)).toEqual([
+        "primary",
+        "fallback",
+        "primary",
+      ]);
+      expect(task.attempt?.reviews).toBe(0);
+      expect(task.attempt?.review?.retryAt).toBe(65_000);
+    } finally {
+      delete reviewTestHooks.now;
+    }
+  });
+
+  test("a retry longer than the step timeout waits in pieces and reruns only when due", async () => {
+    const state = await fixture({
+      reviewerArgs: ["429-once", "--model", "primary"],
+      retrySecs: 4 * 60 * 60,
+    });
+    await verify(state);
+    let clock = 5_000;
+    const waits: number[] = [];
+    reviewTestHooks.now = () => clock;
+    reviewTestHooks.wait = async (ms) => {
+      waits.push(ms);
+      clock += ms;
+      return true;
+    };
+    try {
+      const first = await review(state, "review-long-wait");
+      expect(first.result).toBe("unavailable");
+      const retryAt = first.data?.retryAt as number;
+      expect(retryAt).toBe(5_000 + 4 * 60 * 60 * 1000);
+
+      let due = await reviewDue(state, "review-long-wait");
+      expect(due.result).toBe("ready");
+      // One run asks for less than its step timeout, so the wait survives.
+      expect(waits[0]).toBe(REVIEW_WAIT_CHUNK_MS);
+      expect(waits[0]).toBeLessThan(STEP_TIMEOUT_SECS * 1000);
+      expect(due.data?.at as number).toBeLessThan(retryAt);
+
+      while ((due.data?.at as number) < retryAt) {
+        // The early piece ends in a replayed round, never a model call.
+        const replayed = await review(state, "review-long-wait");
+        expect(replayed.result).toBe("unavailable");
+        expect(state.reviewer.calls).toHaveLength(1);
+        due = await reviewDue(state, "review-long-wait");
+      }
+      expect(due.data?.at).toBe(retryAt);
+
+      const retried = await review(state, "review-long-wait");
+      expect(retried.result).toBe("pass");
+      expect(state.reviewer.calls).toHaveLength(2);
+      expect((await taskOf(state)).attempt?.number).toBe(1);
+    } finally {
+      delete reviewTestHooks.now;
+      delete reviewTestHooks.wait;
+    }
   });
 
   test("a timeout runs once more with the same arguments and then succeeds", async () => {

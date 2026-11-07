@@ -135,7 +135,11 @@ or an HTTP 429, the same round runs once on `reviewer.fallback` at once. If the
 repository sets no fallback, or the fallback is unavailable too, the task waits
 with `retryAt` set to `now + reviewer.retrySecs` and does not rework. When the
 time comes, `dev/review_due` lets the flow run the review again, with no new
-attempt and no other step.
+attempt and no other step. A round uses its fallback at most once: a retry that
+finds the primary unavailable again waits instead of trying the fallback a
+second time. A wait longer than one step run is split into pieces below the
+three-hour step timeout, so any positive `reviewer.retrySecs` is waited out and
+the review runs a model again only at `retryAt`.
 
 A review that times out runs once more with the same arguments. A second
 timeout waits for a person with the note `review timed out twice`. Neither an

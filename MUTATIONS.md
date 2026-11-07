@@ -605,3 +605,5 @@
 | TK0002-M4 | packages/dev/src/gate.ts | a model run was not written to the task before the round continued | `dev/review crash recovery > a crash after the first run resumes the same round on the fallback` |
 | TK0002-M5 | packages/dev/flows/dev.flow.ts | sent an unavailable review to the person wait instead of the retry wait | `the dev flow > loads with the gate and the rework edges` |
 | TK0002-M6 | packages/dev/src/settings.ts | ignored `reviewer.retrySecs` and always used the 120-second default | `dev/review fallback and retry > a fallback that is also unavailable waits without a rework` |
+| TK0002-M7 | packages/dev/src/gate.ts | let a retry after the wait choose the fallback again in the same round | `dev/review fallback and retry > a retry after the wait does not use the fallback a second time` |
+| TK0002-M8 | packages/dev/src/gate.ts | removed the chunk bound from `runReviewDue`, so it asked for the whole remaining wait in one step | `dev/review fallback and retry > a retry longer than the step timeout waits in pieces and reruns only when due` |
