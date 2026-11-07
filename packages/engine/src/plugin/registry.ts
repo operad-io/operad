@@ -1744,6 +1744,7 @@ export class PluginRegistry {
       signal: options.signal ?? new AbortController().signal,
       settings: this.settingsFor(plugin.name),
       secrets: this.secretsFor(plugin.name),
+      ...(options.input === undefined ? {} : { input: options.input }),
     };
     const value = await command.run(ctx, resolved.argv);
     return { ...resolved, value };

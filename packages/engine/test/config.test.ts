@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   ConfigError,
+  DEFAULT_MCP,
   DEFAULT_PLUGINS,
   configJson,
   defaultConfig,
@@ -43,6 +44,7 @@ describe("operad config", () => {
       store: { backend: "jsonl", path: join(home, "store") },
       http: { enabled: false, port: 7480, listen: ["127.0.0.1"] },
       notify: { command: null, on: ["waiting"] },
+      mcp: { ...DEFAULT_MCP, actions: [...DEFAULT_MCP.actions] },
       ask: { graceSecs: 600 },
     });
     expect(storeRootOf(config)).toBe(join(home, "store"));
@@ -240,6 +242,7 @@ describe("operad config", () => {
     expect(schema.properties?.store).toBeDefined();
     expect(schema.properties?.http).toBeDefined();
     expect(schema.properties?.notify).toBeDefined();
+    expect(schema.properties?.mcp).toBeDefined();
   });
 
   test("reads http options and applies their defaults", async () => {
@@ -283,4 +286,52 @@ describe("operad config", () => {
     );
     await expect(readConfig(home)).rejects.toThrow(/http.listen/);
   });
+  test("reads mcp actions and applies their defaults", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    await Bun.write(
+      join(home, "config.json"),
+      JSON.stringify({
+        mcp: {
+          actions: ["dev:merge", "demo:approve"],
+          confirmActions: ["dev:merge"],
+        },
+      }),
+    );
+    expect((await readConfig(home)).mcp).toEqual({
+      actions: ["dev:merge", "demo:approve"],
+      confirmActions: ["dev:merge"],
+    });
+    await Bun.write(join(home, "config.json"), JSON.stringify({ mcp: {} }));
+    expect((await readConfig(home)).mcp).toEqual({
+      actions: [...DEFAULT_MCP.actions],
+      confirmActions: [],
+    });
+  });
+
+  test("rejects a malformed mcp section and keeps it when written", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    for (const [mcp, pattern] of [
+      [{ actions: "dev:merge" }, /mcp.actions/],
+      [{ actions: ["dev:merge", 3] }, /mcp.actions/],
+      [{ confirmActions: [""] }, /mcp.confirmActions/],
+      ["all", /mcp: must be an object/],
+    ] as const) {
+      await Bun.write(join(home, "config.json"), JSON.stringify({ mcp }));
+      await expect(readConfig(home)).rejects.toThrow(pattern);
+    }
+
+    await Bun.write(
+      join(home, "config.json"),
+      JSON.stringify({ mcp: { actions: ["dev:merge"], confirmActions: ["dev:merge"] } }),
+    );
+    const config = await readConfig(home);
+    await writeConfig(home, config);
+    expect((await readConfig(home)).mcp).toEqual({
+      actions: ["dev:merge"],
+      confirmActions: ["dev:merge"],
+    });
+  });
+
 });

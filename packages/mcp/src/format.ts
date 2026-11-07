@@ -8,6 +8,7 @@ import type {
   ViewRow,
   ViewSectionContent,
 } from "@operad-io/engine";
+import type { McpViewObject } from "./policy.ts";
 
 function cell(value: string): string {
   return value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
@@ -66,7 +67,7 @@ function actionMarkdown(action: ViewObject["actions"][number]): string[] {
 }
 
 /** One object as its row, section directory, actions and link. */
-export function showMarkdown(object: ViewObject): string {
+export function showMarkdown(object: ViewObject | McpViewObject): string {
   const row = object.row;
   const lines = [`# ${row.title}`, ""];
   lines.push(`- id: \`${rowName(row)}\``);
@@ -97,7 +98,22 @@ export function showMarkdown(object: ViewObject): string {
   } else {
     for (const action of object.actions) lines.push(...actionMarkdown(action));
   }
+
+  const ownerActions = "ownerActions" in object ? object.ownerActions : [];
+  if (ownerActions.length > 0) {
+    lines.push("", "## Owner actions");
+    for (const name of ownerActions) {
+      lines.push(`- \`${name}\`: the owner runs it`);
+    }
+  }
   return `${lines.join("\n")}\n`;
+}
+
+/** A plugin verb's or action's value as the CLI prints it. */
+export function valueText(value: unknown): string {
+  if (value === undefined) return "";
+  if (typeof value === "string") return `${value}\n`;
+  return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 /** A section's Markdown, with the cursor named when another page follows. */

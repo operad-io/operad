@@ -5,10 +5,9 @@ import {
   readFileSync,
   readdirSync,
   statSync,
-  watch,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -95,32 +94,60 @@ function staleFiles(repositoryPath: string): readonly string[] {
   );
 }
 
-function startPids(resultPath: string): readonly number[] {
-  if (!existsSync(resultPath)) return [];
-  return readFileSync(resultPath, "utf8")
-    .split("\n")
-    .filter((line) => line.startsWith("start "))
-    .map((line) => Number(line.slice("start ".length)))
-    .filter((pid) => Number.isFinite(pid));
+interface StartWaiter {
+  readonly resolve: (pid: number) => void;
+  readonly reject: (error: Error) => void;
 }
 
-/** Resolves with the pid of the `index`th `start` line, without a sleep. */
-function waitForStart(resultPath: string, index: number): Promise<number> {
-  const seen = (): number | undefined => startPids(resultPath)[index];
-  const first = seen();
-  if (first !== undefined) return Promise.resolve(first);
-  return new Promise((resolve, reject) => {
-    const watcher = watch(dirname(resultPath), () => {
-      const pid = seen();
-      if (pid === undefined) return;
-      watcher.close();
-      resolve(pid);
+/**
+ * Reads `start <pid>` lines from the holders' pipes in the order they acquire
+ * the lock. A pipe is an event stream, so no line falls between a file check
+ * and a watcher registration.
+ */
+function startQueue(
+  children: readonly { readonly stdout: ReadableStream<Uint8Array> }[],
+): () => Promise<number> {
+  const starts: number[] = [];
+  const waiting: StartWaiter[] = [];
+  const fail = (error: Error): void => {
+    for (const waiter of waiting.splice(0)) waiter.reject(error);
+  };
+  for (const child of children) {
+    const reader = child.stdout.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+    let sawStart = false;
+    void (async () => {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (value !== undefined) text += decoder.decode(value, { stream: true });
+        for (;;) {
+          const newline = text.indexOf("\n");
+          if (newline < 0) break;
+          const line = text.slice(0, newline);
+          text = text.slice(newline + 1);
+          if (!line.startsWith("start ")) continue;
+          sawStart = true;
+          const pid = Number(line.slice("start ".length));
+          const waiter = waiting.shift();
+          if (waiter === undefined) starts.push(pid);
+          else waiter.resolve(pid);
+        }
+        if (done) {
+          reader.releaseLock();
+          if (!sawStart) fail(new Error("a holder ended before it acquired the lock"));
+          return;
+        }
+      }
+    })();
+  }
+  return () => {
+    const pid = starts.shift();
+    if (pid !== undefined) return Promise.resolve(pid);
+    return new Promise<number>((resolve, reject) => {
+      waiting.push({ resolve, reject });
     });
-    watcher.on("error", (error) => {
-      watcher.close();
-      reject(error);
-    });
-  });
+  };
 }
 
 describe("the lock file", () => {
@@ -158,6 +185,7 @@ describe("the lock file", () => {
     const children = Array.from({ length: 5 }, () =>
       Bun.spawn({
         cmd: [process.execPath, HOLDER, lockPathOf(repositoryPath), result],
+        stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",
       }),
@@ -165,9 +193,13 @@ describe("the lock file", () => {
     try {
       // Each holder holds the section until the test acknowledges its start:
       // the test decides the order and the duration, not a fixed sleep.
+      const nextStart = startQueue(children);
       for (let index = 0; index < children.length; index += 1) {
-        const pid = await waitForStart(result, index);
-        writeFileSync(join(root, `go-${pid}`), "");
+        const pid = await nextStart();
+        const child = children.find((item) => item.pid === pid);
+        if (child === undefined) throw new Error(`no holder has pid ${pid}`);
+        child.stdin.write("go\n");
+        await child.stdin.end();
       }
       const codes = await Promise.all(children.map((child) => child.exited));
       expect(codes).toEqual([0, 0, 0, 0, 0]);

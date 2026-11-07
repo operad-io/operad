@@ -23,6 +23,10 @@ this manual prints a secret.
   "store": { "backend": "jsonl", "path": "~/.operad/store" },
   "http": { "enabled": false, "port": 7480, "listen": ["127.0.0.1"] },
   "notify": { "command": null, "on": ["waiting"] },
+  "mcp": {
+    "actions": ["dev:rework", "dev:reverify", "dev:reject", "dev:priority"],
+    "confirmActions": []
+  },
   "ask": { "graceSecs": 600 }
 }
 ```
@@ -39,6 +43,19 @@ this manual prints a secret.
   [Asking a person from a step](#asking-a-person-from-a-step).
 - `notify`: a command `serve` runs when something waits for a person; see
   [Notifications](#notifications). It is off while `command` is `null`.
+- `mcp`: the plugin actions the MCP server may run for a lead; see
+  [MCP server](#mcp-server).
+
+### mcp
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `actions` | array of `plugin:action` strings | `["dev:rework", "dev:reverify", "dev:reject", "dev:priority"]` | The actions `operad mcp` may run. Every other action is refused with a message naming it and saying the owner runs it. |
+| `confirmActions` | array of `plugin:action` strings | `[]` | The allowed actions that also carry `confirm: true`. Such an action is refused even when `actions` names it unless this list names it too. |
+
+Both lists take effect the next time `operad mcp` starts. They do not change an
+action already running. The MCP server never offers the owner's actions as its
+own; `show` lists them separately so the lead can tell the owner what to run.
 
 ### http
 
@@ -417,11 +434,13 @@ anyone who guesses it; pick a long random one or use a self-hosted server.
 
 ## MCP server
 
-`operad mcp` runs a read-only MCP server on stdio for a lead agent. It reads
-the same objects, pending items, running items, sections and history as the
-commands, and never runs a step or an owner action. The protocol, tools and
-error mapping are in `docs/mcp.md`; stdout carries only JSON-RPC and logs go to
-stderr.
+`operad mcp` runs an MCP server on stdio for a lead agent. It reads the same
+objects, pending items, running items, sections and history as the commands,
+and it runs the plugin verbs and lead actions `config.json` allows. It never
+starts a step or takes an owner decision; only `operad serve` runs steps, and
+the actions left out of `mcp.actions` stay in the command line or the app. The
+protocol, tools and error mapping are in `docs/mcp.md`; stdout carries only
+JSON-RPC and logs go to stderr.
 
 Claude Code finds the server in a project `.mcp.json`:
 

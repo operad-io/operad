@@ -22,13 +22,22 @@ const CLI_ENTRY = fileURLToPath(
 const pluginPath = fileURLToPath(
   new URL("../../engine/test/fixtures/plugins/presentation.ts", import.meta.url),
 );
+const devPluginPath = fileURLToPath(
+  new URL("../../dev/src/index.ts", import.meta.url),
+);
+const kernelCommandPluginPath = fileURLToPath(
+  new URL("./fixtures/kernel-command.ts", import.meta.url),
+);
+const kernelNamePluginPath = fileURLToPath(
+  new URL("./fixtures/kernel-plugin-name.ts", import.meta.url),
+);
 
 interface Home {
   readonly root: string;
   readonly home: string;
 }
 
-async function makeHome(): Promise<Home> {
+async function makeHome(extra: Record<string, unknown> = {}): Promise<Home> {
   const root = await tempRoot();
   const home = join(root, "home");
   mkdirSync(home, { recursive: true });
@@ -37,9 +46,84 @@ async function makeHome(): Promise<Home> {
     JSON.stringify({
       plugins: [pluginPath],
       store: { backend: "jsonl", path: join(root, "store") },
+      ...extra,
     }),
   );
   return { root, home };
+}
+
+function git(cwd: string, args: readonly string[]): void {
+  const result = Bun.spawnSync({
+    cmd: ["git", "-C", cwd, ...args],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (result.exitCode !== 0) {
+    throw new Error(`git ${args.join(" ")}: ${result.stderr.toString()}`);
+  }
+}
+
+function makeRepository(root: string): string {
+  const repository = join(root, "repo");
+  mkdirSync(repository, { recursive: true });
+  git(repository, ["init", "-q"]);
+  git(repository, ["remote", "add", "origin", "https://example.com/repo.git"]);
+  git(repository, [
+    "-c",
+    "user.name=test",
+    "-c",
+    "user.email=test@example.com",
+    "commit",
+    "--allow-empty",
+    "-qm",
+    "start",
+  ]);
+  return repository;
+}
+
+async function makeDevHome(
+  extra: Record<string, unknown> = {},
+): Promise<Home & { readonly repository: string }> {
+  const root = await tempRoot();
+  const home = join(root, "home");
+  mkdirSync(home, { recursive: true });
+  const repository = makeRepository(root);
+  writeFileSync(
+    join(home, "config.json"),
+    JSON.stringify({
+      plugins: [devPluginPath],
+      store: { backend: "jsonl", path: join(root, "store") },
+      ...extra,
+    }),
+  );
+  return { root, home, repository };
+}
+
+function pluginStoreRoot(home: string): string {
+  return join(home, "..", "store", "plugins");
+}
+
+function taskKey(id: string): string {
+  return `repo/${id}`;
+}
+
+function patchTask(
+  home: string,
+  id: string,
+  change: Record<string, unknown>,
+): void {
+  const store = new FilePluginStore({ root: pluginStoreRoot(home) });
+  const key = taskKey(id);
+  const current = store.get("task", key);
+  if (current === undefined) throw new Error(`no task "${key}"`);
+  store.put("task", key, { ...current.data, ...change }, "test");
+}
+
+function taskData(home: string, id: string): Record<string, unknown> {
+  const store = new FilePluginStore({ root: pluginStoreRoot(home) });
+  const task = store.get("task", taskKey(id));
+  if (task === undefined) throw new Error(`no task "${taskKey(id)}"`);
+  return task.data;
 }
 
 function seed(home: string, id: string, data: Record<string, unknown>): void {
@@ -51,6 +135,7 @@ async function addRun(
   home: string,
   object: string,
   waiting: { readonly prompt: string } | undefined,
+  choices: readonly string[] = ["yes"],
 ): Promise<string> {
   const log = openConfigLog(await readConfig(home));
   try {
@@ -63,7 +148,7 @@ async function addRun(
             waitId: "wait:1",
             step: "ask",
             prompt: waiting.prompt,
-            choices: ["yes"],
+            choices: [...choices],
             waitKind: "step",
             effectId: null,
           },
@@ -168,10 +253,10 @@ interface Child {
   close(): Promise<{ readonly out: string; readonly err: string; readonly code: number }>;
 }
 
-function start(home: string): Child {
+function start(home: string, cwd = home): Child {
   const child = Bun.spawn({
     cmd: [process.execPath, CLI_ENTRY, "mcp"],
-    cwd: home,
+    cwd,
     env: { ...(process.env as Record<string, string>), OPERAD_HOME: home },
     stdin: "pipe",
     stdout: "pipe",
@@ -230,6 +315,13 @@ function structuredOf(response: Record<string, unknown>): Record<string, unknown
   return content as Record<string, unknown>;
 }
 
+function textOf(response: Record<string, unknown>): string {
+  const content = resultOf(response).content;
+  if (!Array.isArray(content)) return "";
+  const first = content[0] as { text?: unknown } | undefined;
+  return typeof first?.text === "string" ? first.text : "";
+}
+
 function errorOf(response: Record<string, unknown>): Record<string, unknown> {
   const error = response.error;
   if (typeof error !== "object" || error === null || Array.isArray(error)) {
@@ -240,7 +332,12 @@ function errorOf(response: Record<string, unknown>): Record<string, unknown> {
 
 describe("operad mcp", () => {
   test("initializes, lists the table and reads every tool on fixture objects", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeHome({
+      mcp: {
+        actions: ["demo:approve", "demo:drop"],
+        confirmActions: ["demo:drop"],
+      },
+    });
     seed(home, "one", { title: "First", state: "new", note: "$1" });
     seed(home, "two", { title: "Second", state: "open" });
     const waitingRun = await addRun(home, "item:one", { prompt: "Approve?" });
@@ -411,4 +508,322 @@ describe("operad mcp", () => {
       expect(closed.code).toBe(0);
     }
   });
+  test("splits show actions into the lead's and the owner's", async () => {
+    const { home } = await makeHome({
+      mcp: {
+        actions: ["demo:approve", "demo:drop"],
+        confirmActions: [],
+      },
+    });
+    seed(home, "one", { title: "First", state: "new" });
+    const child = start(home);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      const shown = await child.request(2, "tools/call", {
+        name: "show",
+        arguments: { id: "item:one" },
+      });
+      const object = structuredOf(shown);
+      const actions = object.actions as { name: string }[];
+      expect(actions.map((action) => action.name)).toEqual(["demo:approve"]);
+      expect(object.ownerActions).toEqual([
+        "demo:auto",
+        "demo:label",
+        "demo:drop",
+      ]);
+      expect(textOf(shown)).toContain("## Owner actions");
+      expect(textOf(shown)).toContain("demo:drop");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("pending lists only the actions the lead may run", async () => {
+    const { home } = await makeHome({
+      mcp: {
+        actions: ["demo:approve", "demo:drop"],
+        confirmActions: [],
+      },
+    });
+    seed(home, "one", { title: "First", state: "new" });
+    await addRun(home, "item:one", { prompt: "Approve?" });
+    const child = start(home);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      const pending = await child.request(2, "tools/call", {
+        name: "pending",
+        arguments: {},
+      });
+      const items = resultOf(pending).structuredContent as unknown as {
+        actions: { plugin: string; action: string }[];
+      }[];
+      expect(items[0]?.actions).toEqual([
+        { plugin: "demo", action: "approve" },
+      ]);
+      expect(textOf(pending)).toContain("- actions: demo:approve");
+      expect(textOf(pending)).not.toContain("demo:drop");
+      expect(textOf(pending)).not.toContain("demo:auto");
+      expect(textOf(pending)).not.toContain("demo:label");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("command runs plugin verbs with input and refuses a kernel verb", async () => {
+    const { home, repository } = await makeDevHome();
+    const child = start(home, repository);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      const added = await child.request(2, "tools/call", {
+        name: "command",
+        arguments: { plugin: "dev", verb: "repo", args: ["add", "."] },
+      });
+      expect(resultOf(added).isError).toBeUndefined();
+      expect(textOf(added)).toContain("added repo");
+
+      const plan = await child.request(3, "tools/call", {
+        name: "command",
+        arguments: {
+          plugin: "dev",
+          verb: "plan",
+          args: ["add", "--slug", "alpha", "--title", "Alpha"],
+          input: "Do the thing.\n",
+        },
+      });
+      expect(textOf(plan).trim()).toBe("P-0001-alpha");
+
+      const task = await child.request(4, "tools/call", {
+        name: "command",
+        arguments: {
+          plugin: "dev",
+          verb: "task",
+          args: [
+            "add",
+            "--plan",
+            "P-0001-alpha",
+            "--slug",
+            "first",
+            "--title",
+            "First task",
+          ],
+          input: "# Brief\n\nUse the store.\n",
+        },
+      });
+      expect(textOf(task).trim()).toBe("T-0001-first");
+
+      const brief = await child.request(5, "tools/call", {
+        name: "section",
+        arguments: { id: "T-0001-first", section: "brief" },
+      });
+      expect(textOf(brief)).toContain("Use the store.");
+
+      const kernel = await child.request(6, "tools/call", {
+        name: "command",
+        arguments: { plugin: "serve", verb: "start" },
+      });
+      expect(resultOf(kernel).isError).toBe(true);
+      expect(textOf(kernel)).toContain("serve");
+      expect(textOf(kernel)).toContain("kernel verb");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("command runs a plugin verb whose name is also a kernel verb", async () => {
+    const { home } = await makeHome({ plugins: [kernelCommandPluginPath] });
+    const child = start(home);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      const shown = await child.request(2, "tools/call", {
+        name: "command",
+        arguments: { plugin: "echo", verb: "show", args: ["hello"] },
+      });
+      expect(resultOf(shown).isError).toBeUndefined();
+      expect(textOf(shown).trim()).toBe("plugin show: hello");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("command refuses a plugin whose name is also a kernel verb", async () => {
+    const { home } = await makeHome({ plugins: [kernelNamePluginPath] });
+    const child = start(home);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      const refused = await child.request(2, "tools/call", {
+        name: "command",
+        arguments: { plugin: "serve", verb: "start", args: ["hello"] },
+      });
+      expect(resultOf(refused).isError).toBe(true);
+      expect(textOf(refused)).toContain("serve");
+      expect(textOf(refused)).toContain("kernel verb");
+      expect(textOf(refused)).not.toContain("plugin start");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("act runs a lead rework with the mcp lead actor and refuses merge by default", async () => {
+    const { home, repository } = await makeDevHome();
+    const child = start(home, repository);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      await child.request(2, "tools/call", {
+        name: "command",
+        arguments: { plugin: "dev", verb: "repo", args: ["add", "."] },
+      });
+      await child.request(3, "tools/call", {
+        name: "command",
+        arguments: {
+          plugin: "dev",
+          verb: "plan",
+          args: ["add", "--slug", "alpha", "--title", "Alpha"],
+          input: "Do the thing.\n",
+        },
+      });
+      const task = await child.request(4, "tools/call", {
+        name: "command",
+        arguments: {
+          plugin: "dev",
+          verb: "task",
+          args: [
+            "add",
+            "--plan",
+            "P-0001-alpha",
+            "--slug",
+            "first",
+            "--title",
+            "First task",
+          ],
+          input: "# Brief\n",
+        },
+      });
+      expect(textOf(task).trim()).toBe("T-0001-first");
+      patchTask(home, "T-0001-first", { phase: "waiting" });
+      await addRun(
+        home,
+        `task:${taskKey("T-0001-first")}`,
+        { prompt: "Ready?" },
+        ["merge", "reject", "rework", "reverify"],
+      );
+
+      const rework = await child.request(5, "tools/call", {
+        name: "act",
+        arguments: {
+          action: "dev:rework",
+          id: "T-0001-first",
+          note: "cover the empty case",
+        },
+      });
+      expect(resultOf(rework).isError).toBeUndefined();
+      expect((structuredOf(rework).action as string)).toBe("rework");
+
+      const merge = await child.request(6, "tools/call", {
+        name: "act",
+        arguments: { action: "dev:merge", id: "T-0001-first" },
+      });
+      expect(resultOf(merge).isError).toBe(true);
+      expect(textOf(merge)).toContain("dev:merge");
+      expect(textOf(merge)).toContain("owner");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+
+    const after = taskData(home, "T-0001-first");
+    expect(after.phase).toBe("running");
+    expect(String(after.brief)).toContain("cover the empty case");
+    const store = new FilePluginStore({ root: pluginStoreRoot(home) });
+    const invoked = store.facts().find((fact) => fact.type === "action_invoked");
+    expect(invoked?.data.actor).toEqual({ via: "mcp", id: "lead" });
+  });
+
+  test("a confirm action runs when both MCP lists name it", async () => {
+    const { home, repository } = await makeDevHome({
+      mcp: {
+        actions: ["dev:merge"],
+        confirmActions: ["dev:merge"],
+      },
+    });
+    const child = start(home, repository);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      await child.request(2, "tools/call", {
+        name: "command",
+        arguments: { plugin: "dev", verb: "repo", args: ["add", "."] },
+      });
+      await child.request(3, "tools/call", {
+        name: "command",
+        arguments: {
+          plugin: "dev",
+          verb: "plan",
+          args: ["add", "--slug", "alpha", "--title", "Alpha"],
+          input: "Do the thing.\n",
+        },
+      });
+      await child.request(4, "tools/call", {
+        name: "command",
+        arguments: {
+          plugin: "dev",
+          verb: "task",
+          args: [
+            "add",
+            "--plan",
+            "P-0001-alpha",
+            "--slug",
+            "first",
+            "--title",
+            "First task",
+          ],
+          input: "# Brief\n",
+        },
+      });
+      patchTask(home, "T-0001-first", {
+        phase: "waiting",
+        attempt: { number: 1, run: "run-1", worktree: "/tmp/none", verified: "abc123" },
+      });
+      const runId = await addRun(
+        home,
+        `task:${taskKey("T-0001-first")}`,
+        { prompt: "Ready?" },
+        ["merge", "reject"],
+      );
+
+      const merge = await child.request(5, "tools/call", {
+        name: "act",
+        arguments: { action: "dev:merge", id: "T-0001-first" },
+      });
+      expect(resultOf(merge).isError).toBeUndefined();
+      expect(structuredOf(merge).name).toBe("dev:merge");
+
+      const log = openConfigLog(await readConfig(home));
+      try {
+        const answer = await (async () => {
+          for await (const input of log.readInputs()) {
+            if (input.runId === runId && input.source === "person") return input;
+          }
+          return undefined;
+        })();
+        expect(answer?.payload).toMatchObject({
+          kind: "person_answer",
+          choice: "merge",
+          actor: { via: "mcp", id: "lead" },
+        });
+      } finally {
+        await log.close();
+      }
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+    expect(String(taskData(home, "T-0001-first").brief)).toContain(
+      "merge requested",
+    );
+  });
+
 });

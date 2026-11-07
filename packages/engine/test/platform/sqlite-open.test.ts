@@ -95,44 +95,48 @@ test("switching to WAL waits while another process holds the database", async ()
     stdout: "pipe",
     stderr: "pipe",
   });
-  const opener = Bun.spawn([process.execPath, OPEN_CHILD], {
-    env: { ...process.env, OPERAD_DB_PATH: path },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  let openerStarted = false;
   try {
+    // Spawn the opener only after the holder reports its write lock: spawning
+    // both at once lets the opener create and switch a fresh database before
+    // the holder starts its transaction, and then no SQLITE_BUSY is expected.
     expect(JSON.parse(await firstLine(holder.stdout))).toEqual({ locked: true });
-    openerStarted = true;
-    // The holder keeps its write lock until it is told otherwise, so the
-    // opener must meet SQLITE_BUSY; only then does the test let the holder go.
-    // A switch that gave up on SQLITE_BUSY exits without ever reporting it.
-    const openerLines = opener.stdout.getReader();
-    const decoder = new TextDecoder();
-    let text = "";
-    const next = async (): Promise<unknown> => {
-      for (;;) {
-        const newline = text.indexOf("\n");
-        if (newline >= 0) {
-          const line = text.slice(0, newline);
-          text = text.slice(newline + 1);
-          return JSON.parse(line);
+    const opener = Bun.spawn([process.execPath, OPEN_CHILD], {
+      env: { ...process.env, OPERAD_DB_PATH: path },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    try {
+      // The holder keeps its write lock until it is told otherwise, so the
+      // opener must meet SQLITE_BUSY; only then does the test let the holder go.
+      // A switch that gave up on SQLITE_BUSY exits without ever reporting it.
+      const openerLines = opener.stdout.getReader();
+      const decoder = new TextDecoder();
+      let text = "";
+      const next = async (): Promise<unknown> => {
+        for (;;) {
+          const newline = text.indexOf("\n");
+          if (newline >= 0) {
+            const line = text.slice(0, newline);
+            text = text.slice(newline + 1);
+            return JSON.parse(line);
+          }
+          const { value, done } = await openerLines.read();
+          if (value !== undefined) text += decoder.decode(value, { stream: true });
+          if (done && text.indexOf("\n") < 0) {
+            throw new Error(`the opener ended early: ${await new Response(opener.stderr).text()}`);
+          }
         }
-        const { value, done } = await openerLines.read();
-        if (value !== undefined) text += decoder.decode(value, { stream: true });
-        if (done && text.indexOf("\n") < 0) {
-          throw new Error(`the opener ended early: ${await new Response(opener.stderr).text()}`);
-        }
-      }
-    };
-    expect(await next()).toEqual({ busy: true });
-    holder.stdin.write("release\n");
-    await holder.stdin.end();
-    expect(await next()).toEqual({ journalMode: "wal" });
-    expect(await opener.exited).toBe(0);
+      };
+      expect(await next()).toEqual({ busy: true });
+      holder.stdin.write("release\n");
+      await holder.stdin.end();
+      expect(await next()).toEqual({ journalMode: "wal" });
+      expect(await opener.exited).toBe(0);
+    } finally {
+      if (opener.exitCode === null) opener.kill();
+      await opener.exited;
+    }
   } finally {
-    if (openerStarted && opener.exitCode === null) opener.kill();
-    await opener.exited;
     if (holder.exitCode === null) holder.kill();
     await holder.exited;
   }

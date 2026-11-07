@@ -40,6 +40,23 @@ function checkOne(
     if (typeof value !== "number" || !Number.isInteger(value)) {
       throw new InvalidToolArguments(`argument "${name}" must be an integer`);
     }
+    return;
+  }
+  if (property.type === "array") {
+    if (!Array.isArray(value)) {
+      throw new InvalidToolArguments(`argument "${name}" must be an array`);
+    }
+    if (property.items !== undefined) {
+      for (const [index, item] of value.entries()) {
+        checkOne(`${name}[${index}]`, property.items, item);
+      }
+    }
+    return;
+  }
+  if (property.type === "object") {
+    if (!isRecord(value)) {
+      throw new InvalidToolArguments(`argument "${name}" must be an object`);
+    }
   }
 }
 

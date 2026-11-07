@@ -3,6 +3,7 @@
 import type {
   Kernel,
   LogBackend,
+  McpConfig,
   PendingItem,
   PluginRegistry,
   RunningItem,
@@ -11,7 +12,13 @@ import type {
   ViewSectionContent,
   Views,
 } from "@operad-io/engine";
-import { HISTORY_SECTION, listPending, listRunning } from "@operad-io/engine";
+import {
+  HISTORY_SECTION,
+  listPending,
+  listRunning,
+  messageOf,
+  type Actor,
+} from "@operad-io/engine";
 import { InvalidToolArguments, validateArguments } from "./arguments.ts";
 import {
   historyMarkdown,
@@ -20,13 +27,23 @@ import {
   runningMarkdown,
   sectionMarkdown,
   showMarkdown,
+  valueText,
 } from "./format.ts";
+import {
+  actionInfoNamed,
+  actionMayRun,
+  mcpPolicy,
+  ownerRefusal,
+  splitActions,
+  splitPendingActions,
+} from "./policy.ts";
 
 /** The JSON Schema subset a tool input uses. */
 export interface InputPropertySchema {
-  readonly type?: "string" | "boolean" | "integer";
+  readonly type?: "string" | "boolean" | "integer" | "array" | "object";
   readonly description?: string;
   readonly minLength?: number;
+  readonly items?: InputPropertySchema;
 }
 
 /** A tool's input: an object with known properties only. */
@@ -43,6 +60,25 @@ export interface ToolDefinition {
   readonly description: string;
   readonly inputSchema: InputSchema;
 }
+
+/** Kernel command names; a plugin verb is never reachable through MCP. */
+const KERNEL_VERBS = new Set([
+  "init",
+  "serve",
+  "pending",
+  "history",
+  "running",
+  "flows",
+  "trigger",
+  "list",
+  "show",
+  "plugin",
+  "secret",
+  "http",
+  "pair",
+  "run-internal",
+  "mcp",
+]);
 
 /** The tools this server offers, in the order it lists them. */
 export const TOOLS = [
@@ -145,6 +181,64 @@ export const TOOLS = [
       },
     },
   },
+  {
+    name: "command",
+    description: "Run a plugin verb the way the CLI does.",
+    inputSchema: {
+      type: "object",
+      required: ["plugin", "verb"],
+      additionalProperties: false,
+      properties: {
+        plugin: {
+          type: "string",
+          minLength: 1,
+          description: "A loaded plugin name, such as dev.",
+        },
+        verb: {
+          type: "string",
+          minLength: 1,
+          description: "A verb the plugin declares, such as plan.",
+        },
+        args: {
+          type: "array",
+          items: { type: "string" },
+          description: "The command-line arguments after the verb.",
+        },
+        input: {
+          type: "string",
+          description: "The text the CLI reads from stdin, such as a brief.",
+        },
+      },
+    },
+  },
+  {
+    name: "act",
+    description: "Run an action the MCP server is allowed to run for a lead.",
+    inputSchema: {
+      type: "object",
+      required: ["action"],
+      additionalProperties: false,
+      properties: {
+        action: {
+          type: "string",
+          minLength: 1,
+          description: "A <plugin>:<action> name from show.",
+        },
+        id: {
+          type: "string",
+          description: "The object id when the action targets one.",
+        },
+        args: {
+          type: "object",
+          description: "The action's arguments, as its schema names them.",
+        },
+        note: {
+          type: "string",
+          description: "The note for an action whose schema declares one.",
+        },
+      },
+    },
+  },
 ] as const satisfies readonly ToolDefinition[];
 
 /** One text block of a tool result. */
@@ -167,6 +261,8 @@ export interface ToolContext {
   readonly registry: PluginRegistry;
   readonly kernel: Kernel;
   readonly clock: () => number;
+  readonly cwd?: string | undefined;
+  readonly mcp?: McpConfig | undefined;
 }
 
 function text(value: string): ToolTextContent {
@@ -203,9 +299,10 @@ export async function runTool(
     }
     case "show": {
       const object: ViewObject = await context.views.get(String(args.id));
+      const shown = splitActions(object, mcpPolicy(context.mcp));
       return {
-        content: [text(showMarkdown(object))],
-        structuredContent: object,
+        content: [text(showMarkdown(shown))],
+        structuredContent: shown,
       };
     }
     case "section": {
@@ -226,9 +323,14 @@ export async function runTool(
         context.registry,
         context.kernel,
       );
+      const shown = splitPendingActions(
+        pending,
+        context.registry.actions(),
+        mcpPolicy(context.mcp),
+      );
       return {
-        content: [text(pendingMarkdown(pending))],
-        structuredContent: pending,
+        content: [text(pendingMarkdown(shown))],
+        structuredContent: shown,
       };
     }
     case "running": {
@@ -249,6 +351,84 @@ export async function runTool(
         content: [text(historyMarkdown(result))],
         structuredContent: result,
       };
+    }
+    case "command": {
+      const plugin = String(args.plugin);
+      const verb = String(args.verb);
+      if (KERNEL_VERBS.has(plugin)) {
+        return toolError(
+          `"${plugin}" is a kernel verb; it is not reachable through MCP`,
+        );
+      }
+      const commandArgs = Array.isArray(args.args)
+        ? args.args.map((item) => String(item))
+        : [];
+      const argv = [plugin, verb, ...commandArgs];
+      const resolved = context.registry.resolveCommand(argv);
+      if (
+        resolved === undefined ||
+        resolved.plugin !== plugin ||
+        resolved.command !== verb
+      ) {
+        if (KERNEL_VERBS.has(verb)) {
+          return toolError(
+            `"${verb}" is a kernel verb; it is not reachable through MCP`,
+          );
+        }
+        return toolError(
+          `no loaded plugin "${plugin}" declares the verb "${verb}"`,
+        );
+      }
+      try {
+        const run = await context.registry.runCommand(
+          argv,
+          {
+            ...(context.cwd === undefined ? {} : { cwd: context.cwd }),
+            input: args.input === undefined ? "" : String(args.input),
+          },
+        );
+        if (run === undefined) {
+          return toolError(
+            `no loaded plugin "${plugin}" declares the verb "${verb}"`,
+          );
+        }
+        return {
+          content: [text(valueText(run.value))],
+          structuredContent: run.value,
+        };
+      } catch (error) {
+        return toolError(messageOf(error));
+      }
+    }
+    case "act": {
+      const policy = mcpPolicy(context.mcp);
+      const action = String(args.action);
+      const info = actionInfoNamed(context.registry.actions(), action);
+      if (info === undefined) {
+        return toolError(`no loaded plugin declares action "${action}"`);
+      }
+      if (!actionMayRun(policy, info)) {
+        return toolError(ownerRefusal(info.name));
+      }
+      const actionArgs =
+        args.args !== undefined && typeof args.args === "object" && args.args !== null
+          ? (args.args as Readonly<Record<string, unknown>>)
+          : {};
+      const actor: Actor = { via: "mcp", id: "lead" };
+      try {
+        const run = await context.views.act(info.name, args.id === undefined ? undefined : String(args.id), {
+          args: actionArgs,
+          ...(args.note === undefined ? {} : { note: String(args.note) }),
+          yes: info.confirm,
+          actor,
+        });
+        return {
+          content: [text(valueText(run.value) || `ran "${run.name}"\n`)],
+          structuredContent: run,
+        };
+      } catch (error) {
+        return toolError(messageOf(error));
+      }
     }
     default:
       throw new InvalidToolArguments(`unknown tool "${name}"`);
