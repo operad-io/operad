@@ -1,0 +1,313 @@
+/**
+ * The pi child program (docs/backlog/operad-harness-pi.md decisions 2, 3, 5, 6).
+ *
+ * Reads one JSON object from stdin, runs one prompt in pi and writes one JSON
+ * object per line to stdout, the last a Result. `README.md` holds the tables.
+ */
+
+import { existsSync, mkdirSync } from "node:fs";
+import {
+  createAgentSession,
+  DefaultResourceLoader,
+  ModelRuntime,
+  SessionManager,
+  SettingsManager,
+  type AgentSessionEvent,
+  type ExtensionFactory,
+} from "@earendil-works/pi-coding-agent";
+import {
+  parseInput,
+  type FailureReason,
+  type WorkerInput,
+  type WorkerLine,
+  type WorkerResult,
+  type WorkerUsage,
+} from "./protocol.ts";
+
+export const EXIT_FAILED = 1;
+export const EXIT_INVALID_INPUT = 2;
+export const EXIT_CANCELLED = 143;
+
+/** Where the program writes. Lines are written whole, in order. */
+export interface WorkerIo {
+  line(line: WorkerLine): void;
+  /** Free text for humans; never parsed. */
+  log(text: string): void;
+}
+
+export interface WorkerHooks {
+  /** Registers extra model providers; the tests use it for the fake model. */
+  registerProviders?(runtime: ModelRuntime): void;
+}
+
+function finite(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** The price of one message in USD, or null when pi gave none. */
+function priceOf(usage: unknown): number | null {
+  if (typeof usage !== "object" || usage === null) return null;
+  const cost: unknown = Reflect.get(usage, "cost");
+  if (typeof cost !== "object" || cost === null) return null;
+  return finite(Reflect.get(cost, "total"));
+}
+
+class Tally {
+  readonly usage: WorkerUsage = {};
+  #total = 0;
+  #priced = 0;
+  #unpriced = 0;
+  lastStop: string | undefined;
+  lastError: string | undefined;
+
+  add(message: Extract<AgentSessionEvent, { type: "message_end" }>["message"]): WorkerLine | undefined {
+    if (message.role !== "assistant") return undefined;
+    const usage = message.usage;
+    const counts = {
+      input: finite(usage.input) ?? 0,
+      output: finite(usage.output) ?? 0,
+      cache_read: finite(usage.cacheRead) ?? 0,
+      cache_write: finite(usage.cacheWrite) ?? 0,
+    };
+    for (const key of ["input", "output", "cache_read", "cache_write"] as const) {
+      this.usage[key] = (this.usage[key] ?? 0) + counts[key];
+    }
+    const price = priceOf(usage);
+    if (price === null) this.#unpriced += 1;
+    else {
+      this.#priced += 1;
+      this.#total += price;
+    }
+    this.lastStop = message.stopReason;
+    this.lastError = message.stopReason === "error" ? (message.errorMessage ?? "the model failed") : undefined;
+    return {
+      type: "message_end",
+      role: "assistant",
+      stopReason: message.stopReason,
+      usage: counts,
+      cost: price === null ? null : { total: price },
+    };
+  }
+
+  get cost(): { micros: number } | null {
+    if (this.#priced === 0 || this.#unpriced > 0) return null;
+    return { micros: Math.round(this.#total * 1e6) };
+  }
+}
+
+function failure(reason: FailureReason, message: string): WorkerResult {
+  return { type: "result", result: "failed", sessionId: null, usage: {}, cost: null, finalMessage: null, reason, message };
+}
+
+/**
+ * Runs one prompt and returns the exit code. `cancel` is the SIGTERM signal;
+ * the Result is written before the code is returned.
+ */
+export async function runWorker(
+  input: WorkerInput,
+  io: WorkerIo,
+  cancel: AbortSignal,
+  hooks: WorkerHooks = {},
+): Promise<number> {
+  if (input.resumeSession !== undefined && !existsSync(input.resumeSession)) {
+    io.line(failure("session_missing", `resumeSession does not exist: ${input.resumeSession}`));
+    return EXIT_FAILED;
+  }
+
+  mkdirSync(input.agentDir, { recursive: true });
+  mkdirSync(input.sessionDir, { recursive: true });
+
+  const runtime = await ModelRuntime.create({
+    authPath: input.authPath,
+    modelsPath: input.modelsPath,
+    refreshOnCreate: false,
+  });
+  hooks.registerProviders?.(runtime);
+
+  let model: ReturnType<ModelRuntime["getModel"]>;
+  if (input.model !== undefined) {
+    const slash = input.model.indexOf("/");
+    model = runtime.getModel(input.model.slice(0, slash), input.model.slice(slash + 1));
+    if (model === undefined) {
+      io.line(failure("model_missing", `model is not known to pi: ${input.model}`));
+      return EXIT_FAILED;
+    }
+  }
+
+  const sessionManager =
+    input.resumeSession !== undefined
+      ? SessionManager.open(input.resumeSession, input.sessionDir)
+      : SessionManager.create(input.cwd, input.sessionDir);
+
+  // The one extension operad loads. Its tool_call handler only logs for now.
+  const operadExtension: ExtensionFactory = (pi) => {
+    pi.on("tool_call", async (event) => {
+      io.log(`tool_call ${event.toolName}`);
+      return undefined;
+    });
+  };
+
+  const settingsManager = SettingsManager.inMemory({
+    compaction: { enabled: false },
+    retry: { enabled: false },
+  });
+  const resourceLoader = new DefaultResourceLoader({
+    cwd: input.cwd,
+    agentDir: input.agentDir,
+    settingsManager,
+    noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+    extensionFactories: [{ name: "operad", factory: operadExtension, hidden: true }],
+  });
+  await resourceLoader.reload();
+
+  const { session } = await createAgentSession({
+    cwd: input.cwd,
+    agentDir: input.agentDir,
+    modelRuntime: runtime,
+    resourceLoader,
+    sessionManager,
+    settingsManager,
+    ...(model !== undefined ? { model } : {}),
+    ...(input.thinkingLevel !== undefined ? { thinkingLevel: input.thinkingLevel } : {}),
+  });
+
+  const tally = new Tally();
+  let settle: () => void = () => {};
+  const settled = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  session.subscribe((event) => {
+    switch (event.type) {
+      case "message_end": {
+        const line = tally.add(event.message);
+        if (line !== undefined) io.line(line);
+        break;
+      }
+      case "tool_execution_start":
+        io.line({ type: "tool_execution_start", toolCallId: event.toolCallId, toolName: event.toolName });
+        break;
+      case "tool_execution_end":
+        io.line({
+          type: "tool_execution_end",
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          isError: event.isError,
+        });
+        break;
+      case "agent_settled":
+        io.line({ type: "agent_settled", aborted: event.aborted });
+        settle();
+        break;
+      default:
+        break;
+    }
+  });
+
+  const result = (name: "done" | "cancelled"): WorkerResult => ({
+    type: "result",
+    result: name,
+    sessionId: session.sessionFile ?? null,
+    usage: tally.usage,
+    cost: tally.cost,
+    finalMessage: session.getLastAssistantText() ?? null,
+  });
+
+  let cancelled = cancel.aborted;
+  const onCancel = (): void => {
+    cancelled = true;
+    void session.abort();
+  };
+  cancel.addEventListener("abort", onCancel, { once: true });
+
+  try {
+    if (!cancelled) {
+      try {
+        await session.prompt(input.prompt);
+      } catch (error) {
+        if (!cancelled) {
+          io.line({
+            ...failure("model_error", error instanceof Error ? error.message : String(error)),
+            sessionId: session.sessionFile ?? null,
+            usage: tally.usage,
+            cost: tally.cost,
+          });
+          return EXIT_FAILED;
+        }
+      }
+      if (!cancelled) await settled;
+    }
+    if (cancelled) {
+      await session.abort();
+      io.line(result("cancelled"));
+      return EXIT_CANCELLED;
+    }
+    if (tally.lastError !== undefined) {
+      io.line({
+        ...failure("model_error", tally.lastError),
+        sessionId: session.sessionFile ?? null,
+        usage: tally.usage,
+        cost: tally.cost,
+        finalMessage: session.getLastAssistantText() ?? null,
+      });
+      return EXIT_FAILED;
+    }
+    io.line(result("done"));
+    return 0;
+  } finally {
+    cancel.removeEventListener("abort", onCancel);
+    session.dispose();
+  }
+}
+
+/** The process entry: stdin in, stdout lines out, exit code out. */
+export async function main(hooks: WorkerHooks = {}): Promise<never> {
+  const write = (text: string): void => {
+    process.stdout.write(text);
+  };
+  const flush = (): Promise<void> =>
+    new Promise((resolve) => {
+      process.stdout.write("", () => resolve());
+    });
+  const io: WorkerIo = {
+    line: (line) => write(`${JSON.stringify(line)}\n`),
+    log: (text) => process.stderr.write(`${text}\n`),
+  };
+  // Anything that prints to stdout by accident would corrupt the protocol.
+  console.log = (...args: unknown[]): void => {
+    process.stderr.write(`${args.map(String).join(" ")}\n`);
+  };
+
+  const controller = new AbortController();
+  process.on("SIGTERM", () => controller.abort());
+
+  let code: number;
+  try {
+    const text = await Bun.stdin.text();
+    let decoded: unknown;
+    let parsedOk = true;
+    try {
+      decoded = JSON.parse(text);
+    } catch {
+      parsedOk = false;
+    }
+    const parsed = parsedOk ? parseInput(decoded) : ({ ok: false, message: "the input is not valid JSON" } as const);
+    if (!parsed.ok) {
+      io.line(failure("invalid_input", parsed.message));
+      code = EXIT_INVALID_INPUT;
+    } else {
+      code = await runWorker(parsed.input, io, controller.signal, hooks);
+    }
+  } catch (error) {
+    io.log(error instanceof Error ? (error.stack ?? error.message) : String(error));
+    io.line(failure("model_error", error instanceof Error ? error.message : String(error)));
+    code = EXIT_FAILED;
+  }
+  await flush();
+  process.exit(code);
+}
+
+if (import.meta.main) await main();

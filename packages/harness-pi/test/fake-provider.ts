@@ -1,11 +1,10 @@
 /**
- * A fake pi model provider for the spike.
+ * A fake pi model provider for the tests.
  *
  * pi ships a faux provider in `@earendil-works/pi-ai`, but
  * `@earendil-works/pi-coding-agent` 1.5.0 does not re-export it. This module
  * therefore registers a custom provider whose `streamSimple` returns a fixed
- * assistant message (text and optionally one tool call), as the spike brief
- * allows.
+ * assistant message (text and optionally one tool call).
  */
 
 import type { ModelRuntime, ProviderConfig } from "@earendil-works/pi-coding-agent";
@@ -29,6 +28,10 @@ export interface FakeResponse {
   text: string;
   /** One tool call in the assistant message. */
   toolCall?: FakeToolCall;
+  /** Cost in USD the message reports; default 0. */
+  cost?: number;
+  /** The message carries no price at all, as for a model pi cannot price. */
+  noPrice?: boolean;
   /** Wait for this before streaming the content; aborting interrupts the wait. */
   before?: Promise<void>;
 }
@@ -110,13 +113,15 @@ export class FakeProvider {
   readonly providerId: string;
   readonly modelId: string;
   readonly contexts: PiContext[] = [];
+  /** Called each time pi starts a stream. */
+  onStream: (() => void) | undefined;
 
   readonly #responses: FakeResponse[] = [];
   readonly #started: Promise<void>;
   #markStarted: (() => void) | undefined;
   #startCount = 0;
 
-  constructor(providerId = "spike", modelId = "spike-model") {
+  constructor(providerId = "fake", modelId = "fake-model") {
     this.providerId = providerId;
     this.modelId = modelId;
     this.#started = new Promise<void>((resolve) => {
@@ -142,22 +147,23 @@ export class FakeProvider {
       this.contexts.push(context);
       this.#startCount += 1;
       this.#markStarted?.();
+      this.onStream?.();
       const stream = new FakeEventStream();
       void this.#run(stream, model, options);
       return stream as unknown as PiStream;
     };
 
     const config: ProviderConfig = {
-      name: "Spike Fake",
-      apiKey: "spike-key",
-      api: "spike-fake",
-      baseUrl: "https://spike.invalid",
+      name: "Fake",
+      apiKey: "fake-key",
+      api: "fake-api",
+      baseUrl: "https://fake.invalid",
       streamSimple,
       models: [
         {
           id: this.modelId,
-          name: "Spike Model",
-          api: "spike-fake",
+          name: "Fake Model",
+          api: "fake-api",
           reasoning: false,
           input: ["text"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -174,7 +180,7 @@ export class FakeProvider {
     if (response.toolCall !== undefined) {
       const call: ToolCall = {
         type: "toolCall",
-        id: `spike-tool-${this.#startCount}`,
+        id: `fake-tool-${this.#startCount}`,
         name: response.toolCall.name,
         arguments: response.toolCall.arguments,
       };
@@ -185,7 +191,7 @@ export class FakeProvider {
     }
     const output = response.text.length + (response.toolCall === undefined ? 0 : 8);
     const input = 12;
-    return {
+    const message: AssistantMessage = {
       role: "assistant",
       content,
       api: model.api,
@@ -194,14 +200,16 @@ export class FakeProvider {
       usage: {
         input,
         output,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: input + output,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        cacheRead: 3,
+        cacheWrite: 2,
+        totalTokens: input + output + 5,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: response.cost ?? 0 },
       },
       stopReason: response.toolCall === undefined ? "stop" : "toolUse",
       timestamp: Date.now(),
     };
+    if (response.noPrice === true) Reflect.deleteProperty(message.usage, "cost");
+    return message;
   }
 
   async #run(stream: FakeEventStream, model: PiModel, options: PiOptions | undefined): Promise<void> {
