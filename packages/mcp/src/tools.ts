@@ -250,7 +250,8 @@ export interface ToolTextContent {
 /** A successful tool result, or a view refusal with `isError`. */
 export interface ToolResult {
   readonly content: readonly ToolTextContent[];
-  readonly structuredContent?: unknown;
+  /** MCP requires an object here, never a list: a list is wrapped as `{ items }`. */
+  readonly structuredContent?: object;
   readonly isError?: true;
 }
 
@@ -275,6 +276,17 @@ export function toolError(message: string): ToolResult {
     content: [text(message)],
     isError: true,
   };
+}
+
+/**
+ * A plugin verb's value as MCP structured content: a plain object as it is,
+ * anything else (a list, a string, a number) wrapped as `{ value }`.
+ */
+function structuredValue(value: unknown): object {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    return value;
+  }
+  return { value };
 }
 
 /**
@@ -331,7 +343,7 @@ export async function runTool(
       );
       return {
         content: [text(pendingMarkdown(shown))],
-        structuredContent: shown,
+        structuredContent: { items: shown },
       };
     }
     case "running": {
@@ -341,7 +353,7 @@ export async function runTool(
       );
       return {
         content: [text(runningMarkdown(running))],
-        structuredContent: running,
+        structuredContent: { items: running },
       };
     }
     case "history": {
@@ -395,7 +407,7 @@ export async function runTool(
         }
         return {
           content: [text(valueText(run.value))],
-          structuredContent: run.value,
+          structuredContent: structuredValue(run.value),
         };
       } catch (error) {
         return toolError(messageOf(error));

@@ -106,7 +106,8 @@ claude --dangerously-load-development-channels server:operad
 The tool table is exported as `TOOLS` from `@operad-io/mcp`; the server serves
 that same table. Every result is a normal MCP tool result with
 `structuredContent` and one text block whose text is the same content as
-Markdown. `next`, when present, is a cursor the caller passes back unchanged.
+Markdown. `structuredContent` is always an object: a list is wrapped as
+`{ "items": [...] }`. `next`, when present, is a cursor the caller passes back unchanged.
 
 ### `list`
 
@@ -190,7 +191,7 @@ Input:
 }
 ```
 
-Result: the same list as `operad pending` and `GET /v1/pending`, with only the
+Result: `{ "items": [...] }`, the same list as `operad pending` and `GET /v1/pending`, with only the
 actions the lead may run now. Each item that is about an object carries its
 `row`, as in `GET /v1/pending`. An action outside `mcp.actions`, or a
 `confirm: true` action that `mcp.confirmActions` does not name, is left out of
@@ -210,7 +211,7 @@ Input:
 }
 ```
 
-Result: the same list as `operad running` and `GET /v1/running`. The Markdown
+Result: `{ "items": [...] }`, the same list as `operad running` and `GET /v1/running`. The Markdown
 is a table of each active run, its flow, step and elapsed time.
 
 ### `history`
@@ -252,6 +253,8 @@ Input:
 ```
 
 Result: the plugin verb's output, the same value `operad <plugin> <verb>` prints.
+A value that is an object is the structured content as it is; any other value
+(a list, a string) is wrapped as `{ "value": ... }`.
 The call builds the CLI's `[plugin, verb, ...args]`, with `input` standing in
 for stdin, so `dev plan add` and `dev task add` take their brief from it. It
 resolves the pair against the loaded plugins, so a plugin verb runs even when
