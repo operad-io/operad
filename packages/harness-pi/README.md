@@ -101,9 +101,29 @@ A flow switches harness by changing `use` from `harness-radian/agent` to
 `harness-pi/agent`; `dev` does it with `worker.use` in `.operad/dev.json`. The
 params, the result names (`done`, `failed`, `interrupted`) and the facts
 (`exitCode`, `signal`, `sessionId`, `finalMessage`, `usage`, `cost`, `log`,
-`durationMs`, `stderr`) are `harness-radian`'s. `args` is accepted and ignored,
-because pi takes no command-line arguments. `sessionId` is the path of pi's
+`durationMs`, `stderr`) are `harness-radian`'s, except `args` (below).
+`sessionId` is the path of pi's
 session file; pass it back as `resumeSession` to continue it.
+
+### Params: `args`
+
+pi takes no command-line arguments, so the step reads two flags from `args`, in
+the spelling `harness-radian` passes to radian. This lets `dev` run the worker
+and the reviewer on different models through the same plugin.
+
+| flag | value | meaning |
+|---|---|---|
+| `--model` | `provider/id` | the model for this step |
+| `--thinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` | the reasoning level for this step |
+
+A flag in `args` wins over the setting of the same meaning (`model`,
+`thinkingLevel`); without the flag the setting applies; without both, pi's own
+default applies and the field is not sent to the worker.
+
+Any other entry fails the step at once, before the worker starts, with result
+`failed`, reason `invalid_args` and a message that names the entry: an unknown
+flag, a flag without its value, a model that is not `provider/id`, an unknown
+level, a flag given twice. Ignoring a flag silently would hide a wrong model.
 
 ### Settings
 
