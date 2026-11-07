@@ -13,7 +13,9 @@ import type {
   PendingItem,
   RunningItem,
   ViewListPage,
+  ViewObject,
   ViewRow,
+  ViewSectionContent,
 } from "@operad-io/engine";
 import { TuiClient } from "./client.ts";
 import { discoverServer } from "./discover.ts";
@@ -21,7 +23,9 @@ import { TuiEvents, type TuiEvent } from "./events.ts";
 import {
   initialState,
   reduce,
+  type TuiObjectRequest,
   type TuiPageRequest,
+  type TuiSectionRequest,
   type TuiState,
   type TuiStateEvent,
   type TuiTheme,
@@ -70,6 +74,18 @@ export interface TuiShellClient {
     cursor?: string,
     signal?: AbortSignal,
   ): Promise<ViewListPage>;
+  /** Optional so an older test client still fits; the object pane needs it. */
+  object?(id: string, signal?: AbortSignal): Promise<ViewObject>;
+  /** Optional so an older test client still fits; the object pane needs it. */
+  section?(
+    id: string,
+    section: string,
+    options?: {
+      readonly cursor?: string | undefined;
+      readonly full?: boolean | undefined;
+      readonly signal?: AbortSignal | undefined;
+    },
+  ): Promise<ViewSectionContent>;
 }
 
 /** The change stream the shell reads; `TuiEvents` has this shape. */
@@ -143,6 +159,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   });
   let finished = false;
   let refreshAbort: AbortController | undefined;
+  let objectAbort: AbortController | undefined;
+  let sectionAbort: AbortController | undefined;
   let refreshTimer: ReturnType<typeof setTimeout> | undefined;
   let events: TuiEventSource | undefined;
   let announce: (code: number) => void = () => undefined;
@@ -158,6 +176,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       refreshTimer = undefined;
     }
     refreshAbort?.abort();
+    objectAbort?.abort();
+    sectionAbort?.abort();
     events?.stop();
     abort.abort();
     deps.onFinish?.();
@@ -180,6 +200,61 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       dispatch({
         type: "page-error",
         tabId: request.tabId,
+        message: messageOf(error),
+        version: request.version,
+      });
+      report(error);
+    }
+  }
+
+  async function loadObject(request: TuiObjectRequest): Promise<void> {
+    const open = client.object;
+    if (open === undefined) return;
+    objectAbort?.abort();
+    const mine = new AbortController();
+    objectAbort = mine;
+    try {
+      const object = await open.call(client, request.id, mine.signal);
+      dispatch({ type: "object", object, version: request.version });
+    } catch (error) {
+      if (mine.signal.aborted) return;
+      dispatch({
+        type: "object-error",
+        id: request.id,
+        message: messageOf(error),
+        version: request.version,
+      });
+      report(error);
+    }
+  }
+
+  async function loadSection(request: TuiSectionRequest): Promise<void> {
+    const load = client.section;
+    if (load === undefined) return;
+    sectionAbort?.abort();
+    const mine = new AbortController();
+    sectionAbort = mine;
+    try {
+      const content = await load.call(client, request.objectId, request.sectionId, {
+        ...(request.cursor === undefined ? {} : { cursor: request.cursor }),
+        ...(request.full ? { full: true } : {}),
+        signal: mine.signal,
+      });
+      dispatch({
+        type: "section",
+        objectId: request.objectId,
+        sectionId: request.sectionId,
+        content,
+        ...(request.cursor === undefined ? {} : { cursor: request.cursor }),
+        full: request.full,
+        version: request.version,
+      });
+    } catch (error) {
+      if (mine.signal.aborted) return;
+      dispatch({
+        type: "section-error",
+        objectId: request.objectId,
+        sectionId: request.sectionId,
         message: messageOf(error),
         version: request.version,
       });
@@ -213,6 +288,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     const signal = mine.signal;
     dispatch({ type: "refresh-start" });
     const generation = state.generation;
+    const objectAtStart = state.object;
     const depths = new Map(
       state.tabs.map((tab) => [tab.id, tab.list.rows.length] as const),
     );
@@ -269,6 +345,61 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         }),
       );
     }
+    const open = state.object;
+    if (
+      open !== undefined &&
+      objectAtStart !== undefined &&
+      open.id === objectAtStart.id &&
+      open.version === objectAtStart.version &&
+      !open.loading &&
+      client.object !== undefined &&
+      !signal.aborted &&
+      !finished
+    ) {
+      const id = open.id;
+      const version = open.version;
+      const result = await settle(client.object(id, signal));
+      if (!signal.aborted && !finished) {
+        if (result.ok) {
+          dispatch({ type: "object", object: result.value, version });
+          const current = state.object;
+          const live =
+            current?.sections.filter(
+              (section) => section.live && section.loaded && !section.loading,
+            ) ?? [];
+          if (client.section !== undefined) {
+            const load = client.section;
+            await Promise.all(
+              live.map(async (section) => {
+                const content = await settle(
+                  load.call(client, current?.id ?? id, section.id, {
+                    ...(section.full ? { full: true } : {}),
+                    signal,
+                  }),
+                );
+                if (signal.aborted || finished || !content.ok) return;
+                dispatch({
+                  type: "section",
+                  objectId: current?.id ?? id,
+                  sectionId: section.id,
+                  content: content.value,
+                  full: section.full,
+                  version: section.version,
+                });
+              }),
+            );
+          }
+        } else {
+          dispatch({
+            type: "object-error",
+            id,
+            message: messageOf(result.error),
+            version,
+          });
+          fail(result.error);
+        }
+      }
+    }
     if (!failed && !signal.aborted && !finished) {
       dispatch({ type: "status", generation });
     }
@@ -291,9 +422,17 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   function dispatch(event: TuiStateEvent): void {
     if (finished) return;
     state = reduce(state, event);
-    // A page is asked for once: the request leaves the state as it is launched.
+    // A request is asked for once: it leaves the state as it is launched.
     const request = state.pageRequest;
     if (request !== undefined) state = reduce(state, { type: "page-launched" });
+    const objectRequest = state.objectRequest;
+    if (objectRequest !== undefined) {
+      state = reduce(state, { type: "object-launched" });
+    }
+    const sectionRequest = state.sectionRequest;
+    if (sectionRequest !== undefined) {
+      state = reduce(state, { type: "section-launched" });
+    }
     const refreshing = state.refreshRequested;
     if (refreshing) state = reduce(state, { type: "refreshed" });
     view.render(state);
@@ -302,6 +441,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       return;
     }
     if (request !== undefined) void loadPage(request);
+    if (objectRequest !== undefined) void loadObject(objectRequest);
+    if (sectionRequest !== undefined) void loadSection(sectionRequest);
     if (refreshing) requestRefresh();
   }
 

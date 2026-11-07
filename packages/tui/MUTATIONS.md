@@ -40,3 +40,15 @@ the row fields.
 | T-0030-M18 | packages/tui/src/state.ts | keys other than `?`, escape and `q` acted on the list hidden behind the key list | `the TUI reducer > ctrl and meta chords are ignored, and only ?, escape and q act while the keys are open` |
 | T-0030-M19 | packages/tui/src/app.ts | a failure while the screen was being set up was thrown, not reported | `runTui > restores the terminal and reports the failure when the view cannot be made` |
 | T-0030-M20 | packages/tui/src/app.ts | the renderer was not remembered for the final cleanup, so a failed setup left it open | `runTui > restores the terminal and reports the failure when the view cannot be made` |
+| T-0031-M1 | packages/tui/src/state.ts | `Enter` returned the state without opening the selected row | `the object pane reducer > Enter opens the selected row and asks for the object` |
+| T-0031-M2 | packages/tui/src/state.ts | `[` and `]` kept the same section instead of moving to another | `the object pane reducer > ] and [ switch the section tabs and load the next one` |
+| T-0031-M3 | packages/tui/src/state.ts | scrolling at the end never asked for the section's `next` page | `the object pane reducer > scrolling at the end asks for the section's next page once` |
+| T-0031-M4 | packages/tui/src/state.ts | `f` required a section that was already full, so a capped section never loaded whole | `the object pane reducer > f loads a capped section with full=true` |
+| T-0031-M5 | packages/tui/src/state.ts | scrolling up left a live section following its end | `the object pane reducer > a live section follows its end, scrolling up stops it and G resumes` |
+| T-0031-M6 | packages/tui/src/state.ts | `G` set the section to its end but never resumed following | `the object pane reducer > a live section follows its end, scrolling up stops it and G resumes` |
+| T-0031-M7 | packages/tui/src/markdown.ts | a diff's added line used the removed colour | `the TUI Markdown > a diff is coloured, a table is aligned and a mermaid block keeps its label` |
+| T-0031-M8 | packages/tui/src/markdown.ts | every Markdown line lost its fenced-code flag | `the TUI Markdown > the engine's lines keep fenced code marked for a monospace client` |
+| T-0031-M9 | packages/tui/src/view/index.ts | a live section's tab lost its dot | `the object pane view > the row, the section tabs and a live dot are in the right pane` |
+| T-0031-M10 | packages/tui/src/app.ts | the shell cleared the object request without launching its fetch | `the TUI object app > Enter fetches the object and its section; a change refreshes both` (timed out after 2000ms) |
+| T-0031-M11 | packages/tui/src/state.ts | the last section page kept the old `next`, so paging never stopped | `the object pane reducer > scrolling at the end asks for the section's next page once` |
+| T-0031-M12 | packages/tui/src/app.ts | a change refreshed the object but not its open live section | `the TUI object app > Enter fetches the object and its section; a change refreshes both` (timed out after 2000ms) |

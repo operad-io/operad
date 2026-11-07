@@ -133,25 +133,40 @@ store and never loads a plugin. It finds the server like this:
 | `http.port` | integer in `config.json` | `7480` | `0` to `65535`; the TUI needs the port `serve` actually uses, so `0` needs `--url`. |
 
 `operad tui` uses the terminal size: at 100 columns or wider the list and the
-object pane sit side by side, and below 100 columns only the list is shown. The
-header counts Pending and Running and then names every object type from
-`/v1/types`. The right pane says `select an object` until the object pane is
-added. A failed request, or a refused event stream such as a wrong token, shows its reason in the footer until a fetch succeeds; the same messages are printed after the screen closes. The list scrolls to keep the cursor in view, and a refresh keeps the selected object when it is still there. Every key the app reads is below.
+object pane sit side by side, and below 100 columns the list fills the screen
+and an open object replaces it until `escape`. The header counts Pending and
+Running and then names every object type from `/v1/types`. The right pane says
+`select an object` until a row is opened. `enter` opens the selected row with
+`GET /v1/objects/<id>`: the pane starts with that row (id, title, state, note
+and mark), then the section tabs in the server's order (History last), then the
+section's Markdown. A live section has a dot on its tab and follows its end
+while the pane is at the bottom (`following`); scrolling up stops following and
+`G` resumes it. A section the server cut at its size cap shows a `Truncated`
+hint and `f` loads the whole section. A failed request, or a refused event
+stream such as a wrong token, shows its reason in the footer until
+a fetch succeeds; the same messages are printed after the screen closes. The
+list scrolls to keep the cursor in view, and a refresh keeps the selected object
+when it is still there. Every key the app reads is below.
 
 | Input | Type | Default | Allowed values |
 |---|---|---|---|
 | `1`–`9` | key | none | The tab with that number. |
 | `tab` | key | none | The next tab. |
 | `shift-tab` | key | none | The previous tab. |
-| `↑` / `↓` | key | none | Move the cursor one row; it loads the next page as it nears the end. |
+| `enter` | key | none | Open the row under the cursor as an object. |
+| `↑` / `↓` | key | none | Move the list cursor one row, or scroll the open section one line; a list loads its next page near the end. |
 | `j` / `k` | key | none | The same as `↓` / `↑`. |
-| `g` | key | none | The first row. |
-| `G` | key | none | The last row. |
-| `r` | key | none | Fetch every list again. |
+| `PgUp` / `PgDn` | key | none | Scroll the open section by one page. At the end it asks the section for its `next` page. |
+| `[` / `]` | key | none | Switch to the previous or next section tab. |
+| `←` / `→` | key | none | The same as `[` / `]`. |
+| `f` | key | none | Load a capped section with `full=true`. |
+| `g` | key | none | The first row, or the top of the open section. |
+| `G` | key | none | The last row, the end of the open section, or resume following a live section. |
+| `r` | key | none | Fetch every list again, and the open object with its live sections. |
 | `?` | key | none | Show or hide the key list. |
 | `q` | key | none | Quit. |
 | `Ctrl-C` | key | none | Quit at once. The terminal restores itself; no other Ctrl or Meta chord does anything. |
-| `escape` | key | none | Close the key list. While it is open only `?`, `escape` and `q` act; the others leave the list alone. |
+| `escape` | key | none | Close the key list, or close the open object. While the key list is open only `?`, `escape` and `q` act; the others leave the list alone. |
 
 ### Endpoints
 
