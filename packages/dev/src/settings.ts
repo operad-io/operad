@@ -19,6 +19,9 @@ import { DevError, isRecord } from "./model.ts";
 /** Where a repository keeps its dev settings. */
 export const DEV_SETTINGS_FILE = ".operad/dev.json";
 
+/** The `$id` of the shipped schema, written as a generated file's `$schema`. */
+export const DEV_SETTINGS_SCHEMA = "https://operad.io/schemas/dev.schema.json";
+
 /** The default location of a repository's worker brief. */
 export const WORKER_BRIEF_FILE = ".operad/worker-brief.md";
 

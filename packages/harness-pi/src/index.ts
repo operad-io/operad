@@ -339,7 +339,7 @@ function resultFor(
     const detail = tail.length === 0 ? "" : `: ${tail}`;
     // A signal nobody here sent (kill -9, an out-of-memory kill) is an
     // interruption of the run, not a verdict of the agent.
-    if (outcome.exitCode === null && outcome.signal !== null) {
+    if (outcome.signal !== null) {
       return failure(who, "interrupted", outcome, result, log, durationMs, {
         reason: "signal",
         message: `the harness was killed by ${outcome.signal} without a Result line${detail}`,

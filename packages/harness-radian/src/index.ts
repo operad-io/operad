@@ -327,7 +327,7 @@ function resultFor(
   }
   if (outcome.exitCode !== 0) {
     const message =
-      outcome.exitCode === null && outcome.signal !== null
+      outcome.signal !== null
         ? `the harness was killed by ${outcome.signal}`
         : `the harness exited ${String(outcome.exitCode)}`;
     return {

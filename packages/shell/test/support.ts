@@ -1,4 +1,4 @@
-import { existsSync, watch } from "node:fs";
+import { existsSync, readFileSync, watch } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Clock } from "@operad-io/engine/platform";
@@ -40,28 +40,85 @@ export function waitForFile(path: string): Promise<void> {
   });
 }
 
+/** True for a pid a test may signal: a finite integer above 1 (never 0, 1 or a group). */
+export function signalable(pid: number | undefined): pid is number {
+  return pid !== undefined && Number.isInteger(pid) && pid > 1;
+}
+
+/**
+ * Resolves with the pid a shell wrote to `path`, once the file holds one. The
+ * file exists, empty, before the shell writes to it, so existence is not enough.
+ */
+export function waitForPid(path: string): Promise<number> {
+  const read = (): number | undefined => {
+    try {
+      const pid = Number(readFileSync(path, "utf8").trim());
+      return signalable(pid) ? pid : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const first = read();
+  if (first !== undefined) return Promise.resolve(first);
+  return new Promise((resolve, reject) => {
+    const watcher = watch(dirname(path), () => {
+      const pid = read();
+      if (pid === undefined) return;
+      watcher.close();
+      resolve(pid);
+    });
+    watcher.on("error", (error) => {
+      watcher.close();
+      reject(error);
+    });
+    const again = read();
+    if (again !== undefined) {
+      watcher.close();
+      resolve(again);
+    }
+  });
+}
+
 export interface ManualClock extends Clock {
   /** Fires every timeout still scheduled; returns how many there were. */
   fireTimeouts(): number;
+  /** Resolves once `predicate` holds; every timer change rechecks it. */
+  when(predicate: () => boolean): Promise<void>;
+  /** How many timeouts are scheduled right now. */
+  readonly pending: number;
   /** How many grace waits were requested. */
   readonly sleeps: number;
 }
 
 /**
  * A clock a test drives: timeouts run only when the test fires them, and a
- * grace wait returns at once. No test waits for real time.
+ * grace wait returns at once. No test waits for real time: a test that needs
+ * to know a timer exists asks `when` and is woken by a timer change.
  */
 export function manualClock(): ManualClock {
   const timers = new Set<{ readonly handler: () => void }>();
+  const waiters: Array<{ readonly predicate: () => boolean; readonly resolve: () => void }> = [];
   let sleeps = 0;
+
+  const notify = (): void => {
+    for (let index = waiters.length - 1; index >= 0; index -= 1) {
+      const waiter = waiters[index];
+      if (waiter === undefined || !waiter.predicate()) continue;
+      waiters.splice(index, 1);
+      waiter.resolve();
+    }
+  };
+
   return {
     setTimeout(handler) {
       const timer = { handler };
       timers.add(timer);
+      notify();
       return timer;
     },
     clearTimeout(handle) {
       timers.delete(handle as { readonly handler: () => void });
+      notify();
     },
     sleep() {
       sleeps += 1;
@@ -71,7 +128,17 @@ export function manualClock(): ManualClock {
       const due = [...timers];
       timers.clear();
       for (const timer of due) timer.handler();
+      notify();
       return due.length;
+    },
+    when(predicate) {
+      if (predicate()) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        waiters.push({ predicate, resolve });
+      });
+    },
+    get pending() {
+      return timers.size;
     },
     get sleeps() {
       return sleeps;

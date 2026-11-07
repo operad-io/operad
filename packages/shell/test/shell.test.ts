@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmod, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
   FilePluginStore,
@@ -19,7 +20,9 @@ import {
   cleanupTempRoots,
   manualClock,
   tempRoot,
+  signalable,
   waitForFile,
+  waitForPid,
 } from "./support.ts";
 
 afterAll(cleanupTempRoots);
@@ -186,8 +189,7 @@ describe("shell/command", () => {
       { runId: "run-cancel", signal: controller.signal },
     );
 
-    await waitForFile(marker);
-    const pid = Number(readFileSync(marker, "utf8").trim());
+    const pid = await waitForPid(marker);
     controller.abort();
 
     const result = await running;
@@ -215,6 +217,21 @@ describe("shell/command", () => {
     expect(tail.join("\n")).toContain("x");
   });
 
+  test("a command that exits 130 keeps the exit code in the fact", async () => {
+    const { registry } = await fixture();
+    const result = await registry.runStep(
+      "shell/command",
+      { line: "exit 130" },
+      { runId: "run-130" },
+    );
+
+    expect(result.result).toBe("fail");
+    const data = dataOf(result);
+    expect(data.exitCode).toBe(130);
+    expect(data.reason).toBe("exit");
+    expect(String(data.message)).toContain("exited 130");
+  });
+
   test("a child that outlives the line is in the group and is stopped", async () => {
     const { root, registry } = await fixture();
     const pidFile = join(root, "child.pid");
@@ -225,31 +242,37 @@ describe("shell/command", () => {
     );
 
     expect(result.result).toBe("pass");
-    const pid = Number(readFileSync(pidFile, "utf8").trim());
+    const pid = await waitForPid(pidFile);
     expect(alive(pid)).toBe(false);
   });
 
   test("a child that leaves the group cannot hold the command open", async () => {
-    const { root, registry } = await fixture();
+    const clock = manualClock();
+    const { root, registry } = await fixture(createShellPlugin({ clock }));
     const pidFile = join(root, "escaped.pid");
-    const started = performance.now();
     // Job control puts the background job in a process group of its own. It
     // keeps the inherited output descriptors and can no longer be signaled
     // through the command's group.
-    const result = await registry.runStep(
+    const running = registry.runStep(
       "shell/command",
       { line: `set -m; sleep 60 & echo $! > '${pidFile}'` },
       { runId: "run-escape" },
     );
-    const elapsed = performance.now() - started;
-    const pid = Number(readFileSync(pidFile, "utf8").trim());
+
+    // The drain grace is the injected clock's timer: the test ends it, so the
+    // run does not wait a real second for the escaped child's descriptors.
+    await clock.when(() => clock.pending > 0);
+    expect(clock.fireTimeouts()).toBe(1);
+
+    const result = await running;
+    const pid = await waitForPid(pidFile);
 
     try {
       expect(result.result).toBe("pass");
       expect(alive(pid)).toBe(true);
-      expect(elapsed).toBeLessThan(10_000);
+      expect(clock.sleeps).toBe(0);
     } finally {
-      process.kill(pid, "SIGKILL");
+      if (signalable(pid) && alive(pid)) process.kill(pid, "SIGKILL");
     }
   });
 
@@ -351,6 +374,46 @@ describe("shell/check", () => {
     expect(readFileSync(String(dataOf(result).log), "utf8")).toContain("a-b");
   });
 
+  test("an abort before the first line is interrupted and leaves a log", async () => {
+    const { registry } = await fixture();
+    const controller = new AbortController();
+    controller.abort();
+    const result = await registry.runStep(
+      "shell/check",
+      { lines: ["true", "echo never"] },
+      { runId: "run-abort", signal: controller.signal },
+    );
+
+    expect(result.result).toBe("interrupted");
+    const data = dataOf(result);
+    expect(data.reason).toBe("cancelled");
+    expect(data.lineNumber).toBe(1);
+    expect(existsSync(String(data.log))).toBe(true);
+    expect(readFileSync(String(data.log), "utf8")).not.toContain("never");
+  });
+
+  test("an abort during a line is interrupted and names it", async () => {
+    const clock = manualClock();
+    const { root, registry } = await fixture(createShellPlugin({ clock }));
+    const marker = join(root, "check-started");
+    const controller = new AbortController();
+    const running = registry.runStep(
+      "shell/check",
+      { lines: [`trap '' TERM; echo $$ > '${marker}'; sleep 30`] },
+      { runId: "run-abort-line", signal: controller.signal },
+    );
+
+    await waitForFile(marker);
+    controller.abort();
+    const result = await running;
+    expect(result.result).toBe("interrupted");
+    const data = dataOf(result);
+    expect(data.reason).toBe("cancelled");
+    expect(data.lineNumber).toBe(1);
+    expect(data.line).toContain("sleep 30");
+    expect(existsSync(String(data.log))).toBe(true);
+  });
+
   test("a cwd that does not exist fails with a clear reason", async () => {
     const { root, registry } = await fixture();
     const result = await registry.runStep(
@@ -365,6 +428,81 @@ describe("shell/check", () => {
 });
 
 describe("shell/probe", () => {
+  test("a cwd that does not exist is interrupted with a clear reason", async () => {
+    const { root, registry } = await fixture();
+    const result = await registry.runStep(
+      "shell/probe",
+      { line: "true", cwd: join(root, "missing") },
+      { runId: "run-probe-cwd" },
+    );
+
+    expect(result.result).toBe("interrupted");
+    const data = dataOf(result);
+    expect(data.reason).toBe("cwd");
+    expect(String(data.message)).toContain("cwd does not exist");
+  });
+
+  test("cancel interrupts a probe", async () => {
+    const clock = manualClock();
+    const { root, registry } = await fixture(createShellPlugin({ clock }));
+    const marker = join(root, "probe-started");
+    const controller = new AbortController();
+    const running = registry.runStep(
+      "shell/probe",
+      { line: `trap '' TERM; echo $$ > '${marker}'; sleep 30` },
+      { runId: "run-probe-cancel", signal: controller.signal },
+    );
+
+    await waitForFile(marker);
+    controller.abort();
+    const result = await running;
+    expect(result.result).toBe("interrupted");
+    expect(dataOf(result).reason).toBe("cancelled");
+  });
+
+  test("a timeout interrupts a probe and says so", async () => {
+    const clock = manualClock();
+    const { root, registry } = await fixture(createShellPlugin({ clock }));
+    const marker = join(root, "probe-timeout");
+    const running = registry.runStep(
+      "shell/probe",
+      { line: `trap '' TERM; echo $$ > '${marker}'; sleep 30`, timeoutSecs: 5 },
+      { runId: "run-probe-timeout" },
+    );
+
+    await waitForFile(marker);
+    expect(clock.fireTimeouts()).toBe(1);
+    const result = await running;
+    expect(result.result).toBe("interrupted");
+    const data = dataOf(result);
+    expect(data.reason).toBe("timeout");
+    expect(String(data.message)).toContain("stopped after 5s");
+  });
+
+  const rootUser = process.getuid?.() === 0;
+  const spawnTest = rootUser ? test.skip : test;
+
+  spawnTest("a spawn failure interrupts a probe and says so", async () => {
+    const { root, registry } = await fixture();
+    const locked = join(root, "locked");
+    await mkdir(locked, { recursive: true });
+    await chmod(locked, 0o000);
+    try {
+      const result = await registry.runStep(
+        "shell/probe",
+        { line: "true", cwd: locked },
+        { runId: "run-probe-spawn" },
+      );
+
+      expect(result.result).toBe("interrupted");
+      const data = dataOf(result);
+      expect(data.reason).toBe("spawn");
+      expect(String(data.message)).toContain("EACCES");
+    } finally {
+      await chmod(locked, 0o700);
+    }
+  });
+
   test("becomes ready when the exit code differs from the previous probe", async () => {
     const { root, registry } = await fixture();
     const flag = join(root, "flag");
@@ -534,8 +672,7 @@ describe("a flow through the runner", () => {
         signal: controller.signal,
       }).run();
 
-      await waitForFile(marker);
-      const pid = Number(readFileSync(marker, "utf8").trim());
+      const pid = await waitForPid(marker);
       controller.abort();
 
       expect(await running).toBe("ended");

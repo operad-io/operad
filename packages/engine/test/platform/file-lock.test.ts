@@ -5,9 +5,10 @@ import {
   readFileSync,
   readdirSync,
   statSync,
+  watch,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -94,6 +95,34 @@ function staleFiles(repositoryPath: string): readonly string[] {
   );
 }
 
+function startPids(resultPath: string): readonly number[] {
+  if (!existsSync(resultPath)) return [];
+  return readFileSync(resultPath, "utf8")
+    .split("\n")
+    .filter((line) => line.startsWith("start "))
+    .map((line) => Number(line.slice("start ".length)))
+    .filter((pid) => Number.isFinite(pid));
+}
+
+/** Resolves with the pid of the `index`th `start` line, without a sleep. */
+function waitForStart(resultPath: string, index: number): Promise<number> {
+  const seen = (): number | undefined => startPids(resultPath)[index];
+  const first = seen();
+  if (first !== undefined) return Promise.resolve(first);
+  return new Promise((resolve, reject) => {
+    const watcher = watch(dirname(resultPath), () => {
+      const pid = seen();
+      if (pid === undefined) return;
+      watcher.close();
+      resolve(pid);
+    });
+    watcher.on("error", (error) => {
+      watcher.close();
+      reject(error);
+    });
+  });
+}
+
 describe("the lock file", () => {
   test("a crash between the tmp write and the link leaves no lock", async () => {
     const { repositoryPath } = await setup();
@@ -133,22 +162,38 @@ describe("the lock file", () => {
         stderr: "pipe",
       }),
     );
-    const codes = await Promise.all(children.map((child) => child.exited));
-    expect(codes).toEqual([0, 0, 0, 0, 0]);
+    try {
+      // Each holder holds the section until the test acknowledges its start:
+      // the test decides the order and the duration, not a fixed sleep.
+      for (let index = 0; index < children.length; index += 1) {
+        const pid = await waitForStart(result, index);
+        writeFileSync(join(root, `go-${pid}`), "");
+      }
+      const codes = await Promise.all(children.map((child) => child.exited));
+      expect(codes).toEqual([0, 0, 0, 0, 0]);
 
-    const lines = readFileSync(result, "utf8").trim().split("\n");
-    expect(lines).toHaveLength(10);
-    let active = 0;
-    for (const line of lines) {
-      if (line.startsWith("start ")) {
-        active += 1;
-        expect(active).toBe(1);
-      } else {
-        active -= 1;
-        expect(active).toBe(0);
+      const lines = readFileSync(result, "utf8").trim().split("\n");
+      expect(lines).toHaveLength(10);
+      let active = 0;
+      for (const line of lines) {
+        if (line.startsWith("start ")) {
+          active += 1;
+          expect(active).toBe(1);
+        } else {
+          active -= 1;
+          expect(active).toBe(0);
+        }
+      }
+      expect(staleFiles(repositoryPath)).toEqual([]);
+    } finally {
+      for (const child of children) {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // The holder already exited.
+        }
       }
     }
-    expect(staleFiles(repositoryPath)).toEqual([]);
   });
 
   test("a newer live lock renamed during a takeover is put back", async () => {

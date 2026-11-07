@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   ConfigError,
@@ -60,6 +60,25 @@ describe("operad config", () => {
     expect(text.store.path).toBe("s");
     const again = await ensureConfig(home);
     expect(again.config.plugins).toEqual(defaultConfig(home).plugins);
+  });
+
+  test("a failed write leaves the existing config whole", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    const written = JSON.stringify({ store: { path: "s" } });
+    await Bun.write(join(home, "config.json"), written);
+    // A directory where the temp file goes makes the write fail.
+    await mkdir(join(home, "config.json.tmp"));
+    await expect(ensureConfig(home)).rejects.toThrow();
+    expect(await readFile(join(home, "config.json"), "utf8")).toBe(written);
+  });
+
+  test("adding the default plugins leaves no temp file behind", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    await Bun.write(join(home, "config.json"), JSON.stringify({ store: { path: "s" } }));
+    await ensureConfig(home);
+    expect(await readdir(home)).toEqual(["config.json"]);
   });
 
   test("init leaves a config that names plugins alone", async () => {
