@@ -8,7 +8,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { Clock } from "../src/process.ts";
+import type { Clock } from "@operad-io/harness-process";
 
 const roots: string[] = [];
 
