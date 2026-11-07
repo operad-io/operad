@@ -628,3 +628,9 @@
 | bun-fd-guard-M1 | packages/harness-radian/src/process.ts | the old code: the sentinel's `stdio` had a fourth pipe and the harness stderr went to `child.stdio[3]` | `harness process descriptors > running 30 harness commands next to open databases never closes a descriptor twice` (child exits 137, 3 of 3 runs) |
 | bun-fd-guard-M2 | packages/harness-radian/src/process.ts | the stderr tail was not read back from the file (`stderrTail.push("")`) | `harness process descriptors > running 30 harness commands next to open databases never closes a descriptor twice` (tails `[""]` instead of `["oops"]`) |
 | bun-fd-guard-M3 | packages/harness-radian/src/process.ts | the fixed code with `stdio` set back to four pipes, the fourth one unused | `harness process descriptors > running 30 harness commands next to open databases never closes a descriptor twice` (child exits 137) |
+
+## T-0019-http-api — rework 2: the cancel test waits on no real timer
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0019-http-api-M9 | packages/shell/src/process.ts | the stop skipped its grace SIGKILL, so a line that ignores SIGTERM kept the group alive | `shell/command > cancel stops the process group and reports interrupted` (timed out after 5000ms) |
