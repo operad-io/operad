@@ -41,9 +41,11 @@ export { DRAIN_GRACE_MS, KILL_GRACE_MS, lastLines, systemClock, type Clock } fro
  * with the JSONL on stdout or the control lines. A reader that does not know a
  * line ignores it.
  *
- * The sentinel watches the process that started it (`$2`): if the host is
- * killed before it can stop the group, the sentinel ends instead of looping
- * forever over a line nobody is waiting for.
+ * The sentinel watches the process that started it (`$2`), from a helper that
+ * runs beside the harness: if the host is killed before it can stop the group,
+ * the helper kills the whole group, harness included, instead of leaving both
+ * running for a host that is gone. The check cannot wait for the harness to
+ * end, because the harness may be the thing that never does.
  *
  * The file replaces a fourth pipe. Bun closes an extra pipe (stdio index 3 and
  * up) of a child process twice, once when its stream ends and once when the
@@ -52,14 +54,16 @@ export { DRAIN_GRACE_MS, KILL_GRACE_MS, lastLines, systemClock, type Clock } fro
  */
 const SENTINEL = [
   "trap ':' TERM",
+  'parent=$2',
+  // The helper's output goes nowhere, so it never holds the control pipe open.
+  '( while kill -0 "$parent" 2>/dev/null; do sleep 1; done; kill -KILL -- "-$$" ) >/dev/null 2>&1 &',
   "printf 'ready\\n' >&2",
   'err=$1',
-  'parent=$2',
   "shift 2",
   '"$@" 2>"$err"',
   "status=$?",
   "printf 'end %s\\n' \"$status\" >&2",
-  'while kill -0 "$parent" 2>/dev/null; do sleep 1; done',
+  'while kill -0 "$parent" 2>/dev/null; do sleep 1 2>/dev/null; done',
 ].join("\n");
 
 /**

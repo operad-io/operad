@@ -20,7 +20,9 @@ import {
   cleanupTempRoots,
   manualClock,
   tempRoot,
+  signalable,
   waitForFile,
+  waitForPid,
 } from "./support.ts";
 
 afterAll(cleanupTempRoots);
@@ -181,8 +183,7 @@ describe("shell/command", () => {
       { runId: "run-cancel", signal: controller.signal },
     );
 
-    await waitForFile(marker);
-    const pid = Number(readFileSync(marker, "utf8").trim());
+    const pid = await waitForPid(marker);
     controller.abort();
 
     const result = await running;
@@ -235,7 +236,7 @@ describe("shell/command", () => {
     );
 
     expect(result.result).toBe("pass");
-    const pid = Number(readFileSync(pidFile, "utf8").trim());
+    const pid = await waitForPid(pidFile);
     expect(alive(pid)).toBe(false);
   });
 
@@ -258,15 +259,14 @@ describe("shell/command", () => {
     expect(clock.fireTimeouts()).toBe(1);
 
     const result = await running;
-    const pid = Number(readFileSync(pidFile, "utf8").trim());
+    const pid = await waitForPid(pidFile);
 
     try {
       expect(result.result).toBe("pass");
-      expect(pid).toBeGreaterThan(0);
       expect(alive(pid)).toBe(true);
       expect(clock.sleeps).toBe(0);
     } finally {
-      if (pid > 0 && alive(pid)) process.kill(pid, "SIGKILL");
+      if (signalable(pid) && alive(pid)) process.kill(pid, "SIGKILL");
     }
   });
 
@@ -666,8 +666,7 @@ describe("a flow through the runner", () => {
         signal: controller.signal,
       }).run();
 
-      await waitForFile(marker);
-      const pid = Number(readFileSync(marker, "utf8").trim());
+      const pid = await waitForPid(marker);
       controller.abort();
 
       expect(await running).toBe("ended");

@@ -185,3 +185,4 @@ the row fields.
 | T-0021-M11 | packages/engine/src/runner/limits.ts | a `step_queued` after a `step_released` for the same effect was ignored again | `step limits after a released place > a step queued again after its release gets a place` |
 | TK0009-M11 | `packages/engine/src/platform/process-group.ts` | the shell's own exit replaced the status in its end record when the exit event came first | `a line's end record > a status the shell wrote survives the shell's exit arriving first` |
 | TK0009-M12 | `packages/engine/src/platform/process-group.ts` | the sentinel did not watch its host while the line ran | `the sentinel's host > a line still running when its host dies is stopped with its sentinel` |
+| TK0009-M13 | `packages/engine/src/platform/process-group.ts` | a control pipe that closed while the sentinel lived was followed by a wait for the sentinel's exit with no stop | `a control pipe that closes early > the group is stopped instead of waited for` |

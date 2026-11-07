@@ -550,6 +550,9 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
   let exit: Exit;
   if (ended.kind === "end") exit = ended.exit;
   else {
+    // A control pipe that closed with the sentinel still alive leaves nothing
+    // that would end it: stop the group before waiting for an exit.
+    if (ended.kind === "closed") await stop();
     // The shell's exit event can arrive before the end record it wrote has been
     // read. The record holds the line's own status, so read the pipe to its
     // close before settling for the shell's exit: a deliberate nonzero status

@@ -48,6 +48,45 @@ function waitForFile(path: string): Promise<void> {
   });
 }
 
+/** True for a pid a test may signal: a finite integer above 1 (never 0, 1 or a group). */
+function signalable(pid: number | undefined): pid is number {
+  return pid !== undefined && Number.isInteger(pid) && pid > 1;
+}
+
+/**
+ * Resolves with the pid a shell wrote to `path`, once the file holds one. The
+ * file exists, empty, before the shell writes to it, so existence is not enough.
+ */
+function waitForPid(path: string): Promise<number> {
+  const read = (): number | undefined => {
+    try {
+      const pid = Number(readFileSync(path, "utf8").trim());
+      return signalable(pid) ? pid : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const first = read();
+  if (first !== undefined) return Promise.resolve(first);
+  return new Promise((resolve, reject) => {
+    const watcher = watch(dirname(path), () => {
+      const pid = read();
+      if (pid === undefined) return;
+      watcher.close();
+      resolve(pid);
+    });
+    watcher.on("error", (error) => {
+      watcher.close();
+      reject(error);
+    });
+    const again = read();
+    if (again !== undefined) {
+      watcher.close();
+      resolve(again);
+    }
+  });
+}
+
 interface ManualClock extends Clock {
   /** How many grace waits were requested. */
   readonly sleeps: number;
@@ -213,7 +252,7 @@ describe("process groups", () => {
     });
 
     expect(outcome.exitCode).toBe(0);
-    const pid = Number(readFileSync(pidFile, "utf8").trim());
+    const pid = await waitForPid(pidFile);
     expect(alive(pid)).toBe(false);
   });
 
@@ -255,8 +294,7 @@ describe("process groups", () => {
 
     let sentinelPid: number | undefined;
     try {
-      await waitForFile(sentinelFile);
-      sentinelPid = Number(readFileSync(sentinelFile, "utf8").trim());
+      sentinelPid = await waitForPid(sentinelFile);
       controller.abort();
 
       // Wait for the line's own shell to report the TERM. The signal is only
@@ -272,7 +310,7 @@ describe("process groups", () => {
     } finally {
       releaseGrace?.();
       await running.catch(() => undefined);
-      if (sentinelPid !== undefined && alive(sentinelPid)) {
+      if (signalable(sentinelPid) && alive(sentinelPid)) {
         try {
           process.kill(-sentinelPid, "SIGKILL");
         } catch {
@@ -327,7 +365,7 @@ describe("process groups", () => {
     // announced `ready`; the signal that follows the announcement reaches a
     // sentinel that ignores it.
     expect(signals.every((entry) => entry.ready)).toBe(true);
-    const sentinelPid = Number(readFileSync(sentinelFile, "utf8").trim());
+    const sentinelPid = await waitForPid(sentinelFile);
     expect(alive(sentinelPid)).toBe(false);
   });
 
@@ -417,6 +455,23 @@ describe("a line's end record", () => {
   });
 });
 
+describe("a control pipe that closes early", () => {
+  test("the group is stopped instead of waited for", async () => {
+    // The sentinel closes its end of the pipe after `ready` and keeps running.
+    const script = ["printf 'ready\\n' >&2", "exec 2>&-", "sleep 30"].join("\n");
+    const root = await tempRoot();
+    const outcome = await runLine({
+      line: "true",
+      cwd: root,
+      signal: new AbortController().signal,
+      clock: manualClock(),
+      sentinelScript: script,
+    });
+    expect(outcome.spawnError).toBeUndefined();
+    expect(outcome.cancelled).toBe(false);
+  }, 10_000);
+});
+
 describe("the sentinel's host", () => {
   test("a line still running when its host dies is stopped with its sentinel", async () => {
     const root = await tempRoot();
@@ -433,10 +488,8 @@ describe("the sentinel's host", () => {
     let sentinelPid = 0;
     let linePid = 0;
     try {
-      await waitForFile(`${pidFile}.line`);
-      await waitForFile(pidFile);
-      sentinelPid = Number(readFileSync(pidFile, "utf8").trim());
-      linePid = Number(readFileSync(`${pidFile}.line`, "utf8").trim());
+      linePid = await waitForPid(`${pidFile}.line`);
+      sentinelPid = await waitForPid(pidFile);
       // We started this host, so its death is ours to cause.
       process.kill(child.pid, "SIGKILL");
       await child.exited;
@@ -449,7 +502,7 @@ describe("the sentinel's host", () => {
       } catch {
         // The host is gone.
       }
-      if (sentinelPid > 0 && alive(sentinelPid)) {
+      if (signalable(sentinelPid) && alive(sentinelPid)) {
         try {
           process.kill(-sentinelPid, "SIGKILL");
         } catch {
@@ -473,15 +526,13 @@ describe("the sentinel's host", () => {
     });
     let sentinelPid: number | undefined;
     try {
-      await waitForFile(pidFile);
-      sentinelPid = Number(readFileSync(pidFile, "utf8").trim());
+      sentinelPid = await waitForPid(pidFile);
       // We started this host, so its death is ours to cause.
       process.kill(child.pid, "SIGKILL");
       await child.exited;
       // The line can now finish; the sentinel must not outlive its host.
       writeFileSync(release, "go");
       await waitUntil(() => sentinelPid === undefined || !alive(sentinelPid));
-      expect(sentinelPid > 0).toBe(true);
       expect(alive(sentinelPid)).toBe(false);
     } finally {
       try {
@@ -494,7 +545,7 @@ describe("the sentinel's host", () => {
       } catch {
         // The host is gone.
       }
-      if (sentinelPid !== undefined && sentinelPid > 0 && alive(sentinelPid)) {
+      if (signalable(sentinelPid) && alive(sentinelPid)) {
         try {
           process.kill(-sentinelPid, "SIGKILL");
         } catch {

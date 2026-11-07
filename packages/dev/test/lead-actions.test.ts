@@ -29,8 +29,8 @@ const CHILD = fileURLToPath(
   new URL("./fixtures/lead-action-child.ts", import.meta.url),
 );
 
-/** Reads one line at a time from a child's stdout. */
-function lines(stream: ReadableStream<Uint8Array>): () => Promise<string> {
+/** Reads one line at a time from a child's stdout; undefined once it ends. */
+function lines(stream: ReadableStream<Uint8Array>): () => Promise<string | undefined> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -44,6 +44,7 @@ function lines(stream: ReadableStream<Uint8Array>): () => Promise<string> {
       }
       const { value, done } = await reader.read();
       if (done) {
+        if (buffer.length === 0) return undefined;
         const line = buffer;
         buffer = "";
         return line;
@@ -357,7 +358,7 @@ describe("dev:rework and dev:reverify", () => {
         const rest: string[] = [];
         for (;;) {
           const line = await next();
-          if (line.length === 0) break;
+          if (line === undefined) break;
           rest.push(line);
         }
         return rest.at(-1) ?? "";

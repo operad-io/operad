@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, watch } from "node:fs";
+import { existsSync, readFileSync, watch } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { runAgent, type Clock } from "../src/index.ts";
 
 const roots: string[] = [];
@@ -107,7 +108,90 @@ function alive(pid: number): boolean {
   }
 }
 
+/** True for a pid a test may signal: a finite integer above 1. */
+function signalable(pid: number | undefined): pid is number {
+  return pid !== undefined && Number.isInteger(pid) && pid > 1;
+}
+
+/** Resolves with the pid a shell wrote to `path`; the file starts out empty. */
+function waitForPid(path: string): Promise<number> {
+  const read = (): number | undefined => {
+    try {
+      const pid = Number(readFileSync(path, "utf8").trim());
+      return signalable(pid) ? pid : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const first = read();
+  if (first !== undefined) return Promise.resolve(first);
+  return new Promise((resolve, reject) => {
+    const watcher = watch(dirname(path), () => {
+      const pid = read();
+      if (pid === undefined) return;
+      watcher.close();
+      resolve(pid);
+    });
+    watcher.on("error", (error) => {
+      watcher.close();
+      reject(error);
+    });
+    const again = read();
+    if (again !== undefined) {
+      watcher.close();
+      resolve(again);
+    }
+  });
+}
+
+/** A bounded poll for a process to go; there is no event for another's death. */
+async function waitUntil(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("timed out waiting for a condition");
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 20));
+  }
+}
+
 describe("the harness process", () => {
+  test("a harness still running when its host dies is stopped with its sentinel", async () => {
+    const root = await tempRoot();
+    const pidFile = join(root, "harness.pid");
+    const fixture = fileURLToPath(
+      new URL("./fixtures/run-agent-orphan.ts", import.meta.url),
+    );
+    const host = Bun.spawn({
+      cmd: [process.execPath, fixture, root, pidFile],
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    let sentinelPid: number | undefined;
+    let harnessPid: number | undefined;
+    try {
+      harnessPid = await waitForPid(pidFile);
+      sentinelPid = await waitForPid(`${pidFile}.sentinel`);
+      // We started this host, so its death is ours to cause.
+      process.kill(host.pid, "SIGKILL");
+      await host.exited;
+      await waitUntil(() => !alive(sentinelPid ?? 0) && !alive(harnessPid ?? 0));
+      expect(alive(sentinelPid)).toBe(false);
+      expect(alive(harnessPid)).toBe(false);
+    } finally {
+      try {
+        process.kill(host.pid, "SIGKILL");
+      } catch {
+        // The host is gone.
+      }
+      if (signalable(sentinelPid) && alive(sentinelPid)) {
+        try {
+          process.kill(-sentinelPid, "SIGKILL");
+        } catch {
+          // The group ended after all.
+        }
+      }
+    }
+  }, 20_000);
+
   test("a child that leaves the group cannot hold the run open", async () => {
     const root = await tempRoot();
     const pidFile = join(root, "escaped.pid");
@@ -128,15 +212,14 @@ describe("the harness process", () => {
     expect(clock.fireTimers()).toBe(1);
 
     const outcome = await running;
-    const pid = Number((await Bun.file(pidFile).text()).trim());
+    const pid = await waitForPid(pidFile);
     try {
       expect(outcome.exitCode).toBe(0);
-      expect(pid).toBeGreaterThan(0);
       expect(alive(pid)).toBe(true);
       // A finished command is stopped directly, without the KILL grace.
       expect(clock.sleeps).toBe(0);
     } finally {
-      if (pid > 0 && alive(pid)) process.kill(pid, "SIGKILL");
+      if (signalable(pid) && alive(pid)) process.kill(pid, "SIGKILL");
     }
   });
 });
