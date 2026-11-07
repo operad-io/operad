@@ -243,4 +243,49 @@ describe("the object pane reducer", () => {
     expect(state.object).toBeUndefined();
     expect(state.objectRequest).toBeUndefined();
   });
+
+  test("an object answer after escape does not reopen the pane", () => {
+    let state = opened();
+    state = reduce(state, { type: "key", key: "escape" });
+    state = reduce(state, {
+      type: "object",
+      object: viewObject("one"),
+      version: 1,
+    });
+    expect(state.object).toBeUndefined();
+  });
+
+  test("a stale answer for the previous object keeps the newly opened one", () => {
+    let state = reduce(initialState({ width: 120, height: 20 }), {
+      type: "types",
+      types: TYPES,
+    });
+    state = reduce(state, {
+      type: "page",
+      tabId: "type:item",
+      replace: true,
+      page: { rows: [row("one"), row("two")] },
+    });
+    state = reduce(state, { type: "key", key: "3" });
+    state = reduce(state, { type: "key", key: "enter" });
+    state = reduce(state, {
+      type: "object",
+      object: viewObject("one"),
+      version: 1,
+    });
+    const staleVersion = state.object?.version ?? 0;
+
+    state = reduce(state, { type: "key", key: "escape" });
+    state = reduce(state, { type: "key", key: "down" });
+    state = reduce(state, { type: "key", key: "enter" });
+    expect(state.objectRequest?.id).toBe("two");
+
+    state = reduce(state, {
+      type: "object",
+      object: viewObject("one"),
+      version: staleVersion,
+    });
+    expect(state.object?.id).toBe("two");
+    expect(state.object?.loading).toBe(true);
+  });
 });

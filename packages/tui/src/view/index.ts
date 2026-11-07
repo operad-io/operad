@@ -20,6 +20,7 @@ import {
   activeTab,
   footerText,
   listWindow,
+  sectionViewport,
   statusText,
   rowMark,
   tabLabel,
@@ -245,10 +246,7 @@ function sectionContent(
   if (!section.loaded) {
     return [chunk(section.loading ? "loading…" : "not loaded", palette.weak)];
   }
-  const viewport = Math.max(
-    1,
-    state.height - 3 - (twoPane(state) ? 4 : 0) - 3,
-  );
+  const viewport = sectionViewport(state);
   const lines = markdownLines(section.markdown, palette);
   const start = Math.min(
     Math.max(0, section.scroll),
@@ -382,15 +380,18 @@ export function createTuiView(ctx: CliRenderer): TuiView {
           : styled([chunk(status, palette.error)]);
 
       listPane.width = wide ? "40%" : "100%";
-      rightPane.visible = wide;
-      rightPane.borderColor = palette.weak;
 
       const keys = state.keys;
       const object = state.object;
+      // On a narrow screen the open object fills the body in the same wrapping
+      // text renderable the right pane uses; the list's renderable truncates.
+      const showObject = object !== undefined && !keys;
+      listPane.visible = wide || !showObject;
+      rightPane.visible = wide || showObject;
+      rightPane.borderColor = palette.weak;
+
       if (keys && !wide) {
         list.content = keyContent(palette);
-      } else if (!wide && object !== undefined) {
-        list.content = objectContent(state, palette);
       } else {
         // The header, the tab line and the footer take three lines.
         list.content = listContent(tab, palette, state.height - 3);

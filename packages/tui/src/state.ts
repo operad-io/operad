@@ -140,6 +140,8 @@ export interface TuiState {
   readonly pageRequest?: TuiPageRequest | undefined;
   /** The open object, if any. */
   readonly object?: TuiObject | undefined;
+  /** The version of the next open; it never restarts, even after a close. */
+  readonly objectVersion: number;
   /** Set when a row is opened and the caller must fetch the object. */
   readonly objectRequest?: TuiObjectRequest | undefined;
   /** Set when a section must be fetched. */
@@ -205,6 +207,7 @@ export function initialState(options: TuiStateOptions = {}): TuiState {
     keys: false,
     quit: false,
     refreshRequested: false,
+    objectVersion: 0,
     generation: 0,
   };
 }
@@ -418,7 +421,12 @@ export function markdownLineCount(markdown: string): number {
 /** How many Markdown lines fit under the object's row and section tabs. */
 export function sectionViewport(state: TuiState): number {
   const body = Math.max(1, state.height - 3);
-  const inner = twoPane(state) ? Math.max(1, body - 4) : body;
+  // The object pane has a border and padding whether it sits beside the list or
+  // fills the body on a narrow screen.
+  const inner =
+    twoPane(state) || state.object !== undefined
+      ? Math.max(1, body - 4)
+      : body;
   return Math.max(1, inner - 3);
 }
 
@@ -543,7 +551,7 @@ function openObject(state: TuiState): TuiState {
   const row = tab?.list.rows[tab.list.cursor];
   if (row === undefined) return state;
   const previous = state.object?.id === row.id ? state.object : undefined;
-  const version = (previous?.version ?? 0) + 1;
+  const version = state.objectVersion + 1;
   const object: TuiObject = {
     id: row.id,
     type: previous?.type ?? (row.id.includes(":") ? row.id.slice(0, row.id.indexOf(":")) : row.id),
@@ -557,6 +565,7 @@ function openObject(state: TuiState): TuiState {
   return {
     ...state,
     object,
+    objectVersion: version,
     objectRequest: { id: row.id, version },
     sectionRequest: undefined,
   };
@@ -578,9 +587,10 @@ function applyObject(
   version: number | undefined,
 ): TuiState {
   const previous = state.object;
+  // A pane that was closed stays closed: a late answer never reopens it.
+  if (previous === undefined) return state;
   if (
     version !== undefined &&
-    previous !== undefined &&
     version !== previous.version
   ) {
     return state;

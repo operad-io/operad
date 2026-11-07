@@ -90,6 +90,27 @@ describe("the object pane view", () => {
     }
   });
 
+  test("a narrow screen wraps the object's long lines instead of clipping them", async () => {
+    const setup = await createTestRenderer({ width: 80, height: 20 });
+    const tail = "the-tail-of-a-long-line";
+    try {
+      const view = createTuiView(setup.renderer);
+      let state: TuiState = { ...opened(), width: 80 };
+      state = reduce(state, {
+        type: "section",
+        objectId: "one",
+        sectionId: "info",
+        content: { markdown: `${"wide ".repeat(40)}${tail}` },
+      });
+      view.render(state);
+      await setup.renderOnce();
+      expect(setup.captureCharFrame()).toContain(tail);
+      view.destroy();
+    } finally {
+      await setup.dispose();
+    }
+  });
+
   test("a live section says following at its end and not after scrolling up", async () => {
     const setup = await createTestRenderer({ width: 120, height: 20 });
     try {
