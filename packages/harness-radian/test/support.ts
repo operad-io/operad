@@ -152,6 +152,21 @@ export function waitForFile(path: string): Promise<void> {
   });
 }
 
+/** Resolves when `predicate` holds, without waiting out a fixed sleep. */
+export async function waitUntil(
+  predicate: () => boolean,
+  timeoutMs = 2000,
+  stepMs = 10,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) {
+      throw new Error("timed out waiting for a condition");
+    }
+    await new Promise((resolve) => globalThis.setTimeout(resolve, stepMs));
+  }
+}
+
 export interface ManualClock extends Clock {
   /** Fires every timeout whose requested delay is at most `maxMs`. */
   fireUpTo(maxMs?: number): number;

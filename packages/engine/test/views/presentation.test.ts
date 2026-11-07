@@ -260,13 +260,22 @@ describe("presentation views", () => {
     ).rejects.toMatchObject({
       kind: "confirm",
     });
+    await expect(
+      views.act("demo:drop", "item:two", { actor: ACTOR }),
+    ).rejects.toThrow(/pass --yes/);
+    await expect(
+      views.act("demo:drop", "item:two", {
+        actor: ACTOR,
+        surface: "http",
+      }),
+    ).rejects.toThrow(/"confirmed": true/);
     await views.act("demo:drop", "item:two", { yes: true, actor: ACTOR });
     expect(store.get("item", "two")?.data.dropped).toBe(true);
 
     await expect(
       views.act("demo:hidden", "item:one", { actor: ACTOR }),
     ).rejects.toMatchObject({
-      kind: "action",
+      kind: "not-available",
     });
     views.close();
     await log.close();

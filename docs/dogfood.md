@@ -185,21 +185,48 @@ still merged; remove the leftover with the command the line names.
 
 ## Using pi as the worker
 
-`harness-pi` runs the pi coding agent instead of radian. Turn it on, then name
-it in `.operad/dev.json`:
+`harness-pi` runs the pi coding agent instead of radian. It is not in the
+default config, so turn it on first. This makes the next command load it:
 
 ```sh
 operad plugin enable harness-pi
 ```
 
+**Log in to pi.** Run `pi` and type `/login`, then pick the provider. operad
+uses your own pi login: the credentials file `~/.pi/agent/auth.json` (set
+`authPath` in the plugin's settings for another file). operad never reads the
+file; it hands the path to pi. pi and operad may refresh the same login at once;
+pi locks the file for that.
+
+**Which model.** The model is pi's own default model, the one `pi` starts with
+for you, unless the plugin's `model` setting (`provider/id`) names one.
+`thinkingLevel` works the same way. The custom-models file is
+`~/.pi/agent/models.json` (`modelsPath`).
+
+**Where the sessions are.** Session files are in `~/.operad/harness/pi/sessions`,
+apart from your own pi sessions, so `pi --continue` does not see them.
+
+**Switch the worker and the reviewer.** In `.operad/dev.json` change `worker.use`
+(and `reviewer.use` if you want pi to review too). radian's flags are for radian;
+pi reads only `--model <provider/id>` and `--thinking <level>` from `args`, and a
+flag there wins over the plugin setting of the same meaning. Any other entry
+fails the step with `invalid_args`. For example, the worker on one model and the
+reviewer on another:
+
 ```json
-{ "worker": { "use": "harness-pi/agent", "args": [] } }
+{
+  "worker":   { "use": "harness-pi/agent", "args": ["--model", "opencode-go/deepseek-v4.1-flash"] },
+  "reviewer": { "use": "harness-pi/agent", "args": ["--model", "openai-codex/gpt-5.6-terra", "--thinking", "medium"] }
+}
 ```
 
-It uses your own pi login: the credentials file `~/.pi/agent/auth.json` (set
-`authPath` in the plugin's settings for another file). Log in once with `pi`
-itself; operad never reads the file, it hands the path to pi. The model is pi's
-default model unless the plugin's `model` setting (`provider/id`) names one.
-Session files are in `~/.operad/harness/pi/sessions`, apart from your own pi
-sessions. The settings, the step's results and the model-error rules are in
+`reviewer.fallback.args` and `reviewer.firstArgs` follow the same rules when
+their harness is pi.
+
+**Switch back.** Put `worker` in `.operad/dev.json` back to
+`"use": "harness-radian/agent"` with its `args` (`--provider`, `--model`). You do
+not need to disable `harness-pi`; `operad plugin disable harness-pi` removes it
+if you want.
+
+The settings, the step's results and the model-error rules are in
 `packages/harness-pi/README.md`.

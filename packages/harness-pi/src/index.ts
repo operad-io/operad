@@ -31,7 +31,7 @@ import {
   type Clock,
   type ToolEvent,
 } from "@operad-io/harness-process";
-import { THINKING_LEVELS, type WorkerResult } from "./protocol.ts";
+import { THINKING_LEVELS, type WorkerResult, type WorkerThinkingLevel } from "./protocol.ts";
 
 /** How long an agent may run before the step stops it. */
 export const DEFAULT_WALL_TIME_SECS = 3600;
@@ -150,11 +150,55 @@ function secs(value: unknown, at: string): number {
   return value;
 }
 
-function stringList(value: unknown, at: string): void {
-  if (value === undefined) return;
+function stringList(value: unknown, at: string): readonly string[] {
+  if (value === undefined) return [];
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
     throw new Error(`${at}: must be an array of strings`);
   }
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+/** What `args` of the step may set. */
+interface StepFlags {
+  readonly model?: string;
+  readonly thinkingLevel?: WorkerThinkingLevel;
+}
+
+/**
+ * Reads `--model <provider/id>` and `--thinking <level>` from the step's
+ * `args`, the spelling `harness-radian` takes. Anything else is an error
+ * message naming the entry: a flag silently ignored would hide a wrong model.
+ */
+function parseStepFlags(args: readonly string[]): StepFlags | string {
+  let model: string | undefined;
+  let thinkingLevel: WorkerThinkingLevel | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const entry = args[index] ?? "";
+    if (entry !== "--model" && entry !== "--thinking") {
+      return `args: unknown entry "${entry}"; expected --model <provider/id> or --thinking <level>`;
+    }
+    const value = args[index + 1];
+    if (value === undefined) return `args: "${entry}" has no value`;
+    index += 1;
+    if (entry === "--model") {
+      if (model !== undefined) return `args: "--model" is given twice`;
+      if (!/^[^/\s]+\/\S+$/.test(value)) {
+        return `args: "--model ${value}": the value must be provider/id`;
+      }
+      model = value;
+    } else {
+      if (thinkingLevel !== undefined) return `args: "--thinking" is given twice`;
+      const known = THINKING_LEVELS.find((level) => level === value);
+      if (known === undefined) {
+        return `args: "--thinking ${value}": the value must be one of ${THINKING_LEVELS.join(", ")}`;
+      }
+      thinkingLevel = known;
+    }
+  }
+  return {
+    ...(model === undefined ? {} : { model }),
+    ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
+  };
 }
 
 /** Expands a leading `~` to the user's home directory. */
@@ -376,9 +420,29 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           const note = eventNote(ctx.trigger);
           const promptWithNote = note === undefined ? prompt : `${prompt}\n\n${note}`;
           const cwd = text(input.cwd ?? flow.cwd, `${at}: params.cwd`);
-          // pi has no command-line arguments; the list is accepted so a flow
-          // written for another harness keeps its params.
-          stringList(input.args === undefined ? flow.args : input.args, `${at}: params.args`);
+          const flags = parseStepFlags(
+            stringList(input.args === undefined ? flow.args : input.args, `${at}: params.args`),
+          );
+          if (typeof flags === "string") {
+            const message = `${at}: ${flags}`;
+            const log = await ctx.logger.write(message);
+            return {
+              result: "failed",
+              data: {
+                reason: "invalid_args",
+                message,
+                exitCode: null,
+                signal: null,
+                sessionId: null,
+                finalMessage: null,
+                usage: {},
+                cost: null,
+                log,
+                durationMs: 0,
+                stderr: [message],
+              },
+            };
+          }
           const resumeSession = optionalText(input.resumeSession, `${at}: params.resumeSession`);
           const wallTimeSecs = secs(
             input.wallTimeSecs ?? ctx.settings.wallTimeSecs ?? DEFAULT_WALL_TIME_SECS,
@@ -391,11 +455,11 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             input.stallSecs ?? ctx.settings.stallSecs ?? DEFAULT_STALL_SECS,
             `${at}: params.stallSecs`,
           );
-          const model = optionalText(ctx.settings.model, `${at}: settings.model`);
-          const thinkingLevel = optionalText(
-            ctx.settings.thinkingLevel,
-            `${at}: settings.thinkingLevel`,
-          );
+          const model =
+            flags.model ?? optionalText(ctx.settings.model, `${at}: settings.model`);
+          const thinkingLevel =
+            flags.thinkingLevel ??
+            optionalText(ctx.settings.thinkingLevel, `${at}: settings.thinkingLevel`);
           const authPath = expandHome(
             text(ctx.settings.authPath ?? DEFAULT_AUTH_PATH, `${at}: settings.authPath`),
           );

@@ -55,6 +55,25 @@ function alive(pid: number): boolean {
   }
 }
 
+/**
+ * Waits for an observable condition with a bounded poll. Only the tests that
+ * exercise a real signal use it: the sentinel's `ready` arrival, the death of
+ * a line the stop killed, and a delayed sentinel are events, not fixed sleeps.
+ */
+async function waitUntil(
+  predicate: () => boolean,
+  timeoutMs = 2000,
+  stepMs = 20,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) {
+      throw new Error("timed out waiting for a condition");
+    }
+    await new Promise((resolve) => globalThis.setTimeout(resolve, stepMs));
+  }
+}
+
 describe("shell/command", () => {
   test("runs a line and keeps its output in a file", async () => {
     const { registry } = await fixture();
@@ -149,7 +168,9 @@ describe("shell/command", () => {
 
   test("cancel stops the process group and reports interrupted", async () => {
     // The grace is injected: the stop sends its SIGTERM and its SIGKILL, but
-    // the test does not wait out the production 500 ms first.
+    // the test does not wait out the production 500 ms first. A real timer
+    // here left the test at the edge of the default timeout under a loaded
+    // suite. The sentinel's survival of the SIGTERM has its own test.
     const clock = manualClock();
     const { root, registry } = await fixture(createShellPlugin({ clock }));
     const marker = join(root, "started");
@@ -167,6 +188,9 @@ describe("shell/command", () => {
     const result = await running;
     expect(result.result).toBe("interrupted");
     expect(dataOf(result).reason).toBe("cancelled");
+    // The SIGKILL reaches the whole group but the kernel takes the processes
+    // down asynchronously: wait for the pid to go instead of sampling it once.
+    await waitUntil(() => !alive(pid));
     expect(alive(pid)).toBe(false);
   });
 

@@ -28,6 +28,7 @@ import {
   tempRoot,
   tempRoots,
   waitForFile,
+  waitUntil,
   type ManualClock,
 } from "./support.ts";
 
@@ -243,6 +244,8 @@ describe("harness-radian/agent", () => {
     const result = await running;
     expect(result.result).toBe("failed");
     expect(dataOf(result).reason).toBe("stall");
+    // The group is signaled asynchronously: wait for the pid to go.
+    await waitUntil(() => !alive(pid));
     expect(alive(pid)).toBe(false);
   });
 
@@ -282,6 +285,7 @@ describe("harness-radian/agent", () => {
     const result = await running;
     expect(result.result).toBe("failed");
     expect(dataOf(result).reason).toBe("wall");
+    await waitUntil(() => !alive(pid));
     expect(alive(pid)).toBe(false);
   });
 
@@ -342,6 +346,7 @@ describe("harness-radian/agent", () => {
     const result = await running;
     expect(result.result).toBe("failed");
     expect(dataOf(result).reason).toBe("wall");
+    await waitUntil(() => !alive(pid));
     expect(alive(pid)).toBe(false);
   });
 
@@ -364,8 +369,10 @@ describe("harness-radian/agent", () => {
     const result = await running;
     expect(result.result).toBe("interrupted");
     expect(dataOf(result).reason).toBe("cancelled");
+    await waitUntil(() => !alive(pids.pid));
     expect(alive(pids.pid)).toBe(false);
     if (typeof pids.child === "number") {
+      await waitUntil(() => !alive(pids.child));
       expect(alive(pids.child)).toBe(false);
     }
   });
