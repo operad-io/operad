@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -161,7 +161,7 @@ describe("harness-pi/agent", () => {
       thinkingLevel: "low",
       authPath: "/auth/here.json",
     });
-    await runAgent(env, { prompt: "hello", cwd: env.root, args: ["--x"] });
+    await runAgent(env, { prompt: "hello", cwd: env.root });
     const input = recorded(env);
     expect(input.prompt).toBe("hello");
     expect(input.cwd).toBe(env.root);
@@ -174,6 +174,51 @@ describe("harness-pi/agent", () => {
     expect("resumeSession" in input).toBe(false);
     expect("access" in input).toBe(false);
   });
+
+  test("--model and --thinking in args reach the worker and win over the settings", async () => {
+    const env = await setup("done", { model: "fake/setting", thinkingLevel: "low" });
+    const result = await runAgent(env, {
+      prompt: "hello",
+      cwd: env.root,
+      args: ["--model", "openai-codex/gpt-5.6-terra", "--thinking", "medium"],
+    });
+    expect(result.result).toBe("done");
+    const input = recorded(env);
+    expect(input.model).toBe("openai-codex/gpt-5.6-terra");
+    expect(input.thinkingLevel).toBe("medium");
+  });
+
+  test("a flag given alone leaves the other from the settings", async () => {
+    const env = await setup("done", { model: "fake/setting", thinkingLevel: "low" });
+    await runAgent(env, { prompt: "hello", cwd: env.root, args: ["--thinking", "high"] });
+    const input = recorded(env);
+    expect(input.model).toBe("fake/setting");
+    expect(input.thinkingLevel).toBe("high");
+  });
+
+  const INVALID_ARGS: ReadonlyArray<readonly [string, string[], string]> = [
+    ["an unknown flag", ["--x"], "--x"],
+    ["a flag without its value", ["--model"], "--model"],
+    ["a thinking flag without its value", ["--thinking"], "--thinking"],
+    ["a model that is not provider/id", ["--model", "gpt"], "gpt"],
+    ["a model with an empty id", ["--model", "openai/"], "openai/"],
+    ["a flag as the value", ["--model", "--thinking"], "--thinking"],
+    ["an unknown level", ["--thinking", "extreme"], "extreme"],
+    ["a model given twice", ["--model", "a/b", "--model", "c/d"], "--model"],
+    ["a level given twice", ["--thinking", "low", "--thinking", "high"], "--thinking"],
+    ["a stray value", ["--model", "a/b", "extra"], "extra"],
+    ["the = spelling", ["--model=a/b"], "--model=a/b"],
+  ];
+  for (const [name, args, entry] of INVALID_ARGS) {
+    test(`${name} fails with invalid_args and the worker is not started`, async () => {
+      const env = await setup("done");
+      const result = await runAgent(env, { prompt: "hello", cwd: env.root, args });
+      expect(result.result).toBe("failed");
+      expect(dataOf(result).reason).toBe("invalid_args");
+      expect(String(dataOf(result).message)).toContain(entry);
+      expect(existsSync(env.record)).toBe(false);
+    });
+  }
 
   test("unset model and thinking level are not sent, so pi uses its default", async () => {
     const env = await setup("done");
