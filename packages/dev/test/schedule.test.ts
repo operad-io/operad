@@ -12,6 +12,8 @@ import {
   recordAnswer,
   Runner,
   serveOnce,
+  type RunInfo,
+  type RunLookup,
 } from "@operad-io/engine";
 import plugin from "../src/index.ts";
 import {
@@ -450,6 +452,48 @@ describe("dev scheduling", () => {
     // A task whose run recorded itself is never claimed again.
     await putTask(fixture, task.key, { run: "run-1" });
     expect(await tick(fixture)).toEqual([]);
+  });
+
+  test("a claim whose run the kernel holds is not released before the run records itself", async () => {
+    const fixture = await setup({ concurrency: 1 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run" });
+    const task = await makeTask(fixture, plan.key, "task");
+    await confirm(fixture, plan.key);
+
+    const started = await tick(fixture);
+    expect(started.length).toBe(1);
+    const claimed = taskData((await getTask(fixture.store, task.key)).data);
+    expect(claimed.phase).toBe("running");
+    expect(claimed.run).toBeNull();
+
+    // The kernel already holds the run; its first step has not written the
+    // run id yet. The next tick must leave the claim alone, or the step finds
+    // its claim gone, cancels, and the task starts again on every tick.
+    const runs: RunLookup = {
+      active: async (object?: string): Promise<readonly RunInfo[]> =>
+        object === `task:${task.key}`
+          ? [
+              {
+                runId: "run-1",
+                flow: "dev",
+                object,
+                active: true,
+                startedAt: 0,
+                endedAt: null,
+                lastSeq: 1,
+                startInputId: null,
+              },
+            ]
+          : [],
+      state: async () => undefined,
+      lastStep: async () => null,
+    };
+    await fixture.registry.tick(runs);
+    expect(fixture.registry.takeStartedRuns()).toEqual([]);
+    const after = taskData((await getTask(fixture.store, task.key)).data);
+    expect(after.phase).toBe("running");
+    expect(after.claim?.token).toBe(claimed.claim?.token);
+    expect(fixture.lines).toEqual([`${task.id} ready -> running`]);
   });
 
   test("a manual start survives a crash before the run records itself", async () => {
