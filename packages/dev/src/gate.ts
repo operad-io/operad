@@ -17,6 +17,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { runCheckWithRerun } from "./rerun.ts";
 import {
   messageOf,
   type PluginStepResult,
@@ -46,6 +47,7 @@ import {
   type ReviewerFallback,
   type ReviewerSettings,
 } from "./settings.ts";
+import { appendChange } from "./model.ts";
 import {
   briefText,
   cancelledStep,
@@ -298,21 +300,17 @@ export async function runVerify(
     );
   }
 
-  let outcome: PluginStepResult | undefined;
-  let hostError: string | undefined;
-  try {
-    outcome = await runStep(
-      "shell/check",
-      {
-        lines: commands,
-        cwd: path,
-        timeoutSecs: context.settings.gate.commandTimeoutSecs,
-      },
-      stepOptions(ctx, path),
-    );
-  } catch (error) {
-    hostError = messageOf(error);
-  }
+  const checked = await runCheckWithRerun(
+    runStep,
+    {
+      lines: commands,
+      cwd: path,
+      timeoutSecs: context.settings.gate.commandTimeoutSecs,
+    },
+    stepOptions(ctx, path),
+    context.settings.check.rerun,
+  );
+  const { outcome, hostError, note } = checked;
 
   const outcomeData =
     outcome !== undefined && isRecord(outcome.data) ? outcome.data : {};
@@ -354,6 +352,9 @@ export async function runVerify(
       run: ctx.runId,
       attempts: Math.max(task.attempts, attempt.number),
       attempt: nextAttempt,
+      ...(note === undefined
+        ? {}
+        : { brief: appendChange(task.brief, note) }),
     },
     "dev:verify",
   );
@@ -361,6 +362,8 @@ export async function runVerify(
   return {
     result,
     data: verifyData(record, {
+      ...(note === undefined ? {} : { note }),
+      ...(checked.rerun ? { rerun: true } : {}),
       attempt: attempt.number,
       verified: sha,
       worktree: path,

@@ -18,7 +18,13 @@ import type {
   ViewSectionContent,
 } from "@operad-io/engine";
 import { ensureServer, spawnServe, type EnsureServerOptions } from "./autostart.ts";
-import { TuiClient, type FetchLike } from "./client.ts";
+import {
+  TuiClient,
+  TuiError,
+  type FetchLike,
+  type TuiActInput,
+  type TuiKeyBinding,
+} from "./client.ts";
 import { defaultOperadHome } from "@operad-io/engine";
 import { discoverServer } from "./discover.ts";
 import { TuiEvents, type TuiEvent } from "./events.ts";
@@ -26,6 +32,7 @@ import {
   initialState,
   joinMarkdown,
   reduce,
+  type TuiActionRequest,
   type TuiObjectRequest,
   type TuiPageRequest,
   type TuiSectionRequest,
@@ -88,6 +95,10 @@ export interface TuiShellClient {
     cursor?: string,
     signal?: AbortSignal,
   ): Promise<ViewListPage>;
+  /** Optional: a server without `/v1/keys` leaves the bindings empty. */
+  keys?(signal?: AbortSignal): Promise<readonly TuiKeyBinding[]>;
+  /** Optional so an older test client still fits; the actions need it. */
+  act?(input: TuiActInput): Promise<unknown>;
   /** Optional so an older test client still fits; the object pane needs it. */
   object?(id: string, signal?: AbortSignal): Promise<ViewObject>;
   /** Optional so an older test client still fits; the object pane needs it. */
@@ -372,8 +383,13 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       settle(client.types(signal)),
       settle(client.pending(signal)),
       settle(client.running(signal)),
+      // An older server has no keys; the bindings then stay as they were.
+      settle(client.keys?.(signal) ?? Promise.resolve(undefined)),
     ]);
-    const [typesResult, pending, running] = await asked;
+    const [typesResult, pending, running, keys] = await asked;
+    if (keys.ok && keys.value !== undefined) {
+      dispatch({ type: "keys", bindings: keys.value, generation });
+    }
     if (typesResult.ok) {
       dispatch({ type: "types", types: typesResult.value.types, generation });
     } else {
@@ -489,6 +505,34 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     }
   }
 
+  /** Sends one action; a success refreshes the object and its list row. */
+  async function sendAction(request: TuiActionRequest): Promise<void> {
+    const act = client.act;
+    if (act === undefined) {
+      dispatch({ type: "action-error", message: "this client cannot run actions" });
+      return;
+    }
+    try {
+      await act.call(client, {
+        action: request.action,
+        id: request.id,
+        ...(request.note === undefined ? {} : { note: request.note }),
+        ...(request.confirmed === true ? { confirmed: true } : {}),
+        signal: abort.signal,
+      });
+      if (abort.signal.aborted) return;
+      dispatch({ type: "action-done" });
+      requestRefresh();
+    } catch (error) {
+      if (abort.signal.aborted) return;
+      dispatch({
+        type: "action-error",
+        message: messageOf(error),
+        status: error instanceof TuiError ? error.status : undefined,
+      });
+    }
+  }
+
   function requestRefresh(): void {
     if (finished) return;
     void refresh();
@@ -517,6 +561,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     if (sectionRequest !== undefined) {
       state = reduce(state, { type: "section-launched" });
     }
+    const actionRequest = state.actionRequest;
+    if (actionRequest !== undefined) state = reduce(state, { type: "action-launched" });
     const refreshing = state.refreshRequested;
     if (refreshing) state = reduce(state, { type: "refreshed" });
     // Requests belong to the object version that asked: another open, or a
@@ -544,6 +590,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     if (request !== undefined) void loadPage(request);
     if (objectRequest !== undefined) void loadObject(objectRequest);
     if (sectionRequest !== undefined) void loadSection(sectionRequest);
+    if (actionRequest !== undefined) void sendAction(actionRequest);
     if (refreshing) requestRefresh();
   }
 
@@ -572,10 +619,19 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       return state;
     },
     key(input: TuiKeyInput): void {
-      const name = input.sequence === "?" ? "?" : input.name;
+      const sequence = input.sequence ?? "";
+      const plain = input.ctrl !== true && input.meta !== true;
+      // A key that types text reaches an input as that text (a space is "space"
+      // by name); a symbol is named by itself, so `?` and `:` bind and match.
+      const text = plain && sequence.length > 0 && !/[\u0000-\u001f\u007f]/.test(sequence)
+        ? sequence
+        : undefined;
+      const symbol = text !== undefined && /^[^\p{L}\p{N}\s]$/u.test(text);
+      const name = symbol ? text : input.name;
       dispatch({
         type: "key",
         key: name,
+        text,
         shift: input.shift,
         ctrl: input.ctrl,
         meta: input.meta,

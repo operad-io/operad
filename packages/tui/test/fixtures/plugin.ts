@@ -7,6 +7,7 @@ export default definePlugin({
   name: "tuitest",
   kind: "domain",
   version: "0.0.1",
+  keys: { m: "tuitest:approve", d: "tuitest:drop" },
   objects: [{ name: "item", index: ["state"] }],
   views: {
     item: {

@@ -238,10 +238,19 @@ Switching tabs closes the object. Every key the app reads is below.
 | `g` | key | none | The first row; under 100 columns with an object open, the top of the section. |
 | `G` | key | none | The last row; under 100 columns with an object open, the end of the section (it resumes following a live section). |
 | `r` | key | none | Fetch every list again, and the open object with its live sections. |
+| `a` | key | none | Run the open object's main action, the first one the object offers now (the footer names it with its key). A key bound to an action (below) wins over `a`. With no action, one footer line says so. |
+| a bound key | key | `GET /v1/keys` | Run that action on the open object. A user binding in `keys.json` beats a plugin default on the same key. Reserved keys cannot be bound: `enter`, `return`, `escape`, `esc`, `tab`, the arrows (`up`, `down`, `left`, `right`), `pageup`, `pagedown`, `home`, `end`, `space`, `[`, `]`, `:`, `?`, `/`, `b`, `f`, `g`, `j`, `k`, `q`, `r` (letters in either case) and `1`–`9`, as well as Ctrl-C and any Ctrl or Meta chord. A plugin default or `keys.json` entry on a reserved key is dropped; at start one footer line names each dropped key with its action and source. The action stays reachable from the `:` palette, with no key shown. If the object does not offer the action now, one footer line says it is not available. |
+| `:` | key | none | Open the palette: type to fuzzy match the `plugin:action` names the open object offers, each with its key and "needs a note" or "asks to confirm". `↑` / `↓` (or Ctrl-P / Ctrl-N) move, `enter` runs, `escape` closes. With no object open it lists nothing but "no object is selected". |
+| note input | key | none | An action with a note field opens a text input. Typing adds text, `backspace` deletes, `shift-enter` or `Ctrl-J` adds a line, `enter` sends and `escape` cancels. A required note cannot be sent empty. |
+| confirmation | key | none | An action that asks to confirm shows `<action> <id>? [y/N]` in red. `y` sends it with `confirmed: true`; any other key cancels. |
 | `?` | key | none | Show or hide the key list. |
 | `q` | key | none | Quit. |
 | `Ctrl-C` | key | none | Quit at once. The terminal restores itself; no other Ctrl or Meta chord does anything. |
 | `escape` | key | none | Close the key list, or close the open object and stop its requests. While the key list is open only `?`, `escape` and `q` act; the others leave the list alone. |
+
+A refused action shows the server's status and message as they came (for
+example `409 …`) in one footer line until the next key. After a success the app
+fetches the lists and the open object again.
 
 ### Endpoints
 
@@ -252,6 +261,7 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 | Method and path | What it returns |
 |---|---|
 | `GET /v1/types` | `{ "types": [{ "type": "task", "title": "Task" }] }`: the object types with views and their display names. |
+| `GET /v1/keys` | `{ "keys": [{ "key": "m", "action": "dev:merge", "source": "plugin" }] }`: the key bindings in force, the plugins' defaults with the person's `keys.json` overrides applied; `source` is `user` for an override. |
 | `GET /v1/objects?type=<type>&cursor=<c>` | `{ "rows": [...], "next": "<c>" }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, plus `waiting` and `running`; an error row also carries `error`. |
 | `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. An item that is about an object also carries `object` (`<type>:<id>`), its `link` and its `row`: the same row `GET /v1/objects?type=…` returns for that object (`id`, `title`, `state`, optional `note`, `waiting`, `running`), so a client does not read each object. When the row cannot be built (the object is gone, no loaded plugin shows its type, or the plugin's row fails) the item carries the error row the list shows for a bad row, with `state` `error` and an `error` message; the list itself never fails for one object. A candidate has no object and no `row`. `operad pending` prints the row's title under each line that has one. |
 | `GET /v1/running` | The same list as `operad running`. |
