@@ -42,7 +42,11 @@ export interface GitResult {
   readonly err: string;
 }
 
-export function git(cwd: string, args: readonly string[]): GitResult {
+/**
+ * Runs git. The output is trimmed unless `raw` is set; output whose leading or
+ * trailing spaces mean something (`status --porcelain`) must be read raw.
+ */
+export function git(cwd: string, args: readonly string[], raw = false): GitResult {
   const result = Bun.spawnSync({
     cmd: ["git", "-C", cwd, ...args],
     stdout: "pipe",
@@ -50,7 +54,7 @@ export function git(cwd: string, args: readonly string[]): GitResult {
   });
   return {
     ok: result.exitCode === 0,
-    out: result.stdout.toString().trim(),
+    out: raw ? result.stdout.toString() : result.stdout.toString().trim(),
     err: result.stderr.toString().trim(),
   };
 }
@@ -242,16 +246,23 @@ export function conflictedFiles(worktree: string): readonly string[] {
     .sort();
 }
 
-/** The files `git status` calls changed, untracked included. */
+/**
+ * The files `git status` calls changed, untracked included. Read from
+ * `--porcelain -z`: names are not quoted or trimmed, a name may hold spaces, and
+ * a rename or copy is followed by its old path, which is skipped (the new path
+ * is the changed file).
+ */
 export function changedFiles(worktree: string): readonly string[] {
-  const result = git(worktree, ["status", "--porcelain"]);
+  const result = git(worktree, ["status", "--porcelain", "-z"], true);
   if (!result.ok || result.out.length === 0) return [];
+  const entries = result.out.split("\0");
   const files: string[] = [];
-  for (const line of result.out.split("\n")) {
-    if (line.length < 4) continue;
-    const rest = line.slice(3);
-    const arrow = rest.indexOf(" -> ");
-    files.push(arrow < 0 ? rest : rest.slice(arrow + 4));
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index] ?? "";
+    if (entry.length < 4) continue;
+    files.push(entry.slice(3));
+    const code = entry.slice(0, 2);
+    if (code.includes("R") || code.includes("C")) index += 1;
   }
   return [...new Set(files)].sort();
 }

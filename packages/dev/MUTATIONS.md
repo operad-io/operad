@@ -110,3 +110,13 @@ the row fields.
 | T-0034-M2 | `packages/dev/src/gate.ts` | a deleted file carried its removed lines | `dev/review > renames and deletions > a deleted file is one line with its length and how to read it` |
 | T-0034-M3 | `packages/dev/src/gate.ts` | a rename with no edit carried a patch | `dev/review > renames and deletions > a rename with no edit is one line` |
 | T-0034-M4 | `packages/dev/src/gate.ts` | a rename with edits was diffed by its new path only | `dev/review > renames and deletions > a rename with an edit carries only the edit` |
+
+## dirty-names — the changed-file list keeps whole names
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| dirty-names-M1 | packages/dev/src/steps.ts | `git()` trimmed the output even when `raw` was set | `changedFiles > a modified tracked file that comes first keeps its whole name` |
+| dirty-names-M2 | packages/dev/src/steps.ts | `changedFiles` did not ask for raw output | `changedFiles > a modified tracked file that comes first keeps its whole name` |
+| dirty-names-M3 | packages/dev/src/steps.ts | a rename's old path was listed as a file | `changedFiles > a rename reports the new path only, whole` |
+| dirty-names-M4 | packages/dev/src/steps.ts | the name was cut at column 2 instead of 3 | `changedFiles > a modified tracked file that comes first keeps its whole name` |
+| dirty-names-M5 | packages/dev/src/steps.ts | `-z` left out of the status call | `changedFiles > a modified tracked file that comes first keeps its whole name` |
