@@ -242,6 +242,20 @@ export function rowFromView(row: ViewRow): TuiRow {
 }
 
 function rowFromPending(item: PendingItem): TuiRow {
+  // A server that sends the object's row saves a read per item: the row names
+  // the object, and the question stays visible as the note. An older server
+  // sends no row, and the item shows its question and flow as before.
+  if (item.row !== undefined) {
+    return {
+      id: item.object ?? item.runId,
+      title: item.row.title,
+      state: item.row.state,
+      note: item.prompt,
+      waiting: true,
+      running: false,
+      ...(item.row.error === undefined ? {} : { error: item.row.error }),
+    };
+  }
   return {
     id: item.object ?? item.runId,
     title: item.prompt,

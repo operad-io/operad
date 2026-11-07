@@ -20,6 +20,7 @@ import type {
   FactsOptions,
   FactsPage,
   ListOptions,
+  ObjectRef,
   ObjectViews,
   PluginFact,
   PluginStore,
@@ -422,21 +423,77 @@ export class Views {
     }
     const flags = await this.allRunFlags();
     const withScope = await this.scopeShown(owner.plugin, type, owner.views);
-    const rows: ViewRow[] = [];
-    for (const object of page.objects) {
-      const { scope, ...row } = this.guardedRow(owner.plugin, type, object);
-      const flag = flags.get(objectKey(type, object.id)) ?? {
-        waiting: false,
-        running: false,
-      };
-      rows.push({
-        ...row,
-        ...(withScope && scope !== undefined ? { scope } : {}),
-        waiting: flag.waiting,
-        running: flag.running,
-      });
-    }
+    const rows = page.objects.map((object) =>
+      this.listRow(owner.plugin, type, object, flags, withScope),
+    );
     return { rows, ...(page.next === undefined ? {} : { next: page.next }) };
+  }
+
+  /**
+   * The rows `list` would show for these objects, keyed `<type>:<id>`. One
+   * read of the run flags serves them all. An object that is gone, or whose
+   * type no loaded plugin shows, gets an error row, and a plugin whose `row`
+   * throws gets the same error row `list` shows; this never throws for one
+   * object.
+   */
+  async rowsOf(
+    objects: readonly ObjectRef[],
+  ): Promise<ReadonlyMap<string, ViewRow>> {
+    const rows = new Map<string, ViewRow>();
+    if (objects.length === 0) return rows;
+    const flags = await this.allRunFlags();
+    const shown = new Map<string, boolean>();
+    for (const ref of objects) {
+      const key = objectKey(ref.type, ref.id);
+      if (rows.has(key)) continue;
+      const owner = this.registry.viewsFor(ref.type);
+      let stored: StoredObject | undefined;
+      try {
+        stored = await this.store.get(ref.type, ref.id);
+      } catch (error) {
+        this.onLog(`could not read "${key}": ${messageOf(error)}`);
+      }
+      if (owner === undefined || stored === undefined) {
+        rows.set(
+          key,
+          this.errorRow(
+            ref.id,
+            owner === undefined
+              ? `no loaded plugin shows objects of type "${ref.type}"`
+              : `no object "${key}"`,
+          ),
+        );
+        continue;
+      }
+      let withScope = shown.get(ref.type);
+      if (withScope === undefined) {
+        withScope = await this.scopeShown(owner.plugin, ref.type, owner.views);
+        shown.set(ref.type, withScope);
+      }
+      rows.set(key, this.listRow(owner.plugin, ref.type, stored, flags, withScope));
+    }
+    return rows;
+  }
+
+  /** One list row: the plugin's row with the run flags and, when shown, its scope. */
+  private listRow(
+    plugin: string,
+    type: string,
+    object: StoredObject,
+    flags: ReadonlyMap<string, RunFlags>,
+    withScope: boolean,
+  ): ViewRow {
+    const { scope, ...row } = this.guardedRow(plugin, type, object);
+    const flag = flags.get(objectKey(type, object.id)) ?? {
+      waiting: false,
+      running: false,
+    };
+    return {
+      ...row,
+      ...(withScope && scope !== undefined ? { scope } : {}),
+      waiting: flag.waiting,
+      running: flag.running,
+    };
   }
 
   /** One page of one object's facts in sequence order. */

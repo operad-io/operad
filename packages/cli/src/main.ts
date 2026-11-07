@@ -364,6 +364,7 @@ async function commandPending(
     context.log,
     context.registry,
     kernelFor(context, io, []),
+    context.views,
   );
   if (json) {
     io.write(`${JSON.stringify(pending, null, 2)}\n`);
@@ -375,6 +376,7 @@ async function commandPending(
   }
   for (const item of pending) {
     io.write(`${item.runId}  ${item.flow}  ${item.step ?? "-"}\n`);
+    if (item.row !== undefined) io.write(`  ${item.row.title}\n`);
     io.write(`  waiting: ${item.prompt}\n`);
     if (item.choices.length > 0) {
       io.write(`  choices: ${item.choices.join(", ")}\n`);

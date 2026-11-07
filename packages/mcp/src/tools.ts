@@ -322,6 +322,7 @@ export async function runTool(
         context.log,
         context.registry,
         context.kernel,
+        context.views,
       );
       const shown = splitPendingActions(
         pending,
