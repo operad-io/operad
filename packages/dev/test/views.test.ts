@@ -51,12 +51,12 @@ describe("dev views", () => {
       id: "P-0001-storage",
       title: "Storage",
       state: "draft",
-      note: "0/1  auto: off  P3",
+      note: "0/1  auto: off  P3  concurrency: 1",
       scope: "repository",
     });
     await setTaskPhase(store, task.id, "merged");
     expect(planViews.row(await getPlan(store, plan.id)).note).toBe(
-      "1/1  auto: off  P3",
+      "1/1  auto: off  P3  concurrency: 1",
     );
   });
 

@@ -29,7 +29,7 @@ views and `--after` accept both forms, and an id is matched exactly.
 operad repo add <path> [--name <name>]
 operad repo list
 operad repo remove <name>
-operad plan add --slug <slug> --title <title> [--repo <name>]   # request on stdin
+operad plan add --slug <slug> --title <title> [--concurrency <n>] [--repo <name>]   # request on stdin
 operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--repo <name>]   # brief on stdin
 operad task edit <id>      # $EDITOR on the brief body; proposed or ready only
 operad task update <id> [--title <title>] [--after <task>]... [--area <area>]   # --area "" clears it
@@ -53,6 +53,7 @@ Every action is also a command: `operad dev:<action> <id>`.
 | `dev:cancel` | plan, task | `x` | cancel a plan and its open tasks, or one task; asks first |
 | `dev:auto` | plan | | set auto: `--level off`, `--level run` or `--level merge` |
 | `dev:priority` | plan | | set the priority: `--level P0` (most urgent) to `--level P5` |
+| `dev:concurrency` | plan | | set how many of the plan's tasks may run at once: `--count 1` to `--count 16`; takes effect at the next tick, running tasks are not stopped |
 
 `merge` and `reject` answer the task's person wait. They appear in `pending`
 only while the task is waiting, and are refused with a clear message otherwise.

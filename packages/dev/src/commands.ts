@@ -10,6 +10,7 @@ import { readStdinText } from "./stdin.ts";
 import { editText } from "./editor.ts";
 import {
   addPlan,
+  validatePlanConcurrency,
   addRepository,
   addTask,
   editTaskBrief,
@@ -144,11 +145,16 @@ async function runRepo(
   return `removed ${repository.name}`;
 }
 
+function concurrencyFlag(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  return validatePlanConcurrency(raw.trim() === "" ? Number.NaN : Number(raw));
+}
+
 async function runPlan(
   ctx: CommandContext,
   argv: readonly string[],
 ): Promise<string> {
-  const parsed = parseArguments(argv, ["--repo", "--slug", "--title"]);
+  const parsed = parseArguments(argv, ["--repo", "--slug", "--title", "--concurrency"]);
   const call = subcommand(parsed, ["add"], "plan");
   if (call.rest.length > 0) {
     throw new DevError("command", `plan ${call.name} takes flags, not ${call.rest[0]}`);
@@ -159,6 +165,7 @@ async function runPlan(
     slug: required(parsed, "--slug", "plan add"),
     title: required(parsed, "--title", "plan add"),
     request: await readStdinText(ctx.input),
+    concurrency: concurrencyFlag(one(parsed, "--concurrency")),
   });
   return bareId(plan.id);
 }
@@ -273,7 +280,7 @@ export const commands: readonly CommandDefinition[] = [
   },
   {
     name: "plan",
-    args: "add --slug <slug> --title <title> [--repo <name>]",
+    args: "add --slug <slug> --title <title> [--concurrency <n>] [--repo <name>]",
     run: runPlan,
   },
   {
