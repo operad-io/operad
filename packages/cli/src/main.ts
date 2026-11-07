@@ -486,6 +486,10 @@ function parseLimit(value: string | undefined): number | undefined {
   return parsed;
 }
 
+function shellQuote(value: string): string {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`;
+}
+
 async function commandList(
   context: Context,
   io: CliIo,
@@ -532,7 +536,8 @@ async function commandList(
   if (page.next !== undefined) {
     const withFilter = options.filter === undefined ? "" : ` --filter ${options.filter}`;
     const withRepo = options.repo === undefined ? "" : ` --repo ${options.repo}`;
-    io.write(`next: operad list ${type}${withFilter}${withRepo} --cursor ${page.next}\n`);
+    const withWhere = options.where.map((item) => ` --where ${shellQuote(item)}`).join("");
+    io.write(`next: operad list ${type}${withFilter}${withRepo}${withWhere} --cursor ${page.next}\n`);
   }
   if (page.hidden !== undefined && page.hidden > 0) {
     io.write(`${page.hidden} hidden (--filter all to show)\n`);

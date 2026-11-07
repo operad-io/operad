@@ -181,7 +181,8 @@ describe("operad presentation commands", () => {
       .split("\n")
       .find((line) => line.startsWith("next: "));
     expect(nextLine).toBeDefined();
-    const cursor = (nextLine ?? "").replace("next: operad list item --cursor ", "");
+    expect(nextLine).toContain("--where plan=P1");
+    const cursor = (nextLine ?? "").replace("next: operad list item --where plan=P1 --cursor ", "");
 
     const second = capture();
     expect(

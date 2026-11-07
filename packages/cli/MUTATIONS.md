@@ -36,3 +36,4 @@ the row fields.
 | pending-row-M7 | packages/cli/src/main.ts | `operad pending` did not print the row's title | `operad pending shows the object's title > a line with the title, the rest unchanged, and the row in --json` |
 | T-0048-M7 | packages/cli/src/main.ts | the hidden line printed only above 99 hidden rows | `operad presentation commands > list applies the default filter, --filter all shows everything, and a hidden line counts the rest` |
 | T-0048-M8 | packages/cli/src/main.ts | `operad list` ignored the type's default filter | `operad presentation commands > list applies the default filter, --filter all shows everything, and a hidden line counts the rest` |
+| T-0048-M9 | packages/cli/src/main.ts | the printed `next:` command dropped the `--where` predicates | `operad presentation commands > list pages with a where and a cursor` |
