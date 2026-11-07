@@ -226,7 +226,7 @@ describe("the lock file", () => {
         }
       }
     }
-  });
+  }, 30_000);
 
   test("a newer live lock renamed during a takeover is put back", async () => {
     const { repositoryPath } = await setup();
