@@ -511,4 +511,93 @@ describe("plugin registry validation", () => {
     expect(logs[0]).toContain('flow "missing"');
     expect(logs[0]).toContain("not declared");
   });
+  describe("step limits", () => {
+    const run = () => ({ result: "ok" });
+    const declare = (limit: unknown): PluginRegistry =>
+      new PluginRegistry([
+        def({
+          name: "limited",
+          steps: [{ name: "agent", results: ["ok"], limit, run } as never],
+        }),
+      ]);
+
+    test("accepts key and concurrent functions", () => {
+      const registry = declare({ key: () => "a", concurrent: () => 2 });
+      expect(registry.stepLimit("limited/agent", {})).toEqual({ key: "a", concurrent: 2 });
+    });
+
+    test("a key function that returns nothing means no limit for that call", () => {
+      const registry = declare({ key: () => undefined, concurrent: () => 2 });
+      expect(registry.stepLimit("limited/agent", {})).toBeUndefined();
+    });
+
+    test("refuses a declaration of the wrong shape, naming plugin and step type", () => {
+      const wrong: [unknown, string][] = [
+        ["one", "must be { key, concurrent }"],
+        [{ concurrent: () => 1 }, "key: must be a function"],
+        [{ key: () => "a" }, "concurrent: must be a function"],
+        [{ key: "a", concurrent: () => 1 }, "key: must be a function"],
+        [{ key: () => "a", concurrent: 2 }, "concurrent: must be a function"],
+        [{ key: () => "a", concurrent: () => 1, extra: 1 }, 'unknown field "extra"'],
+      ];
+      for (const [limit, reason] of wrong) {
+        const error = errorOf(() => declare(limit));
+        expect(error.message).toContain('plugin "limited"');
+        expect(error.message).toContain('step "agent"');
+        expect(error.message).toContain("limit:");
+        expect(error.message).toContain(reason);
+      }
+    });
+
+    test("a key or count that is not usable fails the call, naming the step type", () => {
+      const badKey = declare({ key: () => 7, concurrent: () => 1 });
+      expect(errorOf(() => badKey.stepLimit("limited/agent", {})).message).toContain(
+        'step "limited/agent": limit: key must return a non-empty string or undefined',
+      );
+      for (const count of [0, 1.5, "2"]) {
+        const badCount = declare({ key: () => "a", concurrent: () => count });
+        expect(errorOf(() => badCount.stepLimit("limited/agent", {})).message).toContain(
+          "concurrent must return a positive integer",
+        );
+      }
+      const throwing = declare({
+        key: () => {
+          throw new Error("no model");
+        },
+        concurrent: () => 1,
+      });
+      expect(errorOf(() => throwing.stepLimit("limited/agent", {})).message).toContain(
+        "no model",
+      );
+    });
+
+    test("the key and count are computed from the params and the plugin's settings", () => {
+      const registry = new PluginRegistry(
+        [
+          def({
+            name: "limited",
+            settings: { type: "object", properties: { slots: { type: "integer" } } },
+            steps: [
+              {
+                name: "agent",
+                results: ["ok"],
+                limit: {
+                  key: (params: unknown) =>
+                    typeof params === "object" && params !== null && "model" in params
+                      ? String((params as { model: unknown }).model)
+                      : undefined,
+                  concurrent: (_params: unknown, settings: Readonly<Record<string, unknown>>) =>
+                    Number(settings.slots),
+                },
+                run,
+              } as never,
+            ],
+          }),
+        ],
+        { settings: { limited: { slots: 3 } } },
+      );
+      expect(registry.stepLimit("limited/agent", { model: "m" })).toEqual({ key: "m", concurrent: 3 });
+      expect(registry.stepLimit("limited/agent", {})).toBeUndefined();
+    });
+  });
 });

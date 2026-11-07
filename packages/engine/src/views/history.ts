@@ -129,6 +129,14 @@ export function historyEntry(fact: HistoryFact): HistoryEntry {
       };
     }
 
+    case "step_queued":
+      return {
+        time,
+        step,
+        what: `${step ?? "the step"} is queued`,
+        why: `waiting for a place under ${text(payload.key) ?? "its limit"}`,
+      };
+
     case "edge_taken": {
       const target = text(payload.target) ?? "the next step";
       return {
@@ -252,7 +260,13 @@ export async function* historyEntries(
 ): AsyncGenerator<HistoryEntry> {
   for await (const fact of facts) {
     // Where a step runs is kernel bookkeeping; history shows what it did.
-    if (fact.kind === "step_started") continue;
+    if (
+      fact.kind === "step_started" ||
+      fact.kind === "step_slot" ||
+      fact.kind === "step_released"
+    ) {
+      continue;
+    }
     yield historyEntry(fact);
   }
 }

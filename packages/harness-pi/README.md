@@ -138,6 +138,10 @@ param (`wallTimeSecs`, `stallSecs`) overrides the setting of the same name.
 | `modelsPath` | string | `~/.pi/agent/models.json` | pi's custom models file |
 | `wallTimeSecs` | number | `3600` | the longest one run may take; at most 28500 |
 | `stallSecs` | number | `600` | how long a run may print nothing while no tool call is open |
+| `concurrency` | object, model to positive integer | `{}` | how many runs of one model may go at once, such as `{ "opencode-go/deepseek-v4.1-flash": 2 }`; a model not listed has no limit |
+
+How `concurrency` limits runs, what the key is and how a queued step shows
+are in [the manual](../../docs/manual.md#limiting-runs-of-one-model).
 
 A leading `~` in a path is the user's home directory. The step's own timeout is
 eight hours, above every allowed wall time.

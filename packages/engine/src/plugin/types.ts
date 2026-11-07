@@ -338,9 +338,40 @@ export interface PluginStepResult {
   readonly data?: ObjectData | undefined;
 }
 
+/**
+ * Where a step type's concurrency is limited. `key` names what is shared (a
+ * model, an account); `undefined` means this call is not limited. `concurrent`
+ * is how many calls under one key may run at once across the operad home.
+ */
+export interface StepLimitDefinition {
+  readonly key: (
+    params: unknown,
+    settings: Readonly<Record<string, JsonValue>>,
+  ) => string | undefined;
+  readonly concurrent: (
+    params: unknown,
+    settings: Readonly<Record<string, JsonValue>>,
+  ) => number;
+}
+
+/** A held place under a limit key; `release` gives it back. */
+export interface StepLimitRequest {
+  readonly use: string;
+  readonly key: string;
+  readonly concurrent: number;
+  readonly signal?: AbortSignal | undefined;
+}
+
+/** Hands out places under limit keys to steps a step starts with `runStep`. */
+export interface StepLimiter {
+  acquire(request: StepLimitRequest): Promise<() => Promise<void>>;
+}
+
 /** Options for running a step through the registry. */
 export interface StepRunOptions {
   readonly runId: string;
+  /** Limits the steps this step starts through `ctx.runStep`. */
+  readonly limits?: StepLimiter | undefined;
   readonly object?: RunObject | undefined;
   readonly cwd?: string | undefined;
   readonly signal?: AbortSignal | undefined;
@@ -366,6 +397,8 @@ export interface StepTypeDefinition {
    * it above its own limits.
    */
   readonly timeoutSecs?: number | undefined;
+  /** Limits how many runs of this step may be going at once. */
+  readonly limit?: StepLimitDefinition | undefined;
   readonly run: (
     ctx: StepContext,
     params: unknown,
@@ -410,7 +443,7 @@ export type ActionArgType =
 /**
  * One property of an action's arguments. It is the JSON Schema subset the
  * kernel validates: `type`, `enum`, `minimum`, `maximum`, `minLength`,
- * `maxLength`, `items`, `properties`, `required`, `additionalProperties: false`,
+ * `maxLength`, `items`, `properties`, `required`, `additionalProperties` (`false` or a schema for the other fields),
  * `description` and `role`.
  */
 export interface ActionArgSchema {
@@ -423,7 +456,7 @@ export interface ActionArgSchema {
   readonly items?: ActionArgSchema | undefined;
   readonly properties?: Readonly<Record<string, ActionArgSchema>> | undefined;
   readonly required?: readonly string[] | undefined;
-  readonly additionalProperties?: false | undefined;
+  readonly additionalProperties?: false | ActionArgSchema | undefined;
   /** A value the kernel fills when the field is absent. */
   readonly default?: unknown;
   readonly description?: string | undefined;

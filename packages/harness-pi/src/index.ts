@@ -22,8 +22,11 @@ import {
   type StepContext,
 } from "@operad-io/engine";
 import {
+  CONCURRENCY_SETTING,
   eventNote,
+  flagValue,
   JsonlLog,
+  modelLimit,
   MAX_LINE_CHARS,
   runAgent,
   systemClock,
@@ -119,6 +122,7 @@ const PLUGIN_SETTINGS = {
       default: DEFAULT_STALL_SECS,
       description: "How long an agent may be silent while no tool call is open.",
     },
+    concurrency: CONCURRENCY_SETTING,
   },
   additionalProperties: false as const,
 };
@@ -411,6 +415,14 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
         // The deny fields are applied in the worker's tool_call hook.
         enforces: ["denyPaths", "denyCommands"],
         timeoutSecs: STEP_TIMEOUT_SECS,
+        // The model the step uses: its `--model` argument, else the setting.
+        limit: modelLimit("harness-pi", (params, settings) => {
+          const fromArgs = isRecord(params)
+            ? flagValue(params.args, "--model")
+            : undefined;
+          const model = fromArgs ?? settings.model;
+          return typeof model === "string" && model.length > 0 ? model : undefined;
+        }),
         async run(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
           const at = "harness-pi/agent";
           const input = paramsObject(params, at);

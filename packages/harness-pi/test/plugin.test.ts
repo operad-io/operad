@@ -516,3 +516,40 @@ describe("harness-pi check", () => {
     expect(checks.find((item) => item.plugin === "harness-pi")?.ok).toBe(true);
   });
 });
+
+describe("harness-pi/agent step limit", () => {
+  function registryWith(settings: Record<string, unknown>): PluginRegistry {
+    return new PluginRegistry([createPiHarnessPlugin()], {
+      home: ".",
+      cwd: ".",
+      store: new MemoryPluginStore({ root: "store" }),
+      settings: { "harness-pi": settings },
+    });
+  }
+
+  test("the key is harness-pi:<model> from --model, else the model setting", () => {
+    const registry = registryWith({
+      model: "opencode-go/deepseek-v4.1-flash",
+      concurrency: { "opencode-go/deepseek-v4.1-flash": 2, "p/other": 1 },
+    });
+    expect(registry.stepLimit("harness-pi/agent", { args: ["--model", "p/other"] })).toEqual({
+      key: "harness-pi:p/other",
+      concurrent: 1,
+    });
+    expect(registry.stepLimit("harness-pi/agent", {})).toEqual({
+      key: "harness-pi:opencode-go/deepseek-v4.1-flash",
+      concurrent: 2,
+    });
+  });
+
+  test("a model not in the map, or no model, has no limit", () => {
+    const registry = registryWith({ concurrency: { "p/a": 2 } });
+    expect(registry.stepLimit("harness-pi/agent", { args: ["--model", "p/b"] })).toBeUndefined();
+    expect(registry.stepLimit("harness-pi/agent", {})).toBeUndefined();
+    expect(registryWith({}).stepLimit("harness-pi/agent", { args: ["--model", "p/a"] })).toBeUndefined();
+  });
+
+  test("a count that is not a positive integer refuses the plugin at load", () => {
+    expect(registryWith({ concurrency: { "p/a": 0 } }).names()).toEqual([]);
+  });
+});
