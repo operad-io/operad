@@ -133,3 +133,9 @@ the row fields.
 | T-0047-M6 | packages/dev/src/service.ts | `resolveDevKey` swallowed the repository hint error | `outside every repository: ...` (show / dev action with an id nowhere) |
 | T-0047-M7 | packages/dev/src/service.ts | a qualified id skipped the registered-repository check | `outside every repository: ...` (unknown repository in show / dev action) |
 | T-0047-M8 | packages/engine/src/views/presentation.ts | a qualified id that matches a stored object skipped the registered-repository check | `a qualified id whose repository was removed is refused though its object is stored` |
+| T-0046-M1 | packages/dev/src/service.ts | the upper bound of a plan's concurrency was 100 instead of 16 | `dev actions > addPlan takes a concurrency and refuses one out of range` |
+| T-0046-M2 | packages/dev/src/service.ts | `setConcurrency` did not refuse a cancelled plan | `dev actions > concurrency is refused on a cancelled plan` |
+| T-0046-M3 | packages/dev/src/service.ts | `addPlan` ignored the given concurrency | `operad with the dev plugin > plan add takes --concurrency and dev:concurrency takes --count` |
+| T-0046-M4 | packages/dev/src/views.ts | the plan row left out the concurrency | `dev actions > concurrency sets the plan's count and the view shows it` |
+| T-0046-M5 | packages/dev/src/service.ts | `setConcurrency` accepted a finished plan | `dev actions > concurrency is refused on a finished plan` |
+| T-0046-M6 | packages/dev/src/actions.ts | `dev:concurrency` was available on a finished plan | `dev actions > concurrency is refused on a finished plan` |

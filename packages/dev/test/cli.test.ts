@@ -496,6 +496,45 @@ describe("operad with the dev plugin", () => {
     expect(missing.err).toContain("is required");
   });
 
+  test("plan add takes --concurrency and dev:concurrency takes --count", async () => {
+    const { home, repository } = await setup();
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const wide = await run(
+      home,
+      repository,
+      ["plan", "add", "--slug", "wide", "--title", "Wide", "--concurrency", "3"],
+      "request\n",
+    );
+    expect(wide.code).toBe(0);
+    const planId = wide.out.trim();
+    expect((await run(home, repository, ["show", planId])).out).toContain("concurrency: 3");
+
+    for (const bad of ["0", "17", "1.5", "many"]) {
+      const refused = await run(
+        home,
+        repository,
+        ["plan", "add", "--slug", "bad", "--title", "Bad", "--concurrency", bad],
+        "request\n",
+      );
+      expect(refused.code).not.toBe(0);
+      expect(refused.err).toContain("concurrency");
+    }
+
+    expect((await run(home, repository, ["dev:concurrency", planId, "--count", "5"])).code).toBe(0);
+    expect((await run(home, repository, ["show", planId])).out).toContain("concurrency: 5");
+    const refused = await run(home, repository, ["dev:concurrency", planId, "--count", "17"]);
+    expect(refused.code).not.toBe(0);
+    expect((await run(home, repository, ["show", planId])).out).toContain("concurrency: 5");
+
+    const plain = await run(
+      home,
+      repository,
+      ["plan", "add", "--slug", "plain", "--title", "Plain"],
+      "request\n",
+    );
+    expect((await run(home, repository, ["show", plain.out.trim()])).out).toContain("concurrency: 1");
+  });
+
   test("a command outside the repository takes --repo and edit opens $EDITOR", async () => {
     const { root, home, repository } = await setup();
     const name = repository.split("/").pop() ?? "repository";
