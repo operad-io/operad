@@ -18,6 +18,7 @@ export default definePlugin({
   objects: [
     {
       name: "job",
+      index: ["repository"],
       filters: [
         { name: "active", states: ["open"], default: true },
         { name: "done", states: ["merged"] },

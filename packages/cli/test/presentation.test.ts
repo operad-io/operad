@@ -645,4 +645,28 @@ describe("operad presentation commands", () => {
     expect(await main(["list", "job", "--filter", "x"], { home, io: unknown.io })).not.toBe(0);
     expect(unknown.errors()).toContain("allowed: active, all, done");
   });
+  test("the printed next: command shell-quotes the repo value", async () => {
+    const { root, home } = await makeHome();
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({
+        plugins: [filteredPath],
+        store: { backend: "jsonl", path: join(root, "store") },
+      }),
+    );
+    const store = freshStore(home);
+    store.put("job", "r1", { state: "open", title: "R1", repository: "my repo" }, "seed");
+    store.put("job", "r2", { state: "open", title: "R2", repository: "my repo" }, "seed");
+
+    const quoted = capture();
+    expect(
+      await main(["list", "job", "--filter", "all", "--repo", "my repo", "--limit", "1"], {
+        home,
+        io: quoted.io,
+      }),
+    ).toBe(0);
+    const quotedNext = quoted.text().split("\n").find((line) => line.startsWith("next: "));
+    expect(quotedNext).toContain("--filter all --repo 'my repo' --cursor ");
+
+  });
 });

@@ -534,8 +534,8 @@ async function commandList(
     }
   }
   if (page.next !== undefined) {
-    const withFilter = options.filter === undefined ? "" : ` --filter ${options.filter}`;
-    const withRepo = options.repo === undefined ? "" : ` --repo ${options.repo}`;
+    const withFilter = options.filter === undefined ? "" : ` --filter ${shellQuote(options.filter)}`;
+    const withRepo = options.repo === undefined ? "" : ` --repo ${shellQuote(options.repo)}`;
     const withWhere = options.where.map((item) => ` --where ${shellQuote(item)}`).join("");
     io.write(`next: operad list ${type}${withFilter}${withRepo}${withWhere} --cursor ${page.next}\n`);
   }
