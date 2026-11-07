@@ -206,15 +206,22 @@ for you, unless the plugin's `model` setting (`provider/id`) names one.
 **Where the sessions are.** Session files are in `~/.operad/harness/pi/sessions`,
 apart from your own pi sessions, so `pi --continue` does not see them.
 
-**Switch the worker.** In `.operad/dev.json` change `worker.use`, and set
-`args` to `[]` (radian's flags are for radian):
+**Switch the worker and the reviewer.** In `.operad/dev.json` change `worker.use`
+(and `reviewer.use` if you want pi to review too). radian's flags are for radian;
+pi reads only `--model <provider/id>` and `--thinking <level>` from `args`, and a
+flag there wins over the plugin setting of the same meaning. Any other entry
+fails the step with `invalid_args`. For example, the worker on one model and the
+reviewer on another:
 
 ```json
-{ "worker": { "use": "harness-pi/agent", "args": [] } }
+{
+  "worker":   { "use": "harness-pi/agent", "args": ["--model", "opencode-go/deepseek-v4.1-flash"] },
+  "reviewer": { "use": "harness-pi/agent", "args": ["--model", "openai-codex/gpt-5.6-terra", "--thinking", "medium"] }
+}
 ```
 
-The reviewer keeps its own `reviewer.use`; change it separately if you want pi
-to review too.
+`reviewer.fallback.args` and `reviewer.firstArgs` follow the same rules when
+their harness is pi.
 
 **Switch back.** Put `worker` in `.operad/dev.json` back to
 `"use": "harness-radian/agent"` with its `args` (`--provider`, `--model`). You do
