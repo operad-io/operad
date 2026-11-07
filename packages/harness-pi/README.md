@@ -100,8 +100,11 @@ operad plugin enable harness-pi
 A flow switches harness by changing `use` from `harness-radian/agent` to
 `harness-pi/agent`; `dev` does it with `worker.use` in `.operad/dev.json`. The
 params, the result names (`done`, `failed`, `interrupted`) and the facts
-(`exitCode`, `signal`, `sessionId`, `finalMessage`, `usage`, `cost`, `log`,
-`durationMs`, `stderr`) are `harness-radian`'s, except `args` (below).
+(`exitCode`, `signal`, `sessionId`, `finalMessage`, `usage`, `log`,
+`durationMs`, `stderr`) are `harness-radian`'s, except `args` (below). `usage`
+is the standard one described in [the manual](../../docs/manual.md#usage-and-end-results):
+`model` is the step's `--model` or the `model` setting, and the worker's
+`cost.micros` becomes `costMicros`.
 `sessionId` is the path of pi's
 session file; pass it back as `resumeSession` to continue it.
 

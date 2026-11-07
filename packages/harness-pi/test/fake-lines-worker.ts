@@ -69,6 +69,10 @@ switch (mode) {
     line(result());
     process.exit(0);
     break;
+  case "incomplete":
+    line(result({ cost: { micros: 900, incomplete: true } }));
+    process.exit(0);
+    break;
   case "no-cost":
     line(result({ cost: null }));
     process.exit(0);

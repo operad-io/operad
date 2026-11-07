@@ -39,7 +39,8 @@ export interface WorkerResult {
   readonly result: WorkerResultName;
   readonly sessionId: string | null;
   readonly usage: WorkerUsage;
-  readonly cost: { readonly micros: number } | null;
+  /** The priced part of the run; `incomplete` when some message had no price. */
+  readonly cost: { readonly micros: number; readonly incomplete?: true } | null;
   readonly finalMessage: string | null;
   readonly reason?: FailureReason;
   readonly message?: string;

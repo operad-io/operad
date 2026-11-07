@@ -286,6 +286,18 @@ test("a model with no price has cost.micros null", async () => {
   expect(last(run)).toMatchObject({ result: "done", cost: null, finalMessage: "ANSWER" });
 });
 
+test("a run where one message had no price reports the priced part as incomplete", async () => {
+  const s = setup();
+  const note = join(s.dir, "note.txt");
+  writeFileSync(note, "x");
+  const run = await runFake(s, [
+    { text: "", cost: 0.000001, toolCall: { name: "read", arguments: { path: note } } },
+    { text: "finished", noPrice: true },
+  ]);
+  expect(run.exitCode).toBe(0);
+  expect(last(run)["cost"]).toEqual({ micros: 1, incomplete: true });
+});
+
 test("a free model that reports 0 is cost 0, not unknown", async () => {
   const s = setup();
   const run = await runFake(s, [{ text: "ANSWER" }]);

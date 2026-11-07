@@ -1,3 +1,6 @@
+import type { EndResult } from "./usage.ts";
+import type { Usage } from "./usage.ts";
+
 /**
  * The harness-agnostic shape of an `agent` step and a `<harness>:prompt` flow.
  * Every harness plugin (radian, Claude Code, Codex) offers these params and
@@ -25,23 +28,8 @@ export interface PromptFlowParams {
   readonly args?: readonly string[] | undefined;
 }
 
-/** The result names every harness `agent` step declares. */
-export type AgentResultName = "done" | "failed" | "interrupted";
-
-/** Usage counts a harness reports; a count it does not know is absent. */
-export interface HarnessUsage {
-  readonly input?: number | undefined;
-  readonly output?: number | undefined;
-  readonly cache_read?: number | undefined;
-  readonly cache_write?: number | undefined;
-}
-
-/** A harness's cost. `null` in the facts means the cost is unknown, not zero. */
-export interface HarnessCost {
-  readonly micros: number;
-  readonly incomplete?: boolean | undefined;
-  readonly estimated?: boolean | undefined;
-}
+/** The result names a harness `agent` step declares: a subset of `EndResult`. */
+export type AgentResultName = Extract<EndResult, "done" | "failed" | "interrupted">;
 
 /** What every harness `agent` step records as its facts. */
 export interface AgentResultData {
@@ -49,9 +37,8 @@ export interface AgentResultData {
   readonly signal: string | null;
   readonly sessionId: string | null;
   readonly finalMessage: string | null;
-  readonly usage: HarnessUsage;
-  /** Unknown cost is `null`; a known free run is `{ micros: 0 }`. */
-  readonly cost: HarnessCost | null;
+  /** The standard usage; unknown cost is `costMicros: null`, a free run is `0`. */
+  readonly usage: Usage;
   /** The path of the JSONL file the harness wrote. */
   readonly log: string;
   readonly durationMs: number;

@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "packages/engine" },
+    { "path": "packages/mcp" },
     { "path": "packages/shell" },
     { "path": "packages/dev" },
     { "path": "packages/harness-radian" },

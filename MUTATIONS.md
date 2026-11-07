@@ -757,6 +757,7 @@ each task: `TK0001-M1`.
 - [harness-pi](packages/harness-pi/MUTATIONS.md)
 - [harness-process](packages/harness-process/MUTATIONS.md)
 - [harness-radian](packages/harness-radian/MUTATIONS.md)
+- [mcp](packages/mcp/MUTATIONS.md)
 - [shell](packages/shell/MUTATIONS.md)
 - [source-cron](packages/source-cron/MUTATIONS.md)
 - [tui](packages/tui/MUTATIONS.md)

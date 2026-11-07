@@ -36,7 +36,9 @@ const registry = new PluginRegistry([createDevPlugin()], {
 const object = await store.get("task", taskKey);
 if (object === undefined) throw new Error(`no task ${taskKey}`);
 
-// Both children start their action together: wait for the parent's go.
+// Both children read the task before either acts: tell the parent this one is
+// ready, then wait until every child has read the same version.
+console.log("ready");
 await Bun.stdin.text();
 
 try {

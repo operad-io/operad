@@ -14,3 +14,4 @@ the row fields.
 | TK0017-M13 | packages/shell/src/index.ts | ignored the injected clock for `shell/command` | `shell/command > a timeout is a failure that says so` |
 | TK0017-M14 | packages/shell/src/index.ts | passed no timeout to a `shell/check` line | `shell/check > a line that exceeds the timeout fails and names it` |
 | TK0017-M18 | packages/shell/src/index.ts | stopped passing the step's `env` to the line runner | `shell/command > env is added to the command's environment` |
+| TK0009-M6 | packages/shell/src/index.ts | the aborted-before-first-line branch named a log that was never written | `shell/check > an abort before the first line is interrupted and leaves a log` |

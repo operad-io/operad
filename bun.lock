@@ -32,6 +32,7 @@
         "@operad-io/engine": "workspace:*",
         "@operad-io/harness-pi": "workspace:*",
         "@operad-io/harness-radian": "workspace:*",
+        "@operad-io/mcp": "workspace:*",
         "@operad-io/shell": "workspace:*",
       },
     },
@@ -72,6 +73,13 @@
       "dependencies": {
         "@operad-io/engine": "workspace:*",
         "@operad-io/harness-process": "workspace:*",
+      },
+    },
+    "packages/mcp": {
+      "name": "@operad-io/mcp",
+      "version": "0.0.0",
+      "dependencies": {
+        "@operad-io/engine": "workspace:*",
       },
     },
     "packages/shell": {
@@ -172,6 +180,8 @@
     "@operad-io/harness-process": ["@operad-io/harness-process@workspace:packages/harness-process"],
 
     "@operad-io/harness-radian": ["@operad-io/harness-radian@workspace:packages/harness-radian"],
+
+    "@operad-io/mcp": ["@operad-io/mcp@workspace:packages/mcp"],
 
     "@operad-io/shell": ["@operad-io/shell@workspace:packages/shell"],
 
