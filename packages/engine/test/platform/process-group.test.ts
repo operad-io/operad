@@ -396,7 +396,69 @@ describe("exit status", () => {
   });
 });
 
+describe("a line's end record", () => {
+  test("a status the shell wrote survives the shell's exit arriving first", async () => {
+    // The sentinel exits at once and the record is written by a process that
+    // outlives it, so the exit event comes before the record is readable.
+    const script = [
+      "printf 'ready\\n' >&2",
+      "( sleep 0.3; printf 'end 130\\n' >&2 ) &",
+      "exit 0",
+    ].join("\n");
+    const root = await tempRoot();
+    const outcome = await runLine({
+      line: "true",
+      cwd: root,
+      signal: new AbortController().signal,
+      sentinelScript: script,
+    });
+    expect(outcome.exitCode).toBe(130);
+    expect(outcome.signal).toBe("SIGINT");
+  });
+});
+
 describe("the sentinel's host", () => {
+  test("a line still running when its host dies is stopped with its sentinel", async () => {
+    const root = await tempRoot();
+    const pidFile = join(root, "sentinel.pid");
+    const fixture = fileURLToPath(
+      new URL("../fixtures/run-line-orphan.ts", import.meta.url),
+    );
+    // The release file is never written: the line stays blocked.
+    const child = Bun.spawn({
+      cmd: [process.execPath, fixture, root, pidFile, join(root, "never")],
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    let sentinelPid = 0;
+    let linePid = 0;
+    try {
+      await waitForFile(`${pidFile}.line`);
+      await waitForFile(pidFile);
+      sentinelPid = Number(readFileSync(pidFile, "utf8").trim());
+      linePid = Number(readFileSync(`${pidFile}.line`, "utf8").trim());
+      // We started this host, so its death is ours to cause.
+      process.kill(child.pid, "SIGKILL");
+      await child.exited;
+      await waitUntil(() => !alive(sentinelPid) && !alive(linePid), 10_000);
+      expect(alive(sentinelPid)).toBe(false);
+      expect(alive(linePid)).toBe(false);
+    } finally {
+      try {
+        process.kill(child.pid, "SIGKILL");
+      } catch {
+        // The host is gone.
+      }
+      if (sentinelPid > 0 && alive(sentinelPid)) {
+        try {
+          process.kill(-sentinelPid, "SIGKILL");
+        } catch {
+          // The group ended after all.
+        }
+      }
+    }
+  }, 20_000);
+
   test("a sentinel whose host was killed ends when its line finishes", async () => {
     const root = await tempRoot();
     const pidFile = join(root, "sentinel.pid");

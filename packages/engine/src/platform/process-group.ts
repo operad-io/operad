@@ -26,9 +26,11 @@ export const KILL_GRACE_MS = 500;
  * stays alive, so the numeric group id cannot be reused until the stop's last
  * SIGKILL ends the sentinel together with any child that ignored the TERM.
  *
- * The sentinel also watches the process that started it (`$2`): if the host is
- * killed before it can stop the group, the sentinel ends instead of looping
- * forever over a line nobody is waiting for.
+ * The sentinel also watches the process that started it (`$2`), from a helper
+ * that runs beside the line: if the host is killed before it can stop the
+ * group, the helper kills the whole group, line included, instead of leaving
+ * both to run on for a host that is gone. The check must not wait for the line
+ * to end, because the line may be the thing that never does.
  *
  * The control pipe is the sentinel's stderr; the line gets stderr redirected to
  * its stdout, so the two channels never mix. The line cannot write to the
@@ -36,11 +38,13 @@ export const KILL_GRACE_MS = 500;
  */
 const SENTINEL = [
   "trap ':' TERM",
+  // The helper's output goes nowhere, so it never holds the control pipe open.
+  '( while kill -0 "$2" 2>/dev/null; do sleep 1; done; kill -KILL -- "-$$" ) >/dev/null 2>&1 &',
   "printf 'ready\\n' >&2",
   'sh -c "$1" 2>&1',
   "status=$?",
   "printf 'end %s\\n' \"$status\" >&2",
-  'while kill -0 "$2" 2>/dev/null; do sleep 1; done',
+  'while kill -0 "$2" 2>/dev/null; do sleep 1 2>/dev/null; done',
 ].join("\n");
 
 /** The signal names by number, for the status a shell reports for a signal. */
@@ -525,8 +529,12 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
   readySeen = true;
   openGate();
 
+  // One read serves the race and, if the shell's exit wins it, the look for
+  // the record afterwards: a second read would queue behind this one and miss
+  // the line it takes.
+  const endRead = nextControl();
   const ended = await Promise.race<Ended>([
-    nextControl().then((line): Ended => {
+    endRead.then((line): Ended => {
       const status = endStatus(line);
       return status === undefined
         ? { kind: "closed" }
@@ -540,8 +548,15 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
   options.signal.removeEventListener("abort", onAbort);
 
   let exit: Exit;
-  if (ended.kind === "closed") exit = await exited;
-  else exit = ended.exit;
+  if (ended.kind === "end") exit = ended.exit;
+  else {
+    // The shell's exit event can arrive before the end record it wrote has been
+    // read. The record holds the line's own status, so read the pipe to its
+    // close before settling for the shell's exit: a deliberate nonzero status
+    // must not turn into the shell's own.
+    const record = endStatus(await endRead);
+    exit = record === undefined ? await exited : exitFromStatus(record);
+  }
 
   // Stop the group the line left behind: the sentinel and any forked child.
   // A line that reported its own status has already ended, so there is nothing

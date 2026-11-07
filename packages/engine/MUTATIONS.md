@@ -183,3 +183,5 @@ the row fields.
 | T-0021-M7 | packages/engine/src/plugin/registry.ts | stopped checking that `limit.key` is a function | `plugin registry validation > step limits > refuses a declaration of the wrong shape, naming plugin and step type` |
 | T-0021-M8 | packages/engine/src/runner/limits.ts | `queuedSteps` counted one more step ahead than there was | `step limits (memory) > two steps run, the third starts when one ends` |
 | T-0021-M11 | packages/engine/src/runner/limits.ts | a `step_queued` after a `step_released` for the same effect was ignored again | `step limits after a released place > a step queued again after its release gets a place` |
+| TK0009-M11 | `packages/engine/src/platform/process-group.ts` | the shell's own exit replaced the status in its end record when the exit event came first | `a line's end record > a status the shell wrote survives the shell's exit arriving first` |
+| TK0009-M12 | `packages/engine/src/platform/process-group.ts` | the sentinel did not watch its host while the line ran | `the sentinel's host > a line still running when its host dies is stopped with its sentinel` |

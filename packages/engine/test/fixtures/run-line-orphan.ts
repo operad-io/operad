@@ -3,7 +3,8 @@
  * A host for one `runLine` call that the test kills before the line ends. The
  * line writes the sentinel's pid and waits for a release file; the test kills
  * this process, then writes the release so the sentinel reaches its post-line
- * loop and finds its parent gone.
+ * loop and finds its parent gone. It also records the line's own pid beside
+ * the sentinel's, as `<pid file>.line`.
  */
 import { runLine } from "../../src/platform/index.ts";
 
@@ -14,7 +15,7 @@ if (root === undefined || pidFile === undefined || release === undefined) {
 }
 
 await runLine({
-  line: `echo $PPID > '${pidFile}'; while [ ! -f '${release}' ]; do sleep 0.05; done`,
+  line: `echo $$ > '${pidFile}.line'; echo $PPID > '${pidFile}'; while [ ! -f '${release}' ]; do sleep 0.05; done`,
   cwd: root,
   signal: new AbortController().signal,
 });
