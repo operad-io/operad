@@ -7,6 +7,8 @@ import {
   FileSecretStore,
   Kernel,
   LockHeldError,
+  acquireLock,
+  type LockHandle,
   MemoryPluginStore,
   PluginRegistry,
   Runner,
@@ -1390,15 +1392,8 @@ async function commandServe(
   context: Context,
   io: CliIo,
   argv: readonly string[],
+  lock: LockHandle,
 ): Promise<void> {
-  // A second serve must fail as "lock held" before it opens a port (HTTP is on
-  // by default), not as a port that is in use.
-  if (lockHeld(serveLockPath(context.home))) {
-    throw new LockHeldError(
-      serveLockPath(context.home),
-      "another serve is still alive",
-    );
-  }
   const interval = process.env.OPERAD_SERVE_INTERVAL_MS;
   const parsed = interval === undefined ? Number.NaN : Number(interval);
   const controller = new AbortController();
@@ -1451,6 +1446,7 @@ async function commandServe(
     io.write(`serving ${context.home}\n`);
     await serve({
       home: context.home,
+      lock,
       log: context.log,
       registry: context.registry,
       lockRoot: context.storeRoot,
@@ -2033,12 +2029,20 @@ export async function main(
 
     if (command === "serve") {
       if (args.length > 1) throw new UsageError("serve takes no arguments");
-      const context = await openContext(home, io);
+      // The home lock comes first, before the store, the plugins or the port:
+      // a second serve fails here, with exit 4, and touches nothing. The lock
+      // is handed to `serve`, so there is no check and then act.
+      const lock = acquireLock(serveLockPath(home));
       try {
-        await commandServe(context, io, args.slice(1));
+        const context = await openContext(home, io);
+        try {
+          await commandServe(context, io, args.slice(1), lock);
+        } finally {
+          context.views.close();
+          await context.log.close();
+        }
       } finally {
-        context.views.close();
-        await context.log.close();
+        lock.release();
       }
       return 0;
     }

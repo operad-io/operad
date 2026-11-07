@@ -71,7 +71,8 @@ address (`169.254.0.0/16`, `fe80::/10`) or a Tailscale address
 (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`). It refuses a wildcard (`0.0.0.0` or
 `::`) and every other address, before it opens a port, naming the entry. The
 default listens on the machine only. A config with no `http` section means
-`enabled` true, port `7480`, `listen` `["127.0.0.1"]`.
+`enabled` true, port `7480`, `listen` `["127.0.0.1"]`. An `http` section without
+`enabled` turns the interface on, on the addresses in `listen`.
 
 The first `operad serve` with `http.enabled` true (the default) creates one bearer token, 32 random
 bytes in base64url, in `secrets/http.json`. Every request must carry
@@ -85,6 +86,9 @@ ends the event streams opened with it. No endpoint shows the token.
 ```text
 http http://127.0.0.1:7480
 ```
+
+A second `operad serve` for a home that already has one exits with code 4 before it
+reads the store or opens the port.
 
 ### Pairing the app
 
@@ -104,9 +108,9 @@ The URL is `http://<address>:<port>` for the first non-loopback entry of
 Tailscale HTTPS name (`operad pair --url https://mac.tail1234.ts.net`); it must
 be an `http` or `https` URL without credentials or a query. The QR code encodes
 `operad://pair?url=<url>&token=<token>`. It needs `http.enabled` true, and with no
-`--url` an address in `http.listen` that is not loopback. Because HTTP is now on
-by default, a fresh home no longer fails with `http.enabled`: `pair` says that
-`http.listen` has only loopback addresses and asks for one or `--url`.
+`--url` an address in `http.listen` that is not loopback. With the default `http`
+values, `pair` says that `http.listen` has only loopback addresses and asks for
+one or `--url`; it names `http.enabled` only when that is false.
 
 `pair` is the one command that prints the token. It refuses when its output is
 not a terminal, so a pipe or a log never receives it; `--show-token` overrides
@@ -129,18 +133,24 @@ or starts the server like this:
 - It asks that address for `/v1/types`. If a `serve` answers, it goes on.
 - If nothing answers and no `serve` holds this home, it starts `operad serve`
   for this `OPERAD_HOME`, prints `starting operad serve (log: <path>)`, waits up
-  to 15 seconds for it to answer, and opens the screen. The `serve` runs with
-  the same runtime and `operad` entry as the command you typed, appends its
-  output to `$OPERAD_HOME/serve.log`, and keeps running after you quit the TUI,
+  to 15 seconds (probe time counts) for it to answer, and opens the screen. The `serve` runs with
+  the same runtime and `operad` entry as the command you typed, with
+  `$OPERAD_HOME` as its working directory, appends its output to
+  `$OPERAD_HOME/serve.log`, and keeps running after you quit the TUI,
   because the hub keeps running flows. Stop it with `kill <pid>` (its pid is in
   `$OPERAD_HOME/serve.lock`) or press Ctrl-C in a terminal where you ran
   `operad serve` yourself. If it exits at once or never answers, `operad tui`
-  fails with one error that names `serve.log` and shows its last lines.
+  fails with one error that names `serve.log` and shows its last lines;
+  `serve.log` can hold plugin output, so read the lines before you paste them.
+  If another `operad tui` started the `serve` first, this one waits for that
+  `serve` to answer within the same 15 seconds.
 - If a `serve` already holds this home but nothing answers at the address
   (`http.enabled` is false, or `http.port`/`http.listen` differ), it starts
   nothing and says so, naming `http.enabled` and `http.port`.
 - If something answers at the address but it is not operad, it fails naming the
   port.
+- With `http.port` 0 or an empty `http.listen` it starts nothing and says to set
+  `http.port` (or `http.listen`) or pass `--url`.
 - With `"enabled": false` in `http` it starts nothing and names `http.enabled`.
 - `--no-start` turns the start off: the screen opens as before and shows the
   failure in its footer.

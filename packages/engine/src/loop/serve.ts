@@ -9,6 +9,7 @@ import { Kernel } from "../trigger/kernel.ts";
 import { loadTriggerRules } from "../trigger/rules.ts";
 import type { TriggerRule } from "../trigger/types.ts";
 import { acquireLock, lockHeld, runLockPath, serveLockPath } from "../runner/lock.ts";
+import type { LockHandle } from "../runner/lock.ts";
 import { StepLimits } from "../runner/limits.ts";
 import { applyInput, objectKey, parseObjectKey, readState } from "../runner/service.ts";
 
@@ -327,6 +328,8 @@ export async function serveOnce(
 
 export interface ServeOptions extends Omit<ServePassOptions, "shouldStop"> {
   readonly home: string;
+  /** The home lock, when the caller already holds it; `serve` releases it. */
+  readonly lock?: LockHandle | undefined;
   /** Called after each pass; it must not wait for slow work. */
   readonly onPass?: (() => void) | undefined;
   readonly intervalMs?: number | undefined;
@@ -362,9 +365,11 @@ export function sleepUntilAborted(
  * loop leaves it running, and the next loop picks the run up again.
  */
 export async function serve(options: ServeOptions): Promise<void> {
-  const lock = acquireLock(serveLockPath(options.home), {
-    clock: options.clock,
-  });
+  const lock =
+    options.lock ??
+    acquireLock(serveLockPath(options.home), {
+      clock: options.clock,
+    });
   const intervalMs = options.intervalMs ?? 1_000;
   const sleep = options.sleep ?? sleepUntilAborted;
   const clock = options.clock ?? (() => Date.now());

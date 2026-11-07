@@ -38,14 +38,16 @@ export function urlFromConfig(
   listen: readonly string[],
   port: number,
 ): string {
-  validateListenAddresses(listen);
   const address = listen[0];
   if (address === undefined) {
-    throw new TuiDiscoveryError("http.listen: needs at least one address");
+    throw new TuiDiscoveryError(
+      "http.listen needs at least one address; set http.listen in config.json or pass --url",
+    );
   }
+  validateListenAddresses(listen);
   if (port === 0) {
     throw new TuiDiscoveryError(
-      'http.port is 0; set a port in config.json or pass --url',
+      'http.port is 0, so no address can be reached; set http.port in config.json or pass --url',
     );
   }
   const host = address.includes(":") ? `[${address}]` : address;

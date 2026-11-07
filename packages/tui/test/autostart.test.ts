@@ -173,6 +173,7 @@ describe("ensureServer", () => {
           return { exited: new Promise(() => undefined) };
         },
         wait: noWait,
+        now: (() => { let t = 0; return () => (t += 100); })(),
         startTimeoutMs: 300,
         pollMs: 100,
         lockHeld: () => false,
@@ -223,6 +224,109 @@ describe("ensureServer", () => {
       expect((error as Error).message).toContain("7611");
       expect((error as Error).message).toContain("not operad");
       expect(spawned).toBe(0);
+    } finally {
+      await cleanup();
+    }
+  });
+});
+
+describe("ensureServer: races and bounds", () => {
+  test("two tui starting at once both end connected to the one serve", async () => {
+    const { home, cleanup } = await makeHome();
+    try {
+      let up = false;
+      let waits = 0;
+      let spawned = 0;
+      let lockChecks = 0;
+      const fetchImpl: FetchLike = async () => {
+        if (!up) throw new Error("refused");
+        return operad();
+      };
+      const common = {
+        home,
+        fetch: fetchImpl,
+        wait: async (): Promise<void> => {
+          waits += 1;
+          // Let the other call's file reads run; no time is waited.
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          // The serve comes up only once both have tried to start one.
+          if (waits >= 3 && spawned === 2) up = true;
+        },
+        // Both see the lock free before either spawns; after that it is held.
+        lockHeld: (): boolean => {
+          lockChecks += 1;
+          return lockChecks > 2;
+        },
+        spawn: (log: string) => {
+          spawned += 1;
+          if (spawned === 1) return { exited: new Promise<number | null>(() => undefined) };
+          // The loser: the lock was taken, so it exits at once.
+          writeFileSync(log, "lock held\n");
+          return { exited: Promise.resolve(4) };
+        },
+      };
+      const [a, b] = await Promise.all([ensureServer(common), ensureServer(common)]);
+      expect(a).toBe("http://127.0.0.1:7480");
+      expect(b).toBe(a);
+      expect(spawned).toBe(2);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("port 0 or an empty listen fails before anything is spawned", async () => {
+    for (const http of [{ port: 0 }, { listen: [] }]) {
+      const { home, cleanup } = await makeHome(http);
+      try {
+        let spawned = 0;
+        const error = await ensureServer({
+          home,
+          fetch: async () => { throw new Error("refused"); },
+          spawn: () => {
+            spawned += 1;
+            return { exited: new Promise(() => undefined) };
+          },
+          lockHeld: () => false,
+        }).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toMatch(/--url/);
+        expect((error as Error).message).toMatch(/http\.(port|listen)/);
+        expect(spawned).toBe(0);
+      } finally {
+        await cleanup();
+      }
+    }
+  });
+
+  test("probe time counts against the start deadline", async () => {
+    const { home, cleanup } = await makeHome();
+    try {
+      let clock = 0;
+      let probes = 0;
+      const error = await ensureServer({
+        home,
+        // Each probe takes its whole timeout, then fails.
+        fetch: async () => {
+          probes += 1;
+          clock += 1_500;
+          throw new Error("timed out");
+        },
+        spawn: () => ({ exited: new Promise(() => undefined) }),
+        now: () => clock,
+        wait: async (ms) => {
+          clock += ms;
+        },
+        startTimeoutMs: 15_000,
+        pollMs: 100,
+        probeTimeoutMs: 1_500,
+        lockHeld: () => false,
+      }).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(TuiStartError);
+      // One probe before the start, then about 15 s / 1.6 s while waiting.
+      expect(probes).toBeLessThanOrEqual(12);
+      // The deadline, the probe in flight when it passes, and one wait; the
+      // first probe, before the start, is not part of it.
+      expect(clock).toBeLessThanOrEqual(1_500 + 15_000 + 1_500 + 100);
     } finally {
       await cleanup();
     }

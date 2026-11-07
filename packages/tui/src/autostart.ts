@@ -128,6 +128,8 @@ export interface EnsureServerOptions {
   readonly pollMs?: number | undefined;
   /** Tests inject a wait instead of a timer. */
   readonly wait?: ((ms: number) => Promise<void>) | undefined;
+  /** The clock the start deadline is read from; probe time counts. */
+  readonly now?: (() => number) | undefined;
   /** Tests inject the home lock check. */
   readonly lockHeld?: ((path: string) => boolean) | undefined;
 }
@@ -182,20 +184,30 @@ export async function ensureServer(options: EnsureServerOptions): Promise<string
     exitCode = code;
   });
 
-  const deadline = options.startTimeoutMs ?? START_TIMEOUT_MS;
+  const now = options.now ?? Date.now;
+  const lockCheck = options.lockHeld ?? lockHeld;
+  const timeout = options.startTimeoutMs ?? START_TIMEOUT_MS;
   const step = options.pollMs ?? START_POLL_MS;
-  for (let waited = 0; waited <= deadline; waited += step) {
-    if (exitCode !== undefined) {
-      throw new TuiStartError(
-        `operad serve exited at once${exitCode === null ? "" : ` (code ${exitCode})`}; log ${log}:\n${tailOf(log)}`,
-      );
+  const deadline = now() + timeout;
+  // Another `operad tui` may have started the serve first. Our child then
+  // lost the lock and exited, and the winner is the one to wait for.
+  let adopted = false;
+  for (;;) {
+    if (exitCode !== undefined && !adopted) {
+      if (!lockCheck(serveLockPath(home))) {
+        throw new TuiStartError(
+          `operad serve exited at once${exitCode === null ? "" : ` (code ${exitCode})`}; log ${log}:\n${tailOf(log)}`,
+        );
+      }
+      adopted = true;
     }
     if ((await probeServer(url, fetchImpl, options.probeTimeoutMs)) === "operad") {
       return url;
     }
+    if (now() >= deadline) break;
     await wait(step);
   }
   throw new TuiStartError(
-    `operad serve did not answer at ${url} within ${Math.round(deadline / 1000)} seconds; log ${log}:\n${tailOf(log)}`,
+    `operad serve did not answer at ${url} within ${Math.round(timeout / 1000)} seconds; log ${log}:\n${tailOf(log)}`,
   );
 }
