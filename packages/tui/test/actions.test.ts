@@ -133,6 +133,17 @@ describe("actions in the reducer", () => {
     }
   });
 
+  test("a user binding beats the built-in keys while the key list is open", () => {
+    for (const key of ["q", "/"]) {
+      const open = press(opened(ACTIONS, [{ key, action: "other:ship", source: "user" }]), "?");
+      expect(open.keys).toBe(true);
+      const ran = press(open, key);
+      expect(ran.actionRequest).toEqual({ action: "other:ship", id: "item:one" });
+      expect(ran.quit).not.toBe(true);
+      expect(ran.keys).toBe(false);
+    }
+  });
+
   test("a note is sent exactly as entered", () => {
     let state = press(opened(), "a");
     state = press(state, ...typeText("  reason  "), { type: "key", key: "enter", shift: true }, "enter");

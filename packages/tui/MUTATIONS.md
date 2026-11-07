@@ -93,3 +93,4 @@ the row fields.
 | T-0032-M6 | packages/tui/src/state.ts | `:` opened no palette | `actions in the reducer > the palette filters by fuzzy match and shows key, note and confirm` |
 | T-0032-M7 | packages/tui/src/state.ts | the `:`, `?` and `q` built-ins came before the person's key bindings | `actions in the reducer > a user binding on :, ? or q beats the built-in key` |
 | T-0032-M8 | packages/tui/src/actions.ts | the note was trimmed before it was sent | `actions in the reducer > a note is sent exactly as entered` |
+| T-0032-M9 | packages/tui/src/state.ts | the person's key bindings were skipped while the key list was open | `actions in the reducer > a user binding beats the built-in keys while the key list is open` |

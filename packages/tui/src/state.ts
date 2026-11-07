@@ -1077,9 +1077,10 @@ function handleKey(
   const label = keyLabel(key, shift);
   // The person's own bindings come before every built-in key; a plugin's
   // default comes after them, so it never takes `j` or `r` away.
-  if (!state.keys && !isKey(key, "enter", "return", "escape", "esc")) {
+  if (!isKey(key, "enter", "return", "escape", "esc")) {
     const own = bindingFor(state.bindings, label, "user");
-    if (own !== undefined) return startAction(state, own.action);
+    // The key list closes first, so the action acts on what the person sees.
+    if (own !== undefined) return startAction({ ...state, keys: false }, own.action);
   }
   if (key === ":" && !state.keys) {
     return { ...state, input: { kind: "palette", query: "", cursor: 0 } };
