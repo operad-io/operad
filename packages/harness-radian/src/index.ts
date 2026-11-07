@@ -146,6 +146,8 @@ interface ParsedResult {
   readonly finalMessage: string | null;
   readonly usage: HarnessUsage;
   readonly cost: HarnessCost | null;
+  /** The `model_error` of a run that ended on a model failure, as data. */
+  readonly modelError: Readonly<Record<string, unknown>> | null;
 }
 
 /** Reads the closing `Result` record of radian's JSONL, or undefined. */
@@ -172,7 +174,15 @@ function parseResult(line: string): ParsedResult | undefined {
     finalMessage: typeof value.text === "string" ? value.text : null,
     usage,
     cost,
+    modelError: isRecord(value.model_error) ? value.model_error : null,
   };
+}
+
+/** `{ modelError }` when radian reported one, so a caller can classify it. */
+function modelErrorData(
+  result: ParsedResult | undefined,
+): Record<string, unknown> {
+  return result?.modelError == null ? {} : { modelError: result.modelError };
 }
 
 function failureData(
@@ -184,6 +194,7 @@ function failureData(
 ): Record<string, unknown> {
   return {
     ...agentData(outcome, result, log, durationMs),
+    ...modelErrorData(result),
     ...extra,
   };
 }
@@ -311,10 +322,10 @@ function resultFor(
   }
   return {
     result: "done",
-    data: agentData(outcome, result, log, durationMs) as unknown as Record<
-      string,
-      unknown
-    >,
+    data: {
+      ...agentData(outcome, result, log, durationMs),
+      ...modelErrorData(result),
+    } as unknown as Record<string, unknown>,
   };
 }
 

@@ -118,6 +118,29 @@ how the run ended. `operad history <run id>` narrows it to one run, and
 `operad history <id> --json` gives the same lines as JSON. `operad running` lists
 runs in progress; `operad flows` lists the loaded flows.
 
+## When the reviewer is unavailable
+
+A review whose harness reports a model error (`unavailable` or `usage_limit`),
+or whose error output says `HTTP 429`, does not lose the attempt. The same review round runs once on
+`reviewer.fallback` when `.operad/dev.json` sets one. Without a fallback, or
+when the fallback is unavailable too, the task waits `reviewer.retrySecs`
+(default 120 seconds) and then runs the review again; it does not start a worker
+and does not count a rework. A round uses its fallback at most once, so a retry
+that finds the primary unavailable again waits rather than calling the fallback
+a second time. A wait longer than one step run is split into pieces below the
+step timeout, so any positive `reviewer.retrySecs` is waited out; the flow's
+visit limit is finite, and a round waits at most 36 times (about 72 minutes
+at the default) before it waits for a person with the note `review did not
+finish (model unavailable)`; a review step that cannot fit another run in its
+three-hour step timeout does the same with `review did not finish (out of
+time)`. During the wait, merge, reject, rework and reverify are not offered. A
+review that
+times out is retried once with the same arguments; a second timeout waits for a
+person with the note `review timed out twice`. A crash during a review resumes
+the same round and reuses the answer the reviewer already gave, so a fallback is
+not called twice. `operad history <task>` names the
+model that reviewed each round and why a fallback or a retry happened.
+
 Every time a task starts waiting for a person, `dev` records one `dev.waiting`
 event with one of these reasons: `ready to merge`, `review findings`,
 `gate failed`, `rework limit`, `review timed out twice`, `review did not finish`
