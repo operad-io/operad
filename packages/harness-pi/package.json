@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@operad-io/access-match": "workspace:*",
     "@earendil-works/pi-coding-agent": "1.5.0"
   }
 }

@@ -200,6 +200,83 @@ test("usage and cost are summed over every message_end, with a tool call between
   expect(run.stderr).toContain("tool_call read");
 });
 
+test("a denied bash call is blocked, a blocked line is written, the model gets the reason and the run ends done", async () => {
+  const s = setup();
+  const marker = join(s.dir, "marker");
+  const contexts = join(s.dir, "contexts.jsonl");
+  const run = await runFake(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: `echo hi && touch ${marker}` } } },
+      { text: "I was refused" },
+    ],
+    { ...s.input, access: { denyCommands: ["touch"] } },
+    { FAKE_CONTEXT_FILE: contexts },
+  );
+
+  const reason = `part "touch ${marker}" is refused by denyCommands rule "touch"`;
+  expect(run.exitCode).toBe(0);
+  expect(run.lines.filter((line) => line["type"] === "blocked")).toEqual([
+    { type: "blocked", toolName: "bash", reason },
+  ]);
+  expect(existsSync(marker)).toBe(false);
+  expect(run.lines.find((line) => line["type"] === "tool_execution_end")).toMatchObject({ toolName: "bash", isError: true });
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "I was refused" });
+  const calls = readFileSync(contexts, "utf-8").split("\n").filter((line) => line.length > 0);
+  expect(calls.length).toBe(2);
+  expect(calls[1]).toContain(reason.replaceAll('"', '\\"'));
+});
+
+test("a read of a denied path is blocked; an allowed read runs", async () => {
+  const s = setup();
+  const secrets = join(s.dir, "secrets");
+  mkdirSync(secrets);
+  writeFileSync(join(secrets, "key"), "k\n");
+  const note = join(s.dir, "note.txt");
+  writeFileSync(note, "x\n");
+  const run = await runFake(
+    s,
+    [
+      { text: "", toolCall: { name: "read", arguments: { path: join(secrets, "key") } } },
+      { text: "", toolCall: { name: "read", arguments: { path: note } } },
+      { text: "finished" },
+    ],
+    { ...s.input, access: { denyPaths: [secrets] } },
+  );
+
+  expect(run.lines.filter((line) => line["type"] === "blocked")).toEqual([
+    {
+      type: "blocked",
+      toolName: "read",
+      reason: `path "${join(secrets, "key")}" is under denyPaths entry "${secrets}"`,
+    },
+  ]);
+  expect(run.lines.filter((line) => line["type"] === "tool_execution_end")).toMatchObject([
+    { toolName: "read", isError: true },
+    { toolName: "read", isError: false },
+  ]);
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "finished" });
+});
+
+test("without a profile nothing is blocked", async () => {
+  const s = setup();
+  const run = await runFake(s, [
+    { text: "", toolCall: { name: "bash", arguments: { command: "echo hi; bash -c true" } } },
+    { text: "finished" },
+  ]);
+  expect(run.lines.some((line) => line["type"] === "blocked")).toBe(false);
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "finished" });
+});
+
+test("an access profile with a bad denyPaths is invalid input naming access.denyPaths", async () => {
+  const s = setup();
+  const child = new Child(REAL_WORKER, s.home, {});
+  child.send(JSON.stringify({ ...s.input, access: { denyPaths: "~/.ssh" } }));
+  const run = await child.finish();
+  expect(run.exitCode).toBe(2);
+  expect(String(last(run)["message"])).toContain("access.denyPaths");
+});
+
 test("a model with no price has cost.micros null", async () => {
   const s = setup();
   const run = await runFake(s, [{ text: "ANSWER", noPrice: true }]);

@@ -3,6 +3,8 @@
  * `test/protocol.test.ts` checks the program against them.
  */
 
+import { readProfile } from "@operad-io/access-match";
+
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type WorkerThinkingLevel = (typeof THINKING_LEVELS)[number];
 
@@ -115,6 +117,10 @@ export function parseInput(value: unknown): ParsedInput {
   const access = value["access"];
   if (access !== undefined && !isRecord(access)) {
     return { ok: false, message: "access must be an object" };
+  }
+  if (access !== undefined) {
+    const profile = readProfile(access);
+    if (!profile.ok) return { ok: false, message: `access.${profile.message}` };
   }
 
   return {
