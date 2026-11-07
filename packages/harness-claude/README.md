@@ -37,7 +37,7 @@ the table is refused, not ignored.
 | `resumeSession` | string, a UUID | no | a `sessionId` from an earlier `Result`; the prompt is sent into that session |
 | `model` | string, non-empty | no | model name for claude (`--model`); absent means claude's own default |
 | `effort` | `low`, `medium`, `high`, `xhigh` or `max` | no | reasoning effort; absent means claude's default |
-| `access` | object | no | the access profile; checked when it is read (the matching comes with the access task) |
+| `access` | object | no | the access profile; `denyPaths` and `denyCommands` are enforced in `canUseTool` by `@operad-io/access-match`, `grants` are one-time permissions, other fields are ignored; absent means nothing is denied |
 | `maxTurns` | positive integer | no | SDK `maxTurns`; absent means no limit |
 | `budgetUsd` | positive number | no | SDK `maxBudgetUsd`; absent means none |
 
@@ -172,6 +172,51 @@ but the login kind is read or printed: no e-mail, organisation or token.
 
 ### Access profile
 
-Not enforced yet: the step declares no `enforces` field, so a profile that sets
-a deny field is refused when the run starts. The worker reads the profile and
-checks it; the matching comes with the access task.
+The step declares `enforces: ["denyPaths", "denyCommands"]` and passes the run's
+profile to the worker. A profile that sets `askCommands` is refused when the run
+starts, with `askCommands` named.
+
+The worker judges every call in `canUseTool` (`src/access.ts`). `access-match`
+knows lower-case tool names and the fields `command` and `path`, so one table
+maps claude's tools to them:
+
+| claude tool | judged as | field read | field required |
+|---|---|---|---|
+| `Bash` | `bash` | `command` | yes |
+| `Read` | `read` | `file_path` | yes |
+| `Write` | `write` | `file_path` | yes |
+| `Edit` | `edit` | `file_path` | yes |
+| `MultiEdit` | `edit` | `file_path` | yes |
+| `NotebookEdit` | `edit` | `notebook_path` | yes |
+| `Grep` | `grep` | `path` | no (the search starts in `cwd`) |
+| `Glob` | `find` | `path` | no (the search starts in `cwd`) |
+
+A call whose required field is missing or not a string is refused while a deny
+rule is set: a call without its target cannot be judged.
+
+A tool that is not in the table:
+
+- `TodoWrite`, `WebFetch`, `WebSearch`, `ExitPlanMode`, `BashOutput`,
+  `KillShell`, `Task` and `Agent` run no command and name no file, so they are
+  allowed. A subagent's own tool calls come to `canUseTool` too and are judged
+  like any other.
+- Any other name (an MCP tool, a tool a later claude adds) is allowed only when
+  the profile has no `denyPaths` and no `denyCommands`. With a rule set it is
+  refused, because a rule that could match it cannot be checked.
+
+A refused call is answered `{ behavior: "deny", message }`; the message is the
+reason `access-match` gave, the model receives it as the tool's result and the
+run goes on. The worker writes a `blocked` line and closes the call with a
+`tool_execution_end` that has `isError: true`.
+
+A one-time permission arrives in the profile as `grants: [{ waitId, kind, value,
+tool? }]`. When it is present the step keeps the worker's stdin open after the
+input line. A call the profile refuses and that equals a grant exactly (`Bash`
+command text, or the path for the one tool the grant names) makes the worker
+write `{"type":"grant_use","id":n,"waitId":"..."}` and wait for one stdin line
+`{"type":"grant_ack","id":n,"used":true|false}`. The host records `grant_used`
+before it answers `used: true`; only then does the call run. `used: false`, a
+host that is gone (stdin closed) and a host that fails all leave the call
+refused. A second identical call finds the grant used and is judged as usual.
+The host's half (`hasGrants`, `grantUse`, `answerGrant`) is in
+`@operad-io/harness-process`, shared with `harness-pi`.

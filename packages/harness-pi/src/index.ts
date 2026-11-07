@@ -20,10 +20,12 @@ import {
   type StepContext,
 } from "@operad-io/engine";
 import {
+  answerGrant,
   CONCURRENCY_SETTING,
   eventNote,
   askNote,
   flagValue,
+  hasGrants,
   JsonlLog,
   modelLimit,
   standardUsage,
@@ -386,29 +388,6 @@ function resultFor(
   };
 }
 
-function hasGrants(access: unknown): boolean {
-  return isRecord(access) && Array.isArray(access.grants) && access.grants.length > 0;
-}
-
-/** The `grant_use` line the program writes before a granted call, if this is one. */
-function grantUse(line: string): { id: number; waitId: string } | undefined {
-  if (!line.includes('"grant_use"')) return undefined;
-  try {
-    const parsed: unknown = JSON.parse(line);
-    if (
-      isRecord(parsed) &&
-      parsed.type === "grant_use" &&
-      typeof parsed.id === "number" &&
-      typeof parsed.waitId === "string"
-    ) {
-      return { id: parsed.id, waitId: parsed.waitId };
-    }
-  } catch {
-    // Not JSON: an ordinary line.
-  }
-  return undefined;
-}
-
 /**
  * Creates the pi harness plugin. Its worker is `worker.ts` under the running
  * Bun; a test replaces the program with a fake that prints fixed lines.
@@ -582,16 +561,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             clock,
             toolEvent: piToolEvent,
             async onLine(line, reply) {
-              const use = grantUse(line);
-              if (use !== undefined) {
-                let used = false;
-                try {
-                  used = await ctx.useGrant(use.waitId);
-                } catch {
-                  used = false;
-                }
-                reply(JSON.stringify({ type: "grant_ack", id: use.id, used }));
-              }
+              await answerGrant(line, (waitId) => ctx.useGrant(waitId), reply);
               const writing = jsonl.push(line);
               const parsed = parseResult(line);
               if (parsed !== undefined) result = parsed;

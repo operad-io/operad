@@ -12,9 +12,10 @@ import {
   type CanUseTool,
   type HookCallback,
   type Options,
-  type PermissionResult,
   type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import { readProfile, type AccessProfile } from "@operad-io/access-match";
+import { decideAccess } from "./access.ts";
 import { findClaude } from "./claude-install.ts";
 import {
   parseInput,
@@ -89,22 +90,6 @@ function usageOf(value: unknown): Required<WorkerUsage> {
   };
 }
 
-/** A tool call the model asks to make. */
-export interface ToolCall {
-  readonly tool: string;
-  readonly input: Record<string, unknown>;
-  readonly toolUseId: string;
-}
-
-/**
- * The only permission surface (`permissionMode: 'default'` sends every call
- * that is not already allowed here). It allows every call; the access profile
- * replaces this body.
- */
-async function decideTool(call: ToolCall): Promise<PermissionResult> {
-  return { behavior: "allow", updatedInput: call.input };
-}
-
 function isSessionMissing(text: string): boolean {
   return /no conversation found/i.test(text);
 }
@@ -163,13 +148,20 @@ export async function runWorker(
       return {};
     };
 
+  // The profile was checked when the input was read; a bad one never gets here.
+  const read = readProfile(input.access ?? {});
+  const profile: AccessProfile = read.ok ? read.profile : {};
+
+  // The only permission surface (`permissionMode: 'default'` sends every call
+  // that is not already allowed here). A refusal goes to the model as the
+  // tool's result and the run goes on; the call is closed for the host.
   const canUseTool: CanUseTool = async (toolName, toolInput, options) => {
-    const verdict = await decideTool({ tool: toolName, input: toolInput, toolUseId: options.toolUseID });
-    if (verdict.behavior === "deny") {
-      io.line({ type: "blocked", toolName, reason: verdict.message });
-      endCall(options.toolUseID, toolName, true);
-    }
-    return verdict;
+    io.log(`canUseTool ${toolName}`);
+    const verdict = await decideAccess(profile, toolName, toolInput, input.cwd, io.useGrant);
+    if (verdict.allow) return { behavior: "allow", updatedInput: toolInput };
+    io.line({ type: "blocked", toolName, reason: verdict.reason });
+    endCall(options.toolUseID, toolName, true);
+    return { behavior: "deny", message: verdict.reason };
   };
 
   const stderrTail: string[] = [];
