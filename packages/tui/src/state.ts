@@ -36,6 +36,8 @@ export interface TuiRow {
   readonly running: boolean;
   /** Set on an error row; the view adds one red line under the row. */
   readonly error?: string | undefined;
+  /** False for a row that names no object (a run, a candidate): it never opens. */
+  readonly openable?: boolean | undefined;
 }
 
 /** One section of the open object, with the content fetched so far. */
@@ -51,6 +53,8 @@ export interface TuiSection {
   readonly full: boolean;
   /** The server cut the content at its size cap. */
   readonly capped: boolean;
+  /** How many pages of content are in `markdown`; a refresh fetches as many. */
+  readonly pages: number;
   readonly error?: string | undefined;
   /** The first content line the pane shows. */
   readonly scroll: number;
@@ -63,6 +67,8 @@ export interface TuiSection {
 /** The object the right pane shows, or the one that fills a narrow screen. */
 export interface TuiObject {
   readonly id: string;
+  /** The id of the list row it was opened from; the same row opens it once. */
+  readonly source: string;
   readonly type: string;
   readonly link: string;
   readonly row: TuiRow;
@@ -90,6 +96,8 @@ export interface TuiSectionRequest {
   readonly full: boolean;
   /** The section version the page was asked for. */
   readonly version: number;
+  /** The open that asked: a page for an older open is dropped. */
+  readonly objectVersion: number;
 }
 
 /** A list page the reducer wants the caller to fetch next. */
@@ -147,6 +155,10 @@ export interface TuiState {
   readonly objectRequest?: TuiObjectRequest | undefined;
   /** Set when a section must be fetched. */
   readonly sectionRequest?: TuiSectionRequest | undefined;
+  /** Grows each time a list cursor moves; the shell opens what it lands on. */
+  readonly moveSeq: number;
+  /** The cursor moved and the object pane has not followed it yet. */
+  readonly followPending: boolean;
   /** Grows with each refresh; an answer to an older refresh is dropped. */
   readonly generation: number;
   /** The last failure to show in the footer; cleared by a good refresh. */
@@ -209,6 +221,8 @@ export function initialState(options: TuiStateOptions = {}): TuiState {
     quit: false,
     refreshRequested: false,
     objectVersion: 0,
+    moveSeq: 0,
+    followPending: false,
     generation: 0,
   };
 }
@@ -278,6 +292,10 @@ export type TuiStateEvent =
       readonly cursor?: string | undefined;
       readonly full?: boolean | undefined;
       readonly version?: number | undefined;
+      /** The open it was asked for; an older open drops it. */
+      readonly objectVersion?: number | undefined;
+      /** For a replace: how many pages the text holds. */
+      readonly pages?: number | undefined;
     }
   | {
       readonly type: "section-error";
@@ -285,7 +303,10 @@ export type TuiStateEvent =
       readonly sectionId: string;
       readonly message: string;
       readonly version?: number | undefined;
+      readonly objectVersion?: number | undefined;
     }
+  /** The debounce after a cursor move ended: open the row it landed on. */
+  | { readonly type: "follow" }
   /** The caller launched the object request; it is asked for once. */
   | { readonly type: "object-launched" }
   /** The caller launched the section request; it is asked for once. */
@@ -355,6 +376,7 @@ function rowFromPending(item: PendingItem): TuiRow {
       waiting: true,
       running: false,
       ...(item.row.error === undefined ? {} : { error: sanitize(item.row.error) }),
+      ...(item.object === undefined ? { openable: false } : {}),
     };
   }
   return {
@@ -364,6 +386,7 @@ function rowFromPending(item: PendingItem): TuiRow {
     ...(item.step === null ? {} : { note: sanitize(item.step) }),
     waiting: true,
     running: false,
+    ...(item.object === undefined ? { openable: false } : {}),
   };
 }
 
@@ -375,6 +398,7 @@ function rowFromRunning(item: RunningItem): TuiRow {
     note: formatElapsed(item.elapsedMs),
     waiting: false,
     running: true,
+    openable: false,
   };
 }
 
@@ -499,6 +523,7 @@ function makeSection(info: ViewSectionInfo, previous?: TuiSection): TuiSection {
     loading: false,
     full: false,
     capped: false,
+    pages: 0,
     scroll: 0,
     following: live,
     version: 0,
@@ -553,7 +578,8 @@ function requestSection(
     current.sectionId === section.id &&
     current.cursor === cursor &&
     current.full === full &&
-    current.version === section.version
+    current.version === section.version &&
+    current.objectVersion === object.version
   ) {
     return state;
   }
@@ -570,6 +596,7 @@ function requestSection(
       ...(cursor === undefined ? {} : { cursor }),
       full,
       version: section.version,
+      objectVersion: object.version,
     },
   };
 }
@@ -598,15 +625,20 @@ function moveSection(state: TuiState, delta: number): TuiState {
 function openObject(state: TuiState): TuiState {
   const tab = activeTabOf(state);
   const row = tab?.list.rows[tab.list.cursor];
-  if (row === undefined) return state;
-  const previous = state.object?.id === row.id ? state.object : undefined;
+  if (row === undefined || row.openable === false) return state;
+  const previous = state.object?.source === row.id ? state.object : undefined;
   const version = state.objectVersion + 1;
   const object: TuiObject = {
     id: row.id,
+    source: row.id,
     type: previous?.type ?? (row.id.includes(":") ? row.id.slice(0, row.id.indexOf(":")) : row.id),
     link: previous?.link ?? "",
     row,
-    sections: previous?.sections ?? [],
+    // A request for the sections died with the old open, so none is loading.
+    sections: (previous?.sections ?? []).map((section) => ({
+      ...section,
+      loading: false,
+    })),
     active: previous?.active ?? 0,
     loading: true,
     version,
@@ -663,6 +695,7 @@ function applyObject(
       : Math.min(previous?.active ?? 0, Math.max(0, sections.length - 1));
   const object: TuiObject = {
     id: view.id,
+    source: previous.source,
     type: view.type,
     link: view.link,
     row,
@@ -710,7 +743,23 @@ function applyObjectError(
   };
 }
 
-function joinMarkdown(before: string, after: string): string {
+/**
+ * The line the server puts last when it cuts a section at its size cap
+ * (`operad show <id> --section <section> --full`). Only that exact line, as the
+ * last line, counts: the same words inside the text do not.
+ */
+const TRUNCATION_LINE =
+  /^\[Truncated\. See all of it with `operad show .+ --section .+ --full`\.\]$/;
+
+/** True when the text ends with the server's truncation line. */
+export function isTruncated(markdown: string): boolean {
+  const lines = markdown.split("\n");
+  while (lines.length > 0 && (lines[lines.length - 1] ?? "").trim() === "") lines.pop();
+  return TRUNCATION_LINE.test(lines[lines.length - 1] ?? "");
+}
+
+/** Joins a page after the text before it. */
+export function joinMarkdown(before: string, after: string): string {
   if (before.length === 0) return after;
   if (after.length === 0) return before;
   return `${before.replace(/\n?$/, "\n")}${after}`;
@@ -724,17 +773,21 @@ function applySection(
   cursor: string | undefined,
   full: boolean,
   version: number | undefined,
+  objectVersion: number | undefined,
+  pages: number | undefined,
 ): TuiState {
   const object = state.object;
   if (object === undefined || object.id !== objectId) return state;
   const section = object.sections.find((candidate) => candidate.id === sectionId);
   if (section === undefined) return state;
   if (version !== undefined && version !== section.version) return state;
+  // A page asked for before the object was closed and opened again.
+  if (objectVersion !== undefined && objectVersion !== object.version) return state;
   const markdown =
     cursor === undefined
       ? content.markdown
       : joinMarkdown(section.markdown, content.markdown);
-  const capped = !full && /\[Truncated\./.test(markdown);
+  const capped = !full && isTruncated(markdown);
   const updated = withSection(state, sectionId, (value) => {
     const next: TuiSection = {
       ...value,
@@ -744,6 +797,7 @@ function applySection(
       loading: false,
       full: full || value.full,
       capped,
+      pages: cursor === undefined ? (pages ?? 1) : value.pages + 1,
       error: undefined,
       version: value.version + 1,
     };
@@ -766,6 +820,7 @@ function applySectionError(
   sectionId: string,
   message: string,
   version: number | undefined,
+  objectVersion: number | undefined,
 ): TuiState {
   const object = state.object;
   const section = object?.sections.find((candidate) => candidate.id === sectionId);
@@ -773,6 +828,7 @@ function applySectionError(
     return state;
   }
   if (version !== undefined && version !== section.version) return state;
+  if (objectVersion !== undefined && objectVersion !== object.version) return state;
   const updated = withSection(state, sectionId, (value) => ({
     ...value,
     loading: false,
@@ -843,12 +899,18 @@ function move(state: TuiState, delta: number): TuiState {
     // failed attempt or the end of the loaded rows left unread.
     return delta > 0 ? requestPage(state, tab) : state;
   }
-  const moved = withTab(state, tab.id, (current) => ({
-    ...current,
-    list: { ...current.list, cursor: next },
-  }));
+  const moved = moveCursor(state, tab.id, next);
   const updated = activeTabOf(moved);
   return updated === undefined ? moved : requestPage(moved, updated);
+}
+
+/** Moves a tab's cursor; the object pane follows it after the shell's debounce. */
+function moveCursor(state: TuiState, tabId: string, cursor: number): TuiState {
+  const moved = withTab(state, tabId, (current) => ({
+    ...current,
+    list: { ...current.list, cursor },
+  }));
+  return { ...moved, moveSeq: state.moveSeq + 1, followPending: true };
 }
 
 function jump(state: TuiState, to: "top" | "bottom"): TuiState {
@@ -856,17 +918,48 @@ function jump(state: TuiState, to: "top" | "bottom"): TuiState {
   if (tab === undefined) return state;
   const cursor = to === "top" ? 0 : Math.max(0, tab.list.rows.length - 1);
   if (cursor === tab.list.cursor) return state;
-  const moved = withTab(state, tab.id, (current) => ({
-    ...current,
-    list: { ...current.list, cursor },
-  }));
+  const moved = moveCursor(state, tab.id, cursor);
   const updated = activeTabOf(moved);
   return updated === undefined ? moved : requestPage(moved, updated);
 }
 
 function activate(state: TuiState, index: number): TuiState {
   if (index < 0 || index >= state.tabs.length || index === state.active) return state;
-  return { ...state, active: index };
+  // Another tab is another list: the object of the old one closes.
+  return closeObject({ ...state, active: index, followPending: false });
+}
+
+/** The row the active list's cursor is on, if it can be opened. */
+function selectedRow(state: TuiState): TuiRow | undefined {
+  const tab = activeTabOf(state);
+  const row = tab?.list.rows[tab.list.cursor];
+  return row === undefined || row.openable === false ? undefined : row;
+}
+
+/** Enter: opens the selected row; on the row that is already open, nothing. */
+function enter(state: TuiState): TuiState {
+  const row = selectedRow(state);
+  if (row === undefined) return state;
+  const open = state.object;
+  if (open !== undefined && open.source === row.id && open.error === undefined) {
+    return { ...state, followPending: false };
+  }
+  return openObject({ ...state, followPending: false });
+}
+
+/**
+ * The debounce after a cursor move ended: with the object pane beside the list,
+ * the pane shows the row the cursor is on. A narrow screen opens nothing by
+ * itself.
+ */
+function follow(state: TuiState): TuiState {
+  if (!state.followPending) return state;
+  const cleared = { ...state, followPending: false };
+  if (!twoPane(cleared)) return cleared;
+  const row = selectedRow(cleared);
+  if (row === undefined) return cleared;
+  if (cleared.object?.source === row.id) return cleared;
+  return openObject(cleared);
 }
 
 function cycle(state: TuiState, delta: number): TuiState {
@@ -901,24 +994,34 @@ function handleKey(
     // The list behind the key list is hidden, so no other key acts on it.
     return isKey(key, "escape", "esc") ? { ...state, keys: false } : state;
   }
-  if (isKey(key, "enter", "return")) return openObject(state);
-  if (isKey(key, "escape", "esc")) return closeObject(state);
+  if (isKey(key, "enter", "return")) return enter(state);
+  if (isKey(key, "escape", "esc")) {
+    return closeObject({ ...state, followPending: false });
+  }
   if (isKey(key, "[", "left", "arrowleft")) return moveSection(state, -1);
   if (isKey(key, "]", "right", "arrowright")) return moveSection(state, 1);
-  if (state.object !== undefined) {
+  const object = state.object;
+  if (object !== undefined) {
+    // The pane scrolls by page in both layouts; only on a narrow screen, where
+    // the object fills the screen, do the list keys scroll it by line.
     const page = Math.max(1, sectionViewport(state) - 1);
-    if (isKey(key, "up", "arrowup", "k")) return scrollSection(state, -1);
-    if (isKey(key, "down", "arrowdown", "j")) return scrollSection(state, 1);
-    if (isKey(key, "pageup", "page-up", "prior")) return scrollSection(state, -page);
-    if (isKey(key, "pagedown", "page-down", "next")) return scrollSection(state, page);
-    if (key === "G" || (isKey(key, "g") && shift)) return jumpSection(state, "bottom");
-    if (isKey(key, "g")) return jumpSection(state, "top");
+    if (isKey(key, "pageup", "page-up", "prior", "b")) return scrollSection(state, -page);
+    if (isKey(key, "pagedown", "page-down", "next", "space", " ")) {
+      return scrollSection(state, page);
+    }
+    if (isKey(key, "home")) return jumpSection(state, "top");
+    if (isKey(key, "end")) return jumpSection(state, "bottom");
     if (isKey(key, "f")) {
-      const object = state.object;
       const section = activeSection(state);
-      return object !== undefined && section !== undefined && section.capped && !section.full
+      return section !== undefined && section.capped && !section.full
         ? requestSection(state, object.active, { full: true })
         : state;
+    }
+    if (!twoPane(state)) {
+      if (isKey(key, "up", "arrowup", "k")) return scrollSection(state, -1);
+      if (isKey(key, "down", "arrowdown", "j")) return scrollSection(state, 1);
+      if (key === "G" || (isKey(key, "g") && shift)) return jumpSection(state, "bottom");
+      if (isKey(key, "g")) return jumpSection(state, "top");
     }
   }
   if (isKey(key, "r")) return { ...state, refreshRequested: true };
@@ -1108,6 +1211,8 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
         event.cursor,
         event.full === true,
         event.version,
+        event.objectVersion,
+        event.pages,
       );
     case "section-error":
       return applySectionError(
@@ -1116,7 +1221,10 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
         event.sectionId,
         event.message,
         event.version,
+        event.objectVersion,
       );
+    case "follow":
+      return follow(state);
     case "refresh-start":
       return { ...state, generation: state.generation + 1 };
     case "page-launched":
@@ -1194,21 +1302,29 @@ export function headerText(state: TuiState): string {
 
 /** The footer for the current screen. */
 export function footerText(state: TuiState): string {
-  const common =
-    state.object === undefined
-      ? "1–9/tab switch · ↑↓/j k move · enter open · g G top/bottom · r refetch · ? keys · q quit"
-      : "↑↓/j k scroll · PgUp PgDn page · G follow · [ ]/←→ sections · f full · esc back · ? keys · q quit";
+  let common: string;
+  if (state.object === undefined) {
+    common =
+      "1–9/tab switch · ↑↓/j k move · enter open · g G top/bottom · r refetch · ? keys · q quit";
+  } else if (twoPane(state)) {
+    common =
+      "↑↓/j k row · PgUp PgDn/space b scroll · [ ] sections · f full · esc close · ? keys · q quit";
+  } else {
+    common =
+      "↑↓/j k scroll · PgUp PgDn page · g G top/bottom · [ ] sections · f full · esc back · ? keys · q quit";
+  }
   return state.keys ? `${common} · ? closes the key list` : common;
 }
 
 /** Every key the TUI reads, in the order the key list shows them. */
 export const KEY_LIST: readonly (readonly [string, string])[] = [
-  ["1–9", "open that tab"],
+  ["1–9", "open that tab (closes the open object)"],
   ["tab / shift-tab", "next or previous tab"],
-  ["↑↓ / j k", "move the cursor, or scroll the open section"],
-  ["enter", "open the selected row"],
-  ["g / G", "the top or the bottom, or follow a live section"],
-  ["PgUp / PgDn", "scroll the open section a page"],
+  ["↑↓ / j k", "move the row; on a narrow screen with an object open, scroll it"],
+  ["g / G", "first or last row; on a narrow screen with an object open, its top or bottom"],
+  ["enter", "open the selected row (on a narrow screen); does nothing on the open row"],
+  ["PgUp PgDn / b space", "scroll the open section a page"],
+  ["Home / End", "top of the open section, or its end (follows a live one)"],
   ["[ ] / ← →", "the previous or next section"],
   ["f", "load the whole open section when it is capped"],
   ["r", "fetch the lists again"],

@@ -89,7 +89,7 @@ describe("the object pane reducer", () => {
       objectId: "two",
       sectionId: "info",
       full: false,
-      version: 0,
+      version: 0,      objectVersion: 1,
     });
   });
 
@@ -110,7 +110,7 @@ describe("the object pane reducer", () => {
       objectId: "one",
       sectionId: "pages",
       full: false,
-      version: 0,
+      version: 0,      objectVersion: 1,
     });
 
     state = reduce(state, {
@@ -141,12 +141,13 @@ describe("the object pane reducer", () => {
     const section = activeSection(state);
     expect(section?.next).toBe("two");
 
-    state = reduce(state, { type: "key", key: "down" });
+    state = reduce(state, { type: "key", key: "pagedown" });
     const request = state.sectionRequest;
     expect(request).toEqual({
       objectId: "one",
       sectionId: "pages",
       cursor: "two",
+      objectVersion: 1,
       full: false,
       version: section?.version ?? 0,
     });
@@ -187,6 +188,7 @@ describe("the object pane reducer", () => {
     expect(request).toEqual({
       objectId: "one",
       sectionId: "info",
+      objectVersion: 1,
       full: true,
       version: activeSection(state)?.version ?? 0,
     });
@@ -204,7 +206,7 @@ describe("the object pane reducer", () => {
     expect(activeSection(state)?.capped).toBe(false);
   });
 
-  test("a live section follows its end, scrolling up stops it and G resumes", () => {
+  test("a live section follows its end, scrolling up stops it and End resumes", () => {
     let state = opened();
     state = reduce(state, {
       type: "section",
@@ -225,12 +227,12 @@ describe("the object pane reducer", () => {
     expect(fitted?.following).toBe(true);
     expect(fitted?.scroll).toBeGreaterThan(0);
 
-    state = reduce(state, { type: "key", key: "up" });
+    state = reduce(state, { type: "key", key: "pageup" });
     const stopped = activeSection(state);
     expect(stopped?.following).toBe(false);
     expect(stopped?.scroll).toBeLessThan(fitted?.scroll ?? 0);
 
-    state = reduce(state, { type: "key", key: "G" });
+    state = reduce(state, { type: "key", key: "end" });
     const resumed = activeSection(state);
     expect(resumed?.following).toBe(true);
     expect(resumed?.scroll).toBe(fitted?.scroll);
@@ -287,5 +289,29 @@ describe("the object pane reducer", () => {
     });
     expect(state.object?.id).toBe("two");
     expect(state.object?.loading).toBe(true);
+  });
+
+  describe("capped", () => {
+    const LINE = "[Truncated. See all of it with `operad show one --section info --full`.]";
+    function sectionWith(markdown: string) {
+      const state = reduce(opened(), {
+        type: "section",
+        objectId: "one",
+        sectionId: "info",
+        content: { markdown },
+        objectVersion: 1,
+      });
+      return activeSection(state);
+    }
+
+    test("the engine's truncation line as the last line caps the section", () => {
+      expect(sectionWith(`text\n\n${LINE}\n`)?.capped).toBe(true);
+    });
+
+    test("the same words inside the text, or another last line, do not", () => {
+      expect(sectionWith(`${LINE}\n\nmore text\n`)?.capped).toBe(false);
+      expect(sectionWith("a log line mentioning [Truncated. See it]\n")?.capped).toBe(false);
+      expect(sectionWith(`> ${LINE}\n`)?.capped).toBe(false);
+    });
   });
 });

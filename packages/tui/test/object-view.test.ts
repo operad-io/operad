@@ -158,7 +158,7 @@ describe("the object pane view", () => {
       await setup.renderOnce();
       expect(setup.captureCharFrame()).toContain("following");
 
-      state = reduce(state, { type: "key", key: "up" });
+      state = reduce(state, { type: "key", key: "pageup" });
       view.render(state);
       await setup.renderOnce();
       expect(setup.captureCharFrame()).not.toContain("following");

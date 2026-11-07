@@ -209,32 +209,39 @@ Running and then names every object type from `/v1/types`. The right pane says
 and mark), then the section tabs in the server's order (History last), then the
 section's Markdown. A live section has a dot on its tab and follows its end
 while the pane is at the bottom (`following`); scrolling up stops following and
-`G` resumes it. A section the server cut at its size cap shows a `Truncated`
+`End` resumes it. A section the server cut at its size cap shows a `Truncated`
 hint and `f` loads the whole section. A failed request, or a refused event
 stream such as a wrong token, shows its reason in the footer until
 a fetch succeeds; the same messages are printed after the screen closes. The
 list scrolls to keep the cursor in view, and a refresh keeps the selected object
-when it is still there. Every key the app reads is below.
+when it is still there. With 100 columns or more the list and the object sit
+side by side: the object follows the selected row (it opens about 150 ms after
+the cursor stops), `j` / `k` and the arrows keep moving the list, and the keys
+that scroll or switch sections act on the object. Under 100 columns the object
+fills the screen: `enter` opens it, `escape` goes back, and `j` / `k` scroll it.
+Switching tabs closes the object. Every key the app reads is below.
 
 | Input | Type | Default | Allowed values |
 |---|---|---|---|
 | `1`–`9` | key | none | The tab with that number. |
 | `tab` | key | none | The next tab. |
 | `shift-tab` | key | none | The previous tab. |
-| `enter` | key | none | Open the row under the cursor as an object. |
-| `↑` / `↓` | key | none | Move the list cursor one row, or scroll the open section one line; a list loads its next page near the end. |
+| `enter` | key | none | Open the selected row as an object (under 100 columns; side by side it is open already). On the row that is already open it does nothing. |
+| `↑` / `↓` | key | none | Move the list cursor one row; a list loads its next page near the end. Under 100 columns with an object open, scroll the section one line instead. |
 | `j` / `k` | key | none | The same as `↓` / `↑`. |
 | `PgUp` / `PgDn` | key | none | Scroll the open section by one page. At the end it asks the section for its `next` page. |
+| `b` / `space` | key | none | The same as `PgUp` / `PgDn`. |
+| `Home` / `End` | key | none | The top of the open section, or its end; `End` resumes following a live section. |
 | `[` / `]` | key | none | Switch to the previous or next section tab. |
 | `←` / `→` | key | none | The same as `[` / `]`. |
 | `f` | key | none | Load a capped section with `full=true`. |
-| `g` | key | none | The first row, or the top of the open section. |
-| `G` | key | none | The last row, the end of the open section, or resume following a live section. |
+| `g` | key | none | The first row; under 100 columns with an object open, the top of the section. |
+| `G` | key | none | The last row; under 100 columns with an object open, the end of the section (it resumes following a live section). |
 | `r` | key | none | Fetch every list again, and the open object with its live sections. |
 | `?` | key | none | Show or hide the key list. |
 | `q` | key | none | Quit. |
 | `Ctrl-C` | key | none | Quit at once. The terminal restores itself; no other Ctrl or Meta chord does anything. |
-| `escape` | key | none | Close the key list, or close the open object. While the key list is open only `?`, `escape` and `q` act; the others leave the list alone. |
+| `escape` | key | none | Close the key list, or close the open object and stop its requests. While the key list is open only `?`, `escape` and `q` act; the others leave the list alone. |
 
 ### Endpoints
 
