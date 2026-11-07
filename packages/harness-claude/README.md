@@ -93,3 +93,85 @@ A result with `is_error`, or any subtype but `success` (`error_max_turns`,
 stream-json from a script, so no test runs the real `claude` or sends a model
 request. `test/fake-worker.ts` runs the same `main` with that fake; the script
 comes from `FAKE_SCRIPT` and what the fake saw goes to `FAKE_RECORD`.
+
+## The plugin
+
+`src/index.ts` is the hub side: the plugin `harness-claude`, its step
+`harness-claude/agent` and its flow `harness-claude:prompt`. It never imports the
+SDK; it starts `bun src/worker.ts` through `runAgent` from
+`@operad-io/harness-process`, writes the stdin object above, appends every stdout
+line to the step's log with `JsonlLog`, and turns the last `result` line into the
+facts. The params, the result names (`done`, `failed`, `interrupted`) and the
+facts (`exitCode`, `signal`, `sessionId`, `finalMessage`, `usage`, `log`,
+`durationMs`, `stderr`) are `harness-pi`'s. `usage` is the standard one in
+[the manual](../../docs/manual.md#usage-and-end-results): `model` is the step's
+`--model` or the `model` setting, else the model claude reports; `costMicros` is
+the worker's `cost.micros`, and `costQuality` is `estimated` for a subscription
+login and `exact` for an API key. `sessionId` is claude's session id; pass it back
+as `resumeSession` to continue it (`claude --resume <id>` continues the same
+session).
+
+The plugin is not installed by `operad init`. Turn it on with:
+
+```sh
+operad plugin enable harness-claude
+```
+
+A flow switches harness by changing `use` to `harness-claude/agent`; `dev` does
+it with `worker.use` in `.operad/dev.json`.
+
+### Params: `args`
+
+| flag | value | meaning |
+|---|---|---|
+| `--model` | a model name claude takes, such as `opus` | the model for this step |
+| `--effort` | `low`, `medium`, `high`, `xhigh` or `max` | the reasoning effort for this step |
+
+A flag in `args` wins over the setting of the same name. Any other entry fails
+the step at once, before the worker starts, with result `failed`, reason
+`invalid_args` and a message that names the entry: an unknown flag, a flag
+without its value, an effort outside the set, a flag given twice, the `=`
+spelling.
+
+### Settings
+
+The `harness-claude` section of `config.json`. A step param (`wallTimeSecs`,
+`stallSecs`) overrides the setting of the same name.
+
+| setting | type | default | meaning |
+|---|---|---|---|
+| `model` | string | unset | the model; unset uses claude's own default |
+| `effort` | `low`, `medium`, `high`, `xhigh` or `max` | unset | the reasoning effort; unset uses claude's default |
+| `command` | string | `claude` | the claude command: a name on PATH or a path |
+| `maxTurns` | integer, 1 or more | unset | the most turns one run may take |
+| `budgetUsd` | number, 0.01 or more | unset | the most one run may spend, for API-key logins |
+| `wallTimeSecs` | number | `3600` | the longest one run may take; at most 28500 |
+| `stallSecs` | number | `600` | how long a run may print nothing while no tool call is open |
+| `concurrency` | object, model to positive integer | `{}` | how many runs of one model may go at once; key `harness-claude:<model>` |
+
+### How the step ends
+
+As `harness-pi`'s table. A worker `failed` with reason `model_error` also sets
+`data.modelError`: a rate limit the worker saw is `usage_limit`; otherwise the
+kind is derived from the message text as in `harness-pi` (`usage_limit`,
+`unavailable` or `protocol`). `retry_after_secs` is `null`.
+
+### `operad plugin check`
+
+Runs `claude --version` and `claude auth status` on the claude the `command`
+setting names, and reports the version, the Agent SDK version and the login
+kind (for example `login claude.ai (max)`). It fails, saying what to do, when:
+
+- there is no claude command;
+- the version is below the floor, `2.1.319`, or `--version` prints nothing that
+  starts with a version;
+- claude is not logged in, or `auth status` prints nothing it can read.
+
+The SDK version is only reported, never refused. Nothing from `auth status`
+but the login kind is read or printed: no e-mail, organisation or token.
+
+### Access profile
+
+Not enforced yet: the step declares no `enforces` field, so a profile that sets
+a deny field is refused when the run starts. The worker reads the profile and
+checks it; the matching comes with the access task.

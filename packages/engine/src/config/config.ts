@@ -108,7 +108,7 @@ export const DEFAULT_PLUGINS: readonly string[] = [
  * Plugins shipped with operad that `operad init` does not install. They are
  * not in the default config; `plugin enable <name>` adds them.
  */
-export const OPTIONAL_PLUGINS: readonly string[] = ["harness-pi"];
+export const OPTIONAL_PLUGINS: readonly string[] = ["harness-pi", "harness-claude"];
 
 /** The package name of a plugin shipped with operad. */
 export function defaultPluginModule(name: string): string {
