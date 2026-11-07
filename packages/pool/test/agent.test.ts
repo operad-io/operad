@@ -309,6 +309,18 @@ describe("fallback", () => {
     });
   }
 
+  for (const reason of ["missing", "spawn"]) {
+    test(`a harness that could not start (${reason}) runs the fallback worker`, async () => {
+      const r = await rig();
+      const run = r.run(params([claude, pi]));
+      (await r.calls.next()).finish({ result: "failed", data: { reason, message: "no program" } });
+      const call = await r.calls.next();
+      expect(call.use).toBe("harness-b/agent");
+      call.finish(done);
+      expect((await run).data).toMatchObject({ worker: "pi", fallbackFrom: "claude" });
+    });
+  }
+
   test("the fallback may be a worker outside the pool", async () => {
     const r = await rig();
     const run = r.run(params([claude], { fallbacks: [pi] }));

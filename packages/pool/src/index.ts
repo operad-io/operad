@@ -11,7 +11,9 @@ import {
   type StepContext,
   type StepRunOptions,
 } from "@operad-io/engine";
-import { PlaceBook } from "./places.ts";
+import { join } from "node:path";
+import { PlaceBook, type Claim, type Places } from "./places.ts";
+import { FilePlaces } from "./shared.ts";
 import {
   harnessOf,
   readResolved,
@@ -19,7 +21,8 @@ import {
 } from "./workers.ts";
 
 export * from "./workers.ts";
-export { PlaceBook } from "./places.ts";
+export { PlaceBook, type Claim, type ClaimResult, type Places } from "./places.ts";
+export { FilePlaces } from "./shared.ts";
 
 /** The event a waiting `pool/agent` sends. */
 export const WAITING_EVENT = "pool.waiting";
@@ -58,6 +61,11 @@ function capOf(
   return typeof cap === "number" ? cap : undefined;
 }
 
+/** True when the harness step reported that it could not start at all. */
+export function harnessDidNotStart(data: Readonly<Record<string, unknown>> | undefined): boolean {
+  return data?.reason === "missing" || data?.reason === "spawn";
+}
+
 /** True when the harness reported its model unavailable or at its usage limit. */
 export function modelUnavailable(data: Readonly<Record<string, unknown>> | undefined): boolean {
   const error = data?.modelError;
@@ -78,7 +86,7 @@ const OWN_PARAMS = ["worker", "workers", "fallbacks", "prefix"];
 
 interface Place {
   readonly worker: WorkerDefinition;
-  readonly release: () => void;
+  readonly release: () => Promise<void>;
 }
 
 type Attempt =
@@ -86,12 +94,17 @@ type Attempt =
   | { readonly kind: "threw"; readonly error: unknown };
 
 export interface PoolPluginOptions {
-  /** The place counts; a test passes one to look at what is held. */
-  readonly book?: PlaceBook | undefined;
+  /**
+   * Where the places live. A test passes a book to look at what is held; the
+   * plugin otherwise keeps them in a file under the home, because every step
+   * runs in a fresh worker thread that loads this plugin again.
+   */
+  readonly book?: Places | undefined;
 }
 
 export function createPoolPlugin(options: PoolPluginOptions = {}) {
-  const book = options.book ?? new PlaceBook();
+  const places = (ctx: StepContext): Places =>
+    options.book ?? new FilePlaces(join(ctx.home, "pool"));
 
   /**
    * Waits for the first of `candidates` whose own count and harness cap both
@@ -102,23 +115,29 @@ export function createPoolPlugin(options: PoolPluginOptions = {}) {
     prefix: string,
     candidates: readonly WorkerDefinition[],
   ): Promise<Place | undefined> {
+    const book = places(ctx);
     let announced: string | undefined;
     for (;;) {
       if (ctx.signal.aborted) return undefined;
-      const stamp = book.stamp();
-      const blocked: { worker: string; full: "flow" | "home" }[] = [];
-      for (const worker of candidates) {
-        const own = `count:${prefix}/${worker.name}`;
+      const claims: Claim[] = candidates.map((worker) => {
         const harness = harnessOf(worker.use);
-        const home = `harness:${harness}`;
-        if (!book.hasRoom(own, worker.count)) {
-          blocked.push({ worker: worker.name, full: "flow" });
-        } else if (!book.hasRoom(home, capOf(ctx.settings, harness))) {
-          blocked.push({ worker: worker.name, full: "home" });
-        } else {
-          return { worker, release: book.take([own, home]) };
-        }
+        return {
+          own: `count:${prefix}/${worker.name}`,
+          ownLimit: worker.count,
+          home: `harness:${harness}`,
+          homeLimit: capOf(ctx.settings, harness),
+        };
+      });
+      const got = await book.claim(claims);
+      if (got.kind === "taken") {
+        const worker = candidates[got.index];
+        if (worker === undefined) throw new Error("pool: a claim was taken for no worker");
+        return { worker, release: got.release };
       }
+      const blocked = candidates.map((worker, index) => ({
+        worker: worker.name,
+        full: got.full[index] ?? "home",
+      }));
       const full = blocked.every((item) => item.full === "flow") ? "flow" : "home";
       if (announced !== full) {
         announced = full;
@@ -133,7 +152,7 @@ export function createPoolPlugin(options: PoolPluginOptions = {}) {
           data: { pool: prefix, full, workers: blocked },
         });
       }
-      if (!(await book.changed(stamp, ctx.signal))) return undefined;
+      if (!(await book.changed(got.stamp, ctx.signal))) return undefined;
     }
   }
 
@@ -169,7 +188,7 @@ export function createPoolPlugin(options: PoolPluginOptions = {}) {
     } catch (error) {
       return { kind: "threw", error, worker };
     } finally {
-      place.release();
+      await place.release();
     }
   }
 
@@ -249,7 +268,9 @@ export function createPoolPlugin(options: PoolPluginOptions = {}) {
           const triggered =
             name !== undefined &&
             !ctx.signal.aborted &&
-            (first.kind === "threw" || modelUnavailable(first.result.data));
+            (first.kind === "threw" ||
+              modelUnavailable(first.result.data) ||
+              (first.result.result === "failed" && harnessDidNotStart(first.result.data)));
           if (!triggered) {
             if (first.kind === "threw") throw first.error;
             return record(first.result, first.worker, undefined);

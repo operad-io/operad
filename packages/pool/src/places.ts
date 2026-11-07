@@ -5,7 +5,37 @@
  * plugin instance is the home-wide count.
  */
 
-export class PlaceBook {
+/** One worker's two counts: its own in the flow and its harness at home. */
+export interface Claim {
+  readonly own: string;
+  readonly ownLimit: number;
+  readonly home: string;
+  readonly homeLimit: number | undefined;
+}
+
+/** What `claim` answers: a place held for claim `index`, or what is full. */
+export type ClaimResult =
+  | { readonly kind: "taken"; readonly index: number; readonly release: () => Promise<void> }
+  | {
+      readonly kind: "blocked";
+      /** For each claim, the count that is full. */
+      readonly full: readonly ("flow" | "home")[];
+      /** Pass to `changed`: a release after it wakes the waiter. */
+      readonly stamp: number;
+    };
+
+/** Where the places live: in memory (a test) or in the home (the plugin). */
+export interface Places {
+  /** Atomically takes the first claim that has room in both counts. */
+  claim(claims: readonly Claim[]): Promise<ClaimResult>;
+  /**
+   * Resolves true once something may have been released after `since`, false
+   * when `signal` aborts first. A true answer may be spurious; ask again.
+   */
+  changed(since: number, signal: AbortSignal): Promise<boolean>;
+}
+
+export class PlaceBook implements Places {
   private readonly held = new Map<string, number>();
   private version = 0;
   private readonly listeners = new Set<() => void>();
@@ -18,6 +48,28 @@ export class PlaceBook {
   /** True when `key` has room for one more under `limit`; no limit means room. */
   hasRoom(key: string, limit: number | undefined): boolean {
     return limit === undefined || this.used(key) < limit;
+  }
+
+  claim(claims: readonly Claim[]): Promise<ClaimResult> {
+    const full: ("flow" | "home")[] = [];
+    for (const [index, claim] of claims.entries()) {
+      if (!this.hasRoom(claim.own, claim.ownLimit)) {
+        full.push("flow");
+      } else if (!this.hasRoom(claim.home, claim.homeLimit)) {
+        full.push("home");
+      } else {
+        const give = this.take([claim.own, claim.home]);
+        return Promise.resolve({
+          kind: "taken",
+          index,
+          release: () => {
+            give();
+            return Promise.resolve();
+          },
+        });
+      }
+    }
+    return Promise.resolve({ kind: "blocked", full, stamp: this.version });
   }
 
   /** Holds one place under each key and returns the call that gives them back. */

@@ -561,10 +561,17 @@ such as the one that did the first attempt), plus anything the harness step take
    `data`: `worker`, `harness` and, after a fallback, `fallbackFrom` (the worker
    that failed).
 4. When the result's `data.modelError.kind` is `unavailable` or `usage_limit`,
-   or the harness step cannot start, and the worker has a `fallback`, it runs
+   or the harness step cannot start (it threw, or it ended `failed` with
+   `data.reason` `missing` or `spawn`), and the worker has a `fallback`, it runs
    that worker once, after giving back the first worker's places and waiting for
    the fallback's own room. A timeout (wall time or stall) never falls back, and
    the fallback's own failure is returned as it is.
+
+Where the counts live: every step runs in its own worker thread, so the places
+are kept in one file under the home, `pool/places.json`, changed under a lock
+file. Steps in any thread or process of the home see the same counts. A place
+records the process that holds it; when that process is gone (a crashed serve)
+the place is dropped the next time a `pool/agent` step looks.
 
 ## Usage and end results
 

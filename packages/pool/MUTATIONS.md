@@ -18,3 +18,6 @@ the row fields.
 | T-0042-M10 | packages/pool/src/index.ts | ignored the required `worker` | `picking > with worker set only that worker may run, even when another has room` |
 | T-0042-M11 | packages/pool/src/workers.ts | accepted an unknown worker name in a pool | `parseWorkers > refuses: unknown worker in a pool` |
 | T-0042-M12 | packages/pool/src/index.ts | an aborted wait threw instead of ending `interrupted` | `waiting > an abort while waiting ends the step as interrupted and holds nothing` |
+| T-0042-M13 | packages/pool/src/shared.ts | did not drop the places of a process that is gone | `FilePlaces > a place held by a process that is gone is dropped` |
+| T-0042-M14 | packages/pool/src/shared.ts | treated this process's own places as dead | `FilePlaces > two instances with separate memory share the home cap` |
+| T-0042-M15 | packages/pool/src/index.ts | did not fall back when the harness reported `missing` or `spawn` | `fallback > a harness that could not start (missing) runs the fallback worker` |
