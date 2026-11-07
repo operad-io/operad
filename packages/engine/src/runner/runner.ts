@@ -189,6 +189,8 @@ export interface RunnerOptions {
   readonly askGraceSecs?: number | undefined;
   /** Starts the grace timer of a question; tests inject theirs. */
   readonly askTimer?: AskTimer | undefined;
+  /** How the step's wall time is told; tests move it by hand. */
+  readonly timeoutClock?: TimeoutClock | undefined;
   readonly cwd?: string | undefined;
   readonly signal?: AbortSignal | undefined;
   /** The store root; the run lock lives under `<root>/locks/runs`. */
@@ -257,6 +259,7 @@ export class Runner {
   private readonly stepTimeoutMs: number;
   private readonly askGraceSecs: number | undefined;
   private readonly askTimer: AskTimer | undefined;
+  private readonly timeoutClock: TimeoutClock | undefined;
   /** The wall time of the step that is running now. */
   private activeTimeout: StepTimeout | undefined;
   private readonly cwd: string | undefined;
@@ -285,6 +288,7 @@ export class Runner {
     this.stepTimeoutMs = options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
     this.askGraceSecs = options.askGraceSecs;
     this.askTimer = options.askTimer;
+    this.timeoutClock = options.timeoutClock;
     this.cwd = options.cwd;
     this.signal = options.signal;
     this.lockRoot = options.lockRoot;
@@ -772,16 +776,20 @@ export class Runner {
         );
       };
 
-      timer = new StepTimeout(this.timeoutMsFor(use), () => {
-        abortWorker();
-        finish(
-          this.failure(use, preferInterrupted, {
-            reason: "timeout",
-            message: `the step took longer than ${this.timeoutMsFor(use)} ms`,
-          }),
-          false,
-        );
-      });
+      timer = new StepTimeout(
+        this.timeoutMsFor(use),
+        () => {
+          abortWorker();
+          finish(
+            this.failure(use, preferInterrupted, {
+              reason: "timeout",
+              message: `the step took longer than ${this.timeoutMsFor(use)} ms`,
+            }),
+            false,
+          );
+        },
+        this.timeoutClock,
+      );
       this.activeTimeout = timer;
       this.signal?.addEventListener("abort", onAbort, { once: true });
 
@@ -957,10 +965,14 @@ export class Runner {
 
     let timer: StepTimeout | undefined;
     const timeout = new Promise<"timeout">((resolve) => {
-      timer = new StepTimeout(this.timeoutMsFor(use), () => {
-        controller.abort();
-        resolve("timeout");
-      });
+      timer = new StepTimeout(
+        this.timeoutMsFor(use),
+        () => {
+          controller.abort();
+          resolve("timeout");
+        },
+        this.timeoutClock,
+      );
     });
     this.activeTimeout = timer;
 

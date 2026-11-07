@@ -18,6 +18,7 @@ import {
   type Fact,
   type LogBackend,
 } from "../../src/index.ts";
+import type { TimeoutClock } from "../../src/runner/runner.ts";
 import { waitForChange } from "../../src/platform/index.ts";
 import plugin from "../fixtures/plugins/ask.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
@@ -121,7 +122,7 @@ interface Env {
   runner(
     runId: string,
     timer: FakeTimer,
-    options?: { graceSecs?: number },
+    options?: { graceSecs?: number; timeoutClock?: TimeoutClock; stepTimeoutMs?: number },
   ): Runner;
   /** The id of the first question of the run, once it is open. */
   opened(runId: string): Promise<string>;
@@ -181,6 +182,8 @@ async function setup(mode: "memory" | "file"): Promise<Env> {
         params: (params.get(runId) ?? {}) as Record<string, string>,
         askTimer: timer.timer,
         ...(options.graceSecs === undefined ? {} : { askGraceSecs: options.graceSecs }),
+        ...(options.timeoutClock === undefined ? {} : { timeoutClock: options.timeoutClock }),
+        ...(options.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: options.stepTimeoutMs }),
       });
     },
     async opened(runId) {
@@ -408,6 +411,44 @@ describe("ctx.ask", () => {
       }
     }
   }, 60_000);
+
+  test("the step's own timeout does not run while it waits for an answer", async () => {
+    const env = await setup("memory");
+    try {
+      const id = await env.create("ask-wait", "t");
+      const timer = new FakeTimer();
+      // A clock the test moves by hand: the step may take 100 ms in all.
+      let now = 0;
+      let next = 0;
+      const timers = new Map<number, { due: number; fire: () => void }>();
+      const timeoutClock: TimeoutClock = {
+        now: () => now,
+        set: (fire, ms) => {
+          next += 1;
+          timers.set(next, { due: now + ms, fire });
+          return next;
+        },
+        clear: (handle) => {
+          timers.delete(handle as number);
+        },
+      };
+      const run = env.runner(id, timer, { timeoutClock, stepTimeoutMs: 100 }).run();
+      await env.opened(id);
+      await timer.armed();
+      // The grace timer is set after the step's clock stopped: none is left.
+      expect(timers.size).toBe(0);
+      now += 10_000;
+      for (const [handle, entry] of [...timers]) {
+        timers.delete(handle);
+        entry.fire();
+      }
+      await recordAnswer({ log: env.log, runId: id, choice: "yes", actor: ACTOR });
+      expect(await run).toBe("ended");
+      expect(stepResult(await facts(env.log, id), "q").result).toBe("answered");
+    } finally {
+      await env.close();
+    }
+  }, 30_000);
 
   test("a grace of 0 does not wait", async () => {
     const env = await setup("memory");
