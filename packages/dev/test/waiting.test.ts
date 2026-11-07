@@ -181,6 +181,23 @@ const CASES: readonly Case[] = [
     summary: "T-0001-one waiting: review timed out twice",
   },
   {
+    name: "a review that did not finish",
+    params: { from: "review", result: "failed" },
+    change: {
+      attempts: 1,
+      attempt: {
+        ...GOOD,
+        review: {
+          result: "failed",
+          reason: "no_report",
+          message: "the reviewer wrote no report",
+        },
+      },
+    },
+    reason: "review did not finish",
+    summary: "T-0001-one waiting: review did not finish (the reviewer wrote no report)",
+  },
+  {
     name: "a rework that used up the automatic passes",
     params: { from: "rework", result: "ask" },
     change: {
