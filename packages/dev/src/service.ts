@@ -32,6 +32,7 @@ import {
   taskData,
   validateRepositoryName,
   validateSlug,
+  validateArea,
   validateTitle,
   type AutoMode,
   type PlanData,
@@ -546,6 +547,7 @@ export interface AddTaskOptions {
   readonly title: string;
   readonly brief?: string | undefined;
   readonly after?: readonly string[] | undefined;
+  readonly area?: string | undefined;
 }
 
 export async function addTask(
@@ -585,12 +587,15 @@ export async function addTask(
       options.after ?? [],
     );
     const brief = appendChange(options.brief ?? "", "created");
+    const area =
+      options.area === undefined ? undefined : validateArea(options.area);
     const data: TaskData = {
       repository: repository.name,
       plan: bareId(currentPlan.id),
       title,
       brief,
       after,
+      ...(area === undefined ? {} : { area }),
       phase: "proposed",
       attempts: 0,
       run: null,
@@ -642,6 +647,8 @@ export async function editTaskBrief(
 export interface UpdateTaskOptions {
   readonly title?: string | undefined;
   readonly after?: readonly string[] | undefined;
+  /** A new area; the empty string clears it. */
+  readonly area?: string | undefined;
 }
 
 export async function updateTask(
@@ -649,11 +656,20 @@ export async function updateTask(
   id: string,
   options: UpdateTaskOptions,
 ): Promise<StoredObject> {
-  if (options.title === undefined && options.after === undefined) {
-    throw new DevError("update", "nothing to change; pass --title or --after");
+  if (
+    options.title === undefined &&
+    options.after === undefined &&
+    options.area === undefined
+  ) {
+    throw new DevError(
+      "update",
+      "nothing to change; pass --title, --after or --area",
+    );
   }
   const title =
     options.title === undefined ? undefined : validateTitle(options.title);
+  const area =
+    options.area === undefined ? undefined : validateArea(options.area);
   const initial = await getTask(store, id);
   const initialData = taskData(initial.data);
   requireEditable(initialData);
@@ -681,13 +697,23 @@ export async function updateTask(
         after.length === 0 ? "after: none" : `after: ${after.join(", ")}`,
       );
     }
+    const areaChanged = options.area !== undefined && area !== data.area;
+    if (areaChanged) {
+      lines.push(area === undefined ? "area: none" : `area: ${area}`);
+    }
     let brief = data.brief;
     for (const line of lines) brief = appendChange(brief, line);
+    // A new area drops the old hold; the next tick decides it again.
+    const { area: _area, areaHeldBy: _held, ...kept } = data;
+    const nextArea = options.area === undefined ? data.area : area;
+    const nextHeld = areaChanged ? undefined : data.areaHeldBy;
     const next: TaskData = {
-      ...data,
+      ...kept,
       ...(title === undefined ? {} : { title }),
       after,
       brief,
+      ...(nextArea === undefined ? {} : { area: nextArea }),
+      ...(nextHeld === undefined ? {} : { areaHeldBy: nextHeld }),
     };
     return writeTask(store, id, next, "dev:task-update");
   });
@@ -737,6 +763,7 @@ export async function setTaskPhase(
 export async function claimTaskStart(
   store: ObjectStore,
   id: string,
+  options: { readonly checkArea?: boolean | undefined } = {},
 ): Promise<TaskData | undefined> {
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
@@ -744,8 +771,16 @@ export async function claimTaskStart(
     const current = await getTask(store, id);
     const latest = taskData(current.data);
     if (latest.phase !== "ready") return undefined;
+    // The area check and the claim are one decision under the repository
+    // lock: whoever holds it reads the stored tasks, so two schedulers (two
+    // ticks, or two processes) can never both start a task of one area.
+    if (options.checkArea !== false && latest.area !== undefined) {
+      const holder = await areaHolder(store, latest.repository, latest.area, id);
+      if (holder !== undefined) return undefined;
+    }
+    const { areaHeldBy: _held, ...rest } = latest;
     const next: TaskData = {
-      ...latest,
+      ...rest,
       phase: "running",
       run: null,
       brief: appendChange(latest.brief, "running"),
@@ -753,6 +788,50 @@ export async function claimTaskStart(
     };
     await writeTask(store, id, next, "dev:task-start");
     return next;
+  });
+}
+
+/** The id of a running or reviewing task that holds the area, if any. */
+export async function areaHolder(
+  store: ObjectStore,
+  repository: string,
+  area: string,
+  except: string,
+): Promise<string | undefined> {
+  for (const object of await allTasks(store)) {
+    if (object.id === except) continue;
+    const task = taskData(object.data);
+    if (task.repository !== repository || task.area !== area) continue;
+    if (task.phase === "running" || task.phase === "review") {
+      return bareId(object.id);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Records which task holds a ready task's area, or clears the record, so a
+ * list can say why the task is waiting. Writes only on a change.
+ */
+export async function setAreaHold(
+  store: ObjectStore,
+  id: string,
+  holder: string | undefined,
+): Promise<void> {
+  const initial = await getTask(store, id);
+  const data = taskData(initial.data);
+  if (data.areaHeldBy === holder) return;
+  await withRepoLock(store, data.repository, async () => {
+    const current = await getTask(store, id);
+    const latest = taskData(current.data);
+    if (latest.phase !== "ready" || latest.areaHeldBy === holder) return;
+    const { areaHeldBy: _held, ...rest } = latest;
+    await writeTask(
+      store,
+      id,
+      { ...rest, ...(holder === undefined ? {} : { areaHeldBy: holder }) },
+      "dev:task-area-hold",
+    );
   });
 }
 

@@ -30,9 +30,9 @@ operad repo add <path> [--name <name>]
 operad repo list
 operad repo remove <name>
 operad plan add --slug <slug> --title <title> [--repo <name>]   # request on stdin
-operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--repo <name>]   # brief on stdin
+operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--repo <name>]   # brief on stdin
 operad task edit <id>      # $EDITOR on the brief body; proposed or ready only
-operad task update <id> [--title <title>] [--after <task>]...
+operad task update <id> [--title <title>] [--after <task>]... [--area <area>]   # --area "" clears it
 operad start <task>        # start one ready task now, whatever its plan's auto level
 ```
 
@@ -127,6 +127,29 @@ A task whose dependency was cancelled starts no work. The scheduler starts its
 flow into the person wait instead, so the task is a real pending item: `merge`
 and `reject` answer it like any other wait, and `cancel` stops the run. The task
 is counted as waiting, not running, so it does not hold a concurrency slot.
+
+### Areas
+
+A task may name an `area`, a short one-line string of at most 64 characters
+such as `engine-core`. The scheduler never runs two tasks with the same area in
+the same repository at once, whatever the concurrency; a task with no area is
+not limited, and the same area name in two repositories does not block.
+
+| | |
+|---|---|
+| type | string, default none |
+| set | `operad task add --area <area>`, `operad task update <id> --area <area>` (`--area ""` clears it) |
+| effect | a ready task whose area is held by a running or reviewing task is not started; it starts on a later tick once that task leaves those phases (it merges, is cancelled, or waits for a person) |
+| when | the area is read on every tick, so a change made while the task is `proposed` or `ready` applies from the next tick |
+
+`operad show <task>` prints the area, and `operad list task` shows `area: <a>`.
+A ready task held back by its area shows `waiting for area <a> (<task>)`, naming
+the task that holds it. A task waiting for a person does not hold its area, the
+same way it holds no concurrency slot.
+
+The check and the start are one decision: the scheduler claims a task under the
+repository lock and reads the stored tasks inside that lock, so two ticks or two
+`operad` processes cannot both start a task of one area.
 
 ## Flow
 

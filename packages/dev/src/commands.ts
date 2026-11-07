@@ -182,6 +182,7 @@ async function runTask(
     "--slug",
     "--title",
     "--after",
+    "--area",
   ]);
   const call = subcommand(parsed, ["add", "edit", "update"], "task");
 
@@ -211,6 +212,7 @@ async function runTask(
       title: required(parsed, "--title", "task add"),
       brief: await readStdinText(),
       after: many(parsed, "--after"),
+      area: one(parsed, "--area"),
     });
     return bareId(task.id);
   }
@@ -236,11 +238,13 @@ async function runTask(
 
   const title = one(parsed, "--title");
   const after = many(parsed, "--after");
+  const area = one(parsed, "--area");
   return bareId(
     (
       await updateTask(ctx.store, key, {
         ...(title === undefined ? {} : { title }),
         ...(after.length === 0 ? {} : { after }),
+        ...(area === undefined ? {} : { area }),
       })
     ).id,
   );
@@ -275,7 +279,7 @@ export const commands: readonly CommandDefinition[] = [
   {
     name: "task",
     args:
-      "add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--repo <name>] | edit <id> [--repo <name>] | update <id> [--title <title>] [--after <task>]... [--repo <name>]",
+      "add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--repo <name>] | edit <id> [--repo <name>] | update <id> [--title <title>] [--after <task>]... [--area <area>] [--repo <name>]",
     run: runTask,
   },
   {
