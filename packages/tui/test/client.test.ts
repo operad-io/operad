@@ -6,7 +6,6 @@ import {
   TuiClient,
   type FetchLike,
   TuiConflictError,
-  TuiDiscoveryError,
   TuiNotFoundError,
   TuiPayloadTooLargeError,
   TuiRefusedError,
@@ -324,7 +323,7 @@ describe("TuiClient", () => {
     }
   });
 
-  test("a missing http section is one error naming the config key", async () => {
+  test("a missing http section means the default address", async () => {
     const root = await tempRoot();
     try {
       const home = join(root, "home");
@@ -336,11 +335,8 @@ describe("TuiClient", () => {
           store: { backend: "jsonl", path: join(root, "store") },
         }),
       );
-
-      const missing = await discoverServer({ home }).catch((error: unknown) => error);
-      expect(missing).toBeInstanceOf(TuiDiscoveryError);
-      expect((missing as TuiDiscoveryError).message).toContain("config.json: http:");
-      expect((missing as TuiDiscoveryError).message).toContain('"http"');
+      const found = await discoverServer({ home });
+      expect(found.url).toBe("http://127.0.0.1:7480");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

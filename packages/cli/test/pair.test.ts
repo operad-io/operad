@@ -145,4 +145,23 @@ describe("operad pair", () => {
       expect(output.text()).toBe("");
     }
   });
+
+  test("with no http section pair is on by default: loopback only, so it asks for --url", async () => {
+    const home = await makeHome({});
+    // `{}` still means the defaults: enabled, 127.0.0.1, port 7480.
+    const plain = capture();
+    expect(await main(["pair"], { home, io: plain.io, isTTY: true })).toBe(2);
+    expect(plain.errors()).toContain("http.listen has only loopback");
+    expect(plain.errors()).not.toContain("http.enabled");
+
+    const named = capture();
+    expect(
+      await main(["pair", "--url", "https://mac.example.ts.net"], {
+        home,
+        io: named.io,
+        isTTY: true,
+      }),
+    ).toBe(0);
+    expect(named.text()).toContain("https://mac.example.ts.net");
+  });
 });

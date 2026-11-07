@@ -15,7 +15,9 @@ import type {
   ViewListPage,
   ViewRow,
 } from "@operad-io/engine";
-import { TuiClient } from "./client.ts";
+import { ensureServer, spawnServe, type EnsureServerOptions } from "./autostart.ts";
+import { TuiClient, type FetchLike } from "./client.ts";
+import { defaultOperadHome } from "@operad-io/engine";
 import { discoverServer } from "./discover.ts";
 import { TuiEvents, type TuiEvent } from "./events.ts";
 import {
@@ -41,6 +43,12 @@ export interface TuiRunOptions {
    * is open and passed here one by one after the terminal is restored.
    */
   readonly onError?: ((message: string) => void) | undefined;
+  /** Never start `operad serve`, even when none answers. */
+  readonly noStart?: boolean | undefined;
+  /** The `operad` entry file a started serve runs; without it none is started. */
+  readonly serveEntry?: string | undefined;
+  /** Prints a line before the full screen opens. */
+  readonly write?: ((line: string) => void) | undefined;
   /** Replaces the terminal pieces in a test. */
   readonly hooks?: TuiRunHooks | undefined;
 }
@@ -49,6 +57,11 @@ export interface TuiRunOptions {
 export interface TuiRunHooks {
   readonly renderer?: (() => Promise<CliRenderer>) | undefined;
   readonly view?: ((renderer: CliRenderer) => TuiView) | undefined;
+  /** Replaces the check that a serve answers, and its start. */
+  readonly ensure?:
+    | ((options: EnsureServerOptions) => Promise<string>)
+    | undefined;
+  readonly fetch?: FetchLike | undefined;
 }
 
 /** One key press, as far as the reducer cares. */
@@ -357,6 +370,18 @@ export function startShell(deps: TuiShellDeps): TuiShell {
  * reported after that.
  */
 export async function runTui(options: TuiRunOptions = {}): Promise<number> {
+  // With no --url, make sure a serve answers (starting one) before the screen.
+  if (options.url === undefined && options.noStart !== true) {
+    const home = options.home ?? defaultOperadHome();
+    await (options.hooks?.ensure ?? ensureServer)({
+      home,
+      ...(options.hooks?.fetch === undefined ? {} : { fetch: options.hooks.fetch }),
+      ...(options.serveEntry === undefined
+        ? {}
+        : { spawn: spawnServe(home, options.serveEntry) }),
+      ...(options.write === undefined ? {} : { write: options.write }),
+    });
+  }
   const location = await discoverServer({
     home: options.home,
     url: options.url,

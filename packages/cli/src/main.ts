@@ -110,6 +110,12 @@ export interface TuiCommand {
   readonly home: string;
   readonly url?: string | undefined;
   readonly token?: string | undefined;
+  /** `--no-start`: never start `operad serve`. */
+  readonly noStart?: boolean | undefined;
+  /** The entry file a started `operad serve` runs: this process's own. */
+  readonly serveEntry?: string | undefined;
+  /** Prints a line before the full screen opens. */
+  readonly write?: ((line: string) => void) | undefined;
   readonly onError?: ((message: string) => void) | undefined;
 }
 
@@ -157,8 +163,8 @@ const HELP = [
   "  http token rotate    replace the token the operad app uses",
   "  pair [--url <url>] [--show-token]",
   "                       show the address and token as a QR code for the operad app",
-  "  tui [--url <url>] [--token <token>]",
-  "                       open the terminal client",
+  "  tui [--url <url>] [--token <token>] [--no-start]",
+  "                       open the terminal client; starts serve when none answers",
   "  mcp [--claude-channel] [--types t,...]",
   "                       run the MCP server on stdio; --claude-channel",
   "                       pushes object changes to Claude Code",
@@ -1835,7 +1841,7 @@ async function commandPair(
   return 0;
 }
 
-/** `operad tui [--url <url>] [--token <token>]`. */
+/** `operad tui [--url <url>] [--token <token>] [--no-start]`. */
 async function commandTui(
   home: string,
   io: CliIo,
@@ -1845,9 +1851,12 @@ async function commandTui(
 ): Promise<number> {
   let url: string | undefined;
   let token: string | undefined;
+  let noStart = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index] ?? "";
-    if (arg === "--url" || arg === "--token") {
+    if (arg === "--no-start") {
+      noStart = true;
+    } else if (arg === "--url" || arg === "--token") {
       const value = argv[index + 1];
       if (value === undefined) throw new UsageError(`${arg} needs a value`);
       if (arg === "--url") url = value;
@@ -1874,6 +1883,9 @@ async function commandTui(
     home,
     ...(url === undefined ? {} : { url }),
     ...(token === undefined ? {} : { token }),
+    ...(noStart ? { noStart } : {}),
+    serveEntry: CLI_ENTRY,
+    write: (line) => io.write(`${line}\n`),
     onError: (message) => {
       io.error(`operad: ${message}\n`);
     },

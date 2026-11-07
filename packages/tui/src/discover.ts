@@ -1,12 +1,10 @@
 /**
  * Where `operad tui` finds its server: the flags first, then the home's
- * `config.json` for the address and the token file `operad pair` reads. It
- * never starts a server and never opens the store.
+ * `config.json` (or its defaults) for the address and the token file `operad
+ * pair` reads. It never starts a server and never opens the store.
  */
 
-import { readFile } from "node:fs/promises";
 import {
-  configPath,
   defaultOperadHome,
   ensureHttpToken,
   readConfig,
@@ -35,37 +33,8 @@ export interface TuiServerLocation {
   readonly token: string;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isMissingFile(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === "ENOENT"
-  );
-}
-
-/** True only when the file has no `http` key; a malformed one stays for readConfig. */
-async function httpSectionMissing(home: string): Promise<boolean> {
-  let text: string;
-  try {
-    text = await readFile(configPath(home), "utf8");
-  } catch (error) {
-    return isMissingFile(error);
-  }
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    return false;
-  }
-  return isRecord(raw) && raw.http === undefined;
-}
-
-function urlFromConfig(
+/** The base URL `http.listen` and `http.port` name. */
+export function urlFromConfig(
   listen: readonly string[],
   port: number,
 ): string {
@@ -99,11 +68,6 @@ export async function discoverServer(
     }
     url = normalizeBaseUrl(options.url);
   } else {
-    if (await httpSectionMissing(home)) {
-      throw new TuiDiscoveryError(
-        'config.json: http: add an "http" section with "listen" and "port"',
-      );
-    }
     const config = await readConfig(home);
     url = urlFromConfig(config.http.listen, config.http.port);
   }
