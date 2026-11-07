@@ -682,3 +682,4 @@
 | TK0008-M16 | `packages/dev/src/steps.ts` | a worker model error went to a person instead of waiting | `dev/work > unavailable: a model error waits for the model instead of a person` |
 | TK0008-M17 | `packages/dev/src/steps.ts` | removed the bound on work waits | `dev/work > unavailable: after the allowed waits the failure goes to a person` |
 | engine-followups-2-M1 | `packages/engine/src/runner/runner.ts` | `timer.unref()` put back on the in-process step timeout timer (the test child had top-level await, which Bun keeps alive, so it hid the missing timer; the child now runs from a plain function) | `runner > a step that never settles still times out in a memory-backed process` |
+| engine-followups-2-M2 | `packages/engine/src/config/config.ts` | `addDefaultPlugins` wrote the config file in place instead of a temp file and rename | `operad config > a failed write leaves the existing config whole` |
