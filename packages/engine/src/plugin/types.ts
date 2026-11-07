@@ -306,6 +306,45 @@ export interface PluginCheck {
   readonly message: string;
 }
 
+/** What a step asks a person with `ctx.ask`. */
+export interface AskRequest {
+  readonly prompt: string;
+  /** The answers offered; none means a free note only. */
+  readonly choices?: readonly string[] | undefined;
+  /**
+   * How long to wait for the answer, in seconds, while the step goes on
+   * waiting. The narrowest of this, the step's `askGraceSecs` param and the
+   * `ask.graceSecs` setting counts. `0` does not wait.
+   */
+  readonly graceSecs?: number | undefined;
+  /**
+   * What happens when the grace passes without an answer. `"waiting"` (the
+   * default) ends the step with the result `waiting`; `"reject_once"` returns
+   * to the step with `rejected: true`.
+   */
+  readonly onTimeout?: "waiting" | "reject_once" | undefined;
+  /** What the step needs to carry on later; handed back in the `waiting` data. */
+  readonly resume?: JsonValue | undefined;
+}
+
+/** The answer `ctx.ask` returns. */
+export interface AskAnswer {
+  readonly choice: string | undefined;
+  readonly note?: string | undefined;
+  /** Who answered; absent when `rejected`. */
+  readonly actor?: Actor | undefined;
+  /** True when the grace passed and `onTimeout` was `"reject_once"`. */
+  readonly rejected?: boolean | undefined;
+}
+
+/** The data of a step that ended `waiting` because an ask timed out. */
+export interface AskWaitingData {
+  readonly waitId: string;
+  readonly prompt: string;
+  readonly choices: readonly string[];
+  readonly resume: JsonValue;
+}
+
 /** The context a step run receives. */
 export interface StepContext extends PluginBaseContext {
   readonly runId: string;
@@ -318,6 +357,11 @@ export interface StepContext extends PluginBaseContext {
   readonly trigger: TriggerView | undefined;
   /** Sends an event; the type must begin with this plugin's name. */
   emit(event: StepEvent): Promise<void>;
+  /**
+   * Asks a person and waits for the answer while the step lives. Only steps
+   * have it; a flow cannot ask. When the grace passes, `onTimeout` decides.
+   */
+  ask(request: AskRequest): Promise<AskAnswer>;
   /**
    * Runs another loaded step in this run. The kernel offers it when a plugin
    * step delegates to a harness or another plugin; a direct call to a step's

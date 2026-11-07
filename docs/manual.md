@@ -22,7 +22,8 @@ this manual prints a secret.
   },
   "store": { "backend": "jsonl", "path": "~/.operad/store" },
   "http": { "enabled": false, "port": 7480, "listen": ["127.0.0.1"] },
-  "notify": { "command": null, "on": ["waiting"] }
+  "notify": { "command": null, "on": ["waiting"] },
+  "ask": { "graceSecs": 600 }
 }
 ```
 
@@ -34,6 +35,8 @@ this manual prints a secret.
   relative path resolves against the home.
 - `http`: the interface `operad serve` exposes to clients. It is off unless
   `enabled` is true; no other command opens the port.
+- `ask`: how long `ctx.ask` waits for an answer by default; see
+  [Asking a person from a step](#asking-a-person-from-a-step).
 - `notify`: a command `serve` runs when something waits for a person; see
   [Notifications](#notifications). It is off while `command` is `null`.
 
@@ -160,6 +163,57 @@ Every error body is:
 | `422` | The action's plugin refused it; `message` is the plugin's own message. |
 | `504` | A section did not load in time. |
 | `500` | Anything else; the body carries no stack trace. |
+
+## Asking a person from a step
+
+A step can ask a person a question and carry on with the answer. The step calls
+`ctx.ask`; a flow cannot.
+
+```ts
+const answer = await ctx.ask({
+  prompt: "Delete the stale branch?",
+  choices: ["yes", "no"],
+  graceSecs: 120,
+  onTimeout: "waiting",
+  resume: { session: "abc" },
+});
+```
+
+`ctx.ask` returns `{ choice, note, actor }`. The question shows up in
+`operad pending` and `GET /v1/pending` as one item, with the run's object, like
+any other wait.
+
+**The grace.** While the step's process is alive the answer goes straight to the
+waiting call and the step goes on. The wait lasts the narrowest of: the
+`graceSecs` of the call, the step's `askGraceSecs` param, and `ask.graceSecs` in
+`config.json` (default `600`). `0` does not wait. There is no unlimited value.
+The step's own timeout does not run while it waits for an answer.
+
+```json
+{ "ask": { "graceSecs": 600 } }
+```
+
+**When the grace passes.** `onTimeout` decides:
+
+| `onTimeout` | What happens |
+|---|---|
+| `"waiting"` (default) | The step ends with the result `waiting` and the data `{ waitId, prompt, choices, resume }`. The flow must have an edge `waiting` to a `wait_person` step; that step shows the same item (same wait id) and an answer to it takes the edge the choice names. |
+| `"reject_once"` | The call returns `{ choice: undefined, rejected: true }` and the step goes on. |
+
+A flow where a step can end `waiting` and has no `waiting` edge to a
+`wait_person` step is refused when it loads.
+
+**One answer.** The first answer to a question counts. A second one is refused
+with `already answered`. An answer that comes after the step ended, when its
+flow wait was not reached, is refused and recorded in `operad history` as
+refused. An answer to a question that was already answered is never applied
+twice, also not after a crash.
+
+**After a crash.** A question has a stable id, `<run>:<step run>:<n>`. If the
+process stops while it waits, a step that is safe to run again asks again with the
+same id, so the item stays one; an answer that came in meanwhile is given to the
+step from the log. If the process stops after the step ended `waiting`, the
+flow wait is reached on restart with the same id.
 
 ## Limiting runs of one model
 
