@@ -54,6 +54,11 @@ export interface WaitPersonStep extends StepBase {
   readonly params: {
     readonly prompt: string;
     readonly choices: readonly string[];
+    /**
+     * Shown when the step that led here was interrupted. `{step}` names that
+     * step, so one wait can explain what stopped.
+     */
+    readonly note?: string;
   };
   readonly next: Readonly<Record<string, string>>;
 }

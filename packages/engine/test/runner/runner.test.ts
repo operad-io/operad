@@ -152,13 +152,14 @@ describe("runner", () => {
         "run_started",
         "step_entered",
         "effect_requested",
+        "step_started",
         "step_result",
         "edge_taken",
         "step_entered",
         "run_ended",
       ]);
       // Every batch carries at most one step's entry, so each input is one
-      // append; this log has four batches.
+      // append; the step-start fact is its own append before the result.
       expect(new Set(recorded.map((fact) => fact.seq)).size).toBe(recorded.length);
       expect((await run.log.runs({ active: true })).length).toBe(0);
     } finally {

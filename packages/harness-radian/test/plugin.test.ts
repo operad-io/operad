@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import {
   MemoryPluginStore,
@@ -21,6 +21,7 @@ import { runAgent as runProcess } from "../src/process.ts";
 import {
   cleanupTempRoots,
   fakeRadian,
+  fakeRadianNamed,
   manualClock,
   tempRoot,
   waitForFile,
@@ -51,11 +52,13 @@ interface TestEnv {
   readonly record: string;
   readonly marker: string;
   readonly calls: string;
+  readonly release: string;
 }
 
 async function setup(
   mode: string,
   settings: RadianHarnessSettings = {},
+  registrySettings?: Readonly<Record<string, unknown>>,
 ): Promise<TestEnv> {
   const root = await tempRoot();
   const bin = await fakeRadian(root);
@@ -70,9 +73,11 @@ async function setup(
   const record = join(root, "record.json");
   const marker = join(root, "marker");
   const calls = join(root, "calls");
+  const release = join(root, "release");
   setEnv("FAKE_RADIAN_RECORD", record);
   setEnv("FAKE_RADIAN_MARKER", marker);
   setEnv("FAKE_RADIAN_CALLS", calls);
+  setEnv("FAKE_RADIAN_RELEASE", release);
 
   const clock = manualClock();
   const plugin = createRadianHarnessPlugin({ clock, ...settings });
@@ -80,8 +85,9 @@ async function setup(
     home: root,
     cwd: root,
     store: new MemoryPluginStore({ root: join(root, "store") }),
+    ...(registrySettings === undefined ? {} : { settings: registrySettings }),
   });
-  return { root, clock, registry, record, marker, calls };
+  return { root, clock, registry, record, marker, calls, release };
 }
 
 function dataOf(result: PluginStepResult): Record<string, unknown> {
@@ -214,6 +220,86 @@ describe("harness-radian/agent", () => {
     expect(result.result).toBe("failed");
     expect(dataOf(result).reason).toBe("stall");
     expect(alive(pid)).toBe(false);
+  });
+
+  test("an open tool call pauses the stall timer until it settles", async () => {
+    const env = await setup("tool-silent");
+    const running = runAgent(env, {
+      prompt: "hello",
+      cwd: env.root,
+      wallTimeSecs: 300,
+      stallSecs: 1,
+    });
+
+    await waitForFile(env.marker);
+    await env.clock.when(() => env.clock.clears > 0);
+    // Twice the stall limit passes with no line and no stop: the tool is open.
+    expect(env.clock.fireUpTo(2_000)).toBe(0);
+
+    writeFileSync(env.release, "settle");
+    const result = await running;
+    expect(result.result).toBe("done");
+    expect(dataOf(result).exitCode).toBe(0);
+  });
+
+  test("the wall limit still stops a run while a tool call is open", async () => {
+    const env = await setup("tool-wall");
+    const running = runAgent(env, {
+      prompt: "hello",
+      cwd: env.root,
+      wallTimeSecs: 1,
+      stallSecs: 300,
+    });
+
+    await waitForFile(env.marker);
+    const pid = Number(readFileSync(env.marker, "utf8"));
+    env.clock.fireUpTo(1_000);
+
+    const result = await running;
+    expect(result.result).toBe("failed");
+    expect(dataOf(result).reason).toBe("wall");
+    expect(alive(pid)).toBe(false);
+  });
+
+  test("settings.command is the executable that runs", async () => {
+    const env = await setup("done", {}, {
+      "harness-radian": { command: "custom-radian" },
+    });
+    await fakeRadianNamed(env.root, "custom-radian");
+    unlinkSync(join(env.root, "bin", "radian"));
+
+    const result = await runAgent(env, { prompt: "hello", cwd: env.root });
+    expect(result.result).toBe("done");
+  });
+
+  test("settings supply the stall limit", async () => {
+    const env = await setup("stall", {}, {
+      "harness-radian": { wallTimeSecs: 300, stallSecs: 1 },
+    });
+    const running = runAgent(env, { prompt: "hello", cwd: env.root });
+
+    await waitForFile(env.marker);
+    env.clock.fireUpTo(1_000);
+    const result = await running;
+    expect(result.result).toBe("failed");
+    expect(dataOf(result).reason).toBe("stall");
+  });
+
+  test("a step parameter overrides a settings limit", async () => {
+    const env = await setup("stall", {}, {
+      "harness-radian": { wallTimeSecs: 300, stallSecs: 1 },
+    });
+    const controller = new AbortController();
+    const running = runAgent(
+      env,
+      { prompt: "hello", cwd: env.root, stallSecs: 300 },
+      { signal: controller.signal },
+    );
+
+    await waitForFile(env.marker);
+    expect(env.clock.fireUpTo(2_000)).toBe(0);
+    controller.abort();
+    expect((await running).result).toBe("interrupted");
   });
 
   test("wallTimeSecs stops a run that never ends", async () => {

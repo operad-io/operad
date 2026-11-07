@@ -37,13 +37,13 @@ export function createDevPlugin() {
     steps: [
       {
         name: "worktree",
-        results: ["ready", "conflict", "blocked", "failed", "cancelled"],
+        results: ["ready", "conflict", "blocked", "failed", "cancelled", "interrupted"],
         run: runWorktree,
       },
       {
         name: "work",
         timeoutSecs: STEP_TIMEOUT_SECS,
-        results: ["done", "nothing", "failed", "cancelled"],
+        results: ["done", "nothing", "failed", "cancelled", "interrupted"],
         run: runWork,
       },
       {

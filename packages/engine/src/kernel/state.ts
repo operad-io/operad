@@ -32,6 +32,7 @@ export function initialState(): KernelState {
     endedStatus: null,
     wait: null,
     effect: null,
+    effectStarted: null,
     visits: {},
     recoveries: {},
     effects: {},
@@ -74,6 +75,7 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
         params: payload.params ?? null,
         access: payload.access ?? null,
         hops: payload.hops ?? 0,
+        effectStarted: null,
         lastSeq,
       };
     }
@@ -88,6 +90,7 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
         step: payload.step,
         stepKind: payload.kind,
         wait: null,
+        effectStarted: null,
         visits: { ...state.visits, [payload.step]: payload.visit },
         lastSeq,
       };
@@ -116,11 +119,17 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
         status: payload.effect === "run_plugin_step" ? "running" : "waiting",
         step: payload.step,
         effect,
+        effectStarted: null,
         wait: null,
         effects: { ...state.effects, [payload.effectId]: "outstanding" },
         recoveries,
         lastSeq,
       };
+    }
+
+    case "step_started": {
+      const payload = read<{ readonly effectId: string }>(fact);
+      return { ...state, effectStarted: payload.effectId, lastSeq };
     }
 
     case "step_result": {
@@ -133,6 +142,8 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
         status: "running",
         step: payload.step,
         effect: state.effect !== null && state.effect.id === payload.effectId ? null : state.effect,
+        effectStarted:
+          state.effectStarted === payload.effectId ? null : state.effectStarted,
         effects: { ...state.effects, [payload.effectId]: "done" },
         results: {
           ...state.results,
@@ -150,6 +161,7 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
         ...abandoned,
         step: payload.target === END ? null : payload.target,
         stepKind: null,
+        effectStarted: null,
         lastSeq,
       };
     }
@@ -206,6 +218,7 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
         step: null,
         stepKind: null,
         wait: null,
+        effectStarted: null,
         lastSeq,
       };
     }
@@ -213,7 +226,7 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
     case "step_interrupted": {
       const payload = read<StepInterruptedPayload>(fact);
       const abandoned = abandonEffect(state, payload.effectId);
-      return { ...state, ...abandoned, status: "running", lastSeq };
+      return { ...state, ...abandoned, status: "running", effectStarted: null, lastSeq };
     }
 
     case "crash_loop_stopped": {

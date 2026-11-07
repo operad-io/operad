@@ -65,6 +65,24 @@ export function lastLines(text: string, count: number): readonly string[] {
   return lines.slice(-count);
 }
 
+/** The tool activity a harness journal line reports, when it reports one. */
+export function toolActivity(line: string): "started" | "settled" | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const event = typeof record.event === "string" ? record.event : record.type;
+  if (event === "ToolExecutionStarted") return "started";
+  if (event === "ToolExecutionSettled") return "settled";
+  return undefined;
+}
+
 /** How much of the harness's own stderr the fact keeps. */
 const STDERR_LIMIT = 64 * 1024;
 
@@ -351,8 +369,12 @@ export async function runAgent(
   const clock = options.clock ?? systemClock;
   let resetStallForLine: () => void = () => {};
   let onLineOverflow: () => void = () => {};
+  let toolCalls = 0;
+  let onToolActivity: (activity: "started" | "settled") => void = () => {};
   const stdoutLines = new Lines(
     (line) => {
+      const activity = toolActivity(line);
+      if (activity !== undefined) onToolActivity(activity);
       resetStallForLine();
       return options.onLine(line);
     },
@@ -484,10 +506,20 @@ export async function runAgent(
   let stallTimer: unknown;
   const resetStall = (): void => {
     if (options.stallMs <= 0) return;
-    if (stallTimer !== undefined) clock.clearTimeout(stallTimer);
+    if (stallTimer !== undefined) {
+      clock.clearTimeout(stallTimer);
+      stallTimer = undefined;
+    }
+    // A tool call may run as long as it needs: only the wall limit watches it.
+    if (toolCalls > 0) return;
     stallTimer = clock.setTimeout(() => {
       if (!finished) beginStop("stall");
     }, options.stallMs);
+  };
+  onToolActivity = (activity) => {
+    if (activity === "started") toolCalls += 1;
+    else toolCalls = Math.max(0, toolCalls - 1);
+    resetStall();
   };
   resetStall();
   resetStallForLine = resetStall;

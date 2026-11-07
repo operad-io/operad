@@ -74,6 +74,10 @@ export interface ApplyHooks {
  * Asks `decide` for one input's facts and appends them as one batch, without
  * recording an input. The caller supplies the input id as the cause.
  */
+/**
+ * Asks `decide` for one input's facts and appends them as one batch, without
+ * recording an input. The caller supplies the input id as the cause.
+ */
 export async function appendInput(
   log: LogBackend,
   flow: FlowDefinition,
@@ -83,10 +87,11 @@ export async function appendInput(
   now: number,
 ): Promise<{ readonly state: KernelState; readonly decision: Decision }> {
   const decision = decide(flow, state, input, now);
+  const facts = decision.facts;
   let next = state;
-  if (decision.facts.length > 0) {
-    await log.append(runId, state.lastSeq, decision.facts);
-    for (const fact of decision.facts) next = evolve(next, fact);
+  if (facts.length > 0) {
+    await log.append(runId, state.lastSeq, facts);
+    for (const fact of facts) next = evolve(next, fact);
   }
   return { state: next, decision };
 }

@@ -3,7 +3,6 @@ import { userInfo } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  answerRun,
   ConfigError,
   FileSecretStore,
   Kernel,
@@ -28,6 +27,7 @@ import {
   loadPluginRegistry,
   loadSourcedTriggerRules,
   loadTriggerRules,
+  lockHeld,
   messageOf,
   openConfigLog,
   openPluginStore,
@@ -36,7 +36,9 @@ import {
   readState,
   readStoredStart,
   readStoredTrigger,
+  recordAnswer,
   serve,
+  serveLockPath,
   setPluginEnabled,
   splitActionName,
   storeRootOf,
@@ -177,18 +179,16 @@ async function openContext(home: string, io: CliIo): Promise<Context> {
       const runs = await log.runs();
       const run = runs.find((candidate) => candidate.runId === runId);
       if (run === undefined) throw new StateError(`no run "${runId}"`);
-      const found = loaded?.flow(run.flow);
-      if (found === undefined) {
-        throw new StateError(`run "${runId}": flow "${run.flow}" is not loaded`);
-      }
-      await answerRun({
+      await recordAnswer({
         log,
-        flow: found.flow,
         runId,
         choice,
         ...(note === undefined ? {} : { note }),
         actor,
       });
+      if (!lockHeld(serveLockPath(home))) {
+        io.write("recorded; it runs when `operad serve` is running\n");
+      }
     },
     onCancelRun: async (runId) => {
       const runs = await log.runs();

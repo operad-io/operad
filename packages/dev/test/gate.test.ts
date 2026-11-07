@@ -836,11 +836,20 @@ describe("the dev flow", () => {
       if (step === undefined || step.kind === "end") return {};
       return step.next as Readonly<Record<string, string>>;
     };
+    expect(nextOf("worktree")).toEqual({
+      ready: "work",
+      conflict: "work",
+      blocked: "wait",
+      failed: "end_failed",
+      cancelled: "end_cancelled",
+      interrupted: "wait",
+    });
     expect(nextOf("work")).toEqual({
       done: "verify",
       nothing: "wait",
       failed: "wait",
       cancelled: "end_cancelled",
+      interrupted: "wait",
     });
     expect(nextOf("verify")).toEqual({
       pass: "review",

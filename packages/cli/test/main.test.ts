@@ -9,6 +9,7 @@ import {
   loadPluginRegistry,
   openConfigLog,
   readConfig,
+  serveOnce,
   storeRootOf,
 } from "@operad-io/engine";
 import { addRepository } from "../../dev/src/service.ts";
@@ -353,6 +354,21 @@ describe("operad command", () => {
     expect(
       await main(["test:approve", "job:1"], { home, io: output.io }),
     ).toBe(0);
+    // The CLI records the answer and returns; only serve applies it.
+    expect(output.text()).toContain("recorded; it runs when `operad serve` is running");
+
+    const log = openConfigLog(config);
+    const applyRegistry = await loadPluginRegistry({
+      home,
+      store: new FilePluginStore({ root: join(storeRoot, "plugins") }),
+    });
+    await serveOnce({
+      log,
+      registry: applyRegistry,
+      lockRoot: storeRoot,
+      spawnRun: () => undefined,
+    });
+    await log.close();
 
     const store = new FilePluginStore({ root: join(storeRoot, "plugins") });
     const actionFact = store

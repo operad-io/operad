@@ -47,6 +47,30 @@ function declaredResults(step: Step): readonly string[] {
   }
 }
 
+/** The step a result names, when its data came from a step that stopped. */
+function stepNameOf(data: unknown): string | undefined {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+    return undefined;
+  }
+  const step = (data as Record<string, unknown>).step;
+  return typeof step === "string" && step.length > 0 ? step : undefined;
+}
+
+/**
+ * The prompt a person sees. A wait reached by an interrupted result appends
+ * the wait's note, with `{step}` naming the step that stopped.
+ */
+function waitPrompt(
+  params: { readonly prompt: string; readonly note?: string | undefined },
+  via: { readonly step: string; readonly result: string; readonly named?: string } | undefined,
+): string {
+  if (via?.result !== "interrupted" || params.note === undefined) {
+    return params.prompt;
+  }
+  const named = via.named ?? via.step;
+  return `${params.prompt}\n\n${params.note.replaceAll("{step}", named)}`;
+}
+
 function effectRequestedPayload(effect: PendingEffect, recovery: boolean): EffectRequestedPayload {
   return {
     effectId: effect.id,
@@ -128,7 +152,11 @@ export function decide(
     push("run_ended", { status, reason }, causedBy);
   }
 
-  function enter(stepId: string, causedBy: FactCause): void {
+  function enter(
+    stepId: string,
+    causedBy: FactCause,
+    via?: { readonly step: string; readonly result: string; readonly named?: string },
+  ): void {
     const step = findStep(flow, stepId);
     if (step === undefined) {
       endRun("failed", `unknown step ${stepId}`, causedBy);
@@ -176,12 +204,13 @@ export function decide(
       case "wait_person": {
         const waitId = `${step.id}:${visit}`;
         const choices = [...step.params.choices];
+        const prompt = waitPrompt(step.params, via);
         push(
           "waiting_for_person",
           {
             waitId,
             step: step.id,
-            prompt: step.params.prompt,
+            prompt,
             choices,
             waitKind: "step",
             effectId: null,
@@ -192,7 +221,7 @@ export function decide(
           kind: "notify_pending",
           waitId,
           step: step.id,
-          prompt: step.params.prompt,
+          prompt,
           choices,
           waitKind: "step",
         });
@@ -237,7 +266,12 @@ export function decide(
     }
   }
 
-  function takeEdge(step: Step, result: string, causedBy: FactCause): void {
+  function takeEdge(
+    step: Step,
+    result: string,
+    causedBy: FactCause,
+    named?: string,
+  ): void {
     const target = edgesOf(step)[result];
     if (target === undefined) {
       endRun("failed", `no edge for result ${result}`, causedBy);
@@ -248,7 +282,7 @@ export function decide(
       endRun("done", null, edgeSeq);
       return;
     }
-    enter(target, edgeSeq);
+    enter(target, edgeSeq, { step: step.id, result, ...(named === undefined ? {} : { named }) });
   }
 
   function requestAgain(effect: PendingEffect, causedBy: FactCause, recovery: boolean): void {
@@ -339,7 +373,7 @@ export function decide(
         },
         cause,
       );
-      takeEdge(step, input.result, resultSeq);
+      takeEdge(step, input.result, resultSeq, stepNameOf(input.data));
       return { facts, effects };
     }
 

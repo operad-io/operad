@@ -1,14 +1,15 @@
 /** The kernel loop: one per operad home, one child process per run. */
 
-import { ActiveRunError } from "../log/errors.ts";
-import type { LogBackend } from "../log/types.ts";
+import { ActiveRunError, SeqConflictError } from "../log/errors.ts";
+import type { InputRecord, JsonValue, LogBackend } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
-import type { StartRunRequest } from "../plugin/types.ts";
+import type { RunLookup, StartRunRequest } from "../plugin/types.ts";
+import type { Input, PersonAnswerInput } from "../kernel/types.ts";
 import { Kernel } from "../trigger/kernel.ts";
 import { loadTriggerRules } from "../trigger/rules.ts";
 import type { TriggerRule } from "../trigger/types.ts";
 import { acquireLock, lockHeld, runLockPath, serveLockPath } from "../runner/lock.ts";
-import { objectKey, parseObjectKey, readState } from "../runner/service.ts";
+import { applyInput, objectKey, parseObjectKey, readState } from "../runner/service.ts";
 
 export interface SpawnRunOptions {
   /** The previous process died mid-step; recover before doing anything else. */
@@ -49,6 +50,160 @@ function startObjectKey(request: StartRunRequest): string {
   return key === "flow" ? `flow:${request.plugin}/${request.flow}` : key;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The answer a recorded input carries, or undefined for another input. */
+function recordedAnswer(payload: JsonValue): PersonAnswerInput | undefined {
+  if (!isRecord(payload) || payload.kind !== "person_answer") return undefined;
+  const waitId = payload.waitId;
+  const choice = payload.choice;
+  const actor = payload.actor;
+  if (
+    typeof waitId !== "string" ||
+    typeof choice !== "string" ||
+    !isRecord(actor) ||
+    typeof actor.via !== "string" ||
+    typeof actor.id !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    kind: "person_answer",
+    waitId,
+    choice,
+    ...(typeof payload.note === "string" ? { note: payload.note } : {}),
+    actor: { via: actor.via, id: actor.id },
+  };
+}
+
+/** The kernel facts a plugin's tick may ask about. */
+function runLookup(log: LogBackend): RunLookup {
+  return {
+    active: async (object) => {
+      const runs = await log.runs({ active: true });
+      return object === undefined
+        ? runs
+        : runs.filter((run) => run.object === object);
+    },
+    state: async (runId) => {
+      try {
+        return await readState(log, runId);
+      } catch {
+        return undefined;
+      }
+    },
+    lastStep: async (runId) => {
+      let step: string | null = null;
+      try {
+        for await (const fact of log.read(runId)) {
+          if (
+            fact.kind === "step_entered" &&
+            isRecord(fact.payload) &&
+            fact.payload.kind !== "end" &&
+            typeof fact.payload.step === "string"
+          ) {
+            step = fact.payload.step;
+          }
+        }
+      } catch {
+        return null;
+      }
+      return step;
+    },
+  };
+}
+
+/**
+ * Applies answers another process only recorded. The input record is the
+ * hand-off: `serve` is the one process that may decide what the answer means
+ * and start the step it requests. A repeated record is applied once.
+ */
+async function applyRecordedAnswers(options: {
+  readonly log: LogBackend;
+  readonly registry: PluginRegistry;
+  readonly kernel: Kernel;
+  readonly clock: () => number;
+  readonly shouldStop?: (() => boolean) | undefined;
+}): Promise<void> {
+  const answers: { readonly record: InputRecord; readonly input: PersonAnswerInput }[] = [];
+  for await (const record of options.log.readInputs()) {
+    if (record.runId === null) continue;
+    const input = recordedAnswer(record.payload);
+    if (input !== undefined) answers.push({ record, input });
+  }
+  if (answers.length === 0) return;
+
+  const runs = new Map((await options.log.runs()).map((run) => [run.runId, run]));
+  const appliedByRun = new Map<string, Set<string>>();
+  const appliedFor = async (runId: string): Promise<Set<string>> => {
+    const cached = appliedByRun.get(runId);
+    if (cached !== undefined) return cached;
+    const applied = new Set<string>();
+    try {
+      for await (const fact of options.log.read(runId)) {
+        if (typeof fact.cause === "string") applied.add(fact.cause);
+      }
+    } catch {
+      // A run that cannot be read is left to the runner's own recovery.
+    }
+    appliedByRun.set(runId, applied);
+    return applied;
+  };
+
+  for (const { record, input } of answers) {
+    if (options.shouldStop?.() === true) return;
+    const runId = record.runId;
+    if (runId === null) continue;
+    const applied = await appliedFor(runId);
+    if (applied.has(record.inputId)) continue;
+    const run = runs.get(runId);
+    if (run === undefined) continue;
+    const flow = options.registry.flow(run.flow);
+    if (flow === undefined) continue;
+
+    for (let attempt = 0; ; attempt += 1) {
+      let state;
+      try {
+        state = await readState(options.log, runId);
+      } catch {
+        break;
+      }
+      if (
+        state.status !== "waiting_person" ||
+        state.wait === null ||
+        state.wait.id !== input.waitId
+      ) {
+        break;
+      }
+      const withId: Input = { ...input, inputId: record.inputId };
+      try {
+        await applyInput(
+          options.log,
+          flow.flow,
+          runId,
+          state,
+          withId,
+          options.clock(),
+          "person",
+          `answer:${input.waitId}:${input.choice}`,
+          {
+            beforeEnd: async (endedRunId, ended) => {
+              await options.kernel.emitRunEnd(endedRunId, ended);
+            },
+          },
+        );
+        applied.add(record.inputId);
+        break;
+      } catch (error) {
+        if (error instanceof SeqConflictError && attempt < 2) continue;
+        throw error;
+      }
+    }
+  }
+}
+
 /**
  * One pass: tick every plugin, start the runs they asked for, and give every
  * active run without a live process a child of its own.
@@ -82,7 +237,7 @@ export async function serveOnce(
   const started: string[] = [];
   const spawned: string[] = [];
 
-  await options.registry.tick();
+  await options.registry.tick(runLookup(options.log));
   const requests = options.registry.takeStartedRuns();
   for (const request of requests) {
     if (options.shouldStop?.() === true) break;
@@ -100,6 +255,18 @@ export async function serveOnce(
     } catch (error) {
       if (!(error instanceof ActiveRunError)) throw error;
     }
+  }
+
+  if (options.shouldStop?.() !== true) {
+    await applyRecordedAnswers({
+      log: options.log,
+      registry: options.registry,
+      kernel,
+      clock,
+      ...(options.shouldStop === undefined
+        ? {}
+        : { shouldStop: options.shouldStop }),
+    });
   }
 
   const active = await options.log.runs({ active: true });
@@ -133,7 +300,10 @@ export async function serveOnce(
     kernel.adoptStart(run);
 
     await options.spawnRun(run.runId, {
-      recover: state.status === "running",
+      recover:
+        state.status === "running" &&
+        state.effect !== null &&
+        state.effectStarted === state.effect.id,
     });
     spawned.push(run.runId);
   }
@@ -195,8 +365,18 @@ export async function serve(options: ServeOptions): Promise<void> {
   };
   options.signal?.addEventListener("abort", stop, { once: true });
 
+  // A change another process made marks the loop, so it takes one more pass
+  // before sleeping again. Writes this pass makes itself must not keep the
+  // loop busy, so they are ignored while a pass is running.
+  let inPass = false;
+  let woken = false;
+  const unsubscribe = options.log.subscribe?.(() => {
+    if (!inPass) woken = true;
+  });
+
   try {
     while (!stopped) {
+      inPass = true;
       const result = await serveOnce({
         ...options,
         shouldStop: () => stopped,
@@ -205,12 +385,18 @@ export async function serve(options: ServeOptions): Promise<void> {
           return at !== undefined && clock() - at < intervalMs * 2;
         },
       });
+      inPass = false;
       const now = clock();
       for (const runId of result.spawned) spawnedAt.set(runId, now);
       if (stopped) break;
+      if (woken) {
+        woken = false;
+        continue;
+      }
       await sleep(intervalMs, options.signal);
     }
   } finally {
+    unsubscribe?.();
     options.signal?.removeEventListener("abort", stop);
     lock.release();
   }

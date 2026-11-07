@@ -181,7 +181,7 @@ describe("validateFlow", () => {
           kind: "plugin",
           params: { use: "dev/command", params: { command: "true" } },
           replay: "unsafe",
-          next: { ok: "end", failed: "end" },
+          next: { ok: "end", failed: "end", interrupted: "end" },
         },
       ],
     };
@@ -197,6 +197,47 @@ describe("validateFlow", () => {
       ),
     );
     expect(error.message).toContain('no edge for result "failed"');
+  });
+
+  test("requires an interrupted edge for every unsafe step", () => {
+    const flow = {
+      name: "deploy",
+      entry: "run",
+      steps: [
+        {
+          id: "run",
+          kind: "plugin",
+          params: { use: "dev/command", params: {} },
+          replay: "unsafe",
+          next: { ok: "end", failed: "end" },
+        },
+      ],
+    };
+    const error = errorOf(() =>
+      validateFlow(flow, [{ name: "dev/command", results: ["ok", "failed"] }]),
+    );
+    expect(error.message).toContain('step "run"');
+    expect(error.message).toContain('no edge for result "interrupted"');
+  });
+
+  test("accepts an interrupted edge an unsafe type does not declare", () => {
+    const flow = validateFlow(
+      {
+        name: "deploy",
+        entry: "run",
+        steps: [
+          {
+            id: "run",
+            kind: "plugin",
+            params: { use: "dev/command", params: {} },
+            replay: "unsafe",
+            next: { ok: "end", failed: "end", interrupted: "end" },
+          },
+        ],
+      },
+      [{ name: "dev/command", results: ["ok", "failed"] }],
+    );
+    expect(flow.name).toBe("deploy");
   });
 
   test("accepts a single step type declaration as the registry", () => {

@@ -164,6 +164,42 @@ describe("plugin registry validation", () => {
     );
   });
 
+  test("rejects a flow whose unsafe step has no interrupted edge", () => {
+    const flow = defineFlow({
+      name: "stuck",
+      entry: "run",
+      steps: [
+        {
+          id: "run",
+          kind: "plugin",
+          params: { use: "a/step", params: {} },
+          replay: "unsafe",
+          next: { ok: "end" },
+        },
+      ],
+    });
+    const error = errorOf(
+      () =>
+        new PluginRegistry([
+          def({
+            name: "a",
+            flows: [flow],
+            steps: [
+              {
+                name: "step",
+                results: ["ok"],
+                run: () => ({ result: "ok" }),
+              },
+            ],
+          }),
+        ]),
+    );
+    expect(error.message).toContain('plugin "a"');
+    expect(error.message).toContain('flow "stuck"');
+    expect(error.message).toContain('step "run"');
+    expect(error.message).toContain('no edge for result "interrupted"');
+  });
+
   test("rejects a step that returns a result it did not declare", async () => {
     const root = await tempRoot();
     const registry = new PluginRegistry(

@@ -9,6 +9,7 @@ import {
   PluginRegistry,
   readState,
   readStoredStart,
+  recordAnswer,
   Runner,
   serveOnce,
 } from "@operad-io/engine";
@@ -728,6 +729,128 @@ describe("dev scheduling", () => {
         },
       );
       expect(answers).toEqual([`${item.runId}:reject`]);
+    } finally {
+      await log.close();
+    }
+  });
+
+  test("serve repairs a task whose run ended without an edge, and reject runs again", async () => {
+    const fixture = await setup();
+    const plan = await makePlan(fixture, { slug: "plan", auto: "off" });
+    const task = await makeTask(fixture, plan.key, "task");
+    await confirm(fixture, plan.key);
+    const log = openLog({ backend: "jsonl", path: join(fixture.root, "log") });
+    try {
+      // The state TK0001 was left in: the run stopped in `work` with a result
+      // that had no edge, and the task still said waiting with that run id.
+      const broken = await log.startRun("dev", `task:${task.key}`);
+      await log.append(broken.runId, 0, [
+        { kind: "run_started", payload: { flow: "dev" }, cause: "seed" },
+        {
+          kind: "step_entered",
+          payload: { step: "work", visit: 1, kind: "plugin" },
+          cause: 1,
+        },
+        {
+          kind: "run_ended",
+          payload: { status: "failed", reason: "no edge for result interrupted" },
+          cause: 2,
+        },
+      ]);
+      await log.endRun(broken.runId);
+      await phase(fixture, task.key, "waiting", broken.runId);
+
+      let registry: PluginRegistry;
+      const answers: { readonly runId: string; readonly choice: string }[] = [];
+      registry = new PluginRegistry([plugin], {
+        home: fixture.root,
+        cwd: fixture.repositoryPath,
+        store: fixture.store,
+        storeRoot: fixture.store.root,
+        onAnswer: async (runId, choice, note, actor) => {
+          answers.push({ runId, choice });
+          await recordAnswer({
+            log,
+            runId,
+            choice,
+            ...(note === undefined ? {} : { note }),
+            actor,
+          });
+        },
+      });
+
+      const spawn = async (runId: string, options: { readonly recover: boolean }) => {
+        const found = registry.flow("dev");
+        if (found === undefined) throw new Error("the dev flow is missing");
+        const run = (await log.runs()).find(
+          (candidate) => candidate.runId === runId,
+        );
+        if (run === undefined) throw new Error(`no run ${runId}`);
+        const object = parseObjectKey(run.object);
+        const startInput = readStoredStart(fixture.store.root, runId);
+        await new Runner({
+          log,
+          flow: found.flow,
+          runId,
+          registry,
+          lockRoot: fixture.store.root,
+          recover: options.recover,
+          ...(object === undefined ? {} : { object }),
+          ...(startInput === undefined ? {} : { startInput }),
+        }).run();
+      };
+
+      await serveOnce({
+        log,
+        registry,
+        lockRoot: fixture.store.root,
+        storeRoot: fixture.store.root,
+        home: fixture.root,
+        spawnRun: spawn,
+      });
+
+      const repaired = taskData((await getTask(fixture.store, task.key)).data);
+      expect(repaired.phase).toBe("waiting");
+      expect(repaired.run).not.toBe(broken.runId);
+      expect(fixture.lines).toEqual([
+        `${task.id} waiting -> waiting (run stopped during work)`,
+      ]);
+
+      const pending = await listPending(log, registry);
+      expect(pending).toHaveLength(1);
+      const item = pending[0];
+      if (item === undefined) throw new Error("no pending item");
+      expect(item.prompt).toContain(
+        "the run stopped during work; reject to run it again",
+      );
+      expect(
+        item.actions.map((action) => `${action.plugin}:${action.action}`),
+      ).toContain("dev:reject");
+
+      // Rejecting records the answer only; the next serve pass runs a new
+      // attempt from the worktree step.
+      await registry.runAction(
+        "dev/reject",
+        { note: "try again" },
+        {
+          object: await getTask(fixture.store, task.key),
+          runId: item.runId,
+          actor: ACTOR,
+        },
+      );
+      expect(answers).toEqual([{ runId: item.runId, choice: "reject" }]);
+      const before = taskData((await getTask(fixture.store, task.key)).data);
+      await serveOnce({
+        log,
+        registry,
+        lockRoot: fixture.store.root,
+        storeRoot: fixture.store.root,
+        home: fixture.root,
+        spawnRun: spawn,
+      });
+      const after = taskData((await getTask(fixture.store, task.key)).data);
+      expect(after.attempts).toBe(before.attempts + 1);
+      expect(after.attempt?.worktree).toBeTruthy();
     } finally {
       await log.close();
     }

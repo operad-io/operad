@@ -79,6 +79,7 @@ function checkStep(
   if (raw.replay !== "safe" && raw.replay !== "unsafe") {
     throw new FlowError(at('replay: must be "safe" or "unsafe"'));
   }
+  const replay = raw.replay;
   if (!isRecord(raw.params)) {
     throw new FlowError(at("params: must be an object"));
   }
@@ -98,7 +99,13 @@ function checkStep(
       if (!hasOwn(params, "params")) {
         throw new FlowError(at("params.params: must be present, use {} when the step takes none"));
       }
-      results = type.results;
+      // An unsafe step can be interrupted by a crash before it finishes, even
+      // when its type declares no such result. The flow must say where that
+      // goes; a run must never end because a result had no edge.
+      results =
+        replay === "unsafe"
+          ? [...new Set([...type.results, "interrupted"])]
+          : type.results;
       break;
     }
     case "wait_person": {
@@ -108,6 +115,12 @@ function checkStep(
       const choices = params.choices;
       if (!isStringArray(choices)) {
         throw new FlowError(at("params.choices: must be an array of strings"));
+      }
+      if (
+        params.note !== undefined &&
+        (typeof params.note !== "string" || params.note.length === 0)
+      ) {
+        throw new FlowError(at("params.note: must be a non-empty string"));
       }
       results = [...new Set([...choices, "interrupted"])];
       break;
@@ -162,7 +175,7 @@ function checkStep(
     }
   }
 
-  return { id, kind, params, replay: raw.replay, results, next };
+  return { id, kind, params, replay, results, next };
 }
 
 /**

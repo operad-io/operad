@@ -5,6 +5,7 @@
  */
 
 import {
+  ActiveRunError,
   StateError,
   type ObjectStore,
   type StoredObject,
@@ -25,7 +26,9 @@ import {
   listRepositories,
   recordAutoMerge,
   recordMergeReported,
+  reopenTask,
   releaseTaskClaim,
+  setTaskPhase,
 } from "./service.ts";
 import { readDevSettings, type DevSettings } from "./settings.ts";
 
@@ -191,6 +194,51 @@ async function reportFinishedPlans(
   }
 }
 
+/**
+ * Makes every task's phase follow its run. A task whose run paused for a
+ * person says `waiting`; a task whose run is gone is repaired to a waiting
+ * task with a pending item, never left as `running` or `waiting` with nothing
+ * to act on. The check needs the kernel's run lookup, which only `serve`
+ * supplies.
+ */
+async function reconcileTaskRuns(
+  ctx: TickContext,
+  repository: string,
+  tasks: readonly StoredObject[],
+): Promise<void> {
+  const runs = ctx.runLookup;
+  if (runs === undefined) return;
+  for (const object of tasksOf(tasks, repository)) {
+    const task = taskData(object.data);
+    if (task.phase !== "waiting" && task.phase !== "running") continue;
+    const active = await runs.active(`task:${object.id}`);
+    const run = active[0];
+    if (run !== undefined) {
+      // A run paused for a person is the truth: the task is waiting.
+      const state = await runs.state(run.runId);
+      if (state?.status === "waiting_person" && task.phase === "running") {
+        await setTaskPhase(ctx.store, object.id, "waiting", { run: run.runId });
+        writeSchedulerLine(`${bareId(object.id)} running -> waiting`);
+      }
+      continue;
+    }
+    // A running task with no run id is a start that never landed; the claim
+    // release below gives it back to ready.
+    if (task.phase === "running" && task.run === null) continue;
+    const step = task.run === null ? null : await runs.lastStep(task.run);
+    if ((await reopenTask(ctx.store, object.id)) === undefined) continue;
+    try {
+      if (await startOne(ctx, object, { runStoppedAt: step ?? "the run" })) {
+        writeSchedulerLine(
+          `${bareId(object.id)} ${task.phase} -> waiting (run stopped during ${step ?? "the run"})`,
+        );
+      }
+    } catch (error) {
+      if (!(error instanceof ActiveRunError)) throw error;
+    }
+  }
+}
+
 async function scheduleRepository(
   ctx: TickContext,
   repository: RepositoryData,
@@ -198,6 +246,10 @@ async function scheduleRepository(
   initialPlans: readonly StoredObject[],
 ): Promise<void> {
   const settings = await readDevSettings(repository.path);
+
+  // Repair a run that ended without an edge, or one whose phase was left
+  // behind, before the scheduler reads phases and starts anything else.
+  await reconcileTaskRuns(ctx, repository.name, initialTasks);
 
   // A claim is not durable until the kernel records the run. A task left
   // running with no run is a start that never landed (a crash or a kernel

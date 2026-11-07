@@ -1,6 +1,10 @@
 export * from "./errors.ts";
-export { answerRun } from "./answer.ts";
-export type { AnswerOptions } from "./answer.ts";
+export { answerRun, recordAnswer } from "./answer.ts";
+export type {
+  AnswerOptions,
+  RecordAnswerOptions,
+  RecordedAnswerPayload,
+} from "./answer.ts";
 export {
   acquireLock,
   lockHeld,

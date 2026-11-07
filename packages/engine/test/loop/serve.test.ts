@@ -34,6 +34,9 @@ const pluginPath = fileURLToPath(
 const childPath = fileURLToPath(
   new URL("../fixtures/run-child.ts", import.meta.url),
 );
+const answerChildPath = fileURLToPath(
+  new URL("../fixtures/record-answer-child.ts", import.meta.url),
+);
 
 interface Home {
   readonly root: string;
@@ -94,6 +97,84 @@ function spawn(home: Home, runId: string, recover: boolean) {
 }
 
 describe("serve loop", () => {
+  test("a recorded answer runs the next step in serve's process", async () => {
+    const home = await makeHome();
+    const log = openConfigLog(home.config);
+    const registry = await loadPluginRegistry({
+      home: home.home,
+      store: new MemoryPluginStore({ root: home.storeRoot }),
+    });
+    try {
+      const info = await log.startRun("after-ask", "job:2");
+      const found = registry.flow("after-ask");
+      if (found === undefined) throw new Error("missing flow after-ask");
+      await new Runner({
+        log,
+        flow: found.flow,
+        runId: info.runId,
+        registry,
+        lockRoot: home.storeRoot,
+      }).run();
+      expect((await readState(log, info.runId)).status).toBe("waiting_person");
+
+      // Another process records the answer only. The run stays where it is and
+      // no step is requested until serve picks the input up.
+      const child = Bun.spawn({
+        cmd: [process.execPath, answerChildPath, home.home, info.runId, "go"],
+        cwd: home.home,
+        env: { ...process.env, OPERAD_HOME: home.home },
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      expect(await child.exited).toBe(0);
+      const childPid = child.pid;
+      expect((await readState(log, info.runId)).status).toBe("waiting_person");
+      const before = [];
+      for await (const fact of log.read(info.runId)) before.push(fact);
+      expect(
+        before.some(
+          (fact) =>
+            fact.kind === "effect_requested" &&
+            (fact.payload as { step?: unknown }).step === "work",
+        ),
+      ).toBe(false);
+
+      const spawned: string[] = [];
+      await serveOnce({
+        log,
+        registry,
+        lockRoot: home.storeRoot,
+        spawnRun: async (runId, options) => {
+          spawned.push(runId);
+          await new Runner({
+            log,
+            flow: found.flow,
+            runId,
+            registry,
+            lockRoot: home.storeRoot,
+            recover: options.recover,
+          }).run();
+        },
+      });
+
+      expect(spawned).toEqual([info.runId]);
+      expect((await readState(log, info.runId)).endedStatus).toBe("done");
+      const facts = [];
+      for await (const fact of log.read(info.runId)) facts.push(fact);
+      const started = facts.find(
+        (fact) =>
+          fact.kind === "step_started" &&
+          (fact.payload as { step?: unknown }).step === "work",
+      );
+      // The step's start fact names this process, not the one that answered.
+      expect((started?.payload as { pid?: unknown }).pid).toBe(process.pid);
+      expect((started?.payload as { pid?: unknown }).pid).not.toBe(childPid);
+    } finally {
+      await log.close();
+    }
+  });
+
   test("recovers an unsafe run into a person wait, and an action ends it", async () => {
     const home = await makeHome();
     const log = openConfigLog(home.config);
