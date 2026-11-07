@@ -1,5 +1,6 @@
 /** The one entry point that starts runs, and the rules that point events at it. */
 
+import { readFileSync } from "node:fs";
 import type { KernelState, StartInput } from "../kernel/types.ts";
 import { inputIdFor } from "../log/facts.ts";
 import { ActiveRunError, SeqConflictError } from "../log/errors.ts";
@@ -89,6 +90,7 @@ function eventFromPayload(payload: JsonValue): TriggerEvent | undefined {
     typeof payload.hops === "number" && Number.isInteger(payload.hops) && payload.hops >= 0
       ? payload.hops
       : 0;
+  const summary = readSummary(payload.summaryFile);
   return {
     source,
     key,
@@ -96,7 +98,19 @@ function eventFromPayload(payload: JsonValue): TriggerEvent | undefined {
     hops,
     ...(typeof payload.object === "string" ? { object: payload.object } : {}),
     ...(typeof payload.link === "string" ? { link: payload.link } : {}),
+    ...(summary === undefined ? {} : { summary }),
   };
+}
+
+/** The first line of an event's summary file, kept short for the history. */
+function readSummary(path: unknown): string | undefined {
+  if (typeof path !== "string") return undefined;
+  try {
+    const first = readFileSync(path, "utf8").split("\n")[0]?.trim() ?? "";
+    return first.length === 0 ? undefined : first.slice(0, 300);
+  } catch {
+    return undefined;
+  }
 }
 
 /** What a step sees of a recorded event: paths to files, never their text. */
