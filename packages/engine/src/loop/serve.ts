@@ -9,6 +9,7 @@ import { Kernel } from "../trigger/kernel.ts";
 import { loadTriggerRules } from "../trigger/rules.ts";
 import type { TriggerRule } from "../trigger/types.ts";
 import { acquireLock, lockHeld, runLockPath, serveLockPath } from "../runner/lock.ts";
+import { StepLimits } from "../runner/limits.ts";
 import { applyInput, objectKey, parseObjectKey, readState } from "../runner/service.ts";
 
 export interface SpawnRunOptions {
@@ -267,6 +268,13 @@ export async function serveOnce(
         ? {}
         : { shouldStop: options.shouldStop }),
     });
+  }
+
+  // Places freed while no process was left to hand them on (a crash after a
+  // step's result, a run that ended) go to the next in line before runs are
+  // given processes.
+  if (options.shouldStop?.() !== true) {
+    await new StepLimits({ log: options.log, lockRoot: options.lockRoot }).grant();
   }
 
   const active = await options.log.runs({ active: true });

@@ -330,9 +330,40 @@ export interface PluginStepResult {
   readonly data?: ObjectData | undefined;
 }
 
+/**
+ * Where a step type's concurrency is limited. `key` names what is shared (a
+ * model, an account); `undefined` means this call is not limited. `concurrent`
+ * is how many calls under one key may run at once across the operad home.
+ */
+export interface StepLimitDefinition {
+  readonly key: (
+    params: unknown,
+    settings: Readonly<Record<string, JsonValue>>,
+  ) => string | undefined;
+  readonly concurrent: (
+    params: unknown,
+    settings: Readonly<Record<string, JsonValue>>,
+  ) => number;
+}
+
+/** A held place under a limit key; `release` gives it back. */
+export interface StepLimitRequest {
+  readonly use: string;
+  readonly key: string;
+  readonly concurrent: number;
+  readonly signal?: AbortSignal | undefined;
+}
+
+/** Hands out places under limit keys to steps a step starts with `runStep`. */
+export interface StepLimiter {
+  acquire(request: StepLimitRequest): Promise<() => Promise<void>>;
+}
+
 /** Options for running a step through the registry. */
 export interface StepRunOptions {
   readonly runId: string;
+  /** Limits the steps this step starts through `ctx.runStep`. */
+  readonly limits?: StepLimiter | undefined;
   readonly object?: RunObject | undefined;
   readonly cwd?: string | undefined;
   readonly signal?: AbortSignal | undefined;
@@ -358,6 +389,8 @@ export interface StepTypeDefinition {
    * it above its own limits.
    */
   readonly timeoutSecs?: number | undefined;
+  /** Limits how many runs of this step may be going at once. */
+  readonly limit?: StepLimitDefinition | undefined;
   readonly run: (
     ctx: StepContext,
     params: unknown,

@@ -1286,7 +1286,7 @@ async function commandRunning(
   }
   for (const item of running) {
     io.write(
-      `${item.runId}  ${item.flow}  ${item.step ?? "-"}  ${seconds(item.elapsedMs)}\n`,
+      `${item.runId}  ${item.flow}  ${item.stepLabel ?? "-"}  ${seconds(item.elapsedMs)}\n`,
     );
   }
 }

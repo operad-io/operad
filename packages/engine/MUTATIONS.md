@@ -169,3 +169,11 @@ the row fields.
 | TK0005-M5 | packages/engine/src/platform/sqlite-open.ts | `enableWal` rethrew `SQLITE_BUSY` instead of waiting | `switching to WAL waits while another process holds the database` |
 | TK0005-M6 | packages/engine/src/platform/watch.ts | `resolveSubscriptionWatch` ignored an injected watch | `the injected watch, timer and period replace the defaults` |
 | TK0005-M7 | packages/engine/test/platform/no-copies.test.ts | dropped the `process.kill(-` pattern from the scan | `the platform module is the only copy > the scan finds each forbidden call outside platform/` |
+| T-0021-M1 | packages/engine/src/runner/limits.ts | `grant` compared `held > concurrent` instead of `held >= concurrent`, giving one place too many | `step limits (memory) > two steps run, the third starts when one ends` |
+| T-0021-M2 | packages/engine/src/runner/limits.ts | `compareQueue` ordered the queue newest first | `step limits (memory) > a queue is first come, first served across four` |
+| T-0021-M3 | packages/engine/src/runner/limits.ts | `grant` counted the places held under every key, not just the key being granted | `step limits (memory) > different keys do not block each other and no key is never limited` |
+| T-0021-M4 | packages/engine/src/plugin/registry.ts | a step started with `ctx.runStep` took no place under its key | `step limits (memory) > a step a step starts counts against the key` |
+| T-0021-M5 | packages/engine/src/loop/serve.ts | a `serve` pass no longer granted free places | `step limits survive a crash > after the result, before the next is granted: the next gets the slot on restart` |
+| T-0021-M6 | packages/engine/src/runner/limits.ts | `acquire` wrote `step_queued` again for a step that already had its place | `step limits survive a crash > after step_slot, before the step starts: the step runs holding its slot` |
+| T-0021-M7 | packages/engine/src/plugin/registry.ts | stopped checking that `limit.key` is a function | `plugin registry validation > step limits > refuses a declaration of the wrong shape, naming plugin and step type` |
+| T-0021-M8 | packages/engine/src/runner/limits.ts | `queuedSteps` counted one more step ahead than there was | `step limits (memory) > two steps run, the third starts when one ends` |
