@@ -263,6 +263,7 @@ The file holds the repository's work settings:
 | `workerBrief` | `.operad/worker-brief.md` | the brief a worker reads first; a missing file means the built-in text |
 | `gate.commands` | `[]` | the commands the verify step runs on the task commit |
 | `gate.commandTimeoutSecs` | `1800` | the longest one gate command may run |
+| `check.rerun` | `1` | how many times a failed gate or integration check runs again before it counts as failed; `0` turns it off; a timeout is never rerun. A pass on the rerun is a pass, noted in the task's Changes and the check log holds both runs |
 | `reviewer.use` | `harness-radian/agent` | the harness step that reviews the diff |
 | `reviewer.args` | `[]` | the arguments every review gets |
 | `reviewer.firstArgs` | none | the arguments the first review of an attempt gets instead, including its one retry after an invalid report |
