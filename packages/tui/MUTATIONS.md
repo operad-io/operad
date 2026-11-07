@@ -26,3 +26,17 @@ the row fields.
 | T-0030-M4 | packages/tui/src/state.ts | an appended page kept `loading` true | `the TUI reducer > moving past the end asks for the next page once and appends it once` |
 | T-0030-M5 | packages/tui/src/view/index.ts | the waiting marker used the weak gray instead of the accent | `the TUI view > two panes show the header, a waiting marker and the footer` |
 | T-0030-M6 | packages/tui/src/view/index.ts | the view always drew both panes, ignoring the width | `the TUI view > below 100 columns the right pane is gone` |
+| T-0030-M7 | packages/tui/src/state.ts/app.ts | the shell no longer cleared a page request as it launched it, so every key fetched the page again | `the TUI app > keys, resizes and refreshes while a page is in flight fetch it once` |
+| T-0030-M8 | packages/tui/src/state.ts | an appended page for an older list version was no longer dropped | `the TUI app > a page that lands after a refresh's replace is dropped` |
+| T-0030-M9 | packages/tui/src/app.ts | a new refresh no longer aborted the previous refresh's requests | `the TUI app > the previous refresh is aborted and its late answer is dropped` |
+| T-0030-M10 | packages/tui/src/state.ts | a replace no longer bumped the list version | `the TUI app > a page that lands after a refresh's replace is dropped` |
+| T-0030-M11 | packages/tui/src/state.ts | an answer to an older refresh was applied | `the TUI app > the previous refresh is aborted and its late answer is dropped` |
+| T-0030-M12 | packages/tui/src/view/index.ts | the list drew every row instead of the window around the cursor | `the TUI view > a long list scrolls with the cursor and the status takes the footer` |
+| T-0030-M13 | packages/tui/src/state.ts | a replace kept the cursor index instead of following the selected object's id | `the TUI app > a refresh keeps the selected object, fetching as deep as the list was` |
+| T-0030-M14 | packages/tui/src/app.ts | a refresh fetched only the first page, not as deep as the list was | `the TUI app > a refresh keeps the selected object, fetching as deep as the list was` |
+| T-0030-M15 | packages/tui/src/app.ts | an `error` event from the stream was not shown | `the TUI app > an error event from the stream shows its reason` |
+| T-0030-M16 | packages/tui/src/app.ts | messages were written to stderr while the screen was up | `runTui > failures are printed after the screen is closed, never while it is up` |
+| T-0030-M17 | packages/tui/src/state.ts | a Ctrl or Meta chord acted like its plain key | `the TUI reducer > ctrl and meta chords are ignored, and only ?, escape and q act while the keys are open` |
+| T-0030-M18 | packages/tui/src/state.ts | keys other than `?`, escape and `q` acted on the list hidden behind the key list | `the TUI reducer > ctrl and meta chords are ignored, and only ?, escape and q act while the keys are open` |
+| T-0030-M19 | packages/tui/src/app.ts | a failure while the screen was being set up was thrown, not reported | `runTui > restores the terminal and reports the failure when the view cannot be made` |
+| T-0030-M20 | packages/tui/src/app.ts | the renderer was not remembered for the final cleanup, so a failed setup left it open | `runTui > restores the terminal and reports the failure when the view cannot be made` |

@@ -10,6 +10,7 @@ import {
   type TuiShell,
   type TuiShellClient,
   type TuiState,
+  createTuiView,
   type TuiView,
 } from "../src/index.ts";
 
@@ -257,7 +258,7 @@ describe("the TUI app", () => {
           return Promise.resolve(call.cursor === "p2" ? page(["c", "d"]) : page(["a", "b"], "p2"));
         }
         return Promise.resolve(
-          call.cursor === "p2" ? page(["c", "d"]) : page(["z", "a"], "p2"),
+          call.cursor === "p2" ? page(["c", "d"]) : page(["z", "a", "b"], "p2"),
         );
       };
     });
@@ -267,12 +268,15 @@ describe("the TUI app", () => {
     s.shell.key({ name: "down" });
     s.shell.key({ name: "down" });
     expect(typeList(s.shell.state)?.cursor).toBe(3);
+    s.shell.key({ name: "up" });
+    s.shell.key({ name: "up" });
+    expect(typeList(s.shell.state)?.cursor).toBe(1); // "b"
 
     refreshing = true;
     s.shell.key({ name: "r" });
     await s.view.until((state) => ids(state)[0] === "z");
-    expect(ids(s.shell.state)).toEqual(["z", "a", "c", "d"]);
-    expect(typeList(s.shell.state)?.cursor).toBe(3);
+    expect(ids(s.shell.state)).toEqual(["z", "a", "b", "c", "d"]);
+    expect(typeList(s.shell.state)?.cursor).toBe(2); // still "b"
     s.shell.stop();
   });
 
@@ -357,6 +361,46 @@ describe("runTui", () => {
       expect(test.renderer.isDestroyed).toBe(true);
       expect(reported).toEqual(["no view today"]);
     } finally {
+      await test.dispose();
+    }
+  });
+
+  test("failures are printed after the screen is closed, never while it is up", async () => {
+    const test = await createTestRenderer({ width: 60, height: 10 });
+    const written: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+      written.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    const stop = new AbortController();
+    const seen: boolean[] = [];
+    try {
+      const code = await runTui({
+        url: "http://127.0.0.1:1",
+        token: "t",
+        signal: stop.signal,
+        onError: () => seen.push(test.renderer.isDestroyed),
+        hooks: {
+          renderer: async () => test.renderer,
+          view: (renderer) => {
+            const real = createTuiView(renderer);
+            return {
+              render(state) {
+                real.render(state);
+                if (state.status !== undefined) stop.abort();
+              },
+              destroy: () => real.destroy(),
+            };
+          },
+        },
+      });
+      expect(code).toBe(0);
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.every(Boolean)).toBe(true);
+      expect(written).toEqual([]);
+    } finally {
+      process.stderr.write = original;
       await test.dispose();
     }
   });
