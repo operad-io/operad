@@ -5,7 +5,7 @@ import {
   reduce,
   type TuiState,
 } from "../src/state.ts";
-import { TUI_PALETTE, createTuiView } from "../src/view/index.ts";
+import { TUI_PALETTE, createTuiView, drawState } from "../src/view/index.ts";
 
 function frameState(): TuiState {
   let state = initialState({ width: 120, height: 24, theme: "dark" });
@@ -196,7 +196,7 @@ describe("the TUI view", () => {
         type: "running",
         items: Array.from({ length: 40 }, (_, at) => ({
           runId: `run-${at}`,
-          flow: "flow",
+          flow: `flow-${at}`,
           step: "work",
           startedAt: 0,
           elapsedMs: 10,
@@ -210,12 +210,45 @@ describe("the TUI view", () => {
       view.render(state);
       await setup.renderOnce();
       const frame = setup.captureCharFrame();
-      expect(frame).toContain("run-39");
-      expect(frame).not.toContain("run-0 ");
+      expect(frame).toContain("flow-39");
+      expect(frame).not.toContain("flow-0 ");
       expect(frame).toContain("the token is wrong");
       view.destroy();
     } finally {
       await setup.dispose();
     }
+  });
+
+  test("a row without an object shows its label; a row error shows in the footer", () => {
+    let state = initialState({ width: 120, height: 10, theme: "dark" });
+    state = reduce(state, {
+      type: "running",
+      items: [
+        { runId: "run-1", flow: "my-flow", step: "w", startedAt: 0, elapsedMs: 1, queued: null, stepLabel: "w" },
+      ],
+    });
+    state = reduce(state, { type: "key", key: "2" });
+    const drawn = drawState(state);
+    expect(drawn.list.chunks.map((c) => c.text).join("")).toContain("my-flow");
+    expect(drawn.list.chunks.map((c) => c.text).join("")).not.toContain("run-1");
+  });
+
+  test("the selected row's error shows in the footer", () => {
+    let state = initialState({ width: 120, height: 10, theme: "dark" });
+    state = reduce(state, {
+      type: "pending",
+      items: [
+        {
+          runId: "r1",
+          flow: "f",
+          step: null,
+          prompt: "q",
+          object: "item:T-1-x",
+          row: { title: "t", state: "failed", error: "row is broken" },
+        },
+      ],
+    } as never);
+    const text = drawState(state).footer.chunks.map((c) => c.text).join("");
+    expect(text).toContain("row is broken");
   });
 });

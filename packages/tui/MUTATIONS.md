@@ -83,3 +83,5 @@ the row fields.
 | T-0035-M1 | packages/tui/src/state.ts | `LIST_WIDTH` was 30, so the divider moved off column 36 | `the TUI view > thin lines: the rules, the marker column, one divider and no boxes` |
 | T-0035-M2 | packages/tui/src/view/index.ts | `fit` returned a long text whole, so a long title pushed past the pane | `the TUI view > the object pane text starts two cells after the divider and a long title never pushes the rule` |
 | T-0035-M3 | packages/tui/src/state.ts | an error row took two lines in the list window | `the TUI reducer > the window around the cursor counts one line per row, an error row too` |
+| T-0035-M4 | packages/tui/src/view/index.ts | `rowText` returned the run id for a row without an object | `the TUI view > a row without an object shows its label; a row error shows in the footer` |
+| T-0035-M5 | packages/tui/src/view/index.ts | the footer ignored the selected row's `error` | `the TUI view > the selected row's error shows in the footer` |

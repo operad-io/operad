@@ -178,7 +178,9 @@ function splitId(id: string): { readonly short: string; readonly slug: string } 
 }
 
 function rowText(row: TuiRow, kind: TuiTab["kind"]): string {
-  if (kind !== "type") return row.id;
+  if (kind !== "type") {
+    return row.openable === false && row.title !== "" ? row.title : row.id;
+  }
   const { short, slug } = splitId(bareId(row.id));
   if (row.error !== undefined || slug === "") return short;
   return `${short} ${slug}`;
@@ -247,7 +249,9 @@ function objectHeader(
   const third =
     object.error !== undefined
       ? chunk(fit(object.error, width), palette.error)
-      : object.unavailable !== undefined
+      : row.error !== undefined
+        ? chunk(fit(row.error, width), palette.error)
+        : object.unavailable !== undefined
         ? chunk(fit(object.unavailable, width), palette.weak)
         : chunk("");
   return [
@@ -368,7 +372,9 @@ export interface TuiDrawing {
 /** The styled text of every area for one state; the view only places it. */
 export function drawState(state: TuiState): TuiDrawing {
   const palette = paletteFor(state.theme);
-  const status = statusText(state);
+  const tab = activeTab(state);
+  const rowError = tab?.list.rows[tab.list.cursor]?.error;
+  const status = statusText(state) ?? rowError;
   const width = Math.max(1, state.width - 3);
   return {
     header: headerContent(state, palette),
