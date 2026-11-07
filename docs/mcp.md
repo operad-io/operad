@@ -38,6 +38,69 @@ are checked against the tool's input schema before any view is read. A missing
 required field, an unknown field, or a field of the wrong type is a malformed
 request.
 
+## Claude Code channel
+
+`operad mcp --claude-channel` also pushes object changes to a client that
+understands Claude Code's channel extension. Without the flag the server has
+the same tools, capabilities and instructions as before, and sends no
+notification.
+
+With the flag the `initialize` result carries
+`capabilities.experimental["claude/channel"] = {}`. It never declares
+`claude/channel/permission`: the server relays no permission prompts. The
+instructions gain a paragraph saying the channel is one-way and the read tools
+give the details.
+
+There are two sources. One is the store's object changes. The other is the
+changes to flows, because an object's `waiting` and `running` flags come from
+its flow: a wait that opens or a step that starts writes no object. Both use a
+directory watch with a polling fallback, so a change another process makes is
+seen too (the poll interval is the store's and the flow records' own, 500 ms by
+default). Each change re-reads that object's row. At start the server reads the
+current rows of every type that has views and sends nothing for them; if it
+cannot read a type's rows, the first row it sees for each object of that type is
+its baseline and also sends nothing. It remembers the last row it saw for each
+object and sends one notification only when that row's `state`, `waiting` or
+`running` changed. An object first seen after the starting read has the previous
+state `new`. An object that can no longer be found is forgotten.
+
+The server sends nothing until the client has sent `notifications/initialized`.
+It keeps comparing rows meanwhile, then sends the changes it saw since the
+start, in order.
+
+Each notification is the server's `notifications/claude/channel` method with
+these parameters:
+
+```json
+{
+  "content": "T-0014-kernel running -> waiting: review passed",
+  "meta": {
+    "id": "T-0014-kernel",
+    "type": "task",
+    "state": "waiting",
+    "previous": "running",
+    "waiting": "true",
+    "running": "false"
+  }
+}
+```
+
+`content` is one line, `<id> <old state> -> <new state>`, with `: <note>`
+appended when the row has a note. Every `meta` value is a string. The channel is
+one-way: there is no reply tool, and `show`, `section`, `pending`, `history` and
+the other read tools give the details.
+
+`--types <t,…>` limits the channel to the named object types, separated by
+commas; the default is every type with views. A name that is not a type with
+views is a usage error that names it. The flag does not change the read tools.
+
+Claude Code enables the extension with its development-channel flag, naming the
+server from `.mcp.json`:
+
+```sh
+claude --dangerously-load-development-channels server:operad
+```
+
 ## Tools
 
 The tool table is exported as `TOOLS` from `@operad-io/mcp`; the server serves
