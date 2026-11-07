@@ -6,18 +6,13 @@ import { actions } from "./actions.ts";
 import { runAnnounce } from "./announce.ts";
 import { checkDev } from "./check.ts";
 import { commands } from "./commands.ts";
-import { runRework, runReview, runVerify } from "./gate.ts";
+import { runRework, runReview, runReviewDue, runVerify } from "./gate.ts";
 import { runCleanup, runIntegrate } from "./integrate.ts";
 import { runScheduler } from "./schedule.ts";
 import { resolveDevKey } from "./service.ts";
 import { runWork, runWorktree } from "./steps.ts";
+import { STEP_TIMEOUT_SECS } from "./timeouts.ts";
 import { planViews, taskViews } from "./views.ts";
-
-/**
- * How long work, verify, review and integrate may take: above the worker's
- * two-hour wall time and the reviewer's one-hour timeout in `.operad/dev.json`.
- */
-const STEP_TIMEOUT_SECS = 3 * 60 * 60;
 
 /** Builds the dev plugin. Tests build it directly when they need a fake host. */
 export function createDevPlugin() {
@@ -56,8 +51,25 @@ export function createDevPlugin() {
       {
         name: "review",
         timeoutSecs: STEP_TIMEOUT_SECS,
-        results: ["pass", "fail", "failed", "cancelled"],
+        results: [
+          "pass",
+          "fail",
+          "failed",
+          "unavailable",
+          "timed_out",
+          "exhausted",
+          "out_of_time",
+          "cancelled",
+        ],
         run: runReview,
+      },
+      {
+        name: "review_due",
+        // The wait runs in pieces below this timeout until the recorded retry
+        // time; it is cancelled with the run, never by the step clock.
+        timeoutSecs: STEP_TIMEOUT_SECS,
+        results: ["ready", "interrupted"],
+        run: runReviewDue,
       },
       {
         name: "rework",
@@ -123,4 +135,5 @@ export * from "./schedule.ts";
 export * from "./service.ts";
 export * from "./settings.ts";
 export * from "./steps.ts";
+export * from "./timeouts.ts";
 export * from "./views.ts";
