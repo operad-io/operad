@@ -21,10 +21,11 @@ OpenClaw 是聊天优先，operad 到现在是流程优先。第一个要满足�
 8. **对话的记忆是知识库，不是引擎**：助理跨对话记得的东西写在 `operad-assistant.md` 定的 Markdown 知识库里，由 skill 规定怎么读写；引擎只存对话记录。radian 自己的 memory（ADR 0021）不参与。
 9. **每个对话有访问档**：工作目录、禁入目录、危险命令，见 `operad-sandbox.md`；危险命令触发的询问走决定 6。
 10. **iOS 的后端换成 operad**：`operad serve` 把显示接口（`list`、`get`、`section`、`events`、`act`）按 `operad-presentation.md` 决定 7 暴露成 HTTP：只听本机和局域网或 Tailscale 地址，必须带 token，`events` 用 SSE；推送沿用 arc iOS 今天的通道。hub 的会话路由在对话跑通之后退役（`operad.md` 待决 3 由此有答案）。
+11. **iOS app 改名 operad，只连 operad。** 今天的 arc app（仓库 `radian-ios`）改名为 operad app，后端只有 `operad serve`，不再连 radian hub，也不保留两套后端过渡。app 不认识任何插件：`dev` 的计划和任务、`chat` 的对话都按 `operad-presentation.md` 的通用对象界面显示和操作。
 
 ## 顺序
 
-P-0002 之后的第一个计划。前置：`harness-radian` 的 `resumeSession`、显示接口、事件与规则。先 radian 一种 harness；Claude 和 pi 的会话随 `operad-harness.md` 决定 3 的接法进来，对话对象不变。
+分三步：先做 `operad serve` 的 HTTP 接口（决定 10，不依赖对话）；接着 operad app 换后端（决定 11），先用来管 `dev` 的计划和任务；最后是对话本身（`ctx.ask`、`chat` 插件、访问档），app 只加对话页的输入框。前置：`harness-radian` 的 `resumeSession`、显示接口、事件与规则。先 radian 一种 harness；Claude 和 pi 的会话随 `operad-harness.md` 决定 3 的接法进来，对话对象不变。
 
 ## 待决问题（未定）
 
