@@ -59,6 +59,69 @@ async function withSession(
   }
 }
 
+type PipedProcess = Bun.Subprocess<"ignore", "pipe", "pipe">;
+
+/** Lines a writer process printed, with waiters driven by the stream. */
+class ChildWriter {
+  readonly lines: string[] = [];
+  readonly exited: Promise<number>;
+  readonly #stderr: Promise<string>;
+  readonly #consumed: Promise<void>;
+  readonly #waiters = new Set<() => void>();
+  readonly #decoder = new TextDecoder();
+  #buffer = "";
+  #ended = false;
+
+  constructor(process: PipedProcess) {
+    this.exited = process.exited;
+    this.#stderr = new Response(process.stderr).text();
+    this.#consumed = this.#consume(process.stdout);
+    void process.exited.then(() => {
+      this.#ended = true;
+      this.#wake();
+    });
+  }
+
+  async #consume(stream: ReadableStream<Uint8Array>): Promise<void> {
+    const reader = stream.getReader();
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      this.#buffer += this.#decoder.decode(value, { stream: true });
+      for (;;) {
+        const index = this.#buffer.indexOf("\n");
+        if (index < 0) break;
+        const line = this.#buffer.slice(0, index).trim();
+        this.#buffer = this.#buffer.slice(index + 1);
+        if (line.length === 0) continue;
+        this.lines.push(line);
+        this.#wake();
+      }
+    }
+  }
+
+  #wake(): void {
+    for (const wake of this.#waiters) wake();
+    this.#waiters.clear();
+  }
+
+  async waitFor(line: string): Promise<void> {
+    for (;;) {
+      if (this.lines.includes(line)) return;
+      if (this.#ended) {
+        await this.#consumed.catch(() => {});
+        if (this.lines.includes(line)) return;
+        const stderr = await this.#stderr;
+        throw new Error(`the writer ended before "${line}": ${stderr}`);
+      }
+      const wait = new Promise<void>((resolve) => this.#waiters.add(resolve));
+      // A line or the end may have arrived between the checks and the add.
+      if (this.lines.includes(line) || this.#ended) this.#wake();
+      await wait;
+    }
+  }
+}
+
 afterEach(() => {
   for (const dir of temps.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
@@ -183,31 +246,75 @@ test("abort() during a slow fake stream returns", async () => {
   release?.();
 });
 
-test("auth.json locking works with two writers in two processes", async () => {
+test("auth.json locking blocks a second writer until the lock is released", async () => {
   const dir = tempDir();
   const authPath = join(dir, "auth.json");
   const modelsPath = join(dir, "models.json");
-  const child = join(import.meta.dir, "..", "spike", "login-child.ts");
+  const release = join(dir, "release");
+  const script = join(import.meta.dir, "..", "spike", "auth-writer.ts");
+  writeFileSync(authPath, "{}");
 
-  const spawn = (prefix: string) =>
-    Bun.spawn(["bun", child, authPath, modelsPath, prefix, "5"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+  const spawn = (mode: string, providerId: string) =>
+    new ChildWriter(
+      Bun.spawn(["bun", script, mode, authPath, modelsPath, release, providerId], {
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+    );
 
-  const first = spawn("w1");
-  const second = spawn("w2");
-  const [firstCode, secondCode] = await Promise.all([first.exited, second.exited]);
-  const firstErr = await new Response(first.stderr).text();
-  const secondErr = await new Response(second.stderr).text();
+  const holder = spawn("hold", "holder");
+  await holder.waitFor("held");
 
-  expect(firstCode, firstErr).toBe(0);
-  expect(secondCode, secondErr).toBe(0);
+  const writer = spawn("blocked-write", "writer");
+  await writer.waitFor("blocked");
+  await writer.waitFor("ready");
+  expect(writer.lines).not.toContain("acquired-early");
+
+  // The writer is at pi's read-modify-write and the lock is still held, so its
+  // credential must not be on disk yet. Releasing it is the test's event.
+  const beforeRelease = JSON.parse(readFileSync(authPath, "utf-8")) as Record<string, unknown>;
+  expect(Object.keys(beforeRelease)).toEqual(["holder"]);
+  writeFileSync(release, "release");
+  await holder.waitFor("released");
+  await writer.waitFor("wrote");
+
+  expect(await holder.exited).toBe(0);
+  expect(await writer.exited).toBe(0);
+  expect(writer.lines).not.toContain("acquired-early");
 
   const stored = JSON.parse(readFileSync(authPath, "utf-8")) as Record<string, unknown>;
-  for (const prefix of ["w1", "w2"]) {
-    for (let index = 0; index < 5; index++) {
-      expect(Object.keys(stored)).toContain(`${prefix}-${index}`);
-    }
-  }
+  expect(Object.keys(stored).sort()).toEqual(["holder", "writer"]);
+}, 30_000);
+
+test("the same read-modify-write without the lock loses a credential", async () => {
+  const dir = tempDir();
+  const authPath = join(dir, "auth.json");
+  const modelsPath = join(dir, "models.json");
+  const go = join(dir, "go");
+  const script = join(import.meta.dir, "..", "spike", "auth-writer.ts");
+  writeFileSync(authPath, "{}");
+
+  const spawn = (mode: string, providerId: string) =>
+    new ChildWriter(
+      Bun.spawn(["bun", script, mode, authPath, modelsPath, go, providerId], {
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+    );
+
+  // The reader snapshots the empty file, the writer replaces it, and the
+  // reader then writes its stale snapshot over the writer's credential.
+  const reader = spawn("unlocked-read", "reader");
+  await reader.waitFor("read");
+  const writer = spawn("unlocked-write", "writer");
+  await writer.waitFor("wrote");
+  writeFileSync(go, "go");
+  await reader.waitFor("wrote");
+
+  expect(await reader.exited).toBe(0);
+  expect(await writer.exited).toBe(0);
+
+  const stored = JSON.parse(readFileSync(authPath, "utf-8")) as Record<string, unknown>;
+  expect(Object.keys(stored)).toEqual(["reader"]);
+  expect(Object.keys(stored)).not.toContain("writer");
 }, 30_000);
