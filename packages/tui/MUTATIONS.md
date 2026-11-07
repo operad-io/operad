@@ -40,6 +40,23 @@ the row fields.
 | T-0030-M18 | packages/tui/src/state.ts | keys other than `?`, escape and `q` acted on the list hidden behind the key list | `the TUI reducer > ctrl and meta chords are ignored, and only ?, escape and q act while the keys are open` |
 | T-0030-M19 | packages/tui/src/app.ts | a failure while the screen was being set up was thrown, not reported | `runTui > restores the terminal and reports the failure when the view cannot be made` |
 | T-0030-M20 | packages/tui/src/app.ts | the renderer was not remembered for the final cleanup, so a failed setup left it open | `runTui > restores the terminal and reports the failure when the view cannot be made` |
+| T-0031-M1 | packages/tui/src/state.ts | `Enter` returned the state without opening the selected row | `the object pane reducer > Enter opens the selected row and asks for the object` |
+| T-0031-M2 | packages/tui/src/state.ts | `[` and `]` kept the same section instead of moving to another | `the object pane reducer > ] and [ switch the section tabs and load the next one` |
+| T-0031-M3 | packages/tui/src/state.ts | scrolling at the end never asked for the section's `next` page | `the object pane reducer > scrolling at the end asks for the section's next page once` |
+| T-0031-M4 | packages/tui/src/state.ts | `f` required a section that was already full, so a capped section never loaded whole | `the object pane reducer > f loads a capped section with full=true` |
+| T-0031-M5 | packages/tui/src/state.ts | scrolling up left a live section following its end | `the object pane reducer > a live section follows its end, scrolling up stops it and G resumes` |
+| T-0031-M6 | packages/tui/src/state.ts | `G` set the section to its end but never resumed following | `the object pane reducer > a live section follows its end, scrolling up stops it and G resumes` |
+| T-0031-M7 | packages/tui/src/markdown.ts | a diff's added line used the removed colour | `the TUI Markdown > a diff is coloured, a table is aligned and a mermaid block keeps its label` |
+| T-0031-M8 | packages/tui/src/markdown.ts | every Markdown line lost its fenced-code flag | `the TUI Markdown > the engine's lines keep fenced code marked for a monospace client` |
+| T-0031-M9 | packages/tui/src/view/index.ts | a live section's tab lost its dot | `the object pane view > the row, the section tabs and a live dot are in the right pane` |
+| T-0031-M10 | packages/tui/src/app.ts | the shell cleared the object request without launching its fetch | `the TUI object app > Enter fetches the object and its section; a change refreshes both` (timed out after 2000ms) |
+| T-0031-M11 | packages/tui/src/state.ts | the last section page kept the old `next`, so paging never stopped | `the object pane reducer > scrolling at the end asks for the section's next page once` |
+| T-0031-M12 | packages/tui/src/app.ts | a change refreshed the object but not its open live section | `the TUI object app > Enter fetches the object and its section; a change refreshes both` (timed out after 2000ms) |
+| T-0031-M13 | packages/tui/src/state.ts | a late object answer created the object even after escape had closed the pane | `the object pane reducer > an object answer after escape does not reopen the pane` |
+| T-0031-M14 | packages/tui/src/state.ts | the object version restarted at 1 for a different id, so a stale answer matched the new object | `the object pane reducer > a stale answer for the previous object keeps the newly opened one` |
+| T-0031-M15 | packages/tui/src/view/index.ts | the narrow object was not drawn in the wrapping pane | `the object pane view > a narrow screen wraps the object's long lines instead of clipping them` |
+| T-0031-M16 | packages/tui/src/state.ts | the section line count used raw Markdown lines instead of the wrapped rows | `the object pane view > a narrow live section follows its wrapped end and keeps the hint` |
+| T-0031-M17 | packages/tui/src/view/index.ts | the view drew raw Markdown lines without wrapping them to the section width | `the object pane view > a narrow live section follows its wrapped end and keeps the hint` |
 | tui-autostart-M3 | packages/tui/src/autostart.ts | a held home lock was ignored, so a second serve could be started | `ensureServer > a home lock with a silent port is an error naming http.enabled and http.port, and starts nothing` |
 | tui-autostart-M4 | packages/tui/src/autostart.ts | an answering serve was not recognised and a second one was started | `ensureServer > a serve that already answers is not started again` |
 | tui-autostart-M5 | packages/tui/src/autostart.ts | a non-operad answer was treated as silence | `ensureServer > a port that answers but is not operad is an error naming the port` |
@@ -54,3 +71,12 @@ the row fields.
 | tui-autostart-M17 | packages/tui/src/discover.ts | `http.port` 0 no longer failed before a start | `ensureServer: races and bounds > port 0 or an empty listen fails before anything is spawned` |
 | tui-autostart-M18 | packages/tui/src/autostart.ts | the start deadline was a hundred times too far, so probe time did not bound the wait | `ensureServer: races and bounds > probe time counts against the start deadline` |
 | pending-row-M6 | packages/tui/src/state.ts | a pending item with a row still showed the prompt as its title | `the TUI reducer > a pending item with a row shows the object's title and state, and the question as the note` |
+| T-0031-M18 | packages/tui/src/sanitize.ts | `sanitize` returned the text unchanged, so control bytes reached the terminal | `server text never reaches the terminal as a control > a log line, a title, a note and every error are drawn without control bytes` |
+| T-0031-M19 | packages/tui/src/state.ts | a reopened row kept the `loading` mark of its carried sections | `the object pane reducer > reopening a row after an error does not carry a section that was loading` |
+| T-0031-M20 | packages/tui/src/app.ts | a live refresh fetched one page and dropped the pages the reader had scrolled to | `a live refresh > keeps the pages the reader scrolled to` |
+| T-0031-M21 | packages/tui/src/layout.ts | the layout cache never hit, so every key and render wrapped the section again | `a large section is laid out once > keys and renders after the first do not wrap the text again` |
+| T-0031-M22 | packages/tui/src/wrap.ts | every glyph counted one column | `wrapping is by display width > CJK and emoji take two columns, combining marks none` |
+| T-0031-M23 | packages/tui/src/state.ts | enter on the already-open row opened it again | `focus > side by side the pane follows the cursor and the list keeps j and k` |
+| T-0031-M24 | packages/tui/src/state.ts | any text with the truncation words capped the section | `the object pane reducer > capped > the same words inside the text, or another last line, do not` |
+| T-0031-M25 | packages/tui/src/app.ts | closing the object left its section requests running | `a section request that is not finished > escape and a reopen do not leave the section loading` |
+| T-0031-M26 | packages/tui/src/state.ts | a page from an earlier open of the object appended to the new open | `a section request that is not finished > a page that lands after the object was closed and reopened is dropped` |

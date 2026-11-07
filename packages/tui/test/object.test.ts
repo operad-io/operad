@@ -1,0 +1,333 @@
+import { describe, expect, test } from "bun:test";
+import type { ViewObject, ViewRow } from "@operad-io/engine";
+import {
+  activeSection,
+  initialState,
+  reduce,
+  type TuiState,
+} from "../src/state.ts";
+
+const TYPES = [{ type: "item", title: "Item" }] as const;
+
+function row(id: string): ViewRow {
+  return {
+    id,
+    title: `Title ${id}`,
+    state: "new",
+    waiting: false,
+    running: false,
+  };
+}
+
+function opened(rowId = "one"): TuiState {
+  let state = reduce(initialState({ width: 120, height: 20 }), {
+    type: "types",
+    types: TYPES,
+  });
+  state = reduce(state, {
+    type: "page",
+    tabId: "type:item",
+    replace: true,
+    page: { rows: [row(rowId)] },
+  });
+  state = reduce(state, { type: "key", key: "3" });
+  state = reduce(state, { type: "key", key: "enter" });
+  return reduce(state, {
+    type: "object",
+    object: viewObject(rowId),
+    version: 1,
+  });
+}
+
+function viewObject(id = "one"): ViewObject {
+  return {
+    id,
+    type: "item",
+    link: `operad://objects/item%3A${id}`,
+    row: row(id),
+    sections: [
+      { id: "info", title: "Info" },
+      { id: "pages", title: "Pages", live: true },
+      { id: "history", title: "History" },
+    ],
+    actions: [],
+  };
+}
+
+describe("the object pane reducer", () => {
+  test("Enter opens the selected row and asks for the object", () => {
+    let state = reduce(initialState({ width: 120 }), {
+      type: "types",
+      types: TYPES,
+    });
+    state = reduce(state, {
+      type: "page",
+      tabId: "type:item",
+      replace: true,
+      page: { rows: [row("one"), row("two")], next: "more" },
+    });
+    state = reduce(state, { type: "key", key: "3" });
+    state = reduce(state, { type: "key", key: "down" });
+    state = reduce(state, { type: "key", key: "return" });
+
+    expect(state.object?.id).toBe("two");
+    expect(state.object?.row.title).toBe("Title two");
+    expect(state.objectRequest).toEqual({ id: "two", version: 1 });
+
+    state = reduce(state, {
+      type: "object",
+      object: viewObject("two"),
+      version: 1,
+    });
+    expect(state.objectRequest).toBeUndefined();
+    expect(state.object?.sections.map((section) => section.id)).toEqual([
+      "info",
+      "pages",
+      "history",
+    ]);
+    expect(state.sectionRequest).toEqual({
+      objectId: "two",
+      sectionId: "info",
+      full: false,
+      version: 0,      objectVersion: 1,
+    });
+  });
+
+  test("] and [ switch the section tabs and load the next one", () => {
+    let state = opened();
+    state = reduce(state, {
+      type: "section",
+      objectId: "one",
+      sectionId: "info",
+      content: { markdown: "# Info" },
+    });
+    expect(state.sectionRequest).toBeUndefined();
+    expect(activeSection(state)?.id).toBe("info");
+
+    state = reduce(state, { type: "key", key: "]" });
+    expect(activeSection(state)?.id).toBe("pages");
+    expect(state.sectionRequest).toEqual({
+      objectId: "one",
+      sectionId: "pages",
+      full: false,
+      version: 0,      objectVersion: 1,
+    });
+
+    state = reduce(state, {
+      type: "section",
+      objectId: "one",
+      sectionId: "pages",
+      content: { markdown: "page one", next: "two" },
+    });
+    state = reduce(state, { type: "key", key: "left" });
+    expect(activeSection(state)?.id).toBe("info");
+  });
+
+  test("scrolling at the end asks for the section's next page once", () => {
+    let state = opened();
+    state = reduce(state, {
+      type: "section",
+      objectId: "one",
+      sectionId: "info",
+      content: { markdown: "Info" },
+    });
+    state = reduce(state, { type: "key", key: "]" });
+    state = reduce(state, {
+      type: "section",
+      objectId: "one",
+      sectionId: "pages",
+      content: { markdown: "page one", next: "two" },
+    });
+    const section = activeSection(state);
+    expect(section?.next).toBe("two");
+
+    state = reduce(state, { type: "key", key: "pagedown" });
+    const request = state.sectionRequest;
+    expect(request).toEqual({
+      objectId: "one",
+      sectionId: "pages",
+      cursor: "two",
+      objectVersion: 1,
+      full: false,
+      version: section?.version ?? 0,
+    });
+
+    state = reduce(state, { type: "key", key: "down" });
+    expect(state.sectionRequest).toEqual(request);
+
+    state = reduce(state, {
+      type: "section",
+      objectId: "one",
+      sectionId: "pages",
+      content: { markdown: "page two" },
+      cursor: "two",
+      version: request?.version,
+    });
+    const loaded = activeSection(state);
+    expect(loaded?.markdown).toBe("page one\npage two");
+    expect(loaded?.next).toBeUndefined();
+    expect(loaded?.loading).toBe(false);
+    expect(state.sectionRequest).toBeUndefined();
+  });
+
+  test("f loads a capped section with full=true", () => {
+    let state = opened();
+    state = reduce(state, {
+      type: "section",
+      objectId: "one",
+      sectionId: "info",
+      content: {
+        markdown:
+          "short\n\n[Truncated. See all of it with `operad show one --section info --full`.]\n",
+      },
+    });
+    expect(activeSection(state)?.capped).toBe(true);
+
+    state = reduce(state, { type: "key", key: "f" });
+    const request = state.sectionRequest;
+    expect(request).toEqual({
+      objectId: "one",
+      sectionId: "info",
+      objectVersion: 1,
+      full: true,
+      version: activeSection(state)?.version ?? 0,
+    });
+
+    state = reduce(state, {
+      type: "section",
+      objectId: "one",
+      sectionId: "info",
+      content: { markdown: "the whole section" },
+      full: true,
+      version: request?.version,
+    });
+    expect(activeSection(state)?.markdown).toBe("the whole section");
+    expect(activeSection(state)?.full).toBe(true);
+    expect(activeSection(state)?.capped).toBe(false);
+  });
+
+  test("a live section follows its end, scrolling up stops it and End resumes", () => {
+    let state = opened();
+    state = reduce(state, {
+      type: "section",
+      objectId: "one",
+      sectionId: "info",
+      content: { markdown: "Info" },
+    });
+    state = reduce(state, { type: "key", key: "]" });
+    state = reduce(state, {
+      type: "section",
+      objectId: "one",
+      sectionId: "pages",
+      content: {
+        markdown: Array.from({ length: 30 }, (_, at) => `line ${at}`).join("\n"),
+      },
+    });
+    const fitted = activeSection(state);
+    expect(fitted?.following).toBe(true);
+    expect(fitted?.scroll).toBeGreaterThan(0);
+
+    state = reduce(state, { type: "key", key: "pageup" });
+    const stopped = activeSection(state);
+    expect(stopped?.following).toBe(false);
+    expect(stopped?.scroll).toBeLessThan(fitted?.scroll ?? 0);
+
+    state = reduce(state, { type: "key", key: "end" });
+    const resumed = activeSection(state);
+    expect(resumed?.following).toBe(true);
+    expect(resumed?.scroll).toBe(fitted?.scroll);
+  });
+
+  test("escape closes the object and returns to the list", () => {
+    let state = opened();
+    expect(state.object).toBeDefined();
+    state = reduce(state, { type: "key", key: "escape" });
+    expect(state.object).toBeUndefined();
+    expect(state.objectRequest).toBeUndefined();
+  });
+
+  test("an object answer after escape does not reopen the pane", () => {
+    let state = opened();
+    state = reduce(state, { type: "key", key: "escape" });
+    state = reduce(state, {
+      type: "object",
+      object: viewObject("one"),
+      version: 1,
+    });
+    expect(state.object).toBeUndefined();
+  });
+
+  test("a stale answer for the previous object keeps the newly opened one", () => {
+    let state = reduce(initialState({ width: 120, height: 20 }), {
+      type: "types",
+      types: TYPES,
+    });
+    state = reduce(state, {
+      type: "page",
+      tabId: "type:item",
+      replace: true,
+      page: { rows: [row("one"), row("two")] },
+    });
+    state = reduce(state, { type: "key", key: "3" });
+    state = reduce(state, { type: "key", key: "enter" });
+    state = reduce(state, {
+      type: "object",
+      object: viewObject("one"),
+      version: 1,
+    });
+    const staleVersion = state.object?.version ?? 0;
+
+    state = reduce(state, { type: "key", key: "escape" });
+    state = reduce(state, { type: "key", key: "down" });
+    state = reduce(state, { type: "key", key: "enter" });
+    expect(state.objectRequest?.id).toBe("two");
+
+    state = reduce(state, {
+      type: "object",
+      object: viewObject("one"),
+      version: staleVersion,
+    });
+    expect(state.object?.id).toBe("two");
+    expect(state.object?.loading).toBe(true);
+  });
+
+  describe("capped", () => {
+    const LINE = "[Truncated. See all of it with `operad show one --section info --full`.]";
+    function sectionWith(markdown: string) {
+      const state = reduce(opened(), {
+        type: "section",
+        objectId: "one",
+        sectionId: "info",
+        content: { markdown },
+        objectVersion: 1,
+      });
+      return activeSection(state);
+    }
+
+    test("the engine's truncation line as the last line caps the section", () => {
+      expect(sectionWith(`text\n\n${LINE}\n`)?.capped).toBe(true);
+    });
+
+    test("the same words inside the text, or another last line, do not", () => {
+      expect(sectionWith(`${LINE}\n\nmore text\n`)?.capped).toBe(false);
+      expect(sectionWith("a log line mentioning [Truncated. See it]\n")?.capped).toBe(false);
+      expect(sectionWith(`> ${LINE}\n`)?.capped).toBe(false);
+    });
+  });
+
+  test("reopening a row after an error does not carry a section that was loading", () => {
+    let state = opened();
+    state = reduce(state, {
+      type: "section",
+      objectId: "one",
+      sectionId: "info",
+      content: { markdown: "text", next: "2" },
+      objectVersion: 1,
+    });
+    state = reduce(state, { type: "key", key: "pagedown" });
+    expect(activeSection(state)?.loading).toBe(true);
+    state = reduce(state, { type: "object-error", id: "one", message: "down", version: 1 });
+    state = reduce(state, { type: "key", key: "enter" });
+    expect(state.object?.sections.some((section) => section.loading)).toBe(false);
+  });
+});

@@ -13,7 +13,9 @@ import type {
   PendingItem,
   RunningItem,
   ViewListPage,
+  ViewObject,
   ViewRow,
+  ViewSectionContent,
 } from "@operad-io/engine";
 import { ensureServer, spawnServe, type EnsureServerOptions } from "./autostart.ts";
 import { TuiClient, type FetchLike } from "./client.ts";
@@ -22,8 +24,11 @@ import { discoverServer } from "./discover.ts";
 import { TuiEvents, type TuiEvent } from "./events.ts";
 import {
   initialState,
+  joinMarkdown,
   reduce,
+  type TuiObjectRequest,
   type TuiPageRequest,
+  type TuiSectionRequest,
   type TuiState,
   type TuiStateEvent,
   type TuiTheme,
@@ -83,6 +88,18 @@ export interface TuiShellClient {
     cursor?: string,
     signal?: AbortSignal,
   ): Promise<ViewListPage>;
+  /** Optional so an older test client still fits; the object pane needs it. */
+  object?(id: string, signal?: AbortSignal): Promise<ViewObject>;
+  /** Optional so an older test client still fits; the object pane needs it. */
+  section?(
+    id: string,
+    section: string,
+    options?: {
+      readonly cursor?: string | undefined;
+      readonly full?: boolean | undefined;
+      readonly signal?: AbortSignal | undefined;
+    },
+  ): Promise<ViewSectionContent>;
 }
 
 /** The change stream the shell reads; `TuiEvents` has this shape. */
@@ -105,6 +122,11 @@ export interface TuiShellDeps {
   readonly onFinish?: (() => void) | undefined;
   /** The wait before a change refreshes the lists; 100 by default. */
   readonly refreshDelayMs?: number | undefined;
+  /**
+   * The wait after the list cursor stops before the object pane follows it, so
+   * scrolling fast does not fetch every row; 150 by default.
+   */
+  readonly followDelayMs?: number | undefined;
 }
 
 /** A running shell: feed it keys and sizes, and wait for `done`. */
@@ -156,7 +178,14 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   });
   let finished = false;
   let refreshAbort: AbortController | undefined;
+  // The requests of the open object: its read and its section pages. They end
+  // when the object closes or another one opens, and at no other time, so
+  // switching sections never cancels a page another section is waiting for.
+  const objectRequests = new Set<AbortController>();
+  let seenObject: number | undefined;
+  let seenMove = 0;
   let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  let followTimer: ReturnType<typeof setTimeout> | undefined;
   let events: TuiEventSource | undefined;
   let announce: (code: number) => void = () => undefined;
   const done = new Promise<number>((resolve) => {
@@ -170,7 +199,13 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       clearTimeout(refreshTimer);
       refreshTimer = undefined;
     }
+    if (followTimer !== undefined) {
+      clearTimeout(followTimer);
+      followTimer = undefined;
+    }
     refreshAbort?.abort();
+    for (const request of objectRequests) request.abort();
+    objectRequests.clear();
     events?.stop();
     abort.abort();
     deps.onFinish?.();
@@ -200,6 +235,99 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     }
   }
 
+  async function loadObject(request: TuiObjectRequest): Promise<void> {
+    const open = client.object;
+    if (open === undefined) return;
+    const mine = new AbortController();
+    objectRequests.add(mine);
+    try {
+      const object = await open.call(client, request.id, mine.signal);
+      dispatch({ type: "object", object, version: request.version });
+    } catch (error) {
+      if (mine.signal.aborted) return;
+      dispatch({
+        type: "object-error",
+        id: request.id,
+        message: messageOf(error),
+        version: request.version,
+      });
+      report(error);
+    } finally {
+      objectRequests.delete(mine);
+    }
+  }
+
+  async function loadSection(request: TuiSectionRequest): Promise<void> {
+    const load = client.section;
+    if (load === undefined) return;
+    const mine = new AbortController();
+    objectRequests.add(mine);
+    try {
+      const content = await load.call(client, request.objectId, request.sectionId, {
+        ...(request.cursor === undefined ? {} : { cursor: request.cursor }),
+        ...(request.full ? { full: true } : {}),
+        signal: mine.signal,
+      });
+      dispatch({
+        type: "section",
+        objectId: request.objectId,
+        sectionId: request.sectionId,
+        content,
+        ...(request.cursor === undefined ? {} : { cursor: request.cursor }),
+        full: request.full,
+        version: request.version,
+        objectVersion: request.objectVersion,
+      });
+    } catch (error) {
+      if (mine.signal.aborted) return;
+      dispatch({
+        type: "section-error",
+        objectId: request.objectId,
+        sectionId: request.sectionId,
+        message: messageOf(error),
+        version: request.version,
+        objectVersion: request.objectVersion,
+      });
+      report(error);
+    } finally {
+      objectRequests.delete(mine);
+    }
+  }
+
+  /**
+   * Reads a section from its first page to as many pages as it holds now, so a
+   * refresh keeps what the person paged to instead of cutting it back to one.
+   */
+  async function fetchSectionDepth(
+    id: string,
+    sectionId: string,
+    pages: number,
+    full: boolean,
+    signal: AbortSignal,
+  ): Promise<{ readonly content: ViewSectionContent; readonly pages: number } | undefined> {
+    const load = client.section;
+    if (load === undefined) return undefined;
+    let markdown = "";
+    let next: string | undefined;
+    let cursor: string | undefined;
+    let read = 0;
+    do {
+      const content = await load.call(client, id, sectionId, {
+        ...(cursor === undefined ? {} : { cursor }),
+        ...(full ? { full: true } : {}),
+        signal,
+      });
+      markdown = read === 0 ? content.markdown : joinMarkdown(markdown, content.markdown);
+      next = content.next;
+      cursor = next;
+      read += 1;
+    } while (next !== undefined && read < Math.max(1, pages));
+    return {
+      content: next === undefined ? { markdown } : { markdown, next },
+      pages: read,
+    };
+  }
+
   /** Reads a type's first page, and more until it is as deep as it was. */
   async function fetchTypeRows(
     type: string,
@@ -226,6 +354,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     const signal = mine.signal;
     dispatch({ type: "refresh-start" });
     const generation = state.generation;
+    const objectAtStart = state.object;
     const depths = new Map(
       state.tabs.map((tab) => [tab.id, tab.list.rows.length] as const),
     );
@@ -282,6 +411,79 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         }),
       );
     }
+    const open = state.object;
+    if (
+      open !== undefined &&
+      objectAtStart !== undefined &&
+      open.id === objectAtStart.id &&
+      open.version === objectAtStart.version &&
+      !open.loading &&
+      client.object !== undefined &&
+      !signal.aborted &&
+      !finished
+    ) {
+      const id = open.id;
+      const version = open.version;
+      // The object's own requests end with it (Esc, another open), not only
+      // with this refresh.
+      const scoped = new AbortController();
+      const stop = (): void => scoped.abort();
+      signal.addEventListener("abort", stop, { once: true });
+      objectRequests.add(scoped);
+      try {
+        const result = await settle(client.object(id, scoped.signal));
+        if (!scoped.signal.aborted && !finished) {
+          if (result.ok) {
+            dispatch({ type: "object", object: result.value, version });
+            const current = state.object;
+            const live =
+              current?.sections.filter(
+                (section) => section.live && section.loaded && !section.loading,
+              ) ?? [];
+            if (client.section !== undefined) {
+              await Promise.all(
+                live.map(async (section) => {
+                  const objectId = current?.id ?? id;
+                  const objectVersion = current?.version ?? version;
+                  const fetched = await settle(
+                    fetchSectionDepth(
+                      objectId,
+                      section.id,
+                      section.pages,
+                      section.full,
+                      scoped.signal,
+                    ),
+                  );
+                  if (scoped.signal.aborted || finished) return;
+                  if (!fetched.ok || fetched.value === undefined) return;
+                  dispatch({
+                    type: "section",
+                    objectId,
+                    sectionId: section.id,
+                    content: fetched.value.content,
+                    pages: fetched.value.pages,
+                    full: section.full,
+                    version: section.version,
+                    objectVersion,
+                  });
+                }),
+              );
+            }
+          } else {
+            dispatch({
+              type: "object-error",
+              id,
+              message: messageOf(result.error),
+              version,
+            });
+            fail(result.error);
+          }
+        }
+      } finally {
+        signal.removeEventListener("abort", stop);
+        objectRequests.delete(scoped);
+      }
+    }
     if (!failed && !signal.aborted && !finished) {
       dispatch({ type: "status", generation });
     }
@@ -304,17 +506,44 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   function dispatch(event: TuiStateEvent): void {
     if (finished) return;
     state = reduce(state, event);
-    // A page is asked for once: the request leaves the state as it is launched.
+    // A request is asked for once: it leaves the state as it is launched.
     const request = state.pageRequest;
     if (request !== undefined) state = reduce(state, { type: "page-launched" });
+    const objectRequest = state.objectRequest;
+    if (objectRequest !== undefined) {
+      state = reduce(state, { type: "object-launched" });
+    }
+    const sectionRequest = state.sectionRequest;
+    if (sectionRequest !== undefined) {
+      state = reduce(state, { type: "section-launched" });
+    }
     const refreshing = state.refreshRequested;
     if (refreshing) state = reduce(state, { type: "refreshed" });
+    // Requests belong to the object version that asked: another open, or a
+    // close, ends them.
+    if (state.object?.version !== seenObject) {
+      seenObject = state.object?.version;
+      for (const pending of objectRequests) pending.abort();
+      objectRequests.clear();
+    }
+    if (state.moveSeq !== seenMove) {
+      seenMove = state.moveSeq;
+      if (followTimer !== undefined) clearTimeout(followTimer);
+      followTimer = state.followPending
+        ? setTimeout(() => {
+            followTimer = undefined;
+            dispatch({ type: "follow" });
+          }, deps.followDelayMs ?? 150)
+        : undefined;
+    }
     view.render(state);
     if (state.quit) {
       finish();
       return;
     }
     if (request !== undefined) void loadPage(request);
+    if (objectRequest !== undefined) void loadObject(objectRequest);
+    if (sectionRequest !== undefined) void loadSection(sectionRequest);
     if (refreshing) requestRefresh();
   }
 

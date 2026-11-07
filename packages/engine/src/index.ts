@@ -12,4 +12,4 @@ export * from "./views/index.ts";
 export * from "./loop/index.ts";
 export * from "./trigger/index.ts";
 export * from "./notify/index.ts";
-export * from "./notify/index.ts";
+export * from "./markdown.ts";
