@@ -52,3 +52,4 @@ export {
 } from "./paging.ts";
 export * from "./types.ts";
 export * from "./harness.ts";
+export * from "./usage.ts";

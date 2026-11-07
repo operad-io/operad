@@ -160,7 +160,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
   const clock = options.clock;
   return definePlugin({
     name: "shell",
-    kind: "harness",
+    kind: "stage",
     version: "0.0.0",
     steps: [
       {
@@ -244,13 +244,16 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
 
           for (const [index, line] of lines.entries()) {
             if (ctx.signal.aborted) {
+              // No line has written output yet: create the log the fact names,
+              // so the path is a file a reader can open.
+              const log = await writeNote(ctx.logger, "");
               return {
                 result: "interrupted",
                 data: {
                   reason: "cancelled",
                   line,
                   lineNumber: index + 1,
-                  log: ctx.logger.path,
+                  log,
                   tail: [],
                 },
               };

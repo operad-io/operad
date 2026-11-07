@@ -41,7 +41,7 @@ import {
   type TaskData,
   type TaskPhase,
 } from "./model.ts";
-import { DEFAULT_DEV_SETTINGS } from "./settings.ts";
+import { DEFAULT_DEV_SETTINGS, DEV_SETTINGS_SCHEMA } from "./settings.ts";
 
 /** An optional way for the dev plugin to ask the kernel to cancel a run. */
 export interface DevRunControl {
@@ -237,6 +237,7 @@ function writeSettings(repositoryPath: string, name: string): void {
     settings,
     `${JSON.stringify(
       {
+        $schema: DEV_SETTINGS_SCHEMA,
         name,
         remote: DEFAULT_DEV_SETTINGS.remote,
         mainBranch: DEFAULT_DEV_SETTINGS.mainBranch,

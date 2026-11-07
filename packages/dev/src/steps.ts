@@ -8,6 +8,8 @@ import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
   messageOf,
+  readUsage,
+  type CostQuality,
   type PluginStepResult,
   type StepContext,
   type StepRunOptions,
@@ -623,42 +625,34 @@ export function buildWorkerPrompt(
 interface HarnessReading {
   readonly sessionId: string | null;
   readonly costMicros: number | null;
+  readonly costQuality: CostQuality | null;
   readonly cost: number | null;
   readonly log: string | null;
   readonly tokens: { readonly input: number; readonly output: number } | null;
   readonly durationMs: number | null;
 }
 
-function harnessReading(data: Record<string, unknown>): HarnessReading {
+function harnessReading(
+  data: Record<string, unknown>,
+  onProblem?: (message: string) => void,
+): HarnessReading {
   const sessionId =
     typeof data.sessionId === "string" ? data.sessionId : null;
-  const cost = data.cost;
-  const micros =
-    typeof cost === "object" &&
-    cost !== null &&
-    "micros" in cost &&
-    typeof (cost as { micros?: unknown }).micros === "number" &&
-    Number.isFinite((cost as { micros: number }).micros)
-      ? (cost as { micros: number }).micros
-      : null;
-  const usage = data.usage;
-  const input =
-    typeof usage === "object" && usage !== null
-      ? (usage as { input?: unknown }).input
-      : undefined;
-  const output =
-    typeof usage === "object" && usage !== null
-      ? (usage as { output?: unknown }).output
-      : undefined;
+  // The one reader of a step's usage: it takes the standard field and, for
+  // a fact written before it existed, the old fields.
+  const usage = readUsage(data, onProblem);
+  const micros = usage?.costMicros ?? null;
   return {
     sessionId,
     costMicros: micros,
+    costQuality: usage?.costQuality ?? null,
     cost: micros === null ? null : micros / 1_000_000,
     log: typeof data.log === "string" && data.log.length > 0 ? data.log : null,
     tokens:
-      typeof input === "number" && typeof output === "number"
-        ? { input, output }
-        : null,
+      // A run that reported no tokens at all has none to show.
+      usage === undefined || (usage.tokens.input === 0 && usage.tokens.output === 0)
+        ? null
+        : { input: usage.tokens.input, output: usage.tokens.output },
     durationMs:
       typeof data.durationMs === "number" && Number.isFinite(data.durationMs)
         ? data.durationMs
@@ -676,6 +670,7 @@ function resultData(
     sessionId: reading.sessionId,
     cost: reading.cost,
     costMicros: reading.costMicros,
+    costQuality: reading.costQuality,
     ...extra,
   };
 }
@@ -820,7 +815,12 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     outcome.data !== null
       ? (outcome.data as Record<string, unknown>)
       : {};
-  const reading = harnessReading(outcomeData);
+  const reading = harnessReading(outcomeData, (problem) => {
+    // A usage the harness got wrong is the harness's bug; say which run.
+    void ctx.logger
+      .write(`run ${ctx.runId}: the harness reported a usage that is not standard: ${problem}`)
+      .catch(() => undefined);
+  });
 
   let nextAttempt: TaskAttempt = {
     ...attempt,
@@ -831,6 +831,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     sessionId: reading.sessionId,
     cost: reading.cost,
     costMicros: reading.costMicros,
+    costQuality: reading.costQuality,
     workLog: reading.log,
     tokens: reading.tokens,
     workMs: reading.durationMs,
@@ -860,7 +861,9 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
         run: ctx.runId,
         attempts,
         attempt: nextAttempt,
-        ...(reading.cost === null ? {} : { cost: reading.cost }),
+        ...(reading.cost === null
+          ? {}
+          : { cost: reading.cost, costQuality: reading.costQuality }),
       },
       "dev:work",
     );

@@ -78,6 +78,17 @@ describe("dev views", () => {
     expect(taskViews.row(await getTask(store, task.id))).toMatchObject({
       note: "$0.31",
     });
+    for (const quality of ["estimated", "incomplete"] as const) {
+      await store.put(
+        "task",
+        task.id,
+        { ...taskData(stored.data), cost: 0.31, costQuality: quality },
+        "test:cost",
+      );
+      expect(taskViews.row(await getTask(store, task.id))).toMatchObject({
+        note: `$0.31 (${quality})`,
+      });
+    }
   });
 
   test("a task has brief and changes, and rework only after it has some", async () => {
@@ -245,7 +256,10 @@ describe("dev views", () => {
     await store.put(
       "task",
       task.id,
-      { ...stored, attempt: { number: 2, cost: 0.05, review: { result: "fail" as const } } },
+      {
+        ...stored,
+        attempt: { number: 2, cost: 0.05, costQuality: "incomplete" as const, review: { result: "fail" as const } },
+      },
       "dev:review",
     );
     const section = (await taskViews.load(
@@ -260,6 +274,6 @@ describe("dev views", () => {
     expect(rows[2]).toContain("2m05s");
     expect(rows[2]).toContain("$0.31 | 1200 in / 340 out | pass |");
     expect(rows[3]).toContain("| 2 |");
-    expect(rows[3]).toContain("$0.05 | - | fail |");
+    expect(rows[3]).toContain("$0.05 (incomplete) | - | fail |");
   });
 });

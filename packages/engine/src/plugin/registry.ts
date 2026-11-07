@@ -9,6 +9,7 @@ import { defaultOperadHome } from "./home.ts";
 import { createPluginLogger } from "./logger.ts";
 import { FileSecretStore } from "./secrets.ts";
 import { isRangeSyntax, satisfiesRange } from "./semver.ts";
+import { END_RESULTS, isEndResult } from "./usage.ts";
 import { prepareSettings } from "./settings.ts";
 import { MemoryPluginStore } from "./store.ts";
 import {
@@ -633,7 +634,11 @@ function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     version,
     objects,
     actions: normalizeActions(raw.actions, `${at}: actions`),
-    steps: normalizeSteps(raw.steps, `${at}: steps`),
+    steps: checkHarnessResults(
+      normalizeSteps(raw.steps, `${at}: steps`),
+      kind,
+      at,
+    ),
     flows: optionalArray(raw.flows, `${at}: flows`),
     commands: normalizeCommands(raw.commands, `${at}: commands`),
     views: normalizeViews(raw.views, `${at}: views`, objects),
@@ -646,6 +651,25 @@ function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     enforces: normalizeEnforces(raw.enforces, `${at}: enforces`) ?? [],
     requires: normalizeRequires(raw.requires, at),
   };
+}
+
+/** A harness step type ends only in the standard end results. */
+function checkHarnessResults(
+  steps: readonly StepTypeDefinition[],
+  kind: string,
+  at: string,
+): readonly StepTypeDefinition[] {
+  if (kind !== "harness") return steps;
+  for (const step of steps) {
+    for (const result of step.results) {
+      if (!isEndResult(result)) {
+        throw new PluginError(
+          `${at}: step "${step.name}": result "${result}" is not an end result; a harness step ends in ${END_RESULTS.join(", ")}`,
+        );
+      }
+    }
+  }
+  return steps;
 }
 
 function normalizeLimit(

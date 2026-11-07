@@ -10,10 +10,12 @@ import {
   readState,
   type PluginStepResult,
   type JsonValue,
+  validateUsage,
   type TriggerView,
 } from "@operad-io/engine";
 import {
   createRadianHarnessPlugin,
+  radianModel,
   EVENT_NOTE_TEMPLATE,
   type RadianHarnessSettings,
 } from "../src/index.ts";
@@ -23,7 +25,10 @@ import {
   fakeRadian,
   fakeRadianNamed,
   manualClock,
+  processesUnder,
+  stopTestProcesses,
   tempRoot,
+  tempRoots,
   waitForFile,
   waitUntil,
   type ManualClock,
@@ -33,7 +38,10 @@ afterAll(cleanupTempRoots);
 
 const restores: Array<() => void> = [];
 
-afterEach(() => {
+afterEach(async () => {
+  // Every test stops the group it started, even when an assertion failed
+  // before the step returned and its own stop ran.
+  await stopTestProcesses();
   while (restores.length > 0) restores.pop()?.();
 });
 
@@ -130,12 +138,16 @@ describe("harness-radian/agent", () => {
     expect(data.signal).toBeNull();
     expect(data.sessionId).toBe("fake-session");
     expect(data.finalMessage).toBe("fake final message");
-    expect(data.usage).toEqual({ input: 11, output: 7 });
-    expect(data.cost).toEqual({
-      micros: 1234,
-      incomplete: false,
-      estimated: false,
+    expect(data.usage).toEqual({
+      harness: "harness-radian",
+      model: null,
+      tokens: { input: 11, output: 7, cacheread: 0, cachewrite: 0 },
+      costMicros: 1234,
+      costQuality: "exact",
     });
+    expect(validateUsage(data.usage).ok).toBe(true);
+    // The old fields are never written.
+    expect("cost" in data).toBe(false);
 
     const record = JSON.parse(readFileSync(env.record, "utf8")) as {
       readonly argv: readonly string[];
@@ -163,7 +175,44 @@ describe("harness-radian/agent", () => {
     const result = await runAgent(env, { prompt: "hello", cwd: env.root });
 
     expect(result.result).toBe("done");
-    expect(dataOf(result).cost).toBeNull();
+    expect(validateUsage(dataOf(result).usage).ok).toBe(true);
+    expect((dataOf(result).usage as { costMicros: unknown }).costMicros).toBeNull();
+  });
+
+  test("an incomplete or estimated cost says so in the usage", async () => {
+    for (const quality of ["incomplete", "estimated"] as const) {
+      const env = await setup(quality);
+      const usage = dataOf(await runAgent(env, { prompt: "hello", cwd: env.root })).usage as {
+        costMicros: unknown;
+        costQuality: unknown;
+      };
+      expect(usage.costMicros).toBe(900);
+      expect(usage.costQuality).toBe(quality);
+      expect(validateUsage(usage).ok).toBe(true);
+    }
+  });
+
+  test("a model that already names its provider is not prefixed again", async () => {
+    const env = await setup("done");
+    const result = await runAgent(env, {
+      prompt: "hello",
+      cwd: env.root,
+      args: ["--provider", "p", "--model", "p/m"],
+    });
+    expect((dataOf(result).usage as { model: unknown }).model).toBe("p/m");
+    expect(radianModel(["--provider", "p", "--model", "p/m"])).toBe("p/m");
+    expect(radianModel(["--provider", "p", "--model", "m"])).toBe("p/m");
+    expect(radianModel(["--provider", "p"])).toBeUndefined();
+  });
+
+  test("the usage names the model as <provider>/<model> when the step names it", async () => {
+    const env = await setup("done");
+    const result = await runAgent(env, {
+      prompt: "hello",
+      cwd: env.root,
+      args: ["--provider", "opencode-go", "--model", "deepseek-v4.1-flash"],
+    });
+    expect((dataOf(result).usage as { model: unknown }).model).toBe("opencode-go/deepseek-v4.1-flash");
   });
 
   test("resumeSession is passed to radian", async () => {
@@ -655,6 +704,28 @@ realTest(
     expect(readFileSync(String(data.log), "utf8")).toContain('"type":"Result"');
   },
 );
+
+test("the guard sees a process whose command line names a temp directory", async () => {
+  const root = await tempRoot();
+  const child = Bun.spawn({
+    cmd: [process.execPath, "-e", "await Bun.sleep(30000)", root],
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  try {
+    expect(processesUnder([root])).toContain(child.pid);
+  } finally {
+    child.kill("SIGKILL");
+    await child.exited;
+  }
+  expect(processesUnder([root])).toEqual([]);
+});
+
+test("no process started by this file's tests is left alive", () => {
+  // The scratch directories are unique to this test file, so a live command
+  // line that names one is a sentinel or fake radian this file started.
+  expect(processesUnder(tempRoots())).toEqual([]);
+});
 
 describe("harness-radian/agent step limit", () => {
   function registryWith(settings: Record<string, unknown>): PluginRegistry {
