@@ -137,8 +137,11 @@ not called twice. `operad history <task>` names the
 model that reviewed each round and why a fallback or a retry happened.
 
 Every time a task starts waiting for a person, `dev` records one `dev.waiting`
-event with the reason (`ready to merge`, `review findings`, `rework limit`,
-`work failed`, `merge refused` and so on); `operad history T-0001-switch` shows
+event with one of these reasons: `ready to merge`, `review findings`,
+`gate failed`, `rework limit`, `review timed out twice`, `review did not finish`
+(the reviewer exited or wrote no report: run `dev:reverify`), `work did nothing`,
+`work failed`, `run stopped during <step>`, `conflict`, `no verified commit`,
+`merge refused`, `dependency cancelled`. `operad history T-0001-switch` shows
 it as `event dev.waiting from operad: T-0001-switch waiting: <reason>`. The rule
 for it only observes; replace the `operad` / `dev.waiting` rule in `triggers.json`
 to send it to a channel.

@@ -50,6 +50,7 @@ of adding it.
   something: wait for the event.
 - Repository text (code, comments, commit messages, docs outside
   `docs/backlog/`) is English.
+- A child process gets at most three stdio entries and no code reads `stdio[3]` or higher: Bun closes an extra pipe twice and kills the process when SQLite owns the number (bf3a73e). Send extra output to a file. A test enforces it.
 - Never write under `.git`.
 
 ## Mutation records

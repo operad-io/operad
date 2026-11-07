@@ -96,7 +96,7 @@ export function waitingReason(
         if (/wall|stall|time/i.test(said)) {
           return { reason: "review timed out twice" };
         }
-        return { reason: "review failed", detail: nonEmpty(review?.message) };
+        return { reason: "review did not finish", detail: nonEmpty(review?.message) };
       }
     case "rework": {
       const rework = attempt?.rework;
