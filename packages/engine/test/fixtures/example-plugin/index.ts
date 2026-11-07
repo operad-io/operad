@@ -36,9 +36,10 @@ export default definePlugin({
       run: async (ctx) => {
         const object = ctx.object;
         if (object === undefined) throw new Error("the review flow needs a note to work on");
-        const text = typeof ctx.params === "object" && ctx.params !== null && !Array.isArray(ctx.params)
-          ? ctx.params.text
-          : undefined;
+        const text =
+          typeof ctx.params === "object" && ctx.params !== null && !Array.isArray(ctx.params)
+            ? ctx.params.text
+            : undefined;
         if (typeof text !== "string" || text.length === 0) {
           throw new Error("the review flow needs a text");
         }
