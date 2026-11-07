@@ -182,3 +182,4 @@ the row fields.
 | engine-followups-2-M2 | `packages/engine/src/config/config.ts` | `addDefaultPlugins` wrote the config file in place instead of a temp file and rename | `operad config > a failed write leaves the existing config whole` |
 | engine-followups-2-M4 | `packages/engine/src/plugin/registry.ts` | a run whose object is missing got `at: 0` instead of the run's last time | `plugin registry validation > a waiting run with no object shows its own last time and is logged once` |
 | engine-followups-2-M5 | `packages/engine/src/plugin/registry.ts` | the missing object was logged on every call, not once per run | `plugin registry validation > a waiting run with no object shows its own last time and is logged once` |
+| T-0027-M6 | packages/engine/src/config/config.ts | `readMcp` dropped `confirmActions` and returned an empty list | `operad config > reads mcp actions and applies their defaults` |

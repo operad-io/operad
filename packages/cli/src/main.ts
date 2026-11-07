@@ -144,7 +144,7 @@ const HELP = [
   "  http token rotate    replace the token the operad app uses",
   "  pair [--url <url>] [--show-token]",
   "                       show the address and token as a QR code for the operad app",
-  "  mcp                  run the read-only MCP server on stdio",
+  "  mcp                  run the MCP server on stdio",
   "  trigger <source> <key> [--type t] [--object o] [--summary text] [--data file]",
   "                       send one event through the rules",
   "  trigger rules        the rules in force, with where each came from",

@@ -520,12 +520,17 @@ export interface CommandDefinition {
 }
 
 /** The context a command verb receives. */
-export interface CommandContext extends PluginBaseContext {}
+export interface CommandContext extends PluginBaseContext {
+  /** The text the command reads from stdin, when its caller supplied one. */
+  readonly input?: string | undefined;
+}
 
 /** Options for running a command through the registry. */
 export interface CommandRunOptions {
   readonly cwd?: string | undefined;
   readonly signal?: AbortSignal | undefined;
+  /** The text the command reads from stdin; absent means the real stdin. */
+  readonly input?: string | undefined;
 }
 
 /** Where a command resolved: always `<plugin> <verb>`, optionally `<verb>`. */

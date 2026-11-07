@@ -11,6 +11,7 @@ import {
   openConfigLog,
   openPluginStore,
   readConfig,
+  recordAnswer,
   storeRootOf,
   type LogBackend,
   type OperadConfig,
@@ -31,7 +32,7 @@ export const PROTOCOL_VERSION = "2025-06-18";
 
 /** What `initialize` tells a client, in two sentences. */
 export const INSTRUCTIONS =
-  "The operad MCP server exposes read-only views of objects, pending items and history. Owner decisions are not offered here.";
+  "The operad MCP server reads objects, pending items and history, and writes the commands and lead actions it is allowed to. Owner decisions are not offered here.";
 
 /** JSON-RPC error codes used by this server. */
 export const RPC_ERRORS = {
@@ -79,6 +80,8 @@ interface OpenContext {
   readonly log: LogBackend;
   readonly registry: PluginRegistry;
   readonly kernel: Kernel;
+  readonly mcp: OperadConfig["mcp"];
+  readonly cwd: string;
 }
 
 class RpcError extends Error {
@@ -144,6 +147,15 @@ async function openContext(
     home,
     cwd,
     store,
+    onAnswer: async (runId, choice, note, actor) => {
+      await recordAnswer({
+        log,
+        runId,
+        choice,
+        ...(note === undefined ? {} : { note }),
+        actor,
+      });
+    },
     onLog: (message) => {
       void onLog(message);
     },
@@ -168,7 +180,7 @@ async function openContext(
       void onLog(message);
     },
   });
-  return { views, log, registry, kernel };
+  return { views, log, registry, kernel, mcp: config.mcp, cwd };
 }
 
 function toolContext(
@@ -181,6 +193,8 @@ function toolContext(
     registry: context.registry,
     kernel: context.kernel,
     clock,
+    cwd: context.cwd,
+    mcp: context.mcp,
   };
 }
 
@@ -342,7 +356,8 @@ async function* decodeLines(
 
 /**
  * Runs the MCP server until stdin ends. It opens the configured home like a
- * command does, reads only the presentation views, and never runs a step.
+ * command does, serves the presentation views and the allowed writes, and
+ * never runs a step.
  */
 export async function runMcpServer(
   options: McpServerOptions = {},

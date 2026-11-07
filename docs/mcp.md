@@ -1,10 +1,12 @@
 # operad MCP server
 
-`operad mcp` is a read-only Model Context Protocol server on stdio. It gives a
-lead agent typed access to the same objects, lists, sections, pending items,
-running items and history that `operad` and the `/v1` interface read. It never
-starts a step or runs an action; only `operad serve` runs steps, and owner
-decisions stay in the command line or the app.
+`operad mcp` is a Model Context Protocol server on stdio. It gives a lead agent
+typed access to the same objects, lists, sections, pending items, running items
+and history that `operad` and the `/v1` interface read. It also runs plugin
+verbs and the lead actions `config.json` allows, through the same paths as the
+CLI. It never starts a step or takes an owner decision; only `operad serve` runs
+steps, and the actions left out of `mcp.actions` stay in the command line or the
+app.
 
 The server implements the MCP JSON-RPC 2.0 transport, protocol version
 `2025-06-18`. It has no runtime dependency except `@operad-io/engine`.
@@ -23,12 +25,12 @@ The server accepts these methods:
 | `notifications/initialized` | Accepted; it has no response. |
 | `ping` | Returns `{}`. |
 | `tools/list` | Returns the tool table below. |
-| `tools/call` | Runs one read tool. |
+| `tools/call` | Runs one tool. |
 
 The `initialize` result carries this fixed instruction:
 
 ```text
-The operad MCP server exposes read-only views of objects, pending items and history. Owner decisions are not offered here.
+The operad MCP server reads objects, pending items and history, and writes the commands and lead actions it is allowed to. Owner decisions are not offered here.
 ```
 
 `tools/call` takes `{ "name": "<tool>", "arguments": { ... } }`. The arguments
@@ -80,12 +82,16 @@ Input:
 }
 ```
 
-Result: the object `{ "id", "type", "link", "row", "sections", "actions" }`.
+Result: the object
+`{ "id", "type", "link", "row", "sections", "actions", "ownerActions" }`.
 `row` is the list row. `sections` is the section directory. `actions` are the
-actions available now, each with its `name`, `on`, `args` JSON Schema, `note`
-field name, `noteRequired` and `confirm`. The Markdown shows the row, the
-section directory and the actions with their arguments. An unknown id is a
-tool error with the view's message.
+available actions the lead may run now, each with its `name`, `on`, `args` JSON
+Schema, `note` field name, `noteRequired` and `confirm`. `ownerActions` holds
+only the names of the available actions the lead may not run, including a
+`confirm: true` action that `mcp.confirmActions` does not name. The Markdown
+shows the row, the section directory, the allowed actions with their arguments,
+and an Owner actions list. An unknown id is a tool error with the view's
+message.
 
 ### `section`
 
@@ -158,6 +164,57 @@ Input:
 Result: `{ "id": "<the id as given>", "markdown": "...", "next": "<cursor>" }`.
 The Markdown is the kernel's History section for the object. An unknown id is a
 tool error with the view's message.
+
+
+### `command`
+
+Input:
+
+```json
+{
+  "type": "object",
+  "required": ["plugin", "verb"],
+  "additionalProperties": false,
+  "properties": {
+    "plugin": { "type": "string", "minLength": 1, "description": "A loaded plugin name, such as dev." },
+    "verb": { "type": "string", "minLength": 1, "description": "A verb the plugin declares, such as plan." },
+    "args": { "type": "array", "items": { "type": "string" }, "description": "The command-line arguments after the verb." },
+    "input": { "type": "string", "description": "The text the CLI reads from stdin, such as a brief." }
+  }
+}
+```
+
+Result: the plugin verb's output, the same value `operad <plugin> <verb>` prints.
+The call builds the CLI's `[plugin, verb, ...args]`, with `input` standing in
+for stdin, so `dev plan add` and `dev task add` take their brief from it. A
+kernel verb (`serve`, `init`, `plugin ...`, `secret ...`, `http ...`, and the
+other commands the CLI owns) is refused with a tool error. A verb no loaded
+plugin declares is also refused.
+
+### `act`
+
+Input:
+
+```json
+{
+  "type": "object",
+  "required": ["action"],
+  "additionalProperties": false,
+  "properties": {
+    "action": { "type": "string", "minLength": 1, "description": "A <plugin>:<action> name from show." },
+    "id": { "type": "string", "description": "The object id when the action targets one." },
+    "args": { "type": "object", "description": "The action's arguments, as its schema names them." },
+    "note": { "type": "string", "description": "The note for an action whose schema declares one." }
+  }
+}
+```
+
+Result: the same action record `POST /v1/act` returns, with `plugin`, `action`,
+`name` and `value`. It runs through `views.act`, records the actor
+`{ "via": "mcp", "id": "lead" }`, and records a person's answer for a run that
+waits. An action not named in `mcp.actions` is a tool error naming it and saying
+the owner runs it. An action with `confirm: true` is refused the same way unless
+`mcp.confirmActions` also names it.
 
 ## Errors
 

@@ -10,7 +10,10 @@
       "type": "object",
       "additionalProperties": {
         "oneOf": [
-          { "type": "string", "minLength": 1 },
+          {
+            "type": "string",
+            "minLength": 1
+          },
           {
             "type": "object",
             "properties": {
@@ -40,7 +43,10 @@
       "properties": {
         "backend": {
           "type": "string",
-          "enum": ["jsonl", "sqlite"],
+          "enum": [
+            "jsonl",
+            "sqlite"
+          ],
           "default": "jsonl"
         },
         "path": {
@@ -69,8 +75,13 @@
         "listen": {
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string", "minLength": 1 },
-          "default": ["127.0.0.1"],
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": [
+            "127.0.0.1"
+          ],
           "description": "IP literals: loopback, an RFC 1918 or link-local address, or a Tailscale address. Wildcards are refused."
         }
       },
@@ -81,16 +92,55 @@
       "type": "object",
       "properties": {
         "command": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1,
           "default": null,
           "description": "A shell line run with sh -c in the operad home, for at most 30 seconds. null turns notifications off."
         },
         "on": {
           "type": "array",
-          "items": { "enum": ["waiting"] },
-          "default": ["waiting"],
+          "items": {
+            "enum": [
+              "waiting"
+            ]
+          },
+          "default": [
+            "waiting"
+          ],
           "description": "What triggers the command. Only waiting exists: an object now waits for a person."
+        }
+      },
+      "additionalProperties": false
+    },
+    "mcp": {
+      "description": "What the MCP server may write for a lead. The owner's decisions are not in this list unless it names them.",
+      "type": "object",
+      "properties": {
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": [
+            "dev:rework",
+            "dev:reverify",
+            "dev:reject",
+            "dev:priority"
+          ],
+          "description": "The plugin actions named <plugin>:<action> that operad mcp may run. Every other action is refused for the owner to run. Takes effect at the next operad mcp start."
+        },
+        "confirmActions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": [],
+          "description": "Allowed actions that also carry confirm: true. An action listed here runs through MCP; one that is only in actions is refused. Takes effect at the next operad mcp start."
         }
       },
       "additionalProperties": false

@@ -56,12 +56,27 @@ export const DEFAULT_NOTIFY: NotifyConfig = {
   on: ["waiting"],
 };
 
+/** The actions the MCP server may run for a lead. */
+export interface McpConfig {
+  /** Actions named `<plugin>:<action>`; every other action is the owner's. */
+  readonly actions: readonly string[];
+  /** Allowed actions that also need this extra confirmation to run. */
+  readonly confirmActions: readonly string[];
+}
+
+/** The MCP defaults: the dev plugin's lead actions, and no confirm actions. */
+export const DEFAULT_MCP: McpConfig = {
+  actions: ["dev:rework", "dev:reverify", "dev:reject", "dev:priority"],
+  confirmActions: [],
+};
+
 /** The keys of `$OPERAD_HOME/config.json` the kernel reads. */
 export interface OperadConfig {
   readonly plugins: readonly PluginConfigEntry[];
   readonly store: StoreConfig;
   readonly http: HttpConfig;
   readonly notify: NotifyConfig;
+  readonly mcp: McpConfig;
 }
 
 /** A config file is not usable; the message names the file and the field. */
@@ -106,6 +121,7 @@ export function defaultConfig(home: string): OperadConfig {
     store: { backend: "jsonl", path: join(home, "store") },
     http: DEFAULT_HTTP,
     notify: DEFAULT_NOTIFY,
+    mcp: DEFAULT_MCP,
   };
 }
 
@@ -259,6 +275,30 @@ function readNotify(value: unknown, file: string): NotifyConfig {
   };
 }
 
+function readMcp(value: unknown, file: string): McpConfig {
+  if (value === undefined) return DEFAULT_MCP;
+  if (!isRecord(value)) {
+    throw new ConfigError(`${file}: mcp: must be an object`);
+  }
+  const readNames = (name: "actions" | "confirmActions"): readonly string[] => {
+    const raw = value[name];
+    if (raw === undefined) return DEFAULT_MCP[name];
+    if (
+      !Array.isArray(raw) ||
+      !raw.every((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    ) {
+      throw new ConfigError(
+        `${file}: mcp.${name}: must be an array of "<plugin>:<action>" names`,
+      );
+    }
+    return [...raw];
+  };
+  return {
+    actions: readNames("actions"),
+    confirmActions: readNames("confirmActions"),
+  };
+}
+
 function readStore(value: unknown, file: string, home: string): StoreConfig {
   if (value === undefined) return defaultConfig(home).store;
   if (!isRecord(value)) {
@@ -334,6 +374,7 @@ export async function readConfig(
     },
     http: readHttp(raw.http, file),
     notify: readNotify(raw.notify, file),
+    mcp: readMcp(raw.mcp, file),
   };
 }
 
@@ -365,6 +406,10 @@ export function configJson(config: OperadConfig): Record<string, unknown> {
     ...(config.notify.command === null
       ? {}
       : { notify: { command: config.notify.command, on: [...config.notify.on] } }),
+    mcp: {
+      actions: [...config.mcp.actions],
+      confirmActions: [...config.mcp.confirmActions],
+    },
   };
 }
 

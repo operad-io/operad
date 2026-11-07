@@ -158,7 +158,7 @@ async function runPlan(
     repository,
     slug: required(parsed, "--slug", "plan add"),
     title: required(parsed, "--title", "plan add"),
-    request: await readStdinText(),
+    request: await readStdinText(ctx.input),
   });
   return bareId(plan.id);
 }
@@ -210,7 +210,7 @@ async function runTask(
       plan: planKey,
       slug: required(parsed, "--slug", "task add"),
       title: required(parsed, "--title", "task add"),
-      brief: await readStdinText(),
+      brief: await readStdinText(ctx.input),
       after: many(parsed, "--after"),
       area: one(parsed, "--area"),
     });
