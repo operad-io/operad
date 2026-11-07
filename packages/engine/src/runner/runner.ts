@@ -101,8 +101,9 @@ export interface RunnerOptions {
   readonly registry: PluginRegistry;
   readonly clock?: (() => number) | undefined;
   /**
-   * The timers a step run in this process is timed by. A test passes a fake one
-   * to decide when a step times out. A step run in a worker keeps real timers.
+   * The timers that time a step's run. A test passes a fake one to decide when
+   * a step times out; the grace a worker gets to stop after an abort stays real.
+   * @internal Used by `@operad-io/engine/testing`.
    */
   readonly timers?: Clock | undefined;
   readonly stepTimeoutMs?: number | undefined;
@@ -619,13 +620,13 @@ export class Runner {
       });
 
       let settled = false;
-      let timer: ReturnType<typeof setTimeout> | undefined;
+      let timer: unknown;
       let stopTimer: ReturnType<typeof setTimeout> | undefined;
       const finish = (result: PluginStepResult, terminate = true): void => {
         if (settled) return;
         settled = true;
         for (const wait of waits.values()) wait.abort();
-        if (timer !== undefined) clearTimeout(timer);
+        if (timer !== undefined) this.timers.clearTimeout(timer);
         this.signal?.removeEventListener("abort", onAbort);
         if (terminate) {
           void worker.terminate();
@@ -661,7 +662,7 @@ export class Runner {
         );
       };
 
-      timer = setTimeout(() => {
+      timer = this.timers.setTimeout(() => {
         abortWorker();
         finish(
           this.failure(use, preferInterrupted, {

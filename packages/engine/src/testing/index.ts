@@ -1,26 +1,22 @@
 /**
- * `@operad-io/engine/testing`: run a plugin's flows in the test's own process.
- * It wires the engine's runner and kernel to a scratch log and a memory store;
- * it has no logic of its own to drift from them.
+ * `@operad-io/engine/testing`: run a plugin's flows in the test's own process
+ * tree. It wires the engine's runner, kernel and `serve` pass to a scratch log
+ * and store; it has no logic of its own to drift from them.
  */
 
 import type { FlowDefinition } from "../flow/types.ts";
 import type { JsonValue } from "../log/types.ts";
-import type { PluginDefinition } from "../plugin/types.ts";
-import {
-  answerWait,
-  cleanup,
-  createWorld,
-  execute,
-  flowNamed,
-  memoryStore,
-  snapshot,
-  worldFor,
-} from "./world.ts";
-import type { EmitOptions, EmitResult, FlowRun, RunFlowOptions } from "./types.ts";
+import { answerRunWait, cleanup, memoryStore, resumeRun, testWorld } from "./world.ts";
+import type {
+  EmitOptions,
+  EmitResult,
+  FlowRun,
+  PluginUnderTest,
+  RunFlowOptions,
+} from "./types.ts";
 
 export { fakeClock } from "./clock.ts";
-export { cleanup, memoryStore };
+export { cleanup, memoryStore, testWorld };
 export type {
   EmitOptions,
   EmitResult,
@@ -29,39 +25,29 @@ export type {
   FlowRun,
   FlowRunStatus,
   FlowWait,
+  PluginUnderTest,
   RunFlowOptions,
+  TestWorld,
+  WorldOptions,
 } from "./types.ts";
 
 /**
- * Starts `flow` and runs it to its end or its first wait. The run is about
- * `options.object`, or `<first object type>:1`; a plugin with no object type
- * gets a run of its own flow.
+ * Starts `flow` in a world of its own and runs it to its end or first wait.
+ * The run is about `options.object`, or `<first object type>:1`. Give the
+ * plugin's module path and its steps run in a worker, as under `serve`.
  */
 export async function runFlow(
-  plugin: PluginDefinition,
+  plugin: PluginUnderTest,
   flow: string | FlowDefinition,
   options: RunFlowOptions = {},
 ): Promise<FlowRun> {
-  const world = await createWorld(plugin, options);
-  const definition = flowNamed(world, flow);
-  const first = plugin.objects?.[0];
-  const object =
-    options.object !== undefined
-      ? `${options.object.type}:${options.object.id}`
-      : first !== undefined
-        ? `${first.name}:1`
-        : `flow:${plugin.name}/${definition.name}`;
-  const started = await world.kernel.start({
-    flow: definition.name,
-    object,
-    ...(options.params === undefined ? {} : { params: options.params }),
-    ...(options.access === undefined ? {} : { access: options.access }),
+  const { object, params, access, ...worldOptions } = options;
+  const world = await testWorld(plugin, worldOptions);
+  return world.runFlow(flow, {
+    ...(object === undefined ? {} : { object }),
+    ...(params === undefined ? {} : { params }),
+    ...(access === undefined ? {} : { access }),
   });
-  if (started.kind !== "started") {
-    throw new Error(`the flow "${definition.name}" did not start (${started.kind})`);
-  }
-  await execute(world, started.runId);
-  return snapshot(world, started.runId);
 }
 
 /**
@@ -74,44 +60,31 @@ export function answer(
   choice: string,
   note?: string,
 ): Promise<FlowRun> {
-  return answerWait(run, waitId, choice, note);
+  return answerRunWait(run, waitId, choice, note);
 }
 
-/** Runs a run on, for example after the clock passed a time wait. */
-export async function resume(run: FlowRun): Promise<FlowRun> {
-  const world = worldFor(run);
-  await execute(world, run.runId);
-  return snapshot(world, run.runId);
+/** Lets a run go on, for example after the clock passed a time wait. */
+export function resume(run: FlowRun): Promise<FlowRun> {
+  return resumeRun(run);
 }
-
-let eventCount = 0;
 
 /**
- * Sends an event through the plugin's trigger rules as a source plugin would.
- * A rule that matches starts its flow, and the run goes to its end or first
- * wait; an event no rule matches starts nothing.
+ * Sends one event through the plugin's trigger rules in a world of its own, as
+ * a source plugin would. To send several (a repeated key, a chain of runs), use
+ * `testWorld(plugin).emit`.
  */
 export async function emit(
-  plugin: PluginDefinition,
+  plugin: PluginUnderTest,
   source: string,
   type: string,
   data?: JsonValue,
-  options: EmitOptions = {},
+  options: EmitOptions & Parameters<typeof testWorld>[1] = {},
 ): Promise<EmitResult> {
-  const world = await createWorld(plugin, options);
-  eventCount += 1;
-  const result = await world.kernel.receive({
-    source,
-    type,
-    key: options.key ?? `testing-${eventCount}`,
-    hops: 0,
-    ...(options.object === undefined ? {} : { object: options.object }),
-    ...(options.summary === undefined ? {} : { summary: options.summary }),
-    ...(data === undefined ? {} : { data }),
+  const { key, object, summary, ...worldOptions } = options;
+  const world = await testWorld(plugin, worldOptions);
+  return world.emit(source, type, data, {
+    ...(key === undefined ? {} : { key }),
+    ...(object === undefined ? {} : { object }),
+    ...(summary === undefined ? {} : { summary }),
   });
-  if (result.kind !== "started" || result.runId === undefined) {
-    return { started: false, result, run: undefined };
-  }
-  await execute(world, result.runId);
-  return { started: true, result, run: await snapshot(world, result.runId) };
 }

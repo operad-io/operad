@@ -1,3 +1,4 @@
+// example-plugin/index.ts
 import { defineFlow, definePlugin } from "@operad-io/engine";
 
 /** Writes the note the flow was started with, then asks whether to publish it. */
