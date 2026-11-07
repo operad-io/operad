@@ -756,6 +756,7 @@ each task: `TK0001-M1`.
 - [engine](packages/engine/MUTATIONS.md)
 - [harness-pi](packages/harness-pi/MUTATIONS.md)
 - [harness-radian](packages/harness-radian/MUTATIONS.md)
+- [mcp](packages/mcp/MUTATIONS.md)
 - [shell](packages/shell/MUTATIONS.md)
 - [source-cron](packages/source-cron/MUTATIONS.md)
 ## T-0020 — pairing, links and the notification hook
