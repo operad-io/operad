@@ -1,6 +1,6 @@
 # operad-harness-pi：第二种 harness，pi 走进程内库，装在一个 Bun 子进程里
 
-- 状态：decided（接法、进程边界、第一版范围已定；问人一段等合约决定 6 落地）
+- 状态：decided（接法、进程边界、第一版范围已定；决定 9 改为用用户装的 pi，待落实；问人一段等合约决定 6 落地）
 - 涉及 ADR：0049、0024
 - 涉及：`operad-harness.md` 决定 1 到 3、6；`operad-contract.md` 决定 6、8、11、12；`operad-sandbox.md` 决定 1 到 3
 - 来源：`research/2026-11-06-harness-sdks.md`「pi」；pi 1.5.0 源码 `packages/coding-agent/docs/{sdk,extensions,cli-integration,message-types}.md`、`src/core/{sdk,agent-session,session-manager,auth-storage}.ts`、`src/core/tools/bash.ts`、`examples/sdk/*.ts`
@@ -32,8 +32,7 @@ dogfood 跑通了 `harness-radian`。`operad-harness.md` 决定 1 说一种 harn
 6. **续接**：`resumeSession` 是会话文件路径，子进程 `SessionManager.open(path)` 后把新 prompt 发进去。`steer`、`followUp`、逐 token 流（`message_update` 的 `text_delta`）留给 `operad-conversation`，第一版不接。
 7. **访问档第一版只执行 deny**：`enforces: ["denyPaths", "denyCommands"]`。`tool_call` 处理器拿到访问档：`bash` 的命令按 `operad-sandbox.md` 决定 4 拆链（`&&`、`;`、`|`）后逐段匹配 `denyCommands`，内联代码（`bash -c`、`python -c`、`node -e`、`osascript -e`、`find -exec`、`xargs`）第一版一律拒；`read`、`write`、`edit`、`bash` 涉及的路径匹配 `denyPaths`。命中返回 `{ block: true, reason }`，日志记一条阻断记录。`askCommands` 不在 `enforces` 里，带它的访问档按合约决定 12 在启动时被内核拒绝并说出字段；这不是绕过，是第一版的边界。这个匹配器写成 operad 的一个独立模块，Claude 和命令适配器以后共用。
 8. **问人一段随合约决定 6 一起来，不在这个 plan 里。** `tool_call` 是 async 的，到时就是在处理器里 `await ctx.ask(...)`：宽限期内答了放行，超时返回 `block` 加 `abort()`，步骤以 `waiting` 结束带会话路径；续接按决定 6 开原文件，一次性许可在处理器里放行那一条。`uiContext` 届时也接到 `ctx.ask`，第三方扩展的 `confirm` 不再静默返回假。
-9. **版本钉死**：`package.json` 里 `@earendil-works/pi-coding-agent` 写精确版本（现在是 `1.5.0`），升级是一次有意的提交，跑一遍 `operad plugin check` 和下面的验收。这是 `operad-harness.md` 待决 4 对 pi 的答案；Claude 的 Agent SDK 到时同样处理。
-
+9. **不自带 pi，用用户装的 pi。** `@earendil-works/pi-coding-agent` 不在 `dependencies` 里，只在 `devDependencies` 里供类型和测试的假模型用。worker 启动时找库：取 PATH 上的 `pi` 命令（设置 `command` 可改）的真实路径，往上走到 `package.json` 的 `name` 是 `@earendil-works/pi-coding-agent` 的目录，`import()` 它 `exports["."]` 指的入口（现在是 `dist/index.js`）。bun 全局装（`~/.bun/install/global/node_modules/…`）和 npm 全局装都是这个形状；从外部脚本 `import()` 全局装的那份已核能用。worker 里对库的 import 改成动态的，类型仍是 `import type`。`operad plugin check` 读那个 `package.json` 的版本，低于 worker 写时的版本下限（现在 `1.5.0`）或没有 `pi` 命令时拒绝并说出两边版本。升级 pi 是用户的事；worker 用到的接口变了，operad 改下限。这是 `operad-harness.md` 决定 8 对 pi 的落实，Claude 同样处理（`operad-harness-claude.md` 决定 2）。
 ## 建议的任务切分
 
 给 lead 参考，每条一个子系统；顺序是依赖顺序，1 不通后面都不做。
