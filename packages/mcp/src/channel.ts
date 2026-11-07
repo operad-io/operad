@@ -159,7 +159,7 @@ class ClaudeChannel implements ChannelHandle {
   ) => void | Promise<void>;
   private readonly onLog: (message: string) => void;
   private readonly last = new Map<string, SeenRow>();
-  /** The row each object's last block (or starting row) reported. */
+  /** The row each object's last block reported. */
   private readonly sent = new Map<string, SeenRow>();
   private readonly log: LogBackend | undefined;
   /** Types whose starting rows could not be read: a first sighting is a baseline. */
@@ -256,7 +256,6 @@ class ClaudeChannel implements ChannelHandle {
       );
       for (const row of page.rows) {
         this.last.set(rowKey(type, row.id), seenRow(row));
-        this.sent.set(rowKey(type, row.id), seenRow(row));
       }
       if (page.next === undefined) return;
       cursor = page.next;

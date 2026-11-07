@@ -306,6 +306,31 @@ describe("the channel's sources", () => {
     }
   });
 
+  test("a change back to the starting row after a block is sent, since no block reported the starting row", async () => {
+    const s = await setup();
+    put(s, "task", "t-1", { title: "One", phase: "ready" });
+    const sent = new Sent();
+    const channel = await startClaudeChannel({
+      views: s.views,
+      registry: s.registry,
+      log: s.log,
+      send: sent.push,
+    });
+    try {
+      put(s, "task", "t-1", { title: "One", phase: "review" });
+      expect((await sent.next()).meta.state).toBe("review");
+      put(s, "task", "t-1", { title: "One", phase: "ready" });
+      expect((await sent.next()).meta).toMatchObject({
+        state: "ready",
+        previous: "review",
+      });
+    } finally {
+      await channel.close();
+      s.views.close();
+      await s.log.close();
+    }
+  });
+
   test("an object with a new id after the start reports new -> state, and several types are watched", async () => {
     const s = await setup();
     put(s, "task", "t-1", { title: "One", phase: "ready" });
