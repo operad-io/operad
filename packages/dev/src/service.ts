@@ -25,6 +25,7 @@ import {
   nextId,
   parseId,
   planData,
+  planState,
   PRIORITIES,
   priorityIndex,
   repositoryData,
@@ -1348,14 +1349,14 @@ export async function setConcurrency(
   const concurrency = validatePlanConcurrency(count);
   const initial = await getPlan(store, id);
   const data = planData(initial.data);
-  if (data.status === "cancelled") {
-    throw new DevError("concurrency", `plan "${bareId(id)}" is cancelled`);
+  if (data.status === "cancelled" || planState(data) === "finished") {
+    throw new DevError("concurrency", `plan "${bareId(id)}" is ${planState(data)}`);
   }
   return withRepoLock(store, data.repository, async () => {
     const plan = await getPlan(store, id);
     const fresh = planData(plan.data);
-    if (fresh.status === "cancelled") {
-      throw new DevError("concurrency", `plan "${bareId(id)}" is cancelled`);
+    if (fresh.status === "cancelled" || planState(fresh) === "finished") {
+      throw new DevError("concurrency", `plan "${bareId(id)}" is ${planState(fresh)}`);
     }
     return writePlan(
       store,

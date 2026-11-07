@@ -7,9 +7,10 @@ import {
   addTask,
   getPlan,
   getTask,
+  setConcurrency,
   setTaskPhase,
 } from "../src/service.ts";
-import { planData, taskData } from "../src/model.ts";
+import { planData, planState, taskData } from "../src/model.ts";
 import { planViews } from "../src/views.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "./support.ts";
 
@@ -401,6 +402,25 @@ describe("dev actions", () => {
     await expect(
       registry.runAction("dev/concurrency", { count: 2 }, { object, actor: ACTOR }),
     ).rejects.toThrow(/cancelled|not cancelled/);
+    expect(planData((await getPlan(store, plan.id)).data).concurrency).toBe(1);
+  });
+
+  test("concurrency is refused on a finished plan", async () => {
+    const { store, registry, repository } = await setup();
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    const current = await getPlan(store, plan.id);
+    await store.put(
+      current.type,
+      current.id,
+      { ...current.data, status: "confirmed", taskCount: 2, mergedCount: 1, cancelledCount: 1 },
+      "test:finish",
+    );
+    const object = await getPlan(store, plan.id);
+    expect(planState(planData(object.data))).toBe("finished");
+    await expect(
+      registry.runAction("dev/concurrency", { count: 2 }, { object, actor: ACTOR }),
+    ).rejects.toThrow(/finished/);
+    await expect(setConcurrency(store, plan.id, 2)).rejects.toThrow(/finished/);
     expect(planData((await getPlan(store, plan.id)).data).concurrency).toBe(1);
   });
 

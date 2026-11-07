@@ -408,9 +408,10 @@ export const actions: readonly ActionTypeDefinition[] = [
       additionalProperties: false,
     },
     when(state) {
-      return planData(state).status !== "cancelled";
+      const plan = planData(state);
+      return plan.status !== "cancelled" && planState(plan) !== "finished";
     },
-    why: planStateWhy("concurrency", "a plan that is not cancelled"),
+    why: planStateWhy("concurrency", "a plan that is neither cancelled nor finished"),
     async run(ctx, args) {
       const count =
         typeof args === "object" && args !== null
