@@ -940,7 +940,10 @@ export class Views {
     }
     // A plugin may refuse a qualified id whose namespace is not valid (an
     // unregistered repository) even when an object is still stored under it.
-    if (qualified.length > 1) await this.resolveWithPlugins(typed?.id ?? id);
+    // A typed id is checked only by its own type's hook.
+    if (qualified.length > 1) {
+      await this.resolveWithPlugins(typed?.id ?? id, typed?.type);
+    }
     if (typed !== undefined) {
       const object = await this.store.get(typed.type, typed.id);
       if (object !== undefined || (await this.hasRun(typed.type, typed.id))) {
@@ -1035,9 +1038,11 @@ export class Views {
    */
   private async resolveWithPlugins(
     id: string,
+    onlyType?: string,
   ): Promise<ResolvedObject | undefined> {
     const matches: ResolvedObject[] = [];
     for (const entry of this.registry.objectTypes()) {
+      if (onlyType !== undefined && entry.type !== onlyType) continue;
       const resolve = entry.definition.resolve;
       if (resolve === undefined) continue;
       let key: unknown;
