@@ -191,7 +191,8 @@ Input:
 ```
 
 Result: the same list as `operad pending` and `GET /v1/pending`, with only the
-actions the lead may run now. An action outside `mcp.actions`, or a
+actions the lead may run now. Each item that is about an object carries its
+`row`, as in `GET /v1/pending`. An action outside `mcp.actions`, or a
 `confirm: true` action that `mcp.confirmActions` does not name, is left out of
 both the structured content and the Markdown. The Markdown lists each pending
 item, its prompt, choices and actions. Call `show` on the item's object to see

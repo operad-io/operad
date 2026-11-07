@@ -3,6 +3,7 @@
 import { objectLink } from "../http/link.ts";
 import type { LogBackend, RunInfo } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
+import type { Views, ViewRow } from "./presentation.ts";
 import type { PendingActionView } from "../plugin/types.ts";
 import { answerableAsks, scanAsks } from "../runner/ask.ts";
 import { parseObjectKey, readState } from "../runner/service.ts";
@@ -27,6 +28,11 @@ export interface PendingItem {
   readonly object?: string;
   /** The link that opens the object in the app; absent for a candidate. */
   readonly link?: string;
+  /**
+   * The object's row, the same one the list shows; an error row when it cannot
+   * be built. Absent for a candidate, and when the caller gave no views.
+   */
+  readonly row?: ViewRow;
 }
 
 /** Runs waiting for a person, in the order they started. */
@@ -34,6 +40,7 @@ export async function listPending(
   log: LogBackend,
   registry: PluginRegistry,
   triggers?: CandidateSource,
+  views?: Views,
 ): Promise<readonly PendingItem[]> {
   const runs = (await log.runs({ active: true })).sort(
     (left, right) => left.startedAt - right.startedAt,
@@ -93,7 +100,16 @@ export async function listPending(
     });
   }
 
-  return items;
+  if (views === undefined) return items;
+  const refs = items.flatMap((item) => {
+    const object = item.object === undefined ? undefined : parseObjectKey(item.object);
+    return object === undefined ? [] : [{ type: object.type, id: object.id }];
+  });
+  const rows = await views.rowsOf(refs);
+  return items.map((item) => {
+    const row = item.object === undefined ? undefined : rows.get(item.object);
+    return row === undefined ? item : { ...item, row };
+  });
 }
 
 async function actionsFor(

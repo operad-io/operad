@@ -173,6 +173,13 @@ describe("TuiClient", () => {
         plugin: "tuitest",
         action: "approve",
       });
+      // The item carries the object's row, so no read per item is needed.
+      expect(pending[0]?.row).toMatchObject({
+        id: "waiting",
+        title: "Waiting",
+        state: "new",
+        waiting: true,
+      });
 
       const running = await client(h).running();
       expect(running).toHaveLength(1);

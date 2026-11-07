@@ -459,7 +459,12 @@ function createHandler(
 
     if (method === "GET" && path === "/v1/pending") {
       return json(
-        await listPending(options.log, options.registry, options.kernel),
+        await listPending(
+          options.log,
+          options.registry,
+          options.kernel,
+          options.views,
+        ),
       );
     }
 

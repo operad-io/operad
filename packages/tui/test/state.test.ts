@@ -165,6 +165,47 @@ describe("the TUI reducer", () => {
     expect(state.theme).toBe("dark");
   });
 
+  test("a pending item with a row shows the object's title and state, and the question as the note", () => {
+    let state = withTypes(initialState());
+    const items: PendingItem[] = [];
+    for (let index = 0; index < 30; index += 1) {
+      items.push({
+        ...pending,
+        runId: `run-${index}`,
+        object: `item:${index}`,
+        row: row(`${index}`, { title: `Title ${index}`, state: "open", waiting: true }),
+      });
+    }
+    items.push({
+      ...pending,
+      runId: "run-bad",
+      object: "item:bad",
+      row: row("bad", { state: "error", error: "row failed" }),
+    });
+    state = reduce(state, { type: "pending", items });
+
+    const rows = state.tabs.find((tab) => tab.id === "pending")?.list.rows ?? [];
+    expect(rows).toHaveLength(31);
+    expect(rows[0]).toMatchObject({
+      id: "item:0",
+      title: "Title 0",
+      state: "open",
+      note: "Approve?",
+      waiting: true,
+    });
+    expect(rows[30]).toMatchObject({ id: "item:bad", state: "error", error: "row failed" });
+  });
+
+  test("a pending item without a row (an older server) shows its question and flow", () => {
+    let state = withTypes(initialState());
+    state = reduce(state, { type: "pending", items: [pending] });
+    expect(state.tabs.find((tab) => tab.id === "pending")?.list.rows[0]).toMatchObject({
+      title: "Approve?",
+      state: "flow",
+      note: "ask",
+    });
+  });
+
   test("each list maps its own flags to a row mark", () => {
     let state = withTypes(initialState());
     state = reduce(state, { type: "pending", items: [pending] });
