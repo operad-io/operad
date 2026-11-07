@@ -21,3 +21,29 @@ export class AccessError extends PluginError {
 export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+/**
+ * A step asked a person and the grace passed with `onTimeout: "waiting"`. A step
+ * that lets it escape ends with the result `waiting`; the registry turns it into
+ * that result, carrying the question for the flow's wait.
+ */
+export class AskTimeoutError extends Error {
+  readonly waitId: string;
+  readonly prompt: string;
+  readonly choices: readonly string[];
+  readonly resume: unknown;
+
+  constructor(question: {
+    readonly waitId: string;
+    readonly prompt: string;
+    readonly choices: readonly string[];
+    readonly resume: unknown;
+  }) {
+    super(`nobody answered "${question.prompt}" in time`);
+    this.name = "AskTimeoutError";
+    this.waitId = question.waitId;
+    this.prompt = question.prompt;
+    this.choices = question.choices;
+    this.resume = question.resume;
+  }
+}

@@ -3,6 +3,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { defaultOperadHome } from "../plugin/home.ts";
+import { MAX_ASK_GRACE_SECS } from "../plugin/types.ts";
 import { openLog, type LogBackend, type LogBackendName } from "../log/index.ts";
 
 /** The storage backend the log uses. */
@@ -70,6 +71,14 @@ export const DEFAULT_MCP: McpConfig = {
   confirmActions: [],
 };
 
+/** How long `ctx.ask` waits for an answer unless something narrower says. */
+export interface AskConfig {
+  readonly graceSecs: number;
+}
+
+/** The ask defaults: ten minutes. */
+export const DEFAULT_ASK: AskConfig = { graceSecs: 600 };
+
 /** The keys of `$OPERAD_HOME/config.json` the kernel reads. */
 export interface OperadConfig {
   readonly plugins: readonly PluginConfigEntry[];
@@ -77,6 +86,7 @@ export interface OperadConfig {
   readonly http: HttpConfig;
   readonly notify: NotifyConfig;
   readonly mcp: McpConfig;
+  readonly ask: AskConfig;
 }
 
 /** A config file is not usable; the message names the file and the field. */
@@ -122,6 +132,7 @@ export function defaultConfig(home: string): OperadConfig {
     http: DEFAULT_HTTP,
     notify: DEFAULT_NOTIFY,
     mcp: DEFAULT_MCP,
+    ask: DEFAULT_ASK,
   };
 }
 
@@ -245,6 +256,26 @@ function readHttp(value: unknown, file: string): HttpConfig {
     port: port === undefined ? DEFAULT_HTTP.port : port,
     listen: listen === undefined ? DEFAULT_HTTP.listen : listen,
   };
+}
+
+function readAsk(value: unknown, file: string): AskConfig {
+  if (value === undefined) return DEFAULT_ASK;
+  if (!isRecord(value)) {
+    throw new ConfigError(`${file}: ask: must be an object`);
+  }
+  const graceSecs = value.graceSecs;
+  if (
+    graceSecs !== undefined &&
+    (typeof graceSecs !== "number" ||
+      !Number.isFinite(graceSecs) ||
+      graceSecs < 0 ||
+      graceSecs > MAX_ASK_GRACE_SECS)
+  ) {
+    throw new ConfigError(
+      `${file}: ask.graceSecs: must be a number of seconds from 0 to ${MAX_ASK_GRACE_SECS}`,
+    );
+  }
+  return { graceSecs: graceSecs ?? DEFAULT_ASK.graceSecs };
 }
 
 function readNotify(value: unknown, file: string): NotifyConfig {
@@ -375,6 +406,7 @@ export async function readConfig(
     http: readHttp(raw.http, file),
     notify: readNotify(raw.notify, file),
     mcp: readMcp(raw.mcp, file),
+    ask: readAsk(raw.ask, file),
   };
 }
 
@@ -410,6 +442,9 @@ export function configJson(config: OperadConfig): Record<string, unknown> {
       actions: [...config.mcp.actions],
       confirmActions: [...config.mcp.confirmActions],
     },
+    ...(config.ask.graceSecs === DEFAULT_ASK.graceSecs
+      ? {}
+      : { ask: { graceSecs: config.ask.graceSecs } }),
   };
 }
 

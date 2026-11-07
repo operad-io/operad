@@ -54,6 +54,37 @@ function declaredResults(step: Step): readonly string[] {
   }
 }
 
+/** A question a step asked and could not wait for; the flow wait carries it on. */
+interface AskedVia {
+  readonly waitId: string;
+  readonly prompt: string;
+  readonly choices: readonly string[];
+}
+
+type EnterVia = {
+  readonly step: string;
+  readonly result: string;
+  readonly named?: string;
+  readonly ask?: AskedVia;
+};
+
+/** The question in the data of a `waiting` result, when it is well formed. */
+function askedIn(result: string, data: unknown): AskedVia | undefined {
+  if (result !== "waiting") return undefined;
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+    return undefined;
+  }
+  const record = data as Record<string, unknown>;
+  if (typeof record.waitId !== "string" || record.waitId.length === 0) {
+    return undefined;
+  }
+  if (typeof record.prompt !== "string") return undefined;
+  const choices = Array.isArray(record.choices)
+    ? record.choices.filter((item): item is string => typeof item === "string")
+    : [];
+  return { waitId: record.waitId, prompt: record.prompt, choices };
+}
+
 /** The step a result names, when its data came from a step that stopped. */
 function stepNameOf(data: unknown): string | undefined {
   if (typeof data !== "object" || data === null || Array.isArray(data)) {
@@ -69,7 +100,7 @@ function stepNameOf(data: unknown): string | undefined {
  */
 function waitPrompt(
   params: { readonly prompt: string; readonly note?: string | undefined },
-  via: { readonly step: string; readonly result: string; readonly named?: string } | undefined,
+  via: EnterVia | undefined,
 ): string {
   if (via?.result !== "interrupted" || params.note === undefined) {
     return params.prompt;
@@ -163,7 +194,7 @@ export function decide(
   function enter(
     stepId: string,
     causedBy: FactCause,
-    via?: { readonly step: string; readonly result: string; readonly named?: string },
+    via?: EnterVia,
   ): void {
     const step = findStep(flow, stepId);
     if (step === undefined) {
@@ -210,9 +241,18 @@ export function decide(
         return;
       }
       case "wait_person": {
-        const waitId = `${step.id}:${visit}`;
-        const choices = [...step.params.choices];
-        const prompt = waitPrompt(step.params, via);
+        // A step that asked and ran out of grace hands its question over: the
+        // wait keeps the question's id, so nobody sees it twice.
+        const asked = via?.ask;
+        const waitId = asked?.waitId ?? `${step.id}:${visit}`;
+        const own = [...step.params.choices];
+        const choices =
+          asked !== undefined &&
+          asked.choices.length > 0 &&
+          asked.choices.every((choice) => own.includes(choice))
+            ? [...asked.choices]
+            : own;
+        const prompt = asked?.prompt ?? waitPrompt(step.params, via);
         push(
           "waiting_for_person",
           {
@@ -279,6 +319,7 @@ export function decide(
     result: string,
     causedBy: FactCause,
     named?: string,
+    ask?: AskedVia,
   ): void {
     const target = edgesOf(step)[result];
     if (target === undefined) {
@@ -290,7 +331,12 @@ export function decide(
       endRun("done", null, edgeSeq);
       return;
     }
-    enter(target, edgeSeq, { step: step.id, result, ...(named === undefined ? {} : { named }) });
+    enter(target, edgeSeq, {
+      step: step.id,
+      result,
+      ...(named === undefined ? {} : { named }),
+      ...(ask === undefined ? {} : { ask }),
+    });
   }
 
   function requestAgain(effect: PendingEffect, causedBy: FactCause, recovery: boolean): void {
@@ -382,7 +428,13 @@ export function decide(
         },
         cause,
       );
-      takeEdge(step, input.result, resultSeq, stepNameOf(input.data));
+      takeEdge(
+        step,
+        input.result,
+        resultSeq,
+        stepNameOf(input.data),
+        askedIn(input.result, input.data),
+      );
       return { facts, effects };
     }
 

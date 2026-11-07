@@ -24,3 +24,5 @@ export { DEFAULT_STEP_TIMEOUT_MS, Runner } from "./runner.ts";
 export type { RunnerOptions, RunnerOutcome } from "./runner.ts";
 export { queuedSteps, scanLimits, StepLimits } from "./limits.ts";
 export type { LimitClaim, LimitEntry, StepLimitsOptions } from "./limits.ts";
+export { AskHost, askWaitId, DEFAULT_ASK_GRACE_SECS, scanAsks } from "./ask.ts";
+export type { AskHostOptions, AskRecord, AskTimer } from "./ask.ts";

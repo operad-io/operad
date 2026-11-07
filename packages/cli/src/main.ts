@@ -1484,6 +1484,7 @@ async function commandRunInternal(
     runId,
     registry: context.registry,
     lockRoot: context.storeRoot,
+    askGraceSecs: context.config.ask.graceSecs,
     recover: present,
     ...(run.access === undefined ? {} : { access: run.access }),
     ...(object === undefined ? {} : { object }),

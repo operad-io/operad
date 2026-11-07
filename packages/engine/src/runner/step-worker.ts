@@ -10,8 +10,10 @@ import { FilePluginStore } from "../plugin/file-store.ts";
 import { loadPlugin } from "../plugin/load.ts";
 import { PluginRegistry } from "../plugin/registry.ts";
 import type {
+  AskOutcome,
   PluginStepResult,
   RunObject,
+  StepAsker,
   StepLimiter,
 } from "../plugin/types.ts";
 import type { JsonValue } from "../log/types.ts";
@@ -56,6 +58,14 @@ interface LimitAck {
   readonly id: number;
   readonly ok: boolean;
   readonly error?: string;
+}
+
+interface AskAck {
+  readonly kind: "ask-result";
+  readonly id: number;
+  readonly ok: boolean;
+  readonly outcome?: AskOutcome | undefined;
+  readonly error?: string | undefined;
 }
 
 /** Opens the store the run configured, so a worker writes where the views read. */
@@ -123,8 +133,60 @@ async function main(request: StepWorkerRequest): Promise<void> {
     },
   };
 
+  const pendingAsks = new Map<
+    number,
+    { resolve: (outcome: AskOutcome) => void; reject: (error: Error) => void }
+  >();
+  let nextAskId = 1;
+
+  /** Asks the run's process, which owns the log, to put a question to a person. */
+  const asker: StepAsker = {
+    ask: (question, signal) => {
+      const port = parentPort;
+      if (port === null) return Promise.reject(new Error("no one takes questions"));
+      const id = nextAskId;
+      nextAskId += 1;
+      return new Promise<AskOutcome>((resolve, reject) => {
+        const cancel = (): void => port.postMessage({ kind: "ask-cancel", id });
+        pendingAsks.set(id, {
+          resolve: (outcome) => {
+            signal?.removeEventListener("abort", cancel);
+            resolve(outcome);
+          },
+          reject: (error) => {
+            signal?.removeEventListener("abort", cancel);
+            reject(error);
+          },
+        });
+        signal?.addEventListener("abort", cancel, { once: true });
+        port.postMessage({
+          kind: "ask",
+          id,
+          request: {
+            prompt: question.prompt,
+            ...(question.choices === undefined
+              ? {}
+              : { choices: [...question.choices] }),
+            ...(question.graceSecs === undefined
+              ? {}
+              : { graceSecs: question.graceSecs }),
+          },
+        });
+      });
+    },
+  };
+
   parentPort?.on("message", (message: unknown) => {
     if (typeof message !== "object" || message === null) return;
+    if ((message as { kind?: unknown }).kind === "ask-result") {
+      const ack = message as AskAck;
+      const pending = pendingAsks.get(ack.id);
+      if (pending === undefined) return;
+      pendingAsks.delete(ack.id);
+      if (ack.ok && ack.outcome !== undefined) pending.resolve(ack.outcome);
+      else pending.reject(new Error(ack.error ?? "the question was refused"));
+      return;
+    }
     if ((message as { kind?: unknown }).kind === "limit-result") {
       const ack = message as LimitAck;
       const pending = pendingLimits.get(ack.id);
@@ -177,6 +239,7 @@ async function main(request: StepWorkerRequest): Promise<void> {
     ...(request.trigger === undefined ? {} : { trigger: request.trigger }),
     emit,
     limits,
+    asker,
     signal: controller.signal,
   });
   parentPort?.postMessage({ kind: "result", ok: true, result } satisfies StepWorkerReply);
