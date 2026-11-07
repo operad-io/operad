@@ -89,7 +89,7 @@ operad pending
 
 `pending` lists what waits for a person, with the choices and actions it offers.
 For a task that passed verify and review, the actions are `dev:merge`,
-`dev:reject` and `dev:cancel`.
+`dev:reject`, `dev:rework`, `dev:reverify` and `dev:cancel`.
 
 - `operad dev:merge T-0001-switch --yes` lands the verified commit on main,
   runs the integration checks and cleans the task's worktrees and branches. If
@@ -136,6 +136,13 @@ the same round and reuses the answer the reviewer already gave, so a fallback is
 not called twice. `operad history <task>` names the
 model that reviewed each round and why a fallback or a retry happened.
 
+Every time a task starts waiting for a person, `dev` records one `dev.waiting`
+event with the reason (`ready to merge`, `review findings`, `rework limit`,
+`work failed`, `merge refused` and so on); `operad history T-0001-switch` shows
+it as `event dev.waiting from operad: T-0001-switch waiting: <reason>`. The rule
+for it only observes; replace the `operad` / `dev.waiting` rule in `triggers.json`
+to send it to a channel.
+
 ## When something is stuck
 
 1. `operad pending` — is it waiting for you? A task that needs a decision stays
@@ -153,6 +160,13 @@ model that reviewed each round and why a fallback or a retry happened.
 7. A task that keeps failing the same step stops for a person after repeated
    attempts. `operad dev:cancel <task> --yes` stops it; `operad dev:reject`
    sends it back with a note.
+8. A task that waits after a gate failure, or after the worker returned nothing
+   or failed (a model 429, a gate killed from outside):
+   - `operad dev:reverify <task>` runs verify and review again on the same
+     commit with no worker. Use it when the failure was flaky.
+   - `operad dev:rework <task> --note "what to do"` writes your own
+     `## Rework <n> (lead)` into the brief and runs the worker again. Neither
+     counts toward `maxAutoRework`.
 
 Delete nothing by hand under `.operad-worktrees`; `cleanup` removes the task's
 worktrees and branches after a merge. If cleanup reports a failure, the task is

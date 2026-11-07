@@ -258,6 +258,14 @@ export type TaskAttempt = {
   readonly costMicros?: number | null;
   /** Whether the work step consumed this attempt; a later worktree visit is new work. */
   readonly worked?: boolean;
+  /** The file the worker's own log was written to. */
+  readonly workLog?: string | null;
+  /** Tokens the worker used, when the harness reported them. */
+  readonly tokens?: { readonly input: number; readonly output: number } | null;
+  /** How long the worker ran, in milliseconds, as the harness measured it. */
+  readonly workMs?: number | null;
+  /** Why the work step did not finish cleanly, in the harness's words. */
+  readonly workNote?: string | null;
   readonly result?: string | null;
   /** The branch head the gate verified; review reads this and not the branch. */
   readonly verified?: string | null;

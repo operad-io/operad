@@ -145,7 +145,7 @@ describe("operad with the dev plugin", () => {
 
     const second = await run(home, repository, ["dev:confirm", planId]);
     expect(second.code).toBe(3);
-    expect(second.err).toContain("not available");
+    expect(second.err).toContain("is confirmed; dev:confirm needs draft");
 
     const changes = await run(home, repository, [
       "show",
@@ -249,8 +249,11 @@ describe("operad with the dev plugin", () => {
     expect(ready.out).toContain("TK0001-old  ready  Old task");
 
     const fuzzy = await run(home, repository, ["show", "T-0001-old"]);
-    expect(fuzzy.code).toBe(0);
-    expect(fuzzy.out).toContain("unknown");
+    // An id is matched exactly: the other form of it is a different id, and
+    // the answer names the ids that are close.
+    expect(fuzzy.code).not.toBe(0);
+    expect(fuzzy.err).toContain('no object "T-0001-old"');
+    expect(fuzzy.err).toContain("TK0001-old");
     expect(fuzzy.out).not.toContain("Old task");
   });
 
@@ -679,5 +682,180 @@ describe("operad with the dev plugin", () => {
     const ambiguous = await run(home, home, ["show", "T-0001-work"]);
     expect(ambiguous.code).toBe(2);
     expect(ambiguous.err).toContain("ambiguous");
+  });
+
+  test("show without an id lists the ten latest changes; an unknown id lists the five closest", async () => {
+    const { home, repository } = await setup();
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const plan = await run(
+      home,
+      repository,
+      ["plan", "add", "--slug", "work", "--title", "Work"],
+      "request\n",
+    );
+    const planId = plan.out.trim();
+    for (let index = 1; index <= 12; index += 1) {
+      const added = await run(
+        home,
+        repository,
+        ["task", "add", "--plan", planId, "--slug", `job${index}`, "--title", `Job ${index}`],
+        "brief\n",
+      );
+      expect(added.code).toBe(0);
+    }
+
+    const recent = await run(home, repository, ["show"]);
+    expect(recent.code).toBe(0);
+    const lines = recent.out.trim().split("\n");
+    // Ten objects, then the hint.
+    expect(lines).toHaveLength(11);
+    expect(lines[10]).toBe("operad show <id>");
+    // The plan changed with each task it gained; the newest change comes first.
+    expect(lines[0]).toMatch(/^(plan|task)\s{2}\S+\s{2}\S+\s{2}/);
+    expect(lines.join("\n")).not.toContain("T-0001-job1  ");
+
+    const unknown = await run(home, repository, ["show", "T-0003-job"]);
+    expect(unknown.code).not.toBe(0);
+    expect(unknown.err).toContain('no object "T-0003-job"');
+    const near = unknown.err.split("\n").filter((line) => line.startsWith("  "));
+    expect(near).toHaveLength(5);
+    expect(near[0]).toContain("T-0003-job3");
+  });
+
+  test("a plan shows its auto level and priority, and its history shows who confirmed and set it", async () => {
+    const { home, repository } = await setup();
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const plan = await run(
+      home,
+      repository,
+      ["plan", "add", "--slug", "work", "--title", "Work"],
+      "request\n",
+    );
+    const planId = plan.out.trim();
+    await run(
+      home,
+      repository,
+      ["task", "add", "--plan", planId, "--slug", "one", "--title", "One"],
+      "brief\n",
+    );
+    const confirm = await run(home, repository, ["dev:confirm", planId]);
+    expect(confirm.err).toBe("");
+    expect(confirm.code).toBe(0);
+    expect(
+      (await run(home, repository, ["dev:auto", planId, "--level", "merge"])).code,
+    ).toBe(0);
+    expect(
+      (await run(home, repository, ["dev:priority", planId, "--level", "P1"])).code,
+    ).toBe(0);
+
+    const listed = await run(home, repository, ["list", "plan"]);
+    expect(listed.out).toContain("auto: merge  P1");
+    const shown = await run(home, repository, ["show", planId]);
+    expect(shown.out).toContain("auto: merge  P1");
+    const json = JSON.parse(
+      (await run(home, repository, ["show", planId, "--json"])).out,
+    ) as { row: { note: string } };
+    expect(json.row.note).toContain("auto: merge  P1");
+    const listJson = JSON.parse(
+      (await run(home, repository, ["list", "plan", "--json"])).out,
+    ) as { rows: { note: string }[] };
+    expect(listJson.rows[0]?.note).toContain("auto: merge  P1");
+
+    const history = await run(home, repository, [
+      "show",
+      planId,
+      "--section",
+      "history",
+    ]);
+    expect(history.out).not.toContain("No history yet");
+    expect(history.out).toMatch(/dev:confirm \(via cli, as \S+\)/);
+    expect(history.out).toMatch(/dev:auto \(via cli, as \S+\)/);
+    expect(history.out).toMatch(/dev:priority \(via cli, as \S+\)/);
+
+    // A plan has no run; `history` prints the same actions.
+    const bare = await run(home, repository, ["history", planId]);
+    expect(bare.code).toBe(0);
+    expect(bare.out).toMatch(/dev:confirm \(via cli/);
+  });
+
+  test("a refused action says where the task is and where it must be, and exits non-zero", async () => {
+    const { home, repository } = await setup();
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const plan = await run(
+      home,
+      repository,
+      ["plan", "add", "--slug", "work", "--title", "Work"],
+      "request\n",
+    );
+    const planId = plan.out.trim();
+    const task = await run(
+      home,
+      repository,
+      ["task", "add", "--plan", planId, "--slug", "one", "--title", "One"],
+      "brief\n",
+    );
+    const taskId = task.out.trim();
+    expect((await run(home, repository, ["dev:confirm", planId])).code).toBe(0);
+
+    const refused = await run(home, repository, ["dev:confirm", taskId]);
+    expect(refused.code).toBe(3);
+    expect(refused.err).toContain(`${taskId} is ready; dev:confirm needs proposed`);
+    const merge = await run(home, repository, ["dev:merge", taskId, "--yes"]);
+    expect(merge.code).toBe(3);
+    expect(merge.err).toContain(`${taskId} is ready; dev:merge needs waiting`);
+  });
+
+  test("a task that never ran has a history, and sections for its log, diff and metrics", async () => {
+    const { home, repository } = await setup();
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const plan = await run(
+      home,
+      repository,
+      ["plan", "add", "--slug", "work", "--title", "Work"],
+      "request\n",
+    );
+    const planId = plan.out.trim();
+    const task = await run(
+      home,
+      repository,
+      ["task", "add", "--plan", planId, "--slug", "one", "--title", "One"],
+      "brief\n",
+    );
+    const taskId = task.out.trim();
+    const cancelled = await run(home, repository, ["dev:cancel", taskId, "--yes"]);
+    expect(cancelled.err).toBe("");
+
+    const history = await run(home, repository, ["history", taskId]);
+    expect(history.code).toBe(0);
+    expect(history.out).toMatch(/dev:cancel \(via cli, as \S+\)/);
+
+    const shown = await run(home, repository, ["show", taskId]);
+    expect(shown.out).toContain("sections: Brief, Changes, Log (live), Diff, Metrics, History");
+    const log = await run(home, repository, ["show", taskId, "--section", "log"]);
+    expect(log.out).toContain("No worker log yet.");
+    const metrics = await run(home, repository, ["show", taskId, "--section", "metrics"]);
+    expect(metrics.out).toContain("No attempts yet.");
+    const diff = await run(home, repository, ["show", taskId, "--section", "diff"]);
+    expect(diff.code).toBe(0);
+    expect(diff.out).toContain("No diff");
+  });
+
+  test("lists name the repository once more than one is registered", async () => {
+    const { root, home, repository } = await setup();
+    const other = await makeGitRepository(root, "other");
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    await run(home, repository, ["plan", "add", "--slug", "work", "--title", "A"], "r\n");
+    const single = await run(home, repository, ["list", "plan"]);
+    expect(single.out).toMatch(/^P-0001-work /);
+
+    expect((await run(home, other, ["repo", "add", "."])).code).toBe(0);
+    await run(home, other, ["plan", "add", "--slug", "work", "--title", "B"], "r\n");
+    const both = await run(home, repository, ["list", "plan"]);
+    expect(both.out).toContain("repository/P-0001-work");
+    expect(both.out).toContain("other/P-0001-work");
+    const json = JSON.parse(
+      (await run(home, repository, ["list", "plan", "--json"])).out,
+    ) as { rows: { scope?: string }[] };
+    expect(json.rows.map((row) => row.scope).sort()).toEqual(["other", "repository"]);
   });
 });

@@ -621,6 +621,9 @@ interface HarnessReading {
   readonly sessionId: string | null;
   readonly costMicros: number | null;
   readonly cost: number | null;
+  readonly log: string | null;
+  readonly tokens: { readonly input: number; readonly output: number } | null;
+  readonly durationMs: number | null;
 }
 
 function harnessReading(data: Record<string, unknown>): HarnessReading {
@@ -635,10 +638,28 @@ function harnessReading(data: Record<string, unknown>): HarnessReading {
     Number.isFinite((cost as { micros: number }).micros)
       ? (cost as { micros: number }).micros
       : null;
+  const usage = data.usage;
+  const input =
+    typeof usage === "object" && usage !== null
+      ? (usage as { input?: unknown }).input
+      : undefined;
+  const output =
+    typeof usage === "object" && usage !== null
+      ? (usage as { output?: unknown }).output
+      : undefined;
   return {
     sessionId,
     costMicros: micros,
     cost: micros === null ? null : micros / 1_000_000,
+    log: typeof data.log === "string" && data.log.length > 0 ? data.log : null,
+    tokens:
+      typeof input === "number" && typeof output === "number"
+        ? { input, output }
+        : null,
+    durationMs:
+      typeof data.durationMs === "number" && Number.isFinite(data.durationMs)
+        ? data.durationMs
+        : null,
   };
 }
 
@@ -799,6 +820,9 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     sessionId: reading.sessionId,
     cost: reading.cost,
     costMicros: reading.costMicros,
+    workLog: reading.log,
+    tokens: reading.tokens,
+    workMs: reading.durationMs,
     worked: true,
   };
 
@@ -806,7 +830,11 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     result: string,
     extra: Readonly<Record<string, unknown>>,
   ): Promise<PluginStepResult> => {
-    nextAttempt = { ...nextAttempt, result };
+    nextAttempt = {
+      ...nextAttempt,
+      result,
+      workNote: typeof extra.message === "string" ? extra.message : null,
+    };
     const written = await saveTaskGuarded(
       ctx,
       context.taskKey,
