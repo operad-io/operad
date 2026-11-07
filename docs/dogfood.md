@@ -118,6 +118,13 @@ how the run ended. `operad history <run id>` narrows it to one run, and
 `operad history <id> --json` gives the same lines as JSON. `operad running` lists
 runs in progress; `operad flows` lists the loaded flows.
 
+Every time a task starts waiting for a person, `dev` records one `dev.waiting`
+event with the reason (`ready to merge`, `review findings`, `rework limit`,
+`work failed`, `merge refused` and so on); `operad history T-0001-switch` shows
+it as `event dev.waiting from operad: T-0001-switch waiting: <reason>`. The rule
+for it only observes; replace the `operad` / `dev.waiting` rule in `triggers.json`
+to send it to a channel.
+
 ## When something is stuck
 
 1. `operad pending` — is it waiting for you? A task that needs a decision stays

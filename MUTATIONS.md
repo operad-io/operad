@@ -600,3 +600,15 @@
 | lead-actions-M4 | packages/dev/src/actions.ts | a failed answer left the claim (the lead section) on the task | `dev:rework and dev:reverify > an answer that fails gives the claim back` |
 | lead-actions-M5 | packages/dev/src/actions.ts | `dev:reverify` accepted a task that never worked | `dev:rework and dev:reverify > reverify of a task that never worked refuses and leaves it alone` |
 | lead-actions-M6 | packages/dev/flows/dev.flow.ts | the `reverify` choice had no edge to `verify` | `the dev flow > loads with the gate and the rework edges` |
+| waiting-notices-M1 | packages/dev/src/announce.ts | the event key carried a random part, so a replayed step emitted a second event | `dev.waiting > work did nothing: one event, once, also when the step runs again` |
+| waiting-notices-M2 | packages/dev/src/views.ts | a plan row left out its auto level and priority | `dev views > a plan row shows the derived state and merged/total` |
+| waiting-notices-M3 | packages/engine/src/views/presentation.ts | the History section skipped the actions people ran | `operad with the dev plugin > a plan shows its auto level and priority, and its history shows who confirmed and set it` |
+| waiting-notices-M4 | packages/dev/src/actions.ts | `dev:merge` accepted a task with no verified commit | `dev actions > merge refuses a task whose head was never verified, and says why` |
+| waiting-notices-M5 | packages/engine/src/views/presentation.ts | `show` with no id listed the oldest changes first | `operad with the dev plugin > show without an id lists the ten latest changes; an unknown id lists the five closest` |
+| waiting-notices-M6 | packages/engine/src/views/presentation.ts | an unknown id listed the farthest ids instead of the closest | `operad with the dev plugin > show without an id lists the ten latest changes; an unknown id lists the five closest` |
+| waiting-notices-M7 | packages/engine/src/trigger/kernel.ts | an event recorded in a run lost its summary text | `dev.waiting > work did nothing: one event, once, also when the step runs again` |
+| waiting-notices-M8 | packages/dev/src/views.ts | lists never named the repository | `operad with the dev plugin > lists name the repository once more than one is registered` |
+| waiting-notices-M9 | packages/dev/flows/dev.flow.ts | a worker that did nothing went to the wait without an announce step | `the dev flow > loads with the gate and the rework edges` |
+| waiting-notices-M10 | packages/dev/src/announce.ts | a stopped run returned `done`, so the wait lost the step that stopped | `dev.waiting > a stopped worktree step names the step that stopped: one event, once, also when the step runs again` |
+| waiting-notices-M11 | packages/dev/src/actions.ts | `dev:priority` on a plan with auto off printed nothing | `dev actions > priority on a plan whose auto level is off says the scheduler will not start it` |
+| waiting-notices-M12 | packages/dev/src/views.ts | a long diff was not paged by file | `dev views > the diff section is the stat and the diff, and pages by file when long` |

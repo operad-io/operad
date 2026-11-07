@@ -242,10 +242,16 @@ function normalizeViews(
     if (typeof raw.load !== "function") {
       throw new PluginError(`${at}.${type}: load: must be a function`);
     }
+    if (raw.showScope !== undefined && typeof raw.showScope !== "function") {
+      throw new PluginError(`${at}.${type}: showScope: must be a function`);
+    }
     views[type] = {
       row: raw.row as ObjectViews["row"],
       sections: raw.sections as ObjectViews["sections"],
       load: raw.load as ObjectViews["load"],
+      ...(raw.showScope === undefined
+        ? {}
+        : { showScope: raw.showScope as NonNullable<ObjectViews["showScope"]> }),
     };
   }
   return views;
@@ -518,6 +524,9 @@ function normalizeActions(
       ...(args === undefined ? {} : { args }),
       ...(confirm === undefined ? {} : { confirm }),
       when: entry.when as ActionTypeDefinition["when"],
+      ...(typeof entry.why === "function"
+        ? { why: entry.why as NonNullable<ActionTypeDefinition["why"]> }
+        : {}),
       run: entry.run as ActionTypeDefinition["run"],
     });
   });

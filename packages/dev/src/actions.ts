@@ -1,12 +1,13 @@
 /** The actions the owner runs on a plan or a task. */
 
-import type { ActionTypeDefinition } from "@operad-io/engine";
+import type { ActionTypeDefinition, StoredObject } from "@operad-io/engine";
 import {
   appendChange,
   appendRework,
   bareId,
   DevError,
   planData,
+  planState,
   PRIORITIES,
   taskData,
   type TaskData,
@@ -17,6 +18,7 @@ import {
   claimWaitingTask,
   confirmPlan,
   confirmTask,
+  getPlan,
   getTask,
   releaseWaitingClaim,
   setAuto,
@@ -24,6 +26,24 @@ import {
 } from "./service.ts";
 
 const AUTO_LEVELS = ["off", "run", "merge"] as const;
+
+/** The line a refused action prints: where the object is and where it must be. */
+function needs(
+  object: StoredObject,
+  current: string,
+  action: string,
+  wanted: string,
+): string {
+  return `${bareId(object.id)} is ${current}; dev:${action} needs ${wanted}`;
+}
+
+const planStateWhy = (action: string, wanted: string) =>
+  (object: StoredObject): string =>
+    needs(object, planState(planData(object.data)), action, wanted);
+
+const taskPhaseWhy = (action: string, wanted: string) =>
+  (object: StoredObject): string =>
+    needs(object, taskData(object.data).phase, action, wanted);
 
 /** Reads a required enum argument; the kernel checks it first, this is for types. */
 function enumArgument<T extends string>(
@@ -116,11 +136,19 @@ const mergeTask: ActionTypeDefinition = {
   when(state) {
     return taskData(state).phase === "waiting";
   },
+  why: taskPhaseWhy("merge", "waiting"),
   async run(ctx) {
-    await claimAndAnswer(ctx, "merge", "merge", (latest) => ({
-      ...latest,
-      brief: appendChange(latest.brief, "merge requested"),
-    }));
+    await claimAndAnswer(ctx, "merge", "merge", (latest) => {
+      const verified = latest.attempt?.verified;
+      if (typeof verified !== "string" || verified.length === 0) {
+        // The merge step would refuse later, in the background; say so now.
+        throw new DevError(
+          "merge",
+          `${bareId(ctx.object.id)} has no verified commit; run operad dev:reverify ${bareId(ctx.object.id)} first`,
+        );
+      }
+      return { ...latest, brief: appendChange(latest.brief, "merge requested") };
+    });
   },
 };
 
@@ -139,6 +167,7 @@ const rejectTaskAction: ActionTypeDefinition = {
   when(state) {
     return taskData(state).phase === "waiting";
   },
+  why: taskPhaseWhy("reject", "waiting"),
   async run(ctx, args) {
     const note = noteArgument(args);
     await claimAndAnswer(
@@ -162,6 +191,7 @@ const reworkTaskAction: ActionTypeDefinition = {
   when(state) {
     return taskData(state).phase === "waiting";
   },
+  why: taskPhaseWhy("rework", "waiting"),
   async run(ctx, args) {
     const note = noteArgument(args);
     await claimAndAnswer(
@@ -185,6 +215,7 @@ const reverifyTaskAction: ActionTypeDefinition = {
   when(state) {
     return taskData(state).phase === "waiting";
   },
+  why: taskPhaseWhy("reverify", "waiting"),
   async run(ctx) {
     await claimAndAnswer(ctx, "reverify", "reverify", (latest) => {
       if (latest.attempt === undefined) {
@@ -220,6 +251,7 @@ export const actions: readonly ActionTypeDefinition[] = [
     when(state) {
       return planData(state).status === "draft";
     },
+    why: planStateWhy("confirm", "draft"),
     async run(ctx) {
       await confirmPlan(ctx.store, ctx.object.id);
     },
@@ -230,6 +262,7 @@ export const actions: readonly ActionTypeDefinition[] = [
     when(state) {
       return taskData(state).phase === "proposed";
     },
+    why: taskPhaseWhy("confirm", "proposed"),
     async run(ctx) {
       await confirmTask(ctx.store, ctx.object.id);
     },
@@ -241,6 +274,7 @@ export const actions: readonly ActionTypeDefinition[] = [
     when(state) {
       return planData(state).status !== "cancelled";
     },
+    why: planStateWhy("cancel", "a plan that is not cancelled"),
     async run(ctx) {
       await cancelPlan(ctx.store, ctx.object.id, { runs: ctx.runs });
     },
@@ -253,6 +287,7 @@ export const actions: readonly ActionTypeDefinition[] = [
       const phase = taskData(state).phase;
       return phase !== "merged" && phase !== "cancelled";
     },
+    why: taskPhaseWhy("cancel", "a task that is not merged or cancelled"),
     async run(ctx) {
       await cancelTask(ctx.store, ctx.object.id, { runs: ctx.runs });
     },
@@ -275,6 +310,7 @@ export const actions: readonly ActionTypeDefinition[] = [
     when(state) {
       return planData(state).status !== "cancelled";
     },
+    why: planStateWhy("auto", "a plan that is not cancelled"),
     async run(ctx, args) {
       const level = enumArgument(args, "level", AUTO_LEVELS);
       await setAuto(ctx.store, ctx.object.id, level);
@@ -302,9 +338,15 @@ export const actions: readonly ActionTypeDefinition[] = [
     when(state) {
       return planData(state).status !== "cancelled";
     },
+    why: planStateWhy("priority", "a plan that is not cancelled"),
     async run(ctx, args) {
       const level = enumArgument(args, "level", PRIORITIES);
       await setPriority(ctx.store, ctx.object.id, level);
+      const id = bareId(ctx.object.id);
+      if (planData((await getPlan(ctx.store, ctx.object.id)).data).auto === "off") {
+        return `${id} has auto off: the scheduler does not start its tasks; run operad dev:auto ${id} --level merge`;
+      }
+      return undefined;
     },
   },
 ];

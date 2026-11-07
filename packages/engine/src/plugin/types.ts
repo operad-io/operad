@@ -47,6 +47,11 @@ export interface ObjectRow {
   readonly state: string;
   /** A short tail for the row, such as a cost or a duration. */
   readonly note?: string | undefined;
+  /**
+   * The namespace the id is unique in, such as a repository. A list shows it
+   * only when the type's `showScope` says so.
+   */
+  readonly scope?: string | undefined;
 }
 
 /** One section a detail page offers. `live` means its content still grows. */
@@ -90,6 +95,11 @@ export interface ObjectViews {
   readonly row: (object: StoredObject) => ObjectRow;
   /** The section directory only; it reads no section content. */
   readonly sections: (object: StoredObject) => readonly ViewSection[];
+  /**
+   * Whether a list shows each row's `scope` next to its id, because more than
+   * one namespace exists. Read once per list.
+   */
+  readonly showScope?: ((ctx: ViewContext) => MaybePromise<boolean>) | undefined;
   /** Called when a person opens a section; it may be slow and paged. */
   readonly load: (
     ctx: ViewContext,
@@ -425,7 +435,14 @@ export interface ActionTypeDefinition {
   /** The action asks for confirmation before it runs. */
   readonly confirm?: boolean | undefined;
   readonly when: (state: ObjectData) => MaybePromise<boolean>;
-  readonly run: (ctx: ActionContext, args: unknown) => MaybePromise<void>;
+  /**
+   * Why `when` refuses this object, in one line that starts with the object's
+   * own name. A client prints it when the action is not available.
+   */
+  readonly why?:
+    | ((object: StoredObject) => string | undefined)
+    | undefined;
+  readonly run: (ctx: ActionContext, args: unknown) => MaybePromise<unknown>;
 }
 
 /** The context an action receives. `runId` is set when it answers a person wait. */

@@ -458,7 +458,8 @@ async function commandList(
     for (const row of page.rows) {
       const state = paintState(row, row.state, tty);
       const note = row.note === undefined ? "" : `  ${row.note}`;
-      io.write(`${row.id}  ${state}  ${row.title}${note}\n`);
+      const name = row.scope === undefined ? row.id : `${row.scope}/${row.id}`;
+      io.write(`${name}  ${state}  ${row.title}${note}\n`);
     }
   }
   if (page.next !== undefined) {
@@ -493,6 +494,23 @@ function actionLine(action: ViewAction): string {
   return `${action.name}${key}${suffix}${list}`;
 }
 
+/** `show` with no id: the objects that changed last, and how to open one. */
+async function showRecent(
+  context: Context,
+  io: CliIo,
+  json: boolean,
+): Promise<void> {
+  const recent = await context.views.recent(10);
+  if (json) {
+    io.write(`${JSON.stringify(recent, null, 2)}\n`);
+    return;
+  }
+  for (const entry of recent) {
+    io.write(`${entry.type}  ${entry.id}  ${entry.state}  ${entry.title}\n`);
+  }
+  io.write("operad show <id>\n");
+}
+
 async function commandShow(
   context: Context,
   io: CliIo,
@@ -512,10 +530,29 @@ async function commandShow(
   rest = json.args;
 
   const id = rest[0];
-  if (id === undefined) throw new UsageError("show needs an object id");
+  if (id === undefined) {
+    await showRecent(context, io, json.present);
+    return;
+  }
   if (rest.length > 1) throw new UsageError("show takes one object id");
 
-  const object = await context.views.get(id);
+  let object: ViewObject;
+  try {
+    object = await context.views.get(id);
+  } catch (error) {
+    if (error instanceof ViewError && error.kind === "not-found") {
+      const near = await context.views.closest(id, 5);
+      if (near.length === 0) throw error;
+      throw new ViewError(
+        "not-found",
+        `${error.message}\nclosest:\n${near
+          .map((entry) => `  ${entry.id}  (${entry.type})`)
+          .join("\n")}`,
+        { cause: error },
+      );
+    }
+    throw error;
+  }
   const requested = sectionFlag.value ?? firstSection(object);
 
   if (json.present) {
@@ -1162,6 +1199,21 @@ async function commandHistory(
       for (const fact of globals) {
         io.write(`${formatHistoryEntry(historyEntry(fact))}\n`);
       }
+      return;
+    }
+    // An object that never had a run still has the actions people ran on it.
+    let own: readonly string[] = [];
+    try {
+      own = await context.views.objectHistory(id);
+    } catch {
+      own = [];
+    }
+    if (own.length > 0) {
+      if (json) {
+        io.write(`${JSON.stringify(own.map((what) => ({ what })), null, 2)}\n`);
+        return;
+      }
+      for (const line of own) io.write(`${line}\n`);
       return;
     }
     throw new Error(`no run or object "${id}"`);
