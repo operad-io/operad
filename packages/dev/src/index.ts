@@ -62,8 +62,8 @@ export function createDevPlugin() {
       },
       {
         name: "review_due",
-        // The wait holds until the recorded retry time; it is cancelled with
-        // the run, never by the step clock.
+        // The wait runs in pieces below this timeout until the recorded retry
+        // time; it is cancelled with the run, never by the step clock.
         timeoutSecs: STEP_TIMEOUT_SECS,
         results: ["ready", "interrupted"],
         run: runReviewDue,
