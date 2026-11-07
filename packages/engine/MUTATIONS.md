@@ -235,3 +235,4 @@ the row fields.
 | T-0025-M13 | `packages/engine/src/plugin/registry.ts` | a step with `grants: false` could ask for a permission | `a question that offers a permission is checked before anyone is asked > a step that cannot enforce a permission cannot ask for one` |
 | tui-autostart-M1 | packages/engine/src/config/config.ts | `DEFAULT_HTTP` was disabled again | `operad config > a missing config means jsonl at <home>/store` |
 | tui-autostart-M2 | packages/engine/src/config/config.ts | an `http` section without `enabled` meant off | `operad config > reads http options and applies their defaults` |
+| tui-autostart-M19 | packages/engine/src/loop/serve.ts | `serve()` took its own lock instead of the one handed to it | `a second operad serve > exits 4 on a held home before it reads the config, the store or the port` (the first serve failed against its own lock) |
