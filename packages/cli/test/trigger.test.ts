@@ -229,6 +229,43 @@ describe("operad trigger", () => {
     expect(await runIds(home)).toHaveLength(1);
   });
 
+  test("start and dismiss take --repo without counting it as an argument", async () => {
+    const home = await makeHome([
+      {
+        source: "cron",
+        type: "tick",
+        start: { flow: "one" },
+        object: "job:1",
+        mode: "candidate",
+      },
+    ]);
+    const ids: string[] = [];
+    for (const name of ["c1", "c2"]) {
+      const out = capture();
+      expect(
+        await main(["trigger", "cron", name, "--type", "tick"], { home, io: out.io }),
+      ).toBe(0);
+      const id = out.text().trim().split(/\s+/)[1];
+      if (id === undefined) throw new Error("no pending id");
+      ids.push(id);
+    }
+    const [toStart, toDismiss] = ids;
+    if (toStart === undefined || toDismiss === undefined) throw new Error("no ids");
+
+    const started = capture();
+    expect(
+      await main(["start", toStart, "--repo", "x"], { home, io: started.io }),
+    ).toBe(0);
+    expect(started.text()).toContain("started");
+    expect(await runIds(home)).toHaveLength(1);
+
+    const dismissed = capture();
+    expect(
+      await main(["dismiss", "--repo=x", toDismiss], { home, io: dismissed.io }),
+    ).toBe(0);
+    expect(dismissed.text()).toContain(`dismissed ${toDismiss}`);
+  });
+
   test("a step running in a worker can emit an event", async () => {
     const home = await makeHome([
       {

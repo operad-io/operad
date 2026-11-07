@@ -683,3 +683,4 @@
 | TK0008-M17 | `packages/dev/src/steps.ts` | removed the bound on work waits | `dev/work > unavailable: after the allowed waits the failure goes to a person` |
 | engine-followups-2-M1 | `packages/engine/src/runner/runner.ts` | `timer.unref()` put back on the in-process step timeout timer (the test child had top-level await, which Bun keeps alive, so it hid the missing timer; the child now runs from a plain function) | `runner > a step that never settles still times out in a memory-backed process` |
 | engine-followups-2-M2 | `packages/engine/src/config/config.ts` | `addDefaultPlugins` wrote the config file in place instead of a temp file and rename | `operad config > a failed write leaves the existing config whole` |
+| engine-followups-2-M3 | `packages/cli/src/main.ts` | a kernel action got the arguments with `--repo` still in them | `operad trigger > start and dismiss take --repo without counting it as an argument` |
