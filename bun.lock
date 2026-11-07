@@ -16,6 +16,10 @@
         "typescript": "5.9.3",
       },
     },
+    "packages/access-match": {
+      "name": "@operad-io/access-match",
+      "version": "0.0.0",
+    },
     "packages/cli": {
       "name": "@operad-io/cli",
       "version": "0.0.1",
@@ -48,6 +52,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@earendil-works/pi-coding-agent": "1.5.0",
+        "@operad-io/access-match": "workspace:*",
       },
     },
     "packages/harness-radian": {
@@ -134,6 +139,8 @@
     "@google/genai": ["@google/genai@2.21.0", "", { "dependencies": { "google-auth-library": "^10.3.0", "p-retry": "^4.6.2", "protobufjs": "^7.5.4", "ws": "^8.18.0" }, "peerDependencies": { "@modelcontextprotocol/sdk": "^1.25.2" }, "optionalPeers": ["@modelcontextprotocol/sdk"] }, "sha512-+PDtco2/Z0ONdzCGekCoCT+O1VJS9xJQNN4XzQpXG/t3El/SWWMkCWlFRO1KmivOHPa4Q0VjUYu1HBKCZ/v33Q=="],
 
     "@isaacs/nonrecursive-glob-match": ["@isaacs/nonrecursive-glob-match@1.1.0", "", {}, "sha512-GPm/Dbvk5RLmhRnxXIa7nTpK0xtl4E0wj0MslsuNiJ1FIROU+2+9lgUC/dgF7Ey4QCWhfEsgxilMRMCdHPfDfw=="],
+
+    "@operad-io/access-match": ["@operad-io/access-match@workspace:packages/access-match"],
 
     "@operad-io/cli": ["@operad-io/cli@workspace:packages/cli"],
 

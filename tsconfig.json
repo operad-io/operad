@@ -7,6 +7,7 @@
     { "path": "packages/harness-radian" },
     { "path": "packages/cli" },
     { "path": "packages/source-cron" },
+    { "path": "packages/access-match" },
     { "path": "packages/harness-pi" }
   ]
 }
