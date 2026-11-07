@@ -139,7 +139,8 @@ attempt and no other step. A round uses its fallback at most once: a retry that
 finds the primary unavailable again waits instead of trying the fallback a
 second time. A wait longer than one step run is split into pieces below the
 three-hour step timeout, so any positive `reviewer.retrySecs` is waited out and
-the review runs a model again only at `retryAt`.
+the review runs a model again only at `retryAt`; the dev flow raises its visit
+limit so the pieces cannot end the task.
 
 A review that times out runs once more with the same arguments. A second
 timeout waits for a person with the note `review timed out twice`. Neither an
@@ -151,13 +152,17 @@ or a retry happened.
 
 ### Crash table
 
-A review round records each run before it decides anything, so a crash resumes
-the same round instead of starting a new attempt.
+A review round writes the run it is about to make to the task, and each
+reviewer call writes its outcome beside the report before it returns. A crash
+therefore resumes the same round and reuses the answer instead of asking the
+same model again.
 
 | crash point | what is recorded | the resumed round does | test |
 |---|---|---|---|
-| after the first run's result | the primary run and its outcome | runs the fallback once; never asks the first model again | `dev/review crash recovery > a crash after the first run resumes the same round on the fallback` |
-| during the fallback | the primary run and the round, with no fallback result | runs the fallback again | `dev/review crash recovery > a crash during the fallback resumes the same round` |
+| after the first run's result | the pending primary run and its outcome | reads the outcome back; never asks the first model again | `dev/review crash recovery > a crash after the first result reuses it instead of asking again` |
+| after an unavailable first result | the pending primary run and its `unavailable` outcome | runs the fallback once; never repeats the primary | `dev/review crash recovery > a crash after an unavailable first result resumes on the fallback` |
+| during the fallback | the primary run, and the fallback as pending with its outcome | reads the fallback outcome back; no model runs again | `dev/review crash recovery > a crash during the fallback reads its result back` |
+| after the first run was saved | the primary run in the round | runs the fallback once | `dev/review crash recovery > a crash after the first run was saved resumes on the fallback` |
 
 ## Review diff size
 

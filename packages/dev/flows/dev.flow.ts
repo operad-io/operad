@@ -8,6 +8,11 @@ import { defineFlow } from "@operad-io/engine";
 export default defineFlow({
   name: "dev",
   entry: "worktree",
+  // An unavailable review waits through `review` and `review_retry` once per
+  // wait piece, and `reviewer.retrySecs` may be longer than any number of
+  // pieces. The wait is bounded by the recorded retry time, not by visits; a
+  // step that keeps crashing still stops through the kernel's recovery limit.
+  maxVisits: Number.MAX_SAFE_INTEGER,
   steps: [
     {
       id: "worktree",

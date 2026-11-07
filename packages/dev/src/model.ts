@@ -148,6 +148,23 @@ export interface ReviewRunRecord {
   readonly counted?: number | null;
 }
 
+/**
+ * A model run of a review round that was asked for but not recorded yet. It is
+ * written before the reviewer is called, so a crash after the model answered
+ * resumes that run instead of asking the same model again.
+ */
+export interface PendingReviewRun {
+  readonly [key: string]: unknown;
+  readonly attempt?: number | null;
+  readonly round: number;
+  readonly role: ReviewRunRole;
+  readonly use: string;
+  readonly args: readonly string[];
+  readonly model: string;
+  readonly reason: ReviewRunReason;
+  readonly run?: string | null;
+}
+
 /** One review of a task's verified commit: one decision for the round. */
 export interface ReviewRecord {
   readonly [key: string]: unknown;
@@ -248,6 +265,8 @@ export type TaskAttempt = {
   readonly review?: ReviewRecord | null;
   /** Every model run of every review round in this attempt. */
   readonly reviewRuns?: readonly ReviewRunRecord[] | null;
+  /** The run this review asked for and has not recorded yet. */
+  readonly reviewPending?: PendingReviewRun | null;
   /** How many review rounds this attempt has finished. */
   readonly reviews?: number | null;
   /** The rework this run appended; a replay of the same run reads it. */

@@ -26,6 +26,7 @@ import {
 import {
   appendRework,
   isRecord,
+  type PendingReviewRun,
   type ReviewFinding,
   type ReviewRecord,
   type ReviewResult,
@@ -843,7 +844,90 @@ function failureOutcome(
   return "failed";
 }
 
+/** Where one reviewer call leaves its outcome beside the report it wrote. */
+function reviewOutcomePath(resultPath: string): string {
+  return resultPath.endsWith(".json")
+    ? `${resultPath.slice(0, -".json".length)}.run.json`
+    : `${resultPath}.run.json`;
+}
+
+function writeReviewOutcome(path: string, call: ReviewerCall): void {
+  try {
+    writeFileSync(
+      path,
+      JSON.stringify({
+        outcome: call.outcome,
+        message: call.message,
+        ...(call.report === undefined ? {} : { report: call.report }),
+      }),
+    );
+  } catch {
+    // A sidecar that cannot be written only costs one repeated run after a
+    // crash; the review itself still continues.
+  }
+}
+
+const REVIEW_OUTCOMES: readonly ReviewerCall["outcome"][] = [
+  "report",
+  "invalid",
+  "unavailable",
+  "timed_out",
+  "failed",
+];
+
+/** The call a crashed review recorded, or undefined when it never answered. */
+function readReviewOutcome(resultPath: string): ReviewerCall | undefined {
+  const read = readReport(reviewOutcomePath(resultPath));
+  if (read.text === undefined) return undefined;
+  let value: unknown;
+  try {
+    value = JSON.parse(read.text);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(value)) return undefined;
+  const outcome = value.outcome;
+  if (
+    typeof outcome !== "string" ||
+    !REVIEW_OUTCOMES.includes(outcome as ReviewerCall["outcome"])
+  ) {
+    return undefined;
+  }
+  const message = typeof value.message === "string" ? value.message : "";
+  if (outcome !== "report") {
+    return { outcome: outcome as ReviewerCall["outcome"], message };
+  }
+  const report = parseReport(JSON.stringify(value.report));
+  if (report === undefined) return undefined;
+  return { outcome: "report", report, message };
+}
+
+/**
+ * One call to the reviewer, with its outcome written to disk before it
+ * returns. A crash after the model answered therefore reads the outcome back
+ * instead of asking the same model again.
+ */
 async function callReviewer(
+  ctx: StepContext,
+  context: TaskContext,
+  gatePath: string,
+  prompt: string,
+  resultPath: string,
+  reviewer: { readonly use: string; readonly args: readonly string[] },
+): Promise<ReviewerCall> {
+  const call = await callReviewerOnce(
+    ctx,
+    context,
+    gatePath,
+    prompt,
+    resultPath,
+    reviewer,
+  );
+  writeReviewOutcome(reviewOutcomePath(resultPath), call);
+  return call;
+}
+
+async function callReviewerOnce(
   ctx: StepContext,
   context: TaskContext,
   gatePath: string,
@@ -863,6 +947,11 @@ async function callReviewer(
     rmSync(resultPath, { force: true });
   } catch {
     // A result file that cannot be removed is read only if it is fresh enough.
+  }
+  try {
+    rmSync(reviewOutcomePath(resultPath), { force: true });
+  } catch {
+    // A sidecar left behind is never trusted unless the task names the run.
   }
   let outcome: PluginStepResult | undefined;
   try {
@@ -1065,6 +1154,10 @@ export const reviewTestHooks: {
     | ((ms: number, signal: AbortSignal | undefined) => Promise<boolean>)
     | undefined;
   beforeRun?:
+    | ((run: { readonly role: ReviewRunRole; readonly reason: ReviewRunReason }) => void)
+    | undefined;
+  /** Runs after the reviewer answered and before its run is written. */
+  afterCall?:
     | ((run: { readonly role: ReviewRunRole; readonly reason: ReviewRunReason }) => void)
     | undefined;
   afterRunSaved?: ((run: ReviewRunRecord) => void) | undefined;
@@ -1355,19 +1448,75 @@ export async function runReview(
     ? { role: "primary", reason: "retry" }
     : nextReviewAction(runs, settings.fallback);
 
+  // A run that crashed after its model answered left this pending record and
+  // its outcome beside the report path. Resuming reads that outcome instead of
+  // asking the same model a second time.
+  let pendingReview: PendingReviewRun | undefined =
+    attempt.reviewPending !== undefined &&
+    attempt.reviewPending !== null &&
+    attempt.reviewPending.round === round &&
+    (attempt.reviewPending.attempt === undefined ||
+      attempt.reviewPending.attempt === null ||
+      attempt.reviewPending.attempt === attempt.number)
+      ? attempt.reviewPending
+      : undefined;
+
   while (typeof next === "object") {
+    const action = next;
+    const resume =
+      pendingReview !== undefined &&
+      pendingReview.role === action.role &&
+      pendingReview.reason === action.reason
+        ? pendingReview
+        : undefined;
+    pendingReview = undefined;
     const use =
-      next.role === "fallback"
+      resume?.use ??
+      (action.role === "fallback"
         ? settings.fallback?.use ?? settings.use
-        : settings.use;
+        : settings.use);
     const args =
-      next.role === "fallback" ? settings.fallback?.args ?? [] : roundArgs;
-    const model = modelOf(use, args);
-    reviewTestHooks.beforeRun?.({ role: next.role, reason: next.reason });
-    const call = await callReviewer(ctx, context, path, prompt, resultPath, {
-      use,
-      args,
-    });
+      resume?.args ??
+      (action.role === "fallback" ? settings.fallback?.args ?? [] : roundArgs);
+    const model = resume?.model ?? modelOf(use, args);
+    let call =
+      resume === undefined ? undefined : readReviewOutcome(resultPath);
+    if (call === undefined) {
+      // Record the run before the model is asked: a crash after it answers
+      // finds the run and its outcome on disk instead of repeating the call.
+      current = {
+        ...current,
+        run: ctx.runId,
+        reviewPending: {
+          attempt: attempt.number,
+          round,
+          role: action.role,
+          use,
+          args,
+          model,
+          reason: action.reason,
+          run: ctx.runId,
+        },
+      };
+      const pendingWritten = await saveTaskGuarded(
+        ctx,
+        context.taskKey,
+        {
+          ...task,
+          run: ctx.runId,
+          attempts: Math.max(task.attempts, attempt.number),
+          attempt: current,
+        },
+        "dev:review",
+      );
+      if (!pendingWritten) return cancelledStep();
+      reviewTestHooks.beforeRun?.({ role: action.role, reason: action.reason });
+      call = await callReviewer(ctx, context, path, prompt, resultPath, {
+        use,
+        args,
+      });
+    }
+    reviewTestHooks.afterCall?.({ role: action.role, reason: action.reason });
     let runRecord: ReviewRunRecord;
     if (call.outcome === "report" && call.report !== undefined) {
       const findings: ReviewFinding[] = call.report.findings.map((finding) => {
@@ -1386,11 +1535,11 @@ export async function runReview(
       runRecord = {
         attempt: attempt.number,
         round,
-        role: next.role,
+        role: action.role,
         use,
         args,
         model,
-        reason: next.reason,
+        reason: action.reason,
         outcome: "report",
         run: ctx.runId,
         findings,
@@ -1401,11 +1550,11 @@ export async function runReview(
       runRecord = {
         attempt: attempt.number,
         round,
-        role: next.role,
+        role: action.role,
         use,
         args,
         model,
-        reason: next.reason,
+        reason: action.reason,
         outcome: call.outcome,
         run: ctx.runId,
         ...(call.message.length === 0 ? {} : { message: call.message }),
@@ -1415,6 +1564,7 @@ export async function runReview(
     current = {
       ...current,
       run: ctx.runId,
+      reviewPending: null,
       reviewRuns: [...(current.reviewRuns ?? []), runRecord],
     };
     const written = await saveTaskGuarded(

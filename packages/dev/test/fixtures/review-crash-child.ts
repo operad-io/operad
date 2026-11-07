@@ -63,13 +63,16 @@ const reviewer = definePlugin({
   ],
 });
 
-reviewTestHooks.beforeRun = (run) => {
+reviewTestHooks.afterCall = (run) => {
+  if (crash === "after-first-result" && run.role === "primary") {
+    process.kill(process.pid, "SIGKILL");
+  }
   if (crash === "during-fallback" && run.role === "fallback") {
     process.kill(process.pid, "SIGKILL");
   }
 };
 reviewTestHooks.afterRunSaved = (run) => {
-  if (crash === "after-first" && run.role === "primary") {
+  if (crash === "after-first-saved" && run.role === "primary") {
     process.kill(process.pid, "SIGKILL");
   }
 };

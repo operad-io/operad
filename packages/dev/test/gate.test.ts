@@ -5,9 +5,13 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  decide,
   definePlugin,
+  evolve,
   FilePluginStore,
+  initialState,
   PluginRegistry,
+  type KernelState,
   type PluginStepResult,
 } from "@operad-io/engine";
 import { createShellPlugin } from "@operad-io/shell";
@@ -1037,14 +1041,31 @@ describe("dev/review fallback and retry", () => {
 });
 
 describe("dev/review crash recovery", () => {
-  async function crashReview(crash: "after-first" | "during-fallback") {
+  interface CrashCase {
+    readonly crash:
+      | "after-first-result"
+      | "during-fallback"
+      | "after-first-saved";
+    readonly reviewerArgs: readonly string[];
+    readonly fallback?: {
+      readonly use: string;
+      readonly args: readonly string[];
+    };
+    /** Model calls the resumed process makes. */
+    readonly resumedCalls: number;
+    /** The arguments of those calls, in order. */
+    readonly resumedArgs?: (readonly string[])[];
+    /** Lines the call log holds after both processes. */
+    readonly totalCalls: number;
+    /** The roles of the runs the resumed round records. */
+    readonly roles: ("primary" | "fallback")[];
+  }
+
+  async function crashReview(options: CrashCase) {
     const callLog = join(await tempRoot(), "review-calls");
     const state = await fixture({
-      reviewerArgs: ["unavailable", "--model", "primary"],
-      fallback: {
-        use: "fake-reviewer/agent",
-        args: ["none", "--model", "fallback"],
-      },
+      reviewerArgs: options.reviewerArgs,
+      ...(options.fallback === undefined ? {} : { fallback: options.fallback }),
       callLog,
     });
     await verify(state);
@@ -1056,7 +1077,7 @@ describe("dev/review crash recovery", () => {
         state.remote.repository,
         state.taskKey,
         "review-crash",
-        crash,
+        options.crash,
         callLog,
       ],
       cwd: state.remote.repository,
@@ -1080,9 +1101,15 @@ describe("dev/review crash recovery", () => {
       object: { type: "task", id: state.taskKey, data: {} },
     });
     expect(resumed.result).toBe("pass");
-    expect(reviewer.calls).toHaveLength(1);
-    expect(reviewer.calls[0]?.args).toEqual(["none", "--model", "fallback"]);
-    expect(readFileSync(callLog, "utf8").trim().split("\n")).toHaveLength(2);
+    expect(reviewer.calls).toHaveLength(options.resumedCalls);
+    if (options.resumedArgs !== undefined) {
+      expect(reviewer.calls.map((call) => call.args)).toEqual(
+        options.resumedArgs,
+      );
+    }
+    expect(readFileSync(callLog, "utf8").trim().split("\n")).toHaveLength(
+      options.totalCalls,
+    );
 
     const object = await store.get("task", state.taskKey);
     if (object === undefined) throw new Error("task disappeared");
@@ -1090,18 +1117,64 @@ describe("dev/review crash recovery", () => {
     expect(task.attempt?.number).toBe(1);
     expect(task.attempt?.reviews).toBe(1);
     expect(task.attempt?.review?.decision).toBe("passed");
-    expect(task.attempt?.review?.runs?.map((run) => run.role)).toEqual([
-      "primary",
-      "fallback",
-    ]);
+    expect(task.attempt?.reviewPending ?? null).toBeNull();
+    expect(task.attempt?.review?.runs?.map((run) => run.role)).toEqual(
+      options.roles,
+    );
   }
 
-  test("a crash after the first run resumes the same round on the fallback", async () => {
-    await crashReview("after-first");
+  test("a crash after the first result reuses it instead of asking again", async () => {
+    await crashReview({
+      crash: "after-first-result",
+      reviewerArgs: ["none", "--model", "primary"],
+      resumedCalls: 0,
+      totalCalls: 1,
+      roles: ["primary"],
+    });
   });
 
-  test("a crash during the fallback resumes the same round", async () => {
-    await crashReview("during-fallback");
+  test("a crash after an unavailable first result resumes on the fallback", async () => {
+    await crashReview({
+      crash: "after-first-result",
+      reviewerArgs: ["unavailable", "--model", "primary"],
+      fallback: {
+        use: "fake-reviewer/agent",
+        args: ["none", "--model", "fallback"],
+      },
+      resumedCalls: 1,
+      resumedArgs: [["none", "--model", "fallback"]],
+      totalCalls: 2,
+      roles: ["primary", "fallback"],
+    });
+  });
+
+  test("a crash during the fallback reads its result back", async () => {
+    await crashReview({
+      crash: "during-fallback",
+      reviewerArgs: ["unavailable", "--model", "primary"],
+      fallback: {
+        use: "fake-reviewer/agent",
+        args: ["none", "--model", "fallback"],
+      },
+      resumedCalls: 0,
+      totalCalls: 2,
+      roles: ["primary", "fallback"],
+    });
+  });
+
+  test("a crash after the first run was saved resumes on the fallback", async () => {
+    await crashReview({
+      crash: "after-first-saved",
+      reviewerArgs: ["unavailable", "--model", "primary"],
+      fallback: {
+        use: "fake-reviewer/agent",
+        args: ["none", "--model", "fallback"],
+      },
+      resumedCalls: 1,
+      resumedArgs: [["none", "--model", "fallback"]],
+      totalCalls: 2,
+      roles: ["primary", "fallback"],
+    });
   });
 });
 
@@ -1346,5 +1419,73 @@ describe("the dev flow", () => {
       done: "end_done",
       cancelled: "end_cancelled",
     });
+  });
+
+  test("a review wait longer than ten pieces keeps waiting", async () => {
+    const root = await tempRoot();
+    const remote = await makeRemote(root);
+    const store = storeAt(root);
+    const registry = new PluginRegistry([createDevPlugin()], {
+      home: root,
+      cwd: remote.repository,
+      store,
+    });
+    const found = registry.flow("dev");
+    if (found === undefined) throw new Error("the dev flow is missing");
+    const flow = found.flow;
+
+    // Start in the retry wait, as the flow is after an unavailable review.
+    let state: KernelState = {
+      ...initialState(),
+      status: "running",
+      started: true,
+      step: "review_retry",
+      stepKind: "wait",
+      effect: {
+        id: "review_retry:1",
+        kind: "poll_check",
+        step: "review_retry",
+        use: null,
+        params: null,
+        check: "dev/review_due",
+        due: null,
+        replay: "safe",
+      },
+      effectStarted: "review_retry:1",
+      visits: { review_retry: 1 },
+      effects: { "review_retry:1": "outstanding" },
+      lastSeq: 100,
+    };
+
+    const apply = (result: string): void => {
+      const effectId = state.effect?.id;
+      if (effectId === undefined) {
+        throw new Error("the flow is not waiting for a step result");
+      }
+      const decision = decide(
+        flow,
+        state,
+        { kind: "step_result", effectId, result },
+        0,
+      );
+      expect(
+        decision.facts.some((fact) => fact.kind === "visit_limit_reached"),
+      ).toBe(false);
+      state = decision.facts.reduce(evolve, state);
+    };
+
+    // Each piece is one review entry and one retry-wait entry. The engine
+    // default of ten visits would end the task during the fifth piece.
+    for (let piece = 0; piece < 20; piece += 1) {
+      apply("ready");
+      expect(state.status).toBe("running");
+      expect(state.step).toBe("review");
+      apply("unavailable");
+      // A wait step parks the run until its check is answered again.
+      expect(state.status).toBe("waiting");
+      expect(state.step).toBe("review_retry");
+    }
+    expect(state.visits.review).toBe(20);
+    expect(state.visits.review_retry).toBe(21);
   });
 });

@@ -607,3 +607,5 @@
 | TK0002-M6 | packages/dev/src/settings.ts | ignored `reviewer.retrySecs` and always used the 120-second default | `dev/review fallback and retry > a fallback that is also unavailable waits without a rework` |
 | TK0002-M7 | packages/dev/src/gate.ts | let a retry after the wait choose the fallback again in the same round | `dev/review fallback and retry > a retry after the wait does not use the fallback a second time` |
 | TK0002-M8 | packages/dev/src/gate.ts | removed the chunk bound from `runReviewDue`, so it asked for the whole remaining wait in one step | `dev/review fallback and retry > a retry longer than the step timeout waits in pieces and reruns only when due` |
+| TK0002-M9 | packages/dev/src/gate.ts | stopped writing a reviewer's outcome beside the report, so a crash after the answer repeated the model run | `dev/review crash recovery > a crash after the first result reuses it instead of asking again` |
+| TK0002-M10 | packages/dev/flows/dev.flow.ts | left `maxVisits` at the engine default, so a long review wait hit the visit limit | `the dev flow > a review wait longer than ten pieces keeps waiting` |
