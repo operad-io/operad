@@ -37,6 +37,7 @@ import {
   type TaskData,
 } from "../src/index.ts";
 import {
+  advanceMain,
   commitIn,
   gitOrThrow,
   makeRemote,
@@ -335,6 +336,8 @@ interface FixtureOptions {
   /** Add one small committed file after the worktree is created. */
   readonly commit?: boolean;
   readonly clock?: ManualClock;
+  /** Files already on main when the task's worktree is made. */
+  readonly baseFiles?: Readonly<Record<string, string>>;
 }
 
 interface Fixture {
@@ -351,6 +354,9 @@ interface Fixture {
 async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
   const root = await tempRoot();
   const remote = await makeRemote(root);
+  for (const [file, text] of Object.entries(options.baseFiles ?? {})) {
+    await advanceMain(remote, file, text, `add ${file}`);
+  }
   const store = storeAt(root);
   const repository = await addRepository(store, {
     path: remote.repository,
@@ -773,6 +779,83 @@ describe("dev/review", () => {
     expect(listed).toHaveLength(1);
     expect(listed[0]).toContain("vendored");
     expect(prompt.length).toBeLessThan(100_000);
+  });
+
+  describe("renames and deletions", () => {
+    const numbered = (count: number, edit?: number): string =>
+      `${Array.from({ length: count }, (_, index) =>
+        index + 1 === edit ? `edited line ${index + 1}` : `source line ${index + 1}`,
+      ).join("\n")}\n`;
+    const commitAll = (worktree: string, message: string): void => {
+      gitOrThrow(worktree, ["add", "-A"]);
+      gitOrThrow(worktree, [
+        "-c",
+        "user.name=test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "-qm",
+        message,
+      ]);
+    };
+
+    test("a rename with no edit is one line", async () => {
+      const state = await fixture({
+        baseFiles: { "old.txt": numbered(5000) },
+        maxFileDiffBytes: 200_000,
+        maxDiffBytes: 20_000,
+        commit: false,
+      });
+      gitOrThrow(state.worktree, ["mv", "old.txt", "new.txt"]);
+      commitAll(state.worktree, "rename");
+      await verify(state);
+      const result = await review(state);
+      expect(result.result).toBe("pass");
+      const prompt = state.reviewer.calls[0]?.prompt ?? "";
+      expect(prompt).toContain("renamed old.txt → new.txt, unchanged");
+      expect(prompt).not.toContain("source line 2500");
+      expect(prompt.length).toBeLessThan(10_000);
+    });
+
+    test("a rename with an edit carries only the edit", async () => {
+      const state = await fixture({
+        baseFiles: { "old.txt": numbered(5000) },
+        maxFileDiffBytes: 200_000,
+        maxDiffBytes: 20_000,
+        commit: false,
+      });
+      gitOrThrow(state.worktree, ["mv", "old.txt", "new.txt"]);
+      writeFileSync(join(state.worktree, "new.txt"), numbered(5000, 2500));
+      commitAll(state.worktree, "rename and edit");
+      await verify(state);
+      const result = await review(state);
+      expect(result.result).toBe("pass");
+      const prompt = state.reviewer.calls[0]?.prompt ?? "";
+      expect(prompt).toContain("rename from old.txt");
+      expect(prompt).toContain("+edited line 2500");
+      expect(prompt).toContain("-source line 2500");
+      expect(prompt).not.toContain("source line 100\n");
+      expect(prompt.length).toBeLessThan(10_000);
+    });
+
+    test("a deleted file is one line with its length and how to read it", async () => {
+      const state = await fixture({
+        baseFiles: { "gone.txt": numbered(5000) },
+        maxFileDiffBytes: 200_000,
+        maxDiffBytes: 20_000,
+        commit: false,
+      });
+      gitOrThrow(state.worktree, ["rm", "-q", "gone.txt"]);
+      commitAll(state.worktree, "delete");
+      await verify(state);
+      const result = await review(state);
+      expect(result.result).toBe("pass");
+      const prompt = state.reviewer.calls[0]?.prompt ?? "";
+      expect(prompt).toContain("gone.txt: deleted, 5000 lines");
+      expect(prompt).toContain("git show");
+      expect(prompt).not.toContain("source line 2500");
+      expect(prompt.length).toBeLessThan(10_000);
+    });
   });
 
   test("2 MB of real code fails before a reviewer starts and records the size", async () => {
