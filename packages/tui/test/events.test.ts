@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   TuiEvents,
+  TuiUnauthorizedError,
   retryDelay,
   type FetchLike,
   type TuiEvent,
@@ -180,11 +181,179 @@ describe("TuiEvents", () => {
           if (delays.length === 3) events.stop();
         },
       });
-      expect(await events.next()).toEqual({ done: true, value: undefined });
+      // Each reconnect with no id to resume from says so with one reset.
+      const seen: TuiEvent[] = [];
+      for (;;) {
+        const result = await events.next();
+        if (result.done) break;
+        seen.push(result.value);
+      }
+      expect(seen).toEqual([{ kind: "reset" }, { kind: "reset" }]);
       expect(attempts).toBe(3);
       expect(delays).toEqual([retryDelay(0), retryDelay(1), retryDelay(2)]);
     } finally {
       await h.close();
+    }
+  });
+
+  test("a bad token ends the stream after one error event", async () => {
+    const h = await makeHarness();
+    try {
+      let attempts = 0;
+      const counting: FetchLike = (input, init) => {
+        attempts += 1;
+        return fetch(input, init);
+      };
+      const events = new TuiEvents({
+        url: h.base,
+        token: "not-the-token",
+        fetch: counting,
+        wait: async () => undefined,
+      });
+      const first = await events.next();
+      if (first.done || first.value.kind !== "error") {
+        throw new Error("expected an error event");
+      }
+      expect(first.value.error).toBeInstanceOf(TuiUnauthorizedError);
+      expect(first.value.error.status).toBe(401);
+      expect(await events.next()).toEqual({ done: true, value: undefined });
+      expect(attempts).toBe(1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("404 and 409 end the stream; 500 is retried with backoff", async () => {
+    const h = await makeHarness();
+    try {
+      for (const status of [404, 409]) {
+        let attempts = 0;
+        const events = new TuiEvents({
+          url: h.base,
+          token: h.token,
+          fetch: async () => {
+            attempts += 1;
+            return Response.json(
+              { error: { kind: "x", message: `refused ${status}` } },
+              { status },
+            );
+          },
+          wait: async () => undefined,
+        });
+        const first = await events.next();
+        if (first.done || first.value.kind !== "error") {
+          throw new Error("expected an error event");
+        }
+        expect(first.value.error.status).toBe(status);
+        expect(first.value.error.message).toBe(`refused ${status}`);
+        expect(await events.next()).toEqual({ done: true, value: undefined });
+        expect(attempts).toBe(1);
+      }
+
+      const delays: number[] = [];
+      let attempts = 0;
+      const events = new TuiEvents({
+        url: h.base,
+        token: h.token,
+        fetch: async () => {
+          attempts += 1;
+          return Response.json(
+            { error: { kind: "internal", message: "boom" } },
+            { status: 500 },
+          );
+        },
+        wait: async (ms) => {
+          delays.push(ms);
+          if (delays.length === 2) events.stop();
+        },
+      });
+      const kinds: string[] = [];
+      for (;;) {
+        const result = await events.next();
+        if (result.done) break;
+        kinds.push(result.value.kind);
+      }
+      expect(kinds).toEqual(["error", "error"]);
+      expect(attempts).toBe(2);
+      expect(delays).toEqual([retryDelay(0), retryDelay(1)]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("a reconnect with no id to resume from sends one reset", async () => {
+    const encoder = new TextEncoder();
+    let attempts = 0;
+    const headers: (string | null)[] = [];
+    const fetchImpl: FetchLike = async (_input, init) => {
+      attempts += 1;
+      headers.push(new Headers(init?.headers).get("last-event-id"));
+      if (attempts === 1) {
+        // Accepted, then dropped before any event: no id is held.
+        return new Response(new ReadableStream({ start: (c) => c.close() }), {
+          status: 200,
+        });
+      }
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode('id: s-1\ndata: {"id":"after"}\n\n'),
+            );
+          },
+        }),
+        { status: 200 },
+      );
+    };
+    const events = new TuiEvents({
+      url: "http://127.0.0.1:1",
+      token: "t",
+      fetch: fetchImpl,
+      wait: async () => undefined,
+    });
+    try {
+      expect(take(await events.next())).toEqual({ kind: "reset" });
+      expect(take(await events.next())).toEqual({ kind: "change", id: "after" });
+      expect(headers).toEqual([null, null]);
+    } finally {
+      events.stop();
+    }
+  });
+
+  test("the same instance reconnects with the last id and gets the missed event", async () => {
+    const encoder = new TextEncoder();
+    const seen: (string | null)[] = [];
+    let attempts = 0;
+    const fetchImpl: FetchLike = async (_input, init) => {
+      attempts += 1;
+      seen.push(new Headers(init?.headers).get("last-event-id"));
+      const frame =
+        attempts === 1
+          ? 'id: s-1\ndata: {"id":"one"}\n\n'
+          : 'id: s-2\ndata: {"id":"two"}\n\n';
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(frame));
+            // The first response ends after its one event.
+            if (attempts === 1) controller.close();
+          },
+        }),
+        { status: 200 },
+      );
+    };
+    const events = new TuiEvents({
+      url: "http://127.0.0.1:1",
+      token: "t",
+      fetch: fetchImpl,
+      wait: async () => undefined,
+    });
+    try {
+      expect(take(await events.next())).toEqual({ kind: "change", id: "one" });
+      expect(take(await events.next())).toEqual({ kind: "change", id: "two" });
+      expect(seen).toEqual([null, "s-1"]);
+    } finally {
+      events.stop();
     }
   });
 

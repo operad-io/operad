@@ -37,6 +37,8 @@ export interface TuiTypes {
 export interface TuiSectionOptions {
   readonly cursor?: string | undefined;
   readonly full?: boolean | undefined;
+  /** Cancels the request; it then rejects. */
+  readonly signal?: AbortSignal | undefined;
 }
 
 /** What `POST /v1/act` carries. Only `action` is always required. */
@@ -46,6 +48,8 @@ export interface TuiActInput {
   readonly args?: Readonly<Record<string, unknown>> | undefined;
   readonly note?: string | undefined;
   readonly confirmed?: boolean | undefined;
+  /** Cancels the request; it then rejects. */
+  readonly signal?: AbortSignal | undefined;
 }
 
 /** Options for a client: where the server is and the token it checks. */
@@ -204,7 +208,8 @@ function serverErrorBody(text: string, status: number): ServerErrorBody {
   };
 }
 
-async function httpError(response: Response): Promise<TuiError> {
+/** The typed error for a non-ok response; it reads the body. */
+export async function httpError(response: Response): Promise<TuiError> {
   const text = await response.text().catch(() => "");
   const body = serverErrorBody(text, response.status);
   switch (response.status) {
@@ -232,6 +237,7 @@ interface RequestOptions {
   readonly method?: "GET" | "POST" | undefined;
   readonly query?: Readonly<Record<string, string | undefined>> | undefined;
   readonly body?: unknown;
+  readonly signal?: AbortSignal | undefined;
 }
 
 /** One client for one running `serve`. */
@@ -247,30 +253,37 @@ export class TuiClient {
   }
 
   /** The types the loaded plugins show, with their display names. */
-  async types(): Promise<TuiTypes> {
-    return (await this.request("/v1/types")) as TuiTypes;
+  async types(signal?: AbortSignal): Promise<TuiTypes> {
+    return (await this.request("/v1/types", { signal })) as TuiTypes;
   }
 
   /** One page of a type's list; pass the previous page's `next` as the cursor. */
-  async objects(type: string, cursor?: string): Promise<ViewListPage> {
+  async objects(
+    type: string,
+    cursor?: string,
+    signal?: AbortSignal,
+  ): Promise<ViewListPage> {
     return (await this.request("/v1/objects", {
       query: { type, cursor },
+      signal,
     })) as ViewListPage;
   }
 
   /** Everything waiting for a person, with the actions each item offers. */
-  async pending(): Promise<readonly PendingItem[]> {
-    return (await this.request("/v1/pending")) as readonly PendingItem[];
+  async pending(signal?: AbortSignal): Promise<readonly PendingItem[]> {
+    return (await this.request("/v1/pending", { signal })) as readonly PendingItem[];
   }
 
   /** The runs that are working now. */
-  async running(): Promise<readonly RunningItem[]> {
-    return (await this.request("/v1/running")) as readonly RunningItem[];
+  async running(signal?: AbortSignal): Promise<readonly RunningItem[]> {
+    return (await this.request("/v1/running", { signal })) as readonly RunningItem[];
   }
 
   /** One object: its row, section directory and available actions. */
-  async object(id: string): Promise<ViewObject> {
-    return (await this.request(`/v1/objects/${encodeURIComponent(id)}`)) as ViewObject;
+  async object(id: string, signal?: AbortSignal): Promise<ViewObject> {
+    return (await this.request(`/v1/objects/${encodeURIComponent(id)}`, {
+      signal,
+    })) as ViewObject;
   }
 
   /** One section's Markdown; `full` skips the server's size cap. */
@@ -286,6 +299,7 @@ export class TuiClient {
           cursor: options.cursor,
           full: options.full === true ? "true" : undefined,
         },
+        signal: options.signal,
       },
     )) as ViewSectionContent;
   }
@@ -294,6 +308,7 @@ export class TuiClient {
   async act(input: TuiActInput): Promise<ViewActionRun> {
     return (await this.request("/v1/act", {
       method: "POST",
+      signal: input.signal,
       body: {
         action: input.action,
         ...(input.id === undefined ? {} : { id: input.id }),
@@ -327,8 +342,11 @@ export class TuiClient {
         ...(options.body === undefined
           ? {}
           : { body: JSON.stringify(options.body) }),
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
       });
     } catch (error) {
+      // A cancelled request is the caller's own doing, not an unreachable server.
+      if (options.signal?.aborted === true) throw error;
       throw new TuiUnreachableError(
         `no server answered at ${this.baseUrl}: ${messageOf(error)}`,
         error,

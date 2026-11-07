@@ -4,6 +4,7 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
   TuiClient,
+  type FetchLike,
   TuiConflictError,
   TuiDiscoveryError,
   TuiNotFoundError,
@@ -372,5 +373,41 @@ describe("TuiClient", () => {
       }).catch((error: unknown) => error);
       expect(bad).toBeInstanceOf(TuiUrlError);
     }
+  });
+
+  test("an aborted request rejects with the abort, not an unreachable server", async () => {
+    const seen: AbortSignal[] = [];
+    const hanging: FetchLike = (_input, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (signal === undefined || signal === null) {
+          reject(new Error("the request carried no signal"));
+          return;
+        }
+        seen.push(signal);
+        signal.addEventListener(
+          "abort",
+          () => reject(new DOMException("aborted", "AbortError")),
+          { once: true },
+        );
+      });
+    const c = new TuiClient({
+      url: "http://127.0.0.1:1",
+      token: "t",
+      fetch: hanging,
+    });
+    const controller = new AbortController();
+    const pending = c.pending(controller.signal);
+    const section = c.section("item:a", "overview", {
+      signal: controller.signal,
+    });
+    const act = c.act({ action: "demo:go", signal: controller.signal });
+    controller.abort();
+    for (const call of [pending, section, act]) {
+      const error = await call.catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(DOMException);
+      expect(error).not.toBeInstanceOf(TuiUnreachableError);
+    }
+    expect(seen).toHaveLength(3);
   });
 });

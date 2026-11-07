@@ -4,7 +4,7 @@
  * cannot resume, and a reconnect with capped backoff until the caller stops it.
  */
 
-import { defaultFetch, type FetchLike } from "./client.ts";
+import { defaultFetch, httpError, type FetchLike, type TuiError } from "./client.ts";
 
 /** The first delay before a reconnect. */
 export const DEFAULT_RETRY_MIN_MS = 250;
@@ -23,8 +23,26 @@ export interface TuiResetEvent {
   readonly kind: "reset";
 }
 
-/** What the event stream yields. */
-export type TuiEvent = TuiChangeEvent | TuiResetEvent;
+/**
+ * The server refused the stream. `error` is the typed error of the response.
+ * After a 401, 404 or 409 the stream ends (a wrong token, or an old or wrong
+ * server: retrying cannot help). After a 5xx the stream goes on with backoff,
+ * and another error event follows each failed attempt.
+ */
+export interface TuiErrorEvent {
+  readonly kind: "error";
+  readonly error: TuiError;
+}
+
+/**
+ * What the event stream yields: `change` (one object changed), `reset` (refetch
+ * the lists and open sections; also sent by the client itself when it
+ * reconnected with no id to resume from) and `error` (the server refused).
+ */
+export type TuiEvent = TuiChangeEvent | TuiResetEvent | TuiErrorEvent;
+
+/** Statuses after which a retry cannot succeed. */
+const FINAL_STATUSES: ReadonlySet<number> = new Set([401, 404, 409]);
 
 /** Options for one event stream. */
 export interface TuiEventsOptions {
@@ -115,6 +133,7 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
   private readonly queue: TuiEvent[] = [];
   private readonly waiters: ((result: IteratorResult<TuiEvent>) => void)[] = [];
   private lastId: string | undefined;
+  private connectedBefore = false;
   private started = false;
   private closed = false;
 
@@ -229,12 +248,22 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
       signal: this.abort.signal,
     });
     if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined);
+      const error = await httpError(response);
+      this.push({ kind: "error", error });
+      if (error.status !== undefined && FINAL_STATUSES.has(error.status)) {
+        this.stop();
+      }
       return false;
     }
     if (response.body === null) {
       throw new Error("the event stream has no body");
     }
+    // A reconnect with no id asks "from now", and the server then cannot say
+    // that events were missed: the client says it.
+    if (this.connectedBefore && this.lastId === undefined) {
+      this.push({ kind: "reset" });
+    }
+    this.connectedBefore = true;
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
