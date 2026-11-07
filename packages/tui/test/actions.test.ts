@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ViewAction, ViewObject } from "@operad-io/engine";
-import { paletteEntries } from "../src/actions.ts";
+import { RESERVED_KEYS, entryHint, keyOf, paletteEntries } from "../src/actions.ts";
 import {
   footerText,
   initialState,
@@ -114,42 +114,48 @@ describe("actions in the reducer", () => {
     const ran = press(state, "m");
     expect(ran.actionRequest).toEqual({ action: "other:ship", id: "item:one" });
     expect(ran.acting).toBe(true);
-    // The person's `j` binding takes the key from the list; a plugin's does not.
-    const takes = opened(ACTIONS, [{ key: "j", action: "other:ship", source: "user" }]);
-    expect(press(takes, "j").actionRequest?.action).toBe("other:ship");
-    const keeps = opened(ACTIONS, [{ key: "j", action: "other:ship", source: "plugin" }]);
-    expect(press(keeps, "j").actionRequest).toBeUndefined();
     expect(press(opened(ACTIONS, [plugin]), "m").input?.kind).toBe("note");
   });
 
-  test("a user binding on :, ? or q beats the built-in key", () => {
-    for (const key of [":", "?", "q"]) {
+  test("reserved keys are dropped from the bindings, announced once, and keep their built-in use", () => {
+    const dropped: TuiBinding[] = [
+      { key: "j", action: "other:ship", source: "plugin" },
+      { key: "enter", action: "other:ship", source: "user" },
+    ];
+    const state = opened(ACTIONS, dropped);
+    expect(state.bindings).toEqual([]);
+    expect(state.notice).toContain("j (other:ship, plugin)");
+    expect(state.notice).toContain("enter (other:ship, user)");
+    const ship = ACTIONS.find((action) => action.name === "other:ship") as ViewAction;
+    expect(keyOf(state.bindings, ship)).toBe(ship.key);
+    expect(entryHint(paletteEntries(state).find((e) => e.name === "other:ship") as never)).not.toContain("enter");
+    expect(press(state, "j").actionRequest).toBeUndefined();
+    const pressed = press(state, "enter");
+    expect(pressed.actionRequest).toBeUndefined();
+  });
+
+  test("every reserved key is dropped whatever its source", () => {
+    for (const key of RESERVED_KEYS) {
       const state = opened(ACTIONS, [{ key, action: "other:ship", source: "user" }]);
+      expect(state.bindings).toEqual([]);
+    }
+  });
+
+  test("every key keyOf advertises runs its action through handleKey", () => {
+    const bindings: TuiBinding[] = [
+      { key: "m", action: "tuitest:approve", source: "plugin" },
+      { key: "x", action: "other:ship", source: "plugin" },
+      { key: "x", action: "tuitest:drop", source: "user" },
+      { key: "a", action: "tuitest:drop", source: "plugin" },
+      { key: "r", action: "tuitest:approve", source: "plugin" },
+    ];
+    const state = opened(ACTIONS, bindings);
+    for (const action of state.object?.actions ?? []) {
+      const key = keyOf(state.bindings, action);
+      if (key === undefined) continue;
       const ran = press(state, key);
-      expect(ran.actionRequest).toEqual({ action: "other:ship", id: "item:one" });
-      expect(ran.quit).not.toBe(true);
-      expect(ran.input).toBeUndefined();
-      expect(ran.keys).toBe(false);
-    }
-  });
-
-  test("a user binding beats the built-in keys while the key list is open", () => {
-    for (const key of ["q", "/"]) {
-      const open = press(opened(ACTIONS, [{ key, action: "other:ship", source: "user" }]), "?");
-      expect(open.keys).toBe(true);
-      const ran = press(open, key);
-      expect(ran.actionRequest).toEqual({ action: "other:ship", id: "item:one" });
-      expect(ran.quit).not.toBe(true);
-      expect(ran.keys).toBe(false);
-    }
-  });
-
-  test("a user binding on enter or escape beats the built-in key", () => {
-    for (const [bound, pressed] of [["enter", "enter"], ["enter", "return"], ["escape", "escape"], ["escape", "esc"]] as const) {
-      const state = opened(ACTIONS, [{ key: bound, action: "other:ship", source: "user" }]);
-      const ran = press(state, pressed);
-      expect(ran.actionRequest).toEqual({ action: "other:ship", id: "item:one" });
-      expect(ran.object).toBeDefined();
+      const started = ran.actionRequest?.action ?? (ran.input !== undefined && "action" in ran.input ? ran.input.action : undefined);
+      expect(started).toBe(action.name);
     }
   });
 

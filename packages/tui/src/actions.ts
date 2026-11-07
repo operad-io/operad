@@ -12,6 +12,46 @@ import { graphemes } from "./wrap.ts";
 /** The key that runs the main action when the plugin binds none to it. */
 export const MAIN_KEY = "a";
 
+/**
+ * Every key the TUI uses itself for navigation and control (lower case). A
+ * plugin default or a `keys.json` entry on one of these is dropped when the
+ * bindings are resolved; `handleKey` never looks a binding up for them.
+ */
+export const RESERVED_KEYS: readonly string[] = [
+  "enter", "return", "escape", "esc", "tab",
+  "up", "down", "left", "right", "arrowup", "arrowdown", "arrowleft", "arrowright",
+  "pageup", "page-up", "prior", "pagedown", "page-down", "next",
+  "home", "end", "space", " ",
+  "[", "]", ":", "?", "/",
+  "b", "f", "g", "j", "k", "q", "r",
+  "1", "2", "3", "4", "5", "6", "7", "8", "9",
+];
+
+/** Is `key` one the TUI keeps for itself? Letters match in either case. */
+export function isReserved(key: string): boolean {
+  return RESERVED_KEYS.includes(key.toLowerCase());
+}
+
+/** The bindings that may run actions, and the footer line naming those dropped. */
+export function resolveBindings(bindings: readonly TuiBinding[]): {
+  readonly bindings: readonly TuiBinding[];
+  readonly notice: string | undefined;
+} {
+  const kept = bindings.filter((binding) => !isReserved(binding.key));
+  const dropped = bindings.filter((binding) => isReserved(binding.key));
+  return {
+    bindings: kept,
+    notice:
+      dropped.length === 0
+        ? undefined
+        : sanitize(
+            `reserved keys ignored: ${dropped
+              .map((b) => `${b.key} (${b.action}, ${b.source})`)
+              .join(", ")}`,
+          ),
+  };
+}
+
 /** One line of the palette. */
 export interface TuiPaletteEntry {
   /** `<plugin>:<action>`. */

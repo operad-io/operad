@@ -27,6 +27,8 @@ import {
   mainKey,
   runKey,
   startAction,
+  isReserved,
+  resolveBindings,
 } from "./actions.ts";
 
 /** The two terminal themes the view knows. */
@@ -1083,9 +1085,11 @@ function handleKey(
   const key = event.key;
   const shift = event.shift === true;
   const label = keyLabel(key, shift);
-  // The person's own bindings come before every built-in key; a plugin's
-  // default comes after them, so it never takes `j` or `r` away.
-  const own = bindingFor(state.bindings, bindingLabel(label), "user");
+  // Reserved keys were dropped from the bindings; the rest, a user binding
+  // first, run their action.
+  const own = isReserved(label)
+    ? undefined
+    : bindingFor(state.bindings, bindingLabel(label));
   // The key list closes first, so the action acts on what the person sees.
   if (own !== undefined) return startAction({ ...state, keys: false }, own.action);
   if (key === ":" && !state.keys) {
@@ -1362,7 +1366,15 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
     case "theme":
       return { ...state, theme: event.theme };
     case "keys":
-      return stale(state, event.generation) ? state : { ...state, bindings: event.bindings };
+    {
+      if (stale(state, event.generation)) return state;
+      const resolved = resolveBindings(event.bindings);
+      return {
+        ...state,
+        bindings: resolved.bindings,
+        ...(resolved.notice === undefined ? {} : { notice: resolved.notice }),
+      };
+    }
     case "action-launched":
       return state.actionRequest === undefined
         ? state
