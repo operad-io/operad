@@ -280,6 +280,10 @@ export async function answerAsk(options: AnswerAskOptions): Promise<void> {
     );
   }
   const refuse = async (reason: string): Promise<never> => {
+    // An ended run takes no more facts; the answer is just not taken.
+    if (options.state.status === "ended") {
+      throw new StateError(`run ${runId}: ${reason}`);
+    }
     await appendWhen(log, runId, () => [
       {
         kind: "ask_refused",

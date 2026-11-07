@@ -19,7 +19,12 @@ function mark(dir: string, name: string): void {
   writeFileSync(existsSync(first) ? `${first}-again` : first, String(process.pid));
 }
 
-function flow(name: string, stepParams: Record<string, unknown>, hold: boolean) {
+function flow(
+  name: string,
+  stepParams: Record<string, unknown>,
+  hold: boolean,
+  replay: "safe" | "unsafe" = "safe",
+) {
   return defineFlow({
     name,
     entry: "q",
@@ -28,13 +33,14 @@ function flow(name: string, stepParams: Record<string, unknown>, hold: boolean) 
         id: "q",
         kind: "plugin",
         params: { use: "ask/question", params: stepParams },
-        replay: "safe",
+        replay,
         next: {
           answered: hold ? "hold" : "done",
           rejected: hold ? "hold" : "done",
           waiting: "person",
           failed: "done",
-          interrupted: "done",
+          // A step that ran again after a crash ends here: the person decides.
+          interrupted: replay === "unsafe" ? "person" : "done",
         },
       },
       ...(hold
@@ -126,5 +132,6 @@ export default definePlugin({
     flow("ask-hold", {}, true),
     flow("ask-param90", { askGraceSecs: 90 }, false),
     flow("ask-param30", { askGraceSecs: 30 }, false),
+    flow("ask-unsafe", {}, false, "unsafe"),
   ],
 });

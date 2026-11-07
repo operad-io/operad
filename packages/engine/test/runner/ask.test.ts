@@ -348,6 +348,32 @@ describe("ctx.ask", () => {
     }
   }, 30_000);
 
+  test("an answer claimed by a process that stopped before the fact is still delivered", async () => {
+    const env = await setup("memory");
+    try {
+      const id = await env.create("ask-wait", "c");
+      const run = env.runner(id, new FakeTimer()).run();
+      const waitId = await env.opened(id);
+      // The claim is recorded, and the process that took it never wrote the fact.
+      await env.log.recordInput(id, "person", `${id}:ask:${waitId}`, {
+        kind: "ask_answer",
+        waitId,
+        choice: "no",
+        note: null,
+        actor: { via: "cli", id: "gone" },
+      });
+      expect(await run).toBe("ended");
+      const list = await facts(env.log, id);
+      expect(stepResult(list, "q").data).toMatchObject({
+        choice: "no",
+        actor: { via: "cli", id: "gone" },
+      });
+      expect(count(list.map((fact) => fact.kind), "ask_answered")).toBe(1);
+    } finally {
+      await env.close();
+    }
+  }, 30_000);
+
   test("an answer to a run that was cancelled while it asked is not taken", async () => {
     const env = await setup("memory");
     try {
@@ -566,6 +592,34 @@ describe("ctx.ask survives a crash", () => {
       expect(count(all, "ask_answered")).toBe(1);
       expect(stepResult(list, "q").result).toBe("answered");
       expect(waitId.startsWith(`${id}:`)).toBe(true);
+    } finally {
+      await env.close();
+    }
+  }, 60_000);
+
+  test("an answer to a question whose step ended without closing it is refused and recorded", async () => {
+    const env = await setup("file");
+    try {
+      // An unsafe step that stopped after it asked is not run again: the run
+      // goes on to the person, and the old question stays open in the log.
+      const id = await env.create("ask-unsafe", "u");
+      const dead = spawnChild(env, id, { name: "u" }, "opened");
+      expect(await dead.exited).not.toBe(0);
+      const waitId = await env.opened(id);
+      const restarted = spawnChild(env, id, { name: "u" }, "none", true);
+      expect(await restarted.exited).toBe(0);
+      const state = await readState(env.log, id);
+      expect(state.status).toBe("waiting_person");
+      expect(state.wait?.id).not.toBe(waitId);
+
+      await expect(
+        recordAnswer({ log: env.log, runId: id, waitId, choice: "yes", actor: ACTOR }),
+      ).rejects.toThrow(/closed/);
+      const all = await kinds(env.log, id);
+      expect(count(all, "ask_refused")).toBe(1);
+      expect(all).not.toContain("ask_answered");
+      // The flow's own wait is still there to answer.
+      expect((await readState(env.log, id)).status).toBe("waiting_person");
     } finally {
       await env.close();
     }
