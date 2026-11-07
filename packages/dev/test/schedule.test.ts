@@ -751,7 +751,7 @@ describe("dev scheduling", () => {
       expect(pending).toHaveLength(1);
       const item = pending[0];
       if (item === undefined) throw new Error("no pending item");
-      expect(item.choices).toEqual(["merge", "reject", "reverify"]);
+      expect(item.choices).toEqual(["merge", "reject", "rework", "reverify"]);
       expect(
         item.actions.map((action) => `${action.plugin}:${action.action}`),
       ).toEqual(["dev:cancel", "dev:merge", "dev:reject", "dev:rework", "dev:reverify"]);

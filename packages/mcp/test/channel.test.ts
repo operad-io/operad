@@ -193,9 +193,31 @@ describe("the channel's sources", () => {
     }
   });
 
-  test("a run log change with no object write reports the wait and the running flag", async () => {
+  const waitFact = (waitId: string) => ({
+    kind: "waiting_for_person",
+    payload: {
+      waitId,
+      step: "ask",
+      prompt: "Approve?",
+      choices: ["yes"],
+      waitKind: "step",
+      effectId: null,
+    },
+    cause: "test",
+  });
+
+  test("a running flag flip alone sends nothing, and a wait turning on sends with the step", async () => {
     const s = await setup();
     put(s, "task", "t-1", { title: "One", phase: "ready" });
+    const running = new Reads();
+    const realGet = s.views.get.bind(s.views);
+    Object.defineProperty(s.views, "get", {
+      value: async (id: string) => {
+        const current = await realGet(id);
+        if (current.row.running) running.push();
+        return current;
+      },
+    });
     const sent = new Sent();
     const channel = await startClaudeChannel({
       views: s.views,
@@ -205,29 +227,78 @@ describe("the channel's sources", () => {
     });
     try {
       const info = await s.log.startRun("demo-flow", "task:t-1");
-      const started = await sent.next();
-      expect(started.meta).toMatchObject({
-        id: "t-1",
-        waiting: "false",
-        running: "true",
-      });
+      await running.next();
       await s.log.append(info.runId, 0, [
         {
-          kind: "waiting_for_person",
-          payload: {
-            waitId: "wait:1",
-            step: "ask",
-            prompt: "Approve?",
-            choices: ["yes"],
-            waitKind: "step",
-            effectId: null,
-          },
+          kind: "step_entered",
+          payload: { kind: "call", step: "verify" },
           cause: "test",
         },
       ]);
+      await s.log.append(info.runId, 1, [waitFact("wait:1")]);
+      // The running flip and the step produced no block: the wait is the first.
       const waiting = await sent.next();
-      expect(waiting.meta).toMatchObject({ waiting: "true", running: "false" });
+      expect(waiting.meta).toMatchObject({
+        id: "t-1",
+        waiting: "true",
+        running: "false",
+        step: "verify",
+      });
       expect(waiting.content).toBe("t-1 ready -> ready");
+      // The run ends: waiting turns off with the same state, nothing is sent,
+      // and no step is reported once no run is active.
+      await s.log.endRun(info.runId);
+      put(s, "task", "t-1", { title: "One", phase: "review" });
+      const changed = await sent.next();
+      expect(changed.meta).toMatchObject({
+        state: "review",
+        previous: "ready",
+        waiting: "false",
+      });
+      expect(changed.meta.step).toBeUndefined();
+    } finally {
+      await channel.close();
+      s.views.close();
+      await s.log.close();
+    }
+  });
+
+  test("a wait turning on again with the state and flags of the last block sent sends nothing", async () => {
+    const s = await setup();
+    put(s, "task", "t-1", { title: "One", phase: "ready" });
+    // Tells the test when the channel has read the object with no wait open.
+    const idle = new Reads();
+    const again = new Reads();
+    let armed = false;
+    const realGet = s.views.get.bind(s.views);
+    Object.defineProperty(s.views, "get", {
+      value: async (id: string) => {
+        const current = await realGet(id);
+        if (armed && !current.row.waiting) idle.push();
+        if (armed && current.row.waiting) again.push();
+        return current;
+      },
+    });
+    const sent = new Sent();
+    const channel = await startClaudeChannel({
+      views: s.views,
+      registry: s.registry,
+      log: s.log,
+      send: sent.push,
+    });
+    try {
+      const first = await s.log.startRun("demo-flow", "task:t-1");
+      await s.log.append(first.runId, 0, [waitFact("wait:1")]);
+      expect((await sent.next()).meta.waiting).toBe("true");
+      armed = true;
+      await s.log.endRun(first.runId);
+      await idle.next();
+      const second = await s.log.startRun("demo-flow", "task:t-1");
+      await s.log.append(second.runId, 0, [waitFact("wait:2")]);
+      await again.next();
+      put(s, "task", "t-1", { title: "One", phase: "done" });
+      const next = await sent.next();
+      expect(next.meta).toMatchObject({ state: "done", previous: "ready" });
     } finally {
       await channel.close();
       s.views.close();

@@ -1019,39 +1019,26 @@ describe("operad mcp --claude-channel", () => {
     }
   });
 
-  test("a flipped running flag is reported without an object write", async () => {
+  test("a flipped running flag alone is not reported", async () => {
     const { home } = await makeHome({ plugins: [channelPluginPath] });
     putObject(home, "task", "T-0001-one", { title: "First", phase: "ready" });
     const child = start(home, home, ["--claude-channel"]);
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
       child.notify("notifications/initialized");
-      // A run that has started and is not waiting for a person is running.
       const runId = await addRun(home, "task:T-0001-one", undefined);
-      const started = JSON.parse(await child.lines.next()) as {
-        params: { content: string; meta: Record<string, string> };
-      };
-      expect(started.params.meta).toMatchObject({
-        id: "T-0001-one",
-        state: "ready",
-        previous: "ready",
-        waiting: "false",
-        running: "true",
-      });
-      // The run ends: the flag flips back.
       const log = openConfigLog(await readConfig(home));
       try {
         await log.endRun(runId);
       } finally {
         await log.close();
       }
-      const ended = JSON.parse(await child.lines.next()) as {
-        params: { meta: Record<string, string> };
+      // Both flips were silent: the first block is the state change after them.
+      putObject(home, "task", "T-0001-one", { title: "First", phase: "running" });
+      const line = JSON.parse(await child.lines.next()) as {
+        params: { content: string };
       };
-      expect(ended.params.meta).toMatchObject({
-        waiting: "false",
-        running: "false",
-      });
+      expect(line.params.content).toBe("T-0001-one ready -> running");
     } finally {
       const closed = await child.close();
       expect(closed.code).toBe(0);

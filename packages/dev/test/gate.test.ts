@@ -1762,6 +1762,7 @@ describe("the dev flow", () => {
       expect(nextOf(id)).toEqual({
         merge: "integrate",
         reject: "worktree",
+        rework: "worktree",
         interrupted: "end_cancelled",
       });
     }
@@ -1774,6 +1775,7 @@ describe("the dev flow", () => {
     expect(nextOf("wait_review_timeout")).toEqual({
       merge: "integrate",
       reject: "worktree",
+      rework: "worktree",
       interrupted: "end_cancelled",
     });
     expect(nextOf("rework")).toEqual({
@@ -1784,6 +1786,7 @@ describe("the dev flow", () => {
     expect(nextOf("wait")).toEqual({
       merge: "integrate",
       reject: "worktree",
+      rework: "worktree",
       reverify: "verify",
       interrupted: "end_cancelled",
     });

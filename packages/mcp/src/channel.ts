@@ -6,8 +6,8 @@
  * that opens or a step that starts touches no object. Each change re-reads the
  * object's row. A watch is the fast path and each backend's own timer is the
  * fallback, so a change another process writes is seen too. The server
- * remembers the row it last saw for each object and sends only when its state,
- * waiting or running flag differs.
+ * remembers the row it last saw for each object and sends only when its state
+ * differs or its waiting flag turns on, and never repeats the row it last sent.
  */
 
 import {
@@ -32,7 +32,7 @@ export const CHANNEL_METHOD = "notifications/claude/channel";
 
 /** The paragraph the channel adds to the server's instructions. */
 export const CHANNEL_INSTRUCTIONS =
-  "Changes arrive as `<channel>` blocks, one per change, with the meta attributes `id`, `type`, `state`, `previous`, `waiting` and `running`. They are one-way: there is no reply tool. Read the details with `show`, `section`, `pending` and `history`.";
+  "Changes arrive as `<channel>` blocks, one per change, with the meta attributes `id`, `type`, `state`, `previous`, `waiting` and `running`, and `step` while the object has an active run. A block is sent when the state changes or something starts waiting for a person; a flag flipping alone sends nothing. They are one-way: there is no reply tool. Read the details with `show`, `section`, `pending` and `history`.";
 
 /** One notification's parameters: a one-line content and string meta. */
 export interface ChannelNotification {
@@ -44,6 +44,8 @@ export interface ChannelNotification {
     readonly previous: string;
     readonly waiting: string;
     readonly running: string;
+    /** The active run's last step; absent when the object has no active run. */
+    readonly step?: string;
   };
 }
 
@@ -132,6 +134,7 @@ function notificationOf(
   type: string,
   row: ViewRow,
   previous: string,
+  step: string | undefined,
 ): ChannelNotification {
   return {
     content: contentOf(row, previous),
@@ -142,6 +145,7 @@ function notificationOf(
       previous: oneLine(previous),
       waiting: row.waiting ? "true" : "false",
       running: row.running ? "true" : "false",
+      ...(step === undefined ? {} : { step: oneLine(step) }),
     },
   };
 }
@@ -155,6 +159,8 @@ class ClaudeChannel implements ChannelHandle {
   ) => void | Promise<void>;
   private readonly onLog: (message: string) => void;
   private readonly last = new Map<string, SeenRow>();
+  /** The row each object's last block (or starting row) reported. */
+  private readonly sent = new Map<string, SeenRow>();
   private readonly log: LogBackend | undefined;
   /** Types whose starting rows could not be read: a first sighting is a baseline. */
   private readonly unseeded = new Set<string>();
@@ -250,6 +256,7 @@ class ClaudeChannel implements ChannelHandle {
       );
       for (const row of page.rows) {
         this.last.set(rowKey(type, row.id), seenRow(row));
+        this.sent.set(rowKey(type, row.id), seenRow(row));
       }
       if (page.next === undefined) return;
       cursor = page.next;
@@ -265,6 +272,35 @@ class ClaudeChannel implements ChannelHandle {
       });
   }
 
+  /** The last step of the object's active run, if it has one. */
+  private async stepOf(object: ObjectRef): Promise<string | undefined> {
+    if (this.log === undefined) return undefined;
+    try {
+      const key = `${object.type}:${object.id}`;
+      const runs = await this.log.runs({ active: true });
+      const run = runs.find((entry) => entry.object === key);
+      if (run === undefined) return undefined;
+      let step: string | undefined;
+      for await (const fact of this.log.read(run.runId)) {
+        const payload = fact.payload;
+        if (
+          fact.kind === "step_entered" &&
+          typeof payload === "object" &&
+          payload !== null &&
+          !Array.isArray(payload) &&
+          payload.kind !== "end" &&
+          typeof payload.step === "string"
+        ) {
+          step = payload.step;
+        }
+      }
+      return step;
+    } catch (error) {
+      this.onLog(`channel: the step of "${object.type}:${object.id}" could not be read: ${messageOf(error)}`);
+      return undefined;
+    }
+  }
+
   private async handle(object: ObjectRef): Promise<void> {
     if (this.closed || !this.types.has(object.type)) return;
     let current: ViewObject;
@@ -274,6 +310,7 @@ class ClaudeChannel implements ChannelHandle {
       if (error instanceof ViewError && error.kind === "not-found") {
         // A deleted object: forget it, so a new one with the same id is new.
         this.last.delete(rowKey(object.type, object.id));
+        this.sent.delete(rowKey(object.type, object.id));
         return;
       }
       this.onLog(
@@ -287,11 +324,19 @@ class ClaudeChannel implements ChannelHandle {
     const previous = this.last.get(key);
     this.last.set(key, next);
     if (previous === undefined && this.unseeded.has(object.type)) return;
-    if (previous !== undefined && sameRow(previous, next)) return;
+    if (previous !== undefined) {
+      const stateChanged = previous.state !== next.state;
+      const waitingOn = next.waiting && !previous.waiting;
+      if (!stateChanged && !waitingOn) return;
+    }
+    const lastSent = this.sent.get(key);
+    if (lastSent !== undefined && sameRow(lastSent, next)) return;
+    this.sent.set(key, next);
     const notification = notificationOf(
       object.type,
       row,
       previous?.state ?? "new",
+      await this.stepOf(object),
     );
     if (this.held !== undefined) this.held.push(notification);
     else await this.sendNotification(notification);

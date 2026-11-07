@@ -48,7 +48,7 @@ Every action is also a command: `operad dev:<action> <id>`.
 | `dev:confirm` | plan, task | `c` | confirm a draft plan (its tasks become ready) or a proposed task |
 | `dev:merge` | task | | answer the task's wait with `merge`; asks first |
 | `dev:reject` | task | | answer the task's wait with `reject` and append `## Rework <n> (owner)` with the note |
-| `dev:rework` | task | | add the lead's own rework: `--note <text>` becomes `## Rework <n> (lead)`, and the worker runs again |
+| `dev:rework` | task | | add the lead's own rework: `--note <text>` becomes `## Rework <n> (lead)`, and the worker runs again; history reads "you chose rework" with the note |
 | `dev:reverify` | task | | run verify and review again on the task's current commit, with no worker |
 | `dev:cancel` | plan, task | `x` | cancel a plan and its open tasks, or one task; asks first |
 | `dev:auto` | plan | | set auto: `--level off`, `--level run` or `--level merge` |

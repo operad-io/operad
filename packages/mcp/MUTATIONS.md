@@ -31,3 +31,7 @@ the row fields.
 | T-0028-M10 | packages/mcp/src/channel.ts | an unknown `--types` entry was accepted | `a type with no views is refused with its name`, `--types names an unknown type, and a missing value, as a usage error` |
 | T-0028-M11 | packages/mcp/src/channel.ts | a not-found object stayed in `last`, so a new object with its id was not new | `an object that is not found is forgotten, so it comes back as new` |
 | T-0028-M12 | packages/mcp/src/channel.ts | held notifications were sent at once instead of pushed to the hold list | `nothing is written before notifications/initialized arrives` |
+| T-0057-M1 | packages/mcp/src/channel.ts | a waiting flag turning on alone was not sent (state change only) | `a running flag flip alone sends nothing, and a wait turning on sends with the step`, `a wait turning on again with the state and flags of the last block sent sends nothing` |
+| T-0057-M2 | packages/mcp/src/channel.ts | the row equal to the last block sent was sent again | `a wait turning on again with the state and flags of the last block sent sends nothing` |
+| T-0057-M3 | packages/mcp/src/channel.ts | the `step` meta was never added | `a running flag flip alone sends nothing, and a wait turning on sends with the step` |
+| T-0057-M4 | packages/mcp/src/channel.ts | every changed row was sent, flag flips included | `a running flag flip alone sends nothing, and a wait turning on sends with the step`, `a wait turning on again with the state and flags of the last block sent sends nothing` |

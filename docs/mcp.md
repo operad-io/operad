@@ -60,8 +60,11 @@ default). Each change re-reads that object's row. At start the server reads the
 current rows of every type that has views and sends nothing for them; if it
 cannot read a type's rows, the first row it sees for each object of that type is
 its baseline and also sends nothing. It remembers the last row it saw for each
-object and sends one notification only when that row's `state`, `waiting` or
-`running` changed. An object first seen after the starting read has the previous
+object and sends one notification only when that row's `state` changed or its `waiting`
+flag turned on (something now waits for a person). A `running` flip alone, or
+`waiting` turning off with the same state, sends nothing, and a row equal to the
+last one sent for that object (state, `waiting` and `running`) is not sent
+again, so a change seen again after a reconnect or restart stays quiet. An object first seen after the starting read has the previous
 state `new`. An object that can no longer be found is forgotten.
 
 The server sends nothing until the client has sent `notifications/initialized`.
@@ -80,10 +83,15 @@ these parameters:
     "state": "waiting",
     "previous": "running",
     "waiting": "true",
-    "running": "false"
+    "running": "false",
+    "step": "review"
   }
 }
 ```
+
+`step` is the last step of the object's active run and is absent when the
+object has none, so a block reads `state="review" step="verify"` when verify
+failed inside the review state.
 
 `content` is one line, `<id> <old state> -> <new state>`, with `: <note>`
 appended when the row has a note. Every `meta` value is a string. The channel is

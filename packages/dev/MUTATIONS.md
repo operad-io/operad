@@ -127,3 +127,4 @@ the row fields.
 | T-0046-M5 | packages/dev/src/service.ts | `setConcurrency` accepted a finished plan | `dev actions > concurrency is refused on a finished plan` |
 | T-0046-M6 | packages/dev/src/actions.ts | `dev:concurrency` was available on a finished plan | `dev actions > concurrency is refused on a finished plan` |
 | T-0045-M5 | packages/dev/test/gate.test.ts | the FIFO the fake reviewer made was not removed after the test | `dev/review > the FIFO the previous test made is gone, and it was made outside the repository` |
+| T-0057-M1 | packages/dev/src/actions.ts | `dev:rework` answered the wait with the choice `reject` again | `dev actions > rework answers the wait with the choice rework and the note` |

@@ -298,6 +298,36 @@ describe("dev actions", () => {
     expect(after.brief).toContain("cover the concurrent writers");
   });
 
+  test("rework answers the wait with the choice rework and the note", async () => {
+    const answers: [string, string | undefined][] = [];
+    const { store, registry, repository } = await setup(undefined, (_runId, choice, note) => {
+      answers.push([choice, note]);
+    });
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
+    await setTaskPhase(store, task.id, "waiting");
+
+    await registry.runAction(
+      "dev/rework",
+      { note: "cover the concurrent writers" },
+      { object: await getTask(store, task.id), runId: "run-1", actor: ACTOR },
+    );
+    expect(answers).toEqual([["rework", "cover the concurrent writers"]]);
+  });
+
+  test("every person wait of the dev flow accepts rework and routes it like reject", async () => {
+    const flow = (await import("../flows/dev.flow.ts")).default as unknown;
+    const waits = JSON.parse(JSON.stringify(flow)) as {
+      steps: { kind: string; choices?: string[]; params?: { choices?: string[] }; next?: Record<string, string> }[];
+    };
+    const people = waits.steps.filter((node) => node.kind === "wait_person");
+    expect(people.length).toBeGreaterThan(0);
+    for (const node of people) {
+      expect(node.choices ?? node.params?.choices).toContain("rework");
+      expect(node.next?.rework).toBe(node.next?.reject);
+    }
+  });
+
   test("merge and reject refuse a running task", async () => {
     const answers: string[] = [];
     const { store, registry, repository } = await setup(undefined, (_runId, choice) => {
