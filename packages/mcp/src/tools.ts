@@ -35,6 +35,7 @@ import {
   mcpPolicy,
   ownerRefusal,
   splitActions,
+  splitPendingActions,
 } from "./policy.ts";
 
 /** The JSON Schema subset a tool input uses. */
@@ -322,9 +323,14 @@ export async function runTool(
         context.registry,
         context.kernel,
       );
+      const shown = splitPendingActions(
+        pending,
+        context.registry.actions(),
+        mcpPolicy(context.mcp),
+      );
       return {
-        content: [text(pendingMarkdown(pending))],
-        structuredContent: pending,
+        content: [text(pendingMarkdown(shown))],
+        structuredContent: shown,
       };
     }
     case "running": {

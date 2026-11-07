@@ -536,6 +536,38 @@ describe("operad mcp", () => {
     }
   });
 
+  test("pending lists only the actions the lead may run", async () => {
+    const { home } = await makeHome({
+      mcp: {
+        actions: ["demo:approve", "demo:drop"],
+        confirmActions: [],
+      },
+    });
+    seed(home, "one", { title: "First", state: "new" });
+    await addRun(home, "item:one", { prompt: "Approve?" });
+    const child = start(home);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      const pending = await child.request(2, "tools/call", {
+        name: "pending",
+        arguments: {},
+      });
+      const items = resultOf(pending).structuredContent as unknown as {
+        actions: { plugin: string; action: string }[];
+      }[];
+      expect(items[0]?.actions).toEqual([
+        { plugin: "demo", action: "approve" },
+      ]);
+      expect(textOf(pending)).toContain("- actions: demo:approve");
+      expect(textOf(pending)).not.toContain("demo:drop");
+      expect(textOf(pending)).not.toContain("demo:auto");
+      expect(textOf(pending)).not.toContain("demo:label");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
   test("command runs plugin verbs with input and refuses a kernel verb", async () => {
     const { home, repository } = await makeDevHome();
     const child = start(home, repository);

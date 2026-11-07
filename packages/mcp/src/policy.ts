@@ -5,6 +5,7 @@ import {
   splitActionName,
   type ActionInfo,
   type McpConfig,
+  type PendingItem,
   type ViewAction,
   type ViewObject,
 } from "@operad-io/engine";
@@ -73,4 +74,20 @@ export function splitActions(
     else ownerActions.push(action.name);
   }
   return { ...object, actions, ownerActions };
+}
+
+/** Keeps only the pending actions the lead may run. */
+export function splitPendingActions(
+  pending: readonly PendingItem[],
+  actions: readonly ActionInfo[],
+  policy: McpPolicy,
+): readonly PendingItem[] {
+  const byName = new Map(actions.map((info) => [info.name, info]));
+  return pending.map((item) => ({
+    ...item,
+    actions: item.actions.filter((action) => {
+      const info = byName.get(`${action.plugin}:${action.action}`);
+      return info !== undefined && actionMayRun(policy, info);
+    }),
+  }));
 }

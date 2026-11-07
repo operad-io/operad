@@ -127,9 +127,12 @@ Input:
 }
 ```
 
-Result: the same list as `operad pending` and `GET /v1/pending`, including the
-actions each item offers. The Markdown lists each pending item, its prompt,
-choices and actions.
+Result: the same list as `operad pending` and `GET /v1/pending`, with only the
+actions the lead may run now. An action outside `mcp.actions`, or a
+`confirm: true` action that `mcp.confirmActions` does not name, is left out of
+both the structured content and the Markdown. The Markdown lists each pending
+item, its prompt, choices and actions. Call `show` on the item's object to see
+the owner actions.
 
 ### `running`
 
