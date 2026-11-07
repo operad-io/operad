@@ -522,6 +522,29 @@ An alias or function from the user's own shell setup, such as `ls` defined as
   around the alias, or define it only in a file that agents do not read. The
   `bashTimeoutSecs` limit above still stops a hung command after its time.
 
+## A different reviewer for later reviews
+
+`reviewer.later` in `.operad/dev.json` is an object `{ "use", "args", "fallback" }`
+that sets the reviewer of every review after the task's first one: after a
+rework, a reject or a reverify, and on any later attempt. A missing `use` or
+`args` is the reviewer's own, and a missing `fallback` is the reviewer's own
+`fallback`. The task's first review is the first review round of the first
+attempt that ran a review, including its retry after an invalid report and a
+switch to the fallback; a first attempt whose work failed before any review
+leaves the first review to attempt 2. On the task's first review the reviewer's
+`use` with `firstArgs` runs, and on later reviews `later` wins and `firstArgs`
+is not used. Each review run record and history line says which ran:
+`reviewer`, `reviewer later` or `fallback`.
+
+```json
+{
+  "reviewer": {
+    "args": ["--model", "big"],
+    "later": { "args": ["--model", "small"] }
+  }
+}
+```
+
 ## Usage and end results
 
 Every agent step records what the run used in one field of its data, `usage`,

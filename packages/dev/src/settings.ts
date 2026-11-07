@@ -75,6 +75,16 @@ export interface ReviewerFallback {
   readonly args: readonly string[];
 }
 
+/** The reviewer used for every review of a task after its first one. */
+export interface ReviewerLater {
+  /** Inherits the reviewer's own `use` when absent. */
+  readonly use?: string | undefined;
+  /** Inherits the reviewer's own `args` when absent. */
+  readonly args?: readonly string[] | undefined;
+  /** Inherits the reviewer's own `fallback` when absent. */
+  readonly fallback?: ReviewerFallback | undefined;
+}
+
 /** What a repository may configure for the review harness step. */
 export interface ReviewerSettings {
   readonly use: string;
@@ -83,6 +93,8 @@ export interface ReviewerSettings {
   readonly firstArgs?: readonly string[] | undefined;
   /** The step used when the primary reviewer is unavailable. */
   readonly fallback?: ReviewerFallback | undefined;
+  /** The reviewer of every review after the task's first review. */
+  readonly later?: ReviewerLater | undefined;
   readonly timeoutSecs: number;
   /** How long a review may print nothing; unset uses the harness default. */
   readonly stallSecs?: number | undefined;
@@ -401,6 +413,63 @@ function reviewerFallback(value: unknown, field: string): ReviewerFallback {
   };
 }
 
+function reviewerLater(value: unknown, field: string): ReviewerLater {
+  if (!isRecord(value)) {
+    throw new DevError(field, "must be an object");
+  }
+  for (const key of Object.keys(value)) {
+    if (key !== "use" && key !== "args" && key !== "fallback") {
+      throw new DevError(`${field}.${key}`, "is not a later-reviewer setting");
+    }
+  }
+  return {
+    ...(value.use === undefined
+      ? {}
+      : { use: nonEmptyString(value.use, `${field}.use`) }),
+    ...(value.args === undefined
+      ? {}
+      : { args: stringList(value.args, `${field}.args`) }),
+    ...(value.fallback === undefined
+      ? {}
+      : { fallback: reviewerFallback(value.fallback, `${field}.fallback`) }),
+  };
+}
+
+/** The harness step, arguments and fallback one review runs with. */
+export interface ReviewerChoice {
+  readonly use: string;
+  readonly args: readonly string[];
+  readonly fallback: ReviewerFallback | undefined;
+}
+
+/**
+ * The reviewer for a review. The task's first review uses the reviewer's own
+ * `use` with `firstArgs` when set. Every later review uses `later` when it is
+ * set, and `firstArgs` is not used there; without `later` a review that starts
+ * an attempt keeps `firstArgs`.
+ */
+export function reviewerChoice(
+  settings: ReviewerSettings,
+  taskFirst: boolean,
+  attemptFirst: boolean,
+): ReviewerChoice {
+  const own = { use: settings.use, fallback: settings.fallback };
+  if (!taskFirst && settings.later !== undefined) {
+    return {
+      use: settings.later.use ?? own.use,
+      args: settings.later.args ?? settings.args,
+      fallback: settings.later.fallback ?? own.fallback,
+    };
+  }
+  const first =
+    settings.later === undefined ? attemptFirst : taskFirst;
+  return {
+    use: own.use,
+    args: first && settings.firstArgs !== undefined ? settings.firstArgs : settings.args,
+    fallback: own.fallback,
+  };
+}
+
 function reviewerSettings(value: unknown, field: string): ReviewerSettings {
   if (!isRecord(value)) {
     throw new DevError(field, "must be an object");
@@ -411,6 +480,7 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
       key !== "args" &&
       key !== "firstArgs" &&
       key !== "fallback" &&
+      key !== "later" &&
       key !== "timeoutSecs" &&
       key !== "stallSecs" &&
       key !== "fixLevel" &&
@@ -429,6 +499,10 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
     value.fallback === undefined
       ? undefined
       : reviewerFallback(value.fallback, `${field}.fallback`);
+  const later =
+    value.later === undefined
+      ? undefined
+      : reviewerLater(value.later, `${field}.later`);
   return {
     use:
       value.use === undefined
@@ -440,6 +514,7 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
         : stringList(value.args, `${field}.args`),
     ...(firstArgs === undefined ? {} : { firstArgs }),
     ...(fallback === undefined ? {} : { fallback }),
+    ...(later === undefined ? {} : { later }),
     timeoutSecs:
       value.timeoutSecs === undefined
         ? DEFAULT_DEV_SETTINGS.reviewer.timeoutSecs

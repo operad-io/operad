@@ -17,6 +17,7 @@ import {
 } from "@operad-io/engine";
 import { createShellPlugin } from "@operad-io/shell";
 import { setTaskPhase } from "../src/service.ts";
+import { reviewerChoice } from "../src/settings.ts";
 import {
   addPlan,
   addRepository,
@@ -324,6 +325,11 @@ interface FixtureOptions {
   readonly rerun?: number;
   readonly reviewerArgs?: readonly string[];
   readonly firstArgs?: readonly string[];
+  readonly later?: {
+    readonly use?: string;
+    readonly args?: readonly string[];
+    readonly fallback?: { readonly use: string; readonly args: readonly string[] };
+  };
   readonly reviewerStallSecs?: number;
   readonly reviewerTimeoutSecs?: number;
   readonly fixLevel?: FixLevel;
@@ -390,6 +396,7 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
           ...(options.fallback === undefined
             ? {}
             : { fallback: options.fallback }),
+          ...(options.later === undefined ? {} : { later: options.later }),
           ...(options.reviewerTimeoutSecs === undefined
             ? {}
             : { timeoutSecs: options.reviewerTimeoutSecs }),
@@ -964,6 +971,183 @@ describe("dev/review", () => {
   });
 });
 
+function newAttempt(state: Fixture, runId: string) {
+  return state.registry.runStep("dev/worktree", {}, {
+    runId,
+    object: { type: "task", id: state.taskKey, data: {} },
+  });
+}
+
+function runRecordOf(state: Fixture, resultPath: string): Record<string, unknown> {
+  const sidecar = resultPath.replace(/\.json$/, ".run.json");
+  return JSON.parse(readFileSync(sidecar, "utf8")) as Record<string, unknown>;
+}
+
+describe("dev/review reviewer.later", () => {
+  test("the first review uses firstArgs, a review after a reverify uses later, and firstArgs is not used there", async () => {
+    const state = await fixture({
+      reviewerArgs: ["major", "--model", "own"],
+      firstArgs: ["major", "--model", "first"],
+      later: { args: ["none", "--model", "later"] },
+      maxAutoRework: 5,
+    });
+    await verify(state);
+    const first = await review(state, "review-1");
+    expect(first.result).toBe("fail");
+    expect(state.reviewer.calls[0]?.args).toEqual(["major", "--model", "first"]);
+    const firstRun = (await taskOf(state)).attempt?.review?.runs?.[0];
+    expect(firstRun?.reviewer).toBe("reviewer");
+    expect(runRecordOf(state, state.reviewer.calls[0]?.resultPath ?? "").reviewer).toBe("reviewer");
+
+    await setTaskPhase(state.store, state.taskKey, "waiting");
+    const registry = new PluginRegistry([createDevPlugin()], {
+      home: state.root,
+      cwd: state.remote.repository,
+      store: state.store,
+      onAnswer: async () => {},
+    });
+    await registry.runAction("dev/reverify", {}, {
+      object: (await state.store.get("task", state.taskKey)) as never,
+      runId: "review-2",
+      actor: { via: "test", id: "lead" },
+    });
+    await verify(state, "verify-again");
+    const second = await review(state, "review-2");
+    expect(second.result).toBe("pass");
+    expect(state.reviewer.calls[1]?.args).toEqual(["none", "--model", "later"]);
+    expect(String(second.data?.message)).toContain("reviewer later");
+    const run = (await taskOf(state)).attempt?.review?.runs?.[0];
+    expect(run?.reviewer).toBe("reviewer later");
+    expect(runRecordOf(state, state.reviewer.calls[1]?.resultPath ?? "").reviewer).toBe("reviewer later");
+  });
+
+  test("the first review of a new attempt after a rework uses later", async () => {
+    const state = await fixture({
+      reviewerArgs: ["major", "--model", "own"],
+      firstArgs: ["major", "--model", "first"],
+      later: { args: ["none", "--model", "later"] },
+    });
+    await verify(state);
+    expect((await review(state, "review-1")).result).toBe("fail");
+    await newAttempt(state, "work-2");
+    await commitIn(state.worktree, "more.txt", "more\n", "more");
+    await verify(state, "verify-2");
+    const second = await review(state, "review-2");
+    expect(second.result).toBe("pass");
+    expect((await taskOf(state)).attempt?.number).toBe(2);
+    expect(state.reviewer.calls.map((call) => call.args)).toEqual([
+      ["major", "--model", "first"],
+      ["none", "--model", "later"],
+    ]);
+  });
+
+  test("a task whose first attempt had no review gets its first review on attempt 2", async () => {
+    const state = await fixture({
+      reviewerArgs: ["none", "--model", "own"],
+      firstArgs: ["none", "--model", "first"],
+      later: { args: ["none", "--model", "later"] },
+    });
+    await newAttempt(state, "work-2");
+    await commitIn(state.worktree, "more.txt", "more\n", "more");
+    await verify(state, "verify-2");
+    expect((await taskOf(state)).attempt?.number).toBe(2);
+    await review(state, "review-2");
+    expect(state.reviewer.calls.map((call) => call.args)).toEqual([
+      ["none", "--model", "first"],
+    ]);
+  });
+
+  test("an invalid report retry inside the first review stays on the first-review arguments", async () => {
+    const state = await fixture({
+      reviewerArgs: ["none", "--model", "own"],
+      later: { args: ["none", "--model", "later"] },
+      firstArgs: ["none", "--model", "first"],
+      retryInvalid: true,
+    });
+    await verify(state);
+    expect((await review(state, "review-1")).result).toBe("pass");
+    expect(state.reviewer.calls.map((call) => call.args)).toEqual([
+      ["none", "--model", "first"],
+      ["none", "--model", "first"],
+    ]);
+  });
+
+  test("an unavailable first review that waits stays the first review", async () => {
+    const state = await fixture({
+      reviewerArgs: ["unavailable", "--model", "own"],
+      later: { args: ["none", "--model", "later"] },
+    });
+    await verify(state);
+    expect((await review(state, "review-1")).result).toBe("unavailable");
+    expect((await taskOf(state)).reviewedOnce).toBeUndefined();
+  });
+
+  test("the later fallback is used on a later review, else the reviewer's fallback", async () => {
+    const withLater = await fixture({
+      reviewerArgs: ["429-once"],
+      fallback: { use: "fake-reviewer/agent", args: ["none", "--model", "own-fallback"] },
+      later: {
+        args: ["unavailable"],
+        fallback: { use: "fake-reviewer/agent", args: ["none", "--model", "later-fallback"] },
+      },
+    });
+    await verify(withLater);
+    expect((await review(withLater, "review-1")).result).toBe("pass");
+    await newAttempt(withLater, "work-2");
+    await commitIn(withLater.worktree, "more.txt", "more\n", "more");
+    await verify(withLater, "verify-2");
+    const second = await review(withLater, "review-2");
+    expect(second.result).toBe("pass");
+    expect(withLater.reviewer.calls.map((call) => call.args)).toEqual([
+      ["429-once"],
+      ["none", "--model", "own-fallback"],
+      ["unavailable"],
+      ["none", "--model", "later-fallback"],
+    ]);
+    const runs = (await taskOf(withLater)).attempt?.review?.runs;
+    expect(runs?.map((run) => run.reviewer)).toEqual(["reviewer later", "fallback"]);
+
+    const inherited = await fixture({
+      reviewerArgs: ["none"],
+      fallback: { use: "fake-reviewer/agent", args: ["none", "--model", "own-fallback"] },
+      later: { args: ["unavailable"] },
+    });
+    await verify(inherited);
+    await review(inherited, "review-1");
+    await newAttempt(inherited, "work-2");
+    await commitIn(inherited.worktree, "more.txt", "more\n", "more");
+    await verify(inherited, "verify-2");
+    expect((await review(inherited, "review-2")).result).toBe("pass");
+    expect(inherited.reviewer.calls.at(-1)?.args).toEqual(["none", "--model", "own-fallback"]);
+ }, 60_000);
+});
+
+describe("reviewer.later settings", () => {
+  test("later inherits what it leaves out, and bad values are refused with the field path", () => {
+    const parsed = validateDevSettings({
+      reviewer: { use: "a/b", args: ["x"], later: { args: ["y"] } },
+    });
+    expect(parsed.reviewer.later).toEqual({ args: ["y"] });
+    const choice = reviewerChoice(parsed.reviewer, false, false);
+    expect(choice.use).toBe("a/b");
+    expect(choice.args).toEqual(["y"]);
+    expect(reviewerChoice(parsed.reviewer, true, true).args).toEqual(["x"]);
+    const withFirst = validateDevSettings({
+      reviewer: { args: ["x"], firstArgs: ["f"], later: { use: "c/d" } },
+    });
+    expect(reviewerChoice(withFirst.reviewer, false, true)).toEqual({
+      use: "c/d",
+      args: ["x"],
+      fallback: undefined,
+    });
+    expect(reviewerChoice(withFirst.reviewer, true, true).args).toEqual(["f"]);
+    expect(() => validateDevSettings({ reviewer: { later: { nope: 1 } } })).toThrow("reviewer.later.nope");
+    expect(() => validateDevSettings({ reviewer: { later: { use: "" } } })).toThrow("reviewer.later.use");
+    expect(() => validateDevSettings({ reviewer: { later: { args: "x" } } })).toThrow("reviewer.later.args");
+    expect(() => validateDevSettings({ reviewer: { later: { fallback: { use: "" } } } })).toThrow("reviewer.later.fallback.use");
+  });
+});
+
 describe("dev/review fallback and retry", () => {
   test("a 429 falls back once, and the round passes without a rework", async () => {
     const state = await fixture({
@@ -1467,6 +1651,7 @@ describe("dev/review crash recovery", () => {
       | "during-fallback"
       | "after-first-saved";
     readonly reviewerArgs: readonly string[];
+    readonly later?: FixtureOptions["later"];
     readonly fallback?: {
       readonly use: string;
       readonly args: readonly string[];
@@ -1486,6 +1671,7 @@ describe("dev/review crash recovery", () => {
     const state = await fixture({
       reviewerArgs: options.reviewerArgs,
       ...(options.fallback === undefined ? {} : { fallback: options.fallback }),
+      ...(options.later === undefined ? {} : { later: options.later }),
       callLog,
     });
     await verify(state);
@@ -1550,6 +1736,28 @@ describe("dev/review crash recovery", () => {
       resumedCalls: 0,
       totalCalls: 1,
       roles: ["primary"],
+    });
+  });
+
+  test("a crash in the middle of the first review resumes on the first-review settings, not later", async () => {
+    await crashReview({
+      crash: "after-first-result",
+      reviewerArgs: ["unavailable", "--model", "primary"],
+      fallback: {
+        use: "fake-reviewer/agent",
+        args: ["none", "--model", "fallback"],
+      },
+      later: {
+        args: ["none", "--model", "later"],
+        fallback: {
+          use: "fake-reviewer/agent",
+          args: ["none", "--model", "later-fallback"],
+        },
+      },
+      resumedCalls: 1,
+      resumedArgs: [["none", "--model", "fallback"]],
+      totalCalls: 2,
+      roles: ["primary", "fallback"],
     });
   });
 

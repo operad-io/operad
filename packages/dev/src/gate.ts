@@ -32,6 +32,7 @@ import {
   type ReviewRecord,
   type ReviewResult,
   type ReviewRunRecord,
+  type ReviewerLabel,
   type ReviewRunReason,
   type ReviewRunRole,
   type ReworkRecord,
@@ -46,6 +47,7 @@ import {
   type FixLevel,
   type ReviewerFallback,
   type ReviewerSettings,
+  reviewerChoice,
 } from "./settings.ts";
 import { appendChange } from "./model.ts";
 import {
@@ -922,11 +924,16 @@ function reviewOutcomePath(resultPath: string): string {
     : `${resultPath}.run.json`;
 }
 
-function writeReviewOutcome(path: string, call: ReviewerCall): void {
+function writeReviewOutcome(
+  path: string,
+  call: ReviewerCall,
+  label: ReviewerLabel | undefined,
+): void {
   try {
     writeFileSync(
       path,
       JSON.stringify({
+        ...(label === undefined ? {} : { reviewer: label }),
         outcome: call.outcome,
         message: call.message,
         ...(call.report === undefined ? {} : { report: call.report }),
@@ -984,7 +991,11 @@ async function callReviewer(
   gatePath: string,
   prompt: string,
   resultPath: string,
-  reviewer: { readonly use: string; readonly args: readonly string[] },
+  reviewer: {
+    readonly use: string;
+    readonly args: readonly string[];
+    readonly label?: ReviewerLabel;
+  },
   resuming: boolean,
 ): Promise<ReviewerCall> {
   const call = await callReviewerOnce(
@@ -996,7 +1007,7 @@ async function callReviewer(
     reviewer,
     resuming,
   );
-  writeReviewOutcome(reviewOutcomePath(resultPath), call);
+  writeReviewOutcome(reviewOutcomePath(resultPath), call, reviewer.label);
   return call;
 }
 
@@ -1215,7 +1226,12 @@ function nextReviewAction(
 
 /** One run in words a person can read. */
 function runPhrase(run: ReviewRunRecord): string {
-  const who = run.role === "fallback" ? `fallback ${run.model}` : run.model;
+  const who =
+    run.role === "fallback"
+      ? `fallback ${run.model}`
+      : run.reviewer === "reviewer later"
+        ? `reviewer later ${run.model}`
+        : run.model;
   switch (run.outcome) {
     case "report":
       return `${who} reviewed`;
@@ -1272,6 +1288,10 @@ export async function runReview(
   const reviews =
     typeof attempt.reviews === "number" ? attempt.reviews : 0;
   const round = reviews + 1;
+  // The task's first review is its first round that ran a model, in the first
+  // attempt that reviewed. A rework or a reverify starts a round 1 again, so
+  // the mark lives on the task and is set when a round with a run finishes.
+  const taskFirst = task.reviewedOnce !== true && round === 1;
   const now = reviewTestHooks.now?.() ?? Date.now();
   const previous = attempt.review;
 
@@ -1336,6 +1356,15 @@ export async function runReview(
               : round,
         },
         ...(record.decision === "passed" ? { reworkStreak: 0 } : {}),
+        ...(task.reviewedOnce !== true &&
+        !(
+          record.decision === "unavailable" &&
+          record.reason !== "exhausted" &&
+          record.reason !== "out_of_time"
+        ) &&
+        (current.reviewRuns ?? []).some((run) => run.round === round)
+          ? { reviewedOnce: true }
+          : {}),
         retryAt:
           record.decision === "unavailable" && typeof record.retryAt === "number"
             ? record.retryAt
@@ -1520,9 +1549,10 @@ export async function runReview(
 
   const settings = context.settings.reviewer;
   // The retry is the same review round, so it keeps the round's arguments:
-  // the first review of an attempt still gets `firstArgs` on its retry.
-  const useFirst = reviews === 0 && settings.firstArgs !== undefined;
-  const roundArgs = useFirst ? settings.firstArgs ?? [] : settings.args;
+  // the first review still gets the first-review settings on its retry.
+  const choice = reviewerChoice(settings, taskFirst, reviews === 0);
+  const laterLabel: ReviewerLabel =
+    !taskFirst && settings.later !== undefined ? "reviewer later" : "reviewer";
   const changed = new Set(prepared.files.map((file) => file.path));
   // The runs of this round survive a crash; a fresh round starts with none.
   const runs: ReviewRunRecord[] = (attempt.reviewRuns ?? []).filter(
@@ -1551,7 +1581,7 @@ export async function runReview(
     runs.length <= recordedRuns.length;
   let next: ReviewNext = retryAfterWait
     ? { role: "primary", reason: "retry" }
-    : nextReviewAction(runs, settings.fallback);
+    : nextReviewAction(runs, choice.fallback);
 
   // A run that crashed after its model answered left this pending record and
   // its outcome beside the report path. Resuming reads that outcome instead of
@@ -1584,11 +1614,13 @@ export async function runReview(
     const use =
       resume?.use ??
       (action.role === "fallback"
-        ? settings.fallback?.use ?? settings.use
-        : settings.use);
+        ? choice.fallback?.use ?? choice.use
+        : choice.use);
     const args =
       resume?.args ??
-      (action.role === "fallback" ? settings.fallback?.args ?? [] : roundArgs);
+      (action.role === "fallback" ? choice.fallback?.args ?? [] : choice.args);
+    const label: ReviewerLabel =
+      action.role === "fallback" ? "fallback" : laterLabel;
     const model = resume?.model ?? modelOf(use, args);
     let call =
       resume === undefined ? undefined : readReviewOutcome(resultPath);
@@ -1611,6 +1643,7 @@ export async function runReview(
           attempt: attempt.number,
           round,
           role: action.role,
+          reviewer: label,
           use,
           args,
           model,
@@ -1637,7 +1670,7 @@ export async function runReview(
         path,
         prompt,
         resultPath,
-        { use, args },
+        { use, args, label },
         resume !== undefined,
       );
     }
@@ -1661,6 +1694,7 @@ export async function runReview(
         attempt: attempt.number,
         round,
         role: action.role,
+        reviewer: label,
         use,
         args,
         model,
@@ -1676,6 +1710,7 @@ export async function runReview(
         attempt: attempt.number,
         round,
         role: action.role,
+        reviewer: label,
         use,
         args,
         model,
@@ -1705,7 +1740,7 @@ export async function runReview(
     );
     if (!written) return cancelledStep();
     reviewTestHooks.afterRunSaved?.(runRecord);
-    next = nextReviewAction(runs, settings.fallback);
+    next = nextReviewAction(runs, choice.fallback);
   }
 
   const last = runs[runs.length - 1];

@@ -132,3 +132,7 @@ the row fields.
 | T-0054-M3 | packages/dev/src/rerun.ts | a pass on the rerun carried no note | `dev/verify > a check that fails once and then passes is a pass with a note` |
 | T-0054-M4 | packages/dev/src/rerun.ts | the separator was not drawn between the two runs in the log | `dev/verify > a check that fails once and then passes is a pass with a note` |
 | T-0054-M5 | packages/dev/src/integrate.ts | the merged task left out the rerun note | `dev/integrate > a key command that fails once and then passes lands with a note` |
+| T-0050-M1 | packages/dev/src/gate.ts | never marked the task as reviewed, so every review counted as the first | `dev/review reviewer.later > the first review of a new attempt after a rework uses later` |
+| T-0050-M2 | packages/dev/src/settings.ts | a later review ignored `later.fallback` | `dev/review reviewer.later > the later fallback is used on a later review, else the reviewer's fallback` |
+| T-0050-M3 | packages/dev/src/settings.ts | a later review without `later.args` took `firstArgs` | `reviewer.later settings > later inherits what it leaves out, and bad values are refused with the field path` |
+| T-0050-M4 | packages/dev/src/gate.ts | the run record named `reviewer` on a later review | `dev/review reviewer.later > the first review uses firstArgs, a review after a reverify uses later, and firstArgs is not used there` |

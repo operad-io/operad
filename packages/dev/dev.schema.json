@@ -160,6 +160,37 @@
           "required": ["use"],
           "additionalProperties": false
         },
+        "later": {
+          "description": "The reviewer of every review after the task's first review; a missing use, args or fallback is the reviewer's own.",
+          "type": "object",
+          "properties": {
+            "use": {
+              "description": "The harness step for later reviews.",
+              "type": "string",
+              "minLength": 1
+            },
+            "args": {
+              "description": "Arguments for later reviews.",
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "fallback": {
+              "description": "The fallback used when the later reviewer is unavailable.",
+              "type": "object",
+              "properties": {
+                "use": { "type": "string", "minLength": 1 },
+                "args": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "default": []
+                }
+              },
+              "required": ["use"],
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
         "timeoutSecs": {
           "description": "The longest a review may run, in seconds.",
           "type": "number",

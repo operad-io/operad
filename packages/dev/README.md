@@ -266,7 +266,10 @@ The file holds the repository's work settings:
 | `check.rerun` | `1` | how many times a failed gate or integration check runs again before it counts as failed; `0` turns it off; a timeout is never rerun. A pass on the rerun is a pass, noted in the task's Changes and the check log holds both runs |
 | `reviewer.use` | `harness-radian/agent` | the harness step that reviews the diff |
 | `reviewer.args` | `[]` | the arguments every review gets |
-| `reviewer.firstArgs` | none | the arguments the first review of an attempt gets instead, including its one retry after an invalid report |
+| `reviewer.firstArgs` | none | the arguments the first review of an attempt gets instead, including its one retry after an invalid report; with `reviewer.later` set, only the task's first review uses it |
+| `reviewer.later` | none | an object `{ use, args, fallback }` for every review after the task's first review (after a rework, a reject, a reverify, or on any later attempt); a missing `use` or `args` is the reviewer's own, a missing `fallback` is `reviewer.fallback`; an unknown key, an empty `use` or `args` that is not a list of strings is refused when the file loads |
+| `reviewer.later.use`, `reviewer.later.args` | the reviewer's own | the harness step and arguments of a later review |
+| `reviewer.later.fallback` | `reviewer.fallback` | the fallback (`use`, `args`) of a later review when its reviewer is unavailable |
 | `reviewer.fallback.use` | none | the harness step that reviews when the primary reviewer is unavailable |
 | `reviewer.fallback.args` | `[]` | the arguments every fallback review gets |
 | `reviewer.timeoutSecs` | `600` | the longest a review may run |
@@ -279,6 +282,15 @@ The file holds the repository's work settings:
 | `integration.style` | `merge` | `merge` lands a merge commit with `Merge work/<task id> (<short sha>)`; `squash` lands one squashed commit |
 | `integration.keyCommands` | `[]` | commands the integrate step runs on the candidate before the push; a failure sends the task back to the worker |
 | `hooks.afterMerge` | removes both worktrees and both branches | commands cleanup runs after a merge, in the repository root, with `OPERAD_TASK`, `OPERAD_WORKTREE` and `OPERAD_REMOTE` set |
+
+The task's first review is the first review round of the first attempt that ran
+a review, with its one retry after an invalid report and any switch to the
+fallback inside that round; a task whose first attempt failed before any review
+has its first review on attempt 2. On the task's first review the reviewer's
+`use` with `firstArgs` runs, and on later reviews `reviewer.later` wins and
+`firstArgs` is not used. Each review run record (the `*.run.json` beside the
+report, and the runs in the task) and the history line name the reviewer that
+ran: `reviewer`, `reviewer later` or `fallback`.
 
 The built-in brief says to work only in the worktree, commit whole pieces, run
 the repository's verify command and end with a summary.

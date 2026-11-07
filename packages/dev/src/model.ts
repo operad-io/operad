@@ -118,6 +118,9 @@ export type ReviewRunOutcome =
 /** Which settings a review run used. */
 export type ReviewRunRole = "primary" | "fallback";
 
+/** Which reviewer a run was: the task's first, the later one, or the fallback. */
+export type ReviewerLabel = "reviewer" | "reviewer later" | "fallback";
+
 /** Why a review run happened. */
 export type ReviewRunReason =
   | "initial"
@@ -132,6 +135,8 @@ export interface ReviewRunRecord {
   /** The review round this run belongs to. */
   readonly round: number;
   readonly role: ReviewRunRole;
+  /** Which reviewer ran: `reviewer`, `reviewer later` or `fallback`. */
+  readonly reviewer?: ReviewerLabel | null;
   /** The harness step this run used. */
   readonly use: string;
   readonly args: readonly string[];
@@ -158,6 +163,7 @@ export interface PendingReviewRun {
   readonly attempt?: number | null;
   readonly round: number;
   readonly role: ReviewRunRole;
+  readonly reviewer?: ReviewerLabel | null;
   readonly use: string;
   readonly args: readonly string[];
   readonly model: string;
@@ -329,6 +335,8 @@ export type TaskData = {
   readonly retryAt?: number | null | undefined;
   /** What the scheduler claimed while it waits for the run to record itself. */
   readonly claim?: TaskClaim | null | undefined;
+  /** A review round ran a model: later reviews use the later reviewer. */
+  readonly reviewedOnce?: boolean | undefined;
   /** The attempt whose review the scheduler already answered for auto merge. */
   readonly autoMergeAttempt?: number | undefined;
   /** The attempt whose integration result the scheduler already reported. */
