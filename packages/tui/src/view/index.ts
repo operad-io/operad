@@ -17,6 +17,8 @@ import {
   KEY_LIST,
   activeTab,
   footerText,
+  listWindow,
+  statusText,
   rowMark,
   tabLabel,
   twoPane,
@@ -142,7 +144,11 @@ function rowLine(
   ];
 }
 
-function listContent(tab: TuiTab | undefined, palette: TuiPalette): StyledText {
+function listContent(
+  tab: TuiTab | undefined,
+  palette: TuiPalette,
+  available: number,
+): StyledText {
   if (tab === undefined) return styled([chunk("no tabs", palette.weak)]);
   if (tab.list.rows.length === 0) {
     const message = tab.list.loaded
@@ -151,8 +157,11 @@ function listContent(tab: TuiTab | undefined, palette: TuiPalette): StyledText {
     return styled([chunk(message, palette.weak)]);
   }
   const chunks: TextChunk[] = [];
-  tab.list.rows.forEach((row, index) => {
-    chunks.push(...rowLine(row, index === tab.list.cursor, palette));
+  const window = listWindow(tab.list, available);
+  tab.list.rows.slice(window.start, window.end).forEach((row, offset) => {
+    chunks.push(
+      ...rowLine(row, window.start + offset === tab.list.cursor, palette),
+    );
   });
   if (tab.list.loading) chunks.push(chunk("loading more…", palette.weak));
   if (tab.list.error !== undefined) {
@@ -259,7 +268,11 @@ export function createTuiView(ctx: CliRenderer): TuiView {
 
       header.content = headerContent(state, palette);
       tabs.content = tabsContent(state, palette);
-      footer.content = styled([chunk(footerText(state), palette.weak)]);
+      const status = statusText(state);
+      footer.content =
+        status === undefined
+          ? styled([chunk(footerText(state), palette.weak)])
+          : styled([chunk(status, palette.error)]);
 
       listPane.width = wide ? "40%" : "100%";
       rightPane.visible = wide;
@@ -269,7 +282,8 @@ export function createTuiView(ctx: CliRenderer): TuiView {
       if (keys && !wide) {
         list.content = keyContent(palette);
       } else {
-        list.content = listContent(tab, palette);
+        // The header, the tab line and the footer take three lines.
+        list.content = listContent(tab, palette, state.height - 3);
       }
 
       right.content = keys

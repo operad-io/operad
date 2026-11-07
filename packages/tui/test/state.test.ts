@@ -6,6 +6,7 @@ import {
   formatElapsed,
   headerText,
   initialState,
+  listWindow,
   reduce,
   rowMark,
   tabLabel,
@@ -93,7 +94,11 @@ describe("the TUI reducer", () => {
 
     state = reduce(state, { type: "key", key: "j" });
     expect(activeTab(state)?.list.cursor).toBe(1);
-    expect(state.pageRequest).toEqual({ tabId: "type:item", cursor: "after-two" });
+    expect(state.pageRequest).toEqual({
+      tabId: "type:item",
+      cursor: "after-two",
+      version: 1,
+    });
     expect(activeTab(state)?.list.loading).toBe(true);
 
     const asked = state.pageRequest;
@@ -127,7 +132,11 @@ describe("the TUI reducer", () => {
       page: { rows: [row("one")], next: "more" },
     });
     state = reduce(state, { type: "key", key: "down" });
-    expect(state.pageRequest).toEqual({ tabId: "type:item", cursor: "more" });
+    expect(state.pageRequest).toEqual({
+      tabId: "type:item",
+      cursor: "more",
+      version: 1,
+    });
 
     state = reduce(state, {
       type: "page-error",
@@ -136,7 +145,11 @@ describe("the TUI reducer", () => {
     });
     expect(state.pageRequest).toBeUndefined();
     state = reduce(state, { type: "key", key: "down" });
-    expect(state.pageRequest).toEqual({ tabId: "type:item", cursor: "more" });
+    expect(state.pageRequest).toEqual({
+      tabId: "type:item",
+      cursor: "more",
+      version: 1,
+    });
   });
 
   test("resize crosses 100 columns and carries the theme", () => {
@@ -258,5 +271,50 @@ describe("the TUI reducer", () => {
     expect(formatElapsed(0)).toBe("0ms");
     expect(formatElapsed(1_500)).toBe("1.5s");
     expect(formatElapsed(61_000)).toBe("1m 1s");
+  });
+
+  test("the window around the cursor fits the pane and counts an error row's extra line", () => {
+    const rows = Array.from({ length: 30 }, (_, at) => ({
+      id: `r${at}`,
+      title: "t",
+      state: "new",
+      waiting: false,
+      running: false,
+      ...(at === 11 ? { error: "boom" } : {}),
+    }));
+    const list = { rows, cursor: 12, loaded: true, loading: false, version: 1 };
+    const window = listWindow(list, 6);
+    expect(window.start).toBeLessThanOrEqual(12);
+    expect(window.end).toBeGreaterThan(12);
+    const lines = rows
+      .slice(window.start, window.end)
+      .reduce((total, entry) => total + (entry.error === undefined ? 1 : 2), 0);
+    expect(lines).toBeLessThanOrEqual(6);
+    expect(lines).toBeGreaterThanOrEqual(5);
+    // The lines after the rows are kept free.
+    const loading = listWindow({ ...list, loading: true }, 6);
+    const loadingLines = rows
+      .slice(loading.start, loading.end)
+      .reduce((total, entry) => total + (entry.error === undefined ? 1 : 2), 0);
+    expect(loadingLines).toBeLessThanOrEqual(5);
+    expect(listWindow({ ...list, cursor: 0 }, 6).start).toBe(0);
+    expect(listWindow({ ...list, cursor: 29 }, 6).end).toBe(30);
+  });
+
+  test("ctrl and meta chords are ignored, and only ?, escape and q act while the keys are open", () => {
+    let state = withTypes(initialState());
+    state = reduce(state, { type: "key", key: "q", ctrl: true });
+    state = reduce(state, { type: "key", key: "r", meta: true });
+    expect(state.quit).toBe(false);
+    expect(state.refreshRequested).toBe(false);
+
+    state = reduce(state, { type: "key", key: "?" });
+    expect(state.keys).toBe(true);
+    state = reduce(state, { type: "key", key: "r" });
+    state = reduce(state, { type: "key", key: "2" });
+    expect(state.refreshRequested).toBe(false);
+    expect(state.active).toBe(0);
+    state = reduce(state, { type: "key", key: "escape" });
+    expect(state.keys).toBe(false);
   });
 });

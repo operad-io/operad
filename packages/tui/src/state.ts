@@ -37,6 +37,8 @@ export interface TuiRow {
 export interface TuiPageRequest {
   readonly tabId: string;
   readonly cursor: string;
+  /** The list version the page was asked for; a newer list drops the answer. */
+  readonly version: number;
 }
 
 /** The rows, cursor and paging state of one tab. */
@@ -50,6 +52,8 @@ export interface TuiList {
   readonly loading: boolean;
   /** A failed page fetch, kept until the next successful page. */
   readonly error?: string | undefined;
+  /** Grows with each replace; an appended page for an older one is dropped. */
+  readonly version: number;
 }
 
 /** One tab: Pending, Running or one object type. */
@@ -76,6 +80,10 @@ export interface TuiState {
   readonly refreshRequested: boolean;
   /** Set when the cursor nears the end of a list that has another page. */
   readonly pageRequest?: TuiPageRequest | undefined;
+  /** Grows with each refresh; an answer to an older refresh is dropped. */
+  readonly generation: number;
+  /** The last failure to show in the footer; cleared by a good refresh. */
+  readonly status?: string | undefined;
 }
 
 /** The width at which the right pane appears. */
@@ -100,6 +108,7 @@ function makeList(): TuiList {
     cursor: 0,
     loaded: false,
     loading: false,
+    version: 0,
   };
 }
 
@@ -132,6 +141,7 @@ export function initialState(options: TuiStateOptions = {}): TuiState {
     keys: false,
     quit: false,
     refreshRequested: false,
+    generation: 0,
   };
 }
 
@@ -140,15 +150,31 @@ export const createInitialState = initialState;
 
 /** What the reducer accepts. */
 export type TuiStateEvent =
-  | { readonly type: "types"; readonly types: readonly TuiTypeInfo[] }
-  | { readonly type: "pending"; readonly items: readonly PendingItem[] }
-  | { readonly type: "running"; readonly items: readonly RunningItem[] }
+  | {
+      readonly type: "types";
+      readonly types: readonly TuiTypeInfo[];
+      readonly generation?: number | undefined;
+    }
+  | {
+      readonly type: "pending";
+      readonly items: readonly PendingItem[];
+      readonly generation?: number | undefined;
+    }
+  | {
+      readonly type: "running";
+      readonly items: readonly RunningItem[];
+      readonly generation?: number | undefined;
+    }
   | {
       readonly type: "page";
       readonly tabId: string;
       readonly page: ViewListPage;
       /** Replace the list instead of appending one page. */
       readonly replace?: boolean | undefined;
+      /** For a replace: the refresh it belongs to. */
+      readonly generation?: number | undefined;
+      /** For an append: the list version it was asked for. */
+      readonly version?: number | undefined;
     }
   | {
       readonly type: "rows";
@@ -161,8 +187,25 @@ export type TuiStateEvent =
       readonly type: "page-error";
       readonly tabId: string;
       readonly message: string;
+      readonly version?: number | undefined;
     }
-  | { readonly type: "key"; readonly key: string; readonly shift?: boolean | undefined }
+  /** A refresh began; answers to the one before it are dropped. */
+  | { readonly type: "refresh-start" }
+  /** The caller launched the pending page request; it is asked for once. */
+  | { readonly type: "page-launched" }
+  /** Show a failure in the footer, or clear it with no message. */
+  | {
+      readonly type: "status";
+      readonly message?: string | undefined;
+      readonly generation?: number | undefined;
+    }
+  | {
+      readonly type: "key";
+      readonly key: string;
+      readonly shift?: boolean | undefined;
+      readonly ctrl?: boolean | undefined;
+      readonly meta?: boolean | undefined;
+    }
   | {
       readonly type: "resize";
       readonly width: number;
@@ -256,7 +299,10 @@ function requestPage(state: TuiState, tab: TuiTab): TuiState {
     ...current,
     list: { ...current.list, loading: true },
   }));
-  return { ...updated, pageRequest: { tabId: tab.id, cursor: list.next } };
+  return {
+    ...updated,
+    pageRequest: { tabId: tab.id, cursor: list.next, version: list.version },
+  };
 }
 
 function activeTabOf(state: TuiState): TuiTab | undefined {
@@ -312,13 +358,27 @@ function isKey(key: string, ...names: string[]): boolean {
   return names.some((name) => lowered === name.toLowerCase());
 }
 
-function handleKey(state: TuiState, event: { key: string; shift?: boolean | undefined }): TuiState {
+function handleKey(
+  state: TuiState,
+  event: {
+    key: string;
+    shift?: boolean | undefined;
+    ctrl?: boolean | undefined;
+    meta?: boolean | undefined;
+  },
+): TuiState {
+  // Ctrl-C is the renderer's exit; no other chord is ours.
+  if (event.ctrl === true || event.meta === true) return state;
   const key = event.key;
   const shift = event.shift === true;
   if (key === "?" || (key === "/" && shift)) {
     return { ...state, keys: !state.keys };
   }
   if (isKey(key, "q")) return { ...state, quit: true };
+  if (state.keys) {
+    // The list behind the key list is hidden, so no other key acts on it.
+    return isKey(key, "escape", "esc") ? { ...state, keys: false } : state;
+  }
   if (isKey(key, "r")) return { ...state, refreshRequested: true };
   if (isKey(key, "tab")) return cycle(state, shift ? -1 : 1);
   if (isKey(key, "up", "arrowup", "k")) return move(state, -1);
@@ -356,20 +416,52 @@ function applyTypes(state: TuiState, types: readonly TuiTypeInfo[]): TuiState {
   };
 }
 
+/** Keeps the cursor on the same object when the rows are replaced. */
+function cursorAfterReplace(old: TuiList, rows: readonly TuiRow[]): number {
+  const selected = old.rows[old.cursor]?.id;
+  if (selected !== undefined) {
+    const found = rows.findIndex((row) => row.id === selected);
+    if (found >= 0) return found;
+  }
+  return clampCursor({ ...old, rows });
+}
+
+function replaceRows(
+  tab: TuiTab,
+  rows: readonly TuiRow[],
+  next: string | undefined,
+): TuiTab {
+  const cursor = cursorAfterReplace(tab.list, rows);
+  return {
+    ...tab,
+    list: {
+      ...tab.list,
+      rows,
+      cursor,
+      next,
+      loaded: true,
+      // The page that was in flight for the old rows is dropped when it lands.
+      loading: false,
+      error: undefined,
+      version: tab.list.version + 1,
+    },
+  };
+}
+
+function clearRequest(before: TuiState, after: TuiState, tabId: string): TuiState {
+  return before.pageRequest?.tabId === tabId
+    ? { ...after, pageRequest: undefined }
+    : after;
+}
+
 function applyPending(state: TuiState, items: readonly PendingItem[]): TuiState {
   const rows = items.map(rowFromPending);
-  return withTab(state, "pending", (tab) => {
-    const list = { ...tab.list, rows, loaded: true, loading: false };
-    return { ...tab, list: { ...list, cursor: clampCursor(list), error: undefined } };
-  });
+  return withTab(state, "pending", (tab) => replaceRows(tab, rows, undefined));
 }
 
 function applyRunning(state: TuiState, items: readonly RunningItem[]): TuiState {
   const rows = items.map(rowFromRunning);
-  return withTab(state, "running", (tab) => {
-    const list = { ...tab.list, rows, loaded: true, loading: false };
-    return { ...tab, list: { ...list, cursor: clampCursor(list), error: undefined } };
-  });
+  return withTab(state, "running", (tab) => replaceRows(tab, rows, undefined));
 }
 
 function appendPage(
@@ -378,27 +470,37 @@ function appendPage(
   rows: readonly TuiRow[],
   next: string | undefined,
   replace: boolean,
+  version: number | undefined,
 ): TuiState {
-  const updated = withTab(state, tabId, (tab) => {
-    const merged = replace ? rows : [...tab.list.rows, ...rows];
+  const tab = state.tabs.find((candidate) => candidate.id === tabId);
+  if (tab === undefined) return state;
+  if (!replace && version !== undefined && version !== tab.list.version) {
+    return state;
+  }
+  const updated = withTab(state, tabId, (current) => {
+    if (replace) return replaceRows(current, rows, next);
     const list: TuiList = {
-      ...tab.list,
-      rows: merged,
+      ...current.list,
+      rows: [...current.list.rows, ...rows],
       loaded: true,
       loading: false,
-      ...(next === undefined ? { next: undefined } : { next }),
+      next,
       error: undefined,
     };
-    return { ...tab, list: { ...list, cursor: clampCursor(list) } };
+    return { ...current, list: { ...list, cursor: clampCursor(list) } };
   });
-  if (updated === state) return state;
-  if (state.pageRequest?.tabId === tabId) {
-    return { ...updated, pageRequest: undefined };
-  }
-  return updated;
+  return clearRequest(state, updated, tabId);
 }
 
-function applyPageError(state: TuiState, tabId: string, message: string): TuiState {
+function applyPageError(
+  state: TuiState,
+  tabId: string,
+  message: string,
+  version: number | undefined,
+): TuiState {
+  const current = state.tabs.find((candidate) => candidate.id === tabId);
+  if (current === undefined) return state;
+  if (version !== undefined && version !== current.list.version) return state;
   const updated = withTab(state, tabId, (tab) => ({
     ...tab,
     list: { ...tab.list, loading: false, error: message },
@@ -410,22 +512,35 @@ function applyPageError(state: TuiState, tabId: string, message: string): TuiSta
   return updated;
 }
 
+/** An answer to a refresh that is no longer the current one. */
+function stale(state: TuiState, generation: number | undefined): boolean {
+  return generation !== undefined && generation !== state.generation;
+}
+
 /** The pure reducer: the same state and event always give the same state. */
 export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
   switch (event.type) {
     case "types":
-      return applyTypes(state, event.types);
+      return stale(state, event.generation)
+        ? state
+        : applyTypes(state, event.types);
     case "pending":
-      return applyPending(state, event.items);
+      return stale(state, event.generation)
+        ? state
+        : applyPending(state, event.items);
     case "running":
-      return applyRunning(state, event.items);
+      return stale(state, event.generation)
+        ? state
+        : applyRunning(state, event.items);
     case "page":
+      if (event.replace === true && stale(state, event.generation)) return state;
       return appendPage(
         state,
         event.tabId,
         event.page.rows.map(rowFromView),
         event.page.next,
         event.replace === true,
+        event.version,
       );
     case "rows":
       return appendPage(
@@ -434,9 +549,19 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
         event.rows.map(rowFromView),
         event.next,
         event.replace === true,
+        undefined,
       );
     case "page-error":
-      return applyPageError(state, event.tabId, event.message);
+      return applyPageError(state, event.tabId, event.message, event.version);
+    case "refresh-start":
+      return { ...state, generation: state.generation + 1 };
+    case "page-launched":
+      return state.pageRequest === undefined
+        ? state
+        : { ...state, pageRequest: undefined };
+    case "status":
+      if (stale(state, event.generation)) return state;
+      return { ...state, status: event.message };
     case "key":
       return handleKey(state, event);
     case "resize":
@@ -508,3 +633,47 @@ export const KEY_LIST: readonly (readonly [string, string])[] = [
   ["?", "show or hide this key list"],
   ["q", "quit"],
 ];
+
+/** The lines one row takes: an error row adds a line under it. */
+export function rowLines(row: TuiRow): number {
+  return row.error === undefined ? 1 : 2;
+}
+
+/**
+ * The rows `[start, end)` that fit in `available` lines around the cursor. The
+ * lines after the rows (`loading more…` and a page error) are kept free.
+ */
+export function listWindow(
+  list: TuiList,
+  available: number,
+): { readonly start: number; readonly end: number } {
+  const count = list.rows.length;
+  if (count === 0) return { start: 0, end: 0 };
+  const tail = (list.loading ? 1 : 0) + (list.error === undefined ? 0 : 2);
+  const room = Math.max(1, Math.trunc(available) - tail);
+  const cursor = Math.min(Math.max(0, list.cursor), count - 1);
+  let start = cursor;
+  let end = cursor + 1;
+  let used = rowLines(list.rows[cursor] as TuiRow);
+  for (;;) {
+    let grew = false;
+    const after = list.rows[end];
+    if (after !== undefined && used + rowLines(after) <= room) {
+      used += rowLines(after);
+      end += 1;
+      grew = true;
+    }
+    const before = list.rows[start - 1];
+    if (before !== undefined && used + rowLines(before) <= room) {
+      used += rowLines(before);
+      start -= 1;
+      grew = true;
+    }
+    if (!grew) return { start, end };
+  }
+}
+
+/** The footer when a failure is showing: the reason, then the way out. */
+export function statusText(state: TuiState): string | undefined {
+  return state.status === undefined ? undefined : `${state.status} · q quit`;
+}

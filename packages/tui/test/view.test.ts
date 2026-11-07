@@ -99,4 +99,36 @@ describe("the TUI view", () => {
       await setup.dispose();
     }
   });
+
+  test("a long list scrolls with the cursor and the status takes the footer", async () => {
+    const setup = await createTestRenderer({ width: 80, height: 10 });
+    try {
+      const view = createTuiView(setup.renderer);
+      let state = initialState({ width: 80, height: 10, theme: "dark" });
+      state = reduce(state, {
+        type: "running",
+        items: Array.from({ length: 40 }, (_, at) => ({
+          runId: `run-${at}`,
+          flow: "flow",
+          step: "work",
+          startedAt: 0,
+          elapsedMs: 10,
+          queued: null,
+          stepLabel: "work",
+        })),
+      });
+      state = reduce(state, { type: "key", key: "2" });
+      state = reduce(state, { type: "key", key: "G" });
+      state = reduce(state, { type: "status", message: "the token is wrong" });
+      view.render(state);
+      await setup.renderOnce();
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("run-39");
+      expect(frame).not.toContain("run-0 ");
+      expect(frame).toContain("the token is wrong");
+      view.destroy();
+    } finally {
+      await setup.dispose();
+    }
+  });
 });

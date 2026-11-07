@@ -136,7 +136,7 @@ store and never loads a plugin. It finds the server like this:
 object pane sit side by side, and below 100 columns only the list is shown. The
 header counts Pending and Running and then names every object type from
 `/v1/types`. The right pane says `select an object` until the object pane is
-added. Every key the app reads is below.
+added. A failed request, or a refused event stream such as a wrong token, shows its reason in the footer until a fetch succeeds; the same messages are printed after the screen closes. The list scrolls to keep the cursor in view, and a refresh keeps the selected object when it is still there. Every key the app reads is below.
 
 | Input | Type | Default | Allowed values |
 |---|---|---|---|
@@ -150,6 +150,8 @@ added. Every key the app reads is below.
 | `r` | key | none | Fetch every list again. |
 | `?` | key | none | Show or hide the key list. |
 | `q` | key | none | Quit. |
+| `Ctrl-C` | key | none | Quit at once. The terminal restores itself; no other Ctrl or Meta chord does anything. |
+| `escape` | key | none | Close the key list. While it is open only `?`, `escape` and `q` act; the others leave the list alone. |
 
 ### Endpoints
 
