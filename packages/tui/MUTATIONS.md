@@ -71,3 +71,12 @@ the row fields.
 | tui-autostart-M17 | packages/tui/src/discover.ts | `http.port` 0 no longer failed before a start | `ensureServer: races and bounds > port 0 or an empty listen fails before anything is spawned` |
 | tui-autostart-M18 | packages/tui/src/autostart.ts | the start deadline was a hundred times too far, so probe time did not bound the wait | `ensureServer: races and bounds > probe time counts against the start deadline` |
 | pending-row-M6 | packages/tui/src/state.ts | a pending item with a row still showed the prompt as its title | `the TUI reducer > a pending item with a row shows the object's title and state, and the question as the note` |
+| T-0031-M18 | packages/tui/src/sanitize.ts | `sanitize` returned the text unchanged, so control bytes reached the terminal | `server text never reaches the terminal as a control > a log line, a title, a note and every error are drawn without control bytes` |
+| T-0031-M19 | packages/tui/src/state.ts | a reopened row kept the `loading` mark of its carried sections | `the object pane reducer > reopening a row after an error does not carry a section that was loading` |
+| T-0031-M20 | packages/tui/src/app.ts | a live refresh fetched one page and dropped the pages the reader had scrolled to | `a live refresh > keeps the pages the reader scrolled to` |
+| T-0031-M21 | packages/tui/src/layout.ts | the layout cache never hit, so every key and render wrapped the section again | `a large section is laid out once > keys and renders after the first do not wrap the text again` |
+| T-0031-M22 | packages/tui/src/wrap.ts | every glyph counted one column | `wrapping is by display width > CJK and emoji take two columns, combining marks none` |
+| T-0031-M23 | packages/tui/src/state.ts | enter on the already-open row opened it again | `focus > side by side the pane follows the cursor and the list keeps j and k` |
+| T-0031-M24 | packages/tui/src/state.ts | any text with the truncation words capped the section | `the object pane reducer > capped > the same words inside the text, or another last line, do not` |
+| T-0031-M25 | packages/tui/src/app.ts | closing the object left its section requests running | `a section request that is not finished > escape and a reopen do not leave the section loading` |
+| T-0031-M26 | packages/tui/src/state.ts | a page from an earlier open of the object appended to the new open | `a section request that is not finished > a page that lands after the object was closed and reopened is dropped` |

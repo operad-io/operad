@@ -314,4 +314,20 @@ describe("the object pane reducer", () => {
       expect(sectionWith(`> ${LINE}\n`)?.capped).toBe(false);
     });
   });
+
+  test("reopening a row after an error does not carry a section that was loading", () => {
+    let state = opened();
+    state = reduce(state, {
+      type: "section",
+      objectId: "one",
+      sectionId: "info",
+      content: { markdown: "text", next: "2" },
+      objectVersion: 1,
+    });
+    state = reduce(state, { type: "key", key: "pagedown" });
+    expect(activeSection(state)?.loading).toBe(true);
+    state = reduce(state, { type: "object-error", id: "one", message: "down", version: 1 });
+    state = reduce(state, { type: "key", key: "enter" });
+    expect(state.object?.sections.some((section) => section.loading)).toBe(false);
+  });
 });
