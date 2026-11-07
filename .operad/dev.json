@@ -13,23 +13,31 @@
     "wallTimeSecs": 7200
   },
   "reviewer": {
-    "use": "harness-pi/agent",
+    "use": "harness-radian/agent",
     "args": [
+      "--provider",
+      "chatgpt",
       "--model",
-      "opencode-go/deepseek-v4-pro",
+      "gpt-5.6-terra",
       "--thinking",
-      "medium"
+      "medium",
+      "--approval",
+      "auto"
     ],
     "fixLevel": "major",
     "timeoutSecs": 3600,
     "stallSecs": 900,
     "fallback": {
-      "use": "harness-pi/agent",
+      "use": "harness-radian/agent",
       "args": [
+        "--provider",
+        "opencode-go",
         "--model",
-        "openai-codex/gpt-5.6-terra",
+        "deepseek-v4-pro",
         "--thinking",
-        "medium"
+        "medium",
+        "--approval",
+        "auto"
       ]
     }
   },
