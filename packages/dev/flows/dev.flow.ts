@@ -22,6 +22,10 @@ function announce(id: string, from: string, result: string) {
 export default defineFlow({
   name: "dev",
   entry: "worktree",
+  // Ten visits per step for ordinary loops, plus one visit of `review` and
+  // `review_retry` for each of the review waits a round may take; after those
+  // the review waits for a person. See `DEV_MAX_VISITS` in src/timeouts.ts, which a test keeps equal to this number.
+  maxVisits: 46,
   steps: [
     {
       id: "worktree",
@@ -70,7 +74,66 @@ export default defineFlow({
         pass: "announce_ready",
         fail: "rework",
         failed: "announce_review_failed",
+        unavailable: "review_retry",
+        timed_out: "wait_review_timeout",
+        exhausted: "wait_review_unavailable",
+        out_of_time: "wait_review_out_of_time",
         cancelled: "end_cancelled",
+      },
+    },
+    {
+      id: "review_retry",
+      kind: "wait",
+      params: { check: "dev/review_due" },
+      replay: "safe",
+      next: { ready: "review", interrupted: "end_cancelled" },
+    },
+    {
+      id: "wait_review_timeout",
+      kind: "wait_person",
+      params: {
+        prompt:
+          "The task is waiting for you: merge it or reject it.\n\nreview timed out twice",
+        choices: ["merge", "reject"],
+        note: "review timed out twice",
+      },
+      replay: "safe",
+      next: {
+        merge: "integrate",
+        reject: "worktree",
+        interrupted: "end_cancelled",
+      },
+    },
+    {
+      id: "wait_review_unavailable",
+      kind: "wait_person",
+      params: {
+        prompt:
+          "The task is waiting for you: merge it or reject it.\n\nreview did not finish (model unavailable)",
+        choices: ["merge", "reject"],
+        note: "review did not finish (model unavailable)",
+      },
+      replay: "safe",
+      next: {
+        merge: "integrate",
+        reject: "worktree",
+        interrupted: "end_cancelled",
+      },
+    },
+    {
+      id: "wait_review_out_of_time",
+      kind: "wait_person",
+      params: {
+        prompt:
+          "The task is waiting for you: merge it or reject it.\n\nreview did not finish (out of time)",
+        choices: ["merge", "reject"],
+        note: "review did not finish (out of time)",
+      },
+      replay: "safe",
+      next: {
+        merge: "integrate",
+        reject: "worktree",
+        interrupted: "end_cancelled",
       },
     },
     {

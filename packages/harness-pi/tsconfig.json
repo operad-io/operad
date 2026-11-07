@@ -1,5 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "rootDir": ".", "outDir": "../../.tsbuild/harness-pi" },
-  "include": ["src", "test", "spike"]
+  "include": ["src", "test", "spike"],
+  "references": [{ "path": "../access-match" }]
 }

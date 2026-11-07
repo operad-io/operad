@@ -87,14 +87,99 @@ export interface ReviewFinding {
   readonly pre_existing?: boolean;
 }
 
-/** What the review step found. */
-export type ReviewResult = "pass" | "fail" | "failed";
+/**
+ * The decision a review round records once. A round may use more than one
+ * model run (a fallback, a retry), but it has one decision.
+ */
+export type ReviewDecision =
+  | "passed"
+  | "findings"
+  | "unavailable"
+  | "timed_out";
 
-/** One review of a task's verified commit. */
+/** What the review step found. The old `pass`/`fail` records still read. */
+export type ReviewResult =
+  | "pass"
+  | "fail"
+  | "passed"
+  | "findings"
+  | "failed"
+  | "unavailable"
+  | "timed_out";
+
+/** What one model run of a review round did. */
+export type ReviewRunOutcome =
+  | "report"
+  | "invalid"
+  | "unavailable"
+  | "timed_out"
+  | "failed";
+
+/** Which settings a review run used. */
+export type ReviewRunRole = "primary" | "fallback";
+
+/** Why a review run happened. */
+export type ReviewRunReason =
+  | "initial"
+  | "retry"
+  | "fallback";
+
+/** One model run inside a review round. */
+export interface ReviewRunRecord {
+  readonly [key: string]: unknown;
+  /** The task attempt this run belongs to. */
+  readonly attempt?: number | null;
+  /** The review round this run belongs to. */
+  readonly round: number;
+  readonly role: ReviewRunRole;
+  /** The harness step this run used. */
+  readonly use: string;
+  readonly args: readonly string[];
+  /** The model the run named, or its harness step when it named none. */
+  readonly model: string;
+  readonly reason: ReviewRunReason;
+  readonly outcome: ReviewRunOutcome;
+  readonly run?: string | null;
+  readonly message?: string | null;
+  /** The findings a report run returned, with pre-existing marks. */
+  readonly findings?: readonly ReviewFinding[] | null;
+  readonly verified?: readonly string[] | null;
+  /** How many of the findings are at or above the fix level. */
+  readonly counted?: number | null;
+}
+
+/**
+ * A model run of a review round that was asked for but not recorded yet. It is
+ * written before the reviewer is called, so a crash after the model answered
+ * resumes that run instead of asking the same model again.
+ */
+export interface PendingReviewRun {
+  readonly [key: string]: unknown;
+  readonly attempt?: number | null;
+  readonly round: number;
+  readonly role: ReviewRunRole;
+  readonly use: string;
+  readonly args: readonly string[];
+  readonly model: string;
+  readonly reason: ReviewRunReason;
+  readonly run?: string | null;
+}
+
+/** One review of a task's verified commit: one decision for the round. */
 export interface ReviewRecord {
   readonly [key: string]: unknown;
   readonly result: ReviewResult;
   readonly run?: string | null;
+  /** The decision of the round; absent on a report that failed outright. */
+  readonly decision?: ReviewDecision | null;
+  /** The round number inside the attempt; the first round is 1. */
+  readonly round?: number | null;
+  /** The model that produced the decision. */
+  readonly model?: string | null;
+  /** When an unavailable round may run again, in epoch milliseconds. */
+  readonly retryAt?: number | null;
+  /** Every run of this round, in order. */
+  readonly runs?: readonly ReviewRunRecord[] | null;
   readonly findings?: readonly ReviewFinding[];
   readonly verified?: readonly string[];
   readonly log?: string | null;
@@ -186,7 +271,11 @@ export type TaskAttempt = {
   readonly verified?: string | null;
   readonly verify?: VerifyRecord | null;
   readonly review?: ReviewRecord | null;
-  /** How many review steps this attempt has started. */
+  /** Every model run of every review round in this attempt. */
+  readonly reviewRuns?: readonly ReviewRunRecord[] | null;
+  /** The run this review asked for and has not recorded yet. */
+  readonly reviewPending?: PendingReviewRun | null;
+  /** How many review rounds this attempt has finished. */
   readonly reviews?: number | null;
   /** The rework this run appended; a replay of the same run reads it. */
   readonly rework?: ReworkRecord | null;
@@ -215,6 +304,10 @@ export type TaskData = {
   readonly title: string;
   readonly brief: string;
   readonly after: readonly string[];
+  /** Tasks with the same area in one repository never run at once. */
+  readonly area?: string | undefined;
+  /** The running task that holds this ready task's area; the scheduler sets it. */
+  readonly areaHeldBy?: string | undefined;
   readonly phase: TaskPhase;
   readonly attempts: number;
   readonly run: string | null;
@@ -224,6 +317,8 @@ export type TaskData = {
   readonly reworkStreak?: number | undefined;
   /** The owner asked the scheduler to start this ready task. */
   readonly startRequested?: boolean | undefined;
+  /** When an unavailable review may run again, in epoch milliseconds. */
+  readonly retryAt?: number | null | undefined;
   /** What the scheduler claimed while it waits for the run to record itself. */
   readonly claim?: TaskClaim | null | undefined;
   /** The attempt whose review the scheduler already answered for auto merge. */
@@ -310,6 +405,19 @@ export function validateTitle(title: unknown): string {
     throw new DevError("title", "must be a non-empty string");
   }
   return title.trim();
+}
+
+/** An area is a short single-line label; the empty string means none. */
+export function validateArea(area: unknown): string | undefined {
+  if (typeof area !== "string") {
+    throw new DevError("area", "must be a string");
+  }
+  const trimmed = area.trim();
+  if (trimmed.length === 0) return undefined;
+  if (trimmed.length > 64 || /[\r\n\u0000]/.test(trimmed)) {
+    throw new DevError("area", "must be one short line of at most 64 characters");
+  }
+  return trimmed;
 }
 
 export function validateRepositoryName(name: unknown): string {

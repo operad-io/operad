@@ -607,6 +607,28 @@
 | T-0019-http-api-M6 | packages/engine/src/http/server.ts | ignored `Last-Event-ID`, so a reconnect replayed nothing | `http server > streams changes, resumes from Last-Event-ID and resets an old id` |
 | T-0019-http-api-M7 | packages/engine/src/config/config.ts | ignored `http.enabled` and always kept the interface off | `operad config > reads http options and applies their defaults` |
 | T-0019-http-api-M8 | packages/engine/src/http/server.ts | skipped the listen-address check before binding | `operad serve http > refuses a wildcard at start and names the entry` |
+## TK0002 — reviewer fallback and retry
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0002-M1 | packages/dev/src/gate.ts | `failureOutcome` stopped treating a model error or HTTP 429 as unavailable | `dev/review fallback and retry > a 429 falls back once, and the round passes without a rework` |
+| TK0002-M2 | packages/dev/src/gate.ts | a second timeout ended as `failed` instead of waiting for a person | `dev/review fallback and retry > a second timeout waits for a person with the note` |
+| TK0002-M3 | packages/dev/src/gate.ts | an unavailable round counted itself as a finished review | `dev/review fallback and retry > no fallback and a 429 wait for retrySecs, then run the review only` |
+| TK0002-M4 | packages/dev/src/gate.ts | a model run was not written to the task before the round continued | `dev/review crash recovery > a crash after the first run resumes the same round on the fallback` |
+| TK0002-M5 | packages/dev/flows/dev.flow.ts | sent an unavailable review to the person wait instead of the retry wait | `the dev flow > loads with the gate and the rework edges` |
+| TK0002-M6 | packages/dev/src/settings.ts | ignored `reviewer.retrySecs` and always used the 120-second default | `dev/review fallback and retry > a fallback that is also unavailable waits without a rework` |
+| TK0002-M7 | packages/dev/src/gate.ts | let a retry after the wait choose the fallback again in the same round | `dev/review fallback and retry > a retry after the wait does not use the fallback a second time` |
+| TK0002-M8 | packages/dev/src/gate.ts | removed the chunk bound from `runReviewDue`, so it asked for the whole remaining wait in one step | `dev/review fallback and retry > a retry longer than the step timeout waits in pieces and reruns only when due` |
+| TK0002-M9 | packages/dev/src/gate.ts | stopped writing a reviewer's outcome beside the report, so a crash after the answer repeated the model run | `dev/review crash recovery > a crash after the first result reuses it instead of asking again` |
+| TK0002-M10 | packages/dev/flows/dev.flow.ts | left `maxVisits` at the engine default, so a long review wait hit the visit limit | `the dev flow > a review wait longer than ten pieces keeps waiting` |
+| TK0002-M11 | packages/dev/src/actions.ts | reverify kept the old round's `reviewRuns` and `reviewPending` | `dev/review hardening > reverify starts review round 1 again and asks the reviewer` |
+| TK0002-M12 | packages/dev/src/gate.ts | treated any `429` in the stderr tail as unavailable | `dev/review hardening > a 429 only in a stderr line or a number is not unavailable` |
+| TK0002-M13 | packages/dev/src/gate.ts | judged the harness outcome before reading the report, dropping a valid report from a failed exit | `dev/review hardening > a valid report from a reviewer that then failed (report-then-exit) is used and kept` |
+| TK0002-M14 | packages/harness-radian/src/index.ts | `parseResult` dropped the Result's `model_error` | `harness-radian/agent > a Result record's model_error is passed through as data` and `dev/review hardening > a radian Result with a model_error makes the real harness report unavailable` |
+| TK0002-M15 | packages/dev/src/gate.ts | removed the cap on unavailable waits | `dev/review hardening > an unavailable model waits at most MAX_REVIEW_WAITS times, across a restart` |
+| TK0002-M16 | packages/dev/src/gate.ts | started a reviewer run that cannot end inside the step deadline | `dev/review hardening > runs that cannot fit in the step deadline are skipped and a person decides` |
+| TK0002-M17 | packages/dev/src/actions.ts | offered merge, reject, rework and reverify during the review model wait | `dev:rework and dev:reverify > a review waiting for its model offers no merge, reject, rework or reverify` |
+| TK0002-M18 | packages/dev/flows/dev.flow.ts | set the flow's visit bound to 10, below the review waits | `the dev flow > loads with the gate and the rework edges` |
 ## TK0013 — pi runs under Bun
 
 | id | file | mutation | failing test |
@@ -672,3 +694,28 @@
 | TK0005-M5 | packages/engine/src/platform/sqlite-open.ts | `enableWal` rethrew `SQLITE_BUSY` instead of waiting | `switching to WAL waits while another process holds the database` |
 | TK0005-M6 | packages/engine/src/platform/watch.ts | `resolveSubscriptionWatch` ignored an injected watch | `the injected watch, timer and period replace the defaults` |
 | TK0005-M7 | packages/engine/test/platform/no-copies.test.ts | dropped the `process.kill(-` pattern from the scan | `the platform module is the only copy > the scan finds each forbidden call outside platform/` |
+| TK0006-M1 | packages/dev/src/service.ts | `claimTaskStart` skipped the area check under the lock | `two schedulers on one store never start two tasks of one area` |
+| TK0006-M2 | packages/dev/src/service.ts | `areaHolder` ignored tasks in the review phase | `a claim is refused while a task of the area is running or reviewing` |
+| TK0006-M3 | packages/dev/src/service.ts | `areaHolder` ignored the repository | `the same area in another repository does not block` (and the two-scheduler test) |
+
+## TK0015 — pi worker
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0015-M1 | packages/harness-pi/src/worker.ts | a message with no cost object counted as price 0 instead of unpriced | `a model with no price has cost.micros null` |
+| TK0015-M2 | packages/harness-pi/src/worker.ts | `cache_read` taken from `cacheWrite` | `a prompt that ends writes the lines in order and a Result with usage, cost and sessionId` |
+| TK0015-M3 | packages/harness-pi/src/worker.ts | the `agent_settled` line not written | `a prompt that ends writes the lines in order and a Result with usage, cost and sessionId` |
+| TK0015-M4 | packages/harness-pi/src/worker.ts | cancelled run returned exit code 0 instead of 143 | `SIGTERM during a slow fake stream writes a cancelled Result and exits 143` |
+| TK0015-M5 | packages/harness-pi/src/worker.ts | resource loader discovery on, `agentDir` set to `$HOME/.pi/agent` | `nothing under the fake HOME .pi is read or created` |
+| TK0015-M6 | packages/harness-pi/src/worker.ts | `resumeSession` ignored (always a new session) | `resume: the second run sees the first answer in the context the fake model receives` |
+
+## TK0014 — the shared harness process helper
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0014-M1 | packages/harness-process/src/process.ts | ignored the `toolEvent` classifier, so no line counted as a tool call | `a pi tool call pauses the stall timer until its end line` |
+| TK0014-M2 | packages/harness-radian/src/index.ts | mapped radian's `ToolExecutionStarted` to `"tool-end"` | `harness-radian/agent > an open tool call pauses the stall timer until it settles` |
+| TK0017-M1 | packages/access-match/src/command.ts | `\|` removed from the split operators | `split operator "\|" reaches the part after it` |
+| TK0017-M2 | packages/access-match/src/index.ts | relative paths joined to `cwd` without resolving `..` | `~ is expanded, relative paths are joined to cwd, and .. is resolved` |
+| TK0017-M3 | packages/harness-pi/src/worker.ts | the `tool_call` hook returns `undefined` instead of `{ block: true, reason }` | `a denied bash call is blocked, a blocked line is written, the model gets the reason and the run ends done` |
+| TK0017-M4 | packages/access-match/src/command.ts | `xargs` and `eval` not seen as inline code | `inline code xargs is refused though no rule names it` |

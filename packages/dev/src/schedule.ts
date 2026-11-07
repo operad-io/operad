@@ -23,6 +23,7 @@ import {
 } from "./model.ts";
 import {
   claimTaskStart,
+  setAreaHold,
   listRepositories,
   recordAutoMerge,
   recordMergeReported,
@@ -123,7 +124,11 @@ async function startOne(
   object: StoredObject,
   params?: Readonly<Record<string, string>>,
 ): Promise<boolean> {
-  const claimed = await claimTaskStart(ctx.store, object.id);
+  // A start that only parks the task for a person (a cancelled dependency)
+  // runs no work, so it is not held by an area.
+  const claimed = await claimTaskStart(ctx.store, object.id, {
+    checkArea: params?.blockedBy === undefined,
+  });
   if (claimed === undefined) return false;
   const token = claimed.claim?.token;
   const startParams: Readonly<Record<string, string>> | undefined =
@@ -287,6 +292,14 @@ async function scheduleRepository(
     isActive(taskData(object.data)),
   ).length;
   const started = new Set<string>();
+  // Which running or reviewing task holds each area in this repository.
+  const areaActive = new Map<string, string>();
+  for (const object of current) {
+    const task = taskData(object.data);
+    if (task.area !== undefined && isActive(task) && !areaActive.has(task.area)) {
+      areaActive.set(task.area, bareId(object.id));
+    }
+  }
 
   /** Starts one ready task when its dependencies and both limits allow it. */
   const startEligible = async (
@@ -310,12 +323,14 @@ async function scheduleRepository(
       return;
     }
     if (!dependencies.ready) return;
+    if (task.area !== undefined && areaActive.has(task.area)) return;
     if (planConcurrency(plan) - (planActive.get(planId) ?? 0) <= 0) return;
     if (repositoryActive >= repositoryConcurrency(settings)) return;
     if (!(await startOne(ctx, object))) return;
     writeSchedulerLine(`${bareId(object.id)} ready -> running`);
     planActive.set(planId, (planActive.get(planId) ?? 0) + 1);
     repositoryActive += 1;
+    if (task.area !== undefined) areaActive.set(task.area, bareId(object.id));
     started.add(object.id);
   };
 
@@ -327,9 +342,13 @@ async function scheduleRepository(
       const task = taskData(object.data);
       const attempt = task.attempt;
       if (task.phase !== "waiting" || task.run === null) continue;
-      if (attempt === undefined || attempt.review?.result !== "pass") {
-        continue;
-      }
+      if (attempt === undefined) continue;
+      const review = attempt.review;
+      const passed =
+        review?.decision === "passed" ||
+        review?.result === "pass" ||
+        review?.result === "passed";
+      if (!passed) continue;
       // An integrate that failed is a person wait, never a second answer.
       if (attempt.integration !== undefined && attempt.integration !== null) {
         continue;
@@ -377,6 +396,18 @@ async function scheduleRepository(
     for (const object of ready) {
       await startEligible(object, plan, planId);
     }
+  }
+
+  // Say why a ready task whose dependencies are met is not starting: its area
+  // is held. The record is cleared once the area is free or the task started.
+  for (const object of current) {
+    const task = taskData(object.data);
+    if (task.phase !== "ready" || started.has(object.id)) continue;
+    const holder =
+      task.area !== undefined && dependencyState(task, byId).ready
+        ? areaActive.get(task.area)
+        : undefined;
+    await setAreaHold(ctx.store, object.id, holder);
   }
 }
 

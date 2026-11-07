@@ -57,23 +57,11 @@ const SENTINEL = [
   "while :; do sleep 1; done",
 ].join("\n");
 
-/** The tool activity a harness journal line reports, when it reports one. */
-export function toolActivity(line: string): "started" | "settled" | undefined {
-  let value: unknown;
-  try {
-    value = JSON.parse(line);
-  } catch {
-    return undefined;
-  }
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return undefined;
-  }
-  const record = value as Record<string, unknown>;
-  const event = typeof record.event === "string" ? record.event : record.type;
-  if (event === "ToolExecutionStarted") return "started";
-  if (event === "ToolExecutionSettled") return "settled";
-  return undefined;
-}
+/**
+ * What one output line says about a tool call. Each harness names its own
+ * events; the caller supplies the classifier.
+ */
+export type ToolEvent = "tool-start" | "tool-end";
 
 /** How much of the harness's own stderr the fact keeps. */
 const STDERR_LIMIT = 64 * 1024;
@@ -124,6 +112,12 @@ export interface AgentRunOptions {
    * a handler that is still busy writes before the next line is taken.
    */
   readonly onLine: (line: string) => void | Promise<void>;
+  /**
+   * Classifies one complete stdout line. A line that starts a tool call pauses
+   * the stall timer until a line that ends it arrives; the wall limit still
+   * runs. Without a classifier no line counts as a tool call.
+   */
+  readonly toolEvent?: ((line: string) => ToolEvent | undefined) | undefined;
   /** Sends a signal to one process group; a test replaces it to watch signals. */
   readonly killGroup?:
     | ((pgid: number, signal: NodeJS.Signals | 0) => boolean)
@@ -285,10 +279,10 @@ export async function runAgent(
   let resetStallForLine: () => void = () => {};
   let onLineOverflow: () => void = () => {};
   let toolCalls = 0;
-  let onToolActivity: (activity: "started" | "settled") => void = () => {};
+  let onToolActivity: (activity: ToolEvent) => void = () => {};
   const stdoutLines = new Lines(
     (line) => {
-      const activity = toolActivity(line);
+      const activity = options.toolEvent?.(line);
       if (activity !== undefined) onToolActivity(activity);
       resetStallForLine();
       return options.onLine(line);
@@ -409,7 +403,7 @@ export async function runAgent(
     }, options.stallMs);
   };
   onToolActivity = (activity) => {
-    if (activity === "started") toolCalls += 1;
+    if (activity === "tool-start") toolCalls += 1;
     else toolCalls = Math.max(0, toolCalls - 1);
     resetStall();
   };

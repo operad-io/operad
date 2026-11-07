@@ -189,6 +189,30 @@ describe("dev:rework and dev:reverify", () => {
     });
   }
 
+  test("a review waiting for its model offers no merge, reject, rework or reverify", async () => {
+    const fixture = await setup();
+    await setTaskPhase(fixture.store, fixture.task.id, "waiting");
+    await patch(fixture, {
+      retryAt: Date.now() + 120_000,
+      attempt: {
+        ...GATED,
+        review: {
+          result: "unavailable",
+          decision: "unavailable",
+          round: 1,
+          retryAt: Date.now() + 120_000,
+        } as never,
+      },
+    });
+    const pending = await fixture.registry.pending([
+      { runId: "run-1", object: { type: "task", id: fixture.task.id } },
+    ]);
+    const names = pending[0]?.actions.map((action) => action.action) ?? [];
+    for (const name of ["merge", "reject", "rework", "reverify"]) {
+      expect(names).not.toContain(name);
+    }
+  });
+
   test("pending lists both after merge and reject", async () => {
     const fixture = await setup();
     await setTaskPhase(fixture.store, fixture.task.id, "waiting");
