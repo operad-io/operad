@@ -52,6 +52,7 @@ of adding it.
   `docs/backlog/`) is English.
 - A child process gets at most three stdio entries and no code reads `stdio[3]` or higher: Bun closes an extra pipe twice and kills the process when SQLite owns the number (bf3a73e). Send extra output to a file. A test enforces it.
 - Never write under `.git`.
+- Plugins use `@operad-io/engine/platform` for processes, locks and watching (process groups, file locks, directory watches, sqlite open settings); a test fails when a source file outside it calls `linkSync(`, `process.kill(-` or `fs.watch(`.
 
 ## Mutation records
 
