@@ -20,6 +20,7 @@ dogfood 跑通了 `harness-radian`。`operad-harness.md` 决定 1 说一种 harn
 - 凭据：`ModelRuntime.create({ authPath, modelsPath })` 指定文件；`setRuntimeApiKey(provider, key)` 只在内存里给。`auth.json` 的读写走 `proper-lockfile`，多个 pi 进程共享一份是它支持的用法。
 - `createBashTool` 接受 `operations`（换执行器）、`spawnHook`（改命令、cwd、env）、`commandPrefix`。
 - `AgentSession` 接受 `uiContext`；不给时 `ctx.ui.confirm()` 这类对话在扩展里返回默认值。
+- **Bun 1.3.14 下全部跑通（2026-11-06）**：显式 `resourceLoader`、`SettingsManager.inMemory()`、临时 `agentDir`、`ModelRuntime.create({ authPath, modelsPath })`、自定义 provider 的 `streamSimple`、`message_end.usage`、`SessionManager` 落盘与 `open(path)` 续接、`abort()`、`proper-lockfile` 两个进程写同一份 `auth.json` 都在 `packages/harness-pi/test/spike.test.ts` 通过，不需要 Node；锁的测试是确定性的：一个进程按 pi 的锁参数（`proper-lockfile`、`realpath: false`、`stale: 30s`）持锁并等测试创建释放文件，另一个进程先以 `retries: 0` 撞锁拿到 `ELOCKED`，释放后再走 `ModelRuntime.login` 的读改写，结束时两份凭据都在；关掉锁的对照会丢掉一份凭据；这两个断言由 `auth.json locking blocks a second writer until the lock is released`（事件栅栏强制争用）和 `the same read-modify-write without the lock loses a credential`（无锁对照丢掉一份凭据）两个测试证明。pi 1.5.0 的包根没有导出 `AuthStorage` / `FileAuthStorageBackend`（只有 `readStoredCredential`），所以从 API 无法在外面持锁，spike 用同一把 `proper-lockfile` 锁同一个路径。pi-ai 自带的 faux provider 没有从 `pi-coding-agent` 公开导出，spike 按任务 3 的退路注册自定义 provider。
 
 ## 决定（已定）
 
@@ -46,9 +47,8 @@ dogfood 跑通了 `harness-radian`。`operad-harness.md` 决定 1 说一种 harn
 
 ## 待决问题（未定）
 
-1. pi 在 Bun 下的实际兼容性（任务 1 的产出）；如果 `proper-lockfile` 或别的依赖在 Bun 下不行，退路是 `worker.ts` 用 Node 起，接法不变。
-2. 两份凭据同时刷新 OAuth 令牌，pi 的文件锁够不够；dogfood 期间观察 `auth.json` 有没有被互相覆盖。
-3. 会话文件归属：放在 operad 的 `agentDir` 下意味着用户自己的 `pi` 命令看不到这些会话；要不要反过来放到用户的会话目录里，让 `pi --continue` 能接上，继承 `operad-harness.md` 待决 1。
+1. 两份凭据同时刷新 OAuth 令牌，pi 的文件锁够不够；dogfood 期间观察 `auth.json` 有没有被互相覆盖。（spike 已证明锁在 Bun 下串行化读改写，见上；dogfood 观察的是令牌刷新语义。）
+2. 会话文件归属：放在 operad 的 `agentDir` 下意味着用户自己的 `pi` 命令看不到这些会话；要不要反过来放到用户的会话目录里，让 `pi --continue` 能接上，继承 `operad-harness.md` 待决 1。
 
 ## 验收
 
