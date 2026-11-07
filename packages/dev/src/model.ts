@@ -215,6 +215,10 @@ export type TaskData = {
   readonly title: string;
   readonly brief: string;
   readonly after: readonly string[];
+  /** Tasks with the same area in one repository never run at once. */
+  readonly area?: string | undefined;
+  /** The running task that holds this ready task's area; the scheduler sets it. */
+  readonly areaHeldBy?: string | undefined;
   readonly phase: TaskPhase;
   readonly attempts: number;
   readonly run: string | null;
@@ -310,6 +314,19 @@ export function validateTitle(title: unknown): string {
     throw new DevError("title", "must be a non-empty string");
   }
   return title.trim();
+}
+
+/** An area is a short single-line label; the empty string means none. */
+export function validateArea(area: unknown): string | undefined {
+  if (typeof area !== "string") {
+    throw new DevError("area", "must be a string");
+  }
+  const trimmed = area.trim();
+  if (trimmed.length === 0) return undefined;
+  if (trimmed.length > 64 || /[\r\n\u0000]/.test(trimmed)) {
+    throw new DevError("area", "must be one short line of at most 64 characters");
+  }
+  return trimmed;
 }
 
 export function validateRepositoryName(name: unknown): string {

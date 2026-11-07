@@ -23,8 +23,11 @@ import {
   getTask,
   setAuto,
   setPriority,
+  claimTaskStart,
   setTaskPhase,
+  updateTask,
 } from "../src/service.ts";
+import { taskViews } from "../src/views.ts";
 import {
   bareId,
   planData,
@@ -919,5 +922,142 @@ describe("dev scheduling", () => {
 
     const started = await tick(fixture);
     expect(started.length).toBe(2);
+  });
+
+  test("an area holds back a second task while concurrency allows three", async () => {
+    const fixture = await setup({ concurrency: 3 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run", concurrency: 3 });
+    const first = await addTask(fixture.store, { plan: plan.key, slug: "a-one", title: "a-one", area: "core" });
+    const second = await addTask(fixture.store, { plan: plan.key, slug: "a-two", title: "a-two", area: "core" });
+    const free = await makeTask(fixture, plan.key, "free");
+    await confirm(fixture, plan.key);
+
+    const started = (await tick(fixture)).map((request) => startedId(request));
+    expect(started.sort()).toEqual([first.id, free.key].sort());
+    const held = taskData((await getTask(fixture.store, second.id)).data);
+    expect(held.phase).toBe("ready");
+    expect(taskViews.row(await getTask(fixture.store, second.id)).note).toBe(
+      `waiting for area core (${bareId(first.id)})`,
+    );
+
+    // The holder is still running: later ticks keep holding the second task.
+    await putTask(fixture, first.id, { run: "run-1" });
+    await putTask(fixture, free.key, { run: "run-2" });
+    expect(await tick(fixture)).toEqual([]);
+
+    await phase(fixture, first.id, "merged");
+    const next = await tick(fixture);
+    expect(next.map((request) => startedId(request))).toEqual([second.id]);
+    const running = await getTask(fixture.store, second.id);
+    expect(taskData(running.data).areaHeldBy).toBeUndefined();
+    expect(taskViews.row(running).note).toBe("area: core");
+  });
+
+  test("a task in the review phase still holds its area", async () => {
+    const fixture = await setup({ concurrency: 3 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run", concurrency: 3 });
+    const first = await addTask(fixture.store, { plan: plan.key, slug: "a-one", title: "a-one", area: "core" });
+    await addTask(fixture.store, { plan: plan.key, slug: "a-two", title: "a-two", area: "core" });
+    await confirm(fixture, plan.key);
+    await tick(fixture);
+    await putTask(fixture, first.id, { run: "run-1", phase: "review" });
+    expect(await tick(fixture)).toEqual([]);
+  });
+
+  test("the same area in another repository does not block", async () => {
+    const fixture = await setup();
+    const secondPath = await makeGitRepository(fixture.repositoryPath, "second");
+    const second = await addRepository(fixture.store, { path: secondPath });
+    const firstPlan = await makePlan(fixture, { slug: "one", auto: "run" });
+    await addTask(fixture.store, { plan: firstPlan.key, slug: "first", title: "first", area: "core" });
+    await confirm(fixture, firstPlan.key);
+    const secondPlan = await addPlan(fixture.store, { repository: second, slug: "two", title: "two" });
+    await setAuto(fixture.store, secondPlan.id, "run");
+    await addTask(fixture.store, { plan: secondPlan.id, slug: "second", title: "second", area: "core" });
+    await confirmPlan(fixture.store, secondPlan.id);
+    expect((await tick(fixture)).length).toBe(2);
+  });
+
+  test("changing the area of a ready task takes effect on the next tick", async () => {
+    const fixture = await setup({ concurrency: 3 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run", concurrency: 3 });
+    const first = await addTask(fixture.store, { plan: plan.key, slug: "a-one", title: "a-one", area: "core" });
+    const second = await addTask(fixture.store, { plan: plan.key, slug: "a-two", title: "a-two", area: "core" });
+    await confirm(fixture, plan.key);
+    await tick(fixture);
+    await putTask(fixture, first.id, { run: "run-1" });
+    expect(taskData((await getTask(fixture.store, second.id)).data).areaHeldBy).toBe(
+      bareId(first.id),
+    );
+
+    await updateTask(fixture.store, second.id, { area: "docs" });
+    const changed = taskData((await getTask(fixture.store, second.id)).data);
+    expect(changed.area).toBe("docs");
+    expect(changed.areaHeldBy).toBeUndefined();
+    expect(changed.brief).toContain("area: docs");
+    expect((await tick(fixture)).map((request) => startedId(request))).toEqual([second.id]);
+    await putTask(fixture, second.id, { run: "run-2" });
+
+    // Clearing the area also frees a held task.
+    const third = await addTask(fixture.store, { plan: plan.key, slug: "a-three", title: "a-three", area: "core" });
+    await phase(fixture, third.id, "ready");
+    await tick(fixture);
+    expect(taskData((await getTask(fixture.store, third.id)).data).phase).toBe("ready");
+    await updateTask(fixture.store, third.id, { area: "" });
+    expect(taskData((await getTask(fixture.store, third.id)).data).area).toBeUndefined();
+    expect((await tick(fixture)).map((request) => startedId(request))).toEqual([third.id]);
+  });
+
+  test("two schedulers on one store never start two tasks of one area", async () => {
+    const fixture = await setup({ concurrency: 3 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run", concurrency: 3 });
+    const first = await addTask(fixture.store, { plan: plan.key, slug: "a-one", title: "a-one", area: "core" });
+    const second = await addTask(fixture.store, { plan: plan.key, slug: "a-two", title: "a-two", area: "core" });
+    await confirm(fixture, plan.key);
+
+    const other = new PluginRegistry([plugin], {
+      home: fixture.root,
+      cwd: fixture.repositoryPath,
+      store: fixture.store,
+      storeRoot: fixture.store.root,
+      onAnswer: async () => {},
+      onCancelRun: () => {},
+    });
+    await Promise.all([fixture.registry.tick(), other.tick()]);
+    const started = [...fixture.registry.takeStartedRuns(), ...other.takeStartedRuns()];
+    expect(started.length).toBe(1);
+    const phases = await Promise.all(
+      [first.id, second.id].map(
+        async (key) => taskData((await getTask(fixture.store, key)).data).phase,
+      ),
+    );
+    expect(phases.sort()).toEqual(["ready", "running"]);
+
+    // The claim itself is the decision: both claims at once, one wins.
+    const fresh = await setup({ concurrency: 3 });
+    const freshPlan = await makePlan(fresh, { slug: "plan", auto: "off" });
+    const one = await addTask(fresh.store, { plan: freshPlan.key, slug: "one", title: "one", area: "core" });
+    const two = await addTask(fresh.store, { plan: freshPlan.key, slug: "two", title: "two", area: "core" });
+    await phase(fresh, one.id, "ready");
+    await phase(fresh, two.id, "ready");
+    const claims = await Promise.all([
+      claimTaskStart(fresh.store, one.id),
+      claimTaskStart(fresh.store, two.id),
+    ]);
+    expect(claims.filter((claim) => claim !== undefined).length).toBe(1);
+  });
+
+  test("a claim is refused while a task of the area is running or reviewing", async () => {
+    const fixture = await setup({ concurrency: 3 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "off" });
+    const holder = await addTask(fixture.store, { plan: plan.key, slug: "holder", title: "holder", area: "core" });
+    const waiting = await addTask(fixture.store, { plan: plan.key, slug: "waiting", title: "waiting", area: "core" });
+    await phase(fixture, waiting.id, "ready");
+    for (const held of ["running", "review"] as const) {
+      await putTask(fixture, holder.id, { phase: held, run: "run-1" });
+      expect(await claimTaskStart(fixture.store, waiting.id)).toBeUndefined();
+    }
+    await putTask(fixture, holder.id, { phase: "waiting", run: "run-1" });
+    expect(await claimTaskStart(fixture.store, waiting.id)).toBeDefined();
   });
 });

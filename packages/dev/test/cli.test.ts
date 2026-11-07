@@ -606,6 +606,41 @@ describe("operad with the dev plugin", () => {
     expect(updated.out.trim()).toBe(taskId);
   });
 
+  test("task add and update set, show and clear the area", async () => {
+    const { home, repository } = await setup();
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const plan = await run(
+      home,
+      repository,
+      ["plan", "add", "--slug", "p", "--title", "P"],
+      "a request\n",
+    );
+    const task = await run(
+      home,
+      repository,
+      ["task", "add", "--plan", plan.out.trim(), "--slug", "t", "--title", "T", "--area", "engine-core"],
+      "a brief\n",
+    );
+    expect(task.code).toBe(0);
+    const taskId = task.out.trim();
+
+    const listed = await run(home, repository, ["list", "task"]);
+    expect(listed.out).toContain("area: engine-core");
+    const shown = await run(home, repository, ["show", taskId, "--section", "brief"]);
+    expect(shown.out).toContain("Area: engine-core");
+
+    const changed = await run(home, repository, ["task", "update", taskId, "--area", "docs"]);
+    expect(changed.code).toBe(0);
+    expect((await run(home, repository, ["list", "task"])).out).toContain("area: docs");
+
+    const cleared = await run(home, repository, ["task", "update", taskId, "--area", ""]);
+    expect(cleared.code).toBe(0);
+    expect((await run(home, repository, ["list", "task"])).out).not.toContain("area:");
+
+    const bad = await run(home, repository, ["task", "update", taskId, "--area", "x".repeat(65)]);
+    expect(bad.code).toBe(1);
+  });
+
   test("a bare id resolves in the repository of the current directory", async () => {
     const { root, home, repository } = await setup();
     const other = await makeGitRepository(root, "other");
