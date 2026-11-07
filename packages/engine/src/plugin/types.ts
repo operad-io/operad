@@ -631,6 +631,12 @@ export interface WaitingRun {
   readonly object: ObjectRef;
   readonly prompt?: string | undefined;
   readonly choices?: readonly string[] | undefined;
+  /**
+   * When the run last recorded anything. A run whose object is not in the store
+   * takes this as the time of its placeholder object, so an age shown for it
+   * is the run's own.
+   */
+  readonly lastFactAt?: number | undefined;
 }
 
 /** One action the pending view offers for a waiting run. */
