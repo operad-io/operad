@@ -4,7 +4,7 @@ import { afterEach, expect } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { FilePluginStore } from "@operad-io/engine";
-import { openLockHandleCount } from "../src/lock.ts";
+import { openWaitHandleCount as openLockHandleCount } from "@operad-io/engine/platform";
 
 const roots: string[] = [];
 
@@ -55,9 +55,9 @@ export function storeAt(path: string): FilePluginStore {
 
 /**
  * Every dev test file calls this. It checks after each of that file's tests
- * that no lock directory watch or fallback timer is still open, so a leak fails
+ * that no directory watch or fallback timer is still open, so a leak fails
  * in the file that caused it. One "last" test cannot see a leak from a file Bun
- * happens to run later. Test-only: `lock.ts` exports the counter for this.
+ * happens to run later. Test-only: the platform module exports the counter for this.
  */
 export function guardLockHandles(): void {
   afterEach(() => {

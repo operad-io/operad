@@ -31,7 +31,7 @@ import {
 } from "./facts.ts";
 import { assertJsonValue } from "./json-value.ts";
 import { SCHEMA_VERSION } from "./schema.ts";
-import { resolveSubscriptionWatch, type SubscriptionWatch } from "./poll.ts";
+import { resolveSubscriptionWatch, type SubscriptionWatch } from "../platform/index.ts";
 import type {
   AppendResult,
   Fact,
