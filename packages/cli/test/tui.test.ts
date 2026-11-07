@@ -89,4 +89,27 @@ describe("operad tui", () => {
     ).toBe(2);
     expect(output.errors()).toContain("tui needs a terminal");
   });
+
+  test("--no-start is passed on, and the app gets this process's entry and a way to print", async () => {
+    const output = capture();
+    const seen: TuiCommand[] = [];
+    for (const argv of [["tui"], ["tui", "--no-start"]]) {
+      expect(
+        await main(argv, {
+          home: "/tmp/home",
+          io: output.io,
+          isTTY: true,
+          tui: async (command) => {
+            seen.push(command);
+            command.write?.("starting operad serve (log: /tmp/home/serve.log)");
+            return 0;
+          },
+        }),
+      ).toBe(0);
+    }
+    expect(seen[0]?.noStart).toBeUndefined();
+    expect(seen[1]?.noStart).toBe(true);
+    expect(seen[0]?.serveEntry?.endsWith("bin/operad.ts")).toBe(true);
+    expect(output.text()).toContain("starting operad serve (log: /tmp/home/serve.log)");
+  });
 });
