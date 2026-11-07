@@ -5,7 +5,7 @@ import devFlow from "../flows/dev.flow.ts";
 import { actions } from "./actions.ts";
 import { checkDev } from "./check.ts";
 import { commands } from "./commands.ts";
-import { runRework, runReview, runVerify } from "./gate.ts";
+import { runRework, runReview, runReviewDue, runVerify } from "./gate.ts";
 import { runCleanup, runIntegrate } from "./integrate.ts";
 import { runScheduler } from "./schedule.ts";
 import { resolveDevKey } from "./service.ts";
@@ -55,8 +55,23 @@ export function createDevPlugin() {
       {
         name: "review",
         timeoutSecs: STEP_TIMEOUT_SECS,
-        results: ["pass", "fail", "failed", "cancelled"],
+        results: [
+          "pass",
+          "fail",
+          "failed",
+          "unavailable",
+          "timed_out",
+          "cancelled",
+        ],
         run: runReview,
+      },
+      {
+        name: "review_due",
+        // The wait holds until the recorded retry time; it is cancelled with
+        // the run, never by the step clock.
+        timeoutSecs: STEP_TIMEOUT_SECS,
+        results: ["ready", "interrupted"],
+        run: runReviewDue,
       },
       {
         name: "rework",

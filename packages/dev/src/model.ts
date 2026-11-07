@@ -87,14 +87,80 @@ export interface ReviewFinding {
   readonly pre_existing?: boolean;
 }
 
-/** What the review step found. */
-export type ReviewResult = "pass" | "fail" | "failed";
+/**
+ * The decision a review round records once. A round may use more than one
+ * model run (a fallback, a retry), but it has one decision.
+ */
+export type ReviewDecision =
+  | "passed"
+  | "findings"
+  | "unavailable"
+  | "timed_out";
 
-/** One review of a task's verified commit. */
+/** What the review step found. The old `pass`/`fail` records still read. */
+export type ReviewResult =
+  | "pass"
+  | "fail"
+  | "passed"
+  | "findings"
+  | "failed"
+  | "unavailable"
+  | "timed_out";
+
+/** What one model run of a review round did. */
+export type ReviewRunOutcome =
+  | "report"
+  | "invalid"
+  | "unavailable"
+  | "timed_out"
+  | "failed";
+
+/** Which settings a review run used. */
+export type ReviewRunRole = "primary" | "fallback";
+
+/** Why a review run happened. */
+export type ReviewRunReason =
+  | "initial"
+  | "retry"
+  | "fallback";
+
+/** One model run inside a review round. */
+export interface ReviewRunRecord {
+  readonly [key: string]: unknown;
+  /** The review round this run belongs to. */
+  readonly round: number;
+  readonly role: ReviewRunRole;
+  /** The harness step this run used. */
+  readonly use: string;
+  readonly args: readonly string[];
+  /** The model the run named, or its harness step when it named none. */
+  readonly model: string;
+  readonly reason: ReviewRunReason;
+  readonly outcome: ReviewRunOutcome;
+  readonly run?: string | null;
+  readonly message?: string | null;
+  /** The findings a report run returned, with pre-existing marks. */
+  readonly findings?: readonly ReviewFinding[] | null;
+  readonly verified?: readonly string[] | null;
+  /** How many of the findings are at or above the fix level. */
+  readonly counted?: number | null;
+}
+
+/** One review of a task's verified commit: one decision for the round. */
 export interface ReviewRecord {
   readonly [key: string]: unknown;
   readonly result: ReviewResult;
   readonly run?: string | null;
+  /** The decision of the round; absent on a report that failed outright. */
+  readonly decision?: ReviewDecision | null;
+  /** The round number inside the attempt; the first round is 1. */
+  readonly round?: number | null;
+  /** The model that produced the decision. */
+  readonly model?: string | null;
+  /** When an unavailable round may run again, in epoch milliseconds. */
+  readonly retryAt?: number | null;
+  /** Every run of this round, in order. */
+  readonly runs?: readonly ReviewRunRecord[] | null;
   readonly findings?: readonly ReviewFinding[];
   readonly verified?: readonly string[];
   readonly log?: string | null;
@@ -178,7 +244,9 @@ export type TaskAttempt = {
   readonly verified?: string | null;
   readonly verify?: VerifyRecord | null;
   readonly review?: ReviewRecord | null;
-  /** How many review steps this attempt has started. */
+  /** Every model run of every review round in this attempt. */
+  readonly reviewRuns?: readonly ReviewRunRecord[] | null;
+  /** How many review rounds this attempt has finished. */
   readonly reviews?: number | null;
   /** The rework this run appended; a replay of the same run reads it. */
   readonly rework?: ReworkRecord | null;
@@ -216,6 +284,8 @@ export type TaskData = {
   readonly reworkStreak?: number | undefined;
   /** The owner asked the scheduler to start this ready task. */
   readonly startRequested?: boolean | undefined;
+  /** When an unavailable review may run again, in epoch milliseconds. */
+  readonly retryAt?: number | null | undefined;
   /** What the scheduler claimed while it waits for the run to record itself. */
   readonly claim?: TaskClaim | null | undefined;
   /** The attempt whose review the scheduler already answered for auto merge. */

@@ -29,6 +29,9 @@ import {
   type ReviewFinding,
   type ReviewRecord,
   type ReviewResult,
+  type ReviewRunRecord,
+  type ReviewRunReason,
+  type ReviewRunRole,
   type ReworkRecord,
   type TaskAttempt,
   type TaskData,
@@ -39,6 +42,7 @@ import {
   assertInsideRepository,
   type DevSettings,
   type FixLevel,
+  type ReviewerFallback,
   type ReviewerSettings,
 } from "./settings.ts";
 import {
@@ -692,8 +696,9 @@ function reviewPrompt(
   return pieces.join("\n\n");
 }
 
-interface ReviewerAttempt {
-  readonly ok: boolean;
+/** What one call to a reviewer harness step produced. */
+interface ReviewerCall {
+  readonly outcome: "report" | "invalid" | "unavailable" | "timed_out" | "failed";
   readonly report?: Report | undefined;
   readonly message: string;
 }
@@ -770,25 +775,89 @@ function readReport(resultPath: string): ReportRead {
   }
 }
 
+/** The model a harness step names, or its step name when it names none. */
+function modelOf(use: string, args: readonly string[]): string {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (arg === "--model") {
+      const value = args[index + 1];
+      return typeof value === "string" && value.length > 0 ? value : use;
+    }
+    if (arg.startsWith("--model=")) {
+      const value = arg.slice("--model=".length);
+      return value.length > 0 ? value : use;
+    }
+  }
+  return use;
+}
+
+/** The `kind` a harness reports for a model error, in its usual shapes. */
+function modelErrorKind(data: Record<string, unknown>): string | undefined {
+  for (const key of ["modelError", "model_error", "error", "failure"]) {
+    const value = data[key];
+    if (typeof value === "string") return value;
+    if (isRecord(value) && typeof value.kind === "string") return value.kind;
+    if (isRecord(value)) {
+      const nested = value.kind;
+      if (typeof nested === "string") return nested;
+    }
+  }
+  if (typeof data.kind === "string") return data.kind;
+  return undefined;
+}
+
+/** True when a value carries an HTTP 429 or its phrase. */
+function contains429(value: unknown, depth = 0): boolean {
+  if (typeof value === "number") return value === 429;
+  if (typeof value === "string") {
+    return /\b429\b/.test(value) || /too many requests/i.test(value);
+  }
+  if (depth >= 3) return false;
+  if (Array.isArray(value)) {
+    return value.some((item) => contains429(item, depth + 1));
+  }
+  if (isRecord(value)) {
+    return Object.values(value).some((item) => contains429(item, depth + 1));
+  }
+  return false;
+}
+
+/** Why a reviewer run failed: unavailable, timed out, or anything else. */
+function failureOutcome(
+  data: Record<string, unknown>,
+  message: string,
+): "unavailable" | "timed_out" | "failed" {
+  const reason = typeof data.reason === "string" ? data.reason : undefined;
+  if (reason === "wall" || reason === "stall" || reason === "timeout") {
+    return "timed_out";
+  }
+  if (reason === "unavailable" || reason === "usage_limit") {
+    return "unavailable";
+  }
+  const kind = modelErrorKind(data);
+  if (kind === "unavailable" || kind === "usage_limit") return "unavailable";
+  const status = data.statusCode ?? data.status ?? data.httpStatus;
+  if (status === 429) return "unavailable";
+  if (contains429(message) || contains429(data)) return "unavailable";
+  return "failed";
+}
+
 async function callReviewer(
   ctx: StepContext,
   context: TaskContext,
   gatePath: string,
   prompt: string,
   resultPath: string,
-  reviews: number,
-): Promise<ReviewerAttempt> {
+  reviewer: { readonly use: string; readonly args: readonly string[] },
+): Promise<ReviewerCall> {
   const runStep = ctx.runStep;
   if (runStep === undefined) {
     return {
-      ok: false,
+      outcome: "failed",
       message: "the kernel did not offer a way to run the reviewer",
     };
   }
   const settings = context.settings.reviewer;
-  const useFirst =
-    reviews === 0 && settings.firstArgs !== undefined;
-  const args = useFirst ? settings.firstArgs ?? [] : settings.args;
   try {
     rmSync(resultPath, { force: true });
   } catch {
@@ -797,11 +866,11 @@ async function callReviewer(
   let outcome: PluginStepResult | undefined;
   try {
     outcome = await runStep(
-      settings.use,
+      reviewer.use,
       {
         prompt,
         cwd: gatePath,
-        args,
+        args: reviewer.args,
         wallTimeSecs: settings.timeoutSecs,
         ...(settings.stallSecs === undefined
           ? {}
@@ -811,73 +880,184 @@ async function callReviewer(
       stepOptions(ctx, gatePath),
     );
   } catch (error) {
-    return { ok: false, message: messageOf(error) };
+    const message = messageOf(error);
+    return { outcome: failureOutcome({}, message), message };
   }
   if (outcome.result !== "done") {
     const data = isRecord(outcome.data) ? outcome.data : {};
-    return {
-      ok: false,
-      message:
-        typeof data.message === "string"
-          ? data.message
-          : `the reviewer ended "${outcome.result}"`,
-    };
+    const message =
+      typeof data.message === "string"
+        ? data.message
+        : `the reviewer ended "${outcome.result}"`;
+    return { outcome: failureOutcome(data, message), message };
   }
   const read = readReport(resultPath);
   if (read.text === undefined) {
     return {
-      ok: false,
+      outcome: "invalid",
       message: read.message ?? `cannot read ${resultPath}`,
     };
   }
   const report = parseReport(read.text);
   if (report === undefined) {
     return {
-      ok: false,
+      outcome: "invalid",
       message: `the review report at ${resultPath} is not the expected JSON`,
     };
   }
-  return { ok: true, report, message: "" };
+  return { outcome: "report", report, message: "" };
 }
 
 function reviewData(
-  result: ReviewResult,
+  result: string,
   sha: string,
   extra: Readonly<Record<string, unknown>>,
 ): Record<string, unknown> {
   return { result, sha, ...extra };
 }
 
-async function saveReview(
-  ctx: StepContext,
-  context: TaskContext,
-  task: TaskData,
-  attempt: TaskAttempt,
-  record: ReviewRecord,
-  reviews: number,
-): Promise<boolean> {
-  const passed = record.result === "pass";
-  return saveTaskGuarded(
-    ctx,
-    context.taskKey,
-    {
-      ...task,
-      // A pass and an infrastructure failure both go to the person wait; a
-      // failing review goes to the rework step, which sets the next phase.
-      phase: record.result === "fail" ? task.phase : "waiting",
-      run: ctx.runId,
-      attempts: Math.max(task.attempts, attempt.number),
-      attempt: {
-        ...attempt,
-        run: ctx.runId,
-        review: record,
-        reviews,
-      },
-      ...(passed ? { reworkStreak: 0 } : {}),
-    },
-    "dev:review",
-  );
+/** The step result a finished review record stands for. */
+function stepResultOf(record: ReviewRecord): string {
+  if (record.decision === "passed") return "pass";
+  if (record.decision === "findings") return "fail";
+  if (record.decision === "unavailable") return "unavailable";
+  if (record.decision === "timed_out") return "timed_out";
+  if (record.result === "pass" || record.result === "passed") return "pass";
+  if (record.result === "fail" || record.result === "findings") return "fail";
+  return "failed";
 }
+
+/** A review step that runs again after a crash reads the round it recorded. */
+function replayReview(
+  record: ReviewRecord,
+  attempt: TaskAttempt,
+): PluginStepResult {
+  const stepResult = stepResultOf(record);
+  return {
+    result: stepResult,
+    data: reviewData(stepResult, record.sha ?? "", {
+      attempt: attempt.number,
+      ...(record.decision === undefined || record.decision === null
+        ? {}
+        : { decision: record.decision }),
+      ...(record.round === undefined || record.round === null
+        ? {}
+        : { round: record.round }),
+      ...(record.model === undefined || record.model === null
+        ? {}
+        : { model: record.model }),
+      ...(record.retryAt === undefined || record.retryAt === null
+        ? {}
+        : { retryAt: record.retryAt }),
+      ...(record.runs === undefined ? {} : { runs: record.runs }),
+      ...(record.findings === undefined ? {} : { findings: record.findings }),
+      ...(record.verified === undefined ? {} : { verified: record.verified }),
+      ...(record.message === undefined || record.message === null
+        ? {}
+        : { message: record.message }),
+      replayed: true,
+    }),
+  };
+}
+
+interface ReviewAction {
+  readonly role: ReviewRunRole;
+  readonly reason: ReviewRunReason;
+}
+
+type ReviewNext =
+  | ReviewAction
+  | "done"
+  | "wait-unavailable"
+  | "wait-timed-out"
+  | "failed";
+
+/**
+ * What the next run of a review round is. A report ends the round; an
+ * unavailable primary goes to the fallback once; a timeout is retried once on
+ * the same model; an invalid report is retried once. Every other state ends
+ * the round for a person or for a wait.
+ */
+function nextReviewAction(
+  runs: readonly ReviewRunRecord[],
+  fallback: ReviewerFallback | undefined,
+): ReviewNext {
+  const last = runs[runs.length - 1];
+  if (last === undefined) return { role: "primary", reason: "initial" };
+  switch (last.outcome) {
+    case "report":
+      return "done";
+    case "unavailable":
+      if (last.role === "primary" && fallback !== undefined) {
+        return { role: "fallback", reason: "fallback" };
+      }
+      return "wait-unavailable";
+    case "timed_out": {
+      const before = runs[runs.length - 2];
+      if (
+        before !== undefined &&
+        before.outcome === "timed_out" &&
+        before.role === last.role
+      ) {
+        return "wait-timed-out";
+      }
+      return { role: last.role, reason: "retry" };
+    }
+    case "invalid": {
+      const before = runs[runs.length - 2];
+      if (
+        before !== undefined &&
+        before.outcome === "invalid" &&
+        before.role === last.role
+      ) {
+        return "failed";
+      }
+      return { role: last.role, reason: "retry" };
+    }
+    case "failed":
+      return "failed";
+  }
+}
+
+/** One run in words a person can read. */
+function runPhrase(run: ReviewRunRecord): string {
+  const who = run.role === "fallback" ? `fallback ${run.model}` : run.model;
+  switch (run.outcome) {
+    case "report":
+      return `${who} reviewed`;
+    case "unavailable":
+      return `${who} was unavailable${run.message === undefined || run.message === null ? "" : ` (${run.message})`}`;
+    case "timed_out":
+      return `${who} timed out`;
+    case "invalid":
+      return `${who} wrote an invalid report`;
+    case "failed":
+      return `${who} failed${run.message === undefined || run.message === null ? "" : ` (${run.message})`}`;
+  }
+}
+
+/** Why a round ended the way it did, as the history line shows it. */
+function reviewMessage(
+  decision: "passed" | "findings" | "unavailable" | "timed_out",
+  runs: readonly ReviewRunRecord[],
+  retryAt?: number,
+): string {
+  if (decision === "timed_out") return "review timed out twice";
+  const parts = runs.map(runPhrase);
+  if (decision === "unavailable" && retryAt !== undefined) {
+    parts.push(`it runs again at ${new Date(retryAt).toISOString()}`);
+  }
+  return parts.join("; ");
+}
+
+/** Test-only hooks: a child process crashes at a named point in a review. */
+export const reviewTestHooks: {
+  now?: (() => number) | undefined;
+  beforeRun?:
+    | ((run: { readonly role: ReviewRunRole; readonly reason: ReviewRunReason }) => void)
+    | undefined;
+  afterRunSaved?: ((run: ReviewRunRecord) => void) | undefined;
+} = {};
 
 /** Step `dev/review`: have the reviewer read the verified commit's diff. */
 export async function runReview(
@@ -889,72 +1069,110 @@ export async function runReview(
   const attempt = attemptOf(ctx, task);
   const reviews =
     typeof attempt.reviews === "number" ? attempt.reviews : 0;
+  const round = reviews + 1;
+  const now = reviewTestHooks.now?.() ?? Date.now();
   const previous = attempt.review;
+
+  // A record without a decision came from before review rounds existed; a
+  // record with one is read back when the same round already ended.
   if (
     previous !== undefined &&
     previous !== null &&
+    previous.decision === undefined &&
     previous.run === ctx.runId
   ) {
-    return {
-      result: previous.result,
-      data: reviewData(previous.result, attempt.verified ?? "", {
-        attempt: attempt.number,
-        ...(previous.findings === undefined
-          ? {}
-          : { findings: previous.findings }),
-        ...(previous.verified === undefined
-          ? {}
-          : { verified: previous.verified }),
-        replayed: true,
-      }),
-    };
+    return replayReview(previous, attempt);
+  }
+  if (previous !== undefined && previous !== null) {
+    const finished =
+      previous.decision === "passed" ||
+      previous.decision === "findings" ||
+      previous.decision === "timed_out";
+    if (finished && (previous.round === round || previous.run === ctx.runId)) {
+      return replayReview(previous, attempt);
+    }
+    if (previous.round === round && previous.decision === "unavailable") {
+      const retryAt =
+        typeof previous.retryAt === "number" ? previous.retryAt : 0;
+      // Wait until the recorded time; a recovered step asks no model again.
+      if (now < retryAt) return replayReview(previous, attempt);
+    }
   }
 
   const sha = attempt.verified;
-  if (typeof sha !== "string" || sha.length === 0) {
-    const record: ReviewRecord = {
-      result: "failed",
-      run: ctx.runId,
-      reason: "no_verified_commit",
-      message: "the verify step recorded no commit to review",
-    };
-    if (!(await saveReview(ctx, context, task, attempt, record, reviews + 1))) {
-      return cancelledStep();
-    }
-    return {
-      result: "failed",
-      data: reviewData("failed", "", {
-        attempt: attempt.number,
-        reason: "no_verified_commit",
-        message: record.message,
-      }),
-    };
-  }
-
+  let current: TaskAttempt = attempt;
   const finish = async (
-    result: ReviewResult,
     record: ReviewRecord,
-    extra: Readonly<Record<string, unknown>>,
+    stepResult: string,
+    extra: Readonly<Record<string, unknown>> = {},
   ): Promise<PluginStepResult> => {
-    const written = await saveReview(
+    const written = await saveTaskGuarded(
       ctx,
-      context,
-      task,
-      attempt,
-      record,
-      reviews + 1,
+      context.taskKey,
+      {
+        ...task,
+        // A findings review continues to the rework step; every other ending
+        // is a wait, either for a person or for the next review time.
+        phase:
+          record.decision === "findings" || record.result === "fail"
+            ? "review"
+            : "waiting",
+        run: ctx.runId,
+        attempts: Math.max(task.attempts, attempt.number),
+        attempt: {
+          ...current,
+          run: ctx.runId,
+          review: record,
+          // An unavailable round is not finished: the same round runs again.
+          reviews: record.decision === "unavailable" ? round - 1 : round,
+        },
+        ...(record.decision === "passed" ? { reworkStreak: 0 } : {}),
+        retryAt:
+          record.decision === "unavailable" && typeof record.retryAt === "number"
+            ? record.retryAt
+            : null,
+      },
+      "dev:review",
     );
     if (!written) return cancelledStep();
     return {
-      result,
-      data: reviewData(result, sha, {
+      result: stepResult,
+      data: reviewData(stepResult, typeof sha === "string" ? sha : "", {
         attempt: attempt.number,
+        round,
+        ...(record.decision === undefined || record.decision === null
+          ? {}
+          : { decision: record.decision }),
+        ...(record.model === undefined || record.model === null
+          ? {}
+          : { model: record.model }),
+        ...(record.retryAt === undefined || record.retryAt === null
+          ? {}
+          : { retryAt: record.retryAt }),
+        ...(record.runs === undefined ? {} : { runs: record.runs }),
         ...(record.findings === undefined ? {} : { findings: record.findings }),
         ...(record.verified === undefined ? {} : { verified: record.verified }),
+        ...(record.message === undefined || record.message === null
+          ? {}
+          : { message: record.message }),
         ...extra,
       }),
     };
   };
+
+  if (typeof sha !== "string" || sha.length === 0) {
+    const record: ReviewRecord = {
+      result: "failed",
+      run: ctx.runId,
+      round,
+      reason: "no_verified_commit",
+      message: "the verify step recorded no commit to review",
+    };
+    return finish(record, "failed", {
+      reason: "no_verified_commit",
+      message: record.message,
+    });
+  }
 
   git(context.repository.path, [
     "fetch",
@@ -967,10 +1185,11 @@ export async function runReview(
       result: "failed",
       run: ctx.runId,
       sha,
+      round,
       reason: "no_merge_base",
       message: `cannot find the merge base of ${context.settings.remote}/${context.settings.mainBranch} and ${sha}`,
     };
-    return finish("failed", record, {
+    return finish(record, "failed", {
       reason: "no_merge_base",
       message: record.message,
     });
@@ -991,10 +1210,11 @@ export async function runReview(
       result: "failed",
       run: ctx.runId,
       sha,
+      round,
       reason: "worktree",
       message: preparedWorktree,
     };
-    return finish("failed", record, {
+    return finish(record, "failed", {
       reason: "worktree",
       message: preparedWorktree,
     });
@@ -1037,10 +1257,11 @@ export async function runReview(
       result: "failed",
       run: ctx.runId,
       sha,
+      round,
       reason: "diff_size",
       message,
     };
-    return finish("failed", record, {
+    return finish(record, "failed", {
       reason: "diff_size",
       message,
       bytes: prepared.bytes,
@@ -1054,14 +1275,17 @@ export async function runReview(
   // the reviewer: the list is what tells it those files exist.
   if (prepared.files.length === 0) {
     const record: ReviewRecord = {
-      result: "pass",
+      result: "passed",
+      decision: "passed",
       run: ctx.runId,
       sha,
+      round,
+      runs: [],
       findings: [],
       verified: [],
       reason: "empty",
     };
-    return finish("pass", record, {
+    return finish(record, "pass", {
       reason: "empty",
       leftOut: prepared.leftOut.map(leftOutLine),
     });
@@ -1071,13 +1295,13 @@ export async function runReview(
   mkdirSync(reviewDir, { recursive: true });
   const resultPath = join(
     reviewDir,
-    `${context.taskId}-attempt-${attempt.number}-review-${reviews + 1}.json`,
+    `${context.taskId}-attempt-${attempt.number}-review-${round}.json`,
   );
   const prompt = reviewPrompt(task, sha, base, prepared, resultPath);
   // Keep the prompt for a person to read without putting its bytes in a fact.
   const promptPath = join(
     reviewDir,
-    `${context.taskId}-attempt-${attempt.number}-review-${reviews + 1}.prompt.md`,
+    `${context.taskId}-attempt-${attempt.number}-review-${round}.prompt.md`,
   );
   try {
     writeFileSync(promptPath, prompt);
@@ -1085,96 +1309,300 @@ export async function runReview(
     // A prompt file is a convenience; the reviewer still gets the text.
   }
 
-  let last: ReviewerAttempt = {
-    ok: false,
-    message: "the reviewer did not run",
-  };
-  // The retry is the same review round, not a new review, so it keeps the
-  // round's arguments: the first review of an attempt still gets `firstArgs`
-  // on its retry, and every later review still gets `args` on its retry.
-  for (let attemptNumber = 0; attemptNumber < 2; attemptNumber += 1) {
-    last = await callReviewer(
+  const settings = context.settings.reviewer;
+  // The retry is the same review round, so it keeps the round's arguments:
+  // the first review of an attempt still gets `firstArgs` on its retry.
+  const useFirst = reviews === 0 && settings.firstArgs !== undefined;
+  const roundArgs = useFirst ? settings.firstArgs ?? [] : settings.args;
+  const changed = new Set(prepared.files.map((file) => file.path));
+  // The runs of this round survive a crash; a fresh round starts with none.
+  const runs: ReviewRunRecord[] = (attempt.reviewRuns ?? []).filter(
+    (run) => run.round === round,
+  );
+  // The recorded unavailable round holds the runs it had when it waited. Once
+  // the time has passed, a primary run starts the round again; a run saved
+  // after that point is resumed instead of started twice.
+  const recordedRuns = (previous?.runs ?? []).filter(
+    (run) => run.round === round,
+  );
+  const retryAfterWait =
+    previous !== undefined &&
+    previous !== null &&
+    previous.round === round &&
+    previous.decision === "unavailable" &&
+    now >= (typeof previous.retryAt === "number" ? previous.retryAt : 0) &&
+    runs.length <= recordedRuns.length;
+  let next: ReviewNext = retryAfterWait
+    ? { role: "primary", reason: "retry" }
+    : nextReviewAction(runs, settings.fallback);
+
+  while (typeof next === "object") {
+    const use =
+      next.role === "fallback"
+        ? settings.fallback?.use ?? settings.use
+        : settings.use;
+    const args =
+      next.role === "fallback" ? settings.fallback?.args ?? [] : roundArgs;
+    const model = modelOf(use, args);
+    reviewTestHooks.beforeRun?.({ role: next.role, reason: next.reason });
+    const call = await callReviewer(ctx, context, path, prompt, resultPath, {
+      use,
+      args,
+    });
+    let runRecord: ReviewRunRecord;
+    if (call.outcome === "report" && call.report !== undefined) {
+      const findings: ReviewFinding[] = call.report.findings.map((finding) => {
+        const preExisting = !changed.has(normalizePath(finding.file));
+        return {
+          ...finding,
+          ...(preExisting ? { preExisting: true, pre_existing: true } : {}),
+        };
+      });
+      const counted = findings.filter(
+        (finding) =>
+          finding.preExisting !== true &&
+          finding.pre_existing !== true &&
+          atOrAbove(finding.severity, settings.fixLevel),
+      ).length;
+      runRecord = {
+        round,
+        role: next.role,
+        use,
+        args,
+        model,
+        reason: next.reason,
+        outcome: "report",
+        run: ctx.runId,
+        findings,
+        verified: call.report.verified,
+        counted,
+      };
+    } else {
+      runRecord = {
+        round,
+        role: next.role,
+        use,
+        args,
+        model,
+        reason: next.reason,
+        outcome: call.outcome,
+        run: ctx.runId,
+        ...(call.message.length === 0 ? {} : { message: call.message }),
+      };
+    }
+    runs.push(runRecord);
+    current = {
+      ...current,
+      run: ctx.runId,
+      reviewRuns: [...(current.reviewRuns ?? []), runRecord],
+    };
+    const written = await saveTaskGuarded(
       ctx,
-      context,
-      path,
-      prompt,
-      resultPath,
-      reviews,
+      context.taskKey,
+      {
+        ...task,
+        run: ctx.runId,
+        attempts: Math.max(task.attempts, attempt.number),
+        attempt: current,
+      },
+      "dev:review",
     );
-    if (last.ok && last.report !== undefined) break;
+    if (!written) return cancelledStep();
+    reviewTestHooks.afterRunSaved?.(runRecord);
+    next = nextReviewAction(runs, settings.fallback);
   }
 
-  if (!last.ok || last.report === undefined) {
+  const last = runs[runs.length - 1];
+  if (next === "done" && last !== undefined) {
+    const counted = last.counted ?? 0;
+    const decision = counted === 0 ? "passed" : "findings";
+    const stepResult = decision === "passed" ? "pass" : "fail";
+    const result: ReviewResult = decision;
+    const findings = last.findings ?? [];
+    const countedFindings = findings.filter(
+      (finding) =>
+        finding.preExisting !== true &&
+        finding.pre_existing !== true &&
+        atOrAbove(finding.severity, settings.fixLevel),
+    );
+    const preExistingCount = findings.filter(
+      (finding) =>
+        finding.preExisting === true || finding.pre_existing === true,
+    ).length;
+    const findingsMessage = countedFindings
+      .map(
+        (finding) =>
+          `${finding.file}:${finding.line} ${finding.severity}: ${finding.summary}`,
+      )
+      .join("; ");
+    const message = [reviewMessage(decision, runs), findingsMessage]
+      .filter((piece) => piece.length > 0)
+      .join("; ");
     const record: ReviewRecord = {
-      result: "failed",
+      result,
+      decision,
       run: ctx.runId,
       sha,
-      reason: "invalid_json",
-      message: last.message,
+      round,
+      model: last.model,
+      runs,
+      findings,
+      verified: last.verified ?? [],
       log: resultPath,
+      message,
+      ...(decision === "findings" ? { reason: "findings" } : {}),
     };
-    return finish("failed", record, {
-      reason: "invalid_json",
-      message: last.message,
+    return finish(record, stepResult, {
+      counted,
+      preExisting: preExistingCount,
+      pre_existing: preExistingCount,
+      leftOut: prepared.leftOut.map(leftOutLine),
       log: resultPath,
       prompt: promptPath,
     });
   }
 
-  const changed = new Set(
-    prepared.files.map((file) => file.path),
-  );
-  const findings: ReviewFinding[] = last.report.findings.map((finding) => {
-    const preExisting = !changed.has(normalizePath(finding.file));
-    return {
-      ...finding,
-      ...(preExisting ? { preExisting: true, pre_existing: true } : {}),
+  if (next === "wait-unavailable") {
+    const retryAt =
+      (reviewTestHooks.now?.() ?? Date.now()) + settings.retrySecs * 1000;
+    const message = reviewMessage("unavailable", runs, retryAt);
+    const record: ReviewRecord = {
+      result: "unavailable",
+      decision: "unavailable",
+      run: ctx.runId,
+      sha,
+      round,
+      ...(last === undefined ? {} : { model: last.model }),
+      runs,
+      retryAt,
+      message,
+      reason: "unavailable",
+      log: resultPath,
     };
-  });
-  const counted = findings.filter(
-    (finding) =>
-      finding.preExisting !== true &&
-      finding.pre_existing !== true &&
-      atOrAbove(finding.severity, context.settings.reviewer.fixLevel),
-  );
-  const preExistingCount = findings.filter(
-    (finding) =>
-      finding.preExisting === true || finding.pre_existing === true,
-  ).length;
-  const result: ReviewResult = counted.length === 0 ? "pass" : "fail";
+    return finish(record, "unavailable", {
+      reason: "unavailable",
+      message,
+      retryAt,
+      log: resultPath,
+      prompt: promptPath,
+    });
+  }
+
+  if (next === "wait-timed-out") {
+    const message = "review timed out twice";
+    const record: ReviewRecord = {
+      result: "timed_out",
+      decision: "timed_out",
+      run: ctx.runId,
+      sha,
+      round,
+      ...(last === undefined ? {} : { model: last.model }),
+      runs,
+      message,
+      reason: "timed_out",
+      log: resultPath,
+    };
+    return finish(record, "timed_out", {
+      reason: "timed_out",
+      message,
+      log: resultPath,
+      prompt: promptPath,
+    });
+  }
+
+  const message =
+    last?.message === undefined || last.message === null
+      ? reviewMessage("passed", runs)
+      : [reviewMessage("passed", runs), last.message]
+          .filter((piece) => piece.length > 0)
+          .join("; ");
   const record: ReviewRecord = {
-    result,
+    result: "failed",
     run: ctx.runId,
     sha,
-    findings,
-    verified: last.report.verified,
+    round,
+    ...(last === undefined ? {} : { model: last.model }),
+    runs,
+    message,
+    reason: last?.outcome === "invalid" ? "invalid_json" : "review_failed",
     log: resultPath,
-    ...(result === "fail"
-      ? {
-          reason: "findings",
-          message: counted
-            .map(
-              (finding) =>
-                `${finding.file}:${finding.line} ${finding.severity}: ${finding.summary}`,
-            )
-            .join("; "),
-        }
-      : {}),
   };
-  return finish(result, record, {
-    counted: counted.length,
-    preExisting: preExistingCount,
-    pre_existing: preExistingCount,
-    leftOut: prepared.leftOut.map(leftOutLine),
+  return finish(record, "failed", {
+    reason: record.reason,
+    message,
     log: resultPath,
     prompt: promptPath,
   });
 }
 
+/** Waits for a timer, or returns false when the run is cancelled. */
+function waitFor(ms: number, signal: AbortSignal | undefined): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (signal?.aborted === true) {
+      resolve(false);
+      return;
+    }
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve(true);
+    }, ms);
+    const onAbort = (): void => {
+      cleanup();
+      resolve(false);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * Step `dev/review_due`: the wait a review enters when its model was
+ * unavailable. It holds until the recorded `retryAt`, then lets the flow run
+ * the same review round again without polling.
+ */
+export async function runReviewDue(
+  ctx: StepContext,
+): Promise<PluginStepResult> {
+  const context = await taskContext(ctx);
+  if (!claimAllows(ctx, context.task)) {
+    return { result: "interrupted", data: { reason: "cancelled" } };
+  }
+  const review = context.task.attempt?.review;
+  const retryAt =
+    typeof context.task.retryAt === "number"
+      ? context.task.retryAt
+      : review !== undefined &&
+          review !== null &&
+          review.decision === "unavailable" &&
+          typeof review.retryAt === "number"
+        ? review.retryAt
+        : undefined;
+  const now = reviewTestHooks.now?.() ?? Date.now();
+  if (retryAt === undefined || retryAt <= now) {
+    return { result: "ready", data: { at: now } };
+  }
+  const waited = await waitFor(retryAt - now, ctx.signal);
+  if (!waited) return { result: "interrupted", data: { reason: "cancelled" } };
+  return {
+    result: "ready",
+    data: { at: retryAt, waitedMs: retryAt - now },
+  };
+}
+
 function gateSource(task: TaskData): "verify" | "review" {
   const review = task.attempt?.review;
   if (review !== undefined && review !== null) {
-    if (review.result === "fail" || review.result === "failed") return "review";
+    if (review.decision === "findings") return "review";
+    if (
+      review.result === "fail" ||
+      review.result === "findings" ||
+      review.result === "failed"
+    ) {
+      return "review";
+    }
   }
   return "verify";
 }

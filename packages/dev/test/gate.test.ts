@@ -1,10 +1,12 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, watch } from "node:fs";
+import { appendFileSync, existsSync, watch } from "node:fs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   definePlugin,
+  FilePluginStore,
   PluginRegistry,
   type PluginStepResult,
 } from "@operad-io/engine";
@@ -16,6 +18,7 @@ import {
   createDevPlugin,
   gateWorktreePath,
   readDevSettings,
+  reviewTestHooks,
   taskData,
   validateDevSettings,
   workBranch,
@@ -33,6 +36,10 @@ import { cleanupTempRoots, guardLockHandles, storeAt, tempRoot } from "./support
 
 afterAll(cleanupTempRoots);
 guardLockHandles();
+
+const REVIEW_CRASH_CHILD = fileURLToPath(
+  new URL("./fixtures/review-crash-child.ts", import.meta.url),
+);
 
 interface ManualClock {
   setTimeout(handler: () => void, ms: number): unknown;
@@ -101,6 +108,8 @@ interface FakeReviewer {
 interface FakeReviewerOptions {
   /** Write an invalid report on the first call of every review round. */
   readonly retryInvalid?: boolean;
+  /** Append one line per model call, so a test can count calls across processes. */
+  readonly callLog?: string;
 }
 
 function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
@@ -131,6 +140,9 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             stallSecs: input.stallSecs,
             resultPath: input.resultPath,
           });
+          if (options.callLog !== undefined) {
+            appendFileSync(options.callLog, "call\n");
+          }
           if (
             options.retryInvalid === true &&
             !seenResults.has(input.resultPath)
@@ -140,6 +152,53 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             return { result: "done", data: {} };
           }
           const mode = input.args?.[0] ?? "none";
+          if (mode === "unavailable") {
+            return {
+              result: "failed",
+              data: {
+                reason: "exit",
+                kind: "unavailable",
+                message: "the model is unavailable",
+              },
+            };
+          }
+          if (mode === "usage-limit") {
+            return {
+              result: "failed",
+              data: {
+                reason: "exit",
+                modelError: { kind: "usage_limit" },
+                message: "the usage limit is reached",
+              },
+            };
+          }
+          if (mode === "429") {
+            return {
+              result: "failed",
+              data: {
+                reason: "exit",
+                message: "HTTP 429 Too Many Requests",
+              },
+            };
+          }
+          if (mode === "429-once" && count === 1) {
+            return {
+              result: "failed",
+              data: {
+                reason: "exit",
+                message: "HTTP 429 Too Many Requests",
+              },
+            };
+          }
+          if (mode === "timeout" || (mode === "timeout-once" && count === 1)) {
+            return {
+              result: "failed",
+              data: {
+                reason: "wall",
+                message: "the harness ran longer than 600s",
+              },
+            };
+          }
           if (mode === "fifo") {
             const made = Bun.spawnSync({
               cmd: ["mkfifo", input.resultPath],
@@ -225,6 +284,15 @@ interface FixtureOptions {
   readonly maxDiffBytes?: number;
   /** Make the fake reviewer write an invalid report on every round's first call. */
   readonly retryInvalid?: boolean;
+  /** The optional second reviewer the fallback setting names. */
+  readonly fallback?: {
+    readonly use: string;
+    readonly args: readonly string[];
+  };
+  /** How long an unavailable review waits before it runs again. */
+  readonly retrySecs?: number;
+  /** A file the fake reviewer appends one line to per call. */
+  readonly callLog?: string;
   /** Add one small committed file after the worktree is created. */
   readonly commit?: boolean;
   readonly clock?: ManualClock;
@@ -265,10 +333,14 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
           ...(options.firstArgs === undefined
             ? {}
             : { firstArgs: options.firstArgs }),
+          ...(options.fallback === undefined
+            ? {}
+            : { fallback: options.fallback }),
           ...(options.reviewerStallSecs === undefined
             ? {}
             : { stallSecs: options.reviewerStallSecs }),
           fixLevel: options.fixLevel ?? "major",
+          retrySecs: options.retrySecs ?? 120,
           maxFileDiffBytes: options.maxFileDiffBytes ?? 200_000,
           maxDiffBytes: options.maxDiffBytes ?? 1_000_000,
         },
@@ -292,6 +364,7 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
   });
   const reviewer = fakeReviewer({
     retryInvalid: options.retryInvalid === true,
+    ...(options.callLog === undefined ? {} : { callLog: options.callLog }),
   });
   const registry = new PluginRegistry(
     [
@@ -686,6 +759,233 @@ describe("dev/review", () => {
   });
 });
 
+describe("dev/review fallback and retry", () => {
+  test("a 429 falls back once, and the round passes without a rework", async () => {
+    const state = await fixture({
+      reviewerArgs: ["429-once", "--model", "primary"],
+      fallback: {
+        use: "fake-reviewer/agent",
+        args: ["none", "--model", "fallback"],
+      },
+    });
+    await verify(state);
+    const result = await review(state, "review-fallback");
+    expect(result.result).toBe("pass");
+    expect(result.data?.model).toBe("fallback");
+    // The history line reads its why from this message.
+    expect(String(result.data?.message)).toContain("primary was unavailable");
+    expect(String(result.data?.message)).toContain("fallback reviewed");
+    expect(state.reviewer.calls.map((call) => call.args)).toEqual([
+      ["429-once", "--model", "primary"],
+      ["none", "--model", "fallback"],
+    ]);
+
+    const task = await taskOf(state);
+    expect(task.attempt?.reviews).toBe(1);
+    expect(task.attempt?.review?.decision).toBe("passed");
+    expect(task.attempt?.review?.result).toBe("passed");
+    expect(task.attempt?.review?.model).toBe("fallback");
+    expect(task.attempt?.review?.runs?.map((run) => run.role)).toEqual([
+      "primary",
+      "fallback",
+    ]);
+    expect(task.attempt?.review?.runs?.[0]?.outcome).toBe("unavailable");
+    expect(task.attempt?.review?.runs?.[1]?.outcome).toBe("report");
+    expect(task.reworkStreak).toBe(0);
+    expect(task.phase).toBe("waiting");
+  });
+
+  test("no fallback and a 429 wait for retrySecs, then run the review only", async () => {
+    const state = await fixture({
+      reviewerArgs: ["429-once", "--model", "primary"],
+      retrySecs: 120,
+    });
+    await verify(state);
+    let clock = 10_000;
+    reviewTestHooks.now = () => clock;
+    try {
+      const first = await review(state, "review-wait");
+      expect(first.result).toBe("unavailable");
+      expect(first.data?.retryAt).toBe(130_000);
+      expect(state.reviewer.calls).toHaveLength(1);
+
+      let task = await taskOf(state);
+      expect(task.phase).toBe("waiting");
+      expect(task.attempt?.review?.decision).toBe("unavailable");
+      expect(task.attempt?.review?.retryAt).toBe(130_000);
+      expect(task.retryAt).toBe(130_000);
+      expect(task.attempt?.reviews).toBe(0);
+      expect(task.reworkStreak).toBeUndefined();
+
+      // Before the clock moves the step asks no model again.
+      clock = 129_999;
+      const early = await review(state, "review-wait");
+      expect(early.result).toBe("unavailable");
+      expect(state.reviewer.calls).toHaveLength(1);
+
+      // The wait lets the flow continue at the recorded time.
+      clock = 130_000;
+      const due = await state.registry.runStep("dev/review_due", {}, {
+        runId: "review-wait",
+        object: { type: "task", id: state.taskKey, data: {} },
+      });
+      expect(due.result).toBe("ready");
+
+      const second = await review(state, "review-wait");
+      expect(second.result).toBe("pass");
+      expect(state.reviewer.calls).toHaveLength(2);
+      task = await taskOf(state);
+      expect(task.attempt?.review?.decision).toBe("passed");
+      expect(task.attempt?.reviews).toBe(1);
+      expect(task.attempt?.number).toBe(1);
+      expect(task.attempt?.review?.runs?.[1]?.reason).toBe("retry");
+      expect(task.reworkStreak).toBe(0);
+      expect(task.retryAt ?? null).toBeNull();
+    } finally {
+      delete reviewTestHooks.now;
+    }
+  });
+
+  test("a fallback that is also unavailable waits without a rework", async () => {
+    const state = await fixture({
+      reviewerArgs: ["unavailable", "--model", "primary"],
+      fallback: {
+        use: "fake-reviewer/agent",
+        args: ["unavailable", "--model", "fallback"],
+      },
+      retrySecs: 30,
+    });
+    await verify(state);
+    let clock = 5_000;
+    reviewTestHooks.now = () => clock;
+    let result: PluginStepResult;
+    try {
+      result = await review(state, "review-both-unavailable");
+    } finally {
+      delete reviewTestHooks.now;
+    }
+    expect(result.result).toBe("unavailable");
+    expect(state.reviewer.calls).toHaveLength(2);
+    const task = await taskOf(state);
+    expect(task.attempt?.review?.decision).toBe("unavailable");
+    expect(task.attempt?.review?.retryAt).toBe(35_000);
+    expect(task.retryAt).toBe(35_000);
+    expect(task.attempt?.review?.runs?.map((run) => run.outcome)).toEqual([
+      "unavailable",
+      "unavailable",
+    ]);
+    expect(task.attempt?.reviews).toBe(0);
+    expect(task.reworkStreak).toBeUndefined();
+  });
+
+  test("a timeout runs once more with the same arguments and then succeeds", async () => {
+    const state = await fixture({
+      reviewerArgs: ["timeout-once", "--model", "primary"],
+    });
+    await verify(state);
+    const result = await review(state, "review-timeout-once");
+    expect(result.result).toBe("pass");
+    expect(String(result.data?.message)).toContain("timed out");
+    expect(state.reviewer.calls.map((call) => call.args)).toEqual([
+      ["timeout-once", "--model", "primary"],
+      ["timeout-once", "--model", "primary"],
+    ]);
+    const task = await taskOf(state);
+    expect(task.attempt?.review?.decision).toBe("passed");
+    expect(task.attempt?.review?.runs?.map((run) => run.outcome)).toEqual([
+      "timed_out",
+      "report",
+    ]);
+    expect(task.attempt?.review?.runs?.[1]?.reason).toBe("retry");
+  });
+
+  test("a second timeout waits for a person with the note", async () => {
+    const state = await fixture({
+      reviewerArgs: ["timeout", "--model", "primary"],
+    });
+    await verify(state);
+    const result = await review(state, "review-timeout-twice");
+    expect(result.result).toBe("timed_out");
+    expect(result.data?.message).toBe("review timed out twice");
+    expect(state.reviewer.calls).toHaveLength(2);
+    const task = await taskOf(state);
+    expect(task.phase).toBe("waiting");
+    expect(task.attempt?.review?.decision).toBe("timed_out");
+    expect(task.attempt?.review?.message).toBe("review timed out twice");
+    expect(task.attempt?.reviews).toBe(1);
+    expect(task.reworkStreak).toBeUndefined();
+  });
+});
+
+describe("dev/review crash recovery", () => {
+  async function crashReview(crash: "after-first" | "during-fallback") {
+    const callLog = join(await tempRoot(), "review-calls");
+    const state = await fixture({
+      reviewerArgs: ["unavailable", "--model", "primary"],
+      fallback: {
+        use: "fake-reviewer/agent",
+        args: ["none", "--model", "fallback"],
+      },
+      callLog,
+    });
+    await verify(state);
+    const child = Bun.spawn({
+      cmd: [
+        process.execPath,
+        REVIEW_CRASH_CHILD,
+        state.store.root,
+        state.remote.repository,
+        state.taskKey,
+        "review-crash",
+        crash,
+        callLog,
+      ],
+      cwd: state.remote.repository,
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    await child.exited;
+    expect(child.signalCode).toBe("SIGKILL");
+
+    // The parent opens the store again and runs the same round in a new
+    // process, as serve would after a crash.
+    const store = new FilePluginStore({ root: state.store.root });
+    const reviewer = fakeReviewer({ callLog });
+    const registry = new PluginRegistry([createDevPlugin(), reviewer.plugin], {
+      home: state.root,
+      cwd: state.remote.repository,
+      store,
+    });
+    const resumed = await registry.runStep("dev/review", {}, {
+      runId: "review-crash",
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+    expect(resumed.result).toBe("pass");
+    expect(reviewer.calls).toHaveLength(1);
+    expect(reviewer.calls[0]?.args).toEqual(["none", "--model", "fallback"]);
+    expect(readFileSync(callLog, "utf8").trim().split("\n")).toHaveLength(2);
+
+    const object = await store.get("task", state.taskKey);
+    if (object === undefined) throw new Error("task disappeared");
+    const task = taskData(object.data);
+    expect(task.attempt?.number).toBe(1);
+    expect(task.attempt?.reviews).toBe(1);
+    expect(task.attempt?.review?.decision).toBe("passed");
+    expect(task.attempt?.review?.runs?.map((run) => run.role)).toEqual([
+      "primary",
+      "fallback",
+    ]);
+  }
+
+  test("a crash after the first run resumes the same round on the fallback", async () => {
+    await crashReview("after-first");
+  });
+
+  test("a crash during the fallback resumes the same round", async () => {
+    await crashReview("during-fallback");
+  });
+});
+
 describe("dev/rework", () => {
   test("two failures rework and the third waits for a person", async () => {
     const state = await fixture({
@@ -802,6 +1102,7 @@ describe("gate settings", () => {
       args: [],
       timeoutSecs: 600,
       fixLevel: "major",
+      retrySecs: 120,
       maxFileDiffBytes: 200_000,
       maxDiffBytes: 1_000_000,
     });
@@ -816,9 +1117,22 @@ describe("gate settings", () => {
     expect(() =>
       validateDevSettings({ gate: { commands: [""], commandTimeoutSecs: 1 } }),
     ).toThrow(/gate\.commands\[0\]/);
+    expect(() => validateDevSettings({ reviewer: { fixLevel: "high" } })).toThrow(
+      /reviewer\.fixLevel/,
+    );
+    expect(() => validateDevSettings({ reviewer: { retrySecs: 0 } })).toThrow(
+      /reviewer\.retrySecs/,
+    );
     expect(() =>
-      validateDevSettings({ reviewer: { fixLevel: "high" } }),
-    ).toThrow(/reviewer\.fixLevel/);
+      validateDevSettings({ reviewer: { fallback: { args: [] } } }),
+    ).toThrow(/reviewer\.fallback\.use/);
+    expect(() =>
+      validateDevSettings({ reviewer: { fallback: { use: "x/agent", other: 1 } } }),
+    ).toThrow(/reviewer\.fallback\.other/);
+    expect(
+      validateDevSettings({ reviewer: { fallback: { use: "x/agent" } } })
+        .reviewer.fallback,
+    ).toEqual({ use: "x/agent", args: [] });
     expect(() => validateDevSettings({ maxAutoRework: -1 })).toThrow(
       /maxAutoRework/,
     );
@@ -879,7 +1193,18 @@ describe("the dev flow", () => {
       pass: "wait",
       fail: "rework",
       failed: "wait",
+      unavailable: "review_retry",
+      timed_out: "wait_review_timeout",
       cancelled: "end_cancelled",
+    });
+    expect(nextOf("review_retry")).toEqual({
+      ready: "review",
+      interrupted: "end_cancelled",
+    });
+    expect(nextOf("wait_review_timeout")).toEqual({
+      merge: "integrate",
+      reject: "worktree",
+      interrupted: "end_cancelled",
     });
     expect(nextOf("rework")).toEqual({
       again: "worktree",

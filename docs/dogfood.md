@@ -118,6 +118,18 @@ how the run ended. `operad history <run id>` narrows it to one run, and
 `operad history <id> --json` gives the same lines as JSON. `operad running` lists
 runs in progress; `operad flows` lists the loaded flows.
 
+## When the reviewer is unavailable
+
+A review that reports a model error (`unavailable` or `usage_limit`) or an HTTP
+429 does not lose the attempt. The same review round runs once on
+`reviewer.fallback` when `.operad/dev.json` sets one. Without a fallback, or
+when the fallback is unavailable too, the task waits `reviewer.retrySecs`
+(default 120 seconds) and then runs the review again; it does not start a worker
+and does not count a rework. A review that times out is retried once with the
+same arguments; a second timeout waits for a person with the note `review timed
+out twice`. `operad history <task>` names the model that reviewed each round and
+why a fallback or a retry happened.
+
 ## When something is stuck
 
 1. `operad pending` — is it waiting for you? A task that needs a decision stays

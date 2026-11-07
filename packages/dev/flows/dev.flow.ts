@@ -56,7 +56,32 @@ export default defineFlow({
         pass: "wait",
         fail: "rework",
         failed: "wait",
+        unavailable: "review_retry",
+        timed_out: "wait_review_timeout",
         cancelled: "end_cancelled",
+      },
+    },
+    {
+      id: "review_retry",
+      kind: "wait",
+      params: { check: "dev/review_due" },
+      replay: "safe",
+      next: { ready: "review", interrupted: "end_cancelled" },
+    },
+    {
+      id: "wait_review_timeout",
+      kind: "wait_person",
+      params: {
+        prompt:
+          "The task is waiting for you: merge it or reject it.\n\nreview timed out twice",
+        choices: ["merge", "reject"],
+        note: "review timed out twice",
+      },
+      replay: "safe",
+      next: {
+        merge: "integrate",
+        reject: "worktree",
+        interrupted: "end_cancelled",
       },
     },
     {

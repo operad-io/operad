@@ -64,7 +64,8 @@ section and the task goes back to the worktree.
 | `dev/worktree` | `ready`, `conflict`, `blocked`, `failed` | fetches, creates `worktreeRoot/<task id>` on `work/<task id>` from `<remote>/<mainBranch>`, and on a later attempt reuses it after merging the latest main; a start that carries a `blockedBy` dependency records the person wait instead |
 | `dev/work` | `done`, `nothing`, `failed` | builds the worker prompt, runs the configured harness step in the worktree, then requires new commits, a clean tree and a pushed branch |
 | `dev/verify` | `pass`, `fail` | recreates `<worktreeRoot>/<task id>-gate` detached at the branch head, runs `gate.commands` through `shell/check`, and records the verified commit |
-| `dev/review` | `pass`, `fail`, `failed` | runs the reviewer harness step in the gate worktree on the diff from the merge base to the verified commit; a finding on a file the change did not touch is pre-existing and does not count |
+| `dev/review` | `pass`, `fail`, `failed`, `unavailable`, `timed_out` | runs the reviewer harness step in the gate worktree on the diff from the merge base to the verified commit; a finding on a file the change did not touch is pre-existing and does not count |
+| `dev/review_due` | `ready`, `interrupted` | the wait a review enters after a model was unavailable; it lets the flow run the same review round again at the recorded time |
 | `dev/rework` | `again`, `ask` | appends `## Rework <n> (verify|review)` with the failed command or the counted findings and sends the task back to the worker; after `maxAutoRework` in a row it asks a person instead |
 | `dev/integrate` | `merged`, `conflict`, `fail`, `failed` | fetches, builds the candidate in the gate worktree by merging the verified commit onto `<remote>/<mainBranch>`, runs `integration.keyCommands` through `shell/check`, and pushes plainly; a moved main starts again from the fetch, at most three times |
 | `dev/cleanup` | `done` | runs `hooks.afterMerge` with `OPERAD_TASK`, `OPERAD_WORKTREE` and `OPERAD_REMOTE` set; a failing hook is recorded, not a task failure |
@@ -116,9 +117,43 @@ is counted as waiting, not running, so it does not hold a concurrency slot.
 person wait directly from the worktree step. A failing verify or review goes to
 `rework`, which sends the task back to the worktree until `maxAutoRework`
 automatic reworks have run in a row; then it waits for a person. `nothing` and
-`failed` from `work` also wait for a person. `merge` builds the candidate on main
-and pushes it, then cleanup removes the worktrees and branches. A plan is
-finished when every task is merged or cancelled.
+`failed` from `work` also wait for a person. An unavailable reviewer waits for
+`reviewer.retrySecs` and runs the same review again; a review that times out
+twice waits for a person. `merge` builds the candidate on main and pushes it,
+then cleanup removes the worktrees and branches. A plan is finished when every
+task is merged or cancelled.
+
+## Review fallback and retry
+
+One review round is keyed by the attempt and the review number. It ends once,
+with `passed`, `findings`, `unavailable` or `timed_out`. A fallback or a retry
+is another run of the same round: the attempt and the rework count do not
+change, and no worker starts.
+
+When the reviewer reports a model error of kind `unavailable` or `usage_limit`,
+or an HTTP 429, the same round runs once on `reviewer.fallback` at once. If the
+repository sets no fallback, or the fallback is unavailable too, the task waits
+with `retryAt` set to `now + reviewer.retrySecs` and does not rework. When the
+time comes, `dev/review_due` lets the flow run the review again, with no new
+attempt and no other step.
+
+A review that times out runs once more with the same arguments. A second
+timeout waits for a person with the note `review timed out twice`. Neither an
+unavailable reviewer nor a timeout counts toward `maxAutoRework`: only a review
+that returns findings at or above `reviewer.fixLevel` does.
+
+The task's history names the model that reviewed each round and why a fallback
+or a retry happened.
+
+### Crash table
+
+A review round records each run before it decides anything, so a crash resumes
+the same round instead of starting a new attempt.
+
+| crash point | what is recorded | the resumed round does | test |
+|---|---|---|---|
+| after the first run's result | the primary run and its outcome | runs the fallback once; never asks the first model again | `dev/review crash recovery > a crash after the first run resumes the same round on the fallback` |
+| during the fallback | the primary run and the round, with no fallback result | runs the fallback again | `dev/review crash recovery > a crash during the fallback resumes the same round` |
 
 ## Review diff size
 
@@ -152,9 +187,12 @@ The file holds the repository's work settings:
 | `reviewer.use` | `harness-radian/agent` | the harness step that reviews the diff |
 | `reviewer.args` | `[]` | the arguments every review gets |
 | `reviewer.firstArgs` | none | the arguments the first review of an attempt gets instead, including its one retry after an invalid report |
+| `reviewer.fallback.use` | none | the harness step that reviews when the primary reviewer is unavailable |
+| `reviewer.fallback.args` | `[]` | the arguments every fallback review gets |
 | `reviewer.timeoutSecs` | `600` | the longest a review may run |
 | `reviewer.stallSecs` | harness default | how long a review may print no new line before it is stopped |
 | `reviewer.fixLevel` | `major` | the lowest finding severity that fails the gate: `critical`, `major` or `minor` |
+| `reviewer.retrySecs` | `120` | how long an unavailable review waits before the same round runs again |
 | `reviewer.maxFileDiffBytes` | `200000` | the largest diff one file may put in the review prompt |
 | `reviewer.maxDiffBytes` | `1000000` | the largest diff the review prompt may carry |
 | `maxAutoRework` | `2` | how many automatic reworks in a row are allowed before waiting for a person |

@@ -594,3 +594,14 @@
 | TK0011-M9 | packages/dev/src/model.ts | `parseId` rejected the old `PL`/`TK` form, so an old id in two repositories was ambiguous | `operad with the dev plugin > show and dev:confirm take an old id, and an id is matched exactly` |
 | TK0011-M10 | packages/dev/src/model.ts | `numberById` skipped ids in the old form, so allocation started from 1 instead of the highest old number | `dev per-repository ids > new ids count past old ids in either form` |
 | TK0011-M11 | packages/dev/src/model.ts | `formatId` emitted the old `PL`/`TK` form for new objects | `dev per-repository ids > ids count up across different slugs in one repository` |
+
+## TK0002 — reviewer fallback and retry
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0002-M1 | packages/dev/src/gate.ts | `failureOutcome` stopped treating a model error or HTTP 429 as unavailable | `dev/review fallback and retry > a 429 falls back once, and the round passes without a rework` |
+| TK0002-M2 | packages/dev/src/gate.ts | a second timeout ended as `failed` instead of waiting for a person | `dev/review fallback and retry > a second timeout waits for a person with the note` |
+| TK0002-M3 | packages/dev/src/gate.ts | an unavailable round counted itself as a finished review | `dev/review fallback and retry > no fallback and a 429 wait for retrySecs, then run the review only` |
+| TK0002-M4 | packages/dev/src/gate.ts | a model run was not written to the task before the round continued | `dev/review crash recovery > a crash after the first run resumes the same round on the fallback` |
+| TK0002-M5 | packages/dev/flows/dev.flow.ts | sent an unavailable review to the person wait instead of the retry wait | `the dev flow > loads with the gate and the rework edges` |
+| TK0002-M6 | packages/dev/src/settings.ts | ignored `reviewer.retrySecs` and always used the 120-second default | `dev/review fallback and retry > a fallback that is also unavailable waits without a rework` |
