@@ -4,10 +4,10 @@
   "concurrency": 3,
   "maxAutoRework": 4,
   "worker": {
-    "use": "harness-pi/agent",
+    "use": "harness-claude/agent",
     "args": [
       "--model",
-      "opencode-go/deepseek-v4.1-flash"
+      "sonnet"
     ],
     "stallSecs": 900,
     "wallTimeSecs": 7200
