@@ -433,7 +433,7 @@ export type ActionArgType =
 /**
  * One property of an action's arguments. It is the JSON Schema subset the
  * kernel validates: `type`, `enum`, `minimum`, `maximum`, `minLength`,
- * `maxLength`, `items`, `properties`, `required`, `additionalProperties: false`,
+ * `maxLength`, `items`, `properties`, `required`, `additionalProperties` (`false` or a schema for the other fields),
  * `description` and `role`.
  */
 export interface ActionArgSchema {
@@ -446,7 +446,7 @@ export interface ActionArgSchema {
   readonly items?: ActionArgSchema | undefined;
   readonly properties?: Readonly<Record<string, ActionArgSchema>> | undefined;
   readonly required?: readonly string[] | undefined;
-  readonly additionalProperties?: false | undefined;
+  readonly additionalProperties?: false | ActionArgSchema | undefined;
   /** A value the kernel fills when the field is absent. */
   readonly default?: unknown;
   readonly description?: string | undefined;

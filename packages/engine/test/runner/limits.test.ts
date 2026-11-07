@@ -542,3 +542,47 @@ describe("step limits survive a crash", () => {
     }
   }, 60_000);
 });
+
+describe("step limits after a released place", () => {
+  test("a step queued again after its release gets a place", async () => {
+    const env = await setup("memory");
+    try {
+      const q = await env.create("lim-a1", "q");
+      // The run is in the state a crash leaves: the effect is outstanding, and
+      // the failed attempt's place was released before its result was written.
+      await env.log.append(q, 0, [
+        { kind: "run_started", payload: { flow: "lim-a1" }, cause: "test" },
+        { kind: "step_entered", payload: { step: "work", visit: 1, kind: "plugin" }, cause: 1 },
+        {
+          kind: "effect_requested",
+          payload: {
+            effectId: "work:1",
+            effect: "run_plugin_step",
+            step: "work",
+            replay: "safe",
+            recovery: false,
+            use: "lim/hold",
+            params: { key: "a", concurrent: 1 },
+            check: null,
+            due: null,
+          },
+          cause: 2,
+        },
+      ]);
+      const claim = { runId: q, effectId: "work:1", step: "work", key: "a", concurrent: 1 };
+      await env.log.append(q, 3, [
+        { kind: "step_queued", payload: { step: "work", effectId: "work:1", key: "a", concurrent: 1 }, cause: 3 },
+      ]);
+      await env.log.append(q, 4, [
+        { kind: "step_released", payload: { effectId: "work:1", key: "a" }, cause: 4 },
+      ]);
+
+      const limits = new StepLimits({ log: env.log, lockRoot: env.storeRoot });
+      await limits.acquire(claim);
+      const after = await kinds(env.log, q);
+      expect(after.slice(-2)).toEqual(["step_queued", "step_slot"]);
+    } finally {
+      await env.close();
+    }
+  }, 10_000);
+});

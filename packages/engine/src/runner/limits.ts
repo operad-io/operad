@@ -67,7 +67,8 @@ async function scanRun(
     const effectId = payload.effectId;
     const existing = found.get(effectId);
     if (fact.kind === "step_queued") {
-      if (existing !== undefined) continue;
+      // A queue entry that was released is over; queueing again starts afresh.
+      if (existing !== undefined && !existing.released) continue;
       if (typeof payload.key !== "string") continue;
       if (typeof payload.concurrent !== "number") continue;
       found.set(effectId, {

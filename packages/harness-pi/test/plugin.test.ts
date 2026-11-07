@@ -549,10 +549,7 @@ describe("harness-pi/agent step limit", () => {
     expect(registryWith({}).stepLimit("harness-pi/agent", { args: ["--model", "p/a"] })).toBeUndefined();
   });
 
-  test("a count that is not a positive integer names the model", () => {
-    const registry = registryWith({ concurrency: { "p/a": 0 } });
-    expect(() => registry.stepLimit("harness-pi/agent", { args: ["--model", "p/a"] })).toThrow(
-      'settings.concurrency: "p/a" must be a positive integer',
-    );
+  test("a count that is not a positive integer refuses the plugin at load", () => {
+    expect(registryWith({ concurrency: { "p/a": 0 } }).names()).toEqual([]);
   });
 });

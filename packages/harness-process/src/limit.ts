@@ -14,22 +14,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** The settings schema property both harnesses declare for `concurrency`. */
 export const CONCURRENCY_SETTING = {
   type: "object" as const,
+  additionalProperties: {
+    type: "integer" as const,
+    minimum: 1,
+  },
   default: {},
   description:
     'How many agent runs of one model may go at once, as { "<model>": <count> }. A model not listed has no limit. Takes effect with the next step that starts.',
 };
 
-/** The value of `flag` in an `args` list, or undefined when it has none. */
-export function flagValue(
-  args: unknown,
-  flag: string,
-): string | undefined {
+/**
+ * The value of `flag` in an `args` list, as `--flag value` or `--flag=value`.
+ * A flag given more than once takes its last value, as radian does.
+ */
+export function flagValue(args: unknown, flag: string): string | undefined {
   if (!Array.isArray(args)) return undefined;
-  for (let index = 0; index < args.length - 1; index += 1) {
-    const value = args[index + 1];
-    if (args[index] === flag && typeof value === "string") return value;
+  let found: string | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const entry = args[index];
+    if (typeof entry !== "string") continue;
+    if (entry === flag) {
+      const value = args[index + 1];
+      if (typeof value === "string") found = value;
+    } else if (entry.startsWith(`${flag}=`)) {
+      found = entry.slice(flag.length + 1);
+    }
   }
-  return undefined;
+  return found;
 }
 
 /**

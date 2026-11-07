@@ -177,3 +177,4 @@ the row fields.
 | T-0021-M6 | packages/engine/src/runner/limits.ts | `acquire` wrote `step_queued` again for a step that already had its place | `step limits survive a crash > after step_slot, before the step starts: the step runs holding its slot` |
 | T-0021-M7 | packages/engine/src/plugin/registry.ts | stopped checking that `limit.key` is a function | `plugin registry validation > step limits > refuses a declaration of the wrong shape, naming plugin and step type` |
 | T-0021-M8 | packages/engine/src/runner/limits.ts | `queuedSteps` counted one more step ahead than there was | `step limits (memory) > two steps run, the third starts when one ends` |
+| T-0021-M11 | packages/engine/src/runner/limits.ts | a `step_queued` after a `step_released` for the same effect was ignored again | `step limits after a released place > a step queued again after its release gets a place` |
