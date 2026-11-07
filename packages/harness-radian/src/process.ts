@@ -6,9 +6,9 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { access } from "node:fs/promises";
+import { access, mkdtemp, open, rm } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
-import { constants as osConstants } from "node:os";
+import { constants as osConstants, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { Readable } from "node:stream";
 
@@ -46,13 +46,21 @@ export const systemClock: Clock = {
  * child that ignored the TERM.
  *
  * The control pipe is the sentinel's stderr. The harness keeps its own stderr
- * on fd 3, so diagnostics never mix with the JSONL on stdout or the control
- * lines. A reader that does not know a line ignores it.
+ * in a file the caller names (the first argument), so diagnostics never mix
+ * with the JSONL on stdout or the control lines. A reader that does not know a
+ * line ignores it.
+ *
+ * The file replaces a fourth pipe. Bun closes an extra pipe (stdio index 3 and
+ * up) of a child process twice, once when its stream ends and once when the
+ * child object is collected; by then a SQLite database may own the number, and
+ * macOS kills the process (EXC_GUARD). See test/descriptor-owner.test.ts.
  */
 const SENTINEL = [
   "trap ':' TERM",
   "printf 'ready\\n' >&2",
-  '"$@" 2>&3',
+  'err=$1',
+  "shift",
+  '"$@" 2>"$err"',
   "status=$?",
   "printf 'end %s\\n' \"$status\" >&2",
   "while :; do sleep 1; done",
@@ -312,23 +320,41 @@ class ControlReader {
 function consume(
   stream: Readable,
   lines: Lines,
-  tail: Tail | undefined,
 ): Promise<void> {
   return (async () => {
     const decoder = new TextDecoder();
     try {
       for await (const chunk of stream) {
         const text = decoder.decode(chunk as Uint8Array, { stream: true });
-        if (tail === undefined) await lines.push(text);
-        else tail.push(text);
+        await lines.push(text);
       }
       const rest = decoder.decode();
-      if (tail === undefined) await lines.push(rest);
-      else tail.push(rest);
+      await lines.push(rest);
     } catch {
       // A process that failed to start has no output; its streams may error.
     }
   })();
+}
+
+/** The last `STDERR_LIMIT` bytes of a file; empty when it cannot be read. */
+async function readTail(path: string): Promise<string> {
+  let handle: Awaited<ReturnType<typeof open>>;
+  try {
+    handle = await open(path, "r");
+  } catch {
+    return "";
+  }
+  try {
+    const { size } = await handle.stat();
+    const length = Math.min(size, STDERR_LIMIT);
+    const buffer = Buffer.alloc(length);
+    const { bytesRead } = await handle.read(buffer, 0, length, size - length);
+    return new TextDecoder().decode(buffer.subarray(0, bytesRead));
+  } catch {
+    return "";
+  } finally {
+    await handle.close();
+  }
 }
 
 function messageOf(error: unknown): string {
@@ -382,6 +408,14 @@ export async function runAgent(
   );
   const stderrTail = new Tail(undefined);
 
+  let errorDirectory: string;
+  try {
+    errorDirectory = await mkdtemp(join(tmpdir(), "operad-harness-"));
+  } catch (error) {
+    return empty({ spawnError: messageOf(error) });
+  }
+  const errorPath = join(errorDirectory, "stderr");
+
   let child: ChildProcess;
   try {
     child = spawn(
@@ -390,16 +424,18 @@ export async function runAgent(
         "-c",
         SENTINEL,
         "operad-harness",
+        errorPath,
         executablePath,
         ...options.args,
       ],
       {
         cwd: options.cwd,
         detached: true,
-        stdio: ["pipe", "pipe", "pipe", "pipe"],
+        stdio: ["pipe", "pipe", "pipe"],
       },
     );
   } catch (error) {
+    await rm(errorDirectory, { recursive: true, force: true });
     return empty({ spawnError: messageOf(error) });
   }
 
@@ -422,13 +458,9 @@ export async function runAgent(
 
   const stdout = child.stdout;
   const stderr = child.stderr;
-  const extra = child.stdio[3] as Readable | null | undefined;
   const drained: Promise<void>[] = [];
   if (stdout !== null) {
-    drained.push(consume(stdout, stdoutLines, undefined));
-  }
-  if (extra !== null && extra !== undefined) {
-    drained.push(consume(extra, stdoutLines, stderrTail));
+    drained.push(consume(stdout, stdoutLines));
   }
   const control = stderr === null ? undefined : new ControlReader(stderr);
   const nextControl = (): Promise<string | null> =>
@@ -553,11 +585,13 @@ export async function runAgent(
     await Promise.race([drainedOutput, drainLimit]);
     if (drainTimer !== undefined) globalThis.clearTimeout(drainTimer);
     if (stdout !== null) stdout.destroy();
-    if (extra !== null && extra !== undefined) extra.destroy();
     control?.destroy();
     await drainedOutput;
     await stdoutLines.end();
-    return { tail: stderrTail.lines(20), exit: await settled };
+    const exit = await settled;
+    stderrTail.push(await readTail(errorPath));
+    await rm(errorDirectory, { recursive: true, force: true });
+    return { tail: stderrTail.lines(20), exit };
   };
 
   if (startup.kind !== "ready") {

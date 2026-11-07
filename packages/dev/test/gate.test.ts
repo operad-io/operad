@@ -858,17 +858,17 @@ describe("the dev flow", () => {
     expect(nextOf("worktree")).toEqual({
       ready: "work",
       conflict: "work",
-      blocked: "wait",
+      blocked: "announce_blocked",
       failed: "end_failed",
       cancelled: "end_cancelled",
-      interrupted: "wait",
+      interrupted: "announce_worktree_stopped",
     });
     expect(nextOf("work")).toEqual({
       done: "verify",
-      nothing: "wait",
-      failed: "wait",
+      nothing: "announce_nothing",
+      failed: "announce_work_failed",
       cancelled: "end_cancelled",
-      interrupted: "wait",
+      interrupted: "announce_work_stopped",
     });
     expect(nextOf("verify")).toEqual({
       pass: "review",
@@ -876,28 +876,38 @@ describe("the dev flow", () => {
       cancelled: "end_cancelled",
     });
     expect(nextOf("review")).toEqual({
-      pass: "wait",
+      pass: "announce_ready",
       fail: "rework",
-      failed: "wait",
+      failed: "announce_review_failed",
       cancelled: "end_cancelled",
     });
     expect(nextOf("rework")).toEqual({
       again: "worktree",
-      ask: "wait",
+      ask: "announce_rework",
       cancelled: "end_cancelled",
     });
     expect(nextOf("wait")).toEqual({
       merge: "integrate",
       reject: "worktree",
+      reverify: "verify",
       interrupted: "end_cancelled",
     });
     expect(nextOf("integrate")).toEqual({
       merged: "cleanup",
       conflict: "worktree",
       fail: "worktree",
-      failed: "wait",
+      failed: "announce_integrate",
       cancelled: "end_cancelled",
     });
+    // Every stop that needs a person passes an announce step first.
+    for (const step of steps) {
+      if (!step.id.startsWith("announce_")) continue;
+      expect(nextOf(step.id)).toEqual({
+        done: "wait",
+        interrupted: "wait",
+        cancelled: "end_cancelled",
+      });
+    }
     expect(nextOf("cleanup")).toEqual({
       done: "end_done",
       cancelled: "end_cancelled",

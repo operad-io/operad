@@ -19,6 +19,8 @@ import type {
   FactsOptions,
   FactsPage,
   ListOptions,
+  ObjectViews,
+  PluginFact,
   PluginStore,
   StoredObject,
   ViewContext,
@@ -47,6 +49,8 @@ export interface ViewRow {
   readonly title: string;
   readonly state: string;
   readonly note?: string | undefined;
+  /** The namespace the id lives in; set only when the list shows it. */
+  readonly scope?: string | undefined;
   /** A person wait is open on this object. */
   readonly waiting: boolean;
   /** The object's run is working. */
@@ -273,6 +277,50 @@ class EventStream implements AsyncIterable<ViewEvent> {
   }
 }
 
+/** The fact an action leaves on its object to say who asked. */
+const ACTION_FACT = "action_invoked";
+
+/** An object named for a short list: its type, id, state and title. */
+export interface RecentObject {
+  readonly type: string;
+  readonly id: string;
+  readonly state: string;
+  readonly title: string;
+}
+
+function editDistance(left: string, right: string): number {
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= right.length; column += 1) {
+      const cost = left[row - 1] === right[column - 1] ? 0 : 1;
+      current[column] = Math.min(
+        (previous[column] ?? 0) + 1,
+        (current[column - 1] ?? 0) + 1,
+        (previous[column - 1] ?? 0) + cost,
+      );
+    }
+    previous = current;
+  }
+  return previous[right.length] ?? 0;
+}
+
+/** One object fact in words, with the time it happened. */
+function describeFact(fact: PluginFact): string {
+  const time = new Date(fact.at).toISOString();
+  if (fact.type === ACTION_FACT) {
+    const data = fact.data;
+    const action =
+      typeof data.action === "string" ? data.action.replace("/", ":") : "an action";
+    const actor = isRecord(data.actor) ? data.actor : {};
+    const who: string[] = [];
+    if (typeof actor.via === "string") who.push(`via ${actor.via}`);
+    if (typeof actor.id === "string") who.push(`as ${actor.id}`);
+    return `${time}  ${action}${who.length === 0 ? "" : ` (${who.join(", ")})`}`;
+  }
+  return `${time}  changed by ${fact.cause}`;
+}
+
 /** The in-process presentation API. */
 export class Views {
   private readonly registry: PluginRegistry;
@@ -364,14 +412,20 @@ export class Views {
       throw error;
     }
     const flags = await this.allRunFlags();
+    const withScope = await this.scopeShown(owner.plugin, type, owner.views);
     const rows: ViewRow[] = [];
     for (const object of page.objects) {
-      const row = this.guardedRow(owner.plugin, type, object);
+      const { scope, ...row } = this.guardedRow(owner.plugin, type, object);
       const flag = flags.get(objectKey(type, object.id)) ?? {
         waiting: false,
         running: false,
       };
-      rows.push({ ...row, waiting: flag.waiting, running: flag.running });
+      rows.push({
+        ...row,
+        ...(withScope && scope !== undefined ? { scope } : {}),
+        waiting: flag.waiting,
+        running: flag.running,
+      });
     }
     return { rows, ...(page.next === undefined ? {} : { next: page.next }) };
   }
@@ -387,6 +441,19 @@ export class Views {
     const resolved = await this.resolve(id);
     const owner = this.registry.viewsFor(resolved.type);
     const object = resolved.object;
+    if (
+      object === undefined &&
+      owner !== undefined &&
+      !(await this.hasRun(resolved.type, resolved.id)) &&
+      this.objectFacts(resolved.type, resolved.id).length === 0
+    ) {
+      // A plugin that scopes ids claims any well-formed id; nothing stored or
+      // recorded under it means the id matches nothing.
+      throw new ViewError(
+        "not-found",
+        `no object "${id}" of type "${resolved.type}"`,
+      );
+    }
     const flags = await this.flagsFor(resolved.type, resolved.id);
 
     let row: ViewRow;
@@ -395,7 +462,12 @@ export class Views {
     let unavailable: string | undefined;
 
     if (owner !== undefined && object !== undefined) {
-      row = { ...this.guardedRow(owner.plugin, resolved.type, object), ...flags };
+      const { scope: _scope, ...guarded } = this.guardedRow(
+        owner.plugin,
+        resolved.type,
+        object,
+      );
+      row = { ...guarded, ...flags };
       try {
         sections = this.sectionDirectory(owner.plugin, object);
       } catch (error) {
@@ -562,10 +634,7 @@ export class Views {
       );
     }
     if (holds !== true) {
-      throw new ViewError(
-        "not-available",
-        `action "${target.info.name}" is not available now`,
-      );
+      throw new ViewError("not-available", this.refusal(target, object));
     }
 
     const args: Record<string, unknown> = { ...(options.args ?? {}) };
@@ -940,11 +1009,13 @@ export class Views {
       );
     }
     const note = textOf(outcome.note);
+    const scope = textOf(outcome.scope);
     return {
       id,
       title,
       state,
       ...(note === undefined ? {} : { note }),
+      ...(scope === undefined ? {} : { scope }),
       waiting: false,
       running: false,
     };
@@ -1080,14 +1151,23 @@ export class Views {
   }
 
   private async historyMarkdown(type: string, id: string): Promise<string> {
-    if (this.log === undefined) return "No history yet.\n";
-    const runs = (await this.log.runs())
-      .filter((run) => run.object === objectKey(type, id))
-      .sort((left, right) => left.startedAt - right.startedAt);
-    if (runs.length === 0) return "No history yet.\n";
+    const actions = this.personActions(type, id);
+    const runs =
+      this.log === undefined
+        ? []
+        : (await this.log.runs())
+            .filter((run) => run.object === objectKey(type, id))
+            .sort((left, right) => left.startedAt - right.startedAt);
+    if (runs.length === 0 && actions.length === 0) return "No history yet.\n";
 
     const lines: string[] = [];
+    if (actions.length > 0) {
+      lines.push("## Person actions");
+      for (const action of actions) lines.push(`- ${action}`);
+      lines.push("");
+    }
     for (const run of runs) {
+      if (this.log === undefined) break;
       lines.push(`## ${run.runId} (${run.flow})`);
       try {
         for await (const entry of historyEntries(this.log.read(run.runId))) {
@@ -1099,6 +1179,139 @@ export class Views {
       lines.push("");
     }
     return `${lines.join("\n").trimEnd()}\n`;
+  }
+
+  /** Every fact of one object, oldest first. */
+  private objectFacts(type: string, id: string): readonly PluginFact[] {
+    const facts: PluginFact[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const page = this.store.facts(
+        { type, id },
+        cursor === undefined ? {} : { cursor },
+      );
+      facts.push(...page.facts);
+      if (page.next === undefined) return facts;
+      cursor = page.next;
+    }
+  }
+
+  /** The actions a person ran on an object, one line each, with who ran it. */
+  private personActions(type: string, id: string): readonly string[] {
+    const lines: string[] = [];
+    for (const fact of this.objectFacts(type, id)) {
+      if (fact.type !== ACTION_FACT) continue;
+      lines.push(describeFact(fact));
+    }
+    return lines;
+  }
+
+  /**
+   * What happened to an object in its own words: the actions people ran on it
+   * and each change, oldest first. An object that never had a run still has
+   * these.
+   */
+  async objectHistory(id: string): Promise<readonly string[]> {
+    const resolved = await this.resolve(id);
+    return this.objectFacts(resolved.type, resolved.id).map(describeFact);
+  }
+
+  /** The objects that changed most recently, newest first. */
+  async recent(limit: number): Promise<readonly RecentObject[]> {
+    const found: { readonly at: number; readonly entry: RecentObject }[] = [];
+    for (const entry of this.registry.objectTypes()) {
+      const owner = this.registry.viewsFor(entry.type);
+      if (owner === undefined) continue;
+      for (const object of await this.allObjects(entry.type)) {
+        const row = this.guardedRow(owner.plugin, entry.type, object);
+        found.push({
+          at: object.at,
+          entry: {
+            type: entry.type,
+            id: row.id,
+            state: row.state,
+            title: row.title,
+          },
+        });
+      }
+    }
+    found.sort((left, right) => right.at - left.at);
+    return found.slice(0, limit).map((item) => item.entry);
+  }
+
+  /** The ids nearest to a name that matched nothing, nearest first. */
+  async closest(id: string, limit: number): Promise<readonly RecentObject[]> {
+    const wanted = (id.includes(":") ? id.slice(id.indexOf(":") + 1) : id)
+      .toLowerCase();
+    const scored: { readonly score: number; readonly entry: RecentObject }[] = [];
+    for (const entry of this.registry.objectTypes()) {
+      const owner = this.registry.viewsFor(entry.type);
+      if (owner === undefined) continue;
+      for (const object of await this.allObjects(entry.type)) {
+        const row = this.guardedRow(owner.plugin, entry.type, object);
+        const candidate = row.id.toLowerCase();
+        const near = candidate.includes(wanted) || wanted.includes(candidate);
+        scored.push({
+          score: near ? 0 : editDistance(wanted, candidate),
+          entry: {
+            type: entry.type,
+            id: row.id,
+            state: row.state,
+            title: row.title,
+          },
+        });
+      }
+    }
+    scored.sort(
+      (left, right) =>
+        left.score - right.score || left.entry.id.localeCompare(right.entry.id),
+    );
+    return scored.slice(0, limit).map((item) => item.entry);
+  }
+
+  private async allObjects(type: string): Promise<readonly StoredObject[]> {
+    const objects: StoredObject[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await this.store.list(
+        type,
+        cursor === undefined ? {} : { cursor },
+      );
+      objects.push(...page.objects);
+      if (page.next === undefined) return objects;
+      cursor = page.next;
+    }
+  }
+
+  /** The line an action refusal prints: the plugin's reason, or a plain one. */
+  private refusal(
+    target: { readonly action: ActionTypeDefinition; readonly info: ActionInfo },
+    object: StoredObject,
+  ): string {
+    try {
+      const why = target.action.why?.(object);
+      if (why !== undefined && why.length > 0) return why;
+    } catch (error) {
+      this.onLog(`action "${target.info.name}": why failed: ${messageOf(error)}`);
+    }
+    return `action "${target.info.name}" is not available now`;
+  }
+
+  private async scopeShown(
+    plugin: string,
+    type: string,
+    views: ObjectViews,
+  ): Promise<boolean> {
+    if (views.showScope === undefined) return false;
+    try {
+      const ctx = this.viewContext(plugin, new AbortController().signal);
+      return (await views.showScope(ctx)) === true;
+    } catch (error) {
+      this.onLog(
+        `plugin "${plugin}": showScope failed for "${type}": ${messageOf(error)}`,
+      );
+      return false;
+    }
   }
 
   private publish(id: string): void {
