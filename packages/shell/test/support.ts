@@ -1,7 +1,7 @@
 import { existsSync, watch } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { Clock } from "../src/process.ts";
+import type { Clock } from "@operad-io/engine/platform";
 
 const roots: string[] = [];
 

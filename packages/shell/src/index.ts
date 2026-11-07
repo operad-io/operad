@@ -12,7 +12,11 @@ import {
   type PluginStepResult,
   type StepContext,
 } from "@operad-io/engine";
-import { runLine, type Clock, type LineOutcome } from "./process.ts";
+import {
+  runLine,
+  type Clock,
+  type LineOutcome,
+} from "@operad-io/engine/platform";
 
 function paramsObject(params: unknown, at: string): Record<string, unknown> {
   if (typeof params !== "object" || params === null || Array.isArray(params)) {
