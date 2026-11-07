@@ -375,6 +375,8 @@ export interface StepTypeDefinition {
 /** What an object type's `resolve` receives. `cwd` is where the person is. */
 export interface ObjectResolveContext {
   readonly cwd: string;
+  /** A namespace the person named explicitly (`--repo <name>`), when they did. */
+  readonly scope?: string | undefined;
   readonly store: ObjectStore;
 }
 

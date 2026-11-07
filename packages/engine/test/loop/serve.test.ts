@@ -11,6 +11,7 @@ import {
   definePlugin,
   historyEntries,
   listPending,
+  parseObjectKey,
   loadPluginRegistry,
   openConfigLog,
   readConfig,
@@ -425,7 +426,9 @@ describe("serve loop", () => {
     });
     try {
       const info = await log.startRun("retry", "job:3");
-      let child: ReturnType<typeof spawn> | undefined;
+      // Every process the loop started: under load it may start a second one for
+      // the run before the first holds the run lock; that one gives up at once.
+      const children: ReturnType<typeof spawn>[] = [];
       const controller = new AbortController();
       const loop = serve({
         home: home.home,
@@ -435,16 +438,17 @@ describe("serve loop", () => {
         intervalMs: 20,
         signal: controller.signal,
         spawnRun: (runId, options) => {
-          child = spawn(home, runId, options.recover);
+          children.push(spawn(home, runId, options.recover));
         },
       });
       await waitForFile(join(home.home, "blocked"));
       controller.abort();
       await loop;
 
-      expect(child?.exitCode).toBeNull();
+      // A process is still mid-step after the loop ended.
+      expect(children.some((child) => child.exitCode === null)).toBe(true);
       writeFileSync(join(home.home, "release"), "go");
-      await child?.exited;
+      await Promise.all(children.map((child) => child.exited));
       expect((await readState(log, info.runId)).endedStatus).toBe("done");
     } finally {
       await log.close();
@@ -492,6 +496,11 @@ describe("serve loop", () => {
     } finally {
       await log.close();
     }
+  });
+
+  test("a run started without an object has no object", async () => {
+    expect(parseObjectKey("flow:clock/hourly")).toBeUndefined();
+    expect(parseObjectKey("job:3")).toEqual({ type: "job", id: "3" });
   });
 
   test("a sleeping loop ends as soon as the signal aborts", async () => {

@@ -23,11 +23,11 @@ export function createDevPlugin() {
     objects: [
       {
         name: "plan",
-        resolve: (ctx, type, id) => resolveDevKey(ctx.store, type, id, ctx.cwd),
+        resolve: (ctx, type, id) => resolveDevKey(ctx.store, type, id, ctx.cwd, ctx.scope),
       },
       {
         name: "task",
-        resolve: (ctx, type, id) => resolveDevKey(ctx.store, type, id, ctx.cwd),
+        resolve: (ctx, type, id) => resolveDevKey(ctx.store, type, id, ctx.cwd, ctx.scope),
       },
     ],
     steps: [

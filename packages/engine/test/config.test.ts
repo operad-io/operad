@@ -44,6 +44,25 @@ describe("operad config", () => {
     expect(storeRootOf(config)).toBe(join(home, "store"));
   });
 
+  test("a config without plugins gets the default plugins", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    await Bun.write(join(home, "config.json"), JSON.stringify({ store: { path: "s" } }));
+    const config = await readConfig(home);
+    expect(config.plugins).toEqual(defaultConfig(home).plugins);
+  });
+
+  test("an older config's moved module name still loads", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    await Bun.write(
+      join(home, "config.json"),
+      JSON.stringify({ plugins: ["@operad-io/engine/shell", "./x.ts"] }),
+    );
+    const config = await readConfig(home);
+    expect(config.plugins.map((entry) => entry.module)).toEqual(["@operad-io/shell", "./x.ts"]);
+  });
+
   test("reads plugins and a sqlite store with a relative path", async () => {
     const root = await tempRoot();
     const home = join(root, "home");

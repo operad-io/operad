@@ -79,6 +79,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Module names an older version wrote that moved; a config keeps working. */
+const MOVED_MODULES: Readonly<Record<string, string>> = {
+  "@operad-io/engine/shell": "@operad-io/shell",
+};
+
+function currentModule(module: string): string {
+  return MOVED_MODULES[module] ?? module;
+}
+
 function readPlugins(value: unknown, file: string): readonly PluginConfigEntry[] {
   if (value === undefined) return [];
   if (Array.isArray(value)) {
@@ -93,7 +102,7 @@ function readPlugins(value: unknown, file: string): readonly PluginConfigEntry[]
     }
     return value.map((module) => ({
       name: undefined,
-      module,
+      module: currentModule(module),
       enabled: true,
       settings: {},
     }));
@@ -110,7 +119,7 @@ function readPlugins(value: unknown, file: string): readonly PluginConfigEntry[]
       if (raw.trim().length === 0) {
         throw new ConfigError(`${file}: plugins.${name}: must be a non-empty module name or path`);
       }
-      entries.push({ name, module: raw, enabled: true, settings: {} });
+      entries.push({ name, module: currentModule(raw), enabled: true, settings: {} });
       continue;
     }
     if (!isRecord(raw)) {
@@ -131,7 +140,7 @@ function readPlugins(value: unknown, file: string): readonly PluginConfigEntry[]
     }
     entries.push({
       name,
-      module: module ?? name,
+      module: currentModule(module ?? name),
       enabled: enabled !== false,
       settings: raw.settings === undefined ? {} : raw.settings,
     });
@@ -207,7 +216,12 @@ export async function readConfig(
   const store = readStore(raw.store, file, home);
   const configured = store.path;
   return {
-    plugins: readPlugins(raw.plugins, file),
+    // A config that does not mention plugins gets the default ones, as a
+    // missing config file does.
+    plugins:
+      raw.plugins === undefined
+        ? defaultConfig(home).plugins
+        : readPlugins(raw.plugins, file),
     store: {
       backend: store.backend,
       path: configured.startsWith("/") ? configured : resolve(home, configured),

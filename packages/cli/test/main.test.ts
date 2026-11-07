@@ -478,6 +478,14 @@ describe("operad command", () => {
     expect(briefOutput.text()).not.toContain("waiting for you");
   });
 
+  test("history does not resolve an object type no plugin declares", async () => {
+    const { home } = await makeHome();
+    await startRun(home, "ask", "bogus:42");
+    const output = capture();
+    expect(await main(["history", "bogus:42"], { home, io: output.io })).toBe(1);
+    expect(output.text()).not.toContain("waiting");
+  });
+
   test("serve rejects arguments as a usage error", async () => {
     const { home } = await makeHome();
     const output = capture();

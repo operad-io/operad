@@ -67,7 +67,7 @@
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| TK0012-M9 | `packages/engine/src/platform/sqlite-open.ts` | `enableWal` rethrew `SQLITE_BUSY` instead of waiting for the other writer through the busy handler | `opening waits while another process holds the store` |
+| TK0012-M9 | `packages/engine/src/platform/sqlite-open.ts` | `enableWal` rethrew `SQLITE_BUSY` instead of waiting for the other writer through the busy handler | `switching to WAL waits while another process holds the database` (TK0008 replaced the 100 ms hold with a release the test sends once the opener reports SQLITE_BUSY; the old name was `opening waits while another process holds the store`) |
 
 ## TK0015 — plugin interface
 
@@ -664,3 +664,5 @@
 | TK0006-M1 | packages/dev/src/service.ts | `claimTaskStart` skipped the area check under the lock | `two schedulers on one store never start two tasks of one area` |
 | TK0006-M2 | packages/dev/src/service.ts | `areaHolder` ignored tasks in the review phase | `a claim is refused while a task of the area is running or reviewing` |
 | TK0006-M3 | packages/dev/src/service.ts | `areaHolder` ignored the repository | `the same area in another repository does not block` (and the two-scheduler test) |
+| TK0008-M1 | `packages/engine/src/platform/sqlite-open.ts` | `enableWal` rethrew every error, so SQLITE_BUSY was not waited out | `switching to WAL waits while another process holds the database` |
+| TK0008-M2 | `packages/engine/src/platform/sqlite-open.ts` | `enableWal` returned whatever mode SQLite answered instead of failing when it is not wal | `a database that cannot be WAL is an error, not a loop` |
