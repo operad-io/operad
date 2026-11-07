@@ -101,7 +101,19 @@ export interface MainOptions {
   readonly io?: CliIo | undefined;
   /** Whether prompts and colours are available; defaults to the real terminal. */
   readonly isTTY?: boolean | undefined;
+  /** Replaces the OpenTUI app in a test; the real one is imported only by `tui`. */
+  readonly tui?: TuiRunner | undefined;
 }
+
+/** What the CLI hands the terminal app. */
+export interface TuiCommand {
+  readonly home: string;
+  readonly url?: string | undefined;
+  readonly token?: string | undefined;
+  readonly onError?: ((message: string) => void) | undefined;
+}
+
+export type TuiRunner = (command: TuiCommand) => Promise<number>;
 
 const KERNEL_VERBS = [
   "init",
@@ -117,6 +129,7 @@ const KERNEL_VERBS = [
   "secret",
   "http",
   "pair",
+  "tui",
   "run-internal",
   "mcp",
 ] as const;
@@ -144,6 +157,8 @@ const HELP = [
   "  http token rotate    replace the token the operad app uses",
   "  pair [--url <url>] [--show-token]",
   "                       show the address and token as a QR code for the operad app",
+  "  tui [--url <url>] [--token <token>]",
+  "                       open the terminal client",
   "  mcp [--claude-channel] [--types t,...]",
   "                       run the MCP server on stdio; --claude-channel",
   "                       pushes object changes to Claude Code",
@@ -1820,6 +1835,51 @@ async function commandPair(
   return 0;
 }
 
+/** `operad tui [--url <url>] [--token <token>]`. */
+async function commandTui(
+  home: string,
+  io: CliIo,
+  argv: readonly string[],
+  tty: boolean,
+  injected: TuiRunner | undefined,
+): Promise<number> {
+  let url: string | undefined;
+  let token: string | undefined;
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index] ?? "";
+    if (arg === "--url" || arg === "--token") {
+      const value = argv[index + 1];
+      if (value === undefined) throw new UsageError(`${arg} needs a value`);
+      if (arg === "--url") url = value;
+      else token = value;
+      index += 1;
+    } else if (arg.startsWith("--url=")) {
+      url = arg.slice("--url=".length);
+    } else if (arg.startsWith("--token=")) {
+      token = arg.slice("--token=".length);
+    } else {
+      throw new UsageError(`tui: unknown argument "${arg}"`);
+    }
+  }
+  if (injected === undefined && !tty) {
+    throw new UsageError("tui needs a terminal");
+  }
+  const runner: TuiRunner =
+    injected ??
+    (async (command) => {
+      const { runTui } = await import("@operad-io/tui/app");
+      return await runTui(command);
+    });
+  return await runner({
+    home,
+    ...(url === undefined ? {} : { url }),
+    ...(token === undefined ? {} : { token }),
+    onError: (message) => {
+      io.error(`operad: ${message}\n`);
+    },
+  });
+}
+
 async function commandPlugin(
   context: Context,
   io: CliIo,
@@ -1924,6 +1984,10 @@ export async function main(
         args.slice(1),
         options.isTTY ?? process.stdout.isTTY === true,
       );
+    }
+
+    if (command === "tui") {
+      return await commandTui(home, io, args.slice(1), tty, options.tui);
     }
 
     if (command === "plugin") {

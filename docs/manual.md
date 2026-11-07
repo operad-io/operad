@@ -132,6 +132,27 @@ store and never loads a plugin. It finds the server like this:
 | `http.listen` | array of strings in `config.json` | `["127.0.0.1"]` | IP literals `serve` may listen on; the first one is the default TUI address. |
 | `http.port` | integer in `config.json` | `7480` | `0` to `65535`; the TUI needs the port `serve` actually uses, so `0` needs `--url`. |
 
+`operad tui` uses the terminal size: at 100 columns or wider the list and the
+object pane sit side by side, and below 100 columns only the list is shown. The
+header counts Pending and Running and then names every object type from
+`/v1/types`. The right pane says `select an object` until the object pane is
+added. A failed request, or a refused event stream such as a wrong token, shows its reason in the footer until a fetch succeeds; the same messages are printed after the screen closes. The list scrolls to keep the cursor in view, and a refresh keeps the selected object when it is still there. Every key the app reads is below.
+
+| Input | Type | Default | Allowed values |
+|---|---|---|---|
+| `1`–`9` | key | none | The tab with that number. |
+| `tab` | key | none | The next tab. |
+| `shift-tab` | key | none | The previous tab. |
+| `↑` / `↓` | key | none | Move the cursor one row; it loads the next page as it nears the end. |
+| `j` / `k` | key | none | The same as `↓` / `↑`. |
+| `g` | key | none | The first row. |
+| `G` | key | none | The last row. |
+| `r` | key | none | Fetch every list again. |
+| `?` | key | none | Show or hide the key list. |
+| `q` | key | none | Quit. |
+| `Ctrl-C` | key | none | Quit at once. The terminal restores itself; no other Ctrl or Meta chord does anything. |
+| `escape` | key | none | Close the key list. While it is open only `?`, `escape` and `q` act; the others leave the list alone. |
+
 ### Endpoints
 
 All endpoints are under `/v1`. Responses are JSON unless the endpoint says

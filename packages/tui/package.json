@@ -4,9 +4,12 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./app": "./src/app.ts",
+    "./view": "./src/view/index.ts"
   },
   "dependencies": {
+    "@opentui/core": "0.6.8",
     "@operad-io/engine": "workspace:*"
   }
 }
