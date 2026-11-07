@@ -19,3 +19,9 @@ the row fields.
 | T-0027-M8 | packages/mcp/src/tools.ts | `command` still refused a verb whose name is a kernel verb after the named plugin declared it | `command runs a plugin verb whose name is also a kernel verb` |
 | T-0027-M9 | packages/mcp/src/policy.ts | `splitPendingActions` kept every pending action and filtered none | `pending lists only the actions the lead may run` |
 | T-0027-M10 | packages/mcp/src/tools.ts | `command` checked only the verb for a kernel name and let a plugin namespace that is a kernel verb run | `command refuses a plugin whose name is also a kernel verb` |
+| T-0028-M1 | packages/mcp/src/server.ts | `initialize` never declared the channel capability, even with the flag | `reports a phase change with its meta and stays silent for the rest` |
+| T-0028-M2 | packages/mcp/src/channel.ts | the starting rows were not kept, so objects present at start became `new` transitions | `reports a phase change with its meta and stays silent for the rest` |
+| T-0028-M3 | packages/mcp/src/channel.ts | `sameRow` compared only `state`, so a change to the waiting flag was dropped | `reports a phase change with its meta and stays silent for the rest` (timed out) |
+| T-0028-M4 | packages/mcp/src/channel.ts | `--types` did not filter the change listener | `--types limits the channel to the named object types` |
+| T-0028-M5 | packages/mcp/src/channel.ts | the notification content left out the row's note | `reports a phase change with its meta and stays silent for the rest` |
+| T-0028-M6 | packages/mcp/src/channel.ts | the waiting meta value was always `"false"` | `reports a phase change with its meta and stays silent for the rest` |

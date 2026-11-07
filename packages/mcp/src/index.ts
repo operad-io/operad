@@ -7,6 +7,16 @@ export {
   type McpServerOptions,
 } from "./server.ts";
 export {
+  CHANNEL_CAPABILITY,
+  CHANNEL_INSTRUCTIONS,
+  CHANNEL_METHOD,
+  CHANNEL_PERMISSION_CAPABILITY,
+  startClaudeChannel,
+  type ChannelHandle,
+  type ChannelNotification,
+  type ChannelOptions,
+} from "./channel.ts";
+export {
   TOOLS,
   runTool,
   toolError,

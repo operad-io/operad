@@ -20,6 +20,13 @@ import {
 } from "@operad-io/engine";
 import { InvalidToolArguments } from "./arguments.ts";
 import {
+  CHANNEL_CAPABILITY,
+  CHANNEL_INSTRUCTIONS,
+  CHANNEL_METHOD,
+  startClaudeChannel,
+  type ChannelHandle,
+} from "./channel.ts";
+import {
   TOOLS,
   runTool,
   validateArguments,
@@ -73,6 +80,10 @@ export interface McpServerOptions {
   readonly write?: ((text: string) => void | Promise<void>) | undefined;
   readonly error?: ((text: string) => void | Promise<void>) | undefined;
   readonly clock?: (() => number) | undefined;
+  /** Declare Claude Code's channel capability and push object changes. */
+  readonly claudeChannel?: boolean | undefined;
+  /** The object types the channel reports; the default is every type with views. */
+  readonly types?: readonly string[] | undefined;
 }
 
 interface OpenContext {
@@ -119,6 +130,20 @@ function lineWriter(
 ): (response: JsonRpcResponse) => Promise<void> {
   return async (response) => {
     await write(`${JSON.stringify(response)}\n`);
+  };
+}
+
+/** One writer, so a channel notification and a response never interleave. */
+function serializedWrite(
+  write: (text: string) => void | Promise<void>,
+): (text: string) => Promise<void> {
+  let tail: Promise<void> = Promise.resolve();
+  return (text) => {
+    const next = tail.then(async () => {
+      await write(text);
+    });
+    tail = next.catch(() => undefined);
+    return next;
   };
 }
 
@@ -253,6 +278,7 @@ async function dispatch(
   method: string,
   params: unknown,
   context: ToolContext,
+  claudeChannel: boolean,
 ): Promise<unknown> {
   switch (method) {
     case "initialize":
@@ -261,9 +287,16 @@ async function dispatch(
       }
       return {
         protocolVersion: PROTOCOL_VERSION,
-        capabilities: { tools: {} },
+        capabilities: claudeChannel
+          ? {
+              tools: {},
+              experimental: { [CHANNEL_CAPABILITY]: {} },
+            }
+          : { tools: {} },
         serverInfo: { name: "operad", version: ENGINE_VERSION },
-        instructions: INSTRUCTIONS,
+        instructions: claudeChannel
+          ? `${INSTRUCTIONS}\n\n${CHANNEL_INSTRUCTIONS}`
+          : INSTRUCTIONS,
       };
     case "ping":
       requireEmptyParams(params);
@@ -283,6 +316,7 @@ async function handleLine(
   context: ToolContext,
   send: (response: JsonRpcResponse) => Promise<void>,
   log: (message: string) => Promise<void>,
+  claudeChannel: boolean,
 ): Promise<void> {
   let message: unknown;
   try {
@@ -316,7 +350,12 @@ async function handleLine(
   if (id === undefined) return;
 
   try {
-    const result = await dispatch(message.method, message.params, context);
+    const result = await dispatch(
+      message.method,
+      message.params,
+      context,
+      claudeChannel,
+    );
     await send(success(id, result));
   } catch (error) {
     if (error instanceof RpcError) {
@@ -365,19 +404,42 @@ export async function runMcpServer(
   const home = options.home ?? defaultOperadHome();
   const cwd = options.cwd ?? process.cwd();
   const clock = options.clock ?? (() => Date.now());
-  const write = options.write ?? ((text: string) => void process.stdout.write(text));
+  const write = serializedWrite(
+    options.write ?? ((text: string) => void process.stdout.write(text)),
+  );
   const error = options.error ?? ((text: string) => void process.stderr.write(text));
   const log = logWriter(error);
   const send = lineWriter(write);
   const input = options.input ?? Bun.stdin.stream();
 
   const opened = await openContext(home, cwd, clock, log);
+  let channel: ChannelHandle | undefined;
   try {
+    if (options.claudeChannel === true) {
+      channel = await startClaudeChannel({
+        views: opened.views,
+        registry: opened.registry,
+        ...(options.types === undefined ? {} : { types: options.types }),
+        send: async (notification) => {
+          await write(
+            `${JSON.stringify({
+              jsonrpc: "2.0",
+              method: CHANNEL_METHOD,
+              params: notification,
+            })}\n`,
+          );
+        },
+        onLog: (message) => {
+          void log(message);
+        },
+      });
+    }
     const context = toolContext(opened, clock);
     for await (const line of decodeLines(input)) {
-      await handleLine(line, context, send, log);
+      await handleLine(line, context, send, log, channel !== undefined);
     }
   } finally {
+    await channel?.close();
     opened.views.close();
     await opened.log.close();
   }

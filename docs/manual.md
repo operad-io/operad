@@ -457,3 +457,33 @@ Claude Code finds the server in a project `.mcp.json`:
 
 The server uses `$OPERAD_HOME`, or `~/.operad` when it is unset. Set
 `OPERAD_HOME` in the entry's `env` when the agent should read another home.
+
+### Claude Code channel
+
+`operad mcp --claude-channel` turns the server into a one-way channel: it
+declares the experimental `claude/channel` capability and sends
+`notifications/claude/channel` when an object's state, waiting flag or running
+flag changes. It never declares `claude/channel/permission` and never relays a
+permission prompt. Without the flag the server sends no notification and
+declares no experimental capability.
+
+At start the server reads the current rows and sends nothing for them. Every
+later notification has a one-line `content`, `<id> <old state> -> <new state>`
+with `: <note>` when the row has one, and string `meta` with `id`, `type`,
+`state`, `previous`, `waiting` and `running`. An object seen for the first time
+after the starting read has `previous` set to `new`. The channel is one-way;
+use `show`, `section`, `pending` and `history` for the details.
+
+`--types <t,…>` limits the channel to some object types, separated by commas.
+The default is every type with views. For example:
+
+```json
+"args": ["mcp", "--claude-channel", "--types", "task"]
+```
+
+Claude Code enables the extension with its development-channel flag, naming the
+server from `.mcp.json`:
+
+```sh
+claude --dangerously-load-development-channels server:operad
+```
