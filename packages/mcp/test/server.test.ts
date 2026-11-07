@@ -8,6 +8,8 @@ import {
   readConfig,
 } from "@operad-io/engine";
 import {
+  CHANNEL_CAPABILITY,
+  CHANNEL_METHOD,
   INSTRUCTIONS,
   PROTOCOL_VERSION,
   TOOLS,
@@ -30,6 +32,9 @@ const kernelCommandPluginPath = fileURLToPath(
 );
 const kernelNamePluginPath = fileURLToPath(
   new URL("./fixtures/kernel-plugin-name.ts", import.meta.url),
+);
+const channelPluginPath = fileURLToPath(
+  new URL("./fixtures/channel.ts", import.meta.url),
 );
 
 interface Home {
@@ -129,6 +134,16 @@ function taskData(home: string, id: string): Record<string, unknown> {
 function seed(home: string, id: string, data: Record<string, unknown>): void {
   const root = join(home, "..", "store", "plugins");
   new FilePluginStore({ root }).put("item", id, data, "seed");
+}
+
+function putObject(
+  home: string,
+  type: string,
+  id: string,
+  data: Record<string, unknown>,
+): void {
+  const root = join(home, "..", "store", "plugins");
+  new FilePluginStore({ root }).put(type, id, data, "test");
 }
 
 async function addRun(
@@ -253,9 +268,13 @@ interface Child {
   close(): Promise<{ readonly out: string; readonly err: string; readonly code: number }>;
 }
 
-function start(home: string, cwd = home): Child {
+function start(
+  home: string,
+  cwd = home,
+  extra: readonly string[] = [],
+): Child {
   const child = Bun.spawn({
-    cmd: [process.execPath, CLI_ENTRY, "mcp"],
+    cmd: [process.execPath, CLI_ENTRY, "mcp", ...extra],
     cwd,
     env: { ...(process.env as Record<string, string>), OPERAD_HOME: home },
     stdin: "pipe",
@@ -297,6 +316,11 @@ function start(home: string, cwd = home): Child {
       }
     },
   };
+}
+
+/** A pause for a thing that must not happen; the only wait on time here. */
+function settle(ms = 1500): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function resultOf(response: Record<string, unknown>): Record<string, unknown> {
@@ -826,4 +850,278 @@ describe("operad mcp", () => {
     );
   });
 
+});
+
+describe("operad mcp --claude-channel", () => {
+  test("reports a phase change with its meta and stays silent for the rest", async () => {
+    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    putObject(home, "task", "T-0001-one", {
+      title: "First",
+      phase: "ready",
+    });
+    const child = start(home, home, ["--claude-channel"]);
+    try {
+      const initialized = await child.request(1, "initialize", {
+        protocolVersion: PROTOCOL_VERSION,
+      });
+      const init = resultOf(initialized);
+      expect(init.capabilities).toEqual({
+        tools: {},
+        experimental: { [CHANNEL_CAPABILITY]: {} },
+      });
+      expect(
+        (init.capabilities as { experimental: Record<string, unknown> })
+          .experimental,
+      ).not.toHaveProperty("claude/channel/permission");
+      expect(init.instructions).toContain("one-way");
+      child.notify("notifications/initialized");
+
+      // The starting row is a baseline: a title edit that keeps state, waiting
+      // and running sends nothing.
+      putObject(home, "task", "T-0001-one", {
+        title: "Renamed",
+        phase: "ready",
+      });
+
+      // Give the edit time to be read before the run starts, so the wait is
+      // not seen through it.
+      await settle();
+
+      // A wait opens and the object is not written: the wait alone reports
+      // the new waiting flag even though the state stayed the same.
+      await addRun(home, "task:T-0001-one", { prompt: "Approve?" });
+      const waitingLine = JSON.parse(await child.lines.next()) as Record<
+        string,
+        unknown
+      >;
+      expect(waitingLine).toEqual({
+        jsonrpc: "2.0",
+        method: CHANNEL_METHOD,
+        params: {
+          content: "T-0001-one ready -> ready",
+          meta: {
+            id: "T-0001-one",
+            type: "task",
+            state: "ready",
+            previous: "ready",
+            waiting: "true",
+            running: "false",
+          },
+        },
+      });
+
+      putObject(home, "task", "T-0001-one", {
+        title: "Running",
+        phase: "running",
+        note: "busy",
+      });
+      const phaseLine = JSON.parse(await child.lines.next()) as Record<
+        string,
+        unknown
+      >;
+      expect(phaseLine).toEqual({
+        jsonrpc: "2.0",
+        method: CHANNEL_METHOD,
+        params: {
+          content: "T-0001-one ready -> running: busy",
+          meta: {
+            id: "T-0001-one",
+            type: "task",
+            state: "running",
+            previous: "ready",
+            waiting: "true",
+            running: "false",
+          },
+        },
+      });
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("--types limits the channel to the named object types", async () => {
+    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    putObject(home, "task", "T-0001-one", {
+      title: "First",
+      phase: "ready",
+    });
+    putObject(home, "note", "n-1", { title: "Note", state: "open" });
+    const child = start(home, home, [
+      "--claude-channel",
+      "--types",
+      "note",
+    ]);
+    try {
+      await child.request(1, "initialize", {
+        protocolVersion: PROTOCOL_VERSION,
+      });
+      child.notify("notifications/initialized");
+
+      putObject(home, "task", "T-0001-one", {
+        title: "First",
+        phase: "running",
+      });
+      putObject(home, "note", "n-1", { title: "Note", state: "closed" });
+
+      const line = JSON.parse(await child.lines.next()) as Record<
+        string,
+        unknown
+      >;
+      expect(line).toEqual({
+        jsonrpc: "2.0",
+        method: CHANNEL_METHOD,
+        params: {
+          content: "n-1 open -> closed",
+          meta: {
+            id: "n-1",
+            type: "note",
+            state: "closed",
+            previous: "open",
+            waiting: "false",
+            running: "false",
+          },
+        },
+      });
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("without the flag there is no capability and no notification", async () => {
+    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    putObject(home, "task", "T-0001-one", {
+      title: "First",
+      phase: "ready",
+    });
+    const child = start(home);
+    try {
+      const initialized = await child.request(1, "initialize", {
+        protocolVersion: PROTOCOL_VERSION,
+      });
+      expect(resultOf(initialized).capabilities).toEqual({ tools: {} });
+
+      putObject(home, "task", "T-0001-one", {
+        title: "First",
+        phase: "running",
+      });
+      child.notify("notifications/initialized");
+      // Nothing is waited for here, so give a notification time to arrive.
+      await settle();
+      const ping = await child.request(2, "ping", {});
+      expect(resultOf(ping)).toEqual({});
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+      expect(closed.out).not.toContain(CHANNEL_METHOD);
+    }
+  });
+
+  test("a flipped running flag is reported without an object write", async () => {
+    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    putObject(home, "task", "T-0001-one", { title: "First", phase: "ready" });
+    const child = start(home, home, ["--claude-channel"]);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      child.notify("notifications/initialized");
+      // A run that has started and is not waiting for a person is running.
+      const runId = await addRun(home, "task:T-0001-one", undefined);
+      const started = JSON.parse(await child.lines.next()) as {
+        params: { content: string; meta: Record<string, string> };
+      };
+      expect(started.params.meta).toMatchObject({
+        id: "T-0001-one",
+        state: "ready",
+        previous: "ready",
+        waiting: "false",
+        running: "true",
+      });
+      // The run ends: the flag flips back.
+      const log = openConfigLog(await readConfig(home));
+      try {
+        await log.endRun(runId);
+      } finally {
+        await log.close();
+      }
+      const ended = JSON.parse(await child.lines.next()) as {
+        params: { meta: Record<string, string> };
+      };
+      expect(ended.params.meta).toMatchObject({
+        waiting: "false",
+        running: "false",
+      });
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("nothing is written before notifications/initialized arrives", async () => {
+    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    putObject(home, "task", "T-0001-one", { title: "First", phase: "ready" });
+    const child = start(home, home, ["--claude-channel"]);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      putObject(home, "task", "T-0001-one", { title: "First", phase: "running" });
+      await settle();
+      expect(child.lines.seen).toHaveLength(1);
+      expect(child.lines.seen.join("\n")).not.toContain(CHANNEL_METHOD);
+
+      child.notify("notifications/initialized");
+      const line = JSON.parse(await child.lines.next()) as {
+        method: string;
+        params: { content: string };
+      };
+      expect(line.method).toBe(CHANNEL_METHOD);
+      expect(line.params.content).toBe("T-0001-one ready -> running");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("a new object reports new -> state, and a --types list names several types", async () => {
+    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    putObject(home, "task", "T-0001-one", { title: "First", phase: "ready" });
+    const child = start(home, home, [
+      "--claude-channel",
+      "--types",
+      "task,note",
+    ]);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      child.notify("notifications/initialized");
+      putObject(home, "task", "T-0002-two", { title: "Two", phase: "ready" });
+      const task = JSON.parse(await child.lines.next()) as {
+        params: { content: string; meta: Record<string, string> };
+      };
+      expect(task.params.content).toBe("T-0002-two new -> ready");
+      expect(task.params.meta.previous).toBe("new");
+      putObject(home, "note", "n-1", { title: "Note", state: "open" });
+      const note = JSON.parse(await child.lines.next()) as {
+        params: { content: string };
+      };
+      expect(note.params.content).toBe("n-1 new -> open");
+      // T-0001-one existed at the start: it produced nothing.
+      expect(child.lines.seen.join("\n")).not.toContain("T-0001-one");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("--types names an unknown type, and a missing value, as a usage error", async () => {
+    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    for (const [args, message] of [
+      [["--claude-channel", "--types", "task,ghost"], '"ghost"'],
+      [["--claude-channel", "--types"], "--types needs"],
+    ] as const) {
+      const child = start(home, home, args);
+      const closed = await child.close();
+      expect(closed.code).toBe(2);
+      expect(closed.err).toContain(message);
+      expect(closed.out).toBe("");
+    }
+  });
 });

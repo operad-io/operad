@@ -66,7 +66,7 @@ import {
   type ViewRow,
   type Views,
 } from "@operad-io/engine";
-import { runMcpServer } from "@operad-io/mcp";
+import { ChannelTypeError, runMcpServer } from "@operad-io/mcp";
 import { renderMarkdown } from "./markdown.ts";
 import { QrTooLongError, encodeQr, renderQr } from "./qr.ts";
 
@@ -144,7 +144,9 @@ const HELP = [
   "  http token rotate    replace the token the operad app uses",
   "  pair [--url <url>] [--show-token]",
   "                       show the address and token as a QR code for the operad app",
-  "  mcp                  run the MCP server on stdio",
+  "  mcp [--claude-channel] [--types t,...]",
+  "                       run the MCP server on stdio; --claude-channel",
+  "                       pushes object changes to Claude Code",
   "  trigger <source> <key> [--type t] [--object o] [--summary text] [--data file]",
   "                       send one event through the rules",
   "  trigger rules        the rules in force, with where each came from",
@@ -1861,13 +1863,49 @@ export async function main(
     }
 
     if (command === "mcp") {
-      if (args.length > 1) throw new UsageError("mcp takes no arguments");
-      await runMcpServer({
-        home,
-        cwd: process.cwd(),
-        write: (text) => io.write(text),
-        error: (text) => io.error(text),
-      });
+      let claudeChannel = false;
+      let types: string[] | undefined;
+      const rest = args.slice(1);
+      for (let index = 0; index < rest.length; index += 1) {
+        const arg = rest[index] ?? "";
+        if (arg === "--claude-channel") {
+          claudeChannel = true;
+          continue;
+        }
+        if (arg === "--types" || arg.startsWith("--types=")) {
+          const value =
+            arg === "--types" ? rest[index + 1] : arg.slice("--types=".length);
+          if (value === undefined || value.startsWith("--")) {
+            throw new UsageError("mcp --types needs a comma-separated list of object types");
+          }
+          if (arg === "--types") index += 1;
+          const names = value
+            .split(",")
+            .map((name) => name.trim())
+            .filter((name) => name.length > 0);
+          if (names.length === 0) {
+            throw new UsageError("mcp --types needs at least one object type");
+          }
+          types = [...new Set([...(types ?? []), ...names])];
+          continue;
+        }
+        throw new UsageError(`mcp does not take "${arg}"`);
+      }
+      try {
+        await runMcpServer({
+          home,
+          cwd: process.cwd(),
+          write: (text) => io.write(text),
+          error: (text) => io.error(text),
+          ...(claudeChannel ? { claudeChannel: true } : {}),
+          ...(types === undefined ? {} : { types }),
+        });
+      } catch (error) {
+        if (error instanceof ChannelTypeError) {
+          throw new UsageError(error.message);
+        }
+        throw error;
+      }
       return 0;
     }
 
