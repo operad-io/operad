@@ -35,6 +35,7 @@ import {
   type Clock,
   type ToolEvent,
 } from "@operad-io/harness-process";
+import { DEFAULT_PI_COMMAND, findPi, PI_FLOOR } from "./pi-install.ts";
 import { THINKING_LEVELS, type WorkerResult, type WorkerThinkingLevel } from "./protocol.ts";
 
 /** How long an agent may run before the step stops it. */
@@ -97,6 +98,13 @@ const PLUGIN_SETTINGS = {
       type: "string" as const,
       enum: THINKING_LEVELS,
       description: "The reasoning level; unset uses pi's default.",
+    },
+    command: {
+      type: "string" as const,
+      minLength: 1,
+      default: DEFAULT_PI_COMMAND,
+      description:
+        "The pi command: a name on PATH or a path. It must lead into an installed @earendil-works/pi-coding-agent; point it at the package's bin when `pi` is a wrapper script.",
     },
     authPath: {
       type: "string" as const,
@@ -542,6 +550,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           const sessionDir = join(agentDir, "sessions");
           await mkdir(sessionDir, { recursive: true });
 
+          const piCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
           const stdin: Record<string, unknown> = {
             prompt: promptWithNote,
             cwd,
@@ -549,6 +558,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             modelsPath,
             agentDir,
             sessionDir,
+            ...(piCommand === undefined ? {} : { piCommand }),
             ...(resumeSession === undefined ? {} : { resumeSession }),
             ...(model === undefined ? {} : { model }),
             ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
@@ -603,14 +613,17 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
       },
     ],
     flows: [promptFlow],
-    async check() {
+    async check(ctx) {
+      const piCommand = optionalText(ctx.settings.command, "harness-pi: settings.command");
+      // The user's own pi: found and version-checked, not loaded.
+      const pi = findPi(piCommand ?? DEFAULT_PI_COMMAND);
       if (options.command === undefined && !existsSync(process.execPath)) {
         throw new Error("bun was not found");
       }
       if (options.args === undefined && !existsSync(WORKER_PATH)) {
         throw new Error(`the worker program is missing: ${WORKER_PATH}`);
       }
-      return "the pi worker program is available";
+      return `pi ${pi.version} at ${pi.dir} (floor ${PI_FLOOR}); the worker program is available`;
     },
   });
 }

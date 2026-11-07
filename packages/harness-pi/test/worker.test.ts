@@ -16,6 +16,8 @@ import { parseInput, THINKING_LEVELS } from "../src/protocol.ts";
 
 const REAL_WORKER = join(import.meta.dir, "..", "src", "worker.ts");
 const FAKE_WORKER = join(import.meta.dir, "fake-worker.ts");
+/** The devDependency copy of pi, reached the way a user's `pi` is: through its bin link. */
+export const DEV_PI = join(import.meta.dir, "..", "node_modules", ".bin", "pi");
 
 const temps: string[] = [];
 
@@ -48,6 +50,7 @@ function setup(): Setup {
     home,
     input: {
       prompt: "hello",
+      piCommand: DEV_PI,
       cwd,
       model: "fake/fake-model",
       authPath: join(dir, "agent", "auth.json"),
@@ -330,6 +333,21 @@ test("resume: the second run sees the first answer in the context the fake model
   expect(calls[1]).toContain("SECOND_MARKER");
   // The session file is the same one; no second file was made.
   expect(readdirSync(String(s.input["sessionDir"])).length).toBe(1);
+});
+
+test("the worker logs the pi version it loaded and where from", async () => {
+  const s = setup();
+  const run = await runFake(s, [{ text: "ok" }]);
+  expect(run.exitCode).toBe(0);
+  expect(run.stderr).toMatch(/pi \d+\.\d+\.\d+\S* loaded from .*pi-coding-agent/);
+});
+
+test("without a pi the worker fails with the model_error reason and says what is missing", async () => {
+  const s = setup();
+  const run = await runFake(s, [], { ...s.input, piCommand: join(s.dir, "no-such-pi") });
+  expect(run.exitCode).toBe(1);
+  expect(last(run)).toMatchObject({ result: "failed", reason: "model_error" });
+  expect(String(last(run)["message"])).toContain("no-such-pi");
 });
 
 test("a missing session file is failed and names the path", async () => {

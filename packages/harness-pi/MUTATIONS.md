@@ -19,3 +19,14 @@ the row fields.
 | T-0022-M11 | packages/harness-pi/src/index.ts | an early failure recorded `model: null` | `harness-pi/agent > a step that fails before it starts still records the model it named` |
 | T-0025-M5 | `packages/harness-pi/src/worker.ts` | a call that matched a grant ran whether or not the host used the grant up | `a granted call runs once after the host used the grant; the same call again and another call are blocked` |
 | T-0025-M6 | `packages/harness-pi/src/index.ts` | the step answered `used: true` without asking the engine to use the grant | `harness-pi/agent > a grant in the profile is used through the host before the program goes on` |
+| T-0036-M1 | packages/harness-pi/src/pi-install.ts | the walk up accepted a `package.json` of any name | `findPi > a package.json with another name all the way up is refused (and the wrapper test)` |
+| T-0036-M2 | packages/harness-pi/src/pi-install.ts | the version floor was not enforced | `findPi > a version below the floor is refused naming both versions` |
+| T-0036-M3 | packages/harness-pi/src/pi-install.ts | a prerelease compared equal to its release | `findPi > a prerelease of the floor is below it; a prerelease above it is accepted` |
+| T-0036-M4 | packages/harness-pi/src/pi-install.ts | `exports["."]` conditions were not read (only `types`) | `findPi > finds a bun global install and an npm global install` |
+| T-0036-M5 | packages/harness-pi/src/pi-install.ts | the command was not resolved to its real path (symlinks not followed) | `findPi > finds a bun global install and an npm global install` |
+| T-0036-M6 | packages/harness-pi/src/pi-install.ts | `exports["."]` was not looked up | `findPi > finds a bun global install and an npm global install` |
+| T-0036-M7 | packages/harness-pi/src/worker.ts | the worker did not log the pi version it loaded | `the worker logs the pi version it loaded and where from` |
+| T-0036-M8 | packages/harness-pi/src/worker.ts | the worker ignored `piCommand` and always looked up `pi` | `without a pi the worker fails with the model_error reason and says what is missing` |
+| T-0036-M9 | packages/harness-pi/src/index.ts | the `command` setting was not passed to the worker | `harness-pi:prompt > the command setting reaches the worker as piCommand; unset it is pi` |
+| T-0036-M10 | packages/harness-pi/src/index.ts | `check` did not look for pi | `harness-pi check > refuses when there is no pi on PATH` |
+| T-0036-M11 | packages/harness-pi/src/pi-install.ts | an `exports` entry that is missing or outside the package was accepted | `findPi > an exports entry that is not a file in the package is refused` |
