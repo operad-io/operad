@@ -124,7 +124,16 @@ export const planViews: ObjectViews = {
 export const taskViews: ObjectViews = {
   row(object: StoredObject): ObjectRow {
     const task = taskData(object.data);
-    const note = waitNote(task) ?? costNote(task.cost);
+    const areaNote =
+      task.phase === "ready" && task.areaHeldBy !== undefined
+        ? `waiting for area ${task.area ?? ""} (${task.areaHeldBy})`
+        : task.area === undefined
+          ? undefined
+          : `area: ${task.area}`;
+    const note =
+      [waitNote(task) ?? costNote(task.cost), areaNote]
+        .filter((part): part is string => part !== undefined)
+        .join("  ") || undefined;
     return {
       id: bareId(object.id),
       title: task.title,
@@ -152,7 +161,14 @@ export const taskViews: ObjectViews = {
   async load(ctx, object, sectionId, options) {
     const task = taskData(object.data);
     const parts = splitBrief(task.brief);
-    if (sectionId === "brief") return { markdown: parts.body };
+    if (sectionId === "brief") {
+      return {
+        markdown:
+          task.area === undefined
+            ? parts.body
+            : `Area: ${task.area}\n\n${parts.body}`,
+      };
+    }
     if (sectionId === "rework") return { markdown: parts.reworks };
     if (sectionId === "changes") return { markdown: parts.changes };
     if (sectionId === "log") return { markdown: await workerLog(ctx, task) };
