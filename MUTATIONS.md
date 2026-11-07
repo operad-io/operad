@@ -290,6 +290,18 @@ each task: `TK0001-M1`.
 | TK0011-M10 | packages/dev/src/model.ts | `numberById` skipped ids in the old form, so allocation started from 1 instead of the highest old number | `dev per-repository ids > new ids count past old ids in either form` |
 | TK0011-M11 | packages/dev/src/model.ts | `formatId` emitted the old `PL`/`TK` form for new objects | `dev per-repository ids > ids count up across different slugs in one repository` |
 
+## T-0019-http-api — the HTTP interface of serve
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0019-http-api-M1 | packages/engine/src/http/token.ts | `tokensEqual` returned true without comparing | `http server > refuses a missing, a wrong and a rotated token` |
+| T-0019-http-api-M2 | packages/engine/src/http/token.ts | `rotateHttpToken` kept the current token instead of generating a new one | `http server > refuses a missing, a wrong and a rotated token` |
+| T-0019-http-api-M3 | packages/engine/src/http/address.ts | accepted every `172.x` address as RFC 1918 instead of `172.16.0.0/12` | `http server > classifies every listen address class and refuses a wildcard` |
+| T-0019-http-api-M4 | packages/engine/src/http/server.ts | mapped a section timeout to `400` instead of `504` | `http server > lists types and objects, gets one object, and pages a section` |
+| T-0019-http-api-M5 | packages/engine/src/http/server.ts | recorded the token itself as the HTTP actor id | `http server > acts with a note, refuses without one, and needs confirmed for a confirm action`; `http server > never writes the token to the store, its facts or history` |
+| T-0019-http-api-M6 | packages/engine/src/http/server.ts | ignored `Last-Event-ID`, so a reconnect replayed nothing | `http server > streams changes, resumes from Last-Event-ID and resets an old id` |
+| T-0019-http-api-M7 | packages/engine/src/config/config.ts | ignored `http.enabled` and always kept the interface off | `operad config > reads http options and applies their defaults` |
+| T-0019-http-api-M8 | packages/engine/src/http/server.ts | skipped the listen-address check before binding | `operad serve http > refuses a wildcard at start and names the entry` |
 ## TK0002 — reviewer fallback and retry
 
 | id | file | mutation | failing test |
@@ -342,8 +354,36 @@ each task: `TK0001-M1`.
 | bun-fd-guard-M1 | packages/harness-radian/src/process.ts | the old code: the sentinel's `stdio` had a fourth pipe and the harness stderr went to `child.stdio[3]` | `harness process descriptors > running 30 harness commands next to open databases never closes a descriptor twice` (child exits 137, 3 of 3 runs) |
 | bun-fd-guard-M2 | packages/harness-radian/src/process.ts | the stderr tail was not read back from the file (`stderrTail.push("")`) | `harness process descriptors > running 30 harness commands next to open databases never closes a descriptor twice` (tails `[""]` instead of `["oops"]`) |
 | bun-fd-guard-M3 | packages/harness-radian/src/process.ts | the fixed code with `stdio` set back to four pipes, the fourth one unused | `harness process descriptors > running 30 harness commands next to open databases never closes a descriptor twice` (child exits 137) |
+
+## T-0019-http-api — rework 2: the cancel test waits on no real timer
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0019-http-api-M9 | packages/shell/src/process.ts | the stop skipped its grace SIGKILL, so a line that ignores SIGTERM kept the group alive | `shell/command > cancel stops the process group and reports interrupted` (timed out after 5000ms) |
 | bun-fd-guard-M4 | packages/harness-radian/src/process.ts | `stdio` set back to four pipes | `child process stdio > no source spawns with more than three stdio entries or reads stdio[3] or higher` (names `packages/harness-radian/src/process.ts:434` and bf3a73e) |
 | review-did-not-finish-M1 | packages/dev/src/announce.ts | named the reason `review failed` again | `dev.waiting > a review that did not finish: one event, once, also when the step runs again` |
+
+## T-0019-http-api — rework 3: SSE ids, stream limits, rotation and the HTTP confirm hint
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0019-http-api-M10 | packages/engine/src/http/server.ts | the resume check ignored the boot id, so an id from an earlier serve looked current | `http server > a Last-Event-ID from an earlier serve gets one reset` |
+| T-0019-http-api-M11 | packages/engine/src/http/server.ts | `push` accepted every event, so a client that stopped reading kept an unbounded queue | `http server > ends a client that stops reading instead of growing without bound` |
+| T-0019-http-api-M12 | packages/engine/src/http/server.ts | the token watcher noticed a rotation but did not end the open streams | `http server > rotating the token ends the event streams opened with the old one` |
+| T-0019-http-api-M13 | packages/engine/src/http/server.ts | `Bun.serve` got a body limit eight times the protocol's | `http server > refuses a request body larger than one mebibyte` |
+| T-0019-http-api-M14 | packages/engine/src/views/presentation.ts | the confirm refusal always said `pass --yes`, also over HTTP | `http server > acts with a note, refuses without one, and needs confirmed for a confirm action` |
+
+## T-0019-http-api — rework 4: lead actions claim the version they were offered
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0019-http-api-M15 | packages/dev/src/actions.ts | claimed at the version read inside the action instead of the version the action was offered on, so two lead actions both won | `dev:rework and dev:reverify > an action offered a stale object loses even while the task still waits` |
+
+## T-0019-http-api — rework 5: the act body's optional id
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0019-http-api-M16 | packages/engine/src/http/server.ts | made `POST /v1/act` require an id again, so the handler answered `400` before the views could name the missing object | `http server > accepts an act body without an id and lets the views name the missing object` |
 
 ## TK0005 — the platform module
 
@@ -404,3 +444,16 @@ each task: `TK0001-M1`.
 - [harness-radian](packages/harness-radian/MUTATIONS.md)
 - [shell](packages/shell/MUTATIONS.md)
 - [source-cron](packages/source-cron/MUTATIONS.md)
+## T-0020 — pairing, links and the notification hook
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0020-M1 | packages/engine/src/notify/notify.ts | dropped the `recorded.has(key)` skip, so every pass notified again | `notify > a restart of serve does not notify again for the same wait` |
+| T-0020-M2 | packages/engine/src/notify/notify.ts | the notification key left out the wait id | `notify > a new wait on the same run notifies again` |
+| T-0020-M3 | packages/engine/src/notify/notify.ts | a cancelled command was recorded as sent | `notify > stopping serve cancels a running command and records nothing` |
+| T-0020-M4 | packages/engine/src/http/link.ts | `objectLink` stopped URL-encoding the id | `http server > an object carries its link, URL-encoded, and so does its pending item` |
+| T-0020-M5 | packages/cli/src/qr.ts | the format bits lost their `0x5412` mask | `qr encoder > the format bits for level M match the standard's table` |
+| T-0020-M6 | packages/cli/src/qr.ts | version 8's block layout became four equal blocks | `qr encoder > every version round-trips at its capacity, and the next byte needs the next version` |
+| T-0020-M7 | packages/cli/src/main.ts | `pair` stopped refusing a non-terminal without `--show-token` | `operad pair > refuses without a terminal and prints nothing of the token` |
+| T-0020-M8 | packages/engine/src/notify/notify.ts | `OPERAD_LINK` left out of the command's environment | `notify > a waiting task runs the command once with the four variables` |
+| T-0020-M9 | packages/engine/src/config/config.ts | `notify.on` accepted any value | `operad config > rejects a malformed notify section` |

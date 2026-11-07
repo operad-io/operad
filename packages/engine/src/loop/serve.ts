@@ -319,6 +319,8 @@ export async function serveOnce(
 
 export interface ServeOptions extends Omit<ServePassOptions, "shouldStop"> {
   readonly home: string;
+  /** Called after each pass; it must not wait for slow work. */
+  readonly onPass?: (() => void) | undefined;
   readonly intervalMs?: number | undefined;
   readonly signal?: AbortSignal | undefined;
   readonly sleep?:
@@ -386,6 +388,7 @@ export async function serve(options: ServeOptions): Promise<void> {
         },
       });
       inPass = false;
+      options.onPass?.();
       const now = clock();
       for (const runId of result.spawned) spawnedAt.set(runId, now);
       if (stopped) break;

@@ -50,6 +50,50 @@
         }
       },
       "additionalProperties": false
+    },
+    "http": {
+      "description": "The HTTP interface serve exposes for clients. It listens only on addresses a person names.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Only an enabled http section opens the port; serve creates the token on first use."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "default": 7480
+        },
+        "listen": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "default": ["127.0.0.1"],
+          "description": "IP literals: loopback, an RFC 1918 or link-local address, or a Tailscale address. Wildcards are refused."
+        }
+      },
+      "additionalProperties": false
+    },
+    "notify": {
+      "description": "A command serve runs when something waits for a person, once per wait. It gets OPERAD_ID, OPERAD_TITLE, OPERAD_REASON and OPERAD_LINK in its environment.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "default": null,
+          "description": "A shell line run with sh -c in the operad home, for at most 30 seconds. null turns notifications off."
+        },
+        "on": {
+          "type": "array",
+          "items": { "enum": ["waiting"] },
+          "default": ["waiting"],
+          "description": "What triggers the command. Only waiting exists: an object now waits for a person."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": true
