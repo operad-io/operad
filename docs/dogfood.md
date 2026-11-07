@@ -24,6 +24,9 @@ checks are:
   (with git's own message) or has no main branch. It pushes nothing, so no ref
   can be left behind.
 
+`harness-pi` is optional and is not installed by `init`; see "Using pi as the
+worker" below.
+
 Then register the checkout:
 
 ```sh
@@ -179,3 +182,24 @@ to send it to a channel.
 Delete nothing by hand under `.operad-worktrees`; `cleanup` removes the task's
 worktrees and branches after a merge. If cleanup reports a failure, the task is
 still merged; remove the leftover with the command the line names.
+
+## Using pi as the worker
+
+`harness-pi` runs the pi coding agent instead of radian. Turn it on, then name
+it in `.operad/dev.json`:
+
+```sh
+operad plugin enable harness-pi
+```
+
+```json
+{ "worker": { "use": "harness-pi/agent", "args": [] } }
+```
+
+It uses your own pi login: the credentials file `~/.pi/agent/auth.json` (set
+`authPath` in the plugin's settings for another file). Log in once with `pi`
+itself; operad never reads the file, it hands the path to pi. The model is pi's
+default model unless the plugin's `model` setting (`provider/id`) names one.
+Session files are in `~/.operad/harness/pi/sessions`, apart from your own pi
+sessions. The settings, the step's results and the model-error rules are in
+`packages/harness-pi/README.md`.

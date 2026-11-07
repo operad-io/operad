@@ -2,8 +2,8 @@
 
 The pi harness. `src/worker.ts` is the child program: it imports pi's library,
 reads one JSON object from stdin, runs one prompt and writes one JSON object per
-line to stdout. The last line is the `Result`. The hub-side step that spawns it
-is a later task. Decisions: `docs/backlog/operad-harness-pi.md` 2, 3, 5, 6, 7.
+line to stdout. The last line is the `Result`. The hub-side step
+(`src/index.ts`, described under "The plugin" below) spawns it. Decisions: `docs/backlog/operad-harness-pi.md` 2, 3, 5, 6, 7.
 
 Run it as `bun packages/harness-pi/src/worker.ts`. stderr is free text for
 humans and is never parsed.
@@ -82,3 +82,81 @@ the path in `message`. `sessionId` of the new Result is the same path.
 `test/fake-worker.ts` runs the same program with a fake model registered
 (`test/fake-provider.ts`); the script comes from the `FAKE_SCRIPT` environment
 variable. It exists because a model cannot travel over the stdin protocol.
+
+## The plugin
+
+`src/index.ts` is the hub side: the plugin `harness-pi`, its step
+`harness-pi/agent` and its flow `harness-pi:prompt`. It never imports pi; it
+starts `bun src/worker.ts` through `runAgent` from `@operad-io/harness-process`,
+writes the stdin object above, appends every stdout line to the step's log with
+`JsonlLog`, and turns the last `result` line into the facts.
+
+The plugin is not installed by `operad init`. Turn it on with:
+
+```sh
+operad plugin enable harness-pi
+```
+
+A flow switches harness by changing `use` from `harness-radian/agent` to
+`harness-pi/agent`; `dev` does it with `worker.use` in `.operad/dev.json`. The
+params, the result names (`done`, `failed`, `interrupted`) and the facts
+(`exitCode`, `signal`, `sessionId`, `finalMessage`, `usage`, `cost`, `log`,
+`durationMs`, `stderr`) are `harness-radian`'s. `args` is accepted and ignored,
+because pi takes no command-line arguments. `sessionId` is the path of pi's
+session file; pass it back as `resumeSession` to continue it.
+
+### Settings
+
+The `harness-pi` section of `config.json`. The kernel fills the defaults. A step
+param (`wallTimeSecs`, `stallSecs`) overrides the setting of the same name.
+
+| setting | type | default | meaning |
+|---|---|---|---|
+| `model` | string `provider/id` | unset | the model; unset uses pi's own default model |
+| `thinkingLevel` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` | unset | the reasoning level; unset uses pi's default |
+| `authPath` | string | `~/.pi/agent/auth.json` | pi's credentials file; the plugin passes the path and never reads the file |
+| `modelsPath` | string | `~/.pi/agent/models.json` | pi's custom models file |
+| `wallTimeSecs` | number | `3600` | the longest one run may take; at most 28500 |
+| `stallSecs` | number | `600` | how long a run may print nothing while no tool call is open |
+
+A leading `~` in a path is the user's home directory. The step's own timeout is
+eight hours, above every allowed wall time.
+
+### Where files go
+
+pi runs with an agent directory of its own, `<operad home>/harness/pi`, empty of
+user configuration. Session files are in `<operad home>/harness/pi/sessions`
+(`~/.operad/harness/pi/sessions` by default), so the user's own `pi` command
+does not see them. The step's log, one JSON line per worker line, is in the
+store like every step log.
+
+### How the step ends
+
+| condition | result | `reason` |
+|---|---|---|
+| worker `result` is `done` | `done` | |
+| worker `result` is `failed` | `failed` | the worker's own reason |
+| worker `result` is `cancelled`, or the run was cancelled | `interrupted` | `cancelled` |
+| no `result` line, the worker was killed by a signal | `interrupted` | `signal` |
+| no `result` line, the worker exited | `failed` | `no_result`; `message` ends with the worker's last five stderr lines |
+| wall time, stall, a line over 8 MiB, no program, no directory | `failed` | `wall`, `stall`, `line_too_long`, `missing` or `spawn`, `cwd` |
+
+A stall is silence while no tool call is open: pi's `tool_execution_start` opens
+one and `tool_execution_end` closes it. The wall time always applies.
+
+### Model errors
+
+A worker failure with reason `model_error` also sets `data.modelError`, the
+shape `harness-radian` gives: `{ kind, status, retry_after_secs, message }`.
+`kind` is derived from the error text the worker passes on: a usage limit
+(`usage limit`, `quota`, `out of credits`) is `usage_limit`; otherwise a 429, 503
+or 529, `overloaded`, `rate limit` or `too many requests` is `unavailable`; any
+other text is `protocol`. `status` is that number when the text has one, else
+`null`; `retry_after_secs` is `null` because pi does not report it. `dev`'s
+review and work waits read `kind` and so treat both harnesses alike.
+
+### Access profile
+
+The step declares `enforces: ["denyPaths", "denyCommands"]` and passes the run's
+profile to the worker. A profile that sets `askCommands` is refused when the run
+starts, with `askCommands` named.
