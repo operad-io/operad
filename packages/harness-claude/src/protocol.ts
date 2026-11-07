@@ -61,6 +61,17 @@ export interface WorkerResult {
 }
 
 export type WorkerLine =
+  /**
+   * Written once, when claude starts a session. `apiKeySource` says which
+   * credential claude uses: `none` for a subscription login, `ANTHROPIC_API_KEY`
+   * when that environment variable is set.
+   */
+  | {
+      readonly type: "session";
+      readonly claudeVersion: string;
+      readonly apiKeySource: string;
+      readonly model: string;
+    }
   | {
       readonly type: "message_end";
       readonly role: "assistant";
@@ -101,7 +112,8 @@ export type ParsedInput =
   | { readonly ok: true; readonly input: WorkerInput }
   | { readonly ok: false; readonly message: string };
 
-const FIELDS = [
+/** The stdin fields, in the order the README lists them. */
+export const INPUT_FIELDS = [
   "prompt",
   "cwd",
   "command",
@@ -126,7 +138,7 @@ export function parseInput(value: unknown): ParsedInput {
   // A field the program does not know is refused, never ignored: a flag that
   // is silently dropped would hide a wrong model.
   for (const key of Object.keys(value)) {
-    if (!(FIELDS as readonly string[]).includes(key)) {
+    if (!(INPUT_FIELDS as readonly string[]).includes(key)) {
       return { ok: false, message: `${key} is not an input field` };
     }
   }

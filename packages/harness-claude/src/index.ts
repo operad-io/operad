@@ -85,7 +85,7 @@ export interface ClaudeHarnessOptions {
 }
 
 /** The settings a config.json section may set for this plugin. */
-const PLUGIN_SETTINGS = {
+export const PLUGIN_SETTINGS = {
   type: "object" as const,
   properties: {
     model: {

@@ -88,6 +88,6 @@ describe("the Claude Code binary is the user's, not a dependency", () => {
 describe("the probe", () => {
   test("with no claude on PATH it fails with a message that says what to do", () => {
     expect(() => findClaude("")).toThrow(ClaudeNotFoundError);
-    expect(() => findClaude("/nonexistent-dir")).toThrow(/install Claude Code/);
+    expect(() => findClaude("/nonexistent-dir")).toThrow(/install claude/);
   });
 });

@@ -30,7 +30,9 @@ function tempDir(): string {
 type Line = Record<string, unknown>;
 
 interface Run {
+  /** Every stdout line but the `session` line, which has its own field. */
   readonly lines: Line[];
+  readonly session: Line[];
   readonly stdout: string;
   readonly stderr: string;
   readonly exitCode: number;
@@ -138,17 +140,19 @@ class Child {
     await this.#stderrDone;
     await this.#stdoutDone;
     const stdout = this.#stdout;
-    const lines = stdout
+    const all = stdout
       .split("\n")
       .filter((text) => text.length > 0)
       .map((text) => JSON.parse(text) as Line);
+    const lines = all.filter((line) => line["type"] !== "session");
+    const session = all.filter((line) => line["type"] === "session");
     const record = existsSync(this.recordFile)
       ? readFileSync(this.recordFile, "utf8")
           .split("\n")
           .filter((text) => text.length > 0)
           .map((text) => JSON.parse(text) as Line)
       : [];
-    return { lines, stdout, stderr: this.#stderr, exitCode, record };
+    return { lines, session, stdout, stderr: this.#stderr, exitCode, record };
   }
 }
 
@@ -445,7 +449,7 @@ test("with no claude on PATH the real worker fails and says how to fix it", asyn
 
   expect(run.exitCode).toBe(1);
   expect(last(run)).toMatchObject({ result: "failed", reason: "model_error" });
-  expect(String(last(run)["message"])).toContain("install Claude Code");
+  expect(String(last(run)["message"])).toContain("install claude");
 });
 
 test("the input table: required fields, types and limits", () => {
@@ -678,4 +682,22 @@ test("an access profile the matcher cannot read is invalid input", async () => {
 
   expect(run.exitCode).toBe(2);
   expect(last(run)).toMatchObject({ reason: "invalid_input", message: "access.denyCommands must be an array of strings" });
+});
+
+test("the session line says which credential claude uses, and is written once, first", async () => {
+  const subscription = await runFake(setup(), { steps: done });
+  expect(subscription.session).toEqual([
+    { type: "session", claudeVersion: "2.1.319", apiKeySource: "none", model: "fake" },
+  ]);
+  expect(subscription.stdout.startsWith('{"type":"session"')).toBe(true);
+
+  const withKey = await runFake(setup(), {
+    steps: [{ say: { ...systemInit(), apiKeySource: "ANTHROPIC_API_KEY" } }, { say: result() }],
+  });
+  expect(withKey.session[0]).toMatchObject({ apiKeySource: "ANTHROPIC_API_KEY" });
+});
+
+test("no session line is written when claude never starts a session", async () => {
+  const run = await runFake(setup(), { steps: [{ say: result() }] });
+  expect(run.session).toEqual([]);
 });

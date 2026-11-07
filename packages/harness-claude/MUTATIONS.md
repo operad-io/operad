@@ -64,3 +64,11 @@ setup it depends on, in the order they were recorded. The root
 | T-0040-M10 | packages/harness-claude/src/worker.ts | the `blocked` line was not written | `a Bash command that denyCommands refuses is denied with the reason, logged, and the run goes on` |
 | T-0040-M11 | packages/harness-claude/src/worker.ts | `canUseTool` was not given the host's `useGrant` | `a grant that matches is asked for, and the call runs when the host says used` |
 | T-0040-M12 | packages/harness-claude/src/index.ts | the step stopped declaring `enforces` | `harness-claude access > the step declares the deny fields it enforces` |
+
+## T-0041 — the session line
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0041-M1 | packages/harness-claude/src/worker.ts | the `session` line always said `apiKeySource: "none"` | `the session line says which credential claude uses, and is written once, first` |
+| T-0041-M2 | packages/harness-claude/src/worker.ts | the `session` line took `claudeVersion` from the model field | `the session line says which credential claude uses, and is written once, first` |
+| T-0041-M3 | packages/harness-claude/src/worker.ts | the `session` line was not written | `the session line says which credential claude uses, and is written once, first` |

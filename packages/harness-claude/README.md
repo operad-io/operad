@@ -8,7 +8,7 @@ line is the `Result`. Decisions: `docs/backlog/operad-harness-claude.md` 2 to 8.
 Run it as `bun packages/harness-claude/src/worker.ts`. stderr is free text for
 humans and is never parsed.
 
-operad bundles no Claude Code. The root `package.json` replaces the eight
+operad bundles no claude. The root `package.json` replaces the eight
 platform packages of the SDK with empty ones (`SPIKE.md`), and the worker finds
 `claude` on `PATH` (or at the `command` it is given) and resolves its real path.
 The login is the one `claude` already has; the worker passes no credential. A
@@ -51,6 +51,7 @@ One JSON object per line, flushed per line, each with a `type`:
 
 | type | other fields | meaning |
 |---|---|---|
+| `session` | `claudeVersion`, `apiKeySource`, `model` | claude started a session; written once, first. `apiKeySource` says which credential it uses: `none` for a subscription login, `ANTHROPIC_API_KEY` when that variable is set in the environment |
 | `message_end` | `role` (`"assistant"`), `stopReason` (string or null), `usage` (`{input, output, cache_read, cache_write}`), `cost` (always `null`: claude prices a run, not a message) | an assistant message finished; written once per message |
 | `tool_execution_start` | `toolCallId`, `toolName` | a tool call began (the `PreToolUse` hook) |
 | `tool_execution_end` | `toolCallId`, `toolName`, `isError` | a tool call ended (`PostToolUse`, `PostToolUseFailure`, or a refusal) |

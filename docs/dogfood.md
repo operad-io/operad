@@ -24,8 +24,8 @@ checks are:
   (with git's own message) or has no main branch. It pushes nothing, so no ref
   can be left behind.
 
-`harness-pi` is optional and is not installed by `init`; see "Using pi as the
-worker" below.
+`harness-pi` and `harness-claude` are optional and are not installed by `init`;
+see "Using pi as the worker" and "Using claude as the worker" below.
 
 Then register the checkout:
 
@@ -239,3 +239,101 @@ if you want.
 
 The settings, the step's results and the model-error rules are in
 `packages/harness-pi/README.md`.
+
+## Using claude as the worker
+
+`harness-claude` runs `claude`, Anthropic's coding agent, instead of radian. It
+is not in the default config, so turn it on first. This makes the next command
+load it:
+
+```sh
+operad plugin enable harness-claude
+```
+
+**Install claude and log in.** operad does not bring its own claude: it uses the
+one you installed (see https://code.claude.com), so a `claude` command must be
+on `PATH`. Run `claude` once and log in. operad uses your own login and passes
+no credential of its own. `operad plugin check` runs `claude --version` and
+`claude auth status` and reports the claude version, the Agent SDK version and
+the login kind (such as `claude.ai (max)`). It fails, saying what to do, when
+there is no `claude`, when claude is older than `2.1.319`, or when it is not
+logged in. The SDK version is only reported. To use another claude, set
+`command` in the `harness-claude` section of `config.json` to its path.
+
+**A machine without a browser.** Run `claude setup-token` on a machine where you
+can sign in; it prints a token that stands for your claude subscription and
+lasts a year. On the machine without a browser, put it in the environment of
+`operad serve` as `CLAUDE_CODE_OAUTH_TOKEN`. operad hands the whole environment
+to claude unchanged and never reads, logs or stores the token. Treat it like a
+password and keep it out of `config.json`.
+
+**Whose subscription.** operad runs your own tools on your own machine with your
+own claude login. Anthropic does not let a product offer claude.ai login or its
+rate limits to other people unless it has approved that, so a copy of operad that
+is shipped to others would not offer claude.ai login; it would use an API key.
+
+**Which credential is billed.** claude uses an `ANTHROPIC_API_KEY` found in the
+environment before it uses your subscription login. Because operad hands the
+whole environment to claude, an `ANTHROPIC_API_KEY` set in the environment of
+`operad serve` makes claude bill that key and not the subscription. To check
+which one a run used, read the `session` line at the start of the step's log:
+`apiKeySource` is `none` for the subscription login and `ANTHROPIC_API_KEY` when
+that variable is set (the other values name other key sources). `operad plugin
+check` reports the login kind too; run it in the same environment as `operad
+serve`. The cost the facts record is `estimated` for a subscription login (the
+price of the tokens at API rates, not what you are charged) and `exact` for a
+key.
+
+**Which model.** The model is claude's own default unless the plugin's `model`
+setting or the step's `--model` names one (a name claude takes, such as `opus`
+or `sonnet`).
+
+**Settings, arguments and the environment.** These are the inputs of the
+`harness-claude` section of `config.json`, of the step's `args` and of the
+environment. The full tables are in `packages/harness-claude/README.md`.
+
+| Input | Type | Default | Values |
+|---|---|---|---|
+| `command` (setting) | string | `claude` | a command name on `PATH` or a path |
+| `model` (setting) | string | unset: claude's default | a model name claude takes |
+| `effort` (setting) | string | unset: claude's default | `low`, `medium`, `high`, `xhigh`, `max` |
+| `maxTurns` (setting) | integer | unset: no limit | 1 or more |
+| `budgetUsd` (setting) | number | unset: no limit | 0.01 or more, in US dollars; for API-key logins |
+| `wallTimeSecs` (setting) | number | `3600` | 1 to 28500; the longest one run may take |
+| `stallSecs` (setting) | number | `600` | 1 or more; how long a run may print nothing while no tool call is open |
+| `concurrency` (setting) | object | `{}` | model name to a count of 1 or more |
+| `--model <name>` (arg) | string | the `model` setting | wins over the setting |
+| `--effort <level>` (arg) | string | the `effort` setting | `low`, `medium`, `high`, `xhigh`, `max`; wins over the setting |
+| `CLAUDE_CODE_OAUTH_TOKEN` (environment) | string | unset | the token `claude setup-token` prints |
+| `ANTHROPIC_API_KEY` (environment) | string | unset | an API key; when set, claude bills it |
+
+**Where the sessions are.** claude keeps its session files in
+`~/.claude/projects/`, under a folder named for the working directory, so they
+are the same files your own `claude` uses. The `sessionId` in a step's facts is
+the session's id; `claude --resume <id>`, run in the same working directory,
+continues that session by hand.
+
+**What claude is told.** claude runs without your settings, hooks, plugins,
+skills or `CLAUDE.md` files and without its automatic memory; the access profile
+(`denyPaths`, `denyCommands` and one-time permissions) is applied to its tool
+calls, and a profile with `askCommands` is refused when the run starts.
+
+**Switch the worker and the reviewer.** In `.operad/dev.json` change `worker.use`
+(and `reviewer.use` to review with claude too). claude reads only `--model <name>`
+and `--effort <level>` from `args`; any other entry fails the step with
+`invalid_args`. For example:
+
+```json
+{
+  "worker":   { "use": "harness-claude/agent", "args": ["--model", "sonnet"] },
+  "reviewer": { "use": "harness-claude/agent", "args": ["--model", "opus", "--effort", "medium"] }
+}
+```
+
+**Switch back.** Put `worker` in `.operad/dev.json` back to
+`"use": "harness-radian/agent"` with its `args`. You do not need to disable
+`harness-claude`; `operad plugin disable harness-claude` removes it if you want.
+
+The settings, the step's results and the model-error rules are in
+`packages/harness-claude/README.md`. A hand-run acceptance script is in
+`packages/harness-claude/acceptance.md`.

@@ -210,7 +210,15 @@ export async function runWorker(
       if ("session_id" in message && typeof message.session_id === "string") sessionId = message.session_id;
       switch (message.type) {
         case "system":
-          if (message.subtype === "init") io.log(`claude ${message.claude_code_version}`);
+          if (message.subtype === "init") {
+            io.log(`claude ${message.claude_code_version}`);
+            io.line({
+              type: "session",
+              claudeVersion: message.claude_code_version,
+              apiKeySource: message.apiKeySource,
+              model: message.model,
+            });
+          }
           break;
         case "assistant": {
           const id = message.message.id;
