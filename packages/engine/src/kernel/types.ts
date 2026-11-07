@@ -64,6 +64,8 @@ export interface PollCheckEffect {
   readonly effectId: string;
   readonly step: string;
   readonly check: string;
+  /** The wait's own params for the check; `null` when it gave none. */
+  readonly params: JsonValue;
 }
 
 export type Effect =
@@ -289,6 +291,8 @@ export interface StepInterruptedPayload {
   readonly effectId: string | null;
   readonly reason: string;
   readonly result: string | null;
+  /** What the step said when it stopped with a result the flow does not expect. */
+  readonly message?: string | undefined;
 }
 
 export interface CrashLoopStoppedPayload {

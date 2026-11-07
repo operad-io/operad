@@ -540,6 +540,38 @@ describe("operad with the dev plugin", () => {
     expect(brief.out).not.toContain("Old body");
   });
 
+  test("show and an action take --repo for a bare id from outside any repository", async () => {
+    const { root, home, repository } = await setup();
+    const name = repository.split("/").pop() ?? "repository";
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const other = await makeGitRepository(root, "other");
+    expect((await run(home, other, ["repo", "add", "."])).code).toBe(0);
+    // The same plan id in both repositories: only a named repository can pick one.
+    for (const where of [repository, other]) {
+      const plan = await run(
+        home,
+        where,
+        ["plan", "add", "--slug", "p", "--title", where === other ? "In other" : "In first"],
+        "a request\n",
+      );
+      expect(plan.out.trim()).toBe("P-0001-p");
+    }
+
+    const bare = await run(home, home, ["show", "P-0001-p"]);
+    expect(bare.code).not.toBe(0);
+
+    const first = await run(home, home, ["show", "P-0001-p", "--repo", name]);
+    expect(first.code).toBe(0);
+    expect(first.out).toContain("In first");
+    const second = await run(home, home, ["show", "P-0001-p", "--repo", "other"]);
+    expect(second.code).toBe(0);
+    expect(second.out).toContain("In other");
+
+    const acted = await run(home, home, ["dev:confirm", "P-0001-p", "--repo", "other", "--yes"]);
+    expect(acted.err).not.toContain("--repo");
+    expect(acted.err).not.toContain("ambiguous");
+  });
+
   test("task edit and update resolve the repository like every other command", async () => {
     const { root, home, repository } = await setup();
     expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);

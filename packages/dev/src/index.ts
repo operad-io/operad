@@ -6,7 +6,7 @@ import { actions } from "./actions.ts";
 import { runAnnounce } from "./announce.ts";
 import { checkDev } from "./check.ts";
 import { commands } from "./commands.ts";
-import { runRework, runReview, runReviewDue, runVerify } from "./gate.ts";
+import { runRework, runReview, runReviewDue, runVerify, runWorkDue } from "./gate.ts";
 import { runCleanup, runIntegrate } from "./integrate.ts";
 import { runScheduler } from "./schedule.ts";
 import { resolveDevKey } from "./service.ts";
@@ -23,11 +23,11 @@ export function createDevPlugin() {
     objects: [
       {
         name: "plan",
-        resolve: (ctx, type, id) => resolveDevKey(ctx.store, type, id, ctx.cwd),
+        resolve: (ctx, type, id) => resolveDevKey(ctx.store, type, id, ctx.cwd, ctx.scope),
       },
       {
         name: "task",
-        resolve: (ctx, type, id) => resolveDevKey(ctx.store, type, id, ctx.cwd),
+        resolve: (ctx, type, id) => resolveDevKey(ctx.store, type, id, ctx.cwd, ctx.scope),
       },
     ],
     steps: [
@@ -39,7 +39,7 @@ export function createDevPlugin() {
       {
         name: "work",
         timeoutSecs: STEP_TIMEOUT_SECS,
-        results: ["done", "nothing", "failed", "cancelled", "interrupted"],
+        results: ["done", "nothing", "failed", "unavailable", "cancelled", "interrupted"],
         run: runWork,
       },
       {
@@ -70,6 +70,13 @@ export function createDevPlugin() {
         timeoutSecs: STEP_TIMEOUT_SECS,
         results: ["ready", "interrupted"],
         run: runReviewDue,
+      },
+      {
+        name: "work_due",
+        // Like review_due: pieces below this timeout until the recorded time.
+        timeoutSecs: STEP_TIMEOUT_SECS,
+        results: ["ready", "interrupted"],
+        run: runWorkDue,
       },
       {
         name: "rework",

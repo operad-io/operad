@@ -8,7 +8,7 @@ import {
   whereFingerprint,
 } from "./paging.ts";
 import type {
-  FactInput,
+  StoreFactInput,
   FactsOptions,
   FactsPage,
   ListOptions,
@@ -20,7 +20,7 @@ import type {
   StoredObject,
 } from "./types.ts";
 
-/** Options for the in-process store used before the storage backends land. */
+/** Options for the in-process plugin store: nothing it keeps survives the process. */
 export interface MemoryPluginStoreOptions {
   readonly root: string;
   /** The clock facts use. Tests inject one. */
@@ -40,9 +40,10 @@ function requireName(value: string, field: string): void {
 }
 
 /**
- * The store the kernel gives plugins before a storage backend is chosen. Each
+ * The in-process plugin store, used when no store location is given (tests and
+ * one-shot use). It is separate from the run log's storage backends. Each
  * object change and each appended fact is kept in order; `facts()` is the
- * history the kernel's views will read.
+ * history the kernel's views read.
  */
 export class MemoryPluginStore implements PluginStore {
   readonly kind = "memory" as const;
@@ -232,12 +233,9 @@ export class MemoryPluginStore implements PluginStore {
     };
   }
 
-  append(input: FactInput): PluginFact {
+  append(input: StoreFactInput): PluginFact {
     requireName(input.type, "fact type");
     const cause = input.cause;
-    if (cause === undefined) {
-      throw new Error("cause: must be a non-empty string");
-    }
     requireName(cause, "cause");
     const fact: PluginFact = {
       sequence: this.entries.length + 1,

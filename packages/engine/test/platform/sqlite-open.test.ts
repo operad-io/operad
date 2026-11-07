@@ -78,23 +78,61 @@ test("WAL is switched on once and left on", () => {
   database.close();
 });
 
+const OPEN_CHILD = join(import.meta.dir, "..", "fixtures", "sqlite-open-child.ts");
+
+test("a database that cannot be WAL is an error, not a loop", () => {
+  const database = new Database(":memory:");
+  setBusyTimeout(database);
+  expect(() => enableWal(database)).toThrow(/could not switch to WAL/);
+  database.close();
+});
+
 test("switching to WAL waits while another process holds the database", async () => {
   const path = join(tempDirectory(), "c.sqlite");
   const holder = Bun.spawn([process.execPath, HOLD_CHILD], {
-    env: { ...process.env, OPERAD_DB_PATH: path, OPERAD_HOLD_MS: "100" },
+    env: { ...process.env, OPERAD_DB_PATH: path },
+    stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
   });
+  const opener = Bun.spawn([process.execPath, OPEN_CHILD], {
+    env: { ...process.env, OPERAD_DB_PATH: path },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  let openerStarted = false;
   try {
     expect(JSON.parse(await firstLine(holder.stdout))).toEqual({ locked: true });
-    const database = new Database(path);
-    setBusyTimeout(database);
-    // The holder keeps its write lock for a moment; a switch that gave up on
-    // SQLITE_BUSY would throw here.
-    enableWal(database);
-    expect(journalMode(database)).toBe("wal");
-    database.close();
+    openerStarted = true;
+    // The holder keeps its write lock until it is told otherwise, so the
+    // opener must meet SQLITE_BUSY; only then does the test let the holder go.
+    // A switch that gave up on SQLITE_BUSY exits without ever reporting it.
+    const openerLines = opener.stdout.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+    const next = async (): Promise<unknown> => {
+      for (;;) {
+        const newline = text.indexOf("\n");
+        if (newline >= 0) {
+          const line = text.slice(0, newline);
+          text = text.slice(newline + 1);
+          return JSON.parse(line);
+        }
+        const { value, done } = await openerLines.read();
+        if (value !== undefined) text += decoder.decode(value, { stream: true });
+        if (done && text.indexOf("\n") < 0) {
+          throw new Error(`the opener ended early: ${await new Response(opener.stderr).text()}`);
+        }
+      }
+    };
+    expect(await next()).toEqual({ busy: true });
+    holder.stdin.write("release\n");
+    await holder.stdin.end();
+    expect(await next()).toEqual({ journalMode: "wal" });
+    expect(await opener.exited).toBe(0);
   } finally {
+    if (openerStarted && opener.exitCode === null) opener.kill();
+    await opener.exited;
     if (holder.exitCode === null) holder.kill();
     await holder.exited;
   }

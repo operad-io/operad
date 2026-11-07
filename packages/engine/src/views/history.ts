@@ -180,7 +180,9 @@ export function historyEntry(fact: HistoryFact): HistoryEntry {
         reason === "recover_unsafe"
           ? "the run stopped and this step cannot be replayed safely"
           : reason === "undeclared_result"
-            ? `the step returned "${text(payload.result) ?? "an unknown result"}", which the flow does not expect`
+            ? `the step returned "${text(payload.result) ?? "an unknown result"}", which the flow does not expect${
+                text(payload.message) === undefined ? "" : `: ${text(payload.message)}`
+              }`
             : "the step did not finish";
       return { time, step, what: `${step ?? "the step"} interrupted`, why };
     }

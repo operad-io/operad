@@ -129,6 +129,8 @@ export interface ViewsOptions {
   readonly store?: PluginStore | undefined;
   readonly log?: LogBackend | undefined;
   readonly cwd?: string | undefined;
+  /** A namespace named explicitly, handed to each type's `resolve`. */
+  readonly scope?: string | undefined;
   readonly clock?: (() => number) | undefined;
   readonly rowTimeoutMs?: number | undefined;
   readonly loadTimeoutMs?: number | undefined;
@@ -332,6 +334,7 @@ export class Views {
   private readonly store: PluginStore;
   private readonly log: LogBackend | undefined;
   private readonly cwd: string;
+  private readonly scope: string | undefined;
   private readonly clock: () => number;
   private readonly rowTimeoutMs: number;
   private readonly loadTimeoutMs: number;
@@ -346,6 +349,7 @@ export class Views {
     this.store = options.store ?? options.registry.store;
     this.log = options.log;
     this.cwd = options.cwd ?? options.registry.workdir;
+    this.scope = options.scope;
     this.clock = options.clock ?? (() => Date.now());
     this.rowTimeoutMs = options.rowTimeoutMs ?? DEFAULT_ROW_TIMEOUT_MS;
     this.loadTimeoutMs = options.loadTimeoutMs ?? DEFAULT_LOAD_TIMEOUT_MS;
@@ -971,7 +975,11 @@ export class Views {
       let key: unknown;
       try {
         key = await resolve(
-          { cwd: this.cwd, store: this.store },
+          {
+            cwd: this.cwd,
+            store: this.store,
+            ...(this.scope === undefined ? {} : { scope: this.scope }),
+          },
           entry.type,
           id,
         );
@@ -1143,7 +1151,7 @@ export class Views {
   private factsFor(cause: string): FactWriter {
     return {
       append: (input) =>
-        this.store.append(input.cause === undefined ? { ...input, cause } : input),
+        this.store.append({ ...input, cause: input.cause ?? cause }),
     };
   }
 

@@ -5,6 +5,7 @@ import {
   openLog,
   PluginRegistry,
   Runner,
+  serveOnce,
   type FlowDefinition,
   type LogBackend,
 } from "../../src/index.ts";
@@ -191,6 +192,36 @@ describe("run access profile", () => {
       expect(message).toContain("access: must be an object");
     } finally {
       await run.close();
+    }
+  });
+
+  test("a run a plugin starts on tick records the profile in the log", async () => {
+    const root = await tempRoot();
+    const storeRoot = join(root, "store");
+    const log = openLog({ backend: "jsonl", path: storeRoot });
+    const { definition } = plugin();
+    const registry = new PluginRegistry(
+      [
+        {
+          ...definition,
+          onTick: (ctx: { start: (request: { flow: string; access: { network: string } }) => unknown }) =>
+            ctx.start({ flow: "guarded", access: { network: "all" } }),
+        },
+      ],
+      {
+        home: root,
+        storeRoot,
+        store: new MemoryPluginStore({ root: storeRoot }),
+        onLog: () => undefined,
+      },
+    );
+    try {
+      await serveOnce({ log, registry, lockRoot: storeRoot, spawnRun: () => undefined });
+      const runs = await log.runs();
+      expect(runs).toHaveLength(1);
+      expect(runs[0]?.access).toEqual({ network: "all" });
+    } finally {
+      await log.close();
     }
   });
 });

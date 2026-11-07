@@ -19,3 +19,4 @@ export {
   statSync,
   writeSync,
 } from "node:fs";
+export { open as openAsync } from "node:fs/promises";

@@ -171,7 +171,8 @@ function checkStep(
       if (typeof target !== "string") {
         throw new FlowError(at(`next.${result}: must name a step or "end"`));
       }
-      next[result] = target;
+      // defineProperty: a result named "__proto__" must become an own key, not hit the setter.
+      Object.defineProperty(next, result, { value: target, enumerable: true, writable: true, configurable: true });
     }
   }
 

@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { open as openAsync } from "node:fs/promises";
 import { join } from "node:path";
 import {
   closeSync,
@@ -15,6 +14,7 @@ import {
   rmSync,
   statSync,
   writeSync,
+  openAsync,
 } from "./file-system.ts";
 import {
   ActiveRunError,
@@ -360,11 +360,17 @@ function parseFact(value: unknown, runId: string): Fact {
   if (typeof record.time !== "number" || !Number.isFinite(record.time)) {
     throw new CorruptLogError(runId, "a fact has no time");
   }
+  if (!Object.hasOwn(record, "payload")) throw new CorruptLogError(runId, "a fact has no payload");
+  try {
+    assertJsonValue(record.payload, "fact payload");
+  } catch {
+    throw new CorruptLogError(runId, "a fact payload is not JSON");
+  }
   return {
     runId,
     seq: record.seq as number,
     kind: record.kind,
-    payload: record.payload as JsonValue,
+    payload: record.payload,
     cause: record.cause,
     time: record.time,
   };

@@ -266,6 +266,19 @@ describe("plugin registry", () => {
     expect(logs).toEqual([]);
   });
 
+  test("takeStartedRuns drains, so a loop never starts a run twice", async () => {
+    const root = await tempRoot();
+    const registry = new PluginRegistry([defineTickPlugin()], {
+      storeRoot: join(root, "store"),
+    });
+    await registry.tick();
+    expect(registry.takeStartedRuns()).toHaveLength(1);
+    expect(registry.startedRuns).toEqual([]);
+    await registry.tick();
+    expect(registry.takeStartedRuns()).toHaveLength(1);
+    expect(registry.takeStartedRuns()).toEqual([]);
+  });
+
   test("logs an onTick failure instead of raising it", async () => {
     const root = await tempRoot();
     const logs: string[] = [];

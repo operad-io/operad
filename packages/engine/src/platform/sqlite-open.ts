@@ -41,16 +41,25 @@ function waitForWriter(database: Database): void {
  * Switch the store to WAL. Two processes opening a fresh store race for the
  * exclusive lock the switch takes: the loser sees SQLITE_BUSY at once, waits
  * for the winner through the busy handler, then sees the mode is already WAL.
+ * `onBusy` is told each time the switch met SQLITE_BUSY, so a test can act on
+ * that event instead of guessing a duration.
+ *
+ * A database that cannot be WAL (an in-memory one stays in MEMORY mode and
+ * raises nothing) is an error, not something to retry.
  */
-export function enableWal(database: Database): void {
+export function enableWal(database: Database, onBusy?: () => void): void {
   if (currentJournalMode(database) === "wal") return;
   for (;;) {
     try {
-      database.run("PRAGMA journal_mode = WAL");
-      return;
+      const mode = database
+        .query<{ journal_mode: string }, []>("PRAGMA journal_mode = WAL")
+        .get()?.journal_mode;
+      if (mode === "wal") return;
+      throw new Error(`the database could not switch to WAL (journal mode stays ${mode ?? "unknown"})`);
     } catch (error) {
       if (!isBusy(error)) throw error;
     }
+    onBusy?.();
     waitForWriter(database);
     if (currentJournalMode(database) === "wal") return;
   }

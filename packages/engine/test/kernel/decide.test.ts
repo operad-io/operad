@@ -64,7 +64,7 @@ function timedFlow(): FlowDefinition {
   });
 }
 
-function checkFlow(): FlowDefinition {
+function checkFlow(params?: Record<string, unknown>): FlowDefinition {
   return validateFlow(
     {
       name: "watch",
@@ -73,7 +73,7 @@ function checkFlow(): FlowDefinition {
         {
           id: "watch",
           kind: "wait",
-          params: { check: "dev/command" },
+          params: { check: "dev/command", ...(params === undefined ? {} : { params }) },
           replay: "safe",
           next: { ready: "end", interrupted: "end" },
         },
@@ -224,6 +224,22 @@ describe("decide: step_result", () => {
     expect(late.facts).toEqual([]);
   });
 
+  test("an undeclared result keeps what the step said", () => {
+    const runner = new Runner(pluginFlow());
+    runner.apply({ kind: "start" });
+    const decision = runner.apply({
+      kind: "step_result",
+      effectId: "run:1",
+      result: "surprise",
+      data: { reason: "error", message: "boom" },
+    });
+    expect(payloadOf(decision.facts[0] ?? {})).toMatchObject({
+      reason: "undeclared_result",
+      result: "surprise",
+      message: "boom",
+    });
+  });
+
   test("turns an undeclared result into an interrupted failure", () => {
     const runner = new Runner(pluginFlow());
     runner.apply({ kind: "start" });
@@ -364,11 +380,31 @@ describe("decide: tick", () => {
     expect(runner.state.status).toBe("ended");
   });
 
+  test("a poll_check effect carries the wait's check params", () => {
+    const runner = new Runner(checkFlow({ line: "true" }));
+    const start = runner.apply({ kind: "start" });
+    expect(start.effects).toEqual([
+      {
+        kind: "poll_check",
+        effectId: "watch:1",
+        step: "watch",
+        check: "dev/command",
+        params: { line: "true" },
+      },
+    ]);
+  });
+
   test("asks a check step to poll and resolves its result", () => {
     const runner = new Runner(checkFlow());
     const start = runner.apply({ kind: "start" });
     expect(start.effects).toEqual([
-      { kind: "poll_check", effectId: "watch:1", step: "watch", check: "dev/command" },
+      {
+        kind: "poll_check",
+        effectId: "watch:1",
+        step: "watch",
+        check: "dev/command",
+        params: null,
+      },
     ]);
     expect(runner.state.status).toBe("waiting");
     const tick = runner.apply({ kind: "tick" }, 5_000);

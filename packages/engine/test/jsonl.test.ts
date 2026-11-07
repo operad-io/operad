@@ -111,3 +111,24 @@ test("a subscription learns of a write when the watch never fires", async () => 
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("a fact line without a payload is a corrupt log, not a fact with no payload", async () => {
+  mkdirSync(TEST_ROOT, { recursive: true });
+  const directory = join(TEST_ROOT, `jsonl-nopayload-${randomUUID()}`);
+  mkdirSync(directory, { recursive: true });
+  const backend = openJsonlLogBackend(directory);
+  try {
+    const run = await backend.startRun("flow", "object");
+    appendFileSync(
+      runPath(directory, run.runId),
+      `${JSON.stringify({ type: "batch", facts: [{ runId: run.runId, seq: 1, kind: "k", cause: 1, time: 1 }] })}\n`,
+    );
+    const read = async (): Promise<void> => {
+      for await (const _fact of backend.read(run.runId)) void _fact;
+    };
+    await expect(read()).rejects.toThrow(/payload/);
+  } finally {
+    await backend.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

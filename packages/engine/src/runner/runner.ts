@@ -9,14 +9,20 @@ import type { ObjectRef } from "../plugin/types.ts";
 import { messageOf } from "../plugin/errors.ts";
 import type { StepEvent, TriggerView } from "../trigger/types.ts";
 import { Worker } from "node:worker_threads";
+import { KILL_GRACE_MS } from "../platform/index.ts";
 import { acquireLock, runLockPath, type LockHandle } from "./lock.ts";
 import { appendInput, applyInput, parseObjectKey, readState } from "./service.ts";
 
 /** The wall time a plugin step may take before the run records a failure. */
 export const DEFAULT_STEP_TIMEOUT_MS = 5 * 60 * 1000;
 
-/** How long a worker gets to stop what it started before it is terminated. */
-const WORKER_ABORT_GRACE_MS = 1000;
+/**
+ * How long a worker gets to stop what it started before it is terminated. A
+ * process-group stop may wait one grace for the sentinel's `ready` and one more
+ * after SIGTERM before it sends SIGKILL, so this exceeds both plus latency;
+ * terminating sooner would leave the sentinel and its line running.
+ */
+export const WORKER_ABORT_GRACE_MS = 2 * KILL_GRACE_MS + 1000;
 
 const STEP_WORKER = new URL("./step-worker.ts", import.meta.url);
 
@@ -637,7 +643,6 @@ export class Runner {
         controller.abort();
         resolve("timeout");
       }, this.timeoutMsFor(use));
-      if (typeof timer === "object" && "unref" in timer) timer.unref();
     });
 
     const step = this.registry.runStep(use, params, {

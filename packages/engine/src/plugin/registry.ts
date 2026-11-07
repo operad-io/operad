@@ -937,6 +937,15 @@ export class PluginRegistry {
     this.settingsByPlugin = settingsByPlugin;
     const kept = normalized.filter((plugin) => !refused.has(plugin.name));
     validatePluginSet(kept);
+    for (const plugin of kept) {
+      for (const command of plugin.commands) {
+        if (this.kernelVerbs.has(command.name)) {
+          throw new PluginError(
+            `plugin "${plugin.name}": command "${command.name}" clashes with the kernel verb "${command.name}"`,
+          );
+        }
+      }
+    }
     if (typeof this.store.declare === "function") {
       for (const plugin of kept) {
         for (const object of plugin.objects) {
@@ -1345,8 +1354,9 @@ export class PluginRegistry {
   }
 
   /**
-   * Resolves a CLI verb. `<plugin> <verb>` always wins; `<verb>` works when no
-   * kernel verb and exactly one plugin declare the name.
+   * Resolves a CLI verb. `<plugin> <verb>` always wins; `<verb>` works when
+   * exactly one plugin declares the name (a plugin command that shares a name
+   * with a kernel verb is refused when the registry is built).
    */
   resolveCommand(argv: readonly string[]): ResolvedCommand | undefined {
     const first = argv[0];
@@ -1364,8 +1374,6 @@ export class PluginRegistry {
         };
       }
     }
-
-    if (this.kernelVerbs.has(first)) return undefined;
 
     let owner:
       | { readonly plugin: LoadedPlugin; readonly command: CommandDefinition }
@@ -1438,7 +1446,27 @@ export class PluginRegistry {
     const entries: PendingEntry[] = [];
     for (const run of runs) {
       const object = await this.store.get(run.object.type, run.object.id);
-      if (object === undefined) continue;
+      if (object === undefined) {
+        // The run still waits; show it without actions instead of hiding it.
+        this.log(
+          `pending: run "${run.runId}" waits on ${run.object.type} "${run.object.id}", which is not in the store`,
+        );
+        entries.push({
+          runId: run.runId,
+          prompt: run.prompt,
+          choices: run.choices,
+          object: {
+            type: run.object.type,
+            id: run.object.id,
+            data: {},
+            version: 0,
+            cause: "missing",
+            at: 0,
+          },
+          actions: [],
+        });
+        continue;
+      }
 
       const actions: PendingActionView[] = [];
       for (const { plugin, action } of this.actionsFor(object.type)) {
@@ -1543,9 +1571,12 @@ export class PluginRegistry {
     }
   }
 
-  /** The run starts plugins asked for on the latest ticks. */
+  /**
+   * The run starts plugins asked for that nobody took yet. Reading does not
+   * drain; a loop that ticks each pass calls `takeStartedRuns()` instead.
+   */
   get startedRuns(): readonly StartRunRequest[] {
-    return this.starts;
+    return [...this.starts];
   }
 
   /** The loaded source plugins, with the function that starts each one. */
@@ -1756,9 +1787,7 @@ export class PluginRegistry {
   private factsFor(cause: string): FactWriter {
     return {
       append: (input: FactInput) =>
-        this.store.append(
-          input.cause === undefined ? { ...input, cause } : input,
-        ),
+        this.store.append({ ...input, cause: input.cause ?? cause }),
     };
   }
 
