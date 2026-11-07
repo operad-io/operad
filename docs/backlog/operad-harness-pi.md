@@ -53,3 +53,23 @@ dogfood 跑通了 `harness-radian`。`operad-harness.md` 决定 1 说一种 harn
 ## 验收
 
 operad 仓库里一个 dogfood 任务从创建跑到 `review`，worker 是 `harness-pi/agent`，用的是用户自己的 pi 登录；它的事实里有 `usage`、以微美元计的 `cost`、会话文件路径；第二个步骤用 `resumeSession` 接上同一个会话并在日志里看到旧消息在上下文中；一次命中 `denyCommands` 的 `bash` 调用被阻断，日志有原因，agent 继续跑完；一个带 `askCommands` 的访问档在启动时被拒并说出字段名；`operad plugin check` 对 `harness-pi` 通过；worker 子进程被 `kill -9` 后步骤以 `interrupted` 结束而 `operad serve` 不受影响。
+
+### 验收怎么分
+
+测试覆盖的（`bash scripts/verify.sh`，不打真模型，不用用户的 pi 登录）：
+
+- 事实里有 `usage`、微美元 `cost`、会话文件路径：`worker.test.ts` 的 `a prompt that ends writes the lines in order and a Result with usage, cost and sessionId`，步骤一侧是 `plugin.test.ts` 的 `a done run has the facts harness-radian records for the same data`；都用假 provider。
+- `resumeSession` 接上同一个会话、旧消息在上下文里：`worker.test.ts` 的 `resume: the second run sees the first answer in the context the fake model receives`，透传是 `plugin.test.ts` 的 `resumeSession is passed through to the worker's stdin`。
+- 命中 `denyCommands` 的 `bash` 被阻断、有原因、run 继续到 `done`：`worker.test.ts` 的 `a denied bash call is blocked, a blocked line is written, the model gets the reason and the run ends done`，匹配器本身在 `access-match` 的测试里。
+- 带 `askCommands` 的访问档在启动时被拒并说出字段名：`plugin.test.ts` 的 `a profile with askCommands is refused at start and the field is named`。
+- `operad plugin check` 对 `harness-pi` 通过：`plugin.test.ts` 的 `passes with the default worker program`（插件的 `check()`）。
+- `dev` 的 `worker.use` 换成 `harness-pi/agent`：`packages/dev/test/harness-pi.test.ts`（假 worker 把任务带到 `review`）和 `packages/dev/test/dogfood-config.test.ts`（本仓库 `.operad/dev.json` 换成 pi 后通过校验，启用插件后该步骤能解析）。
+- worker 被 `SIGKILL` 后步骤以 `interrupted` 结束，测试进程不受影响：`plugin.test.ts` 的 `a worker killed with SIGKILL ends interrupted and leaves the test alive`（杀的是测试自己起的子进程，不碰 `operad serve`）。
+
+合并后由 lead 手工核的（测试不能做，也不该做）：
+
+- 真实的 pi 登录：`pi` 里 `/login`，operad 用这份登录跑通一次真模型，默认模型来自用户的 pi。
+- 真实的续接：同一任务的第二个步骤用上一个 `sessionId` 接上，真模型的回答里看得到旧消息。
+- 真实的 `kill -9`：对 `operad serve` 起的真 worker 子进程 `kill -9`，步骤以 `interrupted` 结束，`operad serve` 不受影响。
+- 一个 dogfood 任务从创建跑到 `review`，worker 是 `harness-pi/agent`，事实里的 `usage` 和 `cost` 是真数。
+- 待决 1 的观察：dogfood 期间 `auth.json` 有没有被互相覆盖。

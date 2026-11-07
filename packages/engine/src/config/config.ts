@@ -62,6 +62,12 @@ export const DEFAULT_PLUGINS: readonly string[] = [
   "dev",
 ];
 
+/**
+ * Plugins shipped with operad that `operad init` does not install. They are
+ * not in the default config; `plugin enable <name>` adds them.
+ */
+export const OPTIONAL_PLUGINS: readonly string[] = ["harness-pi"];
+
 /** The package name of a plugin shipped with operad. */
 export function defaultPluginModule(name: string): string {
   return `@operad-io/${name}`;
@@ -381,9 +387,11 @@ export async function setPluginEnabled(
   }
   const entry = plugins[name];
   if (entry === undefined) {
-    throw new ConfigError(`${file}: plugins.${name}: no such plugin`);
-  }
-  if (typeof entry === "string") {
+    if (!enabled || !OPTIONAL_PLUGINS.includes(name)) {
+      throw new ConfigError(`${file}: plugins.${name}: no such plugin`);
+    }
+    plugins[name] = { module: defaultPluginModule(name), enabled: true };
+  } else if (typeof entry === "string") {
     plugins[name] = { module: entry, enabled };
   } else if (isRecord(entry)) {
     entry.enabled = enabled;

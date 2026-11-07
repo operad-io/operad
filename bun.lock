@@ -6,6 +6,7 @@
       "name": "operad-workspace",
       "dependencies": {
         "@operad-io/engine": "workspace:*",
+        "@operad-io/harness-pi": "workspace:*",
         "@operad-io/harness-radian": "workspace:*",
         "@operad-io/source-cron": "workspace:*",
       },
@@ -29,6 +30,7 @@
       "dependencies": {
         "@operad-io/dev": "workspace:*",
         "@operad-io/engine": "workspace:*",
+        "@operad-io/harness-pi": "workspace:*",
         "@operad-io/harness-radian": "workspace:*",
         "@operad-io/shell": "workspace:*",
       },
@@ -53,6 +55,8 @@
       "dependencies": {
         "@earendil-works/pi-coding-agent": "1.5.0",
         "@operad-io/access-match": "workspace:*",
+        "@operad-io/engine": "workspace:*",
+        "@operad-io/harness-process": "workspace:*",
       },
     },
     "packages/harness-process": {

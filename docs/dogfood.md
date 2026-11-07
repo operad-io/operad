@@ -24,6 +24,9 @@ checks are:
   (with git's own message) or has no main branch. It pushes nothing, so no ref
   can be left behind.
 
+`harness-pi` is optional and is not installed by `init`; see "Using pi as the
+worker" below.
+
 Then register the checkout:
 
 ```sh
@@ -179,3 +182,44 @@ to send it to a channel.
 Delete nothing by hand under `.operad-worktrees`; `cleanup` removes the task's
 worktrees and branches after a merge. If cleanup reports a failure, the task is
 still merged; remove the leftover with the command the line names.
+
+## Using pi as the worker
+
+`harness-pi` runs the pi coding agent instead of radian. It is not in the
+default config, so turn it on first. This makes the next command load it:
+
+```sh
+operad plugin enable harness-pi
+```
+
+**Log in to pi.** Run `pi` and type `/login`, then pick the provider. operad
+uses your own pi login: the credentials file `~/.pi/agent/auth.json` (set
+`authPath` in the plugin's settings for another file). operad never reads the
+file; it hands the path to pi. pi and operad may refresh the same login at once;
+pi locks the file for that.
+
+**Which model.** The model is pi's own default model, the one `pi` starts with
+for you, unless the plugin's `model` setting (`provider/id`) names one.
+`thinkingLevel` works the same way. The custom-models file is
+`~/.pi/agent/models.json` (`modelsPath`).
+
+**Where the sessions are.** Session files are in `~/.operad/harness/pi/sessions`,
+apart from your own pi sessions, so `pi --continue` does not see them.
+
+**Switch the worker.** In `.operad/dev.json` change `worker.use`, and set
+`args` to `[]` (radian's flags are for radian):
+
+```json
+{ "worker": { "use": "harness-pi/agent", "args": [] } }
+```
+
+The reviewer keeps its own `reviewer.use`; change it separately if you want pi
+to review too.
+
+**Switch back.** Put `worker` in `.operad/dev.json` back to
+`"use": "harness-radian/agent"` with its `args` (`--provider`, `--model`). You do
+not need to disable `harness-pi`; `operad plugin disable harness-pi` removes it
+if you want.
+
+The settings, the step's results and the model-error rules are in
+`packages/harness-pi/README.md`.
