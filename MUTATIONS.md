@@ -759,6 +759,7 @@ each task: `TK0001-M1`.
 - [harness-radian](packages/harness-radian/MUTATIONS.md)
 - [shell](packages/shell/MUTATIONS.md)
 - [source-cron](packages/source-cron/MUTATIONS.md)
+- [tui](packages/tui/MUTATIONS.md)
 ## T-0020 — pairing, links and the notification hook
 
 | id | file | mutation | failing test |

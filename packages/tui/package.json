@@ -1,0 +1,12 @@
+{
+  "name": "@operad-io/tui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@operad-io/engine": "workspace:*"
+  }
+}
