@@ -5,6 +5,9 @@
 
 import { readProfile } from "@operad-io/access-match";
 
+/** The longest one bash call may run when the settings do not say, in seconds. */
+export const DEFAULT_BASH_TIMEOUT_SECS = 1800;
+
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type WorkerThinkingLevel = (typeof THINKING_LEVELS)[number];
 
@@ -22,6 +25,8 @@ export interface WorkerInput {
   readonly model?: string | undefined;
   readonly thinkingLevel?: WorkerThinkingLevel | undefined;
   readonly access?: Readonly<Record<string, unknown>> | undefined;
+  /** The longest one bash call may run, in seconds; unset means `DEFAULT_BASH_TIMEOUT_SECS`. */
+  readonly bashTimeoutSecs?: number | undefined;
 }
 
 export interface WorkerUsage {
@@ -132,6 +137,14 @@ export function parseInput(value: unknown): ParsedInput {
     thinkingLevel = known;
   }
 
+  const bashTimeoutSecs = value["bashTimeoutSecs"];
+  if (
+    bashTimeoutSecs !== undefined &&
+    (typeof bashTimeoutSecs !== "number" || !Number.isInteger(bashTimeoutSecs) || bashTimeoutSecs < 1)
+  ) {
+    return { ok: false, message: "bashTimeoutSecs must be a positive integer" };
+  }
+
   const access = value["access"];
   if (access !== undefined && !isRecord(access)) {
     return { ok: false, message: "access must be an object" };
@@ -155,6 +168,7 @@ export function parseInput(value: unknown): ParsedInput {
       model,
       thinkingLevel,
       access,
+      bashTimeoutSecs,
     },
   };
 }
