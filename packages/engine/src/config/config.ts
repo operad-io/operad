@@ -40,11 +40,28 @@ export const DEFAULT_HTTP: HttpConfig = {
   listen: ["127.0.0.1"],
 };
 
+/** What can start a notification. */
+export type NotifyTrigger = "waiting";
+
+/** The command `serve` runs when something waits for a person. */
+export interface NotifyConfig {
+  /** A shell line, or null for no notifications. */
+  readonly command: string | null;
+  readonly on: readonly NotifyTrigger[];
+}
+
+/** The notify defaults: no command, and the one trigger there is. */
+export const DEFAULT_NOTIFY: NotifyConfig = {
+  command: null,
+  on: ["waiting"],
+};
+
 /** The keys of `$OPERAD_HOME/config.json` the kernel reads. */
 export interface OperadConfig {
   readonly plugins: readonly PluginConfigEntry[];
   readonly store: StoreConfig;
   readonly http: HttpConfig;
+  readonly notify: NotifyConfig;
 }
 
 /** A config file is not usable; the message names the file and the field. */
@@ -88,6 +105,7 @@ export function defaultConfig(home: string): OperadConfig {
     })),
     store: { backend: "jsonl", path: join(home, "store") },
     http: DEFAULT_HTTP,
+    notify: DEFAULT_NOTIFY,
   };
 }
 
@@ -204,6 +222,34 @@ function readHttp(value: unknown, file: string): HttpConfig {
   };
 }
 
+function readNotify(value: unknown, file: string): NotifyConfig {
+  if (value === undefined) return DEFAULT_NOTIFY;
+  if (!isRecord(value)) {
+    throw new ConfigError(`${file}: notify: must be an object`);
+  }
+  const command = value.command;
+  if (
+    command !== undefined &&
+    command !== null &&
+    (typeof command !== "string" || command.trim().length === 0)
+  ) {
+    throw new ConfigError(
+      `${file}: notify.command: must be a non-empty string or null`,
+    );
+  }
+  const on = value.on;
+  if (
+    on !== undefined &&
+    (!Array.isArray(on) || !on.every((entry) => entry === "waiting"))
+  ) {
+    throw new ConfigError(`${file}: notify.on: must be an array of "waiting"`);
+  }
+  return {
+    command: command ?? null,
+    on: on === undefined ? DEFAULT_NOTIFY.on : [...new Set(on as NotifyTrigger[])],
+  };
+}
+
 function readStore(value: unknown, file: string, home: string): StoreConfig {
   if (value === undefined) return defaultConfig(home).store;
   if (!isRecord(value)) {
@@ -278,6 +324,7 @@ export async function readConfig(
       path: configured.startsWith("/") ? configured : resolve(home, configured),
     },
     http: readHttp(raw.http, file),
+    notify: readNotify(raw.notify, file),
   };
 }
 
@@ -306,6 +353,9 @@ export function configJson(config: OperadConfig): Record<string, unknown> {
       port: config.http.port,
       listen: [...config.http.listen],
     },
+    ...(config.notify.command === null
+      ? {}
+      : { notify: { command: config.notify.command, on: [...config.notify.on] } }),
   };
 }
 

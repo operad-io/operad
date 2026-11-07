@@ -30,6 +30,7 @@ import {
   lockHeld,
   messageOf,
   openConfigLog,
+  Notifier,
   OPTIONAL_PLUGINS,
   openPluginStore,
   parseObjectKey,
@@ -1374,6 +1375,13 @@ async function commandServe(
     );
   }
   const kernel = kernelFor(context, io, rules);
+  const notifier = new Notifier({
+    home: context.home,
+    config: context.config.notify,
+    log: context.log,
+    titleOf: async (type, id) => (await context.views.get(`${type}:${id}`)).row.title,
+    onLog: (message) => io.error(`${message}\n`),
+  });
   let http: HttpServerHandle | undefined;
   try {
     if (context.config.http.enabled) {
@@ -1403,8 +1411,15 @@ async function commandServe(
       intervalMs: Number.isFinite(parsed) && parsed > 0 ? parsed : 1_000,
       signal: controller.signal,
       clock: () => Date.now(),
+      // The command can take 30 seconds; the loop must not wait for it.
+      onPass: () => {
+        notifier.pass().catch((error: unknown) => {
+          io.error(`notify: ${error instanceof Error ? error.message : String(error)}\n`);
+        });
+      },
     });
   } finally {
+    await notifier.stop();
     if (http !== undefined) await http.stop();
     await kernel.stopSources();
     process.removeListener("SIGINT", stop);

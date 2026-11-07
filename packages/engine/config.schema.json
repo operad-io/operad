@@ -75,6 +75,25 @@
         }
       },
       "additionalProperties": false
+    },
+    "notify": {
+      "description": "A command serve runs when something waits for a person, once per wait. It gets OPERAD_ID, OPERAD_TITLE, OPERAD_REASON and OPERAD_LINK in its environment.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "default": null,
+          "description": "A shell line run with sh -c in the operad home, for at most 30 seconds. null turns notifications off."
+        },
+        "on": {
+          "type": "array",
+          "items": { "enum": ["waiting"] },
+          "default": ["waiting"],
+          "description": "What triggers the command. Only waiting exists: an object now waits for a person."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": true
