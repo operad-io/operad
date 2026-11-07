@@ -163,6 +163,7 @@ param (`wallTimeSecs`, `stallSecs`) overrides the setting of the same name.
 | `modelsPath` | string | `~/.pi/agent/models.json` | pi's custom models file |
 | `wallTimeSecs` | number | `3600` | the longest one run may take; at most 28500 |
 | `stallSecs` | number | `600` | how long a run may print nothing while no tool call is open |
+| `bashTimeoutSecs` | integer, 1 or more | `1800` | the longest one bash call may run, in seconds; it is the default and the maximum for a call. A call that reaches it is stopped and the model gets a tool error; the run goes on |
 | `concurrency` | object, model to positive integer | `{}` | how many runs of one model may go at once, such as `{ "opencode-go/deepseek-v4.1-flash": 2 }`; a model not listed has no limit |
 
 How `concurrency` limits runs, what the key is and how a queued step shows
@@ -192,6 +193,8 @@ store like every step log.
 
 A stall is silence while no tool call is open: pi's `tool_execution_start` opens
 one and `tool_execution_end` closes it. The wall time always applies.
+
+An open tool call is therefore not a stall by design; `bashTimeoutSecs` is what bounds one bash call. The worker enforces it by setting the `timeout` of every bash tool call in its `tool_call` handler (pi's bash tool takes a `timeout` in seconds and has no default). The worker also drops `BASH_ENV` and `ENV` from its environment; pi runs `bash -c`, so the user's aliases and functions do not apply.
 
 ### Model errors
 

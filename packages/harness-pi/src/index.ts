@@ -38,7 +38,12 @@ import {
   type ToolEvent,
 } from "@operad-io/harness-process";
 import { DEFAULT_PI_COMMAND, findPi, PI_FLOOR } from "./pi-install.ts";
-import { THINKING_LEVELS, type WorkerResult, type WorkerThinkingLevel } from "./protocol.ts";
+import {
+  DEFAULT_BASH_TIMEOUT_SECS,
+  THINKING_LEVELS,
+  type WorkerResult,
+  type WorkerThinkingLevel,
+} from "./protocol.ts";
 
 /** How long an agent may run before the step stops it. */
 export const DEFAULT_WALL_TIME_SECS = 3600;
@@ -133,6 +138,13 @@ const PLUGIN_SETTINGS = {
       default: DEFAULT_STALL_SECS,
       description: "How long an agent may be silent while no tool call is open.",
     },
+    bashTimeoutSecs: {
+      type: "integer" as const,
+      minimum: 1,
+      default: DEFAULT_BASH_TIMEOUT_SECS,
+      description:
+        "The longest one bash call may run, in seconds. A longer call is stopped and the model gets an error; the run goes on.",
+    },
     concurrency: CONCURRENCY_SETTING,
   },
   additionalProperties: false as const,
@@ -161,6 +173,14 @@ function optionalText(value: unknown, at: string): string | undefined {
 function secs(value: unknown, at: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     throw new Error(`${at}: must be a positive number of seconds`);
+  }
+  return value;
+}
+
+function optionalPositiveInteger(value: unknown, at: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new Error(`${at}: must be a positive integer`);
   }
   return value;
 }
@@ -493,6 +513,10 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             input.stallSecs ?? ctx.settings.stallSecs ?? DEFAULT_STALL_SECS,
             `${at}: params.stallSecs`,
           );
+          const bashTimeoutSecs = optionalPositiveInteger(
+            ctx.settings.bashTimeoutSecs,
+            `${at}: settings.bashTimeoutSecs`,
+          );
           const model =
             flags.model ?? optionalText(ctx.settings.model, `${at}: settings.model`);
           const thinkingLevel =
@@ -541,6 +565,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             ...(resumeSession === undefined ? {} : { resumeSession }),
             ...(model === undefined ? {} : { model }),
             ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
+            ...(bashTimeoutSecs === undefined ? {} : { bashTimeoutSecs }),
             ...(isRecord(ctx.access) ? { access: ctx.access } : {}),
           };
 

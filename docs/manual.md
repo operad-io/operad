@@ -479,6 +479,49 @@ command such as the gate runs to its end inside the turn. The setting
 call may run, in seconds. If claude nevertheless starts a second session after it
 gave its result, the step ends `failed` with a message that says so.
 
+### Long commands under pi
+
+`harness-pi` gives each call of pi's bash tool a time limit, so a command that
+never ends (a read from a FIFO nobody writes to) cannot hold a run until its
+wall time. The setting `bashTimeoutSecs` (integer, 1 or more, default `1800`) is
+the longest one bash call may run, in seconds. It is both the default and the
+maximum: a call the model gives no timeout runs under it, and a timeout the model
+asks for above it is brought down to it. When a call reaches the limit, pi stops
+the command and its children and the model gets an error that says the command
+timed out; the run goes on, so the model can try something else. A value that is
+not an integer of 1 or more (0, a negative number, a string) is refused when the
+plugin loads, with the field path. The setting is read when a step starts, so a
+change takes effect with the next agent step.
+
+The default is 1800 s (30 minutes), the same as `harness-claude`, because a gate
+such as `bash scripts/verify.sh` (install, type-check and the whole test suite)
+runs in the foreground inside one call and must not be cut short. A project whose
+gate is faster can set a lower value to catch a stuck command sooner.
+
+`stallSecs` is unchanged: it measures silence while no tool call is open, and an
+open tool call is not a stall (see the README of `harness-pi`). The time limit
+above is what bounds a single tool call.
+
+### The agent's shell and the user's aliases
+
+An alias or function from the user's own shell setup, such as `ls` defined as
+`eza --git --hyperlink`, must not change what a command in an agent run does.
+
+- `harness-pi`: pi runs each command as `bash -c` (a non-interactive shell with
+  no rc files, so no aliases or functions). The worker also removes `BASH_ENV`
+  and `ENV` from its environment, the two variables that make a non-interactive
+  shell read a file.
+- `harness-radian`: radian runs `/bin/sh -c`, which reads no user setup.
+- `harness-claude`: claude's Bash tool sources a snapshot of the user's
+  `~/.zshrc` or `~/.bashrc` before each command, and claude has no
+  supported switch (environment variable or setting) that turns the snapshot
+  off. `CLAUDE_CODE_SHELL` only picks which of zsh and bash is used; the
+  snapshot is read from the home directory. operad does not work around this: a
+  user whose rc file defines an alias that hangs (or changes the output of) a
+  common command should guard it there, for example `[[ -o interactive ]]`
+  around the alias, or define it only in a file that agents do not read. The
+  `bashTimeoutSecs` limit above still stops a hung command after its time.
+
 ## Usage and end results
 
 Every agent step records what the run used in one field of its data, `usage`,

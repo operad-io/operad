@@ -167,6 +167,27 @@ describe("harness-pi/agent", () => {
     expect((dataOf(result).usage as { costMicros: unknown }).costMicros).toBeNull();
   });
 
+  test("bashTimeoutSecs reaches the worker; unset it is 1800", async () => {
+    const custom = await setup("done", { bashTimeoutSecs: 900 });
+    await runAgent(custom, { prompt: "hello", cwd: custom.root });
+    expect(recorded(custom).bashTimeoutSecs).toBe(900);
+    const plain = await setup("done");
+    await runAgent(plain, { prompt: "hello", cwd: plain.root });
+    expect(recorded(plain).bashTimeoutSecs).toBe(1800);
+  });
+
+  test("a bashTimeoutSecs of 0, below 0 or not a number refuses the plugin at load and names the field", () => {
+    for (const bad of [0, -5, "60", 1.5]) {
+      const registry = new PluginRegistry([createPiHarnessPlugin()], {
+        home: "/tmp",
+        cwd: "/tmp",
+        store: new MemoryPluginStore({ root: "/tmp/unused-store" }),
+        settings: { "harness-pi": { bashTimeoutSecs: bad } },
+      });
+      expect(registry.names()).toEqual([]);
+    }
+  });
+
   test("the worker gets the prompt, the directories, the settings and no discovery", async () => {
     const env = await setup("done", {
       model: "fake/model",
