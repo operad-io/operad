@@ -216,12 +216,7 @@ export async function readConfig(
   const store = readStore(raw.store, file, home);
   const configured = store.path;
   return {
-    // A config that does not mention plugins gets the default ones, as a
-    // missing config file does.
-    plugins:
-      raw.plugins === undefined
-        ? defaultConfig(home).plugins
-        : readPlugins(raw.plugins, file),
+    plugins: readPlugins(raw.plugins, file),
     store: {
       backend: store.backend,
       path: configured.startsWith("/") ? configured : resolve(home, configured),
@@ -261,6 +256,22 @@ export async function writeConfig(
   );
 }
 
+/**
+ * A config that does not mention `plugins` is a config someone wrote for the
+ * store only; `init` installs the default plugins into it and leaves the rest.
+ */
+async function addDefaultPlugins(home: string, file: string): Promise<void> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(file, "utf8"));
+  } catch {
+    return; // readConfig reports an unreadable file with its own message
+  }
+  if (!isRecord(raw) || raw.plugins !== undefined) return;
+  const plugins = configJson(defaultConfig(home)).plugins;
+  await writeFile(file, `${JSON.stringify({ ...raw, plugins }, null, 2)}\n`);
+}
+
 /** Writes the default config when the home has none. Idempotent. */
 export async function ensureConfig(home: string): Promise<{
   readonly created: boolean;
@@ -282,6 +293,7 @@ export async function ensureConfig(home: string): Promise<{
       "code" in error &&
       error.code === "EEXIST"
     ) {
+      await addDefaultPlugins(home, file);
       return { created: false, path: file, config: await readConfig(home) };
     }
     throw error;

@@ -671,7 +671,7 @@
 | TK0008-M5 | `packages/engine/src/plugin/registry.ts` | accepted a plugin command named like a kernel verb | `plugin registry validation > refuses a plugin command that shares a name with a kernel verb` |
 | TK0008-M6 | `packages/engine/src/plugin/registry.ts` | `pending` skipped a waiting run whose object is missing from the store | `plugin registry validation > pending keeps a waiting run whose object is missing from the store` |
 | TK0008-M7 | `packages/engine/src/runner/service.ts` | `parseObjectKey` read `flow:<plugin>/<flow>` as a real object | `serve loop > a run started without an object has no object` |
-| TK0008-M8 | `packages/engine/src/config/config.ts` | a config without a `plugins` key loaded no plugins | `operad config > a config without plugins gets the default plugins` |
+| TK0008-M8 | `packages/engine/src/config/config.ts` | `init` no longer added the default plugins to a config that names none | `operad config > init adds the default plugins to a config that names none` |
 | TK0008-M9 | `packages/engine/src/config/config.ts` | an older config's moved module name was not mapped | `operad config > an older config's moved module name still loads` |
 | TK0008-M10 | `packages/cli/src/main.ts` | a typed history id resolved an object type no plugin declares | `operad command > history does not resolve an object type no plugin declares` |
 | TK0008-M11 | `packages/engine/src/views/presentation.ts` | the named repository was not handed to a type's resolver | `operad with the dev plugin > show and an action take --repo for a bare id from outside any repository` |

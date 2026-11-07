@@ -230,12 +230,12 @@ describe("decide: step_result", () => {
     const decision = runner.apply({
       kind: "step_result",
       effectId: "run:1",
-      result: "failed",
+      result: "surprise",
       data: { reason: "error", message: "boom" },
     });
     expect(payloadOf(decision.facts[0] ?? {})).toMatchObject({
       reason: "undeclared_result",
-      result: "failed",
+      result: "surprise",
       message: "boom",
     });
   });

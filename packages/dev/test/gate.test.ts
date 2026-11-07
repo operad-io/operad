@@ -1637,8 +1637,13 @@ describe("the dev flow", () => {
       done: "verify",
       nothing: "announce_nothing",
       failed: "announce_work_failed",
+      unavailable: "work_retry",
       cancelled: "end_cancelled",
       interrupted: "announce_work_stopped",
+    });
+    expect(nextOf("work_retry")).toEqual({
+      ready: "work",
+      interrupted: "end_cancelled",
     });
     expect(nextOf("verify")).toEqual({
       pass: "review",
