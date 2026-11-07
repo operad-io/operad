@@ -1,13 +1,11 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
   TuiEvents,
   retryDelay,
   type FetchLike,
   type TuiEvent,
 } from "../src/index.ts";
-import { cleanupTempRoots, makeHarness, type TuiHarness } from "./support.ts";
-
-afterAll(cleanupTempRoots);
+import { makeHarness, type TuiHarness } from "./support.ts";
 
 function seed(h: TuiHarness, id: string): void {
   h.store.put("item", id, { title: id, state: "new" }, "seed");

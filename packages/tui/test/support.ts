@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -15,9 +16,20 @@ import {
   type PluginRegistry,
   type Views,
 } from "@operad-io/engine";
-import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 
-export { cleanupTempRoots, tempRoot };
+/**
+ * A scratch directory under `.radian/`.
+ *
+ * The TUI keeps its own roots instead of using the engine test helper: Bun runs
+ * test files concurrently in one process, so one file's cleanup would delete a
+ * root another file, or another package's suite, is still using. A harness
+ * removes its own root in `close()`.
+ */
+export async function tempRoot(): Promise<string> {
+  const base = join(process.cwd(), ".radian", "tmp");
+  await mkdir(base, { recursive: true });
+  return mkdtemp(join(base, "tui-test-"));
+}
 
 const pluginPath = fileURLToPath(
   new URL("./fixtures/plugin.ts", import.meta.url),
@@ -109,6 +121,7 @@ export async function makeHarness(
       await server.stop();
       views.close();
       await log.close();
+      await rm(root, { recursive: true, force: true });
     },
   };
 }

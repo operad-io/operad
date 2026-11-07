@@ -1,5 +1,6 @@
-import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
   TuiClient,
@@ -15,14 +16,11 @@ import {
   discoverServer,
 } from "../src/index.ts";
 import {
-  cleanupTempRoots,
   freePort,
   makeHarness,
   tempRoot,
   type TuiHarness,
 } from "./support.ts";
-
-afterAll(cleanupTempRoots);
 
 function client(h: TuiHarness, token = h.token): TuiClient {
   return new TuiClient({ url: h.base, token });
@@ -327,20 +325,37 @@ describe("TuiClient", () => {
 
   test("a missing http section is one error naming the config key", async () => {
     const root = await tempRoot();
-    const home = join(root, "home");
-    mkdirSync(home, { recursive: true });
-    writeFileSync(
-      join(home, "config.json"),
-      JSON.stringify({
-        plugins: [],
-        store: { backend: "jsonl", path: join(root, "store") },
-      }),
-    );
+    try {
+      const home = join(root, "home");
+      mkdirSync(home, { recursive: true });
+      writeFileSync(
+        join(home, "config.json"),
+        JSON.stringify({
+          plugins: [],
+          store: { backend: "jsonl", path: join(root, "store") },
+        }),
+      );
 
-    const missing = await discoverServer({ home }).catch((error: unknown) => error);
-    expect(missing).toBeInstanceOf(TuiDiscoveryError);
-    expect((missing as TuiDiscoveryError).message).toContain("config.json: http:");
-    expect((missing as TuiDiscoveryError).message).toContain('"http"');
+      const missing = await discoverServer({ home }).catch((error: unknown) => error);
+      expect(missing).toBeInstanceOf(TuiDiscoveryError);
+      expect((missing as TuiDiscoveryError).message).toContain("config.json: http:");
+      expect((missing as TuiDiscoveryError).message).toContain('"http"');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a harness removes its own scratch home and leaves another's alone", async () => {
+    const first = await makeHarness();
+    const second = await makeHarness();
+    try {
+      await first.close();
+      expect(existsSync(first.root)).toBe(false);
+      expect(existsSync(second.root)).toBe(true);
+    } finally {
+      await second.close();
+    }
+    expect(existsSync(second.root)).toBe(false);
   });
 
   test("refuses a URL that is not an http base URL", async () => {
