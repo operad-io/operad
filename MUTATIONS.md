@@ -682,3 +682,11 @@
 |---|---|---|---|
 | TK0014-M1 | packages/harness-process/src/process.ts | ignored the `toolEvent` classifier, so no line counted as a tool call | `a pi tool call pauses the stall timer until its end line` |
 | TK0014-M2 | packages/harness-radian/src/index.ts | mapped radian's `ToolExecutionStarted` to `"tool-end"` | `harness-radian/agent > an open tool call pauses the stall timer until it settles` |
+
+## TK0018 — pi dogfood
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0018-pi-dogfood-M1 | packages/dev/src/settings.ts | `workerSettings` returned the default `use` instead of the configured one | `this repository's dogfood settings > the dev flow validates with harness-pi/agent as the worker` |
+| TK0018-pi-dogfood-M2 | packages/dev/flows/dev.flow.ts | the flow entry named a step that does not exist (`worktree` → `ghost`) | `this repository's dogfood settings > the dev flow validates with harness-pi/agent as the worker` |
+

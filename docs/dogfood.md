@@ -106,6 +106,76 @@ A plan can run further without a person: `operad dev:auto <plan> --level run`
 merges reviewed work after the gate passes, and `--level off` returns to a
 person at every merge.
 
+## The pi harness
+
+`harness-pi` is the second harness. It runs pi's library inside a child process,
+so a worker can be pi instead of radian. Its step is `harness-pi/agent`, and its
+parameters, results and facts have the same shape as `harness-radian/agent`.
+
+### Log pi in
+
+Run `pi` once in a terminal and log in with `/login`:
+
+```sh
+pi
+/login
+```
+
+Choose the provider and subscription you use with pi. operad reuses
+`~/.pi/agent/auth.json` and does not copy the credentials. pi locks that file,
+so the `pi` TUI and operad may both refresh a token. If the login expires, a
+task fails like any other model error: run `pi` and `/login` again.
+
+The default model is pi's own default: the model your `pi` command uses, from
+`~/.pi/agent`. operad passes no `--provider` or `--model`; the `--provider`,
+`--model` and `--thinking` arguments in the radian block are for `radian exec`
+and mean nothing to pi. To pin a model, set `model` (and optionally
+`thinkingLevel`) in the `harness-pi` section of `~/.operad/config.json`; when
+they are unset, pi's default is used.
+
+operad gives pi an agent directory of its own, `~/.operad/harness/pi/`, and
+loads none of your pi extensions, skills, prompt templates or context files.
+Session files are under `~/.operad/harness/pi/sessions/`. The path of a run's
+session is its `sessionId`; a later step with `resumeSession` opens the same
+file. These sessions belong to operad: the `pi` command you type yourself keeps
+its own history.
+
+### Switch the worker to pi
+
+`operad plugin list` shows `harness-pi` when it is installed and enabled. A
+worker step that is not loaded fails with `step "harness-pi/agent": no loaded
+plugin declares it`, so fix that line first.
+
+Then edit `.operad/dev.json` in the repository root. Change `worker.use` and
+empty `worker.args`; radian's flags are not pi arguments.
+
+```json
+"worker": {
+  "use": "harness-pi/agent",
+  "args": [],
+  "stallSecs": 900,
+  "wallTimeSecs": 7200
+}
+```
+
+`stallSecs` and `wallTimeSecs` keep their meaning. This changes the worker
+only; reviews keep using `reviewer.use`. `operad serve` reads the settings when
+a task starts its steps, so the next task works with pi. A task already in
+`work` finishes on the worker it started. `operad show <task> --section log`
+shows the worker's own log.
+
+To switch back, set `worker.use` to `harness-radian/agent` and restore the
+radian `args`:
+
+```json
+"worker": {
+  "use": "harness-radian/agent",
+  "args": ["--provider", "opencode-go", "--model", "deepseek-v4.1-flash"],
+  "stallSecs": 900,
+  "wallTimeSecs": 7200
+}
+```
+
 ## History and what each step did
 
 ```sh
