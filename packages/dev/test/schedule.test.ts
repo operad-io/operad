@@ -26,6 +26,7 @@ import {
   claimTaskStart,
   setTaskPhase,
   updateTask,
+  setConcurrency,
 } from "../src/service.ts";
 import { taskViews } from "../src/views.ts";
 import {
@@ -1059,5 +1060,72 @@ describe("dev scheduling", () => {
     }
     await putTask(fixture, holder.id, { phase: "waiting", run: "run-1" });
     expect(await claimTaskStart(fixture.store, waiting.id)).toBeDefined();
+  });
+
+  test("a plan raised to 2 starts two ready tasks of different areas in one tick, at 1 only one", async () => {
+    const fixture = await setup({ concurrency: 4 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run" });
+    await addTask(fixture.store, { plan: plan.key, slug: "a", title: "a", area: "one" });
+    await addTask(fixture.store, { plan: plan.key, slug: "b", title: "b", area: "two" });
+    await confirm(fixture, plan.key);
+    expect((await tick(fixture)).length).toBe(1);
+
+    const other = await setup({ concurrency: 4 });
+    const wide = await makePlan(other, { slug: "wide", auto: "run" });
+    await setConcurrency(other.store, wide.key, 2);
+    await addTask(other.store, { plan: wide.key, slug: "c", title: "c", area: "three" });
+    await addTask(other.store, { plan: wide.key, slug: "d", title: "d", area: "four" });
+    await confirm(other, wide.key);
+    expect((await tick(other)).length).toBe(2);
+  });
+
+  test("lowering a plan below its running count cancels nothing and starts nothing until under it", async () => {
+    const fixture = await setup({ concurrency: 4 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run" });
+    await setConcurrency(fixture.store, plan.key, 3);
+    const tasks = [
+      await addTask(fixture.store, { plan: plan.key, slug: "a", title: "a", area: "one" }),
+      await addTask(fixture.store, { plan: plan.key, slug: "b", title: "b", area: "two" }),
+      await addTask(fixture.store, { plan: plan.key, slug: "c", title: "c", area: "three" }),
+      await addTask(fixture.store, { plan: plan.key, slug: "d", title: "d", area: "four" }),
+    ];
+    await confirm(fixture, plan.key);
+    const started = (await tick(fixture)).map((request) => startedId(request));
+    expect(started.length).toBe(3);
+    let run = 0;
+    for (const id of started) await putTask(fixture, id, { run: `run-${(run += 1)}` });
+
+    await setConcurrency(fixture.store, plan.key, 1);
+    expect(await tick(fixture)).toEqual([]);
+    expect(fixture.cancelled).toEqual([]);
+
+    // Two of the three finish: one still runs, which fills the new count.
+    await phase(fixture, started[0] ?? "", "merged");
+    await phase(fixture, started[1] ?? "", "merged");
+    expect(await tick(fixture)).toEqual([]);
+    await phase(fixture, started[2] ?? "", "merged");
+    const next = await tick(fixture);
+    expect(next.length).toBe(1);
+    expect(tasks.map((task) => task.id)).toContain(startedId(next[0] as { object?: { id: string } }));
+  });
+
+  test("a plan at 5 in a repository at 3 runs 3, and one area never runs twice", async () => {
+    const fixture = await setup({ concurrency: 3 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run" });
+    await setConcurrency(fixture.store, plan.key, 5);
+    for (const slug of ["a", "b", "c", "d"]) {
+      await addTask(fixture.store, { plan: plan.key, slug, title: slug, area: slug });
+    }
+    await confirm(fixture, plan.key);
+    expect((await tick(fixture)).length).toBe(3);
+
+    const same = await setup({ concurrency: 4 });
+    const samePlan = await makePlan(same, { slug: "plan", auto: "run" });
+    await setConcurrency(same.store, samePlan.key, 4);
+    for (const slug of ["a", "b"]) {
+      await addTask(same.store, { plan: samePlan.key, slug, title: slug, area: "core" });
+    }
+    await confirm(same, samePlan.key);
+    expect((await tick(same)).length).toBe(1);
   });
 });
