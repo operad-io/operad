@@ -40,7 +40,7 @@ function flow(
           waiting: "person",
           failed: "done",
           // A step that ran again after a crash ends here: the person decides.
-          interrupted: replay === "unsafe" ? "person" : "done",
+          interrupted: replay === "unsafe" ? (hold ? "hold" : "person") : "done",
         },
       },
       ...(hold
@@ -158,5 +158,6 @@ export default definePlugin({
     flow("ask-param90", { askGraceSecs: 90 }, false),
     flow("ask-param30", { askGraceSecs: 30 }, false),
     flow("ask-unsafe", {}, false, "unsafe"),
+    flow("ask-unsafe-hold", {}, true, "unsafe"),
   ],
 });

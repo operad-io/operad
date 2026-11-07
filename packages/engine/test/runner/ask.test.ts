@@ -558,26 +558,6 @@ describe("ctx.ask", () => {
     }
   }, 30_000);
 
-  test("an old open question does not change the error for an answer", async () => {
-    const env = await setup("memory");
-    try {
-      const id = await env.create("ask-hold", "o", { onTimeout: "reject_once" });
-      const timer = new FakeTimer();
-      const run = env.runner(id, timer).run();
-      await env.opened(id);
-      await timer.armed();
-      timer.fire();
-      await fileExists(join(env.dir, "holding-o"));
-      await expect(
-        recordAnswer({ log: env.log, runId: id, choice: "yes", actor: ACTOR }),
-      ).rejects.toThrow(/not waiting for a person/);
-      env.gate("o");
-      expect(await run).toBe("ended");
-    } finally {
-      await env.close();
-    }
-  }, 30_000);
-
   test("a grace of 0 does not wait", async () => {
     const env = await setup("memory");
     try {
@@ -747,6 +727,29 @@ describe("ctx.ask survives a crash", () => {
       expect(all).not.toContain("ask_answered");
       // The flow's own wait is still there to answer.
       expect((await readState(env.log, id)).status).toBe("waiting_person");
+    } finally {
+      await env.close();
+    }
+  }, 60_000);
+
+  test("an old open question does not change the error for an answer", async () => {
+    const env = await setup("file");
+    try {
+      // The unsafe step stopped after it asked; the run went on to a step that
+      // is running now, and the old question is open in the log for good.
+      const id = await env.create("ask-unsafe-hold", "y");
+      const dead = spawnChild(env, id, { name: "y" }, "opened");
+      expect(await dead.exited).not.toBe(0);
+      await env.opened(id);
+      const restarted = spawnChild(env, id, { name: "y" }, "none", true);
+      await fileExists(join(env.dir, "holding-y"));
+      expect((await readState(env.log, id)).status).toBe("running");
+      await expect(
+        recordAnswer({ log: env.log, runId: id, choice: "yes", actor: ACTOR }),
+      ).rejects.toThrow(/not waiting for a person/);
+      expect(await kinds(env.log, id)).not.toContain("ask_refused");
+      env.gate("y");
+      expect(await restarted.exited).toBe(0);
     } finally {
       await env.close();
     }

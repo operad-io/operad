@@ -210,3 +210,9 @@ the row fields.
 | T-0024-M12 | `packages/engine/src/runner/ask.ts` | a question already timed out was waited for again after a crash | `ctx.ask survives a crash > after the timeout, before the flow wait: the wait is reached with the same id` |
 | T-0024-M13 | `packages/engine/src/runner/ask.ts` | a question already answered was not delivered from the fact after a crash | `ctx.ask survives a crash > after ask_answered, before the step reads it: delivered from the fact` |
 | T-0024-M14 | `packages/engine/src/config/config.ts` | `ask.graceSecs` without a value read as 1 instead of 600 | `operad config > reads ask.graceSecs and rejects a malformed ask section` |
+| T-0024-M16 | `packages/engine/src/plugin/registry.ts` | `ctx.ask` with onTimeout waiting did not check that the step declares `waiting` | `ctx.ask > a step that asks with onTimeout waiting must declare waiting` |
+| T-0024-M17 | `packages/engine/src/config/config.ts` | `ask.graceSecs` above the timer limit was accepted | `operad config > reads ask.graceSecs and rejects a malformed ask section` |
+| T-0024-M18 | `packages/engine/src/runner/ask.ts` | a second question at once in one step was not refused | `ctx.ask > a second question at once in one step is refused` |
+| T-0024-M19 | `packages/engine/src/runner/answer.ts` | an answer without a wait id went to the newest open question even when its step was dead | `ctx.ask survives a crash > an old open question does not change the error for an answer` |
+| T-0024-M20 | `packages/engine/src/runner/ask.ts` | a duplicate claim was not refused, so two processes could both win | `ctx.ask answers from two processes > of two processes answering one question exactly one wins` |
+| T-0024-M21 | `packages/engine/src/plugin/registry.ts` | a call's grace above the timer limit was accepted | `ctx.ask > a grace above the timer limit is refused` |
