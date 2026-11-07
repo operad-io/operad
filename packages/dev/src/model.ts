@@ -256,6 +256,8 @@ export type TaskAttempt = {
   readonly cost?: number | null;
   /** The same cost in micros, as the harness reports it. */
   readonly costMicros?: number | null;
+  /** How far to trust the cost: `exact`, `estimated` or `incomplete`. */
+  readonly costQuality?: "exact" | "estimated" | "incomplete" | null;
   /** Whether the work step consumed this attempt; a later worktree visit is new work. */
   readonly worked?: boolean;
   /** The file the worker's own log was written to. */
@@ -317,6 +319,8 @@ export type TaskData = {
   readonly run: string | null;
   readonly attempt?: TaskAttempt | undefined;
   readonly cost?: number | string | undefined;
+  /** How far to trust `cost`; absent for a cost written before it was recorded. */
+  readonly costQuality?: "exact" | "estimated" | "incomplete" | null | undefined;
   /** How many automatic reworks ran in a row; a passing gate resets it. */
   readonly reworkStreak?: number | undefined;
   /** The owner asked the scheduler to start this ready task. */

@@ -27,3 +27,6 @@ the row fields.
 | bun-fd-guard-M4 | packages/harness-radian/src/process.ts | `stdio` set back to four pipes | `child process stdio > no source spawns with more than three stdio entries or reads stdio[3] or higher` (names `packages/harness-radian/src/process.ts:434` and bf3a73e) |
 | TK0009-M8 | packages/harness-radian/test/support.ts | `processesUnder` returned nothing | `the guard sees a process whose command line names a temp directory` |
 | T-0021-M10 | packages/harness-radian/src/index.ts | the limit key used the model alone, without `--provider` | `harness-radian/agent step limit > the key is harness-radian:<provider>/<model> from the step's args` |
+| T-0022-M6 | packages/harness-radian/src/index.ts | the usage dropped radian's cost (`costMicros: null`) | `harness-radian/agent > a successful run records the Result record and writes the JSONL log` |
+| T-0022-M8 | packages/harness-radian/src/index.ts | `parseResult` dropped radian's `incomplete` flag | `harness-radian/agent > an incomplete or estimated cost says so in the usage` |
+| T-0022-M9 | packages/harness-radian/src/index.ts | `radianModel` prefixed a model that already names its provider | `harness-radian/agent > a model that already names its provider is not prefixed again` |

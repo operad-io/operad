@@ -101,7 +101,7 @@ function fakeHarness(record: string) {
               },
             };
           }
-          if (mode === "commit") {
+          if (mode === "commit" || mode === "commit-standard" || mode === "commit-incomplete" || mode === "commit-broken") {
             writeFileSync(join(input.cwd, "worker.txt"), "done\n");
             gitOrThrow(input.cwd, ["add", "worker.txt"]);
             gitOrThrow(input.cwd, [
@@ -120,6 +120,28 @@ function fakeHarness(record: string) {
           if (mode === "reset") {
             gitOrThrow(input.cwd, ["reset", "--hard", "HEAD~1"]);
           }
+          if (mode === "commit-standard" || mode === "commit-incomplete") {
+            return {
+              result: "done",
+              data: {
+                sessionId: "fake-session",
+                usage: {
+                  harness: "fake",
+                  model: null,
+                  tokens: { input: 40, output: 9, cacheread: 0, cachewrite: 0 },
+                  costMicros: FAKE_COST_MICROS,
+                  costQuality: mode === "commit-incomplete" ? "incomplete" : "exact",
+                },
+              },
+            };
+          }
+          if (mode === "commit-broken") {
+            return {
+              result: "done",
+              data: { sessionId: "fake-session", usage: { harness: "fake", tokens: {} } },
+            };
+          }
+          // The shape before `usage` was standard; facts like it are still read.
           return {
             result: "done",
             data: {
@@ -259,7 +281,34 @@ async function taskDataOf(state: Fixture) {
 }
 
 describe("dev/work", () => {
-  test("done: new commits and a clean tree are pushed", async () => {
+  test("the standard usage gives the row's cost and the tokens", async () => {
+    const state = await fixture("commit-standard");
+    const result = await runWork(state);
+    expect(result.result).toBe("done");
+    const task = await taskDataOf(state);
+    expect(task.attempt?.cost).toBe(2.5);
+    expect(task.attempt?.costMicros).toBe(2_500_000);
+    expect(task.attempt?.tokens).toEqual({ input: 40, output: 9 });
+    expect(task.cost).toBe(2.5);
+    expect(task.attempt?.costQuality).toBe("exact");
+  });
+
+  test("an incomplete cost is recorded as incomplete", async () => {
+    const state = await fixture("commit-incomplete");
+    await runWork(state);
+    const task = await taskDataOf(state);
+    expect(task.attempt?.costQuality).toBe("incomplete");
+    expect(task.costQuality).toBe("incomplete");
+  });
+
+  test("a usage that is not standard is ignored and logged with the run", async () => {
+    const state = await fixture("commit-broken");
+    await runWork(state);
+    const task = await taskDataOf(state);
+    expect(task.attempt?.cost).toBeNull();
+  });
+
+  test("done: new commits and a clean tree are pushed (cost from the old fields of an old fact)", async () => {
     const state = await fixture("commit");
     const result = await runWork(state);
     expect(result.result).toBe("done");

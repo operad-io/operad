@@ -183,6 +183,12 @@ the row fields.
 | T-0021-M7 | packages/engine/src/plugin/registry.ts | stopped checking that `limit.key` is a function | `plugin registry validation > step limits > refuses a declaration of the wrong shape, naming plugin and step type` |
 | T-0021-M8 | packages/engine/src/runner/limits.ts | `queuedSteps` counted one more step ahead than there was | `step limits (memory) > two steps run, the third starts when one ends` |
 | T-0021-M11 | packages/engine/src/runner/limits.ts | a `step_queued` after a `step_released` for the same effect was ignored again | `step limits after a released place > a step queued again after its release gets a place` |
+| T-0022-M1 | packages/engine/src/plugin/usage.ts | `validateUsage` skipped the last token field | `validateUsage > refuses each wrong field and names it` |
+| T-0022-M2 | packages/engine/src/plugin/usage.ts | `readUsage` read an old fact's `cache_write` as `cacheread` | `readUsage > reads a fact stored before the standard field existed` |
+| T-0022-M3 | packages/engine/src/plugin/registry.ts | the harness result check never ran | `end results > the plugin check refuses a harness step that declares another name` |
+| T-0022-M4 | packages/engine/src/plugin/usage.ts | `END_RESULTS` lost `nothing`, so the manual's table no longer matched | `end results > the manual's table lists exactly the exported results` |
+| T-0022-M12 | packages/engine/src/plugin/usage.ts | `readUsage` did not report a malformed usage | `readUsage > a malformed standard usage is reported once, naming the field` |
+| T-0022-M13 | packages/engine/src/plugin/usage.ts | `readUsage` read an old `incomplete` cost as exact | `readUsage > reads a fact stored before the standard field existed` |
 | engine-followups-2-M1 | `packages/engine/src/runner/runner.ts` | `timer.unref()` put back on the in-process step timeout timer (the test child had top-level await, which Bun keeps alive, so it hid the missing timer; the child now runs from a plain function) | `runner > a step that never settles still times out in a memory-backed process` |
 | engine-followups-2-M2 | `packages/engine/src/config/config.ts` | `addDefaultPlugins` wrote the config file in place instead of a temp file and rename | `operad config > a failed write leaves the existing config whole` |
 | engine-followups-2-M4 | `packages/engine/src/plugin/registry.ts` | a run whose object is missing got `at: 0` instead of the run's last time | `plugin registry validation > a waiting run with no object shows its own last time and is logged once` |

@@ -306,6 +306,11 @@ if (mode === "done") {
   process.exit(0);
 }
 
+if (mode === "incomplete" || mode === "estimated") {
+  line(result({ cost: { micros: 900, incomplete: mode === "incomplete", estimated: mode === "estimated" } }));
+  process.exit(0);
+}
+
 if (mode === "no-cost") {
   line(result({ cost: null }));
   process.exit(0);

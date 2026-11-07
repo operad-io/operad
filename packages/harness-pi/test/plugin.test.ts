@@ -10,6 +10,7 @@ import {
   openLog,
   readState,
   type JsonValue,
+  validateUsage,
   type PluginStepResult,
   type TriggerView,
 } from "@operad-io/engine";
@@ -113,8 +114,15 @@ describe("harness-pi/agent", () => {
     expect(data.signal).toBeNull();
     expect(data.sessionId).toBe("fake-session");
     expect(data.finalMessage).toBe("fake final message");
-    expect(data.usage).toEqual({ input: 11, output: 7 });
-    expect(data.cost).toEqual({ micros: 1234 });
+    expect(data.usage).toEqual({
+      harness: "harness-pi",
+      model: null,
+      tokens: { input: 11, output: 7, cacheread: 0, cachewrite: 0 },
+      costMicros: 1234,
+      costQuality: "exact",
+    });
+    expect(validateUsage(data.usage).ok).toBe(true);
+    expect("cost" in data).toBe(false);
     expect(data.stderr).toEqual([]);
     expect(typeof data.durationMs).toBe("number");
     expect(readFileSync(String(data.log), "utf8")).toContain('"type":"result"');
@@ -143,16 +151,19 @@ describe("harness-pi/agent", () => {
     expect(other.result).toBe("done");
     const otherData = dataOf(other);
     expect(Object.keys(data).sort()).toEqual(Object.keys(otherData).sort());
-    for (const key of ["exitCode", "signal", "sessionId", "finalMessage", "usage", "cost", "stderr"]) {
+    for (const key of ["exitCode", "signal", "sessionId", "finalMessage", "stderr"]) {
       expect(data[key]).toEqual(otherData[key]);
     }
+    // The same usage but for who ran.
+    expect(otherData.usage).toEqual({ ...(data.usage as object), harness: "harness-radian" });
   });
 
   test("a worker line without a price leaves the cost unknown, not zero", async () => {
     const env = await setup("no-cost");
     const result = await runAgent(env, { prompt: "hello", cwd: env.root });
     expect(result.result).toBe("done");
-    expect(dataOf(result).cost).toBeNull();
+    expect(validateUsage(dataOf(result).usage).ok).toBe(true);
+    expect((dataOf(result).usage as { costMicros: unknown }).costMicros).toBeNull();
   });
 
   test("the worker gets the prompt, the directories, the settings and no discovery", async () => {
@@ -186,6 +197,40 @@ describe("harness-pi/agent", () => {
     const input = recorded(env);
     expect(input.model).toBe("openai-codex/gpt-5.6-terra");
     expect(input.thinkingLevel).toBe("medium");
+    expect((dataOf(result).usage as { model: unknown }).model).toBe("openai-codex/gpt-5.6-terra");
+  });
+
+  test("a run with an unpriced message has an incomplete cost", async () => {
+    const env = await setup("incomplete");
+    const usage = dataOf(await runAgent(env, { prompt: "hello", cwd: env.root })).usage as {
+      costMicros: unknown;
+      costQuality: unknown;
+    };
+    expect(usage.costMicros).toBe(900);
+    expect(usage.costQuality).toBe("incomplete");
+    expect(validateUsage(usage).ok).toBe(true);
+  });
+
+  test("a step that fails before it starts still records the model it named", async () => {
+    const env = await setup("done", { model: "fake/setting" });
+    const badArgs = await runAgent(env, { prompt: "hello", cwd: env.root, args: ["--bogus"] });
+    expect(badArgs.result).toBe("failed");
+    expect((dataOf(badArgs).usage as { model: unknown }).model).toBe("fake/setting");
+    const badFlag = await runAgent(env, {
+      prompt: "hello",
+      cwd: env.root,
+      args: ["--model", "a/b", "--thinking", "loud"],
+    });
+    expect((dataOf(badFlag).usage as { model: unknown }).model).toBe("a/b");
+    const badCwd = await runAgent(env, { prompt: "hello", cwd: join(env.root, "missing") });
+    expect(badCwd.result).toBe("failed");
+    expect((dataOf(badCwd).usage as { model: unknown }).model).toBe("fake/setting");
+  });
+
+  test("the usage names the model setting when the step has no --model", async () => {
+    const env = await setup("done", { model: "fake/setting" });
+    const result = await runAgent(env, { prompt: "hello", cwd: env.root });
+    expect((dataOf(result).usage as { model: unknown }).model).toBe("fake/setting");
   });
 
   test("a flag given alone leaves the other from the settings", async () => {

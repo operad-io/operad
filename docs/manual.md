@@ -204,6 +204,55 @@ front of it. `operad history` shows `<step> is queued`. If the step is stopped
 while it waits (the run is cancelled), it leaves the line, never runs, and ends
 as failed with the reason that it was cancelled.
 
+## Usage and end results
+
+Every agent step records what the run used in one field of its data, `usage`,
+and ends with one of a fixed list of results. Cost, metrics and budgets read
+this one form, whichever harness ran.
+
+`usage` has these fields:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `harness` | string | The harness plugin that ran, such as `harness-pi`. |
+| `model` | string or `null` | The model as `provider/id` when the step named it; `null` when it did not. |
+| `tokens.input` | integer, 0 or more | Input tokens. |
+| `tokens.output` | integer, 0 or more | Output tokens. |
+| `tokens.cacheread` | integer, 0 or more | Tokens read from the provider's cache. |
+| `tokens.cachewrite` | integer, 0 or more | Tokens written to the provider's cache. |
+| `costMicros` | integer, 0 or more, or `null` | The cost in millionths of a dollar. `null` means the cost is unknown; `0` means the run was free. |
+| `costQuality` | `exact`, `estimated`, `incomplete` or `null` | How far to trust `costMicros`. `exact` is the price the provider billed; `estimated` was worked out from a price list; `incomplete` priced only part of the run (some message had no price), so the real cost is higher. `null` exactly when `costMicros` is `null`. |
+
+A count the harness does not report is `0`. Facts written before this field
+existed keep their old fields (`usage` with `input`, `output`, `cache_read` and
+`cache_write`, and `cost` with `micros`, `incomplete` and `estimated`); they are
+still read, and nothing writes them any more. A `usage` that is not in the
+standard shape is ignored and the run's log gets one line naming the run and the
+field.
+
+`dev` shows a cost that is not `exact` with its quality, such as
+`$0.31 (incomplete)`, in a task's row and in its metrics.
+
+A step ends with one of these results:
+
+| Result | Meaning |
+|---|---|
+| `done` | The work finished. |
+| `nothing` | There was nothing to do. |
+| `failed` | The step could not do its work. |
+| `needs_decision` | The step needs a person to choose. |
+| `waiting` | The step stopped to wait, and will continue. |
+| `interrupted` | The step was stopped before it finished. |
+
+The end results apply to plugins of the `harness` kind: they run an agent, and
+a flow reads any agent the same way. `operad plugin check` refuses a harness
+step that declares another name and names it. The agent steps of
+`harness-radian` and `harness-pi` declare `done`, `failed` and `interrupted`.
+Plugins of other kinds name their own results. `shell` is a `stage`, not a
+harness: its steps run a command or a check and give a verdict, so they end in
+`pass` and `fail` (and `ready` or `waiting` for a check), and the end results
+do not apply to them.
+
 ## Notifications
 
 `notify` in `config.json` names a command for `serve` to run when something

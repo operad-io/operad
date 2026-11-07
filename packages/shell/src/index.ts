@@ -160,7 +160,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
   const clock = options.clock;
   return definePlugin({
     name: "shell",
-    kind: "harness",
+    kind: "stage",
     version: "0.0.0",
     steps: [
       {

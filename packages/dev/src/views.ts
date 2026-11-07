@@ -26,9 +26,11 @@ import { git, workBranch } from "./steps.ts";
 import { findRepository, listRepositories } from "./service.ts";
 import { readDevSettings } from "./settings.ts";
 
-function costNote(cost: unknown): string | undefined {
+function costNote(cost: unknown, quality?: unknown): string | undefined {
   if (typeof cost === "number" && Number.isFinite(cost)) {
-    return `$${cost.toFixed(2)}`;
+    // An estimated or incomplete cost says so; an exact one is just the amount.
+    const label = quality === "estimated" || quality === "incomplete" ? ` (${quality})` : "";
+    return `$${cost.toFixed(2)}${label}`;
   }
   if (typeof cost === "string" && cost.trim().length > 0) return cost.trim();
   return undefined;
@@ -131,7 +133,7 @@ export const taskViews: ObjectViews = {
           ? undefined
           : `area: ${task.area}`;
     const note =
-      [waitNote(task) ?? costNote(task.cost), areaNote]
+      [waitNote(task) ?? costNote(task.cost, task.costQuality), areaNote]
         .filter((part): part is string => part !== undefined)
         .join("  ") || undefined;
     return {
@@ -423,7 +425,7 @@ function metrics(ctx: ViewContext, object: StoredObject): string {
     (left, right) => left.number - right.number,
   )) {
     const last = entry.last;
-    const cost = costNote(last?.cost) ?? "-";
+    const cost = costNote(last?.cost, last?.costQuality) ?? "-";
     const tokens =
       last?.tokens === undefined || last.tokens === null
         ? "-"

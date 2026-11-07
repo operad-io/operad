@@ -90,9 +90,14 @@ class Tally {
     };
   }
 
-  get cost(): { micros: number } | null {
-    if (this.#priced === 0 || this.#unpriced > 0) return null;
-    return { micros: Math.round(this.#total * 1e6) };
+  /**
+   * The price of the messages that had one; `incomplete` when some did not.
+   * Null when no message had a price.
+   */
+  get cost(): { micros: number; incomplete?: true } | null {
+    if (this.#priced === 0) return null;
+    const micros = Math.round(this.#total * 1e6);
+    return this.#unpriced > 0 ? { micros, incomplete: true } : { micros };
   }
 }
 
