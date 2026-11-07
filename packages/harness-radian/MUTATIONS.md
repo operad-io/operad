@@ -30,3 +30,4 @@ the row fields.
 | T-0022-M6 | packages/harness-radian/src/index.ts | the usage dropped radian's cost (`costMicros: null`) | `harness-radian/agent > a successful run records the Result record and writes the JSONL log` |
 | T-0022-M8 | packages/harness-radian/src/index.ts | `parseResult` dropped radian's `incomplete` flag | `harness-radian/agent > an incomplete or estimated cost says so in the usage` |
 | T-0022-M9 | packages/harness-radian/src/index.ts | `radianModel` prefixed a model that already names its provider | `harness-radian/agent > a model that already names its provider is not prefixed again` |
+| T-0025-M8 | `packages/harness-radian/src/index.ts` | the step ran radian when the profile had a one-time permission it cannot enforce | `harness-radian/agent > a one-time permission is refused before radian runs, naming radian` |

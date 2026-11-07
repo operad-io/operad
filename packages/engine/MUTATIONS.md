@@ -224,3 +224,7 @@ the row fields.
 | T-0023-M6 | `packages/engine/src/testing/world.ts` | a plugin given by path ran against a memory store, so its steps stayed in the test's process | `isolation > a plugin given by path runs its steps in a worker, as serve does` |
 | T-0023-M7 | `packages/engine/src/testing/world.ts` | a repeated event key was reported as started | `one world across calls > the same key arriving twice starts one run` |
 | T-0023-M8 | `packages/engine/src/runner/runner.ts` | a worker step's timeout used real timers, not the runner's `timers` | `isolation > a fake clock times out a step in a worker too` |
+| T-0025-M1 | `packages/engine/src/runner/grants.ts` | `useGrant` did not look for an earlier `grant_used`, so a used permission could be used again | `a one-time permission survives a crash > using a permission twice, from two callers, succeeds once` |
+| T-0025-M2 | `packages/engine/src/plugin/registry.ts` | a step with `resumable: false` kept the `onTimeout` the call asked for | `ask resume (memory) > a step that cannot resume has its question forced to reject_once` |
+| T-0025-M3 | `packages/engine/src/kernel/decide.ts` | a grant that named the approving choice was given for any choice | `decide: an answered question returns to the step > a grant that names the approving choice is not given for another` |
+| T-0025-M4 | `packages/engine/src/runner/grants.ts` | `useGrant` returned true without writing `grant_used` | `a one-time permission survives a crash > a crash right after grant_used does not give the permission twice` |
