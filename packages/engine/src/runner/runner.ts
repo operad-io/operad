@@ -79,12 +79,25 @@ function isStepWorkerAsk(value: unknown): value is StepWorkerAsk {
   );
 }
 
+/** What `StepTimeout` uses to tell time; tests give it their own. */
+export interface TimeoutClock {
+  readonly now: () => number;
+  readonly set: (fire: () => void, ms: number) => unknown;
+  readonly clear: (handle: unknown) => void;
+}
+
+const REAL_CLOCK: TimeoutClock = {
+  now: () => Date.now(),
+  set: (fire, ms) => setTimeout(fire, ms),
+  clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
 /**
  * A step's wall time. It stops while a question to a person is open: the
  * person's time is not the step's.
  */
 export class StepTimeout {
-  private handle: ReturnType<typeof setTimeout> | undefined;
+  private handle: unknown;
   private remaining: number;
   private startedAt = 0;
   private paused = 0;
@@ -93,14 +106,15 @@ export class StepTimeout {
   constructor(
     ms: number,
     private readonly fire: () => void,
+    private readonly time: TimeoutClock = REAL_CLOCK,
   ) {
     this.remaining = ms;
     this.start();
   }
 
   private start(): void {
-    this.startedAt = Date.now();
-    this.handle = setTimeout(() => {
+    this.startedAt = this.time.now();
+    this.handle = this.time.set(() => {
       this.handle = undefined;
       if (!this.done) this.fire();
     }, this.remaining);
@@ -109,9 +123,9 @@ export class StepTimeout {
   pause(): void {
     this.paused += 1;
     if (this.paused !== 1 || this.done || this.handle === undefined) return;
-    clearTimeout(this.handle);
+    this.time.clear(this.handle);
     this.handle = undefined;
-    this.remaining = Math.max(0, this.remaining - (Date.now() - this.startedAt));
+    this.remaining = Math.max(0, this.remaining - (this.time.now() - this.startedAt));
   }
 
   resume(): void {
@@ -122,7 +136,7 @@ export class StepTimeout {
 
   clear(): void {
     this.done = true;
-    if (this.handle !== undefined) clearTimeout(this.handle);
+    if (this.handle !== undefined) this.time.clear(this.handle);
     this.handle = undefined;
   }
 }
