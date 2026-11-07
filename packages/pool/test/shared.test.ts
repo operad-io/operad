@@ -58,3 +58,47 @@ describe("FilePlaces", () => {
     expect((await new FilePlaces(dir).claim([claim("a")])).kind).toBe("taken");
   });
 });
+
+describe("FilePlaces leases", () => {
+  test("a place whose holder stopped beating is dropped, and a live one is kept beating", async () => {
+    const dir = join(await tempRoot(), "pool");
+    let now = 1000;
+    const options = { now: () => now, heartbeatMs: 20, leaseMs: 100 };
+    // A holder in this very process (a killed step thread shares the pid) that never beats.
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "places.json"),
+      JSON.stringify({ version: 1, held: [{ id: "orphan", pid: process.pid, beat: 1000, keys: ["count:a", "harness:h"] }] }),
+    );
+    const places = new FilePlaces(dir, options);
+    expect((await places.claim([claim("a")])).kind).toBe("blocked");
+    now = 1500;
+    const taken = await places.claim([claim("a")]);
+    expect(taken.kind).toBe("taken");
+    if (taken.kind !== "taken") throw new Error("unexpected");
+    // The new holder beats while time moves on, so it stays.
+    for (let step = 0; step < 5; step += 1) {
+      now += 50;
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+    expect(await new FilePlaces(dir, options).claim([claim("b")])).toMatchObject({ kind: "blocked", full: ["home"] });
+    await taken.release();
+  });
+
+  test("pruning a dead holder is written, so a waiter does not see a changed version at once", async () => {
+    const dir = join(await tempRoot(), "pool");
+    const child = spawnSync(process.execPath, ["-e", ""]);
+    mkdirSync(dir, { recursive: true });
+    const live = { id: "l", pid: process.pid, beat: Date.now(), keys: ["count:a", "harness:h"] };
+    const dead = { id: "d", pid: child.pid, beat: Date.now(), keys: ["count:z", "harness:z"] };
+    writeFileSync(join(dir, "places.json"), JSON.stringify({ version: 1, held: [dead, live] }));
+    const places = new FilePlaces(dir);
+    const blocked = await places.claim([claim("a")]);
+    if (blocked.kind !== "blocked") throw new Error("unexpected");
+    const controller = new AbortController();
+    const wait = places.changed(blocked.stamp, controller.signal);
+    const early = await Promise.race([wait, new Promise((resolve) => setTimeout(() => resolve("waiting"), 200))]);
+    expect(early).toBe("waiting");
+    controller.abort();
+  });
+});

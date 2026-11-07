@@ -21,3 +21,5 @@ the row fields.
 | T-0042-M13 | packages/pool/src/shared.ts | did not drop the places of a process that is gone | `FilePlaces > a place held by a process that is gone is dropped` |
 | T-0042-M14 | packages/pool/src/shared.ts | treated this process's own places as dead | `FilePlaces > two instances with separate memory share the home cap` |
 | T-0042-M15 | packages/pool/src/index.ts | did not fall back when the harness reported `missing` or `spawn` | `fallback > a harness that could not start (missing) runs the fallback worker` |
+| T-0042-M16 | packages/pool/src/shared.ts | ignored the lease, so a place of a killed step thread in a live process stayed held | `FilePlaces leases > a place whose holder stopped beating is dropped, and a live one is kept beating` |
+| T-0042-M17 | packages/pool/src/shared.ts | pruned dead holders only in memory (did not write the book) | `FilePlaces leases > pruning a dead holder is written, so a waiter does not see a changed version at once` |
