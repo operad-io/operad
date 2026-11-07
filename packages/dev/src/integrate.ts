@@ -212,6 +212,7 @@ function integrationData(
       ? {}
       : { lineNumber: record.lineNumber }),
     ...(record.files === undefined ? {} : { files: record.files }),
+    ...(typeof record.checkNote === "string" ? { note: record.checkNote } : {}),
     ...extra,
   };
 }
@@ -324,7 +325,12 @@ export async function runIntegrate(
       if (
         (await writeIntegration(ctx, context, task, attempt, record, {
           phase: "merged",
-          change: `merged ${shortSha(previous.candidate)}`,
+          change: [
+            ...(typeof previous.checkNote === "string"
+              ? [previous.checkNote]
+              : []),
+            `merged ${shortSha(previous.candidate)}`,
+          ],
         })) === undefined
       ) {
         return cancelledStep();
