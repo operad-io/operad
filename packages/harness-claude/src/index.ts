@@ -36,7 +36,7 @@ import {
   type ToolEvent,
 } from "@operad-io/harness-process";
 import { CLAUDE_FLOOR, DEFAULT_CLAUDE_COMMAND, inspectClaude, sdkVersion } from "./claude-install.ts";
-import { EFFORT_LEVELS, type WorkerEffort, type WorkerResult } from "./protocol.ts";
+import { DEFAULT_BASH_TIMEOUT_SECS, EFFORT_LEVELS, type WorkerEffort, type WorkerResult } from "./protocol.ts";
 
 /** How long an agent may run before the step stops it. */
 export const DEFAULT_WALL_TIME_SECS = 3600;
@@ -85,7 +85,7 @@ export interface ClaudeHarnessOptions {
 }
 
 /** The settings a config.json section may set for this plugin. */
-const PLUGIN_SETTINGS = {
+export const PLUGIN_SETTINGS = {
   type: "object" as const,
   properties: {
     model: {
@@ -113,6 +113,13 @@ const PLUGIN_SETTINGS = {
       type: "number" as const,
       minimum: 0.01,
       description: "The most one run may spend, in US dollars; unset means no limit. For API-key logins.",
+    },
+    bashTimeoutSecs: {
+      type: "integer" as const,
+      minimum: 1,
+      default: DEFAULT_BASH_TIMEOUT_SECS,
+      description:
+        "The longest one Bash call may run, in seconds. Nothing runs in the background, so a long gate runs in the foreground within this time.",
     },
     wallTimeSecs: {
       type: "number" as const,
@@ -498,6 +505,11 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
           const effort = flags.effort ?? optionalText(ctx.settings.effort, `${at}: settings.effort`);
           const maxTurns = optionalNumber(ctx.settings.maxTurns, `${at}: settings.maxTurns`, true);
           const budgetUsd = optionalNumber(ctx.settings.budgetUsd, `${at}: settings.budgetUsd`, false);
+          const bashTimeoutSecs = optionalNumber(
+            ctx.settings.bashTimeoutSecs,
+            `${at}: settings.bashTimeoutSecs`,
+            true,
+          );
 
           const cwdProblem = await directoryError(cwd);
           if (cwdProblem !== undefined) return refuse("cwd", cwdProblem);
@@ -512,6 +524,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             ...(effort === undefined ? {} : { effort }),
             ...(maxTurns === undefined ? {} : { maxTurns }),
             ...(budgetUsd === undefined ? {} : { budgetUsd }),
+            ...(bashTimeoutSecs === undefined ? {} : { bashTimeoutSecs }),
             ...(isRecord(ctx.access) ? { access: ctx.access } : {}),
           };
 

@@ -18,6 +18,7 @@ import { readProfile, type AccessProfile } from "@operad-io/access-match";
 import { decideAccess } from "./access.ts";
 import { findClaude } from "./claude-install.ts";
 import {
+  DEFAULT_BASH_TIMEOUT_SECS,
   parseInput,
   type CostQuality,
   type FailureReason,
@@ -42,7 +43,24 @@ export const ISOLATION_ENV: Readonly<Record<string, string>> = {
   CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
   DISABLE_TELEMETRY: "1",
   DISABLE_ERROR_REPORTING: "1",
+  // A run is one foreground turn: nothing may move to the background, where
+  // the turn would end and claude would go on by itself later.
+  CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1",
 };
+
+/**
+ * Tools that only schedule or wait for work outside the turn. They are off, so
+ * the model cannot end its turn waiting for something that would continue it.
+ * Names are those of `BUILTIN_TOOL_NAMES` in the SDK (0.3.319).
+ */
+export const DISALLOWED_TOOLS: readonly string[] = [
+  "Monitor",
+  "ScheduleWakeup",
+  "CronCreate",
+  "CronDelete",
+  "CronList",
+  "TaskStop",
+];
 
 /** Where the program writes. Lines are written whole, in order. */
 export interface WorkerIo {
@@ -174,7 +192,14 @@ export async function runWorker(
     systemPrompt: { type: "preset", preset: "claude_code" },
     canUseTool,
     abortController: controller,
-    env: { ...process.env, ...ISOLATION_ENV },
+    disallowedTools: [...DISALLOWED_TOOLS],
+    env: {
+      ...process.env,
+      ...ISOLATION_ENV,
+      // Both limits, so a gate runs in the foreground instead of being moved on.
+      BASH_DEFAULT_TIMEOUT_MS: String((input.bashTimeoutSecs ?? DEFAULT_BASH_TIMEOUT_SECS) * 1000),
+      BASH_MAX_TIMEOUT_MS: String((input.bashTimeoutSecs ?? DEFAULT_BASH_TIMEOUT_SECS) * 1000),
+    },
     hooks: {
       PreToolUse: [{ hooks: [toolHook("start")] }],
       PostToolUse: [{ hooks: [toolHook("end")] }],
@@ -198,6 +223,7 @@ export async function runWorker(
   let final: Extract<SDKMessage, { type: "result" }> | undefined;
   const seenMessages = new Set<string>();
   let thrown: string | undefined;
+  let continued = false;
 
   const session = query({ prompt: input.prompt, options });
   const account = session.initializationResult().then(
@@ -206,11 +232,26 @@ export async function runWorker(
   );
 
   try {
-    for await (const message of session) {
+    messages: for await (const message of session) {
       if ("session_id" in message && typeof message.session_id === "string") sessionId = message.session_id;
       switch (message.type) {
         case "system":
-          if (message.subtype === "init") io.log(`claude ${message.claude_code_version}`);
+          if (message.subtype === "init" && final !== undefined) {
+            // claude went on by itself after the result (something it started
+            // finished). A run is one turn: stop here and say so.
+            io.log("a second session started after the result; stopping");
+            continued = true;
+            break messages;
+          }
+          if (message.subtype === "init") {
+            io.log(`claude ${message.claude_code_version}`);
+            io.line({
+              type: "session",
+              claudeVersion: message.claude_code_version,
+              apiKeySource: message.apiKeySource,
+              model: message.model,
+            });
+          }
           break;
         case "assistant": {
           const id = message.message.id;
@@ -282,22 +323,42 @@ export async function runWorker(
   const counts = usageOf(final.usage);
   const text = "result" in final && typeof final.result === "string" ? final.result : null;
   const names = Object.keys(final.modelUsage ?? {});
+  const hasModel = names.length > 0;
   const base = {
     type: "result",
     sessionId: final.session_id,
     usage: counts,
-    cost: { micros: Math.round(finite(final.total_cost_usd) * 1e6), quality },
+    // A run that used no model (a session that would not load) has no cost to
+    // call exact or estimated.
+    cost: hasModel ? { micros: Math.round(finite(final.total_cost_usd) * 1e6), quality } : null,
     finalMessage: text,
     model: names[0] ?? null,
   } as const;
 
+  if (continued) {
+    io.line({
+      ...base,
+      result: "failed",
+      reason: "model_error",
+      message:
+        "claude went on after its result: a second session started by itself (something it ran in the background finished); a run is one turn",
+    });
+    return EXIT_FAILED;
+  }
   if (final.subtype === "success" && !final.is_error) {
     io.line({ ...base, result: "done" });
     return 0;
   }
+  // An error result carries its text in `errors` (an unknown session says
+  // "No conversation found with session ID: ..."); a success-shaped one in `result`.
+  const errors = "errors" in final && Array.isArray(final.errors) ? final.errors.filter((e) => typeof e === "string") : [];
   const message =
     modelError?.message ??
-    (text !== null && text.length > 0 ? text : `claude stopped: ${final.subtype}`);
+    (errors.length > 0
+      ? errors.join("; ")
+      : text !== null && text.length > 0
+        ? text
+        : `claude stopped: ${final.subtype}`);
   const reason: FailureReason = isSessionMissing(message) ? "session_missing" : "model_error";
   io.line({
     ...base,

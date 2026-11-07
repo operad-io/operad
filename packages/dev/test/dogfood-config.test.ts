@@ -63,3 +63,37 @@ describe("this repository's dev.json with the pi worker", () => {
     expect(registry.stepResults("harness-pi/agent")).toBeUndefined();
   });
 });
+
+describe("this repository's dev.json with the claude worker", () => {
+  test("worker.use harness-claude/agent with --model and --effort validates and the dev flow resolves it", async () => {
+    const settings = validateDevSettings({
+      ...committed(),
+      worker: { use: "harness-claude/agent", args: ["--model", "sonnet"] },
+      reviewer: {
+        ...(committed().reviewer as Record<string, unknown>),
+        use: "harness-claude/agent",
+        args: ["--model", "opus", "--effort", "medium"],
+      },
+    });
+    expect(settings.worker.use).toBe("harness-claude/agent");
+    expect(settings.reviewer.use).toBe("harness-claude/agent");
+
+    const root = await tempRoot();
+    const registry = new PluginRegistry(
+      [
+        createDevPlugin(),
+        createShellPlugin(),
+        (await plugin("../../harness-claude/src/index.ts")).default,
+      ],
+      { home: root, cwd: root, store: storeAt(root) },
+    );
+    expect(registry.refusals()).toEqual([]);
+    expect(registry.flow("dev")).toBeDefined();
+    // The step reports what radian's step reports.
+    const radian = (await plugin("../../harness-radian/src/index.ts")).default;
+    const withRadian = new PluginRegistry([radian], { home: root, cwd: root, store: storeAt(root) });
+    expect(registry.stepResults(settings.worker.use)).toEqual(
+      withRadian.stepResults("harness-radian/agent") ?? [],
+    );
+  });
+});

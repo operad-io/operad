@@ -145,10 +145,12 @@ describe("harness-claude/agent", () => {
       command: "/opt/claude/bin/claude",
       maxTurns: 7,
       budgetUsd: 2.5,
+      bashTimeoutSecs: 900,
     });
     await runAgent(env, { prompt: "hello", cwd: env.root });
     const input = recorded(env);
     expect(input).toEqual({
+      bashTimeoutSecs: 900,
       prompt: "hello",
       cwd: env.root,
       command: "/opt/claude/bin/claude",
@@ -159,10 +161,10 @@ describe("harness-claude/agent", () => {
     });
   });
 
-  test("unset settings are not sent, so claude uses its defaults; the command defaults to claude", async () => {
+  test("unset settings are not sent, so claude uses its defaults; the command defaults to claude and Bash to 1800 s", async () => {
     const env = await setup("done");
     await runAgent(env, { prompt: "hello", cwd: env.root });
-    expect(recorded(env)).toEqual({ prompt: "hello", cwd: env.root, command: "claude" });
+    expect(recorded(env)).toEqual({ prompt: "hello", cwd: env.root, command: "claude", bashTimeoutSecs: 1800 });
   });
 
   test("--model and --effort in args reach the worker and win over the settings", async () => {

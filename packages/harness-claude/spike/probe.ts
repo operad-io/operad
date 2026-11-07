@@ -15,7 +15,7 @@ import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 export class ClaudeNotFoundError extends Error {
   constructor() {
     super(
-      "no `claude` command was found on PATH; install Claude Code first (https://code.claude.com), then run the probe again",
+      "no `claude` command was found on PATH; install claude first (https://code.claude.com), then run the probe again",
     );
     this.name = "ClaudeNotFoundError";
   }

@@ -8,7 +8,7 @@ line is the `Result`. Decisions: `docs/backlog/operad-harness-claude.md` 2 to 8.
 Run it as `bun packages/harness-claude/src/worker.ts`. stderr is free text for
 humans and is never parsed.
 
-operad bundles no Claude Code. The root `package.json` replaces the eight
+operad bundles no claude. The root `package.json` replaces the eight
 platform packages of the SDK with empty ones (`SPIKE.md`), and the worker finds
 `claude` on `PATH` (or at the `command` it is given) and resolves its real path.
 The login is the one `claude` already has; the worker passes no credential. A
@@ -20,7 +20,15 @@ The login is the one `claude` already has; the worker passes no credential. A
 appended and the SDK's default tools. `canUseTool` is the only permission
 surface. These names are set in its environment: `CLAUDE_CODE_DISABLE_AUTO_MEMORY`,
 `CLAUDE_CODE_DISABLE_CLAUDE_MDS`, `DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`
-(all `1`). Auto compaction and tool search are left on: a long run needs
+(all `1`), and `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, so no command moves to the
+background. A run is one foreground turn: the tools that only schedule or wait for
+work outside the turn (`Monitor`, `ScheduleWakeup`, `CronCreate`, `CronDelete`,
+`CronList`, `TaskStop`) are in `disallowedTools`, and `BASH_DEFAULT_TIMEOUT_MS` and
+`BASH_MAX_TIMEOUT_MS` are set from `bashTimeoutSecs` so a gate (a full test run)
+finishes in the foreground instead of after claude's default 120 s. If claude
+starts a second session after its result (a second `system/init`), the worker
+stops, logs it and ends `failed` with reason `model_error` and a message that says
+so; the first result's usage and session id are kept. Auto compaction and tool search are left on: a long run needs
 compaction.
 
 ## stdin
@@ -37,6 +45,7 @@ the table is refused, not ignored.
 | `resumeSession` | string, a UUID | no | a `sessionId` from an earlier `Result`; the prompt is sent into that session |
 | `model` | string, non-empty | no | model name for claude (`--model`); absent means claude's own default |
 | `effort` | `low`, `medium`, `high`, `xhigh` or `max` | no | reasoning effort; absent means claude's default |
+| `bashTimeoutSecs` | positive integer | no | the longest one Bash call may run in the foreground, in seconds; absent means 1800. Sets claude's `BASH_DEFAULT_TIMEOUT_MS` and `BASH_MAX_TIMEOUT_MS` |
 | `access` | object | no | the access profile; `denyPaths` and `denyCommands` are enforced in `canUseTool` by `@operad-io/access-match`, `grants` are one-time permissions, other fields are ignored; absent means nothing is denied |
 | `maxTurns` | positive integer | no | SDK `maxTurns`; absent means no limit |
 | `budgetUsd` | positive number | no | SDK `maxBudgetUsd`; absent means none |
@@ -51,6 +60,7 @@ One JSON object per line, flushed per line, each with a `type`:
 
 | type | other fields | meaning |
 |---|---|---|
+| `session` | `claudeVersion`, `apiKeySource`, `model` | claude started a session; written once, first. `apiKeySource` says which credential it uses: `none` for a subscription login, `ANTHROPIC_API_KEY` when that variable is set in the environment |
 | `message_end` | `role` (`"assistant"`), `stopReason` (string or null), `usage` (`{input, output, cache_read, cache_write}`), `cost` (always `null`: claude prices a run, not a message) | an assistant message finished; written once per message |
 | `tool_execution_start` | `toolCallId`, `toolName` | a tool call began (the `PreToolUse` hook) |
 | `tool_execution_end` | `toolCallId`, `toolName`, `isError` | a tool call ended (`PostToolUse`, `PostToolUseFailure`, or a refusal) |
@@ -145,6 +155,7 @@ The `harness-claude` section of `config.json`. A step param (`wallTimeSecs`,
 | `command` | string | `claude` | the claude command: a name on PATH or a path |
 | `maxTurns` | integer, 1 or more | unset | the most turns one run may take |
 | `budgetUsd` | number, 0.01 or more | unset | the most one run may spend, for API-key logins |
+| `bashTimeoutSecs` | integer, 1 or more | `1800` | the longest one Bash call may run, in seconds; nothing runs in the background, so a long gate runs in the foreground within this time |
 | `wallTimeSecs` | number | `3600` | the longest one run may take; at most 28500 |
 | `stallSecs` | number | `600` | how long a run may print nothing while no tool call is open |
 | `concurrency` | object, model to positive integer | `{}` | how many runs of one model may go at once; key `harness-claude:<model>` |

@@ -80,7 +80,7 @@ describe("inspectClaude", () => {
 
   test("no claude command is refused and says how to fix it", () => {
     expect(() => inspectClaude(undefined, { path: "" })).toThrow(ClaudeNotFoundError);
-    expect(() => inspectClaude("/nowhere/claude")).toThrow(/install Claude Code/);
+    expect(() => inspectClaude("/nowhere/claude")).toThrow(/install claude/);
   });
 
   test("a version below the floor is refused and names both versions", async () => {
@@ -171,6 +171,6 @@ describe("harness-claude check", () => {
   test("fails when there is no claude", async () => {
     const check = await checks("/nowhere/claude");
     expect(check?.ok).toBe(false);
-    expect(JSON.stringify(check)).toContain("install Claude Code");
+    expect(JSON.stringify(check)).toContain("install claude");
   });
 });

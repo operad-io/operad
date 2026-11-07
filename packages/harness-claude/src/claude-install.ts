@@ -27,7 +27,7 @@ export class ClaudeInstallError extends Error {
 export class ClaudeNotFoundError extends ClaudeInstallError {
   constructor(command: string) {
     super(
-      `no \`${command}\` command was found; install Claude Code first (https://code.claude.com) or set the command setting to its path`,
+      `no \`${command}\` command was found; install claude first (https://code.claude.com) or set the command setting to its path`,
     );
     this.name = "ClaudeNotFoundError";
   }
@@ -137,7 +137,7 @@ export function inspectClaude(
   const version = match[1];
   if (compareVersions(version, floor) < 0) {
     throw new ClaudeInstallError(
-      `claude ${version} at ${path} is older than the floor ${floor}; update Claude Code (claude update)`,
+      `claude ${version} at ${path} is older than the floor ${floor}; update claude (claude update)`,
     );
   }
 

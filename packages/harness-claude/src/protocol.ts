@@ -21,7 +21,12 @@ export interface WorkerInput {
   readonly access?: Readonly<Record<string, unknown>> | undefined;
   readonly maxTurns?: number | undefined;
   readonly budgetUsd?: number | undefined;
+  /** The longest a Bash call may run in the foreground, in seconds; unset means `DEFAULT_BASH_TIMEOUT_SECS`. */
+  readonly bashTimeoutSecs?: number | undefined;
 }
+
+/** A gate such as a full test run must finish in the foreground; claude's own default is 120 s. */
+export const DEFAULT_BASH_TIMEOUT_SECS = 1800;
 
 export interface WorkerUsage {
   input?: number;
@@ -61,6 +66,17 @@ export interface WorkerResult {
 }
 
 export type WorkerLine =
+  /**
+   * Written once, when claude starts a session. `apiKeySource` says which
+   * credential claude uses: `none` for a subscription login, `ANTHROPIC_API_KEY`
+   * when that environment variable is set.
+   */
+  | {
+      readonly type: "session";
+      readonly claudeVersion: string;
+      readonly apiKeySource: string;
+      readonly model: string;
+    }
   | {
       readonly type: "message_end";
       readonly role: "assistant";
@@ -101,7 +117,8 @@ export type ParsedInput =
   | { readonly ok: true; readonly input: WorkerInput }
   | { readonly ok: false; readonly message: string };
 
-const FIELDS = [
+/** The stdin fields, in the order the README lists them. */
+export const INPUT_FIELDS = [
   "prompt",
   "cwd",
   "command",
@@ -111,6 +128,7 @@ const FIELDS = [
   "access",
   "maxTurns",
   "budgetUsd",
+  "bashTimeoutSecs",
 ] as const;
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -126,7 +144,7 @@ export function parseInput(value: unknown): ParsedInput {
   // A field the program does not know is refused, never ignored: a flag that
   // is silently dropped would hide a wrong model.
   for (const key of Object.keys(value)) {
-    if (!(FIELDS as readonly string[]).includes(key)) {
+    if (!(INPUT_FIELDS as readonly string[]).includes(key)) {
       return { ok: false, message: `${key} is not an input field` };
     }
   }
@@ -170,6 +188,14 @@ export function parseInput(value: unknown): ParsedInput {
     return { ok: false, message: "budgetUsd must be a positive number" };
   }
 
+  const bashTimeoutSecs = value["bashTimeoutSecs"];
+  if (
+    bashTimeoutSecs !== undefined &&
+    (typeof bashTimeoutSecs !== "number" || !Number.isInteger(bashTimeoutSecs) || bashTimeoutSecs < 1)
+  ) {
+    return { ok: false, message: "bashTimeoutSecs must be a positive integer" };
+  }
+
   const access = value["access"];
   if (access !== undefined && !isRecord(access)) {
     return { ok: false, message: "access must be an object" };
@@ -191,6 +217,7 @@ export function parseInput(value: unknown): ParsedInput {
       access,
       maxTurns,
       budgetUsd,
+      bashTimeoutSecs,
     },
   };
 }
