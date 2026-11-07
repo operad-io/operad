@@ -199,14 +199,16 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
   private async run(): Promise<void> {
     let attempt = 0;
     while (!this.closed) {
-      let connected = false;
+      let delivered = false;
       try {
-        connected = await this.connect();
+        delivered = await this.connect();
       } catch {
         // A refused connection or a dropped stream is retried below.
       }
       if (this.closed) break;
-      if (connected) attempt = 0;
+      // A server that accepts and then closes without an event is still a
+      // failure: only a connection that delivered something resets the backoff.
+      if (delivered) attempt = 0;
       const delay = retryDelay(attempt, this.retryMinMs, this.retryMaxMs);
       attempt += 1;
       await this.waitImpl(delay, this.abort.signal);
@@ -214,7 +216,7 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
     this.settle();
   }
 
-  /** Reads one connection to its end; true when the server answered. */
+  /** Reads one connection to its end; true when it delivered an event. */
   private async connect(): Promise<boolean> {
     const headers: Record<string, string> = {
       authorization: `Bearer ${this.token}`,
@@ -237,35 +239,40 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let delivered = false;
     try {
       while (!this.closed) {
         const read = await reader.read();
         if (read.done) break;
         buffer += decoder.decode(read.value, { stream: true });
-        buffer = this.drain(buffer);
+        const drained = this.drain(buffer);
+        buffer = drained.remaining;
+        delivered = delivered || drained.delivered;
       }
     } finally {
       await reader.cancel().catch(() => undefined);
     }
-    return true;
+    return delivered;
   }
 
   /** Consumes every complete block and returns the unfinished tail. */
-  private drain(buffer: string): string {
+  private drain(buffer: string): { remaining: string; delivered: boolean } {
     let remaining = buffer;
+    let delivered = false;
     for (;;) {
       const match = /\r?\n\r?\n/.exec(remaining);
       if (match === null) break;
       const block = remaining.slice(0, match.index);
       remaining = remaining.slice(match.index + match[0].length);
-      this.handleBlock(block);
+      if (this.handleBlock(block)) delivered = true;
     }
-    return remaining;
+    return { remaining, delivered };
   }
 
-  private handleBlock(block: string): void {
+  /** Handles one block; true when it yielded an event. */
+  private handleBlock(block: string): boolean {
     const parsed = parseBlock(block);
-    if (parsed === undefined) return;
+    if (parsed === undefined) return false;
     if (parsed.id !== undefined && parsed.id.length > 0) {
       this.lastId = parsed.id;
     }
@@ -274,16 +281,17 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
       // second reset does not follow the first.
       this.lastId = undefined;
       this.push({ kind: "reset" });
-      return;
+      return true;
     }
-    if (parsed.event !== "message" || parsed.data.length === 0) return;
+    if (parsed.event !== "message" || parsed.data.length === 0) return false;
     let body: unknown;
     try {
       body = JSON.parse(parsed.data);
     } catch {
-      return;
+      return false;
     }
-    if (!isRecord(body) || typeof body.id !== "string") return;
+    if (!isRecord(body) || typeof body.id !== "string") return false;
     this.push({ kind: "change", id: body.id });
+    return true;
   }
 }

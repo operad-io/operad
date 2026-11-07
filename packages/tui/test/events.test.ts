@@ -161,6 +161,35 @@ describe("TuiEvents", () => {
     }
   });
 
+  test("a stream that closes without an event keeps backing off", async () => {
+    const h = await makeHarness();
+    try {
+      const delays: number[] = [];
+      let attempts = 0;
+      const fetchImpl: FetchLike = async () => {
+        attempts += 1;
+        return new Response("", {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      };
+      const events = new TuiEvents({
+        url: h.base,
+        token: h.token,
+        fetch: fetchImpl,
+        wait: async (ms) => {
+          delays.push(ms);
+          if (delays.length === 3) events.stop();
+        },
+      });
+      expect(await events.next()).toEqual({ done: true, value: undefined });
+      expect(attempts).toBe(3);
+      expect(delays).toEqual([retryDelay(0), retryDelay(1), retryDelay(2)]);
+    } finally {
+      await h.close();
+    }
+  });
+
   test("stop ends a waiting reader at once", async () => {
     const h = await makeHarness();
     try {
