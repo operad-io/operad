@@ -5,4 +5,5 @@
  */
 
 export * from "./file-lock.ts";
+export * from "./sqlite-open.ts";
 export * from "./watch.ts";

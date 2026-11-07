@@ -31,7 +31,12 @@ import {
 } from "./facts.ts";
 import { assertJsonValue } from "./json-value.ts";
 import { SCHEMA_VERSION } from "./schema.ts";
-import { resolveSubscriptionWatch, type SubscriptionWatch } from "../platform/index.ts";
+import {
+  enableWal,
+  resolveSubscriptionWatch,
+  setBusyTimeout,
+  type SubscriptionWatch,
+} from "../platform/index.ts";
 import type {
   AppendResult,
   Fact,
@@ -54,8 +59,7 @@ import type {
 /** The file the sqlite factory creates inside the store directory. */
 export const SQLITE_FILE_NAME = "log.sqlite";
 
-/** How long a writer waits for another writer before SQLITE_BUSY. */
-export const BUSY_TIMEOUT_MS = 5_000;
+export { BUSY_TIMEOUT_MS } from "../platform/index.ts";
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS schema_version (
@@ -243,50 +247,6 @@ function openFailure(path: string, error: unknown): LogBackendError {
   return new LogBackendError(`cannot open the sqlite log at ${path}: ${detail}`);
 }
 
-function isBusy(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === "SQLITE_BUSY"
-  );
-}
-
-/**
- * Wait until another connection releases the database. SQLite's busy handler,
- * which `busy_timeout` installs, covers ordinary lock acquisition but not a
- * journal mode switch; an immediate transaction goes through it and blocks
- * until the other writer commits, so nothing has to sleep and poll.
- */
-function waitForWriter(database: Database): void {
-  database.transaction(() => undefined).immediate();
-}
-
-/**
- * Switch the store to WAL. Two processes opening a fresh store race for the
- * exclusive lock the switch takes: the loser sees SQLITE_BUSY at once, waits
- * for the winner through the busy handler, then sees the mode is already WAL.
- */
-function setWalMode(database: Database): void {
-  if (currentJournalMode(database) === "wal") return;
-  for (;;) {
-    try {
-      database.run("PRAGMA journal_mode = WAL");
-      return;
-    } catch (error) {
-      if (!isBusy(error)) throw error;
-    }
-    waitForWriter(database);
-    if (currentJournalMode(database) === "wal") return;
-  }
-}
-
-function currentJournalMode(database: Database): string | undefined {
-  return database
-    .query<{ journal_mode: string }, []>("PRAGMA journal_mode")
-    .get()?.journal_mode;
-}
-
 function ensureDirectory(path: string): void {
   const directory = dirname(path);
   try {
@@ -299,10 +259,10 @@ function ensureDirectory(path: string): void {
 }
 
 function configure(database: Database): void {
-  database.run(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
+  setBusyTimeout(database);
   database.run("PRAGMA synchronous = FULL");
   database.run("PRAGMA foreign_keys = ON");
-  setWalMode(database);
+  enableWal(database);
 }
 
 /** The recorded version, or undefined when the schema has not been created yet. */
