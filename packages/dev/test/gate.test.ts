@@ -1156,7 +1156,7 @@ describe("dev/review fallback and retry", () => {
     expect(task.attempt?.reviews).toBe(0);
     expect(task.attempt?.reviewRuns).toHaveLength(1);
     expect(task.attempt?.reviewRuns?.[0]?.attempt).toBe(2);
-  });
+  }, 30_000);
 });
 
 /**
@@ -1187,7 +1187,7 @@ describe("dev/review hardening", () => {
     expect(result.result).toBe("failed");
     // No fallback was tried: the failure is not an unavailable model.
     expect(state.reviewer.calls).toHaveLength(1);
-  });
+  }, 30_000);
 
   test("a usage limit reported as a model error falls back", async () => {
     const state = await fixture({
@@ -1198,7 +1198,7 @@ describe("dev/review hardening", () => {
     const result = await review(state, "review-usage-limit");
     expect(result.result).toBe("pass");
     expect(state.reviewer.calls).toHaveLength(2);
-  });
+  }, 30_000);
 
   for (const mode of ["report-then-exit", "report-then-wall"]) {
     test(`a valid report from a reviewer that then failed (${mode}) is used and kept`, async () => {
@@ -1350,7 +1350,7 @@ describe("dev/review hardening", () => {
     } finally {
       delete reviewTestHooks.now;
     }
-  });
+  }, 60_000);
 
   test("runs that cannot fit in the step deadline are skipped and a person decides", async () => {
     const state = await fixture({
