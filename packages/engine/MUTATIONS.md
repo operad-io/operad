@@ -169,3 +169,8 @@ the row fields.
 | TK0005-M5 | packages/engine/src/platform/sqlite-open.ts | `enableWal` rethrew `SQLITE_BUSY` instead of waiting | `switching to WAL waits while another process holds the database` |
 | TK0005-M6 | packages/engine/src/platform/watch.ts | `resolveSubscriptionWatch` ignored an injected watch | `the injected watch, timer and period replace the defaults` |
 | TK0005-M7 | packages/engine/test/platform/no-copies.test.ts | dropped the `process.kill(-` pattern from the scan | `the platform module is the only copy > the scan finds each forbidden call outside platform/` |
+| TK0009-M1 | packages/engine/src/platform/process-group.ts | the drain grace used `globalThis.setTimeout` instead of the injected clock | `shell/command > a child that leaves the group cannot hold the command open` (timed out) |
+| TK0009-M2 | packages/engine/src/platform/process-group.ts | a finished line took the TERM/grace stop instead of a direct SIGKILL | `process groups > a finished line is stopped with a single SIGKILL` |
+| TK0009-M3 | packages/engine/src/platform/process-group.ts | the sentinel looped forever instead of watching the host process | `the sentinel's host > a sentinel whose host was killed ends when its line finishes` |
+| TK0009-M4 | packages/engine/src/platform/process-group.ts | `exitFromStatus` mapped status 130 to a signal and dropped the code | `shell/command > a command that exits 130 keeps the exit code in the fact` |
+| TK0009-M5 | packages/engine/src/platform/process-group.ts | `ControlReader.destroy()` set closed before the stream close could resolve the waiter | `the control reader > destroy resolves a pending read` (timed out) |

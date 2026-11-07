@@ -432,20 +432,6 @@ each task: `TK0001-M1`.
 | TK0016-M4 | packages/harness-pi/src/index.ts | a usage-limit error text was never `usage_limit` | `harness-pi/agent > a model_error failure about a usage limit is usage_limit` |
 | TK0016-M5 | packages/harness-pi/src/index.ts | the step stopped declaring `denyCommands` in `enforces` | `harness-pi/agent > the step declares the deny fields it enforces and a timeout above its wall time` |
 
-## TK0009 — plugin follow-ups
-
-| id | file | mutation | failing test |
-|---|---|---|---|
-| TK0009-M1 | packages/engine/src/platform/process-group.ts | the drain grace used `globalThis.setTimeout` instead of the injected clock | `shell/command > a child that leaves the group cannot hold the command open` (timed out) |
-| TK0009-M2 | packages/engine/src/platform/process-group.ts | a finished line took the TERM/grace stop instead of a direct SIGKILL | `process groups > a finished line is stopped with a single SIGKILL` |
-| TK0009-M3 | packages/engine/src/platform/process-group.ts | the sentinel looped forever instead of watching the host process | `the sentinel's host > a sentinel whose host was killed ends when its line finishes` |
-| TK0009-M4 | packages/engine/src/platform/process-group.ts | `exitFromStatus` mapped status 130 to a signal and dropped the code | `shell/command > a command that exits 130 keeps the exit code in the fact` |
-| TK0009-M5 | packages/engine/src/platform/process-group.ts | `ControlReader.destroy()` set closed before the stream close could resolve the waiter | `the control reader > destroy resolves a pending read` (timed out) |
-| TK0009-M6 | packages/shell/src/index.ts | the aborted-before-first-line branch named a log that was never written | `shell/check > an abort before the first line is interrupted and leaves a log` |
-| TK0009-M7 | packages/dev/src/service.ts | the generated dev.json left out `$schema` | `dev repositories > add writes settings and excludes, list reads it, remove refuses open tasks` |
-| TK0009-M8 | packages/harness-radian/test/support.ts | `processesUnder` returned nothing | `the guard sees a process whose command line names a temp directory` |
-| TK0009-M9 | packages/harness-process/src/process.ts | the harness drain used `globalThis.setTimeout` instead of the injected clock | `the harness process > a child that leaves the group cannot hold the run open` (timed out) |
-| TK0009-M10 | packages/harness-process/src/process.ts | a finished harness run took the grace stop instead of a direct SIGKILL | `the harness process > a child that leaves the group cannot hold the run open` (sleeps 1) |
 ## TK0018 — pi dogfood
 
 | id | file | mutation | failing test |
@@ -455,6 +441,7 @@ each task: `TK0001-M1`.
 - [dev](packages/dev/MUTATIONS.md)
 - [engine](packages/engine/MUTATIONS.md)
 - [harness-pi](packages/harness-pi/MUTATIONS.md)
+- [harness-process](packages/harness-process/MUTATIONS.md)
 - [harness-radian](packages/harness-radian/MUTATIONS.md)
 - [shell](packages/shell/MUTATIONS.md)
 - [source-cron](packages/source-cron/MUTATIONS.md)
