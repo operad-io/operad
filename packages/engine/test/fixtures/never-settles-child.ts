@@ -46,24 +46,32 @@ const plugin = definePlugin({
   ],
 });
 
-const storeRoot = join(root, "store");
-const log = openLog({ backend: "jsonl", path: storeRoot });
-const registry = new PluginRegistry([plugin], {
-  home: root,
-  storeRoot,
-  store: new MemoryPluginStore({ root: storeRoot }),
-  onLog: () => undefined,
-});
-const info = await log.startRun("stuck", "job:1");
-const runner = new Runner({
-  log,
-  flow,
-  runId: info.runId,
-  registry,
-  lockRoot: storeRoot,
-  stepTimeoutMs: 100,
-});
-await runner.run();
-const state = await readState(log, info.runId);
-process.stdout.write(`${JSON.stringify({ results: Object.values(state.results).map((r) => r.result) })}\n`);
-await log.close();
+/**
+ * Not top-level await: Bun keeps a process alive while a module's top-level
+ * await is pending, which would hide an unref'd step timer.
+ */
+async function main(root: string): Promise<void> {
+  const storeRoot = join(root, "store");
+  const log = openLog({ backend: "jsonl", path: storeRoot });
+  const registry = new PluginRegistry([plugin], {
+    home: root,
+    storeRoot,
+    store: new MemoryPluginStore({ root: storeRoot }),
+    onLog: () => undefined,
+  });
+  const info = await log.startRun("stuck", "job:1");
+  const runner = new Runner({
+    log,
+    flow,
+    runId: info.runId,
+    registry,
+    lockRoot: storeRoot,
+    stepTimeoutMs: 100,
+  });
+  await runner.run();
+  const state = await readState(log, info.runId);
+  process.stdout.write(`${JSON.stringify({ results: Object.values(state.results).map((r) => r.result) })}\n`);
+  await log.close();
+}
+
+void main(root);

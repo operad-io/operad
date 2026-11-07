@@ -681,3 +681,4 @@
 | TK0008-M15 | `packages/engine/src/runner/runner.ts` | `WORKER_ABORT_GRACE_MS` back to 1000 ms, not above two process-group graces | `runner > an aborted worker gets longer than the slowest process-group stop` |
 | TK0008-M16 | `packages/dev/src/steps.ts` | a worker model error went to a person instead of waiting | `dev/work > unavailable: a model error waits for the model instead of a person` |
 | TK0008-M17 | `packages/dev/src/steps.ts` | removed the bound on work waits | `dev/work > unavailable: after the allowed waits the failure goes to a person` |
+| engine-followups-2-M1 | `packages/engine/src/runner/runner.ts` | `timer.unref()` put back on the in-process step timeout timer (the test child had top-level await, which Bun keeps alive, so it hid the missing timer; the child now runs from a plain function) | `runner > a step that never settles still times out in a memory-backed process` |
