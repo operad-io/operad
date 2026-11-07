@@ -5,7 +5,10 @@
   "maxAutoRework": 4,
   "worker": {
     "use": "harness-pi/agent",
-    "args": [],
+    "args": [
+      "--model",
+      "opencode-go/deepseek-v4.1-flash"
+    ],
     "stallSecs": 900,
     "wallTimeSecs": 7200
   },
