@@ -178,3 +178,7 @@ the row fields.
 | T-0021-M7 | packages/engine/src/plugin/registry.ts | stopped checking that `limit.key` is a function | `plugin registry validation > step limits > refuses a declaration of the wrong shape, naming plugin and step type` |
 | T-0021-M8 | packages/engine/src/runner/limits.ts | `queuedSteps` counted one more step ahead than there was | `step limits (memory) > two steps run, the third starts when one ends` |
 | T-0021-M11 | packages/engine/src/runner/limits.ts | a `step_queued` after a `step_released` for the same effect was ignored again | `step limits after a released place > a step queued again after its release gets a place` |
+| T-0022-M1 | packages/engine/src/plugin/usage.ts | `validateUsage` skipped the last token field | `validateUsage > refuses each wrong field and names it` |
+| T-0022-M2 | packages/engine/src/plugin/usage.ts | `readUsage` read an old fact's `cache_write` as `cacheread` | `readUsage > reads a fact stored before the standard field existed` |
+| T-0022-M3 | packages/engine/src/plugin/registry.ts | the harness result check never ran | `end results > the plugin check refuses a harness step that declares another name` |
+| T-0022-M4 | packages/engine/src/plugin/usage.ts | `END_RESULTS` lost `nothing`, so the manual's table no longer matched | `end results > the manual's table lists exactly the exported results` |

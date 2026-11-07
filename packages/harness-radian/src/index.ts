@@ -10,8 +10,6 @@ import {
   defineFlow,
   definePlugin,
   type AgentResultData,
-  type HarnessCost,
-  type HarnessUsage,
   type PluginStepResult,
   type StepContext,
 } from "@operad-io/engine";
@@ -22,6 +20,9 @@ import {
   flagValue,
   JsonlLog,
   MAX_LINE_CHARS,
+  standardUsage,
+  type RawCounts,
+  type UsageSource,
   modelLimit,
   runAgent,
   systemClock,
@@ -152,8 +153,9 @@ async function directoryError(cwd: string): Promise<string | undefined> {
 interface ParsedResult {
   readonly sessionId: string | null;
   readonly finalMessage: string | null;
-  readonly usage: HarnessUsage;
-  readonly cost: HarnessCost | null;
+  /** radian's own counts and cost, as it prints them. */
+  readonly counts: RawCounts;
+  readonly costMicros: number | null;
   /** The `model_error` of a run that ended on a model failure, as data. */
   readonly modelError: Readonly<Record<string, unknown>> | null;
 }
@@ -168,20 +170,18 @@ function parseResult(line: string): ParsedResult | undefined {
   }
   if (!isRecord(value) || value.type !== "Result") return undefined;
 
-  const usage = isRecord(value.usage) ? (value.usage as HarnessUsage) : {};
-  let cost: HarnessCost | null = null;
-  if (
+  const counts = isRecord(value.usage) ? (value.usage as RawCounts) : {};
+  const costMicros =
     isRecord(value.cost) &&
     typeof value.cost.micros === "number" &&
     Number.isFinite(value.cost.micros)
-  ) {
-    cost = value.cost as unknown as HarnessCost;
-  }
+      ? value.cost.micros
+      : null;
   return {
     sessionId: typeof value.session_id === "string" ? value.session_id : null,
     finalMessage: typeof value.text === "string" ? value.text : null,
-    usage,
-    cost,
+    counts,
+    costMicros,
     modelError: isRecord(value.model_error) ? value.model_error : null,
   };
 }
@@ -194,6 +194,7 @@ function modelErrorData(
 }
 
 function failureData(
+  who: UsageSource,
   outcome: AgentRunOutcome,
   result: ParsedResult | undefined,
   log: string,
@@ -201,13 +202,14 @@ function failureData(
   extra: Readonly<Record<string, unknown>>,
 ): Record<string, unknown> {
   return {
-    ...agentData(outcome, result, log, durationMs),
+    ...agentData(who, outcome, result, log, durationMs),
     ...modelErrorData(result),
     ...extra,
   };
 }
 
 function agentData(
+  who: UsageSource,
   outcome: AgentRunOutcome,
   result: ParsedResult | undefined,
   log: string,
@@ -218,8 +220,7 @@ function agentData(
     signal: outcome.signal,
     sessionId: result?.sessionId ?? null,
     finalMessage: result?.finalMessage ?? null,
-    usage: result?.usage ?? {},
-    cost: result?.cost ?? null,
+    usage: standardUsage(who, result?.counts, result?.costMicros),
     log,
     durationMs,
     stderr: outcome.stderrTail,
@@ -244,6 +245,7 @@ function radianArgs(
 }
 
 function resultFor(
+  who: UsageSource,
   outcome: AgentRunOutcome,
   result: ParsedResult | undefined,
   log: string,
@@ -255,7 +257,7 @@ function resultFor(
   if (outcome.cancelled) {
     return {
       result: "interrupted",
-      data: failureData(outcome, result, log, durationMs, {
+      data: failureData(who, outcome, result, log, durationMs, {
         reason: "cancelled",
         message: "the harness run was cancelled",
       }),
@@ -264,7 +266,7 @@ function resultFor(
   if (outcome.missing) {
     return {
       result: "failed",
-      data: failureData(outcome, result, log, durationMs, {
+      data: failureData(who, outcome, result, log, durationMs, {
         reason: "missing",
         message: `${command} was not found on PATH`,
       }),
@@ -273,7 +275,7 @@ function resultFor(
   if (outcome.spawnError !== undefined) {
     return {
       result: "failed",
-      data: failureData(outcome, result, log, durationMs, {
+      data: failureData(who, outcome, result, log, durationMs, {
         reason: "spawn",
         message: outcome.spawnError,
       }),
@@ -282,7 +284,7 @@ function resultFor(
   if (outcome.wall) {
     return {
       result: "failed",
-      data: failureData(outcome, result, log, durationMs, {
+      data: failureData(who, outcome, result, log, durationMs, {
         reason: "wall",
         message: `the harness ran longer than ${wallTimeSecs}s`,
       }),
@@ -291,7 +293,7 @@ function resultFor(
   if (outcome.stall) {
     return {
       result: "failed",
-      data: failureData(outcome, result, log, durationMs, {
+      data: failureData(who, outcome, result, log, durationMs, {
         reason: "stall",
         message: `the harness printed no new line for ${stallSecs}s`,
       }),
@@ -300,7 +302,7 @@ function resultFor(
   if (outcome.lineTooLong) {
     return {
       result: "failed",
-      data: failureData(outcome, result, log, durationMs, {
+      data: failureData(who, outcome, result, log, durationMs, {
         reason: "line_too_long",
         message: `the harness printed a line longer than ${MAX_LINE_CHARS} characters`,
       }),
@@ -313,7 +315,7 @@ function resultFor(
         : `the harness exited ${String(outcome.exitCode)}`;
     return {
       result: "failed",
-      data: failureData(outcome, result, log, durationMs, {
+      data: failureData(who, outcome, result, log, durationMs, {
         reason: "exit",
         message,
       }),
@@ -322,7 +324,7 @@ function resultFor(
   if (result === undefined) {
     return {
       result: "failed",
-      data: failureData(outcome, result, log, durationMs, {
+      data: failureData(who, outcome, result, log, durationMs, {
         reason: "no_result",
         message: "the harness exited 0 without a Result record",
       }),
@@ -331,7 +333,7 @@ function resultFor(
   return {
     result: "done",
     data: {
-      ...agentData(outcome, result, log, durationMs),
+      ...agentData(who, outcome, result, log, durationMs),
       ...modelErrorData(result),
     } as unknown as Record<string, unknown>,
   };
@@ -419,6 +421,19 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
               ? defaults.command
               : text(ctx.settings.command, `${at}: settings.command`);
 
+          // The model as the step names it, `<provider>/<model>`, for the usage.
+          const modelFlag = flagValue(args, "--model");
+          const providerFlag = flagValue(args, "--provider");
+          const who: UsageSource = {
+            harness: "harness-radian",
+            model:
+              modelFlag === undefined
+                ? null
+                : providerFlag === undefined
+                  ? modelFlag
+                  : `${providerFlag}/${modelFlag}`,
+          };
+
           const cwdProblem = await directoryError(cwd);
           if (cwdProblem !== undefined) {
             const log = await ctx.logger.write(cwdProblem);
@@ -431,8 +446,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
                 signal: null,
                 sessionId: null,
                 finalMessage: null,
-                usage: {},
-                cost: null,
+                usage: standardUsage(who, undefined, null),
                 log,
                 durationMs: 0,
                 stderr: [cwdProblem],
@@ -465,6 +479,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
           await jsonl.end();
 
           return resultFor(
+            who,
             outcome,
             result,
             ctx.logger.path,

@@ -14,3 +14,4 @@ the row fields.
 | pi-step-model-M1 | packages/harness-pi/src/index.ts | the setting won over the `--model` flag | `--model and --thinking in args reach the worker and win over the settings` |
 | pi-step-model-M2 | packages/harness-pi/src/index.ts | removed the "given twice" check for `--model` | `a model given twice fails with invalid_args and the worker is not started` |
 | pi-step-model-M3 | packages/harness-pi/src/index.ts | an unknown entry in `args` was skipped instead of rejected | `an unknown flag fails with invalid_args and the worker is not started` |
+| T-0022-M7 | packages/harness-pi/src/index.ts | the usage left the model out (`model: null`) | `harness-pi/agent > the usage names the model setting when the step has no --model` |

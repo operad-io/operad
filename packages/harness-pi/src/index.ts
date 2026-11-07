@@ -16,8 +16,6 @@ import {
   defineFlow,
   definePlugin,
   type AgentResultData,
-  type HarnessCost,
-  type HarnessUsage,
   type PluginStepResult,
   type StepContext,
 } from "@operad-io/engine";
@@ -27,6 +25,8 @@ import {
   flagValue,
   JsonlLog,
   modelLimit,
+  standardUsage,
+  type UsageSource,
   MAX_LINE_CHARS,
   runAgent,
   systemClock,
@@ -258,20 +258,18 @@ export function modelErrorOf(message: string): Record<string, unknown> {
 }
 
 function agentData(
+  who: UsageSource,
   outcome: AgentRunOutcome,
   result: WorkerResult | undefined,
   log: string,
   durationMs: number,
 ): AgentResultData {
-  const usage: HarnessUsage = result?.usage ?? {};
-  const cost: HarnessCost | null = result?.cost ?? null;
   return {
     exitCode: outcome.exitCode,
     signal: outcome.signal,
     sessionId: result?.sessionId ?? null,
     finalMessage: result?.finalMessage ?? null,
-    usage,
-    cost,
+    usage: standardUsage(who, result?.usage, result?.cost?.micros ?? null),
     log,
     durationMs,
     stderr: outcome.stderrTail,
@@ -279,6 +277,7 @@ function agentData(
 }
 
 function failure(
+  who: UsageSource,
   kind: "failed" | "interrupted",
   outcome: AgentRunOutcome,
   result: WorkerResult | undefined,
@@ -288,11 +287,12 @@ function failure(
 ): PluginStepResult {
   return {
     result: kind,
-    data: { ...agentData(outcome, result, log, durationMs), ...extra },
+    data: { ...agentData(who, outcome, result, log, durationMs), ...extra },
   };
 }
 
 function resultFor(
+  who: UsageSource,
   outcome: AgentRunOutcome,
   result: WorkerResult | undefined,
   log: string,
@@ -301,10 +301,10 @@ function resultFor(
   command: string,
 ): PluginStepResult {
   const fail = (extra: Readonly<Record<string, unknown>>): PluginStepResult =>
-    failure("failed", outcome, result, log, durationMs, extra);
+    failure(who, "failed", outcome, result, log, durationMs, extra);
 
   if (outcome.cancelled) {
-    return failure("interrupted", outcome, result, log, durationMs, {
+    return failure(who, "interrupted", outcome, result, log, durationMs, {
       reason: "cancelled",
       message: "the harness run was cancelled",
     });
@@ -340,7 +340,7 @@ function resultFor(
     // A signal nobody here sent (kill -9, an out-of-memory kill) is an
     // interruption of the run, not a verdict of the agent.
     if (outcome.exitCode === null && outcome.signal !== null) {
-      return failure("interrupted", outcome, result, log, durationMs, {
+      return failure(who, "interrupted", outcome, result, log, durationMs, {
         reason: "signal",
         message: `the harness was killed by ${outcome.signal} without a Result line${detail}`,
       });
@@ -352,7 +352,7 @@ function resultFor(
   }
 
   if (result.result === "cancelled") {
-    return failure("interrupted", outcome, result, log, durationMs, {
+    return failure(who, "interrupted", outcome, result, log, durationMs, {
       reason: "cancelled",
       message: "the harness run was cancelled",
     });
@@ -373,7 +373,7 @@ function resultFor(
   }
   return {
     result: "done",
-    data: agentData(outcome, result, log, durationMs) as unknown as Record<string, unknown>,
+    data: agentData(who, outcome, result, log, durationMs) as unknown as Record<string, unknown>,
   };
 }
 
@@ -447,8 +447,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
                 signal: null,
                 sessionId: null,
                 finalMessage: null,
-                usage: {},
-                cost: null,
+                usage: standardUsage({ harness: "harness-pi", model: null }, undefined, null),
                 log,
                 durationMs: 0,
                 stderr: [message],
@@ -491,8 +490,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
                 signal: null,
                 sessionId: null,
                 finalMessage: null,
-                usage: {},
-                cost: null,
+                usage: standardUsage({ harness: "harness-pi", model: null }, undefined, null),
                 log,
                 durationMs: 0,
                 stderr: [cwdProblem],
@@ -541,6 +539,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           await jsonl.end();
 
           return resultFor(
+            { harness: "harness-pi", model: model ?? null },
             outcome,
             result,
             ctx.logger.path,

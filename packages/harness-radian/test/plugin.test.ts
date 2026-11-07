@@ -10,6 +10,7 @@ import {
   readState,
   type PluginStepResult,
   type JsonValue,
+  validateUsage,
   type TriggerView,
 } from "@operad-io/engine";
 import {
@@ -130,12 +131,15 @@ describe("harness-radian/agent", () => {
     expect(data.signal).toBeNull();
     expect(data.sessionId).toBe("fake-session");
     expect(data.finalMessage).toBe("fake final message");
-    expect(data.usage).toEqual({ input: 11, output: 7 });
-    expect(data.cost).toEqual({
-      micros: 1234,
-      incomplete: false,
-      estimated: false,
+    expect(data.usage).toEqual({
+      harness: "harness-radian",
+      model: null,
+      tokens: { input: 11, output: 7, cacheread: 0, cachewrite: 0 },
+      costMicros: 1234,
     });
+    expect(validateUsage(data.usage).ok).toBe(true);
+    // The old fields are never written.
+    expect("cost" in data).toBe(false);
 
     const record = JSON.parse(readFileSync(env.record, "utf8")) as {
       readonly argv: readonly string[];
@@ -163,7 +167,18 @@ describe("harness-radian/agent", () => {
     const result = await runAgent(env, { prompt: "hello", cwd: env.root });
 
     expect(result.result).toBe("done");
-    expect(dataOf(result).cost).toBeNull();
+    expect(validateUsage(dataOf(result).usage).ok).toBe(true);
+    expect((dataOf(result).usage as { costMicros: unknown }).costMicros).toBeNull();
+  });
+
+  test("the usage names the model as <provider>/<model> when the step names it", async () => {
+    const env = await setup("done");
+    const result = await runAgent(env, {
+      prompt: "hello",
+      cwd: env.root,
+      args: ["--provider", "opencode-go", "--model", "deepseek-v4.1-flash"],
+    });
+    expect((dataOf(result).usage as { model: unknown }).model).toBe("opencode-go/deepseek-v4.1-flash");
   });
 
   test("resumeSession is passed to radian", async () => {

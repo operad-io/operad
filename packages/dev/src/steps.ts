@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
   messageOf,
+  readUsage,
   type PluginStepResult,
   type StepContext,
   type StepRunOptions,
@@ -632,33 +633,20 @@ interface HarnessReading {
 function harnessReading(data: Record<string, unknown>): HarnessReading {
   const sessionId =
     typeof data.sessionId === "string" ? data.sessionId : null;
-  const cost = data.cost;
-  const micros =
-    typeof cost === "object" &&
-    cost !== null &&
-    "micros" in cost &&
-    typeof (cost as { micros?: unknown }).micros === "number" &&
-    Number.isFinite((cost as { micros: number }).micros)
-      ? (cost as { micros: number }).micros
-      : null;
-  const usage = data.usage;
-  const input =
-    typeof usage === "object" && usage !== null
-      ? (usage as { input?: unknown }).input
-      : undefined;
-  const output =
-    typeof usage === "object" && usage !== null
-      ? (usage as { output?: unknown }).output
-      : undefined;
+  // The one reader of a step's usage: it takes the standard field and, for
+  // a fact written before it existed, the old fields.
+  const usage = readUsage(data);
+  const micros = usage?.costMicros ?? null;
   return {
     sessionId,
     costMicros: micros,
     cost: micros === null ? null : micros / 1_000_000,
     log: typeof data.log === "string" && data.log.length > 0 ? data.log : null,
     tokens:
-      typeof input === "number" && typeof output === "number"
-        ? { input, output }
-        : null,
+      // A run that reported no tokens at all has none to show.
+      usage === undefined || (usage.tokens.input === 0 && usage.tokens.output === 0)
+        ? null
+        : { input: usage.tokens.input, output: usage.tokens.output },
     durationMs:
       typeof data.durationMs === "number" && Number.isFinite(data.durationMs)
         ? data.durationMs
