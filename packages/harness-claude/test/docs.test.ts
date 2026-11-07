@@ -25,6 +25,9 @@ const MANUAL = read("../../../docs/manual.md");
 /** The dogfood section for claude, from its heading to the end. */
 const SECTION = DOGFOOD.slice(DOGFOOD.indexOf("## Using claude as the worker"));
 
+/** The README's settings tables only: some setting names are stdin fields too. */
+const SETTINGS = README.slice(README.indexOf("### Settings"), README.indexOf("### How the step ends"));
+
 /** The table row of the README that starts with `| \`name\` |`, or undefined. */
 function row(doc: string, name: string): string | undefined {
   return doc.split("\n").find((line) => line.startsWith(`| \`${name}\``));
@@ -35,7 +38,7 @@ describe("the settings", () => {
 
   for (const [name, schema] of Object.entries(properties)) {
     test(`${name}: the README row and the dogfood table document it`, () => {
-      const readme = row(README, name);
+      const readme = row(SETTINGS, name);
       expect(readme).toBeDefined();
       // An enum names its values in the type column; any other type names the type.
       if (Array.isArray(schema["enum"])) {
