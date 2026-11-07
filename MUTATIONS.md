@@ -67,7 +67,7 @@
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| TK0012-M9 | `packages/engine/src/log/sqlite.ts` | `setWalMode` rethrew `SQLITE_BUSY` instead of waiting for the other writer through the busy handler | `opening waits while another process holds the store` |
+| TK0012-M9 | `packages/engine/src/platform/sqlite-open.ts` | `enableWal` rethrew `SQLITE_BUSY` instead of waiting for the other writer through the busy handler | `opening waits while another process holds the store` |
 
 ## TK0015 — plugin interface
 
@@ -152,18 +152,18 @@
 | TK0017-M3 | packages/shell/src/index.ts | never compared a probe's exit code with the previous probe | `shell/probe > becomes ready when the exit code differs from the previous probe` |
 | TK0017-M4 | packages/shell/src/index.ts | reported a timeout as a signal failure | `shell/command > a timeout is a failure that says so` |
 | TK0017-M5 | packages/shell/src/index.ts | skipped the working-directory check, so a missing cwd became a spawn failure | `shell/command > a cwd that does not exist fails with a clear reason` (and the same check test) |
-| TK0017-M6 | packages/shell/src/process.ts | kept 20 000 lines in the fact instead of 20 | `shell/command > megabytes of output land in the log and only the tail is in the fact` |
+| TK0017-M6 | packages/engine/src/platform/process-group.ts | kept 20 000 lines in the fact instead of 20 | `shell/command > megabytes of output land in the log and only the tail is in the fact` |
 | TK0017-M7 | packages/engine/src/kernel/decide.ts | dropped the check params from the poll effect | `decide: tick > keeps a check's params in the poll effect` |
 | TK0017-M8 | packages/engine/src/runner/runner.ts | ran a wait check without its params | `a flow through the runner > waits on shell/probe with its params` |
-| TK0017-M9 | packages/shell/src/process.ts | signaled only the process group leader, not the group | `shell/command > a child that outlives the line is in the group and is stopped` |
+| TK0017-M9 | packages/engine/src/platform/process-group.ts | signaled only the process group leader, not the group | `shell/command > a child that outlives the line is in the group and is stopped` |
 | TK0017-M10 | packages/engine/src/runner/runner.ts | terminated a cancelled worker without asking it to stop its processes | `a flow through the runner > a run cancel stops the command's process group in a worker` |
 
 ## TK0017 — rework 3: bounded cleanup and injected time
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| TK0017-M11 | packages/shell/src/process.ts | dropped the drain limit and waited for the output pipes to close | `shell/command > a child that leaves the group cannot hold the command open` (timed out) |
-| TK0017-M12 | packages/shell/src/process.ts | sent the grace SIGKILL without checking that the group still exists | `runLine > the grace SIGKILL is not sent to a group that ended` |
+| TK0017-M11 | packages/engine/src/platform/process-group.ts | dropped the drain limit and waited for the output pipes to close | `shell/command > a child that leaves the group cannot hold the command open` (timed out) |
+| TK0017-M12 | packages/engine/src/platform/process-group.ts | sent the grace SIGKILL without checking that the group still exists | `process groups > the grace SIGKILL is not sent to a group that ended` |
 | TK0017-M13 | packages/shell/src/index.ts | ignored the injected clock for `shell/command` | `shell/command > a timeout is a failure that says so` |
 | TK0017-M14 | packages/shell/src/index.ts | passed no timeout to a `shell/check` line | `shell/check > a line that exceeds the timeout fails and names it` |
 
@@ -171,22 +171,22 @@
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| TK0017-M15 | packages/shell/src/process.ts | dropped the sentinel from the wrapper, so the group ends when the line exits | `runLine > the group outlives a finished line until the grace SIGKILL` |
+| TK0017-M15 | packages/engine/src/platform/process-group.ts | dropped the sentinel from the wrapper, so the group ends when the line exits | `process groups > the group outlives a finished line until the grace SIGKILL` |
 
 ## TK0017 — rework 11: the sentinel's trap before any signal, and env coverage
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| TK0017-M16 | packages/shell/src/process.ts | left the line's stderr out of the log instead of folding it into the command's output | `shell/command > a non-zero exit is a failure with its code and output path` |
-| TK0017-M17 | packages/shell/src/process.ts | passed only the step's `env` to the command, dropping the host environment | `shell/command > the host environment is still there when env is given` |
+| TK0017-M16 | packages/engine/src/platform/process-group.ts | left the line's stderr out of the log instead of folding it into the command's output | `shell/command > a non-zero exit is a failure with its code and output path` |
+| TK0017-M17 | packages/engine/src/platform/process-group.ts | passed only the step's `env` to the command, dropping the host environment | `shell/command > the host environment is still there when env is given` |
 | TK0017-M18 | packages/shell/src/index.ts | stopped passing the step's `env` to the line runner | `shell/command > env is added to the command's environment` |
-| TK0017-M19 | packages/shell/src/process.ts | removed the sentinel's TERM trap, so the stop's SIGTERM ends the group before the grace | `runLine > the sentinel survives the stop's SIGTERM` |
+| TK0017-M19 | packages/engine/src/platform/process-group.ts | removed the sentinel's TERM trap, so the stop's SIGTERM ends the group before the grace | `process groups > the sentinel survives the stop's SIGTERM` |
 
 ## TK0017 — rework 15: the stop's order and the trap have teeth
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| TK0017-M20 | packages/shell/src/process.ts | removed the wait for the sentinel's `ready` before the stop's first signal | `runLine > a stop before ready waits for the sentinel's trap` |
+| TK0017-M20 | packages/engine/src/platform/process-group.ts | removed the wait for the sentinel's `ready` before the stop's first signal | `process groups > a stop before ready waits for the sentinel's trap` |
 
 ## TK0025 — presentation views
 
@@ -247,25 +247,25 @@
 | TK0019-M9 | packages/dev/src/service.ts | dropped the open-task recheck inside `removeRepository`'s lock | `dev checks inside the lock > repo remove rechecks that no task is open` |
 | TK0019-M10 | packages/dev/src/service.ts | let `repositoryOf` return a repository marked removed | `dev checks inside the lock > a write refuses a repository that was removed` |
 | TK0019-M11 | packages/dev/src/model.ts | made `storeKey` return the bare id, so two repositories shared one key | `dev per-repository ids > two repositories may both hold TK0001-work under different keys` |
-| TK0019-M12 | packages/dev/src/service.ts | skipped the takeover of a lock whose pid is dead | `the dev lock survives a dead holder > a lock left by a dead pid is taken over` (timed out) |
+| TK0019-M12 | packages/dev/src/service.ts | skipped the takeover of a lock whose pid is dead | `the lock file > a lock left by a dead pid is taken over` (timed out) |
 | TK0019-M13 | packages/dev/src/service.ts | removed the source-checkout wording from `repo add`'s refusal | `repo add never writes into the operad checkout > the operad source checkout is refused` |
 
 ## TK0019 — rework 4: the lock protocol and scoped bare ids
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| TK0019-M14 | packages/dev/src/lock.ts | release deleted the renamed lock before checking whose nonce it held | `the repository lock > release never deletes another process's lock` |
-| TK0019-M15 | packages/dev/src/lock.ts | takeover deleted the renamed lock without comparing its nonce with the dead record's | `the repository lock > a newer live lock renamed during a takeover is put back` |
-| TK0019-M16 | packages/dev/src/lock.ts | wrote the record to `dev.lock` before the link, so a crash between the two left a lock | `the repository lock > a crash between the tmp write and the link leaves no lock` |
+| TK0019-M14 | packages/engine/src/platform/file-lock.ts | release deleted the renamed lock before checking whose nonce it held | `the lock file > release never deletes another process's lock` |
+| TK0019-M15 | packages/engine/src/platform/file-lock.ts | takeover deleted the renamed lock without comparing its nonce with the dead record's | `the lock file > a newer live lock renamed during a takeover is put back` |
+| TK0019-M16 | packages/engine/src/platform/file-lock.ts | wrote the record to `dev.lock` before the link, so a crash between the two left a lock | `the lock file > a crash between the tmp write and the link leaves no lock` |
 | TK0019-M17 | packages/engine/src/views/presentation.ts | skipped the plugin's `resolve` hook before the suffix lookup | `operad with the dev plugin > a bare id resolves in the repository of the current directory` |
-| TK0019-M18 | packages/dev/src/lock.ts | treated an unreadable lock as dead immediately instead of after 30 s | `the repository lock > an unparsable lock is live until its mtime is 30 seconds old` |
+| TK0019-M18 | packages/engine/src/platform/file-lock.ts | treated an unreadable lock as dead immediately instead of after 30 s | `the lock file > an unparsable lock is live until its mtime is 30 seconds old` |
 
 ## TK0019 — rework 5: the missed event and the lock's open handles
 
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0019-M19 | packages/engine/src/plugin/file-store.ts | kept only the directory watch in a subscription and dropped the poll fallback | `the file plugin store > a subscription still reports a write the watch does not` |
-| TK0019-M20 | packages/dev/src/lock.ts | left the wait's directory watch and fallback timer open when it finished | `the repository lock > a real wait closes its watch and its timer` |
+| TK0019-M20 | packages/engine/src/platform/watch.ts | left the wait's directory watch and fallback timer open when it finished | `the lock file > a real wait closes its watch and its timer` |
 
 ## TK0026 — rework 10: a start survives a crash after its run exists
 
@@ -607,6 +607,15 @@
 | T-0019-http-api-M6 | packages/engine/src/http/server.ts | ignored `Last-Event-ID`, so a reconnect replayed nothing | `http server > streams changes, resumes from Last-Event-ID and resets an old id` |
 | T-0019-http-api-M7 | packages/engine/src/config/config.ts | ignored `http.enabled` and always kept the interface off | `operad config > reads http options and applies their defaults` |
 | T-0019-http-api-M8 | packages/engine/src/http/server.ts | skipped the listen-address check before binding | `operad serve http > refuses a wildcard at start and names the entry` |
+## TK0013 — pi runs under Bun
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0013-M1 | packages/harness-pi/spike/fake-provider.ts | dropped the tool call from the fake assistant message | `a tool call to read runs` |
+| TK0013-M2 | packages/harness-pi/spike/pi-session.ts | `createSpikeSession` ignored the supplied session manager and used an in-memory one | `a session file reopens and a second prompt sees the first message` |
+| TK0013-M3 | packages/harness-pi/spike/fake-provider.ts | set `usage.totalTokens` to 0 in the fake assistant message | `a prompt ends with the fixed answer and message_end carries usage` |
+| TK0013-M4 | packages/harness-pi/spike/auth-writer.ts | `hold` mode wrote its credential without taking the lock | `auth.json locking blocks a second writer until the lock is released` |
+| TK0013-M5 | packages/harness-pi/spike/auth-writer.ts | `unlocked-read` read the file after the gate instead of snapshotting it before | `the same read-modify-write without the lock loses a credential` |
 | lead-actions-M1 | packages/dev/src/service.ts | the claim ignored the version it was given and checked only the phase | `dev:rework and dev:reverify > rework racing merge in two processes: exactly one wins` |
 | lead-actions-M2 | packages/dev/src/actions.ts | `dev:rework` did not reset the count of automatic reworks | `dev:rework and dev:reverify > a lead rework resets the streak of automatic reworks, and numbers on` |
 | lead-actions-M3 | packages/dev/src/actions.ts | `dev:reverify` kept the old verify result, so the verify step would replay it | `dev:rework and dev:reverify > reverify from a gate failure clears the gate results and answers reverify` |
@@ -646,3 +655,14 @@
 | T-0019-http-api-M12 | packages/engine/src/http/server.ts | the token watcher noticed a rotation but did not end the open streams | `http server > rotating the token ends the event streams opened with the old one` |
 | T-0019-http-api-M13 | packages/engine/src/http/server.ts | `Bun.serve` got a body limit eight times the protocol's | `http server > refuses a request body larger than one mebibyte` |
 | T-0019-http-api-M14 | packages/engine/src/views/presentation.ts | the confirm refusal always said `pass --yes`, also over HTTP | `http server > acts with a note, refuses without one, and needs confirmed for a confirm action` |
+## TK0005 — the platform module
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0005-M1 | packages/engine/src/platform/sqlite-open.ts | `setBusyTimeout` installed no busy timeout | `the busy timeout is installed on the connection` |
+| TK0005-M2 | packages/dev/src/lock.ts | did not map `LockTimeoutError` to the dev lock error | `the repository lock > a live holder past the deadline is a dev lock error naming its pid` |
+| TK0005-M3 | packages/engine/src/platform/file-lock.ts | `linkExclusive` reported success when the target already existed | `the lock file > a live holder blocks until the deadline and names its pid` (and six more in that file) |
+| TK0005-M4 | packages/engine/src/platform/process-group.ts | the shared stop never sent the grace SIGKILL | `process groups` and the harness-radian tests (timed out) |
+| TK0005-M5 | packages/engine/src/platform/sqlite-open.ts | `enableWal` rethrew `SQLITE_BUSY` instead of waiting | `switching to WAL waits while another process holds the database` |
+| TK0005-M6 | packages/engine/src/platform/watch.ts | `resolveSubscriptionWatch` ignored an injected watch | `the injected watch, timer and period replace the defaults` |
+| TK0005-M7 | packages/engine/test/platform/no-copies.test.ts | dropped the `process.kill(-` pattern from the scan | `the platform module is the only copy > the scan finds each forbidden call outside platform/` |
