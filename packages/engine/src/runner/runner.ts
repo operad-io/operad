@@ -13,7 +13,7 @@ import type { ObjectRef } from "../plugin/types.ts";
 import { messageOf } from "../plugin/errors.ts";
 import type { StepEvent, TriggerView } from "../trigger/types.ts";
 import { Worker } from "node:worker_threads";
-import { KILL_GRACE_MS } from "../platform/index.ts";
+import { KILL_GRACE_MS, systemClock, type Clock } from "../platform/index.ts";
 import { acquireLock, runLockPath, type LockHandle } from "./lock.ts";
 import { StepLimits } from "./limits.ts";
 import { appendInput, applyInput, parseObjectKey, readState } from "./service.ts";
@@ -100,6 +100,12 @@ export interface RunnerOptions {
   readonly runId: string;
   readonly registry: PluginRegistry;
   readonly clock?: (() => number) | undefined;
+  /**
+   * The timers that time a step's run. A test passes a fake one to decide when
+   * a step times out; the grace a worker gets to stop after an abort stays real.
+   * @internal Used by `@operad-io/engine/testing`.
+   */
+  readonly timers?: Clock | undefined;
   readonly stepTimeoutMs?: number | undefined;
   readonly cwd?: string | undefined;
   readonly signal?: AbortSignal | undefined;
@@ -166,6 +172,7 @@ export class Runner {
   private readonly flow: FlowDefinition;
   private readonly registry: PluginRegistry;
   private readonly clock: () => number;
+  private readonly timers: Clock;
   private readonly stepTimeoutMs: number;
   private readonly cwd: string | undefined;
   private readonly signal: AbortSignal | undefined;
@@ -190,6 +197,7 @@ export class Runner {
     this.runId = options.runId;
     this.registry = options.registry;
     this.clock = options.clock ?? (() => Date.now());
+    this.timers = options.timers ?? systemClock;
     this.stepTimeoutMs = options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
     this.cwd = options.cwd;
     this.signal = options.signal;
@@ -612,13 +620,13 @@ export class Runner {
       });
 
       let settled = false;
-      let timer: ReturnType<typeof setTimeout> | undefined;
+      let timer: unknown;
       let stopTimer: ReturnType<typeof setTimeout> | undefined;
       const finish = (result: PluginStepResult, terminate = true): void => {
         if (settled) return;
         settled = true;
         for (const wait of waits.values()) wait.abort();
-        if (timer !== undefined) clearTimeout(timer);
+        if (timer !== undefined) this.timers.clearTimeout(timer);
         this.signal?.removeEventListener("abort", onAbort);
         if (terminate) {
           void worker.terminate();
@@ -654,7 +662,7 @@ export class Runner {
         );
       };
 
-      timer = setTimeout(() => {
+      timer = this.timers.setTimeout(() => {
         abortWorker();
         finish(
           this.failure(use, preferInterrupted, {
@@ -798,9 +806,9 @@ export class Runner {
     const forward = (): void => controller.abort();
     this.signal?.addEventListener("abort", forward, { once: true });
 
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timer: unknown;
     const timeout = new Promise<"timeout">((resolve) => {
-      timer = setTimeout(() => {
+      timer = this.timers.setTimeout(() => {
         controller.abort();
         resolve("timeout");
       }, this.timeoutMsFor(use));
@@ -839,7 +847,7 @@ export class Runner {
         message: messageOf(error),
       });
     } finally {
-      if (timer !== undefined) clearTimeout(timer);
+      if (timer !== undefined) this.timers.clearTimeout(timer);
       this.signal?.removeEventListener("abort", forward);
     }
   }

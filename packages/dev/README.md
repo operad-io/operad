@@ -234,6 +234,14 @@ left-out file is listed with its added/removed line counts and the reason. If
 the remaining diff is over `maxDiffBytes`, no reviewer starts and the step fails
 with the size and the largest files, so a person sees why.
 
+The diff is built with rename detection, and `maxDiffBytes` and
+`maxFileDiffBytes` count what the prompt carries, not the raw change:
+
+- A renamed file with no edit is one line, `renamed <old> → <new>, unchanged`.
+  A renamed file with edits carries only the edits.
+- A deleted file is one line, `<path>: deleted, <n> lines`, with the command that
+  reads it (`git show <base>:<path>`); its removed lines are not in the prompt.
+
 ## Settings
 
 `operad repo add` writes `<repository>/.operad/dev.json` when it is absent (its
@@ -264,7 +272,7 @@ The file holds the repository's work settings:
 | `reviewer.fixLevel` | `major` | the lowest finding severity that fails the gate: `critical`, `major` or `minor` |
 | `reviewer.retrySecs` | `120` | how long an unavailable review waits before the same round runs again |
 | `reviewer.maxFileDiffBytes` | `200000` | the largest diff one file may put in the review prompt |
-| `reviewer.maxDiffBytes` | `1000000` | the largest diff the review prompt may carry |
+| `reviewer.maxDiffBytes` | `1000000` | the largest diff the review prompt may carry; counts the prompt's text, where a rename or a deleted file is one line |
 | `maxAutoRework` | `2` | how many automatic reworks in a row are allowed before waiting for a person |
 | `integration.style` | `merge` | `merge` lands a merge commit with `Merge work/<task id> (<short sha>)`; `squash` lands one squashed commit |
 | `integration.keyCommands` | `[]` | commands the integrate step runs on the candidate before the push; a failure sends the task back to the worker |
