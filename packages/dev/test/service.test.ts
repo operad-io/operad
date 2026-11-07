@@ -146,7 +146,7 @@ describe("dev plans and tasks", () => {
       addPlan(store, { repository, slug: "Bad Slug", title: "Bad" }),
     ).rejects.toThrow(/^slug:/);
     await expect(
-      addTask(store, { plan: "PL9999-nope", slug: "one", title: "One" }),
+      addTask(store, { plan: "P-9999-nope", slug: "one", title: "One" }),
     ).rejects.toThrow(/^plan:/);
     const empty = await addPlan(store, { repository, slug: "empty", title: "Empty" });
     await expect(confirmPlan(store, empty.id)).rejects.toThrow(/^confirm:/);
@@ -160,7 +160,7 @@ describe("dev plans and tasks", () => {
       title: "Storage",
       request: "write it",
     });
-    expect(bareId(plan.id)).toBe("PL0001-storage");
+    expect(bareId(plan.id)).toBe("P-0001-storage");
     expect(plan.data).toMatchObject({
       repository: "repository",
       title: "Storage",
@@ -182,7 +182,7 @@ describe("dev plans and tasks", () => {
           })
         ).id,
       ),
-    ).toBe("PL0002-storage");
+    ).toBe("P-0002-storage");
   });
 
   test("confirming a plan readies its proposed tasks; an empty plan is refused", async () => {
@@ -409,7 +409,7 @@ describe("dev plans and tasks", () => {
 });
 
 describe("dev per-repository ids", () => {
-  test("two repositories may both hold TK0001-work under different keys", async () => {
+  test("two repositories may both hold T-0001-work under different keys", async () => {
     const root = await tempRoot();
     const firstPath = await makeGitRepository(root, "one");
     const secondPath = await makeGitRepository(root, "two");
@@ -437,10 +437,10 @@ describe("dev per-repository ids", () => {
       title: "Second",
     });
 
-    expect(bareId(firstTask.id)).toBe("TK0001-work");
-    expect(bareId(secondTask.id)).toBe("TK0001-work");
-    expect(firstTask.id).toBe(storeKey("one", "TK0001-work"));
-    expect(secondTask.id).toBe(storeKey("two", "TK0001-work"));
+    expect(bareId(firstTask.id)).toBe("T-0001-work");
+    expect(bareId(secondTask.id)).toBe("T-0001-work");
+    expect(firstTask.id).toBe(storeKey("one", "T-0001-work"));
+    expect(secondTask.id).toBe(storeKey("two", "T-0001-work"));
     expect((await getTask(store, firstTask.id)).data.title).toBe("First");
     expect((await getTask(store, secondTask.id)).data.title).toBe("Second");
   });
@@ -457,8 +457,8 @@ describe("dev per-repository ids", () => {
       slug: "beta",
       title: "Beta",
     });
-    expect(bareId(alpha.id)).toBe("PL0001-alpha");
-    expect(bareId(beta.id)).toBe("PL0002-beta");
+    expect(bareId(alpha.id)).toBe("P-0001-alpha");
+    expect(bareId(beta.id)).toBe("P-0002-beta");
 
     const first = await addTask(store, {
       plan: beta.id,
@@ -470,8 +470,113 @@ describe("dev per-repository ids", () => {
       slug: "two",
       title: "Two",
     });
-    expect(bareId(first.id)).toBe("TK0001-one");
-    expect(bareId(second.id)).toBe("TK0002-two");
+    expect(bareId(first.id)).toBe("T-0001-one");
+    expect(bareId(second.id)).toBe("T-0002-two");
+  });
+
+  test("new ids count past old ids in either form", async () => {
+    const { repository, store } = await setup();
+    store.put(
+      "plan",
+      storeKey("repository", "PL0003-x"),
+      {
+        repository: "repository",
+        title: "Old plan",
+        request: "old request",
+        status: "confirmed",
+        auto: "off",
+        priority: "P3",
+        concurrency: 1,
+        taskCount: 0,
+        mergedCount: 0,
+        cancelledCount: 0,
+      },
+      "seed",
+    );
+    store.put(
+      "task",
+      storeKey("repository", "TK0007-y"),
+      {
+        repository: "repository",
+        plan: "PL0003-x",
+        title: "Old task",
+        brief: "Old brief",
+        after: [],
+        phase: "merged",
+        attempts: 1,
+        run: null,
+      },
+      "seed",
+    );
+
+    const plan = await addPlan(store, {
+      repository,
+      slug: "new",
+      title: "New plan",
+    });
+    expect(bareId(plan.id)).toBe("P-0004-new");
+    const task = await addTask(store, {
+      plan: plan.id,
+      slug: "new",
+      title: "New task",
+    });
+    expect(bareId(task.id)).toBe("T-0008-new");
+  });
+
+  test("after accepts an old id and a new id, exactly", async () => {
+    const { repository, store } = await setup();
+    const plan = await addPlan(store, {
+      repository,
+      slug: "work",
+      title: "Work",
+    });
+    const planId = bareId(plan.id);
+    store.put(
+      "task",
+      storeKey("repository", "TK0001-old"),
+      {
+        repository: "repository",
+        plan: planId,
+        title: "Old task",
+        brief: "Old brief",
+        after: [],
+        phase: "merged",
+        attempts: 1,
+        run: null,
+      },
+      "seed",
+    );
+    const newer = await addTask(store, {
+      plan: plan.id,
+      slug: "newer",
+      title: "Newer task",
+    });
+    expect(bareId(newer.id)).toBe("T-0002-newer");
+
+    const afterOld = await addTask(store, {
+      plan: plan.id,
+      slug: "after-old",
+      title: "After old",
+      after: ["TK0001-old"],
+    });
+    expect(taskData(afterOld.data).after).toEqual(["TK0001-old"]);
+
+    const afterNew = await addTask(store, {
+      plan: plan.id,
+      slug: "after-new",
+      title: "After new",
+      after: [bareId(newer.id)],
+    });
+    expect(taskData(afterNew.data).after).toEqual([bareId(newer.id)]);
+
+    await expect(
+      addTask(store, {
+        plan: plan.id,
+        slug: "fuzzy",
+        title: "Fuzzy",
+        after: ["T-0001-old"],
+      }),
+    ).rejects.toThrow(/no task "T-0001-old"/);
   });
 });
 

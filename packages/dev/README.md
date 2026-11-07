@@ -17,9 +17,11 @@ merge. It is a plugin: the kernel knows none of these words.
 | **auto** | how far a plan may run without you: off, run, merge |
 | **priority** | P0 (most urgent) to P5 (least urgent), default P3 |
 
-A plan id is `PL<4 digits>-<slug>`; a task id is `TK<4 digits>-<slug>`. Numbers
-count up per repository and are never reused, so two repositories may both have
-`TK0001-work`; a command accepts the bare id inside the repository it names.
+A plan id is `P-<4 digits>-<slug>`; a task id is `T-<4 digits>-<slug>`.
+Numbers count up per repository and are never reused, so two repositories may
+both have `T-0001-work`; a command accepts the bare id inside the repository it
+names. An object made before the change keeps its `PL…` or `TK…` id: commands,
+views and `--after` accept both forms, and an id is matched exactly.
 
 ## Commands
 
@@ -96,7 +98,7 @@ with `merge`. A wait that follows `nothing`, `failed` or the rework limit is
 never answered. A task whose dependency was cancelled waits for a person
 instead of starting, and a plan whose tasks have all merged or been cancelled
 is reported finished once. Every change prints one line:
-`TK0003-kernel ready -> running`.
+`T-0003-kernel ready -> running`.
 
 `operad start <task>` asks the scheduler to start one ready task on its next
 tick, whatever its plan's auto level is. The task's dependencies and both

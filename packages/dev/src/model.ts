@@ -232,8 +232,21 @@ export type RepositoryData = {
   readonly removed: boolean;
 };
 
-export const PLAN_ID = /^PL(\d{4})-([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)$/;
-export const TASK_ID = /^TK(\d{4})-([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)$/;
+/** The two kinds of object the dev plugin numbers. */
+export type IdKind = "plan" | "task";
+
+/** The slug part every id carries: 1-48 of a-z, 0-9 and -, no edge -. */
+const SLUG_SOURCE = "[a-z0-9](?:[a-z0-9-]*[a-z0-9])?";
+
+/** `P-0001-slug`, or the older `PL0001-slug`, which existing objects keep. */
+export const PLAN_ID = new RegExp(
+  `^(?:PL(\\d{4})|P-(\\d{4}))-(${SLUG_SOURCE})$`,
+);
+
+/** `T-0001-slug`, or the older `TK0001-slug`, which existing objects keep. */
+export const TASK_ID = new RegExp(
+  `^(?:TK(\\d{4})|T-(\\d{4}))-(${SLUG_SOURCE})$`,
+);
 
 export type IdMatch = {
   readonly number: number;
@@ -301,34 +314,36 @@ export function validateRepositoryName(name: unknown): string {
   return name.trim();
 }
 
-export function parseId(id: string, prefix: "PL" | "TK"): IdMatch | undefined {
-  const pattern = prefix === "PL" ? PLAN_ID : TASK_ID;
+export function parseId(id: string, kind: IdKind): IdMatch | undefined {
+  const pattern = kind === "plan" ? PLAN_ID : TASK_ID;
   const match = pattern.exec(id);
   if (match === null) return undefined;
-  const number = Number(match[1]);
-  const slug = match[2] ?? "";
+  const number = Number(match[1] ?? match[2]);
+  const slug = match[3] ?? "";
   return { number, slug };
 }
 
+/** A new id always uses the short form, whatever form the existing ids use. */
 export function formatId(
-  prefix: "PL" | "TK",
+  kind: IdKind,
   number: number,
   slug: string,
 ): string {
   if (!Number.isInteger(number) || number < 1 || number > 9999) {
-    throw new DevError("id", `no ${prefix} number is left`);
+    throw new DevError("id", `no ${kind} number is left`);
   }
-  return `${prefix}${String(number).padStart(4, "0")}-${slug}`;
+  const prefix = kind === "plan" ? "P" : "T";
+  return `${prefix}-${String(number).padStart(4, "0")}-${slug}`;
 }
 
 function numberById(
   objects: readonly { readonly id: string }[],
-  prefix: "PL" | "TK",
+  kind: IdKind,
 ): number {
   let highest = 0;
   for (const object of objects) {
     // The store key carries the repository; the number lives in the bare id.
-    const parsed = parseId(bareId(object.id), prefix);
+    const parsed = parseId(bareId(object.id), kind);
     if (parsed !== undefined && parsed.number > highest) {
       highest = parsed.number;
     }
@@ -339,7 +354,7 @@ function numberById(
 /**
  * The store key of a plan or task. Ids are unique within a repository only, so
  * the repository name namespaces the key and two repositories may both hold
- * `TK0001-work`.
+ * `T-0001-work`.
  */
 export function storeKey(repository: string, id: string): string {
   return `${repository}/${id}`;
@@ -368,27 +383,19 @@ export async function nextId(
   repository: string,
   slug: string,
 ): Promise<string> {
-  const prefix = type === "plan" ? "PL" : "TK";
   const all = await listAll(store, type);
   const mine = all.filter(
     (object) =>
       isRecord(object.data) && object.data.repository === repository,
   );
-  let number = numberById(mine, prefix) + 1;
+  let number = numberById(mine, type) + 1;
   for (;;) {
-    const id = formatId(prefix, number, slug);
+    const id = formatId(type, number, slug);
     if ((await store.get(type, storeKey(repository, id))) === undefined) {
       return id;
     }
     number += 1;
   }
-}
-
-/** Splits an id into its prefix and slug, for a project-specific message. */
-export function idParts(id: string): { readonly prefix: string; readonly slug: string } {
-  const at = id.indexOf("-");
-  if (at < 0) return { prefix: id, slug: "" };
-  return { prefix: id.slice(0, at), slug: id.slice(at + 1) };
 }
 
 /* ---------------------------------------------------------------------------

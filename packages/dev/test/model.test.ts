@@ -7,6 +7,7 @@ import {
   editBrief,
   hasRework,
   planState,
+  parseId,
   replaceBriefBody,
   reworkBody,
   splitBrief,
@@ -137,6 +138,17 @@ describe("dev model", () => {
     expect(appendChange("Body\n\n## Changes\n- created", "edited")).toBe(
       "Body\n\n## Changes\n- created\n- edited",
     );
+  });
+
+  test("an id parses in both forms, and a slug may start with digits", () => {
+    expect(parseId("P-0004-alpha", "plan")).toEqual({ number: 4, slug: "alpha" });
+    expect(parseId("PL0004-alpha", "plan")).toEqual({ number: 4, slug: "alpha" });
+    expect(parseId("T-0001-2fa", "task")).toEqual({ number: 1, slug: "2fa" });
+    expect(parseId("TK0001-2fa", "task")).toEqual({ number: 1, slug: "2fa" });
+    expect(parseId("T-0001-2fa", "plan")).toBeUndefined();
+    expect(parseId("T0001-2fa", "task")).toBeUndefined();
+    expect(parseId("P0004-alpha", "plan")).toBeUndefined();
+    expect(parseId("P-004-alpha", "plan")).toBeUndefined();
   });
 
   test("a plan is finished from its tasks", () => {

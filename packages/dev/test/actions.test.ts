@@ -272,7 +272,7 @@ describe("dev actions", () => {
     ).rejects.toThrow(/not waiting for a run/);
     await expect(
       registry.runAction("dev/merge", {}, {
-        object: { type: "task", id: "TK9999-nope", data: {} },
+        object: { type: "task", id: "T-9999-nope", data: {} },
         runId: "run-1",
         actor: ACTOR,
       }),
