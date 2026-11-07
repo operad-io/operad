@@ -21,7 +21,12 @@ export interface WorkerInput {
   readonly access?: Readonly<Record<string, unknown>> | undefined;
   readonly maxTurns?: number | undefined;
   readonly budgetUsd?: number | undefined;
+  /** The longest a Bash call may run in the foreground, in seconds; unset means `DEFAULT_BASH_TIMEOUT_SECS`. */
+  readonly bashTimeoutSecs?: number | undefined;
 }
+
+/** A gate such as a full test run must finish in the foreground; claude's own default is 120 s. */
+export const DEFAULT_BASH_TIMEOUT_SECS = 1800;
 
 export interface WorkerUsage {
   input?: number;
@@ -123,6 +128,7 @@ export const INPUT_FIELDS = [
   "access",
   "maxTurns",
   "budgetUsd",
+  "bashTimeoutSecs",
 ] as const;
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -182,6 +188,14 @@ export function parseInput(value: unknown): ParsedInput {
     return { ok: false, message: "budgetUsd must be a positive number" };
   }
 
+  const bashTimeoutSecs = value["bashTimeoutSecs"];
+  if (
+    bashTimeoutSecs !== undefined &&
+    (typeof bashTimeoutSecs !== "number" || !Number.isInteger(bashTimeoutSecs) || bashTimeoutSecs < 1)
+  ) {
+    return { ok: false, message: "bashTimeoutSecs must be a positive integer" };
+  }
+
   const access = value["access"];
   if (access !== undefined && !isRecord(access)) {
     return { ok: false, message: "access must be an object" };
@@ -203,6 +217,7 @@ export function parseInput(value: unknown): ParsedInput {
       access,
       maxTurns,
       budgetUsd,
+      bashTimeoutSecs,
     },
   };
 }

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EFFORT_LEVELS, parseInput } from "../src/protocol.ts";
 import {
+  MISSING_SESSION,
   SESSION,
   assistant,
   rateLimit,
@@ -700,4 +701,90 @@ test("the session line says which credential claude uses, and is written once, f
 test("no session line is written when claude never starts a session", async () => {
   const run = await runFake(setup(), { steps: [{ say: result() }] });
   expect(run.session).toEqual([]);
+});
+
+test("an unknown session as the real claude reports it: errors, no result text, no model", async () => {
+  const s = setup();
+  s.input["resumeSession"] = "00000000-0000-4000-8000-000000000000";
+  const run = await runFake(s, {
+    steps: [
+      {
+        say: result({
+          subtype: "error_during_execution",
+          is_error: true,
+          result: undefined,
+          errors: [MISSING_SESSION],
+          total_cost_usd: 0,
+          modelUsage: {},
+        }),
+      },
+    ],
+  });
+
+  expect(run.exitCode).toBe(1);
+  expect(last(run)).toMatchObject({ result: "failed", reason: "session_missing", message: MISSING_SESSION });
+});
+
+test("a failed run that used no model has no cost, not an exact zero", async () => {
+  const run = await runFake(setup(), {
+    steps: [{ say: result({ subtype: "error_during_execution", is_error: true, errors: ["boom"], total_cost_usd: 0, modelUsage: {} }) }],
+  });
+
+  expect(last(run)).toMatchObject({ result: "failed", reason: "model_error", message: "boom", cost: null, model: null });
+});
+
+test("claude runs in the foreground: background tasks off, waiting tools disallowed, Bash timeouts set", async () => {
+  const run = await runFake(setup(), { steps: done });
+  const spawned = run.record.find((entry) => "spawn" in entry)?.["spawn"] as {
+    args: string[];
+    env: Record<string, string>;
+  };
+  expect(spawned.env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"]).toBe("1");
+  expect(spawned.env["BASH_DEFAULT_TIMEOUT_MS"]).toBe("1800000");
+  expect(spawned.env["BASH_MAX_TIMEOUT_MS"]).toBe("1800000");
+  const disallowed = flagValue(spawned.args, "--disallowedTools") ?? "";
+  for (const name of ["Monitor", "ScheduleWakeup", "CronCreate", "CronDelete", "CronList", "TaskStop"]) {
+    expect(disallowed).toContain(name);
+  }
+});
+
+test("bashTimeoutSecs sets both Bash timeouts and must be a positive integer", async () => {
+  const s = setup();
+  s.input["bashTimeoutSecs"] = 900;
+  const run = await runFake(s, { steps: done });
+  const env = (run.record.find((entry) => "spawn" in entry)?.["spawn"] as { env: Record<string, string> }).env;
+  expect(env["BASH_DEFAULT_TIMEOUT_MS"]).toBe("900000");
+  expect(env["BASH_MAX_TIMEOUT_MS"]).toBe("900000");
+
+  const bad = setup();
+  bad.input["bashTimeoutSecs"] = 0;
+  const refused = await runFake(bad, { steps: done });
+  expect(refused.exitCode).toBe(2);
+  expect(last(refused)).toMatchObject({ message: "bashTimeoutSecs must be a positive integer" });
+});
+
+test("a second session after the result is not accepted as a second turn", async () => {
+  const run = await runFake(setup(), {
+    steps: [
+      { say: systemInit() },
+      { say: assistant("m1", "waiting for the build") },
+      { say: result({ result: "waiting" }) },
+      { say: systemInit() },
+      { say: assistant("m2", "committed") },
+      { say: result({ result: "done after the wait" }) },
+    ],
+  });
+
+  expect(run.exitCode).toBe(1);
+  expect(run.session.length).toBe(1);
+  expect(kinds(run)).toEqual(["message_end", "result"]);
+  expect(last(run)).toMatchObject({
+    result: "failed",
+    reason: "model_error",
+    sessionId: SESSION,
+    usage: { input: 10, output: 20, cache_read: 30, cache_write: 40 },
+    finalMessage: "waiting",
+  });
+  expect(String(last(run)["message"])).toContain("a second session started by itself");
+  expect(run.stderr).toContain("a second session started after the result");
 });

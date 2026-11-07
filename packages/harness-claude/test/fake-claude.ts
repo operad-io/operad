@@ -230,7 +230,7 @@ export function fakeSpawn(
       spawn: {
         args: options.args,
         env: Object.fromEntries(
-          Object.entries(options.env).filter(([key]) => /^(CLAUDE_CODE_|DISABLE_|ANTHROPIC_|HOME$)/.test(key)),
+          Object.entries(options.env).filter(([key]) => /^(CLAUDE_CODE_|DISABLE_|ANTHROPIC_|BASH_|HOME$)/.test(key)),
         ),
       },
     });
@@ -241,6 +241,8 @@ export function fakeSpawn(
 // Message builders: the shapes the stream carries.
 
 export const SESSION = "11111111-2222-4333-8444-555555555555";
+
+export const MISSING_SESSION = "No conversation found with session ID: 00000000-0000-4000-8000-000000000000";
 
 export function systemInit(session = SESSION): Json {
   return {

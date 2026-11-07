@@ -299,6 +299,7 @@ environment. The full tables are in `packages/harness-claude/README.md`.
 | `effort` (setting) | string | unset: claude's default | `low`, `medium`, `high`, `xhigh`, `max` |
 | `maxTurns` (setting) | integer | unset: no limit | 1 or more |
 | `budgetUsd` (setting) | number | unset: no limit | 0.01 or more, in US dollars; for API-key logins |
+| `bashTimeoutSecs` (setting) | integer | `1800` | 1 or more; the longest one Bash call may run, in seconds; nothing runs in the background |
 | `wallTimeSecs` (setting) | number | `3600` | 1 to 28500; the longest one run may take |
 | `stallSecs` (setting) | number | `600` | 1 or more; how long a run may print nothing while no tool call is open |
 | `concurrency` (setting) | object | `{}` | model name to a count of 1 or more |

@@ -438,6 +438,15 @@ front of it. `operad history` shows `<step> is queued`. If the step is stopped
 while it waits (the run is cancelled), it leaves the line, never runs, and ends
 as failed with the reason that it was cancelled.
 
+### Long commands under claude
+
+`harness-claude` runs each step as one foreground turn. Nothing moves to the
+background, and the tools that only wait for background work are off, so a long
+command such as the gate runs to its end inside the turn. The setting
+`bashTimeoutSecs` (integer, 1 or more, default `1800`) is the longest one Bash
+call may run, in seconds. If claude nevertheless starts a second session after it
+gave its result, the step ends `failed` with a message that says so.
+
 ## Usage and end results
 
 Every agent step records what the run used in one field of its data, `usage`,

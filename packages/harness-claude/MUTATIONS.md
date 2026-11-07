@@ -72,3 +72,16 @@ setup it depends on, in the order they were recorded. The root
 | T-0041-M1 | packages/harness-claude/src/worker.ts | the `session` line always said `apiKeySource: "none"` | `the session line says which credential claude uses, and is written once, first` |
 | T-0041-M2 | packages/harness-claude/src/worker.ts | the `session` line took `claudeVersion` from the model field | `the session line says which credential claude uses, and is written once, first` |
 | T-0041-M3 | packages/harness-claude/src/worker.ts | the `session` line was not written | `the session line says which credential claude uses, and is written once, first` |
+
+## T-0041 — lead review 1
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0041-M4 | packages/harness-claude/src/worker.ts | `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` left out of the isolation environment | `claude runs in the foreground: background tasks off, waiting tools disallowed, Bash timeouts set` |
+| T-0041-M5 | packages/harness-claude/src/worker.ts | `Monitor` left out of the disallowed tools | `claude runs in the foreground: background tasks off, waiting tools disallowed, Bash timeouts set` |
+| T-0041-M6 | packages/harness-claude/src/worker.ts | `BASH_MAX_TIMEOUT_MS` ignored `bashTimeoutSecs` | `bashTimeoutSecs sets both Bash timeouts and must be a positive integer` |
+| T-0041-M7 | packages/harness-claude/src/worker.ts | the loop went on after a second `system/init` that followed the result | `a second session after the result is not accepted as a second turn` |
+| T-0041-M8 | packages/harness-claude/src/worker.ts | the failure message ignored the result's `errors` | `an unknown session as the real claude reports it: errors, no result text, no model` |
+| T-0041-M9 | packages/harness-claude/src/worker.ts | a run with no model still wrote a cost | `a failed run that used no model has no cost, not an exact zero` |
+| T-0041-M10 | packages/harness-claude/src/protocol.ts | `bashTimeoutSecs` was not validated | `bashTimeoutSecs sets both Bash timeouts and must be a positive integer` |
+| T-0041-M11 | packages/harness-claude/src/index.ts | the `bashTimeoutSecs` setting was not sent to the worker | `the worker gets the prompt, the directory and the settings` |
