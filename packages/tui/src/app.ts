@@ -27,9 +27,19 @@ import {
 } from "./client.ts";
 import { defaultOperadHome } from "@operad-io/engine";
 import { discoverServer } from "./discover.ts";
-import { TuiEvents, type TuiEvent } from "./events.ts";
+import { TuiEvents, retryDelay, type TuiEvent } from "./events.ts";
+import {
+  LiveBatcher,
+  connectionOf,
+  refetchTargets,
+  systemClock,
+  type Refetch,
+  type TuiClock,
+} from "./live.ts";
 import {
   initialState,
+  sameObject,
+  type TuiObject,
   joinMarkdown,
   reduce,
   type TuiActionRequest,
@@ -131,8 +141,10 @@ export interface TuiShellDeps {
   readonly onMessage?: ((message: string) => void) | undefined;
   /** Called once when the shell finishes, before `done` resolves. */
   readonly onFinish?: (() => void) | undefined;
-  /** The wait before a change refreshes the lists; 100 by default. */
-  readonly refreshDelayMs?: number | undefined;
+  /** Spaces the live refetches and the retries; the real clock by default. */
+  readonly clock?: TuiClock | undefined;
+  /** The server's URL, named when it does not answer. */
+  readonly url?: string | undefined;
   /**
    * The wait after the list cursor stops before the object pane follows it, so
    * scrolling fast does not fetch every row; 150 by default.
@@ -150,6 +162,9 @@ export interface TuiShell {
   /** Resolves with the exit code once the shell has finished. */
   readonly done: Promise<number>;
 }
+
+/** The signals that close the app cleanly. */
+const STOP_SIGNALS: readonly NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
 
 /** A settle result without throwing away the error's text. */
 type Settled<T> =
@@ -186,6 +201,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     width: deps.width,
     height: deps.height,
     theme: deps.theme,
+    url: deps.url,
   });
   let finished = false;
   let refreshAbort: AbortController | undefined;
@@ -195,7 +211,10 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   const objectRequests = new Set<AbortController>();
   let seenObject: number | undefined;
   let seenMove = 0;
-  let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  const clock = deps.clock ?? systemClock;
+  let retryCancel: (() => void) | undefined;
+  let retryAttempt = 0;
+  const batcher = new LiveBatcher(clock, (targets) => void refetch(targets));
   let followTimer: ReturnType<typeof setTimeout> | undefined;
   let events: TuiEventSource | undefined;
   let announce: (code: number) => void = () => undefined;
@@ -206,10 +225,9 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   function finish(): void {
     if (finished) return;
     finished = true;
-    if (refreshTimer !== undefined) {
-      clearTimeout(refreshTimer);
-      refreshTimer = undefined;
-    }
+    batcher.stop();
+    retryCancel?.();
+    retryCancel = undefined;
     if (followTimer !== undefined) {
       clearTimeout(followTimer);
       followTimer = undefined;
@@ -221,6 +239,14 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     abort.abort();
     deps.onFinish?.();
     announce(0);
+  }
+
+  /** A request that failed to reach the server, or was refused its token. */
+  function noteConnection(error: unknown): boolean {
+    const lost = connectionOf(error);
+    if (lost === undefined) return false;
+    dispatch({ type: "connection", connection: lost });
+    return true;
   }
 
   async function loadPage(request: TuiPageRequest): Promise<void> {
@@ -236,6 +262,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       });
     } catch (error) {
       if (abort.signal.aborted) return;
+      noteConnection(error);
       dispatch({
         type: "page-error",
         tabId: request.tabId,
@@ -256,6 +283,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       dispatch({ type: "object", object, version: request.version });
     } catch (error) {
       if (mine.signal.aborted) return;
+      noteConnection(error);
       dispatch({
         type: "object-error",
         id: request.id,
@@ -291,6 +319,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       });
     } catch (error) {
       if (mine.signal.aborted) return;
+      noteConnection(error);
       dispatch({
         type: "section-error",
         objectId: request.objectId,
@@ -370,11 +399,13 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       state.tabs.map((tab) => [tab.id, tab.list.rows.length] as const),
     );
     let failed = false;
+    let lost = false;
 
     // A request that the next refresh cancelled says nothing.
     const fail = (error: unknown): void => {
       if (signal.aborted || finished) return;
       failed = true;
+      if (noteConnection(error)) lost = true;
       dispatch({ type: "status", message: messageOf(error), generation });
       report(error);
     };
@@ -427,82 +458,188 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         }),
       );
     }
-    const open = state.object;
-    if (
-      open !== undefined &&
-      objectAtStart !== undefined &&
-      open.id === objectAtStart.id &&
-      open.version === objectAtStart.version &&
-      !open.loading &&
-      client.object !== undefined &&
-      !signal.aborted &&
-      !finished
-    ) {
-      const id = open.id;
-      const version = open.version;
-      // The object's own requests end with it (Esc, another open), not only
-      // with this refresh.
-      const scoped = new AbortController();
-      const stop = (): void => scoped.abort();
-      signal.addEventListener("abort", stop, { once: true });
-      objectRequests.add(scoped);
-      try {
-        const result = await settle(client.object(id, scoped.signal));
-        if (!scoped.signal.aborted && !finished) {
-          if (result.ok) {
-            dispatch({ type: "object", object: result.value, version });
-            const current = state.object;
-            const live =
-              current?.sections.filter(
-                (section) => section.live && section.loaded && !section.loading,
-              ) ?? [];
-            if (client.section !== undefined) {
-              await Promise.all(
-                live.map(async (section) => {
-                  const objectId = current?.id ?? id;
-                  const objectVersion = current?.version ?? version;
-                  const fetched = await settle(
-                    fetchSectionDepth(
-                      objectId,
-                      section.id,
-                      section.pages,
-                      section.full,
-                      scoped.signal,
-                    ),
-                  );
-                  if (scoped.signal.aborted || finished) return;
-                  if (!fetched.ok || fetched.value === undefined) return;
-                  dispatch({
-                    type: "section",
-                    objectId,
-                    sectionId: section.id,
-                    content: fetched.value.content,
-                    pages: fetched.value.pages,
-                    full: section.full,
-                    version: section.version,
-                    objectVersion,
-                  });
-                }),
-              );
-            }
-          } else {
-            dispatch({
-              type: "object-error",
-              id,
-              message: messageOf(result.error),
-              version,
-            });
-            fail(result.error);
-          }
-        }
-      } finally {
-        signal.removeEventListener("abort", stop);
-        objectRequests.delete(scoped);
+    await refreshObjectPane(signal, objectAtStart, fail);
+    if (signal.aborted || finished) return;
+    if (!lost) {
+      dispatch({ type: "connection", connection: "ok" });
+      retryAttempt = 0;
+    }
+    if (!failed) dispatch({ type: "status", generation });
+    if (state.connection === "unreachable") scheduleRetry();
+  }
+
+  /** While the server does not answer, ask again with growing waits. */
+  function scheduleRetry(): void {
+    if (retryCancel !== undefined || finished) return;
+    const delay = retryDelay(retryAttempt);
+    retryAttempt += 1;
+    retryCancel = clock.after(() => {
+      retryCancel = undefined;
+      requestRefresh();
+    }, delay);
+  }
+
+  /** Fetches the targets an event asked for; a lost server asks for everything. */
+  async function refetch(targets: Refetch): Promise<void> {
+    if (finished) return;
+    if (targets.all || state.connection !== "ok") {
+      await refresh();
+      return;
+    }
+    const signal = abort.signal;
+    const fail = (error: unknown): void => {
+      if (signal.aborted || finished) return;
+      if (noteConnection(error)) {
+        if (state.connection === "unreachable") scheduleRetry();
+        return;
       }
+      dispatch({ type: "status", message: messageOf(error) });
+      report(error);
+    };
+    const work: Promise<void>[] = [];
+    if (targets.lists) work.push(refreshPendingRunning(signal, fail));
+    for (const id of targets.rows) {
+      if (targets.object && state.object !== undefined && sameObject(state.object.id, id)) {
+        continue;
+      }
+      work.push(refreshRow(id, signal, fail));
     }
-    if (!failed && !signal.aborted && !finished) {
-      dispatch({ type: "status", generation });
+    if (targets.object) {
+      work.push(refreshObjectPane(signal, state.object, fail));
     }
+    await Promise.all(work);
+  }
+
+  async function refreshPendingRunning(
+    signal: AbortSignal,
+    fail: (error: unknown) => void,
+  ): Promise<void> {
+    const [pending, running] = await Promise.all([
+      settle(client.pending(signal)),
+      settle(client.running(signal)),
+    ]);
+    if (signal.aborted || finished) return;
+    if (pending.ok) dispatch({ type: "pending", items: pending.value });
+    else fail(pending.error);
+    if (running.ok) dispatch({ type: "running", items: running.value });
+    else fail(running.error);
+  }
+
+  /**
+   * Fetches one row again. An object that no open list holds yet (a new one)
+   * refetches the list of its type instead.
+   */
+  async function refreshRow(
+    id: string,
+    signal: AbortSignal,
+    fail: (error: unknown) => void,
+  ): Promise<void> {
+    const read = client.object;
+    if (read === undefined) return;
+    const result = await settle(read.call(client, id, signal));
+    if (signal.aborted || finished) return;
+    if (!result.ok) {
+      // An object that is gone from the server is not a failure of the screen.
+      if (!(result.error instanceof TuiError && result.error.status === 404)) {
+        fail(result.error);
+      }
+      return;
+    }
+    const known = state.tabs.some(
+      (tab) => tab.kind === "type" && tab.list.rows.some((row) => sameObject(row.id, id)),
+    );
+    if (known) {
+      dispatch({ type: "row", row: result.value.row });
+      return;
+    }
+    const tab = state.tabs.find((candidate) => candidate.type === result.value.type);
+    if (tab?.type === undefined) return;
+    const page = await settle(fetchTypeRows(tab.type, tab.list.rows.length, signal));
+    if (signal.aborted || finished) return;
+    if (page.ok) dispatch({ type: "page", tabId: tab.id, page: page.value, replace: true });
+    else fail(page.error);
+  }
+
+  /** Fetches the open object again, and the live sections it shows. */
+  async function refreshObjectPane(
+    signal: AbortSignal,
+    objectAtStart: TuiObject | undefined,
+    fail: (error: unknown) => void,
+  ): Promise<void> {
+  const open = state.object;
+  if (
+    open !== undefined &&
+    objectAtStart !== undefined &&
+    open.id === objectAtStart.id &&
+    open.version === objectAtStart.version &&
+    !open.loading &&
+    client.object !== undefined &&
+    !signal.aborted &&
+    !finished
+  ) {
+    const id = open.id;
+    const version = open.version;
+    // The object's own requests end with it (Esc, another open), not only
+    // with this refresh.
+    const scoped = new AbortController();
+    const stop = (): void => scoped.abort();
+    signal.addEventListener("abort", stop, { once: true });
+    objectRequests.add(scoped);
+    try {
+      const result = await settle(client.object(id, scoped.signal));
+      if (!scoped.signal.aborted && !finished) {
+        if (result.ok) {
+          dispatch({ type: "object", object: result.value, version });
+          dispatch({ type: "row", row: result.value.row });
+          const current = state.object;
+          const live =
+            current?.sections.filter(
+              (section) => section.live && section.loaded && !section.loading,
+            ) ?? [];
+          if (client.section !== undefined) {
+            await Promise.all(
+              live.map(async (section) => {
+                const objectId = current?.id ?? id;
+                const objectVersion = current?.version ?? version;
+                const fetched = await settle(
+                  fetchSectionDepth(
+                    objectId,
+                    section.id,
+                    section.pages,
+                    section.full,
+                    scoped.signal,
+                  ),
+                );
+                if (scoped.signal.aborted || finished) return;
+                if (!fetched.ok || fetched.value === undefined) return;
+                dispatch({
+                  type: "section",
+                  objectId,
+                  sectionId: section.id,
+                  content: fetched.value.content,
+                  pages: fetched.value.pages,
+                  full: section.full,
+                  version: section.version,
+                  objectVersion,
+                });
+              }),
+            );
+          }
+        } else {
+          dispatch({
+            type: "object-error",
+            id,
+            message: messageOf(result.error),
+            version,
+          });
+          fail(result.error);
+        }
+      }
+    } finally {
+      signal.removeEventListener("abort", stop);
+      objectRequests.delete(scoped);
+    }
+  }
   }
 
   /** Sends one action; a success refreshes the object and its list row. */
@@ -536,15 +673,6 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   function requestRefresh(): void {
     if (finished) return;
     void refresh();
-  }
-
-  function scheduleRefresh(): void {
-    if (finished) return;
-    if (refreshTimer !== undefined) clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(() => {
-      refreshTimer = undefined;
-      requestRefresh();
-    }, deps.refreshDelayMs ?? 100);
   }
 
   function dispatch(event: TuiStateEvent): void {
@@ -603,7 +731,9 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       for await (const event of source) {
         if (finished) break;
         if (event.kind === "change" || event.kind === "reset") {
-          scheduleRefresh();
+          batcher.push(refetchTargets(event, state.object?.id));
+        } else if (noteConnection(event.error)) {
+          report(event.error);
         } else {
           dispatch({ type: "status", message: event.error.message });
           report(event.error);
@@ -679,6 +809,7 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
   let shell: TuiShell | undefined;
   let code = 0;
   const onAbort = (): void => shell?.stop();
+  const onSignal = (): void => shell?.stop();
 
   // A callback that throws must not leave the screen up.
   const guarded = (work: () => void): void => {
@@ -702,6 +833,7 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
     view = createdView;
     const started = startShell({
       client,
+      url: location.url,
       events: (signal) =>
         new TuiEvents({ url: location.url, token: location.token, signal }),
       view: createdView,
@@ -729,6 +861,9 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
       if (theme !== null) guarded(() => started.setTheme(theme));
     });
     created.once(CliRenderEvents.DESTROY, () => started.stop());
+    // SIGINT and SIGTERM end the app the way `q` does: the screen is restored
+    // and the event stream closed before the process goes on.
+    for (const name of STOP_SIGNALS) process.on(name, onSignal);
     if (options.signal !== undefined) {
       if (options.signal.aborted) started.stop();
       else options.signal.addEventListener("abort", onAbort, { once: true });
@@ -740,6 +875,7 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
     code = 1;
   } finally {
     options.signal?.removeEventListener("abort", onAbort);
+    for (const name of STOP_SIGNALS) process.off(name, onSignal);
     shell?.stop();
     view?.destroy();
     if (renderer !== undefined && !renderer.isDestroyed) renderer.destroy();

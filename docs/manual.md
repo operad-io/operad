@@ -237,7 +237,7 @@ Switching tabs closes the object. Every key the app reads is below.
 | `f` | key | none | Load a capped section with `full=true`. |
 | `g` | key | none | The first row; under 100 columns with an object open, the top of the section. |
 | `G` | key | none | The last row; under 100 columns with an object open, the end of the section (it resumes following a live section). |
-| `r` | key | none | Fetch every list again, and the open object with its live sections. |
+| `r` | key | none | Fetch every list again, and the open object with its live sections. When the open section failed to load, it asks for that section again too. |
 | `a` | key | none | Run the open object's main action, the first one the object offers now (the footer names it with its key). A key bound to an action (below) wins over `a`. With no action, one footer line says so. |
 | a bound key | key | `GET /v1/keys` | Run that action on the open object. A user binding in `keys.json` beats a plugin default on the same key. Reserved keys cannot be bound: `enter`, `return`, `escape`, `esc`, `tab`, the arrows (`up`, `down`, `left`, `right`), `pageup`, `pagedown`, `home`, `end`, `space`, `[`, `]`, `:`, `?`, `/`, `b`, `f`, `g`, `j`, `k`, `q`, `r` (letters in either case) and `1`–`9`, as well as Ctrl-C and any Ctrl or Meta chord. A plugin default or `keys.json` entry on a reserved key is dropped; at start one footer line names each dropped key with its action and source. The action stays reachable from the `:` palette, with no key shown. If the object does not offer the action now, one footer line says it is not available. |
 | `:` | key | none | Open the palette: type to fuzzy match the `plugin:action` names the open object offers, each with its key and "needs a note" or "asks to confirm". `↑` / `↓` (or Ctrl-P / Ctrl-N) move, `enter` runs, `escape` closes. With no object open it lists nothing but "no object is selected". |
@@ -247,6 +247,29 @@ Switching tabs closes the object. Every key the app reads is below.
 | `q` | key | none | Quit. |
 | `Ctrl-C` | key | none | Quit at once. The terminal restores itself; no other Ctrl or Meta chord does anything. |
 | `escape` | key | none | Close the key list, or close the open object and stop its requests. While the key list is open only `?`, `escape` and `q` act; the others leave the list alone. |
+
+#### Live updates, states and leaving
+
+The screen follows the event stream. An event for an object fetches that
+object's row again in every open list and, if it is the open object, the object
+and its open live sections. A `reset` (the server could not resume the stream,
+or the stream reconnected with nothing to resume from) fetches every open list
+and the open object again. Pending and Running are fetched again on any event.
+Events that arrive together are served in one batch, at most one batch every
+250 ms.
+
+| State | What the screen shows |
+|---|---|
+| Server unreachable | One footer line, `no server at <url>: is `operad serve` running? retrying`. The last lists stay on screen, dimmed. The screen asks again after 250 ms, then 500 ms, 1 s, 2 s, 4 s and every 5 s, and returns to normal when the server answers. |
+| 401 | `the token was rotated: run the TUI again or pass --token`. Nothing is retried; `q` quits. |
+| Empty Pending | `nothing waits for you` |
+| Empty list of an object type | `no <type title> yet` |
+| A section that failed to load | The server's message and `r retries` in place of the section; `r` asks for that section again (and fetches the lists again). |
+
+`q`, Ctrl-C, SIGINT and SIGTERM all end the screen the same way: the event
+stream is closed, the terminal is restored (alternate screen left, cursor
+shown), failures collected while the screen was open are printed, and the
+command exits 0. A `serve` that the TUI started keeps running.
 
 A refused action shows the server's status and message as they came (for
 example `409 …`) in one footer line until the next key. After a success the app
