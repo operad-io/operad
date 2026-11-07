@@ -930,6 +930,20 @@ export class Views {
 
   private async resolve(id: string): Promise<ResolvedObject> {
     const typed = splitId(id);
+    // A qualified id names its namespace; a different `--repo` is a mistake.
+    const qualified = (typed?.id ?? id).split("/");
+    if (this.scope !== undefined && qualified.length > 1 && qualified[0] !== this.scope) {
+      throw new ViewError(
+        "args",
+        `"${id}" is in repository "${qualified[0]}", but --repo names "${this.scope}"`,
+      );
+    }
+    // A plugin may refuse a qualified id whose namespace is not valid (an
+    // unregistered repository) even when an object is still stored under it.
+    // A typed id is checked only by its own type's hook.
+    if (qualified.length > 1) {
+      await this.resolveWithPlugins(typed?.id ?? id, typed?.type);
+    }
     if (typed !== undefined) {
       const object = await this.store.get(typed.type, typed.id);
       if (object !== undefined || (await this.hasRun(typed.type, typed.id))) {
@@ -967,7 +981,7 @@ export class Views {
     // even when no object is stored there, so the lookup cannot fall through to
     // another namespace; the kernel's suffix lookup runs only when none claims
     // the id.
-    if (!id.includes("/") && !id.includes(":")) {
+    if (!id.includes(":")) {
       const scoped = await this.resolveWithPlugins(id);
       if (scoped !== undefined) return scoped;
     }
@@ -1024,9 +1038,11 @@ export class Views {
    */
   private async resolveWithPlugins(
     id: string,
+    onlyType?: string,
   ): Promise<ResolvedObject | undefined> {
     const matches: ResolvedObject[] = [];
     for (const entry of this.registry.objectTypes()) {
+      if (onlyType !== undefined && entry.type !== onlyType) continue;
       const resolve = entry.definition.resolve;
       if (resolve === undefined) continue;
       let key: unknown;
@@ -1041,6 +1057,8 @@ export class Views {
           id,
         );
       } catch (error) {
+        // A plugin refuses with a ViewError when it knows why the id is wrong.
+        if (error instanceof ViewError) throw error;
         this.onLog(
           `plugin "${entry.plugin}": resolve failed for "${entry.type}:${id}": ${messageOf(error)}`,
         );

@@ -36,8 +36,34 @@ operad task update <id> [--title <title>] [--after <task>]... [--area <area>]   
 operad start <task>        # start one ready task now, whatever its plan's auto level
 ```
 
-Inside a registered repository the repository is inferred; elsewhere pass
-`--repo <name>`.
+### Where a command runs, and ids
+
+A command that looks up a plan or a task (`start`, `task edit`, `task update`,
+`show`, every `dev:<action>`) finds its repository in this order:
+
+1. A qualified id, `<repo>/<id>` as `operad list` prints it
+   (`operad start operad/T-0045-shell-hang-guards`), names the repository, from
+   any directory. `--repo` with a different repository is refused, naming both.
+2. `--repo <name>`.
+3. Inside a registered repository, a bare id means that repository's object.
+   The longest registered path that contains the directory wins.
+4. Outside every repository, a bare id resolves when exactly one registered
+   repository has an object with that id. When several do, the error lists the
+   qualified ids to choose from.
+
+`plan add` and `task add` create rather than look up, so they never guess from an
+id: they use the repository of the directory or `--repo`.
+
+When no repository applies, the error names the directory and lists the
+registered ones, a repository whose path is gone marked `(missing)`:
+
+```
+no registered repository contains /Users/hai/Code/radian; run the command inside one of these, or pass --repo <name>:
+  operad      ~/Code/operad
+  operad-ios  ~/Code/operad-ios
+```
+
+With nothing registered it points at `operad repo add <path>`.
 
 ## Actions
 

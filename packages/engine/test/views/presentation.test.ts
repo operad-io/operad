@@ -538,6 +538,47 @@ describe("presentation views", () => {
     outside.close();
   });
 
+  test("a typed qualified id is checked only by its own type's resolve hook", async () => {
+    const root = await tempRoot();
+    const store = new MemoryPluginStore({ root: join(root, "plugins") });
+    const view = {
+      row: (object: { readonly id: string }) => ({
+        id: object.id,
+        title: object.id,
+        state: "new",
+      }),
+      sections: () => [],
+      load: () => ({ markdown: "" }),
+    };
+    const plugin = definePlugin({
+      name: "typed",
+      kind: "domain",
+      version: "0.0.1",
+      objects: [
+        {
+          name: "task",
+          resolve() {
+            throw new ViewError("not-found", "no registered repository");
+          },
+        },
+        { name: "note" },
+      ],
+      views: { task: view, note: view },
+    });
+    store.put("note", "external/TK0001-x", { title: "N" }, "seed");
+    const views = trackedViews({
+      registry: new PluginRegistry([plugin], { store }),
+      store,
+      cwd: root,
+    });
+    const found = await views.get("note:external/TK0001-x");
+    expect(found.id).toBe("external/TK0001-x");
+    await expect(views.get("task:external/TK0001-x")).rejects.toMatchObject({
+      kind: "not-found",
+    });
+    views.close();
+  });
+
   test("events reach a reader when another store writes the object", async () => {
     const root = await tempRoot();
     const directory = join(root, "plugins");

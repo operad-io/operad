@@ -81,6 +81,16 @@ function dataOf(result: PluginStepResult): Record<string, unknown> {
   return (result.data ?? {}) as Record<string, unknown>;
 }
 
+/** Resolves true once the process is gone; the kill lands asynchronously. */
+async function gone(pid: number): Promise<boolean> {
+  const deadline = Date.now() + 10_000;
+  while (alive(pid)) {
+    if (Date.now() > deadline) return false;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  return true;
+}
+
 function alive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -395,7 +405,7 @@ describe("harness-pi/agent", () => {
     const data = dataOf(result);
     expect(data.reason).toBe("signal");
     expect(String(data.message)).toContain("SIGKILL");
-    expect(alive(Number(readFileSync(env.marker, "utf8")))).toBe(false);
+    expect(await gone(Number(readFileSync(env.marker, "utf8")))).toBe(true);
     expect(alive(process.pid)).toBe(true);
   });
 
@@ -443,7 +453,7 @@ describe("harness-pi/agent", () => {
     const result = await running;
     expect(result.result).toBe("failed");
     expect(dataOf(result).reason).toBe("stall");
-    expect(alive(pid)).toBe(false);
+    expect(await gone(pid)).toBe(true);
   });
 
   test("silence with an open tool call is not a stall", async () => {
@@ -479,7 +489,7 @@ describe("harness-pi/agent", () => {
     const result = await running;
     expect(result.result).toBe("failed");
     expect(dataOf(result).reason).toBe("wall");
-    expect(alive(pid)).toBe(false);
+    expect(await gone(pid)).toBe(true);
   });
 
   test("settings supply the limits and a step param overrides them", async () => {
@@ -515,7 +525,7 @@ describe("harness-pi/agent", () => {
     const result = await running;
     expect(result.result).toBe("interrupted");
     expect(dataOf(result).reason).toBe("cancelled");
-    expect(alive(pid)).toBe(false);
+    expect(await gone(pid)).toBe(true);
   });
 
   test("a cwd that does not exist fails with a clear reason", async () => {
