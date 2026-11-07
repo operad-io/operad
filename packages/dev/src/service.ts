@@ -881,6 +881,58 @@ export async function recordAutoMerge(
   });
 }
 
+/**
+ * Claims the next transition of a waiting task for one person action. The
+ * action passes the version of the task it looked at; under the repository lock
+ * the claim re-reads the task and writes `change` only when the task is still
+ * waiting at that version. A concurrent merge, reject, rework, reverify or
+ * cancel wrote first, and this call reports what happened and changes nothing.
+ * It returns what was written and the data to put back if the answer fails.
+ */
+export async function claimWaitingTask(
+  store: ObjectStore,
+  id: string,
+  seen: number,
+  action: string,
+  change: (latest: TaskData) => TaskData,
+): Promise<{ readonly claimed: StoredObject; readonly before: TaskData }> {
+  const initial = await getTask(store, id);
+  const data = taskData(initial.data);
+  const at = `task "${bareId(id)}"`;
+  return withRepoLock(store, data.repository, async () => {
+    const current = await getTask(store, id);
+    const latest = taskData(current.data);
+    if (current.version !== seen || latest.phase !== "waiting") {
+      throw new DevError(
+        action,
+        `${at} changed since you looked (it is ${latest.phase}); ${action} did nothing`,
+      );
+    }
+    const claimed = await writeTask(
+      store,
+      id,
+      change(latest),
+      `dev:task-${action}`,
+    );
+    return { claimed, before: latest };
+  });
+}
+
+/** Puts back a task a failed claim changed, unless something wrote it since. */
+export async function releaseWaitingClaim(
+  store: ObjectStore,
+  id: string,
+  claimed: StoredObject,
+  before: TaskData,
+): Promise<void> {
+  const data = taskData(claimed.data);
+  await withRepoLock(store, data.repository, async () => {
+    const current = await getTask(store, id);
+    if (current.version !== claimed.version) return;
+    await writeTask(store, id, before, "dev:task-claim-released");
+  });
+}
+
 /** Appends the owner's rework section and leaves the task for the flow. */
 export async function rejectTask(
   store: ObjectStore,

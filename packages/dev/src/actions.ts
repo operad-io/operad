@@ -2,19 +2,23 @@
 
 import type { ActionTypeDefinition } from "@operad-io/engine";
 import {
+  appendChange,
+  appendRework,
   bareId,
   DevError,
   planData,
   PRIORITIES,
   taskData,
+  type TaskData,
 } from "./model.ts";
 import {
   cancelPlan,
   cancelTask,
+  claimWaitingTask,
   confirmPlan,
   confirmTask,
   getTask,
-  rejectTask,
+  releaseWaitingClaim,
   setAuto,
   setPriority,
 } from "./service.ts";
@@ -59,13 +63,50 @@ function noteArgument(args: unknown): string {
     args === null ||
     typeof (args as { note?: unknown }).note !== "string"
   ) {
-    throw new DevError("note", "a reject needs a note");
+    throw new DevError("note", "needs a note");
   }
   const note = (args as { note: string }).note.trim();
   if (note.length === 0) {
     throw new DevError("note", "must be a non-empty string");
   }
   return note;
+}
+
+type Answer = NonNullable<Parameters<ActionTypeDefinition["run"]>[0]["answer"]>;
+
+/**
+ * Answers the task's wait after claiming the task's next transition at the
+ * version the action saw. The claim goes first so that a concurrent action on
+ * the same version loses before it records anything; an answer that then fails
+ * gives the claim back.
+ */
+async function claimAndAnswer(
+  ctx: { readonly store: Parameters<typeof getTask>[0]; readonly object: { readonly id: string }; readonly answer?: Answer | undefined },
+  action: string,
+  choice: string,
+  change: (latest: TaskData) => TaskData,
+  note?: string,
+): Promise<void> {
+  const object = await waitingTask(ctx.store, ctx.object.id);
+  if (ctx.answer === undefined) {
+    throw new DevError(
+      "wait",
+      `task "${bareId(ctx.object.id)}" is not waiting for a run`,
+    );
+  }
+  const { claimed, before } = await claimWaitingTask(
+    ctx.store,
+    ctx.object.id,
+    object.version,
+    action,
+    change,
+  );
+  try {
+    await ctx.answer(choice, note);
+  } catch (error) {
+    await releaseWaitingClaim(ctx.store, ctx.object.id, claimed, before);
+    throw error;
+  }
 }
 
 const mergeTask: ActionTypeDefinition = {
@@ -76,46 +117,99 @@ const mergeTask: ActionTypeDefinition = {
     return taskData(state).phase === "waiting";
   },
   async run(ctx) {
-    await waitingTask(ctx.store, ctx.object.id);
-    if (ctx.answer === undefined) {
-      throw new DevError(
-        "wait",
-        `task "${bareId(ctx.object.id)}" is not waiting for a run`,
-      );
-    }
-    await ctx.answer("merge");
+    await claimAndAnswer(ctx, "merge", "merge", (latest) => ({
+      ...latest,
+      brief: appendChange(latest.brief, "merge requested"),
+    }));
   },
 };
+
+const NOTE_ARGS = (description: string) =>
+  ({
+    type: "object",
+    properties: { note: { type: "string", role: "note", description } },
+    required: ["note"],
+    additionalProperties: false,
+  }) as const;
 
 const rejectTaskAction: ActionTypeDefinition = {
   name: "reject",
   on: "task",
-  args: {
-    type: "object",
-    properties: {
-      note: {
-        type: "string",
-        role: "note",
-        description: "What the worker should change before the next review.",
-      },
-    },
-    required: ["note"],
-    additionalProperties: false,
-  },
+  args: NOTE_ARGS("What the worker should change before the next review."),
   when(state) {
     return taskData(state).phase === "waiting";
   },
   async run(ctx, args) {
-    await waitingTask(ctx.store, ctx.object.id);
-    if (ctx.answer === undefined) {
-      throw new DevError(
-        "wait",
-        `task "${bareId(ctx.object.id)}" is not waiting for a run`,
-      );
-    }
     const note = noteArgument(args);
-    await rejectTask(ctx.store, ctx.object.id, note);
-    await ctx.answer("reject", note);
+    await claimAndAnswer(
+      ctx,
+      "reject",
+      "reject",
+      (latest) => ({ ...latest, brief: appendRework(latest.brief, "owner", note) }),
+      note,
+    );
+  },
+};
+
+/**
+ * The lead's own rework: it goes into the brief as `## Rework <n> (lead)`, the
+ * worker runs again, and the count of automatic reworks in a row starts over.
+ */
+const reworkTaskAction: ActionTypeDefinition = {
+  name: "rework",
+  on: "task",
+  args: NOTE_ARGS("What the worker should do in this rework."),
+  when(state) {
+    return taskData(state).phase === "waiting";
+  },
+  async run(ctx, args) {
+    const note = noteArgument(args);
+    await claimAndAnswer(
+      ctx,
+      "rework",
+      "reject",
+      (latest) => ({
+        ...appendRework(latest, "lead", note),
+        phase: "running",
+        reworkStreak: 0,
+      }),
+      note,
+    );
+  },
+};
+
+/** Runs verify and review again on the task's current head, with no worker. */
+const reverifyTaskAction: ActionTypeDefinition = {
+  name: "reverify",
+  on: "task",
+  when(state) {
+    return taskData(state).phase === "waiting";
+  },
+  async run(ctx) {
+    await claimAndAnswer(ctx, "reverify", "reverify", (latest) => {
+      if (latest.attempt === undefined) {
+        throw new DevError(
+          "reverify",
+          "the task has no work to verify yet; rework it instead",
+        );
+      }
+      return {
+        ...latest,
+        phase: "running",
+        brief: appendChange(latest.brief, "reverify"),
+        // A fresh gate result: the verify step replays a result its own run
+        // recorded, so the old ones must go before the step enters again.
+        attempt: {
+          ...latest.attempt,
+          verified: null,
+          verify: null,
+          review: null,
+          reviews: 0,
+          rework: null,
+          integration: null,
+        },
+      };
+    });
   },
 };
 
@@ -188,6 +282,8 @@ export const actions: readonly ActionTypeDefinition[] = [
   },
   mergeTask,
   rejectTaskAction,
+  reworkTaskAction,
+  reverifyTaskAction,
   {
     name: "priority",
     on: "plan",

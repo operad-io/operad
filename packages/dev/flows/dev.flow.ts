@@ -74,14 +74,16 @@ export default defineFlow({
       id: "wait",
       kind: "wait_person",
       params: {
-        prompt: "The task is waiting for you: merge it or reject it.",
-        choices: ["merge", "reject"],
-        note: "the run stopped during {step}; reject to run it again",
+        prompt:
+          "The task is waiting for you: merge it, reject it, or verify and review it again.",
+        choices: ["merge", "reject", "reverify"],
+        note: "the run stopped during {step}; reject to run it again, or reverify to check the same commit again",
       },
       replay: "safe",
       next: {
         merge: "integrate",
         reject: "worktree",
+        reverify: "verify",
         interrupted: "end_cancelled",
       },
     },
