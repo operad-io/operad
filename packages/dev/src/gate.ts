@@ -58,7 +58,11 @@ import {
   workBranch,
   type TaskContext,
 } from "./steps.ts";
-import { REVIEW_WAIT_CHUNK_MS } from "./timeouts.ts";
+import {
+  MAX_REVIEW_WAITS,
+  REVIEW_WAIT_CHUNK_MS,
+  STEP_TIMEOUT_SECS,
+} from "./timeouts.ts";
 
 /** The gate worktree of a task: `<worktreeRoot>/<task id>-gate`. */
 export function gateWorktreePath(
@@ -793,54 +797,43 @@ function modelOf(use: string, args: readonly string[]): string {
   return use;
 }
 
-/** The `kind` a harness reports for a model error, in its usual shapes. */
+/** The `kind` of the `modelError` a harness reports, when it reports one. */
 function modelErrorKind(data: Record<string, unknown>): string | undefined {
-  for (const key of ["modelError", "model_error", "error", "failure"]) {
-    const value = data[key];
-    if (typeof value === "string") return value;
-    if (isRecord(value) && typeof value.kind === "string") return value.kind;
-    if (isRecord(value)) {
-      const nested = value.kind;
-      if (typeof nested === "string") return nested;
-    }
-  }
-  if (typeof data.kind === "string") return data.kind;
+  const value = data.modelError;
+  if (isRecord(value) && typeof value.kind === "string") return value.kind;
   return undefined;
 }
 
-/** True when a value carries an HTTP 429 or its phrase. */
-function contains429(value: unknown, depth = 0): boolean {
-  if (typeof value === "number") return value === 429;
-  if (typeof value === "string") {
-    return /\b429\b/.test(value) || /too many requests/i.test(value);
-  }
-  if (depth >= 3) return false;
-  if (Array.isArray(value)) {
-    return value.some((item) => contains429(item, depth + 1));
-  }
-  if (isRecord(value)) {
-    return Object.values(value).some((item) => contains429(item, depth + 1));
-  }
-  return false;
+/** What a provider prints when it refuses a request for rate or load. */
+const UNAVAILABLE_STDERR =
+  /\b(?:HTTP|status(?: code)?)[ :=]+429\b|\btoo many requests\b/i;
+
+/** True when the tail of the harness's own error output names a 429. */
+function stderrSaysUnavailable(data: Record<string, unknown>): boolean {
+  const tail = data.stderr;
+  if (!Array.isArray(tail)) return false;
+  return tail.some(
+    (line) => typeof line === "string" && UNAVAILABLE_STDERR.test(line),
+  );
 }
 
-/** Why a reviewer run failed: unavailable, timed out, or anything else. */
+/**
+ * Why a reviewer run failed: unavailable, timed out, or anything else. Only
+ * the harness's `modelError` (and, when a harness reports none, an anchored
+ * phrase in the tail of its error output) says unavailable; a number or a
+ * word elsewhere in the data never does.
+ */
 function failureOutcome(
   data: Record<string, unknown>,
-  message: string,
+  _message: string,
 ): "unavailable" | "timed_out" | "failed" {
+  const kind = modelErrorKind(data);
+  if (kind === "unavailable" || kind === "usage_limit") return "unavailable";
   const reason = typeof data.reason === "string" ? data.reason : undefined;
   if (reason === "wall" || reason === "stall" || reason === "timeout") {
     return "timed_out";
   }
-  if (reason === "unavailable" || reason === "usage_limit") {
-    return "unavailable";
-  }
-  const kind = modelErrorKind(data);
-  if (kind === "unavailable" || kind === "usage_limit") return "unavailable";
-  const status = data.statusCode ?? data.status ?? data.httpStatus;
-  if (status === 429) return "unavailable";
-  if (contains429(message) || contains429(data)) return "unavailable";
+  if (stderrSaysUnavailable(data)) return "unavailable";
   return "failed";
 }
 
@@ -914,6 +907,7 @@ async function callReviewer(
   prompt: string,
   resultPath: string,
   reviewer: { readonly use: string; readonly args: readonly string[] },
+  resuming: boolean,
 ): Promise<ReviewerCall> {
   const call = await callReviewerOnce(
     ctx,
@@ -922,6 +916,7 @@ async function callReviewer(
     prompt,
     resultPath,
     reviewer,
+    resuming,
   );
   writeReviewOutcome(reviewOutcomePath(resultPath), call);
   return call;
@@ -934,6 +929,7 @@ async function callReviewerOnce(
   prompt: string,
   resultPath: string,
   reviewer: { readonly use: string; readonly args: readonly string[] },
+  resuming: boolean,
 ): Promise<ReviewerCall> {
   const runStep = ctx.runStep;
   if (runStep === undefined) {
@@ -943,6 +939,13 @@ async function callReviewerOnce(
     };
   }
   const settings = context.settings.reviewer;
+  // A valid report already on disk is the answer: a crash between the report
+  // and its recorded outcome must not ask the model again, and a retry never
+  // deletes a report that can be read. Only an unreadable one is removed.
+  const existing = resuming ? readValidReport(resultPath) : undefined;
+  if (existing !== undefined) {
+    return { outcome: "report", report: existing, message: "" };
+  }
   try {
     rmSync(resultPath, { force: true });
   } catch {
@@ -954,6 +957,7 @@ async function callReviewerOnce(
     // A sidecar left behind is never trusted unless the task names the run.
   }
   let outcome: PluginStepResult | undefined;
+  let thrown: string | undefined;
   try {
     outcome = await runStep(
       reviewer.use,
@@ -970,7 +974,16 @@ async function callReviewerOnce(
       stepOptions(ctx, gatePath),
     );
   } catch (error) {
-    const message = messageOf(error);
+    thrown = messageOf(error);
+  }
+  // The report is read before the outcome is judged: a reviewer that wrote a
+  // valid report and then stalled, timed out or exited non-zero still reviewed.
+  const written = readValidReport(resultPath);
+  if (written !== undefined) {
+    return { outcome: "report", report: written, message: "" };
+  }
+  if (outcome === undefined) {
+    const message = thrown ?? "the reviewer did not run";
     return { outcome: failureOutcome({}, message), message };
   }
   if (outcome.result !== "done") {
@@ -988,14 +1001,17 @@ async function callReviewerOnce(
       message: read.message ?? `cannot read ${resultPath}`,
     };
   }
-  const report = parseReport(read.text);
-  if (report === undefined) {
-    return {
-      outcome: "invalid",
-      message: `the review report at ${resultPath} is not the expected JSON`,
-    };
-  }
-  return { outcome: "report", report, message: "" };
+  return {
+    outcome: "invalid",
+    message: `the review report at ${resultPath} is not the expected JSON`,
+  };
+}
+
+/** The report at a path when it reads and parses, otherwise undefined. */
+function readValidReport(resultPath: string): Report | undefined {
+  const read = readReport(resultPath);
+  if (read.text === undefined) return undefined;
+  return parseReport(read.text);
 }
 
 function reviewData(
@@ -1008,6 +1024,8 @@ function reviewData(
 
 /** The step result a finished review record stands for. */
 function stepResultOf(record: ReviewRecord): string {
+  if (record.reason === "exhausted") return "exhausted";
+  if (record.reason === "out_of_time") return "out_of_time";
   if (record.decision === "passed") return "pass";
   if (record.decision === "findings") return "fail";
   if (record.decision === "unavailable") return "unavailable";
@@ -1060,6 +1078,8 @@ type ReviewNext =
   | "done"
   | "wait-unavailable"
   | "wait-timed-out"
+  | "wait-exhausted"
+  | "out-of-time"
   | "failed";
 
 /**
@@ -1191,7 +1211,9 @@ export async function runReview(
     const finished =
       previous.decision === "passed" ||
       previous.decision === "findings" ||
-      previous.decision === "timed_out";
+      previous.decision === "timed_out" ||
+      previous.reason === "exhausted" ||
+      previous.reason === "out_of_time";
     if (finished && (previous.round === round || previous.run === ctx.runId)) {
       return replayReview(previous, attempt);
     }
@@ -1228,7 +1250,12 @@ export async function runReview(
           run: ctx.runId,
           review: record,
           // An unavailable round is not finished: the same round runs again.
-          reviews: record.decision === "unavailable" ? round - 1 : round,
+          reviews:
+            record.decision === "unavailable" &&
+            record.reason !== "exhausted" &&
+            record.reason !== "out_of_time"
+              ? round - 1
+              : round,
         },
         ...(record.decision === "passed" ? { reworkStreak: 0 } : {}),
         retryAt:
@@ -1461,6 +1488,12 @@ export async function runReview(
       ? attempt.reviewPending
       : undefined;
 
+  // Every run of this step must end before the step's own timeout: a run that
+  // cannot fit in what is left is skipped and the round waits for a person.
+  const clock = (): number => reviewTestHooks.now?.() ?? Date.now();
+  const deadline = clock() + (STEP_TIMEOUT_SECS - 60) * 1000;
+  let ranHere = 0;
+
   while (typeof next === "object") {
     const action = next;
     const resume =
@@ -1481,7 +1514,16 @@ export async function runReview(
     const model = resume?.model ?? modelOf(use, args);
     let call =
       resume === undefined ? undefined : readReviewOutcome(resultPath);
+    if (
+      call === undefined &&
+      ranHere > 0 &&
+      clock() + settings.timeoutSecs * 1000 > deadline
+    ) {
+      next = "out-of-time";
+      break;
+    }
     if (call === undefined) {
+      ranHere += 1;
       // Record the run before the model is asked: a crash after it answers
       // finds the run and its outcome on disk instead of repeating the call.
       current = {
@@ -1511,10 +1553,15 @@ export async function runReview(
       );
       if (!pendingWritten) return cancelledStep();
       reviewTestHooks.beforeRun?.({ role: action.role, reason: action.reason });
-      call = await callReviewer(ctx, context, path, prompt, resultPath, {
-        use,
-        args,
-      });
+      call = await callReviewer(
+        ctx,
+        context,
+        path,
+        prompt,
+        resultPath,
+        { use, args },
+        resume !== undefined,
+      );
     }
     reviewTestHooks.afterCall?.({ role: action.role, reason: action.reason });
     let runRecord: ReviewRunRecord;
@@ -1628,6 +1675,44 @@ export async function runReview(
       preExisting: preExistingCount,
       pre_existing: preExistingCount,
       leftOut: prepared.leftOut.map(leftOutLine),
+      log: resultPath,
+      prompt: promptPath,
+    });
+  }
+
+  if (
+    next === "wait-unavailable" &&
+    runs.filter((run) => run.role === "primary" && run.outcome === "unavailable")
+      .length > MAX_REVIEW_WAITS
+  ) {
+    next = "wait-exhausted";
+  }
+
+  if (next === "wait-exhausted" || next === "out-of-time") {
+    const exhausted = next === "wait-exhausted";
+    const reason = exhausted ? "exhausted" : "out_of_time";
+    const why = exhausted
+      ? "review did not finish (model unavailable)"
+      : "review did not finish (out of time)";
+    const message = [reviewMessage("passed", runs), why]
+      .filter((piece) => piece.length > 0)
+      .join("; ");
+    const timedOut = !exhausted && last?.outcome === "timed_out";
+    const record: ReviewRecord = {
+      result: timedOut ? "timed_out" : "unavailable",
+      decision: timedOut ? "timed_out" : "unavailable",
+      run: ctx.runId,
+      sha,
+      round,
+      ...(last === undefined ? {} : { model: last.model }),
+      runs,
+      message,
+      reason,
+      log: resultPath,
+    };
+    return finish(record, reason, {
+      reason,
+      message,
       log: resultPath,
       prompt: promptPath,
     });

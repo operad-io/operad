@@ -48,8 +48,8 @@ const reviewer = definePlugin({
             result: "failed",
             data: {
               reason: "exit",
-              kind: "unavailable",
-              message: "the model is unavailable",
+              modelError: { kind: "unavailable", status: 429, retry_after_secs: null },
+              message: "the harness exited 1",
             },
           };
         }

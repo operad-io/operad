@@ -172,8 +172,12 @@ with `passed`, `findings`, `unavailable` or `timed_out`. A fallback or a retry
 is another run of the same round: the attempt and the rework count do not
 change, and no worker starts.
 
-When the reviewer reports a model error of kind `unavailable` or `usage_limit`,
-or an HTTP 429, the same round runs once on `reviewer.fallback` at once. If the
+The reviewer is unavailable when the harness reports a model error of kind
+`unavailable` or `usage_limit` (the radian harness passes the `Result` record's
+`model_error` through as `modelError`). When a harness reports none, the last
+lines of its error output count only if one reads `HTTP 429`, `status 429` or
+`too many requests`; a `429` elsewhere in the data (a line number, a duration)
+does not. The same round runs once on `reviewer.fallback` at once. If the
 repository sets no fallback, or the fallback is unavailable too, the task waits
 with `retryAt` set to `now + reviewer.retrySecs` and does not rework. When the
 time comes, `dev/review_due` lets the flow run the review again, with no new
@@ -181,8 +185,23 @@ attempt and no other step. A round uses its fallback at most once: a retry that
 finds the primary unavailable again waits instead of trying the fallback a
 second time. A wait longer than one step run is split into pieces below the
 three-hour step timeout, so any positive `reviewer.retrySecs` is waited out and
-the review runs a model again only at `retryAt`; the dev flow raises its visit
-limit so the pieces cannot end the task.
+the review runs a model again only at `retryAt`.
+
+The waits are bounded. A round waits at most 36 times (`MAX_REVIEW_WAITS`, about
+72 minutes at the default 120 seconds); the count is the number of primary runs
+of the round recorded as unavailable in the task, so a crash and a restart agree
+on it. The next unavailable run waits for a person with the note `review did not
+finish (model unavailable)`. The dev flow's visit limit is finite (10 plus one
+visit of each wait step per allowed wait). One review step also has to end
+before its three-hour step timeout: a run that cannot fit in what is left is
+skipped, and the round waits for a person with the note `review did not finish
+(out of time)`. While a review waits for its model, `merge`, `reject`, `rework`
+and `reverify` are not offered.
+
+A reviewer that wrote a valid report and then stalled, timed out or exited
+non-zero has reviewed: its report is used and a retry never deletes it. Only an
+unreadable report is removed before a run. `dev:reverify` starts review round 1
+again with no runs from the old round.
 
 A review that times out runs once more with the same arguments. A second
 timeout waits for a person with the note `review timed out twice`. Neither an

@@ -1,3 +1,4 @@
+import { chmodSync } from "node:fs";
 import { afterAll, describe, expect, test } from "bun:test";
 import { appendFileSync, existsSync, watch } from "node:fs";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -15,11 +16,14 @@ import {
   type PluginStepResult,
 } from "@operad-io/engine";
 import { createShellPlugin } from "@operad-io/shell";
+import { setTaskPhase } from "../src/service.ts";
 import {
   addPlan,
   addRepository,
   addTask,
   createDevPlugin,
+  DEV_MAX_VISITS,
+  MAX_REVIEW_WAITS,
   gateWorktreePath,
   readDevSettings,
   reviewTestHooks,
@@ -163,8 +167,12 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
               result: "failed",
               data: {
                 reason: "exit",
-                kind: "unavailable",
-                message: "the model is unavailable",
+                modelError: {
+                  kind: "unavailable",
+                  status: 503,
+                  retry_after_secs: null,
+                },
+                message: "the harness exited 1",
               },
             };
           }
@@ -173,27 +181,51 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
               result: "failed",
               data: {
                 reason: "exit",
-                modelError: { kind: "usage_limit" },
+                modelError: {
+                  kind: "usage_limit",
+                  status: null,
+                  retry_after_secs: 3600,
+                },
                 message: "the usage limit is reached",
               },
             };
           }
-          if (mode === "429") {
+          if (mode === "429" || (mode === "429-once" && count === 1)) {
             return {
               result: "failed",
               data: {
                 reason: "exit",
-                message: "HTTP 429 Too Many Requests",
+                message: "the harness exited 1",
+                stderr: ["request failed", "error: HTTP 429 Too Many Requests"],
               },
             };
           }
-          if (mode === "429-once" && count === 1) {
+          if (mode === "not-429") {
+            // A 429 that is not a rate limit: a count in a line, a duration.
             return {
               result: "failed",
               data: {
                 reason: "exit",
-                message: "HTTP 429 Too Many Requests",
+                message: "the harness exited 1",
+                stderr: ["processed line 429"],
+                durationMs: 429,
+                finalMessage: "fixed 429 things",
+                log: "/tmp/run-429.jsonl",
+                exitCode: 1,
               },
+            };
+          }
+          if (mode === "report-then-exit" || mode === "report-then-wall") {
+            writeFileSync(
+              input.resultPath,
+              JSON.stringify({ findings: [], verified: ["the diff"] }),
+            );
+            return {
+              result: "failed",
+              data:
+                mode === "report-then-wall"
+                  ? { reason: "wall", message: "the harness ran longer than 600s" }
+                  : { reason: "exit", message: "the harness exited 1" },
             };
           }
           if (mode === "timeout" || (mode === "timeout-once" && count === 1)) {
@@ -284,6 +316,7 @@ interface FixtureOptions {
   readonly reviewerArgs?: readonly string[];
   readonly firstArgs?: readonly string[];
   readonly reviewerStallSecs?: number;
+  readonly reviewerTimeoutSecs?: number;
   readonly fixLevel?: FixLevel;
   readonly maxAutoRework?: number;
   readonly maxFileDiffBytes?: number;
@@ -342,6 +375,9 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
           ...(options.fallback === undefined
             ? {}
             : { fallback: options.fallback }),
+          ...(options.reviewerTimeoutSecs === undefined
+            ? {}
+            : { timeoutSecs: options.reviewerTimeoutSecs }),
           ...(options.reviewerStallSecs === undefined
             ? {}
             : { stallSecs: options.reviewerStallSecs }),
@@ -1040,6 +1076,234 @@ describe("dev/review fallback and retry", () => {
   });
 });
 
+/**
+ * The real radian harness plugin. The dev package does not depend on it, so
+ * the test loads it by path instead of adding a package dependency for one test.
+ */
+async function loadRadianHarness(): Promise<ReturnType<typeof definePlugin>> {
+  const path = fileURLToPath(
+    new URL("../../harness-radian/src/index.ts", import.meta.url),
+  );
+  const loaded: unknown = await import(path);
+  const make =
+    typeof loaded === "object" && loaded !== null && "createRadianHarnessPlugin" in loaded
+      ? loaded.createRadianHarnessPlugin
+      : undefined;
+  if (typeof make !== "function") throw new Error("no radian harness plugin");
+  return make() as ReturnType<typeof definePlugin>;
+}
+
+describe("dev/review hardening", () => {
+  test("a 429 only in a stderr line or a number is not unavailable", async () => {
+    const state = await fixture({
+      reviewerArgs: ["not-429"],
+      fallback: { use: "fake-reviewer/agent", args: ["none"] },
+    });
+    await verify(state);
+    const result = await review(state, "review-not-429");
+    expect(result.result).toBe("failed");
+    // No fallback was tried: the failure is not an unavailable model.
+    expect(state.reviewer.calls).toHaveLength(1);
+  });
+
+  test("a usage limit reported as a model error falls back", async () => {
+    const state = await fixture({
+      reviewerArgs: ["usage-limit", "--model", "primary"],
+      fallback: { use: "fake-reviewer/agent", args: ["none"] },
+    });
+    await verify(state);
+    const result = await review(state, "review-usage-limit");
+    expect(result.result).toBe("pass");
+    expect(state.reviewer.calls).toHaveLength(2);
+  });
+
+  for (const mode of ["report-then-exit", "report-then-wall"]) {
+    test(`a valid report from a reviewer that then failed (${mode}) is used and kept`, async () => {
+      const state = await fixture({ reviewerArgs: [mode] });
+      await verify(state);
+      const result = await review(state, `review-${mode}`);
+      expect(result.result).toBe("pass");
+      expect(state.reviewer.calls).toHaveLength(1);
+      const path = state.reviewer.calls[0]?.resultPath ?? "";
+      expect(existsSync(path)).toBe(true);
+      const task = await taskOf(state);
+      expect(task.attempt?.review?.runs?.[0]?.outcome).toBe("report");
+    });
+  }
+
+  test("a radian Result with a model_error makes the real harness report unavailable", async () => {
+    const state = await fixture({
+      reviewerArgs: [],
+      fallback: { use: "fake-reviewer/agent", args: ["none", "--model", "fallback"] },
+    });
+    // Point the reviewer at the real radian harness, run against a fake radian.
+    const bin = join(state.root, "bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(
+      join(bin, "radian"),
+      [
+        "#!/bin/sh",
+        `echo '{"type":"Result","session_id":"s","outcome":"failed","exit_code":1,"stop_reason":"failed","usage":{},"cost":null,"text":"","model_error":{"kind":"unavailable","status":429,"retry_after_secs":30}}'`,
+        "exit 1",
+        "",
+      ].join("\n"),
+    );
+    chmodSync(join(bin, "radian"), 0o755);
+    const previous = process.env.PATH;
+    process.env.PATH = `${bin}:${previous ?? ""}`;
+    const path = join(state.remote.repository, ".operad", "dev.json");
+    const settings = JSON.parse(readFileSync(path, "utf8")) as {
+      reviewer: Record<string, unknown>;
+    };
+    settings.reviewer.use = "harness-radian/agent";
+    writeFileSync(path, JSON.stringify(settings));
+    const registry = new PluginRegistry(
+      [
+        createDevPlugin(),
+        createShellPlugin(),
+        await loadRadianHarness(),
+        state.reviewer.plugin,
+      ],
+      { home: state.root, cwd: state.remote.repository, store: state.store },
+    );
+    try {
+      await verify(state);
+      const result = await registry.runStep("dev/review", {}, {
+        runId: "review-radian",
+        object: { type: "task", id: state.taskKey, data: {} },
+      });
+      expect(result.result).toBe("pass");
+      expect(state.reviewer.calls).toHaveLength(1);
+      const task = await taskOf(state);
+      expect(task.attempt?.review?.runs?.map((run) => run.outcome)).toEqual([
+        "unavailable",
+        "report",
+      ]);
+    } finally {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    }
+  });
+
+  test("reverify starts review round 1 again and asks the reviewer", async () => {
+    const state = await fixture({ reviewerArgs: ["major"], maxAutoRework: 5 });
+    await verify(state);
+    const first = await review(state, "review-reverify");
+    expect(first.result).toBe("fail");
+    expect(state.reviewer.calls).toHaveLength(1);
+
+    await setTaskPhase(state.store, state.taskKey, "waiting");
+    const registry = new PluginRegistry([createDevPlugin()], {
+      home: state.root,
+      cwd: state.remote.repository,
+      store: state.store,
+      onAnswer: async () => {},
+    });
+    await registry.runAction("dev/reverify", {}, {
+      object: await state.store.get("task", state.taskKey) as never,
+      runId: "review-reverify",
+      actor: { via: "test", id: "lead" },
+    });
+    const cleared = await taskOf(state);
+    expect(cleared.attempt?.reviewRuns).toEqual([]);
+    expect(cleared.attempt?.reviewPending).toBeNull();
+
+    await verify(state, "verify-again");
+    const second = await review(state, "review-reverify");
+    expect(second.result).toBe("fail");
+    expect(second.data?.replayed).toBeUndefined();
+    expect(state.reviewer.calls).toHaveLength(2);
+    const task = await taskOf(state);
+    expect(task.attempt?.review?.runs).toHaveLength(1);
+  });
+
+  test("an unavailable model waits at most MAX_REVIEW_WAITS times, across a restart", async () => {
+    const state = await fixture({
+      reviewerArgs: ["unavailable", "--model", "primary"],
+      retrySecs: 120,
+    });
+    await verify(state);
+    let clock = 1_000_000;
+    reviewTestHooks.now = () => clock;
+    try {
+      let registry = state.registry;
+      for (let wait = 1; wait <= MAX_REVIEW_WAITS; wait += 1) {
+        if (wait === 20) {
+          // A restart: a new registry reads the count from the task's facts.
+          registry = new PluginRegistry(
+            [createDevPlugin(), createShellPlugin(), state.reviewer.plugin],
+            { home: state.root, cwd: state.remote.repository, store: state.store },
+          );
+        }
+        const result = await registry.runStep("dev/review", {}, {
+          runId: "review-exhaust",
+          object: { type: "task", id: state.taskKey, data: {} },
+        });
+        expect(result.result).toBe("unavailable");
+        clock += 120_000;
+      }
+      expect(state.reviewer.calls).toHaveLength(MAX_REVIEW_WAITS);
+      const last = await registry.runStep("dev/review", {}, {
+        runId: "review-exhaust",
+        object: { type: "task", id: state.taskKey, data: {} },
+      });
+      expect(last.result).toBe("exhausted");
+      expect(String(last.data?.message)).toContain(
+        "review did not finish (model unavailable)",
+      );
+      expect(state.reviewer.calls).toHaveLength(MAX_REVIEW_WAITS + 1);
+      const task = await taskOf(state);
+      expect(task.phase).toBe("waiting");
+      expect(task.retryAt ?? null).toBeNull();
+      expect(task.reworkStreak ?? 0).toBe(0);
+
+      // A replay of the stopped round reads it back and asks no model.
+      const replay = await registry.runStep("dev/review", {}, {
+        runId: "review-exhaust",
+        object: { type: "task", id: state.taskKey, data: {} },
+      });
+      expect(replay.result).toBe("exhausted");
+      expect(state.reviewer.calls).toHaveLength(MAX_REVIEW_WAITS + 1);
+    } finally {
+      delete reviewTestHooks.now;
+    }
+  });
+
+  test("runs that cannot fit in the step deadline are skipped and a person decides", async () => {
+    const state = await fixture({
+      reviewerArgs: ["unavailable", "--model", "primary"],
+      reviewerTimeoutSecs: 3600,
+      fallback: {
+        use: "fake-reviewer/agent",
+        args: ["timeout", "--model", "fallback"],
+      },
+    });
+    await verify(state);
+    let clock = 1_000_000;
+    reviewTestHooks.now = () => clock;
+    // Each run uses its whole hour.
+    reviewTestHooks.afterCall = () => {
+      clock += 3_600_000;
+    };
+    try {
+      const result = await review(state, "review-out-of-time");
+      expect(result.result).toBe("out_of_time");
+      // primary (unavailable), fallback (timed out); the retry would pass 3 h.
+      expect(state.reviewer.calls).toHaveLength(2);
+      expect(String(result.data?.message)).toContain(
+        "review did not finish (out of time)",
+      );
+      const task = await taskOf(state);
+      expect(task.phase).toBe("waiting");
+      expect(task.attempt?.reviews).toBe(1);
+      expect(task.reworkStreak ?? 0).toBe(0);
+    } finally {
+      delete reviewTestHooks.now;
+      delete reviewTestHooks.afterCall;
+    }
+  });
+});
+
 describe("dev/review crash recovery", () => {
   interface CrashCase {
     readonly crash:
@@ -1387,8 +1651,19 @@ describe("the dev flow", () => {
       failed: "announce_review_failed",
       unavailable: "review_retry",
       timed_out: "wait_review_timeout",
+      exhausted: "wait_review_unavailable",
+      out_of_time: "wait_review_out_of_time",
       cancelled: "end_cancelled",
     });
+    for (const id of ["wait_review_unavailable", "wait_review_out_of_time"]) {
+      expect(nextOf(id)).toEqual({
+        merge: "integrate",
+        reject: "worktree",
+        interrupted: "end_cancelled",
+      });
+    }
+    // The flow's visit bound is finite and equals the one the waits are sized by.
+    expect(found?.flow.maxVisits).toBe(DEV_MAX_VISITS);
     expect(nextOf("review_retry")).toEqual({
       ready: "review",
       interrupted: "end_cancelled",

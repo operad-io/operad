@@ -57,6 +57,8 @@ export function createDevPlugin() {
           "failed",
           "unavailable",
           "timed_out",
+          "exhausted",
+          "out_of_time",
           "cancelled",
         ],
         run: runReview,

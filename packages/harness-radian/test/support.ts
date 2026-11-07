@@ -214,6 +214,21 @@ if (mode === "exit1") {
   process.exit(1);
 }
 
+if (mode === "model-error-unavailable" || mode === "model-error-usage-limit") {
+  const usage = mode === "model-error-usage-limit";
+  line(
+    result({
+      outcome: "failed",
+      exit_code: 1,
+      stop_reason: "failed",
+      model_error: usage
+        ? { kind: "usage_limit", status: null, retry_after_secs: 3600 }
+        : { kind: "unavailable", status: 429, retry_after_secs: 30 },
+    }),
+  );
+  process.exit(1);
+}
+
 if (mode === "no-result") {
   line({ type: "journal", event: "TurnStarted" });
   process.exit(0);

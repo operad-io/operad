@@ -609,6 +609,14 @@
 | TK0002-M8 | packages/dev/src/gate.ts | removed the chunk bound from `runReviewDue`, so it asked for the whole remaining wait in one step | `dev/review fallback and retry > a retry longer than the step timeout waits in pieces and reruns only when due` |
 | TK0002-M9 | packages/dev/src/gate.ts | stopped writing a reviewer's outcome beside the report, so a crash after the answer repeated the model run | `dev/review crash recovery > a crash after the first result reuses it instead of asking again` |
 | TK0002-M10 | packages/dev/flows/dev.flow.ts | left `maxVisits` at the engine default, so a long review wait hit the visit limit | `the dev flow > a review wait longer than ten pieces keeps waiting` |
+| TK0002-M11 | packages/dev/src/actions.ts | reverify kept the old round's `reviewRuns` and `reviewPending` | `dev/review hardening > reverify starts review round 1 again and asks the reviewer` |
+| TK0002-M12 | packages/dev/src/gate.ts | treated any `429` in the stderr tail as unavailable | `dev/review hardening > a 429 only in a stderr line or a number is not unavailable` |
+| TK0002-M13 | packages/dev/src/gate.ts | judged the harness outcome before reading the report, dropping a valid report from a failed exit | `dev/review hardening > a valid report from a reviewer that then failed (report-then-exit) is used and kept` |
+| TK0002-M14 | packages/harness-radian/src/index.ts | `parseResult` dropped the Result's `model_error` | `harness-radian/agent > a Result record's model_error is passed through as data` and `dev/review hardening > a radian Result with a model_error makes the real harness report unavailable` |
+| TK0002-M15 | packages/dev/src/gate.ts | removed the cap on unavailable waits | `dev/review hardening > an unavailable model waits at most MAX_REVIEW_WAITS times, across a restart` |
+| TK0002-M16 | packages/dev/src/gate.ts | started a reviewer run that cannot end inside the step deadline | `dev/review hardening > runs that cannot fit in the step deadline are skipped and a person decides` |
+| TK0002-M17 | packages/dev/src/actions.ts | offered merge, reject, rework and reverify during the review model wait | `dev:rework and dev:reverify > a review waiting for its model offers no merge, reject, rework or reverify` |
+| TK0002-M18 | packages/dev/flows/dev.flow.ts | set the flow's visit bound to 10, below the review waits | `the dev flow > loads with the gate and the rework edges` |
 ## TK0013 — pi runs under Bun
 
 | id | file | mutation | failing test |

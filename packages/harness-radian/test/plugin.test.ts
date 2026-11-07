@@ -192,6 +192,24 @@ describe("harness-radian/agent", () => {
     expect(data.sessionId).toBe("fake-session");
   });
 
+  test("a Result record's model_error is passed through as data", async () => {
+    const env = await setup("model-error-unavailable");
+    const result = await runAgent(env, { prompt: "hello", cwd: env.root });
+
+    expect(result.result).toBe("failed");
+    expect(dataOf(result).modelError).toEqual({
+      kind: "unavailable",
+      status: 429,
+      retry_after_secs: 30,
+    });
+  });
+
+  test("a run without a model_error carries no modelError", async () => {
+    const env = await setup("exit1");
+    const result = await runAgent(env, { prompt: "hello", cwd: env.root });
+    expect("modelError" in dataOf(result)).toBe(false);
+  });
+
   test("a zero exit without a Result record is a failure that says so", async () => {
     const env = await setup("no-result");
     const result = await runAgent(env, { prompt: "hello", cwd: env.root });
