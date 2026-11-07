@@ -5,7 +5,7 @@ import {
   reduce,
   type TuiState,
 } from "../src/state.ts";
-import { TUI_PALETTE, createTuiView } from "../src/view/index.ts";
+import { TUI_PALETTE, createTuiView, drawState } from "../src/view/index.ts";
 
 function frameState(): TuiState {
   let state = initialState({ width: 120, height: 24, theme: "dark" });
@@ -62,16 +62,15 @@ describe("the TUI view", () => {
       await setup.renderOnce();
 
       const frame = setup.captureCharFrame();
-      expect(frame).toContain("operad ─ Pending 1 · Running 0 · Item");
+      expect(frame).toContain("operad   Pending 1   Running 0   Item 2");
       expect(frame).toContain("item:one");
-      expect(frame).toContain("Approve?");
       expect(frame).toContain("select an object");
       expect(frame).toContain("q quit");
 
       const spans = setup
         .captureSpans()
         .lines.flatMap((line) => line.spans)
-        .filter((span) => span.text.includes("●"));
+        .filter((span) => span.text.includes("!"));
       expect(spans.length).toBeGreaterThan(0);
       const waiting = spans.find(
         (span) => span.fg.toInts().join(",") === "167,147,255,255",
@@ -92,8 +91,96 @@ describe("the TUI view", () => {
       view.render({ ...frameState(), width: 80 });
       await setup.renderOnce();
       const frame = setup.captureCharFrame();
-      expect(frame).toContain("operad ─ Pending 1 · Running 0 · Item");
+      expect(frame).toContain("operad   Pending 1   Running 0   Item 2");
       expect(frame).not.toContain("select an object");
+      view.destroy();
+    } finally {
+      await setup.dispose();
+    }
+  });
+
+  test("thin lines: the rules, the marker column, one divider and no boxes", async () => {
+    const dividerAt = async (width: number): Promise<number[]> => {
+      const setup = await createTestRenderer({ width, height: 24 });
+      try {
+        const view = createTuiView(setup.renderer);
+        view.render({
+          ...reduce(frameState(), { type: "key", key: "3" }),
+          width,
+          height: 24,
+        });
+        await setup.renderOnce();
+        const lines = setup.captureCharFrame().split("\n");
+        expect(lines[1]?.trim()).toMatch(/^─+$/);
+        expect(lines[1]?.startsWith(" ─")).toBe(true);
+        expect(lines[22]?.trim()).toMatch(/^─+$/);
+        expect(lines[23]?.startsWith(" j/k move")).toBe(true);
+        expect(lines[2]?.startsWith(" ❯ ! one")).toBe(true);
+        expect(lines[3]?.startsWith("   ● two")).toBe(true);
+        expect(lines.join("\n")).not.toMatch(/[╭╮╰╯]/);
+        const at = lines.slice(2, 22).map((line) => line.indexOf("│"));
+        view.destroy();
+        return at;
+      } finally {
+        await setup.dispose();
+      }
+    };
+    const at100 = await dividerAt(100);
+    const at200 = await dividerAt(200);
+    expect(new Set(at100)).toEqual(new Set([36]));
+    expect(new Set(at200)).toEqual(new Set([36]));
+    // 99 columns: the list only, no divider.
+    expect((await dividerAt(99)).every((x) => x === -1)).toBe(true);
+  });
+
+  test("the object pane text starts two cells after the divider and a long title never pushes the rule", async () => {
+    const setup = await createTestRenderer({ width: 100, height: 24 });
+    try {
+      const view = createTuiView(setup.renderer);
+      let state = frameState();
+      state = {
+        ...state,
+        width: 100,
+        height: 24,
+        object: {
+          id: "item:one",
+          source: "item:one",
+          type: "item",
+          link: "x",
+          row: {
+            id: "item:T-0031-tui-object",
+            title: "very long title ".repeat(20),
+            state: "running",
+            note: "work 16m",
+            waiting: false,
+            running: true,
+          },
+          sections: [],
+          active: 0,
+          loading: false,
+          version: 1,
+        },
+      };
+      view.render(state);
+      await setup.renderOnce();
+      const lines = setup.captureCharFrame().split("\n");
+      expect(lines[2]?.indexOf("T-0031-tui-object")).toBe(39);
+      expect(lines[2]).toContain("…");
+      for (const line of lines.slice(2, 22)) expect(line.indexOf("│")).toBe(36);
+      expect(lines[3]?.slice(39).startsWith("running · work 16m")).toBe(true);
+      view.destroy();
+    } finally {
+      await setup.dispose();
+    }
+  });
+
+  test("the key list is the one boxed overlay", async () => {
+    const setup = await createTestRenderer({ width: 100, height: 24 });
+    try {
+      const view = createTuiView(setup.renderer);
+      view.render({ ...frameState(), keys: true });
+      await setup.renderOnce();
+      expect(setup.captureCharFrame()).toContain("╭");
       view.destroy();
     } finally {
       await setup.dispose();
@@ -109,7 +196,7 @@ describe("the TUI view", () => {
         type: "running",
         items: Array.from({ length: 40 }, (_, at) => ({
           runId: `run-${at}`,
-          flow: "flow",
+          flow: `flow-${at}`,
           step: "work",
           startedAt: 0,
           elapsedMs: 10,
@@ -123,12 +210,45 @@ describe("the TUI view", () => {
       view.render(state);
       await setup.renderOnce();
       const frame = setup.captureCharFrame();
-      expect(frame).toContain("run-39");
-      expect(frame).not.toContain("run-0 ");
+      expect(frame).toContain("flow-39");
+      expect(frame).not.toContain("flow-0 ");
       expect(frame).toContain("the token is wrong");
       view.destroy();
     } finally {
       await setup.dispose();
     }
+  });
+
+  test("a row without an object shows its label; a row error shows in the footer", () => {
+    let state = initialState({ width: 120, height: 10, theme: "dark" });
+    state = reduce(state, {
+      type: "running",
+      items: [
+        { runId: "run-1", flow: "my-flow", step: "w", startedAt: 0, elapsedMs: 1, queued: null, stepLabel: "w" },
+      ],
+    });
+    state = reduce(state, { type: "key", key: "2" });
+    const drawn = drawState(state);
+    expect(drawn.list.chunks.map((c) => c.text).join("")).toContain("my-flow");
+    expect(drawn.list.chunks.map((c) => c.text).join("")).not.toContain("run-1");
+  });
+
+  test("the selected row's error shows in the footer", () => {
+    let state = initialState({ width: 120, height: 10, theme: "dark" });
+    state = reduce(state, {
+      type: "pending",
+      items: [
+        {
+          runId: "r1",
+          flow: "f",
+          step: null,
+          prompt: "q",
+          object: "item:T-1-x",
+          row: { title: "t", state: "failed", error: "row is broken" },
+        },
+      ],
+    } as never);
+    const text = drawState(state).footer.chunks.map((c) => c.text).join("");
+    expect(text).toContain("row is broken");
   });
 });

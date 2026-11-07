@@ -482,25 +482,27 @@ export function sectionLayout(
   );
 }
 
-/** How many Markdown lines fit under the object's row and section tabs. */
-export function sectionViewport(state: TuiState): number {
-  const body = Math.max(1, state.height - 3);
-  // The object pane has a border and padding whether it sits beside the list or
-  // fills the body on a narrow screen.
-  const inner =
-    twoPane(state) || state.object !== undefined
-      ? Math.max(1, body - 4)
-      : body;
-  return Math.max(1, inner - 3);
+/** The layout's fixed columns (0-based): the list, its divider, the object pane. */
+export const LIST_X = 1;
+export const LIST_WIDTH = 35;
+export const DIVIDER_X = LIST_X + LIST_WIDTH;
+export const RIGHT_X = DIVIDER_X + 3;
+
+/** The lines the body has: the header, its rule, the footer rule and the footer take four. */
+export function bodyHeight(state: TuiState): number {
+  return Math.max(1, state.height - 4);
 }
 
-/** The columns a section's Markdown has inside the object pane. */
+/** How many Markdown lines fit under the object's title, state, tabs and rule. */
+export function sectionViewport(state: TuiState): number {
+  // title, state, a blank line, the section tabs, their rule and the hint line.
+  return Math.max(1, bodyHeight(state) - 6);
+}
+
+/** The columns a section's Markdown has in the object pane. */
 export function sectionWidth(state: TuiState): number {
-  const pane = twoPane(state)
-    ? state.width - Math.floor(state.width * 0.4)
-    : state.width;
-  // The pane has a border on each side and one column of padding on each side.
-  return Math.max(1, pane - 4);
+  const start = twoPane(state) ? RIGHT_X : LIST_X;
+  return Math.max(1, state.width - start - 1);
 }
 
 /** The section the object pane shows, if any. */
@@ -1305,15 +1307,15 @@ export function footerText(state: TuiState): string {
   let common: string;
   if (state.object === undefined) {
     common =
-      "1–9/tab switch · ↑↓/j k move · enter open · g G top/bottom · r refetch · ? keys · q quit";
+      "j/k move  enter open  1-9 tab  g/G ends  r refresh  ? keys  q quit";
   } else if (twoPane(state)) {
     common =
-      "↑↓/j k row · PgUp PgDn/space b scroll · [ ] sections · f full · esc close · ? keys · q quit";
+      "j/k row  space/b scroll  [ ] section  f full  esc close  ? keys  q quit";
   } else {
     common =
-      "↑↓/j k scroll · PgUp PgDn page · g G top/bottom · [ ] sections · f full · esc back · ? keys · q quit";
+      "j/k scroll  space/b page  g/G ends  [ ] section  f full  esc back  ? keys  q quit";
   }
-  return state.keys ? `${common} · ? closes the key list` : common;
+  return state.keys ? `${common}  ? closes the key list` : common;
 }
 
 /** Every key the TUI reads, in the order the key list shows them. */
@@ -1333,9 +1335,9 @@ export const KEY_LIST: readonly (readonly [string, string])[] = [
   ["q", "quit"],
 ];
 
-/** The lines one row takes: an error row adds a line under it. */
-export function rowLines(row: TuiRow): number {
-  return row.error === undefined ? 1 : 2;
+/** The lines one row takes: always one; an error row shows its text elsewhere. */
+export function rowLines(_row: TuiRow): number {
+  return 1;
 }
 
 /**
@@ -1348,7 +1350,7 @@ export function listWindow(
 ): { readonly start: number; readonly end: number } {
   const count = list.rows.length;
   if (count === 0) return { start: 0, end: 0 };
-  const tail = (list.loading ? 1 : 0) + (list.error === undefined ? 0 : 2);
+  const tail = (list.loading ? 1 : 0) + (list.error === undefined ? 0 : 1);
   const room = Math.max(1, Math.trunc(available) - tail);
   const cursor = Math.min(Math.max(0, list.cursor), count - 1);
   let start = cursor;
@@ -1374,5 +1376,5 @@ export function listWindow(
 
 /** The footer when a failure is showing: the reason, then the way out. */
 export function statusText(state: TuiState): string | undefined {
-  return state.status === undefined ? undefined : `${state.status} · q quit`;
+  return state.status === undefined ? undefined : `${state.status}  q quit`;
 }
