@@ -112,7 +112,7 @@
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0016-M17 | packages/engine/src/runner/runner.ts | made `chooseFailure` fall back to the step's first declared result instead of naming the failure | `runner > a step that throws is not recorded as its success result` |
-| TK0016-M18 | packages/engine/src/runner/runner.ts | removed the `preferInterrupted` early return, so a failed check reported its declared success result | `runner > a check that throws is not recorded as ready` |
+| TK0016-M18 | packages/engine/src/runner/runner.ts | removed the `preferInterrupted` early return from `chooseFailure`, so a failed check was named "failed", which a wait step does not accept; the failure was never recorded and the run stayed blocked (re-recorded in TK0008: it does not report a success result) | `runner > a check that throws is not recorded as ready` |
 
 ## TK0026 — trigger core: one start entry and event rules
 
@@ -163,7 +163,7 @@
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0017-M11 | packages/engine/src/platform/process-group.ts | dropped the drain limit and waited for the output pipes to close | `shell/command > a child that leaves the group cannot hold the command open` (timed out) |
-| TK0017-M12 | packages/engine/src/platform/process-group.ts | sent the grace SIGKILL without checking that the group still exists | `process groups > the grace SIGKILL is not sent to a group that ended` |
+| TK0017-M12 | packages/engine/src/platform/process-group.ts | sent the grace SIGKILL without checking `sentinelExited()` (the check replaced the removed `groupExists` one; re-recorded in TK0008, with the test it never had) | `process groups > nothing is signaled after the sentinel exits` |
 | TK0017-M13 | packages/shell/src/index.ts | ignored the injected clock for `shell/command` | `shell/command > a timeout is a failure that says so` |
 | TK0017-M14 | packages/shell/src/index.ts | passed no timeout to a `shell/check` line | `shell/check > a line that exceeds the timeout fails and names it` |
 
@@ -666,3 +666,18 @@
 | TK0006-M3 | packages/dev/src/service.ts | `areaHolder` ignored the repository | `the same area in another repository does not block` (and the two-scheduler test) |
 | TK0008-M1 | `packages/engine/src/platform/sqlite-open.ts` | `enableWal` rethrew every error, so SQLITE_BUSY was not waited out | `switching to WAL waits while another process holds the database` |
 | TK0008-M2 | `packages/engine/src/platform/sqlite-open.ts` | `enableWal` returned whatever mode SQLite answered instead of failing when it is not wal | `a database that cannot be WAL is an error, not a loop` |
+| TK0008-M3 | `packages/engine/src/flow/validate.ts` | wrote a step's `next` edges with `next[result] = target`, which drops a result named `__proto__` | `validateFlow > accepts a result named __proto__` |
+| TK0008-M4 | `packages/engine/src/log/jsonl.ts` | `parseFact` stopped checking that a fact line carries a JSON payload | `a fact line without a payload is a corrupt log, not a fact with no payload` |
+| TK0008-M5 | `packages/engine/src/plugin/registry.ts` | accepted a plugin command named like a kernel verb | `plugin registry validation > refuses a plugin command that shares a name with a kernel verb` |
+| TK0008-M6 | `packages/engine/src/plugin/registry.ts` | `pending` skipped a waiting run whose object is missing from the store | `plugin registry validation > pending keeps a waiting run whose object is missing from the store` |
+| TK0008-M7 | `packages/engine/src/runner/service.ts` | `parseObjectKey` read `flow:<plugin>/<flow>` as a real object | `serve loop > a run started without an object has no object` |
+| TK0008-M8 | `packages/engine/src/config/config.ts` | a config without a `plugins` key loaded no plugins | `operad config > a config without plugins gets the default plugins` |
+| TK0008-M9 | `packages/engine/src/config/config.ts` | an older config's moved module name was not mapped | `operad config > an older config's moved module name still loads` |
+| TK0008-M10 | `packages/cli/src/main.ts` | a typed history id resolved an object type no plugin declares | `operad command > history does not resolve an object type no plugin declares` |
+| TK0008-M11 | `packages/engine/src/views/presentation.ts` | the named repository was not handed to a type's resolver | `operad with the dev plugin > show and an action take --repo for a bare id from outside any repository` |
+| TK0008-M12 | `packages/engine/src/trigger/kernel.ts` | `realizeStart` dropped the access profile when it created the run | `run access profile > a run a plugin starts on tick records the profile in the log` |
+| TK0008-M13 | `packages/engine/src/kernel/decide.ts` | the poll_check effect left out the wait's params | `decide: tick > a poll_check effect carries the wait's check params` |
+| TK0008-M14 | `packages/engine/src/kernel/decide.ts` | an unexpected result dropped what the step said | `decide: step_result > an undeclared result keeps what the step said` |
+| TK0008-M15 | `packages/engine/src/runner/runner.ts` | `WORKER_ABORT_GRACE_MS` back to 1000 ms, not above two process-group graces | `runner > an aborted worker gets longer than the slowest process-group stop` |
+| TK0008-M16 | `packages/dev/src/steps.ts` | a worker model error went to a person instead of waiting | `dev/work > unavailable: a model error waits for the model instead of a person` |
+| TK0008-M17 | `packages/dev/src/steps.ts` | removed the bound on work waits | `dev/work > unavailable: after the allowed waits the failure goes to a person` |

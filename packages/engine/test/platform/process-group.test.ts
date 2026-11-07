@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { watch } from "node:fs";
-import { runLine, type Clock } from "../../src/platform/index.ts";
+import { createGroupStop, runLine, type Clock } from "../../src/platform/index.ts";
 
 const roots: string[] = [];
 
@@ -285,5 +285,41 @@ describe("process groups", () => {
     expect(signals.every((entry) => entry.ready)).toBe(true);
     const sentinelPid = Number(readFileSync(sentinelFile, "utf8").trim());
     expect(alive(sentinelPid)).toBe(false);
+  });
+
+  test("nothing is signaled after the sentinel exits", async () => {
+    const signals: (string | number)[] = [];
+    let exited = false;
+    const stop = createGroupStop({
+      clock: manualClock(),
+      killGroup: (_pgid, signal) => {
+        signals.push(signal);
+        // The sentinel ends right after the first signal (TERM).
+        exited = true;
+        return true;
+      },
+      pid: () => 4242,
+      sentinelExited: () => exited,
+      readySeen: () => true,
+      ready: Promise.resolve(),
+    });
+    await stop();
+    // TERM went out; the group's leader then ended, so no SIGKILL follows: its
+    // group id may belong to someone else by now.
+    expect(signals).toEqual(["SIGTERM"]);
+
+    const quiet: (string | number)[] = [];
+    await createGroupStop({
+      clock: manualClock(),
+      killGroup: (_pgid, signal) => {
+        quiet.push(signal);
+        return true;
+      },
+      pid: () => 4242,
+      sentinelExited: () => true,
+      readySeen: () => true,
+      ready: Promise.resolve(),
+    })();
+    expect(quiet).toEqual([]);
   });
 });

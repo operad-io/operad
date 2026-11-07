@@ -266,6 +266,10 @@ export type TaskAttempt = {
   readonly workMs?: number | null;
   /** Why the work step did not finish cleanly, in the harness's words. */
   readonly workNote?: string | null;
+  /** How many times the work step waited for an unavailable model in this attempt. */
+  readonly workWaits?: number | null;
+  /** When a work step that found its model unavailable may run again (epoch ms). */
+  readonly workRetryAt?: number | null;
   readonly result?: string | null;
   /** The branch head the gate verified; review reads this and not the branch. */
   readonly verified?: string | null;

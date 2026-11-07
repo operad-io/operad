@@ -34,6 +34,13 @@ function edgesOf(step: Step): Readonly<Record<string, string>> {
 }
 
 /** The result names the step may produce. */
+/** The `message` a step's data carries, as a field to spread into a payload. */
+function messageOf(data: JsonValue | undefined): { readonly message?: string } {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return {};
+  const message = (data as { readonly message?: unknown }).message;
+  return typeof message === "string" && message.length > 0 ? { message } : {};
+}
+
 function declaredResults(step: Step): readonly string[] {
   switch (step.kind) {
     case "end":
@@ -109,6 +116,7 @@ function describeEffect(effect: PendingEffect): Effect {
         effectId: effect.id,
         step: effect.step,
         check: effect.check ?? "",
+        params: effect.params,
       };
   }
 }
@@ -357,6 +365,7 @@ export function decide(
           effectId: effect.id,
           reason: "undeclared_result",
           result: input.result,
+          ...messageOf(input.data),
         };
         const interruptedSeq = push("step_interrupted", { ...payload }, cause);
         takeEdge(step, "interrupted", interruptedSeq);

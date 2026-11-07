@@ -26,6 +26,7 @@ import {
   type TaskData,
 } from "./model.ts";
 import { findRepository, withRepoLock } from "./service.ts";
+import { MAX_WORK_WAITS } from "./timeouts.ts";
 import {
   assertInsideRepository,
   readDevSettings,
@@ -545,6 +546,8 @@ export async function runWorktree(
     branch: workBranch(context.taskId),
     base,
     result: prepared.kind,
+    workWaits: 0,
+    workRetryAt: null,
     // A new attempt starts with no gate results; the branch may have moved.
     verified: null,
     verify: null,
@@ -698,6 +701,14 @@ function harnessParams(
 }
 
 /** Step `dev/work`: run the configured harness step and decide what it left. */
+/** True when the harness reported that its model is unavailable or at its usage limit. */
+function modelUnavailable(data: Record<string, unknown>): boolean {
+  const error = data.modelError;
+  if (typeof error !== "object" || error === null) return false;
+  const kind = (error as { readonly kind?: unknown }).kind;
+  return kind === "unavailable" || kind === "usage_limit";
+}
+
 export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   const context = await taskContext(ctx);
   if (!claimAllows(ctx, context.task)) return cancelledStep();
@@ -829,11 +840,13 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   const finish = async (
     result: string,
     extra: Readonly<Record<string, unknown>>,
+    waitsForModel = false,
   ): Promise<PluginStepResult> => {
     nextAttempt = {
       ...nextAttempt,
       result,
       workNote: typeof extra.message === "string" ? extra.message : null,
+      ...(waitsForModel ? {} : { workRetryAt: null }),
     };
     const written = await saveTaskGuarded(
       ctx,
@@ -841,8 +854,9 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       {
         ...task,
         // Only `done` continues to the gate; every other result goes to the
-        // person wait, and the task says so while it waits.
-        phase: result === "done" ? "running" : "waiting",
+        // person wait, and the task says so while it waits. A model that is
+        // unavailable is not a person's business: the work step runs again.
+        phase: result === "done" || waitsForModel ? "running" : "waiting",
         run: ctx.runId,
         attempts,
         attempt: nextAttempt,
@@ -874,6 +888,24 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       message: hostError,
       ...(dirty.length === 0 ? {} : { files: dirty }),
     });
+  }
+
+  if (outcome !== undefined && outcome.result !== "done") {
+    const waits = typeof attempt.workWaits === "number" ? attempt.workWaits : 0;
+    if (modelUnavailable(outcomeData) && waits < MAX_WORK_WAITS) {
+      const retryAt = Date.now() + context.settings.reviewer.retrySecs * 1000;
+      nextAttempt = { ...nextAttempt, workWaits: waits + 1, workRetryAt: retryAt };
+      return finish(
+        "unavailable",
+        {
+          reason: "model_unavailable",
+          message: `the worker's model was unavailable; the work runs again at ${new Date(retryAt).toISOString()}`,
+          retryAt,
+          ...(dirty.length === 0 ? {} : { files: dirty }),
+        },
+        true,
+      );
+    }
   }
 
   if (outcome === undefined || outcome.result !== "done") {
