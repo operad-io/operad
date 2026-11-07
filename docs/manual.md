@@ -229,8 +229,10 @@ step from the log. If the process stops after the step ended `waiting`, the
 flow wait is reached on restart with the same id.
 
 **Carrying on after the answer.** When the person answers the wait that a
-`waiting` step left, the flow returns to the same step. The step runs again with
-its params plus:
+`waiting` step left, the step that asked runs again, also when the flow goes
+through other steps on the way from the wait back to it (those run with their own
+params; the answer waits for the asking step). The step runs again with its
+params plus:
 
 | param | what it holds |
 |---|---|
@@ -238,13 +240,19 @@ its params plus:
 | `askAnswer` | `{ prompt, choice, note }`: the question and the answer |
 
 A harness step adds one paragraph to the prompt: `You asked: <prompt>. The answer
-is: <answer>. Continue.` (the answer is the choice, then the note).
+is: <answer>. Continue.` The prompt and the choice are put on one line. A note
+the person wrote is quoted after it, each line behind `> `, and marked as part
+of the answer, not as an instruction.
 
 If `resume` is `{ session, grant: { kind, value } }`, with `kind` `"command"` or
 `"path"` and `value` the exact command or path the step asked about, the run
 also gets a one-time permission for that call in `access.grants`
-(`{ waitId, kind, value }`). `grant.choice` may name the one choice that
-approves; any other choice gives no permission. A harness lets a call that
+(`{ waitId, kind, value, tool? }`). Only the choice that approves gives it:
+`grant.choice`, which is required when the question has choices and must be one
+of them (`ctx.ask` refuses the question before anyone is asked otherwise). A
+question without choices gives the permission only for the answer `approve`.
+A path grant also names the `tool` the person approved (`write` is not `read`);
+`ctx.ask` refuses a path grant without one. A harness lets a call that
 equals `value` exactly through once: it uses the permission up (recorded in
 `operad history` as "let one call through that you approved", before the call
 runs, so a crash cannot give it twice), a second identical call is checked
@@ -254,7 +262,10 @@ A step type that cannot run again from where it left (`resumable: false` in its
 definition) cannot be asked with `"waiting"`: its questions are forced to
 `onTimeout: "reject_once"`. `harness-pi` and `harness-radian` both resume.
 `harness-radian` cannot enforce a one-time permission (no hook sees its tool
-calls), so it refuses a run that has one, with `grant_unsupported`.
+calls); a step type that says `grants: false` has `ctx.ask` refuse a question
+that offers one, before anyone is asked. If a run still reaches radian with one,
+it fails with `grant_unsupported`. A resumed radian run that answers with another
+session than the one it was given fails with `session_missing`.
 
 ## Limiting runs of one model
 

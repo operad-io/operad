@@ -22,11 +22,11 @@ the `home` option). `test/match.test.ts` follows the tables below.
 | `denyPaths` | string[], optional | a call that touches a path under one of these is refused |
 | `denyCommands` | string[], optional | a `bash` command part that matches one of these is refused |
 
-| `grants` | `{ waitId, kind: "command" \| "path", value }[]`, optional | one-time permissions not yet used; see `findGrant` |
+| `grants` | `{ waitId, kind: "command" \| "path", value, tool? }[]`, optional | one-time permissions not yet used; see `findGrant` |
 
 `findGrant(profile, call)` returns the grant that covers a call, or `undefined`:
 a `command` grant covers a `bash` call whose command equals `value` character
-for character, a `path` grant a path tool call that names the same file. It is
+for character, a `path` grant a call of the one `tool` it names (not another path tool) on the same file; a path grant without a `tool` covers nothing. It is
 pure. The caller must use the grant up (the engine writes `grant_used`) before it
 lets the call run, and match the call as usual when it cannot.
 

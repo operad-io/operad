@@ -11,9 +11,13 @@ The step is `resumable: true`: its params may carry `resumeSession` (passed as
 <answer>. Continue.` to the prompt.
 
 radian has no hook that sees its tool calls, so this harness cannot let one call
-through and no other. A run whose access profile has a one-time permission
-(`grants`) is refused by the step with the reason `grant_unsupported`, naming
-radian; use `harness-pi` for flows that grant.
+through and no other. The step says `grants: false`, so `ctx.ask` refuses a
+question that offers a one-time permission before anyone is asked. A run whose
+access profile has one anyway is refused by the step with the reason
+`grant_unsupported`, naming radian; use `harness-pi` for flows that grant.
+
+With `resumeSession`, the `Result` must name that same session; another id fails
+the step with `session_missing`, because radian started afresh.
 
 ## Settings
 
