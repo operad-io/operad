@@ -317,6 +317,7 @@ async function handleLine(
   send: (response: JsonRpcResponse) => Promise<void>,
   log: (message: string) => Promise<void>,
   claudeChannel: boolean,
+  onInitialized: () => void,
 ): Promise<void> {
   let message: unknown;
   try {
@@ -345,8 +346,12 @@ async function handleLine(
   }
 
   // A notification has no id and never gets a response, including an unknown
-  // one. `notifications/initialized` is the only one MCP defines here.
-  if (!hasId) return;
+  // one. `notifications/initialized` is the only one MCP defines here, and it
+  // lets the channel send what it held.
+  if (!hasId) {
+    if (message.method === "notifications/initialized") onInitialized();
+    return;
+  }
   if (id === undefined) return;
 
   try {
@@ -419,6 +424,8 @@ export async function runMcpServer(
       channel = await startClaudeChannel({
         views: opened.views,
         registry: opened.registry,
+        log: opened.log,
+        hold: true,
         ...(options.types === undefined ? {} : { types: options.types }),
         send: async (notification) => {
           await write(
@@ -436,7 +443,9 @@ export async function runMcpServer(
     }
     const context = toolContext(opened, clock);
     for await (const line of decodeLines(input)) {
-      await handleLine(line, context, send, log, channel !== undefined);
+      await handleLine(line, context, send, log, channel !== undefined, () => {
+        void channel?.release();
+      });
     }
   } finally {
     await channel?.close();

@@ -1,14 +1,19 @@
 /**
  * The Claude Code channel: one-way change notifications beside the read tools.
  *
- * The store's object subscription is the source. A watch is the fast path and
- * the store's own timer is the fallback, so a change another process writes is
- * seen too. The server remembers the row it last saw for each object and sends
- * only when its state, waiting or running flag differs.
+ * Two subscriptions are the source: the store's object changes, and the run
+ * log's changes. The waiting and running flags come from the runs, so a wait
+ * that opens or a step that starts touches no object. Each change re-reads the
+ * object's row. A watch is the fast path and each backend's own timer is the
+ * fallback, so a change another process writes is seen too. The server
+ * remembers the row it last saw for each object and sends only when its state,
+ * waiting or running flag differs.
  */
 
 import {
   messageOf,
+  ViewError,
+  type LogBackend,
   type ObjectRef,
   type PluginRegistry,
   type ViewObject,
@@ -42,10 +47,26 @@ export interface ChannelNotification {
   };
 }
 
-/** What a channel needs: the views, the store's subscription and one writer. */
+/** A `--types` entry that is not an object type with views. */
+export class ChannelTypeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ChannelTypeError";
+  }
+}
+
+/** What a channel needs: the views, both subscriptions and one writer. */
 export interface ChannelOptions {
   readonly views: Views;
   readonly registry: PluginRegistry;
+  /** The run log; its changes carry the waiting and running flags. */
+  readonly log?: LogBackend | undefined;
+  /**
+   * Hold every notification until `release` is called. The channel still reads
+   * its starting rows and keeps diffing, so the release sends the changes seen
+   * since the start.
+   */
+  readonly hold?: boolean | undefined;
   /** The object types to report; the default is every type with views. */
   readonly types?: readonly string[] | undefined;
   readonly send: (
@@ -56,6 +77,8 @@ export interface ChannelOptions {
 
 /** A running channel. Closing it stops the subscription and waits for sends. */
 export interface ChannelHandle {
+  /** Sends the notifications held since the start, then stops holding. */
+  release(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -63,6 +86,14 @@ interface SeenRow {
   readonly state: string;
   readonly waiting: boolean;
   readonly running: boolean;
+}
+
+/** Reads a run's object key, such as `task:42`. */
+function objectOf(key: string | undefined): ObjectRef | undefined {
+  if (key === undefined) return undefined;
+  const at = key.indexOf(":");
+  if (at <= 0 || at === key.length - 1) return undefined;
+  return { type: key.slice(0, at), id: key.slice(at + 1) };
 }
 
 function rowKey(type: string, id: string): string {
@@ -124,13 +155,26 @@ class ClaudeChannel implements ChannelHandle {
   ) => void | Promise<void>;
   private readonly onLog: (message: string) => void;
   private readonly last = new Map<string, SeenRow>();
-  private stop: (() => void) | undefined;
+  private readonly log: LogBackend | undefined;
+  /** Types whose starting rows could not be read: a first sighting is a baseline. */
+  private readonly unseeded = new Set<string>();
+  private held: ChannelNotification[] | undefined;
+  private stops: (() => void)[] = [];
   private queue: Promise<void> = Promise.resolve();
   private closed = false;
 
   constructor(options: ChannelOptions) {
     this.views = options.views;
     this.registry = options.registry;
+    if (options.types !== undefined) {
+      for (const type of options.types) {
+        if (this.registry.viewsFor(type) === undefined) {
+          throw new ChannelTypeError(
+            `mcp --types: "${type}" is not an object type with views`,
+          );
+        }
+      }
+    }
     this.types =
       options.types === undefined
         ? new Set(
@@ -140,6 +184,8 @@ class ClaudeChannel implements ChannelHandle {
               .filter((type) => this.registry.viewsFor(type) !== undefined),
           )
         : new Set(options.types);
+    this.log = options.log;
+    this.held = options.hold === true ? [] : undefined;
     this.sendNotification = options.send;
     this.onLog = options.onLog ?? ((message) => console.error(message));
   }
@@ -149,21 +195,48 @@ class ClaudeChannel implements ChannelHandle {
       try {
         await this.seed(type);
       } catch (error) {
+        this.unseeded.add(type);
         this.onLog(
           `channel: the starting rows of "${type}" could not be read: ${messageOf(error)}`,
         );
       }
     }
     if (this.closed) return;
-    this.stop = this.registry.store.subscribe((object) => {
-      this.enqueue(object);
+    this.stops.push(
+      this.registry.store.subscribe((object) => {
+        this.enqueue(object);
+      }),
+    );
+    if (this.log?.subscribe === undefined) {
+      this.onLog(
+        "channel: the run log cannot notify, so a wait or a running step is not reported until the object changes",
+      );
+    } else {
+      this.stops.push(
+        this.log.subscribe((change) => {
+          const object = objectOf(change.object);
+          if (object !== undefined) this.enqueue(object);
+        }),
+      );
+    }
+  }
+
+  async release(): Promise<void> {
+    this.queue = this.queue.then(async () => {
+      const held = this.held;
+      this.held = undefined;
+      for (const notification of held ?? []) {
+        if (this.closed) return;
+        await this.sendNotification(notification);
+      }
     });
+    await this.queue;
   }
 
   async close(): Promise<void> {
     this.closed = true;
-    this.stop?.();
-    this.stop = undefined;
+    for (const stop of this.stops) stop();
+    this.stops = [];
     await this.queue;
   }
 
@@ -198,6 +271,11 @@ class ClaudeChannel implements ChannelHandle {
     try {
       current = await this.views.get(`${object.type}:${object.id}`);
     } catch (error) {
+      if (error instanceof ViewError && error.kind === "not-found") {
+        // A deleted object: forget it, so a new one with the same id is new.
+        this.last.delete(rowKey(object.type, object.id));
+        return;
+      }
       this.onLog(
         `channel: "${object.type}:${object.id}" could not be read: ${messageOf(error)}`,
       );
@@ -208,10 +286,15 @@ class ClaudeChannel implements ChannelHandle {
     const next = seenRow(row);
     const previous = this.last.get(key);
     this.last.set(key, next);
+    if (previous === undefined && this.unseeded.has(object.type)) return;
     if (previous !== undefined && sameRow(previous, next)) return;
-    await this.sendNotification(
-      notificationOf(object.type, row, previous?.state ?? "new"),
+    const notification = notificationOf(
+      object.type,
+      row,
+      previous?.state ?? "new",
     );
+    if (this.held !== undefined) this.held.push(notification);
+    else await this.sendNotification(notification);
   }
 }
 

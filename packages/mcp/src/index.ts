@@ -11,6 +11,7 @@ export {
   CHANNEL_INSTRUCTIONS,
   CHANNEL_METHOD,
   CHANNEL_PERMISSION_CAPABILITY,
+  ChannelTypeError,
   startClaudeChannel,
   type ChannelHandle,
   type ChannelNotification,

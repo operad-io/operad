@@ -318,6 +318,11 @@ function start(
   };
 }
 
+/** A pause for a thing that must not happen; the only wait on time here. */
+function settle(ms = 1500): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function resultOf(response: Record<string, unknown>): Record<string, unknown> {
   const result = response.result;
   if (typeof result !== "object" || result === null || Array.isArray(result)) {
@@ -869,6 +874,7 @@ describe("operad mcp --claude-channel", () => {
           .experimental,
       ).not.toHaveProperty("claude/channel/permission");
       expect(init.instructions).toContain("one-way");
+      child.notify("notifications/initialized");
 
       // The starting row is a baseline: a title edit that keeps state, waiting
       // and running sends nothing.
@@ -877,13 +883,9 @@ describe("operad mcp --claude-channel", () => {
         phase: "ready",
       });
 
-      // A wait opens without an object change; the next object change reports
+      // A wait opens and the object is not written: the wait alone reports
       // the new waiting flag even though the state stayed the same.
       await addRun(home, "task:T-0001-one", { prompt: "Approve?" });
-      putObject(home, "task", "T-0001-one", {
-        title: "Renamed again",
-        phase: "ready",
-      });
       const waitingLine = JSON.parse(await child.lines.next()) as Record<
         string,
         unknown
@@ -950,6 +952,7 @@ describe("operad mcp --claude-channel", () => {
       await child.request(1, "initialize", {
         protocolVersion: PROTOCOL_VERSION,
       });
+      child.notify("notifications/initialized");
 
       putObject(home, "task", "T-0001-one", {
         title: "First",
@@ -999,12 +1002,122 @@ describe("operad mcp --claude-channel", () => {
         title: "First",
         phase: "running",
       });
+      child.notify("notifications/initialized");
+      // Nothing is waited for here, so give a notification time to arrive.
+      await settle();
       const ping = await child.request(2, "ping", {});
       expect(resultOf(ping)).toEqual({});
     } finally {
       const closed = await child.close();
       expect(closed.code).toBe(0);
       expect(closed.out).not.toContain(CHANNEL_METHOD);
+    }
+  });
+
+  test("a flipped running flag is reported without an object write", async () => {
+    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    putObject(home, "task", "T-0001-one", { title: "First", phase: "ready" });
+    const child = start(home, home, ["--claude-channel"]);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      child.notify("notifications/initialized");
+      // A run that has started and is not waiting for a person is running.
+      const runId = await addRun(home, "task:T-0001-one", undefined);
+      const started = JSON.parse(await child.lines.next()) as {
+        params: { content: string; meta: Record<string, string> };
+      };
+      expect(started.params.meta).toMatchObject({
+        id: "T-0001-one",
+        state: "ready",
+        previous: "ready",
+        waiting: "false",
+        running: "true",
+      });
+      // The run ends: the flag flips back.
+      const log = openConfigLog(await readConfig(home));
+      try {
+        await log.endRun(runId);
+      } finally {
+        await log.close();
+      }
+      const ended = JSON.parse(await child.lines.next()) as {
+        params: { meta: Record<string, string> };
+      };
+      expect(ended.params.meta).toMatchObject({
+        waiting: "false",
+        running: "false",
+      });
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("nothing is written before notifications/initialized arrives", async () => {
+    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    putObject(home, "task", "T-0001-one", { title: "First", phase: "ready" });
+    const child = start(home, home, ["--claude-channel"]);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      putObject(home, "task", "T-0001-one", { title: "First", phase: "running" });
+      await settle();
+      expect(child.lines.seen).toHaveLength(1);
+      expect(child.lines.seen.join("\n")).not.toContain(CHANNEL_METHOD);
+
+      child.notify("notifications/initialized");
+      const line = JSON.parse(await child.lines.next()) as {
+        method: string;
+        params: { content: string };
+      };
+      expect(line.method).toBe(CHANNEL_METHOD);
+      expect(line.params.content).toBe("T-0001-one ready -> running");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("a new object reports new -> state, and a --types list names several types", async () => {
+    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    putObject(home, "task", "T-0001-one", { title: "First", phase: "ready" });
+    const child = start(home, home, [
+      "--claude-channel",
+      "--types",
+      "task,note",
+    ]);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      child.notify("notifications/initialized");
+      putObject(home, "task", "T-0002-two", { title: "Two", phase: "ready" });
+      const task = JSON.parse(await child.lines.next()) as {
+        params: { content: string; meta: Record<string, string> };
+      };
+      expect(task.params.content).toBe("T-0002-two new -> ready");
+      expect(task.params.meta.previous).toBe("new");
+      putObject(home, "note", "n-1", { title: "Note", state: "open" });
+      const note = JSON.parse(await child.lines.next()) as {
+        params: { content: string };
+      };
+      expect(note.params.content).toBe("n-1 new -> open");
+      // T-0001-one existed at the start: it produced nothing.
+      expect(child.lines.seen.join("\n")).not.toContain("T-0001-one");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("--types names an unknown type, and a missing value, as a usage error", async () => {
+    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    for (const [args, message] of [
+      [["--claude-channel", "--types", "task,ghost"], '"ghost"'],
+      [["--claude-channel", "--types"], "--types needs"],
+    ] as const) {
+      const child = start(home, home, args);
+      const closed = await child.close();
+      expect(closed.code).toBe(2);
+      expect(closed.err).toContain(message);
+      expect(closed.out).toBe("");
     }
   });
 });

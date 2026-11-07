@@ -66,7 +66,7 @@ import {
   type ViewRow,
   type Views,
 } from "@operad-io/engine";
-import { runMcpServer } from "@operad-io/mcp";
+import { ChannelTypeError, runMcpServer } from "@operad-io/mcp";
 import { renderMarkdown } from "./markdown.ts";
 import { QrTooLongError, encodeQr, renderQr } from "./qr.ts";
 
@@ -1891,14 +1891,21 @@ export async function main(
         }
         throw new UsageError(`mcp does not take "${arg}"`);
       }
-      await runMcpServer({
-        home,
-        cwd: process.cwd(),
-        write: (text) => io.write(text),
-        error: (text) => io.error(text),
-        ...(claudeChannel ? { claudeChannel: true } : {}),
-        ...(types === undefined ? {} : { types }),
-      });
+      try {
+        await runMcpServer({
+          home,
+          cwd: process.cwd(),
+          write: (text) => io.write(text),
+          error: (text) => io.error(text),
+          ...(claudeChannel ? { claudeChannel: true } : {}),
+          ...(types === undefined ? {} : { types }),
+        });
+      } catch (error) {
+        if (error instanceof ChannelTypeError) {
+          throw new UsageError(error.message);
+        }
+        throw error;
+      }
       return 0;
     }
 
