@@ -540,6 +540,21 @@ describe("operad command", () => {
     expect(disabled.text()).toContain("notes: disabled");
   });
 
+  test("plugin enable adds a shipped plugin the default config leaves out", async () => {
+    const { home } = await makeNamedHome({});
+    const enabled = capture();
+    expect(await main(["plugin", "enable", "harness-pi"], { home, io: enabled.io })).toBe(0);
+    expect(enabled.text()).toContain("harness-pi: enabled");
+
+    const listed = capture();
+    expect(await main(["plugin", "list"], { home, io: listed.io })).toBe(0);
+    expect(listed.text()).toContain("harness-pi  0.0.0  enabled");
+
+    const unknown = capture();
+    expect(await main(["plugin", "enable", "no-such"], { home, io: unknown.io })).not.toBe(0);
+    expect(unknown.errors()).toContain("no such plugin");
+  });
+
   test("plugin list does not import a disabled plugin", async () => {
     const { root, home } = await makeNamedHome({});
     const marker = join(root, "loaded.marker");
