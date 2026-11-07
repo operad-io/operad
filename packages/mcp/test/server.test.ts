@@ -883,6 +883,10 @@ describe("operad mcp --claude-channel", () => {
         phase: "ready",
       });
 
+      // Give the edit time to be read before the run starts, so the wait is
+      // not seen through it.
+      await settle();
+
       // A wait opens and the object is not written: the wait alone reports
       // the new waiting flag even though the state stayed the same.
       await addRun(home, "task:T-0001-one", { prompt: "Approve?" });

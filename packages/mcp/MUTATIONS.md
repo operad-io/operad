@@ -25,3 +25,9 @@ the row fields.
 | T-0028-M4 | packages/mcp/src/channel.ts | `--types` did not filter the change listener | `--types limits the channel to the named object types` |
 | T-0028-M5 | packages/mcp/src/channel.ts | the notification content left out the row's note | `reports a phase change with its meta and stays silent for the rest` |
 | T-0028-M6 | packages/mcp/src/channel.ts | the waiting meta value was always `"false"` | `reports a phase change with its meta and stays silent for the rest` |
+| T-0028-M7 | packages/mcp/src/channel.ts | the run log subscription did not enqueue the changed object, so a wait or running flip alone was never seen | `a run log change with no object write reports the wait and the running flag`, `reports a phase change with its meta and stays silent for the rest`, `a flipped running flag is reported without an object write` |
+| T-0028-M8 | packages/mcp/src/channel.ts | hold was ignored, so notifications were sent before `notifications/initialized` | `nothing is written before notifications/initialized arrives` |
+| T-0028-M9 | packages/mcp/src/channel.ts | a type whose seed failed reported each existing object as `new` | `a seed that fails makes the first sighting of each object a baseline` |
+| T-0028-M10 | packages/mcp/src/channel.ts | an unknown `--types` entry was accepted | `a type with no views is refused with its name`, `--types names an unknown type, and a missing value, as a usage error` |
+| T-0028-M11 | packages/mcp/src/channel.ts | a not-found object stayed in `last`, so a new object with its id was not new | `an object that is not found is forgotten, so it comes back as new` |
+| T-0028-M12 | packages/mcp/src/channel.ts | held notifications were sent at once instead of pushed to the hold list | `nothing is written before notifications/initialized arrives` |

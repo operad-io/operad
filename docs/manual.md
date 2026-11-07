@@ -467,7 +467,11 @@ flag changes. It never declares `claude/channel/permission` and never relays a
 permission prompt. Without the flag the server sends no notification and
 declares no experimental capability.
 
-At start the server reads the current rows and sends nothing for them. Every
+The server watches both the objects and the flows, so a wait that opens or a
+step that starts is reported even when no object is written (a change another
+process makes is found by a poll, 500 ms by default). It sends nothing until the
+client has sent `notifications/initialized`, then sends what changed since the
+start. At start the server reads the current rows and sends nothing for them. Every
 later notification has a one-line `content`, `<id> <old state> -> <new state>`
 with `: <note>` when the row has one, and string `meta` with `id`, `type`,
 `state`, `previous`, `waiting` and `running`. An object seen for the first time
@@ -475,7 +479,8 @@ after the starting read has `previous` set to `new`. The channel is one-way;
 use `show`, `section`, `pending` and `history` for the details.
 
 `--types <t,…>` limits the channel to some object types, separated by commas.
-The default is every type with views. For example:
+The default is every type with views; a name that is not one is a usage error.
+For example:
 
 ```json
 "args": ["mcp", "--claude-channel", "--types", "task"]

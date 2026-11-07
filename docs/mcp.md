@@ -51,12 +51,22 @@ With the flag the `initialize` result carries
 instructions gain a paragraph saying the channel is one-way and the read tools
 give the details.
 
-The source is the store's object subscription, including its directory watch
-and its polling fallback. At start the server reads the current rows of every
-type that has views and sends nothing for them. It remembers the last row it
-saw for each object and sends one notification only when that row's `state`,
-`waiting` or `running` changed. An object first seen after that starting read
-has the previous state `new`.
+There are two sources. One is the store's object changes. The other is the
+changes to flows, because an object's `waiting` and `running` flags come from
+its flow: a wait that opens or a step that starts writes no object. Both use a
+directory watch with a polling fallback, so a change another process makes is
+seen too (the poll interval is the store's and the flow records' own, 500 ms by
+default). Each change re-reads that object's row. At start the server reads the
+current rows of every type that has views and sends nothing for them; if it
+cannot read a type's rows, the first row it sees for each object of that type is
+its baseline and also sends nothing. It remembers the last row it saw for each
+object and sends one notification only when that row's `state`, `waiting` or
+`running` changed. An object first seen after the starting read has the previous
+state `new`. An object that can no longer be found is forgotten.
+
+The server sends nothing until the client has sent `notifications/initialized`.
+It keeps comparing rows meanwhile, then sends the changes it saw since the
+start, in order.
 
 Each notification is the server's `notifications/claude/channel` method with
 these parameters:
@@ -81,8 +91,8 @@ one-way: there is no reply tool, and `show`, `section`, `pending`, `history` and
 the other read tools give the details.
 
 `--types <t,…>` limits the channel to the named object types, separated by
-commas; the default is every type with views. The flag does not change the read
-tools.
+commas; the default is every type with views. A name that is not a type with
+views is a usage error that names it. The flag does not change the read tools.
 
 Claude Code enables the extension with its development-channel flag, naming the
 server from `.mcp.json`:
