@@ -9,7 +9,9 @@
   "dependencies": {
     "@operad-io/access-match": "workspace:*",
     "@operad-io/engine": "workspace:*",
-    "@operad-io/harness-process": "workspace:*",
+    "@operad-io/harness-process": "workspace:*"
+  },
+  "devDependencies": {
     "@earendil-works/pi-coding-agent": "1.5.0"
   }
 }

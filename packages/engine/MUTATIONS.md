@@ -236,3 +236,7 @@ the row fields.
 | tui-autostart-M1 | packages/engine/src/config/config.ts | `DEFAULT_HTTP` was disabled again | `operad config > a missing config means jsonl at <home>/store` |
 | tui-autostart-M2 | packages/engine/src/config/config.ts | an `http` section without `enabled` meant off | `operad config > reads http options and applies their defaults` |
 | tui-autostart-M19 | packages/engine/src/loop/serve.ts | `serve()` took its own lock instead of the one handed to it | `a second operad serve > exits 4 on a held home before it reads the config, the store or the port` (the first serve failed against its own lock) |
+| pending-row-M1 | packages/engine/src/views/pending.ts | the rows were built but not put on the items | `pending items carry their object's row > the row is the one the list shows, with the run flags` and the others in that file |
+| pending-row-M2 | packages/engine/src/views/pending.ts | a candidate carried an object, so it got a row | `pending items carry their object's row > a candidate has no row` |
+| pending-row-M3 | packages/engine/src/views/presentation.ts | the error row for a gone object had no `no object` message | `pending items carry their object's row > an object deleted after the run started gets an error row, and the rest are listed` |
+| pending-row-M4 | packages/engine/src/views/presentation.ts | a built row lost its waiting flag, so it differed from the list's | `pending items carry their object's row > the row is the one the list shows, with the run flags` |

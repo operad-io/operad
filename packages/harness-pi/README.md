@@ -1,6 +1,6 @@
 # @operad-io/harness-pi
 
-The pi harness. `src/worker.ts` is the child program: it imports pi's library,
+The pi harness. `src/worker.ts` is the child program: it imports the library of the pi you installed (see "Installing pi"),
 reads one JSON object from stdin, runs one prompt and writes one JSON object per
 line to stdout. The last line is the `Result`. The hub-side step
 (`src/index.ts`, described under "The plugin" below) spawns it. Decisions: `docs/backlog/operad-harness-pi.md` 2, 3, 5, 6, 7.
@@ -12,6 +12,26 @@ pi does no discovery here: the only extension is operad's inline one, settings
 are in memory, and every path pi uses comes from the input (`agentDir`,
 `sessionDir`, `authPath`, `modelsPath`). Nothing under the user's `~/.pi` is
 read unless the input names it.
+
+## Installing pi
+
+operad does not bundle pi. Install it yourself, with bun
+(`bun add -g @earendil-works/pi-coding-agent`) or npm
+(`npm i -g @earendil-works/pi-coding-agent`), so that a `pi` command is on
+`PATH`. The worker resolves the real path of that command, walks up to the
+directory whose `package.json` is `@earendil-works/pi-coding-agent`, and imports
+the file its `exports["."]` names. It logs `pi <version> loaded from <dir>` on
+stderr. The oldest version it accepts (the floor) is `1.5.0`; a prerelease of
+`1.5.0` is below it. `operad plugin check` reads the same `package.json` and
+fails, naming both versions, when pi is older than the floor, and fails when
+there is no `pi`. The `@earendil-works/pi-coding-agent` in this package's
+`devDependencies` serves the tests only.
+
+`pi` must lead into the package through symbolic links, as the bun and npm
+installs make it. A shell wrapper script is refused with its path; set the
+`command` setting to the package's bin (for example
+`~/.bun/install/global/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js`)
+to use another pi or a wrapper's target.
 
 ## stdin
 
@@ -25,6 +45,7 @@ this table.
 | `authPath` | string, non-empty | yes | pi's credentials file |
 | `modelsPath` | string, non-empty | yes | pi's custom models file |
 | `agentDir` | string, non-empty | yes | pi's agent directory (empty of user config) |
+| `piCommand` | string, non-empty | no | the pi command, a name on PATH or a path; absent means `pi` |
 | `sessionDir` | string, non-empty | yes | directory for session files |
 | `resumeSession` | string, non-empty | no | session file path from an earlier `Result.sessionId`; the prompt is sent into it |
 | `model` | string `provider/id` | no | model to use; absent means pi's own default |
@@ -86,7 +107,7 @@ variable. It exists because a model cannot travel over the stdin protocol.
 ## The plugin
 
 `src/index.ts` is the hub side: the plugin `harness-pi`, its step
-`harness-pi/agent` and its flow `harness-pi:prompt`. It never imports pi; it
+`harness-pi/agent` and its flow `harness-pi:prompt`. It never imports pi (it only reads its version in `check`); it
 starts `bun src/worker.ts` through `runAgent` from `@operad-io/harness-process`,
 writes the stdin object above, appends every stdout line to the step's log with
 `JsonlLog`, and turns the last `result` line into the facts.
@@ -137,6 +158,7 @@ param (`wallTimeSecs`, `stallSecs`) overrides the setting of the same name.
 |---|---|---|---|
 | `model` | string `provider/id` | unset | the model; unset uses pi's own default model |
 | `thinkingLevel` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` | unset | the reasoning level; unset uses pi's default |
+| `command` | string | `pi` | the pi command: a name on PATH or a path; it must lead into an installed `@earendil-works/pi-coding-agent` at the floor version or newer |
 | `authPath` | string | `~/.pi/agent/auth.json` | pi's credentials file; the plugin passes the path and never reads the file |
 | `modelsPath` | string | `~/.pi/agent/models.json` | pi's custom models file |
 | `wallTimeSecs` | number | `3600` | the longest one run may take; at most 28500 |

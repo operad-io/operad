@@ -15,6 +15,8 @@ export interface WorkerInput {
   readonly authPath: string;
   readonly modelsPath: string;
   readonly agentDir: string;
+  /** The pi command (a name on PATH or a path); unset means `pi`. */
+  readonly piCommand?: string | undefined;
   readonly sessionDir: string;
   readonly resumeSession?: string | undefined;
   readonly model?: string | undefined;
@@ -102,7 +104,7 @@ export function parseInput(value: unknown): ParsedInput {
     strings[field] = field_;
   }
 
-  const optional = (field: "resumeSession" | "model"): string | undefined | Error => {
+  const optional = (field: "resumeSession" | "model" | "piCommand"): string | undefined | Error => {
     const field_ = value[field];
     if (field_ === undefined) return undefined;
     if (typeof field_ !== "string" || field_.length === 0) {
@@ -112,6 +114,8 @@ export function parseInput(value: unknown): ParsedInput {
   };
   const resumeSession = optional("resumeSession");
   if (resumeSession instanceof Error) return { ok: false, message: resumeSession.message };
+  const piCommand = optional("piCommand");
+  if (piCommand instanceof Error) return { ok: false, message: piCommand.message };
   const model = optional("model");
   if (model instanceof Error) return { ok: false, message: model.message };
   if (model !== undefined && !/^[^/]+\/.+$/.test(model)) {
@@ -147,6 +151,7 @@ export function parseInput(value: unknown): ParsedInput {
       agentDir: strings["agentDir"] ?? "",
       sessionDir: strings["sessionDir"] ?? "",
       resumeSession,
+      piCommand,
       model,
       thinkingLevel,
       access,
