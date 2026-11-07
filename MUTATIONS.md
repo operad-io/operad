@@ -754,6 +754,7 @@ each task: `TK0001-M1`.
 - [cli](packages/cli/MUTATIONS.md)
 - [dev](packages/dev/MUTATIONS.md)
 - [engine](packages/engine/MUTATIONS.md)
+- [harness-claude](packages/harness-claude/MUTATIONS.md)
 - [harness-pi](packages/harness-pi/MUTATIONS.md)
 - [harness-process](packages/harness-process/MUTATIONS.md)
 - [harness-radian](packages/harness-radian/MUTATIONS.md)
