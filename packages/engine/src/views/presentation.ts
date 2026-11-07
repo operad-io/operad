@@ -975,7 +975,7 @@ export class Views {
     // even when no object is stored there, so the lookup cannot fall through to
     // another namespace; the kernel's suffix lookup runs only when none claims
     // the id.
-    if (!id.includes("/") && !id.includes(":")) {
+    if (!id.includes(":")) {
       const scoped = await this.resolveWithPlugins(id);
       if (scoped !== undefined) return scoped;
     }
@@ -1049,6 +1049,8 @@ export class Views {
           id,
         );
       } catch (error) {
+        // A plugin refuses with a ViewError when it knows why the id is wrong.
+        if (error instanceof ViewError) throw error;
         this.onLog(
           `plugin "${entry.plugin}": resolve failed for "${entry.type}:${id}": ${messageOf(error)}`,
         );

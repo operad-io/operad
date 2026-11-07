@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { ViewError } from "@operad-io/engine";
 import type { ObjectStore, StoredObject } from "@operad-io/engine";
 import { withRepositoryLock } from "./lock.ts";
 import {
@@ -272,7 +273,7 @@ export async function resolveObjectRepository(
   if (having.length > 1) {
     throw new DevError(
       "id",
-      `"${id}" is in more than one repository: use ${having
+      `"${id}" is ambiguous, in more than one repository: use ${having
         .map((repository) => storeKey(repository.name, id))
         .join(", ")}`,
     );
@@ -299,18 +300,33 @@ export async function resolveDevKey(
   const kind =
     type === PLAN_TYPE ? "plan" : type === TASK_TYPE ? "task" : undefined;
   if (kind === undefined) return undefined;
-  if (parseId(id, kind) === undefined) return undefined;
-  let repository: RepositoryData;
+  const slash = id.indexOf("/");
+  if (parseId(slash >= 0 ? id.slice(slash + 1) : id, kind) === undefined) {
+    return undefined;
+  }
   try {
-    repository = await resolveRepository(
+    if (slash >= 0) {
+      // The kernel already looked the qualified key up; only an unknown
+      // repository is worth reporting here.
+      await resolveRepository(store, { name: id.slice(0, slash) });
+      return undefined;
+    }
+    const { repository } = await resolveObjectRepository(
       store,
+      kind,
+      id,
       scope === undefined ? { cwd } : { name: scope },
     );
+    return storeKey(repository.name, id);
   } catch (error) {
-    if (error instanceof DevError) return undefined;
+    if (error instanceof DevError) {
+      throw new ViewError(
+        error.field === "id" ? "ambiguous" : "not-found",
+        error.message,
+      );
+    }
     throw error;
   }
-  return storeKey(repository.name, id);
 }
 
 function ensureExcludes(repositoryPath: string): void {

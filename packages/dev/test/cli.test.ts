@@ -639,6 +639,21 @@ describe("operad with the dev plugin", () => {
     expect(twice.code).not.toBe(0);
     expect(twice.err).toContain(`${name}/T-0001-same`);
     expect(twice.err).toContain("other/T-0001-same");
+
+    // An id nowhere reports where the command ran and what is registered.
+    for (const args of [["show", "T-0099-nope"], ["dev:confirm", "T-0099-nope", "--yes"]]) {
+      const missing = await run(home, outside, args);
+      expect(missing.code).not.toBe(0);
+      expect(missing.err).toContain(`no registered repository contains ${outside}`);
+      expect(missing.err).toContain("  other  ");
+    }
+    // A qualified id names a repository that must be registered.
+    for (const args of [["show", "nowhere/T-0001-x"], ["dev:confirm", "nowhere/P-0001-p", "--yes"]]) {
+      const unknown = await run(home, outside, args);
+      expect(unknown.code).not.toBe(0);
+      expect(unknown.err).toContain('no registered repository "nowhere"');
+      expect(unknown.err).toContain("  other  ");
+    }
   });
 
   test("a qualified id with an unknown repository, or a conflicting --repo, is refused", async () => {
