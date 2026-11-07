@@ -64,7 +64,7 @@ describe("the object pane view", () => {
       expect(frame).toContain("one");
       expect(frame).toContain("First");
       expect(frame).toContain("open · $1");
-      expect(frame).toContain("[Info]");
+      expect(frame).toContain("Info");
       expect(frame).toContain("Log ●");
       expect(frame).toContain("History");
       expect(frame).not.toContain("select an object");
@@ -82,7 +82,7 @@ describe("the object pane view", () => {
       await setup.renderOnce();
       const frame = setup.captureCharFrame();
       expect(frame).toContain("First");
-      expect(frame).toContain("[Info]");
+      expect(frame).toContain("Info");
       expect(frame).toContain("History");
       view.destroy();
     } finally {

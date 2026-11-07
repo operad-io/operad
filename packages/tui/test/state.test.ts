@@ -314,7 +314,7 @@ describe("the TUI reducer", () => {
     expect(formatElapsed(61_000)).toBe("1m 1s");
   });
 
-  test("the window around the cursor fits the pane and counts an error row's extra line", () => {
+  test("the window around the cursor counts one line per row, an error row too", () => {
     const rows = Array.from({ length: 30 }, (_, at) => ({
       id: `r${at}`,
       title: "t",
@@ -325,21 +325,19 @@ describe("the TUI reducer", () => {
     }));
     const list = { rows, cursor: 12, loaded: true, loading: false, version: 1 };
     const window = listWindow(list, 6);
+    expect(window.end - window.start).toBe(6);
     expect(window.start).toBeLessThanOrEqual(12);
     expect(window.end).toBeGreaterThan(12);
-    const lines = rows
-      .slice(window.start, window.end)
-      .reduce((total, entry) => total + (entry.error === undefined ? 1 : 2), 0);
-    expect(lines).toBeLessThanOrEqual(6);
-    expect(lines).toBeGreaterThanOrEqual(5);
-    // The lines after the rows are kept free.
+    // The line after the rows is kept free.
     const loading = listWindow({ ...list, loading: true }, 6);
-    const loadingLines = rows
-      .slice(loading.start, loading.end)
-      .reduce((total, entry) => total + (entry.error === undefined ? 1 : 2), 0);
-    expect(loadingLines).toBeLessThanOrEqual(5);
+    expect(loading.end - loading.start).toBe(5);
     expect(listWindow({ ...list, cursor: 0 }, 6).start).toBe(0);
-    expect(listWindow({ ...list, cursor: 29 }, 6).end).toBe(30);
+    // The last row at the bottom of the window stays visible.
+    const last = listWindow({ ...list, cursor: 29 }, 6);
+    expect(last).toEqual({ start: 24, end: 30 });
+    const middle = listWindow({ ...list, cursor: 20 }, 6);
+    expect(middle.start).toBeLessThanOrEqual(20);
+    expect(middle.end).toBeGreaterThan(20);
   });
 
   test("ctrl and meta chords are ignored, and only ?, escape and q act while the keys are open", () => {

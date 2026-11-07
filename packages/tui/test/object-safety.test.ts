@@ -29,7 +29,7 @@ const CONTROL = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/;
 
 function drawnText(state: TuiState): string {
   const drawing = drawState(state);
-  return [drawing.header, drawing.tabs, drawing.list, drawing.right, drawing.footer]
+  return [drawing.header, drawing.rule, drawing.list, drawing.right, drawing.footer, ...(drawing.overlay === undefined ? [] : [drawing.overlay])]
     .flatMap((styled) => styled.chunks.map((chunk) => chunk.text))
     .join("");
 }
@@ -154,7 +154,7 @@ describe("server text never reaches the terminal as a control", () => {
 
       // The list's own error row and the footer's status too.
       shell.key({ name: "escape" });
-      expect(drawnText(shell.state)).toContain("E");
+      expect(drawnText(shell.state)).toContain("two");
       expect(drawnText(shell.state)).not.toMatch(CONTROL);
     } finally {
       shell.stop();
@@ -272,9 +272,9 @@ describe("wrapping is by display width", () => {
     const section = state.object?.sections[0];
     if (section === undefined) throw new Error("no section");
     const layout = sectionLayout(state, section);
-    expect(layout.length).toBe(markdownLineCount(text, 120 - Math.floor(120 * 0.4) - 4));
+    expect(layout.length).toBe(markdownLineCount(text, 120 - 39 - 1));
     for (const line of layout) {
-      expect(textWidth(line.text)).toBeLessThanOrEqual(120 - Math.floor(120 * 0.4) - 4);
+      expect(textWidth(line.text)).toBeLessThanOrEqual(120 - 39 - 1);
     }
     expect(layout.length).toBeGreaterThan(1);
   });
