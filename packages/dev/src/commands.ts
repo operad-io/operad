@@ -17,6 +17,7 @@ import {
   listRepositories,
   removeRepository,
   requestTaskStart,
+  resolveObjectRepository,
   resolveRepository,
   updateTask,
 } from "./service.ts";
@@ -102,6 +103,18 @@ function objectByPlan(
   return resolveRepository(store, {
     name: one(parsed, "--repo"),
     cwd,
+  });
+}
+
+async function objectById(
+  parsed: ParsedArguments,
+  ctx: CommandContext,
+  kind: "plan" | "task",
+  id: string,
+): Promise<{ readonly repository: RepositoryData; readonly id: string }> {
+  return resolveObjectRepository(ctx.store, kind, id, {
+    name: one(parsed, "--repo"),
+    cwd: ctx.cwd,
   });
 }
 
@@ -224,8 +237,8 @@ async function runTask(
   if (call.rest.length > 1) {
     throw new DevError("id", `task ${call.name} takes one task id`);
   }
-  const repository = await objectByPlan(parsed, ctx.store, ctx.cwd);
-  const key = storeKey(repository.name, id);
+  const target = await objectById(parsed, ctx, "task", id);
+  const key = storeKey(target.repository.name, target.id);
   const task = await getTask(ctx.store, key);
 
   if (call.name === "edit") {
@@ -233,7 +246,7 @@ async function runTask(
     const body = briefBody(taskData(task.data).brief);
     const edited = await editText(body, { root: ctx.store.root });
     await editTaskBrief(ctx.store, key, edited);
-    return id;
+    return target.id;
   }
 
   const title = one(parsed, "--title");
@@ -260,9 +273,9 @@ async function runStart(
   if (parsed.positionals.length > 1) {
     throw new DevError("id", "start takes one task id");
   }
-  const repository = await objectByPlan(parsed, ctx.store, ctx.cwd);
-  await requestTaskStart(ctx.store, storeKey(repository.name, id));
-  return `start requested for ${id}`;
+  const target = await objectById(parsed, ctx, "task", id);
+  await requestTaskStart(ctx.store, storeKey(target.repository.name, target.id));
+  return `start requested for ${target.id}`;
 }
 
 export const commands: readonly CommandDefinition[] = [

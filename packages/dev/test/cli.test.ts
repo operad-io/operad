@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -572,6 +572,105 @@ describe("operad with the dev plugin", () => {
     expect(acted.err).not.toContain("ambiguous");
   });
 
+  test("outside every repository: the error says where, the qualified id and a unique bare id resolve, an ambiguous one lists both", async () => {
+    const { root, home, repository } = await setup();
+    const name = repository.split("/").pop() ?? "repository";
+    const outside = join(root, "outside");
+    mkdirSync(outside, { recursive: true });
+
+    const none = await run(home, outside, ["start", "T-0001-x"]);
+    expect(none.code).not.toBe(0);
+    expect(none.err).toContain(`no registered repository contains`);
+    expect(none.err).toContain("operad repo add <path>");
+
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const other = await makeGitRepository(root, "other");
+    expect((await run(home, other, ["repo", "add", "."])).code).toBe(0);
+
+    const hint = await run(home, outside, ["plan", "add", "--slug", "p", "--title", "P"], "r\n");
+    expect(hint.code).not.toBe(0);
+    expect(hint.err).toContain(`no registered repository contains ${outside}`);
+    expect(hint.err).toContain("or pass --repo <name>:");
+    expect(hint.err).toContain(`  ${name}  `);
+    expect(hint.err).toContain("  other  ");
+
+    const addTask = async (where: string, slug: string): Promise<string> => {
+      const made = await run(
+        home,
+        where,
+        ["task", "add", "--plan", "P-0001-p", "--slug", slug, "--title", "T"],
+        "b\n",
+      );
+      return made.out.trim();
+    };
+    for (const where of [repository, other]) {
+      await run(home, where, ["plan", "add", "--slug", "p", "--title", "P"], "r\n");
+    }
+    expect(await addTask(repository, "same")).toBe("T-0001-same");
+    expect(await addTask(repository, "only")).toBe("T-0002-only");
+    expect(await addTask(other, "same")).toBe("T-0001-same");
+
+    // The qualified form names the repository for an action, from anywhere.
+    for (const repo of [name, "other"]) {
+      const confirmed = await run(home, outside, ["dev:confirm", `${repo}/P-0001-p`, "--yes"]);
+      expect(confirmed.err).toBe("");
+      expect(confirmed.code).toBe(0);
+    }
+
+    // A unique bare id resolves from outside.
+    const shown = await run(home, outside, ["show", "T-0002-only"]);
+    expect(shown.code).toBe(0);
+    expect(shown.out).toContain("T-0002-only");
+    const started = await run(home, outside, ["start", "T-0002-only"]);
+    expect(started.err).toBe("");
+    expect(started.out).toContain("start requested for T-0002-only");
+
+    // The qualified form works from anywhere, for start and show.
+    const qshown = await run(home, outside, ["show", "other/T-0001-same"]);
+    expect(qshown.code).toBe(0);
+    const qstart = await run(home, outside, ["start", "other/T-0001-same"]);
+    expect(qstart.out).toContain("start requested for T-0001-same");
+    // The same bare id in two repositories is ambiguous and lists both.
+    const ambiguous = await run(home, outside, ["show", "T-0001-same"]);
+    expect(ambiguous.code).toBe(2);
+    expect(ambiguous.err).toContain(`${name}/T-0001-same`);
+    expect(ambiguous.err).toContain("other/T-0001-same");
+    const twice = await run(home, outside, ["start", "T-0001-same"]);
+    expect(twice.code).not.toBe(0);
+    expect(twice.err).toContain(`${name}/T-0001-same`);
+    expect(twice.err).toContain("other/T-0001-same");
+  });
+
+  test("a qualified id with an unknown repository, or a conflicting --repo, is refused", async () => {
+    const { root, home, repository } = await setup();
+    const name = repository.split("/").pop() ?? "repository";
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const other = await makeGitRepository(root, "other");
+    expect((await run(home, other, ["repo", "add", "."])).code).toBe(0);
+    const outside = join(root, "outside");
+    mkdirSync(outside, { recursive: true });
+
+    const unknown = await run(home, outside, ["start", "nowhere/T-0001-x"]);
+    expect(unknown.code).not.toBe(0);
+    expect(unknown.err).toContain(`no registered repository "nowhere"`);
+    expect(unknown.err).toContain(`  ${name}  `);
+    expect(unknown.err).toContain("  other  ");
+
+    const conflict = await run(home, outside, ["start", `${name}/T-0001-x`, "--repo", "other"]);
+    expect(conflict.code).not.toBe(0);
+    expect(conflict.err).toContain(name);
+    expect(conflict.err).toContain("other");
+    const shownConflict = await run(home, outside, ["show", `${name}/T-0001-x`, "--repo", "other"]);
+    expect(shownConflict.code).not.toBe(0);
+    expect(shownConflict.err).toContain("--repo");
+    expect(shownConflict.err).toContain(`"${name}"`);
+
+    // A repository whose path is gone stays listed, marked missing.
+    rmSync(other, { recursive: true, force: true });
+    const missing = await run(home, outside, ["start", "T-0001-x"]);
+    expect(missing.err).toMatch(/ {2}other {2}.*\(missing\)/);
+  });
+
   test("task edit and update resolve the repository like every other command", async () => {
     const { root, home, repository } = await setup();
     expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
@@ -618,12 +717,13 @@ describe("operad with the dev plugin", () => {
     const outside = await run(home, home, [
       "task",
       "update",
-      taskId,
+      "T-0099-none",
       "--title",
       "Nowhere",
     ]);
     expect(outside.code).toBe(1);
     expect(outside.err).toContain("--repo");
+    expect(outside.err).toContain("  other  ");
 
     const updated = await run(home, home, [
       "task",

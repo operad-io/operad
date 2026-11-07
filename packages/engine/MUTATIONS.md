@@ -240,3 +240,9 @@ the row fields.
 | pending-row-M2 | packages/engine/src/views/pending.ts | a candidate carried an object, so it got a row | `pending items carry their object's row > a candidate has no row` |
 | pending-row-M3 | packages/engine/src/views/presentation.ts | the error row for a gone object had no `no object` message | `pending items carry their object's row > an object deleted after the run started gets an error row, and the rest are listed` |
 | pending-row-M4 | packages/engine/src/views/presentation.ts | a built row lost its waiting flag, so it differed from the list's | `pending items carry their object's row > the row is the one the list shows, with the run flags` |
+
+## T-0047 — a qualified id and `--repo` must agree
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0047-M6 | packages/engine/src/views/presentation.ts | show accepted `--repo` that differs from a qualified id | `dev` cli test `a qualified id with an unknown repository, or a conflicting --repo, is refused` |

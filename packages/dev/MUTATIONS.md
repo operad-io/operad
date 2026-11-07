@@ -120,3 +120,13 @@ the row fields.
 | dirty-names-M3 | packages/dev/src/steps.ts | a rename's old path was listed as a file | `changedFiles > a rename reports the new path only, whole` |
 | dirty-names-M4 | packages/dev/src/steps.ts | the name was cut at column 2 instead of 3 | `changedFiles > a modified tracked file that comes first keeps its whole name` |
 | dirty-names-M5 | packages/dev/src/steps.ts | `-z` left out of the status call | `changedFiles > a modified tracked file that comes first keeps its whole name` |
+
+## T-0047 — repository hints and qualified ids
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0047-M1 | packages/dev/src/service.ts | the error listed no registered repositories | `outside every repository: the error says where, ...` |
+| T-0047-M2 | packages/dev/src/service.ts | a qualified id ignored its prefix and used the directory | `outside every repository: ...` (qualified start) |
+| T-0047-M3 | packages/dev/src/service.ts | a `--repo` that differs from the qualified id was accepted | `a qualified id with an unknown repository, or a conflicting --repo, is refused` |
+| T-0047-M4 | packages/dev/src/service.ts | a bare id outside a repository took the first repository that has it instead of refusing several | `outside every repository: ...` (ambiguous start) |
+| T-0047-M5 | packages/dev/src/service.ts | a repository with no path on disk was not marked missing | `a qualified id with an unknown repository, or a conflicting --repo, is refused` |

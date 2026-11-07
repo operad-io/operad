@@ -930,6 +930,14 @@ export class Views {
 
   private async resolve(id: string): Promise<ResolvedObject> {
     const typed = splitId(id);
+    // A qualified id names its namespace; a different `--repo` is a mistake.
+    const qualified = (typed?.id ?? id).split("/");
+    if (this.scope !== undefined && qualified.length > 1 && qualified[0] !== this.scope) {
+      throw new ViewError(
+        "args",
+        `"${id}" is in repository "${qualified[0]}", but --repo names "${this.scope}"`,
+      );
+    }
     if (typed !== undefined) {
       const object = await this.store.get(typed.type, typed.id);
       if (object !== undefined || (await this.hasRun(typed.type, typed.id))) {

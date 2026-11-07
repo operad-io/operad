@@ -9,6 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import type { ObjectStore, StoredObject } from "@operad-io/engine";
 import { withRepositoryLock } from "./lock.ts";
@@ -145,6 +146,69 @@ function inside(path: string, cwd: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
+function shortPath(path: string): string {
+  const home = homedir();
+  if (path === home) return "~";
+  return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+}
+
+function registeredLines(registered: readonly RepositoryData[]): string[] {
+  return registered.map(
+    (repository) =>
+      `  ${repository.name}  ${shortPath(repository.path)}${
+        existsSync(repository.path) ? "" : "  (missing)"
+      }`,
+  );
+}
+
+function noRepositoryHere(
+  registered: readonly RepositoryData[],
+  cwd: string,
+): DevError {
+  if (registered.length === 0) {
+    return new DevError(
+      "repo",
+      `no registered repository contains ${cwd}, and none is registered; register one with \`operad repo add <path>\``,
+    );
+  }
+  return new DevError(
+    "repo",
+    [
+      `no registered repository contains ${cwd}; run the command inside one of these, or pass --repo <name>:`,
+      ...registeredLines(registered),
+    ].join("\n"),
+  );
+}
+
+function unknownRepository(
+  registered: readonly RepositoryData[],
+  name: string,
+): DevError {
+  if (registered.length === 0) {
+    return new DevError(
+      "repo",
+      `no registered repository "${name}", and none is registered; register one with \`operad repo add <path>\``,
+    );
+  }
+  return new DevError(
+    "repo",
+    [`no registered repository "${name}"; registered:`, ...registeredLines(registered)].join(
+      "\n",
+    ),
+  );
+}
+
+function repositoryAt(
+  registered: readonly RepositoryData[],
+  cwd: string,
+): RepositoryData | undefined {
+  const matches = registered.filter((repository) =>
+    inside(resolve(repository.path), cwd),
+  );
+  matches.sort((left, right) => right.path.length - left.path.length);
+  return matches[0];
+}
+
 /** The repository the current directory belongs to, or the named one. */
 export async function resolveRepository(
   store: ObjectStore,
@@ -153,28 +217,67 @@ export async function resolveRepository(
   if (options.name !== undefined) {
     const found = await findRepository(store, options.name);
     if (found === undefined) {
-      throw new DevError(
-        "repo",
-        `no registered repository "${options.name}"`,
-      );
+      throw unknownRepository(await listRepositories(store), options.name);
     }
     return repositoryData(found.data);
   }
 
   const cwd = resolve(options.cwd ?? process.cwd());
   const registered = await listRepositories(store);
-  const matches = registered.filter((repository) =>
-    inside(resolve(repository.path), cwd),
-  );
-  matches.sort((left, right) => right.path.length - left.path.length);
-  const found = matches[0];
-  if (found === undefined) {
+  const found = repositoryAt(registered, cwd);
+  if (found === undefined) throw noRepositoryHere(registered, cwd);
+  return found;
+}
+
+/**
+ * The repository a plan or task id belongs to, and the id without its
+ * repository. A qualified id (`<repo>/<id>`) names its repository; a bare id
+ * means the repository of the current directory, or, outside every
+ * repository, the one repository that has an object with that id.
+ */
+export async function resolveObjectRepository(
+  store: ObjectStore,
+  kind: "plan" | "task",
+  id: string,
+  options: ResolveRepositoryOptions = {},
+): Promise<{ readonly repository: RepositoryData; readonly id: string }> {
+  const slash = id.indexOf("/");
+  if (slash >= 0) {
+    const named = id.slice(0, slash);
+    if (options.name !== undefined && options.name !== named) {
+      throw new DevError(
+        "repo",
+        `"${id}" is in repository "${named}", but --repo names "${options.name}"`,
+      );
+    }
+    return {
+      repository: await resolveRepository(store, { name: named }),
+      id: id.slice(slash + 1),
+    };
+  }
+  if (options.name !== undefined) {
+    return { repository: await resolveRepository(store, options), id };
+  }
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const registered = await listRepositories(store);
+  const here = repositoryAt(registered, cwd);
+  if (here !== undefined) return { repository: here, id };
+  const having: RepositoryData[] = [];
+  for (const repository of registered) {
+    const object = await store.get(kind, storeKey(repository.name, id));
+    if (object !== undefined) having.push(repository);
+  }
+  const only = having[0];
+  if (only === undefined) throw noRepositoryHere(registered, cwd);
+  if (having.length > 1) {
     throw new DevError(
-      "repo",
-      `no registered repository here; pass --repo <name>`,
+      "id",
+      `"${id}" is in more than one repository: use ${having
+        .map((repository) => storeKey(repository.name, id))
+        .join(", ")}`,
     );
   }
-  return found;
+  return { repository: only, id };
 }
 
 /**
