@@ -1994,7 +1994,7 @@ export async function main(
     try {
       const action = kernelAction(command, context.registry);
       if (action !== undefined) {
-        await commandKernelAction(context, io, action, args.slice(1));
+        await commandKernelAction(context, io, action, actionRepo.args.slice(1));
         return 0;
       }
       if (await commandAction(context, io, actionRepo.args, tty)) return 0;

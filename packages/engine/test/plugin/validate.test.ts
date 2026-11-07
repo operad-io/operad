@@ -431,6 +431,23 @@ describe("plugin registry validation", () => {
     expect(logs.join("\n")).toContain("not in the store");
   });
 
+  test("a waiting run with no object shows its own last time and is logged once", async () => {
+    const logs: string[] = [];
+    const registry = new PluginRegistry([def({ name: "a", objects: [{ name: "note" }] })], {
+      onLog: (message) => logs.push(message),
+    });
+    const run = {
+      runId: "r",
+      object: { type: "note", id: "missing" },
+      lastFactAt: 1_700_000_000_000,
+    };
+    expect((await registry.pending([run]))[0]?.object.at).toBe(1_700_000_000_000);
+    await registry.pending([run]);
+    await registry.pending([{ ...run, runId: "other" }]);
+    // Once for run "r", once for run "other".
+    expect(logs.filter((line) => line.includes("not in the store"))).toHaveLength(2);
+  });
+
   test("needs the plugin prefix for an action two plugins declare", async () => {
     const registry = new PluginRegistry([
       def({

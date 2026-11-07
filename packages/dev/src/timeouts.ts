@@ -23,7 +23,8 @@ export const MAX_REVIEW_WAITS = 36;
 /**
  * How many times one attempt's work step may wait for an unavailable model
  * before the failure goes to a person. It equals the review bound, so one
- * step's visits stay within `DEV_MAX_VISITS`.
+ * attempt's waits stay within `DEV_MAX_VISITS`; the visits of every attempt of
+ * a run add up, though (see `DEV_MAX_VISITS`).
  */
 export const MAX_WORK_WAITS = MAX_REVIEW_WAITS;
 
@@ -31,5 +32,10 @@ export const MAX_WORK_WAITS = MAX_REVIEW_WAITS;
  * The most the visits of one step may add up to in a dev run: the kernel's
  * default of ten for ordinary loops plus one visit of `review` and of
  * `review_retry` for each allowed review wait.
+ *
+ * The count is for the whole run, not for one rework or attempt. A long model
+ * outage that spans several reworks (each wait is a visit of `work_retry` or
+ * `review_retry`) can therefore use the budget up and end the run with
+ * `visit_limit_reached` before any one attempt reaches its own wait bound.
  */
 export const DEV_MAX_VISITS = 10 + MAX_REVIEW_WAITS;

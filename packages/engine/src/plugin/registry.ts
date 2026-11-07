@@ -800,6 +800,8 @@ export class PluginRegistry {
   readonly store: PluginStore;
 
   private readonly cwd: string;
+  /** Runs whose missing object was already logged, so a poll does not repeat it. */
+  private readonly reportedMissing = new Set<string>();
   private readonly kernelVerbs: ReadonlySet<string>;
   private readonly onLog: (message: string) => void;
   private readonly onStartRun:
@@ -1554,9 +1556,12 @@ export class PluginRegistry {
       const object = await this.store.get(run.object.type, run.object.id);
       if (object === undefined) {
         // The run still waits; show it without actions instead of hiding it.
-        this.log(
-          `pending: run "${run.runId}" waits on ${run.object.type} "${run.object.id}", which is not in the store`,
-        );
+        if (!this.reportedMissing.has(run.runId)) {
+          this.reportedMissing.add(run.runId);
+          this.log(
+            `pending: run "${run.runId}" waits on ${run.object.type} "${run.object.id}", which is not in the store`,
+          );
+        }
         entries.push({
           runId: run.runId,
           prompt: run.prompt,
@@ -1567,7 +1572,7 @@ export class PluginRegistry {
             data: {},
             version: 0,
             cause: "missing",
-            at: 0,
+            at: run.lastFactAt ?? 0,
           },
           actions: [],
         });

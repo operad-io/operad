@@ -1,6 +1,6 @@
 /** The operad home config: JSON, read by the kernel, never by a plugin kind. */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { defaultOperadHome } from "../plugin/home.ts";
 import { openLog, type LogBackend, type LogBackendName } from "../log/index.ts";
@@ -393,7 +393,16 @@ async function addDefaultPlugins(home: string, file: string): Promise<void> {
   }
   if (!isRecord(raw) || raw.plugins !== undefined) return;
   const plugins = configJson(defaultConfig(home)).plugins;
-  await writeFile(file, `${JSON.stringify({ ...raw, plugins }, null, 2)}\n`);
+  // Write beside the config and rename over it, so a crash or a full disk
+  // leaves the old file whole instead of a truncated one.
+  const temp = `${file}.tmp`;
+  try {
+    await writeFile(temp, `${JSON.stringify({ ...raw, plugins }, null, 2)}\n`);
+    await rename(temp, file);
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 /** Writes the default config when the home has none. Idempotent. */
