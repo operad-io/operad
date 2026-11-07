@@ -7,15 +7,12 @@
 
 import { existsSync, mkdirSync } from "node:fs";
 import { findGrant, match, readProfile, type AccessProfile } from "@operad-io/access-match";
-import {
-  createAgentSession,
-  DefaultResourceLoader,
+import type {
+  AgentSessionEvent,
+  ExtensionFactory,
   ModelRuntime,
-  SessionManager,
-  SettingsManager,
-  type AgentSessionEvent,
-  type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
+import { findPi, loadPi } from "./pi-install.ts";
 import {
   parseInput,
   type FailureReason,
@@ -124,6 +121,19 @@ export async function runWorker(
     io.line(failure("session_missing", `resumeSession does not exist: ${input.resumeSession}`));
     return EXIT_FAILED;
   }
+
+  // pi is the user's own install: found at start, never bundled.
+  let pi: Awaited<ReturnType<typeof loadPi>>;
+  try {
+    const install = findPi(input.piCommand);
+    io.log(`pi ${install.version} loaded from ${install.dir}`);
+    pi = await loadPi(install);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    io.line(failure("model_error", message));
+    return EXIT_FAILED;
+  }
+  const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } = pi;
 
   mkdirSync(input.agentDir, { recursive: true });
   mkdirSync(input.sessionDir, { recursive: true });

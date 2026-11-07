@@ -192,6 +192,15 @@ default config, so turn it on first. This makes the next command load it:
 operad plugin enable harness-pi
 ```
 
+**Install pi.** operad does not bring its own pi: it uses the one you installed,
+with bun (`bun add -g @earendil-works/pi-coding-agent`) or npm
+(`npm i -g @earendil-works/pi-coding-agent`), so that `pi` is on `PATH`. The
+oldest pi it accepts is `1.5.0`; `operad plugin check` names both versions when
+yours is older and fails when there is no `pi`. To use another pi, set
+`command` in the `harness-pi` section of `config.json` to its path. A `pi` that
+is a shell wrapper script is refused; point `command` at the package's bin
+instead (`.../@earendil-works/pi-coding-agent/dist/bundle/cli.js`).
+
 **Log in to pi.** Run `pi` and type `/login`, then pick the provider. operad
 uses your own pi login: the credentials file `~/.pi/agent/auth.json` (set
 `authPath` in the plugin's settings for another file). operad never reads the

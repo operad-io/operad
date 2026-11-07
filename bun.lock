@@ -34,6 +34,7 @@
         "@operad-io/harness-radian": "workspace:*",
         "@operad-io/mcp": "workspace:*",
         "@operad-io/shell": "workspace:*",
+        "@operad-io/tui": "workspace:*",
       },
     },
     "packages/dev": {
@@ -54,10 +55,12 @@
       "name": "@operad-io/harness-pi",
       "version": "0.0.0",
       "dependencies": {
-        "@earendil-works/pi-coding-agent": "1.5.0",
         "@operad-io/access-match": "workspace:*",
         "@operad-io/engine": "workspace:*",
         "@operad-io/harness-process": "workspace:*",
+      },
+      "devDependencies": {
+        "@earendil-works/pi-coding-agent": "1.5.0",
       },
     },
     "packages/harness-process": {

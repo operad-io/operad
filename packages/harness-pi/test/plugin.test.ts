@@ -26,6 +26,7 @@ import {
 
 afterAll(cleanupTempRoots);
 
+const DEV_PI = fileURLToPath(new URL("../node_modules/.bin/pi", import.meta.url));
 const FAKE = fileURLToPath(new URL("./fake-lines-worker.ts", import.meta.url));
 
 const restores: Array<() => void> = [];
@@ -606,6 +607,7 @@ describe("harness-pi check", () => {
       home: root,
       cwd: root,
       store: new MemoryPluginStore({ root: join(root, "store") }),
+      settings: { "harness-pi": { command: DEV_PI } },
     });
     const checks = await registry.checks();
     expect(checks.find((item) => item.plugin === "harness-pi")?.ok).toBe(true);
