@@ -90,6 +90,40 @@ http http://127.0.0.1:7480
 A second `operad serve` for a home that already has one exits with code 4 before it
 reads the store or opens the port.
 
+### Stopping serve
+
+`operad serve stop [--timeout <secs>]` stops the `serve` of the current
+`OPERAD_HOME`. It reads `serve.lock`:
+
+- With no lock, or a lock whose process is gone, it prints
+  `no operad serve runs for <home>` and exits 0. It signals nothing and does not
+  delete a stale lock; the next `serve` replaces it.
+- With a live process it first checks that the process is a `serve`: it asks
+  the OS for the process's command line (`ps -p <pid> -o command=`, the same on
+  macOS and Linux) and requires `serve` as a word of it. The lock alone is not
+  enough, because a PID can be reused after a `serve` died. When the process is
+  not a `serve` the command prints an error naming the PID, signals nothing and
+  exits 3.
+- Otherwise it sends SIGTERM, the stop `serve` already handles, prints
+  `stopping operad serve (pid <pid>)`, waits until the process is gone or the
+  lock is released, prints `stopped` and exits 0. It never sends SIGKILL.
+
+`--timeout <secs>` is how long it waits: a whole number of seconds, at least 1,
+default 30. If the `serve` is still running after that, it prints an error that
+it did not stop, with `kill -9 <pid>` as the way to force it, and exits 3. A
+`--timeout` of 0, one with no value, or one that is not a whole number, is a
+usage error (exit 2). `operad serve` with no subcommand runs the loop as before.
+
+Exit codes: 0 stopped, or nothing to stop; 2 usage error; 3 the process is not a
+`serve`, or it did not stop in time.
+
+What happens to running work: SIGTERM ends the loop after its current pass, then
+`serve` stops the notifier, the HTTP server and the trigger sources, releases
+the lock and exits. It does not kill a step. A step that is running in its own
+process when `serve` stops keeps running, and the next `serve` for the home
+picks the run up again. Nothing starts new work or advances waits and timers
+while no `serve` runs; `operad serve` or `operad tui` resumes it.
+
 ### Pairing the app
 
 `operad pair` shows what the app needs to reach this `serve`:
@@ -137,8 +171,8 @@ or starts the server like this:
   the same runtime and `operad` entry as the command you typed, with
   `$OPERAD_HOME` as its working directory, appends its output to
   `$OPERAD_HOME/serve.log`, and keeps running after you quit the TUI,
-  because the hub keeps running flows. Stop it with `kill <pid>` (its pid is in
-  `$OPERAD_HOME/serve.lock`) or press Ctrl-C in a terminal where you ran
+  because the hub keeps running flows. Stop it with `operad serve stop` (see
+  "Stopping serve") or press Ctrl-C in a terminal where you ran
   `operad serve` yourself. If it exits at once or never answers, `operad tui`
   fails with one error that names `serve.log` and shows its last lines;
   `serve.log` can hold plugin output, so read the lines before you paste them.

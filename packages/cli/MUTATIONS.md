@@ -27,3 +27,9 @@ the row fields.
 | tui-autostart-M12 | packages/cli/src/main.ts | `--no-start` was not passed to the app | `operad tui > --no-start is passed on, and the app gets this process's entry and a way to print` |
 | tui-autostart-M14 | packages/cli/src/main.ts | `serve` no longer checked the home lock before opening the HTTP port (superseded by M15: the lock is now taken first) | `operad command > exit codes: 1 unknown id, 2 usage, 4 lock held` |
 | tui-autostart-M15 | packages/cli/src/main.ts | `serve` opened the config and store before it took the home lock, so a held home failed on the config, not with exit 4 | `a second operad serve > exits 4 on a held home before it reads the config, the store or the port` |
+| serve-stop-M1 | packages/cli/src/serve-stop.ts | the command-line check was skipped, so a live process that is not a serve was signalled | `operad serve stop > refuses a live process that is not a serve, and never signals it` |
+| serve-stop-M2 | packages/cli/src/serve-stop.ts | the command-line check matched `serve` anywhere in the text, not as a word | `operad serve stop > the command-line check wants serve as a word` |
+| serve-stop-M3 | packages/cli/src/serve-stop.ts | a lock naming a dead process went on to the stop path | `operad serve stop > a stale lock: says so, exits 0, signals nothing and leaves the file` |
+| serve-stop-M4 | packages/cli/src/serve-stop.ts | a serve still running after the timeout printed `stopped` | `operad serve stop > --timeout: a serve that ignores SIGTERM is an error that says how to force it` |
+| serve-stop-M5 | packages/cli/src/serve-stop.ts | `--timeout 0` was accepted | `operad serve stop > --timeout takes a whole number of seconds, at least 1` |
+| serve-stop-M6 | packages/cli/src/serve-stop.ts | the signal was SIGKILL, not SIGTERM | `operad serve stop > stops a real serve: the lock is gone and the process has exited`, `--timeout: a serve that ignores SIGTERM is an error that says how to force it` |
