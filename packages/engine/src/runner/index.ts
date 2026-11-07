@@ -8,6 +8,8 @@ export type {
 export {
   acquireLock,
   lockHeld,
+  pidAlive,
+  readLockPid,
   runLockPath,
   serveLockPath,
 } from "./lock.ts";
