@@ -111,6 +111,35 @@ describe("the object pane view", () => {
     }
   });
 
+  test("a narrow live section follows its wrapped end and keeps the hint", async () => {
+    const setup = await createTestRenderer({ width: 80, height: 20 });
+    try {
+      const view = createTuiView(setup.renderer);
+      let state: TuiState = { ...opened(), width: 80 };
+      state = reduce(state, { type: "key", key: "]" });
+      state = reduce(state, {
+        type: "section",
+        objectId: "one",
+        sectionId: "log",
+        content: {
+          markdown: Array.from(
+            { length: 30 },
+            (_, at) => `${"wide ".repeat(30)}end-${at}`,
+          ).join("\n"),
+        },
+      });
+      view.render(state);
+      await setup.renderOnce();
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("end-28");
+      expect(frame).toContain("end-29");
+      expect(frame).toContain("following");
+      view.destroy();
+    } finally {
+      await setup.dispose();
+    }
+  });
+
   test("a live section says following at its end and not after scrolling up", async () => {
     const setup = await createTestRenderer({ width: 120, height: 20 });
     try {

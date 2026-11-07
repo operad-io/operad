@@ -55,6 +55,8 @@ the row fields.
 | T-0031-M13 | packages/tui/src/state.ts | a late object answer created the object even after escape had closed the pane | `the object pane reducer > an object answer after escape does not reopen the pane` |
 | T-0031-M14 | packages/tui/src/state.ts | the object version restarted at 1 for a different id, so a stale answer matched the new object | `the object pane reducer > a stale answer for the previous object keeps the newly opened one` |
 | T-0031-M15 | packages/tui/src/view/index.ts | the narrow object was not drawn in the wrapping pane | `the object pane view > a narrow screen wraps the object's long lines instead of clipping them` |
+| T-0031-M16 | packages/tui/src/state.ts | the section line count used raw Markdown lines instead of the wrapped rows | `the object pane view > a narrow live section follows its wrapped end and keeps the hint` |
+| T-0031-M17 | packages/tui/src/view/index.ts | the view drew raw Markdown lines without wrapping them to the section width | `the object pane view > a narrow live section follows its wrapped end and keeps the hint` |
 | tui-autostart-M3 | packages/tui/src/autostart.ts | a held home lock was ignored, so a second serve could be started | `ensureServer > a home lock with a silent port is an error naming http.enabled and http.port, and starts nothing` |
 | tui-autostart-M4 | packages/tui/src/autostart.ts | an answering serve was not recognised and a second one was started | `ensureServer > a serve that already answers is not started again` |
 | tui-autostart-M5 | packages/tui/src/autostart.ts | a non-operad answer was treated as silence | `ensureServer > a port that answers but is not operad is an error naming the port` |

@@ -21,6 +21,7 @@ import {
   footerText,
   listWindow,
   sectionViewport,
+  sectionWidth,
   statusText,
   rowMark,
   tabLabel,
@@ -247,7 +248,7 @@ function sectionContent(
     return [chunk(section.loading ? "loading…" : "not loaded", palette.weak)];
   }
   const viewport = sectionViewport(state);
-  const lines = markdownLines(section.markdown, palette);
+  const lines = markdownLines(section.markdown, palette, sectionWidth(state));
   const start = Math.min(
     Math.max(0, section.scroll),
     Math.max(0, lines.length - 1),
@@ -346,7 +347,10 @@ export function createTuiView(ctx: CliRenderer): TuiView {
     id: "operad-right",
     width: "100%",
     height: "100%",
-    wrapMode: "word",
+    // The section is wrapped by `sectionWidth` before it reaches this
+    // renderable, so a wrapped row must stay one row here.
+    wrapMode: "none",
+    truncate: true,
   });
   const footer = new TextRenderable(ctx, {
     id: "operad-footer",

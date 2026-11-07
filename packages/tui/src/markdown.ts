@@ -10,6 +10,7 @@ import {
   type TextChunk,
 } from "@opentui/core";
 import { renderMarkdownLines } from "@operad-io/engine";
+import { wrapGlyphs, type WrapGlyph } from "./wrap.ts";
 
 /** The colours Markdown needs; the view's palette has them. */
 export interface MarkdownPalette {
@@ -56,26 +57,25 @@ function colourFor(code: number, palette: MarkdownPalette): string | undefined {
   }
 }
 
-/** Reads the ANSI the engine's renderer emits, one line at a time. */
-function chunksFor(
+/** Reads the ANSI the engine's renderer emits into styled display characters. */
+function glyphsFor(
   text: string,
   code: boolean,
   palette: MarkdownPalette,
-): TextChunk[] {
-  const chunks: TextChunk[] = [];
+): WrapGlyph<Style>[] {
+  const glyphs: WrapGlyph<Style>[] = [];
   const style: Style = { colour: undefined, attributes: 0 };
   const pattern = /\x1b\[([0-9;]*)m/g;
   let at = 0;
   const plain = (value: string): void => {
-    if (value.length === 0) return;
-    chunks.push(
-      chunk(
-        value,
-        code && style.colour === undefined
-          ? { colour: palette.weak, attributes: style.attributes }
-          : style,
-      ),
-    );
+    const colour =
+      code && style.colour === undefined ? palette.weak : style.colour;
+    for (const char of value) {
+      glyphs.push({
+        char,
+        value: { colour, attributes: style.attributes },
+      });
+    }
   };
   for (const match of text.matchAll(pattern)) {
     plain(text.slice(at, match.index));
@@ -99,18 +99,60 @@ function chunksFor(
     }
   }
   plain(text.slice(at));
-  if (chunks.length === 0) chunks.push(chunk("", style));
+  return glyphs;
+}
+
+function sameStyle(left: Style, right: Style): boolean {
+  return (
+    left.colour === right.colour && left.attributes === right.attributes
+  );
+}
+
+/** Groups one wrapped row's glyphs back into runs of the same style. */
+function chunksOf(glyphs: readonly WrapGlyph<Style>[]): TextChunk[] {
+  const chunks: TextChunk[] = [];
+  let text = "";
+  let style: Style | undefined;
+  const flush = (): void => {
+    if (text.length > 0) {
+      chunks.push(chunk(text, style ?? { colour: undefined, attributes: 0 }));
+      text = "";
+    }
+  };
+  for (const glyph of glyphs) {
+    if (style !== undefined && !sameStyle(style, glyph.value)) flush();
+    style = glyph.value;
+    text += glyph.char;
+  }
+  flush();
+  if (chunks.length === 0) {
+    chunks.push(chunk("", style ?? { colour: undefined, attributes: 0 }));
+  }
   return chunks;
 }
 
-/** Every line the object pane draws for one section, styled for the theme. */
+/**
+ * Every row the object pane draws for one section, styled for the theme and
+ * wrapped to `width` when the pane knows it. The reducer counts these same
+ * wrapped rows, so its scroll and the drawn content cannot drift apart.
+ */
 export function markdownLines(
   markdown: string,
   palette: MarkdownPalette,
+  width?: number | undefined,
 ): readonly TuiMarkdownLine[] {
-  return renderMarkdownLines(markdown, { colour: true }).map((line) => ({
-    text: line.text.replace(/\x1b\[[0-9;]*m/g, ""),
-    code: line.code,
-    chunks: chunksFor(line.text, line.code, palette),
-  }));
+  const rows: TuiMarkdownLine[] = [];
+  for (const line of renderMarkdownLines(markdown, { colour: true })) {
+    const glyphs = glyphsFor(line.text, line.code, palette);
+    const wrapped =
+      width === undefined ? [glyphs] : wrapGlyphs(glyphs, width);
+    for (const row of wrapped) {
+      rows.push({
+        text: row.map((glyph) => glyph.char).join(""),
+        code: line.code,
+        chunks: chunksOf(row),
+      });
+    }
+  }
+  return rows;
 }

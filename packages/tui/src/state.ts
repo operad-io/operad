@@ -15,6 +15,7 @@ import type {
 } from "@operad-io/engine";
 import { renderMarkdownLines } from "@operad-io/engine";
 import type { TuiTypeInfo } from "./client.ts";
+import { wrapText } from "./wrap.ts";
 
 /** The two terminal themes the view knows. */
 export type TuiTheme = "light" | "dark";
@@ -423,13 +424,23 @@ function activeTabOf(state: TuiState): TuiTab | undefined {
   return state.tabs[state.active];
 }
 
-/** The lines the Markdown renderer gives a section, without its trailing blank. */
-export function markdownLineCount(markdown: string): number {
+/**
+ * The rows a section's Markdown takes once wrapped to the pane, without its
+ * trailing blank. `width` defaults to no wrapping for callers that only want
+ * the renderer's own line count.
+ */
+export function markdownLineCount(
+  markdown: string,
+  width = Number.POSITIVE_INFINITY,
+): number {
   const lines = renderMarkdownLines(markdown);
   while (lines.length > 0 && (lines[lines.length - 1]?.text ?? "") === "") {
     lines.pop();
   }
-  return lines.length;
+  return lines.reduce(
+    (count, line) => count + wrapText(line.text, width).length,
+    0,
+  );
 }
 
 /** How many Markdown lines fit under the object's row and section tabs. */
@@ -442,6 +453,15 @@ export function sectionViewport(state: TuiState): number {
       ? Math.max(1, body - 4)
       : body;
   return Math.max(1, inner - 3);
+}
+
+/** The columns a section's Markdown has inside the object pane. */
+export function sectionWidth(state: TuiState): number {
+  const pane = twoPane(state)
+    ? state.width - Math.floor(state.width * 0.4)
+    : state.width;
+  // The pane has a border on each side and one column of padding on each side.
+  return Math.max(1, pane - 4);
 }
 
 /** The section the object pane shows, if any. */
@@ -489,7 +509,11 @@ function withSection(
 }
 
 function bottomScroll(state: TuiState, section: TuiSection): number {
-  return Math.max(0, markdownLineCount(section.markdown) - sectionViewport(state));
+  return Math.max(
+    0,
+    markdownLineCount(section.markdown, sectionWidth(state)) -
+      sectionViewport(state),
+  );
 }
 
 /** Asks for a section's first page or its next one, once. */
@@ -695,6 +719,10 @@ function applySection(
       ? content.markdown
       : joinMarkdown(section.markdown, content.markdown);
   const capped = !full && /\[Truncated\./.test(markdown);
+  const bottom = Math.max(
+    0,
+    markdownLineCount(markdown, sectionWidth(state)) - sectionViewport(state),
+  );
   const updated = withSection(state, sectionId, (value) => {
     const next: TuiSection = {
       ...value,
@@ -710,9 +738,7 @@ function applySection(
     const following = next.following;
     return {
       ...next,
-      scroll: following
-        ? Math.max(0, markdownLineCount(markdown) - sectionViewport(state))
-        : Math.min(value.scroll, Math.max(0, markdownLineCount(markdown) - sectionViewport(state))),
+      scroll: following ? bottom : Math.min(value.scroll, bottom),
     };
   });
   return {
