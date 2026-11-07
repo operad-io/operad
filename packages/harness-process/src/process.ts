@@ -41,6 +41,12 @@ export { DRAIN_GRACE_MS, KILL_GRACE_MS, lastLines, systemClock, type Clock } fro
  * with the JSONL on stdout or the control lines. A reader that does not know a
  * line ignores it.
  *
+ * The sentinel watches the process that started it (`$2`), from a helper that
+ * runs beside the harness: if the host is killed before it can stop the group,
+ * the helper kills the whole group, harness included, instead of leaving both
+ * running for a host that is gone. The check cannot wait for the harness to
+ * end, because the harness may be the thing that never does.
+ *
  * The file replaces a fourth pipe. Bun closes an extra pipe (stdio index 3 and
  * up) of a child process twice, once when its stream ends and once when the
  * child object is collected; by then a SQLite database may own the number, and
@@ -48,13 +54,16 @@ export { DRAIN_GRACE_MS, KILL_GRACE_MS, lastLines, systemClock, type Clock } fro
  */
 const SENTINEL = [
   "trap ':' TERM",
+  'parent=$2',
+  // The helper's output goes nowhere, so it never holds the control pipe open.
+  '( while kill -0 "$parent" 2>/dev/null; do sleep 1; done; kill -KILL -- "-$$" ) >/dev/null 2>&1 &',
   "printf 'ready\\n' >&2",
   'err=$1',
-  "shift",
+  "shift 2",
   '"$@" 2>"$err"',
   "status=$?",
   "printf 'end %s\\n' \"$status\" >&2",
-  "while :; do sleep 1; done",
+  'while kill -0 "$parent" 2>/dev/null; do sleep 1 2>/dev/null; done',
 ].join("\n");
 
 /**
@@ -308,6 +317,7 @@ export async function runAgent(
         SENTINEL,
         "operad-harness",
         errorPath,
+        String(process.pid),
         executablePath,
         ...options.args,
       ],
@@ -432,12 +442,12 @@ export async function runAgent(
     readonly exit: Exit;
   }> => {
     const drainedOutput = Promise.all(drained).then(() => undefined);
-    let drainTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
+    let drainTimer: unknown;
     const drainLimit = new Promise<void>((resolve) => {
-      drainTimer = globalThis.setTimeout(resolve, DRAIN_GRACE_MS);
+      drainTimer = clock.setTimeout(resolve, DRAIN_GRACE_MS);
     });
     await Promise.race([drainedOutput, drainLimit]);
-    if (drainTimer !== undefined) globalThis.clearTimeout(drainTimer);
+    if (drainTimer !== undefined) clock.clearTimeout(drainTimer);
     if (stdout !== null) stdout.destroy();
     control?.destroy();
     await drainedOutput;
@@ -497,8 +507,16 @@ export async function runAgent(
   if (ended.kind === "closed") exit = await exited;
   else exit = ended.exit;
 
-  // Stop the group the command left behind: the sentinel and any forked child.
-  await stop();
+  // Stop the group the command left behind: the sentinel and any forked
+  // child. A command that reported its own status has already ended, so there
+  // is nothing left to give SIGTERM time for; waiting the grace made every
+  // finished run pay 500 ms. A cancellation or limit still takes the TERM path.
+  if (ended.kind === "end" && stoppingFor === undefined) {
+    const pid = child.pid;
+    if (pid !== undefined) (options.killGroup ?? killProcessGroup)(pid, "SIGKILL");
+  } else {
+    await stop();
+  }
   await Promise.race([exited, failed]);
   const { tail } = await finish();
 
