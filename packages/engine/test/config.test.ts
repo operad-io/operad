@@ -198,6 +198,26 @@ describe("operad config", () => {
     }
   });
 
+  test("reads ask.graceSecs and rejects a malformed ask section", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    await Bun.write(join(home, "config.json"), JSON.stringify({ ask: { graceSecs: 90 } }));
+    expect((await readConfig(home)).ask).toEqual({ graceSecs: 90 });
+    await Bun.write(join(home, "config.json"), JSON.stringify({ ask: {} }));
+    expect((await readConfig(home)).ask).toEqual({ graceSecs: 600 });
+    await Bun.write(join(home, "config.json"), JSON.stringify({ ask: { graceSecs: 0 } }));
+    expect((await readConfig(home)).ask).toEqual({ graceSecs: 0 });
+    for (const [ask, pattern] of [
+      [{ graceSecs: -1 }, /ask.graceSecs/],
+      [{ graceSecs: "10" }, /ask.graceSecs/],
+      [{ graceSecs: null }, /ask.graceSecs/],
+      ["10", /ask: must be an object/],
+    ] as const) {
+      await Bun.write(join(home, "config.json"), JSON.stringify({ ask }));
+      await expect(readConfig(home)).rejects.toThrow(pattern);
+    }
+  });
+
   test("a written config keeps the notify command", async () => {
     const root = await tempRoot();
     const home = join(root, "home");

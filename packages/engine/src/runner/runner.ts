@@ -83,7 +83,7 @@ function isStepWorkerAsk(value: unknown): value is StepWorkerAsk {
  * A step's wall time. It stops while a question to a person is open: the
  * person's time is not the step's.
  */
-class StepTimeout {
+export class StepTimeout {
   private handle: ReturnType<typeof setTimeout> | undefined;
   private remaining: number;
   private startedAt = 0;
