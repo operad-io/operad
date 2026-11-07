@@ -791,3 +791,16 @@ each task: `TK0001-M1`.
 | TK0008-M15 | `packages/engine/src/runner/runner.ts` | `WORKER_ABORT_GRACE_MS` back to 1000 ms, not above two process-group graces | `runner > an aborted worker gets longer than the slowest process-group stop` |
 | TK0008-M16 | `packages/dev/src/steps.ts` | a worker model error went to a person instead of waiting | `dev/work > unavailable: a model error waits for the model instead of a person` |
 | TK0008-M17 | `packages/dev/src/steps.ts` | removed the bound on work waits | `dev/work > unavailable: after the allowed waits the failure goes to a person` |
+
+## T-0030 — the TUI shell
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0030-M1 | packages/tui/src/state.ts | a cursor move near the end never asked for the next page | `the TUI reducer > moving past the end asks for the next page once and appends it once` |
+| T-0030-M2 | packages/tui/src/state.ts | the two-pane threshold became `>` instead of `>=`, so 100 columns stayed one pane | `the TUI reducer > resize crosses 100 columns and carries the theme` |
+| T-0030-M3 | packages/tui/src/state.ts | a Pending row lost its waiting flag | `the TUI reducer > each list maps its own flags to a row mark` |
+| T-0030-M4 | packages/tui/src/state.ts | an appended page kept `loading` true | `the TUI reducer > moving past the end asks for the next page once and appends it once` |
+| T-0030-M5 | packages/tui/src/view/index.ts | the waiting marker used the weak gray instead of the accent | `the TUI view > two panes show the header, a waiting marker and the footer` |
+| T-0030-M6 | packages/tui/src/view/index.ts | the view always drew both panes, ignoring the width | `the TUI view > below 100 columns the right pane is gone` |
+| T-0030-M7 | packages/cli/src/main.ts | `tui --url` dropped the URL instead of handing it to the app | `operad tui > passes the url and token to the terminal app` |
+| T-0030-M8 | packages/cli/src/main.ts | `tui` no longer refused a non-terminal without a runner | `operad tui > needs a terminal unless a runner is injected` |

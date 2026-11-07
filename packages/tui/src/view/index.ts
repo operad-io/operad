@@ -1,0 +1,285 @@
+/**
+ * The OpenTUI view: it turns one `TuiState` into boxes and styled text. It owns
+ * no state, reads no clock and calls no client; every change arrives through
+ * `render(state)`.
+ */
+
+import {
+  BoxRenderable,
+  RGBA,
+  StyledText,
+  TextAttributes,
+  TextRenderable,
+  type CliRenderer,
+  type TextChunk,
+} from "@opentui/core";
+import {
+  KEY_LIST,
+  activeTab,
+  footerText,
+  rowMark,
+  tabLabel,
+  twoPane,
+  type TuiRow,
+  type TuiState,
+  type TuiTab,
+  type TuiTheme,
+} from "../state.ts";
+
+/** The colours of one theme. The accent values are the app's design tokens. */
+export interface TuiPalette {
+  readonly accent: string;
+  readonly run: string;
+  readonly error: string;
+  readonly weak: string;
+  readonly text: string;
+}
+
+/** Light and dark palettes; the accent, the run blue and the error red differ. */
+export const TUI_PALETTE: Readonly<Record<TuiTheme, TuiPalette>> = {
+  light: {
+    accent: "#5b3fd0",
+    run: "#1f6feb",
+    error: "#c62828",
+    weak: "#6b7280",
+    text: "#1f2937",
+  },
+  dark: {
+    accent: "#a793ff",
+    run: "#4f8cff",
+    error: "#ff6b6b",
+    weak: "#8b8b8b",
+    text: "#e6e6e6",
+  },
+};
+
+/** The palette a state's theme names. */
+export function paletteFor(theme: TuiTheme): TuiPalette {
+  return TUI_PALETTE[theme];
+}
+
+function chunk(
+  text: string,
+  color?: string,
+  attributes?: number,
+): TextChunk {
+  return {
+    __isChunk: true,
+    text,
+    ...(color === undefined ? {} : { fg: RGBA.fromHex(color) }),
+    ...(attributes === undefined ? {} : { attributes }),
+  };
+}
+
+function styled(chunks: readonly TextChunk[]): StyledText {
+  return new StyledText([...chunks]);
+}
+
+function headerContent(state: TuiState, palette: TuiPalette): StyledText {
+  const pending = state.tabs.find((tab) => tab.kind === "pending");
+  const running = state.tabs.find((tab) => tab.kind === "running");
+  const types = state.tabs.filter((tab) => tab.kind === "type");
+  return styled([
+    chunk("operad", palette.accent, TextAttributes.BOLD),
+    chunk(" ─ Pending ", palette.weak),
+    chunk(String(pending?.list.rows.length ?? 0)),
+    chunk(" · Running ", palette.weak),
+    chunk(String(running?.list.rows.length ?? 0)),
+    ...types.flatMap((tab) => [
+      chunk(" · ", palette.weak),
+      chunk(tab.title),
+    ]),
+  ]);
+}
+
+function tabsContent(state: TuiState, palette: TuiPalette): StyledText {
+  const chunks: TextChunk[] = [];
+  state.tabs.forEach((tab, index) => {
+    if (index > 0) chunks.push(chunk("   "));
+    const active = index === state.active;
+    chunks.push(
+      chunk(
+        `${index + 1} ${tabLabel(tab)}`,
+        active ? palette.accent : palette.weak,
+        active ? TextAttributes.BOLD : TextAttributes.NONE,
+      ),
+    );
+  });
+  return styled(chunks);
+}
+
+function marker(row: TuiRow, palette: TuiPalette): TextChunk {
+  const mark = rowMark(row);
+  if (mark === "waiting") {
+    return chunk("●", palette.accent, TextAttributes.BOLD);
+  }
+  if (mark === "running") {
+    return chunk("●", palette.run, TextAttributes.BOLD);
+  }
+  return chunk(" ");
+}
+
+function rowLine(
+  row: TuiRow,
+  selected: boolean,
+  palette: TuiPalette,
+): TextChunk[] {
+  const note = row.note === undefined ? "" : ` · ${row.note}`;
+  return [
+    chunk(selected ? "›" : " ", selected ? palette.accent : undefined),
+    chunk(" "),
+    marker(row, palette),
+    chunk(" "),
+    chunk(row.id),
+    chunk("  "),
+    chunk(row.title),
+    chunk("  "),
+    chunk(`${row.state}${note}`, palette.weak),
+    ...(row.error === undefined
+      ? []
+      : [chunk(`\n    ${row.error}`, palette.error)]),
+    chunk("\n"),
+  ];
+}
+
+function listContent(tab: TuiTab | undefined, palette: TuiPalette): StyledText {
+  if (tab === undefined) return styled([chunk("no tabs", palette.weak)]);
+  if (tab.list.rows.length === 0) {
+    const message = tab.list.loaded
+      ? `nothing in ${tab.title.toLowerCase()}`
+      : "loading…";
+    return styled([chunk(message, palette.weak)]);
+  }
+  const chunks: TextChunk[] = [];
+  tab.list.rows.forEach((row, index) => {
+    chunks.push(...rowLine(row, index === tab.list.cursor, palette));
+  });
+  if (tab.list.loading) chunks.push(chunk("loading more…", palette.weak));
+  if (tab.list.error !== undefined) {
+    chunks.push(chunk(`\n${tab.list.error}`, palette.error));
+  }
+  return styled(chunks);
+}
+
+function keyContent(palette: TuiPalette): StyledText {
+  const chunks: TextChunk[] = [chunk("keys\n", palette.accent, TextAttributes.BOLD)];
+  for (const [key, what] of KEY_LIST) {
+    chunks.push(chunk(`  ${key}`, palette.accent));
+    chunks.push(chunk(`  ${what}\n`, palette.weak));
+  }
+  return styled(chunks);
+}
+
+/** What the view exposes to the app. */
+export interface TuiView {
+  render(state: TuiState): void;
+  destroy(): void;
+}
+
+/** Builds the render tree once and updates it on every state. */
+export function createTuiView(ctx: CliRenderer): TuiView {
+  const root = new BoxRenderable(ctx, {
+    id: "operad-tui",
+    width: "100%",
+    height: "100%",
+    flexDirection: "column",
+  });
+  ctx.root.add(root);
+
+  const header = new TextRenderable(ctx, {
+    id: "operad-header",
+    height: 1,
+    flexShrink: 0,
+    wrapMode: "none",
+    truncate: true,
+  });
+  const tabs = new TextRenderable(ctx, {
+    id: "operad-tabs",
+    height: 1,
+    flexShrink: 0,
+    wrapMode: "none",
+    truncate: true,
+  });
+  const body = new BoxRenderable(ctx, {
+    id: "operad-body",
+    width: "100%",
+    flexGrow: 1,
+    flexDirection: "row",
+  });
+  const listPane = new BoxRenderable(ctx, {
+    id: "operad-list-pane",
+    height: "100%",
+    width: "40%",
+    paddingX: 1,
+  });
+  const list = new TextRenderable(ctx, {
+    id: "operad-list",
+    width: "100%",
+    height: "100%",
+    wrapMode: "none",
+    truncate: true,
+  });
+  const rightPane = new BoxRenderable(ctx, {
+    id: "operad-right-pane",
+    height: "100%",
+    flexGrow: 1,
+    padding: 1,
+    border: true,
+    borderStyle: "rounded",
+    borderColor: TUI_PALETTE.dark.weak,
+  });
+  const right = new TextRenderable(ctx, {
+    id: "operad-right",
+    width: "100%",
+    height: "100%",
+    wrapMode: "word",
+  });
+  const footer = new TextRenderable(ctx, {
+    id: "operad-footer",
+    height: 1,
+    flexShrink: 0,
+    wrapMode: "none",
+    truncate: true,
+  });
+
+  listPane.add(list);
+  rightPane.add(right);
+  body.add(listPane);
+  body.add(rightPane);
+  root.add(header);
+  root.add(tabs);
+  root.add(body);
+  root.add(footer);
+
+  return {
+    render(state: TuiState): void {
+      const palette = paletteFor(state.theme);
+      const tab = activeTab(state);
+      const wide = twoPane(state);
+
+      header.content = headerContent(state, palette);
+      tabs.content = tabsContent(state, palette);
+      footer.content = styled([chunk(footerText(state), palette.weak)]);
+
+      listPane.width = wide ? "40%" : "100%";
+      rightPane.visible = wide;
+      rightPane.borderColor = palette.weak;
+
+      const keys = state.keys;
+      if (keys && !wide) {
+        list.content = keyContent(palette);
+      } else {
+        list.content = listContent(tab, palette);
+      }
+
+      right.content = keys
+        ? keyContent(palette)
+        : styled([chunk("select an object", palette.weak)]);
+
+      root.requestRender();
+    },
+    destroy(): void {
+      root.destroyRecursively();
+    },
+  };
+}
