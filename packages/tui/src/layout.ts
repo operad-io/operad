@@ -136,6 +136,7 @@ export function layoutMarkdown(
 
 interface Entry {
   readonly version: number;
+  readonly markdown: string;
   readonly width: number;
   readonly lines: readonly LayoutLine[];
 }
@@ -157,13 +158,20 @@ export function cachedLayout(
   width: number,
 ): readonly LayoutLine[] {
   const entry = cache.get(key);
-  if (entry !== undefined && entry.version === version && entry.width === width) {
+  // The text itself is compared too: the same string is one pointer check, and
+  // two states that happen to share a key and a version cannot share rows.
+  if (
+    entry !== undefined &&
+    entry.version === version &&
+    entry.width === width &&
+    entry.markdown === markdown
+  ) {
     return entry.lines;
   }
   layoutStats.computed += 1;
   const lines = layoutMarkdown(markdown, width);
   cache.delete(key);
-  cache.set(key, { version, width, lines });
+  cache.set(key, { version, markdown, width, lines });
   if (cache.size > CACHE_LIMIT) {
     const oldest = cache.keys().next().value;
     if (oldest !== undefined) cache.delete(oldest);
