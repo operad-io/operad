@@ -1096,7 +1096,7 @@ export class Views {
   private factsFor(cause: string): FactWriter {
     return {
       append: (input) =>
-        this.store.append(input.cause === undefined ? { ...input, cause } : input),
+        this.store.append({ ...input, cause: input.cause ?? cause }),
     };
   }
 

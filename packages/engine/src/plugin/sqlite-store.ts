@@ -13,7 +13,7 @@ import {
   whereFingerprint,
 } from "./paging.ts";
 import type {
-  FactInput,
+  StoreFactInput,
   FactsOptions,
   FactsPage,
   ListOptions,
@@ -349,12 +349,9 @@ export class SqlitePluginStore implements PluginStore {
     };
   }
 
-  append(input: FactInput): PluginFact {
+  append(input: StoreFactInput): PluginFact {
     requireName(input.type, "fact type");
     const cause = input.cause;
-    if (cause === undefined) {
-      throw new Error("cause: must be a non-empty string");
-    }
     requireName(cause, "cause");
     const at = this.clock();
     const result = this.db

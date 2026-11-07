@@ -239,6 +239,11 @@ export interface FactWriter {
   append(input: FactInput): MaybePromise<PluginFact>;
 }
 
+/** A fact as a store takes it: the cause is always known by then. */
+export interface StoreFactInput extends FactInput {
+  readonly cause: string;
+}
+
 /** How a worker reopens the store its run uses. */
 export interface PluginStoreLocation {
   readonly backend: "jsonl" | "sqlite";
@@ -248,7 +253,10 @@ export interface PluginStoreLocation {
 }
 
 /** The store a plugin sees: objects plus its own facts. */
-export interface PluginStore extends ObjectStore, FactWriter {
+export interface PluginStore extends ObjectStore {
+  /** Appends a fact; the caller names its cause (the kernel fills it for plugins). */
+  append(input: StoreFactInput): MaybePromise<PluginFact>;
+
   /**
    * `file` stores live under one directory and a worker step sees the same
    * data; `memory` stores exist only in this process.
