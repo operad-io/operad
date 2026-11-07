@@ -62,8 +62,21 @@ export type WorkerLine =
       readonly isError: boolean;
     }
   | { readonly type: "blocked"; readonly toolName: string; readonly reason: string }
+  /**
+   * The program asks to use up a one-time permission before it lets a call
+   * through. The host writes the fact and answers on stdin with a
+   * `GrantAck` line; only `used: true` lets the call run.
+   */
+  | { readonly type: "grant_use"; readonly id: number; readonly waitId: string }
   | { readonly type: "agent_settled"; readonly aborted: boolean }
   | WorkerResult;
+
+/** A stdin line after the input: the host's answer to a `grant_use` line. */
+export interface GrantAck {
+  readonly type: "grant_ack";
+  readonly id: number;
+  readonly used: boolean;
+}
 
 export type ParsedInput =
   | { readonly ok: true; readonly input: WorkerInput }

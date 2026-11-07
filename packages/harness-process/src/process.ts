@@ -112,6 +112,12 @@ export interface AgentRunOptions {
   readonly cwd: string;
   /** The prompt written to stdin; the command reads it with `-p -`. */
   readonly stdin?: string | undefined;
+  /**
+   * Keeps stdin open after the prompt, which then ends with a newline, so
+   * `onLine` can answer with `reply`. The child's end of the pipe closes when
+   * it exits.
+   */
+  readonly interactive?: boolean | undefined;
   readonly wallMs: number;
   readonly stallMs: number;
   readonly signal: AbortSignal;
@@ -120,7 +126,10 @@ export interface AgentRunOptions {
    * Receives each complete stdout line, in order. Reading waits for the answer:
    * a handler that is still busy writes before the next line is taken.
    */
-  readonly onLine: (line: string) => void | Promise<void>;
+  readonly onLine: (
+    line: string,
+    reply: (text: string) => void,
+  ) => void | Promise<void>;
   /**
    * Classifies one complete stdout line. A line that starts a tool call pauses
    * the stall timer until a line that ends it arrives; the wall limit still
@@ -287,6 +296,11 @@ export async function runAgent(
   const clock = options.clock ?? systemClock;
   let resetStallForLine: () => void = () => {};
   let onLineOverflow: () => void = () => {};
+  const reply = (text: string): void => {
+    const pipe = child.stdin;
+    if (options.interactive !== true || pipe === null || pipe.destroyed) return;
+    pipe.write(`${text}\n`);
+  };
   let toolCalls = 0;
   let onToolActivity: (activity: ToolEvent) => void = () => {};
   const stdoutLines = new Lines(
@@ -294,7 +308,7 @@ export async function runAgent(
       const activity = options.toolEvent?.(line);
       if (activity !== undefined) onToolActivity(activity);
       resetStallForLine();
-      return options.onLine(line);
+      return options.onLine(line, reply);
     },
     () => onLineOverflow(),
   );
@@ -363,7 +377,9 @@ export async function runAgent(
   const stdin = child.stdin;
   if (stdin !== null) {
     stdin.on("error", () => undefined);
-    if (options.stdin === undefined) stdin.end();
+    if (options.interactive === true) {
+      stdin.write(`${options.stdin ?? ""}\n`);
+    } else if (options.stdin === undefined) stdin.end();
     else stdin.end(options.stdin);
   }
 

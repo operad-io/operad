@@ -107,6 +107,7 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
         check: payload.check,
         due: payload.due,
         replay: payload.replay,
+        ...(payload.grants === undefined ? {} : { grants: payload.grants }),
       };
       const recoveries = payload.recovery
         ? {
@@ -175,6 +176,7 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
         choices: payload.choices,
         kind: payload.waitKind,
         effectId: payload.effectId,
+        ...(payload.ask === undefined ? {} : { ask: payload.ask }),
       };
       return {
         ...state,

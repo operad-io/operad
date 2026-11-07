@@ -6,9 +6,18 @@ import { homedir } from "node:os";
 import { posix } from "node:path";
 import { findDenied, inlineFormOf, parseRule, scan, type Rule } from "./command.ts";
 
+/** A one-time permission for the exact call a person was asked about. */
+export interface AccessGrant {
+  readonly waitId: string;
+  readonly kind: "command" | "path";
+  readonly value: string;
+}
+
 export interface AccessProfile {
   readonly denyPaths?: readonly string[] | undefined;
   readonly denyCommands?: readonly string[] | undefined;
+  /** Permissions not yet used; the caller uses one up before it lets a call through. */
+  readonly grants?: readonly AccessGrant[] | undefined;
 }
 
 export interface ToolCall {
@@ -33,7 +42,7 @@ export function readProfile(value: unknown): ProfileRead {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return { ok: false, message: "the access profile must be an object" };
   }
-  const found: { denyPaths?: string[]; denyCommands?: string[] } = {};
+  const found: { denyPaths?: string[]; denyCommands?: string[]; grants?: AccessGrant[] } = {};
   for (const field of ["denyPaths", "denyCommands"] as const) {
     const entry: unknown = Reflect.get(value, field);
     if (entry === undefined) continue;
@@ -41,6 +50,28 @@ export function readProfile(value: unknown): ProfileRead {
       return { ok: false, message: `${field} must be an array of strings` };
     }
     found[field] = entry;
+  }
+  const grants: unknown = Reflect.get(value, "grants");
+  if (grants !== undefined) {
+    if (!Array.isArray(grants)) return { ok: false, message: "grants must be an array" };
+    const read: AccessGrant[] = [];
+    for (const grant of grants) {
+      if (typeof grant !== "object" || grant === null) {
+        return { ok: false, message: "each grant must be an object" };
+      }
+      const waitId: unknown = Reflect.get(grant, "waitId");
+      const kind: unknown = Reflect.get(grant, "kind");
+      const text: unknown = Reflect.get(grant, "value");
+      if (
+        typeof waitId !== "string" ||
+        (kind !== "command" && kind !== "path") ||
+        typeof text !== "string"
+      ) {
+        return { ok: false, message: "each grant needs a waitId, a kind (command or path) and a value" };
+      }
+      read.push({ waitId, kind, value: text });
+    }
+    found.grants = read;
   }
   return { ok: true, profile: found };
 }
@@ -148,4 +179,30 @@ export function match(profile: AccessProfile, call: ToolCall, options: MatchOpti
     if (typeof path === "string" && path.length > 0) return checkPath(denied, path);
   }
   return ALLOW;
+}
+
+/**
+ * The unused grant that covers this exact call, if any. A command grant covers
+ * a bash call whose command equals the value character for character; a path
+ * grant covers a path tool call whose path names the same file. The caller must
+ * use the grant up before it lets the call run, and match as usual afterwards.
+ */
+export function findGrant(profile: AccessProfile, call: ToolCall, options: MatchOptions = {}): AccessGrant | undefined {
+  const home = options.home ?? homedir();
+  for (const grant of profile.grants ?? []) {
+    if (grant.kind === "command") {
+      if (call.tool === "bash" && call.input["command"] === grant.value) return grant;
+      continue;
+    }
+    if (!PATH_TOOLS.has(call.tool)) continue;
+    const path: unknown = call.input["path"] ?? call.input["file_path"];
+    if (
+      typeof path === "string" &&
+      path.length > 0 &&
+      normalise(path, call.cwd, home) === normalise(grant.value, call.cwd, home)
+    ) {
+      return grant;
+    }
+  }
+  return undefined;
 }

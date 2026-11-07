@@ -22,6 +22,7 @@ import {
 import {
   CONCURRENCY_SETTING,
   eventNote,
+  askNote,
   flagValue,
   JsonlLog,
   modelLimit,
@@ -377,6 +378,29 @@ function resultFor(
   };
 }
 
+function hasGrants(access: unknown): boolean {
+  return isRecord(access) && Array.isArray(access.grants) && access.grants.length > 0;
+}
+
+/** The `grant_use` line the program writes before a granted call, if this is one. */
+function grantUse(line: string): { id: number; waitId: string } | undefined {
+  if (!line.includes('"grant_use"')) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(line);
+    if (
+      isRecord(parsed) &&
+      parsed.type === "grant_use" &&
+      typeof parsed.id === "number" &&
+      typeof parsed.waitId === "string"
+    ) {
+      return { id: parsed.id, waitId: parsed.waitId };
+    }
+  } catch {
+    // Not JSON: an ordinary line.
+  }
+  return undefined;
+}
+
 /**
  * Creates the pi harness plugin. Its worker is `worker.ts` under the running
  * Bun; a test replaces the program with a fake that prints fixed lines.
@@ -411,6 +435,8 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     steps: [
       {
         name: "agent",
+        // A question's answer comes back as `resumeSession` and `askAnswer`.
+        resumable: true,
         results: ["done", "failed", "interrupted"],
         // The deny fields are applied in the worker's tool_call hook.
         enforces: ["denyPaths", "denyCommands"],
@@ -430,7 +456,10 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
 
           const prompt = text(input.prompt ?? flow.prompt, `${at}: params.prompt`);
           const note = eventNote(ctx.trigger);
-          const promptWithNote = note === undefined ? prompt : `${prompt}\n\n${note}`;
+          const answerNote = askNote(input.askAnswer ?? flow.askAnswer);
+          const promptWithNote = [prompt, note, answerNote]
+            .filter((part): part is string => part !== undefined)
+            .join("\n\n");
           const cwd = text(input.cwd ?? flow.cwd, `${at}: params.cwd`);
           const flags = parseStepFlags(
             stringList(input.args === undefined ? flow.args : input.args, `${at}: params.args`),
@@ -462,7 +491,10 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
               },
             };
           }
-          const resumeSession = optionalText(input.resumeSession, `${at}: params.resumeSession`);
+          const resumeSession = optionalText(
+            input.resumeSession ?? flow.resumeSession,
+            `${at}: params.resumeSession`,
+          );
           const wallTimeSecs = secs(
             input.wallTimeSecs ?? ctx.settings.wallTimeSecs ?? DEFAULT_WALL_TIME_SECS,
             `${at}: params.wallTimeSecs`,
@@ -532,12 +564,24 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             args: commandArgs,
             cwd,
             stdin: JSON.stringify(stdin),
+            // The program may ask to use a one-time permission; it needs a reply.
+            interactive: hasGrants(ctx.access),
             wallMs: wallTimeSecs * 1000,
             stallMs: stallSecs * 1000,
             signal: ctx.signal,
             clock,
             toolEvent: piToolEvent,
-            onLine(line) {
+            async onLine(line, reply) {
+              const use = grantUse(line);
+              if (use !== undefined) {
+                let used = false;
+                try {
+                  used = await ctx.useGrant(use.waitId);
+                } catch {
+                  used = false;
+                }
+                reply(JSON.stringify({ type: "grant_ack", id: use.id, used }));
+              }
               const writing = jsonl.push(line);
               const parsed = parseResult(line);
               if (parsed !== undefined) result = parsed;

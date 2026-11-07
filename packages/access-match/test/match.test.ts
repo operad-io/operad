@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { match, readProfile, type AccessProfile } from "../src/index.ts";
+import { findGrant, match, readProfile, type AccessProfile } from "../src/index.ts";
 
 const HOME = "/home/u";
 const CWD = "/work/project";
@@ -215,4 +215,50 @@ test("readProfile names the field at fault and keeps only what the matcher reads
   expect(readProfile({ denyCommands: "sudo" })).toEqual({ ok: false, message: "denyCommands must be an array of strings" });
   expect(readProfile({ denyPaths: [1] })).toEqual({ ok: false, message: "denyPaths must be an array of strings" });
   expect(readProfile([])).toEqual({ ok: false, message: "the access profile must be an object" });
+});
+
+// -- grants ------------------------------------------------------------------
+
+const GRANTS: AccessProfile = {
+  denyCommands: ["rm"],
+  grants: [
+    { waitId: "w1", kind: "command", value: "rm -rf build" },
+    { waitId: "w2", kind: "path", value: "/etc/secret" },
+  ],
+};
+
+function call(tool: string, input: Record<string, unknown>) {
+  return { tool, input, cwd: CWD };
+}
+
+test("a grant covers the call that equals its value exactly", () => {
+  expect(findGrant(GRANTS, call("bash", { command: "rm -rf build" }))?.waitId).toBe("w1");
+  expect(findGrant(GRANTS, call("bash", { command: "rm -rf build " }))).toBeUndefined();
+  expect(findGrant(GRANTS, call("bash", { command: "rm -rf build && ls" }))).toBeUndefined();
+  expect(findGrant(GRANTS, call("bash", { command: "rm -rf other" }))).toBeUndefined();
+  // A command grant does not cover a path call, nor a path grant a command.
+  expect(findGrant(GRANTS, call("read", { path: "rm -rf build" }))).toBeUndefined();
+  expect(findGrant(GRANTS, call("bash", { command: "/etc/secret" }))).toBeUndefined();
+});
+
+test("a path grant covers the same file under any spelling, and only that file", () => {
+  expect(findGrant(GRANTS, call("read", { path: "/etc/secret" }))?.waitId).toBe("w2");
+  expect(findGrant(GRANTS, call("edit", { file_path: "/etc/../etc/secret" }))?.waitId).toBe("w2");
+  expect(findGrant(GRANTS, call("read", { path: "/etc/secret2" }))).toBeUndefined();
+  expect(findGrant(GRANTS, call("read", { path: "/etc/secret/inner" }))).toBeUndefined();
+});
+
+test("a grant does not change what match says; the caller uses it up", () => {
+  expect(match(GRANTS, call("bash", { command: "rm -rf build" }), { home: HOME }).allow).toBe(false);
+  expect(findGrant({ denyCommands: ["rm"] }, call("bash", { command: "rm -rf build" }))).toBeUndefined();
+});
+
+test("readProfile reads grants and refuses a malformed one", () => {
+  expect(readProfile({ grants: [{ waitId: "a", kind: "path", value: "/x" }] })).toEqual({
+    ok: true,
+    profile: { grants: [{ waitId: "a", kind: "path", value: "/x" }] },
+  });
+  for (const bad of [{ grants: "x" }, { grants: [1] }, { grants: [{ waitId: "a", kind: "url", value: "x" }] }]) {
+    expect(readProfile(bad).ok).toBe(false);
+  }
 });

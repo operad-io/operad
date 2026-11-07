@@ -223,3 +223,58 @@ describe("the harness process", () => {
     }
   });
 });
+
+describe("runAgent with an interactive stdin", () => {
+  const script = [
+    "const reader = Bun.stdin.stream().getReader();",
+    "let text = '';",
+    "const next = async () => { for (;;) { const i = text.indexOf('\\n'); if (i !== -1) { const l = text.slice(0, i); text = text.slice(i + 1); return l; } const c = await reader.read(); if (c.done) { const rest = text; text = ''; return rest.length > 0 ? rest : null; } text += new TextDecoder().decode(c.value); } };",
+    "const first = await next();",
+    "console.log(JSON.stringify({ first }));",
+    "const answer = await next();",
+    "console.log(JSON.stringify({ answer }));",
+    "process.exit(0);",
+  ].join("\n");
+
+  test("a line can be answered while stdin stays open", async () => {
+    const lines: string[] = [];
+    const outcome = await runAgent({
+      command: process.execPath,
+      args: ["-e", script],
+      cwd: process.cwd(),
+      stdin: "the prompt",
+      interactive: true,
+      wallMs: 30_000,
+      stallMs: 30_000,
+      signal: new AbortController().signal,
+      onLine(line, reply) {
+        lines.push(line);
+        if (line.includes('"first"')) reply("the reply");
+      },
+    });
+    expect(outcome.exitCode).toBe(0);
+    expect(lines.map((line) => JSON.parse(line))).toEqual([
+      { first: "the prompt" },
+      { answer: "the reply" },
+    ]);
+  });
+
+  test("without interactive, stdin ends after the prompt and a reply is dropped", async () => {
+    const lines: string[] = [];
+    const outcome = await runAgent({
+      command: process.execPath,
+      args: ["-e", script],
+      cwd: process.cwd(),
+      stdin: "the prompt",
+      wallMs: 30_000,
+      stallMs: 30_000,
+      signal: new AbortController().signal,
+      onLine(line, reply) {
+        lines.push(line);
+        reply("ignored");
+      },
+    });
+    expect(outcome.exitCode).toBe(0);
+    expect(lines.map((line) => JSON.parse(line))).toEqual([{ first: "the prompt" }, { answer: null }]);
+  });
+});

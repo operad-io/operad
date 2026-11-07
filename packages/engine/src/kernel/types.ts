@@ -19,6 +19,7 @@ export type FactKind =
   | "ask_answered"
   | "ask_timed_out"
   | "ask_refused"
+  | "grant_used"
   | "run_ended"
   | "step_interrupted"
   | "crash_loop_stopped"
@@ -149,6 +150,25 @@ export type RunStatus = "idle" | "running" | "waiting" | "waiting_person" | "end
 
 export type EffectStatus = "outstanding" | "done" | "abandoned";
 
+/**
+ * A one-time permission an answer to a question gives: the exact command or
+ * path the question was about. It lives in the effect that continues the step,
+ * never in the run's own access profile.
+ */
+export interface Grant {
+  readonly waitId: string;
+  readonly kind: "command" | "path";
+  readonly value: string;
+}
+
+/** What a flow wait took over from a step that asked and ran out of grace. */
+export interface AskedWait {
+  /** The step that asked; the answer sends the run back to it. */
+  readonly step: string;
+  /** What the step left to carry on with: a session and the call asked about. */
+  readonly resume: JsonValue;
+}
+
 export interface PendingEffect {
   readonly id: string;
   readonly kind: PendingEffectKind;
@@ -158,6 +178,8 @@ export interface PendingEffect {
   readonly check: string | null;
   readonly due: number | null;
   readonly replay: Replay;
+  /** Permissions for this run of the step only, from an answered question. */
+  readonly grants?: readonly Grant[] | undefined;
 }
 
 export interface PendingWait {
@@ -167,6 +189,7 @@ export interface PendingWait {
   readonly choices: readonly string[];
   readonly kind: WaitKind;
   readonly effectId: string | null;
+  readonly ask?: AskedWait | undefined;
 }
 
 export interface StepResultValue {
@@ -255,6 +278,7 @@ export interface EffectRequestedPayload {
   readonly params: JsonValue;
   readonly check: string | null;
   readonly due: number | null;
+  readonly grants?: readonly Grant[];
 }
 
 export interface StepResultPayload {
@@ -277,6 +301,7 @@ export interface WaitingForPersonPayload {
   readonly choices: string[];
   readonly waitKind: WaitKind;
   readonly effectId: string | null;
+  readonly ask?: AskedWait;
 }
 
 export interface PersonAnsweredPayload {

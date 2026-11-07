@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
-import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import {
   MemoryPluginStore,
@@ -229,6 +229,42 @@ describe("harness-radian/agent", () => {
     };
     expect(record.argv).toContain("--resume");
     expect(record.argv[record.argv.indexOf("--resume") + 1]).toBe("session-7");
+  });
+
+  test("a step that continues after a question passes the session and adds the paragraph", async () => {
+    const env = await setup("done");
+    const result = await runAgent(env, {
+      prompt: "hello",
+      cwd: env.root,
+      resumeSession: "session-7",
+      askAnswer: { prompt: "Run it?", choice: "yes" },
+    });
+    expect(result.result).toBe("done");
+    const record = JSON.parse(readFileSync(env.record, "utf8")) as {
+      readonly argv: readonly string[];
+    };
+    expect(record.argv[record.argv.indexOf("--resume") + 1]).toBe("session-7");
+    expect(record.argv[record.argv.indexOf("-p") + 1]).toBe(
+      "hello\n\nYou asked: Run it?. The answer is: yes. Continue.",
+    );
+    const type = env.registry.stepTypes().find((item) => item.name === "harness-radian/agent");
+    expect(type?.resumable).toBe(true);
+  });
+
+  test("a one-time permission is refused before radian runs, naming radian", async () => {
+    const env = await setup("done");
+    const result = await env.registry.runStep(
+      "harness-radian/agent",
+      { prompt: "hello", cwd: env.root },
+      {
+        runId: "run-grant",
+        access: { grants: [{ waitId: "w1", kind: "command", value: "rm -rf build" }] },
+      },
+    );
+    expect(result.result).toBe("failed");
+    expect(dataOf(result).reason).toBe("grant_unsupported");
+    expect(String(dataOf(result).message)).toContain("radian cannot enforce a one-time permission");
+    expect(existsSync(env.record)).toBe(false);
   });
 
   test("a non-zero exit is a failure that says so", async () => {

@@ -6,6 +6,7 @@ import type {
   Effect,
   EffectRequestedPayload,
   FactKind,
+  Grant,
   Input,
   KernelFact,
   KernelState,
@@ -59,6 +60,17 @@ interface AskedVia {
   readonly waitId: string;
   readonly prompt: string;
   readonly choices: readonly string[];
+  readonly resume: JsonValue;
+}
+
+/** A question the person answered, on the way back to the step that asked. */
+interface AnsweredAsk {
+  readonly waitId: string;
+  readonly step: string;
+  readonly prompt: string;
+  readonly resume: JsonValue;
+  readonly choice: string;
+  readonly note: string | null;
 }
 
 type EnterVia = {
@@ -66,7 +78,56 @@ type EnterVia = {
   readonly result: string;
   readonly named?: string;
   readonly ask?: AskedVia;
+  readonly answered?: AnsweredAsk;
 };
+
+function isPlainRecord(value: unknown): value is Record<string, JsonValue> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The params the step runs again with after its question was answered: the
+ * params it had, the session it left, and the answer. Anything the step did
+ * not leave is simply absent.
+ */
+function resumedParams(base: JsonValue, answered: AnsweredAsk): JsonValue {
+  const resume = answered.resume;
+  const session =
+    typeof resume === "string"
+      ? resume
+      : isPlainRecord(resume) && typeof resume.session === "string"
+        ? resume.session
+        : undefined;
+  return {
+    ...(isPlainRecord(base) ? base : {}),
+    ...(session === undefined ? {} : { resumeSession: session }),
+    askAnswer: {
+      prompt: answered.prompt,
+      choice: answered.choice,
+      ...(answered.note === null ? {} : { note: answered.note }),
+    },
+  };
+}
+
+/** The one-time permission the call the step asked about gets, if it named one. */
+function grantsFrom(answered: AnsweredAsk): readonly Grant[] | undefined {
+  const resume = answered.resume;
+  if (!isPlainRecord(resume)) return undefined;
+  const grant = resume.grant;
+  if (
+    !isPlainRecord(grant) ||
+    (grant.kind !== "command" && grant.kind !== "path") ||
+    typeof grant.value !== "string" ||
+    grant.value.length === 0
+  ) {
+    return undefined;
+  }
+  // A step that offered choices names the one that approves the call.
+  if (typeof grant.choice === "string" && grant.choice !== answered.choice) {
+    return undefined;
+  }
+  return [{ waitId: answered.waitId, kind: grant.kind, value: grant.value }];
+}
 
 /** The question in the data of a `waiting` result, when it is well formed. */
 function askedIn(result: string, data: unknown): AskedVia | undefined {
@@ -82,7 +143,12 @@ function askedIn(result: string, data: unknown): AskedVia | undefined {
   const choices = Array.isArray(record.choices)
     ? record.choices.filter((item): item is string => typeof item === "string")
     : [];
-  return { waitId: record.waitId, prompt: record.prompt, choices };
+  return {
+    waitId: record.waitId,
+    prompt: record.prompt,
+    choices,
+    resume: (record.resume ?? null) as JsonValue,
+  };
 }
 
 /** The step a result names, when its data came from a step that stopped. */
@@ -111,6 +177,7 @@ function waitPrompt(
 
 function effectRequestedPayload(effect: PendingEffect, recovery: boolean): EffectRequestedPayload {
   return {
+    ...(effect.grants === undefined ? {} : { grants: effect.grants }),
     effectId: effect.id,
     effect: effect.kind,
     step: effect.step,
@@ -226,15 +293,23 @@ export function decide(
       }
       case "plugin": {
         const effectId = `${step.id}:${visit}`;
+        // The step that asked, back after the answer: it continues the same
+        // session with the answer and, for the call it asked about, a grant.
+        const answered = via?.answered?.step === step.id ? via.answered : undefined;
+        const grants = answered === undefined ? undefined : grantsFrom(answered);
         const effect: PendingEffect = {
           id: effectId,
           kind: "run_plugin_step",
           step: step.id,
           use: step.params.use,
-          params: step.params.params as unknown as JsonValue,
+          params:
+            answered === undefined
+              ? (step.params.params as unknown as JsonValue)
+              : resumedParams(step.params.params as unknown as JsonValue, answered),
           check: null,
           due: null,
           replay: step.replay,
+          ...(grants === undefined ? {} : { grants }),
         };
         push("effect_requested", effectRequestedPayload(effect, false), enteredSeq);
         effects.push(describeEffect(effect));
@@ -262,6 +337,9 @@ export function decide(
             choices,
             waitKind: "step",
             effectId: null,
+            ...(asked === undefined || via === undefined
+              ? {}
+              : { ask: { step: via.step, resume: asked.resume } }),
           },
           enteredSeq,
         );
@@ -320,6 +398,7 @@ export function decide(
     causedBy: FactCause,
     named?: string,
     ask?: AskedVia,
+    answered?: AnsweredAsk,
   ): void {
     const target = edgesOf(step)[result];
     if (target === undefined) {
@@ -336,6 +415,7 @@ export function decide(
       result,
       ...(named === undefined ? {} : { named }),
       ...(ask === undefined ? {} : { ask }),
+      ...(answered === undefined ? {} : { answered }),
     });
   }
 
@@ -475,7 +555,23 @@ export function decide(
         endRun("failed", `unknown step ${wait.step}`, answerSeq);
         return { facts, effects };
       }
-      takeEdge(step, input.choice, answerSeq);
+      takeEdge(
+        step,
+        input.choice,
+        answerSeq,
+        undefined,
+        undefined,
+        wait.ask === undefined
+          ? undefined
+          : {
+              waitId: wait.id,
+              step: wait.ask.step,
+              prompt: wait.prompt,
+              resume: wait.ask.resume,
+              choice: input.choice,
+              note: input.note ?? null,
+            },
+      );
       return { facts, effects };
     }
 

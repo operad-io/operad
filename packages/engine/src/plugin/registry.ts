@@ -481,6 +481,9 @@ function normalizeSteps(
     steps.push({
       name,
       results: normalizedResults,
+      ...(entry.resumable === undefined
+        ? {}
+        : { resumable: normalizeResumable(entry.resumable, `${at}[${index}]`) }),
       ...(entry.enforces === undefined
         ? {}
         : { enforces: normalizeEnforces(entry.enforces, `${at}[${index}]`) }),
@@ -724,11 +727,19 @@ function normalizeTimeoutSecs(value: unknown, at: string): number {
   return value;
 }
 
+function normalizeResumable(value: unknown, at: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new PluginError(`${at}: resumable: must be true or false`);
+  }
+  return value;
+}
+
 function collectStepTypes(plugins: readonly NormalizedPlugin[]): readonly StepType[] {
   return plugins.flatMap((plugin) =>
     plugin.steps.map((step) => ({
       name: `${plugin.name}/${step.name}`,
       results: step.results,
+      ...(step.resumable === undefined ? {} : { resumable: step.resumable }),
       ...(step.enforces === undefined ? {} : { enforces: step.enforces }),
       ...(step.timeoutSecs === undefined ? {} : { timeoutSecs: step.timeoutSecs }),
     })),
@@ -1407,8 +1418,12 @@ export class PluginRegistry {
           );
         }
       }
+      // A step that cannot resume has nothing to come back to: its question
+      // gets one answer or a refusal, whatever the call said.
+      const onTimeout =
+        found.step.resumable === false ? "reject_once" : request.onTimeout;
       if (
-        request.onTimeout !== "reject_once" &&
+        onTimeout !== "reject_once" &&
         !found.step.results.includes("waiting")
       ) {
         throw new PluginError(
@@ -1421,7 +1436,7 @@ export class PluginRegistry {
         options.signal,
       );
       if (outcome.kind === "answered") return outcome.answer;
-      if (request.onTimeout === "reject_once") {
+      if (onTimeout === "reject_once") {
         return { choice: undefined, rejected: true };
       }
       throw new AskTimeoutError({
@@ -1431,7 +1446,12 @@ export class PluginRegistry {
         resume: request.resume ?? null,
       });
     };
+    const useGrant = async (waitId: string): Promise<boolean> => {
+      if (options.asker === undefined) return false;
+      return options.asker.useGrant(waitId);
+    };
     const ctx: StepContext = {
+      useGrant,
       plugin: found.plugin.name,
       home: this.home,
       cwd: options.cwd ?? this.cwd,

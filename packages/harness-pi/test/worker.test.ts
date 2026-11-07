@@ -455,3 +455,104 @@ test("nothing under the fake HOME .pi is read or created", async () => {
   expect(readdirSync(join(s.home, ".pi")).sort()).toEqual(["agent"]);
   expect(readdirSync(agent).sort()).toEqual(["AGENTS.md", "auth.json", "models.json", "settings.json", "skills"]);
 });
+
+/**
+ * Runs the fake worker with a host that answers `grant_use` lines: the worker
+ * keeps stdin open, writes a line, and waits for the host's acknowledgement.
+ * `decide` sees each request before the answer goes back.
+ */
+async function runGranting(
+  s: Setup,
+  script: unknown[],
+  input: Record<string, unknown>,
+  decide: (waitId: string) => boolean,
+): Promise<Run> {
+  const child = Bun.spawn(["bun", FAKE_WORKER], {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, HOME: s.home, FAKE_SCRIPT: JSON.stringify(script) },
+  });
+  child.stdin.write(`${JSON.stringify(input)}\n`);
+  void child.stdin.flush();
+  const raw: string[] = [];
+  const decoder = new TextDecoder();
+  let pending = "";
+  for await (const chunk of child.stdout) {
+    pending += decoder.decode(chunk, { stream: true });
+    for (;;) {
+      const newline = pending.indexOf("\n");
+      if (newline === -1) break;
+      const line = pending.slice(0, newline);
+      pending = pending.slice(newline + 1);
+      raw.push(line);
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      if (parsed["type"] === "grant_use") {
+        const used = decide(String(parsed["waitId"]));
+        child.stdin.write(`${JSON.stringify({ type: "grant_ack", id: parsed["id"], used })}\n`);
+        void child.stdin.flush();
+      }
+    }
+  }
+  const exitCode = await child.exited;
+  const stderr = await new Response(child.stderr).text();
+  return { lines: raw.map((line) => JSON.parse(line) as Record<string, unknown>), raw, stderr, exitCode };
+}
+
+test("a granted call runs once after the host used the grant; the same call again and another call are blocked", async () => {
+  const s = setup();
+  const marker = join(s.dir, "marker");
+  const other = join(s.dir, "other");
+  const grants = [{ waitId: "w1", kind: "command", value: `touch ${marker}` }];
+  const used = new Set<string>();
+  let markerSeenAtGrant: boolean | undefined;
+  const run = await runGranting(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${marker}` } } },
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${marker}` } } },
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${other}` } } },
+      { text: "finished" },
+    ],
+    { ...s.input, access: { denyCommands: ["touch"], grants } },
+    (waitId) => {
+      // The host's fact is written before the call: the file is not there yet.
+      markerSeenAtGrant ??= existsSync(marker);
+      if (used.has(waitId)) return false;
+      used.add(waitId);
+      return true;
+    },
+  );
+
+  expect(run.exitCode).toBe(0);
+  expect(markerSeenAtGrant).toBe(false);
+  expect(existsSync(marker)).toBe(true);
+  expect(existsSync(other)).toBe(false);
+  // Two calls asked for the grant; only the first got it. The other command
+  // matched no grant and never asked.
+  expect(run.lines.filter((line) => line["type"] === "grant_use")).toHaveLength(2);
+  expect(run.lines.filter((line) => line["type"] === "blocked")).toHaveLength(2);
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "finished" });
+});
+
+test("a grant the host cannot confirm lets nothing through", async () => {
+  const s = setup();
+  const marker = join(s.dir, "marker");
+  const run = await runFake(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${marker}` } } },
+      { text: "finished" },
+    ],
+    {
+      ...s.input,
+      access: {
+        denyCommands: ["touch"],
+        grants: [{ waitId: "w1", kind: "command", value: `touch ${marker}` }],
+      },
+    },
+  );
+  // stdin ended: nobody can write the fact, so the grant does not apply.
+  expect(existsSync(marker)).toBe(false);
+  expect(run.lines.filter((line) => line["type"] === "blocked")).toHaveLength(1);
+});

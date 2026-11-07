@@ -365,6 +365,12 @@ export type AskOutcome =
  */
 export interface StepAsker {
   ask(request: AskRequest, signal?: AbortSignal): Promise<AskOutcome>;
+  /**
+   * Uses up the one-time permission an answer gave. True when this call used
+   * it; false when it was used before or the step has none by that id. The fact
+   * that records the use is written before this returns.
+   */
+  useGrant(waitId: string): Promise<boolean>;
 }
 
 /** The context a step run receives. */
@@ -384,6 +390,12 @@ export interface StepContext extends PluginBaseContext {
    * have it; a flow cannot ask. When the grace passes, `onTimeout` decides.
    */
   ask(request: AskRequest): Promise<AskAnswer>;
+  /**
+   * Uses up the one-time permission an answer gave this step (see
+   * `access.grants`). True when this call used it, false when it was already
+   * used. Call it before the call the permission covers.
+   */
+  useGrant(waitId: string): Promise<boolean>;
   /**
    * Runs another loaded step in this run. The kernel offers it when a plugin
    * step delegates to a harness or another plugin; a direct call to a step's
@@ -456,6 +468,12 @@ export interface StepRunOptions {
 /** A step type a plugin declares. The use name is `<plugin>/<name>`. */
 export interface StepTypeDefinition {
   readonly name: string;
+  /**
+   * True when the step can run again from where a question left it (it takes
+   * `resumeSession` and `askAnswer` in its params). A step that says `false`
+   * has every question it asks forced to `onTimeout: "reject_once"`.
+   */
+  readonly resumable?: boolean | undefined;
   readonly results: readonly string[];
   /** Access profile fields this step applies, such as `denyPaths`. */
   readonly enforces?: readonly string[] | undefined;

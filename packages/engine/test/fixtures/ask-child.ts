@@ -2,7 +2,7 @@
  * Runs one run of the ask fixture and kills itself, with SIGKILL, at the point
  * named by <crash>: `opened` (right after the log accepts ask_opened),
  * `timed-out` (right after ask_timed_out), `answer-read` (just before a read
- * would hand over ask_answered) or `none`.
+ * would hand over ask_answered), `grant-used` (right after grant_used) or `none`.
  */
 import { join } from "node:path";
 import {
@@ -42,6 +42,7 @@ function die(): never {
 const afterAppend: Record<string, string> = {
   opened: "ask_opened",
   "timed-out": "ask_timed_out",
+  "grant-used": "grant_used",
 };
 const target = afterAppend[crash];
 

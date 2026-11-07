@@ -648,3 +648,124 @@ describe("decide: visits", () => {
     expect(payloadOf(decision.facts[2] ?? {})).toMatchObject({ step: "run", visits: 2, limit: 1 });
   });
 });
+
+describe("decide: an answered question returns to the step", () => {
+  const asking: StepTypeRegistry = [
+    { name: "x/agent", results: ["done", "waiting", "failed", "interrupted"] },
+  ];
+  function askingFlow(): FlowDefinition {
+    return validateFlow(
+      {
+        name: "again",
+        entry: "agent",
+        steps: [
+          {
+            id: "agent",
+            kind: "plugin",
+            params: { use: "x/agent", params: { prompt: "p" } },
+            replay: "safe",
+            next: { done: "end", waiting: "person", failed: "end", interrupted: "end" },
+          },
+          {
+            id: "person",
+            kind: "wait_person",
+            params: { prompt: "Waiting?", choices: ["yes", "no"] },
+            replay: "safe",
+            next: { yes: "agent", no: "end", interrupted: "end" },
+          },
+        ],
+      },
+      asking,
+    );
+  }
+
+  function waiting(resume: unknown): Runner {
+    const runner = new Runner(askingFlow());
+    runner.apply({ kind: "start" });
+    runner.apply({
+      kind: "step_result",
+      effectId: "agent:1",
+      result: "waiting",
+      data: { waitId: "w1", prompt: "Run it?", choices: ["yes", "no"], resume } as never,
+    });
+    expect(runner.state.status).toBe("waiting_person");
+    return runner;
+  }
+
+  const ACTOR = { via: "test", id: "t" } as const;
+
+  test("the step runs again with its params, the session, the answer and a grant", () => {
+    const runner = waiting({ session: "s1", grant: { kind: "command", value: "rm -rf build" } });
+    const decision = runner.apply({
+      kind: "person_answer",
+      waitId: "w1",
+      choice: "yes",
+      note: "ok",
+      actor: ACTOR,
+    });
+    expect(decision.facts.map((fact) => fact.kind)).toContain("effect_requested");
+    expect(runner.state.effect?.step).toBe("agent");
+    expect(runner.state.effect?.params).toEqual({
+      prompt: "p",
+      resumeSession: "s1",
+      askAnswer: { prompt: "Run it?", choice: "yes", note: "ok" },
+    });
+    expect(runner.state.effect?.grants).toEqual([
+      { waitId: "w1", kind: "command", value: "rm -rf build" },
+    ]);
+  });
+
+  test("a string resume is the session; no grant is given without one", () => {
+    const runner = waiting("/s/one.jsonl");
+    runner.apply({ kind: "person_answer", waitId: "w1", choice: "yes", actor: ACTOR });
+    expect(runner.state.effect?.params).toEqual({
+      prompt: "p",
+      resumeSession: "/s/one.jsonl",
+      askAnswer: { prompt: "Run it?", choice: "yes" },
+    });
+    expect(runner.state.effect?.grants).toBeUndefined();
+  });
+
+  test("a grant that names the approving choice is not given for another", () => {
+    const runner = new Runner(
+      validateFlow(
+        {
+          name: "again",
+          entry: "agent",
+          steps: [
+            {
+              id: "agent",
+              kind: "plugin",
+              params: { use: "x/agent", params: {} },
+              replay: "safe",
+              next: { done: "end", waiting: "person", failed: "end", interrupted: "end" },
+            },
+            {
+              id: "person",
+              kind: "wait_person",
+              params: { prompt: "Waiting?", choices: ["yes", "no"] },
+              replay: "safe",
+              next: { yes: "agent", no: "agent", interrupted: "end" },
+            },
+          ],
+        },
+        asking,
+      ),
+    );
+    runner.apply({ kind: "start" });
+    runner.apply({
+      kind: "step_result",
+      effectId: "agent:1",
+      result: "waiting",
+      data: {
+        waitId: "w1",
+        prompt: "Run it?",
+        choices: ["yes", "no"],
+        resume: { session: "s", grant: { kind: "path", value: "/etc/x", choice: "yes" } },
+      } as never,
+    });
+    runner.apply({ kind: "person_answer", waitId: "w1", choice: "no", actor: ACTOR });
+    expect(runner.state.effect?.grants).toBeUndefined();
+    expect(runner.state.effect?.params).toMatchObject({ resumeSession: "s" });
+  });
+});
