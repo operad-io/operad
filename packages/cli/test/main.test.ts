@@ -23,6 +23,10 @@ const pluginPath = fileURLToPath(
   new URL("../../engine/test/fixtures/plugins/runner.ts", import.meta.url),
 );
 
+const examplePluginPath = fileURLToPath(
+  new URL("../../engine/test/fixtures/example-plugin/index.ts", import.meta.url),
+);
+
 const notesPath = fileURLToPath(
   new URL("../../engine/test/fixtures/plugins/notes.ts", import.meta.url),
 );
@@ -591,6 +595,15 @@ describe("operad command", () => {
     const { home } = await makeNamedHome({});
     const output = capture();
     expect(await main(["plugin", "check", notesPath], { home, io: output.io })).toBe(0);
+    expect(output.text()).toContain("notes: ok");
+  });
+
+  test("plugin check passes for the plugin in docs/plugin-authoring.md", async () => {
+    const { home } = await makeNamedHome({});
+    const output = capture();
+    expect(
+      await main(["plugin", "check", examplePluginPath], { home, io: output.io }),
+    ).toBe(0);
     expect(output.text()).toContain("notes: ok");
   });
 

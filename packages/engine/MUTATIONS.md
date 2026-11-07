@@ -196,3 +196,11 @@ the row fields.
 | TK0009-M11 | `packages/engine/src/platform/process-group.ts` | the shell's own exit replaced the status in its end record when the exit event came first | `a line's end record > a status the shell wrote survives the shell's exit arriving first` |
 | TK0009-M12 | `packages/engine/src/platform/process-group.ts` | the sentinel did not watch its host while the line ran | `the sentinel's host > a line still running when its host dies is stopped with its sentinel` |
 | TK0009-M13 | `packages/engine/src/platform/process-group.ts` | a control pipe that closed while the sentinel lived was followed by a wait for the sentinel's exit with no stop | `a control pipe that closes early > the group is stopped instead of waited for` |
+| T-0023-M1 | `packages/engine/src/runner/runner.ts` | the in-process step timeout used real timers, not the runner's `timers` | `runFlow > with a fake clock a step timeout ends interrupted` |
+| T-0023-M2 | `packages/engine/src/testing/world.ts` | `answer` accepted any wait id | `runFlow > a person wait is answered by id, and only with a choice it offers` |
+| T-0023-M3 | `packages/engine/src/testing/clock.ts` | `advance` left out a timer due exactly at the target | `runFlow > a step timeout does not fire before the clock passes it` |
+| T-0023-M4 | `packages/engine/src/testing/index.ts` | `emit` reported an unmatched event as started | `emit > an event no rule matches starts nothing` |
+| T-0023-M5 | `packages/engine/src/testing/world.ts` | the world made one pass only, so a run started by a run's end was never run | `one world across calls > a run that ends by itself starts the next run, and it is run` |
+| T-0023-M6 | `packages/engine/src/testing/world.ts` | a plugin given by path ran against a memory store, so its steps stayed in the test's process | `isolation > a plugin given by path runs its steps in a worker, as serve does` |
+| T-0023-M7 | `packages/engine/src/testing/world.ts` | a repeated event key was reported as started | `one world across calls > the same key arriving twice starts one run` |
+| T-0023-M8 | `packages/engine/src/runner/runner.ts` | a worker step's timeout used real timers, not the runner's `timers` | `isolation > a fake clock times out a step in a worker too` |

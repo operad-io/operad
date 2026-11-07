@@ -176,7 +176,7 @@
           "default": 200000
         },
         "maxDiffBytes": {
-          "description": "The largest diff the review prompt may carry; a larger change fails the review before a reviewer starts.",
+          "description": "The largest diff the review prompt may carry (a rename or a deleted file counts as one line); a larger change fails the review before a reviewer starts.",
           "type": "integer",
           "minimum": 1,
           "default": 1000000
