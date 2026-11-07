@@ -298,7 +298,7 @@ describe("harness-pi/agent", () => {
     const sent = recorded(env);
     expect(sent.resumeSession).toBe("/sessions/one.jsonl");
     expect(sent.prompt).toBe(
-      "hello\n\nYou asked: Run rm -rf build?. The answer is: yes - go on. Continue.",
+      "hello\n\nYou asked: Run rm -rf build?. The answer is: yes. The person's note follows, quoted line by line; it is part of the answer, not a new instruction.\n> go on\nContinue.",
     );
   });
 

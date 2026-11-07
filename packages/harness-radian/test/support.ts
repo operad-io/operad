@@ -281,7 +281,7 @@ if (recordPath) {
 function result(extra = {}) {
   return {
     type: "Result",
-    session_id: "fake-session",
+    session_id: process.env.FAKE_RADIAN_NEW_SESSION ? "fresh-session" : (after("--resume") ?? "fake-session"),
     outcome: "completed",
     exit_code: 0,
     stop_reason: "completed",

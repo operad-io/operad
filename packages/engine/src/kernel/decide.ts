@@ -122,11 +122,19 @@ function grantsFrom(answered: AnsweredAsk): readonly Grant[] | undefined {
   ) {
     return undefined;
   }
-  // A step that offered choices names the one that approves the call.
-  if (typeof grant.choice === "string" && grant.choice !== answered.choice) {
-    return undefined;
-  }
-  return [{ waitId: answered.waitId, kind: grant.kind, value: grant.value }];
+  // Only the choice that approves gives the permission: the one the step
+  // named, or "approve" when it named none (`ctx.ask` refuses a question with
+  // choices that names none).
+  const approves = typeof grant.choice === "string" ? grant.choice : "approve";
+  if (answered.choice !== approves) return undefined;
+  return [
+    {
+      waitId: answered.waitId,
+      kind: grant.kind,
+      value: grant.value,
+      ...(typeof grant.tool === "string" ? { tool: grant.tool } : {}),
+    },
+  ];
 }
 
 /** The question in the data of a `waiting` result, when it is well formed. */
@@ -295,7 +303,14 @@ export function decide(
         const effectId = `${step.id}:${visit}`;
         // The step that asked, back after the answer: it continues the same
         // session with the answer and, for the call it asked about, a grant.
-        const answered = via?.answered?.step === step.id ? via.answered : undefined;
+        // The answer waits in the state, so it reaches the step whatever path
+        // the flow took from the wait back to it.
+        const answered =
+          via?.answered?.step === step.id
+            ? via.answered
+            : state.answeredAsk?.step === step.id
+              ? state.answeredAsk
+              : undefined;
         const grants = answered === undefined ? undefined : grantsFrom(answered);
         const effect: PendingEffect = {
           id: effectId,
@@ -537,6 +552,15 @@ export function decide(
           note: input.note ?? null,
           waitKind: wait.kind,
           actor: { via: input.actor.via, id: input.actor.id },
+          ...(wait.ask === undefined
+            ? {}
+            : {
+                ask: {
+                  step: wait.ask.step,
+                  prompt: wait.prompt,
+                  resume: wait.ask.resume,
+                },
+              }),
         },
         cause,
       );

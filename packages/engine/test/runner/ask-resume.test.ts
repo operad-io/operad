@@ -248,6 +248,45 @@ describe("a one-time permission survives a crash", () => {
   });
 });
 
+describe("a question that offers a permission is checked before anyone is asked", () => {
+  async function refusal(step: string, params: unknown): Promise<string> {
+    const env = await setup("memory");
+    try {
+      const asked: string[] = [];
+      const result = await env.registry.runStep(step, params, {
+        runId: "r",
+        params: { dir: env.dir },
+        asker: {
+          useGrant: async () => false,
+          ask: async () => {
+            asked.push("asked");
+            throw new Error("must not be asked");
+          },
+        },
+      });
+      expect(asked).toEqual([]);
+      return String((result.data as { refused: string }).refused);
+    } finally {
+      await env.log.close();
+    }
+  }
+
+  test("a step that cannot enforce a permission cannot ask for one", async () => {
+    expect(await refusal("resume/nogrant", {})).toContain("cannot enforce a one-time permission");
+  });
+
+  test("a question with choices needs the grant to name the choice that approves", async () => {
+    expect(await refusal("resume/offer", { case: "no-choice" })).toContain(
+      "a grant needs the choice that approves it",
+    );
+    expect(await refusal("resume/offer", { case: "other" })).toContain("must be one of the choices");
+  });
+
+  test("a path grant names the tool", async () => {
+    expect(await refusal("resume/offer", { case: "path-no-tool" })).toContain("names the tool");
+  });
+});
+
 test("resumable must be true or false", () => {
   const bad = definePlugin({
     name: "bad",

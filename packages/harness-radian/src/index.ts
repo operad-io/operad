@@ -401,6 +401,9 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
         name: "agent",
         // A question's answer comes back as `resumeSession` and `askAnswer`.
         resumable: true,
+        // No hook sees radian's tool calls: `ctx.ask` refuses a question that
+        // offers a one-time permission before it asks anyone.
+        grants: false,
         results: ["done", "failed", "interrupted"],
         // The model is what the step passes to radian: `<provider>/<model>`.
         limit: modelLimit("harness-radian", (params) =>
@@ -509,6 +512,24 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             },
           });
           await jsonl.end();
+
+          // A resumed run continues the session it was given. Another id means
+          // radian started afresh and the earlier conversation is lost.
+          if (
+            resumeSession !== undefined &&
+            result !== undefined &&
+            !outcome.cancelled &&
+            outcome.exitCode === 0 &&
+            result.sessionId !== resumeSession
+          ) {
+            return {
+              result: "failed",
+              data: failureData(who, outcome, result, ctx.logger.path, Date.now() - started, {
+                reason: "session_missing",
+                message: `radian did not continue the session ${resumeSession}; it answered with ${result.sessionId ?? "no session"}`,
+              }),
+            };
+          }
 
           return resultFor(
             who,

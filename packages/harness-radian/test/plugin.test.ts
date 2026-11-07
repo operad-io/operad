@@ -251,6 +251,18 @@ describe("harness-radian/agent", () => {
     expect(type?.resumable).toBe(true);
   });
 
+  test("a resumed run that answers with another session fails as session_missing", async () => {
+    const env = await setup("done");
+    setEnv("FAKE_RADIAN_NEW_SESSION", "1");
+    const result = await runAgent(env, { prompt: "hello", cwd: env.root, resumeSession: "session-7" });
+    expect(result.result).toBe("failed");
+    expect(dataOf(result).reason).toBe("session_missing");
+    expect(String(dataOf(result).message)).toContain("session-7");
+    // Without --resume a fresh session is what was asked for.
+    const fresh = await runAgent(env, { prompt: "hello", cwd: env.root });
+    expect(fresh.result).toBe("done");
+  });
+
   test("a one-time permission is refused before radian runs, naming radian", async () => {
     const env = await setup("done");
     const result = await env.registry.runStep(

@@ -474,6 +474,12 @@ export interface StepTypeDefinition {
    * has every question it asks forced to `onTimeout: "reject_once"`.
    */
   readonly resumable?: boolean | undefined;
+  /**
+   * False when the step cannot let one call through and no other. `ctx.ask`
+   * then refuses a question that offers a one-time permission, before anyone
+   * is asked.
+   */
+  readonly grants?: boolean | undefined;
   readonly results: readonly string[];
   /** Access profile fields this step applies, such as `denyPaths`. */
   readonly enforces?: readonly string[] | undefined;

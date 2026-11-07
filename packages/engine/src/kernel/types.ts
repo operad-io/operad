@@ -159,6 +159,18 @@ export interface Grant {
   readonly waitId: string;
   readonly kind: "command" | "path";
   readonly value: string;
+  /** The tool the person approved; a path grant covers that tool only. */
+  readonly tool?: string;
+}
+
+/** A question that was answered, waiting for the step that asked to run again. */
+export interface AnsweredAskState {
+  readonly waitId: string;
+  readonly step: string;
+  readonly prompt: string;
+  readonly resume: JsonValue;
+  readonly choice: string;
+  readonly note: string | null;
 }
 
 /** What a flow wait took over from a step that asked and ran out of grace. */
@@ -220,6 +232,8 @@ export interface KernelState {
   readonly effects: Readonly<Record<string, EffectStatus>>;
   readonly results: Readonly<Record<string, StepResultValue>>;
   readonly answeredWaits: Readonly<Record<string, true>>;
+  /** The answer to a question, kept until the step that asked runs again. */
+  readonly answeredAsk: AnsweredAskState | null;
   readonly lastSeq: number;
 }
 
@@ -311,6 +325,12 @@ export interface PersonAnsweredPayload {
   readonly note: string | null;
   readonly waitKind: WaitKind;
   readonly actor: Actor | null;
+  /** Set when the wait took over a question a step asked. */
+  readonly ask?: {
+    readonly step: string;
+    readonly prompt: string;
+    readonly resume: JsonValue;
+  };
 }
 
 export interface RunEndedPayload {

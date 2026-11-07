@@ -74,6 +74,52 @@ export default definePlugin({
       },
     },
     {
+      // Offers a one-time permission in the way `params.case` says.
+      name: "offer",
+      results: ["done", "failed", "interrupted"],
+      async run(ctx, params) {
+        const kind = isRecord(params) ? params.case : undefined;
+        const grant =
+          kind === "path-no-tool"
+            ? { kind: "path", value: "/x", choice: "yes" }
+            : kind === "no-choice"
+              ? { kind: "command", value: "ls" }
+              : { kind: "command", value: "ls", choice: "maybe" };
+        try {
+          await ctx.ask({
+            prompt: "Allow?",
+            choices: ["yes", "no"],
+            graceSecs: 0,
+            onTimeout: "reject_once",
+            resume: { session: "s", grant },
+          });
+          return { result: "done", data: { refused: "" } };
+        } catch (error) {
+          return { result: "done", data: { refused: error instanceof Error ? error.message : String(error) } };
+        }
+      },
+    },
+    {
+      // Cannot enforce a permission: asking for one is refused at once.
+      name: "nogrant",
+      grants: false,
+      results: ["done", "failed", "interrupted"],
+      async run(ctx) {
+        try {
+          await ctx.ask({
+            prompt: "Allow?",
+            choices: ["yes", "no"],
+            graceSecs: 0,
+            onTimeout: "reject_once",
+            resume: { session: "s", grant: { kind: "command", value: "ls", choice: "yes" } },
+          });
+          return { result: "done", data: { refused: "" } };
+        } catch (error) {
+          return { result: "done", data: { refused: error instanceof Error ? error.message : String(error) } };
+        }
+      },
+    },
+    {
       // Cannot run again from where it left: its question gets one answer or none.
       name: "plain",
       resumable: false,

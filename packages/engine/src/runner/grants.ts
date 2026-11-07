@@ -62,7 +62,13 @@ export async function useGrant(
       await log.append(runId, lastSeq, [
         {
           kind: "grant_used",
-          payload: { waitId, step, kind: grant.kind, value: grant.value },
+          payload: {
+            waitId,
+            step,
+            kind: grant.kind,
+            value: grant.value,
+            ...(grant.tool === undefined ? {} : { tool: grant.tool }),
+          },
           cause: lastSeq >= 1 ? lastSeq : "grant",
         },
       ]);

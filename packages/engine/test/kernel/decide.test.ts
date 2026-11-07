@@ -695,7 +695,10 @@ describe("decide: an answered question returns to the step", () => {
   const ACTOR = { via: "test", id: "t" } as const;
 
   test("the step runs again with its params, the session, the answer and a grant", () => {
-    const runner = waiting({ session: "s1", grant: { kind: "command", value: "rm -rf build" } });
+    const runner = waiting({
+      session: "s1",
+      grant: { kind: "command", value: "rm -rf build", choice: "yes" },
+    });
     const decision = runner.apply({
       kind: "person_answer",
       waitId: "w1",
@@ -767,5 +770,112 @@ describe("decide: an answered question returns to the step", () => {
     runner.apply({ kind: "person_answer", waitId: "w1", choice: "no", actor: ACTOR });
     expect(runner.state.effect?.grants).toBeUndefined();
     expect(runner.state.effect?.params).toMatchObject({ resumeSession: "s" });
+  });
+
+  test("with no named choice only \"approve\" gives the permission", () => {
+    const flow = validateFlow(
+      {
+        name: "again",
+        entry: "agent",
+        steps: [
+          {
+            id: "agent",
+            kind: "plugin",
+            params: { use: "x/agent", params: {} },
+            replay: "safe",
+            next: { done: "end", waiting: "person", failed: "end", interrupted: "end" },
+          },
+          {
+            id: "person",
+            kind: "wait_person",
+            params: { prompt: "Waiting?", choices: ["approve", "deny"] },
+            replay: "safe",
+            next: { approve: "agent", deny: "agent", interrupted: "end" },
+          },
+        ],
+      },
+      asking,
+    );
+    const answerWith = (choice: string): Runner => {
+      const runner = new Runner(flow);
+      runner.apply({ kind: "start" });
+      runner.apply({
+        kind: "step_result",
+        effectId: "agent:1",
+        result: "waiting",
+        data: {
+          waitId: "w1",
+          prompt: "Run it?",
+          choices: [],
+          resume: { session: "s", grant: { kind: "command", value: "ls" } },
+        } as never,
+      });
+      runner.apply({ kind: "person_answer", waitId: "w1", choice, actor: ACTOR });
+      return runner;
+    };
+    expect(answerWith("deny").state.effect?.grants).toBeUndefined();
+    expect(answerWith("approve").state.effect?.grants).toEqual([
+      { waitId: "w1", kind: "command", value: "ls" },
+    ]);
+  });
+
+  test("the answer reaches the step that asked through a step in between", () => {
+    const flow = validateFlow(
+      {
+        name: "via",
+        entry: "agent",
+        steps: [
+          {
+            id: "agent",
+            kind: "plugin",
+            params: { use: "x/agent", params: { prompt: "p" } },
+            replay: "safe",
+            next: { done: "end", waiting: "person", failed: "end", interrupted: "end" },
+          },
+          {
+            id: "person",
+            kind: "wait_person",
+            params: { prompt: "Waiting?", choices: ["yes", "no"] },
+            replay: "safe",
+            next: { yes: "between", no: "end", interrupted: "end" },
+          },
+          {
+            id: "between",
+            kind: "plugin",
+            params: { use: "x/agent", params: {} },
+            replay: "safe",
+            next: { done: "agent", waiting: "person", failed: "end", interrupted: "end" },
+          },
+        ],
+      },
+      asking,
+    );
+    const runner = new Runner(flow);
+    runner.apply({ kind: "start" });
+    runner.apply({
+      kind: "step_result",
+      effectId: "agent:1",
+      result: "waiting",
+      data: {
+        waitId: "w1",
+        prompt: "Run it?",
+        choices: ["yes", "no"],
+        resume: { session: "s1", grant: { kind: "command", value: "ls", choice: "yes" } },
+      } as never,
+    });
+    runner.apply({ kind: "person_answer", waitId: "w1", choice: "yes", actor: ACTOR });
+    // The step in between runs fresh and carries nothing.
+    expect(runner.state.effect?.step).toBe("between");
+    expect(runner.state.effect?.params).toEqual({});
+    expect(runner.state.effect?.grants).toBeUndefined();
+    runner.apply({ kind: "step_result", effectId: "between:1", result: "done" });
+    // The step that asked is back with the session, the answer and the grant.
+    expect(runner.state.effect?.step).toBe("agent");
+    expect(runner.state.effect?.params).toEqual({
+      prompt: "p",
+      resumeSession: "s1",
+      askAnswer: { prompt: "Run it?", choice: "yes" },
+    });
+    expect(runner.state.effect?.grants).toEqual([{ waitId: "w1", kind: "command", value: "ls" }]);
   });
 });

@@ -223,7 +223,7 @@ const GRANTS: AccessProfile = {
   denyCommands: ["rm"],
   grants: [
     { waitId: "w1", kind: "command", value: "rm -rf build" },
-    { waitId: "w2", kind: "path", value: "/etc/secret" },
+    { waitId: "w2", kind: "path", value: "/etc/secret", tool: "write" },
   ],
 };
 
@@ -242,10 +242,19 @@ test("a grant covers the call that equals its value exactly", () => {
 });
 
 test("a path grant covers the same file under any spelling, and only that file", () => {
-  expect(findGrant(GRANTS, call("read", { path: "/etc/secret" }))?.waitId).toBe("w2");
-  expect(findGrant(GRANTS, call("edit", { file_path: "/etc/../etc/secret" }))?.waitId).toBe("w2");
-  expect(findGrant(GRANTS, call("read", { path: "/etc/secret2" }))).toBeUndefined();
-  expect(findGrant(GRANTS, call("read", { path: "/etc/secret/inner" }))).toBeUndefined();
+  expect(findGrant(GRANTS, call("write", { path: "/etc/secret" }))?.waitId).toBe("w2");
+  expect(findGrant(GRANTS, call("write", { file_path: "/etc/../etc/secret" }))?.waitId).toBe("w2");
+  expect(findGrant(GRANTS, call("write", { path: "/etc/secret2" }))).toBeUndefined();
+  expect(findGrant(GRANTS, call("write", { path: "/etc/secret/inner" }))).toBeUndefined();
+});
+
+test("a path grant covers the tool the person approved and no other", () => {
+  for (const tool of ["read", "edit", "grep", "find", "ls"]) {
+    expect(findGrant(GRANTS, call(tool, { path: "/etc/secret" }))).toBeUndefined();
+  }
+  // A path grant without a tool covers nothing.
+  const bare: AccessProfile = { grants: [{ waitId: "w3", kind: "path", value: "/etc/secret" }] };
+  expect(findGrant(bare, call("write", { path: "/etc/secret" }))).toBeUndefined();
 });
 
 test("a grant does not change what match says; the caller uses it up", () => {
@@ -254,9 +263,9 @@ test("a grant does not change what match says; the caller uses it up", () => {
 });
 
 test("readProfile reads grants and refuses a malformed one", () => {
-  expect(readProfile({ grants: [{ waitId: "a", kind: "path", value: "/x" }] })).toEqual({
+  expect(readProfile({ grants: [{ waitId: "a", kind: "path", value: "/x", tool: "write" }] })).toEqual({
     ok: true,
-    profile: { grants: [{ waitId: "a", kind: "path", value: "/x" }] },
+    profile: { grants: [{ waitId: "a", kind: "path", value: "/x", tool: "write" }] },
   });
   for (const bad of [{ grants: "x" }, { grants: [1] }, { grants: [{ waitId: "a", kind: "url", value: "x" }] }]) {
     expect(readProfile(bad).ok).toBe(false);

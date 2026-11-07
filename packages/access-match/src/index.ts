@@ -11,6 +11,8 @@ export interface AccessGrant {
   readonly waitId: string;
   readonly kind: "command" | "path";
   readonly value: string;
+  /** The tool the person approved; a path grant covers that tool only. */
+  readonly tool?: string;
 }
 
 export interface AccessProfile {
@@ -69,7 +71,11 @@ export function readProfile(value: unknown): ProfileRead {
       ) {
         return { ok: false, message: "each grant needs a waitId, a kind (command or path) and a value" };
       }
-      read.push({ waitId, kind, value: text });
+      const tool: unknown = Reflect.get(grant, "tool");
+      if (tool !== undefined && typeof tool !== "string") {
+        return { ok: false, message: "a grant's tool must be a string" };
+      }
+      read.push({ waitId, kind, value: text, ...(tool === undefined ? {} : { tool }) });
     }
     found.grants = read;
   }
@@ -194,7 +200,8 @@ export function findGrant(profile: AccessProfile, call: ToolCall, options: Match
       if (call.tool === "bash" && call.input["command"] === grant.value) return grant;
       continue;
     }
-    if (!PATH_TOOLS.has(call.tool)) continue;
+    // A path grant covers the tool the person approved and no other.
+    if (!PATH_TOOLS.has(call.tool) || grant.tool !== call.tool) continue;
     const path: unknown = call.input["path"] ?? call.input["file_path"];
     if (
       typeof path === "string" &&
