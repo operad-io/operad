@@ -349,17 +349,29 @@ export async function runTool(
     case "command": {
       const plugin = String(args.plugin);
       const verb = String(args.verb);
-      if (KERNEL_VERBS.has(plugin) || KERNEL_VERBS.has(verb)) {
-        return toolError(
-          `"${KERNEL_VERBS.has(plugin) ? plugin : verb}" is a kernel verb; it is not reachable through MCP`,
-        );
-      }
       const commandArgs = Array.isArray(args.args)
         ? args.args.map((item) => String(item))
         : [];
+      const argv = [plugin, verb, ...commandArgs];
+      const resolved = context.registry.resolveCommand(argv);
+      if (
+        resolved === undefined ||
+        resolved.plugin !== plugin ||
+        resolved.command !== verb
+      ) {
+        const kernel = KERNEL_VERBS.has(plugin) ? plugin : verb;
+        if (KERNEL_VERBS.has(kernel)) {
+          return toolError(
+            `"${kernel}" is a kernel verb; it is not reachable through MCP`,
+          );
+        }
+        return toolError(
+          `no loaded plugin "${plugin}" declares the verb "${verb}"`,
+        );
+      }
       try {
         const run = await context.registry.runCommand(
-          [plugin, verb, ...commandArgs],
+          argv,
           {
             ...(context.cwd === undefined ? {} : { cwd: context.cwd }),
             input: args.input === undefined ? "" : String(args.input),

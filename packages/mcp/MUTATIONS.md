@@ -16,3 +16,4 @@ the row fields.
 | T-0027-M3 | packages/mcp/src/policy.ts | `splitActions` kept every available action and named no owner action | `splits show actions into the lead's and the owner's` |
 | T-0027-M4 | packages/mcp/src/tools.ts | `command` replaced its `input` with an empty string instead of passing it to the verb | `command runs plugin verbs with input and refuses a kernel verb` |
 | T-0027-M7 | packages/mcp/src/tools.ts | `act` recorded the actor as cli/lead instead of mcp/lead | `act runs a lead rework with the mcp lead actor and refuses merge by default` |
+| T-0027-M8 | packages/mcp/src/tools.ts | `command` still refused a verb whose name is a kernel verb after the named plugin declared it | `command runs a plugin verb whose name is also a kernel verb` |
