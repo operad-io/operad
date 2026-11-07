@@ -1391,6 +1391,14 @@ async function commandServe(
   io: CliIo,
   argv: readonly string[],
 ): Promise<void> {
+  // A second serve must fail as "lock held" before it opens a port (HTTP is on
+  // by default), not as a port that is in use.
+  if (lockHeld(serveLockPath(context.home))) {
+    throw new LockHeldError(
+      serveLockPath(context.home),
+      "another serve is still alive",
+    );
+  }
   const interval = process.env.OPERAD_SERVE_INTERVAL_MS;
   const parsed = interval === undefined ? Number.NaN : Number(interval);
   const controller = new AbortController();

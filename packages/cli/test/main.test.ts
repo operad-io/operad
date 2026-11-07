@@ -456,6 +456,8 @@ describe("operad command", () => {
     const locked = capture();
     expect(await main(["serve"], { home, io: locked.io })).toBe(4);
     expect(locked.errors()).toContain("still alive");
+    // HTTP is on by default; a second serve must not open the port first.
+    expect(locked.text()).not.toContain("http http://");
   });
 
   test("history resolves a plugin object without mixing object types", async () => {

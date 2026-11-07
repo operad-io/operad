@@ -33,6 +33,7 @@ async function makeHome(command: string): Promise<Home> {
     JSON.stringify({
       plugins: [pluginPath],
       store: { backend: "jsonl", path: join(root, "store") },
+      http: { enabled: false },
       notify: { command },
     }),
   );
