@@ -609,7 +609,7 @@ describe("dev/verify", () => {
     expect(result.data?.note).toBe("check line 1 failed, passed on rerun");
     const task = await taskOf(state);
     expect(task.attempt?.verify?.result).toBe("pass");
-    expect(task.brief).toContain("- check line 1 failed, passed on rerun");
+    expect(task.brief).toContain("] check line 1 failed, passed on rerun");
     const log = readFileSync(String(result.data?.log), "utf8");
     expect(log).toContain("first");
     expect(log).toContain("check failed; running it once more");
@@ -2168,6 +2168,7 @@ describe("dev/rework", () => {
     expect(task.brief).toContain("## Rework 2 (verify)");
     expect(task.brief).toContain("## Rework 3 (verify)");
     expect(task.brief).toContain("The verify command failed: `false`");
+    expect(task.brief).toContain("] rework 1 — verify: the verify command failed: false");
     expect(task.brief).toContain(
       "Fix them and nothing else, append commits to the branch, and do not rebase.",
     );
@@ -2230,6 +2231,9 @@ describe("dev/rework", () => {
     expect(task.brief).toContain("## Rework 1 (review)");
     expect(task.brief).toContain("`code.txt:2` major: a real problem — when called");
     expect(task.brief).not.toContain("minor");
+    expect(task.brief).toContain(
+      "] rework 1 — review: code.txt:2 major: a real problem — when called",
+    );
   });
 });
 
@@ -2499,7 +2503,7 @@ describe("dev/verify reruns only the failed tests", () => {
     const note =
       "passed on rerun: process groups > the sentinel; other suite > b";
     expect(result.data?.note).toBe(note);
-    expect((await taskOf(state)).brief).toContain(`- ${note}`);
+    expect((await taskOf(state)).brief).toContain(`] ${note}`);
     const log = readFileSync(String(result.data?.log), "utf8");
     expect(log).toContain("(fail) process groups > the sentinel [1.00ms]");
     expect(log).toContain("===== rerun of failed test: process groups > the sentinel =====");

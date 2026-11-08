@@ -116,7 +116,7 @@ describe("dev views", () => {
       ((await taskViews.load({} as never, before, "changes", {})) as {
         markdown: string;
       }).markdown,
-    ).toContain("- created");
+    ).toMatch(/- \d\d:\d\d {2}created/);
 
     await addRework(store, task.id, "review", "Add a test.");
     const after = await getTask(store, task.id);

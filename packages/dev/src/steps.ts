@@ -610,8 +610,8 @@ export async function runWorktree(
     prepared.merged === undefined
       ? undefined
       : prepared.merged.conflict
-        ? `merging ${prepared.merged.ref} ${prepared.merged.commit}: conflict`
-        : `merged ${prepared.merged.ref} ${prepared.merged.commit}`;
+        ? `merged ${prepared.merged.ref} ${prepared.merged.commit} into the branch (conflict)`
+        : `merged ${prepared.merged.ref} ${prepared.merged.commit} into the branch (clean)`;
   const next: TaskData = {
     ...context.task,
     phase: "running",
