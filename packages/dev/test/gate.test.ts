@@ -1,9 +1,20 @@
 import { chmodSync } from "node:fs";
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { appendFileSync, existsSync, rmSync, watch } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  linkSync,
+  lstatSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  watch,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   decide,
@@ -37,6 +48,7 @@ import {
   workBranch,
   type DevSettings,
   type FixLevel,
+  type ReviewRunOutcome,
   type TaskData,
 } from "../src/index.ts";
 import {
@@ -163,11 +175,14 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
           if (options.callLog !== undefined) {
             appendFileSync(options.callLog, "call\n");
           }
+          // Every call has its own report path; a round is the path without
+          // its try number.
+          const roundKey = input.resultPath.replace(/-try-\d+\.json$/, "");
           if (
             options.retryInvalid === true &&
-            !seenResults.has(input.resultPath)
+            !seenResults.has(roundKey)
           ) {
-            seenResults.add(input.resultPath);
+            seenResults.add(roundKey);
             writeFileSync(input.resultPath, "this is not JSON\n");
             return { result: "done", data: {} };
           }
@@ -246,6 +261,73 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
                 message: "the harness ran longer than 600s",
               },
             };
+          }
+          if (mode.startsWith("table:")) {
+            const [, harness, file] = mode.split(":");
+            if (file === "valid") {
+              writeFileSync(
+                input.resultPath,
+                JSON.stringify({ findings: [], verified: ["t"] }),
+              );
+            } else if (file === "invalid") {
+              writeFileSync(input.resultPath, "this is not JSON\n");
+            }
+            if (harness === "done") {
+              return { result: "done", data: { finalMessage: "last words" } };
+            }
+            if (harness === "failed") {
+              return {
+                result: "failed",
+                data: {
+                  reason: "exit",
+                  message: "the harness exited 1",
+                  finalMessage: "last words",
+                },
+              };
+            }
+            if (harness === "timeout") {
+              return {
+                result: "failed",
+                data: { reason: "wall", message: "the harness ran longer than 600s" },
+              };
+            }
+            return {
+              result: "failed",
+              data: {
+                reason: "exit",
+                modelError: { kind: "unavailable", status: 503, retry_after_secs: null },
+                message: "unavailable",
+              },
+            };
+          }
+          if (mode === "exit-no-write") {
+            return {
+              result: "failed",
+              data: { reason: "exit", message: "the harness exited 1", finalMessage: "no file tool" },
+            };
+          }
+          if (mode === "swap-review") {
+            const folder = dirname(input.resultPath);
+            const outside = mkdtempSync(join(tmpdir(), "operad-swap-"));
+            writeFileSync(
+              join(outside, basename(input.resultPath)),
+              JSON.stringify({ findings: [], verified: ["outside"] }),
+            );
+            rmSync(folder, { recursive: true, force: true });
+            symlinkSync(outside, folder);
+            return { result: "done", data: {} };
+          }
+          if (mode === "no-write") {
+            return {
+              result: "done",
+              data: { finalMessage: "I cannot create files there" },
+            };
+          }
+          if (mode === "invalid-then-nothing") {
+            if (count === 1) {
+              writeFileSync(input.resultPath, "this is not JSON\n");
+            }
+            return { result: "done", data: {} };
           }
           if (mode === "fifo") {
             fifos.push(input.resultPath);
@@ -1334,8 +1416,12 @@ describe("dev/review hardening", () => {
     await verify(state);
     const result = await review(state, "review-not-429");
     expect(result.result).toBe("failed");
-    // No fallback was tried: the failure is not an unavailable model.
-    expect(state.reviewer.calls).toHaveLength(1);
+    // No fallback was tried: the failure is not an unavailable model. A run
+    // that failed without a report is tried once more, like a missing report.
+    expect(state.reviewer.calls).toHaveLength(2);
+    expect(
+      (await taskOf(state)).attempt?.review?.runs?.map((run) => run.role),
+    ).toEqual(["primary", "primary"]);
   }, 30_000);
 
   test("a usage limit reported as a model error falls back", async () => {
@@ -1541,7 +1627,8 @@ describe("dev/review crash recovery", () => {
     readonly crash:
       | "after-first-result"
       | "during-fallback"
-      | "after-first-saved";
+      | "after-first-saved"
+      | "before-copy";
     readonly reviewerArgs: readonly string[];
     readonly fallback?: {
       readonly use: string;
@@ -1677,6 +1764,413 @@ describe("dev/review crash recovery", () => {
       totalCalls: 2,
       roles: ["primary", "fallback"],
     });
+  });
+});
+
+describe("dev/review crash before the store copy", () => {
+  test("a crash after the report was written and before its copy resumes by copying it", async () => {
+    const callLog = join(await tempRoot(), "review-calls");
+    const state = await fixture({ reviewerArgs: ["none"], callLog });
+    await verify(state);
+    const child = Bun.spawn({
+      cmd: [
+        process.execPath,
+        REVIEW_CRASH_CHILD,
+        state.store.root,
+        state.remote.repository,
+        state.taskKey,
+        "review-crash",
+        "before-copy",
+        callLog,
+      ],
+      cwd: dirname(REVIEW_CRASH_CHILD),
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    await child.exited;
+    expect(child.signalCode).toBe("SIGKILL");
+    const stored = join(
+      state.store.root,
+      "dev",
+      "reviews",
+      "review-crash",
+      `${state.taskId}-attempt-1-review-1.json`,
+    );
+    expect(existsSync(stored)).toBe(false);
+
+    const store = new FilePluginStore({ root: state.store.root });
+    const reviewer = fakeReviewer({ callLog });
+    const registry = new PluginRegistry([createDevPlugin(), reviewer.plugin], {
+      home: state.root,
+      cwd: state.remote.repository,
+      store,
+    });
+    const resumed = await registry.runStep("dev/review", {}, {
+      runId: "review-crash",
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+    expect(resumed.result).toBe("pass");
+    expect(reviewer.calls).toHaveLength(0);
+    expect(readFileSync(callLog, "utf8").trim().split("\n")).toHaveLength(1);
+    expect(JSON.parse(readFileSync(stored, "utf8"))).toEqual({
+      findings: [],
+      verified: ["the diff"],
+    });
+  });
+});
+
+describe("dev/review report in the workspace", () => {
+  async function gatePathOf(state: Fixture): Promise<string> {
+    const settings: DevSettings = await readDevSettings(state.remote.repository);
+    return gateWorktreePath(state.remote.repository, settings, state.taskId);
+  }
+
+  test("a reviewer that can only write inside its cwd passes, and dev keeps the store copy", async () => {
+    const state = await fixture({ reviewerArgs: ["none"] });
+    await verify(state);
+    const gate = await gatePathOf(state);
+    const result = await review(state);
+    expect(result.result).toBe("pass");
+    const path = state.reviewer.calls[0]?.resultPath ?? "";
+    expect(path.startsWith(join(gate, ".operad", "review") + "/")).toBe(true);
+    expect(path).toContain("review-run-attempt-1-review-1-try-0.json");
+    expect(state.reviewer.calls[0]?.prompt).toContain(path);
+    const stored = join(
+      state.store.root,
+      "dev",
+      "reviews",
+      "review-run",
+      `${state.taskId}-attempt-1-review-1.json`,
+    );
+    expect(readFileSync(stored, "utf8")).toBe(readFileSync(path, "utf8"));
+    // Dev never deletes the workspace report.
+    expect(existsSync(path)).toBe(true);
+  });
+
+  test("tracked and untracked files under .operad/review survive a review with a retry", async () => {
+    const state = await fixture({
+      reviewerArgs: ["invalid-then-valid"],
+      commit: false,
+    });
+    mkdirSync(join(state.worktree, ".operad", "review"), { recursive: true });
+    await commitIn(state.worktree, "code.txt", "line\n", "add code");
+    await commitIn(
+      state.worktree,
+      join(".operad", "review", "x.json"),
+      "tracked bytes\n",
+      "track a report-shaped file",
+    );
+    await verify(state);
+    const gate = await gatePathOf(state);
+    reviewTestHooks.beforeRun = () => {
+      writeFileSync(join(gate, ".operad", "review", "y.json"), "untracked bytes\n");
+    };
+    try {
+      const result = await review(state);
+      expect(result.result).toBe("pass");
+    } finally {
+      delete reviewTestHooks.beforeRun;
+    }
+    expect(state.reviewer.calls).toHaveLength(2);
+    expect(readFileSync(join(gate, ".operad", "review", "x.json"), "utf8")).toBe(
+      "tracked bytes\n",
+    );
+    expect(readFileSync(join(gate, ".operad", "review", "y.json"), "utf8")).toBe(
+      "untracked bytes\n",
+    );
+  });
+
+  for (const shape of ["operad", "review", "report"] as const) {
+    test(`a symlinked ${shape} is not followed and the review fails with the reason`, async () => {
+      const state = await fixture({ reviewerArgs: ["none"] });
+      await verify(state);
+      const gate = await gatePathOf(state);
+      const outside = mkdtempSync(join(tmpdir(), "operad-outside-"));
+      const target = shape === "report" ? join(outside, "file.json") : outside;
+      if (shape === "report") writeFileSync(target, "outside\n");
+      reviewTestHooks.beforeRun = () => {
+        rmSync(join(gate, ".operad"), { recursive: true, force: true });
+        if (shape === "operad") {
+          symlinkSync(outside, join(gate, ".operad"));
+          return;
+        }
+        mkdirSync(join(gate, ".operad"));
+        if (shape === "review") {
+          symlinkSync(outside, join(gate, ".operad", "review"));
+          return;
+        }
+        mkdirSync(join(gate, ".operad", "review"));
+        symlinkSync(
+          target,
+          join(
+            gate,
+            ".operad",
+            "review",
+            "review-run-attempt-1-review-1-try-0.json",
+          ),
+        );
+      };
+      try {
+        const result = await review(state);
+        expect(result.result).toBe("failed");
+        const message = String(result.data?.message);
+        if (shape === "report") {
+          expect(message).toContain("review-run-attempt-1-review-1-try-0.json");
+          expect(readFileSync(target, "utf8")).toBe("outside\n");
+        } else {
+          expect(message).toContain(join(gate, ".operad"));
+          expect(message).toContain("not a plain directory");
+        }
+        expect(state.reviewer.calls).toHaveLength(0);
+        if (shape !== "report") {
+          expect(Bun.spawnSync({ cmd: ["ls", "-A", outside] }).stdout.toString()).toBe("");
+        }
+        expect(lstatSync(join(gate, ".operad")).isSymbolicLink() || shape !== "operad").toBe(true);
+      } finally {
+        delete reviewTestHooks.beforeRun;
+        rmSync(outside, { recursive: true, force: true });
+      }
+    });
+  }
+
+  test("a retry after an invalid report uses a new path and never reads the old file", async () => {
+    const state = await fixture({ reviewerArgs: ["invalid-then-nothing"] });
+    await verify(state);
+    const result = await review(state);
+    expect(result.result).toBe("failed");
+    const [first, second] = state.reviewer.calls;
+    expect(first?.resultPath).toContain("-try-0.json");
+    expect(second?.resultPath).toContain("-try-1.json");
+    // The old invalid file is still there, untouched, and was not read: the
+    // second call is a missing file, not another invalid one.
+    expect(readFileSync(first?.resultPath ?? "", "utf8")).toBe("this is not JSON\n");
+    const task = await taskOf(state);
+    expect(task.attempt?.review?.runs?.map((run) => run.outcome)).toEqual([
+      "invalid",
+      "no_report",
+    ]);
+  });
+
+  test("a failed store write fails the step and leaves the workspace report", async () => {
+    const state = await fixture({ reviewerArgs: ["none"] });
+    await verify(state);
+    const stored = join(
+      state.store.root,
+      "dev",
+      "reviews",
+      "review-run",
+      `${state.taskId}-attempt-1-review-1.json`,
+    );
+    reviewTestHooks.beforeRun = () => {
+      mkdirSync(stored, { recursive: true });
+    };
+    try {
+      const result = await review(state);
+      expect(result.result).toBe("failed");
+      expect(String(result.data?.message)).toContain("cannot write the review record");
+      expect(state.reviewer.calls).toHaveLength(1);
+      expect(existsSync(state.reviewer.calls[0]?.resultPath ?? "")).toBe(true);
+    } finally {
+      delete reviewTestHooks.beforeRun;
+    }
+  });
+
+  test("a missing report and an invalid report have different labels", async () => {
+    const missing = await fixture({ reviewerArgs: ["no-write"] });
+    await verify(missing);
+    const none = await review(missing);
+    expect(none.result).toBe("failed");
+    const noneMessage = String(none.data?.message);
+    expect(noneMessage).toContain("could not write the report");
+    expect(noneMessage).toContain("I cannot create files there");
+    expect(noneMessage).not.toContain("invalid report");
+    expect(missing.reviewer.calls).toHaveLength(2);
+
+    const invalid = await fixture({ reviewerArgs: ["invalid"] });
+    await verify(invalid);
+    const bad = await review(invalid);
+    expect(String(bad.data?.message)).toContain("wrote an invalid report");
+    expect(String(bad.data?.message)).not.toContain("could not write");
+  });
+
+  test("a folder swapped for a link while the report is read is not accepted", async () => {
+    const state = await fixture({ reviewerArgs: ["none"] });
+    await verify(state);
+    const gate = await gatePathOf(state);
+    const folder = join(gate, ".operad", "review");
+    const outside = mkdtempSync(join(tmpdir(), "operad-race-"));
+    let swapped = false;
+    reviewTestHooks.afterOpen = () => {
+      if (swapped) return;
+      swapped = true;
+      const name = readdirSync(folder)[0] ?? "";
+      writeFileSync(
+        join(outside, name),
+        JSON.stringify({ findings: [], verified: ["outside"] }),
+      );
+      rmSync(folder, { recursive: true, force: true });
+      symlinkSync(outside, folder);
+    };
+    try {
+      const result = await review(state);
+      expect(result.result).toBe("failed");
+      const stored = join(
+        state.store.root,
+        "dev",
+        "reviews",
+        "review-run",
+        `${state.taskId}-attempt-1-review-1.json`,
+      );
+      expect(existsSync(stored)).toBe(false);
+    } finally {
+      delete reviewTestHooks.afterOpen;
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  const TABLE: readonly (readonly [string, string, ReviewRunOutcome])[] = [
+    ["done", "valid", "report"],
+    ["failed", "valid", "report"],
+    ["timeout", "valid", "report"],
+    ["unavailable", "valid", "report"],
+    ["done", "invalid", "invalid"],
+    ["failed", "invalid", "invalid"],
+    ["timeout", "invalid", "invalid"],
+    ["unavailable", "invalid", "invalid"],
+    ["done", "none", "no_report"],
+    ["failed", "none", "no_report"],
+    ["timeout", "none", "timed_out"],
+    ["unavailable", "none", "unavailable"],
+  ];
+  for (const [harness, file, expected] of TABLE) {
+    test(`harness ${harness} with ${file} file is ${expected}`, async () => {
+      const state = await fixture({ reviewerArgs: [`table:${harness}:${file}`] });
+      await verify(state);
+      const result = await review(state);
+      const task = await taskOf(state);
+      expect(task.attempt?.review?.runs?.[0]?.outcome).toBe(expected);
+      if (expected === "no_report") {
+        expect(String(result.data?.message)).toContain("could not write the report");
+      }
+      if (expected === "invalid") {
+        expect(String(result.data?.message)).toContain("wrote an invalid report");
+      }
+    });
+  }
+
+  test("a reviewer that exits without a report is labelled as unable to write it", async () => {
+    const state = await fixture({ reviewerArgs: ["exit-no-write"] });
+    await verify(state);
+    const result = await review(state);
+    expect(result.result).toBe("failed");
+    const message = String(result.data?.message);
+    expect(message).toContain("could not write the report");
+    expect(message).toContain("no file tool");
+    expect(state.reviewer.calls).toHaveLength(2);
+    const task = await taskOf(state);
+    expect(task.attempt?.review?.runs?.map((run) => run.outcome)).toEqual([
+      "no_report",
+      "no_report",
+    ]);
+  });
+
+  test("a report found through a link swapped in after a crash is not read", async () => {
+    const callLog = join(await tempRoot(), "review-calls");
+    const state = await fixture({ reviewerArgs: ["none"], callLog });
+    await verify(state);
+    const child = Bun.spawn({
+      cmd: [
+        process.execPath,
+        REVIEW_CRASH_CHILD,
+        state.store.root,
+        state.remote.repository,
+        state.taskKey,
+        "review-crash",
+        "before-copy",
+        callLog,
+      ],
+      cwd: dirname(REVIEW_CRASH_CHILD),
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    await child.exited;
+    const gate = await gatePathOf(state);
+    const folder = join(gate, ".operad", "review");
+    const name = readdirSync(folder)[0] ?? "";
+    const outside = mkdtempSync(join(tmpdir(), "operad-after-crash-"));
+    writeFileSync(
+      join(outside, name),
+      JSON.stringify({ findings: [], verified: ["outside"] }),
+    );
+    rmSync(folder, { recursive: true, force: true });
+    symlinkSync(outside, folder);
+    const stored = join(
+      state.store.root,
+      "dev",
+      "reviews",
+      "review-crash",
+      `${state.taskId}-attempt-1-review-1.json`,
+    );
+    try {
+      const store = new FilePluginStore({ root: state.store.root });
+      const reviewer = fakeReviewer({ callLog });
+      const registry = new PluginRegistry([createDevPlugin(), reviewer.plugin], {
+        home: state.root,
+        cwd: state.remote.repository,
+        store,
+      });
+      await registry.runStep("dev/review", {}, {
+        runId: "review-crash",
+        object: { type: "task", id: state.taskKey, data: {} },
+      });
+      expect(existsSync(stored) ? readFileSync(stored, "utf8") : "").not.toContain("outside");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  test("a review folder swapped for a link during the call is not read through", async () => {
+    const state = await fixture({ reviewerArgs: ["swap-review"] });
+    await verify(state);
+    const result = await review(state);
+    expect(result.result).toBe("failed");
+    expect(String(result.data?.message)).toContain("not a plain directory");
+  });
+
+  test("a report at the store path from an older prompt is read when the workspace has none", async () => {
+    const state = await fixture({ reviewerArgs: ["none"] });
+    await verify(state);
+    const task = await taskOf(state);
+    const gate = await gatePathOf(state);
+    const stored = join(
+      state.store.root,
+      "dev",
+      "reviews",
+      "review-run",
+      `${state.taskId}-attempt-1-review-1.json`,
+    );
+    mkdirSync(dirname(stored), { recursive: true });
+    writeFileSync(stored, JSON.stringify({ findings: [], verified: ["old"] }));
+    await state.store.put("task", state.taskKey, {
+      ...task,
+      attempt: {
+        ...(task.attempt ?? { number: 1, run: "review-run" }),
+        reviewPending: {
+          attempt: 1,
+          round: 1,
+          role: "primary",
+          use: "fake-reviewer/agent",
+          args: ["none"],
+          model: "fake-reviewer/agent",
+          reason: "initial",
+          run: "review-run",
+        },
+      },
+    }, "test:pending");
+    expect(gate.length).toBeGreaterThan(0);
+    const result = await review(state);
+    expect(result.result).toBe("pass");
+    expect(state.reviewer.calls).toHaveLength(0);
   });
 });
 

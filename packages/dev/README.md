@@ -242,9 +242,36 @@ skipped, and the round waits for a person with the note `review did not finish
 (out of time)`. While a review waits for its model, `merge`, `reject`, `rework`
 and `reverify` are not offered.
 
+Each reviewer call writes its report inside the gate worktree, because some
+agents cannot write elsewhere: `.operad/review/<run>-attempt-<n>-review-<round>-try-<k>.json`,
+where `k` is the number of calls before it in the round, so every call has a
+path of its own and a stale report is never read. The prompt names that path.
+Before the call dev creates `.operad` and `.operad/review` if missing, looking
+at each component with `lstat`; if either is not a plain directory (a link, a
+file) or a file already exists at the report path, the review fails naming the
+path and nothing is written. After the call dev reads the report only if it is
+a regular file, validates it, and writes a copy to
+`<store>/dev/reviews/<run>/<task>-attempt-<n>-review-<round>.json`, which is the
+record the history and views point at; a failed copy fails the step and leaves
+the workspace file. **dev never removes, truncates or overwrites anything under
+the gate worktree's `.operad`**; the worktree is disposable and its next
+recreation removes the reports. Nothing is committed from the gate worktree
+(the integrate step recreates it first and only commits a squash or merge of
+the index), so the reports cannot reach a commit.
+
+How a call is named, in this order: a valid report is used whatever the harness
+result; a file that fails validation is `wrote an invalid report`; with no file,
+a timeout is `timed_out` and an unavailable model is `unavailable` (they drive
+retry and fallback), and anything else is `could not write the report` with the
+reviewer's last message. The review folders are checked (plain directories, same
+device and inode) before and after the report is read, and a missing folder, a
+link or a mismatch fails the round. A run resumed from before this
+change reads the store path too when the workspace path has no file. A crash
+after the report was written and before the copy is recovered by copying the
+report from the old worktree before it is replaced, not by asking again.
+
 A reviewer that wrote a valid report and then stalled, timed out or exited
-non-zero has reviewed: its report is used and a retry never deletes it. Only an
-unreadable report is removed before a run. `dev:reverify` starts review round 1
+non-zero has reviewed: its report is used and a retry never deletes it. `dev:reverify` starts review round 1
 again with no runs from the old round.
 
 A review that times out runs once more with the same arguments. A second
