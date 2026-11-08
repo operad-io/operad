@@ -112,4 +112,22 @@ describe("operad tui", () => {
     expect(seen[0]?.serveEntry?.endsWith("bin/operad.ts")).toBe(true);
     expect(output.text()).toContain("starting operad serve (log: /tmp/home/serve.log)");
   });
+
+  test("--theme goes to the terminal app", async () => {
+    const output = capture();
+    let seen: TuiCommand | undefined;
+    for (const argv of [["tui", "--theme", "terminal"], ["tui", "--theme=terminal"]]) {
+      seen = undefined;
+      await main(argv, {
+        home: "/tmp/operad-tui-home",
+        io: output.io,
+        isTTY: true,
+        tui: async (command) => {
+          seen = command;
+          return 0;
+        },
+      });
+      expect(seen?.theme).toBe("terminal");
+    }
+  });
 });

@@ -531,7 +531,7 @@ export async function runIntegrate(
         keyCommands,
         stepOptions(ctx, gate),
         settings.check.rerun,
-        checkPlaces(ctx),
+        checkPlaces(ctx, context.repository, settings.gate.places),
       );
       await recordRerunPasses(ctx.store, checked.passedOnRerun);
       const { outcome, hostError } = checked;

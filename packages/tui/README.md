@@ -4,6 +4,23 @@ The terminal client for operad's `/v1` interface. It never opens the store and
 never loads a plugin. The manual's `operad tui` section is the reference for
 keys, flags and states.
 
+## Themes
+
+Colours are tokens of a `TuiPalette` (`src/theme.ts`, the only file that names a
+colour value): `text`, `weak`, `rule`, `accent`, `run`, `ok`, `error`, `add`,
+`remove`, `tint`, `code`. The built-in themes are `auto` (the default; `light` or
+`dark` by the terminal's theme mode, live), `light`, `dark` (the operad app's
+tokens) and `terminal` (the terminal's own 16 ANSI colours).
+
+Choose one in `~/.operad/tui.json` (schema: `tui.schema.json`):
+
+```json
+{ "theme": "dark" }
+```
+
+`operad tui --theme <name>` overrides the file for one session. An unknown name,
+or a `tui.json` that cannot be read, is an error and the TUI does not start.
+
 ## Hand tests (the lead runs these after a merge)
 
 Use a scratch `OPERAD_HOME` with the `dev` plugin and some objects in it.

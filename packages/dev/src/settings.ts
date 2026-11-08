@@ -104,6 +104,8 @@ export type CheckCommand =
 export interface GateSettings {
   readonly commands: readonly CheckCommand[];
   readonly commandTimeoutSecs: number;
+  /** The most checks of this repository that run at once; unset means no limit of its own. */
+  readonly places?: number;
 }
 
 /** What a failed check does before it counts as a failure. */
@@ -468,12 +470,19 @@ function commandList(value: unknown, field: string): readonly CheckCommand[] {
   });
 }
 
+function positiveCount(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new DevError(field, "must be an integer of 1 or more");
+  }
+  return value;
+}
+
 function gateSettings(value: unknown, field: string): GateSettings {
   if (!isRecord(value)) {
     throw new DevError(field, "must be an object");
   }
   for (const key of Object.keys(value)) {
-    if (key !== "commands" && key !== "commandTimeoutSecs") {
+    if (key !== "commands" && key !== "commandTimeoutSecs" && key !== "places") {
       throw new DevError(`${field}.${key}`, "is not a gate setting");
     }
   }
@@ -486,6 +495,9 @@ function gateSettings(value: unknown, field: string): GateSettings {
       value.commandTimeoutSecs === undefined
         ? DEFAULT_DEV_SETTINGS.gate.commandTimeoutSecs
         : positiveSeconds(value.commandTimeoutSecs, `${field}.commandTimeoutSecs`),
+    ...(value.places === undefined
+      ? {}
+      : { places: positiveCount(value.places, `${field}.places`) }),
   };
 }
 
