@@ -2574,6 +2574,20 @@ describe("dev/verify reruns only the failed tests", () => {
     ]);
   });
 
+  test("a test that reaches check.flakyTask with no confirmed plan puts a notice in the step's history", async () => {
+    const root = await tempRoot();
+    const state = await fixture({
+      commands: [object(failing("a > flaky"), `echo {name} >> '${join(root, "ran")}'`)],
+    });
+    const first = await verify(state);
+    expect(String(first.data?.note)).not.toContain("no task was proposed");
+    const second = await verify(state, "verify-run-2");
+    const notice = `flaky test "a > flaky" passed on rerun 2 times; no task was proposed: no confirmed plan that is not finished`;
+    expect(second.data?.reason).toBe(notice);
+    expect(String(second.data?.note)).toContain(notice);
+    expect((await taskOf(state)).brief).toContain(notice);
+  });
+
   test("a rerun that fails fails the check", async () => {
     const root = await tempRoot();
     const ran = join(root, "ran");
