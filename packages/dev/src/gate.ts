@@ -868,7 +868,13 @@ interface ReportRead {
  * opened non-blocking without following a link, and the descriptor must still
  * be a bounded regular file before anything is read.
  */
-function readReport(resultPath: string): ReportRead {
+function readReport(
+  resultPath: string,
+  guard?: () => boolean,
+): ReportRead {
+  if (guard !== undefined && !guard()) {
+    return { message: `the review folders of ${resultPath} are not plain directories` };
+  }
   let details;
   try {
     details = lstatSync(resultPath);
@@ -919,6 +925,24 @@ function readReport(resultPath: string): ReportRead {
       }
       if (count === 0) break;
       offset += count;
+    }
+    if (guard !== undefined) {
+      reviewTestHooks.afterOpen?.();
+      // The folders above the file may have been swapped for a link while it
+      // was open: they must still be plain directories and the path must
+      // still lead to the very file that was read.
+      const after = lstatOrUndefined(resultPath);
+      if (
+        !guard() ||
+        after === undefined ||
+        !after.isFile() ||
+        after.ino !== opened.ino ||
+        after.dev !== opened.dev
+      ) {
+        return {
+          message: `the review report at ${resultPath} changed while it was read`,
+        };
+      }
     }
     return { text: buffer.subarray(0, offset).toString("utf8") };
   } finally {
@@ -1099,8 +1123,12 @@ function lstatOrUndefined(path: string): ReturnType<typeof lstatSync> | undefine
 /** The valid report at a path with its text, otherwise undefined. */
 function readValidReportText(
   path: string,
+  gatePath: string,
 ): { readonly report: Report; readonly text: string } | undefined {
-  const read = readReport(path);
+  const read = readReport(
+    path,
+    () => prepareReportFolder(gatePath, false) === undefined,
+  );
   if (read.text === undefined) return undefined;
   const report = parseReport(read.text);
   return report === undefined ? undefined : { report, text: read.text };
@@ -1177,7 +1205,7 @@ async function callReviewerOnce(
     // report and its recorded outcome must not ask the model again. The
     // workspace path comes first; a run whose older prompt named the store
     // path left its report there.
-    const inWorkspace = readValidReportText(reportPath);
+    const inWorkspace = readValidReportText(reportPath, gatePath);
     if (inWorkspace !== undefined) {
       const failure = copyToStore(storePath, inWorkspace.text);
       if (failure !== undefined) return { outcome: "failed", message: failure };
@@ -1235,7 +1263,7 @@ async function callReviewerOnce(
   if (swapped !== undefined) return { outcome: "failed", message: swapped };
   // The report is read before the outcome is judged: a reviewer that wrote a
   // valid report and then stalled, timed out or exited non-zero still reviewed.
-  const written = readValidReportText(reportPath);
+  const written = readValidReportText(reportPath, gatePath);
   if (written !== undefined) {
     const failure = copyToStore(storePath, written.text);
     if (failure !== undefined) return { outcome: "failed", message: failure };
@@ -1254,8 +1282,15 @@ async function callReviewerOnce(
     // No file at the path: a failed run is "could not write the report".
     const missing = lstatOrUndefined(reportPath) === undefined;
     const last = lastMessageOf(outcome);
-    const full = missing && last.length > 0 ? last : message;
     const kind = failureOutcome(data, message);
+    // A timeout keeps its own retry rule; its history still says the report
+    // could not be written, with the reviewer's last words.
+    const full =
+      missing && kind === "timed_out"
+        ? `could not write the report${last.length === 0 ? "" : ` (last message: ${last})`}`
+        : missing && last.length > 0
+          ? last
+          : message;
     return {
       outcome: missing && kind === "failed" ? "no_report" : kind,
       message: full,
@@ -1415,7 +1450,7 @@ function runPhrase(run: ReviewRunRecord): string {
     case "unavailable":
       return `${who} was unavailable${run.message === undefined || run.message === null ? "" : ` (${run.message})`}`;
     case "timed_out":
-      return `${who} timed out`;
+      return `${who} timed out${run.message === undefined || run.message === null || run.message.length === 0 ? "" : ` (${run.message})`}`;
     case "invalid":
       return `${who} wrote an invalid report`;
     case "no_report":
@@ -1456,6 +1491,8 @@ export const reviewTestHooks: {
   afterRunSaved?: ((run: ReviewRunRecord) => void) | undefined;
   /** Runs after the reviewer wrote a valid report, before the store copy. */
   beforeCopy?: (() => void) | undefined;
+  /** Runs while a workspace report is open, before the folders are checked again. */
+  afterOpen?: (() => void) | undefined;
 } = {};
 
 /** Step `dev/review`: have the reviewer read the verified commit's diff. */
@@ -1618,7 +1655,7 @@ export async function runReview(
     pendingReport.report.startsWith(path) &&
     prepareReportFolder(path, false) === undefined
   ) {
-    const old = readValidReportText(pendingReport.report);
+    const old = readValidReportText(pendingReport.report, path);
     if (old !== undefined) {
       const savedDir = join(ctx.store.root, "dev", "reviews", ctx.runId);
       mkdirSync(savedDir, { recursive: true });

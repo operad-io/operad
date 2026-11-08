@@ -260,6 +260,16 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
               },
             };
           }
+          if (mode === "timeout-no-write") {
+            return {
+              result: "failed",
+              data: {
+                reason: "wall",
+                message: "the harness ran longer than 600s",
+                finalMessage: "stuck on the file tool",
+              },
+            };
+          }
           if (mode === "exit-no-write") {
             return {
               result: "failed",
@@ -1951,6 +1961,53 @@ describe("dev/review report in the workspace", () => {
     const bad = await review(invalid);
     expect(String(bad.data?.message)).toContain("wrote an invalid report");
     expect(String(bad.data?.message)).not.toContain("could not write");
+  });
+
+  test("a folder swapped for a link while the report is read is not accepted", async () => {
+    const state = await fixture({ reviewerArgs: ["none"] });
+    await verify(state);
+    const gate = await gatePathOf(state);
+    const folder = join(gate, ".operad", "review");
+    const outside = mkdtempSync(join(tmpdir(), "operad-race-"));
+    let swapped = false;
+    reviewTestHooks.afterOpen = () => {
+      if (swapped) return;
+      swapped = true;
+      const name = readdirSync(folder)[0] ?? "";
+      writeFileSync(
+        join(outside, name),
+        JSON.stringify({ findings: [], verified: ["outside"] }),
+      );
+      rmSync(folder, { recursive: true, force: true });
+      symlinkSync(outside, folder);
+    };
+    try {
+      const result = await review(state);
+      expect(result.result).toBe("failed");
+      const stored = join(
+        state.store.root,
+        "dev",
+        "reviews",
+        "review-run",
+        `${state.taskId}-attempt-1-review-1.json`,
+      );
+      expect(existsSync(stored)).toBe(false);
+    } finally {
+      delete reviewTestHooks.afterOpen;
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  test("a timed-out reviewer with no report says it could not write it", async () => {
+    const state = await fixture({ reviewerArgs: ["timeout-no-write"] });
+    await verify(state);
+    const result = await review(state);
+    const task = await taskOf(state);
+    expect(task.attempt?.review?.runs?.[0]?.outcome).toBe("timed_out");
+    expect(result.data?.message).toBe("review timed out twice");
+    const message = String(task.attempt?.review?.runs?.[0]?.message);
+    expect(message).toContain("could not write the report");
+    expect(message).toContain("stuck on the file tool");
   });
 
   test("a reviewer that exits without a report is labelled as unable to write it", async () => {
