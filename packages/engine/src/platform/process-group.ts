@@ -398,8 +398,7 @@ export function createGroupStop(options: GroupStopOptions): () => Promise<void> 
       if (!ready) {
         // The sentinel never announced its trap. There is no safe delay: one
         // immediate SIGKILL while our leader is still alive is the only signal.
-        options.killGroup(pid, "SIGKILL");
-        sweep(pid, options);
+        if (options.killGroup(pid, "SIGKILL")) sweep(pid, options);
         return;
       }
       if (!options.killGroup(pid, "SIGTERM")) return;
@@ -407,8 +406,9 @@ export function createGroupStop(options: GroupStopOptions): () => Promise<void> 
       // The sentinel ignores SIGTERM, so its group id is still this command's
       // unless it exited, in which case nothing is signaled at all.
       if (options.sentinelExited()) return;
-      options.killGroup(pid, "SIGKILL");
-      sweep(pid, options);
+      // A SIGKILL that found no group means the leader is gone and the id may
+      // already be someone else's: sweeping then would signal a stranger.
+      if (options.killGroup(pid, "SIGKILL")) sweep(pid, options);
     })();
     return stopping;
   };

@@ -477,6 +477,27 @@ describe("process groups", () => {
     expect(signals).toEqual(["SIGTERM", "SIGKILL"]);
   });
 
+  test("a SIGKILL that finds no group starts no sweep", async () => {
+    // The group vanished before the SIGKILL, so its id may be someone else's.
+    for (const readySeen of [true, false]) {
+      const signals: (string | number)[] = [];
+      await createGroupStop({
+        clock: manualClock(),
+        killGroup: (_pgid, signal) => {
+          signals.push(signal);
+          return signal === "SIGTERM";
+        },
+        pid: () => 4242,
+        sentinelExited: () => false,
+        readySeen: () => readySeen,
+        ready: readySeen ? Promise.resolve() : new Promise<void>(() => undefined),
+        groupExists: () => true,
+        pause: () => undefined,
+      })();
+      expect(signals).toEqual(readySeen ? ["SIGTERM", "SIGKILL"] : ["SIGKILL"]);
+    }
+  });
+
   test("a group that is gone after the SIGKILL gets no more signals", async () => {
     const signals: (string | number)[] = [];
     await createGroupStop({
