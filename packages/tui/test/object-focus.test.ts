@@ -15,6 +15,7 @@ import {
   type TuiState,
   type TuiView,
 } from "../src/index.ts";
+import { immediateClock } from "./support.ts";
 
 function row(id: string, title = `Title ${id}`): ViewRow {
   return { id, title, state: "new", waiting: false, running: false };
@@ -153,7 +154,7 @@ async function start(width: number): Promise<{
     width,
     height: 20,
     theme: "dark",
-    refreshDelayMs: 0,
+    clock: immediateClock,
     followDelayMs: 0,
   });
   await view.until((state) =>

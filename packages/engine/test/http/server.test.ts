@@ -58,6 +58,8 @@ interface HarnessOptions {
   readonly keepAliveMs?: number;
   readonly tokenCheckMs?: number;
   readonly loadTimeoutMs?: number;
+  /** Written to `<home>/keys.json` before the plugins load. */
+  readonly userKeys?: Record<string, string>;
 }
 
 async function freePort(): Promise<number> {
@@ -84,6 +86,9 @@ async function makeHarness(options: HarnessOptions = {}): Promise<Harness> {
       http: { enabled: true, port: 0, listen: ["127.0.0.1"] },
     }),
   );
+  if (options.userKeys !== undefined) {
+    writeFileSync(join(home, "keys.json"), JSON.stringify(options.userKeys));
+  }
   const config = await readConfig(home);
   const storeRoot = storeRootOf(config);
   const store =
@@ -325,6 +330,29 @@ function walk(directory: string): string[] {
 }
 
 describe("http server", () => {
+  test("GET /v1/keys lists the plugin defaults and the person's overrides", async () => {
+    const plain = await makeHarness();
+    try {
+      const response = await api(plain, "/v1/keys");
+      expect(response.status).toBe(200);
+      expect(await json(response)).toEqual({
+        keys: [{ key: "m", action: "webtest:approve", source: "plugin" }],
+      });
+    } finally {
+      await plain.close();
+    }
+    const custom = await makeHarness({ userKeys: { m: "webtest:drop", x: "webtest:approve" } });
+    try {
+      const body = await json(await api(custom, "/v1/keys"));
+      expect(body.keys).toEqual([
+        { key: "m", action: "webtest:drop", source: "user" },
+        { key: "x", action: "webtest:approve", source: "user" },
+      ]);
+    } finally {
+      await custom.close();
+    }
+  });
+
   test("refuses a missing, a wrong and a rotated token", async () => {
     const h = await makeHarness();
     try {

@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { TuiClock } from "../src/live.ts";
 import {
   MemoryPluginStore,
   createViews,
@@ -124,4 +125,51 @@ export async function makeHarness(
       await rm(root, { recursive: true, force: true });
     },
   };
+}
+
+/** A clock that runs a timer as soon as the current work yields. */
+export const immediateClock: TuiClock = {
+  after(run) {
+    let live = true;
+    setTimeout(() => {
+      if (live) run();
+    }, 0);
+    return () => {
+      live = false;
+    };
+  },
+};
+
+/** A clock the test moves by hand. */
+export class ManualClock implements TuiClock {
+  private now = 0;
+  private readonly timers = new Map<number, { at: number; run: () => void }>();
+  private next = 0;
+
+  after(run: () => void, ms: number): () => void {
+    const id = this.next++;
+    this.timers.set(id, { at: this.now + ms, run });
+    return () => {
+      this.timers.delete(id);
+    };
+  }
+
+  /** Moves time forward and runs every timer that falls due, in order. */
+  advance(ms: number): void {
+    const target = this.now + ms;
+    for (;;) {
+      const due = [...this.timers.entries()]
+        .filter(([, timer]) => timer.at <= target)
+        .sort((a, b) => a[1].at - b[1].at)[0];
+      if (due === undefined) break;
+      this.timers.delete(due[0]);
+      this.now = due[1].at;
+      due[1].run();
+    }
+    this.now = target;
+  }
+
+  get pending(): number {
+    return this.timers.size;
+  }
 }

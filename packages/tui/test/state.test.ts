@@ -357,3 +357,25 @@ describe("the TUI reducer", () => {
     expect(state.keys).toBe(false);
   });
 });
+
+describe("rework 1 states", () => {
+  test("r does not retry after the token was rotated", () => {
+    let state = withTypes(initialState({ width: 80, height: 24, url: "http://x" }));
+    state = reduce(state, { type: "connection", connection: "unauthorized" });
+    state = reduce(state, { type: "key", key: "r" });
+    expect(state.refreshRequested).toBe(false);
+  });
+
+  test("a row whose object is gone leaves its list", () => {
+    let state = withTypes(initialState({ width: 80, height: 24, url: "http://x" }));
+    state = reduce(state, {
+      type: "page",
+      tabId: "type:item",
+      replace: true,
+      page: { rows: [row("one"), row("two")] },
+    });
+    state = reduce(state, { type: "row-gone", id: "one" });
+    const ids = state.tabs.find((t) => t.id === "type:item")?.list.rows.map((r) => r.id);
+    expect(ids).toEqual(["two"]);
+  });
+});

@@ -67,7 +67,7 @@ export interface McpConfig {
 
 /** The MCP defaults: the dev plugin's lead actions, and no confirm actions. */
 export const DEFAULT_MCP: McpConfig = {
-  actions: ["dev:rework", "dev:reverify", "dev:reject", "dev:priority"],
+  actions: ["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency"],
   confirmActions: [],
 };
 

@@ -26,6 +26,7 @@ import {
   gateWorktreePath,
   recreateGateWorktree,
 } from "./gate.ts";
+import { runCheckWithRerun } from "./rerun.ts";
 import { getPlan, refreshPlanCounts } from "./service.ts";
 import {
   cancelledStep,
@@ -147,7 +148,7 @@ function clearConflict(path: string): void {
 
 interface SaveOptions {
   readonly phase?: TaskData["phase"] | undefined;
-  readonly change?: string | undefined;
+  readonly change?: string | readonly string[] | undefined;
 }
 
 async function writeIntegration(
@@ -161,7 +162,7 @@ async function writeIntegration(
   const brief =
     options.change === undefined
       ? task.brief
-      : appendChange(task.brief, options.change);
+      : [options.change].flat().reduce(appendChange, task.brief);
   const next: TaskData = {
     ...task,
     ...(options.phase === undefined ? {} : { phase: options.phase }),
@@ -211,6 +212,7 @@ function integrationData(
       ? {}
       : { lineNumber: record.lineNumber }),
     ...(record.files === undefined ? {} : { files: record.files }),
+    ...(typeof record.checkNote === "string" ? { note: record.checkNote } : {}),
     ...extra,
   };
 }
@@ -270,10 +272,14 @@ export async function runIntegrate(
     sha: string,
     extra: Readonly<Record<string, unknown>> = {},
   ): Promise<PluginStepResult> => {
+    const note = record.checkNote;
     if (
       (await writeIntegration(ctx, context, task, attempt, record, {
         phase: "merged",
-        change: `merged ${shortSha(sha)}`,
+        change: [
+          ...(typeof note === "string" ? [note] : []),
+          `merged ${shortSha(sha)}`,
+        ],
       })) === undefined
     ) {
       return cancelledStep();
@@ -319,7 +325,12 @@ export async function runIntegrate(
       if (
         (await writeIntegration(ctx, context, task, attempt, record, {
           phase: "merged",
-          change: `merged ${shortSha(previous.candidate)}`,
+          change: [
+            ...(typeof previous.checkNote === "string"
+              ? [previous.checkNote]
+              : []),
+            `merged ${shortSha(previous.candidate)}`,
+          ],
         })) === undefined
       ) {
         return cancelledStep();
@@ -400,21 +411,19 @@ export async function runIntegrate(
     }
     const sha = candidate.sha;
 
+    let checkNote: string | undefined;
     if (keyCommands.length > 0) {
       if (runStep === undefined) {
         return fail("the kernel did not offer a way to run the integration checks");
       }
-      let outcome: PluginStepResult | undefined;
-      let hostError: string | undefined;
-      try {
-        outcome = await runStep(
-          "shell/check",
-          { lines: keyCommands, cwd: gate },
-          stepOptions(ctx, gate),
-        );
-      } catch (error) {
-        hostError = messageOf(error);
-      }
+      const checked = await runCheckWithRerun(
+        runStep,
+        { lines: keyCommands, cwd: gate },
+        stepOptions(ctx, gate),
+        settings.check.rerun,
+      );
+      const { outcome, hostError } = checked;
+      checkNote = checked.note;
       if (hostError !== undefined || outcome?.result !== "pass") {
         const data =
           outcome !== undefined && isRecord(outcome.data) ? outcome.data : {};
@@ -485,6 +494,7 @@ export async function runIntegrate(
       head: head ?? null,
       headMoved,
       pushed: false,
+      ...(checkNote === undefined ? {} : { checkNote }),
     };
     if ((await writeIntegration(ctx, context, task, attempt, pending)) === undefined) {
       return cancelledStep();

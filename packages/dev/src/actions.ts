@@ -22,7 +22,11 @@ import {
   getTask,
   releaseWaitingClaim,
   setAuto,
+  setConcurrency,
+  validatePlanConcurrency,
   setPriority,
+  MAX_PLAN_CONCURRENCY,
+  MIN_PLAN_CONCURRENCY,
 } from "./service.ts";
 
 const AUTO_LEVELS = ["off", "run", "merge"] as const;
@@ -231,7 +235,7 @@ const reworkTaskAction: ActionTypeDefinition = {
     await claimAndAnswer(
       ctx,
       "rework",
-      "reject",
+      "rework",
       (latest) => ({
         ...appendRework(latest, "lead", note),
         phase: "running",
@@ -385,6 +389,35 @@ export const actions: readonly ActionTypeDefinition[] = [
         return `${id} has auto off: the scheduler does not start its tasks; run operad dev:auto ${id} --level merge`;
       }
       return undefined;
+    },
+  },
+  {
+    name: "concurrency",
+    on: "plan",
+    args: {
+      type: "object",
+      properties: {
+        count: {
+          type: "integer",
+          minimum: MIN_PLAN_CONCURRENCY,
+          maximum: MAX_PLAN_CONCURRENCY,
+          description: `How many of the plan's tasks may run at once, from ${MIN_PLAN_CONCURRENCY} to ${MAX_PLAN_CONCURRENCY} (a fixed upper bound). Takes effect at the next scheduler tick; running tasks are not stopped.`,
+        },
+      },
+      required: ["count"],
+      additionalProperties: false,
+    },
+    when(state) {
+      const plan = planData(state);
+      return plan.status !== "cancelled" && planState(plan) !== "finished";
+    },
+    why: planStateWhy("concurrency", "a plan that is neither cancelled nor finished"),
+    async run(ctx, args) {
+      const count =
+        typeof args === "object" && args !== null
+          ? (args as Record<string, unknown>).count
+          : undefined;
+      await setConcurrency(ctx.store, ctx.object.id, validatePlanConcurrency(count));
     },
   },
 ];

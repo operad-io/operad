@@ -272,7 +272,16 @@ interface Prepared {
   readonly base?: string | undefined;
   readonly message?: string | undefined;
   readonly files?: readonly string[] | undefined;
+  /** The main this visit merged into the branch, when it merged one. */
+  readonly merged?: MergedMain | undefined;
 }
+
+/** What the worktree step merged: the remote main's commit, and whether it conflicted. */
+export type MergedMain = {
+  readonly ref: string;
+  readonly commit: string;
+  readonly conflict: boolean;
+};
 
 function failed(message: string, files?: readonly string[]): Prepared {
   return { kind: "failed", message, ...(files === undefined ? {} : { files }) };
@@ -280,17 +289,31 @@ function failed(message: string, files?: readonly string[]): Prepared {
 
 /** Merges the fetched main into a reused branch and reports a conflict. */
 function mergeLatest(path: string, mainRef: string): Prepared {
+  const before = headOf(path);
+  const commit = git(path, ["rev-parse", "--short", mainRef]).out;
   const merge = git(path, ["merge", "--no-edit", "--no-ff", mainRef]);
   if (!merge.ok) {
     const files = conflictedFiles(path);
     if (files.length > 0 || mergeInProgress(path)) {
-      return { kind: "conflict", base: headOf(path), files };
+      return {
+        kind: "conflict",
+        base: headOf(path),
+        files,
+        merged: { ref: mainRef, commit, conflict: true },
+      };
     }
     return failed(
       `cannot merge "${mainRef}" into the worktree: ${merge.err || merge.out}`,
     );
   }
-  return { kind: "ready", base: headOf(path) };
+  const after = headOf(path);
+  return {
+    kind: "ready",
+    base: after,
+    ...(after === before
+      ? {}
+      : { merged: { ref: mainRef, commit, conflict: false } }),
+  };
 }
 
 /** Fetches, creates the worktree when needed, and merges main into a reused one. */
@@ -541,7 +564,7 @@ export async function runWorktree(
       data: { reason: "cancelled_dependency", dependency: blockedBy },
     };
   }
-  const { attempt, attempts } = attemptFor(ctx, context.task);
+  const { attempt, attempts, replay } = attemptFor(ctx, context.task);
   const prepared = prepareWorktree(
     context.repository,
     context.settings,
@@ -569,7 +592,15 @@ export async function runWorktree(
     reviews: 0,
     // The next gate failure appends a fresh rework even in the same flow run.
     rework: null,
+    // A replay finds main already merged and keeps what the first visit said.
+    merged: prepared.merged ?? (replay ? (attempt.merged ?? null) : null),
   };
+  const mergedNote =
+    prepared.merged === undefined
+      ? undefined
+      : prepared.merged.conflict
+        ? `merging ${prepared.merged.ref} ${prepared.merged.commit}: conflict`
+        : `merged ${prepared.merged.ref} ${prepared.merged.commit}`;
   const next: TaskData = {
     ...context.task,
     phase: "running",
@@ -578,6 +609,9 @@ export async function runWorktree(
     startRequested: false,
     attempts,
     attempt: nextAttempt,
+    ...(mergedNote === undefined
+      ? {}
+      : { brief: appendChange(context.task.brief, mergedNote) }),
   };
   if (!(await saveTaskGuarded(ctx, context.taskKey, next, "dev:worktree"))) {
     return cancelledStep();
@@ -590,6 +624,7 @@ export async function runWorktree(
     base,
     ...(prepared.message === undefined ? {} : { message: prepared.message }),
     ...(prepared.files === undefined ? {} : { files: prepared.files }),
+    ...(prepared.merged === undefined ? {} : { merged: prepared.merged }),
   };
   return { result: prepared.kind, data };
 }
@@ -613,7 +648,7 @@ export function conflictPrompt(files: readonly string[]): string {
         ].join("\n");
   return [
     named,
-    "Start by resolving every conflict, then commit the merge and continue with the task.",
+    "The branch has a merge of the latest main in progress, and resolving it is part of this attempt. Start by resolving every conflict, then commit the merge and continue with the task.",
   ].join("\n\n");
 }
 

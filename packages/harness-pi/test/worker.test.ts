@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseInput, THINKING_LEVELS } from "../src/protocol.ts";
+import { boundedTimeout } from "../src/worker.ts";
 
 const REAL_WORKER = join(import.meta.dir, "..", "src", "worker.ts");
 const FAKE_WORKER = join(import.meta.dir, "fake-worker.ts");
@@ -573,4 +574,92 @@ test("a grant the host cannot confirm lets nothing through", async () => {
   // stdin ended: nobody can write the fact, so the grant does not apply.
   expect(existsSync(marker)).toBe(false);
   expect(run.lines.filter((line) => line["type"] === "blocked")).toHaveLength(1);
+});
+
+function makeFifo(path: string): void {
+  const made = Bun.spawnSync({ cmd: ["mkfifo", path] });
+  if (made.exitCode !== 0) throw new Error(`mkfifo failed for ${path}`);
+}
+
+test("a bash call that blocks on a FIFO is stopped by bashTimeoutSecs, the model gets an error and the run ends done", async () => {
+  const s = setup();
+  const fifo = join(s.dir, "stuck.fifo");
+  makeFifo(fifo);
+  const contexts = join(s.dir, "contexts.jsonl");
+  const run = await runFake(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: `cat ${fifo}` } } },
+      { text: "I will try something else" },
+    ],
+    { ...s.input, bashTimeoutSecs: 1 },
+    { FAKE_CONTEXT_FILE: contexts },
+  );
+
+  expect(run.exitCode).toBe(0);
+  expect(run.lines.find((line) => line["type"] === "tool_execution_end")).toMatchObject({ toolName: "bash", isError: true });
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "I will try something else" });
+  const calls = readFileSync(contexts, "utf-8").split("\n").filter((line) => line.length > 0);
+  expect(calls.length).toBe(2);
+  expect(calls[1]).toContain("timed out after 1 seconds");
+});
+
+test("a timeout the model asks for above the limit is brought down to the limit", async () => {
+  const s = setup();
+  const fifo = join(s.dir, "stuck.fifo");
+  makeFifo(fifo);
+  const contexts = join(s.dir, "contexts.jsonl");
+  const run = await runFake(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: `cat ${fifo}`, timeout: 100000 } } },
+      { text: "done" },
+    ],
+    { ...s.input, bashTimeoutSecs: 1 },
+    { FAKE_CONTEXT_FILE: contexts },
+  );
+  expect(run.exitCode).toBe(0);
+  const calls = readFileSync(contexts, "utf-8").split("\n").filter((line) => line.length > 0);
+  expect(calls[1]).toContain("timed out after 1 seconds");
+});
+
+test("boundedTimeout: absent gets the limit, above gets the limit, within and bad values are left alone", () => {
+  expect(boundedTimeout(undefined, 1800)).toBe(1800);
+  expect(boundedTimeout(5000, 1800)).toBe(1800);
+  expect(boundedTimeout(30, 1800)).toBeUndefined();
+  expect(boundedTimeout(1800, 1800)).toBeUndefined();
+  expect(boundedTimeout(-1, 1800)).toBeUndefined();
+});
+
+test("the agent's shell does not read BASH_ENV, where a user's aliases and functions could come from", async () => {
+  const s = setup();
+  const marker = join(s.dir, "bash-env-ran");
+  const rc = join(s.dir, "rc.sh");
+  writeFileSync(rc, `touch ${marker}\n`);
+  const run = await runFake(
+    s,
+    [{ text: "", toolCall: { name: "bash", arguments: { command: "true" } } }, { text: "ok" }],
+    s.input,
+    { BASH_ENV: rc },
+  );
+  expect(run.exitCode).toBe(0);
+  expect(existsSync(marker)).toBe(false);
+});
+
+test("parseInput refuses a bashTimeoutSecs that is 0, negative, fractional or not a number, and names the field", () => {
+  const base = {
+    prompt: "p",
+    cwd: "/c",
+    authPath: "/a",
+    modelsPath: "/m",
+    agentDir: "/d",
+    sessionDir: "/s",
+  };
+  for (const bad of [0, -1, 2.5, "60", null]) {
+    expect(parseInput({ ...base, bashTimeoutSecs: bad })).toEqual({
+      ok: false,
+      message: "bashTimeoutSecs must be a positive integer",
+    });
+  }
+  expect(parseInput({ ...base, bashTimeoutSecs: 60 }).ok).toBe(true);
 });

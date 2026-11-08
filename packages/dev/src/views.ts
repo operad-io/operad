@@ -86,7 +86,7 @@ export const planViews: ObjectViews = {
       id: bareId(object.id),
       title: plan.title,
       state: planState(plan),
-      note: `${planNote(plan)}  auto: ${plan.auto}  ${plan.priority}`,
+      note: `${planNote(plan)}  auto: ${plan.auto}  ${plan.priority}  concurrency: ${plan.concurrency}`,
       scope: plan.repository,
     };
   },

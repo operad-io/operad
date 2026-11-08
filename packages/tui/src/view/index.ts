@@ -13,6 +13,7 @@ import {
   type CliRenderer,
   type TextChunk,
 } from "@opentui/core";
+import { entryHint, paletteEntries } from "../actions.ts";
 import { chunksOfLine, type MarkdownPalette } from "../markdown.ts";
 import { sanitize } from "../sanitize.ts";
 import { displayWidth, graphemes } from "../wrap.ts";
@@ -25,6 +26,7 @@ import {
   RIGHT_X,
   bodyHeight,
   footerText,
+  noticeText,
   sectionLayout,
   sectionWidth,
   listWindow,
@@ -94,6 +96,13 @@ function chunk(
 
 function styled(chunks: readonly TextChunk[]): StyledText {
   return new StyledText([...chunks]);
+}
+
+/** The last lists stay visible but weak while the server does not answer. */
+function dimmed(text: StyledText, on: boolean, palette: TuiPalette): StyledText {
+  if (!on) return text;
+  const fg = RGBA.fromHex(palette.weak);
+  return new StyledText(text.chunks.map((part) => ({ ...part, fg })));
 }
 
 /** Cuts `text` to `width` display cells, ending in `…` when it was cut. */
@@ -218,9 +227,13 @@ function listContent(
 ): StyledText {
   if (tab === undefined) return styled([chunk("no tabs", palette.weak)]);
   if (tab.list.rows.length === 0) {
-    const message = tab.list.loaded
-      ? `nothing in ${tab.title.toLowerCase()}`
-      : "loading…";
+    const message = !tab.list.loaded
+      ? "loading…"
+      : tab.kind === "pending"
+        ? "nothing waits for you"
+        : tab.kind === "type"
+          ? `no ${tab.title.toLowerCase()} yet`
+          : `nothing in ${tab.title.toLowerCase()}`;
     return styled([chunk(message, palette.weak)]);
   }
   const width = listCells(state);
@@ -297,7 +310,7 @@ function sectionHint(
   width: number,
 ): TextChunk[] {
   if (section.error !== undefined) {
-    return [chunk(`${fit(section.error, width)}\n`, palette.error)];
+    return [chunk(`${fit(`${section.error} · r retries`, width)}\n`, palette.error)];
   }
   if (section.loading) return [chunk("loading…\n", palette.weak)];
   if (section.capped && !section.full) {
@@ -357,6 +370,43 @@ function keyContent(palette: TuiPalette): StyledText {
   return styled(chunks);
 }
 
+/** The palette or the note input, drawn in the box; undefined when neither is open. */
+function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefined {
+  const input = state.input;
+  if (input === undefined || input.kind === "confirm") return undefined;
+  const bar = "▏";
+  if (input.kind === "note") {
+    const chunks: TextChunk[] = [
+      chunk(`${input.action} · note${input.required ? " (required)" : ""}\n`, palette.accent, TextAttributes.BOLD),
+      chunk(`${input.text}${bar}\n`),
+      chunk("enter sends · shift-enter or ctrl-j adds a line · esc cancels", palette.weak),
+    ];
+    return styled(chunks);
+  }
+  const chunks: TextChunk[] = [chunk(`: ${input.query}${bar}\n`, palette.accent)];
+  const entries = paletteEntries(state);
+  if (state.object === undefined) {
+    chunks.push(chunk("no object is selected", palette.weak));
+  } else if (entries.length === 0) {
+    chunks.push(chunk("no action matches", palette.weak));
+  }
+  entries.forEach((entry, at) => {
+    const hint = entryHint(entry);
+    chunks.push(chunk(at === input.cursor ? "❯ " : "  ", palette.accent));
+    chunks.push(chunk(entry.name, at === input.cursor ? palette.accent : undefined));
+    chunks.push(chunk(hint === "" ? "\n" : `  ${hint}\n`, palette.weak));
+  });
+  return styled(chunks);
+}
+
+/** The line count the box needs for the input it draws. */
+function inputLines(state: TuiState): number {
+  const input = state.input;
+  if (input?.kind === "note") return input.text.split("\n").length + 2;
+  if (input?.kind === "palette") return Math.max(1, paletteEntries(state).length) + 1;
+  return 0;
+}
+
 /** Everything one state draws, as styled text, before any terminal sees it. */
 export interface TuiDrawing {
   readonly header: StyledText;
@@ -374,7 +424,8 @@ export function drawState(state: TuiState): TuiDrawing {
   const palette = paletteFor(state.theme);
   const tab = activeTab(state);
   const rowError = tab?.list.rows[tab.list.cursor]?.error;
-  const status = statusText(state) ?? rowError;
+  const notice = noticeText(state);
+  const status = notice ?? statusText(state) ?? rowError;
   const width = Math.max(1, state.width - 3);
   return {
     header: headerContent(state, palette),
@@ -384,9 +435,13 @@ export function drawState(state: TuiState): TuiDrawing {
       status === undefined
         ? styled([chunk(` ${fit(footerText(state), width)}`, palette.weak)])
         : styled([chunk(` ${fit(status, width)}`, palette.error)]),
-    list: listContent(state, activeTab(state), palette),
+    list: dimmed(
+      listContent(state, activeTab(state), palette),
+      state.connection === "unreachable",
+      palette,
+    ),
     right: objectContent(state, palette),
-    overlay: state.keys ? keyContent(palette) : undefined,
+    overlay: state.keys ? keyContent(palette) : inputContent(state, palette),
   };
 }
 
@@ -521,7 +576,8 @@ export function createTuiView(ctx: CliRenderer): TuiView {
       overlayBox.visible = drawing.overlay !== undefined;
       overlayBox.borderColor = palette.weak;
       overlayBox.width = Math.max(10, Math.min(60, state.width - 4));
-      overlayBox.height = Math.max(3, Math.min(KEY_LIST.length + 4, state.height - 3));
+      const wanted = state.keys ? KEY_LIST.length + 4 : inputLines(state) + 2;
+      overlayBox.height = Math.max(3, Math.min(wanted, state.height - 3));
       if (drawing.overlay !== undefined) overlay.content = drawing.overlay;
 
       root.requestRender();
