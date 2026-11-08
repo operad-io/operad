@@ -3,6 +3,7 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
+  appendFileSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -110,6 +111,8 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
   });
   const devJson = join(remote.repository, ".operad", "dev.json");
   writeDevJson(remote.repository, options);
+  // The settings file is local to the clone; keep it from making the tree dirty.
+  appendFileSync(join(remote.repository, ".git", "info", "exclude"), ".operad/\n");
   const plan = await addPlan(store, {
     repository,
     slug: "plan",
@@ -652,6 +655,19 @@ describe("dev/integrate main clone", () => {
     expect((await taskOf(state)).brief).toContain(
       "main clone not updated: uncommitted changes",
     );
+  });
+
+  test("an untracked file makes the clone dirty and it is left alone", async () => {
+    const state = await fixture();
+    const before = cloneHead(state);
+    writeFileSync(join(state.remote.repository, "scratch.txt"), "new\n");
+    const result = await integrate(state);
+    expect(result.result).toBe("merged");
+    expect(cloneHead(state)).toBe(before);
+    expect(result.data?.mainClone).toMatchObject({
+      updated: false,
+      note: "uncommitted changes",
+    });
   });
 
   test("a clone on another branch is left alone", async () => {

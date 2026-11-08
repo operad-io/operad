@@ -65,7 +65,7 @@ export function updateMainClone(
       note: `the main clone is on ${current.ok ? `"${current.out}"` : "no branch"}, not "${branch}"`,
     };
   }
-  const status = git(repository, ["status", "--porcelain", "--untracked-files=no"]);
+  const status = git(repository, ["status", "--porcelain", "--untracked-files=normal"]);
   if (!status.ok) {
     return { updated: false, note: `cannot read its status: ${status.err}` };
   }
