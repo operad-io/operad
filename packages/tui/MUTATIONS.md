@@ -108,3 +108,6 @@ the row fields.
 | T-0033-M6 | packages/tui/src/view/index.ts | the lists were not dimmed while the server was lost | `the states a session meets > the last lists stay visible but dimmed while the server does not answer` |
 | T-0033-M7 | packages/tui/src/app.ts | an event after the server was lost fetched one row instead of everything | `live updates in the shell > an event while the server was lost refetches everything, not one row` |
 | T-0033-M8 | packages/tui/src/state.ts | `r` did not ask again for a failed section | `the states a session meets > a section that failed shows its message and r asks for it again` |
+| T-0033-M9 | packages/tui/src/state.ts | `r` retried after the 401 state | `rework 1 states > r does not retry after the token was rotated` |
+| T-0033-M10 | packages/tui/src/state.ts | a gone object's row stayed in the type lists | `rework 1 states > a row whose object is gone leaves its list` |
+| T-0033-M11 | packages/tui/src/events.ts | a lost stream yielded no error event | `TuiEvents > a refused connection retries with the first backoff step` |

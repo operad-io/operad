@@ -430,7 +430,8 @@ export type TuiStateEvent =
   /** The server answered, or did not, or refused the token. */
   | { readonly type: "connection"; readonly connection: TuiConnection }
   /** One row was fetched again; it replaces the rows with its id in every list. */
-  | { readonly type: "row"; readonly row: ViewRow };
+  | { readonly type: "row"; readonly row: ViewRow }
+  | { readonly type: "row-gone"; readonly id: string };
 
 /** A duration as the Running list writes it. */
 export function formatElapsed(ms: number): string {
@@ -1147,6 +1148,8 @@ function handleKey(
       if (isKey(key, "g")) return jumpSection(state, "top");
     }
   }
+  // A rotated token is not retried: the person runs the TUI again.
+  if (isKey(key, "r") && state.connection === "unauthorized") return state;
   if (isKey(key, "r")) {
     const retry = { ...state, refreshRequested: true };
     const object = state.object;
@@ -1222,6 +1225,21 @@ function replaceRow(state: TuiState, row: TuiRow): TuiState {
     return changed && rows.some((r, i) => r !== tab.list.rows[i])
       ? { ...tab, list: { ...tab.list, rows } }
       : tab;
+  });
+  return changed ? { ...state, tabs } : state;
+}
+
+/** Drops the row of an object that is gone from the server. */
+function removeRow(state: TuiState, id: string): TuiState {
+  let changed = false;
+  const tabs = state.tabs.map((tab) => {
+    if (tab.kind !== "type") return tab;
+    const at = tab.list.rows.findIndex((row) => sameObject(row.id, id));
+    if (at < 0) return tab;
+    changed = true;
+    const rows = tab.list.rows.filter((_, i) => i !== at);
+    const cursor = Math.min(tab.list.cursor, Math.max(0, rows.length - 1));
+    return { ...tab, list: { ...tab.list, rows, cursor } };
   });
   return changed ? { ...state, tabs } : state;
 }
@@ -1433,6 +1451,8 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       return state.connection === event.connection
         ? state
         : { ...state, connection: event.connection };
+    case "row-gone":
+      return removeRow(state, event.id);
     case "row":
       return replaceRow(state, rowFromView(event.row));
     case "refreshed":

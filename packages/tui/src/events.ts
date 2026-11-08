@@ -4,7 +4,13 @@
  * cannot resume, and a reconnect with capped backoff until the caller stops it.
  */
 
-import { defaultFetch, httpError, type FetchLike, type TuiError } from "./client.ts";
+import {
+  defaultFetch,
+  httpError,
+  TuiUnreachableError,
+  type FetchLike,
+  type TuiError,
+} from "./client.ts";
 
 /** The first delay before a reconnect. */
 export const DEFAULT_RETRY_MIN_MS = 250;
@@ -217,12 +223,25 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
 
   private async run(): Promise<void> {
     let attempt = 0;
+    let down = false;
     while (!this.closed) {
       let delivered = false;
       try {
         delivered = await this.connect();
-      } catch {
-        // A refused connection or a dropped stream is retried below.
+        down = false;
+      } catch (error) {
+        // A refused connection or a dropped stream is retried below, and said
+        // once per outage so the app can show it and ask the lists again.
+        if (!this.closed && !down) {
+          down = true;
+          this.push({
+            kind: "error",
+            error: new TuiUnreachableError(
+              `the event stream to ${this.baseUrl} was lost`,
+              error,
+            ),
+          });
+        }
       }
       if (this.closed) break;
       // A server that accepts and then closes without an event is still a

@@ -246,6 +246,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     const lost = connectionOf(error);
     if (lost === undefined) return false;
     dispatch({ type: "connection", connection: lost });
+    // Whoever lost the server, the lists are asked for again with backoff.
+    if (lost === "unreachable") scheduleRetry();
     return true;
   }
 
@@ -540,7 +542,9 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     if (signal.aborted || finished) return;
     if (!result.ok) {
       // An object that is gone from the server is not a failure of the screen.
-      if (!(result.error instanceof TuiError && result.error.status === 404)) {
+      if (result.error instanceof TuiError && result.error.status === 404) {
+        dispatch({ type: "row-gone", id });
+      } else {
         fail(result.error);
       }
       return;

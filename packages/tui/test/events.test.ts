@@ -146,6 +146,8 @@ describe("TuiEvents", () => {
         },
       });
       try {
+        const lost = await events.next();
+        expect(lost.done ? undefined : lost.value.kind).toBe("error");
         const waiting = events.next();
         await connection.connected;
         seed(h, "one");
