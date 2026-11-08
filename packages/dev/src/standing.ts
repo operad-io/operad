@@ -132,17 +132,17 @@ export function loadedPackages(home: string, codeRoot: string): ReadonlySet<stri
 }
 
 /**
- * True when `file` is code of a loaded package or a schema serve validates
- * with. Tests, docs and the mutation records are not loaded.
+ * True when `file` lies in a loaded package and is not documentation or a test:
+ * source, flows, bin, schemas at any depth, manifests. The item it raises is
+ * advice, so a file that did not need a restart may raise it.
  */
 export function isServeCode(file: string, packages: ReadonlySet<string>): boolean {
   const parts = file.split("/");
   if (parts[0] !== "packages" || parts.length < 3) return false;
   const name = parts[1];
   if (name === undefined || !packages.has(name)) return false;
-  const area = parts[2];
-  if (area === "src" || area === "flows" || area === "bin") return true;
-  return parts.length === 3 && (parts[2] ?? "").endsWith(".schema.json");
+  if (file.endsWith(".md")) return false;
+  return !parts.slice(2, -1).some((part) => part === "test" || part === "fixtures");
 }
 
 export interface ServeCodeMerge {

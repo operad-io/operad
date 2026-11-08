@@ -431,6 +431,21 @@ describe("a followed merge and the code serve has loaded", () => {
     }
   });
 
+  test("a nested schema or a manifest of a loaded package raises the item", async () => {
+    const fixture = await setup();
+    const { path, branch, repository } = await mainClone(fixture);
+    serveStartedAt(fixture.root, 1);
+    const testHooks = await import("../src/integrate.ts");
+    testHooks.integrateTestHooks.codeRoot = path;
+    try {
+      const sha = commitOnSide(path, branch, "packages/engine/schemas/config.schema.json");
+      followMain(repository, fixture.root, branch, sha);
+      expect((await fixture.registry.standing()).map((item) => item.id)).toEqual(["serve-older"]);
+    } finally {
+      testHooks.integrateTestHooks.codeRoot = undefined;
+    }
+  });
+
   test("a package serve does not load, tests and a merge in another repository raise nothing", async () => {
     const fixture = await setup();
     const { path, branch, repository } = await mainClone(fixture);

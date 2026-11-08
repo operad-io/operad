@@ -231,3 +231,4 @@ the row fields.
 | T-0076-M1 | packages/dev/src/places.ts | the repository place was never taken | `repository check places > two checks of a repository with places 1 take turns while another repository runs beside them` |
 | T-0076-M2 | packages/dev/src/places.ts | the home place was never taken | `repository check places > the home limit holds with repository limits that would allow more` |
 | T-0076-M3 | packages/dev/src/places.ts | every repository shared one set of place files | `repository check places > a check waiting for its repository does not hold a home place` |
+| T-0094-M15 | packages/dev/src/standing.ts | a file under a `schemas/` subdirectory of a loaded package was not serve code | `a followed merge and the code serve has loaded > a nested schema or a manifest of a loaded package raises the item` |
