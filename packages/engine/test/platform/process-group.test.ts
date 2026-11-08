@@ -2,8 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { watch } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import {
@@ -11,6 +10,7 @@ import {
   createGroupStop,
   exitFromStatus,
   runLine,
+  waitForChange,
   type Clock,
 } from "../../src/platform/index.ts";
 
@@ -28,24 +28,18 @@ afterAll(async () => {
   }
 });
 
-/** Resolves when the file exists, without asking repeatedly: watches the directory. */
-function waitForFile(path: string): Promise<void> {
-  if (existsSync(path)) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const watcher = watch(dirname(path), () => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      resolve();
-    });
-    watcher.on("error", (error) => {
-      watcher.close();
-      reject(error);
-    });
-    if (existsSync(path)) {
-      watcher.close();
-      resolve();
-    }
-  });
+/**
+ * How long a wait for a file sleeps between two looks when no directory event
+ * comes. A directory watch can miss a file made while it was starting, so the
+ * wait never relies on the event alone (see `waitForChange`).
+ */
+const LOOK_MS = 100;
+
+/** Resolves when the file exists. Event first; a look every `LOOK_MS` besides. */
+async function waitForFile(path: string): Promise<void> {
+  while (!existsSync(path)) {
+    await waitForChange(dirname(path), basename(path), LOOK_MS);
+  }
 }
 
 /** True for a pid a test may signal: a finite integer above 1 (never 0, 1 or a group). */
@@ -57,34 +51,16 @@ function signalable(pid: number | undefined): pid is number {
  * Resolves with the pid a shell wrote to `path`, once the file holds one. The
  * file exists, empty, before the shell writes to it, so existence is not enough.
  */
-function waitForPid(path: string): Promise<number> {
-  const read = (): number | undefined => {
+async function waitForPid(path: string): Promise<number> {
+  for (;;) {
     try {
       const pid = Number(readFileSync(path, "utf8").trim());
-      return signalable(pid) ? pid : undefined;
+      if (signalable(pid)) return pid;
     } catch {
-      return undefined;
+      // Not there yet.
     }
-  };
-  const first = read();
-  if (first !== undefined) return Promise.resolve(first);
-  return new Promise((resolve, reject) => {
-    const watcher = watch(dirname(path), () => {
-      const pid = read();
-      if (pid === undefined) return;
-      watcher.close();
-      resolve(pid);
-    });
-    watcher.on("error", (error) => {
-      watcher.close();
-      reject(error);
-    });
-    const again = read();
-    if (again !== undefined) {
-      watcher.close();
-      resolve(again);
-    }
-  });
+    await waitForChange(dirname(path), basename(path), LOOK_MS);
+  }
 }
 
 interface ManualClock extends Clock {
@@ -108,6 +84,54 @@ function manualClock(): ManualClock {
       return sleeps;
     },
   };
+}
+
+/**
+ * A clock whose waits end when the test says so. A wait that a stop starts
+ * before the sentinel's `ready` was read is bounded by the same clock; letting
+ * it end at once (the manual clock) made the stop give up on `ready` and send
+ * only SIGKILL whenever the abort beat the read of the pipe. Here every wait
+ * stays open until `release`, which the test calls from its `killGroup` once
+ * SIGTERM went out, so the order TERM, grace, KILL does not depend on timing.
+ */
+function gatedClock(): Clock & { release(): void; readonly sleepsAfterRelease: number } {
+  let open = false;
+  let after = 0;
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = () => {
+      open = true;
+      resolve();
+    };
+  });
+  return {
+    setTimeout() {
+      return {};
+    },
+    clearTimeout() {},
+    async sleep() {
+      if (open) after += 1;
+      await gate;
+    },
+    release,
+    get sleepsAfterRelease() {
+      return after;
+    },
+  };
+}
+
+/**
+ * The signals of a stop without the repeats of its last SIGKILL: after the
+ * KILL the stop looks for members of the group until it is empty and repeats
+ * the KILL while one is left, so a count of KILLs depends on how fast the
+ * kernel reaps.
+ */
+function afterTerm(signals: readonly (string | number)[]): readonly (string | number)[] {
+  const first = signals.indexOf("SIGKILL");
+  if (first < 0) return signals;
+  const rest = signals.slice(first + 1);
+  expect(rest.every((signal) => signal === "SIGKILL")).toBe(true);
+  return signals.slice(0, first + 1);
 }
 
 function alive(pid: number): boolean {
@@ -215,7 +239,7 @@ describe("process groups", () => {
     const root = await tempRoot();
     const marker = join(root, "started");
     const signals: (string | number)[] = [];
-    const clock = manualClock();
+    const clock = gatedClock();
     const controller = new AbortController();
     const running = runLine({
       line: `echo $$ > '${marker}'; sleep 60`,
@@ -224,6 +248,8 @@ describe("process groups", () => {
       clock,
       killGroup: (pgid, signal) => {
         signals.push(signal);
+        // The grace starts when TERM has gone out; ending it sends KILL.
+        if (signal === "SIGTERM") clock.release();
         try {
           process.kill(-pgid, signal);
           return true;
@@ -237,8 +263,10 @@ describe("process groups", () => {
 
     const outcome = await running;
     expect(outcome.cancelled).toBe(true);
-    expect(clock.sleeps).toBe(1);
-    expect(signals).toEqual(["SIGTERM", "SIGKILL"]);
+    // One grace after the TERM. A wait for `ready` that the abort beat is
+    // bounded by the clock too, but it ends because `ready` came.
+    expect(clock.sleepsAfterRelease).toBe(1);
+    expect(afterTerm(signals)).toEqual(["SIGTERM", "SIGKILL"]);
   });
 
   test("the sentinel does not outlive the run", async () => {
@@ -277,7 +305,12 @@ describe("process groups", () => {
     const controller = new AbortController();
     const signals: (string | number)[] = [];
     const running = runLine({
-      line: `trap 'echo got-term > "${marker}"' TERM; echo $PPID > '${sentinelFile}'; sleep 60`,
+      // The sleep runs in the background before the pid is written, and `wait`
+      // takes the trap at once. A foreground `sleep` that the abort beat to its
+      // fork would not be in the group when SIGTERM went out, and the shell
+      // would hold the trap until that sleep ended, with the grace waiting for
+      // the trap: the test would hang.
+      line: `trap 'echo got-term > "${marker}"' TERM; sleep 60 & echo $PPID > '${sentinelFile}'; wait`,
       cwd: root,
       signal: controller.signal,
       clock,
@@ -340,13 +373,19 @@ describe("process groups", () => {
     ].join("\n");
     const controller = new AbortController();
     const signals: { readonly signal: string | number; readonly ready: boolean }[] = [];
+    // The wait for `ready` is bounded by the grace; a real 500 ms ended before
+    // the delayed announcement under load and the stop sent only SIGKILL. The
+    // clock holds every wait until TERM went out, so `ready` always wins.
+    const clock = gatedClock();
     const running = runLine({
       line: "sleep 60",
       cwd: root,
       signal: controller.signal,
       sentinelScript,
+      clock,
       killGroup: (pgid, signal) => {
         signals.push({ signal, ready: existsSync(readyFile) });
+        if (signal === "SIGTERM") clock.release();
         try {
           process.kill(-pgid, signal);
           return true;
@@ -361,7 +400,10 @@ describe("process groups", () => {
 
     const outcome = await running;
     expect(outcome.cancelled).toBe(true);
-    expect(signals.map((entry) => entry.signal)).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(afterTerm(signals.map((entry) => entry.signal))).toEqual([
+      "SIGTERM",
+      "SIGKILL",
+    ]);
     // Every signal was sent only after the sentinel had installed its trap and
     // announced `ready`; the signal that follows the announcement reaches a
     // sentinel that ignores it.
@@ -369,6 +411,131 @@ describe("process groups", () => {
     const sentinelPid = await waitForPid(sentinelFile);
     expect(alive(sentinelPid)).toBe(false);
   });
+
+  test("a straggler that missed the SIGKILL is killed again while the group exists", async () => {
+    const signals: (string | number)[] = [];
+    // The group still has a member (a child forked while the signal went out)
+    // for the first two looks, then it is gone.
+    const looks = [true, true, false];
+    const stop = createGroupStop({
+      clock: manualClock(),
+      killGroup: (_pgid, signal) => {
+        signals.push(signal);
+        return true;
+      },
+      pid: () => 4242,
+      sentinelExited: () => false,
+      readySeen: () => true,
+      ready: Promise.resolve(),
+      groupExists: () => looks.shift() ?? false,
+      pause: () => undefined,
+    });
+    await stop();
+    expect(signals).toEqual(["SIGTERM", "SIGKILL", "SIGKILL", "SIGKILL"]);
+    expect(looks).toEqual([]);
+  });
+
+  test("a stop that gave up on ready also kills a straggler again", async () => {
+    const signals: (string | number)[] = [];
+    const looks = [true, false];
+    await createGroupStop({
+      clock: manualClock(),
+      killGroup: (_pgid, signal) => {
+        signals.push(signal);
+        return true;
+      },
+      pid: () => 4242,
+      sentinelExited: () => false,
+      readySeen: () => false,
+      // `ready` never comes: the grace ends first and the stop sends KILL only.
+      ready: new Promise<void>(() => undefined),
+      groupExists: () => looks.shift() ?? false,
+      pause: () => undefined,
+    })();
+    expect(signals).toEqual(["SIGKILL", "SIGKILL"]);
+  });
+
+  test("no signal goes to the group id once the sentinel is reaped", async () => {
+    // The reaped leader no longer owns the group id; the id may now belong to
+    // an unrelated group, so a group that still looks alive is left alone.
+    const signals: (string | number)[] = [];
+    let reaped = false;
+    await createGroupStop({
+      clock: manualClock(),
+      killGroup: (_pgid, signal) => {
+        signals.push(signal);
+        if (signal === "SIGKILL") reaped = true;
+        return true;
+      },
+      pid: () => 4242,
+      sentinelExited: () => reaped,
+      readySeen: () => true,
+      ready: Promise.resolve(),
+      groupExists: () => true,
+      pause: () => undefined,
+    })();
+    expect(signals).toEqual(["SIGTERM", "SIGKILL"]);
+  });
+
+  test("a SIGKILL that finds no group starts no sweep", async () => {
+    // The group vanished before the SIGKILL, so its id may be someone else's.
+    for (const readySeen of [true, false]) {
+      const signals: (string | number)[] = [];
+      await createGroupStop({
+        clock: manualClock(),
+        killGroup: (_pgid, signal) => {
+          signals.push(signal);
+          return signal === "SIGTERM";
+        },
+        pid: () => 4242,
+        sentinelExited: () => false,
+        readySeen: () => readySeen,
+        ready: readySeen ? Promise.resolve() : new Promise<void>(() => undefined),
+        groupExists: () => true,
+        pause: () => undefined,
+      })();
+      expect(signals).toEqual(readySeen ? ["SIGTERM", "SIGKILL"] : ["SIGKILL"]);
+    }
+  });
+
+  test("a group that is gone after the SIGKILL gets no more signals", async () => {
+    const signals: (string | number)[] = [];
+    await createGroupStop({
+      clock: manualClock(),
+      killGroup: (_pgid, signal) => {
+        signals.push(signal);
+        return true;
+      },
+      pid: () => 4242,
+      sentinelExited: () => false,
+      readySeen: () => true,
+      ready: Promise.resolve(),
+      groupExists: () => false,
+      pause: () => undefined,
+    })();
+    expect(signals).toEqual(["SIGTERM", "SIGKILL"]);
+  });
+
+  test("a child forked as the group is signaled does not outlive the stop", async () => {
+    // The shell forks its `sleep` while the stop signals the group: the signal
+    // reaches the shell and misses the child, which keeps the output pipe open.
+    // Repeating this makes the race likely; every run must end.
+    for (let round = 0; round < 40; round += 1) {
+      const root = await tempRoot();
+      const marker = join(root, "started");
+      const controller = new AbortController();
+      const running = runLine({
+        line: `echo $$ > '${marker}'; sleep 60`,
+        cwd: root,
+        signal: controller.signal,
+        clock: manualClock(),
+      });
+      await waitForFile(marker);
+      controller.abort();
+      const outcome = await running;
+      expect(outcome.cancelled).toBe(true);
+    }
+  }, 60_000);
 
   test("nothing is signaled after the sentinel exits", async () => {
     const signals: (string | number)[] = [];

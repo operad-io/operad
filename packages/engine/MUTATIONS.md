@@ -263,3 +263,14 @@ the row fields.
 | T-0068-M1 | packages/engine/src/views/running.ts | a new attempt (`effect_requested`) no longer reset the step time | `the running view names the object and times the step > step time resets on a new step and on a new attempt` |
 | T-0068-M2 | packages/engine/src/views/running.ts | an error row's message was returned as the title | `the running view names the object and times the step > a throwing row leaves the title null` |
 | typed-bare-id-M1 | packages/engine/src/views/presentation.ts | a typed bare id (`task:T-0043-x`) skipped the scoped lookup | `presentation views > a typed bare id finds a scoped object of its type, as the app opens a row` |
+
+## T-0065 — a cancelled line never hangs, and a lock takeover keeps one holder
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0065-M1 | packages/engine/src/platform/process-group.ts | the stop sent its last SIGKILL once and did not look for a child the signal missed | `process groups > a straggler that missed the SIGKILL is killed again while the group exists`, `a child forked as the group is signaled does not outlive the stop` |
+| T-0065-M2 | packages/engine/src/platform/process-group.ts | the stop that gave up on `ready` sent its SIGKILL once and did not look for a missed child | `process groups > a stop that gave up on ready also kills a straggler again`, `a stop before ready waits for the sentinel's trap` |
+| T-0065-M3 | packages/engine/src/platform/process-group.ts | the look for a straggler found it and did not signal the group again | `process groups > a straggler that missed the SIGKILL is killed again while the group exists`, `a stop that gave up on ready also kills a straggler again` |
+| T-0065-M5 | packages/engine/src/platform/process-group.ts | the sweep signalled the group id after the sentinel was reaped, when an unrelated group could own it | `process groups > no signal goes to the group id once the sentinel is reaped` |
+| T-0065-M4 | packages/engine/src/platform/file-lock.ts | a lock takeover removed the lock file without checking, under the guard, that it was still the dead record | `the lock file > a newer live lock renamed during a takeover is put back` |
+| T-0065-M6 | packages/engine/src/platform/process-group.ts | the sweep ran although the first SIGKILL reported the group already gone, when an unrelated group could own the id | `process groups > a SIGKILL that finds no group starts no sweep` |

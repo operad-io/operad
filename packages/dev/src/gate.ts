@@ -18,7 +18,8 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { checkPlaces } from "./places.ts";
-import { runCheckWithRerun } from "./rerun.ts";
+import { runCheckCommands } from "./rerun.ts";
+import { recordRerunPasses } from "./reruns.ts";
 import {
   ReviewGradingError,
   readReviewGrading,
@@ -307,17 +308,15 @@ export async function runVerify(
     );
   }
 
-  const checked = await runCheckWithRerun(
+  const checked = await runCheckCommands(
     runStep,
-    {
-      lines: commands,
-      cwd: path,
-      timeoutSecs: context.settings.gate.commandTimeoutSecs,
-    },
+    { cwd: path, timeoutSecs: context.settings.gate.commandTimeoutSecs },
+    commands,
     stepOptions(ctx, path),
     context.settings.check.rerun,
     checkPlaces(ctx),
   );
+  await recordRerunPasses(ctx.store, checked.passedOnRerun);
   const { outcome, hostError, note } = checked;
 
   const outcomeData =

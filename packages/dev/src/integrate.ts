@@ -34,7 +34,8 @@ import {
   type CommandRunner,
   type MainCloneOutcome,
 } from "./mainclone.ts";
-import { runCheckWithRerun } from "./rerun.ts";
+import { runCheckCommands } from "./rerun.ts";
+import { recordRerunPasses } from "./reruns.ts";
 import { getPlan, refreshPlanCounts } from "./service.ts";
 import {
   cancelledStep,
@@ -482,13 +483,15 @@ export async function runIntegrate(
       if (runStep === undefined) {
         return fail("the kernel did not offer a way to run the integration checks");
       }
-      const checked = await runCheckWithRerun(
+      const checked = await runCheckCommands(
         runStep,
-        { lines: keyCommands, cwd: gate },
+        { cwd: gate },
+        keyCommands,
         stepOptions(ctx, gate),
         settings.check.rerun,
         checkPlaces(ctx),
       );
+      await recordRerunPasses(ctx.store, checked.passedOnRerun);
       const { outcome, hostError } = checked;
       checkNote = checked.note;
       if (hostError !== undefined || outcome?.result !== "pass") {
