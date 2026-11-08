@@ -142,6 +142,7 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
   private connectedBefore = false;
   private started = false;
   private closed = false;
+  private down = false;
 
   constructor(options: TuiEventsOptions) {
     this.baseUrl = options.url.replace(/\/+$/, "");
@@ -223,17 +224,15 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
 
   private async run(): Promise<void> {
     let attempt = 0;
-    let down = false;
     while (!this.closed) {
       let delivered = false;
       try {
         delivered = await this.connect();
-        down = false;
       } catch (error) {
         // A refused connection or a dropped stream is retried below, and said
         // once per outage so the app can show it and ask the lists again.
-        if (!this.closed && !down) {
-          down = true;
+        if (!this.closed && !this.down) {
+          this.down = true;
           this.push({
             kind: "error",
             error: new TuiUnreachableError(
@@ -283,6 +282,7 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
       this.push({ kind: "reset" });
     }
     this.connectedBefore = true;
+    this.down = false;
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -300,6 +300,8 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
     } finally {
       await reader.cancel().catch(() => undefined);
     }
+    // The stream is meant to stay open: an end that was not asked for is a loss.
+    if (!this.closed) throw new Error("the event stream ended");
     return delivered;
   }
 

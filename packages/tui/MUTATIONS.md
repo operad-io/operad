@@ -111,3 +111,5 @@ the row fields.
 | T-0033-M9 | packages/tui/src/state.ts | `r` retried after the 401 state | `rework 1 states > r does not retry after the token was rotated` |
 | T-0033-M10 | packages/tui/src/state.ts | a gone object's row stayed in the type lists | `rework 1 states > a row whose object is gone leaves its list` |
 | T-0033-M11 | packages/tui/src/events.ts | a lost stream yielded no error event | `TuiEvents > a refused connection retries with the first backoff step` |
+| T-0033-M12 | packages/tui/src/events.ts | a stream that ended by itself was not reported as lost | `TuiEvents > a stream that ends by itself says the stream was lost once per outage` |
+| T-0033-M13 | packages/tui/src/app.ts | a 401 left the scheduled unreachable retry running | `live updates in the shell > a 401 after the server was lost cancels the scheduled retry` |

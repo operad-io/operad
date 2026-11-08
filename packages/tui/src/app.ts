@@ -246,6 +246,10 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     const lost = connectionOf(error);
     if (lost === undefined) return false;
     dispatch({ type: "connection", connection: lost });
+    if (lost === "unauthorized" && retryCancel !== undefined) {
+      retryCancel();
+      retryCancel = undefined;
+    }
     // Whoever lost the server, the lists are asked for again with backoff.
     if (lost === "unreachable") scheduleRetry();
     return true;
@@ -473,6 +477,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   /** While the server does not answer, ask again with growing waits. */
   function scheduleRetry(): void {
     if (retryCancel !== undefined || finished) return;
+    if (state.connection === "unauthorized") return;
     const delay = retryDelay(retryAttempt);
     retryAttempt += 1;
     retryCancel = clock.after(() => {

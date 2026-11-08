@@ -190,11 +190,36 @@ describe("TuiEvents", () => {
         if (result.done) break;
         seen.push(result.value);
       }
-      expect(seen).toEqual([{ kind: "reset" }, { kind: "reset" }]);
+      expect(seen.map((e) => e.kind)).toEqual(["error", "reset", "error", "reset", "error"]);
       expect(attempts).toBe(3);
       expect(delays).toEqual([retryDelay(0), retryDelay(1), retryDelay(2)]);
     } finally {
       await h.close();
+    }
+  });
+
+  test("a stream that ends by itself says the stream was lost once per outage", async () => {
+    let attempts = 0;
+    const fetchImpl: FetchLike = async () => {
+      attempts += 1;
+      return new Response(new ReadableStream({ start: (c) => c.close() }), {
+        status: 200,
+      });
+    };
+    const events = new TuiEvents({
+      url: "http://127.0.0.1:1",
+      token: "t",
+      fetch: fetchImpl,
+      wait: async () => undefined,
+    });
+    try {
+      expect(take(await events.next()).kind).toBe("error");
+      // The next connection opens, so the outage ended; its end is a new one.
+      expect(take(await events.next()).kind).toBe("reset");
+      expect(take(await events.next()).kind).toBe("error");
+      expect(attempts).toBe(2);
+    } finally {
+      events.stop();
     }
   });
 
@@ -314,6 +339,7 @@ describe("TuiEvents", () => {
       wait: async () => undefined,
     });
     try {
+      expect(take(await events.next()).kind).toBe("error");
       expect(take(await events.next())).toEqual({ kind: "reset" });
       expect(take(await events.next())).toEqual({ kind: "change", id: "after" });
       expect(headers).toEqual([null, null]);
@@ -352,6 +378,7 @@ describe("TuiEvents", () => {
     });
     try {
       expect(take(await events.next())).toEqual({ kind: "change", id: "one" });
+      expect(take(await events.next()).kind).toBe("error");
       expect(take(await events.next())).toEqual({ kind: "change", id: "two" });
       expect(seen).toEqual([null, "s-1"]);
     } finally {

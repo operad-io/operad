@@ -365,6 +365,23 @@ describe("live updates in the shell", () => {
     s.shell.stop();
   });
 
+  test("a 401 after the server was lost cancels the scheduled retry", async () => {
+    const s = start();
+    await s.view.until((state) => titles(state).length === 1);
+    s.client.failure = new TuiUnreachableError("no server answered");
+    s.shell.key({ name: "r" });
+    await s.view.until((state) => state.connection === "unreachable");
+    await settled();
+    s.events.push({ kind: "error", error: new TuiUnauthorizedError(undefined, "no") });
+    await s.view.until((state) => state.connection === "unauthorized");
+    await settled();
+    const seen = s.client.pendingCalls;
+    s.clock.advance(60_000);
+    await settled();
+    expect(s.client.pendingCalls).toBe(seen);
+    s.shell.stop();
+  });
+
   test("an event stream refused with 401 gives the same state", async () => {
     const s = start();
     await s.view.until((state) => titles(state).length === 1);
