@@ -45,28 +45,33 @@ export function createDevPlugin() {
     steps: [
       {
         name: "worktree",
+        calls: ["shell/check"],
         results: ["ready", "conflict", "blocked", "failed", "cancelled", "interrupted"],
         run: runWorktree,
       },
       {
         name: "reverify",
+        calls: ["shell/check"],
         results: ["ready", "conflict", "failed", "cancelled", "interrupted"],
         run: runReverify,
       },
       {
         name: "work",
+        calls: ["pool/agent"],
         timeoutSecs: STEP_TIMEOUT_SECS,
         results: ["done", "nothing", "failed", "unavailable", "cancelled", "interrupted"],
         run: runWork,
       },
       {
         name: "verify",
+        calls: ["shell/check"],
         timeoutSecs: STEP_TIMEOUT_SECS,
         results: ["pass", "fail", "cancelled"],
         run: runVerify,
       },
       {
         name: "review",
+        calls: ["shell/check"],
         timeoutSecs: STEP_TIMEOUT_SECS,
         results: [
           "pass",
@@ -115,12 +120,14 @@ export function createDevPlugin() {
       },
       {
         name: "integrate",
+        calls: ["shell/check", "shell/command"],
         timeoutSecs: STEP_TIMEOUT_SECS,
         results: ["merged", "conflict", "fail", "failed", "cancelled"],
         run: runIntegrate,
       },
       {
         name: "cleanup",
+        calls: ["shell/command"],
         results: ["done", "cancelled"],
         run: runCleanup,
       },

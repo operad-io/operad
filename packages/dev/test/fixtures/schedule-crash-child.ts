@@ -4,6 +4,7 @@
  * start became a run. The parent proves the next tick recovers the claim.
  */
 
+import { createShellPlugin } from "@operad-io/shell";
 import { FilePluginStore, PluginRegistry } from "@operad-io/engine";
 import { createPoolPlugin } from "@operad-io/pool";
 import { createDevPlugin } from "../../src/index.ts";
@@ -14,7 +15,7 @@ if (storeRoot === undefined || repository === undefined) {
 }
 
 const store = new FilePluginStore({ root: storeRoot });
-const registry = new PluginRegistry([createDevPlugin(), createPoolPlugin()], {
+const registry = new PluginRegistry([createDevPlugin(), createPoolPlugin(), createShellPlugin()], {
   home: storeRoot,
   cwd: repository,
   store,
