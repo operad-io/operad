@@ -253,6 +253,16 @@ describe("dev views", () => {
     ]);
   });
 
+  test("radian journal lines show the agent's text and each turn's usage; empty tool-call messages show nothing", () => {
+    const lines = [
+      { event: "MessageAppended", data: { index: 1, message: { assistant: { content: [{ text: { text: "Checking the build." } }], reasoning: [{ text: { text: "private" } }] } } } },
+      { event: "MessageAppended", data: { index: 2, message: { assistant: { content: [], tool_calls: [{ id: "c" }] } } } },
+      { event: "MessageAppended", data: { index: 0, message: { user: { content: [{ text: { text: "prompt" } }] } } } },
+      { event: "ModelUsageRecorded", data: { usage: { input: 12, output: 3 }, fee: { micros: 1543 } } },
+    ].map((line) => JSON.stringify(line));
+    expect(readableLog(lines)).toEqual(["**agent:** Checking the build.", "turn ended: 12 in / 3 out tokens · $0.0015"]);
+  });
+
   test("an agent paragraph of 300 characters is shown whole", () => {
     const text = "w".repeat(300);
     const line = JSON.stringify({ type: "message_end", role: "assistant", text, stopReason: "stop" });

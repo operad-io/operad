@@ -168,6 +168,19 @@ describe("harness-radian/agent", () => {
     expect(end).not.toContain("/secrets/key");
   });
 
+  test("radian's nested failure result logs isError and its first error line", async () => {
+    const open = new Map();
+    radianLogLine(JSON.stringify({ event: "ToolExecutionStarted", data: { call_id: "c1", name: "shell", arguments: { command: "false" } } }), () => 5, open, "/work");
+    const end = radianLogLine(
+      JSON.stringify({ event: "ToolExecutionSettled", data: { call_id: "c1", result: { call_id: "c1", is_error: true, content: [{ text: { text: "exit code: 1\nSECRET OUTPUT" } }] } } }),
+      () => 9,
+      open,
+      "/work",
+    );
+    expect(JSON.parse(end)).toMatchObject({ type: "tool_execution_end", toolCallId: "c1", toolName: "shell", isError: true, durationMs: 4, error: "exit code: 1" });
+    expect(end).not.toContain("SECRET OUTPUT");
+  });
+
   test("a successful run records the Result record and writes the JSONL log", async () => {
     const env = await setup("done");
     const result = await runAgent(env, {

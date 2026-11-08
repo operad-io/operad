@@ -367,6 +367,27 @@ export function readableLog(lines: readonly string[]): string[] {
       if (parts.length > 0 || kind !== "Result") out.push(`result: ${parts.join(" · ")}`);
       continue;
     }
+    if (record !== undefined && (kind === "journal" || kind === "") && typeof record.event === "string") {
+      const data = isObject(record.data) ? record.data : {};
+      if (record.event === "MessageAppended") {
+        const message = isObject(data.message) ? data.message : {};
+        const assistant = isObject(message.assistant) ? message.assistant : undefined;
+        const blocks: unknown[] = Array.isArray(assistant?.content) ? assistant.content : [];
+        const said = blocks
+          .map((block) => (isObject(block) && isObject(block.text) ? stringField(block.text, ["text"]) : undefined))
+          .filter((part): part is string => part !== undefined)
+          .join(" ");
+        if (said.trim().length > 0) out.push(`**agent:** ${agentText(said)}`);
+        continue;
+      }
+      if (record.event === "ModelUsageRecorded") {
+        const parts = [stringField(data, ["stop_reason"]), tokenText(data.usage), costText(data.fee)].filter(
+          (part): part is string => part !== undefined,
+        );
+        if (parts.length > 0) out.push(`turn ended: ${parts.join(" · ")}`);
+        continue;
+      }
+    }
     if (record !== undefined && ["session", "rate_limit", "agent_settled", "grant_use"].includes(kind ?? "")) {
       continue;
     }
@@ -705,4 +726,8 @@ function workerTable(entries: readonly AttemptMetrics[]): string | undefined {
     );
   }
   return lines.join("\n");
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

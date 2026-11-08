@@ -120,8 +120,19 @@ export function radianLogLine(
   }
   const begun = open.get(id);
   open.delete(id);
-  const isError = value.isError === true || nested.isError === true || value.is_error === true;
-  const error = isError && begun?.denied !== true ? firstErrorLine(field(["error", "message"]), { secrets }) : undefined;
+  // Radian settles a call as data.result: `is_error` and content blocks of
+  // `{ text: { text } }`. Only the first error line of that text is kept.
+  const settled = isRecord(nested.result) ? nested.result : {};
+  const isError =
+    value.isError === true || nested.isError === true || value.is_error === true || settled.is_error === true;
+  const blocks = Array.isArray(settled.content) ? settled.content : [];
+  const first: unknown = blocks[0];
+  const blockText =
+    isRecord(first) && isRecord(first.text) && typeof first.text.text === "string" ? first.text.text : undefined;
+  const error =
+    isError && begun?.denied !== true
+      ? firstErrorLine(field(["error", "message"]) ?? blockText, { secrets })
+      : undefined;
   return JSON.stringify({
     type: "tool_execution_end",
     toolCallId: id,
