@@ -246,6 +246,35 @@ An unknown name is an error that lists the names. A `tui.json` that is not a
 JSON object, is not valid JSON, has a key other than `theme`, or names no known
 theme is an error that names the file and the problem; the TUI does not start.
 
+##### Your own themes
+
+`theme` may also name a theme file, `$OPERAD_HOME/themes/<name>.json` (JSON
+Schema: `packages/tui/theme.schema.json`). It names only the tokens it changes;
+`extends` (`light`, `dark`, `terminal` or another theme file; `dark` when
+absent) fills the rest. A colour is `"#rrggbb"` or an ANSI index from 0 to 15:
+
+```json
+{ "extends": "dark", "colors": { "accent": "#ff8800", "error": 9 } }
+```
+
+A cycle in `extends`, an unknown token, a bad colour or an unknown key is an
+error naming the file and the key. A file with the name of a built-in theme
+(`auto`, `light`, `dark`, `terminal`) is refused.
+
+Two examples are in `docs/themes/` and are not installed: `high-contrast.json`
+and `low-saturation.json`. To start from one:
+
+```sh
+mkdir -p ~/.operad/themes
+cp docs/themes/high-contrast.json ~/.operad/themes/mine.json
+echo '{ "theme": "mine" }' > ~/.operad/tui.json
+```
+
+The TUI watches `tui.json` and the themes directory and repaints when either
+changes, without a restart. A file that turns invalid keeps the last good theme
+and the footer shows one line, `theme not changed: <why>`, until the next good
+change.
+
 Every theme defines the same tokens: `text`, `weak` (secondary text), `rule`
 (rules and borders), `accent` (needs you), `run` (in progress), `ok` (success),
 `error`, `add` and `remove` (diff lines), `tint` (the selected row's background)
