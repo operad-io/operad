@@ -6,7 +6,16 @@
  */
 
 import { existsSync, mkdirSync } from "node:fs";
-import { findGrant, match, readProfile, type AccessProfile } from "@operad-io/access-match";
+import {
+  findGrant,
+  firstErrorLine,
+  REFUSED_IN_LOG,
+  match,
+  messageSummary,
+  readProfile,
+  summarizeCall,
+  type AccessProfile,
+} from "@operad-io/access-match";
 import type {
   AgentSessionEvent,
   ExtensionFactory,
@@ -53,6 +62,21 @@ export interface WorkerIo {
 export interface WorkerHooks {
   /** Registers extra model providers; the tests use it for the fake model. */
   registerProviders?(runtime: ModelRuntime): void;
+  /** The clock for tool call times, in epoch milliseconds; the tests inject one. */
+  now?: () => number;
+}
+
+/** The text of an assistant message, thinking and tool calls left out. */
+function textOf(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((block: unknown) =>
+      typeof block === "object" && block !== null && Reflect.get(block, "type") === "text"
+        ? String(Reflect.get(block, "text") ?? "")
+        : "",
+    )
+    .join(" ");
 }
 
 function finite(value: unknown): number | null {
@@ -95,9 +119,11 @@ class Tally {
     }
     this.lastStop = message.stopReason;
     this.lastError = message.stopReason === "error" ? (message.errorMessage ?? "the model failed") : undefined;
+    const said = messageSummary(textOf(message.content));
     return {
       type: "message_end",
       role: "assistant",
+      ...(said === undefined ? {} : { text: said }),
       stopReason: message.stopReason,
       usage: counts,
       cost: price === null ? null : { total: price },
@@ -177,6 +203,7 @@ export async function runWorker(
   const bashTimeoutSecs = input.bashTimeoutSecs ?? DEFAULT_BASH_TIMEOUT_SECS;
   const access = readProfile(input.access ?? {});
   const profile: AccessProfile = access.ok ? access.profile : {};
+  const blockedCalls = new Set<string>();
   const operadExtension: ExtensionFactory = (pi) => {
     pi.on("tool_call", async (event) => {
       io.log(`tool_call ${event.toolName}`);
@@ -201,7 +228,8 @@ export async function runWorker(
         }
         if (used) return undefined;
       }
-      io.line({ type: "blocked", toolName: event.toolName, reason: verdict.reason });
+      blockedCalls.add(event.toolCallId);
+      io.line({ type: "blocked", toolName: event.toolName, reason: REFUSED_IN_LOG });
       return { block: true, reason: verdict.reason };
     });
   };
@@ -235,6 +263,8 @@ export async function runWorker(
   });
 
   const tally = new Tally();
+  const now = hooks.now ?? Date.now;
+  const started = new Map<string, number>();
   let settle: () => void = () => {};
   const settled = new Promise<void>((resolve) => {
     settle = resolve;
@@ -246,17 +276,33 @@ export async function runWorker(
         if (line !== undefined) io.line(line);
         break;
       }
-      case "tool_execution_start":
-        io.line({ type: "tool_execution_start", toolCallId: event.toolCallId, toolName: event.toolName });
+      case "tool_execution_start": {
+        const startedAt = now();
+        started.set(event.toolCallId, startedAt);
+        const summary = summarizeCall(profile, event.toolName, event.args, input.cwd, { secrets: input.secretValues });
+        io.line({
+          type: "tool_execution_start",
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          at: startedAt,
+          ...(summary === undefined ? {} : { input: summary }),
+        });
         break;
-      case "tool_execution_end":
+      }
+      case "tool_execution_end": {
+        const begun = started.get(event.toolCallId);
+        started.delete(event.toolCallId);
+        const firstLine = blockedCalls.has(event.toolCallId) ? REFUSED_IN_LOG : event.isError ? firstErrorLine(textOf(typeof event.result === "object" && event.result !== null ? Reflect.get(event.result, "content") : event.result), { secrets: input.secretValues }) : undefined;
         io.line({
           type: "tool_execution_end",
           toolCallId: event.toolCallId,
           toolName: event.toolName,
           isError: event.isError,
+          durationMs: begun === undefined ? (event.durationMs ?? 0) : Math.max(0, now() - begun),
+          ...(firstLine === undefined ? {} : { error: firstLine }),
         });
         break;
+      }
       case "agent_settled":
         io.line({ type: "agent_settled", aborted: event.aborted });
         settle();

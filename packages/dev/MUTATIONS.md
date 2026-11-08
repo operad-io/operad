@@ -168,6 +168,8 @@ the row fields.
 | T-0056-M4 | packages/dev/src/rerun.ts | the check ran without taking a place | `check places > a check waits for a place before its command starts` |
 | T-0056-M5 | packages/dev/src/places.ts | a taken place made the taker wait for its holder instead of trying the next place | `check places > a killed check releases its place` |
 | T-0058-M4 | packages/dev/src/mainclone.ts | the clean-tree check ignored untracked files | `dev/integrate main clone > an untracked file makes the clone dirty and it is left alone` |
+| T-0063-M1 | packages/dev/src/views.ts | a call without an end line was not marked running | `dev views > a call without an end line is marked running, with its start time` |
+| T-0063-M2 | packages/dev/src/views.ts | a log of two agents showed the first one only, unlabelled | `dev views > the log section says which agent each block is from when it mixes them` |
 | T-0069-M1 | packages/dev/src/marks.ts | a ready task behind a prior task was `todo`, not `blocked` | `task marks > ready behind a prior task`, `dev scheduling > a task behind a prior task is blocked until that task merges; the plan counts its active tasks` |
 | T-0069-M2 | packages/dev/src/marks.ts | a task given up after the auto rework limit was `rework_pending` | `task marks > waiting, given up after the auto rework limit` |
 | T-0069-M3 | packages/dev/src/marks.ts | the badge read the task's attempt count only | `task badge > follows the attempt` |
@@ -179,6 +181,7 @@ the row fields.
 | T-0059-M5 | packages/dev/src/gate.ts | the Grading section's text was altered instead of given verbatim | `dev/review > review.json > the prompt carries the flow's grading verbatim` |
 | T-0059-M6 | packages/dev/src/gate.ts | review.json's fixLevel was ignored | `dev/review > review.json > fixLevel in review.json decides whether a minor finding fails` |
 | T-0059-M7 | packages/dev/src/gate.ts | an invalid review.json was swallowed instead of failing the step | `dev/review > review.json > an invalid file fails the review step naming the file` |
+| T-0063-M3 | packages/dev/src/views.ts | a radian `Result` line lost its stop reason, tokens and cost | `a radian Result line shows its stop reason, tokens and cost` |
 
 ## T-0086 — rerun only the failed tests
 
@@ -190,6 +193,7 @@ the row fields.
 | T-0086-M4 | packages/dev/src/rerun.ts | the shell quoting of a name was dropped | `dev/verify reruns only the failed tests > names with quotes and regex characters reach the rerun intact` |
 | T-0086-M5 | packages/dev/src/rerun.ts | a failed rerun counted as a pass | `dev/verify reruns only the failed tests > a rerun that fails fails the check` |
 | T-0086-M6 | packages/dev/src/reruns.ts | the count was set to 1 instead of added to | `dev/verify reruns only the failed tests > the count accumulates across tasks` |
+| T-0063-M4 | packages/dev/src/views.ts | a radian `Result` with a stop reason dropped its assistant text | `a radian Result line with text keeps the assistant text and the metadata` |
 
 ## T-0064 — final states
 
@@ -210,6 +214,8 @@ the row fields.
 | T-0094-M5 | packages/dev/src/standing.ts | a changed `*.schema.json` of a loaded package was not serve code | `a followed merge and the code serve has loaded > a merge that changes a schema serve validates with raises the item` |
 | T-0094-M6 | packages/dev/src/standing.ts | every file of a loaded package counted as serve code (tests, MUTATIONS.md) | `a followed merge and the code serve has loaded > a package serve does not load, tests and a merge in another repository raise nothing` |
 | T-0094-M7 | packages/dev/src/settings.ts | the home kept no copy of the last valid settings | `a repository whose dev.json becomes invalid > a process that starts while the file is invalid reads the copy the home kept` |
+| T-0063-M12 | `packages/dev/src/views.ts` | a radian Result text was not cut at 300 characters | `a radian Result text is cut at 300 characters` |
+| T-0063-M13 | `packages/dev/src/views.ts` | a message_end text was not cut at 300 characters | `a message_end text longer than 300 characters is cut at 300` |
 | T-0044-M1 | packages/dev/src/views.ts | a long worker name was not cut in the row | `dev views > a task row shows the last attempt's worker, short, and nothing before pools` |
 | T-0044-M2 | packages/dev/src/views.ts | an attempt with no worker got a row named "undefined" | `dev views > the metrics section splits cost, time and first pass by worker` |
 | T-0044-M3 | packages/dev/src/views.ts | a pass in a later review round counted as first pass | `dev views > the metrics section splits cost, time and first pass by worker` |
@@ -237,3 +243,4 @@ the row fields.
 | T-0076-M2 | packages/dev/src/places.ts | the home place was never taken | `repository check places > the home limit holds with repository limits that would allow more` |
 | T-0076-M3 | packages/dev/src/places.ts | every repository shared one set of place files | `repository check places > a check waiting for its repository does not hold a home place` |
 | T-0094-M15 | packages/dev/src/standing.ts | a file under a `schemas/` subdirectory of a loaded package was not serve code | `a followed merge and the code serve has loaded > a nested schema or a manifest of a loaded package raises the item` |
+| T-0063-M14 | `packages/dev/src/views.ts` | MessageAppended and ModelUsageRecorded journal lines were left to the fallback | `radian journal lines show the agent's text and each turn's usage; empty tool-call messages show nothing` |

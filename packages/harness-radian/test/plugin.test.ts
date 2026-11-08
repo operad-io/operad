@@ -1,3 +1,4 @@
+import { radianLogLine } from "../src/index.ts";
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
@@ -124,6 +125,77 @@ function runAgent(
 }
 
 describe("harness-radian/agent", () => {
+  test("tool lines carry the command summary, the duration and an error's first line", async () => {
+    const times = [1_000, 73_000];
+    const env = await setup("tool-detail", { now: () => times.shift() ?? 0 });
+    const result = await runAgent(env, { prompt: "hello", cwd: env.root });
+    const text = await Bun.file(String(dataOf(result).log)).text();
+    const records = text
+      .split("\n")
+      .filter((l) => l.includes("tool_execution"))
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(records[0]).toEqual({
+      type: "tool_execution_start",
+      toolCallId: "t1",
+      toolName: "Bash",
+      at: 1_000,
+      input: "token=*** make test",
+    });
+    expect(records[1]).toMatchObject({ type: "tool_execution_end", durationMs: 72_000, isError: true, error: "boom" });
+    expect(text).not.toContain("supersecret");
+    expect(text).not.toContain("SECRET OUTPUT");
+  });
+
+  test("a secret of the operad store is masked in the logged command", () => {
+    const line = JSON.stringify({ type: "ToolExecutionStarted", toolCallId: "t1", toolName: "Bash", input: { command: "curl store-secret-9" } });
+    const out = radianLogLine(line, () => 5, new Map(), "/work", {}, ["store-secret-9"]);
+    expect(JSON.parse(out)).toMatchObject({ input: "curl ***" });
+  });
+
+  test("a tool call the access profile refuses is only said to be denied in the log", async () => {
+    const line = JSON.stringify({ type: "ToolExecutionStarted", toolCallId: "t1", toolName: "Read", input: { file_path: "/secrets/key" } });
+    const out = radianLogLine(line, () => 5, new Map(), "/work", { denyPaths: ["/secrets"] });
+    expect(JSON.parse(out)).toMatchObject({ type: "tool_execution_start", input: "Read denied by the access profile (rule: /secrets)" });
+    expect(out).not.toContain("/secrets/key");
+  });
+
+  test("a denied call's settled error is not logged", async () => {
+    const open = new Map();
+    const profile = { denyPaths: ["/secrets"] };
+    radianLogLine(JSON.stringify({ type: "ToolExecutionStarted", toolCallId: "t1", toolName: "Read", input: { file_path: "/secrets/key" } }), () => 5, open, "/work", profile);
+    const end = radianLogLine(JSON.stringify({ type: "ToolExecutionSettled", toolCallId: "t1", toolName: "Read", isError: true, error: "path /secrets/key denied" }), () => 9, open, "/work", profile);
+    expect(JSON.parse(end)).toMatchObject({ type: "tool_execution_end", isError: true });
+    expect(end).not.toContain("/secrets/key");
+  });
+
+  test("radian's nested failure result logs isError and its first error line", async () => {
+    const open = new Map();
+    radianLogLine(JSON.stringify({ event: "ToolExecutionStarted", data: { call_id: "c1", name: "shell", arguments: { command: "false" } } }), () => 5, open, "/work");
+    const end = radianLogLine(
+      JSON.stringify({ event: "ToolExecutionSettled", data: { call_id: "c1", result: { call_id: "c1", is_error: true, content: [{ text: { text: "exit code: 1\nSECRET OUTPUT" } }] } } }),
+      () => 9,
+      open,
+      "/work",
+    );
+    expect(JSON.parse(end)).toMatchObject({ type: "tool_execution_end", toolCallId: "c1", toolName: "shell", isError: true, durationMs: 4, error: "exit code: 1" });
+    expect(end).not.toContain("SECRET OUTPUT");
+  });
+
+  test("radian's own tool names are judged by the access profile: shell, patch, glob, list, other path tools", () => {
+    const profile = { denyPaths: ["/secrets"], denyCommands: ["rm"] };
+    const start = (name: string, args: unknown): string =>
+      String(JSON.parse(radianLogLine(JSON.stringify({ event: "ToolExecutionStarted", data: { call_id: "c", name, arguments: args } }), () => 1, new Map(), "/work", profile)).input);
+    expect(start("shell", { command: "cat /secrets/key" })).toBe("shell denied by the access profile (rule: /secrets)");
+    expect(start("shell", { command: "rm -rf build" })).toBe("shell denied by the access profile (rule: rm)");
+    expect(start("patch", { path: "/secrets/key", old: "a", new: "b" })).toBe("patch denied by the access profile (rule: /secrets)");
+    expect(start("glob", { pattern: "/secrets/**" })).toBe("glob denied by the access profile (rule: /secrets)");
+    expect(start("list", { path: "/secrets" })).toBe("list denied by the access profile (rule: /secrets)");
+    expect(start("git_diff", { path: "/secrets/key" })).toBe("git_diff denied by the access profile (rule: /secrets)");
+    expect(start("shell", { command: "make test" })).toBe("make test");
+    expect(start("patch", { path: "src/a.ts", old: "x", new: "y" })).toBe("src/a.ts");
+    expect(start("git_diff", { path: "src/a.ts" })).toBe("src/a.ts");
+  });
+
   test("a successful run records the Result record and writes the JSONL log", async () => {
     const env = await setup("done");
     const result = await runAgent(env, {

@@ -8,12 +8,13 @@ import {
   getTask,
   setTaskPhase,
 } from "../src/service.ts";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   DIFF_PAGE_CHARS,
   ROW_WORKER_CHARS,
   planViews,
+  readableLog,
   readableLogLine,
   taskViews,
 } from "../src/views.ts";
@@ -45,6 +46,22 @@ async function setup() {
 }
 
 describe("dev views", () => {
+  test("a radian Result line shows its stop reason, tokens and cost", () => {
+    const line = JSON.stringify({ type: "Result", stop_reason: "end_turn", usage: { input: 5, output: 6 }, cost: { micros: 12346 } });
+    expect(readableLog([line])).toEqual(["result: end_turn · 5 in / 6 out tokens · $0.0123"]);
+  });
+
+  test("a radian Result line with text keeps the assistant text and the metadata", () => {
+    const line = JSON.stringify({ type: "Result", text: "All done.\nBye", stop_reason: "end_turn", usage: { input: 5, output: 6 } });
+    expect(readableLog([line])).toEqual(["**agent:** All done. Bye", "result: end_turn · 5 in / 6 out tokens"]);
+  });
+
+  test("a radian Result text is cut at 300 characters", () => {
+    const line = JSON.stringify({ type: "Result", text: "x".repeat(400), stop_reason: "end_turn" });
+    const out = readableLog([line]);
+    expect(out[0]).toBe(`**agent:** ${"x".repeat(299)}…`);
+  });
+
   test("a plan row shows the derived state and merged/total", async () => {
     const { store, plan, task } = await setup();
     const confirmed = await getPlan(store, plan.id);
@@ -221,6 +238,108 @@ describe("dev views", () => {
     expect(section.markdown).not.toContain("assistant: step 0\n");
     expect(section.markdown.split("\n\n")).toHaveLength(80);
     expect(taskViews.sections(await getTask(store, task.id)).find((item) => item.id === "log")?.live).toBe(true);
+  });
+
+  test("a tool call is one line with what ran and how long it took", () => {
+    const lines = [
+      { type: "tool_execution_start", toolCallId: "a", toolName: "Bash", at: 1, input: "xcodebuild test -only-testing X" },
+      { type: "tool_execution_end", toolCallId: "a", toolName: "Bash", isError: false, durationMs: 72000 },
+      { type: "tool_execution_start", toolCallId: "b", toolName: "Read", at: 2, input: "/w/a.ts" },
+      { type: "tool_execution_end", toolCallId: "b", toolName: "Read", isError: false, durationMs: 400 },
+    ].map((line) => JSON.stringify(line));
+    expect(readableLog(lines)).toEqual([
+      "tool Bash 1m12s  xcodebuild test -only-testing X",
+      "tool Read <1s  /w/a.ts",
+    ]);
+  });
+
+  test("a call without an end line is marked running, with its start time", () => {
+    const start = { type: "tool_execution_start", toolCallId: "a", toolName: "Bash", at: Date.UTC(2026, 10, 7, 14, 3, 22), input: "sleep 9999" };
+    expect(readableLog([JSON.stringify(start)])).toEqual(["tool Bash running since 14:03:22Z  sleep 9999"]);
+    // After the result line nothing is running any more.
+    expect(readableLog([JSON.stringify(start), JSON.stringify({ type: "result", result: "failed" })])[0]).toBe(
+      "tool Bash no end logged (started 14:03:22Z)  sleep 9999",
+    );
+  });
+
+  test("the agent's text, a tool error's first line and a turn's end are shown; tool output is not", () => {
+    const lines = [
+      { type: "message_end", role: "assistant", text: "I will run the tests.", stopReason: "tool_use", usage: { input: 120, output: 30 }, cost: { total: 0.0123 } },
+      { type: "tool_execution_start", toolCallId: "a", toolName: "Bash", at: 1, input: "false" },
+      { type: "tool_execution_end", toolCallId: "a", toolName: "Bash", isError: true, durationMs: 2000, error: "exit code 1" },
+      { type: "message_end", role: "assistant", stopReason: "end_turn", usage: { input: 1, output: 2 }, cost: null },
+      { type: "result", result: "done", usage: { input: 5, output: 6 }, cost: { micros: 12346, quality: "exact" } },
+    ].map((line) => JSON.stringify(line));
+    expect(readableLog(lines)).toEqual([
+      "**agent:** I will run the tests.",
+      "turn ended: tool_use · 120 in / 30 out tokens · $0.0123",
+      "tool Bash 2s  false",
+      "tool Bash failed: exit code 1",
+      "turn ended: end_turn · 1 in / 2 out tokens",
+      "result: done · 5 in / 6 out tokens · $0.0123",
+    ]);
+  });
+
+  test("radian journal lines show the agent's text and each turn's usage; empty tool-call messages show nothing", () => {
+    const lines = [
+      { event: "MessageAppended", data: { index: 1, message: { assistant: { content: [{ text: { text: "Checking the build." } }], reasoning: [{ text: { text: "private" } }] } } } },
+      { event: "MessageAppended", data: { index: 2, message: { assistant: { content: [], tool_calls: [{ id: "c" }] } } } },
+      { event: "MessageAppended", data: { index: 0, message: { user: { content: [{ text: { text: "prompt" } }] } } } },
+      { event: "ModelUsageRecorded", data: { usage: { input: 12, output: 3 }, fee: { micros: 1543 } } },
+    ].map((line) => JSON.stringify(line));
+    expect(readableLog(lines)).toEqual(["**agent:** Checking the build.", "turn ended: 12 in / 3 out tokens · $0.0015"]);
+  });
+
+  test("an agent paragraph of 300 characters is shown whole", () => {
+    const text = "w".repeat(300);
+    const line = JSON.stringify({ type: "message_end", role: "assistant", text, stopReason: "stop" });
+    expect(readableLog([line])[0]).toBe(`**agent:** ${text}`);
+  });
+
+  test("a message_end text longer than 300 characters is cut at 300", () => {
+    const line = JSON.stringify({ type: "message_end", role: "assistant", text: "w".repeat(400) });
+    expect(readableLog([line])[0]).toBe(`**agent:** ${"w".repeat(299)}…`);
+  });
+
+  test("the log section says which agent each block is from when it mixes them", async () => {
+    const { store, task } = await setup();
+    const root = await tempRoot();
+    const workLog = join(root, "worker.log");
+    writeFileSync(
+      workLog,
+      `${JSON.stringify({ type: "tool_execution_start", toolCallId: "w", toolName: "Bash", at: 1, input: "make" })}\n`,
+    );
+    const reviewDir = join(store.root, "logs", "harness-pi", "runs", "run-9");
+    mkdirSync(reviewDir, { recursive: true });
+    writeFileSync(
+      join(reviewDir, "agent.log"),
+      `${JSON.stringify({ type: "message_end", role: "assistant", text: "Looks fine.", stopReason: "stop" })}\n`,
+    );
+    const stored = await getTask(store, task.id);
+    await store.put(
+      "task",
+      task.id,
+      {
+        ...taskData(stored.data),
+        attempt: {
+          number: 2,
+          workLog,
+          reviewRuns: [
+            { round: 1, role: "primary", use: "harness-pi/agent", args: [], model: "gpt", reason: "initial", outcome: "report", run: "run-9" },
+          ],
+        },
+      },
+      "test:log",
+    );
+    const section = (await taskViews.load({ store } as never, await getTask(store, task.id), "log", {})) as {
+      markdown: string;
+    };
+    const text = section.markdown;
+    expect(text).toContain("**Worker, attempt 2**");
+    expect(text).toContain("**Reviewer, round 1 (gpt)**");
+    expect(text.indexOf("Worker, attempt 2")).toBeLessThan(text.indexOf("tool Bash"));
+    expect(text.indexOf("tool Bash")).toBeLessThan(text.indexOf("Reviewer, round 1"));
+    expect(text.indexOf("Reviewer, round 1")).toBeLessThan(text.indexOf("**agent:** Looks fine."));
   });
 
   test("the diff section is the stat and the diff, and pages by file when long", async () => {
