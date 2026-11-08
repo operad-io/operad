@@ -75,6 +75,40 @@ function firstString(record: Record<string, unknown>, keys: readonly string[]): 
 }
 
 /**
+ * Radian's own tool names, read as the access-match tool the profile judges:
+ * `shell` is a bash command, `patch` an edit, `glob` a find, and any other tool
+ * with a `path` is a read of it. The log still names the radian tool.
+ */
+function summarizeRadianCall(
+  profile: AccessProfile,
+  toolName: string,
+  args: unknown,
+  cwd: string,
+  secrets: readonly string[],
+): string | undefined {
+  if (!isRecord(args)) return undefined;
+  const lower = toolName.toLowerCase();
+  let mapped = lower;
+  let input: Record<string, unknown> = args;
+  if (lower === "shell") mapped = "bash";
+  else if (lower === "patch") mapped = "edit";
+  else if (lower === "glob") {
+    mapped = "find";
+    const where = typeof args.path === "string" && args.path.length > 0 ? args.path : args.pattern;
+    input = typeof where === "string" ? { ...args, path: where } : args;
+  } else if (lower === "list") mapped = "ls";
+  else if (!["bash", "read", "write", "edit", "grep", "find", "ls"].includes(lower) && typeof args.path === "string") {
+    mapped = "read";
+  }
+  const summary = summarizeCall(profile, mapped, input, cwd, { secrets });
+  const denied = `${mapped} denied by the access profile`;
+  if (summary !== undefined && summary.startsWith(denied)) return `${toolName}${summary.slice(mapped.length)}`;
+  // Unknown tools keep the plain summary of their main argument.
+  if (mapped === "read" && lower !== "read") return summarizeCall({}, toolName, args, cwd, { secrets });
+  return summary;
+}
+
+/**
  * Turns radian's tool journal lines into the log lines the other harnesses
  * write: `tool_execution_start` with the command or path summary and its start
  * time, `tool_execution_end` with the duration and an error's first line. Any
@@ -108,7 +142,7 @@ export function radianLogLine(
     const at = now();
     const toolName = name ?? "tool";
     const args = value.input ?? value.args ?? value.arguments ?? nested.input ?? nested.args ?? nested.arguments;
-    const summary = summarizeCall(profile, toolName, args, cwd, { secrets });
+    const summary = summarizeRadianCall(profile, toolName, args, cwd, secrets);
     open.set(id, { at, name: toolName, denied: summary?.includes(" denied by the access profile") === true });
     return JSON.stringify({
       type: "tool_execution_start",

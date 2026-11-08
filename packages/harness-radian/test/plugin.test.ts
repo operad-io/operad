@@ -181,6 +181,21 @@ describe("harness-radian/agent", () => {
     expect(end).not.toContain("SECRET OUTPUT");
   });
 
+  test("radian's own tool names are judged by the access profile: shell, patch, glob, list, other path tools", () => {
+    const profile = { denyPaths: ["/secrets"], denyCommands: ["rm"] };
+    const start = (name: string, args: unknown): string =>
+      String(JSON.parse(radianLogLine(JSON.stringify({ event: "ToolExecutionStarted", data: { call_id: "c", name, arguments: args } }), () => 1, new Map(), "/work", profile)).input);
+    expect(start("shell", { command: "cat /secrets/key" })).toBe("shell denied by the access profile (rule: /secrets)");
+    expect(start("shell", { command: "rm -rf build" })).toBe("shell denied by the access profile (rule: rm)");
+    expect(start("patch", { path: "/secrets/key", old: "a", new: "b" })).toBe("patch denied by the access profile (rule: /secrets)");
+    expect(start("glob", { pattern: "/secrets/**" })).toBe("glob denied by the access profile (rule: /secrets)");
+    expect(start("list", { path: "/secrets" })).toBe("list denied by the access profile (rule: /secrets)");
+    expect(start("git_diff", { path: "/secrets/key" })).toBe("git_diff denied by the access profile (rule: /secrets)");
+    expect(start("shell", { command: "make test" })).toBe("make test");
+    expect(start("patch", { path: "src/a.ts", old: "x", new: "y" })).toBe("src/a.ts");
+    expect(start("git_diff", { path: "src/a.ts" })).toBe("src/a.ts");
+  });
+
   test("a successful run records the Result record and writes the JSONL log", async () => {
     const env = await setup("done");
     const result = await runAgent(env, {
