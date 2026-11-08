@@ -35,3 +35,4 @@ the row fields.
 | T-0045-M3 | packages/harness-pi/src/index.ts | the `bashTimeoutSecs` setting was not passed to the worker | `harness-pi/agent > bashTimeoutSecs reaches the worker; unset it is 1800` |
 | T-0045-M4 | packages/harness-pi/src/protocol.ts | `parseInput` accepted a `bashTimeoutSecs` of 0 | `parseInput refuses a bashTimeoutSecs that is 0, negative, fractional or not a number, and names the field` |
 | T-0063-M1 | packages/harness-pi/src/worker.ts | `tool_execution_end` wrote `durationMs: 0` | `a bash call logs its command, its start time and its duration, and no output` |
+| T-0063-M30 | packages/harness-pi/src/worker.ts | the blocked line and the call end logged the real refusal reason | `a read of a denied path is blocked; an allowed read runs` |

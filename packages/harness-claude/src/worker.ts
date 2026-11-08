@@ -18,6 +18,7 @@ import {
   firstErrorLine,
   messageSummary,
   readProfile,
+  REFUSED_IN_LOG,
   summarizeCall,
   type AccessProfile,
 } from "@operad-io/access-match";
@@ -204,8 +205,8 @@ export async function runWorker(
     io.log(`canUseTool ${toolName}`);
     const verdict = await decideAccess(profile, toolName, toolInput, input.cwd, io.useGrant);
     if (verdict.allow) return { behavior: "allow", updatedInput: toolInput };
-    io.line({ type: "blocked", toolName, reason: verdict.reason });
-    endCall(options.toolUseID, toolName, true, verdict.reason);
+    io.line({ type: "blocked", toolName, reason: REFUSED_IN_LOG });
+    endCall(options.toolUseID, toolName, true, REFUSED_IN_LOG);
     return { behavior: "deny", message: verdict.reason };
   };
 

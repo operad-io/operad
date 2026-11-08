@@ -222,10 +222,11 @@ test("a denied bash call is blocked, a blocked line is written, the model gets t
   const reason = `part "touch ${marker}" is refused by denyCommands rule "touch"`;
   expect(run.exitCode).toBe(0);
   expect(run.lines.filter((line) => line["type"] === "blocked")).toEqual([
-    { type: "blocked", toolName: "bash", reason },
+    { type: "blocked", toolName: "bash", reason: "refused by the access profile" },
   ]);
   expect(existsSync(marker)).toBe(false);
-  expect(run.lines.find((line) => line["type"] === "tool_execution_end")).toMatchObject({ toolName: "bash", isError: true });
+  expect(run.lines.find((line) => line["type"] === "tool_execution_end")).toMatchObject({ toolName: "bash", isError: true, error: "refused by the access profile" });
+  expect(JSON.stringify(run.lines)).not.toContain(marker);
   expect(last(run)).toMatchObject({ result: "done", finalMessage: "I was refused" });
   const calls = readFileSync(contexts, "utf-8").split("\n").filter((line) => line.length > 0);
   expect(calls.length).toBe(2);
@@ -253,11 +254,11 @@ test("a read of a denied path is blocked; an allowed read runs", async () => {
     {
       type: "blocked",
       toolName: "read",
-      reason: `path "${join(secrets, "key")}" is under denyPaths entry "${secrets}"`,
+      reason: "refused by the access profile",
     },
   ]);
   expect(run.lines.filter((line) => line["type"] === "tool_execution_end")).toMatchObject([
-    { toolName: "read", isError: true },
+    { toolName: "read", isError: true, error: "refused by the access profile" },
     { toolName: "read", isError: false },
   ]);
   expect(last(run)).toMatchObject({ result: "done", finalMessage: "finished" });

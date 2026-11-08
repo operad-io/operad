@@ -14,6 +14,9 @@ export const SUMMARY_CHARS = 300;
 /** What stands where the profile forbids showing the call. */
 export const REDACTED = "[redacted]";
 
+/** What a log says of a refused call: the real reason names paths and commands the profile may mark secret. */
+export const REFUSED_IN_LOG = "refused by the access profile";
+
 /** Keys that hold the main argument of a tool, in the order they are tried. */
 const MAIN_KEYS = ["file_path", "path", "notebook_path", "pattern", "query", "url", "command", "description"] as const;
 

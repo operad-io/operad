@@ -561,14 +561,14 @@ test("a Bash command that denyCommands refuses is denied with the reason, logged
   expect(String(answer["message"])).toContain('denyCommands rule "rm"');
   expect(run.lines.slice(0, 3)).toEqual([
     { type: "tool_execution_start", toolCallId: "tool-1", toolName: "Bash", at: expect.any(Number), input: "[redacted]" },
-    { type: "blocked", toolName: "Bash", reason: answer["message"] },
+    { type: "blocked", toolName: "Bash", reason: "refused by the access profile" },
     {
       type: "tool_execution_end",
       toolCallId: "tool-1",
       toolName: "Bash",
       isError: true,
       durationMs: expect.any(Number),
-      error: answer["message"],
+      error: "refused by the access profile",
     },
   ]);
   expect(kinds(run).slice(3)).toEqual(["message_end", "result"]);
@@ -603,7 +603,11 @@ test("a Read under denyPaths is denied, and Read elsewhere is allowed", async ()
 
   expect(answerOf(run)["behavior"]).toBe("deny");
   expect(String(answerOf(run)["message"])).toContain('under denyPaths entry "/etc"');
-  expect(run.lines.find((line) => line["type"] === "blocked")).toMatchObject({ toolName: "Read" });
+  expect(run.lines.find((line) => line["type"] === "blocked")).toMatchObject({
+    toolName: "Read",
+    reason: "refused by the access profile",
+  });
+  expect(JSON.stringify(run.lines)).not.toContain("/etc/passwd");
 });
 
 test("a tool outside the table is denied under a rule and allowed without one", async () => {

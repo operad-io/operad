@@ -4,7 +4,7 @@
 
 import { homedir } from "node:os";
 import { posix } from "node:path";
-export { COMMAND_SUMMARY_CHARS, SUMMARY_CHARS, REDACTED, summarizeCall, firstErrorLine, messageSummary } from "./summary.ts";
+export { COMMAND_SUMMARY_CHARS, SUMMARY_CHARS, REDACTED, REFUSED_IN_LOG, summarizeCall, firstErrorLine, messageSummary } from "./summary.ts";
 import { findDenied, inlineFormOf, parseRule, scan, type Rule } from "./command.ts";
 
 /** A one-time permission for the exact call a person was asked about. */

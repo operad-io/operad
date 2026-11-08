@@ -9,6 +9,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import {
   findGrant,
   firstErrorLine,
+  REFUSED_IN_LOG,
   match,
   messageSummary,
   readProfile,
@@ -202,6 +203,7 @@ export async function runWorker(
   const bashTimeoutSecs = input.bashTimeoutSecs ?? DEFAULT_BASH_TIMEOUT_SECS;
   const access = readProfile(input.access ?? {});
   const profile: AccessProfile = access.ok ? access.profile : {};
+  const blockedCalls = new Set<string>();
   const operadExtension: ExtensionFactory = (pi) => {
     pi.on("tool_call", async (event) => {
       io.log(`tool_call ${event.toolName}`);
@@ -226,7 +228,8 @@ export async function runWorker(
         }
         if (used) return undefined;
       }
-      io.line({ type: "blocked", toolName: event.toolName, reason: verdict.reason });
+      blockedCalls.add(event.toolCallId);
+      io.line({ type: "blocked", toolName: event.toolName, reason: REFUSED_IN_LOG });
       return { block: true, reason: verdict.reason };
     });
   };
@@ -289,7 +292,7 @@ export async function runWorker(
       case "tool_execution_end": {
         const begun = started.get(event.toolCallId);
         started.delete(event.toolCallId);
-        const firstLine = event.isError ? firstErrorLine(textOf(typeof event.result === "object" && event.result !== null ? Reflect.get(event.result, "content") : event.result)) : undefined;
+        const firstLine = blockedCalls.has(event.toolCallId) ? REFUSED_IN_LOG : event.isError ? firstErrorLine(textOf(typeof event.result === "object" && event.result !== null ? Reflect.get(event.result, "content") : event.result)) : undefined;
         io.line({
           type: "tool_execution_end",
           toolCallId: event.toolCallId,
