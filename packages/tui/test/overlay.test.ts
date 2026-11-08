@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
 import { initialState, reduce, type TuiInput, type TuiState } from "../src/state.ts";
-import { createTuiView, overlayBox } from "../src/view/index.ts";
+import { createTuiView, overlayBox, paletteFor } from "../src/view/index.ts";
+import { toRgba } from "../src/theme.ts";
 
 /** Rows whose text is one letter, so a cell of the list is easy to tell from a cell of an overlay. */
 function listState(width: number, height: number, theme: "light" | "dark" = "dark"): TuiState {
@@ -134,4 +135,36 @@ describe("overlays", () => {
     const fewer = { ...wide, input: { kind: "palette", query: "tuitest:a", cursor: 0 } satisfies TuiInput };
     expect(overlayBox(fewer)?.width).toBe(overlayBox(wide)?.width);
   });
+
+  for (const theme of ["light", "dark", "terminal"] as const) {
+    for (const [name, input] of Object.entries(inputs)) {
+      test(`under the ${theme} theme the ${name} box is filled with the background token`, async () => {
+        const base = listState(120, 30, theme === "light" ? "light" : "dark");
+        const open = { ...base, input };
+        const box = overlayBox(open);
+        if (box === undefined) throw new Error("no box");
+        const want = toRgba(paletteFor(open.theme, theme).background).toInts().join(",");
+        const setup = await createTestRenderer({ width: 120, height: 30 });
+        try {
+          const view = createTuiView(setup.renderer, theme);
+          view.render(open);
+          await setup.renderOnce();
+          const frame = setup.captureSpans();
+          const seen = new Set<string>();
+          for (let row = box.top + 1; row < box.top + box.height - 1; row += 1) {
+            let col = 0;
+            for (const span of frame.lines[row]?.spans ?? []) {
+              for (let at = 0; at < span.width; at += 1, col += 1) {
+                if (col > box.left && col < box.left + box.width - 1) seen.add(span.bg.toInts().join(","));
+              }
+            }
+          }
+          expect([...seen]).toEqual([want]);
+          view.destroy();
+        } finally {
+          await setup.dispose();
+        }
+      });
+    }
+  }
 });
