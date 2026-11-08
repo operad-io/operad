@@ -437,7 +437,7 @@ describe("http server", () => {
       const types = await api(h, "/v1/types");
       expect(types.status).toBe(200);
       expect(await json(types)).toEqual({
-        types: [{ type: "item", title: "Item" }],
+        types: [{ type: "item", title: "Item", plugin: "webtest" }],
       });
 
       const list = await api(h, "/v1/objects?type=item");
