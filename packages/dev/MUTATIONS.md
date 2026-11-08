@@ -281,3 +281,5 @@ the row fields.
 | T-0075-M10 | packages/dev/src/views.ts | a work step waiting for its model was reported as running verify | `dev views > a retried review, a work retry and a reverify are judged by the latest step's record` |
 | T-0075-M11 | packages/dev/src/views.ts | a finished reverify was followed by integrate, not verify | `dev views > a retried review, a work retry and a reverify are judged by the latest step's record` |
 | T-0075-M12 | packages/dev/src/views.ts | a failed verify was not read from the latest step (an older review result won) | `dev views > a retried review, a work retry and a reverify are judged by the latest step's record` |
+| T-0075-M13 | packages/dev/src/views.ts | a rework or reverify answer was ignored and the step after the last record ran | `dev views > a rework or reverify answer starts the step it enters, not the step after the last record` |
+| T-0075-M14 | packages/dev/src/views.ts | a recorded step did not clear the restart, so a finished reverify stayed running | `dev views > a rework or reverify answer starts the step it enters, not the step after the last record` |

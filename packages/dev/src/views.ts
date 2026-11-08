@@ -618,6 +618,11 @@ interface AttemptMetrics {
   endedAt: number;
   /** The latest step recorded for it. */
   lastStep: string;
+  /**
+   * A person's answer that sent the attempt back to work (rework, reject,
+   * reverify), written after its latest step and before the next step records.
+   */
+  restart: { readonly step: string; readonly at: number } | undefined;
 }
 
 /** A token count: whole below 10k, then in k with one decimal. */
@@ -680,6 +685,11 @@ function activeStep(
 ): string | undefined {
   if (!latest || phase === "cancelled" || phase === "merged") return undefined;
   const last = entry.last;
+  // An answer that sent the attempt back to work: the step it enters runs,
+  // whatever the records of the step before it say.
+  if (entry.restart !== undefined && (phase === "running" || phase === "review")) {
+    return entry.restart.step;
+  }
   if (entry.lastStep === "review" && last?.reviewPending !== undefined && last.reviewPending !== null) {
     return "review";
   }
@@ -761,6 +771,7 @@ export async function metrics(
             startedAt: previous ?? fact.at,
             endedAt: fact.at,
             lastStep: step,
+            restart: undefined,
           };
           byAttempt.set(attempt.number, entry);
         }
@@ -774,9 +785,17 @@ export async function metrics(
         entry.last = attempt;
         entry.endedAt = fact.at;
         entry.lastStep = step;
+        entry.restart = undefined;
       } else if (attempt !== undefined) {
         const entry = byAttempt.get(attempt.number);
-        if (entry !== undefined) entry.last = attempt;
+        if (entry !== undefined) {
+          entry.last = attempt;
+          // Reverify enters the reverify step; rework and reject enter a new worktree.
+          const answer = /^dev:task-(reverify|rework|reject)$/.exec(fact.cause)?.[1];
+          if (answer !== undefined) {
+            entry.restart = { step: answer === "reverify" ? "reverify" : "worktree", at: fact.at };
+          }
+        }
       }
       previous = fact.at;
     }
@@ -820,7 +839,7 @@ export async function metrics(
       const spent = entry.spent.get(step);
       if (step === active) {
         // The running step's time so far: what it recorded plus the time since.
-        const ms = (spent ?? 0) + Math.max(0, now - entry.endedAt);
+        const ms = (spent ?? 0) + Math.max(0, now - (entry.restart?.at ?? entry.endedAt));
         return [`${step} ${seconds(ms)} (running)`];
       }
       return spent === undefined ? [] : [`${step} ${seconds(spent)}`];

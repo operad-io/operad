@@ -568,6 +568,42 @@ describe("dev views", () => {
     expect((await show(3)).row).toContain("| verify failed |");
   });
 
+  test("a rework or reverify answer starts the step it enters, not the step after the last record", async () => {
+    const root = await tempRoot();
+    const repositoryPath = await makeGitRepository(root);
+    let clock = 1_000_000;
+    const store = new FilePluginStore({ root: join(root, "store"), clock: () => clock });
+    const repository = await addRepository(store, { path: repositoryPath });
+    const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
+    const stored = taskData((await getTask(store, task.id)).data);
+    const put = async (cause: string, attempt: Record<string, unknown>, phase: string) => {
+      clock += 10_000;
+      await store.put("task", task.id, { ...stored, phase, attempt }, cause);
+    };
+    const show = async () => {
+      const rows = (await metrics({ store } as never, await getTask(store, task.id), clock + 5_000)).split("\n");
+      return { row: rows[2] ?? "", line: rows.find((row) => row.startsWith("**#1**")) ?? "" };
+    };
+    await put("dev:worktree", { number: 1 }, "running");
+    await put("dev:review", { number: 1, review: { result: "passed" } }, "waiting");
+    // A rework answer: the next step is a worktree, and integrate never ran.
+    await put("dev:task-rework", { number: 1, review: { result: "passed" } }, "running");
+    let seen = await show();
+    expect(seen.row).toContain("| running worktree |");
+    expect(seen.line).toContain("worktree 15s (running)");
+    expect(seen.line).not.toContain("integrate");
+    // A reverify answer clears the old gate records and enters the reverify step.
+    await put("dev:task-reverify", { number: 1, review: null }, "running");
+    seen = await show();
+    expect(seen.row).toContain("| running reverify |");
+    expect(seen.line).toContain("reverify 5s (running)");
+    expect(seen.line).not.toContain("integrate");
+    // Once the reverify records, verify is next.
+    await put("dev:reverify", { number: 1, result: "ready", review: null }, "running");
+    expect((await show()).row).toContain("| running verify |");
+  });
+
   test("how an attempt ended: merged, verify failed, conflict, cancelled", async () => {
     const { store, task } = await setup();
     const stored = taskData((await getTask(store, task.id)).data);
