@@ -168,3 +168,10 @@ the row fields.
 | T-0078-M4 | packages/tui/src/view/index.ts | the overlay had no one-cell margin inside its border | `overlays > the palette fills its box and closing repaints the list` |
 | T-0078-M5 | packages/tui/src/view/index.ts | the overlay box was filled with the `code` token instead of `background` | `overlays > under the dark theme the palette box is filled with the background token` |
 | T-0079-M5 | packages/tui/src/layout.ts | the weak colour code (90) was not read, so the table header lost its weak role | `tables fit the pane > 13 tasks at 100 columns take 15 rows none wider than the pane, and a resize re-lays them` |
+| T-0071-M1 | packages/tui/src/theme.ts | the extends cycle check was removed, so a cycle recursed | `file themes > a cycle in extends names the file and the key` |
+| T-0071-M2 | packages/tui/src/theme.ts | a theme without `extends` extended light instead of dark | `file themes > a theme names only what it changes and extends dark by default` |
+| T-0071-M3 | packages/tui/src/theme.ts | a theme file named like a built-in was accepted | `file themes > a file with the name of a built-in is refused` |
+| T-0071-M4 | packages/tui/src/theme.ts | an invalid edit replaced the last good theme with dark | `file themes > a change to the theme file or tui.json is applied; an invalid edit keeps the last good theme` |
+| T-0071-M5 | packages/tui/src/app.ts | a good theme change did not clear the footer line about the bad one | `a changed theme file > repaints, shows one line when it is invalid and clears that line when it is good again` |
+| T-0071-M6 | packages/tui/src/theme.ts | ANSI index 16 was accepted as a colour | `file themes > an unknown token, a bad colour and an unknown extends name the file and the key` |
+| T-0071-M7 | packages/tui/src/theme.ts | a change to tui.json was ignored by the watch | `file themes > a change to the theme file or tui.json is applied; an invalid edit keeps the last good theme` |

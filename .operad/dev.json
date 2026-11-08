@@ -24,11 +24,11 @@
     "timeoutSecs": 3600,
     "stallSecs": 900,
     "fallback": {
-      "use": "harness-pi/agent",
+      "use": "harness-claude/agent",
       "args": [
         "--model",
-        "opencode-go/deepseek-v4.1-flash",
-        "--thinking",
+        "opus",
+        "--effort",
         "medium"
       ]
     }

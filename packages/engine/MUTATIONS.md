@@ -310,3 +310,6 @@ the row fields.
 | T-0079-M1 | packages/engine/src/markdown.ts | number columns were shrinkable like text columns | `table fit > squeezed hard, text columns give way and number columns keep their width` |
 | T-0079-M2 | packages/engine/src/markdown.ts | numbers, durations and money were left-aligned | `table fit > numbers, durations and money are right-aligned` |
 | T-0079-M3 | packages/engine/src/markdown.ts | the column gap was three spaces instead of two | `table fit > a table narrower than the width keeps its content, without pipes` |
+| T-0075-M20 | packages/engine/src/views/running.ts | a run waiting for a person counted as running, so a plugin view saw a current step | `the running view names the object and times the step > the current step of a run is what the running view reports, and nothing once it waits or ends` |
+| T-0075-M24 | packages/engine/src/views/running.ts | an ended run reported the step it ended in even when it was waiting for a person | `the running view names the object and times the step > an ended run reports the step it was in, but not a person wait` |
+| T-0075-M25 | packages/engine/src/views/running.ts | an ended run was read after its end, so no step was in flight | `the running view names the object and times the step > an ended run reports the step it was in, but not a person wait` |

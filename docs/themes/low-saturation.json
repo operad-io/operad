@@ -1,0 +1,18 @@
+{
+  "$schema": "../../packages/tui/theme.schema.json",
+  "extends": "dark",
+  "colors": {
+    "text": "#d8d8dc",
+    "weak": "#8c8c94",
+    "rule": "#2c2c30",
+    "accent": "#b4aad6",
+    "run": "#9fb3c8",
+    "ok": "#9dbba9",
+    "error": "#c99a9c",
+    "add": "#9dbba9",
+    "remove": "#c99a9c",
+    "tint": "#222226",
+    "code": "#1a1a1d",
+    "background": "#131315"
+  }
+}

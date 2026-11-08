@@ -1,0 +1,180 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "operad theme file",
+  "description": "A theme in themes/<name>.json of the operad home. It names only the tokens it changes; extends fills the rest.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "extends": {
+      "description": "light, dark, terminal or the name of another theme file.",
+      "type": "string",
+      "minLength": 1,
+      "default": "dark"
+    },
+    "colors": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            }
+          ]
+        },
+        "weak": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            }
+          ]
+        },
+        "rule": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            }
+          ]
+        },
+        "accent": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            }
+          ]
+        },
+        "run": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            }
+          ]
+        },
+        "ok": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            }
+          ]
+        },
+        "error": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            }
+          ]
+        },
+        "add": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            }
+          ]
+        },
+        "remove": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            }
+          ]
+        },
+        "tint": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            }
+          ]
+        },
+        "code": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            }
+          ]
+        },
+        "background": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            }
+          ]
+        }
+      }
+    }
+  }
+}

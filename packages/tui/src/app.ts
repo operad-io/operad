@@ -51,7 +51,7 @@ import {
   type TuiStateEvent,
   type TuiTheme,
 } from "./state.ts";
-import { chooseTheme } from "./theme.ts";
+import { chooseSelection, watchThemes, type ThemeHolder } from "./theme.ts";
 import { createTuiView, type TuiView } from "./view/index.ts";
 import type { TuiTypeInfo } from "./client.ts";
 
@@ -163,10 +163,15 @@ export interface TuiShell {
   key(input: TuiKeyInput): void;
   resize(width: number, height: number): void;
   setTheme(theme: TuiTheme): void;
+  /** Repaints after the theme files changed; `problem` is shown in the footer, none clears it. */
+  repaintTheme(problem?: string): void;
   stop(): void;
   /** Resolves with the exit code once the shell has finished. */
   readonly done: Promise<number>;
 }
+
+/** Starts the footer line that says a changed theme file was not applied. */
+const THEME_PROBLEM = "theme not changed:";
 
 /** The signals that close the app cleanly. */
 const STOP_SIGNALS: readonly NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
@@ -856,6 +861,16 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     setTheme(theme: TuiTheme): void {
       dispatch({ type: "theme", theme });
     },
+    repaintTheme(problem?: string): void {
+      if (problem !== undefined) {
+        dispatch({ type: "status", message: `${THEME_PROBLEM} ${problem}` });
+      } else if (state.status?.startsWith(THEME_PROBLEM) === true) {
+        // Clear the line only when it is still ours.
+        dispatch({ type: "status" });
+      } else {
+        dispatch({ type: "theme", theme: state.theme });
+      }
+    },
     stop: finish,
     done,
   };
@@ -869,10 +884,10 @@ export function startShell(deps: TuiShellDeps): TuiShell {
  */
 export async function runTui(options: TuiRunOptions = {}): Promise<number> {
   // A broken config or an unknown theme stops here, before a server is started.
-  const themeName = chooseTheme({
-    home: options.home ?? defaultOperadHome(),
-    flag: options.theme,
-  });
+  const themeHome = options.home ?? defaultOperadHome();
+  const holder: ThemeHolder = {
+    current: chooseSelection({ home: themeHome, flag: options.theme }),
+  };
   // With no --url, make sure a serve answers (starting one) before the screen.
   if (options.url === undefined && options.noStart !== true) {
     const home = options.home ?? defaultOperadHome();
@@ -896,6 +911,7 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
   let view: TuiView | undefined;
   let shell: TuiShell | undefined;
   let code = 0;
+  let stopThemeWatch: (() => void) | undefined;
   const onAbort = (): void => shell?.stop();
   const onSignal = (): void => shell?.stop();
 
@@ -917,7 +933,7 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
         screenMode: "alternate-screen",
       }));
     renderer = created;
-    const createdView = (options.hooks?.view ?? ((ctx) => createTuiView(ctx, themeName)))(created);
+    const createdView = (options.hooks?.view ?? ((ctx) => createTuiView(ctx, () => holder.current)))(created);
     view = createdView;
     const started = startShell({
       client,
@@ -937,6 +953,12 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
       },
     });
     shell = started;
+    stopThemeWatch = watchThemes({
+      home: themeHome,
+      flag: options.theme,
+      holder,
+      onChange: (problem) => guarded(() => started.repaintTheme(problem)),
+    });
 
     created.keyInput.on("keypress", (key) => {
       guarded(() => started.key(key));
@@ -964,6 +986,7 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
   } finally {
     options.signal?.removeEventListener("abort", onAbort);
     for (const name of STOP_SIGNALS) process.off(name, onSignal);
+    stopThemeWatch?.();
     shell?.stop();
     view?.destroy();
     if (renderer !== undefined && !renderer.isDestroyed) renderer.destroy();
