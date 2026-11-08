@@ -76,9 +76,24 @@ function legacyWorkers(worker: WorkerSettings, concurrency: number): ParsedWorke
 /** How serious a review finding must be before it fails the gate. */
 export type FixLevel = "critical" | "major" | "minor";
 
+/** How a failed check command runs only the tests that failed. */
+export interface FailedRerun {
+  /** A regex with one capture group: the failed test's name. */
+  readonly match: string;
+  /** The command that runs one test again; `{name}` and `{pattern}` are replaced. */
+  readonly rerun: string;
+  /** The most failed tests that are run again; more fails the check. */
+  readonly max: number;
+}
+
+/** A check command: a shell line, or a line with a rerun of its failed tests. */
+export type CheckCommand =
+  | string
+  | { readonly run: string; readonly failed?: FailedRerun };
+
 /** The commands a task's gate runs and how long each may take. */
 export interface GateSettings {
-  readonly commands: readonly string[];
+  readonly commands: readonly CheckCommand[];
   readonly commandTimeoutSecs: number;
 }
 
@@ -95,7 +110,7 @@ export type IntegrationStyle = "merge" | "squash";
 export interface IntegrationSettings {
   readonly style: IntegrationStyle;
   /** Commands that must pass on the candidate before it is pushed. */
-  readonly keyCommands: readonly string[];
+  readonly keyCommands: readonly CheckCommand[];
 }
 
 /** Commands the cleanup step runs after a merge. */
@@ -381,14 +396,67 @@ function nonNegativeInteger(value: unknown, field: string): number {
   return value;
 }
 
-function commandList(value: unknown, field: string): readonly string[] {
-  const commands = stringList(value, field);
-  commands.forEach((command, index) => {
-    if (command.trim().length === 0) {
+function lineList(value: unknown, field: string): readonly string[] {
+  const lines = stringList(value, field);
+  lines.forEach((line, index) => {
+    if (line.trim().length === 0) {
       throw new DevError(`${field}[${index}]`, "must be a non-empty string");
     }
   });
-  return commands;
+  return lines;
+}
+
+function failedRerun(value: unknown, field: string): FailedRerun {
+  if (!isRecord(value)) throw new DevError(field, "must be an object");
+  for (const key of Object.keys(value)) {
+    if (key !== "match" && key !== "rerun" && key !== "max") {
+      throw new DevError(`${field}.${key}`, "is not a failed setting");
+    }
+  }
+  const match = nonEmptyString(value.match, `${field}.match`);
+  let groups: number;
+  try {
+    groups = (new RegExp(`${match}|`).exec("")?.length ?? 1) - 1;
+  } catch {
+    throw new DevError(`${field}.match`, "must be a valid regular expression");
+  }
+  if (groups !== 1) {
+    throw new DevError(`${field}.match`, "must have exactly one capture group");
+  }
+  const rerun = nonEmptyString(value.rerun, `${field}.rerun`);
+  if (!rerun.includes("{name}") && !rerun.includes("{pattern}")) {
+    throw new DevError(`${field}.rerun`, "must contain {name} or {pattern}");
+  }
+  return {
+    match,
+    rerun,
+    max:
+      value.max === undefined
+        ? 10
+        : positiveInteger(value.max, `${field}.max`),
+  };
+}
+
+function commandList(value: unknown, field: string): readonly CheckCommand[] {
+  if (!Array.isArray(value)) {
+    throw new DevError(field, "must be an array of commands");
+  }
+  return value.map((command: unknown, index): CheckCommand => {
+    const at = `${field}[${index}]`;
+    if (typeof command === "string") return nonEmptyString(command, at);
+    if (!isRecord(command)) {
+      throw new DevError(at, "must be a string or an object");
+    }
+    for (const key of Object.keys(command)) {
+      if (key !== "run" && key !== "failed") {
+        throw new DevError(`${at}.${key}`, "is not a command setting");
+      }
+    }
+    const run = nonEmptyString(command.run, `${at}.run`);
+    return command.failed === undefined
+      ? { run }
+      : { run, failed: failedRerun(command.failed, `${at}.failed`) };
+  });
 }
 
 function gateSettings(value: unknown, field: string): GateSettings {
@@ -554,7 +622,7 @@ function hookSettings(value: unknown, field: string): HookSettings {
     afterMerge:
       value.afterMerge === undefined
         ? DEFAULT_DEV_SETTINGS.hooks.afterMerge
-        : commandList(value.afterMerge, `${field}.afterMerge`),
+        : lineList(value.afterMerge, `${field}.afterMerge`),
   };
 }
 

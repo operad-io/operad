@@ -495,7 +495,7 @@ function createHandler(
     }
 
     if (method === "GET" && path === "/v1/running") {
-      return json(await listRunning(options.log, options.clock));
+      return json(await listRunning(options.log, options.clock, options.views));
     }
 
     if (method === "POST" && path === "/v1/act") {

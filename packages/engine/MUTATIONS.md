@@ -253,4 +253,11 @@ the row fields.
 |---|---|---|---|
 | T-0047-M6 | packages/engine/src/views/presentation.ts | show accepted `--repo` that differs from a qualified id | `dev` cli test `a qualified id with an unknown repository, or a conflicting --repo, is refused` |
 | T-0043-M8 | packages/engine/src/plugin/registry.ts | a nested step did not pass the parent's event destination on | `dev/work with workers > a rework waits for its worker while another worker is free` (`pool.waiting` could not be sent) |
+
+## T-0068 — the running view names the object and times the step
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0068-M1 | packages/engine/src/views/running.ts | a new attempt (`effect_requested`) no longer reset the step time | `the running view names the object and times the step > step time resets on a new step and on a new attempt` |
+| T-0068-M2 | packages/engine/src/views/running.ts | an error row's message was returned as the title | `the running view names the object and times the step > a throwing row leaves the title null` |
 | typed-bare-id-M1 | packages/engine/src/views/presentation.ts | a typed bare id (`task:T-0043-x`) skipped the scoped lookup | `presentation views > a typed bare id finds a scoped object of its type, as the app opens a row` |
