@@ -129,6 +129,14 @@ export function historyEntry(fact: HistoryFact): HistoryEntry {
       };
     }
 
+    case "process_replaced":
+      return {
+        time,
+        step,
+        what: "continuing on updated code",
+        why: text(payload.reason) ?? "",
+      };
+
     case "step_queued":
       return {
         time,

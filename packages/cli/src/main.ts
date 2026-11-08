@@ -34,6 +34,7 @@ import {
   messageOf,
   openConfigLog,
   Notifier,
+  CodeWatch,
   ensureHttpToken,
   listenAddressKind,
   pairLink,
@@ -70,6 +71,13 @@ import {
   type Views,
 } from "@operad-io/engine";
 import { ChannelTypeError, runMcpServer } from "@operad-io/mcp";
+import {
+  codeChecker,
+  reexecServe,
+  settingsRoots,
+  takeCodeSnapshot,
+} from "./code-reload.ts";
+import type { CodeSnapshot } from "./code-reload.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { QrTooLongError, encodeQr, renderQr } from "./qr.ts";
 import {
@@ -149,6 +157,7 @@ const KERNEL_VERBS = [
   "pair",
   "tui",
   "run-internal",
+  "check-load",
   "mcp",
 ] as const;
 
@@ -214,6 +223,10 @@ interface Context {
   readonly storeRoot: string;
   readonly views: Views;
   readonly disabled: readonly string[];
+  /** What did not load, one line each, as the registry reported it. */
+  readonly problems: string[];
+  /** The code this process loaded, when the caller asked to keep track. */
+  readonly code: CodeSnapshot | undefined;
 }
 
 async function openContext(
@@ -221,9 +234,14 @@ async function openContext(
   io: CliIo,
   scope?: string,
   viewsCwd?: string,
+  trackCode = false,
 ): Promise<Context> {
   const cwd = process.cwd();
   const config = await readConfig(home);
+  // Taken before anything loads: a file that changes while loading then
+  // counts as changed, never as loaded.
+  const code = trackCode ? takeCodeSnapshot(home, config.plugins) : undefined;
+  const problems: string[] = [];
   const storeRoot = storeRootOf(config);
   const store = openPluginStore({ backend: config.store.backend, root: storeRoot });
   const log = openConfigLog(config);
@@ -233,7 +251,10 @@ async function openContext(
     cwd,
     store,
     kernelVerbs: KERNEL_VERBS,
-    onLog: (message) => io.error(`${message}\n`),
+    onLog: (message) => {
+      problems.push(message);
+      io.error(`${message}\n`);
+    },
     onAnswer: async (runId, choice, note, actor) => {
       const runs = await log.runs();
       const run = runs.find((candidate) => candidate.runId === runId);
@@ -279,6 +300,8 @@ async function openContext(
     registry,
     log,
     storeRoot,
+    problems,
+    code,
     disabled: config.plugins
       .filter((entry) => !entry.enabled)
       .map((entry) => entry.name)
@@ -1457,7 +1480,7 @@ async function commandServe(
   io: CliIo,
   argv: readonly string[],
   lock: LockHandle,
-): Promise<void> {
+): Promise<"stopped" | "reload"> {
   const interval = process.env.OPERAD_SERVE_INTERVAL_MS;
   const parsed = interval === undefined ? Number.NaN : Number(interval);
   const controller = new AbortController();
@@ -1473,7 +1496,10 @@ async function commandServe(
     rules = await loadTriggerRules({
       home: context.home,
       registry: context.registry,
-      onLog: (message) => io.error(`${message}\n`),
+      onLog: (message) => {
+        context.problems.push(message);
+        io.error(`${message}\n`);
+      },
     });
   } catch (error) {
     sourcesAllowed = false;
@@ -1490,6 +1516,8 @@ async function commandServe(
     onLog: (message) => io.error(`${message}\n`),
   });
   let http: HttpServerHandle | undefined;
+  let outcome: "stopped" | "reload" = "stopped";
+  let watch: CodeWatch | undefined;
   try {
     if (context.config.http.enabled) {
       http = await startHttpServer({
@@ -1508,6 +1536,34 @@ async function commandServe(
     }
 
     io.write(`serving ${context.home}\n`);
+    if (context.code !== undefined) {
+      const check = codeChecker({
+        home: context.home,
+        snapshot: context.code,
+        known: context.problems,
+        onProblem: (message) => io.error(`operad: ${message}\n`),
+      });
+      watch = new CodeWatch({
+        roots: context.code.roots,
+        alsoWatch: settingsRoots(context.home),
+        baseline: context.code.baseline,
+        quietMs: envNumber("OPERAD_RELOAD_QUIET_MS", 1_000),
+        pollMs: envNumber("OPERAD_RELOAD_POLL_MS", 5_000),
+        onChange: async () => {
+          const what = await check();
+          // A stop that came while the new code was tried is not started again.
+          if (what === undefined || controller.signal.aborted) return "keep";
+          io.write(`reloading: ${what}\n`);
+          outcome = "reload";
+          controller.abort();
+          return "reload";
+        },
+      });
+      watch.start();
+      // A stop that is under way (a signal) ends the watch: a change then does nothing more.
+      const watching = watch;
+      controller.signal.addEventListener("abort", () => watching.stop(), { once: true });
+    }
     await serve({
       home: context.home,
       lock,
@@ -1527,12 +1583,19 @@ async function commandServe(
       },
     });
   } finally {
+    watch?.stop();
     await notifier.stop();
     if (http !== undefined) await http.stop();
     await kernel.stopSources();
     process.removeListener("SIGINT", stop);
     process.removeListener("SIGTERM", stop);
   }
+  return outcome;
+}
+
+function envNumber(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 async function commandRunInternal(
@@ -1587,6 +1650,17 @@ async function commandRunInternal(
     emit: async (plugin, event) => {
       await kernel.emitStep(runId, plugin, event, run.object);
     },
+    ...(context.code === undefined
+      ? {}
+      : {
+          handover: codeChecker({
+            home: context.home,
+            snapshot: context.code,
+            known: context.problems,
+            onProblem: (message) => io.error(`operad: ${message}\n`),
+            waitPollMs: envNumber("OPERAD_RELOAD_POLL_MS", 5_000),
+          }),
+        }),
   });
   await runner.run();
 }
@@ -2085,8 +2159,30 @@ export async function main(
       }
     }
 
+    if (command === "check-load") {
+      // What a fresh process would not load, one line each, for a process that
+      // wants to know before it gives up the code it runs.
+      const context = await openContext(home, { ...io, error: () => undefined });
+      try {
+        try {
+          await loadTriggerRules({
+            home,
+            registry: context.registry,
+            onLog: (message) => context.problems.push(message),
+          });
+        } catch (error) {
+          context.problems.push(error instanceof Error ? error.message : String(error));
+        }
+        for (const line of context.problems) io.write(`${line.replace(/\n/g, " ")}\n`);
+      } finally {
+        context.views.close();
+        await context.log.close();
+      }
+      return 0;
+    }
+
     if (command === "run-internal") {
-      const context = await openContext(home, io);
+      const context = await openContext(home, io, undefined, undefined, true);
       try {
         await commandRunInternal(context, io, args.slice(1));
       } finally {
@@ -2125,13 +2221,14 @@ export async function main(
       // a second serve fails here, with exit 4, and touches nothing. The lock
       // is handed to `serve`, so there is no check and then act.
       const lock = acquireLock(serveLockPath(home));
+      let reload = false;
       try {
         // serve answers clients that are in no directory: a bare id must not
         // be scoped to the repository serve happened to start in, so its
         // views resolve ids from the home, outside every repository.
-        const context = await openContext(home, io, undefined, home);
+        const context = await openContext(home, io, undefined, home, true);
         try {
-          await commandServe(context, io, args.slice(1), lock);
+          reload = (await commandServe(context, io, args.slice(1), lock)) === "reload";
         } finally {
           context.views.close();
           await context.log.close();
@@ -2139,6 +2236,8 @@ export async function main(
       } finally {
         lock.release();
       }
+      // The home lock and the port are free; the same command line starts again.
+      if (reload) reexecServe();
       return 0;
     }
 

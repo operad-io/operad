@@ -50,3 +50,7 @@ the row fields.
 | T-0052-M11 | packages/cli/src/main.ts | `list --parent` was not passed to the views | `operad list hierarchy > --root and --parent list one level; show prints the parent` |
 | T-0077-M1 | packages/cli/src/main.ts | serve killed every run process it had started (SIGKILL) when it stopped, so the sentinel of the running check stopped its line | `a serve restart while a check runs > the check's command is not signalled and finishes with its exit code` |
 | T-0079-M4 | packages/cli/src/main.ts | `show` passed the terminal width even when stdout was a pipe | `operad presentation commands > show lays a table out for the terminal's width; a pipe keeps the old output` |
+| T-0098-M1 | packages/cli/src/code-reload.ts | `loadsAsWellAs` accepted any problem | `a serve picks up changed code > code that does not load leaves the old code running; fixing it reloads` |
+| T-0098-M2 | packages/cli/src/code-reload.ts | a run's process did not wait out code that does not load | `a serve picks up changed code > code that does not load leaves the old code running; fixing it reloads` |
+| T-0098-M3 | packages/cli/src/code-reload.ts | the wait ignored the settings files | `a serve picks up changed code > a settings file that does not read during a change is read again when it is fixed` |
+| T-0098-M4 | packages/cli/src/main.ts | serve did not start again after it stopped for new code | `a serve picks up changed code > a running step finishes on the old code; the next step runs the new code` |
