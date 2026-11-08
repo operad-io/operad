@@ -367,7 +367,7 @@ export function readableLog(lines: readonly string[]): string[] {
       if (parts.length > 0 || kind !== "Result") out.push(`result: ${parts.join(" · ")}`);
       continue;
     }
-    if (record !== undefined && (kind === "journal" || kind === "") && typeof record.event === "string") {
+    if (record !== undefined && (kind === "journal" || kind === undefined) && typeof record.event === "string") {
       const data = isObject(record.data) ? record.data : {};
       if (record.event === "MessageAppended") {
         const message = isObject(data.message) ? data.message : {};
