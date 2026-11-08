@@ -324,3 +324,193 @@ export async function* historyEntries(
     yield historyEntry(fact);
   }
 }
+
+/** Results that mean "carry on with the next step"; they need no explaining. */
+const PLAIN_RESULTS: ReadonlySet<string> = new Set([
+  "ready",
+  "done",
+  "ok",
+  "pass",
+  "passed",
+  "success",
+  "next",
+]);
+
+const SHORT_DETAIL = 100;
+
+function two(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+/** HH:MM:SS in the time zone of the host that serves the view. */
+export function localTime(time: number): string {
+  const date = new Date(time);
+  return `${two(date.getHours())}:${two(date.getMinutes())}:${two(date.getSeconds())}`;
+}
+
+/** HH:MM, for a run's heading. */
+export function localMinute(time: number): string {
+  return localTime(time).slice(0, 5);
+}
+
+/** YYYY-MM-DD in the host's time zone. */
+export function localDay(time: number): string {
+  const date = new Date(time);
+  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}`;
+}
+
+/** 1s, 58s, 41m, 2h 5m, 3d. */
+export function shortDuration(milliseconds: number): string {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+function oneLine(value: string, full: boolean): string {
+  const flat = value.replace(/\s*\n\s*/g, " ").replace(/[ \t]+/g, " ").trim();
+  if (full || flat.length <= SHORT_DETAIL) return flat;
+  return `${flat.slice(0, SHORT_DETAIL - 1).trimEnd()}…`;
+}
+
+interface Attempt {
+  readonly time: number;
+  readonly step: string;
+  readonly attempt: number;
+  readonly reason: string;
+  outcome: string | undefined;
+  endedAt: number | undefined;
+  detail: string;
+}
+
+type Item = Attempt | { readonly time: number; readonly text: string };
+
+function isAttempt(item: Item): item is Attempt {
+  return "attempt" in item;
+}
+
+export interface RunHistoryOptions {
+  /** The current time, for a step that is still running. */
+  readonly now: number;
+  /** Keep every detail whole instead of cutting it to one short line. */
+  readonly full: boolean;
+}
+
+/**
+ * One line per step attempt, with a date line where the day changes. The
+ * lines are plain text; a caller adds the list marks it needs.
+ */
+export function runHistoryLines(
+  facts: readonly HistoryFact[],
+  options: RunHistoryOptions,
+): string[] {
+  const items: Item[] = [];
+  let open: Attempt | undefined;
+  let reason = "";
+
+  const close = (outcome: string, at: number, detail: string): void => {
+    if (open === undefined) return;
+    if (open.outcome === undefined || open.outcome === "waiting") {
+      open.outcome = outcome;
+      open.endedAt = at;
+      open.detail = detail;
+    }
+    open = undefined;
+  };
+
+  for (const fact of facts) {
+    const payload = record(fact.payload);
+    switch (fact.kind) {
+      case "run_started": // the run's heading says it
+      case "step_started":
+      case "step_slot":
+      case "step_released":
+      case "effect_requested":
+        break;
+      case "step_entered": {
+        // An end step is not work; the run's own closing line says it.
+        if (payload.kind === "end") {
+          reason = "";
+          break;
+        }
+        const step = text(payload.step) ?? "a step";
+        const attempt: Attempt = {
+          time: fact.time,
+          step,
+          attempt: number(payload.visit) ?? 1,
+          reason,
+          outcome: undefined,
+          endedAt: undefined,
+          detail: "",
+        };
+        reason = "";
+        open = attempt;
+        items.push(attempt);
+        break;
+      }
+      case "step_result":
+        close(text(payload.result) ?? "finished", fact.time, reasonOf(record(payload.data)));
+        break;
+      case "waiting_for_person":
+        if (open !== undefined && open.outcome === undefined) {
+          open.outcome = "waiting";
+          open.detail = text(payload.prompt) ?? "";
+        } else if (open === undefined) {
+          const entry = historyEntry(fact);
+          items.push({ time: fact.time, text: `${entry.what}: ${oneLine(entry.why, options.full)}` });
+        }
+        break;
+      case "edge_taken": {
+        const result = text(payload.result);
+        if (open !== undefined) close(result ?? "finished", fact.time, "");
+        reason = result === undefined || PLAIN_RESULTS.has(result) ? "" : `after ${result}`;
+        break;
+      }
+      case "step_interrupted": {
+        const entry = historyEntry(fact);
+        close("interrupted", fact.time, entry.why);
+        break;
+      }
+      case "run_ended": {
+        const entry = historyEntry(fact);
+        const status = text(payload.status) ?? "ended";
+        close(status === "done" ? "stopped" : status, fact.time, "");
+        items.push({ time: fact.time, text: `${entry.what}${entry.why.length > 0 ? `: ${entry.why}` : ""}` });
+        break;
+      }
+      default: {
+        const entry = historyEntry(fact);
+        items.push({
+          time: fact.time,
+          text: `${entry.what}${entry.why.length > 0 ? `: ${oneLine(entry.why, options.full)}` : ""}`,
+        });
+      }
+    }
+  }
+
+  const lines: string[] = [];
+  let day = "";
+  for (const item of items) {
+    const today = localDay(item.time);
+    if (today !== day) {
+      day = today;
+      lines.push(`**${today}**`);
+    }
+    if (!isAttempt(item)) {
+      lines.push(`${localTime(item.time)}  ${item.text}`);
+      continue;
+    }
+    const outcome = item.outcome ?? "running";
+    const end = item.endedAt ?? options.now;
+    const parts = [localTime(item.time), item.step];
+    if (item.attempt > 1) parts.push(`attempt ${item.attempt}`);
+    if (item.reason.length > 0) parts.push(item.reason);
+    parts.push(outcome, shortDuration(end - item.time));
+    if (item.detail.length > 0) parts.push(oneLine(item.detail, options.full));
+    lines.push(parts.join("  "));
+  }
+  return lines;
+}
