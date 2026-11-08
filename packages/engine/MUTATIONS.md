@@ -240,6 +240,11 @@ the row fields.
 | pending-row-M2 | packages/engine/src/views/pending.ts | a candidate carried an object, so it got a row | `pending items carry their object's row > a candidate has no row` |
 | pending-row-M3 | packages/engine/src/views/presentation.ts | the error row for a gone object had no `no object` message | `pending items carry their object's row > an object deleted after the run started gets an error row, and the rest are listed` |
 | pending-row-M4 | packages/engine/src/views/presentation.ts | a built row lost its waiting flag, so it differed from the list's | `pending items carry their object's row > the row is the one the list shows, with the run flags` |
+| T-0048-M1 | packages/engine/src/plugin/filters.ts | an error row was judged by the filter's states like any other | `object type filters > an error row is shown by every filter` |
+| T-0048-M2 | packages/engine/src/views/presentation.ts | a row the filter left out was not counted in `hidden` | `object type filters > a filter keeps matching rows and counts the rest as hidden`, `a filter that hides every row returns no rows and the total` |
+| T-0048-M3 | packages/engine/src/views/presentation.ts | a filtered page never gave a `next` cursor | `object type filters > paging works within the filtered list and never returns a short page early` |
+| T-0048-M4 | packages/engine/src/plugin/registry.ts | a plugin could declare a filter named `all` | `object type filters > plugin loading refuses a malformed declaration with the field path` |
+| T-0048-M5 | packages/engine/src/http/server.ts | `GET /v1/objects` without `filter` ignored the type's default | `filters over HTTP > /v1/types lists filters and /v1/objects applies them` |
 | T-0032-M1 | packages/engine/src/http/server.ts | `GET /v1/keys` reported every binding as `plugin`, hiding the person's override | `http server > GET /v1/keys lists the plugin defaults and the person's overrides` |
 
 ## T-0047 — a qualified id and `--repo` must agree
@@ -248,3 +253,4 @@ the row fields.
 |---|---|---|---|
 | T-0047-M6 | packages/engine/src/views/presentation.ts | show accepted `--repo` that differs from a qualified id | `dev` cli test `a qualified id with an unknown repository, or a conflicting --repo, is refused` |
 | T-0043-M8 | packages/engine/src/plugin/registry.ts | a nested step did not pass the parent's event destination on | `dev/work with workers > a rework waits for its worker while another worker is free` (`pool.waiting` could not be sent) |
+| typed-bare-id-M1 | packages/engine/src/views/presentation.ts | a typed bare id (`task:T-0043-x`) skipped the scoped lookup | `presentation views > a typed bare id finds a scoped object of its type, as the app opens a row` |

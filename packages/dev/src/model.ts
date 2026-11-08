@@ -23,6 +23,9 @@ export async function listAll(
 /** A plan is a request the owner confirmed into work. */
 export type PlanStatus = "draft" | "confirmed" | "cancelled";
 
+/** Every state a plan row shows: its status, or `finished` once its tasks ended. */
+export const PLAN_STATES = ["draft", "confirmed", "finished", "cancelled"] as const;
+
 /** How far a plan may run without a person. */
 export type AutoMode = "off" | "run" | "merge";
 
@@ -30,15 +33,43 @@ export type AutoMode = "off" | "run" | "merge";
 export const PRIORITIES = ["P0", "P1", "P2", "P3", "P4", "P5"] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
+/** Every phase a task can be in, in the order it usually passes through them. */
+export const TASK_PHASES = [
+  "proposed",
+  "ready",
+  "running",
+  "review",
+  "waiting",
+  "merged",
+  "cancelled",
+] as const;
+
 /** Where a task is. */
-export type TaskPhase =
-  | "proposed"
-  | "ready"
-  | "running"
-  | "review"
-  | "waiting"
-  | "merged"
-  | "cancelled";
+export type TaskPhase = (typeof TASK_PHASES)[number];
+
+/**
+ * The list filters of plans and tasks. The declaration and the tests read
+ * these; no state name is copied anywhere else.
+ */
+export const TASK_FILTERS = [
+  {
+    name: "active",
+    default: true,
+    states: TASK_PHASES.filter((phase) => phase !== "merged" && phase !== "cancelled"),
+  },
+  { name: "done", states: ["merged"] },
+  { name: "cancelled", states: ["cancelled"] },
+] as const;
+
+export const PLAN_FILTERS = [
+  {
+    name: "active",
+    default: true,
+    states: PLAN_STATES.filter((state) => state !== "finished" && state !== "cancelled"),
+  },
+  { name: "done", states: ["finished"] },
+  { name: "cancelled", states: ["cancelled"] },
+] as const;
 
 /** The data of a plan object. Counts are a cache over its tasks. */
 export type PlanData = {
@@ -735,7 +766,7 @@ export function editBrief(brief: string, body: string): string {
  * ------------------------------------------------------------------------- */
 
 /** The state a plan row shows: `finished` is derived from its tasks. */
-export function planState(plan: PlanData): string {
+export function planState(plan: PlanData): (typeof PLAN_STATES)[number] {
   if (plan.status === "cancelled") return "cancelled";
   if (
     plan.status === "confirmed" &&
