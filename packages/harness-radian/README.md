@@ -42,7 +42,7 @@ journal lines as `tool_execution_start` and `tool_execution_end`, the lines
 assignment values are removed); the end carries `durationMs` and, for an
 error, its first line as `error`. The tool name, call id and arguments are
 read from `toolName`, `toolCallId` and `input` (also `tool`, `args` and
-`id`), at the top of the line or under `data`. The step cannot read the
-access profile, so it does not redact a summary beyond the environment values.
+`id`), at the top of the line or under `data`. A summary the run's
+access profile refuses is written as `[redacted]`.
 Tool output is never written. The dev task's Log section renders these lines
 like the other harnesses'.

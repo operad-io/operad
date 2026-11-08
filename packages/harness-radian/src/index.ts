@@ -6,7 +6,7 @@
  */
 
 import { stat } from "node:fs/promises";
-import { firstErrorLine, summarizeCall } from "@operad-io/access-match";
+import { firstErrorLine, readProfile, summarizeCall, type AccessProfile } from "@operad-io/access-match";
 import {
   defineFlow,
   definePlugin,
@@ -79,14 +79,15 @@ function firstString(record: Record<string, unknown>, keys: readonly string[]): 
  * write: `tool_execution_start` with the command or path summary and its start
  * time, `tool_execution_end` with the duration and an error's first line. Any
  * other line, and a tool line it cannot read, is returned as radian wrote it.
- * Radian cannot be asked for its profile, so the summary is cut and has
- * environment values removed but is not otherwise redacted.
+ * The summary is cut, has environment values removed, and is `[redacted]`
+ * where the run's access profile refuses the call.
  */
 export function radianLogLine(
   line: string,
   now: () => number,
   open: Map<string, { at: number; name: string }>,
   cwd: string,
+  profile: AccessProfile = {},
 ): string {
   const kind = radianToolEvent(line);
   if (kind === undefined) return line;
@@ -107,7 +108,7 @@ export function radianLogLine(
     const toolName = name ?? "tool";
     open.set(id, { at, name: toolName });
     const args = value.input ?? value.args ?? value.arguments ?? nested.input ?? nested.args ?? nested.arguments;
-    const summary = summarizeCall({}, toolName, args, cwd);
+    const summary = summarizeCall(profile, toolName, args, cwd);
     return JSON.stringify({
       type: "tool_execution_start",
       toolCallId: id,
@@ -511,6 +512,9 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
               ? defaults.command
               : text(ctx.settings.command, `${at}: settings.command`);
 
+          const readAccess = readProfile(ctx.access ?? {});
+          const logProfile: AccessProfile = readAccess.ok ? readAccess.profile : {};
+
           const who: UsageSource = {
             harness: "harness-radian",
             model: radianModel(args) ?? null,
@@ -575,7 +579,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             clock: defaults.clock,
             toolEvent: radianToolEvent,
             onLine(line) {
-              const writing = jsonl.push(radianLogLine(line, defaults.now, openTools, cwd));
+              const writing = jsonl.push(radianLogLine(line, defaults.now, openTools, cwd, logProfile));
               const parsed = parseResult(line);
               if (parsed !== undefined) result = parsed;
               return writing;

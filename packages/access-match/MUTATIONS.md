@@ -12,3 +12,4 @@ and the row fields.
 | T-0063-M2 | `packages/access-match/src/summary.ts` | a call the profile refuses was summarized instead of redacted | `a call the profile refuses is redacted, and environment values never show` |
 | T-0063-M3 | packages/access-match/src/summary.ts | environment redaction matched uppercase names only | `lowercase environment values never show` |
 | T-0063-M4 | packages/access-match/src/summary.ts | environment redaction stopped at the first quoted fragment | `an environment value of shell-quoted fragments is hidden whole` |
+| T-0063-M5 | packages/access-match/src/summary.ts | environment redaction ended a value at an escaped space | `a shell-escaped space does not end an environment value` |

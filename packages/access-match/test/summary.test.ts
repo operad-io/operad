@@ -37,6 +37,10 @@ test("an environment value of shell-quoted fragments is hidden whole", () => {
   expect(summarizeCall({}, "Bash", { command: `token='super secret'"more" make test` }, CWD)).toBe("token=… make test");
 });
 
+test("a shell-escaped space does not end an environment value", () => {
+  expect(summarizeCall({}, "Bash", { command: "token=super\\ secret make test" }, CWD)).toBe("token=… make test");
+});
+
 test("an error shows its first non-empty line and a message its first 300 characters", () => {
   expect(firstErrorLine("\n\nboom\nmore")).toBe("boom");
   expect(firstErrorLine(42)).toBeUndefined();

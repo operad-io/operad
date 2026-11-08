@@ -1,3 +1,4 @@
+import { radianLogLine } from "../src/index.ts";
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
@@ -143,6 +144,13 @@ describe("harness-radian/agent", () => {
     expect(records[1]).toMatchObject({ type: "tool_execution_end", durationMs: 72_000, isError: true, error: "boom" });
     expect(text).not.toContain("supersecret");
     expect(text).not.toContain("SECRET OUTPUT");
+  });
+
+  test("a tool call the access profile refuses is redacted in the log", async () => {
+    const line = JSON.stringify({ type: "ToolExecutionStarted", toolCallId: "t1", toolName: "Read", input: { file_path: "/secrets/key" } });
+    const out = radianLogLine(line, () => 5, new Map(), "/work", { denyPaths: ["/secrets"] });
+    expect(JSON.parse(out)).toMatchObject({ type: "tool_execution_start", input: "[redacted]" });
+    expect(out).not.toContain("/secrets/key");
   });
 
   test("a successful run records the Result record and writes the JSONL log", async () => {
