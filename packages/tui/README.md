@@ -8,7 +8,7 @@ keys, flags and states.
 
 Colours are tokens of a `TuiPalette` (`src/theme.ts`, the only file that names a
 colour value): `text`, `weak`, `rule`, `accent`, `run`, `ok`, `error`, `add`,
-`remove`, `tint`, `code`. The built-in themes are `auto` (the default; `light` or
+`remove`, `tint`, `code`, `background`. The built-in themes are `auto` (the default; `light` or
 `dark` by the terminal's theme mode, live), `light`, `dark` (the operad app's
 tokens) and `terminal` (the terminal's own 16 ANSI colours).
 
