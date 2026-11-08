@@ -69,6 +69,12 @@ export default definePlugin({
           title: String(object.data.title ?? ""),
           state: String(object.data.state ?? "new"),
           ...(typeof note === "string" ? { note } : {}),
+          ...(object.data.mark === undefined
+            ? {}
+            : { mark: object.data.mark as ObjectRow["mark"] }),
+          ...(object.data.badge === undefined
+            ? {}
+            : { badge: object.data.badge as string }),
         };
       },
       sections() {

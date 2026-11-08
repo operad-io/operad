@@ -556,10 +556,15 @@ export async function refreshPlanCounts(
   const cancelledCount = tasks.filter(
     (object) => taskData(object.data).phase === "cancelled",
   ).length;
+  const activeCount = tasks.filter((object) => {
+    const phase = taskData(object.data).phase;
+    return phase === "running" || phase === "review";
+  }).length;
   if (
     data.taskCount === taskCount &&
     data.mergedCount === mergedCount &&
-    data.cancelledCount === cancelledCount
+    data.cancelledCount === cancelledCount &&
+    (data.activeCount ?? 0) === activeCount
   ) {
     return plan;
   }
@@ -568,6 +573,7 @@ export async function refreshPlanCounts(
     taskCount,
     mergedCount,
     cancelledCount,
+    activeCount,
     // A new task reopens a plan the scheduler already called finished.
     ...(taskCount > 0 && mergedCount + cancelledCount === taskCount
       ? {}
@@ -853,7 +859,12 @@ export async function updateTask(
     let brief = data.brief;
     for (const line of lines) brief = appendChange(brief, line);
     // A new area drops the old hold; the next tick decides it again.
-    const { area: _area, areaHeldBy: _held, ...kept } = data;
+    const {
+      area: _area,
+      areaHeldBy: _held,
+      dependencyHeld: _waits,
+      ...kept
+    } = data;
     const nextArea = options.area === undefined ? data.area : area;
     const nextHeld = areaChanged ? undefined : data.areaHeldBy;
     const next: TaskData = {
@@ -927,7 +938,7 @@ export async function claimTaskStart(
       const holder = await areaHolder(store, latest.repository, latest.area, id);
       if (holder !== undefined) return undefined;
     }
-    const { areaHeldBy: _held, ...rest } = latest;
+    const { areaHeldBy: _held, dependencyHeld: _waits, ...rest } = latest;
     const next: TaskData = {
       ...rest,
       phase: "running",
@@ -980,6 +991,32 @@ export async function setAreaHold(
       id,
       { ...rest, ...(holder === undefined ? {} : { areaHeldBy: holder }) },
       "dev:task-area-hold",
+    );
+  });
+}
+
+/**
+ * Records that a ready task waits for a task it follows, or clears the record,
+ * so a row can say the task is blocked. Writes only on a change.
+ */
+export async function setDependencyHold(
+  store: ObjectStore,
+  id: string,
+  held: boolean,
+): Promise<void> {
+  const initial = await getTask(store, id);
+  const data = taskData(initial.data);
+  if ((data.dependencyHeld === true) === held) return;
+  await withRepoLock(store, data.repository, async () => {
+    const current = await getTask(store, id);
+    const latest = taskData(current.data);
+    if (latest.phase !== "ready" || (latest.dependencyHeld === true) === held) return;
+    const { dependencyHeld: _waits, ...rest } = latest;
+    await writeTask(
+      store,
+      id,
+      { ...rest, ...(held ? { dependencyHeld: true } : {}) },
+      "dev:task-dependency-hold",
     );
   });
 }

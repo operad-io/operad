@@ -53,6 +53,7 @@ describe("dev views", () => {
       state: "draft",
       note: "0/1  auto: off  P3  concurrency: 1",
       scope: "repository",
+      mark: "proposed",
     });
     await setTaskPhase(store, task.id, "merged");
     expect(planViews.row(await getPlan(store, plan.id)).note).toBe(
@@ -68,6 +69,8 @@ describe("dev views", () => {
       title: "JSONL",
       state: "proposed",
       scope: "repository",
+      mark: "proposed",
+      badge: "#0",
     });
     await store.put(
       "task",
@@ -213,6 +216,8 @@ describe("dev views", () => {
     expect(short.markdown).toContain("small.txt");
     expect(short.markdown).toContain("````diff");
     expect(short.markdown).toContain("+hello");
+    // The diffstat keeps git's leading space on its first line.
+    expect(short.markdown).toMatch(/^````diff\n small\.txt /);
     expect(short.next).toBeUndefined();
 
     gitOrThrow(remote.repository, ["checkout", "-q", branch]);

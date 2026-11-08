@@ -6,6 +6,7 @@
 
 import type {
   PendingItem,
+  RowMark,
   RunningItem,
   ViewListPage,
   ViewAction,
@@ -37,8 +38,16 @@ export type TuiTheme = "light" | "dark";
 /** What a tab lists. */
 export type TuiTabKind = "pending" | "running" | "type";
 
-/** The marker a row shows: a person waits, a run works, or nothing. */
-export type TuiMark = "waiting" | "running" | "none";
+/** The marker a row shows: one of the plugin's marks, or nothing. */
+export type TuiMark = RowMark | "none";
+
+/** The marks that stay when the kernel says a person waits; others draw `waiting`. */
+const WAITING_KEEPS: readonly RowMark[] = [
+  "waiting",
+  "proposed",
+  "rework_pending",
+  "ready_to_merge",
+];
 
 /** One line of a list, in the words the view renders. */
 export interface TuiRow {
@@ -48,6 +57,10 @@ export interface TuiRow {
   readonly note?: string | undefined;
   readonly waiting: boolean;
   readonly running: boolean;
+  /** The plugin's semantic mark, when the row carries one. */
+  readonly mark?: RowMark | undefined;
+  /** A short text shown after the state. */
+  readonly badge?: string | undefined;
   /** Set on an error row; the view adds one red line under the row. */
   readonly error?: string | undefined;
   /** False for a row that names no object (a run, a candidate): it never opens. */
@@ -455,6 +468,8 @@ export function rowFromView(row: ViewRow): TuiRow {
     ...(row.note === undefined ? {} : { note: sanitize(row.note) }),
     waiting: row.waiting,
     running: row.running,
+    ...(row.mark === undefined ? {} : { mark: row.mark }),
+    ...(row.badge === undefined ? {} : { badge: sanitize(row.badge) }),
     ...(row.error === undefined ? {} : { error: sanitize(row.error) }),
   };
 }
@@ -471,6 +486,8 @@ function rowFromPending(item: PendingItem): TuiRow {
       note: sanitize(item.prompt),
       waiting: true,
       running: false,
+      ...(item.row.mark === undefined ? {} : { mark: item.row.mark }),
+      ...(item.row.badge === undefined ? {} : { badge: sanitize(item.row.badge) }),
       ...(item.row.error === undefined ? {} : { error: sanitize(item.row.error) }),
       ...(item.object === undefined ? { openable: false } : {}),
     };
@@ -506,7 +523,12 @@ function rowFromRunning(item: RunningItem): TuiRow {
 
 /** The marker a row puts in its first column. */
 export function rowMark(row: TuiRow): TuiMark {
-  if (row.waiting) return "waiting";
+  if (row.waiting) {
+    return row.mark !== undefined && WAITING_KEEPS.includes(row.mark)
+      ? row.mark
+      : "waiting";
+  }
+  if (row.mark !== undefined) return row.mark;
   if (row.running) return "running";
   return "none";
 }
