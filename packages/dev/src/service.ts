@@ -717,53 +717,64 @@ export async function addTask(
     throw new DevError("plan", `plan "${bareId(plan.id)}" is cancelled`);
   }
   await devTestHooks.beforeLock?.("task-add");
-  return withRepoLock(store, planObject.repository, async (repository) => {
-    const currentPlan = await getPlan(store, options.plan);
-    const current = planData(currentPlan.data);
-    if (current.status === "cancelled") {
-      throw new DevError(
-        "plan",
-        `plan "${bareId(currentPlan.id)}" is cancelled`,
-      );
-    }
-    if (current.repository !== repository.name) {
-      throw new DevError(
-        "plan",
-        `plan "${bareId(currentPlan.id)}" is not in repository "${repository.name}"`,
-      );
-    }
-    const id = await nextId(store, "task", repository.name, slug);
-    const tasks = await allTasks(store);
-    const after = validateAfter(
-      tasks,
-      repository.name,
-      bareId(currentPlan.id),
-      id,
-      options.after ?? [],
+  return withRepoLock(store, planObject.repository, (repository) =>
+    addTaskLocked(store, options, repository),
+  );
+}
+
+/** Adds the task; the caller holds the repository's lock. */
+export async function addTaskLocked(
+  store: ObjectStore,
+  options: AddTaskOptions,
+  repository: RepositoryData,
+): Promise<StoredObject> {
+  const slug = validateSlug(options.slug);
+  const title = validateTitle(options.title);
+  const currentPlan = await getPlan(store, options.plan);
+  const current = planData(currentPlan.data);
+  if (current.status === "cancelled") {
+    throw new DevError(
+      "plan",
+      `plan "${bareId(currentPlan.id)}" is cancelled`,
     );
-    const brief = appendChange(options.brief ?? "", "created");
-    const area =
-      options.area === undefined ? undefined : validateArea(options.area);
-    const data: TaskData = {
-      repository: repository.name,
-      plan: bareId(currentPlan.id),
-      title,
-      brief,
-      after,
-      ...(area === undefined ? {} : { area }),
-      phase: "proposed",
-      attempts: 0,
-      run: null,
-    };
-    const written = await writeTask(
-      store,
-      storeKey(repository.name, id),
-      data,
-      "dev:task-add",
+  }
+  if (current.repository !== repository.name) {
+    throw new DevError(
+      "plan",
+      `plan "${bareId(currentPlan.id)}" is not in repository "${repository.name}"`,
     );
-    await refreshPlanCounts(store, currentPlan);
-    return written;
-  });
+  }
+  const id = await nextId(store, "task", repository.name, slug);
+  const tasks = await allTasks(store);
+  const after = validateAfter(
+    tasks,
+    repository.name,
+    bareId(currentPlan.id),
+    id,
+    options.after ?? [],
+  );
+  const brief = appendChange(options.brief ?? "", "created");
+  const area =
+    options.area === undefined ? undefined : validateArea(options.area);
+  const data: TaskData = {
+    repository: repository.name,
+    plan: bareId(currentPlan.id),
+    title,
+    brief,
+    after,
+    ...(area === undefined ? {} : { area }),
+    phase: "proposed",
+    attempts: 0,
+    run: null,
+  };
+  const written = await writeTask(
+    store,
+    storeKey(repository.name, id),
+    data,
+    "dev:task-add",
+  );
+  await refreshPlanCounts(store, currentPlan);
+  return written;
 }
 
 function requireEditable(task: TaskData): void {

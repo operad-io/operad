@@ -37,6 +37,7 @@ import {
 } from "./mainclone.ts";
 import { recordServeCode } from "./standing.ts";
 import { runCheckCommands } from "./rerun.ts";
+import { reportFlakyTests } from "./flaky.ts";
 import { recordRerunPasses } from "./reruns.ts";
 import { getPlan, refreshPlanCounts } from "./service.ts";
 import {
@@ -534,6 +535,13 @@ export async function runIntegrate(
         checkPlaces(ctx, context.repository, settings.gate.places),
       );
       await recordRerunPasses(ctx.store, checked.passedOnRerun);
+      await reportFlakyTests({
+        ctx,
+        repository: context.repository,
+        taskId: context.taskId,
+        threshold: context.settings.check.flakyTask,
+        check: checked,
+      });
       const { outcome, hostError } = checked;
       checkNote = checked.note;
       if (hostError !== undefined || outcome?.result !== "pass") {

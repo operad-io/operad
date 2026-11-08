@@ -244,3 +244,11 @@ the row fields.
 | T-0076-M3 | packages/dev/src/places.ts | every repository shared one set of place files | `repository check places > a check waiting for its repository does not hold a home place` |
 | T-0094-M15 | packages/dev/src/standing.ts | a file under a `schemas/` subdirectory of a loaded package was not serve code | `a followed merge and the code serve has loaded > a nested schema or a manifest of a loaded package raises the item` |
 | T-0063-M14 | `packages/dev/src/views.ts` | MessageAppended and ModelUsageRecorded journal lines were left to the fallback | `radian journal lines show the agent's text and each turn's usage; empty tool-call messages show nothing` |
+| T-0092-M1 | packages/dev/src/flaky.ts | a test crossed the threshold one pass early | `a flaky test proposes a task > the threshold proposes exactly one task with the expected brief` |
+| T-0092-M2 | packages/dev/src/flaky.ts | the count did not restart after the task ended | `a flaky test proposes a task > after a merge the count restarts at 0` |
+| T-0092-M3 | packages/dev/src/flaky.ts | a proposal ignored an open task that names the test | `a flaky test proposes a task > an open task that already names the test stops a proposal` |
+| T-0092-M4 | packages/dev/src/flaky.ts | a finished plan could receive the task | `a flaky test proposes a task > a finished plan is passed over for an older unfinished one` |
+| T-0092-M5 | packages/dev/src/flaky.ts | flakyTask 0 did not turn the proposal off | `a flaky test proposes a task > flakyTask 0 proposes nothing` |
+| T-0092-M6 | packages/dev/src/flaky.ts | the no-plan notice was recorded on every call | `a flaky test proposes a task > a repository without a confirmed plan records a notice and proposes nothing` |
+| T-0092-M7 | packages/dev/src/flaky.ts | the failure excerpt held 31 lines before the (fail) line | `a flaky test proposes a task > the failure excerpt holds the (fail) line and up to 30 lines before it` |
+| T-0092-M8 | packages/dev/src/flaky.ts | `operad reruns` showed the task of an ended fix | `a flaky test proposes a task > operad reruns shows the task beside its test while it is open` |

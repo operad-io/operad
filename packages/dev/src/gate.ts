@@ -19,6 +19,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { checkPlaces } from "./places.ts";
 import { runCheckCommands } from "./rerun.ts";
+import { reportFlakyTests } from "./flaky.ts";
 import { recordRerunPasses } from "./reruns.ts";
 import {
   ReviewGradingError,
@@ -317,6 +318,13 @@ export async function runVerify(
     checkPlaces(ctx, context.repository, context.settings.gate.places),
   );
   await recordRerunPasses(ctx.store, checked.passedOnRerun);
+  await reportFlakyTests({
+    ctx,
+    repository: context.repository,
+    taskId: context.taskId,
+    threshold: context.settings.check.flakyTask,
+    check: checked,
+  });
   const { outcome, hostError, note } = checked;
 
   const outcomeData =

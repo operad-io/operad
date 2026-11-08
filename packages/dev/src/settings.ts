@@ -112,6 +112,11 @@ export interface GateSettings {
 export interface CheckSettings {
   /** How many times a failed check line list runs again; 0 turns it off. */
   readonly rerun: number;
+  /**
+   * How many passes on rerun of one test in a repository propose a task to fix
+   * it; 0 turns the proposal off.
+   */
+  readonly flakyTask: number;
 }
 
 /** How the integrate step lands a verified commit on main. */
@@ -227,7 +232,7 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
     commands: [],
     commandTimeoutSecs: 1800,
   },
-  check: { rerun: 1 },
+  check: { rerun: 1, flakyTask: 2 },
   reviewer: {
     use: DEFAULT_WORKER_USE,
     args: [],
@@ -506,7 +511,7 @@ function checkSettings(value: unknown, field: string): CheckSettings {
     throw new DevError(field, "must be an object");
   }
   for (const key of Object.keys(value)) {
-    if (key !== "rerun") {
+    if (key !== "rerun" && key !== "flakyTask") {
       throw new DevError(`${field}.${key}`, "is not a check setting");
     }
   }
@@ -515,6 +520,10 @@ function checkSettings(value: unknown, field: string): CheckSettings {
       value.rerun === undefined
         ? DEFAULT_DEV_SETTINGS.check.rerun
         : nonNegativeInteger(value.rerun, `${field}.rerun`),
+    flakyTask:
+      value.flakyTask === undefined
+        ? DEFAULT_DEV_SETTINGS.check.flakyTask
+        : nonNegativeInteger(value.flakyTask, `${field}.flakyTask`),
   };
 }
 
