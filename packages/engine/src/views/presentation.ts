@@ -1098,6 +1098,38 @@ export class Views {
       if (object !== undefined || (await this.hasRun(typed.type, typed.id))) {
         return { type: typed.type, id: typed.id, object };
       }
+      // A typed bare id (`task:T-0043-x`) names a scoped object the same way
+      // the bare id does, limited to its type: the operad app opens a row as
+      // `<type>:<row id>`, and a row's id carries no namespace.
+      if (!typed.id.includes("/")) {
+        const scoped = await this.resolveWithPlugins(typed.id, typed.type);
+        if (scoped !== undefined) return scoped;
+        const suffixed: ResolvedObject[] = [];
+        let cursor: string | undefined;
+        for (;;) {
+          const page = await this.store.list(
+            typed.type,
+            cursor === undefined ? {} : { cursor },
+          );
+          for (const object of page.objects) {
+            if (!object.id.endsWith(`/${typed.id}`)) continue;
+            suffixed.push({ type: typed.type, id: object.id, object });
+          }
+          if (page.next === undefined) break;
+          cursor = page.next;
+        }
+        if (suffixed.length > 1) {
+          throw new ViewError(
+            "ambiguous",
+            `"${id}" is ambiguous: use ${suffixed
+              .map((match) => `${match.type}:${match.id}`)
+              .sort()
+              .join(", ")}`,
+          );
+        }
+        const only = suffixed[0];
+        if (only !== undefined) return only;
+      }
     }
 
     const matches: ResolvedObject[] = [];
