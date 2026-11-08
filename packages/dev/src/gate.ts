@@ -318,14 +318,19 @@ export async function runVerify(
     checkPlaces(ctx, context.repository, context.settings.gate.places),
   );
   await recordRerunPasses(ctx.store, checked.passedOnRerun);
-  await reportFlakyTests({
+  const flakyNotice = await reportFlakyTests({
     ctx,
     repository: context.repository,
     taskId: context.taskId,
     threshold: context.settings.check.flakyTask,
     check: checked,
   });
-  const { outcome, hostError, note } = checked;
+  const { outcome, hostError } = checked;
+  // A notice joins the check's own note, so the task's Changes and the step's history say it.
+  const note =
+    flakyNotice === undefined
+      ? checked.note
+      : [checked.note, flakyNotice].filter((part) => part !== undefined).join("; ");
 
   const outcomeData =
     outcome !== undefined && isRecord(outcome.data) ? outcome.data : {};
@@ -378,6 +383,7 @@ export async function runVerify(
     result,
     data: verifyData(record, {
       ...(note === undefined ? {} : { note }),
+      ...(flakyNotice === undefined ? {} : { reason: flakyNotice }),
       ...(checked.rerun ? { rerun: true } : {}),
       attempt: attempt.number,
       verified: sha,

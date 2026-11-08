@@ -2,11 +2,11 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { CommandContext, FactWriter } from "@operad-io/engine";
+import type { CommandContext } from "@operad-io/engine";
 import { commands } from "../src/commands.ts";
 import { recordRerunPasses } from "../src/reruns.ts";
 import { failureExcerpt, flakyTasksByName, flakyTestHooks, trackFlakyTests } from "../src/flaky.ts";
-import { bareId, changeClock, listAll, repositoryData, taskData, type RepositoryData } from "../src/model.ts";
+import { appendChange, bareId, changeClock, listAll, repositoryData, taskData, type RepositoryData } from "../src/model.ts";
 import {
   addPlan,
   addRepository,
@@ -54,17 +54,18 @@ async function setup(withPlan: boolean) {
     await confirmPlan(store, plan.id);
     planId = plan.id;
   }
-  const notices: { type: string; data: unknown }[] = [];
-  const facts: FactWriter = {
-    append: (input) => {
-      notices.push({ type: input.type, data: input.data });
-      return { id: String(notices.length), type: input.type, data: input.data } as never;
-    },
-  };
-  const track = async (taskId: string, log: string, threshold = 2, names: readonly string[] = [TEST]) => {
+  const notices: string[] = [];
+  const track = async (
+    taskId: string,
+    log: string,
+    threshold = 2,
+    names: readonly string[] = [TEST],
+    secrets: readonly string[] = [],
+  ) => {
     const logPath = join(root, `${taskId}.log`);
     writeFileSync(logPath, log);
-    await trackFlakyTests({ store, facts, repository, taskId, names, log: logPath, threshold });
+    const notice = await trackFlakyTests({ store, repository, taskId, names, log: logPath, threshold, secrets });
+    if (notice !== undefined) notices.push(notice);
   };
   const flaky = async () =>
     (await listAll(store, "task")).filter((object) => taskData(object.data).title.startsWith("Fix the flaky test"));
@@ -133,6 +134,48 @@ describe("a flaky test proposes a task", () => {
     await addTask(s.store, { plan: s.planId ?? "", slug: "mine", title: `Look at ${TEST}` });
     await s.track("T-0001-a", logWith(TEST), 1);
     expect(await s.flaky()).toHaveLength(0);
+    // The open task is the one that counts: reruns shows it, and its end restarts the count.
+    const mine = (await listAll(s.store, "task")).find((object) => taskData(object.data).title.startsWith("Look at"));
+    expect((await flakyTasksByName(s.store)).get(TEST)).toBe(bareId(mine?.id ?? ""));
+    await setTaskPhase(s.store, mine?.id ?? "", "merged");
+    await s.track("T-0002-b", logWith(TEST), 2);
+    expect(await s.flaky()).toHaveLength(0);
+    await s.track("T-0003-c", logWith(TEST), 2);
+    expect(await s.flaky()).toHaveLength(1);
+  });
+
+  test("a task whose Changes only say the test passed on rerun does not stop the proposal", async () => {
+    const s = await setup(true);
+    const other = await addTask(s.store, { plan: s.planId ?? "", slug: "other", title: "Other work" });
+    const data = taskData(other.data);
+    await s.store.put("task", other.id, { ...data, brief: appendChange(data.brief, `passed on rerun: ${TEST}`) }, "test");
+    await s.track("T-0001-a", logWith(TEST), 1);
+    expect(await s.flaky()).toHaveLength(1);
+  });
+
+  test("secrets in a failure excerpt are masked in the record and the brief", async () => {
+    const s = await setup(true);
+    const leaky = logWith(TEST, ["token=hunter2hunter2 seen", "plain"]);
+    await s.track("T-0001-a", leaky, 1, [TEST], ["hunter2hunter2"]);
+    const brief = taskData((await s.flaky())[0]?.data ?? {}).brief;
+    expect(brief).not.toContain("hunter2hunter2");
+    expect(brief).toContain("token=*** seen");
+    const records = await listAll(s.store, "flaky-test");
+    expect(JSON.stringify(records.map((record) => record.data))).not.toContain("hunter2hunter2");
+  });
+
+  test("a failure after an earlier command's rerun keeps its excerpt and file", async () => {
+    const s = await setup(true);
+    const log = [
+      "===== rerun of failed test: first one =====",
+      "(pass) first one [1ms]",
+      logWith(TEST, ["later output"]),
+    ].join("\n");
+    await s.track("T-0001-a", log, 1);
+    const task = taskData((await s.flaky())[0]?.data ?? {});
+    expect(task.area).toBe("widget");
+    expect(task.brief).toContain("later output");
+    expect(task.brief).toContain(`'${FILE}'`);
   });
 
   test("after a merge the count restarts at 0", async () => {
@@ -172,7 +215,8 @@ describe("a flaky test proposes a task", () => {
     await s.track("T-0003-c", logWith("other"), 2, ["other"]);
     expect(await s.flaky()).toHaveLength(0);
     expect(s.notices).toHaveLength(1);
-    expect(s.notices[0]?.type).toBe("dev/flaky_task_skipped");
+    expect(s.notices[0]).toContain(`"${TEST}" passed on rerun 2 times`);
+    expect(s.notices[0]).toContain("no confirmed plan");
   });
 
   test("a finished plan is passed over for an older unfinished one", async () => {

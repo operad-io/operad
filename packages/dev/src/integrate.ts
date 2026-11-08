@@ -339,6 +339,7 @@ export async function runIntegrate(
     };
   };
 
+  let flakyReason: string | undefined;
   const recordMerged = async (
     record: IntegrationRecord,
     sha: string,
@@ -363,7 +364,10 @@ export async function runIntegrate(
     await refreshPlan(ctx, context);
     return {
       result: "merged",
-      data: integrationData(withClone, attempt, extra),
+      data: integrationData(withClone, attempt, {
+        ...extra,
+        ...(flakyReason === undefined ? {} : { reason: flakyReason }),
+      }),
     };
   };
 
@@ -535,7 +539,7 @@ export async function runIntegrate(
         checkPlaces(ctx, context.repository, settings.gate.places),
       );
       await recordRerunPasses(ctx.store, checked.passedOnRerun);
-      await reportFlakyTests({
+      const flakyNotice = await reportFlakyTests({
         ctx,
         repository: context.repository,
         taskId: context.taskId,
@@ -543,7 +547,11 @@ export async function runIntegrate(
         check: checked,
       });
       const { outcome, hostError } = checked;
-      checkNote = checked.note;
+      checkNote =
+        flakyNotice === undefined
+          ? checked.note
+          : [checked.note, flakyNotice].filter((part) => part !== undefined).join("; ");
+      flakyReason = flakyNotice;
       if (hostError !== undefined || outcome?.result !== "pass") {
         const data =
           outcome !== undefined && isRecord(outcome.data) ? outcome.data : {};

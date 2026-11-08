@@ -13,7 +13,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ObjectStore, StoredObject } from "@operad-io/engine";
-import { messageOf, type FactWriter } from "@operad-io/engine";
+import { messageOf, type SecretStore } from "@operad-io/engine";
 import {
   bareId,
   changeClock,
@@ -24,11 +24,36 @@ import {
   parseId,
   planData,
   planState,
+  splitBrief,
   taskData,
   type RepositoryData,
 } from "./model.ts";
 import { anchoredPattern, shellQuote } from "./rerun.ts";
 import { addTaskLocked, withRepoLock } from "./service.ts";
+
+const MASK = "***";
+const SECRET_NAME = /(KEY|TOKEN|SECRET|PASS|PASSWORD|AUTH|CREDENTIAL)/i;
+const SECRET_MIN_CHARS = 6;
+
+/** The text with each known secret value, and each secret-named environment value, shown as `***`. */
+export function maskSecrets(
+  text: string,
+  secrets: readonly string[],
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+  const values = new Set<string>();
+  for (const value of secrets) if (value.length > 0) values.add(value);
+  for (const [name, value] of Object.entries(env)) {
+    if (value !== undefined && value.length >= SECRET_MIN_CHARS && SECRET_NAME.test(name)) {
+      values.add(value);
+    }
+  }
+  let out = text;
+  for (const value of [...values].sort((x, y) => y.length - x.length)) {
+    out = out.split(value).join(MASK);
+  }
+  return out;
+}
 
 const FLAKY_TYPE = "flaky-test";
 const MAX_TITLE_NAME = 120;
@@ -107,18 +132,12 @@ function writableOf(record: FlakyRecord): Record<string, unknown> {
   };
 }
 
-/** The log text of the first run: the reruns are drawn after their headings. */
-function firstRunText(log: string): string {
-  const cut = log.search(/^===== (?:rerun of failed test:|check failed; running it once more)/m);
-  return cut < 0 ? log : log.slice(0, cut);
-}
-
 /** The "(fail)" line of a test with up to 30 lines before it, and the file named above it. */
 export function failureExcerpt(
   log: string,
   name: string,
 ): { readonly excerpt: string; readonly file: string | undefined } {
-  const lines = firstRunText(log).replace(/\r\n/g, "\n").split("\n");
+  const lines = log.replace(/\r\n/g, "\n").split("\n");
   const wanted = `(fail) ${name} [`;
   let found = -1;
   for (let index = 0; index < lines.length; index += 1) {
@@ -239,14 +258,16 @@ async function namingTask(
     return (
       task.repository === repository &&
       isOpenTask(task) &&
-      (task.title.includes(name) || task.brief.includes(name))
+      (task.title.includes(name) || splitBrief(task.brief).body.includes(name))
     );
   });
 }
 
 export interface FlakyInput {
   readonly store: ObjectStore;
-  readonly facts: FactWriter | undefined;
+  /** Secret values to hide in the failure excerpts. */
+  readonly secrets?: readonly string[] | undefined;
+  readonly env?: Readonly<Record<string, string | undefined>> | undefined;
   readonly repository: RepositoryData;
   /** The task whose check passed the tests on rerun. */
   readonly taskId: string;
@@ -275,8 +296,9 @@ async function taskEnded(store: ObjectStore, repository: string, id: string): Pr
  * Remembers the tests that passed on rerun and proposes a task for each test
  * that reached the threshold. Safe to call again at any time.
  */
-export async function trackFlakyTests(input: FlakyInput): Promise<void> {
-  if (input.threshold <= 0 || input.names.length === 0) return;
+export async function trackFlakyTests(input: FlakyInput): Promise<string | undefined> {
+  if (input.threshold <= 0 || input.names.length === 0) return undefined;
+  const notices: string[] = [];
   const { store, repository } = input;
   const log = readLog(input.log);
   const at = changeClock.now();
@@ -295,11 +317,12 @@ export async function trackFlakyTests(input: FlakyInput): Promise<void> {
       // While its task is open the count does not grow: the fix is on its way.
       if (record.task !== undefined) continue;
       const found = failureExcerpt(log, name);
+      const excerpt = maskSecrets(found.excerpt, input.secrets ?? [], input.env);
       record = {
         ...record,
         occurrences: [
           ...record.occurrences,
-          { task: input.taskId, at, file: found.file, excerpt: found.excerpt },
+          { task: input.taskId, at, file: found.file, excerpt },
         ],
       };
       await store.put(FLAKY_TYPE, key, writableOf(record), "dev:flaky-count");
@@ -311,9 +334,11 @@ export async function trackFlakyTests(input: FlakyInput): Promise<void> {
       const record = recordOf(object.data);
       if (record === undefined || record.task !== undefined) continue;
       if (record.occurrences.length < input.threshold) continue;
-      await propose(input, fresh, object.id, record);
+      const notice = await propose(input, fresh, object.id, record);
+      if (notice !== undefined) notices.push(notice);
     }
   });
+  return notices.length === 0 ? undefined : notices.join("; ");
 }
 
 async function propose(
@@ -321,27 +346,26 @@ async function propose(
   repository: RepositoryData,
   key: string,
   record: FlakyRecord,
-): Promise<void> {
+): Promise<string | undefined> {
   const { store } = input;
   const existing = await namingTask(store, repository.name, record.name);
-  if (existing !== undefined) return;
+  if (existing !== undefined) {
+    // Its task is the one that counts: the count restarts when that task ends.
+    await store.put(
+      FLAKY_TYPE,
+      key,
+      writableOf({ ...record, task: bareId(existing.id) }),
+      "dev:flaky-task",
+    );
+    return undefined;
+  }
   const plan = await newestOpenPlan(store, repository.name);
   if (plan === undefined) {
     // One notice per count is enough; the count stays and decides again later.
     const count = record.occurrences.length;
-    if (record.noticed !== undefined && record.noticed >= count) return;
+    if (record.noticed !== undefined && record.noticed >= count) return undefined;
     await store.put(FLAKY_TYPE, key, writableOf({ ...record, noticed: count }), "dev:flaky-task");
-    await input.facts?.append({
-      type: "dev/flaky_task_skipped",
-      cause: "dev:flaky-task",
-      data: {
-        repository: repository.name,
-        test: record.name,
-        count: record.occurrences.length,
-        reason: "no confirmed plan that is not finished",
-      },
-    });
-    return;
+    return noticeFor(record, "no confirmed plan that is not finished");
   }
   await flakyTestHooks.beforePropose?.(record.name);
   const file = [...record.occurrences].reverse().find((entry) => entry.file !== undefined)?.file;
@@ -363,18 +387,14 @@ async function propose(
       writableOf({ ...record, task: bareId(task.id) }),
       "dev:flaky-task",
     );
+    return undefined;
   } catch (error) {
-    await input.facts?.append({
-      type: "dev/flaky_task_skipped",
-      cause: "dev:flaky-task",
-      data: {
-        repository: repository.name,
-        test: record.name,
-        count: record.occurrences.length,
-        reason: messageOf(error),
-      },
-    });
+    return noticeFor(record, messageOf(error));
   }
+}
+
+function noticeFor(record: FlakyRecord, reason: string): string {
+  return `flaky test "${record.name}" passed on rerun ${record.occurrences.length} times; no task was proposed: ${reason}`;
 }
 
 /** The open task of each test name, across the home; the first one found wins. */
@@ -395,7 +415,7 @@ export async function flakyTasksByName(
 export interface FlakyReport {
   readonly ctx: {
     readonly store: ObjectStore;
-    readonly facts: FactWriter;
+    readonly secrets: SecretStore;
     readonly logger: { write(text: string): Promise<string> | string };
   };
   readonly repository: RepositoryData;
@@ -407,13 +427,31 @@ export interface FlakyReport {
   };
 }
 
-/** Counts the passes on rerun of a finished check; a failure here never fails the check. */
-export async function reportFlakyTests(report: FlakyReport): Promise<void> {
+async function secretValues(store: SecretStore): Promise<string[]> {
+  try {
+    const values: string[] = [];
+    for (const name of await store.names()) {
+      const secret = await store.get(name);
+      if (secret !== undefined) values.push(secret.reveal());
+    }
+    return values;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Counts the passes on rerun of a finished check; a failure here never fails
+ * the check. Returns a notice for the check's history when no task could be
+ * proposed.
+ */
+export async function reportFlakyTests(report: FlakyReport): Promise<string | undefined> {
+  if (report.threshold <= 0 || report.check.passedOnRerun.length === 0) return undefined;
   const log = report.check.outcome?.data?.log;
   try {
-    await trackFlakyTests({
+    return await trackFlakyTests({
       store: report.ctx.store,
-      facts: report.ctx.facts,
+      secrets: await secretValues(report.ctx.secrets),
       repository: report.repository,
       taskId: report.taskId,
       names: report.check.passedOnRerun,
@@ -422,5 +460,6 @@ export async function reportFlakyTests(report: FlakyReport): Promise<void> {
     });
   } catch (error) {
     await report.ctx.logger.write(`could not propose a task for a flaky test: ${messageOf(error)}`);
+    return undefined;
   }
 }

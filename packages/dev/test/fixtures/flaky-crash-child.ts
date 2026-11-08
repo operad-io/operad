@@ -22,7 +22,6 @@ flakyTestHooks.beforePropose = () => {
 };
 await trackFlakyTests({
   store,
-  facts: undefined,
   repository: repositoryData(found.data),
   taskId: "T-0001-child",
   names: [test],
