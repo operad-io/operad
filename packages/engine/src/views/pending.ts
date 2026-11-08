@@ -22,7 +22,7 @@ export interface PendingItem {
   readonly prompt: string;
   readonly choices: readonly string[];
   readonly actions: readonly PendingActionView[];
-  readonly kind?: "run" | "candidate";
+  readonly kind?: "run" | "candidate" | "standing";
   readonly pendingId?: string;
   /** The object the run is about, as `<type>:<id>`; absent for a candidate. */
   readonly object?: string;
@@ -97,6 +97,18 @@ export async function listPending(
       ],
       kind: "candidate",
       pendingId: candidate.pendingId,
+    });
+  }
+
+  for (const item of await registry.standing()) {
+    items.push({
+      runId: `${item.plugin}:${item.id}`,
+      flow: item.plugin,
+      step: null,
+      prompt: item.prompt,
+      choices: [],
+      actions: [],
+      kind: "standing",
     });
   }
 

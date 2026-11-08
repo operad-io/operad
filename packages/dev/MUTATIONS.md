@@ -203,9 +203,20 @@ the row fields.
 | T-0066-M1 | packages/dev/src/steps.ts | the clean-merge history line lost "main" and "checking again" | `dev/reverify > a branch behind a non-conflicting main merges it and goes to verify, no work` |
 | T-0066-M2 | packages/dev/src/steps.ts | the reverify step opened a new attempt number | `dev/reverify > a branch behind a non-conflicting main merges it and goes to verify, no work` |
 | T-0066-M3 | packages/dev/flows/dev.flow.ts | the wait's reverify edge went straight to verify again | `the dev flow > loads with the gate and the rework edges` |
+| T-0094-M1 | packages/dev/src/settings.ts | an invalid file threw again instead of returning the last valid settings | `a repository whose dev.json becomes invalid > a step in its own process finishes with the old settings, the log says it once, and pending clears when fixed` |
+| T-0094-M2 | packages/dev/src/schedule.ts | the settings problem was logged on every tick, not once per change | `a repository whose dev.json becomes invalid > a step in its own process finishes with the old settings, the log says it once, and pending clears when fixed` |
+| T-0094-M3 | packages/dev/src/schedule.ts | a ready task started although a plugin dev needs is not loaded | `a plugin dev needs that the home does not load > a pending item names the plugin and the command, and ready tasks stay ready` |
+| T-0094-M4 | packages/dev/src/standing.ts | the restart item counted merges older than the running serve | `a followed merge and the code serve has loaded > a merge that touches packages/dev/src raises the item once; docs alone do not` |
+| T-0094-M5 | packages/dev/src/standing.ts | a changed `*.schema.json` of a loaded package was not serve code | `a followed merge and the code serve has loaded > a merge that changes a schema serve validates with raises the item` |
+| T-0094-M6 | packages/dev/src/standing.ts | every file of a loaded package counted as serve code (tests, MUTATIONS.md) | `a followed merge and the code serve has loaded > a package serve does not load, tests and a merge in another repository raise nothing` |
+| T-0094-M7 | packages/dev/src/settings.ts | the home kept no copy of the last valid settings | `a repository whose dev.json becomes invalid > a process that starts while the file is invalid reads the copy the home kept` |
 | T-0044-M1 | packages/dev/src/views.ts | a long worker name was not cut in the row | `dev views > a task row shows the last attempt's worker, short, and nothing before pools` |
 | T-0044-M2 | packages/dev/src/views.ts | an attempt with no worker got a row named "undefined" | `dev views > the metrics section splits cost, time and first pass by worker` |
 | T-0044-M3 | packages/dev/src/views.ts | a pass in a later review round counted as first pass | `dev views > the metrics section splits cost, time and first pass by worker` |
+| T-0094-M10 | packages/dev/src/schedule.ts | the once-per-change key was the message alone, not the file text | `a repository whose dev.json becomes invalid > a step in its own process finishes with the old settings, the log says it once, and pending clears when fixed` |
+| T-0094-M11 | packages/dev/src/standing.ts | a plugin configured by a path to a package was not counted as loaded | `a followed merge and the code serve has loaded > a plugin loaded by a path to a package of the clone counts as loaded` |
+| T-0094-M12 | packages/dev/src/standing.ts | a plugin entry given as a module string was not counted as loaded | `a followed merge and the code serve has loaded > string and array plugin entries count as loaded too` |
+| T-0094-M13 | packages/dev/src/schedule.ts | the repair of a stopped task started the flow although a needed plugin is missing | `a stopped task when a plugin dev needs is missing > is not started again by the repair, and is while the plugin is loaded` |
 
 ## T-0073 — Changes tells the story
 
@@ -216,6 +227,7 @@ the row fields.
 | T-0073-M3 | packages/dev/src/announce.ts | the stopped-step lookup ignored the entry's time prefix | `dev scheduling > serve repairs a task whose run ended without an edge, and reject runs again` |
 | T-0073-M4 | packages/dev/src/model.ts | a reason was not cut to one short line | `the Changes story > a rework names who asked and the first finding, cut to one line` |
 | T-0073-M5 | packages/dev/src/gate.ts | the review and verify rework lost their reason | `dev/rework > a review failure appends the findings at or above the fix level` |
+| T-0094-M14 | packages/dev/src/standing.ts | the kernel packages' dependencies (cli lists the tui) were counted as loaded code | `a followed merge and the code serve has loaded > a package serve does not load, tests and a merge in another repository raise nothing` |
 
 ## T-0076 — repository check places
 
@@ -224,3 +236,4 @@ the row fields.
 | T-0076-M1 | packages/dev/src/places.ts | the repository place was never taken | `repository check places > two checks of a repository with places 1 take turns while another repository runs beside them` |
 | T-0076-M2 | packages/dev/src/places.ts | the home place was never taken | `repository check places > the home limit holds with repository limits that would allow more` |
 | T-0076-M3 | packages/dev/src/places.ts | every repository shared one set of place files | `repository check places > a check waiting for its repository does not hold a home place` |
+| T-0094-M15 | packages/dev/src/standing.ts | a file under a `schemas/` subdirectory of a loaded package was not serve code | `a followed merge and the code serve has loaded > a nested schema or a manifest of a loaded package raises the item` |

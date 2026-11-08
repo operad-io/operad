@@ -291,6 +291,8 @@ the row fields.
 | T-0089-M3 | packages/engine/src/markdown.ts | a closing fence ignored its character (a backtick fence closed a tilde fence) | `markdown fences > closing needs the same character and a length at least the opening's` |
 | T-0089-M4 | packages/engine/src/markdown.ts | the language was the whole info string, not its first word | `markdown fences > only the first word of the info string is the language` |
 | T-0089-M5 | packages/engine/src/markdown.ts | `---`/`+++` diff headers were drawn bold again instead of red/green | `markdown > a four-backtick diff colours + and - lines and keeps indentation` |
+| T-0094-M8 | packages/engine/src/views/pending.ts | the pending view left out the plugins' standing items | `standing pending items > a plugin's items join the pending view, wait on no run and go when the plugin stops reporting them` |
+| T-0094-M9 | packages/engine/src/plugin/registry.ts | a standing hook that threw was raised instead of logged | `standing pending items > a plugin's items join the pending view, wait on no run and go when the plugin stops reporting them` |
 | T-0052-M1 | packages/engine/src/views/presentation.ts | `root` kept the rows that have a parent instead of those without | `row parent > root lists only rows with no parent, across types in type order` |
 | T-0052-M2 | packages/engine/src/views/presentation.ts | a parent id matched only as written, not as the resolved `type:id` or bare id | `row parent > parent= lists only that parent's children and the row carries parent` |
 | T-0052-M3 | packages/engine/src/views/presentation.ts | the level list ignored the type's filter, so no row was hidden | `row parent > the default filter applies under parent= and hidden counts the filtered rows` |
