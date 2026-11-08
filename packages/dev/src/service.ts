@@ -28,6 +28,8 @@ import {
   parseId,
   planData,
   planState,
+  PLAN_FINAL_STATES,
+  TASK_FINAL_STATES,
   PRIORITIES,
   priorityIndex,
   repositoryData,
@@ -62,7 +64,9 @@ export interface AddRepositoryOptions {
   readonly cwd?: string | undefined;
 }
 
-const REPOSITORY_TYPE = "repository";
+const REPOSITORY_TYPE = "repo";
+/** The type name stored repositories had before dev declared `repo`. */
+const LEGACY_REPOSITORY_TYPE = "repository";
 const PLAN_TYPE = "plan";
 const TASK_TYPE = "task";
 
@@ -116,7 +120,69 @@ export async function withRepoLock<T>(
  * Repositories
  * ------------------------------------------------------------------------- */
 
+/** Open plans and open tasks of one repository, as its row shows them. */
+async function openCounts(
+  store: ObjectStore,
+  name: string,
+): Promise<{ readonly openPlans: number; readonly openTasks: number }> {
+  const plans = (await listAll(store, PLAN_TYPE)).filter(
+    (object) => planData(object.data).repository === name,
+  );
+  const tasks = (await listAll(store, TASK_TYPE)).filter(
+    (object) => taskData(object.data).repository === name,
+  );
+  return {
+    openPlans: plans.filter(
+      (object) => !PLAN_FINAL_STATES.includes(planState(planData(object.data))),
+    ).length,
+    openTasks: tasks.filter(
+      (object) => !TASK_FINAL_STATES.includes(taskData(object.data).phase),
+    ).length,
+  };
+}
+
+/**
+ * Keeps the open counts a repository's row reads, writing the repository only
+ * on a change. The row is pure, so the counts live in the stored object.
+ */
+export async function refreshRepositoryCounts(
+  store: ObjectStore,
+  name: string,
+): Promise<void> {
+  const found = await store.get(REPOSITORY_TYPE, name);
+  if (found === undefined) return;
+  const data = repositoryData(found.data);
+  const counts = await openCounts(store, name);
+  if (data.openPlans === counts.openPlans && data.openTasks === counts.openTasks) {
+    return;
+  }
+  await store.put(
+    REPOSITORY_TYPE,
+    name,
+    { ...data, ...counts },
+    "dev:refresh-repo",
+  );
+}
+
+const migrated = new WeakSet<ObjectStore>();
+
+/** Copies repositories stored under the old type name to `repo`, once per store. */
+async function migrateLegacyRepositories(store: ObjectStore): Promise<void> {
+  if (migrated.has(store)) return;
+  migrated.add(store);
+  for (const old of await listAll(store, LEGACY_REPOSITORY_TYPE)) {
+    if ((await store.get(REPOSITORY_TYPE, old.id)) !== undefined) continue;
+    await store.put(
+      REPOSITORY_TYPE,
+      old.id,
+      { ...old.data, ...(await openCounts(store, old.id)) },
+      "dev:repo-migrate",
+    );
+  }
+}
+
 async function repositories(store: ObjectStore): Promise<readonly StoredObject[]> {
+  await migrateLegacyRepositories(store);
   return listAll(store, REPOSITORY_TYPE);
 }
 
@@ -125,6 +191,7 @@ export async function findRepository(
   name: string,
   options: { readonly includeRemoved?: boolean | undefined } = {},
 ): Promise<StoredObject | undefined> {
+  await migrateLegacyRepositories(store);
   const object = await store.get(REPOSITORY_TYPE, name);
   if (object === undefined) return undefined;
   if (options.includeRemoved !== true && repositoryData(object.data).removed) {
@@ -420,7 +487,13 @@ export async function addRepository(
     );
   }
 
-  const data: RepositoryData = { name, path, removed: false };
+  const data: RepositoryData = {
+    name,
+    path,
+    removed: false,
+    openPlans: 0,
+    openTasks: 0,
+  };
   await store.put(REPOSITORY_TYPE, name, data, "dev:repo-add");
   writeSettings(path, name);
   ensureExcludes(path);
@@ -530,7 +603,9 @@ async function writePlan(
   data: PlanData,
   cause: string,
 ): Promise<StoredObject> {
-  return store.put(PLAN_TYPE, id, data, cause);
+  const written = await store.put(PLAN_TYPE, id, data, cause);
+  await refreshRepositoryCounts(store, data.repository);
+  return written;
 }
 
 async function writeTask(

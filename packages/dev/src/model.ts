@@ -78,6 +78,12 @@ export const PLAN_FILTERS = [
   { name: "cancelled", states: ["cancelled"] },
 ] as const;
 
+/** The repository states a row shows; a removed repository is hidden by default. */
+export const REPO_FILTERS = [
+  { name: "active", default: true, states: ["active"] },
+  { name: "removed", states: ["removed"] },
+] as const;
+
 /** The data of a plan object. Counts are a cache over its tasks. */
 export type PlanData = {
   readonly [key: string]: unknown;
@@ -399,6 +405,9 @@ export type RepositoryData = {
   readonly name: string;
   readonly path: string;
   readonly removed: boolean;
+  /** Plans and tasks not yet ended; a cache the repository's row reads. */
+  readonly openPlans?: number | undefined;
+  readonly openTasks?: number | undefined;
 };
 
 /** The two kinds of object the dev plugin numbers. */

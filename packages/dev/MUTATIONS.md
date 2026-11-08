@@ -283,3 +283,10 @@ the row fields.
 | T-0092-M18 | packages/dev/src/flaky.ts | a brief line that merely contains the name counted as naming the test | `a flaky test proposes a task > which open task names a test` |
 | T-0092-M17 | packages/dev/src/integrate.ts | a failing integration check left out the no-plan notice | `dev/integrate > a failing integration check still says why no flaky task was proposed` |
 | T-0092-M19 | packages/dev/src/flaky.ts | the task title cut the test name at 120 characters | `a flaky test proposes a task > two long names that share their first 120 characters each get their own task with the full name` |
+| T-0053-M1 | packages/dev/src/views.ts | a plan row left out its `parent` | `dev views > a plan row shows the derived state and merged/total` |
+| T-0053-M2 | packages/dev/src/views.ts | a task row's `parent` named the bare plan id, which two repositories share | `the repo type > parent=<plan> lists its tasks, and another repository's plan with the same id does not leak` |
+| T-0053-M3 | packages/dev/src/views.ts | a repo row showed 0 open tasks whatever the stored count | `the repo type > the row counts open plans and open tasks as they change` |
+| T-0053-M4 | packages/dev/src/service.ts | a plan write no longer refreshed its repository's open counts | `the repo type > the row counts open plans and open tasks as they change` |
+| T-0053-M5 | packages/dev/src/views.ts | a removed repository's row said `active`, so the default filter kept it | `the repo type > a repository added or removed after start fires an event and appears or disappears` |
+| T-0053-M6 | packages/dev/src/service.ts | repositories stored under the old `repository` type were not carried over to `repo` | `the repo type > a repository stored before dev declared repo shows up as a repo object` |
+| T-0053-M7 | packages/dev/src/views.ts | the Overview named `main` instead of the repository's configured default branch | `the repo type > the Overview names the path, the default branch, dev.json, worker and reviewer` |

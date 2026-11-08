@@ -6,6 +6,7 @@ import { createDevPlugin } from "../src/index.ts";
 import {
   PLAN_FILTERS,
   PLAN_STATES,
+  REPO_FILTERS,
   TASK_FILTERS,
   TASK_PHASES,
   planState,
@@ -75,6 +76,7 @@ test("docs/manual.md lists the dev filters with the states the code declares", (
   for (const [type, list] of [
     ["task", TASK_FILTERS],
     ["plan", PLAN_FILTERS],
+    ["repo", REPO_FILTERS],
   ] as const) {
     for (const filter of list) {
       const name = "default" in filter ? `\`${filter.name}\` (default)` : `\`${filter.name}\``;

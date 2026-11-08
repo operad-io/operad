@@ -21,6 +21,7 @@ import {
   renderChanges,
   repositoryData,
   splitBrief,
+  storeKey,
   taskData,
   type TaskAttempt,
   type TaskData,
@@ -28,7 +29,7 @@ import {
 import { planMark, taskBadge, taskMark } from "./marks.ts";
 import { git, workBranch } from "./steps.ts";
 import { findRepository, listRepositories } from "./service.ts";
-import { readDevSettings } from "./settings.ts";
+import { DEV_SETTINGS_FILE, readDevSettings, settingsProblem } from "./settings.ts";
 
 function costNote(cost: unknown, quality?: unknown): string | undefined {
   if (typeof cost === "number" && Number.isFinite(cost)) {
@@ -97,6 +98,54 @@ async function showRepository(ctx: ViewContext): Promise<boolean> {
   return (await listRepositories(ctx.store)).length > 1;
 }
 
+/** A repository: its row reads the stored counts; Overview reads dev.json. */
+export const repoViews: ObjectViews = {
+  row(object: StoredObject): ObjectRow {
+    const repository = repositoryData(object.data);
+    const state = repository.removed ? "removed" : "active";
+    return {
+      id: repository.name,
+      title: repository.name,
+      state,
+      note: `open plans: ${repository.openPlans ?? 0}  open tasks: ${repository.openTasks ?? 0}`,
+      final: repository.removed,
+    };
+  },
+
+  sections(): readonly ViewSection[] {
+    return [{ id: "overview", title: "Overview" }];
+  },
+
+  async load(_ctx, object, sectionId) {
+    if (sectionId !== "overview") return { markdown: "" };
+    const repository = repositoryData(object.data);
+    const lines = [`- Path: \`${repository.path}\``];
+    try {
+      const settings = await readDevSettings(repository.path);
+      const problem = settingsProblem(repository.path);
+      const file = join(repository.path, DEV_SETTINGS_FILE);
+      lines.push(
+        `- Default branch: \`${settings.mainBranch}\` on \`${settings.remote}\``,
+        `- ${DEV_SETTINGS_FILE}: ${
+          problem !== undefined
+            ? `invalid, the last valid settings stay in force (${problem})`
+            : existsSync(file)
+              ? "in force"
+              : "not written, the defaults are in force"
+        }`,
+        `- Worker: \`${settings.worker.use}\``,
+        `- Reviewer: \`${settings.reviewer.use}\``,
+      );
+    } catch (error) {
+      lines.push(
+        `- ${DEV_SETTINGS_FILE}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (repository.removed) lines.push("- Removed from the registered repositories.");
+    return { markdown: lines.join("\n") };
+  },
+};
+
 export const planViews: ObjectViews = {
   row(object: StoredObject): ObjectRow {
     const plan = planData(object.data);
@@ -108,6 +157,7 @@ export const planViews: ObjectViews = {
       scope: plan.repository,
       final: PLAN_FINAL_STATES.includes(planState(plan)),
       mark: planMark(plan),
+      parent: `repo:${plan.repository}`,
     };
   },
 
@@ -169,6 +219,7 @@ export const taskViews: ObjectViews = {
       final: TASK_FINAL_STATES.includes(task.phase),
       mark: taskMark(task),
       badge: taskBadge(task),
+      parent: `plan:${storeKey(task.repository, task.plan)}`,
     };
   },
 
