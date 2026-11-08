@@ -794,10 +794,9 @@ export async function metrics(
     const parts: string[] = METRIC_STEPS.flatMap((name) => {
       const spent = entry.spent.get(name);
       if (name === step && current !== undefined) {
-        // A record written while the step was in flight (a pending review) is
-        // part of the current visit; a record from an earlier visit is not.
-        const covered = entry.lastStep === name && entry.endedAt >= current.startedAt;
-        const ms = (covered ? 0 : (spent ?? 0)) + Math.max(0, now - current.startedAt);
+        // Everything recorded for the step stays; the running time adds what
+        // came since the later of its last record and this visit's start.
+        const ms = (spent ?? 0) + Math.max(0, now - Math.max(current.startedAt, entry.endedAt));
         return [`${name} ${seconds(ms)} (running)`];
       }
       return spent === undefined ? [] : [`${name} ${seconds(spent)}`];

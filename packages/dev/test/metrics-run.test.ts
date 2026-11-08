@@ -178,7 +178,7 @@ const CASES: readonly Case[] = [
       return w.show(107);
     },
     row: "| running review |",
-    line: "worktree 2s · work 1m00s · verify 10s · review 10s (running)",
+    line: "worktree 2s · work 1m00s · verify 10s · review 35s (running)",
   },
   {
     name: "a work retry after an unavailable model: the wait runs and verify never did",
@@ -227,6 +227,8 @@ const CASES: readonly Case[] = [
       await toWait(w);
       w.at(110);
       await w.answer("merge");
+      // The merge action writes the task when it answers the wait.
+      await w.put("dev:task-merge", { number: 1, review: { result: "passed" } }, "waiting");
       w.at(113);
       await w.put(
         "dev:integrate",

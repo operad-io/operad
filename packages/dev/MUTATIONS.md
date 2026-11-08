@@ -283,7 +283,7 @@ the row fields.
 | T-0075-M4 | packages/dev/src/views.ts | a conflict attempt showed no result | `dev views > how an attempt ended: merged, verify failed, conflict, cancelled` |
 | T-0075-M5 | packages/dev/src/views.ts | the total row's cost kept only the last attempt's cost | `dev views > the total row sums the cost of every attempt` |
 | T-0075-M15 | packages/dev/src/views.ts | the running step was taken only while the task's phase said running or review | `metrics follow the run's own step > an integrate in flight while the task waits` |
-| T-0075-M16 | packages/dev/src/views.ts | a record written while the step was in flight was added to the step's running time again | `metrics follow the run's own step > an integrate in flight while the task waits` |
+| T-0075-M16 | packages/dev/src/views.ts | the running step's time dropped what its earlier records already hold (a retried review lost its first visit) | `metrics follow the run's own step > a retried review: the retry wait runs, then the review with its pending run` |
 | T-0075-M17 | packages/dev/src/views.ts | a worktree, reverify or work step that failed showed no result | `metrics follow the run's own step > a failed worktree ends the run: nothing runs and no later step is shown` |
 | T-0075-M18 | packages/dev/src/views.ts | a current step that is not a recorded one (rework, a retry wait) was not shown | `metrics follow the run's own step > a failed gate: the rework step runs, then the person wait shows the failure` |
 | T-0075-M19 | packages/dev/src/views.ts | a cancelled task did not show cancelled | `dev views > how an attempt ended: merged, verify failed, conflict, cancelled` |
