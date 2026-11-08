@@ -15,7 +15,13 @@ import {
 import type { RowMark } from "@operad-io/engine";
 import { confirmText, entryHint, paletteEntries } from "../actions.ts";
 import { chunksOfLine } from "../markdown.ts";
-import { TUI_PALETTE, resolvePalette, toRgba, type TuiPalette } from "../theme.ts";
+import {
+  TUI_PALETTE,
+  resolvePalette,
+  toRgba,
+  type ThemeSelection,
+  type TuiPalette,
+} from "../theme.ts";
 import { sanitize } from "../sanitize.ts";
 import { displayWidth, graphemes } from "../wrap.ts";
 import {
@@ -47,7 +53,8 @@ import {
 export { TUI_PALETTE, type TuiPalette };
 
 /** The palette a state's theme names. */
-export function paletteFor(theme: TuiTheme, name = "auto"): TuiPalette {
+export function paletteFor(theme: TuiTheme, name: string | ThemeSelection = "auto"): TuiPalette {
+  if (typeof name !== "string") return name.palette ?? resolvePalette(name.name, theme);
   return resolvePalette(name, theme);
 }
 
@@ -491,7 +498,10 @@ export interface TuiDrawing {
 }
 
 /** The styled text of every area for one state; the view only places it. */
-export function drawState(state: TuiState, themeName = "auto"): TuiDrawing {
+export function drawState(
+  state: TuiState,
+  themeName: string | ThemeSelection = "auto",
+): TuiDrawing {
   const palette = paletteFor(state.theme, themeName);
   const tab = activeTab(state);
   const rowError = tab?.list.rows[tab.list.cursor]?.error;
@@ -525,7 +535,10 @@ export interface TuiView {
 }
 
 /** Builds the render tree once and updates it on every state. */
-export function createTuiView(ctx: CliRenderer, themeName = "auto"): TuiView {
+export function createTuiView(
+  ctx: CliRenderer,
+  theme: string | ThemeSelection | (() => ThemeSelection) = "auto",
+): TuiView {
   const root = new BoxRenderable(ctx, {
     id: "operad-tui",
     width: "100%",
@@ -627,6 +640,7 @@ export function createTuiView(ctx: CliRenderer, themeName = "auto"): TuiView {
 
   return {
     render(state: TuiState): void {
+      const themeName = typeof theme === "function" ? theme() : theme;
       const palette = paletteFor(state.theme, themeName);
       const wide = twoPane(state);
       const drawing = drawState(state, themeName);
