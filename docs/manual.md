@@ -813,6 +813,31 @@ another worker does not take it. If the worker is no longer in the `default`
 pool the pool picks any worker with room and the result says
 `work: pi; claude is no longer in the pool`.
 
+### What the views say about the worker
+
+- `operad list task` and the first lines of `operad show` end the row's note
+  with the worker of the task's last attempt, name only. A name longer than 16
+  characters is cut with `…`; Metrics has the whole name.
+- `operad history` has the work line above: `work: claude` or
+  `work: pi (fallback from claude)`.
+- The task's Metrics section adds a table under the attempts, one row per
+  worker, summed over the attempts that worker ran: attempts, cost, time and
+  first pass (attempts whose first review round passed, out of the attempts
+  reviewed).
+- A task from before pools has no worker: the row shows none and Metrics has no
+  worker table. `dev` has no repository-level metrics, so there is nothing to
+  split there.
+
+```
+$ operad list task
+T-0044-views   Worker views   running   $0.35  pi
+$ operad section T-0044-views metrics
+| worker | attempts | cost | time | first pass |
+| --- | --- | --- | --- | --- |
+| claude | 2 | $0.30 | 4m10s | 1/2 |
+| pi | 1 | $0.05 | 1m02s | 0/1 |
+```
+
 ## Usage and end results
 
 Every agent step records what the run used in one field of its data, `usage`,
