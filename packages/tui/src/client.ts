@@ -26,6 +26,10 @@ export const defaultFetch: FetchLike = (input, init) => fetch(input, init);
 export interface TuiTypeInfo {
   readonly type: string;
   readonly title: string;
+  /** The type's filters in display order; absent when it declares none. */
+  readonly filters?: readonly { readonly name: string; readonly states?: readonly string[] }[] | undefined;
+  /** The filter a list opens on; present with `filters`. */
+  readonly defaultFilter?: string | undefined;
 }
 
 /** One entry of `GET /v1/keys`. */
@@ -277,9 +281,10 @@ export class TuiClient {
     type: string,
     cursor?: string,
     signal?: AbortSignal,
+    filter?: string,
   ): Promise<ViewListPage> {
     return (await this.request("/v1/objects", {
-      query: { type, cursor },
+      query: { type, cursor, filter },
       signal,
     })) as ViewListPage;
   }

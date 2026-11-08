@@ -237,7 +237,15 @@ side by side: the object follows the selected row (it opens about 150 ms after
 the cursor stops), `j` / `k` and the arrows keep moving the list, and the keys
 that scroll or switch sections act on the object. Under 100 columns the object
 fills the screen: `enter` opens it, `escape` goes back, and `j` / `k` scroll it.
-Switching tabs closes the object. Every key the app reads is below.
+Switching tabs closes the object. On a type tab whose type declares filters,
+`f` shows the next filter in the server's order (every start opens each tab on
+the type's default; the choice is not saved). The header adds ` · <filter>` after
+the tab and, unless the filter is `all`, ` · N hidden`. The selection stays on
+the same object when the new filter still shows it, and moves to the first row
+otherwise. An object that leaves the filter through a live update leaves the
+list. Beside an open object, `f` loads the whole section when it is capped and
+cycles the filter otherwise; on a narrow screen with an object open it only
+loads the section. Every key the app reads is below.
 
 | Input | Type | Default | Allowed values |
 |---|---|---|---|
@@ -820,6 +828,31 @@ session when the harness can. If that worker is busy the work waits for it;
 another worker does not take it. If the worker is no longer in the `default`
 pool the pool picks any worker with room and the result says
 `work: pi; claude is no longer in the pool`.
+
+### What the views say about the worker
+
+- `operad list task` and the first lines of `operad show` end the row's note
+  with the worker of the task's last attempt, name only. A name longer than 16
+  characters is cut with `…`; Metrics has the whole name.
+- `operad history` has the work line above: `work: claude` or
+  `work: pi (fallback from claude)`.
+- The task's Metrics section adds a table under the attempts, one row per
+  worker, summed over the attempts that worker ran: attempts, cost, time and
+  first pass (attempts whose first review round passed, out of the attempts
+  reviewed).
+- A task from before pools has no worker: the row shows none and Metrics has no
+  worker table. `dev` has no repository-level metrics, so there is nothing to
+  split there.
+
+```
+$ operad list task
+T-0044-views   Worker views   running   $0.35  pi
+$ operad section T-0044-views metrics
+| worker | attempts | cost | time | first pass |
+| --- | --- | --- | --- | --- |
+| claude | 2 | $0.30 | 4m10s | 1/2 |
+| pi | 1 | $0.05 | 1m02s | 0/1 |
+```
 
 ## Usage and end results
 

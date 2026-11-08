@@ -209,3 +209,6 @@ the row fields.
 | T-0067-M4 | packages/dev/src/gate.ts | the report was not copied from the old worktree before it was replaced | `dev/review crash before the store copy > a crash after the report was written and before its copy resumes by copying it` |
 | T-0067-M5 | packages/dev/src/gate.ts | a failed store write was swallowed and the report counted | `dev/review report in the workspace > a failed store write fails the step and leaves the workspace report` |
 | T-0067-M6 | packages/dev/src/gate.ts | the store path was not read when the workspace had no file | `dev/review report in the workspace > a report at the store path from an older prompt is read when the workspace has none` |
+| T-0044-M1 | packages/dev/src/views.ts | a long worker name was not cut in the row | `dev views > a task row shows the last attempt's worker, short, and nothing before pools` |
+| T-0044-M2 | packages/dev/src/views.ts | an attempt with no worker got a row named "undefined" | `dev views > the metrics section splits cost, time and first pass by worker` |
+| T-0044-M3 | packages/dev/src/views.ts | a pass in a later review round counted as first pass | `dev views > the metrics section splits cost, time and first pass by worker` |
