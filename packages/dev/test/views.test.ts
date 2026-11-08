@@ -12,6 +12,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   DIFF_PAGE_CHARS,
+  ROW_WORKER_CHARS,
   planViews,
   readableLogLine,
   taskViews,
@@ -307,5 +308,95 @@ describe("dev views", () => {
     expect(rows[2]).toContain("$0.31 | 1200 in / 340 out | pass |");
     expect(rows[3]).toContain("| 2 |");
     expect(rows[3]).toContain("$0.05 (incomplete) | - | fail |");
+  });
+
+  test("a task row shows the last attempt's worker, short, and nothing before pools", async () => {
+    const { store, task } = await setup();
+    const stored = taskData((await getTask(store, task.id)).data);
+    const row = async () => taskViews.row(await getTask(store, task.id));
+    await store.put("task", task.id, { ...stored, attempt: { number: 1 } }, "test:a");
+    expect((await row()).note).toBeUndefined();
+    await store.put("task", task.id, { ...stored, attempt: { number: 1, worker: null } }, "test:a");
+    expect((await row()).note ?? "").not.toContain("null");
+    await store.put(
+      "task",
+      task.id,
+      { ...stored, cost: 0.31, attempt: { number: 1, worker: "claude", fallbackFrom: null } },
+      "test:a",
+    );
+    expect((await row()).note).toBe("$0.31  claude");
+    await store.put(
+      "task",
+      task.id,
+      { ...stored, attempt: { number: 2, worker: "pi", fallbackFrom: "claude" } },
+      "test:a",
+    );
+    expect((await row()).note).toBe("pi");
+    const long = "a-very-long-worker-name-indeed";
+    await store.put("task", task.id, { ...stored, attempt: { number: 2, worker: long } }, "test:a");
+    const note = (await row()).note ?? "";
+    expect(note.length).toBeLessThanOrEqual(ROW_WORKER_CHARS);
+    expect(note.endsWith("…")).toBe(true);
+  });
+
+  test("the metrics section splits cost, time and first pass by worker", async () => {
+    const { store, task } = await setup();
+    const stored = taskData((await getTask(store, task.id)).data);
+    const metrics = async () =>
+      (
+        (await taskViews.load(
+          { store } as never,
+          await getTask(store, task.id),
+          "metrics",
+          {},
+        )) as { markdown: string }
+      ).markdown;
+    // Zero workers: an attempt from before pools has no worker table.
+    await store.put(
+      "task",
+      task.id,
+      { ...stored, attempt: { number: 1, cost: 0.1, review: { result: "pass" as const } } },
+      "dev:review",
+    );
+    expect(await metrics()).not.toContain("| worker |");
+    expect(await metrics()).not.toContain("undefined");
+    // One worker.
+    await store.put(
+      "task",
+      task.id,
+      {
+        ...stored,
+        attempt: { number: 1, worker: "claude", cost: 0.1, workMs: 60_000, review: { result: "pass" as const, round: 1 } },
+      },
+      "dev:review",
+    );
+    let lines = (await metrics()).split("\n");
+    const at = lines.indexOf("| worker | attempts | cost | time | first pass |");
+    expect(lines[at + 2]).toBe("| claude | 1 | $0.10 | <1s | 1/1 |");
+    // Two workers: a fallback attempt, summed per worker.
+    await store.put(
+      "task",
+      task.id,
+      {
+        ...stored,
+        attempt: { number: 2, worker: "pi", fallbackFrom: "claude", cost: 0.05, review: { result: "failed" as const } },
+      },
+      "dev:review",
+    );
+    await store.put(
+      "task",
+      task.id,
+      {
+        ...stored,
+        attempt: { number: 3, worker: "claude", cost: 0.2, review: { result: "passed" as const, round: 2 } },
+      },
+      "dev:review",
+    );
+    lines = (await metrics()).split("\n");
+    const start = lines.indexOf("| worker | attempts | cost | time | first pass |");
+    expect(lines.slice(start + 2)).toEqual([
+      "| claude | 2 | $0.30 | <1s | 1/2 |",
+      "| pi | 1 | $0.05 | <1s | 0/1 |",
+    ]);
   });
 });
