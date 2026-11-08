@@ -125,6 +125,11 @@ describe("task marks", () => {
       "failed",
     ],
     [
+      "waiting, given up after a raised limit of 5",
+      task({ phase: "waiting", attempt: attempt({ rework: { source: "review", streak: 6, limit: 5, result: "ask" } }) }),
+      "failed",
+    ],
+    [
       "waiting, given up with a limit of 0",
       task({ phase: "waiting", attempt: attempt({ rework: { source: "gate", streak: 1, limit: 0, result: "ask" } }) }),
       "failed",
