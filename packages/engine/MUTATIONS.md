@@ -319,3 +319,4 @@ the row fields.
 | T-0075-M24 | packages/engine/src/views/running.ts | an ended run reported the step it ended in even when it was waiting for a person | `the running view names the object and times the step > an ended run reports the step it was in, but not a person wait` |
 | T-0075-M25 | packages/engine/src/views/running.ts | an ended run was read after its end, so no step was in flight | `the running view names the object and times the step > an ended run reports the step it was in, but not a person wait` |
 | T-0079-M6 | packages/engine/src/markdown.ts | cell widths were counted in code points, not display columns | `table fit > wide characters are measured in columns, so a CJK title fits` |
+| T-0106-M1 | packages/engine/test/fixtures/plugins/testing-isolation.ts | `resetCalls` did nothing, so the in-process count kept growing across reruns | `isolation > in process, module state is shared: faster, not isolated` (fails on rerun 2 of `--rerun-each`) |

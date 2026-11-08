@@ -13,7 +13,7 @@ import {
   ViewError,
   type LogBackend,
 } from "../../src/index.ts";
-import demo, { testClock } from "../fixtures/plugins/presentation.ts";
+import demo, { resetLogReads, testClock } from "../fixtures/plugins/presentation.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
 
 afterAll(cleanupTempRoots);
@@ -78,6 +78,7 @@ interface Fixture {
 }
 
 async function fixture(): Promise<Fixture> {
+  resetLogReads();
   const root = await tempRoot();
   const store = new MemoryPluginStore({ root: join(root, "plugins") });
   store.put("item", "one", { title: "First", state: "new", note: "$1" }, "seed");
