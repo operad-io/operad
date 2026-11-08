@@ -8,15 +8,18 @@ import {
   getTask,
   setTaskPhase,
 } from "../src/service.ts";
+import { FilePluginStore } from "@operad-io/engine";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   DIFF_PAGE_CHARS,
   ROW_WORKER_CHARS,
+  metrics,
   planViews,
   readableLog,
   readableLogLine,
   taskViews,
+  tokenCount,
 } from "../src/views.ts";
 import { commitIn, gitOrThrow, makeRemote } from "./git-support.ts";
 import { bareId, planData, taskData } from "../src/model.ts";
@@ -392,41 +395,81 @@ describe("dev views", () => {
     expect(page2.next).toBeUndefined();
   });
 
-  test("the metrics section has one row per attempt with time, cost, tokens and review", async () => {
+  test("the metrics summary has at most four columns, a row per attempt and a total", async () => {
+    const root = await tempRoot();
+    const repositoryPath = await makeGitRepository(root);
+    let clock = 0;
+    const store = new FilePluginStore({ root: join(root, "store"), clock: () => clock });
+    const repository = await addRepository(store, { path: repositoryPath });
+    const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
+    const stored = taskData((await getTask(store, task.id)).data);
+    const MIN = 60_000;
+    const put = async (at: number, cause: string, attempt: Record<string, unknown>, phase = "running") => {
+      clock = at;
+      await store.put("task", task.id, { ...stored, phase, attempt }, cause);
+    };
+    const start = 1_000_000;
+    // Attempt 1: worktree 2s, work 22m10s, verify 4m35s, review 18m, two findings.
+    await put(start, "test:start", { number: 1 });
+    await put(start + 2_000, "dev:worktree", { number: 1 });
+    await put(start + 2_000 + 1_330_000, "dev:work", {
+      number: 1, cost: 1.24, tokens: { input: 100, output: 35_900 }, workMs: 1_330_000,
+    });
+    await put(start + 2_000 + 1_330_000 + 275_000, "dev:verify", {
+      number: 1, cost: 1.24, tokens: { input: 100, output: 35_900 }, verify: { result: "pass" },
+    });
+    const end1 = start + 2_000 + 1_330_000 + 275_000 + 1_080_000;
+    await put(end1, "dev:review", {
+      number: 1, cost: 1.24, tokens: { input: 100, output: 35_900 },
+      review: { result: "findings", findings: [{}, {}] },
+    }, "waiting");
+    // Attempt 2 is running its work step.
+    await put(end1 + 1_000, "test:rework", { number: 2 });
+    await put(end1 + 3_000, "dev:worktree", { number: 2 });
+    const now = end1 + 3_000 + 3 * MIN;
+    const text = await metrics({ store } as never, await getTask(store, task.id), now);
+    const rows = text.split("\n");
+    for (const row of rows.filter((line) => line.startsWith("|"))) {
+      expect(row.split("|").length - 2).toBeLessThanOrEqual(4);
+    }
+    expect(rows.slice(0, 5)).toEqual([
+      "| # | time | cost | result |",
+      "| --- | --- | --- | --- |",
+      "| 1 | 45m | $1.24 | review: 2 findings |",
+      "| 2 | 3m … | – | running work |",
+      "| total | 48m | $1.24 | |",
+    ]);
+    expect(rows[6]).toBe("**#2** worktree 2s · work 3m00s (running)");
+    expect(rows[8]).toBe(
+      "**#1** worktree 2s · work 22m10s · verify 4m35s · review 18m00s · 100 in / 35.9k out tokens",
+    );
+  });
+
+  test("how an attempt ended: merged, verify failed, conflict, cancelled", async () => {
     const { store, task } = await setup();
     const stored = taskData((await getTask(store, task.id)).data);
-    const attempt = {
-      number: 1,
-      cost: 0.31,
-      tokens: { input: 1200, output: 340 },
-      workMs: 125_000,
-      review: { result: "pass" as const },
+    const result = async (attempt: Record<string, unknown>, phase: string) => {
+      await store.put("task", task.id, { ...stored, phase, attempt }, "dev:integrate");
+      const text = await metrics({ store } as never, await getTask(store, task.id), Date.now());
+      return text.split("\n")[2]?.split("|")[4]?.trim();
     };
-    for (const cause of ["dev:worktree", "dev:work", "dev:verify", "dev:review"]) {
-      await store.put("task", task.id, { ...stored, attempt }, cause);
-    }
-    await store.put(
-      "task",
-      task.id,
-      {
-        ...stored,
-        attempt: { number: 2, cost: 0.05, costQuality: "incomplete" as const, review: { result: "fail" as const } },
-      },
-      "dev:review",
-    );
-    const section = (await taskViews.load(
-      { store } as never,
-      await getTask(store, task.id),
-      "metrics",
-      {},
-    )) as { markdown: string };
-    const rows = section.markdown.split("\n");
-    expect(rows[0]).toBe("| attempt | worktree | work | verify | review | integrate | cost | tokens | review |");
-    expect(rows[2]).toContain("| 1 |");
-    expect(rows[2]).toContain("2m05s");
-    expect(rows[2]).toContain("$0.31 | 1200 in / 340 out | pass |");
-    expect(rows[3]).toContain("| 2 |");
-    expect(rows[3]).toContain("$0.05 (incomplete) | - | fail |");
+    expect(await result({ number: 1, integration: { result: "merged" } }, "merged")).toBe("merged");
+    expect(await result({ number: 1, verify: { result: "fail" } }, "waiting")).toBe("verify failed");
+    expect(await result({ number: 1, integration: { result: "conflict" } }, "waiting")).toBe("conflict");
+    expect(await result({ number: 1 }, "cancelled")).toBe("cancelled");
+  });
+
+  test("per-attempt lines leave out steps that did not run, and tokens show in k from 10k", async () => {
+    const { store, task } = await setup();
+    const stored = taskData((await getTask(store, task.id)).data);
+    await store.put("task", task.id, { ...stored, phase: "waiting", attempt: { number: 1, tokens: { input: 9999, output: 10_000 } } }, "dev:work");
+    const text = await metrics({ store } as never, await getTask(store, task.id), Date.now());
+    const line = text.split("\n").find((row) => row.startsWith("**#1**"));
+    expect(line).toBe("**#1** work <1s · 9999 in / 10.0k out tokens");
+    expect(tokenCount(9_999)).toBe("9999");
+    expect(tokenCount(10_000)).toBe("10.0k");
+    expect(tokenCount(35_949)).toBe("35.9k");
   });
 
   test("a task row shows the last attempt's worker, short, and nothing before pools", async () => {

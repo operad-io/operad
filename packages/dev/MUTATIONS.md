@@ -264,3 +264,12 @@ the row fields.
 | T-0094-M15 | packages/dev/src/standing.ts | a file under a `schemas/` subdirectory of a loaded package was not serve code | `a followed merge and the code serve has loaded > a nested schema or a manifest of a loaded package raises the item` |
 | T-0063-M14 | `packages/dev/src/views.ts` | MessageAppended and ModelUsageRecorded journal lines were left to the fallback | `radian journal lines show the agent's text and each turn's usage; empty tool-call messages show nothing` |
 | T-0067-M12 | packages/dev/src/gate.ts | a file that fails validation was named no_report instead of invalid | `dev/review report in the workspace > harness failed with invalid file is invalid` |
+
+## T-0075 — narrow metrics
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0075-M1 | packages/dev/src/views.ts | tokens switched to k from 1k, not 10k | `dev views > per-attempt lines leave out steps that did not run, and tokens show in k from 10k` |
+| T-0075-M2 | packages/dev/src/views.ts | the total row left out the attempts' time | `dev views > the metrics summary has at most four columns, a row per attempt and a total` |
+| T-0075-M3 | packages/dev/src/views.ts | a step that did not run was listed as `<1s` | `dev views > per-attempt lines leave out steps that did not run, and tokens show in k from 10k` |
+| T-0075-M4 | packages/dev/src/views.ts | a conflict attempt showed no result | `dev views > how an attempt ended: merged, verify failed, conflict, cancelled` |

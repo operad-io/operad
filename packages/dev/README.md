@@ -430,3 +430,22 @@ owner action carries its note when it has one, a wait says what it waits for,
 and a merge names the commit. The time and the reason are stored with the entry
 when the event happens (in the task's brief); an entry written before that has
 no time and is shown as it was.
+
+The Metrics section is narrow enough for a phone. A table has one row per
+attempt (number, wall time from its first step to its last, cost, how it ended:
+`merged`, `review: n findings`, `verify failed`, `conflict`, `cancelled`,
+`running <step>`) and a total row that sums time and cost over all attempts.
+Under it, one line per attempt, newest first, gives the per-step times and the
+tokens (in k with one decimal from 10k); steps that did not run are left out:
+
+```
+| # | time | cost | result |
+|---|------|------|--------|
+| 1 | 45m | $1.24 | review: 2 findings |
+| 2 | 3m … | – | running work |
+| total | 48m | $1.24 | |
+
+**#2** worktree 2s · work 3m00s (running)
+
+**#1** worktree 2s · work 22m10s · verify 4m35s · review 18m00s · 100 in / 35.9k out tokens
+```
