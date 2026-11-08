@@ -320,7 +320,7 @@ async function diffSection(
   const branch = task.attempt?.branch ?? workBranch(bareId(object.id));
   const main = `${settings.remote}/${settings.mainBranch}`;
   const range = `${main}...${branch}`;
-  const stat = git(repository.path, ["diff", "--stat", range]);
+  const stat = git(repository.path, ["diff", "--stat", range], true);
   if (!stat.ok) {
     return { markdown: `_No diff: ${stat.err || `cannot compare ${branch} with ${main}`}._` };
   }
