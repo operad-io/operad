@@ -257,9 +257,15 @@ the workspace file. **dev never removes, truncates or overwrites anything under
 the gate worktree's `.operad`**; the worktree is disposable and its next
 recreation removes the reports. Nothing is committed from the gate worktree
 (the integrate step recreates it first and only commits a squash or merge of
-the index), so the reports cannot reach a commit. No file at the path after the call is
-`could not write the report` (with the reviewer's last message); a file that
-fails validation is `wrote an invalid report`. A run resumed from before this
+the index), so the reports cannot reach a commit.
+
+How a call is named, in this order: a valid report is used whatever the harness
+result; a file that fails validation is `wrote an invalid report`; with no file,
+a timeout is `timed_out` and an unavailable model is `unavailable` (they drive
+retry and fallback), and anything else is `could not write the report` with the
+reviewer's last message. The review folders are checked (plain directories, same
+device and inode) before and after the report is read, and a missing folder, a
+link or a mismatch fails the round. A run resumed from before this
 change reads the store path too when the workspace path has no file. A crash
 after the report was written and before the copy is recovered by copying the
 report from the old worktree before it is replaced, not by asking again.
@@ -269,7 +275,7 @@ non-zero has reviewed: its report is used and a retry never deletes it. `dev:rev
 again with no runs from the old round.
 
 A review that times out runs once more with the same arguments. A second
-timeout waits for a person with the note `review timed out twice` (followed by the reviewer's last message when it never wrote the report). Neither an
+timeout waits for a person with the note `review timed out twice`. Neither an
 unavailable reviewer nor a timeout counts toward `maxAutoRework`: only a review
 that returns findings at or above `reviewer.fixLevel` does.
 

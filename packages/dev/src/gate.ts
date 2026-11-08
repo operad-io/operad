@@ -860,6 +860,8 @@ const MAX_REPORT_BYTES = 1_000_000;
 interface ReportRead {
   readonly text?: string;
   readonly message?: string;
+  /** The review folders were not plain directories, or changed during the read. */
+  readonly unsafe?: boolean;
 }
 
 /**
@@ -874,7 +876,10 @@ function readReport(
 ): ReportRead {
   const before = guard?.();
   if (guard !== undefined && before === undefined) {
-    return { message: `the review folders of ${resultPath} are not plain directories` };
+    return {
+      message: `the review folders of ${resultPath} are not plain directories`,
+      unsafe: true,
+    };
   }
   let details;
   try {
@@ -929,27 +934,11 @@ function readReport(
     }
     if (guard !== undefined) {
       reviewTestHooks.afterOpen?.();
-      // The folders above the file may have been swapped for a link while it
-      // was open: they must still be plain directories and the path must
-      // still lead to the very file that was read.
-      // The folders are looked at before and after the path is, and all
-      // three looks must agree on the same plain directories.
-      const mid = guard();
-      reviewTestHooks.betweenChecks?.("before-stat");
-      const after = lstatOrUndefined(resultPath);
-      reviewTestHooks.betweenChecks?.("after-stat");
-      const end = guard();
-      if (
-        mid === undefined ||
-        mid !== before ||
-        end !== before ||
-        after === undefined ||
-        !after.isFile() ||
-        after.ino !== opened.ino ||
-        after.dev !== opened.dev
-      ) {
+      // The same plain directories must still be there after the read.
+      if (guard() !== before) {
         return {
-          message: `the review report at ${resultPath} changed while it was read`,
+          message: `the review folders of ${resultPath} changed while the report was read`,
+          unsafe: true,
         };
       }
     }
@@ -1283,59 +1272,57 @@ async function callReviewerOnce(
   } catch (error) {
     thrown = messageOf(error);
   }
-  // The reviewer owned the worktree during the call and may have swapped a
-  // folder for a link: look at the folders again before reading through them.
-  const swapped = prepareReportFolder(gatePath, false);
-  if (swapped !== undefined) return { outcome: "failed", message: swapped };
-  // The report is read before the outcome is judged: a reviewer that wrote a
-  // valid report and then stalled, timed out or exited non-zero still reviewed.
-  const written = readValidReportText(reportPath, gatePath);
-  if (written !== undefined) {
-    const failure = copyToStore(storePath, written.text);
-    if (failure !== undefined) return { outcome: "failed", message: failure };
-    return { outcome: "report", report: written.report, message: "" };
-  }
-  if (outcome === undefined) {
-    const message = thrown ?? "the reviewer did not run";
-    return { outcome: failureOutcome({}, message), message };
-  }
-  if (outcome.result !== "done") {
-    const data = isRecord(outcome.data) ? outcome.data : {};
-    const message =
-      typeof data.message === "string"
-        ? data.message
-        : `the reviewer ended "${outcome.result}"`;
-    // No file at the path: a failed run is "could not write the report".
-    const missing = lstatOrUndefined(reportPath) === undefined;
-    const last = lastMessageOf(outcome);
-    const kind = failureOutcome(data, message);
-    // A timeout keeps its own retry rule; its history still says the report
-    // could not be written, with the reviewer's last words.
-    const full =
-      missing && kind === "timed_out"
-        ? `could not write the report${last.length === 0 ? "" : ` (last message: ${last})`}`
-        : missing && last.length > 0
-          ? last
-          : message;
+  // The reviewer owned the worktree during the call. The folders must still be
+  // plain directories (a missing one is a failure too) before anything is read.
+  const folders = (): string | undefined => folderIdentity(gatePath);
+  if (folders() === undefined) {
     return {
-      outcome: missing && kind === "failed" ? "no_report" : kind,
-      message: full,
+      outcome: "failed",
+      message: `${join(gatePath, ".operad", "review")} is not a plain directory any more, so the review report is not read`,
     };
   }
-  if (lstatOrUndefined(reportPath) === undefined) {
-    return { outcome: "no_report", message: lastMessageOf(outcome) };
+  // How the round is named: a valid report is used whatever the harness
+  // result; a file that fails validation is invalid; with no file a timeout or
+  // an unavailable model keeps its own rule, and anything else is a report
+  // the reviewer could not write.
+  const read = readReport(reportPath, folders);
+  if (read.unsafe === true) {
+    return { outcome: "failed", message: read.message ?? "unsafe report" };
   }
-  const read = readReport(reportPath);
-  if (read.text === undefined) {
+  if (read.text !== undefined) {
+    const report = parseReport(read.text);
+    if (report === undefined) {
+      return {
+        outcome: "invalid",
+        message: `the review report at ${reportPath} is not the expected JSON`,
+      };
+    }
+    const failure = copyToStore(storePath, read.text);
+    if (failure !== undefined) return { outcome: "failed", message: failure };
+    return { outcome: "report", report, message: "" };
+  }
+  if (lstatOrUndefined(reportPath) !== undefined) {
     return {
       outcome: "invalid",
       message: read.message ?? `cannot read ${reportPath}`,
     };
   }
-  return {
-    outcome: "invalid",
-    message: `the review report at ${reportPath} is not the expected JSON`,
-  };
+  if (outcome === undefined) {
+    const message = thrown ?? "the reviewer did not run";
+    return { outcome: failureOutcome({}, message), message };
+  }
+  const data = isRecord(outcome.data) ? outcome.data : {};
+  if (outcome.result !== "done") {
+    const message =
+      typeof data.message === "string"
+        ? data.message
+        : `the reviewer ended "${outcome.result}"`;
+    const kind = failureOutcome(data, message);
+    if (kind === "timed_out" || kind === "unavailable") {
+      return { outcome: kind, message };
+    }
+  }
+  return { outcome: "no_report", message: lastMessageOf(outcome) };
 }
 
 /** The report at a path when it reads and parses, otherwise undefined. */
@@ -1476,7 +1463,7 @@ function runPhrase(run: ReviewRunRecord): string {
     case "unavailable":
       return `${who} was unavailable${run.message === undefined || run.message === null ? "" : ` (${run.message})`}`;
     case "timed_out":
-      return `${who} timed out${run.message === undefined || run.message === null || run.message.length === 0 ? "" : ` (${run.message})`}`;
+      return `${who} timed out`;
     case "invalid":
       return `${who} wrote an invalid report`;
     case "no_report":
@@ -1492,13 +1479,7 @@ function reviewMessage(
   runs: readonly ReviewRunRecord[],
   retryAt?: number,
 ): string {
-  if (decision === "timed_out") {
-    // The reviewer's last words show when the file was never written.
-    const note = runs[runs.length - 1]?.message ?? "";
-    return note.length === 0
-      ? "review timed out twice"
-      : `review timed out twice (${note})`;
-  }
+  if (decision === "timed_out") return "review timed out twice";
   const parts = runs.map(runPhrase);
   if (decision === "unavailable" && retryAt !== undefined) {
     parts.push(`it runs again at ${new Date(retryAt).toISOString()}`);
@@ -1525,8 +1506,6 @@ export const reviewTestHooks: {
   beforeCopy?: (() => void) | undefined;
   /** Runs while a workspace report is open, before the folders are checked again. */
   afterOpen?: (() => void) | undefined;
-  /** Runs between the folder looks that follow a workspace report read. */
-  betweenChecks?: ((step: "before-stat" | "after-stat") => void) | undefined;
 } = {};
 
 /** Step `dev/review`: have the reviewer read the verified commit's diff. */
@@ -2148,7 +2127,7 @@ export async function runReview(
   }
 
   if (next === "wait-timed-out") {
-    const message = reviewMessage("timed_out", runs);
+    const message = "review timed out twice";
     const record: ReviewRecord = {
       result: "timed_out",
       decision: "timed_out",

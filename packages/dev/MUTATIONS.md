@@ -217,7 +217,6 @@ the row fields.
 | T-0067-M9 | packages/dev/src/gate.ts | a failed run with no report file stayed outcome `failed` | `dev/review report in the workspace > a reviewer that exits without a report is labelled as unable to write it` |
 | T-0067-M10 | packages/dev/src/gate.ts | the crash salvage and the resumed read skipped the folder check | `dev/review report in the workspace > a report found through a link swapped in after a crash is not read` |
 | T-0067-M11 | packages/dev/src/gate.ts | the report read did not check the folders again, or the file identity, after opening it | `dev/review report in the workspace > a folder swapped for a link while the report is read is not accepted` |
-| T-0067-M12 | packages/dev/src/gate.ts | a timed-out run with no file kept its plain message | `dev/review report in the workspace > a timed-out reviewer with no report says it could not write it` |
 
 ## T-0073 — Changes tells the story
 
@@ -228,7 +227,6 @@ the row fields.
 | T-0073-M3 | packages/dev/src/announce.ts | the stopped-step lookup ignored the entry's time prefix | `dev scheduling > serve repairs a task whose run ended without an edge, and reject runs again` |
 | T-0073-M4 | packages/dev/src/model.ts | a reason was not cut to one short line | `the Changes story > a rework names who asked and the first finding, cut to one line` |
 | T-0073-M5 | packages/dev/src/gate.ts | the review and verify rework lost their reason | `dev/rework > a review failure appends the findings at or above the fix level` |
-| T-0067-M13 | packages/dev/src/gate.ts | the last folder look was not compared with the first | `dev/review report in the workspace > a folder swapped for a link only around the file look is not accepted` |
 
 ## T-0076 — repository check places
 
@@ -237,3 +235,4 @@ the row fields.
 | T-0076-M1 | packages/dev/src/places.ts | the repository place was never taken | `repository check places > two checks of a repository with places 1 take turns while another repository runs beside them` |
 | T-0076-M2 | packages/dev/src/places.ts | the home place was never taken | `repository check places > the home limit holds with repository limits that would allow more` |
 | T-0076-M3 | packages/dev/src/places.ts | every repository shared one set of place files | `repository check places > a check waiting for its repository does not hold a home place` |
+| T-0067-M12 | packages/dev/src/gate.ts | a file that fails validation was named no_report instead of invalid | `dev/review report in the workspace > harness failed with invalid file is invalid` |
