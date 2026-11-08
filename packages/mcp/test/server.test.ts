@@ -363,7 +363,7 @@ describe("operad mcp", () => {
       },
     });
     seed(home, "one", { title: "First", state: "new", note: "$1" });
-    seed(home, "two", { title: "Second", state: "open" });
+    seed(home, "two", { title: "Second", state: "open", mark: "integrating", badge: "#2" });
     const waitingRun = await addRun(home, "item:one", { prompt: "Approve?" });
     const runningRun = await addRun(home, "item:two", undefined);
     const child = start(home);
@@ -391,10 +391,18 @@ describe("operad mcp", () => {
       const page = structuredOf(list);
       expect(page.rows).toMatchObject([
         { id: "one", title: "First", state: "new", note: "$1", waiting: true },
-        { id: "two", title: "Second", state: "open", running: true },
+        {
+          id: "two",
+          title: "Second",
+          state: "open",
+          running: true,
+          mark: "integrating",
+          badge: "#2",
+        },
       ]);
       const listText = (resultOf(list).content as { text: string }[])[0]?.text ?? "";
-      expect(listText).toContain("| one | new | First | $1 | waiting |");
+      expect(listText).toContain("| one | new |  |  | First | $1 | waiting |");
+      expect(listText).toContain("| two | open | integrating | #2 | Second |  | running |");
 
       const show = await child.request(4, "tools/call", {
         name: "show",
@@ -402,6 +410,14 @@ describe("operad mcp", () => {
       });
       const object = structuredOf(show);
       expect(object.row).toMatchObject({ id: "one", title: "First", waiting: true });
+      const showTwo = await child.request(40, "tools/call", {
+        name: "show",
+        arguments: { id: "item:two" },
+      });
+      expect(structuredOf(showTwo).row).toMatchObject({ mark: "integrating", badge: "#2" });
+      const showText = (resultOf(showTwo).content as { text: string }[])[0]?.text ?? "";
+      expect(showText).toContain("- mark: integrating");
+      expect(showText).toContain("- badge: #2");
       expect(object.sections).toContainEqual({ id: "history", title: "History" });
       const actions = object.actions as {
         name: string;

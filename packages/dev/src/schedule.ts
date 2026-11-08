@@ -23,10 +23,13 @@ import {
 } from "./model.ts";
 import {
   claimTaskStart,
+  getPlan,
   setAreaHold,
+  setDependencyHold,
   listRepositories,
   recordAutoMerge,
   recordMergeReported,
+  refreshPlanCounts,
   reopenTask,
   releaseTaskClaim,
   setTaskPhase,
@@ -417,6 +420,17 @@ async function scheduleRepository(
         ? areaActive.get(task.area)
         : undefined;
     await setAreaHold(ctx.store, object.id, holder);
+    const dependencies = dependencyState(task, byId);
+    await setDependencyHold(
+      ctx.store,
+      object.id,
+      !dependencies.ready && dependencies.cancelled === undefined,
+    );
+  }
+
+  // Keep each plan's cached counts, and with them its row's mark, current.
+  for (const planObject of plans) {
+    await refreshPlanCounts(ctx.store, await getPlan(ctx.store, planObject.id));
   }
 }
 

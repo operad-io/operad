@@ -59,6 +59,7 @@ describe("dev views", () => {
       state: "draft",
       note: "0/1  auto: off  P3  concurrency: 1",
       scope: "repository",
+      mark: "proposed",
     });
     await setTaskPhase(store, task.id, "merged");
     expect(planViews.row(await getPlan(store, plan.id)).note).toBe(
@@ -74,6 +75,8 @@ describe("dev views", () => {
       title: "JSONL",
       state: "proposed",
       scope: "repository",
+      mark: "proposed",
+      badge: "#0",
     });
     await store.put(
       "task",
