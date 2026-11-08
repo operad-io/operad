@@ -190,6 +190,8 @@ export interface TuiTab {
   readonly filter?: string | undefined;
   /** How many rows of the type the filter left out; unset on `all`. */
   readonly hidden?: number | undefined;
+  /** How many times `f` cycled this tab's filter. */
+  readonly filterSeq?: number | undefined;
 }
 
 /** One filter of a type: its name and the states it shows (`all` has none). */
@@ -202,6 +204,8 @@ export interface TuiFilterInfo {
 export interface TuiFilterRequest {
   readonly tabId: string;
   readonly filter: string;
+  /** The tab's filter-cycle count when `f` was pressed; a later answer wins. */
+  readonly seq: number;
 }
 
 /** Everything the view needs; nothing here is derived from a terminal handle. */
@@ -363,6 +367,8 @@ export type TuiStateEvent =
       readonly replace?: boolean | undefined;
       /** The filter the page was asked under; a page for another one is dropped. */
       readonly filter?: string | undefined;
+      /** The filter-cycle count it was asked under; an older one is dropped. */
+      readonly filterSeq?: number | undefined;
       /** For a replace: the refresh it belongs to. */
       readonly generation?: number | undefined;
       /** For an append: the list version it was asked for. */
@@ -1231,6 +1237,7 @@ function cycleFilter(state: TuiState): TuiState {
   const changed = withTab(state, tab.id, (current) => ({
     ...current,
     filter: next,
+    filterSeq: (current.filterSeq ?? 0) + 1,
     hidden: undefined,
     // The rows stay until the new ones arrive; a page of the old filter is
     // dropped by its version, and its paging cursor is no longer valid.
@@ -1244,7 +1251,10 @@ function cycleFilter(state: TuiState): TuiState {
   }));
   const quiet =
     changed.pageRequest?.tabId === tab.id ? { ...changed, pageRequest: undefined } : changed;
-  return { ...quiet, filterRequest: { tabId: tab.id, filter: next } };
+  return {
+    ...quiet,
+    filterRequest: { tabId: tab.id, filter: next, seq: (tab.filterSeq ?? 0) + 1 },
+  };
 }
 
 /** What the header adds after the current type tab: the filter and what it hides. */
@@ -1421,9 +1431,11 @@ function appendPage(
   version: number | undefined,
   filter?: string | undefined,
   hidden?: number | undefined,
+  filterSeq?: number | undefined,
 ): TuiState {
   const tab = state.tabs.find((candidate) => candidate.id === tabId);
   if (tab === undefined) return state;
+  if (filterSeq !== undefined && filterSeq !== (tab.filterSeq ?? 0)) return state;
   if (!replace && version !== undefined && version !== tab.list.version) {
     return state;
   }
@@ -1512,6 +1524,7 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
         event.version,
         event.filter,
         event.page.hidden,
+        event.filterSeq,
       );
     case "filter-launched":
       return state.filterRequest === undefined

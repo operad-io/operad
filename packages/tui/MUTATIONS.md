@@ -140,3 +140,5 @@ the row fields.
 | T-0049-M9 | packages/tui/src/state.ts | `f` did nothing | `filters: state > f with an object open cycles the filter in two panes and does nothing on a narrow screen` |
 | T-0049-M10 | packages/tui/src/state.ts | an empty list under the new filter left the old object open | `filters: state > an empty list under the new filter closes the object pane` |
 | T-0049-M11 | packages/tui/src/state.ts | the selected row leaving the filter did not make the pane follow | `filters: state > a live event that takes the selected object out of the filter moves to the next row` |
+| T-0049-M12 | packages/tui/src/state.ts | a page was accepted without comparing its filter-cycle count | `filters: state > an old answer for a filter cycled back to is dropped` |
+| T-0049-M13 | packages/tui/src/view/index.ts | the empty text for the `all` filter fell back to `no <type> yet` | `filters: view > an empty all filter reads no all tasks` |

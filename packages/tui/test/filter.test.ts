@@ -80,7 +80,11 @@ describe("filters: state", () => {
     for (let i = 0; i < 4; i += 1) {
       state = key(state, "f");
       seen.push(task(state)?.filter ?? "");
-      expect(state.filterRequest).toEqual({ tabId: "type:task", filter: task(state)?.filter ?? "" });
+      expect(state.filterRequest).toEqual({
+        tabId: "type:task",
+        filter: task(state)?.filter ?? "",
+        seq: i + 1,
+      });
       state = reduce(state, { type: "filter-launched" });
       expect(state.filterRequest).toBeUndefined();
     }
@@ -265,6 +269,34 @@ describe("filters: view", () => {
     state = key(state, "f");
     state = load(state, [], undefined, "active");
     expect(listOf(state)).toBe("no active tasks");
+  });
+
+  test("an empty all filter reads no all tasks", () => {
+    let state = key(onTasks(), "f");
+    state = load(state, [], undefined, "all");
+    expect(listOf(state)).toBe("no all tasks");
+  });
+
+  test("an old answer for a filter cycled back to is dropped", () => {
+    let state = onTasks();
+    const asked: (number | undefined)[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      state = key(state, "f");
+      asked.push(state.filterRequest?.seq);
+      state = reduce(state, { type: "filter-launched" });
+    }
+    expect(task(state)?.filter).toBe("active");
+    const page = (id: string, filterSeq: number | undefined): TuiStateEvent => ({
+      type: "page",
+      tabId: "type:task",
+      replace: true,
+      page: { rows: [row(id)] },
+      filter: "active",
+      filterSeq,
+    });
+    state = reduce(state, page("new", asked[3]));
+    state = reduce(state, page("old", 0));
+    expect(ids(state)).toEqual(["new"]);
   });
 
   test("the footer offers f filter only on a tab that has filters", () => {

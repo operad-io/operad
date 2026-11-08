@@ -256,7 +256,7 @@ function listContent(
       : tab.kind === "pending"
         ? "nothing waits for you"
         : tab.kind === "type"
-          ? tab.filters !== undefined && tab.filter !== undefined && tab.filter !== "all"
+          ? tab.filters !== undefined && tab.filter !== undefined
             ? `no ${tab.filter} ${tab.title.toLowerCase()}s`
             : `no ${tab.title.toLowerCase()} yet`
           : `nothing in ${tab.title.toLowerCase()}`;

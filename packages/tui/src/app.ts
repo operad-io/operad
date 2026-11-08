@@ -417,6 +417,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         page,
         replace: true,
         filter: request.filter,
+        filterSeq: request.seq,
       });
     } catch (error) {
       if (abort.signal.aborted) return;
