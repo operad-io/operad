@@ -150,3 +150,4 @@ the row fields.
 | T-0051-M3 | packages/dev/src/gate.ts | a missing file was labelled `invalid` instead of `missing` | `dev/review report in the workspace > no file at the path says the reviewer could not write the report, with its last message` |
 | T-0051-M4 | packages/dev/src/gate.ts | the workspace report was not salvaged before the gate worktree was recreated | `dev/review crash recovery > a crash after the reviewer wrote its workspace report copies it instead of reviewing again` |
 | T-0051-M5 | packages/dev/src/gate.ts | the report at the store path was not read after the run | `dev/review report in the workspace > an old prompt that writes to the store path is still read` |
+| T-0051-M6 | packages/dev/src/gate.ts | the workspace report was deleted even when the copy to the store failed | `dev/review report in the workspace > a store that cannot take the copy does not lose a valid workspace report` |

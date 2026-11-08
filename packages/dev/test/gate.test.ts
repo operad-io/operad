@@ -195,6 +195,19 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             writeFileSync(legacy, valid);
             return { result: "done", data: {} };
           }
+          if (mode === "store-blocked") {
+            // A valid workspace report, and a store that cannot take a copy.
+            const dir = join(
+              options.storeRoot ?? "",
+              "dev",
+              "reviews",
+              stepCtx.runId,
+            );
+            rmSync(dir, { recursive: true, force: true });
+            writeFileSync(dir, "not a directory");
+            writeFileSync(input.resultPath, valid);
+            return { result: "done", data: {} };
+          }
           if (mode === "cwd-only") {
             // Only a path under cwd can be written, as with radian's file tool.
             if (!input.resultPath.startsWith(`${input.cwd}/`)) {
@@ -1698,6 +1711,14 @@ describe("dev/review report in the workspace", () => {
     const state = await fixture({ reviewerArgs: ["legacy-store"] });
     await verify(state);
     const result = await review(state, "review-legacy");
+    expect(result.result).toBe("pass");
+    expect(state.reviewer.calls).toHaveLength(1);
+  });
+
+  test("a store that cannot take the copy does not lose a valid workspace report", async () => {
+    const state = await fixture({ reviewerArgs: ["store-blocked"] });
+    await verify(state);
+    const result = await review(state, "review-blocked");
     expect(result.result).toBe("pass");
     expect(state.reviewer.calls).toHaveLength(1);
   });

@@ -1131,8 +1131,20 @@ async function callReviewerOnce(
   // the workspace file is removed once it is copied (a harness that still
   // writes straight to the store path is read from there).
   const inWorkspace = readReport(workPath);
-  if (inWorkspace.text !== undefined) copyToStore(inWorkspace.text, resultPath);
-  removeWorkspaceReports(workPath);
+  // A copy that fails keeps the workspace file and answers from it: the only
+  // valid report is never deleted because the store was unwritable.
+  if (inWorkspace.text !== undefined) {
+    if (copyToStore(inWorkspace.text, resultPath)) {
+      removeWorkspaceReports(workPath);
+    } else {
+      const kept = parseReport(inWorkspace.text);
+      if (kept !== undefined) {
+        return { outcome: "report", report: kept, message: "" };
+      }
+    }
+  } else {
+    removeWorkspaceReports(workPath);
+  }
   // The report is read before the outcome is judged: a reviewer that wrote a
   // valid report and then stalled, timed out or exited non-zero still reviewed.
   const written = readValidReport(resultPath);
