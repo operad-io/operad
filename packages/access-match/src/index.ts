@@ -4,6 +4,7 @@
 
 import { homedir } from "node:os";
 import { posix } from "node:path";
+export { COMMAND_SUMMARY_CHARS, SUMMARY_CHARS, COMMAND_NOT_SHOWN, REFUSED_IN_LOG, summarizeCall, firstErrorLine, messageSummary, secretValuesOf, type SummaryOptions } from "./summary.ts";
 import { findDenied, inlineFormOf, parseRule, scan, type Rule } from "./command.ts";
 
 /** A one-time permission for the exact call a person was asked about. */
@@ -28,7 +29,7 @@ export interface ToolCall {
   readonly cwd: string;
 }
 
-export type Verdict = { readonly allow: true } | { readonly allow: false; readonly reason: string };
+export type Verdict = { readonly allow: true } | { readonly allow: false; readonly reason: string; /** The profile rule that refused, as the profile wrote it; never part of the call. */ readonly rule?: string };
 
 export interface MatchOptions {
   /** What `~` means; defaults to the user's home directory. */
@@ -105,7 +106,7 @@ function checkPath(denied: Denied, path: string): Verdict {
   const normal = normalise(path, denied.cwd, denied.home);
   for (const entry of denied.entries) {
     if (isUnder(normal, entry.path)) {
-      return { allow: false, reason: `path "${path}" is under denyPaths entry "${entry.written}"` };
+      return { allow: false, reason: `path "${path}" is under denyPaths entry "${entry.written}"`, rule: entry.written };
     }
   }
   return ALLOW;
@@ -151,7 +152,7 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
     }
     const hit = findDenied(rules, parts);
     if (hit !== undefined) {
-      return { allow: false, reason: `part "${hit.text}" is refused by denyCommands rule "${hit.rule}"` };
+      return { allow: false, reason: `part "${hit.text}" is refused by denyCommands rule "${hit.rule}"`, rule: hit.rule };
     }
   }
 

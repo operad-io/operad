@@ -10,6 +10,11 @@ import { openWaitHandleCount as openLockHandleCount } from "@operad-io/engine/pl
 
 const roots: string[] = [];
 
+// A test that reads settings must never keep a copy in the real home.
+if (process.env.OPERAD_HOME === undefined) {
+  process.env.OPERAD_HOME = join(realpathSync(tmpdir()), `operad-dev-test-home-${process.pid}`);
+}
+
 /** A scratch directory under `.radian/`, removed by `cleanupTempRoots`. */
 export async function tempRoot(): Promise<string> {
   const base = join(process.cwd(), ".radian", "tmp");

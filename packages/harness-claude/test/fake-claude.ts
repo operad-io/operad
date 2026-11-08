@@ -25,6 +25,8 @@ export type FakeStep =
       readonly toolName: string;
       readonly toolUseId: string;
       readonly input?: Record<string, unknown>;
+      /** The tool's output (PostToolUse) or error text (PostToolUseFailure). */
+      readonly output?: string;
     }
   | {
       readonly ask: { readonly toolName: string; readonly toolUseId: string; readonly input: Record<string, unknown> };
@@ -195,8 +197,8 @@ class FakeProcess extends EventEmitter implements SpawnedProcess {
             tool_name: step.toolName,
             tool_input: step.input ?? {},
             tool_use_id: step.toolUseId,
-            ...(step.hook === "PostToolUse" ? { tool_response: {} } : {}),
-            ...(step.hook === "PostToolUseFailure" ? { error: "failed" } : {}),
+            ...(step.hook === "PostToolUse" ? { tool_response: step.output === undefined ? {} : { stdout: step.output } } : {}),
+            ...(step.hook === "PostToolUseFailure" ? { error: step.output ?? "failed" } : {}),
           },
         });
         record(this.recordFile, { hookReply: step.hook, subtype: reply["subtype"] });

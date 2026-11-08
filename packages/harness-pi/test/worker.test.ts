@@ -161,6 +161,7 @@ test("a prompt that ends writes the lines in order and a Result with usage, cost
   expect(run.lines[0]).toEqual({
     type: "message_end",
     role: "assistant",
+    text: "ANSWER",
     stopReason: "stop",
     usage: { input: 12, output: 6, cache_read: 3, cache_write: 2 },
     cost: { total: 0.0015 },
@@ -221,10 +222,11 @@ test("a denied bash call is blocked, a blocked line is written, the model gets t
   const reason = `part "touch ${marker}" is refused by denyCommands rule "touch"`;
   expect(run.exitCode).toBe(0);
   expect(run.lines.filter((line) => line["type"] === "blocked")).toEqual([
-    { type: "blocked", toolName: "bash", reason },
+    { type: "blocked", toolName: "bash", reason: "refused by the access profile" },
   ]);
   expect(existsSync(marker)).toBe(false);
-  expect(run.lines.find((line) => line["type"] === "tool_execution_end")).toMatchObject({ toolName: "bash", isError: true });
+  expect(run.lines.find((line) => line["type"] === "tool_execution_end")).toMatchObject({ toolName: "bash", isError: true, error: "refused by the access profile" });
+  expect(JSON.stringify(run.lines)).not.toContain(marker);
   expect(last(run)).toMatchObject({ result: "done", finalMessage: "I was refused" });
   const calls = readFileSync(contexts, "utf-8").split("\n").filter((line) => line.length > 0);
   expect(calls.length).toBe(2);
@@ -252,11 +254,11 @@ test("a read of a denied path is blocked; an allowed read runs", async () => {
     {
       type: "blocked",
       toolName: "read",
-      reason: `path "${join(secrets, "key")}" is under denyPaths entry "${secrets}"`,
+      reason: "refused by the access profile",
     },
   ]);
   expect(run.lines.filter((line) => line["type"] === "tool_execution_end")).toMatchObject([
-    { toolName: "read", isError: true },
+    { toolName: "read", isError: true, error: "refused by the access profile" },
     { toolName: "read", isError: false },
   ]);
   expect(last(run)).toMatchObject({ result: "done", finalMessage: "finished" });
@@ -662,4 +664,94 @@ test("parseInput refuses a bashTimeoutSecs that is 0, negative, fractional or no
     });
   }
   expect(parseInput({ ...base, bashTimeoutSecs: 60 }).ok).toBe(true);
+});
+
+/* ---- what a tool call line says (T-0063) ---- */
+
+const BASE = 1_700_000_000_000;
+
+function toolLines(run: Run): { start: Array<Record<string, unknown>>; end: Array<Record<string, unknown>> } {
+  return {
+    start: run.lines.filter((line) => line["type"] === "tool_execution_start"),
+    end: run.lines.filter((line) => line["type"] === "tool_execution_end"),
+  };
+}
+
+test("a bash call logs its command, its start time and its duration, and no output", async () => {
+  const s = setup();
+  const run = await runFake(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: "echo OUTPUT-MARKER-$((1+1))" } } },
+      { text: "done" },
+    ],
+    s.input,
+    { FAKE_CLOCK_STEP: "72000" },
+  );
+  const { start, end } = toolLines(run);
+  expect(start[0]).toMatchObject({ toolName: "bash", at: BASE, input: "echo OUTPUT-MARKER-$((1+1))" });
+  expect(end[0]).toMatchObject({ isError: false, durationMs: 72000 });
+  expect(run.raw.join("\n")).not.toContain("OUTPUT-MARKER-2");
+});
+
+test("a long command is cut at 500 characters", async () => {
+  const s = setup();
+  const run = await runFake(s, [
+    { text: "", toolCall: { name: "bash", arguments: { command: `true ${"x".repeat(900)}` } } },
+    { text: "done" },
+  ]);
+  expect(String(toolLines(run).start[0]?.["input"]).length).toBe(500);
+});
+
+test("a read logs its path and not the file", async () => {
+  const s = setup();
+  const note = join(s.dir, "note.txt");
+  writeFileSync(note, "FILE-BODY-MARKER\n");
+  const run = await runFake(s, [{ text: "", toolCall: { name: "read", arguments: { path: note } } }, { text: "ok" }]);
+  expect(toolLines(run).start[0]?.["input"]).toBe(note);
+  expect(run.raw.join("\n")).not.toContain("FILE-BODY-MARKER");
+});
+
+test("a failed tool logs the first line of its error", async () => {
+  const s = setup();
+  const missing = join(s.dir, "missing.txt");
+  const run = await runFake(s, [{ text: "", toolCall: { name: "read", arguments: { path: missing } } }, { text: "ok" }]);
+  const end = toolLines(run).end[0];
+  expect(end).toMatchObject({ isError: true });
+  expect(typeof end?.["error"]).toBe("string");
+  expect(String(end?.["error"])).not.toContain("\n");
+});
+
+test("a path the access profile refuses, and an environment value, are not logged", async () => {
+  const s = setup();
+  const secrets = join(s.dir, "secrets");
+  s.input["access"] = { denyPaths: [secrets] };
+  const run = await runFake(s, [
+    { text: "", toolCall: { name: "read", arguments: { path: join(secrets, "key") } } },
+    { text: "", toolCall: { name: "bash", arguments: { command: "API_TOKEN=hunter2 true" } } },
+    { text: "ok" },
+  ]);
+  const { start } = toolLines(run);
+  expect(start[0]?.["input"]).toBe(`read denied by the access profile (rule: ${secrets})`);
+  expect(start[1]?.["input"]).toBe("API_TOKEN=*** true");
+  expect(run.raw.join("\n")).not.toContain("hunter2");
+});
+
+test("an assistant message logs at most 300 characters of its text", async () => {
+  const s = setup();
+  const run = await runFake(s, [{ text: `line one\n\nline two ${"z".repeat(400)}` }]);
+  const line = run.lines.find((l) => l["type"] === "message_end");
+  expect(String(line?.["text"]).length).toBe(300);
+  expect(String(line?.["text"]).startsWith("line one line two zzz")).toBe(true);
+});
+
+test("a secret of the operad store sent as secretValues is masked in the logged command", async () => {
+  const s = setup();
+  s.input["secretValues"] = ["store-secret-9"];
+  const run = await runFake(s, [
+    { text: "", toolCall: { name: "bash", arguments: { command: "curl -H store-secret-9 x" } } },
+    { text: "ok" },
+  ]);
+  expect(toolLines(run).start[0]?.["input"]).toBe("curl -H *** x");
+  expect(JSON.stringify(toolLines(run).start)).not.toContain("store-secret-9");
 });

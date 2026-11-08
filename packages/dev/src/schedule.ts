@@ -4,6 +4,8 @@
  * plan is finished. Scheduling lives here, not in the kernel (operad decision 12).
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   ActiveRunError,
   StateError,
@@ -34,7 +36,14 @@ import {
   releaseTaskClaim,
   setTaskPhase,
 } from "./service.ts";
-import { readDevSettings, runningTaskCap, type DevSettings } from "./settings.ts";
+import { missingPlugins } from "./standing.ts";
+import {
+  DEV_SETTINGS_FILE,
+  readDevSettings,
+  runningTaskCap,
+  settingsProblem,
+  type DevSettings,
+} from "./settings.ts";
 
 /** Where a scheduler change goes: the kernel loop's output. */
 export const schedulerTestHooks: {
@@ -213,6 +222,7 @@ async function reconcileTaskRuns(
   ctx: TickContext,
   repository: string,
   tasks: readonly StoredObject[],
+  canStartWork: boolean,
 ): Promise<void> {
   const runs = ctx.runLookup;
   if (runs === undefined) return;
@@ -233,6 +243,9 @@ async function reconcileTaskRuns(
     // A running task with no run id is a start that never landed; the claim
     // release below gives it back to ready.
     if (task.phase === "running" && task.run === null) continue;
+    // A recovered run starts the dev flow again; without the plugins it
+    // runs through, the task waits where it is.
+    if (!canStartWork) continue;
     const step = task.run === null ? null : await runs.lastStep(task.run);
     if ((await reopenTask(ctx.store, object.id)) === undefined) continue;
     try {
@@ -247,17 +260,56 @@ async function reconcileTaskRuns(
   }
 }
 
+/** What the scheduler last said about each repository's settings file. */
+const reportedProblems = new Map<string, string>();
+
+/**
+ * Says once per change of the settings file that it is not valid, and says
+ * nothing while it stays the same or is valid. The last valid settings stay
+ * in force either way.
+ */
+function reportSettingsProblem(repository: RepositoryData): void {
+  const problem = settingsProblem(repository.path);
+  if (problem === undefined) {
+    reportedProblems.delete(repository.path);
+    return;
+  }
+  // The file's text counts, not only the message: two different edits can
+  // fail with the same message.
+  let text = "";
+  try {
+    text = readFileSync(join(repository.path, DEV_SETTINGS_FILE), "utf8");
+  } catch {
+    // The problem is the missing or unreadable file itself.
+  }
+  const state = `${problem}\n${text}`;
+  if (reportedProblems.get(repository.path) === state) return;
+  reportedProblems.set(repository.path, state);
+  console.error(`dev: repository "${repository.name}": ${problem}`);
+}
+
 async function scheduleRepository(
   ctx: TickContext,
   repository: RepositoryData,
   initialTasks: readonly StoredObject[],
   initialPlans: readonly StoredObject[],
 ): Promise<void> {
-  const settings = await readDevSettings(repository.path);
+  reportSettingsProblem(repository);
+  let settings: DevSettings;
+  try {
+    settings = await readDevSettings(repository.path);
+  } catch {
+    // Never valid: the problem is reported and shown as pending. Nothing
+    // here may touch the repository's running steps.
+    return;
+  }
+  // Work needs the plugins dev runs its steps through; without them a task
+  // stays ready instead of failing.
+  const canStartWork = missingPlugins(ctx.loaded).length === 0;
 
   // Repair a run that ended without an edge, or one whose phase was left
   // behind, before the scheduler reads phases and starts anything else.
-  await reconcileTaskRuns(ctx, repository.name, initialTasks);
+  await reconcileTaskRuns(ctx, repository.name, initialTasks, canStartWork);
 
   // A claim is not durable until the kernel records the run. A task left
   // running with no run is a start that never landed (a crash or a kernel
@@ -335,6 +387,7 @@ async function scheduleRepository(
       return;
     }
     if (!dependencies.ready) return;
+    if (!canStartWork) return;
     if (task.area !== undefined && areaActive.has(task.area)) return;
     if (planConcurrency(plan) - (planActive.get(planId) ?? 0) <= 0) return;
     if (repositoryActive >= repositoryConcurrency(settings)) return;

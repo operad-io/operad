@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EFFORT_LEVELS, parseInput } from "../src/protocol.ts";
+import { TOOL_TABLE } from "../src/access.ts";
 import {
   MISSING_SESSION,
   SESSION,
@@ -263,10 +264,10 @@ test("PreToolUse and PostToolUse hooks write tool_execution_start and tool_execu
 
   expect(run.exitCode).toBe(0);
   expect(run.lines.slice(0, 4)).toEqual([
-    { type: "tool_execution_start", toolCallId: "tool-1", toolName: "Bash" },
-    { type: "tool_execution_end", toolCallId: "tool-1", toolName: "Bash", isError: false },
-    { type: "tool_execution_start", toolCallId: "tool-2", toolName: "Read" },
-    { type: "tool_execution_end", toolCallId: "tool-2", toolName: "Read", isError: true },
+    { type: "tool_execution_start", toolCallId: "tool-1", toolName: "Bash", at: expect.any(Number), input: "ls" },
+    { type: "tool_execution_end", toolCallId: "tool-1", toolName: "Bash", isError: false, durationMs: expect.any(Number) },
+    { type: "tool_execution_start", toolCallId: "tool-2", toolName: "Read", at: expect.any(Number) },
+    { type: "tool_execution_end", toolCallId: "tool-2", toolName: "Read", isError: true, durationMs: expect.any(Number), error: "failed" },
   ]);
 });
 
@@ -560,9 +561,16 @@ test("a Bash command that denyCommands refuses is denied with the reason, logged
   expect(answer["behavior"]).toBe("deny");
   expect(String(answer["message"])).toContain('denyCommands rule "rm"');
   expect(run.lines.slice(0, 3)).toEqual([
-    { type: "tool_execution_start", toolCallId: "tool-1", toolName: "Bash" },
-    { type: "blocked", toolName: "Bash", reason: answer["message"] },
-    { type: "tool_execution_end", toolCallId: "tool-1", toolName: "Bash", isError: true },
+    { type: "tool_execution_start", toolCallId: "tool-1", toolName: "Bash", at: expect.any(Number), input: "Bash denied by the access profile (rule: rm)" },
+    { type: "blocked", toolName: "Bash", reason: "refused by the access profile" },
+    {
+      type: "tool_execution_end",
+      toolCallId: "tool-1",
+      toolName: "Bash",
+      isError: true,
+      durationMs: expect.any(Number),
+      error: "refused by the access profile",
+    },
   ]);
   expect(kinds(run).slice(3)).toEqual(["message_end", "result"]);
   expect(last(run)).toMatchObject({ result: "done" });
@@ -596,7 +604,50 @@ test("a Read under denyPaths is denied, and Read elsewhere is allowed", async ()
 
   expect(answerOf(run)["behavior"]).toBe("deny");
   expect(String(answerOf(run)["message"])).toContain('under denyPaths entry "/etc"');
-  expect(run.lines.find((line) => line["type"] === "blocked")).toMatchObject({ toolName: "Read" });
+  expect(run.lines.find((line) => line["type"] === "blocked")).toMatchObject({
+    toolName: "Read",
+    reason: "refused by the access profile",
+  });
+  expect(JSON.stringify(run.lines)).not.toContain("/etc/passwd");
+});
+
+test("a denied NotebookEdit or MultiEdit start line shows no path", async () => {
+  const s = setup();
+  s.input["access"] = { denyPaths: ["/secrets"] };
+  const run = await runFake(s, {
+    steps: [
+      { say: systemInit() },
+      { hook: "PreToolUse", toolName: "NotebookEdit", toolUseId: "n1", input: { notebook_path: "/secrets/key" } },
+      { hook: "PreToolUse", toolName: "MultiEdit", toolUseId: "m1", input: { file_path: "/secrets/key" } },
+      { say: result() },
+    ],
+  });
+  const starts = run.lines.filter((line) => line["type"] === "tool_execution_start");
+  expect(starts.map((line) => line["input"])).toEqual([
+    "NotebookEdit denied by the access profile (rule: /secrets)",
+    "MultiEdit denied by the access profile (rule: /secrets)",
+  ]);
+  expect(JSON.stringify(run.lines)).not.toContain("/secrets/key");
+});
+
+test("every tool the translation maps shows only its denial when the profile denies it", async () => {
+  const s = setup();
+  s.input["access"] = { denyPaths: ["/secrets"], denyCommands: ["rm"] };
+  const calls = TOOL_TABLE.map((row, i) => ({
+    name: row.claude,
+    id: `t${i}`,
+    input: { [row.from]: row.tool === "bash" ? "rm /secrets/key" : "/secrets/key" },
+  }));
+  const run = await runFake(s, {
+    steps: [
+      { say: systemInit() },
+      ...calls.map((c) => ({ hook: "PreToolUse" as const, toolName: c.name, toolUseId: c.id, input: c.input })),
+      { say: result() },
+    ],
+  });
+  const starts = run.lines.filter((line) => line["type"] === "tool_execution_start");
+  expect(starts.map((line) => line["input"])).toEqual(calls.map((c) => `${c.name} denied by the access profile (rule: ${c.name === "Bash" ? "rm" : "/secrets"})`));
+  expect(JSON.stringify(run.lines)).not.toContain("/secrets/key");
 });
 
 test("a tool outside the table is denied under a rule and allowed without one", async () => {
@@ -787,4 +838,125 @@ test("a second session after the result is not accepted as a second turn", async
   });
   expect(String(last(run)["message"])).toContain("a second session started by itself");
   expect(run.stderr).toContain("a second session started after the result");
+});
+
+/* ---- what a tool call line says (T-0063) ---- */
+
+const BASE = 1_700_000_000_000;
+
+function toolLines(run: Run): { start: Line[]; end: Line[] } {
+  return {
+    start: run.lines.filter((line) => line["type"] === "tool_execution_start"),
+    end: run.lines.filter((line) => line["type"] === "tool_execution_end"),
+  };
+}
+
+test("a Bash call logs its command, its start time and its duration", async () => {
+  const run = await runFake(
+    setup(),
+    {
+      steps: [
+        { say: systemInit() },
+        { hook: "PreToolUse", toolName: "Bash", toolUseId: "b1", input: { command: "xcodebuild test\n  -only-testing A/B" } },
+        { hook: "PostToolUse", toolName: "Bash", toolUseId: "b1", input: {}, output: "TOOL OUTPUT MUST NOT APPEAR" },
+        { say: result() },
+      ],
+    },
+    { FAKE_CLOCK_STEP: "72000" },
+  );
+  const { start, end } = toolLines(run);
+  expect(start[0]).toMatchObject({ toolName: "Bash", at: BASE, input: "xcodebuild test -only-testing A/B" });
+  expect(end[0]).toMatchObject({ toolCallId: "b1", isError: false, durationMs: 72000 });
+  expect(run.stdout).not.toContain("TOOL OUTPUT MUST NOT APPEAR");
+});
+
+test("a long command is cut at 500 characters", async () => {
+  const run = await runFake(setup(), {
+    steps: [
+      { say: systemInit() },
+      { hook: "PreToolUse", toolName: "Bash", toolUseId: "b1", input: { command: `echo ${"x".repeat(900)}` } },
+      { say: result() },
+    ],
+  });
+  const text = String(toolLines(run).start[0]?.["input"]);
+  expect(text.length).toBe(500);
+  expect(text.startsWith("echo xxx")).toBe(true);
+});
+
+test("a Read and a Write log their path and never the file content", async () => {
+  const run = await runFake(setup(), {
+    steps: [
+      { say: systemInit() },
+      { hook: "PreToolUse", toolName: "Read", toolUseId: "r1", input: { file_path: "/w/a.ts" } },
+      { hook: "PostToolUse", toolName: "Read", toolUseId: "r1", output: "FILE BODY" },
+      {
+        hook: "PreToolUse",
+        toolName: "Write",
+        toolUseId: "w1",
+        input: { file_path: "/w/b.ts", content: "NEW FILE BODY" },
+      },
+      { hook: "PreToolUse", toolName: "Grep", toolUseId: "g1", input: { pattern: "needle", path: "/w" } },
+      { hook: "PreToolUse", toolName: "TodoWrite", toolUseId: "t1", input: { todos: [{ content: "x" }] } },
+      { say: result() },
+    ],
+  });
+  const { start } = toolLines(run);
+  expect(start.map((line) => line["input"])).toEqual(["/w/a.ts", "/w/b.ts", "/w", undefined]);
+  expect(run.stdout).not.toContain("FILE BODY");
+});
+
+test("a tool error logs its first line only", async () => {
+  const run = await runFake(setup(), {
+    steps: [
+      { say: systemInit() },
+      { hook: "PreToolUse", toolName: "Bash", toolUseId: "b1", input: { command: "false" } },
+      { hook: "PostToolUseFailure", toolName: "Bash", toolUseId: "b1", output: "\nexit code 1\nsecond line\nthird" },
+      { say: result() },
+    ],
+  });
+  expect(toolLines(run).end[0]).toMatchObject({ isError: true, error: "exit code 1" });
+  expect(run.stdout).not.toContain("second line");
+});
+
+test("a call the access profile refuses, and an environment value, are not logged", async () => {
+  const s = setup();
+  s.input["access"] = { denyPaths: ["/secrets"] };
+  const run = await runFake(s, {
+    steps: [
+      { say: systemInit() },
+      { hook: "PreToolUse", toolName: "Read", toolUseId: "r1", input: { file_path: "/secrets/key" } },
+      { hook: "PreToolUse", toolName: "Bash", toolUseId: "b1", input: { command: "API_TOKEN=hunter2 make test" } },
+      { say: result() },
+    ],
+  });
+  const { start } = toolLines(run);
+  expect(start[0]?.["input"]).toBe("Read denied by the access profile (rule: /secrets)");
+  expect(start[1]?.["input"]).toBe("API_TOKEN=*** make test");
+  expect(run.stdout).not.toContain("hunter2");
+  expect(run.stdout).not.toContain("/secrets/key");
+});
+
+test("an assistant message logs its first 300 characters as one paragraph, without thinking", async () => {
+  const message = assistant("m1", `first\n\nsecond ${"y".repeat(400)}`);
+  const inner = message["message"] as Record<string, unknown>;
+  inner["content"] = [{ type: "thinking", thinking: "PRIVATE THOUGHT" }, ...(inner["content"] as unknown[])];
+  const run = await runFake(setup(), { steps: [{ say: systemInit() }, { say: message }, { say: result() }] });
+  const line = run.lines.find((l) => l["type"] === "message_end");
+  expect(String(line?.["text"]).length).toBe(300);
+  expect(String(line?.["text"]).startsWith("first second yyy")).toBe(true);
+  expect(run.stdout).not.toContain("PRIVATE THOUGHT");
+});
+
+test("a secret of the operad store sent as secretValues is masked in the logged command", async () => {
+  const s = setup();
+  s.input["secretValues"] = ["store-secret-9"];
+  const run = await runFake(s, {
+    steps: [
+      { say: systemInit() },
+      { hook: "PreToolUse", toolName: "Bash", toolUseId: "b1", input: { command: "curl -H store-secret-9 x" } },
+      { say: result() },
+    ],
+  });
+  expect(toolLines(run).start[0]?.["input"]).toBe("curl -H *** x");
+  expect(run.stdout).not.toContain("store-secret-9");
 });

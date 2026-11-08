@@ -10,6 +10,7 @@ import { commands } from "./commands.ts";
 import { runRework, runReview, runReviewDue, runVerify, runWorkDue } from "./gate.ts";
 import { runCleanup, runIntegrate } from "./integrate.ts";
 import { runScheduler } from "./schedule.ts";
+import { devStanding } from "./standing.ts";
 import { resolveDevKey } from "./service.ts";
 import { runReverify, runWork, runWorktree } from "./steps.ts";
 import { STEP_TIMEOUT_SECS } from "./timeouts.ts";
@@ -137,6 +138,7 @@ export function createDevPlugin() {
     actions,
     commands,
     onTick: runScheduler,
+    standing: devStanding,
     views: {
       plan: planViews,
       task: taskViews,
@@ -164,6 +166,7 @@ export * from "./schedule.ts";
 export * from "./service.ts";
 export * from "./places.ts";
 export * from "./settings.ts";
+export * from "./standing.ts";
 export * from "./steps.ts";
 export * from "./timeouts.ts";
 export * from "./views.ts";

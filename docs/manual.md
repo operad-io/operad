@@ -59,6 +59,22 @@ own; `show` lists them separately so the lead can tell the owner what to run.
 
 `dev:reverify` merges the current main into the task branch first, then runs verify and review again with no worker. A clean merge goes straight to verify; a conflicting main sends the task to the worker.
 
+### Where the reviewer writes its report
+
+The reviewer runs in the task's gate worktree, and some agents (radian, for one)
+cannot write outside the folder they run in. So each reviewer call is told to
+write its report to `.operad/review/<run>-attempt-<n>-review-<round>-try-<k>.json`
+inside that worktree, a path that is new for every call (`k` counts the calls
+before it in the round). `dev` reads the report there, checks it, and keeps its
+own copy in the store under `dev/reviews/<run>/`; that copy is the record.
+`dev` never deletes, truncates or overwrites a file in the review workspace: it
+creates `.operad/review` when missing, and refuses to write through a link or
+over an existing file, failing the review with the path instead. The gate
+worktree is disposable and is replaced by the next gate step, which removes the
+reports with it. A reviewer that finishes without writing a report is shown as
+`could not write the report` with its last message; a file that fails the check
+is shown as `wrote an invalid report`.
+
 ### http
 
 | Key | Type | Default | What it does |
@@ -329,7 +345,7 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 | `GET /v1/types` | `{ "types": [{ "type": "task", "title": "Task", "plugin": "dev" }] }`: the object types with views, their display names and the name of the plugin each belongs to (a client groups types by it). A type that declares filters also carries `"filters"`, in display order (`[{ "name": "active", "states": ["proposed", ...] }, { "name": "all" }, ...]`), and `"defaultFilter"`. A type without filters carries neither. |
 | `GET /v1/keys` | `{ "keys": [{ "key": "m", "action": "dev:merge", "source": "plugin" }] }`: the key bindings in force, the plugins' defaults with the person's `keys.json` overrides applied; `source` is `user` for an override. |
 | `GET /v1/objects?type=<type>&filter=<name>&cursor=<c>` (also `root` and `parent=<id>`, see [Levels](#levels)) | `{ "rows": [...], "next": "<c>", "hidden": 3 }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, `mark` and `badge` (see [Row marks](#row-marks)), plus `waiting` and `running`; an error row also carries `error`. `filter` keeps the rows the named filter shows, and `hidden` counts the rows of the type it left out (the whole type, not only this page). Without `filter` the type's default filter applies when it has filters; a type without filters lists every row and has no `hidden`. `filter=all` lists every row and has no `hidden`. An unknown name is a `400` that names the allowed ones. `next` pages within the filtered list. |
-| `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. An item that is about an object also carries `object` (`<type>:<id>`), its `link` and its `row`: the same row `GET /v1/objects?type=…` returns for that object (`id`, `title`, `state`, optional `note`, `mark`, `badge`, `waiting`, `running`), so a client does not read each object. When the row cannot be built (the object is gone, no loaded plugin shows its type, or the plugin's row fails) the item carries the error row the list shows for a bad row, with `state` `error` and an `error` message; the list itself never fails for one object. A candidate has no object and no `row`. `operad pending` prints the row's title under each line that has one. |
+| `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. An item a plugin raises without a run waiting (`kind` `standing`, no actions, `runId` `<plugin>:<id>`) is in the list too, and goes when the plugin stops reporting it. An item that is about an object also carries `object` (`<type>:<id>`), its `link` and its `row`: the same row `GET /v1/objects?type=…` returns for that object (`id`, `title`, `state`, optional `note`, `mark`, `badge`, `waiting`, `running`), so a client does not read each object. When the row cannot be built (the object is gone, no loaded plugin shows its type, or the plugin's row fails) the item carries the error row the list shows for a bad row, with `state` `error` and an `error` message; the list itself never fails for one object. A candidate has no object and no `row`. `operad pending` prints the row's title under each line that has one. |
 | `GET /v1/running` | The same list as `operad running`. Each item has `runId`, `flow`, `step`, `stepLabel`, `queued`, `startedAt` and `elapsedMs` (the run's age), and: `object`, the object's id as rows and `operad show` name it (for example `operad/T-0048-type-filters`), or `null` for a run with no object; `title`, that object's row title, or `null` when there is no object or the lookup failed (a failed lookup never fails the list); `stepStartedAt` and `stepElapsedMs`, when the current step's current attempt started and how long it has run (`null` before the first step). The step time starts again when the step changes and on a new attempt. |
 | `GET /v1/objects/<id>` | `{ "id", "type", "link", "row", "sections", "actions" }`: the link that opens the object, the row, the section directory, and the actions available now with their `args` schema, `note` field and `confirm` flag. |
 | `GET /v1/objects/<id>/sections/<section>?cursor=<c>&full=<bool>` | `{ "markdown": "...", "next": "<c>" }`. `full=true` skips the size cap. |
@@ -435,6 +451,35 @@ Every error body is:
 | `422` | The action's plugin refused it; `message` is the plugin's own message. |
 | `504` | A section did not load in time. |
 | `500` | Anything else; the body carries no stack trace. |
+
+## The History section
+
+Every object has a History section (`operad show <id> --section history`, the
+last tab in the web page and the terminal screen). It groups by run, then by
+attempt of each step. A run's heading names the flow and when it started; the
+run id comes once at the end of the run's block, in small text, for support.
+A step attempt is one line: the local time of the host that serves it, the step,
+the attempt when it is above 1, why it started when that is not the plain next
+step (`after fail`, `after reverify`), the outcome, how long it took (a running
+step shows `running` and how long so far) and the outcome's detail cut to one
+line with `…`. People's answers and events keep their own line. A date line
+starts each new day.
+
+```
+## dev run · started 21:38
+**2026-11-08**
+- 21:38:41  worktree  ready  1s
+- 21:38:44  work  done  41m
+- 22:20:01  review  fail  58s  packages/dev/src/gate.ts:1059 major …
+- 22:21:01  work  attempt 2  after fail  done  1m
+- 22:22:02  confirm  reverify  8m
+- 22:30:02  you chose merge: via plugin, as dev
+- 22:30:04  verify  after reverify  running  2m
+<sub>run 01bb7a85-d171-4d83-81d0-8990b77dab78</sub>
+```
+
+`operad show <id> --section history --full` keeps each detail whole.
+`operad history <id>` is unchanged: it prints every step with a UTC time.
 
 ## Levels
 
@@ -872,6 +917,48 @@ session when the harness can. If that worker is busy the work waits for it;
 another worker does not take it. If the worker is no longer in the `default`
 pool the pool picks any worker with room and the result says
 `work: pi; claude is no longer in the pool`.
+
+### When `dev.json` is not valid
+
+A repository's `dev.json` is read again by every step and every scheduler pass.
+When the file stops being valid (a typo, or a shape the running `serve` does
+not know yet, such as after a merge changed what `dev.json` may hold):
+
+- The last valid settings of that repository stay in force. Running steps finish
+  with them, the next step of a run reads them too, and the scheduler keeps
+  starting and repairing tasks in that repository. A `serve` or a step that
+  starts while the file is invalid reads the copy of the last valid settings
+  kept in `$OPERAD_HOME/dev/settings/`. Another repository is not affected.
+- `serve` writes one line to its log, `dev: repository "<name>": <reason>`, each
+  time the file changes to a different invalid state, never once per pass.
+- `operad pending` and `GET /v1/pending` show one item for the repository (its id
+  is `dev:settings:<name>`, it has no actions): `the repository settings are not
+  valid: <reason>; the last valid settings are in use`. The item disappears when
+  the file is valid again, and the next breakage is logged again.
+- A repository that never had valid settings has nothing to fall back on: the
+  item says so and no task starts in it until the file is fixed. Its running
+  steps are not touched either.
+
+### When a merge changes the code `serve` runs
+
+The main clone follows a merge when it can (a fast-forward on a clean clone), but
+a `serve` that is already running keeps the code it loaded when it started.
+When a followed merge changes that code, which means any file under the directory of the kernel (`engine`, `cli`) or
+of a package the home loads (source, flows, `bin/`, schemas at any depth,
+manifests), `operad pending` shows
+`serve runs older code than main: restart it when no check runs (merged <commit>
+in <repository>)`, once however many merges followed. Markdown files (docs and the
+mutation records), `test/` and `fixtures/` do not count. The item is advice: it
+may appear for a change that did not need a restart, but a change to a loaded
+package's code or schema always raises it. `serve` does not restart itself: stop it with
+`operad serve stop` when no check runs, and start it again; the item goes away
+with the restart.
+
+`dev` also needs the plugins its steps run through. When the home does not load
+`pool`, `operad pending` shows `plugin pool is not loaded and dev runs its
+workers through it: run `operad plugin enable pool` and restart serve; until
+then no new work starts`, and ready tasks stay ready instead of failing. The
+item goes away once `pool` is loaded.
 
 ### What the views say about the worker
 

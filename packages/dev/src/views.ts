@@ -213,7 +213,14 @@ export const taskViews: ObjectViews = {
 
 const LOG_TAIL_BYTES = 256 * 1024;
 const LOG_TAIL_LINES = 80;
+const LOG_EARLIER_LINES = 20;
 const LOG_LINE_CHARS = 240;
+
+/** An agent message as one paragraph of at most 300 characters. */
+function agentText(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length <= 300 ? flat : `${flat.slice(0, 299)}…`;
+}
 
 function oneLine(text: string): string {
   const flat = text.replace(/\s+/g, " ").trim();
@@ -231,6 +238,167 @@ function stringField(
     if (typeof value === "string" && value.trim().length > 0) return value;
   }
   return undefined;
+}
+
+/** How a tool call that has an end line finished. */
+interface ToolEnd {
+  readonly durationMs: number | undefined;
+  readonly error: string | undefined;
+}
+
+function numberField(record: Record<string, unknown>, name: string): number | undefined {
+  const value = record[name];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function clockTime(at: number): string {
+  return `${new Date(at).toISOString().slice(11, 19)}Z`;
+}
+
+function tokenText(usage: unknown): string | undefined {
+  if (typeof usage !== "object" || usage === null) return undefined;
+  const record = usage as Record<string, unknown>;
+  const input = numberField(record, "input");
+  const output = numberField(record, "output");
+  if (input === undefined && output === undefined) return undefined;
+  return `${input ?? 0} in / ${output ?? 0} out tokens`;
+}
+
+/** The cost a log line carries, as dollars: pi's `total`, or `micros`. */
+function costText(cost: unknown): string | undefined {
+  if (typeof cost !== "object" || cost === null) return undefined;
+  const record = cost as Record<string, unknown>;
+  const micros = numberField(record, "micros");
+  const dollars = micros !== undefined ? micros / 1e6 : numberField(record, "total");
+  return dollars === undefined ? undefined : `$${dollars.toFixed(4)}`;
+}
+
+function parseObject(text: string): Record<string, unknown> | undefined {
+  try {
+    const value: unknown = JSON.parse(text);
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Worker log lines as readable lines, in order. A tool call is one line: what
+ * ran and how long it took, or since when it has been running when no end line
+ * follows. The agent's own text is marked as the agent's; a turn's end gives
+ * its stop reason, tokens and cost; a tool's output is never shown, only the
+ * first line of an error.
+ */
+export function readableLog(lines: readonly string[]): string[] {
+  const ends = new Map<string, ToolEnd>();
+  const starts = new Set<string>();
+  let finished = false;
+  for (const line of lines) {
+    const record = parseObject(line.trim());
+    if (record === undefined) continue;
+    if (record.type === "result" || record.type === "Result") finished = true;
+    const id = stringField(record, ["toolCallId"]);
+    if (id === undefined) continue;
+    if (record.type === "tool_execution_start") starts.add(id);
+    if (record.type !== "tool_execution_end") continue;
+    ends.set(id, {
+      durationMs: numberField(record, "durationMs"),
+      error: record.isError === true ? stringField(record, ["error"]) : undefined,
+    });
+  }
+  const out: string[] = [];
+  for (const line of lines) {
+    const record = parseObject(line.trim());
+    const kind = record === undefined ? undefined : stringField(record, ["type"]);
+    if (record !== undefined && kind === "tool_execution_start") {
+      const id = stringField(record, ["toolCallId"]);
+      const name = stringField(record, ["toolName"]) ?? "tool";
+      const end = id === undefined ? undefined : ends.get(id);
+      const at = numberField(record, "at");
+      const input = stringField(record, ["input"]);
+      const when =
+        end !== undefined
+          ? end.durationMs === undefined
+            ? ""
+            : ` ${seconds(end.durationMs)}`
+          : finished
+            ? ` no end logged${at === undefined ? "" : ` (started ${clockTime(at)})`}`
+            : ` running${at === undefined ? "" : ` since ${clockTime(at)}`}`;
+      // The summary is already one line and at most 500 characters: kept whole.
+      out.push(`tool ${name}${when}${input === undefined ? "" : `  ${input.replace(/\s+/g, " ")}`}`);
+      if (end?.error !== undefined) out.push(`tool ${name} failed: ${end.error.replace(/\s+/g, " ")}`);
+      continue;
+    }
+    if (record !== undefined && kind === "tool_execution_end") {
+      // An end whose start is not in the tail still tells of its error.
+      const error = stringField(record, ["error"]);
+      const id = stringField(record, ["toolCallId"]);
+      const hasStart = id !== undefined && starts.has(id);
+      if (error !== undefined && !hasStart) {
+        out.push(oneLine(`tool ${stringField(record, ["toolName"]) ?? "tool"} failed: ${error}`));
+      }
+      continue;
+    }
+    if (record !== undefined && kind === "message_end") {
+      const text = stringField(record, ["text"]);
+      if (text !== undefined) out.push(`**agent:** ${agentText(text)}`);
+      const stop = stringField(record, ["stopReason"]);
+      const parts = [stop, tokenText(record.usage), costText(record.cost)].filter(
+        (part): part is string => part !== undefined,
+      );
+      if (parts.length > 0) out.push(`turn ended: ${parts.join(" · ")}`);
+      continue;
+    }
+    if (record !== undefined && kind === "blocked") {
+      const reason = stringField(record, ["reason"]);
+      out.push(
+        oneLine(`blocked ${stringField(record, ["toolName"]) ?? "tool"}${reason === undefined ? "" : `: ${reason}`}`),
+      );
+      continue;
+    }
+    if (record !== undefined && (kind === "result" || kind === "Result")) {
+      if (kind === "Result") {
+        const said = stringField(record, ["text"]);
+        if (said !== undefined) out.push(`**agent:** ${agentText(said)}`);
+      }
+      const parts = [
+        stringField(record, kind === "Result" ? ["stop_reason"] : ["result"]),
+        tokenText(record.usage),
+        costText(record.cost),
+      ].filter((part): part is string => part !== undefined);
+      if (parts.length > 0 || kind !== "Result") out.push(`result: ${parts.join(" · ")}`);
+      continue;
+    }
+    if (record !== undefined && (kind === "journal" || kind === undefined) && typeof record.event === "string") {
+      const data = isObject(record.data) ? record.data : {};
+      if (record.event === "MessageAppended") {
+        const message = isObject(data.message) ? data.message : {};
+        const assistant = isObject(message.assistant) ? message.assistant : undefined;
+        const blocks: unknown[] = Array.isArray(assistant?.content) ? assistant.content : [];
+        const said = blocks
+          .map((block) => (isObject(block) && isObject(block.text) ? stringField(block.text, ["text"]) : undefined))
+          .filter((part): part is string => part !== undefined)
+          .join(" ");
+        if (said.trim().length > 0) out.push(`**agent:** ${agentText(said)}`);
+        continue;
+      }
+      if (record.event === "ModelUsageRecorded") {
+        const parts = [stringField(data, ["stop_reason"]), tokenText(data.usage), costText(data.fee)].filter(
+          (part): part is string => part !== undefined,
+        );
+        if (parts.length > 0) out.push(`turn ended: ${parts.join(" · ")}`);
+        continue;
+      }
+    }
+    if (record !== undefined && ["session", "rate_limit", "agent_settled", "grant_use"].includes(kind ?? "")) {
+      continue;
+    }
+    const readable = readableLogLine(line);
+    if (readable !== undefined) out.push(readable);
+  }
+  return out;
 }
 
 /** One worker log line as a sentence, or undefined for bookkeeping. */
@@ -305,19 +473,66 @@ async function workerLogPath(
   );
 }
 
-async function workerLog(ctx: ViewContext, task: TaskData): Promise<string> {
-  const path = await workerLogPath(ctx, task);
-  if (path === undefined || !existsSync(path)) return "_No worker log yet._";
+function logPathFor(ctx: ViewContext, use: string, run: string): string | undefined {
+  const [plugin, step] = use.split("/");
+  if (plugin === undefined || step === undefined) return undefined;
+  return join(ctx.store.root, "logs", segment(plugin), "runs", segment(run), `${segment(step)}.log`);
+}
+
+/** The readable lines of one log file, or undefined when there is no file. */
+function readLogLines(path: string | undefined): string[] | undefined {
+  if (path === undefined || !existsSync(path)) return undefined;
   const size = statSync(path).size;
   const bytes = readFileSync(path);
   const tail = bytes.subarray(Math.max(0, size - LOG_TAIL_BYTES));
-  const lines = tail
-    .toString("utf8")
-    .split("\n")
-    .map(readableLogLine)
-    .filter((line): line is string => line !== undefined);
-  if (lines.length === 0) return "_The worker has written nothing readable yet._";
-  return lines.slice(-LOG_TAIL_LINES).join("\n\n");
+  return readableLog(tail.toString("utf8").split("\n"));
+}
+
+/**
+ * The log of the current attempt. The worker's lines come first; once the
+ * attempt is under review, each reviewer round's lines follow. A section that
+ * holds more than one agent says which agent each block is from.
+ */
+async function workerLog(ctx: ViewContext, task: TaskData): Promise<string> {
+  const attempt = task.attempt;
+  const blocks: Array<{ readonly label: string; readonly lines: string[] }> = [];
+  const worker = readLogLines(await workerLogPath(ctx, task));
+  if (worker !== undefined && worker.length > 0) {
+    blocks.push({ label: `Worker, attempt ${attempt?.number ?? 1}`, lines: worker });
+  }
+  const seen = new Set<string>();
+  const reviews = [
+    ...(attempt?.reviewRuns ?? []),
+    ...(attempt?.reviewPending === undefined || attempt.reviewPending === null
+      ? []
+      : [attempt.reviewPending]),
+  ];
+  let reviewing = false;
+  for (const review of reviews) {
+    if (typeof review.run !== "string" || review.run.length === 0) continue;
+    const path = logPathFor(ctx, review.use, review.run);
+    if (path === undefined || seen.has(path)) continue;
+    seen.add(path);
+    reviewing = true;
+    const lines = readLogLines(path);
+    if (lines === undefined || lines.length === 0) continue;
+    blocks.push({ label: `Reviewer, round ${review.round} (${review.model})`, lines });
+  }
+  if (blocks.length === 0) {
+    return worker === undefined && !reviewing
+      ? "_No worker log yet._"
+      : "_The worker has written nothing readable yet._";
+  }
+  if (blocks.length === 1) {
+    return (blocks[0]?.lines ?? []).slice(-LOG_TAIL_LINES).join("\n\n");
+  }
+  // The newest block gets the whole tail; the earlier ones a short one.
+  return blocks
+    .map((block, index) => {
+      const keep = index === blocks.length - 1 ? LOG_TAIL_LINES : LOG_EARLIER_LINES;
+      return [`**${block.label}**`, ...block.lines.slice(-keep)].join("\n\n");
+    })
+    .join("\n\n---\n\n");
 }
 
 /* ---------------------------------------------------------------------------
@@ -515,4 +730,8 @@ function workerTable(entries: readonly AttemptMetrics[]): string | undefined {
     );
   }
   return lines.join("\n");
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -85,3 +85,10 @@ setup it depends on, in the order they were recorded. The root
 | T-0041-M9 | packages/harness-claude/src/worker.ts | a run with no model still wrote a cost | `a failed run that used no model has no cost, not an exact zero` |
 | T-0041-M10 | packages/harness-claude/src/protocol.ts | `bashTimeoutSecs` was not validated | `bashTimeoutSecs sets both Bash timeouts and must be a positive integer` |
 | T-0041-M11 | packages/harness-claude/src/index.ts | the `bashTimeoutSecs` setting was not sent to the worker | `the worker gets the prompt, the directory and the settings` |
+| T-0063-M1 | packages/harness-claude/src/worker.ts | `tool_execution_end` wrote `durationMs: 0` | `a Bash call logs its command, its start time and its duration` |
+| T-0063-M2 | packages/harness-claude/src/worker.ts | a message's thinking block was written into its `text` | `an assistant message logs its first 300 characters as one paragraph, without thinking` |
+| T-0063-M30 | packages/harness-claude/src/worker.ts | the blocked line and the call end logged the real refusal reason | `a Read under denyPaths is denied, and Read elsewhere is allowed` |
+| T-0063-M31 | packages/harness-claude/src/worker.ts | the summary ignored `secretValues` | `a secret of the operad store sent as secretValues is masked in the logged command` |
+| T-0063-M32 | packages/harness-claude/src/worker.ts | the start summary judged the original tool name, not the access-match translation | `a denied NotebookEdit or MultiEdit start line shows no path` |
+| T-0063-M33 | packages/harness-claude/src/worker.ts | the denial check skipped the translation for one mapped tool (Grep/Glob) | `every tool the translation maps shows only its denial when the profile denies it` |
+| T-0063-M34 | packages/harness-claude/src/worker.ts | the denied-call summary dropped the matching rule's name | `a Bash command that denyCommands refuses is denied with the reason, logged, and the run goes on` |

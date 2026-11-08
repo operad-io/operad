@@ -6,6 +6,7 @@
  */
 
 import { stat } from "node:fs/promises";
+import { firstErrorLine, readProfile, secretValuesOf, summarizeCall, type AccessProfile } from "@operad-io/access-match";
 import {
   defineFlow,
   definePlugin,
@@ -65,6 +66,117 @@ export function radianToolEvent(line: string): ToolEvent | undefined {
   return undefined;
 }
 
+function firstString(record: Record<string, unknown>, keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return undefined;
+}
+
+/**
+ * Radian's own tool names, read as the access-match tool the profile judges:
+ * `shell` is a bash command, `patch` an edit, `glob` a find, and any other tool
+ * with a `path` is a read of it. The log still names the radian tool.
+ */
+function summarizeRadianCall(
+  profile: AccessProfile,
+  toolName: string,
+  args: unknown,
+  cwd: string,
+  secrets: readonly string[],
+): string | undefined {
+  if (!isRecord(args)) return undefined;
+  const lower = toolName.toLowerCase();
+  let mapped = lower;
+  let input: Record<string, unknown> = args;
+  if (lower === "shell") mapped = "bash";
+  else if (lower === "patch") mapped = "edit";
+  else if (lower === "glob") {
+    mapped = "find";
+    const where = typeof args.path === "string" && args.path.length > 0 ? args.path : args.pattern;
+    input = typeof where === "string" ? { ...args, path: where } : args;
+  } else if (lower === "list") mapped = "ls";
+  else if (!["bash", "read", "write", "edit", "grep", "find", "ls"].includes(lower) && typeof args.path === "string") {
+    mapped = "read";
+  }
+  const summary = summarizeCall(profile, mapped, input, cwd, { secrets });
+  const denied = `${mapped} denied by the access profile`;
+  if (summary !== undefined && summary.startsWith(denied)) return `${toolName}${summary.slice(mapped.length)}`;
+  // Unknown tools keep the plain summary of their main argument.
+  if (mapped === "read" && lower !== "read") return summarizeCall({}, toolName, args, cwd, { secrets });
+  return summary;
+}
+
+/**
+ * Turns radian's tool journal lines into the log lines the other harnesses
+ * write: `tool_execution_start` with the command or path summary and its start
+ * time, `tool_execution_end` with the duration and an error's first line. Any
+ * other line, and a tool line it cannot read, is returned as radian wrote it.
+ * The summary is cut, has secret values masked, and says only that the call
+ * was denied where the run's access profile refuses it.
+ */
+export function radianLogLine(
+  line: string,
+  now: () => number,
+  open: Map<string, { at: number; name: string; denied?: boolean }>,
+  cwd: string,
+  profile: AccessProfile = {},
+  secrets: readonly string[] = [],
+): string {
+  const kind = radianToolEvent(line);
+  if (kind === undefined) return line;
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    return line;
+  }
+  if (!isRecord(value)) return line;
+  const nested = isRecord(value.data) ? value.data : isRecord(value.payload) ? value.payload : {};
+  const field = (keys: readonly string[]): string | undefined =>
+    firstString(value as Record<string, unknown>, keys) ?? firstString(nested, keys);
+  const id = field(["toolCallId", "tool_call_id", "callId", "call_id", "id"]) ?? "";
+  const name = field(["toolName", "tool_name", "tool", "name"]);
+  if (kind === "tool-start") {
+    const at = now();
+    const toolName = name ?? "tool";
+    const args = value.input ?? value.args ?? value.arguments ?? nested.input ?? nested.args ?? nested.arguments;
+    const summary = summarizeRadianCall(profile, toolName, args, cwd, secrets);
+    open.set(id, { at, name: toolName, denied: summary?.includes(" denied by the access profile") === true });
+    return JSON.stringify({
+      type: "tool_execution_start",
+      toolCallId: id,
+      toolName,
+      at,
+      ...(summary === undefined ? {} : { input: summary }),
+    });
+  }
+  const begun = open.get(id);
+  open.delete(id);
+  // Radian settles a call as data.result: `is_error` and content blocks of
+  // `{ text: { text } }`. Only the first error line of that text is kept.
+  const settled = isRecord(nested.result) ? nested.result : {};
+  const isError =
+    value.isError === true || nested.isError === true || value.is_error === true || settled.is_error === true;
+  const blocks = Array.isArray(settled.content) ? settled.content : [];
+  const first: unknown = blocks[0];
+  const blockText =
+    isRecord(first) && isRecord(first.text) && typeof first.text.text === "string" ? first.text.text : undefined;
+  const error =
+    isError && begun?.denied !== true
+      ? firstErrorLine(field(["error", "message"]) ?? blockText, { secrets })
+      : undefined;
+  return JSON.stringify({
+    type: "tool_execution_end",
+    toolCallId: id,
+    toolName: name ?? begun?.name ?? "tool",
+    isError,
+    durationMs: begun === undefined ? 0 : Math.max(0, now() - begun.at),
+    ...(error === undefined ? {} : { error }),
+  });
+}
+
 /**
  * The model a step passes to radian as `<provider>/<model>`, from `--provider`
  * and `--model` in its args. A model that already names a provider (it has a
@@ -86,6 +198,8 @@ export interface RadianHarnessSettings {
   /** The default stall limit in seconds. */
   readonly stallSecs?: number | undefined;
   readonly clock?: Clock | undefined;
+  /** Milliseconds now, for tool call start times and durations; a test injects it. */
+  readonly now?: (() => number) | undefined;
 }
 
 interface ResolvedSettings {
@@ -93,6 +207,7 @@ interface ResolvedSettings {
   readonly wallTimeSecs: number;
   readonly stallSecs: number;
   readonly clock: Clock;
+  readonly now: () => number;
 }
 
 /** The settings a config.json section may set for this plugin. */
@@ -367,6 +482,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
     wallTimeSecs: settings.wallTimeSecs ?? DEFAULT_WALL_TIME_SECS,
     stallSecs: settings.stallSecs ?? DEFAULT_STALL_SECS,
     clock: settings.clock ?? systemClock,
+    now: settings.now ?? Date.now,
   };
 
   const promptFlow = defineFlow({
@@ -442,6 +558,10 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
               ? defaults.command
               : text(ctx.settings.command, `${at}: settings.command`);
 
+          const readAccess = readProfile(ctx.access ?? {});
+          const logSecrets = await secretValuesOf(ctx.secrets);
+          const logProfile: AccessProfile = readAccess.ok ? readAccess.profile : {};
+
           const who: UsageSource = {
             harness: "harness-radian",
             model: radianModel(args) ?? null,
@@ -493,6 +613,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
           const started = Date.now();
           const jsonl = new JsonlLog(ctx.logger);
           let result: ParsedResult | undefined;
+          const openTools = new Map<string, { at: number; name: string }>();
 
           const outcome = await runAgent({
             command: commandName,
@@ -505,7 +626,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             clock: defaults.clock,
             toolEvent: radianToolEvent,
             onLine(line) {
-              const writing = jsonl.push(line);
+              const writing = jsonl.push(radianLogLine(line, defaults.now, openTools, cwd, logProfile, logSecrets));
               const parsed = parseResult(line);
               if (parsed !== undefined) result = parsed;
               return writing;

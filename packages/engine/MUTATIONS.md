@@ -291,6 +291,8 @@ the row fields.
 | T-0089-M3 | packages/engine/src/markdown.ts | a closing fence ignored its character (a backtick fence closed a tilde fence) | `markdown fences > closing needs the same character and a length at least the opening's` |
 | T-0089-M4 | packages/engine/src/markdown.ts | the language was the whole info string, not its first word | `markdown fences > only the first word of the info string is the language` |
 | T-0089-M5 | packages/engine/src/markdown.ts | `---`/`+++` diff headers were drawn bold again instead of red/green | `markdown > a four-backtick diff colours + and - lines and keeps indentation` |
+| T-0094-M8 | packages/engine/src/views/pending.ts | the pending view left out the plugins' standing items | `standing pending items > a plugin's items join the pending view, wait on no run and go when the plugin stops reporting them` |
+| T-0094-M9 | packages/engine/src/plugin/registry.ts | a standing hook that threw was raised instead of logged | `standing pending items > a plugin's items join the pending view, wait on no run and go when the plugin stops reporting them` |
 | T-0052-M1 | packages/engine/src/views/presentation.ts | `root` kept the rows that have a parent instead of those without | `row parent > root lists only rows with no parent, across types in type order` |
 | T-0052-M2 | packages/engine/src/views/presentation.ts | a parent id matched only as written, not as the resolved `type:id` or bare id | `row parent > parent= lists only that parent's children and the row carries parent` |
 | T-0052-M3 | packages/engine/src/views/presentation.ts | the level list ignored the type's filter, so no row was hidden | `row parent > the default filter applies under parent= and hidden counts the filtered rows` |
@@ -299,3 +301,9 @@ the row fields.
 | T-0052-M6 | packages/engine/src/views/presentation.ts | a level cursor was accepted for a different parent | `row parent > pages keep the order and a cursor cannot be moved to another list` |
 | T-0052-M7 | packages/engine/src/http/server.ts | `/v1/types` left out each type's plugin | `hierarchy over HTTP > /v1/types names the plugin and /v1/objects takes root and parent` |
 | T-0052-M8 | packages/engine/src/http/server.ts | `/v1/objects` ignored `parent=` | `hierarchy over HTTP > /v1/types names the plugin and /v1/objects takes root and parent` |
+| T-0074-M1 | packages/engine/src/views/history.ts | `runHistoryLines` kept the "moving to" reason for plain results (dropped the PLAIN_RESULTS check) | `readable run history > one line per step attempt with time, outcome and duration` |
+| T-0074-M2 | packages/engine/src/views/history.ts | a running step's time so far was measured from its own start (always 0s) | `readable run history > a running step shows how long so far, a person's answer keeps its line` |
+| T-0074-M3 | packages/engine/src/views/history.ts | the date line was never written | `readable run history > a new day gets a date line` |
+| T-0074-M4 | packages/engine/src/views/history.ts | `oneLine` cut details even with `full` | `readable run history > details are cut to one line, and --full keeps them` |
+| T-0074-M5 | packages/engine/src/views/presentation.ts | the run id was printed in the heading as well as at the end | `shows a row, the section directory, the kernel history and actions` |
+| T-0074-M6 | packages/engine/src/views/history.ts | an entered end step opened an attempt line (the end-step skip removed) | `readable run history > a run that ends on an end step has no line for that step` |

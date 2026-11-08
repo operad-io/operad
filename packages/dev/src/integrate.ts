@@ -4,6 +4,7 @@
  * never runs either itself.
  */
 
+import { fileURLToPath } from "node:url";
 import {
   messageOf,
   type PluginStepResult,
@@ -34,6 +35,7 @@ import {
   type CommandRunner,
   type MainCloneOutcome,
 } from "./mainclone.ts";
+import { recordServeCode } from "./standing.ts";
 import { runCheckCommands } from "./rerun.ts";
 import { recordRerunPasses } from "./reruns.ts";
 import { getPlan, refreshPlanCounts } from "./service.ts";
@@ -63,19 +65,51 @@ export const integrateTestHooks: {
   afterPush?: ((candidate: string) => void) | undefined;
   /** Replaces the command runner the main clone's install uses. */
   runCommand?: CommandRunner | undefined;
+  /** The repository serve's code comes from; tests name a scratch one. */
+  codeRoot?: string | undefined;
 } = {};
 
-function followMain(
-  repository: string,
+/** The repository whose code this module was loaded from. */
+function ownCodeRoot(): string {
+  const result = Bun.spawnSync({
+    cmd: ["git", "-C", fileURLToPath(new URL(".", import.meta.url)), "rev-parse", "--show-toplevel"],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  return result.exitCode === 0 ? result.stdout.toString().trim() : "";
+}
+
+export function followMain(
+  repository: { readonly name: string; readonly path: string },
+  home: string,
   branch: string,
   sha: string,
 ): MainCloneOutcome {
-  return updateMainClone(
-    repository,
+  const before = git(repository.path, ["rev-parse", "HEAD"]);
+  const outcome = updateMainClone(
+    repository.path,
     branch,
     sha,
     integrateTestHooks.runCommand ?? runCommand,
   );
+  const after = git(repository.path, ["rev-parse", "HEAD"]);
+  if (outcome.updated && before.ok && after.ok && before.out !== after.out) {
+    const changed = git(repository.path, ["diff", "--name-only", before.out, after.out]);
+    try {
+      recordServeCode({
+        home,
+        codeRoot: integrateTestHooks.codeRoot ?? ownCodeRoot(),
+        repository,
+        from: before.out,
+        to: after.out,
+        files: changed.ok ? changed.out.split("\n").filter((line) => line.length > 0) : [],
+        at: Date.now(),
+      });
+    } catch {
+      // The note is a courtesy; the merge has landed either way.
+    }
+  }
+  return outcome;
 }
 
 function shortSha(sha: string): string {
@@ -310,7 +344,7 @@ export async function runIntegrate(
     extra: Readonly<Record<string, unknown>> = {},
   ): Promise<PluginStepResult> => {
     const note = record.checkNote;
-    const clone = followMain(repository, settings.mainBranch, sha);
+    const clone = followMain(context.repository, ctx.home, settings.mainBranch, sha);
     const cloneChange = mainCloneChange(clone);
     const withClone: IntegrationRecord = { ...record, mainClone: { ...clone } };
     if (
@@ -367,7 +401,8 @@ export async function runIntegrate(
         style: settings.integration.style,
       };
       const clone = followMain(
-        repository,
+        context.repository,
+        ctx.home,
         settings.mainBranch,
         previous.candidate,
       );
