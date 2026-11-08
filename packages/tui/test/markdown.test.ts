@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { RGBA } from "@opentui/core";
+import { RGBA, TextAttributes } from "@opentui/core";
+import { layoutMarkdown } from "../src/layout.ts";
 import { createTestRenderer } from "@opentui/core/testing";
 import type { ViewObject, ViewRow } from "@operad-io/engine";
 import { initialState, reduce, type TuiState } from "../src/state.ts";
@@ -80,10 +81,11 @@ describe("the TUI Markdown", () => {
       await setup.renderOnce();
 
       const frame = setup.captureCharFrame();
-      expect(frame).toContain("| name  | value |");
-      expect(frame).toContain("|-------|-------|");
-      expect(frame).toContain("| alpha | 1     |");
-      expect(frame).toContain("| long  | 2     |");
+      expect(frame).toContain("name   value");
+      expect(frame).not.toContain("| name");
+      expect(frame).toContain("────────────");
+      expect(frame).toContain("alpha      1");
+      expect(frame).toContain("long       2");
       expect(frame).toContain("mermaid");
       expect(frame).toContain("graph TD");
       expect(frame).toContain("A-->B");
@@ -107,7 +109,7 @@ describe("the TUI Markdown", () => {
     const mermaid = lines.find((line) => line.text.includes("mermaid"));
     expect(diff?.code).toBe(true);
     expect(mermaid?.code).toBe(true);
-    expect(lines.find((line) => line.text.includes("| alpha"))?.code).toBe(false);
+    expect(lines.find((line) => line.text.includes("alpha"))?.code).toBe(false);
   });
 
   test("a four-backtick diff colours + and - lines and keeps indentation", () => {
@@ -130,5 +132,34 @@ describe("the TUI Markdown", () => {
     const texts = lines.map((line) => line.text);
     expect(texts).toContain("   docs/manual.md | 2 +-");
     expect(texts).toContain("   docs/other.md | 1 +");
+  });
+});
+
+describe("tables fit the pane", () => {
+  const tasks = [
+    "| id | title | state | cost |",
+    "| -- | ----- | ----- | ---- |",
+    ...Array.from(
+      { length: 13 },
+      (_, i) =>
+        `| T-${String(i + 1).padStart(4, "0")} | A long task title number ${i + 1} that describes a good deal of work to do | in_review | $${i + 1}.00 |`,
+    ),
+  ].join("\n");
+
+  test("13 tasks at 100 columns take 15 rows none wider than the pane, and a resize re-lays them", () => {
+    const wide = markdownLines(tasks, TUI_PALETTE.dark, 100);
+    expect(wide).toHaveLength(15);
+    for (const line of wide) {
+      expect([...line.text].length).toBeLessThanOrEqual(100);
+    }
+    const header = layoutMarkdown(tasks, 100)[0];
+    expect(header?.runs[0]?.style.role).toBe("weak");
+    expect((header?.runs[0]?.style.attributes ?? 0) & TextAttributes.BOLD).not.toBe(0);
+    const narrow = markdownLines(tasks, TUI_PALETTE.dark, 60);
+    expect(narrow).toHaveLength(15);
+    for (const line of narrow) {
+      expect([...line.text].length).toBeLessThanOrEqual(60);
+    }
+    expect(narrow[5]?.text).not.toBe(wide[5]?.text);
   });
 });
