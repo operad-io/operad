@@ -40,6 +40,8 @@ import {
   isRecord,
   type PendingReviewRun,
   type ReviewFinding,
+  type ReviewNote,
+  type ReviewNotes,
   type ReviewRecord,
   type ReviewResult,
   type ReviewRunRecord,
@@ -1592,6 +1594,32 @@ export const reviewTestHooks: {
   afterOpen?: (() => void) | undefined;
 } = {};
 
+/** The task's notes with this round's findings that did not fail it. */
+function notesOf(
+  task: TaskData,
+  record: ReviewRecord,
+  attempt: number,
+  round: number,
+  fixLevel: FixLevel,
+): { readonly reviewNotes?: readonly ReviewNotes[] } {
+  const findings: ReviewNote[] = (record.findings ?? [])
+    .filter(
+      (finding) =>
+        finding.preExisting === true ||
+        finding.pre_existing === true ||
+        !atOrAbove(finding.severity, fixLevel),
+    )
+    .map((finding) => ({
+      severity: finding.severity,
+      file: finding.file,
+      line: typeof finding.line === "number" ? finding.line : null,
+      summary: finding.summary,
+    }));
+  if (findings.length === 0) return {};
+  const old = Array.isArray(task.reviewNotes) ? task.reviewNotes : [];
+  return { reviewNotes: [...old, { attempt, round, findings }] };
+}
+
 /** The task's review history with this record added, when it holds a report. */
 function historyOf(
   task: TaskData,
@@ -1755,6 +1783,7 @@ export async function runReview(
           ? { brief: appendChange(task.brief, record.reworkLine) }
           : {}),
         ...historyOf(task, record, attempt.number, context.settings.reviewer.fixLevel),
+        ...notesOf(task, record, attempt.number, round, context.settings.reviewer.fixLevel),
         retryAt:
           record.decision === "unavailable" && typeof record.retryAt === "number"
             ? record.retryAt

@@ -320,6 +320,11 @@
           ],
           "default": "major"
         },
+        "followups": {
+          "description": "Whether findings that did not fail a review are collected into one follow-up task when a plan has no open task.",
+          "type": "boolean",
+          "default": true
+        },
         "retrySecs": {
           "description": "How long a review waits before it runs again after a model was unavailable.",
           "type": "number",
@@ -345,6 +350,7 @@
         "args": [],
         "timeoutSecs": 600,
         "fixLevel": "major",
+        "followups": true,
         "retrySecs": 120,
         "maxFileDiffBytes": 200000,
         "maxDiffBytes": 1000000

@@ -276,6 +276,26 @@ describe("dev/integrate", () => {
     expect(planState(planData(plan.data))).toBe("finished");
   });
 
+  test("a merge marks a task that has notes, unless followups is false", async () => {
+    for (const followups of [true, false]) {
+      const state = await fixture();
+      const dev = JSON.parse(readFileSync(state.devJson, "utf8"));
+      writeFileSync(state.devJson, JSON.stringify({ ...dev, reviewer: { followups } }));
+      const object = await state.store.get("task", state.taskKey);
+      await state.store.put(
+        "task",
+        state.taskKey,
+        {
+          ...taskData(object?.data ?? {}),
+          reviewNotes: [{ attempt: 1, round: 1, findings: [{ severity: "minor", file: "a.ts", line: 1, summary: "x" }] }],
+        },
+        "test",
+      );
+      expect((await integrate(state)).result).toBe("merged");
+      expect((await taskOf(state)).followups?.state).toBe(followups ? "collect" : undefined);
+    }
+  });
+
   test("squash style lands one commit with the same message", async () => {
     const state = await fixture({ style: "squash" });
     const verified = (await taskOf(state)).attempt?.verified ?? "";

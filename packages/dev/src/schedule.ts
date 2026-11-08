@@ -36,6 +36,7 @@ import {
   releaseTaskClaim,
   setTaskPhase,
 } from "./service.ts";
+import { collectFollowups } from "./followups.ts";
 import { missingPlugins } from "./standing.ts";
 import {
   DEV_SETTINGS_FILE,
@@ -331,6 +332,10 @@ async function scheduleRepository(
     if ((await releaseTaskClaim(ctx.store, object.id)) === undefined) continue;
     writeSchedulerLine(`${bareId(object.id)} running -> ready`);
   }
+
+  // Findings that did not fail a review become one follow-up task once the
+  // plan has no open task; this runs before a plan can be reported finished.
+  await collectFollowups(ctx.store, repository.name, settings);
 
   // A recovered claim changes the store; read the phases again before counting.
   const current = tasksOf(await listAll(ctx.store, "task"), repository.name);
