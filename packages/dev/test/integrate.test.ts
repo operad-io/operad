@@ -3,6 +3,7 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
+  appendFileSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -18,6 +19,7 @@ import {
   confirmPlan,
   createDevPlugin,
   getPlan,
+  integrateTestHooks,
   planData,
   planState,
   schedulerTestHooks,
@@ -109,6 +111,8 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
   });
   const devJson = join(remote.repository, ".operad", "dev.json");
   writeDevJson(remote.repository, options);
+  // The settings file is local to the clone; keep it from making the tree dirty.
+  appendFileSync(join(remote.repository, ".git", "info", "exclude"), ".operad/\n");
   const plan = await addPlan(store, {
     repository,
     slug: "plan",
@@ -614,5 +618,113 @@ describe("dev scheduling reports the integration transition", () => {
       `${state.taskId} integrating -> running`,
     ]);
     expect(lines.some((line) => line.includes("merged"))).toBe(false);
+  });
+});
+
+describe("dev/integrate main clone", () => {
+  const cloneHead = (state: Fixture) =>
+    gitOrThrow(state.remote.repository, ["rev-parse", "HEAD"]);
+
+  test("a clean clone on the base branch fast-forwards", async () => {
+    const state = await fixture();
+    const result = await integrate(state);
+    expect(result.result).toBe("merged");
+    expect(cloneHead(state)).toBe(remoteMain(state));
+    expect(
+      readFileSync(join(state.remote.repository, "code.txt"), "utf8"),
+    ).toBe("line\n");
+    const clone = result.data?.mainClone as { updated: boolean } | undefined;
+    expect(clone?.updated).toBe(true);
+    expect((await taskOf(state)).brief).not.toContain("main clone not updated");
+  });
+
+  test("a dirty clone is left alone with the note", async () => {
+    const state = await fixture();
+    const before = cloneHead(state);
+    writeFileSync(join(state.remote.repository, "README.md"), "edited\n");
+    const result = await integrate(state);
+    expect(result.result).toBe("merged");
+    expect(cloneHead(state)).toBe(before);
+    expect(readFileSync(join(state.remote.repository, "README.md"), "utf8")).toBe(
+      "edited\n",
+    );
+    expect(result.data?.mainClone).toMatchObject({
+      updated: false,
+      note: "uncommitted changes",
+    });
+    expect((await taskOf(state)).brief).toContain(
+      "main clone not updated: uncommitted changes",
+    );
+  });
+
+  test("an untracked file makes the clone dirty and it is left alone", async () => {
+    const state = await fixture();
+    const before = cloneHead(state);
+    writeFileSync(join(state.remote.repository, "scratch.txt"), "new\n");
+    const result = await integrate(state);
+    expect(result.result).toBe("merged");
+    expect(cloneHead(state)).toBe(before);
+    expect(result.data?.mainClone).toMatchObject({
+      updated: false,
+      note: "uncommitted changes",
+    });
+  });
+
+  test("a clone on another branch is left alone", async () => {
+    const state = await fixture();
+    gitOrThrow(state.remote.repository, ["checkout", "-q", "-b", "other"]);
+    const before = cloneHead(state);
+    const result = await integrate(state);
+    expect(result.result).toBe("merged");
+    expect(cloneHead(state)).toBe(before);
+    expect(gitOrThrow(state.remote.repository, ["branch", "--show-current"])).toBe(
+      "other",
+    );
+    expect((await taskOf(state)).brief).toContain("main clone not updated");
+  });
+
+  test("a lockfile change runs the install in the clone, once, after the fast-forward", async () => {
+    const state = await fixture();
+    const calls: { cwd: string; cmd: readonly string[]; head: string }[] = [];
+    integrateTestHooks.runCommand = (cwd, cmd) => {
+      calls.push({ cwd, cmd, head: cloneHead(state) });
+      return { ok: true, out: "" };
+    };
+    try {
+      await commitIn(state.worktree, "bun.lock", "lock\n", "lock");
+      gitOrThrow(state.worktree, ["push", "origin", `HEAD:refs/heads/work/${state.taskId}`]);
+      const verified = await state.registry.runStep("dev/verify", {}, {
+        runId: "verify-run-2",
+        object: { type: "task", id: state.taskKey, data: {} },
+      });
+      expect(verified.result).toBe("pass");
+      const result = await integrate(state);
+      expect(result.result).toBe("merged");
+      expect(calls).toEqual([
+        {
+          cwd: state.remote.repository,
+          cmd: ["bun", "install", "--frozen-lockfile"],
+          head: remoteMain(state),
+        },
+      ]);
+      expect(result.data?.mainClone).toMatchObject({ updated: true, installed: true });
+    } finally {
+      integrateTestHooks.runCommand = undefined;
+    }
+  });
+
+  test("no lockfile change runs no install, and a failed install is reported", async () => {
+    const state = await fixture();
+    let ran = 0;
+    integrateTestHooks.runCommand = () => {
+      ran += 1;
+      return { ok: false, out: "boom" };
+    };
+    try {
+      expect((await integrate(state)).result).toBe("merged");
+      expect(ran).toBe(0);
+    } finally {
+      integrateTestHooks.runCommand = undefined;
+    }
   });
 });
