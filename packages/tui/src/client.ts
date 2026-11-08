@@ -26,6 +26,8 @@ export const defaultFetch: FetchLike = (input, init) => fetch(input, init);
 export interface TuiTypeInfo {
   readonly type: string;
   readonly title: string;
+  /** The plugin the type belongs to. */
+  readonly plugin?: string;
 }
 
 /** One entry of `GET /v1/keys`. */

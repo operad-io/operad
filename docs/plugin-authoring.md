@@ -307,3 +307,25 @@ test("the same key arriving twice starts one run", async () => {
   expect(await world.runs()).toHaveLength(1);
 });
 ```
+
+## Putting objects in levels
+
+A plugin's `row(object)` may return `parent`: the id of the object one level up.
+Give a full id (`plan:repo/P-0001`) or a bare id that resolves the way
+`operad show` resolves it. Rows without `parent` are the plugin's top level.
+The kernel never invents a parent and does not check that it exists.
+
+```typescript
+row: (object) => ({
+  id: object.id,
+  title: String(object.data.title),
+  state: String(object.data.state),
+  parent: typeof object.data.parent === "string" ? object.data.parent : undefined,
+}),
+```
+
+Clients name each type's plugin (`plugin` in `GET /v1/types`) so they can group
+types by plugin, list the top level with `root`, and open one level down with
+`parent=<id>`. A type's filters apply inside the level. See the manual's
+"Levels" section for the exact behaviour, including the order of a list across
+types and what an unknown parent returns.

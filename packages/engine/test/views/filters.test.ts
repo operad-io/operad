@@ -261,6 +261,7 @@ describe("filters over HTTP", () => {
       {
         type: "job",
         title: "Job",
+        plugin: "jobs",
         filters: [
           { name: "active", states: ["new", "open"] },
           { name: "all" },
@@ -269,7 +270,7 @@ describe("filters over HTTP", () => {
         ],
         defaultFilter: "active",
       },
-      { type: "plain", title: "Plain" },
+      { type: "plain", title: "Plain", plugin: "jobs" },
     ]);
 
     const byDefault = await get("/v1/objects?type=job");

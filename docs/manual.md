@@ -285,9 +285,9 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 
 | Method and path | What it returns |
 |---|---|
-| `GET /v1/types` | `{ "types": [{ "type": "task", "title": "Task" }] }`: the object types with views and their display names. A type that declares filters also carries `"filters"`, in display order (`[{ "name": "active", "states": ["proposed", ...] }, { "name": "all" }, ...]`), and `"defaultFilter"`. A type without filters carries neither. |
+| `GET /v1/types` | `{ "types": [{ "type": "task", "title": "Task", "plugin": "dev" }] }`: the object types with views, their display names and the name of the plugin each belongs to (a client groups types by it). A type that declares filters also carries `"filters"`, in display order (`[{ "name": "active", "states": ["proposed", ...] }, { "name": "all" }, ...]`), and `"defaultFilter"`. A type without filters carries neither. |
 | `GET /v1/keys` | `{ "keys": [{ "key": "m", "action": "dev:merge", "source": "plugin" }] }`: the key bindings in force, the plugins' defaults with the person's `keys.json` overrides applied; `source` is `user` for an override. |
-| `GET /v1/objects?type=<type>&filter=<name>&cursor=<c>` | `{ "rows": [...], "next": "<c>", "hidden": 3 }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, `mark` and `badge` (see [Row marks](#row-marks)), plus `waiting` and `running`; an error row also carries `error`. `filter` keeps the rows the named filter shows, and `hidden` counts the rows of the type it left out (the whole type, not only this page). Without `filter` the type's default filter applies when it has filters; a type without filters lists every row and has no `hidden`. `filter=all` lists every row and has no `hidden`. An unknown name is a `400` that names the allowed ones. `next` pages within the filtered list. |
+| `GET /v1/objects?type=<type>&filter=<name>&cursor=<c>` (also `root` and `parent=<id>`, see [Levels](#levels)) | `{ "rows": [...], "next": "<c>", "hidden": 3 }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, `mark` and `badge` (see [Row marks](#row-marks)), plus `waiting` and `running`; an error row also carries `error`. `filter` keeps the rows the named filter shows, and `hidden` counts the rows of the type it left out (the whole type, not only this page). Without `filter` the type's default filter applies when it has filters; a type without filters lists every row and has no `hidden`. `filter=all` lists every row and has no `hidden`. An unknown name is a `400` that names the allowed ones. `next` pages within the filtered list. |
 | `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. An item that is about an object also carries `object` (`<type>:<id>`), its `link` and its `row`: the same row `GET /v1/objects?type=…` returns for that object (`id`, `title`, `state`, optional `note`, `mark`, `badge`, `waiting`, `running`), so a client does not read each object. When the row cannot be built (the object is gone, no loaded plugin shows its type, or the plugin's row fails) the item carries the error row the list shows for a bad row, with `state` `error` and an `error` message; the list itself never fails for one object. A candidate has no object and no `row`. `operad pending` prints the row's title under each line that has one. |
 | `GET /v1/running` | The same list as `operad running`. Each item has `runId`, `flow`, `step`, `stepLabel`, `queued`, `startedAt` and `elapsedMs` (the run's age), and: `object`, the object's id as rows and `operad show` name it (for example `operad/T-0048-type-filters`), or `null` for a run with no object; `title`, that object's row title, or `null` when there is no object or the lookup failed (a failed lookup never fails the list); `stepStartedAt` and `stepElapsedMs`, when the current step's current attempt started and how long it has run (`null` before the first step). The step time starts again when the step changes and on a new attempt. |
 | `GET /v1/objects/<id>` | `{ "id", "type", "link", "row", "sections", "actions" }`: the link that opens the object, the row, the section directory, and the actions available now with their `args` schema, `note` field and `confirm` flag. |
@@ -394,6 +394,33 @@ Every error body is:
 | `422` | The action's plugin refused it; `message` is the plugin's own message. |
 | `504` | A section did not load in time. |
 | `500` | Anything else; the body carries no stack trace. |
+
+## Levels
+
+A plugin can arrange its objects in levels. A row may carry `parent`: the id of
+the object one level up, either a full id (`plan:repo/P-0001`) or a bare id
+that resolves the way `operad show` resolves it. The kernel passes it through
+and never makes one up. A row without `parent` is at the top level.
+
+- `operad list <type> --root` lists the rows of that type with no parent;
+  `operad list <type> --parent <id>` lists the rows whose parent is that
+  object. Plain `operad list <type>` stays flat.
+- `GET /v1/objects?root` and `GET /v1/objects?parent=<id>` do the same. `type`
+  is optional with them. Without `type` they list across the types of all
+  plugins in a stable order: the types in the order `GET /v1/types` gives them
+  (plugin load order, then the order each plugin declares its types), and
+  within a type the rows in the order a plain list of that type has (by id).
+  `next` pages through that whole order. `root` and `parent` cannot be used
+  together.
+- The type's filters apply inside the level: a request with `type` uses the
+  named filter or the type's default; without `type` each type uses its own
+  default (or the named filter, where the type has it). `hidden` counts the
+  rows of that level the filters left out.
+- A `parent` that names no object is not an error: the list is empty. A row
+  whose `parent` names an object that does not exist still lists under
+  `parent=<that id>`, and not under `root`.
+- `operad show <id>` prints `parent: <id>` under the row when it has one.
+- The MCP `list` tool takes `root` and `parent` too; see `docs/mcp.md`.
 
 ## Filtering a list
 

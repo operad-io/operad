@@ -65,7 +65,7 @@ describe("TuiClient", () => {
       }
 
       expect(await client(h).types()).toEqual({
-        types: [{ type: "item", title: "Item" }],
+        types: [{ type: "item", title: "Item", plugin: "tuitest" }],
       });
 
       const first = await client(h).objects("item");
