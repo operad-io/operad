@@ -9,6 +9,7 @@ import {
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { PluginRegistry } from "@operad-io/engine";
+import { createShellPlugin } from "@operad-io/shell";
 import {
   addPlan,
   addRepository,
@@ -73,7 +74,7 @@ async function fixture(): Promise<Fixture> {
     title: "Task",
     brief: "Change the README.",
   });
-  const registry = new PluginRegistry([createDevPlugin()], {
+  const registry = new PluginRegistry([createDevPlugin(), createShellPlugin()], {
     home: root,
     cwd: remote.repository,
     store,
@@ -372,5 +373,85 @@ describe("dev/worktree", () => {
     expect(settings.mainBranch).toBe("main");
     expect(settings.worktreeRoot).toBe(".operad-worktrees");
     expect(settings.worker.use).toBe("harness-radian/agent");
+  });
+});
+
+function runReverify(state: Fixture, runId: string) {
+  return state.registry.runStep("dev/reverify", {}, {
+    runId,
+    object: { type: "task", id: state.taskKey, data: {} },
+  });
+}
+
+describe("dev/reverify", () => {
+  test("a branch behind a non-conflicting main merges it and goes to verify, no work", async () => {
+    const state = await fixture();
+    await runWorktree(state, "run-1");
+    const path = worktreeOf(state);
+    await commitIn(path, "branch.txt", "work\n", "branch work");
+    await advanceMain(state.remote, "main.txt", "moved\n");
+    const before = await taskDataOf(state);
+
+    const result = await runReverify(state, "run-1");
+    expect(result.result).toBe("ready");
+    const mainSha = gitOrThrow(path, ["rev-parse", "--short", "origin/main"]);
+    expect(result.data?.message).toBe(`reverify: merged main ${mainSha}, checking again`);
+    expect(
+      git(path, ["merge-base", "--is-ancestor", "origin/main", "HEAD"]).ok,
+    ).toBe(true);
+    const task = await taskDataOf(state);
+    expect(task.attempts).toBe(before.attempts);
+    expect(task.attempt?.number).toBe(before.attempt?.number);
+    expect(JSON.stringify(task.attempt?.merged)).toContain(mainSha);
+    expect(task.brief).toContain(`reverify: merged main ${mainSha}, checking again`);
+
+    // The gate that follows checks the merged head, not the old branch tip.
+    const settingsPath = join(state.remote.repository, ".operad", "dev.json");
+    const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as object;
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        ...settings,
+        gate: { commands: ["test -f main.txt && test -f branch.txt"], commandTimeoutSecs: 60 },
+      }),
+    );
+    const merged = gitOrThrow(path, ["rev-parse", "HEAD"]);
+    const verified = await state.registry.runStep("dev/verify", {}, {
+      runId: "run-1",
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+    expect(verified.result).toBe("pass");
+    expect(verified.data?.verified).toBe(merged);
+    expect((await taskDataOf(state)).attempt?.verified).toBe(merged);
+  });
+
+  test("a conflicting main leaves the merge open and says so", async () => {
+    const state = await fixture();
+    await runWorktree(state, "run-1");
+    const path = worktreeOf(state);
+    await commitIn(path, "README.md", "# branch\n", "branch changes readme");
+    await advanceMain(state.remote, "README.md", "# main\n", "main changes readme");
+
+    const result = await runReverify(state, "run-1");
+    expect(result.result).toBe("conflict");
+    expect(mergeInProgress(path)).toBe(true);
+    expect(result.data?.files).toEqual(["README.md"]);
+    expect(result.data?.message).toBe("reverify: main conflicts, sending to work");
+    expect((await taskDataOf(state)).brief).toContain(
+      "reverify: main conflicts, sending to work",
+    );
+  });
+
+  test("a main that has not moved adds no merge commit", async () => {
+    const state = await fixture();
+    await runWorktree(state, "run-1");
+    const path = worktreeOf(state);
+    await commitIn(path, "branch.txt", "work\n", "branch work");
+    const head = gitOrThrow(path, ["rev-parse", "HEAD"]);
+
+    const result = await runReverify(state, "run-1");
+    expect(result.result).toBe("ready");
+    expect(gitOrThrow(path, ["rev-parse", "HEAD"])).toBe(head);
+    expect(result.data?.merged).toBeUndefined();
   });
 });

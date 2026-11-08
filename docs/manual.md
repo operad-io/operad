@@ -57,6 +57,8 @@ Both lists take effect the next time `operad mcp` starts. They do not change an
 action already running. The MCP server never offers the owner's actions as its
 own; `show` lists them separately so the lead can tell the owner what to run.
 
+`dev:reverify` merges the current main into the task branch first, then runs verify and review again with no worker. A clean merge goes straight to verify; a conflicting main sends the task to the worker.
+
 ### http
 
 | Key | Type | Default | What it does |
