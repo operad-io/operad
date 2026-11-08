@@ -59,6 +59,22 @@ own; `show` lists them separately so the lead can tell the owner what to run.
 
 `dev:reverify` merges the current main into the task branch first, then runs verify and review again with no worker. A clean merge goes straight to verify; a conflicting main sends the task to the worker.
 
+### Where the reviewer writes its report
+
+The reviewer runs in the task's gate worktree, and some agents (radian, for one)
+cannot write outside the folder they run in. So each reviewer call is told to
+write its report to `.operad/review/<run>-attempt-<n>-review-<round>-try-<k>.json`
+inside that worktree, a path that is new for every call (`k` counts the calls
+before it in the round). `dev` reads the report there, checks it, and keeps its
+own copy in the store under `dev/reviews/<run>/`; that copy is the record.
+`dev` never deletes, truncates or overwrites a file in the review workspace: it
+creates `.operad/review` when missing, and refuses to write through a link or
+over an existing file, failing the review with the path instead. The gate
+worktree is disposable and is replaced by the next gate step, which removes the
+reports with it. A reviewer that finishes without writing a report is shown as
+`could not write the report` with its last message; a file that fails the check
+is shown as `wrote an invalid report`.
+
 ### http
 
 | Key | Type | Default | What it does |

@@ -71,6 +71,9 @@ reviewTestHooks.afterCall = (run) => {
     process.kill(process.pid, "SIGKILL");
   }
 };
+reviewTestHooks.beforeCopy = () => {
+  if (crash === "before-copy") process.kill(process.pid, "SIGKILL");
+};
 reviewTestHooks.afterRunSaved = (run) => {
   if (crash === "after-first-saved" && run.role === "primary") {
     process.kill(process.pid, "SIGKILL");
