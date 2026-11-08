@@ -79,6 +79,7 @@ function writeDevJson(
   value: {
     readonly style?: IntegrationStyle;
     readonly keyCommands?: readonly unknown[];
+    readonly prepare?: readonly string[];
     readonly check?: Readonly<Record<string, number>>;
     readonly hooks?: readonly string[];
   },
@@ -89,6 +90,7 @@ function writeDevJson(
     `${JSON.stringify(
       {
         name: "repository",
+        ...(value.prepare === undefined ? {} : { prepare: value.prepare }),
         gate: { commands: ["true"], commandTimeoutSecs: 60 },
         integration: {
           style: value.style ?? "merge",
@@ -339,6 +341,27 @@ describe("dev/integrate", () => {
       "moved",
     );
     expect((await taskOf(state)).phase).toBe("merged");
+  });
+
+  test("prepare runs in the integration checkout before the key commands", async () => {
+    const state = await fixture({ style: "merge" });
+    writeDevJson(state.remote.repository, {
+      keyCommands: ["test -f .prepared"],
+      prepare: ["touch .prepared"],
+    });
+    expect((await integrate(state)).result).toBe("merged");
+  });
+
+  test("a failing prepare fails the integration with its reason and log", async () => {
+    const state = await fixture({ style: "merge" });
+    writeDevJson(state.remote.repository, {
+      keyCommands: ["true"],
+      prepare: ["echo nope >&2; exit 2"],
+    });
+    const result = await integrate(state);
+    expect(result.result).toBe("failed");
+    expect(result.data?.reason).toBe("prepare failed");
+    expect(readFileSync(String(result.data?.log), "utf8")).toContain("nope");
   });
 
   test("a key command that fails once and then passes lands with a note", async () => {

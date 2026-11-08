@@ -194,6 +194,12 @@
       "minLength": 1,
       "default": ".operad/worker-brief.md"
     },
+    "prepare": {
+      "description": "Shell lines run in every checkout dev makes (the worker's worktree, the gate checkout for verify and review, the integration checkout) after it is created or moved to a new commit and before any step uses it, for example installing dependencies. Output goes to the step's log; a failing line fails the step with reason \"prepare failed\".",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "default": []
+    },
     "gate": {
       "description": "The commands a task's gate runs on its commit and how long each may take.",
       "type": "object",

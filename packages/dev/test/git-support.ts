@@ -1,7 +1,7 @@
 /** Git scratch repositories for the worktree and work tests. */
 
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export interface GitResult {
   readonly ok: boolean;
@@ -70,6 +70,7 @@ export async function advanceMain(
   text: string,
   message = "main moves",
 ): Promise<void> {
+  await mkdir(dirname(join(setup.seed, file)), { recursive: true });
   await writeFile(join(setup.seed, file), text);
   gitOrThrow(setup.seed, ["add", file]);
   gitOrThrow(setup.seed, [...IDENTITY, "commit", "-qm", message]);
@@ -83,6 +84,7 @@ export async function commitIn(
   text: string,
   message: string,
 ): Promise<void> {
+  await mkdir(dirname(join(worktree, file)), { recursive: true });
   await writeFile(join(worktree, file), text);
   gitOrThrow(worktree, ["add", file]);
   gitOrThrow(worktree, [...IDENTITY, "commit", "-qm", message]);

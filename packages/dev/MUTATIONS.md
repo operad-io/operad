@@ -290,3 +290,11 @@ the row fields.
 | T-0053-M5 | packages/dev/src/views.ts | a removed repository's row said `active`, so the default filter kept it | `the repo type > a repository added or removed after start fires an event and appears or disappears` |
 | T-0053-M6 | packages/dev/src/service.ts | repositories stored under the old `repository` type were not carried over to `repo` | `the repo type > a repository stored before dev declared repo shows up as a repo object` |
 | T-0053-M7 | packages/dev/src/views.ts | the Overview named `main` instead of the repository's configured default branch | `the repo type > the Overview names the path, the default branch, dev.json, worker and reviewer` |
+| T-0095-M1 | packages/dev/src/gate.ts | verify did not run the prepare commands in the gate checkout | `prepare > runs once per checkout, before verify and before review, and the review prompt says so` |
+| T-0095-M2 | packages/dev/src/gate.ts | review did not run the prepare commands in the recreated gate checkout | `prepare > a failing prepare fails review before a reviewer starts` |
+| T-0095-M3 | packages/dev/src/gate.ts | the review prompt did not say the checkout is prepared | `prepare > runs once per checkout, before verify and before review, and the review prompt says so` |
+| T-0095-M4 | packages/dev/src/gate.ts | the gate checkout did not link its own workspace packages when no prepare is set | `prepare > a change spanning two packages > with no prepare command the checkout still links its own packages` |
+| T-0095-M5 | packages/dev/src/steps.ts | the worker's worktree was not prepared | `dev/worktree > prepare runs in the new worktree before the visit reports ready` |
+| T-0095-M6 | packages/dev/src/integrate.ts | the integration checkout was not prepared | `dev/integrate > prepare runs in the integration checkout before the key commands` |
+| T-0095-M7 | packages/dev/src/prepare.ts | a failing prepare command counted as a pass | `prepare > a failing prepare fails verify with its reason and log, and no gate command runs` |
+| T-0095-M8 | packages/dev/src/gate.ts | review did not prepare its recreated checkout, so the test a reviewer runs there could not resolve the branch's package | `prepare > a change spanning two packages > with a prepare command that installs, the test passes in the review checkout` |
