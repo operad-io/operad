@@ -8,6 +8,7 @@ import {
   type CheckPlaces,
 } from "../src/places.ts";
 import { runCheckWithRerun } from "../src/rerun.ts";
+import { validateDevSettings } from "../src/settings.ts";
 import { cleanupTempRoots, guardLockHandles, osTempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
@@ -226,3 +227,165 @@ describe("check places", () => {
 async function until(ready: () => boolean): Promise<void> {
   while (!ready()) await new Promise<void>((done) => setImmediate(done));
 }
+
+describe("repository check places", () => {
+  const repo = (name: string, places: number) => ({ name, path: `/r/${name}`, places });
+
+  /** Starts checks by name; each holds its place until the test releases it. */
+  function rig(home: string, rings: ReturnType<typeof bell>, watcher: ReturnType<typeof logWatcher>) {
+    const started: string[] = [];
+    const gates = new Map<string, Deferred>();
+    const run = (
+      name: string,
+      checks: number,
+      repository: ReturnType<typeof repo>,
+    ): Promise<string> =>
+      withCheckPlace(
+        { home, checks, repository, log: watcher.log, wait: rings.wait },
+        async () => {
+          started.push(name);
+          const gate = deferred();
+          gates.set(name, gate);
+          await gate.promise;
+          return name;
+        },
+      );
+    const release = (name: string): void => gates.get(name)?.resolve();
+    return { started, run, release };
+  }
+
+  test("two checks of a repository with places 1 take turns while another repository runs beside them", async () => {
+    const home = await osTempRoot();
+    const watcher = logWatcher();
+    const rings = bell();
+    const { started, run, release } = rig(home, rings, watcher);
+    const ios = repo("operad-ios", 1);
+    const one = run("ios1", 3, ios);
+    await until(() => started.includes("ios1"));
+    const two = run("ios2", 3, ios);
+    await watcher.seen("waiting for a check place of operad-ios: 1 in use");
+    const other = run("operad", 3, repo("operad", 2));
+    await until(() => started.includes("operad"));
+    expect(started).toEqual(["ios1", "operad"]);
+    release("ios1");
+    await one;
+    rings.ring();
+    await until(() => started.includes("ios2"));
+    release("ios2");
+    release("operad");
+    await Promise.all([two, other]);
+  });
+
+  test("the home limit holds with repository limits that would allow more", async () => {
+    const home = await osTempRoot();
+    const watcher = logWatcher();
+    const rings = bell();
+    const { started, run, release } = rig(home, rings, watcher);
+    const a = run("a", 1, repo("a", 2));
+    await until(() => started.includes("a"));
+    const b = run("b", 1, repo("b", 2));
+    await watcher.seen("waiting for a check place: 1 in use");
+    expect(started).toEqual(["a"]);
+    release("a");
+    await a;
+    rings.ring();
+    await until(() => started.includes("b"));
+    release("b");
+    await b;
+  });
+
+  test("a check waiting for its repository does not hold a home place", async () => {
+    const home = await osTempRoot();
+    const watcher = logWatcher();
+    const rings = bell();
+    const { started, run, release } = rig(home, rings, watcher);
+    const ios = repo("ios", 1);
+    const first = run("ios1", 2, ios);
+    await until(() => started.includes("ios1"));
+    const second = run("ios2", 2, ios);
+    await watcher.seen("waiting for a check place of ios: 1 in use");
+    // The home has two places; the waiting check holds none, so this one runs.
+    const third = run("operad", 2, repo("operad", 1));
+    await until(() => started.includes("operad"));
+    release("operad");
+    release("ios1");
+    await Promise.all([first, third]);
+    rings.ring();
+    await until(() => started.includes("ios2"));
+    release("ios2");
+    await second;
+  });
+
+  test("three checks with both limits at 1 finish without deadlock", async () => {
+    const home = await osTempRoot();
+    const watcher = logWatcher();
+    const rings = bell();
+    const { started, run, release } = rig(home, rings, watcher);
+    const ios = repo("ios", 1);
+    const all = [run("x", 1, ios), run("y", 1, ios), run("z", 1, repo("z", 1))];
+    for (let finished = 0; finished < 3; finished += 1) {
+      await until(() => started.length > finished);
+      const name = started[finished];
+      if (name === undefined) throw new Error("no check started");
+      release(name);
+      await all[["x", "y", "z"].indexOf(name)];
+      rings.ring();
+    }
+    expect((await Promise.all(all)).sort()).toEqual(["x", "y", "z"]);
+    expect(started.length).toBe(3);
+
+  });
+
+  test("a killed check frees its home place and its repository place", async () => {
+    const home = await osTempRoot();
+    const child = Bun.spawn({
+      cmd: [process.execPath, CHILD, home, "1", "ios", "1"],
+      stdout: "pipe",
+      stderr: "inherit",
+    });
+    try {
+      const reader = child.stdout.getReader();
+      const chunk = await reader.read();
+      expect(new TextDecoder().decode(chunk.value)).toBe("held\n");
+      reader.releaseLock();
+      const watcher = logWatcher();
+      const rings = bell();
+      let ran = false;
+      const waiting = withCheckPlace(
+        { home, checks: 1, repository: { name: "ios", path: "/r/ios", places: 1 }, log: watcher.log, wait: rings.wait },
+        () => {
+          ran = true;
+        },
+      );
+      await watcher.seen("waiting for a check place: 1 in use");
+      expect(ran).toBe(false);
+      child.kill("SIGKILL");
+      await child.exited;
+      rings.ring();
+      await waiting;
+      expect(ran).toBe(true);
+      // The repository's place is free too: the same repository can take it with room at home.
+      expect(
+        await withCheckPlace(
+          { home, checks: 2, repository: { name: "ios", path: "/r/ios", places: 1 }, log: () => {} },
+          () => "free",
+        ),
+      ).toBe("free");
+    } finally {
+      child.kill("SIGKILL");
+      await child.exited;
+    }
+  });
+});
+
+describe("gate.places setting", () => {
+  test("is an integer of 1 or more, and optional", () => {
+    expect(validateDevSettings({ name: "r", gate: { places: 1 } }).gate.places).toBe(1);
+    expect(validateDevSettings({ name: "r" }).gate.places).toBeUndefined();
+    for (const bad of [0, 1.5, "1"]) {
+      expect(() => validateDevSettings({ name: "r", gate: { places: bad } })).toThrow(
+        "gate.places",
+      );
+    }
+  });
+});
