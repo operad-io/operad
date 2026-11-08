@@ -139,6 +139,7 @@ describe("dev:rework and dev:reverify", () => {
       const after = taskData((await getTask(fixture.store, fixture.task.id)).data);
       expect(after.brief).toContain("## Rework 1 (lead)");
       expect(after.brief).toContain("cover the empty case");
+      expect(after.brief).toContain("] rework 1 — lead: cover the empty case");
       expect(after.phase).toBe("running");
       expect(after.reworkStreak).toBe(0);
     });
@@ -154,6 +155,7 @@ describe("dev:rework and dev:reverify", () => {
       expect(fixture.answers).toEqual([["reverify", undefined]]);
       const after = taskData((await getTask(fixture.store, fixture.task.id)).data);
       expect(after.phase).toBe("running");
+      expect(after.brief).toContain("] reverify");
       expect(after.attempt?.verify).toBeNull();
       expect(after.attempt?.review).toBeNull();
       expect(after.attempt?.verified).toBeNull();

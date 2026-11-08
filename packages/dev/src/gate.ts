@@ -314,7 +314,7 @@ export async function runVerify(
     commands,
     stepOptions(ctx, path),
     context.settings.check.rerun,
-    checkPlaces(ctx),
+    checkPlaces(ctx, context.repository, context.settings.gate.places),
   );
   await recordRerunPasses(ctx.store, checked.passedOnRerun);
   const { outcome, hostError, note } = checked;
@@ -2074,6 +2074,7 @@ export async function runRework(
   }
   const source = gateSource(task);
   const pieces: string[] = [];
+  let reason: string | undefined;
 
   if (source === "review") {
     const review = attempt?.review;
@@ -2084,12 +2085,15 @@ export async function runRework(
         finding.pre_existing !== true &&
         atOrAbove(finding.severity, level),
     );
-    if (findings.length > 0) {
+    const first = findings[0];
+    if (first !== undefined) {
+      reason = findingText(first).replace(/^- /, "").replaceAll("`", "");
       pieces.push(
         "The review failed with these findings:",
         findings.map(findingText).join("\n"),
       );
     } else {
+      reason = `the review failed: ${review?.message ?? "no review report was produced"}`;
       pieces.push(
         `The review failed: ${review?.message ?? "no review report was produced"}`,
       );
@@ -2100,6 +2104,7 @@ export async function runRework(
       typeof verify?.command === "string" &&
       verify.command.length > 0
     ) {
+      reason = `the verify command failed: ${verify.command}`;
       pieces.push(
         `The verify command failed: \`${verify.command}\``,
         ...(typeof verify.log === "string" && verify.log.length > 0
@@ -2107,6 +2112,7 @@ export async function runRework(
           : []),
       );
     } else {
+      reason = `the gate failed: ${verify?.message ?? "verify recorded no reason"}`;
       pieces.push(
         `The gate failed: ${verify?.message ?? "verify recorded no reason"}`,
       );
@@ -2114,7 +2120,12 @@ export async function runRework(
   }
   pieces.push(REWORK_INSTRUCTION);
 
-  const withRework = appendRework(task, source, pieces.join("\n\n"));
+  const withRework = appendRework(
+    task,
+    source,
+    pieces.join("\n\n"),
+    reason,
+  );
   const streak = (task.reworkStreak ?? 0) + 1;
   const again = streak <= context.settings.maxAutoRework;
   const record: ReworkRecord = {

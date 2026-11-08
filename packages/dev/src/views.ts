@@ -16,6 +16,7 @@ import {
   planData,
   planNote,
   planState,
+  renderChanges,
   repositoryData,
   splitBrief,
   taskData,
@@ -51,6 +52,20 @@ function waitNote(task: TaskData): string | undefined {
   return typeof message === "string" && message.trim().length > 0
     ? message.trim()
     : undefined;
+}
+
+/** The longest worker name a list row shows; the full name is in Metrics. */
+export const ROW_WORKER_CHARS = 16;
+
+/** The last attempt's worker for a row: the name only, cut when it is long. */
+function workerNote(task: TaskData): string | undefined {
+  const worker = task.attempt?.worker;
+  if (typeof worker !== "string") return undefined;
+  const flat = worker.replace(/\s+/g, " ").trim();
+  if (flat.length === 0) return undefined;
+  return flat.length <= ROW_WORKER_CHARS
+    ? flat
+    : `${flat.slice(0, ROW_WORKER_CHARS - 1)}…`;
 }
 
 function cell(text: string): string {
@@ -135,7 +150,11 @@ export const taskViews: ObjectViews = {
           ? undefined
           : `area: ${task.area}`;
     const note =
-      [waitNote(task) ?? costNote(task.cost, task.costQuality), areaNote]
+      [
+        waitNote(task) ?? costNote(task.cost, task.costQuality),
+        workerNote(task),
+        areaNote,
+      ]
         .filter((part): part is string => part !== undefined)
         .join("  ") || undefined;
     return {
@@ -176,7 +195,7 @@ export const taskViews: ObjectViews = {
       };
     }
     if (sectionId === "rework") return { markdown: parts.reworks };
-    if (sectionId === "changes") return { markdown: parts.changes };
+    if (sectionId === "changes") return { markdown: renderChanges(parts.changes) };
     if (sectionId === "log") return { markdown: await workerLog(ctx, task) };
     if (sectionId === "diff") return diffSection(ctx, object, options.cursor);
     if (sectionId === "metrics") return { markdown: metrics(ctx, object) };
@@ -616,13 +635,14 @@ function metrics(ctx: ViewContext, object: StoredObject): string {
     cursor = page.next;
   }
   if (byAttempt.size === 0) return "_No attempts yet._";
+  const entries = [...byAttempt.values()].sort(
+    (left, right) => left.number - right.number,
+  );
   const lines = [
     `| attempt | ${METRIC_STEPS.join(" | ")} | cost | tokens | review |`,
     `| --- | ${METRIC_STEPS.map(() => "---").join(" | ")} | --- | --- | --- |`,
   ];
-  for (const entry of [...byAttempt.values()].sort(
-    (left, right) => left.number - right.number,
-  )) {
+  for (const entry of entries) {
     const last = entry.last;
     const cost = costNote(last?.cost, last?.costQuality) ?? "-";
     const tokens =
@@ -636,6 +656,52 @@ function metrics(ctx: ViewContext, object: StoredObject): string {
     });
     lines.push(
       `| ${entry.number} | ${times.join(" | ")} | ${cost} | ${tokens} | ${review} |`,
+    );
+  }
+  const perWorker = workerTable(entries);
+  return perWorker === undefined ? lines.join("\n") : `${lines.join("\n")}\n\n${perWorker}`;
+}
+
+/**
+ * Cost, time and first-pass result per worker, summed over the attempts. An
+ * attempt from before pools has no worker and is left out; no table when none
+ * has one. First pass: the attempt's first review round passed.
+ */
+function workerTable(entries: readonly AttemptMetrics[]): string | undefined {
+  const rows = new Map<
+    string,
+    { attempts: number; cost: number; costed: boolean; ms: number; reviewed: number; first: number }
+  >();
+  for (const entry of entries) {
+    const worker = entry.last?.worker;
+    if (typeof worker !== "string" || worker.length === 0) continue;
+    const row = rows.get(worker) ?? {
+      attempts: 0, cost: 0, costed: false, ms: 0, reviewed: 0, first: 0,
+    };
+    row.attempts += 1;
+    const cost = entry.last?.cost;
+    if (typeof cost === "number" && Number.isFinite(cost)) {
+      row.cost += cost;
+      row.costed = true;
+    }
+    for (const spent of entry.spent.values()) row.ms += spent;
+    const review = entry.last?.review;
+    if (review !== undefined && review !== null) {
+      row.reviewed += 1;
+      if ((review.result === "passed" || review.result === "pass") && (review.round ?? 1) <= 1) row.first += 1;
+    }
+    rows.set(worker, row);
+  }
+  if (rows.size === 0) return undefined;
+  const lines = [
+    "| worker | attempts | cost | time | first pass |",
+    "| --- | --- | --- | --- | --- |",
+  ];
+  for (const [worker, row] of [...rows].sort(([a], [b]) => a.localeCompare(b))) {
+    const cost = row.costed ? `$${row.cost.toFixed(2)}` : "-";
+    const first = row.reviewed === 0 ? "-" : `${row.first}/${row.reviewed}`;
+    lines.push(
+      `| ${cell(worker)} | ${row.attempts} | ${cost} | ${seconds(row.ms)} | ${first} |`,
     );
   }
   return lines.join("\n");

@@ -303,7 +303,7 @@ describe("dev plans and tasks", () => {
       title: "One",
       brief: "Original body",
     });
-    expect(taskData(task.data).brief).toContain("## Changes\n- created");
+    expect(taskData(task.data).brief).toMatch(/## Changes\n- \[[^\]]+\] created/);
     expect(briefBody(taskData(task.data).brief)).toBe("Original body");
     await addRework(store, task.id, "review", "Please fix it");
     const withRework = taskData((await getTask(store, task.id)).data);
@@ -313,8 +313,8 @@ describe("dev plans and tasks", () => {
     const edited = taskData((await getTask(store, task.id)).data);
     expect(briefBody(edited.brief)).toBe("New body");
     expect(edited.brief).toContain("## Rework 1 (review)");
-    expect(changesBody(edited.brief)).toContain("- rework 1 (review)");
-    expect(changesBody(edited.brief)).toContain("- brief edited");
+    expect(changesBody(edited.brief)).toContain("] rework 1 — review: Please fix it");
+    expect(changesBody(edited.brief)).toContain("] brief edited");
   });
 
   test("edit and update refuse a task after it started", async () => {

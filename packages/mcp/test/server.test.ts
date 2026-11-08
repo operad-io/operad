@@ -24,6 +24,9 @@ const CLI_ENTRY = fileURLToPath(
 const pluginPath = fileURLToPath(
   new URL("../../engine/test/fixtures/plugins/presentation.ts", import.meta.url),
 );
+const treePluginPath = fileURLToPath(
+  new URL("../../engine/test/fixtures/plugins/tree.ts", import.meta.url),
+);
 const devPluginPath = fileURLToPath(
   new URL("../../dev/src/index.ts", import.meta.url),
 );
@@ -1131,6 +1134,45 @@ describe("operad mcp --claude-channel", () => {
       expect(closed.code).toBe(2);
       expect(closed.err).toContain(message);
       expect(closed.out).toBe("");
+    }
+  });
+});
+
+describe("operad mcp hierarchy", () => {
+  test("list takes root and parent, with or without a type", async () => {
+    const { home } = await makeHome({ plugins: [treePluginPath] });
+    putObject(home, "group", "g1", { title: "G1" });
+    putObject(home, "leaf", "a", { state: "open", parent: "group:g1" });
+    putObject(home, "leaf", "b", { state: "merged", parent: "group:g1" });
+    putObject(home, "leaf", "d", { state: "open" });
+    const child = start(home);
+    try {
+      await child.request(1, "initialize", {
+        protocolVersion: PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: { name: "test", version: "0.0.0" },
+      });
+      child.notify("notifications/initialized");
+      const rowsOf = async (id: number, args: Record<string, unknown>) => {
+        const response = await child.request(id, "tools/call", { name: "list", arguments: args });
+        return {
+          rows: (structuredOf(response).rows as { id: string; parent?: string }[]),
+          hidden: structuredOf(response).hidden,
+        };
+      };
+      expect((await rowsOf(2, { root: true })).rows.map((row) => row.id)).toEqual(["g1", "d"]);
+      expect((await rowsOf(3, { type: "leaf", root: true })).rows.map((row) => row.id)).toEqual([
+        "d",
+      ]);
+      const kids = await rowsOf(4, { parent: "group:g1" });
+      expect(kids.rows.map((row) => row.id)).toEqual(["a"]);
+      expect(kids.rows[0]?.parent).toBe("group:g1");
+      expect(kids.hidden).toBe(1);
+      expect((await rowsOf(5, { type: "leaf", parent: "group:nothing" })).rows).toEqual([]);
+      const bad = await child.request(6, "tools/call", { name: "list", arguments: {} });
+      expect(resultOf(bad).isError).toBe(true);
+    } finally {
+      await child.close();
     }
   });
 });

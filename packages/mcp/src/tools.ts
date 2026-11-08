@@ -17,6 +17,7 @@ import {
   listPending,
   listRunning,
   messageOf,
+  ViewError,
   type Actor,
 } from "@operad-io/engine";
 import { InvalidToolArguments, validateArguments } from "./arguments.ts";
@@ -87,13 +88,22 @@ export const TOOLS = [
     description: "List one object type, with the kernel's waiting and running flags.",
     inputSchema: {
       type: "object",
-      required: ["type"],
       additionalProperties: false,
       properties: {
         type: {
           type: "string",
           minLength: 1,
-          description: "An object type, such as task.",
+          description:
+            "An object type, such as task. Optional with root or parent: then every type is listed.",
+        },
+        root: {
+          type: "boolean",
+          description: "Only rows with no parent.",
+        },
+        parent: {
+          type: "string",
+          minLength: 1,
+          description: "Only rows whose parent is this object id.",
         },
         cursor: {
           type: "string",
@@ -300,10 +310,21 @@ export async function runTool(
 ): Promise<ToolResult> {
   switch (name) {
     case "list": {
-      const type = String(args.type);
-      const page: ViewListPage = await context.views.list(type, {
+      const type = args.type === undefined ? undefined : String(args.type);
+      const root = args.root === true;
+      const parent = args.parent === undefined ? undefined : String(args.parent);
+      if (type === undefined && !root && parent === undefined) {
+        throw new ViewError("args", "list needs a type, root or parent");
+      }
+      const level = {
+        ...(root ? { root } : {}),
+        ...(parent === undefined ? {} : { parent }),
         ...(args.cursor === undefined ? {} : { cursor: String(args.cursor) }),
-      });
+      };
+      const page: ViewListPage =
+        root || parent !== undefined
+          ? await context.views.listTree(type, level)
+          : await context.views.list(String(type), level);
       return {
         content: [text(listMarkdown(page))],
         structuredContent: page,

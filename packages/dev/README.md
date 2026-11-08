@@ -360,6 +360,17 @@ time limit; its `gate.commandTimeoutSecs` starts when it runs. Places are lock
 files under `<home>/dev/check-places/`, so a check whose process dies gives its
 place back. A rerun of a failed check takes a place again.
 
+A repository can also limit itself: `gate.places` in its `dev.json` (an integer
+of 1 or more, unset by default) is the most checks of that repository that run
+at once. It is for checks that cannot share a machine, such as full UI test
+runs on a simulator, so that they do not hold back the checks of other
+repositories. A check takes a place of the home and a place of its repository,
+waits without a time limit until both are free, and says which it waits for:
+`waiting for a check place of operad-ios: 1 in use`. It takes them in one order
+(home, then repository) and gives the home place back while it waits for the
+repository's, so two checks cannot wait for each other. The repository's places
+are lock files in the same directory, so a dead check gives both back.
+
 The built-in brief says to work only in the worktree, commit whole pieces, run
 the repository's verify command and end with a summary.
 
@@ -372,3 +383,23 @@ refused when the file is read and again before a worktree is created.
 
 A plan shows a request and a table of its tasks. A task shows its brief, its
 rework sections when it has some, and its changes.
+
+The Changes section is the task's story in a few lines, readable without the
+history. Each entry shows the time it happened (`HH:MM`, the serve host's local
+time) and, where there is one, why, in one line of about 160 characters; a date
+line starts each new day:
+
+```
+2026-11-08
+
+21:05  rework 1 — review: packages/dev/src/gate.ts:1059 major: The review-report setup follows …
+21:31  merged origin/main 83163e5 into the branch (clean)
+21:40  merged as 0bce8fa
+```
+
+A rework says who asked (review, verify, integrate, conflict, lead, owner) and
+the first finding or failing check line. A reverify, reject, cancel or lead or
+owner action carries its note when it has one, a wait says what it waits for,
+and a merge names the commit. The time and the reason are stored with the entry
+when the event happens (in the task's brief); an entry written before that has
+no time and is shown as it was.
