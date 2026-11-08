@@ -46,7 +46,7 @@ function paramsOf(params: unknown): AnnounceParams {
 function stoppedStep(task: TaskData, fallback: string): string {
   const lines = task.brief.replace(/\r\n/g, "\n").split("\n");
   for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const match = /^- waiting: (\S+) stopped$/.exec(lines[index] ?? "");
+    const match = /^- (?:\[[^\]]*\] )?waiting: (\S+) stopped$/.exec(lines[index] ?? "");
     if (match !== null) return match[1] ?? fallback;
   }
   return fallback;

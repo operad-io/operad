@@ -371,3 +371,23 @@ refused when the file is read and again before a worktree is created.
 
 A plan shows a request and a table of its tasks. A task shows its brief, its
 rework sections when it has some, and its changes.
+
+The Changes section is the task's story in a few lines, readable without the
+history. Each entry shows the time it happened (`HH:MM`, the serve host's local
+time) and, where there is one, why, in one line of about 160 characters; a date
+line starts each new day:
+
+```
+2026-11-08
+
+21:05  rework 1 — review: packages/dev/src/gate.ts:1059 major: The review-report setup follows …
+21:31  merged origin/main 83163e5 into the branch (clean)
+21:40  merged as 0bce8fa
+```
+
+A rework says who asked (review, verify, integrate, conflict, lead, owner) and
+the first finding or failing check line. A reverify, reject, cancel or lead or
+owner action carries its note when it has one, a wait says what it waits for,
+and a merge names the commit. The time and the reason are stored with the entry
+when the event happens (in the task's brief); an entry written before that has
+no time and is shown as it was.

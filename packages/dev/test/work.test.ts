@@ -561,7 +561,7 @@ describe("dev/work after main moved", () => {
     const task = await taskDataOf(state);
     const short = gitOrThrow(worktreeOf(state), ["rev-parse", "--short", "origin/main"]);
     expect(task.attempt?.merged).toEqual({ ref: "origin/main", commit: short, conflict: false });
-    expect(task.brief).toContain(`- merged origin/main ${short}`);
+    expect(task.brief).toContain(`] merged origin/main ${short} into the branch (clean)`);
   });
 
   test("a clean merge and no change by the worker is nothing", async () => {
@@ -588,7 +588,7 @@ describe("dev/work after main moved", () => {
     expect(conflict.result).toBe("conflict");
     const task = await taskDataOf(state);
     expect(task.attempt?.merged).toMatchObject({ conflict: true });
-    expect(task.brief).toContain("- merging origin/main");
+    expect(task.brief).toContain("into the branch (conflict)");
     await runWork(state, "rework-work");
     const { prompt } = readRecord(state);
     expect(prompt).toContain("merge of the latest main in progress");

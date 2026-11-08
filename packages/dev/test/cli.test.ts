@@ -155,8 +155,8 @@ describe("operad with the dev plugin", () => {
       "--raw",
     ]);
     expect(changes.code).toBe(0);
-    expect(changes.out).toContain("- created");
-    expect(changes.out).toContain("- ready");
+    expect(changes.out).toMatch(/- \d\d:\d\d {2}created/);
+    expect(changes.out).toMatch(/- \d\d:\d\d {2}ready/);
   });
 
   test("show and dev:confirm take an old id, and an id is matched exactly", async () => {

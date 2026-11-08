@@ -680,17 +680,71 @@ function insertBeforeChanges(brief: string, block: string): string {
   return `${before}\n\n${block}\n\n${after}`;
 }
 
-/** Appends one line to the trailing `## Changes` section, creating it. */
-export function appendChange(brief: string, line: string): string {
+/** The clock a Changes entry's time comes from; a test replaces it. */
+export const changeClock: { now: () => number } = { now: () => Date.now() };
+
+const REASON_LIMIT = 160;
+
+/** One line of at most about 160 characters: whitespace collapsed, cut with an ellipsis. */
+export function oneLine(text: string, limit: number = REASON_LIMIT): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length <= limit ? flat : `${flat.slice(0, limit - 1).trimEnd()}…`;
+}
+
+/**
+ * Appends one line to the trailing `## Changes` section, creating it. The
+ * entry keeps the time it happened (UTC, ISO) and the reason when there is one.
+ */
+export function appendChange(
+  brief: string,
+  line: string,
+  reason?: string,
+): string {
   const text = brief.replace(/\r\n/g, "\n").trimEnd();
   const { changes } = briefHeadings(text);
-  const entry = `- ${line.trim()}`;
+  const why = reason === undefined ? "" : oneLine(reason);
+  const said = oneLine(line, Number.MAX_SAFE_INTEGER);
+  const at = new Date(changeClock.now()).toISOString();
+  const entry = `- [${at}] ${said}${why.length === 0 ? "" : ` — ${why}`}`;
   if (changes < 0) {
     return text.length === 0
       ? `## Changes\n${entry}`
       : `${text}\n\n## Changes\n${entry}`;
   }
   return `${text}\n${entry}`;
+}
+
+const TIMED_ENTRY = /^- \[(\d{4}-\d{2}-\d{2}T[^\]]+Z)\] (.*)$/;
+
+function two(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+/**
+ * The Changes section for a reader: each timed entry as `HH:MM  text` in this
+ * host's local time, with a date line before the first entry of each day.
+ * An entry without a time stays as it was written.
+ */
+export function renderChanges(changes: string): string {
+  const out: string[] = [];
+  let day = "";
+  for (const line of changes.split("\n")) {
+    if (/^##\s+Changes\s*$/.test(line)) continue;
+    const match = TIMED_ENTRY.exec(line);
+    const when = match === null ? new Date(Number.NaN) : new Date(match[1] ?? "");
+    if (match === null || Number.isNaN(when.getTime())) {
+      if (line.trim().length > 0) out.push(line);
+      continue;
+    }
+    const date = `${when.getFullYear()}-${two(when.getMonth() + 1)}-${two(when.getDate())}`;
+    if (date !== day) {
+      day = date;
+      if (out.length > 0) out.push("");
+      out.push(`**${date}**`, "");
+    }
+    out.push(`- ${two(when.getHours())}:${two(when.getMinutes())}  ${match[2] ?? ""}`);
+  }
+  return out.join("\n");
 }
 
 function reworkCount(brief: string): number {
@@ -712,21 +766,30 @@ function reworkCount(brief: string): number {
   return count;
 }
 
+/** The word a Changes entry uses for who asked, where it differs from the section's source. */
+const ASKER: Readonly<Record<string, string>> = {
+  "conflict with main": "conflict",
+  integration: "integrate",
+};
+
 /** Appends `## Rework <n> (<source>)`, then records the change. */
 export function appendRework(
   brief: string,
   source: string,
   text: string,
+  reason?: string,
 ): string;
 export function appendRework(
   task: TaskData,
   source: string,
   text: string,
+  reason?: string,
 ): TaskData;
 export function appendRework(
   value: string | TaskData,
   source: string,
   text: string,
+  reason?: string,
 ): string | TaskData {
   const cleanSource = source.trim();
   if (cleanSource.length === 0) {
@@ -737,7 +800,14 @@ export function appendRework(
   const body = text.trim();
   const block = `## Rework ${number} (${cleanSource})${body.length === 0 ? "" : `\n\n${body}`}`;
   const withRework = insertBeforeChanges(brief, block);
-  const next = appendChange(withRework, `rework ${number} (${cleanSource})`);
+  const asked = ASKER[cleanSource] ?? cleanSource;
+  const firstLine =
+    body.split("\n").find((line) => line.trim().length > 0) ?? "";
+  const why = oneLine(reason ?? firstLine.replace(/^\s*[-*]\s+/, ""));
+  const next = appendChange(
+    withRework,
+    `rework ${number} — ${asked}${why.length === 0 ? "" : `: ${why}`}`,
+  );
   return typeof value === "string" ? next : { ...value, brief: next };
 }
 
