@@ -196,9 +196,7 @@ function renderCode(
       lines.push({ text: body, code: true });
       continue;
     }
-    if (diff && (codeLine.startsWith("+++") || codeLine.startsWith("---"))) {
-      lines.push({ text: styled(body, ANSI.bold), code: true });
-    } else if (diff && codeLine.startsWith("+")) {
+    if (diff && codeLine.startsWith("+")) {
       lines.push({ text: styled(body, ANSI.green), code: true });
     } else if (diff && codeLine.startsWith("-")) {
       lines.push({ text: styled(body, ANSI.red), code: true });

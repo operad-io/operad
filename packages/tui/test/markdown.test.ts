@@ -112,7 +112,7 @@ describe("the TUI Markdown", () => {
 
   test("a four-backtick diff colours + and - lines and keeps indentation", () => {
     const lines = markdownLines(
-      "````diff\n docs/manual.md | 2 +-\n docs/other.md | 1 +\n@@ -1 +1 @@\n-old\n+```\n+new\n````",
+      "````diff\n--- a/f\n+++ b/f\n docs/manual.md | 2 +-\n docs/other.md | 1 +\n@@ -1 +1 @@\n-old\n+```\n+new\n````",
       TUI_PALETTE.dark,
     );
     const colourOf = (needle: string): string | undefined => {
@@ -124,6 +124,8 @@ describe("the TUI Markdown", () => {
     expect(colourOf("+new")).toBe(ints(TUI_PALETTE.dark.add));
     expect(colourOf("+```")).toBe(ints(TUI_PALETTE.dark.add));
     expect(colourOf("-old")).toBe(ints(TUI_PALETTE.dark.remove));
+    expect(colourOf("+++ b/f")).toBe(ints(TUI_PALETTE.dark.add));
+    expect(colourOf("--- a/f")).toBe(ints(TUI_PALETTE.dark.remove));
     expect(colourOf("@@")).toBe(ints(TUI_PALETTE.dark.accent));
     const texts = lines.map((line) => line.text);
     expect(texts).toContain("   docs/manual.md | 2 +-");

@@ -269,3 +269,4 @@ the row fields.
 | T-0089-M2 | packages/engine/src/markdown.ts | a closing fence ignored its length (any fence of the same character closed) | `markdown fences > a ``` line inside a ```` fence is content` |
 | T-0089-M3 | packages/engine/src/markdown.ts | a closing fence ignored its character (a backtick fence closed a tilde fence) | `markdown fences > closing needs the same character and a length at least the opening's` |
 | T-0089-M4 | packages/engine/src/markdown.ts | the language was the whole info string, not its first word | `markdown fences > only the first word of the info string is the language` |
+| T-0089-M5 | packages/engine/src/markdown.ts | `---`/`+++` diff headers were drawn bold again instead of red/green | `markdown > a four-backtick diff colours + and - lines and keeps indentation` |
