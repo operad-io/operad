@@ -330,12 +330,16 @@ export function readableLog(lines: readonly string[]): string[] {
       continue;
     }
     if (record !== undefined && (kind === "result" || kind === "Result")) {
+      if (kind === "Result") {
+        const said = stringField(record, ["text"]);
+        if (said !== undefined) out.push(`**agent:** ${said.replace(/\s+/g, " ")}`);
+      }
       const parts = [
-        stringField(record, kind === "Result" ? ["stop_reason", "text"] : ["result"]),
+        stringField(record, kind === "Result" ? ["stop_reason"] : ["result"]),
         tokenText(record.usage),
         costText(record.cost),
       ].filter((part): part is string => part !== undefined);
-      out.push(`result: ${parts.join(" · ")}`);
+      if (parts.length > 0 || kind !== "Result") out.push(`result: ${parts.join(" · ")}`);
       continue;
     }
     if (record !== undefined && ["session", "rate_limit", "agent_settled", "grant_use"].includes(kind ?? "")) {

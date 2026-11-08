@@ -184,3 +184,4 @@ the row fields.
 | T-0086-M4 | packages/dev/src/rerun.ts | the shell quoting of a name was dropped | `dev/verify reruns only the failed tests > names with quotes and regex characters reach the rerun intact` |
 | T-0086-M5 | packages/dev/src/rerun.ts | a failed rerun counted as a pass | `dev/verify reruns only the failed tests > a rerun that fails fails the check` |
 | T-0086-M6 | packages/dev/src/reruns.ts | the count was set to 1 instead of added to | `dev/verify reruns only the failed tests > the count accumulates across tasks` |
+| T-0063-M4 | packages/dev/src/views.ts | a radian `Result` with a stop reason dropped its assistant text | `a radian Result line with text keeps the assistant text and the metadata` |

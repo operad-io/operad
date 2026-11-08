@@ -50,6 +50,11 @@ describe("dev views", () => {
     expect(readableLog([line])).toEqual(["result: end_turn · 5 in / 6 out tokens · $0.0123"]);
   });
 
+  test("a radian Result line with text keeps the assistant text and the metadata", () => {
+    const line = JSON.stringify({ type: "Result", text: "All done.\nBye", stop_reason: "end_turn", usage: { input: 5, output: 6 } });
+    expect(readableLog([line])).toEqual(["**agent:** All done. Bye", "result: end_turn · 5 in / 6 out tokens"]);
+  });
+
   test("a plan row shows the derived state and merged/total", async () => {
     const { store, plan, task } = await setup();
     const confirmed = await getPlan(store, plan.id);
