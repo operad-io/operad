@@ -104,6 +104,10 @@ const filteredPath = fileURLToPath(
   new URL("../../engine/test/fixtures/plugins/filtered.ts", import.meta.url),
 );
 
+const treePath = fileURLToPath(
+  new URL("../../engine/test/fixtures/plugins/tree.ts", import.meta.url),
+);
+
 const INTERNAL = ["fact", "effect", "node", "graph", "decide", "evolve"];
 
 function assertUserWords(text: string): void {
@@ -668,5 +672,55 @@ describe("operad presentation commands", () => {
     const quotedNext = quoted.text().split("\n").find((line) => line.startsWith("next: "));
     expect(quotedNext).toContain("--filter all --repo 'my repo' --cursor ");
 
+  });
+});
+
+describe("operad list hierarchy", () => {
+  test("--root and --parent list one level; show prints the parent", async () => {
+    const { root, home } = await makeHome();
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({
+        plugins: [treePath],
+        store: { backend: "jsonl", path: join(root, "store") },
+      }),
+    );
+    const store = freshStore(home);
+    store.put("group", "g1", { title: "G1" }, "seed");
+    store.put("leaf", "a", { state: "open", title: "Alpha", parent: "group:g1" }, "seed");
+    store.put("leaf", "b", { state: "merged", title: "Beta", parent: "group:g1" }, "seed");
+    store.put("leaf", "d", { state: "open", title: "Delta" }, "seed");
+
+    const flat = capture();
+    expect(await main(["list", "leaf", "--filter", "all"], { home, io: flat.io })).toBe(0);
+    expect(flat.text()).toContain("Alpha");
+    expect(flat.text()).toContain("Delta");
+
+    const top = capture();
+    expect(await main(["list", "leaf", "--root"], { home, io: top.io })).toBe(0);
+    expect(top.text()).toContain("Delta");
+    expect(top.text()).not.toContain("Alpha");
+
+    const kids = capture();
+    expect(await main(["list", "leaf", "--parent", "group:g1"], { home, io: kids.io })).toBe(0);
+    expect(kids.text()).toContain("a  open  Alpha");
+    expect(kids.text()).not.toContain("Delta");
+    expect(kids.text().trimEnd().split("\n").pop()).toBe("1 hidden (--filter all to show)");
+
+    const none = capture();
+    expect(await main(["list", "leaf", "--parent", "group:zzz"], { home, io: none.io })).toBe(0);
+    expect(none.text()).toContain('no objects of type "leaf"');
+
+    const both = capture();
+    expect(
+      await main(["list", "leaf", "--root", "--parent", "group:g1"], { home, io: both.io }),
+    ).not.toBe(0);
+
+    const shown = capture();
+    expect(await main(["show", "leaf:a"], { home, io: shown.io })).toBe(0);
+    expect(shown.text()).toContain("parent: group:g1");
+    const topShown = capture();
+    expect(await main(["show", "leaf:d"], { home, io: topShown.io })).toBe(0);
+    expect(topShown.text()).not.toContain("parent:");
   });
 });

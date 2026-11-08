@@ -438,6 +438,7 @@ function createHandler(
       const types: {
         type: string;
         title: string;
+        plugin: string;
         filters?: readonly { name: string; states?: readonly string[] | undefined }[];
         defaultFilter?: string;
       }[] = [];
@@ -449,6 +450,7 @@ function createHandler(
         types.push({
           type: entry.type,
           title: displayNameOf(entry.type),
+          plugin: entry.plugin,
           ...(filters === undefined
             ? {}
             : { filters: filters.filters, defaultFilter: filters.default }),
@@ -469,14 +471,30 @@ function createHandler(
 
     if (method === "GET" && path === "/v1/objects") {
       const type = url.searchParams.get("type");
-      if (type === null || type.trim().length === 0) {
+      const cursor = url.searchParams.get("cursor") ?? undefined;
+      const parent = url.searchParams.get("parent") ?? undefined;
+      const root = url.searchParams.has("root");
+      const named = type !== null && type.trim().length > 0 ? type : undefined;
+      if (named === undefined && !root && parent === undefined) {
+        return errorResponse(400, "args", "the query needs a type, root or parent");
+      }
+      const filterName = url.searchParams.get("filter") ?? undefined;
+      if (root || parent !== undefined) {
+        return json(
+          await options.views.listTree(named, {
+            root,
+            ...(parent === undefined ? {} : { parent }),
+            ...(cursor === undefined ? {} : { cursor }),
+            ...(filterName === undefined ? {} : { filter: filterName }),
+          }),
+        );
+      }
+      if (named === undefined) {
         return errorResponse(400, "args", "the query needs a type");
       }
-      const cursor = url.searchParams.get("cursor") ?? undefined;
-      const filter =
-        url.searchParams.get("filter") ?? options.views.defaultFilterOf(type);
+      const filter = filterName ?? options.views.defaultFilterOf(named);
       return json(
-        await options.views.list(type, {
+        await options.views.list(named, {
           ...(cursor === undefined ? {} : { cursor }),
           ...(filter === undefined ? {} : { filter }),
         }),

@@ -21,7 +21,7 @@ import {
   whereFingerprint,
   WhereError,
 } from "../plugin/paging.ts";
-import { ALL_FILTER, filterShows, typeFilters } from "../plugin/filters.ts";
+import { ALL_FILTER, filterShows, typeFilters, type TypeFilter } from "../plugin/filters.ts";
 import { ActionArgsError, noteProperty, validateActionArgs } from "../plugin/action-schema.ts";
 import type {
   ActionTypeDefinition,
@@ -69,6 +69,8 @@ export interface ViewRow {
   readonly mark?: RowMark | undefined;
   /** A short text shown after the state. */
   readonly badge?: string | undefined;
+  /** The object one level up, exactly as the plugin's row names it. */
+  readonly parent?: string | undefined;
   /** A person wait is open on this object. */
   readonly waiting: boolean;
   /** The object's run is working. */
@@ -175,6 +177,16 @@ export interface ViewListPage {
   readonly next?: string | undefined;
   /** How many rows of the type the filter left out; absent without a filter or on `all`. */
   readonly hidden?: number | undefined;
+}
+
+/** What a hierarchy list adds to the flat list's options. */
+export interface TreeListOptions extends ListOptions {
+  /** Which filter to apply; each type's default filter when absent. */
+  readonly filter?: string | undefined;
+  /** Only rows with no parent. */
+  readonly root?: boolean | undefined;
+  /** Only rows whose parent is this object id. */
+  readonly parent?: string | undefined;
 }
 
 /** An action that ran. */
@@ -414,11 +426,194 @@ export class Views {
    */
   async list(
     type: string,
-    options: ListOptions & { readonly filter?: string | undefined } = {},
+    options: TreeListOptions = {},
   ): Promise<ViewListPage> {
-    const { filter, ...listOptions } = options;
+    const tree = options;
+    const { filter, root: _root, parent: _parent, ...listOptions } = options;
+    if (tree.root === true || tree.parent !== undefined) {
+      return this.listTree(type, options);
+    }
     if (filter !== undefined) return this.listFiltered(type, filter, listOptions);
     return this.listPlain(type, listOptions);
+  }
+
+  /**
+   * The rows of one level of the hierarchy: `root` keeps rows with no parent,
+   * `parent` keeps rows whose parent is that object. Without a type it covers
+   * every type that has views, in the order the plugins declare them, and each
+   * type's rows in the order its own list has. A parent that names no object
+   * lists nothing. A filter applies per type (each type's default when none is
+   * named; a type that does not declare the named filter shows every row), and
+   * `hidden` counts the rows of the level the filter left out.
+   */
+  async listTree(
+    type: string | undefined,
+    options: TreeListOptions,
+  ): Promise<ViewListPage> {
+    const root = options.root === true;
+    const parent = options.parent;
+    if (root && parent !== undefined) {
+      throw new ViewError("args", "root and parent cannot be combined");
+    }
+    if (!root && (parent === undefined || parent.trim().length === 0)) {
+      throw new ViewError("args", "parent needs an object id");
+    }
+    const label = type === undefined ? "list" : `list "${type}"`;
+    const types: string[] = [];
+    if (type === undefined) {
+      for (const entry of this.registry.objectTypes()) {
+        if (types.includes(entry.type)) continue;
+        if (this.registry.viewsFor(entry.type) === undefined) continue;
+        types.push(entry.type);
+      }
+    } else {
+      if (this.registry.viewsFor(type) === undefined) {
+        throw new ViewError(
+          "no-views",
+          `no loaded plugin shows objects of type "${type}"`,
+        );
+      }
+      types.push(type);
+    }
+    const fingerprint = whereFingerprint(options.where ?? {});
+    let after: { readonly t: number; readonly id: string } | undefined;
+    if (options.cursor !== undefined) {
+      try {
+        const cursor = decodeCursor(options.cursor, label);
+        const mark = cursor.after;
+        if (
+          cursor.kind !== "tree" ||
+          (cursor.type ?? undefined) !== type ||
+          (cursor.filter ?? undefined) !== options.filter ||
+          cursor.where !== fingerprint ||
+          (cursor.root === true) !== root ||
+          (cursor.parent ?? undefined) !== parent ||
+          !isRecord(mark) ||
+          typeof mark.t !== "number" ||
+          typeof mark.id !== "string"
+        ) {
+          throw new CursorError(`${label}: the cursor was made for a different list`);
+        }
+        after = { t: mark.t, id: mark.id };
+      } catch (error) {
+        if (error instanceof CursorError) {
+          throw new ViewError("cursor", error.message, { cause: error });
+        }
+        throw error;
+      }
+    }
+    const limit = (() => {
+      try {
+        return pageLimit(options.limit);
+      } catch (error) {
+        throw new ViewError("args", messageOf(error), { cause: error });
+      }
+    })();
+
+    const accepted = root || parent === undefined ? undefined : await this.parentForms(parent);
+    const flags = await this.allRunFlags();
+    const shown: { readonly t: number; readonly id: string; readonly row: ViewRow }[] = [];
+    let hidden = 0;
+    let counted = false;
+    for (const [t, name] of types.entries()) {
+      const owner = this.registry.viewsFor(name);
+      if (owner === undefined) continue;
+      const declared = typeFilters(this.registry.objectType(name));
+      let chosen: TypeFilter | undefined;
+      const wanted = options.filter ?? declared?.default;
+      if (wanted !== undefined) {
+        chosen = declared?.filters.find((candidate) => candidate.name === wanted);
+        if (chosen === undefined && type !== undefined) {
+          throw new ViewError(
+            "filter",
+            declared === undefined
+              ? `type "${name}": this type has no filters`
+              : `type "${name}": unknown filter "${wanted}"; allowed: ${declared.filters
+                  .map((candidate) => candidate.name)
+                  .join(", ")}`,
+          );
+        }
+        if (chosen?.name === ALL_FILTER) chosen = undefined;
+      }
+      if (chosen !== undefined) counted = true;
+      const withScope = await this.scopeShown(owner.plugin, name, owner.views);
+      let cursor: string | undefined;
+      do {
+        let page;
+        try {
+          page = await this.store.list(name, {
+            ...(options.where === undefined ? {} : { where: options.where }),
+            ...(options.index === undefined ? {} : { index: options.index }),
+            ...(cursor === undefined ? {} : { cursor }),
+            limit: MAX_PAGE_LIMIT,
+          });
+        } catch (error) {
+          if (error instanceof WhereError || error instanceof CursorError) {
+            throw new ViewError(
+              error instanceof CursorError ? "cursor" : "where",
+              error.message,
+              { cause: error },
+            );
+          }
+          throw error;
+        }
+        for (const object of page.objects) {
+          const row = this.listRow(owner.plugin, name, object, flags, withScope);
+          const rowParent = row.parent;
+          const inLevel =
+            accepted === undefined ? rowParent === undefined : rowParent !== undefined && accepted.has(rowParent);
+          if (!inLevel) continue;
+          if (chosen === undefined || filterShows(chosen, row.state)) {
+            shown.push({ t, id: object.id, row });
+          } else {
+            hidden += 1;
+          }
+        }
+        cursor = page.next;
+      } while (cursor !== undefined);
+    }
+
+    let start = 0;
+    if (after !== undefined) {
+      const resume = after;
+      const next = shown.findIndex(
+        (entry) => entry.t > resume.t || (entry.t === resume.t && entry.id > resume.id),
+      );
+      start = next >= 0 ? next : shown.length;
+    }
+    const slice = shown.slice(start, start + limit);
+    const last = slice[slice.length - 1];
+    const more = start + limit < shown.length && last !== undefined;
+    return {
+      rows: slice.map((entry) => entry.row),
+      ...(more
+        ? {
+            next: encodeCursor({
+              kind: "tree",
+              type: type ?? null,
+              filter: options.filter ?? null,
+              where: fingerprint,
+              root,
+              parent: parent ?? null,
+              after: { t: last.t, id: last.id },
+            }),
+          }
+        : {}),
+      ...(counted ? { hidden } : {}),
+    };
+  }
+
+  /** The spellings a row's `parent` may use for the object this id names. */
+  private async parentForms(parent: string): Promise<ReadonlySet<string>> {
+    const forms = new Set<string>([parent]);
+    try {
+      const resolved = await this.resolve(parent);
+      forms.add(objectKey(resolved.type, resolved.id));
+      forms.add(resolved.id);
+    } catch {
+      // An id that names nothing, or names two things, matches only as written.
+    }
+    return forms;
   }
 
   private async listFiltered(
@@ -1356,11 +1551,20 @@ export class Views {
         );
       }
     }
+    const parent = outcome.parent;
+    if (parent !== undefined && (typeof parent !== "string" || parent.length === 0)) {
+      return this.failRow(
+        plugin,
+        object,
+        new Error("row parent must be a non-empty object id"),
+      );
+    }
     return {
       id,
       title,
       state,
       ...(note === undefined ? {} : { note }),
+      ...(typeof parent === "string" ? { parent } : {}),
       ...(scope === undefined ? {} : { scope }),
       ...(mark === undefined ? {} : { mark }),
       ...(typeof badge === "string" ? { badge } : {}),
