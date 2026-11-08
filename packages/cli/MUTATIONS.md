@@ -34,3 +34,9 @@ the row fields.
 | serve-stop-M5 | packages/cli/src/serve-stop.ts | `--timeout 0` was accepted | `operad serve stop > --timeout takes a whole number of seconds, at least 1` |
 | serve-stop-M6 | packages/cli/src/serve-stop.ts | the signal was SIGKILL, not SIGTERM | `operad serve stop > stops a real serve: the lock is gone and the process has exited`, `--timeout: a serve that ignores SIGTERM is an error that says how to force it` |
 | pending-row-M7 | packages/cli/src/main.ts | `operad pending` did not print the row's title | `operad pending shows the object's title > a line with the title, the rest unchanged, and the row in --json` |
+
+## T-0068 — `operad running` line
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0068-M1 | packages/cli/src/main.ts | the step time column showed the run age | `operad running line > object, step, step time, title, then the run age` |

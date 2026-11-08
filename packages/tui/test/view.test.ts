@@ -201,6 +201,10 @@ describe("the TUI view", () => {
           step: "work",
           startedAt: 0,
           elapsedMs: 10,
+          object: null,
+          title: null,
+          stepStartedAt: null,
+          stepElapsedMs: null,
           queued: null,
           stepLabel: "work",
         })),
@@ -225,7 +229,7 @@ describe("the TUI view", () => {
     state = reduce(state, {
       type: "running",
       items: [
-        { runId: "run-1", flow: "my-flow", step: "w", startedAt: 0, elapsedMs: 1, queued: null, stepLabel: "w" },
+        { runId: "run-1", flow: "my-flow", step: "w", startedAt: 0, elapsedMs: 1, object: null, title: null, stepStartedAt: null, stepElapsedMs: null, queued: null, stepLabel: "w" },
       ],
     });
     state = reduce(state, { type: "key", key: "2" });

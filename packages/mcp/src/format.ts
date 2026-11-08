@@ -169,12 +169,12 @@ function elapsed(ms: number): string {
 export function runningMarkdown(running: readonly RunningItem[]): string {
   if (running.length === 0) return "Nothing is running.\n";
   const lines = [
-    "| run | flow | step | elapsed |",
-    "| --- | --- | --- | --- |",
+    "| object | title | flow | step | step time | run |",
+    "| --- | --- | --- | --- | --- | --- |",
   ];
   for (const item of running) {
     lines.push(
-      `| ${cell(item.runId)} | ${cell(item.flow)} | ${cell(item.step ?? "-")} | ${elapsed(item.elapsedMs)} |`,
+      `| ${cell(item.object ?? item.runId)} | ${cell(item.title ?? "")} | ${cell(item.flow)} | ${cell(item.stepLabel ?? "-")} | ${item.stepElapsedMs === null ? "-" : elapsed(item.stepElapsedMs)} | ${elapsed(item.elapsedMs)} |`,
     );
   }
   return `${lines.join("\n")}\n`;

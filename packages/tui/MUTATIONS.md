@@ -117,3 +117,9 @@ the row fields.
 | T-0033-M15 | packages/tui/src/app.ts | a live batch queued before a 401 still fetched | `live updates in the shell > a batch queued before a 401 makes no fetch` |
 | T-0033-M16 | packages/tui/src/app.ts | a transport failure replaced the 401 state | `live updates in the shell > a transport failure after the 401 does not replace it or restart retries` |
 | T-0033-M17 | packages/tui/src/app.ts | a failed live-section refresh was dropped silently | `live updates in the shell > a live section that fails to refresh shows its error` |
+
+## T-0068 — running rows show the object
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0068-M1 | packages/tui/src/state.ts | the running row showed the run id instead of the object | `the TUI reducer` state test (running row with an object) |
