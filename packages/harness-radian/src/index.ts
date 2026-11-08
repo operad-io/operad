@@ -6,7 +6,7 @@
  */
 
 import { stat } from "node:fs/promises";
-import { firstErrorLine, readProfile, summarizeCall, type AccessProfile } from "@operad-io/access-match";
+import { firstErrorLine, readProfile, secretValuesOf, summarizeCall, type AccessProfile } from "@operad-io/access-match";
 import {
   defineFlow,
   definePlugin,
@@ -79,8 +79,8 @@ function firstString(record: Record<string, unknown>, keys: readonly string[]): 
  * write: `tool_execution_start` with the command or path summary and its start
  * time, `tool_execution_end` with the duration and an error's first line. Any
  * other line, and a tool line it cannot read, is returned as radian wrote it.
- * The summary is cut, has environment values removed, and is `[redacted]`
- * where the run's access profile refuses the call.
+ * The summary is cut, has secret values masked, and says only that the call
+ * was denied where the run's access profile refuses it.
  */
 export function radianLogLine(
   line: string,
@@ -88,6 +88,7 @@ export function radianLogLine(
   open: Map<string, { at: number; name: string }>,
   cwd: string,
   profile: AccessProfile = {},
+  secrets: readonly string[] = [],
 ): string {
   const kind = radianToolEvent(line);
   if (kind === undefined) return line;
@@ -108,7 +109,7 @@ export function radianLogLine(
     const toolName = name ?? "tool";
     open.set(id, { at, name: toolName });
     const args = value.input ?? value.args ?? value.arguments ?? nested.input ?? nested.args ?? nested.arguments;
-    const summary = summarizeCall(profile, toolName, args, cwd);
+    const summary = summarizeCall(profile, toolName, args, cwd, { secrets });
     return JSON.stringify({
       type: "tool_execution_start",
       toolCallId: id,
@@ -513,6 +514,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
               : text(ctx.settings.command, `${at}: settings.command`);
 
           const readAccess = readProfile(ctx.access ?? {});
+          const logSecrets = await secretValuesOf(ctx.secrets);
           const logProfile: AccessProfile = readAccess.ok ? readAccess.profile : {};
 
           const who: UsageSource = {
@@ -579,7 +581,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             clock: defaults.clock,
             toolEvent: radianToolEvent,
             onLine(line) {
-              const writing = jsonl.push(radianLogLine(line, defaults.now, openTools, cwd, logProfile));
+              const writing = jsonl.push(radianLogLine(line, defaults.now, openTools, cwd, logProfile, logSecrets));
               const parsed = parseResult(line);
               if (parsed !== undefined) result = parsed;
               return writing;

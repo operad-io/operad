@@ -88,3 +88,4 @@ setup it depends on, in the order they were recorded. The root
 | T-0063-M1 | packages/harness-claude/src/worker.ts | `tool_execution_end` wrote `durationMs: 0` | `a Bash call logs its command, its start time and its duration` |
 | T-0063-M2 | packages/harness-claude/src/worker.ts | a message's thinking block was written into its `text` | `an assistant message logs its first 300 characters as one paragraph, without thinking` |
 | T-0063-M30 | packages/harness-claude/src/worker.ts | the blocked line and the call end logged the real refusal reason | `a Read under denyPaths is denied, and Read elsewhere is allowed` |
+| T-0063-M31 | packages/harness-claude/src/worker.ts | the summary ignored `secretValues` | `a secret of the operad store sent as secretValues is masked in the logged command` |

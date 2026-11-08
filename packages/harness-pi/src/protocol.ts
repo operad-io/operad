@@ -27,6 +27,8 @@ export interface WorkerInput {
   readonly access?: Readonly<Record<string, unknown>> | undefined;
   /** The longest one bash call may run, in seconds; unset means `DEFAULT_BASH_TIMEOUT_SECS`. */
   readonly bashTimeoutSecs?: number | undefined;
+  /** Secret values of the operad secret store; a log line shows `***` where one appears. */
+  readonly secretValues?: readonly string[] | undefined;
 }
 
 export interface WorkerUsage {
@@ -159,6 +161,11 @@ export function parseInput(value: unknown): ParsedInput {
     return { ok: false, message: "bashTimeoutSecs must be a positive integer" };
   }
 
+  const secretValues = value["secretValues"];
+  if (secretValues !== undefined && (!Array.isArray(secretValues) || !secretValues.every((v): v is string => typeof v === "string"))) {
+    return { ok: false, message: "secretValues must be an array of strings" };
+  }
+
   const access = value["access"];
   if (access !== undefined && !isRecord(access)) {
     return { ok: false, message: "access must be an object" };
@@ -183,6 +190,7 @@ export function parseInput(value: unknown): ParsedInput {
       thinkingLevel,
       access,
       bashTimeoutSecs,
+      secretValues,
     },
   };
 }

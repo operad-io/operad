@@ -33,4 +33,5 @@ the row fields.
 | T-0025-M8 | `packages/harness-radian/src/index.ts` | the step ran radian when the profile had a one-time permission it cannot enforce | `harness-radian/agent > a one-time permission is refused before radian runs, naming radian` |
 | T-0025-M14 | `packages/harness-radian/src/index.ts` | a resumed run that answered with another session was accepted | `harness-radian/agent > a resumed run that answers with another session fails as session_missing` |
 | T-0063-M1 | packages/harness-radian/src/index.ts | `radianLogLine` returned radian's raw line instead of the rewritten one | `harness-radian/agent > tool lines carry the command summary, the duration and an error's first line` |
-| T-0063-M2 | packages/harness-radian/src/index.ts | `radianLogLine` summarized with an empty profile instead of the run's | `harness-radian/agent > a tool call the access profile refuses is redacted in the log` |
+| T-0063-M2 | packages/harness-radian/src/index.ts | `radianLogLine` summarized with an empty profile instead of the run's | `harness-radian/agent > a tool call the access profile refuses is only said to be denied in the log` |
+| T-0063-M3 | packages/harness-radian/src/index.ts | `radianLogLine` ignored the store secrets | `harness-radian/agent > a secret of the operad store is masked in the logged command` |

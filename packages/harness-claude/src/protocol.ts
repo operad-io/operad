@@ -23,6 +23,8 @@ export interface WorkerInput {
   readonly budgetUsd?: number | undefined;
   /** The longest a Bash call may run in the foreground, in seconds; unset means `DEFAULT_BASH_TIMEOUT_SECS`. */
   readonly bashTimeoutSecs?: number | undefined;
+  /** Secret values of the operad secret store; a log line shows `***` where one appears. */
+  readonly secretValues?: readonly string[] | undefined;
 }
 
 /** A gate such as a full test run must finish in the foreground; claude's own default is 120 s. */
@@ -143,6 +145,7 @@ export const INPUT_FIELDS = [
   "maxTurns",
   "budgetUsd",
   "bashTimeoutSecs",
+  "secretValues",
 ] as const;
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -193,6 +196,11 @@ export function parseInput(value: unknown): ParsedInput {
     effort = known;
   }
 
+  const secretValues = value["secretValues"];
+  if (secretValues !== undefined && (!Array.isArray(secretValues) || !secretValues.every((v): v is string => typeof v === "string"))) {
+    return { ok: false, message: "secretValues must be an array of strings" };
+  }
+
   const maxTurns = value["maxTurns"];
   if (maxTurns !== undefined && (typeof maxTurns !== "number" || !Number.isInteger(maxTurns) || maxTurns < 1)) {
     return { ok: false, message: "maxTurns must be a positive integer" };
@@ -232,6 +240,7 @@ export function parseInput(value: unknown): ParsedInput {
       maxTurns,
       budgetUsd,
       bashTimeoutSecs,
+      secretValues,
     },
   };
 }

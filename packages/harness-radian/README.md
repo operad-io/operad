@@ -39,10 +39,10 @@ The step rewrites radian's `ToolExecutionStarted` and `ToolExecutionSettled`
 journal lines as `tool_execution_start` and `tool_execution_end`, the lines
 `harness-claude` and `harness-pi` write. The start carries `at` and `input`
 (the command, first 500 characters, or the path or main argument; environment
-assignment values are removed); the end carries `durationMs` and, for an
+assignment values and secret values are masked); the end carries `durationMs` and, for an
 error, its first line as `error`. The tool name, call id and arguments are
 read from `toolName`, `toolCallId` and `input` (also `tool`, `args` and
-`id`), at the top of the line or under `data`. A summary the run's
-access profile refuses is written as `[redacted]`.
+`id`), at the top of the line or under `data`. A call the run's
+access profile denies is written as `<tool> denied by the access profile`.
 Tool output is never written. The dev task's Log section renders these lines
 like the other harnesses'.

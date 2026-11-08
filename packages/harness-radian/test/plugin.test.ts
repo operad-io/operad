@@ -139,17 +139,23 @@ describe("harness-radian/agent", () => {
       toolCallId: "t1",
       toolName: "Bash",
       at: 1_000,
-      input: "token=… make test",
+      input: "token=*** make test",
     });
     expect(records[1]).toMatchObject({ type: "tool_execution_end", durationMs: 72_000, isError: true, error: "boom" });
     expect(text).not.toContain("supersecret");
     expect(text).not.toContain("SECRET OUTPUT");
   });
 
-  test("a tool call the access profile refuses is redacted in the log", async () => {
+  test("a secret of the operad store is masked in the logged command", () => {
+    const line = JSON.stringify({ type: "ToolExecutionStarted", toolCallId: "t1", toolName: "Bash", input: { command: "curl store-secret-9" } });
+    const out = radianLogLine(line, () => 5, new Map(), "/work", {}, ["store-secret-9"]);
+    expect(JSON.parse(out)).toMatchObject({ input: "curl ***" });
+  });
+
+  test("a tool call the access profile refuses is only said to be denied in the log", async () => {
     const line = JSON.stringify({ type: "ToolExecutionStarted", toolCallId: "t1", toolName: "Read", input: { file_path: "/secrets/key" } });
     const out = radianLogLine(line, () => 5, new Map(), "/work", { denyPaths: ["/secrets"] });
-    expect(JSON.parse(out)).toMatchObject({ type: "tool_execution_start", input: "[redacted]" });
+    expect(JSON.parse(out)).toMatchObject({ type: "tool_execution_start", input: "Read denied by the access profile" });
     expect(out).not.toContain("/secrets/key");
   });
 

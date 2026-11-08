@@ -36,3 +36,4 @@ the row fields.
 | T-0045-M4 | packages/harness-pi/src/protocol.ts | `parseInput` accepted a `bashTimeoutSecs` of 0 | `parseInput refuses a bashTimeoutSecs that is 0, negative, fractional or not a number, and names the field` |
 | T-0063-M1 | packages/harness-pi/src/worker.ts | `tool_execution_end` wrote `durationMs: 0` | `a bash call logs its command, its start time and its duration, and no output` |
 | T-0063-M30 | packages/harness-pi/src/worker.ts | the blocked line and the call end logged the real refusal reason | `a read of a denied path is blocked; an allowed read runs` |
+| T-0063-M31 | packages/harness-pi/src/worker.ts | the summary ignored `secretValues` | `a secret of the operad store sent as secretValues is masked in the logged command` |

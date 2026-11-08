@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { firstErrorLine, messageSummary, summarizeCall } from "../src/index.ts";
+import { firstErrorLine, messageSummary, secretValuesOf, summarizeCall } from "../src/index.ts";
 
 const CWD = "/work";
 
@@ -22,23 +22,71 @@ test("another tool shows its main argument, or nothing", () => {
   expect(summarizeCall({}, "Bash", "not an object", CWD)).toBeUndefined();
 });
 
-test("a call the profile refuses is redacted, and environment values never show", () => {
-  expect(summarizeCall({ denyPaths: ["/secrets"] }, "Read", { file_path: "/secrets/k" }, CWD)).toBe("[redacted]");
-  expect(summarizeCall({}, "Bash", { command: "A_KEY=abc B=\"x y\" make; Z_1='q' run" }, CWD)).toBe(
-    "A_KEY=… B=… make; Z_1=… run",
-  );
+const NOT_SHOWN = "<command not shown: could not read it safely>";
+const ENV = { OPERAD_API_KEY: "key-value-123", MY_PASSWORD: "pw-value-456", SHORT_TOKEN: "abc", HOME: "/home/someone" };
+
+// One row per rule: the command a worker ran -> what the log says.
+const COMMANDS: readonly (readonly [string, string, string])[] = [
+  // rule 1: known secret values are masked wherever they appear
+  ["env secret by value", "curl -H key-value-123 x", "curl -H *** x"],
+  ["env secret in a second place", "echo pw-value-456 pw-value-456", "echo *** ***"],
+  ["env secret under 6 characters stays", "echo abc", "echo abc"],
+  ["store secret by value", "echo from-the-store", "echo ***"],
+  ["env value of a name that is not secret stays", "ls /home/someone", "ls /home/someone"],
+  // rule 2: leading assignments keep the name, value shown as ***
+  ["uppercase assignment", "A_KEY=abc make", "A_KEY=*** make"],
+  ["lowercase assignment", "token=supersecret make test", "token=*** make test"],
+  ["several assignments", "A=1 b='x y' c=\"p q\" make", "A=*** b=*** c=*** make"],
+  ["quoted fragments", "token='super secret'\"more\" make test", "token=*** make test"],
+  ["escaped space", "token=super\\ secret make test", "token=*** make test"],
+  ["assignment after the command word is not leading", "make X=1", "make X=1"],
+  ["unbalanced single quote", "echo 'oops", NOT_SHOWN],
+  ["unbalanced double quote", "A=1 echo \"oops", NOT_SHOWN],
+  ["trailing backslash", "A=1 echo \\", NOT_SHOWN],
+  // rule 3: constructs the reader does not understand
+  ["command substitution", "token=$(printf supersecret) make test", NOT_SHOWN],
+  ["backticks", "token=`printf supersecret` make", NOT_SHOWN],
+  ["process substitution", "x=<(cat f) make", NOT_SHOWN],
+  ["heredoc", "x=<<EOF make", NOT_SHOWN],
+  ["arithmetic", "x=$((1+2)) make", NOT_SHOWN],
+  // rule 4: nothing else is redacted by pattern
+  ["a substitution outside an assignment", "echo $(whoami) AWS_SECRET=zzz", "echo $(whoami) AWS_SECRET=zzz"],
+  ["a flag that looks like a token", "tool --token=abcdef", "tool --token=abcdef"],
+];
+
+for (const [label, command, shown] of COMMANDS) {
+  test(`bash command: ${label}`, () => {
+    expect(summarizeCall({}, "Bash", { command }, CWD, { env: ENV, secrets: ["from-the-store"] })).toBe(shown);
+  });
+}
+
+test("a secret is also masked in a path summary", () => {
+  expect(summarizeCall({}, "Read", { file_path: "/w/key-value-123.txt" }, CWD, { env: ENV })).toBe("/w/***.txt");
 });
 
-test("lowercase environment values never show", () => {
-  expect(summarizeCall({}, "Bash", { command: "token=supersecret make test" }, CWD)).toBe("token=… make test");
+test("the process environment is the default", () => {
+  process.env["OPERAD_TEST_SUMMARY_TOKEN"] = "process-env-value";
+  try {
+    expect(summarizeCall({}, "Bash", { command: "echo process-env-value" }, CWD)).toBe("echo ***");
+  } finally {
+    delete process.env["OPERAD_TEST_SUMMARY_TOKEN"];
+  }
 });
 
-test("an environment value of shell-quoted fragments is hidden whole", () => {
-  expect(summarizeCall({}, "Bash", { command: `token='super secret'"more" make test` }, CWD)).toBe("token=… make test");
+test("a store's values are read, and an unreadable store has none", async () => {
+  const store = {
+    names: async () => ["a", "b"],
+    get: async (name: string) => (name === "a" ? { reveal: () => "va" } : undefined),
+  };
+  expect(await secretValuesOf(store)).toEqual(["va"]);
+  expect(await secretValuesOf({ names: async () => { throw new Error("x"); }, get: async () => undefined })).toEqual([]);
 });
 
-test("a shell-escaped space does not end an environment value", () => {
-  expect(summarizeCall({}, "Bash", { command: "token=super\\ secret make test" }, CWD)).toBe("token=… make test");
+test("a call the profile denies is logged as denied, never its arguments or reason", () => {
+  const profile = { denyPaths: ["/secrets"], denyCommands: ["rm"] };
+  expect(summarizeCall(profile, "Read", { file_path: "/secrets/k" }, CWD)).toBe("Read denied by the access profile");
+  expect(summarizeCall(profile, "Bash", { command: "rm -rf /w" }, CWD)).toBe("Bash denied by the access profile");
+  expect(summarizeCall(profile, "Grep", { pattern: "x", path: "/secrets" }, CWD)).toBe("Grep denied by the access profile");
 });
 
 test("an error shows its first non-empty line and a message its first 300 characters", () => {

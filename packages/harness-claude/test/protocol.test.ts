@@ -560,7 +560,7 @@ test("a Bash command that denyCommands refuses is denied with the reason, logged
   expect(answer["behavior"]).toBe("deny");
   expect(String(answer["message"])).toContain('denyCommands rule "rm"');
   expect(run.lines.slice(0, 3)).toEqual([
-    { type: "tool_execution_start", toolCallId: "tool-1", toolName: "Bash", at: expect.any(Number), input: "[redacted]" },
+    { type: "tool_execution_start", toolCallId: "tool-1", toolName: "Bash", at: expect.any(Number), input: "Bash denied by the access profile" },
     { type: "blocked", toolName: "Bash", reason: "refused by the access profile" },
     {
       type: "tool_execution_end",
@@ -890,8 +890,8 @@ test("a call the access profile refuses, and an environment value, are not logge
     ],
   });
   const { start } = toolLines(run);
-  expect(start[0]?.["input"]).toBe("[redacted]");
-  expect(start[1]?.["input"]).toBe("API_TOKEN=… make test");
+  expect(start[0]?.["input"]).toBe("Read denied by the access profile");
+  expect(start[1]?.["input"]).toBe("API_TOKEN=*** make test");
   expect(run.stdout).not.toContain("hunter2");
   expect(run.stdout).not.toContain("/secrets/key");
 });
@@ -905,4 +905,18 @@ test("an assistant message logs its first 300 characters as one paragraph, witho
   expect(String(line?.["text"]).length).toBe(300);
   expect(String(line?.["text"]).startsWith("first second yyy")).toBe(true);
   expect(run.stdout).not.toContain("PRIVATE THOUGHT");
+});
+
+test("a secret of the operad store sent as secretValues is masked in the logged command", async () => {
+  const s = setup();
+  s.input["secretValues"] = ["store-secret-9"];
+  const run = await runFake(s, {
+    steps: [
+      { say: systemInit() },
+      { hook: "PreToolUse", toolName: "Bash", toolUseId: "b1", input: { command: "curl -H store-secret-9 x" } },
+      { say: result() },
+    ],
+  });
+  expect(toolLines(run).start[0]?.["input"]).toBe("curl -H *** x");
+  expect(run.stdout).not.toContain("store-secret-9");
 });

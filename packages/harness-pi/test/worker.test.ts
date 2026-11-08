@@ -732,8 +732,8 @@ test("a path the access profile refuses, and an environment value, are not logge
     { text: "ok" },
   ]);
   const { start } = toolLines(run);
-  expect(start[0]?.["input"]).toBe("[redacted]");
-  expect(start[1]?.["input"]).toBe("API_TOKEN=… true");
+  expect(start[0]?.["input"]).toBe("read denied by the access profile");
+  expect(start[1]?.["input"]).toBe("API_TOKEN=*** true");
   expect(run.raw.join("\n")).not.toContain("hunter2");
 });
 
@@ -743,4 +743,15 @@ test("an assistant message logs at most 300 characters of its text", async () =>
   const line = run.lines.find((l) => l["type"] === "message_end");
   expect(String(line?.["text"]).length).toBe(300);
   expect(String(line?.["text"]).startsWith("line one line two zzz")).toBe(true);
+});
+
+test("a secret of the operad store sent as secretValues is masked in the logged command", async () => {
+  const s = setup();
+  s.input["secretValues"] = ["store-secret-9"];
+  const run = await runFake(s, [
+    { text: "", toolCall: { name: "bash", arguments: { command: "curl -H store-secret-9 x" } } },
+    { text: "ok" },
+  ]);
+  expect(toolLines(run).start[0]?.["input"]).toBe("curl -H *** x");
+  expect(JSON.stringify(toolLines(run).start)).not.toContain("store-secret-9");
 });

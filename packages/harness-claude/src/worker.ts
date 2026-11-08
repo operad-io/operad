@@ -162,7 +162,7 @@ export async function runWorker(
     if (open.has(id)) return;
     const startedAt = now();
     open.set(id, { name, startedAt });
-    const summary = summarizeCall(profile, name, toolInput, input.cwd);
+    const summary = summarizeCall(profile, name, toolInput, input.cwd, { secrets: input.secretValues });
     io.line({
       type: "tool_execution_start",
       toolCallId: id,
