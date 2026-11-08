@@ -14,7 +14,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { StandingContext, StandingItem } from "@operad-io/engine";
 import { isRecord } from "./model.ts";
 import { listRepositories } from "./service.ts";
@@ -76,6 +76,13 @@ export function loadedPackages(home: string, codeRoot: string): ReadonlySet<stri
       const module = entry.module;
       if (typeof module === "string" && module.startsWith("@operad-io/")) {
         names.add(module.slice("@operad-io/".length));
+      } else if (typeof module === "string" && (module.startsWith(".") || isAbsolute(module))) {
+        // A module given as a path counts when it lies in a package of the code root.
+        const inside = relative(join(codeRoot, "packages"), resolve(home, module));
+        const name = inside.split(sep)[0];
+        if (name !== undefined && name.length > 0 && name !== ".." && !isAbsolute(inside)) {
+          names.add(name);
+        }
       }
     }
   } catch {

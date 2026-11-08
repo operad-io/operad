@@ -343,6 +343,25 @@ describe("a followed merge and the code serve has loaded", () => {
     }
   });
 
+  test("a plugin loaded by a path to a package of the clone counts as loaded", async () => {
+    const fixture = await setup();
+    const { path, branch, repository } = await mainClone(fixture);
+    serveStartedAt(fixture.root, 1);
+    writeFileSync(
+      join(fixture.root, "config.json"),
+      JSON.stringify({ plugins: { dev: { module: join(path, "packages/dev/src/index.ts"), enabled: true } } }),
+    );
+    const testHooks = await import("../src/integrate.ts");
+    testHooks.integrateTestHooks.codeRoot = path;
+    try {
+      const sha = commitOnSide(path, branch, "packages/dev/src/p.ts");
+      followMain(repository, fixture.root, branch, sha);
+      expect((await fixture.registry.standing()).map((item) => item.id)).toEqual(["serve-older"]);
+    } finally {
+      testHooks.integrateTestHooks.codeRoot = undefined;
+    }
+  });
+
   test("a merge that changes a schema serve validates with raises the item", async () => {
     const fixture = await setup();
     const { path, branch, repository } = await mainClone(fixture);
