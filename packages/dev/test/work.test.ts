@@ -542,3 +542,70 @@ realTest(
     expect(task.attempt?.sessionId).not.toBeUndefined();
   },
 );
+
+describe("dev/work after main moved", () => {
+  const worktreeOf = (state: Fixture) =>
+    join(state.remote.repository, ".operad-worktrees", state.taskId);
+  const visit = (state: Fixture, runId: string) =>
+    state.registry.runStep("dev/worktree", {}, {
+      runId,
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+
+  test("a rework gets main's commit, and the attempt and Changes say so", async () => {
+    const state = await fixture("nothing");
+    await advanceMain(state.remote, "main.txt", "moved\n", "main moves");
+    const prepared = await visit(state, "rework-run");
+    expect(prepared.result).toBe("ready");
+    expect(readFileSync(join(worktreeOf(state), "main.txt"), "utf8")).toBe("moved\n");
+    const task = await taskDataOf(state);
+    const short = gitOrThrow(worktreeOf(state), ["rev-parse", "--short", "origin/main"]);
+    expect(task.attempt?.merged).toEqual({ ref: "origin/main", commit: short, conflict: false });
+    expect(task.brief).toContain(`- merged origin/main ${short}`);
+  });
+
+  test("a clean merge and no change by the worker is nothing", async () => {
+    const state = await fixture("nothing");
+    await advanceMain(state.remote, "main.txt", "moved\n", "main moves");
+    await visit(state, "rework-run");
+    const result = await runWork(state, "rework-work");
+    expect(result.result).toBe("nothing");
+  });
+
+  test("a clean merge and a commit by the worker is work", async () => {
+    const state = await fixture("commit");
+    await advanceMain(state.remote, "main.txt", "moved\n", "main moves");
+    await visit(state, "rework-run");
+    expect((await runWork(state, "rework-work")).result).toBe("done");
+  });
+
+  test("a conflicting main is left for the worker and the prompt names the files", async () => {
+    const state = await fixture("nothing");
+    const path = worktreeOf(state);
+    await commitIn(path, "README.md", "# branch\n", "branch changes readme");
+    await advanceMain(state.remote, "README.md", "# main\n", "main changes readme");
+    const conflict = await visit(state, "rework-run");
+    expect(conflict.result).toBe("conflict");
+    const task = await taskDataOf(state);
+    expect(task.attempt?.merged).toMatchObject({ conflict: true });
+    expect(task.brief).toContain("- merging origin/main");
+    await runWork(state, "rework-work");
+    const { prompt } = readRecord(state);
+    expect(prompt).toContain("merge of the latest main in progress");
+    expect(prompt).toContain("resolving it is part of this attempt");
+    expect(prompt).toContain("- README.md");
+  });
+
+  test("a merge the worker resolved is work", async () => {
+    const state = await fixture("nothing");
+    const path = worktreeOf(state);
+    await commitIn(path, "README.md", "# branch\n", "branch changes readme");
+    await advanceMain(state.remote, "README.md", "# main\n", "main changes readme");
+    expect((await visit(state, "rework-run")).result).toBe("conflict");
+    // The worker resolves the merge and commits it; the fake reports done.
+    writeFileSync(join(path, "README.md"), "# both\n");
+    gitOrThrow(path, ["add", "README.md"]);
+    gitOrThrow(path, ["-c", "user.name=w", "-c", "user.email=w@example.com", "commit", "-qm", "resolve"]);
+    expect((await runWork(state, "rework-work")).result).toBe("done");
+  });
+});

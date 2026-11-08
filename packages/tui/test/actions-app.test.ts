@@ -7,7 +7,7 @@ import {
   type TuiState,
   type TuiView,
 } from "../src/index.ts";
-import { makeHarness } from "./support.ts";
+import { makeHarness, immediateClock } from "./support.ts";
 
 /** A change stream that never speaks; the test refreshes through its own actions. */
 class Quiet implements TuiEventSource {
@@ -63,7 +63,7 @@ describe("actions against the in-process server", () => {
       width: 120,
       height: 30,
       theme: "dark",
-      refreshDelayMs: 0,
+      clock: immediateClock,
     });
     const type = (text: string): void => {
       for (const char of text) {

@@ -98,6 +98,13 @@ function styled(chunks: readonly TextChunk[]): StyledText {
   return new StyledText([...chunks]);
 }
 
+/** The last lists stay visible but weak while the server does not answer. */
+function dimmed(text: StyledText, on: boolean, palette: TuiPalette): StyledText {
+  if (!on) return text;
+  const fg = RGBA.fromHex(palette.weak);
+  return new StyledText(text.chunks.map((part) => ({ ...part, fg })));
+}
+
 /** Cuts `text` to `width` display cells, ending in `…` when it was cut. */
 export function fit(text: string, width: number): string {
   const clean = sanitize(text).replace(/\n/g, " ");
@@ -220,9 +227,13 @@ function listContent(
 ): StyledText {
   if (tab === undefined) return styled([chunk("no tabs", palette.weak)]);
   if (tab.list.rows.length === 0) {
-    const message = tab.list.loaded
-      ? `nothing in ${tab.title.toLowerCase()}`
-      : "loading…";
+    const message = !tab.list.loaded
+      ? "loading…"
+      : tab.kind === "pending"
+        ? "nothing waits for you"
+        : tab.kind === "type"
+          ? `no ${tab.title.toLowerCase()} yet`
+          : `nothing in ${tab.title.toLowerCase()}`;
     return styled([chunk(message, palette.weak)]);
   }
   const width = listCells(state);
@@ -299,7 +310,7 @@ function sectionHint(
   width: number,
 ): TextChunk[] {
   if (section.error !== undefined) {
-    return [chunk(`${fit(section.error, width)}\n`, palette.error)];
+    return [chunk(`${fit(`${section.error} · r retries`, width)}\n`, palette.error)];
   }
   if (section.loading) return [chunk("loading…\n", palette.weak)];
   if (section.capped && !section.full) {
@@ -424,7 +435,11 @@ export function drawState(state: TuiState): TuiDrawing {
       status === undefined
         ? styled([chunk(` ${fit(footerText(state), width)}`, palette.weak)])
         : styled([chunk(` ${fit(status, width)}`, palette.error)]),
-    list: listContent(state, activeTab(state), palette),
+    list: dimmed(
+      listContent(state, activeTab(state), palette),
+      state.connection === "unreachable",
+      palette,
+    ),
     right: objectContent(state, palette),
     overlay: state.keys ? keyContent(palette) : inputContent(state, palette),
   };

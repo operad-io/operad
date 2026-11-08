@@ -100,3 +100,20 @@ the row fields.
 | T-0032-M13 | packages/tui/src/actions.ts | `keyOf` fell back to the action's own key, advertising a dropped reserved key | `actions in the reducer > a reserved plugin default is not advertised from the action's own key` |
 | T-0032-M14 | packages/tui/src/actions.ts | `mainKey` returned `a` while `a` was bound to another action | `actions in the reducer > a bound a is not advertised as the main action's key` |
 | T-0032-M15 | packages/tui/src/actions.ts | Ctrl and Meta chords were not reserved | `actions in the reducer > Ctrl and Meta chords are dropped as reserved` |
+| T-0033-M1 | packages/tui/src/live.ts | a change event no longer asked for Pending and Running | `which events ask for which fetches > a change refetches its row and the lists; the open object also its pane` |
+| T-0033-M2 | packages/tui/src/live.ts | every push opened a new timer, so a window made many batches | `which events ask for which fetches > events inside one window make one batch, then the next window starts` |
+| T-0033-M3 | packages/tui/src/app.ts | the retry wait never grew | `live updates in the shell > a server that does not answer keeps the lists, names itself and retries with growing waits` |
+| T-0033-M4 | packages/tui/src/app.ts | a 401 was retried like an unreachable server | `live updates in the shell > a 401 says the token was rotated and does not retry` |
+| T-0033-M5 | packages/tui/src/app.ts | the signal handlers stayed after the app ended | `runTui > SIGINT restores the terminal, stops the event stream and exits 0` |
+| T-0033-M6 | packages/tui/src/view/index.ts | the lists were not dimmed while the server was lost | `the states a session meets > the last lists stay visible but dimmed while the server does not answer` |
+| T-0033-M7 | packages/tui/src/app.ts | an event after the server was lost fetched one row instead of everything | `live updates in the shell > an event while the server was lost refetches everything, not one row` |
+| T-0033-M8 | packages/tui/src/state.ts | `r` did not ask again for a failed section | `the states a session meets > a section that failed shows its message and r asks for it again` |
+| T-0033-M9 | packages/tui/src/state.ts | `r` retried after the 401 state | `rework 1 states > r does not retry after the token was rotated` |
+| T-0033-M10 | packages/tui/src/state.ts | a gone object's row stayed in the type lists | `rework 1 states > a row whose object is gone leaves its list` |
+| T-0033-M11 | packages/tui/src/events.ts | a lost stream yielded no error event | `TuiEvents > a refused connection retries with the first backoff step` |
+| T-0033-M12 | packages/tui/src/events.ts | a stream that ended by itself was not reported as lost | `TuiEvents > a stream that ends by itself says the stream was lost once per outage` |
+| T-0033-M13 | packages/tui/src/app.ts | a 401 left the scheduled unreachable retry running | `live updates in the shell > a 401 after the server was lost cancels the scheduled retry` |
+| T-0033-M14 | packages/tui/src/app.ts | a deletion of the open object left its row in the lists | `live updates in the shell > a deletion event for the open object removes its row from the lists` |
+| T-0033-M15 | packages/tui/src/app.ts | a live batch queued before a 401 still fetched | `live updates in the shell > a batch queued before a 401 makes no fetch` |
+| T-0033-M16 | packages/tui/src/app.ts | a transport failure replaced the 401 state | `live updates in the shell > a transport failure after the 401 does not replace it or restart retries` |
+| T-0033-M17 | packages/tui/src/app.ts | a failed live-section refresh was dropped silently | `live updates in the shell > a live section that fails to refresh shows its error` |
