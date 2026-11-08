@@ -40,3 +40,7 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0068-M1 | packages/cli/src/main.ts | the step time column showed the run age | `operad running line > object, step, step time, title, then the run age` |
+| T-0048-M7 | packages/cli/src/main.ts | the hidden line printed only above 99 hidden rows | `operad presentation commands > list applies the default filter, --filter all shows everything, and a hidden line counts the rest` |
+| T-0048-M8 | packages/cli/src/main.ts | `operad list` ignored the type's default filter | `operad presentation commands > list applies the default filter, --filter all shows everything, and a hidden line counts the rest` |
+| T-0048-M9 | packages/cli/src/main.ts | the printed `next:` command dropped the `--where` predicates | `operad presentation commands > list filters on indexed fields and pages with --limit and --cursor` |
+| T-0048-M10 | packages/cli/src/main.ts | the printed `next:` command left the `--repo` value unquoted | `operad presentation commands > the printed next: command shell-quotes the repo value` |

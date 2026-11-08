@@ -158,7 +158,7 @@ const HELP = [
   "  serve stop [--timeout <secs>]",
   "                       stop this home's serve (SIGTERM; default timeout 30)",
   "  pending [--json]     things waiting for a person",
-  "  list <type>          objects of one type",
+  "  list <type>          objects of one type (--filter <name>, --repo <name>)",
   "  show <id>            one object, its sections and its actions",
   "  history <id> [--json] steps of a run, or of a plugin object's runs",
   "  running              runs in progress",
@@ -478,6 +478,10 @@ function parseLimit(value: string | undefined): number | undefined {
   return parsed;
 }
 
+function shellQuote(value: string): string {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`;
+}
+
 async function commandList(
   context: Context,
   io: CliIo,
@@ -488,11 +492,22 @@ async function commandList(
     readonly where: readonly string[];
     readonly limit: string | undefined;
     readonly cursor: string | undefined;
+    readonly filter: string | undefined;
+    readonly repo: string | undefined;
   },
 ): Promise<void> {
   const limit = parseLimit(options.limit);
+  const filter = options.filter ?? context.views.defaultFilterOf(type);
   const page = await context.views.list(type, {
-    ...(options.where.length === 0 ? {} : { where: parseWhere(options.where) }),
+    ...(filter === undefined ? {} : { filter }),
+    ...(options.where.length === 0 && options.repo === undefined
+      ? {}
+      : {
+          where: {
+            ...parseWhere(options.where),
+            ...(options.repo === undefined ? {} : { repository: options.repo }),
+          },
+        }),
     ...(limit === undefined ? {} : { limit }),
     ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
   });
@@ -511,7 +526,13 @@ async function commandList(
     }
   }
   if (page.next !== undefined) {
-    io.write(`next: operad list ${type} --cursor ${page.next}\n`);
+    const withFilter = options.filter === undefined ? "" : ` --filter ${shellQuote(options.filter)}`;
+    const withRepo = options.repo === undefined ? "" : ` --repo ${shellQuote(options.repo)}`;
+    const withWhere = options.where.map((item) => ` --where ${shellQuote(item)}`).join("");
+    io.write(`next: operad list ${type}${withFilter}${withRepo}${withWhere} --cursor ${page.next}\n`);
+  }
+  if (page.hidden !== undefined && page.hidden > 0) {
+    io.write(`${page.hidden} hidden (--filter all to show)\n`);
   }
 }
 
@@ -2148,6 +2169,10 @@ export async function main(
           rest = limitFlag.args;
           const cursorFlag = takeValueFlag(rest, "--cursor");
           rest = cursorFlag.args;
+          const filterFlag = takeValueFlag(rest, "--filter");
+          rest = filterFlag.args;
+          const repoFlag = takeValueFlag(rest, "--repo");
+          rest = repoFlag.args;
           const type = rest[0];
           if (type === undefined) throw new UsageError("list needs an object type");
           if (rest.length > 1) throw new UsageError("list takes one object type");
@@ -2155,6 +2180,8 @@ export async function main(
             where: whereFlag.values,
             limit: limitFlag.value,
             cursor: cursorFlag.value,
+            filter: filterFlag.value,
+            repo: repoFlag.value,
           });
           return 0;
         }
