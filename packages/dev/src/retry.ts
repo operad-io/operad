@@ -97,12 +97,20 @@ export async function runRetry(
   }
 
   const stop = task.stop;
-  const verdict = classifyStop({
+  const classified = classifyStop({
     step: edge.from,
     result: edge.result,
     reason: stop?.step === edge.from ? stop.reason : undefined,
     use: stop?.use,
   });
+  // A stopped run whose settings still cannot be read would only fail again:
+  // wait for the settings first, within the same bound.
+  const verdict =
+    classified.kind === "environment" &&
+    classified.waitFor === undefined &&
+    context.settingsError !== undefined
+      ? classifyStop({ step: edge.from, result: "failed", reason: "settings_unreadable" })
+      : classified;
   if (verdict.kind === "task") {
     if (stop !== undefined && stop !== null && !(await write({ stop: null }))) {
       return cancelledStep();

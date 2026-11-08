@@ -341,3 +341,4 @@ the row fields.
 | T-0097-M5 | packages/dev/src/retry.ts | the wait treated every step as loaded | `the night of 2026-11-08 at 08:01 > nine tasks start while pool is disabled; when it is enabled every task continues by itself` |
 | T-0097-M6 | packages/dev/src/steps.ts | the host's not-loaded error kind was not read, so the failure looked like the task's | `an environment failure of the work step > a step that is not loaded: the retry waits until it is, then the work runs` |
 | T-0097-M7 | packages/dev/src/steps.ts | a repair run that only asks a person was not marked, so the retry step ran the stopped step again | `dev scheduling > serve repairs a task whose run ended without an edge, and reject runs again` |
+| T-0097-M8 | packages/dev/src/retry.ts | a stopped run was retried at once although the settings still could not be read | `settings that cannot be read > a stopped run whose settings still cannot be read waits for them instead of spending its retry` |

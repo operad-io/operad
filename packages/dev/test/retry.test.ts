@@ -414,6 +414,22 @@ describe("settings that cannot be read", () => {
     clock.advance(1);
   });
 
+  test("a stopped run whose settings still cannot be read waits for them instead of spending its retry", async () => {
+    manualClock();
+    const w = await world(1);
+    const registry = registryOf(w, [createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
+    const key = w.tasks[0] as string;
+    const object = { type: "task", id: key, data: {} };
+    writeFileSync(join(w.remote.repository, ".operad", "dev.json"), "{ not json");
+    const first = await registry.runStep(
+      "dev/retry",
+      { from: "work", result: "interrupted" },
+      { runId: "r3", object },
+    );
+    expect(first.result).toBe("hold");
+    expect((await taskOf(w, key)).retry?.cause).toBe("settings could not be read");
+  });
+
   test("the bound runs out and the task waits for a person with the cause", async () => {
     const clock = manualClock();
     const w = await world(1);
