@@ -933,6 +933,10 @@ describe("http server", () => {
       expect(runningItems).toHaveLength(1);
       expect(runningItems[0]?.flow).toBe("demo-flow");
       expect(runningItems[0]?.elapsedMs).toBeGreaterThanOrEqual(0);
+      expect(runningItems[0]).toHaveProperty("object");
+      expect(runningItems[0]).toHaveProperty("title");
+      expect(runningItems[0]).toHaveProperty("stepStartedAt");
+      expect(runningItems[0]).toHaveProperty("stepElapsedMs");
     } finally {
       await h.close();
     }
