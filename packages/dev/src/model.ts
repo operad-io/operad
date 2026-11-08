@@ -295,6 +295,7 @@ export type TaskAttempt = {
   readonly fallbackFrom?: string | null;
   /** The worker of the attempt before, which this attempt's work asks for again. */
   readonly previousWorker?: string | null;
+  readonly previousSession?: string | null;
   /** The earlier worker that was no longer in the pool, when the work changed hands. */
   readonly workerChanged?: string | null;
   /** Whether the work step consumed this attempt; a later worktree visit is new work. */

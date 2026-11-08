@@ -32,7 +32,6 @@ import { findRepository, withRepoLock } from "./service.ts";
 import { MAX_WORK_WAITS } from "./timeouts.ts";
 import {
   assertInsideRepository,
-  poolWorkers,
   readDevSettings,
   readWorkerBrief,
   type DevSettings,
@@ -153,11 +152,14 @@ function attemptFor(ctx: StepContext, task: TaskData): AttemptState {
   // The worker of the attempt before this one, so the work goes back to it.
   const previousWorker =
     typeof previous?.worker === "string" ? previous.worker : previous?.previousWorker;
+  const ran = typeof previous?.worker === "string";
+  const previousSession = ran ? previous?.sessionId : previous?.previousSession;
   return {
     attempt: {
       number,
       run: ctx.runId,
       ...(typeof previousWorker === "string" ? { previousWorker } : {}),
+      ...(typeof previousSession === "string" ? { previousSession } : {}),
     },
     attempts: number,
     replay: false,
@@ -740,15 +742,23 @@ function poolParams(
   repository: RepositoryData,
   settings: DevSettings,
   worker: string | undefined,
+  resumeSession: string | undefined,
 ): Record<string, unknown> {
   const resolved = resolvePool(settings.workers, DEFAULT_POOL);
+  // A fallback worker that ran is not a member of the pool; hand it over as
+  // one so pool/agent can be asked for it by name.
+  const fallback =
+    worker === undefined || resolved.workers.some((item) => item.name === worker)
+      ? undefined
+      : resolved.fallbacks.find((item) => item.name === worker);
   return {
     prompt,
     cwd: worktree,
     prefix: `${repository.name}/${DEFAULT_POOL}`,
-    workers: resolved.workers,
+    workers: fallback === undefined ? resolved.workers : [...resolved.workers, fallback],
     fallbacks: resolved.fallbacks,
     ...(worker === undefined ? {} : { worker }),
+    ...(worker !== undefined && resumeSession !== undefined ? { resumeSession } : {}),
   };
 }
 
@@ -875,7 +885,12 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       : undefined;
   const stillThere =
     before !== undefined &&
-    poolWorkers(context.settings, DEFAULT_POOL).some((worker) => worker.name === before);
+    (() => {
+      const resolved = resolvePool(context.settings.workers, DEFAULT_POOL);
+      return [...resolved.workers, ...resolved.fallbacks].some(
+        (worker) => worker.name === before,
+      );
+    })();
   const asked = stillThere ? before : undefined;
   const workerChangedFrom = before !== undefined && !stillThere ? before : undefined;
   let outcome: PluginStepResult | undefined;
@@ -883,7 +898,14 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   try {
     outcome = await runStep(
       "pool/agent",
-      poolParams(prompt, path, context.repository, context.settings, asked),
+      poolParams(
+        prompt,
+        path,
+        context.repository,
+        context.settings,
+        asked,
+        typeof attempt.previousSession === "string" ? attempt.previousSession : undefined,
+      ),
       options,
     );
   } catch (error) {

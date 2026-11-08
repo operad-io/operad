@@ -51,6 +51,7 @@ function fakeHarness(record: string) {
             readonly prompt: string;
             readonly cwd: string;
             readonly args?: readonly string[];
+            readonly resumeSession?: string;
           };
           // Mirror harness-radian: an absent args falls back to the flow's.
           const flow =
@@ -70,6 +71,7 @@ function fakeHarness(record: string) {
               prompt: input.prompt,
               cwd: input.cwd,
               args,
+              resumeSession: input.resumeSession ?? null,
             }),
           );
           if (mode === "fail") {
@@ -768,6 +770,33 @@ describe("dev/work with workers", () => {
     const second = await runWork(state, "run-2");
     expect(second.data).toMatchObject({ worker: "pi", work: "work: pi" });
     expect((await taskDataOf(state)).attempt?.fallbackFrom).toBeNull();
+  });
+
+  test("a rework resumes the session of the worker it goes back to", async () => {
+    const state = await fixture("nothing", { workers: { only: fake("nothing") } });
+    await runWork(state, "run-1");
+    await visit(state, "rework-run");
+    await runWork(state, "run-2");
+    const record = JSON.parse(readFileSync(state.record, "utf8")) as {
+      readonly resumeSession: string | null;
+    };
+    expect(record.resumeSession).toBe("fake-session");
+  });
+
+  test("a fallback outside the default pool is still the worker a rework goes back to", async () => {
+    const state = await fixture("nothing", {
+      workers: {
+        claude: fake("usage_limit", { fallback: "pi" }),
+        pi: fake("nothing"),
+      },
+      pools: { default: ["claude"] },
+    });
+    await runWork(state, "run-1");
+    expect((await taskDataOf(state)).attempt?.worker).toBe("pi");
+    await visit(state, "rework-run");
+    const second = await runWork(state, "run-2");
+    expect(second.data).toMatchObject({ worker: "pi", work: "work: pi" });
+    expect((await taskDataOf(state)).attempt?.workerChanged).toBeNull();
   });
 
   test("the work reads the main clone's dev.json, not the worktree's older copy", async () => {
