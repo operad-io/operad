@@ -264,3 +264,13 @@ the row fields.
 | T-0094-M15 | packages/dev/src/standing.ts | a file under a `schemas/` subdirectory of a loaded package was not serve code | `a followed merge and the code serve has loaded > a nested schema or a manifest of a loaded package raises the item` |
 | T-0063-M14 | `packages/dev/src/views.ts` | MessageAppended and ModelUsageRecorded journal lines were left to the fallback | `radian journal lines show the agent's text and each turn's usage; empty tool-call messages show nothing` |
 | T-0067-M12 | packages/dev/src/gate.ts | a file that fails validation was named no_report instead of invalid | `dev/review report in the workspace > harness failed with invalid file is invalid` |
+
+## T-0087 — rework-round review
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0087-M1 | packages/dev/src/rework.ts | a review of the same commit as the previous one was a rework round | `dev/review rework rounds > a review of the same commit as the previous review gets the first prompt` |
+| T-0087-M2 | packages/dev/src/rework.ts | the change window was 4 lines, not 3 | `pre-existing rules > (a) 4 lines away is moved` |
+| T-0087-M3 | packages/dev/src/rework.ts | a critical finding far from the change was moved | `pre-existing rules > (c) critical far away stays` |
+| T-0087-M4 | packages/dev/src/rework.ts | the increment diff kept every hunk | `dev/review rework rounds > the first review gets the whole diff; a rework round gets the previous findings and the increment` |
+| T-0087-M5 | packages/dev/src/gate.ts | a resumed call built its prompt again instead of reading the recorded one | `dev/review rework rounds > a rework round resumed after a crash asks with the prompt it recorded` |

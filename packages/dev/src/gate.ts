@@ -8,6 +8,7 @@ import {
   closeSync,
   constants as fsConstants,
   existsSync,
+  readFileSync,
   fstatSync,
   lstatSync,
   mkdirSync,
@@ -68,6 +69,18 @@ import {
   workBranch,
   type TaskContext,
 } from "./steps.ts";
+import {
+  addedLinesOf,
+  fixedCount,
+  intersect,
+  movesAsPreExisting,
+  previousLine,
+  previousReview,
+  restrictPatch,
+  type LineMap,
+  type PreviousFinding,
+  type ReviewHistoryEntry,
+} from "./rework.ts";
 import {
   MAX_REVIEW_WAITS,
   REVIEW_WAIT_CHUNK_MS,
@@ -798,6 +811,14 @@ function gradingLines(grading: Grading): string[] {
   return lines;
 }
 
+/** What a rework round's prompt holds beside the brief. */
+interface ReworkPrompt {
+  readonly previousSha: string;
+  readonly previous: readonly PreviousFinding[];
+  readonly commits: string;
+  readonly increment: string;
+}
+
 function reviewPrompt(
   task: TaskData,
   sha: string,
@@ -805,6 +826,7 @@ function reviewPrompt(
   prepared: PreparedDiff,
   resultPath: string,
   grading: Grading,
+  rework?: ReworkPrompt,
 ): string {
   const pieces: string[] = [
     `Review the changes of task ${task.title}.`,
@@ -813,7 +835,22 @@ function reviewPrompt(
   ];
   const graded = gradingLines(grading);
   if (graded.length > 0) pieces.push("## Grading", graded.join("\n"));
-  if (prepared.included.length === 0) {
+  if (rework !== undefined) {
+    pieces.push(
+      "## Previous review",
+      `This is a rework round. The previous review looked at ${rework.previousSha} and found these blocking problems:`,
+      rework.previous.length === 0
+        ? "(none)"
+        : rework.previous.map(previousLine).join("\n"),
+      "## Commits since the previous review",
+      rework.commits.length === 0 ? "(none)" : rework.commits,
+      "## Increment",
+      `The task's own change restricted to the hunks that hold lines changed since ${rework.previousSha}. The full diff is not here; read any file you need.`,
+      rework.increment.length === 0
+        ? "No line of the task's own change was changed since the previous review."
+        : rework.increment,
+    );
+  } else if (prepared.included.length === 0) {
     pieces.push("## Diff", "The change has no diff to review.");
   } else {
     pieces.push(
@@ -834,7 +871,12 @@ function reviewPrompt(
     [
       `Write a JSON object to ${resultPath} (inside the worktree you are in). The file must contain exactly:`,
       '{ "findings": [{ "file": "<path>", "line": <number>, "severity": "critical|major|minor", "summary": "<one line>", "trigger": "<what causes it>" }], "verified": ["<what you checked>"] }',
-      "A finding on a file the change did not touch is pre-existing; say so in its summary.",
+      "List every problem you find; the gate decides which of them are old, not you.",
+      ...(rework === undefined
+        ? []
+        : [
+            "Check each previous problem above: in `verified`, write one entry per previous problem that says whether it is fixed or not fixed. Then review the increment.",
+          ]),
       "Write only the JSON file. Do not change anything else in the worktree.",
     ].join("\n"),
   );
@@ -1508,6 +1550,82 @@ export const reviewTestHooks: {
   afterOpen?: (() => void) | undefined;
 } = {};
 
+/** The task's review history with this record added, when it holds a report. */
+function historyOf(
+  task: TaskData,
+  record: ReviewRecord,
+  attempt: number,
+  fixLevel: FixLevel,
+): { readonly reviewHistory?: readonly ReviewHistoryEntry[] } {
+  if (
+    (record.decision !== "passed" && record.decision !== "findings") ||
+    typeof record.sha !== "string" ||
+    record.sha.length === 0
+  ) {
+    return {};
+  }
+  const blocking: PreviousFinding[] = (record.findings ?? [])
+    .filter(
+      (finding) =>
+        finding.preExisting !== true &&
+        finding.pre_existing !== true &&
+        atOrAbove(finding.severity, fixLevel),
+    )
+    .map((finding) => ({
+      severity: finding.severity,
+      file: finding.file,
+      line: typeof finding.line === "number" ? finding.line : null,
+      summary: finding.summary,
+    }));
+  const old = Array.isArray(task.reviewHistory) ? task.reviewHistory : [];
+  return {
+    reviewHistory: [
+      ...old,
+      {
+        attempt,
+        round: typeof record.round === "number" ? record.round : 1,
+        sha: record.sha,
+        blocking,
+      },
+    ].slice(-10),
+  };
+}
+
+function reworkPromptOf(
+  repositoryPath: string,
+  followed: ReviewHistoryEntry,
+  sha: string,
+  own: LineMap,
+  prepared: PreparedDiff,
+): ReworkPrompt {
+  const since = addedLinesOf(
+    gitZ(repositoryPath, [
+      "-c",
+      "core.quotepath=false",
+      "diff",
+      "-U0",
+      "--no-color",
+      "--no-ext-diff",
+      "-M",
+      followed.sha,
+      sha,
+    ]).out,
+  );
+  const increment = intersect(since, own);
+  return {
+    previousSha: followed.sha,
+    previous: followed.blocking,
+    commits: git(repositoryPath, [
+      "log",
+      "--oneline",
+      `${followed.sha}..${sha}`,
+    ]).out,
+    increment: prepared.included
+      .map((file) => restrictPatch(file.patch, increment.get(file.path)))
+      .join(""),
+  };
+}
+
 /** Step `dev/review`: have the reviewer read the verified commit's diff. */
 export async function runReview(
   ctx: StepContext,
@@ -1583,6 +1701,7 @@ export async function runReview(
               : round,
         },
         ...(record.decision === "passed" ? { reworkStreak: 0 } : {}),
+        ...historyOf(task, record, attempt.number, context.settings.reviewer.fixLevel),
         retryAt:
           record.decision === "unavailable" && typeof record.retryAt === "number"
             ? record.retryAt
@@ -1725,6 +1844,39 @@ export async function runReview(
     path,
   );
 
+  // A rework round follows the newest earlier review of another commit; a
+  // commit the checkout does not have makes it a first review.
+  const history: readonly ReviewHistoryEntry[] = Array.isArray(task.reviewHistory)
+    ? task.reviewHistory
+    : [];
+  const followed = previousReview(history, sha);
+  const rework =
+    followed !== undefined &&
+    git(context.repository.path, [
+      "cat-file",
+      "-e",
+      `${followed.sha}^{commit}`,
+    ]).ok
+      ? followed
+      : undefined;
+  const own: LineMap = addedLinesOf(
+    gitZ(context.repository.path, [
+      "-c",
+      "core.quotepath=false",
+      "diff",
+      "-U0",
+      "--no-color",
+      "--no-ext-diff",
+      "-M",
+      base,
+      sha,
+    ]).out,
+  );
+  const reworkPrompt: ReworkPrompt | undefined =
+    rework === undefined
+      ? undefined
+      : reworkPromptOf(context.repository.path, rework, sha, own, prepared);
+
   if (prepared.bytes > context.settings.reviewer.maxDiffBytes) {
     const largest = [...prepared.files]
       .sort((left, right) => right.bytes - left.bytes)
@@ -1802,7 +1954,6 @@ export async function runReview(
   // the first review of an attempt still gets `firstArgs` on its retry.
   const useFirst = reviews === 0 && settings.firstArgs !== undefined;
   const roundArgs = useFirst ? settings.firstArgs ?? [] : settings.args;
-  const changed = new Set(prepared.files.map((file) => file.path));
   // The runs of this round survive a crash; a fresh round starts with none.
   const runs: ReviewRunRecord[] = (attempt.reviewRuns ?? []).filter(
     (run) =>
@@ -1878,14 +2029,21 @@ export async function runReview(
       round,
       runs.length,
     );
-    const prompt = reviewPrompt(
+    const built = reviewPrompt(
       task,
       sha,
       base,
       prepared,
       reportPath,
       grading,
+      reworkPrompt,
     );
+    // A resumed call asks with the prompt it recorded, not one built again.
+    const recorded =
+      resume === undefined || !existsSync(promptPath)
+        ? undefined
+        : readFileSync(promptPath, "utf8");
+    const prompt = recorded !== undefined && recorded.includes(reportPath) ? recorded : built;
     let call =
       resume === undefined ? undefined : readReviewOutcome(resultPath);
     if (
@@ -1948,12 +2106,26 @@ export async function runReview(
     reviewTestHooks.afterCall?.({ role: action.role, reason: action.reason });
     let runRecord: ReviewRunRecord;
     if (call.outcome === "report" && call.report !== undefined) {
-      const findings: ReviewFinding[] = call.report.findings.map((finding) => {
-        const preExisting = !changed.has(normalizePath(finding.file));
-        return {
-          ...finding,
-          ...(preExisting ? { preExisting: true, pre_existing: true } : {}),
-        };
+      // Dev decides what is pre-existing; a mark the model wrote is dropped.
+      const findings: ReviewFinding[] = call.report.findings.map((reported) => {
+        const finding: ReviewFinding = { ...reported };
+        delete (finding as { preExisting?: unknown }).preExisting;
+        delete (finding as { pre_existing?: unknown }).pre_existing;
+        const moved =
+          atOrAbove(finding.severity, settings.fixLevel) &&
+          movesAsPreExisting(
+            {
+              severity: finding.severity,
+              file: finding.file,
+              line: finding.line,
+            },
+            own,
+            rework?.blocking ?? [],
+            normalizePath,
+          );
+        return moved
+          ? { ...finding, preExisting: true, pre_existing: true }
+          : finding;
       });
       const counted = findings.filter(
         (finding) =>
@@ -2035,7 +2207,19 @@ export async function runReview(
           `${finding.file}:${finding.line} ${finding.severity}: ${finding.summary}`,
       )
       .join("; ");
-    const message = [reviewMessage(decision, runs), findingsMessage]
+    const reworkLine =
+      rework === undefined
+        ? ""
+        : `rework round: ${rework.blocking.length} previous findings, ${fixedCount(
+            rework.blocking,
+            countedFindings.map((finding) => ({
+              severity: finding.severity,
+              file: finding.file,
+              line: finding.line,
+            })),
+            normalizePath,
+          )} fixed, ${preExistingCount} moved as pre-existing`;
+    const message = [reviewMessage(decision, runs), reworkLine, findingsMessage]
       .filter((piece) => piece.length > 0)
       .join("; ");
     const record: ReviewRecord = {
@@ -2056,6 +2240,8 @@ export async function runReview(
       counted,
       preExisting: preExistingCount,
       pre_existing: preExistingCount,
+      moved: preExistingCount,
+      ...(rework === undefined ? {} : { reworkRound: true }),
       leftOut: prepared.leftOut.map(leftOutLine),
       log: resultPath,
       prompt: promptPath,

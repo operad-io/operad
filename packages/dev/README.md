@@ -320,6 +320,36 @@ same model again.
 | during the fallback | the primary run, and the fallback as pending with its outcome | reads the fallback outcome back; no model runs again | `dev/review crash recovery > a crash during the fallback reads its result back` |
 | after the first run was saved | the primary run in the round | runs the fallback once | `dev/review crash recovery > a crash after the first run was saved resumes on the fallback` |
 
+## Rework rounds
+
+A review is a **rework round** when the task has an earlier review report for a
+different commit; the newest report is the previous review. A review of the same
+commit as the previous one (a reverify of an unchanged head) is a first review,
+and so is a review whose previous commit is not in the checkout.
+
+A rework round's prompt holds the brief, the previous review's blocking findings
+(level, `file:line`, summary), the commits `<previous sha>..<sha>` and the
+increment, not the full diff. It asks the reviewer to say, in `verified`, which
+previous findings are fixed and which are not, to review the increment, and to
+list every problem it finds. The reviewer can still read any file.
+
+The increment is the new-side lines of `git diff <previous sha> <sha>` that are
+also new-side lines of the task's own diff (merge base of main and the head, to
+the head), so lines that came only with a merge of main drop out. The increment
+diff is the task's own diff restricted to the hunks that hold an increment line.
+
+In every round, dev, not the model, moves a failing finding out of the failing
+set and marks it `pre_existing` unless (a) its `file:line` is within 3 lines of
+a line the task's own change added or changed in that file, (b) it is in the same
+file as and within 10 lines of a blocking finding of the previous review, (c) its
+level is `critical`, or (d) it has no file or no line. A moved finding keeps its
+level, and a `pre_existing` mark the reviewer wrote is ignored. The grading in
+`.operad/review.json` applies first. The review's data records `moved`, and
+history and Changes say "rework round: n previous findings, m fixed, k moved as
+pre-existing"; a previous finding counts as fixed when no blocking finding of
+this review is in the same file within 10 lines of it. A rework round that
+crashed before its model answered asks again with the prompt it recorded.
+
 ## Review diff size
 
 Before building the review prompt, the step leaves out files marked
