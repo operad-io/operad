@@ -24,3 +24,4 @@ the row fields.
 | T-0042-M16 | packages/pool/src/shared.ts | ignored the lease, so a place of a killed step thread in a live process stayed held | `FilePlaces leases > a place whose holder stopped beating is dropped, and a live one is kept beating` |
 | T-0042-M17 | packages/pool/src/shared.ts | pruned dead holders only in memory (did not write the book) | `FilePlaces leases > pruning a dead holder is written, so a waiter does not see a changed version at once` |
 | T-0042-M18 | packages/pool/src/shared.ts | built the place id from pid, time and a per-instance counter, so two instances in one millisecond got the same id | `FilePlaces > places taken in the same millisecond by separate instances have distinct ids` |
+| T-0043-M1 | packages/pool/src/index.ts | passed the requested worker's resume session on to the fallback worker | `fallback > the fallback does not receive the requested worker's resume session` |
