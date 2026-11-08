@@ -26,6 +26,13 @@ import {
   gateWorktreePath,
   recreateGateWorktree,
 } from "./gate.ts";
+import {
+  mainCloneChange,
+  runCommand,
+  updateMainClone,
+  type CommandRunner,
+  type MainCloneOutcome,
+} from "./mainclone.ts";
 import { runCheckWithRerun } from "./rerun.ts";
 import { getPlan, refreshPlanCounts } from "./service.ts";
 import {
@@ -52,7 +59,22 @@ export const MAX_INTEGRATION_ROUNDS = 3;
  */
 export const integrateTestHooks: {
   afterPush?: ((candidate: string) => void) | undefined;
+  /** Replaces the command runner the main clone's install uses. */
+  runCommand?: CommandRunner | undefined;
 } = {};
+
+function followMain(
+  repository: string,
+  branch: string,
+  sha: string,
+): MainCloneOutcome {
+  return updateMainClone(
+    repository,
+    branch,
+    sha,
+    integrateTestHooks.runCommand ?? runCommand,
+  );
+}
 
 function shortSha(sha: string): string {
   return sha.slice(0, 7);
@@ -213,6 +235,7 @@ function integrationData(
       : { lineNumber: record.lineNumber }),
     ...(record.files === undefined ? {} : { files: record.files }),
     ...(typeof record.checkNote === "string" ? { note: record.checkNote } : {}),
+    ...(isRecord(record.mainClone) ? { mainClone: record.mainClone } : {}),
     ...extra,
   };
 }
@@ -273,19 +296,26 @@ export async function runIntegrate(
     extra: Readonly<Record<string, unknown>> = {},
   ): Promise<PluginStepResult> => {
     const note = record.checkNote;
+    const clone = followMain(repository, settings.mainBranch, sha);
+    const cloneChange = mainCloneChange(clone);
+    const withClone: IntegrationRecord = { ...record, mainClone: { ...clone } };
     if (
-      (await writeIntegration(ctx, context, task, attempt, record, {
+      (await writeIntegration(ctx, context, task, attempt, withClone, {
         phase: "merged",
         change: [
           ...(typeof note === "string" ? [note] : []),
           `merged ${shortSha(sha)}`,
+          ...(cloneChange === undefined ? [] : [cloneChange]),
         ],
       })) === undefined
     ) {
       return cancelledStep();
     }
     await refreshPlan(ctx, context);
-    return { result: "merged", data: integrationData(record, attempt, extra) };
+    return {
+      result: "merged",
+      data: integrationData(withClone, attempt, extra),
+    };
   };
 
   if (typeof verified !== "string" || verified.length === 0) {
@@ -322,14 +352,25 @@ export async function runIntegrate(
         pushed: true,
         style: settings.integration.style,
       };
+      const clone = followMain(
+        repository,
+        settings.mainBranch,
+        previous.candidate,
+      );
+      const cloneChange = mainCloneChange(clone);
+      const withClone: IntegrationRecord = {
+        ...record,
+        mainClone: { ...clone },
+      };
       if (
-        (await writeIntegration(ctx, context, task, attempt, record, {
+        (await writeIntegration(ctx, context, task, attempt, withClone, {
           phase: "merged",
           change: [
             ...(typeof previous.checkNote === "string"
               ? [previous.checkNote]
               : []),
             `merged ${shortSha(previous.candidate)}`,
+            ...(cloneChange === undefined ? [] : [cloneChange]),
           ],
         })) === undefined
       ) {
@@ -338,7 +379,7 @@ export async function runIntegrate(
       await refreshPlan(ctx, context);
       return {
         result: "merged",
-        data: integrationData(record, attempt, { replayed: true }),
+        data: integrationData(withClone, attempt, { replayed: true }),
       };
     }
   }

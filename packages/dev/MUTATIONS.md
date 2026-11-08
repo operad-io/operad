@@ -146,3 +146,6 @@ the row fields.
 | T-0054-M3 | packages/dev/src/rerun.ts | a pass on the rerun carried no note | `dev/verify > a check that fails once and then passes is a pass with a note` |
 | T-0054-M4 | packages/dev/src/rerun.ts | the separator was not drawn between the two runs in the log | `dev/verify > a check that fails once and then passes is a pass with a note` |
 | T-0054-M5 | packages/dev/src/integrate.ts | the merged task left out the rerun note | `dev/integrate > a key command that fails once and then passes lands with a note` |
+| T-0058-M1 | packages/dev/src/mainclone.ts | the clean-tree check was skipped | `dev/integrate main clone > a dirty clone is left alone with the note` |
+| T-0058-M2 | packages/dev/src/mainclone.ts | the branch check was skipped | `dev/integrate main clone > a clone on another branch is left alone` |
+| T-0058-M3 | packages/dev/src/mainclone.ts | the install ran when bun.lock did not change and not when it did | `dev/integrate main clone > a lockfile change runs the install in the clone, once, after the fast-forward` |
