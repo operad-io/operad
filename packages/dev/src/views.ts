@@ -751,6 +751,7 @@ export async function metrics(
     if (page.next === undefined) break;
     cursor = page.next;
   }
+  const lastFactAt = previous;
   if (byAttempt.size === 0) return "_No attempts yet._";
   const entries = [...byAttempt.values()].sort(
     (left, right) => left.number - right.number,
@@ -774,7 +775,13 @@ export async function metrics(
   for (const entry of entries) {
     const last = entry.last;
     const step = runningOf(entry);
-    const ms = Math.max(0, (step === undefined ? entry.endedAt : Math.max(now, entry.endedAt)) - entry.startedAt);
+    // A cancelled task's newest attempt ends when the task was last written,
+    // the cancel; a step in flight then has no record of its own.
+    const ended =
+      phase === "cancelled" && entry.number === newest
+        ? Math.max(entry.endedAt, lastFactAt ?? 0)
+        : entry.endedAt;
+    const ms = Math.max(0, (step === undefined ? ended : Math.max(now, entry.endedAt)) - entry.startedAt);
     totalMs += ms;
     if (typeof last?.cost === "number" && Number.isFinite(last.cost)) {
       totalCost += last.cost;

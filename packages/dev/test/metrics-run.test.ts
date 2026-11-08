@@ -287,6 +287,27 @@ describe("metrics follow the run's own step", () => {
     });
   }
 
+  test("a task cancelled while its worker runs keeps the time up to the cancel", async () => {
+    const w = await world();
+    try {
+      await w.put("test:start", { number: 1 });
+      await w.start();
+      w.at(2);
+      await w.put("dev:worktree", { number: 1 });
+      await w.result("ready");
+      // The worker runs for twenty minutes, then the task is cancelled.
+      w.at(1200);
+      await w.put("dev:task-cancel", { number: 1 }, "cancelled");
+      await w.log.endRun((await w.log.runs())[0]?.runId ?? "");
+      const seen = await w.show(1500);
+      expect(seen.row).toBe("| 1 | 20m | – | cancelled |");
+      expect(seen.text).toContain("| total | 20m | – | |");
+      expect(seen.text).not.toContain("(running)");
+    } finally {
+      await w.log.close();
+    }
+  });
+
   test("a run that is not active shows nothing as running, whatever the phase says", async () => {
     const w = await world();
     try {
