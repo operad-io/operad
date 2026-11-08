@@ -152,6 +152,8 @@ export interface ReviewerSettings {
   /** How long a review may print nothing; unset uses the harness default. */
   readonly stallSecs?: number | undefined;
   readonly fixLevel: FixLevel;
+  /** Whether findings that did not fail a review become a follow-up task. */
+  readonly followups: boolean;
   /** How long an unavailable review waits before it runs again. */
   readonly retrySecs: number;
   /** The largest diff one file may put in the review prompt. */
@@ -245,6 +247,7 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
     args: [],
     timeoutSecs: 600,
     fixLevel: "major",
+    followups: true,
     retrySecs: DEFAULT_REVIEWER_RETRY_SECS,
     maxFileDiffBytes: 200_000,
     maxDiffBytes: 1_000_000,
@@ -568,6 +571,11 @@ function reviewerFallback(value: unknown, field: string): ReviewerFallback {
   };
 }
 
+function booleanOf(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") throw new DevError(field, "must be true or false");
+  return value;
+}
+
 function reviewerSettings(value: unknown, field: string): ReviewerSettings {
   if (!isRecord(value)) {
     throw new DevError(field, "must be an object");
@@ -581,6 +589,7 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
       key !== "timeoutSecs" &&
       key !== "stallSecs" &&
       key !== "fixLevel" &&
+      key !== "followups" &&
       key !== "retrySecs" &&
       key !== "maxFileDiffBytes" &&
       key !== "maxDiffBytes"
@@ -615,6 +624,10 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
       ? {}
       : { stallSecs: positiveSeconds(value.stallSecs, `${field}.stallSecs`) }),
     fixLevel: fixLevelOf(value.fixLevel, `${field}.fixLevel`),
+    followups:
+      value.followups === undefined
+        ? DEFAULT_DEV_SETTINGS.reviewer.followups
+        : booleanOf(value.followups, `${field}.followups`),
     retrySecs:
       value.retrySecs === undefined
         ? DEFAULT_DEV_SETTINGS.reviewer.retrySecs

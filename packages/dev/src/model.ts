@@ -400,7 +400,35 @@ export type TaskData = {
   readonly autoMergeAttempt?: number | undefined;
   /** The attempt whose integration result the scheduler already reported. */
   readonly mergeReportedAttempt?: number | undefined;
+  /** The findings that did not fail each review round, oldest first. */
+  readonly reviewNotes?: readonly ReviewNotes[] | undefined;
+  /** Set when the task merged with notes to collect; absent on older merges. */
+  readonly followups?: FollowupMark | undefined;
+  /** The tasks a follow-up task collects; set only on a follow-up. */
+  readonly followupOf?: readonly string[] | undefined;
 };
+
+/** A finding that did not fail its review round. */
+export interface ReviewNote {
+  readonly severity: string;
+  readonly file: string;
+  readonly line: number | null;
+  readonly summary: string;
+}
+
+/** The notes of one review round. */
+export interface ReviewNotes {
+  readonly attempt: number;
+  readonly round: number;
+  readonly findings: readonly ReviewNote[];
+}
+
+/** A merged task whose notes the plan's follow-up has not collected yet. */
+export interface FollowupMark {
+  /** When the task merged, in epoch milliseconds; orders the follow-up's `after`. */
+  readonly mergedAt: number;
+  readonly state: "collect" | "collected";
+}
 
 /** A repository registered with the dev plugin. */
 export type RepositoryData = {

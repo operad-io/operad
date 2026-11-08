@@ -53,6 +53,7 @@ import {
   worktreePath,
   type TaskContext,
 } from "./steps.ts";
+import { followupMark } from "./followups.ts";
 import type { DevSettings, IntegrationStyle } from "./settings.ts";
 
 /** How many times a moved main sends the candidate back to the fetch. */
@@ -216,6 +217,7 @@ async function writeIntegration(
   const next: TaskData = {
     ...task,
     ...(options.phase === undefined ? {} : { phase: options.phase }),
+    ...(options.phase === "merged" ? followupMark(task, context.settings) : {}),
     run: ctx.runId,
     attempts: Math.max(task.attempts, attempt.number),
     attempt: {

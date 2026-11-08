@@ -778,6 +778,8 @@ export interface AddTaskOptions {
   readonly brief?: string | undefined;
   readonly after?: readonly string[] | undefined;
   readonly area?: string | undefined;
+  /** The tasks this follow-up collects; set only by the follow-up collection. */
+  readonly followupOf?: readonly string[] | undefined;
 }
 
 export async function addTask(
@@ -838,6 +840,7 @@ export async function addTaskLocked(
     brief,
     after,
     ...(area === undefined ? {} : { area }),
+    ...(options.followupOf === undefined ? {} : { followupOf: options.followupOf }),
     phase: "proposed",
     attempts: 0,
     run: null,

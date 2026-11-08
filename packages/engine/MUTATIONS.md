@@ -311,6 +311,12 @@ the row fields.
 | T-0075-M20 | packages/engine/src/views/running.ts | a run waiting for a person counted as running, so a plugin view saw a current step | `the running view names the object and times the step > the current step of a run is what the running view reports, and nothing once it waits or ends` |
 | T-0075-M24 | packages/engine/src/views/running.ts | an ended run reported the step it ended in even when it was waiting for a person | `the running view names the object and times the step > an ended run reports the step it was in, but not a person wait` |
 | T-0075-M25 | packages/engine/src/views/running.ts | an ended run was read after its end, so no step was in flight | `the running view names the object and times the step > an ended run reports the step it was in, but not a person wait` |
+| T-0096-M1 | packages/engine/src/plugin/registry.ts | `startProblem` did not follow a step's `calls` | `a start whose called step is not loaded > absent: the plugin is not loaded at all` |
+| T-0096-M2 | packages/engine/src/plugin/registry.ts | a disabled plugin was reported as not loaded | `a start whose called step is not loaded > disabled: refused with the step, the plugin and the command` |
+| T-0096-M3 | packages/engine/src/trigger/kernel.ts | `realizeStart` did not refuse a flow with a missing step | `a start whose called step is not loaded > absent: the plugin is not loaded at all` |
+| T-0096-M4 | packages/engine/src/loop/serve.ts | serve spawned a child for a run whose called step is missing | `a start whose called step is not loaded > recovery leaves a run whose called step went missing, and says why` |
+| T-0096-M5 | packages/engine/src/plugin/registry.ts | a nested call was never checked against `calls` | `calls > a call the step did not declare fails in tests` |
+| T-0096-M6 | packages/engine/src/plugin/registry.ts | every nested call to a harness step was refused | `calls > a call a step of a harness plugin needs no declaration` |
 | T-0053-M10 | packages/engine/src/views/presentation.ts | a tree list did not run the types' `prepare` first | `object type prepare > a root list called first sees them too` |
 | T-0079-M1 | packages/engine/src/markdown.ts | number columns were shrinkable like text columns | `table fit > squeezed hard, text columns give way and number columns keep their width` |
 | T-0079-M2 | packages/engine/src/markdown.ts | numbers, durations and money were left-aligned | `table fit > numbers, durations and money are right-aligned` |
@@ -329,3 +335,6 @@ the row fields.
 | T-0098-M7 | packages/engine/src/loop/code-watch.ts | `stop` left the fallback timer set | `a code watch > a stopped watch ignores events and leaves no timers` |
 | T-0098-M8 | packages/engine/src/runner/runner.ts | a hand-over wrote no line for history | `a run's process between steps > hands over after a step, says so in history, and a fresh process finishes without repeating it` |
 | T-0098-M9 | packages/engine/src/runner/runner.ts | a hand-over was asked for when the run had ended | `a run's process between steps > goes on when nothing asks for a hand-over` |
+| T-0096-M9 | packages/engine/src/trigger/kernel.ts | `refusedStarts` listed nothing for a refused start | `a start whose called step is not loaded > enabling the plugin and starting again works; the event was kept` |
+| T-0096-M10 | packages/engine/src/trigger/kernel.ts | `startCandidate` recorded the person's choice before refusing, so the candidate left the pending view | `a candidate started while its plugin is disabled > stays pending with the reason, and starts after the plugin is enabled` |
+| T-0096-M11 | packages/engine/src/trigger/kernel.ts | `refusedStarts` skipped a candidate whose choice was recorded | `a candidate started while its plugin is disabled > a choice recorded before the refusal is listed with the reason` |

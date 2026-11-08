@@ -1,3 +1,4 @@
+import { createShellPlugin } from "@operad-io/shell";
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -89,7 +90,7 @@ async function setup(
   const store = storeAt(root);
   const answers: { readonly runId: string; readonly choice: string }[] = [];
   const cancelled: string[] = [];
-  const registry = new PluginRegistry([plugin, poolPlugin], {
+  const registry = new PluginRegistry([plugin, poolPlugin, createShellPlugin()], {
     home: root,
     cwd: repositoryPath,
     store,
@@ -819,7 +820,7 @@ describe("dev scheduling", () => {
 
       // The normal task action reaches the run: the wait has an answer handler.
       const answers: string[] = [];
-      const answering = new PluginRegistry([plugin, poolPlugin], {
+      const answering = new PluginRegistry([plugin, poolPlugin, createShellPlugin()], {
         home: fixture.root,
         cwd: fixture.repositoryPath,
         store: fixture.store,
@@ -871,7 +872,7 @@ describe("dev scheduling", () => {
 
       let registry: PluginRegistry;
       const answers: { readonly runId: string; readonly choice: string }[] = [];
-      registry = new PluginRegistry([plugin, poolPlugin], {
+      registry = new PluginRegistry([plugin, poolPlugin, createShellPlugin()], {
         home: fixture.root,
         cwd: fixture.repositoryPath,
         store: fixture.store,
@@ -1121,7 +1122,7 @@ describe("dev scheduling", () => {
     const second = await addTask(fixture.store, { plan: plan.key, slug: "a-two", title: "a-two", area: "core" });
     await confirm(fixture, plan.key);
 
-    const other = new PluginRegistry([plugin, poolPlugin], {
+    const other = new PluginRegistry([plugin, poolPlugin, createShellPlugin()], {
       home: fixture.root,
       cwd: fixture.repositoryPath,
       store: fixture.store,

@@ -13,11 +13,12 @@ import type {
 } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { SourceHandle } from "../plugin/types.ts";
-import { messageOf } from "../plugin/errors.ts";
+import { messageOf, StartRefusedError } from "../plugin/errors.ts";
 import { readState } from "../runner/service.ts";
 import { TriggerStore } from "./store.ts";
 import {
   MAX_TRIGGER_HOPS,
+  type RefusedStart,
   type StartRequest,
   type StartResult,
   type StepEvent,
@@ -551,6 +552,45 @@ export class Kernel {
     );
   }
 
+  /**
+   * Events the rules sent to a flow that cannot start now. Nothing is stored
+   * for them: they are read from the route decisions, so they leave this list
+   * when the plugin is enabled and the start goes through.
+   */
+  async refusedStarts(): Promise<readonly RefusedStart[]> {
+    const list: RefusedStart[] = [];
+    const runs = await this.log.runs();
+    const resolvedStarts = new Set<string>();
+    const outcomes: InputOutcome[] = [];
+    for await (const outcome of this.log.readOutcomes()) {
+      outcomes.push(outcome);
+      if (outcome.kind === RESOLVE && valueOf(outcome) === "started") {
+        resolvedStarts.add(outcome.inputId);
+      }
+    }
+    for (const outcome of outcomes) {
+      // A route that starts, or a candidate a person already chose to start.
+      if (
+        outcome.kind !== ROUTE ||
+        !(
+          valueOf(outcome) === "started" ||
+          (valueOf(outcome) === "candidate" && resolvedStarts.has(outcome.inputId))
+        )
+      ) {
+        continue;
+      }
+      const flow = field(outcome.payload, "flow");
+      const object = field(outcome.payload, "object");
+      if (flow === undefined || object === undefined) continue;
+      if (runs.some((run) => run.startInputId === outcome.inputId)) continue;
+      const reason = this.registry.startProblem(flow);
+      if (reason !== undefined) {
+        list.push({ inputId: outcome.inputId, flow, object, reason });
+      }
+    }
+    return list;
+  }
+
   /** Cancels a candidate without starting it. */
   async dismiss(pendingId: string): Promise<TriggerCandidate> {
     const route = await this.outcome(pendingId, ROUTE);
@@ -605,6 +645,10 @@ export class Kernel {
     if (candidate === undefined) {
       throw new Error(`no pending item "${pendingId}"`);
     }
+    // Refused before the person's choice is recorded, so the candidate stays
+    // pending and can be started once the plugin is enabled.
+    const problem = this.registry.startProblem(candidate.flow);
+    if (problem !== undefined) throw new StartRefusedError(problem);
 
     const recorded = await this.log.recordOutcome(
       pendingId,
@@ -1001,6 +1045,11 @@ export class Kernel {
         return { kind: "started", runId: existing.runId };
       }
     }
+
+    // Nothing is written for a refused start: the claimed event stays
+    // unrealised and is tried again once the plugin is enabled.
+    const problem = this.registry.startProblem(flow);
+    if (problem !== undefined) throw new StartRefusedError(problem);
 
     const view = input === undefined ? undefined : viewFromPayload(input.payload);
     const event: TriggerEvent | undefined =

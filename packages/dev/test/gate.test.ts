@@ -768,6 +768,27 @@ describe("dev/review", () => {
     expect(result.data?.preExisting).toBe(0);
   });
 
+  test("a finding that did not fail the round is kept as a note of the round", async () => {
+    const state = await fixture({ reviewerArgs: ["minor"], fixLevel: "major" });
+    await verify(state);
+    await review(state);
+    const task = await taskOf(state);
+    expect(task.reviewNotes).toEqual([
+      {
+        attempt: 1,
+        round: 1,
+        findings: [expect.objectContaining({ severity: "minor", summary: "a minor thing" })],
+      },
+    ]);
+  });
+
+  test("a finding that failed the round is not a note", async () => {
+    const state = await fixture({ reviewerArgs: ["major"], fixLevel: "major" });
+    await verify(state);
+    await review(state);
+    expect((await taskOf(state)).reviewNotes).toBeUndefined();
+  });
+
   test("a major finding fails", async () => {
     const state = await fixture({
       reviewerArgs: ["major"],
@@ -2318,6 +2339,7 @@ describe("gate settings", () => {
       args: [],
       timeoutSecs: 600,
       fixLevel: "major",
+      followups: true,
       retrySecs: 120,
       maxFileDiffBytes: 200_000,
       maxDiffBytes: 1_000_000,
