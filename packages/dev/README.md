@@ -227,11 +227,10 @@ and `reverify` are not offered.
 
 The reviewer writes its report inside the review workspace (the gate worktree),
 at `.operad/review/<task>-attempt-<n>-review-<round>.json`, because some
-harnesses (radian) refuse paths outside their workspace. The folder holds a
-`.gitignore` of `*`, so `git status` stays clean and the repository's own
-`.gitignore` is not touched. When the reviewer ends, dev copies the report to
-`<store>/dev/reviews/<run>/<same name>`, which is the record, and removes the
-workspace folder; the next run of the round removes any old one first, and a
+harnesses (radian) refuse paths outside their workspace. Dev lists that name pattern in the worktree's
+`info/exclude`, so `git status` stays clean and no repository file is edited;
+other files the repository keeps in the folder are left alone. When the reviewer ends, dev copies the report to
+`<store>/dev/reviews/<run>/<same name>`, which is the record, and removes its report files (and the folder when it is then empty); the next run of the round removes any old one first, and a
 recreated gate worktree starts without one. A valid report left in the workspace
 by a crash is copied to the store before the worktree is recreated, so the
 resumed round uses it instead of reviewing again. A report an older prompt wrote

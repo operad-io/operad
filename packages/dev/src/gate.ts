@@ -5,6 +5,7 @@
  */
 
 import {
+  appendFileSync,
   closeSync,
   constants as fsConstants,
   existsSync,
@@ -12,7 +13,9 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  readFileSync,
   readSync,
+  readdirSync,
   rmSync,
   rmdirSync,
   writeFileSync,
@@ -1002,11 +1005,24 @@ function copyToStore(text: string, storePath: string): boolean {
   }
 }
 
-/** Removes the workspace report directory so no report outlives its round. */
+/** The names dev gives its reports; nothing else in the folder is dev's. */
+const WORKSPACE_REPORT_NAME = /-attempt-\d+-review-\d+\.json$/;
+const WORKSPACE_REPORT_EXCLUDE = "/.operad/review/*-attempt-*-review-*.json";
+
+/**
+ * Removes the reports dev wrote into the workspace so none outlives its round.
+ * Only files named like a dev report go; whatever else the repository keeps in
+ * that folder stays, and the folders go only when they are left empty.
+ */
 function removeWorkspaceReports(workPath: string): void {
   const dir = dirname(workPath);
   try {
-    rmSync(dir, { recursive: true, force: true });
+    for (const name of readdirSync(dir)) {
+      if (WORKSPACE_REPORT_NAME.test(name)) {
+        rmSync(join(dir, name), { force: true });
+      }
+    }
+    rmdirSync(dir);
     // `.operad` is only dev's scratch parent; drop it when it is empty.
     rmdirSync(dirname(dir));
   } catch {
@@ -1028,12 +1044,24 @@ function salvageWorkspaceReport(workPath: string, storePath: string): boolean {
   return true;
 }
 
-/** Makes the workspace report directory, ignored by git whatever it holds. */
+/**
+ * Makes the workspace report directory and ignores dev's report names in the
+ * worktree's own exclude file, so no repository file is edited or replaced.
+ */
 function prepareWorkspaceReports(workPath: string): void {
   const dir = dirname(workPath);
   mkdirSync(dir, { recursive: true });
-  // The directory ignores itself, so no repository file is edited.
-  writeFileSync(join(dir, ".gitignore"), "*\n");
+  const gatePath = dirname(dirname(dir));
+  const path = git(gatePath, ["rev-parse", "--git-path", "info/exclude"]);
+  if (!path.ok) throw new Error(`not a git work tree: ${path.err}`);
+  const excludePath = resolve(gatePath, path.out);
+  mkdirSync(dirname(excludePath), { recursive: true });
+  const current = existsSync(excludePath) ? readFileSync(excludePath, "utf8") : "";
+  if (current.split("\n").some((line) => line.trim() === WORKSPACE_REPORT_EXCLUDE)) {
+    return;
+  }
+  const prefix = current.length === 0 || current.endsWith("\n") ? "" : "\n";
+  appendFileSync(excludePath, `${prefix}${WORKSPACE_REPORT_EXCLUDE}\n`, "utf8");
 }
 
 /**

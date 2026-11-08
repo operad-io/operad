@@ -208,6 +208,12 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             writeFileSync(input.resultPath, valid);
             return { result: "done", data: {} };
           }
+          if (mode === "foreign-file") {
+            // A repository file that sits beside dev's report in the folder.
+            writeFileSync(join(dirname(input.resultPath), "notes.txt"), "keep");
+            writeFileSync(input.resultPath, valid);
+            return { result: "done", data: {} };
+          }
           if (mode === "cwd-only") {
             // Only a path under cwd can be written, as with radian's file tool.
             if (!input.resultPath.startsWith(`${input.cwd}/`)) {
@@ -1705,6 +1711,17 @@ describe("dev/review report in the workspace", () => {
     const result = await review(state, "review-stale");
     expect(result.result).toBe("failed");
     expect(existsSync(join(gate, ".operad", "review"))).toBe(false);
+  });
+
+  test("a file the repository keeps beside the report is not removed or ignored away", async () => {
+    const state = await fixture({ reviewerArgs: ["foreign-file"] });
+    await verify(state);
+    const result = await review(state, "review-foreign");
+    expect(result.result).toBe("pass");
+    const settings: DevSettings = await readDevSettings(state.remote.repository);
+    const gate = gateWorktreePath(state.remote.repository, settings, state.taskId);
+    const dir = join(gate, ".operad", "review");
+    expect(readdirSync(dir)).toEqual(["notes.txt"]);
   });
 
   test("an old prompt that writes to the store path is still read", async () => {

@@ -639,8 +639,7 @@ anyone who guesses it; pick a long random one or use a self-hosted server.
 The `dev` plugin's reviewer runs in the task's review workspace (the gate
 worktree) and writes its report inside it, at
 `.operad/review/<task>-attempt-<n>-review-<round>.json`. A harness that refuses
-paths outside its workspace (radian does) can therefore write it. The folder
-ignores itself, so `git status` shows nothing and no commit can pick the report
+paths outside its workspace (radian does) can therefore write it. Dev ignores that name pattern in the worktree's `info/exclude`, so `git status` shows nothing and no commit can pick the report
 up. Once the reviewer ends, dev copies the report to
 `<home>/store/plugins/dev/reviews/<run>/` under the same name, which stays the
 record, and removes the workspace file. A review that ends without a file says

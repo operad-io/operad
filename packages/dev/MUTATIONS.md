@@ -152,3 +152,4 @@ the row fields.
 | T-0051-M5 | packages/dev/src/gate.ts | the report at the store path was not read after the run | `dev/review report in the workspace > an old prompt that writes to the store path is still read` |
 | T-0051-M6 | packages/dev/src/gate.ts | the workspace report was deleted even when the copy to the store failed | `dev/review report in the workspace > a store that cannot take the copy does not lose a valid workspace report` |
 | T-0051-M7 | packages/dev/src/gate.ts | a failed store copy still completed the review from the workspace report | `dev/review report in the workspace > a store that cannot take the copy does not lose a valid workspace report` |
+| T-0051-M8 | packages/dev/src/gate.ts | the cleanup removed the whole `.operad/review` folder instead of only dev's report files | `dev/review report in the workspace > a file the repository keeps beside the report is not removed or ignored away` |
