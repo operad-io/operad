@@ -4,7 +4,15 @@
  * read, and this module applies the same rules when a step loads the file.
  */
 
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import {
   basename,
   dirname,
@@ -22,6 +30,7 @@ import {
   type ParsedWorkers,
   type WorkerDefinition,
 } from "@operad-io/pool";
+import { defaultOperadHome } from "@operad-io/engine";
 import { DevError, isRecord } from "./model.ts";
 
 /** Where a repository keeps its dev settings. */
@@ -802,28 +811,18 @@ export function validateDevSettings(value: unknown): DevSettings {
   };
 }
 
-/**
- * Reads a repository's settings. A missing file means the defaults, so a work
- * tree that `operad repo add` has not written yet still runs.
- */
-export async function readDevSettings(
+interface ReadSettings {
+  readonly settings: DevSettings;
+  /** The file's text; empty when the file does not exist. */
+  readonly text: string;
+}
+
+/** Parses and checks the text of a settings file for the repository at `repositoryPath`. */
+function settingsFromText(
   repositoryPath: string,
-): Promise<DevSettings> {
-  const path = join(repositoryPath, DEV_SETTINGS_FILE);
-  if (!existsSync(path)) {
-    assertInsideRepository(
-      repositoryPath,
-      resolve(repositoryPath, DEFAULT_DEV_SETTINGS.worktreeRoot),
-      "worktreeRoot",
-    );
-    return DEFAULT_DEV_SETTINGS;
-  }
-  let text: string;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch (error) {
-    throw new DevError("dev.json", `cannot read ${path}: ${String(error)}`);
-  }
+  path: string,
+  text: string,
+): ReadSettings {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -842,7 +841,130 @@ export async function readDevSettings(
     resolve(repositoryPath, settings.worktreeRoot),
     field,
   );
-  return settings;
+  return { settings, text };
+}
+
+/** Reads the file as it is now; any problem with it is thrown. */
+function readSettingsNow(repositoryPath: string): ReadSettings {
+  const path = join(repositoryPath, DEV_SETTINGS_FILE);
+  if (!existsSync(path)) {
+    assertInsideRepository(
+      repositoryPath,
+      resolve(repositoryPath, DEFAULT_DEV_SETTINGS.worktreeRoot),
+      "worktreeRoot",
+    );
+    return { settings: DEFAULT_DEV_SETTINGS, text: "" };
+  }
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (error) {
+    throw new DevError("dev.json", `cannot read ${path}: ${String(error)}`);
+  }
+  return settingsFromText(repositoryPath, path, text);
+}
+
+/**
+ * The last settings of each repository that were valid, by repository path.
+ * A process keeps them in memory; the text is also kept in the home, so a
+ * process that starts while the file is invalid finds the same settings.
+ */
+const lastValid = new Map<string, ReadSettings>();
+
+function keptFile(home: string, repositoryPath: string): string {
+  const key = createHash("sha1").update(repositoryPath).digest("hex");
+  return join(home, "dev", "settings", `${key}.json`);
+}
+
+function keptHome(): string | undefined {
+  const home = defaultOperadHome();
+  return existsSync(join(home, "config.json")) ? home : undefined;
+}
+
+function keep(repositoryPath: string, read: ReadSettings): void {
+  const before = lastValid.get(repositoryPath);
+  if (before !== undefined && before.text === read.text) return;
+  lastValid.set(repositoryPath, read);
+  const home = keptHome();
+  if (home === undefined) return;
+  try {
+    const file = keptFile(home, repositoryPath);
+    mkdirSync(dirname(file), { recursive: true });
+    const temporary = `${file}.${process.pid}.tmp`;
+    writeFileSync(temporary, JSON.stringify({ path: repositoryPath, text: read.text }));
+    renameSync(temporary, file);
+  } catch {
+    // The copy is a convenience for the next process; the memory copy stays.
+  }
+}
+
+function recall(repositoryPath: string): ReadSettings | undefined {
+  const remembered = lastValid.get(repositoryPath);
+  if (remembered !== undefined) return remembered;
+  const home = keptHome();
+  if (home === undefined) return undefined;
+  try {
+    const raw: unknown = JSON.parse(readFileSync(keptFile(home, repositoryPath), "utf8"));
+    if (isRecord(raw) && typeof raw.text === "string") {
+      const read =
+        raw.text === ""
+          ? readDefaults(repositoryPath)
+          : settingsFromText(
+              repositoryPath,
+              join(repositoryPath, DEV_SETTINGS_FILE),
+              raw.text,
+            );
+      lastValid.set(repositoryPath, read);
+      return read;
+    }
+  } catch {
+    // No usable copy.
+  }
+  return undefined;
+}
+
+function readDefaults(repositoryPath: string): ReadSettings {
+  assertInsideRepository(
+    repositoryPath,
+    resolve(repositoryPath, DEFAULT_DEV_SETTINGS.worktreeRoot),
+    "worktreeRoot",
+  );
+  return { settings: DEFAULT_DEV_SETTINGS, text: "" };
+}
+
+/**
+ * Reads a repository's settings. A missing file means the defaults, so a work
+ * tree that `operad repo add` has not written yet still runs. A file that is
+ * not valid never stops work: the last valid settings stay in force. Only a
+ * repository that never had valid settings gets the error.
+ */
+export async function readDevSettings(
+  repositoryPath: string,
+): Promise<DevSettings> {
+  try {
+    const read = readSettingsNow(repositoryPath);
+    keep(repositoryPath, read);
+    return read.settings;
+  } catch (error) {
+    const kept = recall(repositoryPath);
+    if (kept !== undefined) return kept.settings;
+    throw error;
+  }
+}
+
+/** What is wrong with the repository's settings file now, or undefined when it is valid. */
+export function settingsProblem(repositoryPath: string): string | undefined {
+  try {
+    keep(repositoryPath, readSettingsNow(repositoryPath));
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+/** True when the repository has valid settings to fall back on. */
+export function hasValidSettings(repositoryPath: string): boolean {
+  return recall(repositoryPath) !== undefined;
 }
 
 /** An alias for callers that name the file rather than the plugin. */

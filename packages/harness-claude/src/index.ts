@@ -7,6 +7,7 @@
  * child program, never by the hub.
  */
 
+import { secretValuesOf } from "@operad-io/access-match";
 import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -515,6 +516,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
           if (cwdProblem !== undefined) return refuse("cwd", cwdProblem);
 
           const claudeCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
+          const storeSecrets = await secretValuesOf(ctx.secrets);
           const stdin: Record<string, unknown> = {
             prompt: promptWithNote,
             cwd,
@@ -526,6 +528,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             ...(budgetUsd === undefined ? {} : { budgetUsd }),
             ...(bashTimeoutSecs === undefined ? {} : { bashTimeoutSecs }),
             ...(isRecord(ctx.access) ? { access: ctx.access } : {}),
+            ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };
 
           const started = Date.now();

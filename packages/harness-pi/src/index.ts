@@ -7,6 +7,7 @@
  * program, never by the hub.
  */
 
+import { secretValuesOf } from "@operad-io/access-match";
 import { existsSync } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -554,6 +555,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           await mkdir(sessionDir, { recursive: true });
 
           const piCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
+          const storeSecrets = await secretValuesOf(ctx.secrets);
           const stdin: Record<string, unknown> = {
             prompt: promptWithNote,
             cwd,
@@ -567,6 +569,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
             ...(bashTimeoutSecs === undefined ? {} : { bashTimeoutSecs }),
             ...(isRecord(ctx.access) ? { access: ctx.access } : {}),
+            ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };
 
           const started = Date.now();

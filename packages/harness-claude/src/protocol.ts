@@ -23,6 +23,8 @@ export interface WorkerInput {
   readonly budgetUsd?: number | undefined;
   /** The longest a Bash call may run in the foreground, in seconds; unset means `DEFAULT_BASH_TIMEOUT_SECS`. */
   readonly bashTimeoutSecs?: number | undefined;
+  /** Secret values of the operad secret store; a log line shows `***` where one appears. */
+  readonly secretValues?: readonly string[] | undefined;
 }
 
 /** A gate such as a full test run must finish in the foreground; claude's own default is 120 s. */
@@ -80,16 +82,30 @@ export type WorkerLine =
   | {
       readonly type: "message_end";
       readonly role: "assistant";
+      /** The first 300 characters of the message's text, one paragraph; absent when it has none. */
+      readonly text?: string;
       readonly stopReason: string | null;
       readonly usage: Required<WorkerUsage>;
       readonly cost: null;
     }
-  | { readonly type: "tool_execution_start"; readonly toolCallId: string; readonly toolName: string }
+  | {
+      readonly type: "tool_execution_start";
+      readonly toolCallId: string;
+      readonly toolName: string;
+      /** When the call started, in epoch milliseconds. */
+      readonly at: number;
+      /** What ran: the command (500 characters), the path, or the main argument; absent when there is none. */
+      readonly input?: string;
+    }
   | {
       readonly type: "tool_execution_end";
       readonly toolCallId: string;
       readonly toolName: string;
       readonly isError: boolean;
+      /** How long the call took. */
+      readonly durationMs: number;
+      /** The first line of the error, when the call failed. */
+      readonly error?: string;
     }
   | { readonly type: "blocked"; readonly toolName: string; readonly reason: string }
   | {
@@ -129,6 +145,7 @@ export const INPUT_FIELDS = [
   "maxTurns",
   "budgetUsd",
   "bashTimeoutSecs",
+  "secretValues",
 ] as const;
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -179,6 +196,11 @@ export function parseInput(value: unknown): ParsedInput {
     effort = known;
   }
 
+  const secretValues = value["secretValues"];
+  if (secretValues !== undefined && (!Array.isArray(secretValues) || !secretValues.every((v): v is string => typeof v === "string"))) {
+    return { ok: false, message: "secretValues must be an array of strings" };
+  }
+
   const maxTurns = value["maxTurns"];
   if (maxTurns !== undefined && (typeof maxTurns !== "number" || !Number.isInteger(maxTurns) || maxTurns < 1)) {
     return { ok: false, message: "maxTurns must be a positive integer" };
@@ -218,6 +240,7 @@ export function parseInput(value: unknown): ParsedInput {
       maxTurns,
       budgetUsd,
       bashTimeoutSecs,
+      secretValues,
     },
   };
 }

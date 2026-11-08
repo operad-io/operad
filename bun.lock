@@ -90,6 +90,7 @@
       "name": "@operad-io/harness-radian",
       "version": "0.0.0",
       "dependencies": {
+        "@operad-io/access-match": "workspace:*",
         "@operad-io/engine": "workspace:*",
         "@operad-io/harness-process": "workspace:*",
       },

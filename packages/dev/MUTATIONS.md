@@ -168,6 +168,8 @@ the row fields.
 | T-0056-M4 | packages/dev/src/rerun.ts | the check ran without taking a place | `check places > a check waits for a place before its command starts` |
 | T-0056-M5 | packages/dev/src/places.ts | a taken place made the taker wait for its holder instead of trying the next place | `check places > a killed check releases its place` |
 | T-0058-M4 | packages/dev/src/mainclone.ts | the clean-tree check ignored untracked files | `dev/integrate main clone > an untracked file makes the clone dirty and it is left alone` |
+| T-0063-M1 | packages/dev/src/views.ts | a call without an end line was not marked running | `dev views > a call without an end line is marked running, with its start time` |
+| T-0063-M2 | packages/dev/src/views.ts | a log of two agents showed the first one only, unlabelled | `dev views > the log section says which agent each block is from when it mixes them` |
 | T-0069-M1 | packages/dev/src/marks.ts | a ready task behind a prior task was `todo`, not `blocked` | `task marks > ready behind a prior task`, `dev scheduling > a task behind a prior task is blocked until that task merges; the plan counts its active tasks` |
 | T-0069-M2 | packages/dev/src/marks.ts | a task given up after the auto rework limit was `rework_pending` | `task marks > waiting, given up after the auto rework limit` |
 | T-0069-M3 | packages/dev/src/marks.ts | the badge read the task's attempt count only | `task badge > follows the attempt` |
@@ -179,6 +181,7 @@ the row fields.
 | T-0059-M5 | packages/dev/src/gate.ts | the Grading section's text was altered instead of given verbatim | `dev/review > review.json > the prompt carries the flow's grading verbatim` |
 | T-0059-M6 | packages/dev/src/gate.ts | review.json's fixLevel was ignored | `dev/review > review.json > fixLevel in review.json decides whether a minor finding fails` |
 | T-0059-M7 | packages/dev/src/gate.ts | an invalid review.json was swallowed instead of failing the step | `dev/review > review.json > an invalid file fails the review step naming the file` |
+| T-0063-M3 | packages/dev/src/views.ts | a radian `Result` line lost its stop reason, tokens and cost | `a radian Result line shows its stop reason, tokens and cost` |
 
 ## T-0086 — rerun only the failed tests
 
@@ -190,6 +193,7 @@ the row fields.
 | T-0086-M4 | packages/dev/src/rerun.ts | the shell quoting of a name was dropped | `dev/verify reruns only the failed tests > names with quotes and regex characters reach the rerun intact` |
 | T-0086-M5 | packages/dev/src/rerun.ts | a failed rerun counted as a pass | `dev/verify reruns only the failed tests > a rerun that fails fails the check` |
 | T-0086-M6 | packages/dev/src/reruns.ts | the count was set to 1 instead of added to | `dev/verify reruns only the failed tests > the count accumulates across tasks` |
+| T-0063-M4 | packages/dev/src/views.ts | a radian `Result` with a stop reason dropped its assistant text | `a radian Result line with text keeps the assistant text and the metadata` |
 
 ## T-0064 — final states
 
@@ -203,9 +207,41 @@ the row fields.
 | T-0066-M1 | packages/dev/src/steps.ts | the clean-merge history line lost "main" and "checking again" | `dev/reverify > a branch behind a non-conflicting main merges it and goes to verify, no work` |
 | T-0066-M2 | packages/dev/src/steps.ts | the reverify step opened a new attempt number | `dev/reverify > a branch behind a non-conflicting main merges it and goes to verify, no work` |
 | T-0066-M3 | packages/dev/flows/dev.flow.ts | the wait's reverify edge went straight to verify again | `the dev flow > loads with the gate and the rework edges` |
+| T-0094-M1 | packages/dev/src/settings.ts | an invalid file threw again instead of returning the last valid settings | `a repository whose dev.json becomes invalid > a step in its own process finishes with the old settings, the log says it once, and pending clears when fixed` |
+| T-0094-M2 | packages/dev/src/schedule.ts | the settings problem was logged on every tick, not once per change | `a repository whose dev.json becomes invalid > a step in its own process finishes with the old settings, the log says it once, and pending clears when fixed` |
+| T-0094-M3 | packages/dev/src/schedule.ts | a ready task started although a plugin dev needs is not loaded | `a plugin dev needs that the home does not load > a pending item names the plugin and the command, and ready tasks stay ready` |
+| T-0094-M4 | packages/dev/src/standing.ts | the restart item counted merges older than the running serve | `a followed merge and the code serve has loaded > a merge that touches packages/dev/src raises the item once; docs alone do not` |
+| T-0094-M5 | packages/dev/src/standing.ts | a changed `*.schema.json` of a loaded package was not serve code | `a followed merge and the code serve has loaded > a merge that changes a schema serve validates with raises the item` |
+| T-0094-M6 | packages/dev/src/standing.ts | every file of a loaded package counted as serve code (tests, MUTATIONS.md) | `a followed merge and the code serve has loaded > a package serve does not load, tests and a merge in another repository raise nothing` |
+| T-0094-M7 | packages/dev/src/settings.ts | the home kept no copy of the last valid settings | `a repository whose dev.json becomes invalid > a process that starts while the file is invalid reads the copy the home kept` |
+| T-0063-M12 | `packages/dev/src/views.ts` | a radian Result text was not cut at 300 characters | `a radian Result text is cut at 300 characters` |
+| T-0063-M13 | `packages/dev/src/views.ts` | a message_end text was not cut at 300 characters | `a message_end text longer than 300 characters is cut at 300` |
 | T-0044-M1 | packages/dev/src/views.ts | a long worker name was not cut in the row | `dev views > a task row shows the last attempt's worker, short, and nothing before pools` |
 | T-0044-M2 | packages/dev/src/views.ts | an attempt with no worker got a row named "undefined" | `dev views > the metrics section splits cost, time and first pass by worker` |
 | T-0044-M3 | packages/dev/src/views.ts | a pass in a later review round counted as first pass | `dev views > the metrics section splits cost, time and first pass by worker` |
+| T-0094-M10 | packages/dev/src/schedule.ts | the once-per-change key was the message alone, not the file text | `a repository whose dev.json becomes invalid > a step in its own process finishes with the old settings, the log says it once, and pending clears when fixed` |
+| T-0094-M11 | packages/dev/src/standing.ts | a plugin configured by a path to a package was not counted as loaded | `a followed merge and the code serve has loaded > a plugin loaded by a path to a package of the clone counts as loaded` |
+| T-0094-M12 | packages/dev/src/standing.ts | a plugin entry given as a module string was not counted as loaded | `a followed merge and the code serve has loaded > string and array plugin entries count as loaded too` |
+| T-0094-M13 | packages/dev/src/schedule.ts | the repair of a stopped task started the flow although a needed plugin is missing | `a stopped task when a plugin dev needs is missing > is not started again by the repair, and is while the plugin is loaded` |
+
+## T-0067 — review report in the workspace, no deletion
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0067-M1 | packages/dev/src/gate.ts | a link in place of `.operad` or `.operad/review` was accepted as a plain directory | `dev/review report in the workspace > a symlinked operad is not followed and the review fails with the reason`, `... a symlinked review ...` |
+| T-0067-M2 | packages/dev/src/gate.ts | every call got try number 0, so a retry reused the first path | `dev/review report in the workspace > a retry after an invalid report uses a new path and never reads the old file` |
+| T-0067-M3 | packages/dev/src/gate.ts | a finished call with no file was labelled an invalid report | `dev/review report in the workspace > a missing report and an invalid report have different labels` |
+| T-0067-M4 | packages/dev/src/gate.ts | the report was not copied from the old worktree before it was replaced | `dev/review crash before the store copy > a crash after the report was written and before its copy resumes by copying it` |
+| T-0067-M5 | packages/dev/src/gate.ts | a failed store write was swallowed and the report counted | `dev/review report in the workspace > a failed store write fails the step and leaves the workspace report` |
+| T-0067-M6 | packages/dev/src/gate.ts | the store path was not read when the workspace had no file | `dev/review report in the workspace > a report at the store path from an older prompt is read when the workspace has none` |
+| T-0044-M1 | packages/dev/src/views.ts | a long worker name was not cut in the row | `dev views > a task row shows the last attempt's worker, short, and nothing before pools` |
+| T-0044-M2 | packages/dev/src/views.ts | an attempt with no worker got a row named "undefined" | `dev views > the metrics section splits cost, time and first pass by worker` |
+| T-0044-M3 | packages/dev/src/views.ts | a pass in a later review round counted as first pass | `dev views > the metrics section splits cost, time and first pass by worker` |
+| T-0067-M7 | packages/dev/src/gate.ts | the folders were not looked at again after the call | `dev/review report in the workspace > a review folder swapped for a link during the call is not read through` |
+| T-0067-M8 | packages/dev/src/gate.ts | a non-done call with no file kept its plain failure message | `dev/review report in the workspace > a reviewer that exits without a report is labelled as unable to write it` |
+| T-0067-M9 | packages/dev/src/gate.ts | a failed run with no report file stayed outcome `failed` | `dev/review report in the workspace > a reviewer that exits without a report is labelled as unable to write it` |
+| T-0067-M10 | packages/dev/src/gate.ts | the crash salvage and the resumed read skipped the folder check | `dev/review report in the workspace > a report found through a link swapped in after a crash is not read` |
+| T-0067-M11 | packages/dev/src/gate.ts | the report read did not check the folders again, or the file identity, after opening it | `dev/review report in the workspace > a folder swapped for a link while the report is read is not accepted` |
 
 ## T-0073 — Changes tells the story
 
@@ -216,6 +252,7 @@ the row fields.
 | T-0073-M3 | packages/dev/src/announce.ts | the stopped-step lookup ignored the entry's time prefix | `dev scheduling > serve repairs a task whose run ended without an edge, and reject runs again` |
 | T-0073-M4 | packages/dev/src/model.ts | a reason was not cut to one short line | `the Changes story > a rework names who asked and the first finding, cut to one line` |
 | T-0073-M5 | packages/dev/src/gate.ts | the review and verify rework lost their reason | `dev/rework > a review failure appends the findings at or above the fix level` |
+| T-0094-M14 | packages/dev/src/standing.ts | the kernel packages' dependencies (cli lists the tui) were counted as loaded code | `a followed merge and the code serve has loaded > a package serve does not load, tests and a merge in another repository raise nothing` |
 
 ## T-0076 — repository check places
 
@@ -224,3 +261,6 @@ the row fields.
 | T-0076-M1 | packages/dev/src/places.ts | the repository place was never taken | `repository check places > two checks of a repository with places 1 take turns while another repository runs beside them` |
 | T-0076-M2 | packages/dev/src/places.ts | the home place was never taken | `repository check places > the home limit holds with repository limits that would allow more` |
 | T-0076-M3 | packages/dev/src/places.ts | every repository shared one set of place files | `repository check places > a check waiting for its repository does not hold a home place` |
+| T-0094-M15 | packages/dev/src/standing.ts | a file under a `schemas/` subdirectory of a loaded package was not serve code | `a followed merge and the code serve has loaded > a nested schema or a manifest of a loaded package raises the item` |
+| T-0063-M14 | `packages/dev/src/views.ts` | MessageAppended and ModelUsageRecorded journal lines were left to the fallback | `radian journal lines show the agent's text and each turn's usage; empty tool-call messages show nothing` |
+| T-0067-M12 | packages/dev/src/gate.ts | a file that fails validation was named no_report instead of invalid | `dev/review report in the workspace > harness failed with invalid file is invalid` |

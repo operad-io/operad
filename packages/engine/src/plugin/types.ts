@@ -752,6 +752,22 @@ export interface TickContext extends PluginBaseContext {
   answer(runId: string, choice: string, note?: string): Promise<void>;
   /** What the kernel knows about runs, when the loop supplies it. */
   readonly runLookup?: RunLookup | undefined;
+  /** The names of the plugins this process loaded. */
+  readonly loaded: readonly string[];
+}
+
+/** One thing a plugin asks a person to know about; it waits on no run. */
+export interface StandingItem {
+  /** Names the item within its plugin; the same id is the same item. */
+  readonly id: string;
+  /** What the person reads. */
+  readonly prompt: string;
+}
+
+/** The context a plugin's `standing` hook receives. */
+export interface StandingContext extends PluginBaseContext {
+  /** The names of the plugins this process loaded. */
+  readonly loaded: readonly string[];
 }
 
 /** A plugin's declared dependencies: plugins and the plugin API version. */
@@ -794,6 +810,14 @@ export interface PluginShape {
    */
   readonly rules?: readonly TriggerRule[] | undefined;
   readonly onTick?: ((ctx: TickContext) => MaybePromise<void>) | undefined;
+  /**
+   * Items for the pending view that wait on no run: a problem the plugin sees
+   * and a person should act on. The hook runs each time the view is built and
+   * returns the items that hold now, so an item disappears when it is fixed.
+   */
+  readonly standing?:
+    | ((ctx: StandingContext) => MaybePromise<readonly StandingItem[]>)
+    | undefined;
   /** The JSON Schema of this plugin's `config.json` settings section. */
   readonly settings?: ActionArgsSchema | undefined;
   /** Access profile fields this plugin's steps apply. */
