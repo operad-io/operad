@@ -8,7 +8,8 @@
   },
   "dependencies": {
     "@operad-io/engine": "workspace:*",
-    "@operad-io/pool": "workspace:*"
+    "@operad-io/pool": "workspace:*",
+    "@operad-io/review-grading": "workspace:*"
   },
   "devDependencies": {
     "@operad-io/shell": "workspace:*"
