@@ -57,7 +57,7 @@ const CHILD = fileURLToPath(
 
 interface FixtureOptions {
   readonly style?: IntegrationStyle;
-  readonly keyCommands?: readonly string[];
+  readonly keyCommands?: readonly unknown[];
   readonly hooks?: readonly string[];
 }
 
@@ -78,7 +78,8 @@ function writeDevJson(
   repository: string,
   value: {
     readonly style?: IntegrationStyle;
-    readonly keyCommands?: readonly string[];
+    readonly keyCommands?: readonly unknown[];
+    readonly check?: Readonly<Record<string, number>>;
     readonly hooks?: readonly string[];
   },
 ): void {
@@ -93,6 +94,7 @@ function writeDevJson(
           style: value.style ?? "merge",
           keyCommands: value.keyCommands ?? [],
         },
+        ...(value.check === undefined ? {} : { check: value.check }),
         ...(value.hooks === undefined ? {} : { hooks: { afterMerge: value.hooks } }),
       },
       null,
@@ -350,6 +352,27 @@ describe("dev/integrate", () => {
     expect(result.result).toBe("merged");
     const task = await taskOf(state);
     expect(task.brief).toContain("] check line 1 failed, passed on rerun");
+  });
+
+  test("a failing integration check still says why no flaky task was proposed", async () => {
+    const state = await fixture({ style: "merge" });
+    const plan = await state.store.get("plan", state.planKey);
+    await state.store.put("plan", state.planKey, { ...(plan?.data ?? {}), status: "draft" }, "test");
+    writeDevJson(state.remote.repository, {
+      style: "merge",
+      check: { flakyTask: 1 },
+      keyCommands: [
+        {
+          run: 'echo "(fail) a > flaky [1.00ms]" >&2; echo "(fail) b > broken [1.00ms]" >&2; exit 1',
+          failed: { match: "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$", rerun: "case {name} in *broken) exit 1;; esac" },
+        },
+      ],
+    });
+    const result = await integrate(state);
+    expect(result.result).toBe("fail");
+    const notice = 'flaky test "a > flaky" passed on rerun 1 times; no task was proposed: no confirmed plan that is not finished';
+    expect(String(result.data?.message)).toContain(notice);
+    expect((await taskOf(state)).brief).toContain(notice);
   });
 
   test("a failing key command sends the task back to work", async () => {

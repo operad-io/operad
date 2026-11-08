@@ -19,6 +19,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { checkPlaces } from "./places.ts";
 import { runCheckCommands } from "./rerun.ts";
+import { reportFlakyTests } from "./flaky.ts";
 import { recordRerunPasses } from "./reruns.ts";
 import {
   ReviewGradingError,
@@ -317,7 +318,19 @@ export async function runVerify(
     checkPlaces(ctx, context.repository, context.settings.gate.places),
   );
   await recordRerunPasses(ctx.store, checked.passedOnRerun);
-  const { outcome, hostError, note } = checked;
+  const flakyNotice = await reportFlakyTests({
+    ctx,
+    repository: context.repository,
+    taskId: context.taskId,
+    threshold: context.settings.check.flakyTask,
+    check: checked,
+  });
+  const { outcome, hostError } = checked;
+  // A notice joins the check's own note, so the task's Changes and the step's history say it.
+  const note =
+    flakyNotice === undefined
+      ? checked.note
+      : [checked.note, flakyNotice].filter((part) => part !== undefined).join("; ");
 
   const outcomeData =
     outcome !== undefined && isRecord(outcome.data) ? outcome.data : {};
@@ -326,12 +339,17 @@ export async function runVerify(
   const command =
     typeof outcomeData.line === "string" ? outcomeData.line : undefined;
   const log = typeof outcomeData.log === "string" ? outcomeData.log : undefined;
-  const message =
+  const failure =
     hostError ??
     (typeof outcomeData.message === "string" ? outcomeData.message : undefined) ??
     (result === "fail"
       ? `the gate commands failed (${outcome?.result ?? "unknown"})`
       : undefined);
+  // History shows the message before the reason, so a failure carries the notice.
+  const message =
+    failure !== undefined && flakyNotice !== undefined
+      ? `${failure}; ${flakyNotice}`
+      : failure;
   const lineNumber =
     typeof outcomeData.lineNumber === "number"
       ? outcomeData.lineNumber
@@ -370,6 +388,7 @@ export async function runVerify(
     result,
     data: verifyData(record, {
       ...(note === undefined ? {} : { note }),
+      ...(flakyNotice === undefined ? {} : { reason: flakyNotice }),
       ...(checked.rerun ? { rerun: true } : {}),
       attempt: attempt.number,
       verified: sha,

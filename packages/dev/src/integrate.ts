@@ -37,6 +37,7 @@ import {
 } from "./mainclone.ts";
 import { recordServeCode } from "./standing.ts";
 import { runCheckCommands } from "./rerun.ts";
+import { reportFlakyTests } from "./flaky.ts";
 import { recordRerunPasses } from "./reruns.ts";
 import { getPlan, refreshPlanCounts } from "./service.ts";
 import {
@@ -338,6 +339,7 @@ export async function runIntegrate(
     };
   };
 
+  let flakyReason: string | undefined;
   const recordMerged = async (
     record: IntegrationRecord,
     sha: string,
@@ -362,7 +364,10 @@ export async function runIntegrate(
     await refreshPlan(ctx, context);
     return {
       result: "merged",
-      data: integrationData(withClone, attempt, extra),
+      data: integrationData(withClone, attempt, {
+        ...extra,
+        ...(flakyReason === undefined ? {} : { reason: flakyReason }),
+      }),
     };
   };
 
@@ -534,8 +539,19 @@ export async function runIntegrate(
         checkPlaces(ctx, context.repository, settings.gate.places),
       );
       await recordRerunPasses(ctx.store, checked.passedOnRerun);
+      const flakyNotice = await reportFlakyTests({
+        ctx,
+        repository: context.repository,
+        taskId: context.taskId,
+        threshold: context.settings.check.flakyTask,
+        check: checked,
+      });
       const { outcome, hostError } = checked;
-      checkNote = checked.note;
+      checkNote =
+        flakyNotice === undefined
+          ? checked.note
+          : [checked.note, flakyNotice].filter((part) => part !== undefined).join("; ");
+      flakyReason = flakyNotice;
       if (hostError !== undefined || outcome?.result !== "pass") {
         const data =
           outcome !== undefined && isRecord(outcome.data) ? outcome.data : {};
@@ -554,6 +570,7 @@ export async function runIntegrate(
             : `The integration check failed: \`${command}\``,
           ...(log === undefined ? [] : [`Log: \`${log}\``]),
           detail,
+          ...(flakyNotice === undefined ? [] : [`Note: ${flakyNotice}`]),
         ];
         const withRework = appendRework(
           task,
@@ -575,7 +592,7 @@ export async function runIntegrate(
           ...(command === undefined ? {} : { command }),
           ...(log === undefined ? {} : { log }),
           ...(lineNumber === undefined ? {} : { lineNumber }),
-          message: detail,
+          message: flakyNotice === undefined ? detail : `${detail}; ${flakyNotice}`,
         };
         const written = await saveTaskGuarded(
           ctx,

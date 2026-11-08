@@ -263,6 +263,14 @@ the row fields.
 | T-0076-M3 | packages/dev/src/places.ts | every repository shared one set of place files | `repository check places > a check waiting for its repository does not hold a home place` |
 | T-0094-M15 | packages/dev/src/standing.ts | a file under a `schemas/` subdirectory of a loaded package was not serve code | `a followed merge and the code serve has loaded > a nested schema or a manifest of a loaded package raises the item` |
 | T-0063-M14 | `packages/dev/src/views.ts` | MessageAppended and ModelUsageRecorded journal lines were left to the fallback | `radian journal lines show the agent's text and each turn's usage; empty tool-call messages show nothing` |
+| T-0092-M1 | packages/dev/src/flaky.ts | a test crossed the threshold one pass early | `a flaky test proposes a task > the threshold proposes exactly one task with the expected brief` |
+| T-0092-M2 | packages/dev/src/flaky.ts | the count did not restart after the task ended | `a flaky test proposes a task > after a merge the count restarts at 0` |
+| T-0092-M3 | packages/dev/src/flaky.ts | a proposal ignored an open task that names the test | `a flaky test proposes a task > an open task that already names the test stops a proposal` |
+| T-0092-M4 | packages/dev/src/flaky.ts | a finished plan could receive the task | `a flaky test proposes a task > a finished plan is passed over for an older unfinished one` |
+| T-0092-M5 | packages/dev/src/flaky.ts | flakyTask 0 did not turn the proposal off | `a flaky test proposes a task > flakyTask 0 proposes nothing` |
+| T-0092-M6 | packages/dev/src/flaky.ts | the no-plan notice was recorded on every call | `a flaky test proposes a task > a repository without a confirmed plan records a notice and proposes nothing` |
+| T-0092-M7 | packages/dev/src/flaky.ts | the failure excerpt held 31 lines before the (fail) line | `a flaky test proposes a task > the failure excerpt holds the (fail) line and up to 30 lines before it` |
+| T-0092-M8 | packages/dev/src/flaky.ts | `operad reruns` showed the task of an ended fix | `a flaky test proposes a task > operad reruns shows the task beside its test while it is open` |
 | T-0067-M12 | packages/dev/src/gate.ts | a file that fails validation was named no_report instead of invalid | `dev/review report in the workspace > harness failed with invalid file is invalid` |
 
 ## T-0075 — narrow metrics
@@ -279,3 +287,14 @@ the row fields.
 | T-0075-M17 | packages/dev/src/views.ts | a worktree, reverify or work step that failed showed no result | `metrics follow the run's own step > a failed worktree ends the run: nothing runs and no later step is shown` |
 | T-0075-M18 | packages/dev/src/views.ts | a current step that is not a recorded one (rework, a retry wait) was not shown | `metrics follow the run's own step > a failed gate: the rework step runs, then the person wait shows the failure` |
 | T-0075-M19 | packages/dev/src/views.ts | a cancelled task did not show cancelled | `dev views > how an attempt ended: merged, verify failed, conflict, cancelled` |
+| T-0092-M9 | packages/dev/src/flaky.ts | the failure excerpt kept secret values | `a flaky test proposes a task > secrets in a failure excerpt are masked in the record and the brief` |
+| T-0092-M10 | packages/dev/src/flaky.ts | the log was cut at the first rerun heading before the failure was searched | `a flaky test proposes a task > a failure after an earlier command's rerun keeps its excerpt and file` |
+| T-0092-M11 | packages/dev/src/flaky.ts | an existing open task that names the test was not linked to the record | `a flaky test proposes a task > an open task that already names the test stops a proposal` |
+| T-0092-M12 | packages/dev/src/flaky.ts | a task's Changes section counted as naming the test | `a flaky test proposes a task > a task whose Changes only say the test passed on rerun does not stop the proposal` |
+| T-0092-M13 | packages/dev/src/flaky.ts | the no-plan notice was not returned to the check step | `a flaky test proposes a task > a repository without a confirmed plan records a notice and proposes nothing` |
+| T-0092-M14 | packages/dev/src/flaky.ts | an open task naming the test was linked only once the threshold was reached | `a flaky test proposes a task > an open task naming the test is linked on the first pass, so its end restarts the count` |
+| T-0092-M15 | packages/dev/src/flaky.ts | any open task containing the test name as a substring counted as naming it | `a flaky test proposes a task > an unrelated open task that only contains a short test name is not its task` |
+| T-0092-M16 | packages/dev/src/flaky.ts | a brief line equal to the name inside a fenced block counted as naming the test | `a flaky test proposes a task > which open task names a test` |
+| T-0092-M18 | packages/dev/src/flaky.ts | a brief line that merely contains the name counted as naming the test | `a flaky test proposes a task > which open task names a test` |
+| T-0092-M17 | packages/dev/src/integrate.ts | a failing integration check left out the no-plan notice | `dev/integrate > a failing integration check still says why no flaky task was proposed` |
+| T-0092-M19 | packages/dev/src/flaky.ts | the task title cut the test name at 120 characters | `a flaky test proposes a task > two long names that share their first 120 characters each get their own task with the full name` |
