@@ -35,12 +35,24 @@
   },
   "gate": {
     "commands": [
-      "bash scripts/verify.sh"
+      {
+        "run": "bash scripts/verify.sh",
+        "failed": {
+          "match": "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$",
+          "rerun": "bun test -t {pattern}"
+        }
+      }
     ]
   },
   "integration": {
     "keyCommands": [
-      "bash scripts/verify.sh"
+      {
+        "run": "bash scripts/verify.sh",
+        "failed": {
+          "match": "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$",
+          "rerun": "bun test -t {pattern}"
+        }
+      }
     ]
   }
 }

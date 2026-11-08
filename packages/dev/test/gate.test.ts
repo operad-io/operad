@@ -17,6 +17,9 @@ import {
 } from "@operad-io/engine";
 import { createShellPlugin } from "@operad-io/shell";
 import { setTaskPhase } from "../src/service.ts";
+import type { CheckCommand } from "../src/settings.ts";
+import { listRerunCounts, recordRerunPasses } from "../src/reruns.ts";
+import { anchoredPattern, rerunCommand } from "../src/rerun.ts";
 import {
   addPlan,
   addRepository,
@@ -319,7 +322,7 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
 }
 
 interface FixtureOptions {
-  readonly commands?: readonly string[];
+  readonly commands?: readonly CheckCommand[];
   readonly commandTimeoutSecs?: number;
   readonly rerun?: number;
   readonly reviewerArgs?: readonly string[];
@@ -2015,5 +2018,176 @@ describe("the dev flow", () => {
     }
     expect(state.visits.review).toBe(20);
     expect(state.visits.review_retry).toBe(21);
+  });
+});
+
+describe("dev/verify reruns only the failed tests", () => {
+  const MATCH = "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$";
+  const failing = (...names: string[]): string =>
+    `${names.map((name) => `echo ${JSON.stringify(`(fail) ${name} [1.00ms]`)} >&2`).join("; ")}; exit 1`;
+  const object = (
+    run: string,
+    rerun: string,
+    max?: number,
+  ): CheckCommand => ({
+    run,
+    failed: { match: MATCH, rerun, max: max ?? 10 },
+  });
+
+  test("a failed test that passes alone passes the check, is reported and counted", async () => {
+    const root = await tempRoot();
+    const ran = join(root, "ran");
+    const state = await fixture({
+      commands: [
+        object(
+          failing("process groups > the sentinel", "other suite > b"),
+          `printf '%s\\n' {name} >> '${ran}'`,
+        ),
+      ],
+    });
+    const result = await verify(state);
+    expect(result.result).toBe("pass");
+    expect(readFileSync(ran, "utf8")).toBe(
+      "process groups > the sentinel\nother suite > b\n",
+    );
+    const note =
+      "passed on rerun: process groups > the sentinel; other suite > b";
+    expect(result.data?.note).toBe(note);
+    expect((await taskOf(state)).brief).toContain(`- ${note}`);
+    const log = readFileSync(String(result.data?.log), "utf8");
+    expect(log).toContain("(fail) process groups > the sentinel [1.00ms]");
+    expect(log).toContain("===== rerun of failed test: process groups > the sentinel =====");
+    expect(log.indexOf("(fail) other")).toBeLessThan(log.indexOf("rerun of failed test: process"));
+    expect(await listRerunCounts(state.store)).toEqual([
+      { name: "other suite > b", count: 1 },
+      { name: "process groups > the sentinel", count: 1 },
+    ]);
+  });
+
+  test("a rerun that fails fails the check", async () => {
+    const root = await tempRoot();
+    const ran = join(root, "ran");
+    const state = await fixture({
+      commands: [
+        object(
+          failing("a > one", "a > two"),
+          `echo {name} >> '${ran}'; case {name} in *two) exit 1;; esac`,
+        ),
+      ],
+    });
+    const result = await verify(state);
+    expect(result.result).toBe("fail");
+    expect(String(result.data?.message)).toContain('"a > two" failed again');
+    expect((await taskOf(state)).brief).not.toContain("passed on rerun");
+    // The test that passed is still counted.
+    expect(await listRerunCounts(state.store)).toEqual([{ name: "a > one", count: 1 }]);
+  });
+
+  test("no name found fails without a rerun", async () => {
+    const root = await tempRoot();
+    const ran = join(root, "ran");
+    const state = await fixture({
+      commands: [object("echo compile error >&2; exit 1", `echo {name} >> '${ran}'`)],
+    });
+    expect((await verify(state)).result).toBe("fail");
+    expect(existsSync(ran)).toBe(false);
+  });
+
+  test("more names than max fails without a rerun", async () => {
+    const root = await tempRoot();
+    const ran = join(root, "ran");
+    const state = await fixture({
+      commands: [object(failing("a", "b", "c"), `echo {name} >> '${ran}'`, 2)],
+    });
+    expect((await verify(state)).result).toBe("fail");
+    expect(existsSync(ran)).toBe(false);
+  });
+
+  test("a timeout is not rerun", async () => {
+    const clock = manualClock();
+    const root = await tempRoot();
+    const marker = join(root, "started");
+    const ran = join(root, "ran");
+    const state = await fixture({
+      clock,
+      commands: [
+        object(
+          `echo '(fail) t [1ms]' >&2; trap '' TERM; echo $$ > '${marker}'; sleep 30`,
+          `echo {name} >> '${ran}'`,
+        ),
+      ],
+      commandTimeoutSecs: 5,
+    });
+    const running = verify(state);
+    await waitForFile(marker);
+    expect(clock.fireTimeouts()).toBe(1);
+    expect((await running).result).toBe("fail");
+    expect(existsSync(ran)).toBe(false);
+  });
+
+  test("the whole-command rerun is not used when failed is declared", async () => {
+    const root = await tempRoot();
+    const count = join(root, "count");
+    const state = await fixture({
+      commands: [object(`echo x >> '${count}'; exit 1`, "true {name}")],
+    });
+    expect((await verify(state)).result).toBe("fail");
+    expect(readFileSync(count, "utf8").trim().split("\n")).toHaveLength(1);
+  });
+
+  test("plain strings around an object command keep their meaning and line numbers", async () => {
+    const root = await tempRoot();
+    const ran = join(root, "ran");
+    const state = await fixture({
+      commands: [
+        "true",
+        object(failing("x > y"), `echo {name} >> '${ran}'`),
+        "echo last; exit 3",
+      ],
+    });
+    const result = await verify(state);
+    expect(result.result).toBe("fail");
+    expect(result.data?.lineNumber).toBe(3);
+    expect(readFileSync(ran, "utf8")).toBe("x > y\n");
+  });
+
+  test("names with quotes and regex characters reach the rerun intact", async () => {
+    const root = await tempRoot();
+    const names = join(root, "names");
+    const patterns = join(root, "patterns");
+    const name = `suite > it's "quoted" $(touch ${root}/pwned) [a.b]* \`x\``;
+    writeFileSync(join(root, "out"), `(fail) ${name} [1.00ms]\n`);
+    const state = await fixture({
+      commands: [
+        object(
+          `cat '${join(root, "out")}' >&2; exit 1`,
+          `printf '%s' {name} > '${names}'; printf '%s' {pattern} > '${patterns}'`,
+        ),
+      ],
+    });
+    expect((await verify(state)).result).toBe("pass");
+    expect(readFileSync(names, "utf8")).toBe(name);
+    expect(existsSync(join(root, "pwned"))).toBe(false);
+    const pattern = readFileSync(patterns, "utf8");
+    expect(pattern).toBe(anchoredPattern(name));
+    expect(new RegExp(pattern).test(name.replace(" > ", " "))).toBe(true);
+  });
+
+  test("the pattern is anchored and joins describe names with a space, as bun test -t does", () => {
+    expect(anchoredPattern("a > b (c)")).toBe("^a b \\(c\\)$");
+    expect(rerunCommand("bun test -t {pattern}", "it's")).toBe("bun test -t '^it'\\''s$'");
+    expect(rerunCommand("run {name} {name}", "$x")).toBe("run '$x' '$x'");
+  });
+
+  test("the count accumulates across tasks", async () => {
+    const store = storeAt(await osTempRoot());
+    await recordRerunPasses(store, ["a", "b"]);
+    await recordRerunPasses(store, ["b"]);
+    await recordRerunPasses(store, ["b", "c"]);
+    expect(await listRerunCounts(store)).toEqual([
+      { name: "b", count: 3 },
+      { name: "a", count: 1 },
+      { name: "c", count: 1 },
+    ]);
   });
 });

@@ -4,6 +4,50 @@
   "title": "operad dev repository settings",
   "description": "The settings in <repository>/.operad/dev.json, owned by the dev plugin.",
   "type": "object",
+  "$defs": {
+    "checkCommand": {
+      "description": "A check command: a shell line, or an object that also says how to run again only the tests that failed.",
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "properties": {
+            "run": {
+              "description": "The shell line to run.",
+              "type": "string",
+              "minLength": 1
+            },
+            "failed": {
+              "description": "When the line exits non-zero, read the failed tests' names from its log and run each alone; the check passes when every rerun passes. Used instead of check.rerun for this line. A timeout is never rerun.",
+              "type": "object",
+              "properties": {
+                "match": {
+                  "description": "A regular expression with exactly one capture group, matched per line of the log (multiline): the failed test's name.",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "rerun": {
+                  "description": "The command that runs one failed test. {name} is replaced by the shell-quoted name, {pattern} by the shell-quoted anchored regular expression of it (a ' > ' between describe names becomes a space, as bun test -t matches).",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "max": {
+                  "description": "The most failed tests that are run again; more than this fails the check without a rerun.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 10
+                }
+              },
+              "required": ["match", "rerun"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["run"],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
   "properties": {
     "$schema": {
       "description": "The schema this file follows.",
@@ -93,7 +137,7 @@
         "commands": {
           "description": "The commands the verify step runs, in order, in a detached checkout of the task commit.",
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": { "$ref": "#/$defs/checkCommand" },
           "default": []
         },
         "commandTimeoutSecs": {
@@ -220,7 +264,7 @@
         "keyCommands": {
           "description": "Commands the integrate step runs on the candidate before it pushes; the first failure sends the task back to the worker.",
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": { "$ref": "#/$defs/checkCommand" },
           "default": []
         }
       },
