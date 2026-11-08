@@ -2,7 +2,7 @@ import { chmodSync } from "node:fs";
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, existsSync, rmSync, watch } from "node:fs";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -1719,8 +1719,14 @@ describe("dev/review report in the workspace", () => {
     const state = await fixture({ reviewerArgs: ["store-blocked"] });
     await verify(state);
     const result = await review(state, "review-blocked");
-    expect(result.result).toBe("pass");
+    // No store record, so the review is not complete; the report is kept.
+    expect(result.result).toBe("failed");
+    expect(String(result.data?.message)).toContain("could not be copied");
     expect(state.reviewer.calls).toHaveLength(1);
+    const settings: DevSettings = await readDevSettings(state.remote.repository);
+    const gate = gateWorktreePath(state.remote.repository, settings, state.taskId);
+    const dir = join(gate, ".operad", "review");
+    expect(readdirSync(dir).filter((name) => name.endsWith(".json"))).toHaveLength(1);
   });
 
   test("no file at the path says the reviewer could not write the report, with its last message", async () => {

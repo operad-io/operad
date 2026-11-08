@@ -1018,10 +1018,14 @@ function removeWorkspaceReports(workPath: string): void {
  * Moves a valid report the reviewer left in the workspace to the store, then
  * clears the workspace. An unreadable one is left for the next run to remove.
  */
-function salvageWorkspaceReport(workPath: string, storePath: string): void {
+function salvageWorkspaceReport(workPath: string, storePath: string): boolean {
   const read = readReport(workPath);
-  if (read.text === undefined || parseReport(read.text) === undefined) return;
-  if (copyToStore(read.text, storePath)) removeWorkspaceReports(workPath);
+  if (read.text === undefined || parseReport(read.text) === undefined) {
+    return true;
+  }
+  if (!copyToStore(read.text, storePath)) return false;
+  removeWorkspaceReports(workPath);
+  return true;
 }
 
 /** Makes the workspace report directory, ignored by git whatever it holds. */
@@ -1082,6 +1086,12 @@ async function callReviewerOnce(
   // A valid report already on disk is the answer: a crash between the report
   // and its recorded outcome must not ask the model again, and a retry never
   // deletes a report that can be read. Only an unreadable one is removed.
+  if (!salvageWorkspaceReport(workPath, resultPath)) {
+    return {
+      outcome: "failed",
+      message: `a valid report is kept at ${workPath}; it could not be copied to ${resultPath}`,
+    };
+  }
   const existing = resuming ? readValidReport(resultPath) : undefined;
   if (existing !== undefined) {
     return { outcome: "report", report: existing, message: "" };
@@ -1137,9 +1147,13 @@ async function callReviewerOnce(
     if (copyToStore(inWorkspace.text, resultPath)) {
       removeWorkspaceReports(workPath);
     } else {
-      const kept = parseReport(inWorkspace.text);
-      if (kept !== undefined) {
-        return { outcome: "report", report: kept, message: "" };
+      if (parseReport(inWorkspace.text) !== undefined) {
+        // No store record, so the review is not complete: fail it and keep
+        // the workspace file for the next run to copy.
+        return {
+          outcome: "failed",
+          message: `a valid report is kept at ${workPath}; it could not be copied to ${resultPath}`,
+        };
       }
     }
   } else {
@@ -1519,7 +1533,18 @@ export async function runReview(
   const workPath = workspaceReportPath(path, reportName);
   // A crash after the reviewer wrote its report and before dev copied it: the
   // gate worktree is about to be recreated, so keep a valid report first.
-  salvageWorkspaceReport(workPath, resultPath);
+  if (!salvageWorkspaceReport(workPath, resultPath)) {
+    const message = `a valid report is kept at ${workPath}; it could not be copied to ${resultPath}`;
+    const record: ReviewRecord = {
+      result: "failed",
+      run: ctx.runId,
+      sha,
+      round,
+      reason: "store_copy",
+      message,
+    };
+    return finish(record, "failed", { reason: "store_copy", message });
+  }
   const preparedWorktree = recreateGateWorktree(
     context.repository.path,
     path,
