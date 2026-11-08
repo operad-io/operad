@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://operad.io/schemas/review.schema.json",
+  "title": "operad review grading",
+  "description": "The grading in <repository>/.operad/review.json: what critical, major and minor mean, extra rules, and the lowest level that fails a review. A flow's entry falls back field by field to \"default\".",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "default": { "$ref": "#/$defs/grading" },
+    "flows": {
+      "description": "Grading per flow name.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/grading" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "grading": {
+      "type": "object",
+      "properties": {
+        "levels": {
+          "description": "What each severity means, given to the reviewer verbatim.",
+          "type": "object",
+          "properties": {
+            "critical": { "type": "string" },
+            "major": { "type": "string" },
+            "minor": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "rules": {
+          "description": "Rules for grading, given to the reviewer verbatim.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "fixLevel": {
+          "description": "The lowest severity that fails a review. Wins over dev.json's reviewer.fixLevel.",
+          "enum": ["critical", "major", "minor"]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
