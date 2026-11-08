@@ -602,6 +602,12 @@ export interface ObjectTypeDefinition {
     type: string,
     id: string,
   ) => MaybePromise<string | undefined>;
+  /**
+   * Brings this type's stored objects up to date (for example after a rename)
+   * before a client reads them. Views run it once per instance, before the
+   * first list or get; it must be safe to run again.
+   */
+  readonly prepare?: (ctx: { readonly store: ObjectStore }) => MaybePromise<void>;
   /** The fields a person may filter on with `list(..., { where })`. */
   readonly index?: readonly string[] | undefined;
   /** Ordered row filters for lists; see {@link ObjectFilterDefinition}. */

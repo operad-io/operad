@@ -1,7 +1,7 @@
 /** The dev plugin: repositories, plans, tasks and their commands and views. */
 
 import { definePlugin } from "@operad-io/engine";
-import { PLAN_FILTERS, TASK_FILTERS } from "./model.ts";
+import { PLAN_FILTERS, REPO_FILTERS, TASK_FILTERS } from "./model.ts";
 import devFlow from "../flows/dev.flow.ts";
 import { actions } from "./actions.ts";
 import { runAnnounce } from "./announce.ts";
@@ -11,10 +11,10 @@ import { runRework, runReview, runReviewDue, runVerify, runWorkDue } from "./gat
 import { runCleanup, runIntegrate } from "./integrate.ts";
 import { runScheduler } from "./schedule.ts";
 import { devStanding } from "./standing.ts";
-import { resolveDevKey } from "./service.ts";
+import { migrateLegacyRepositories, resolveDevKey } from "./service.ts";
 import { runReverify, runWork, runWorktree } from "./steps.ts";
 import { STEP_TIMEOUT_SECS } from "./timeouts.ts";
-import { planViews, taskViews } from "./views.ts";
+import { planViews, repoViews, taskViews } from "./views.ts";
 
 /** Builds the dev plugin. Tests build it directly when they need a fake host. */
 export function createDevPlugin() {
@@ -23,6 +23,11 @@ export function createDevPlugin() {
     kind: "domain",
     version: "0.0.0",
     objects: [
+      {
+        name: "repo",
+        prepare: ({ store }) => migrateLegacyRepositories(store),
+        filters: REPO_FILTERS,
+      },
       {
         name: "plan",
         filters: PLAN_FILTERS,
@@ -147,6 +152,7 @@ export function createDevPlugin() {
     onTick: runScheduler,
     standing: devStanding,
     views: {
+      repo: repoViews,
       plan: planViews,
       task: taskViews,
     },

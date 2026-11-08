@@ -222,6 +222,8 @@ describe("emit", () => {
   });
 });
 
+import { resetCalls } from "../fixtures/plugins/testing-isolation.ts";
+
 const isolation = join(import.meta.dir, "..", "fixtures", "plugins", "testing-isolation.ts");
 const chain = join(import.meta.dir, "..", "fixtures", "plugins", "testing-chain.ts");
 
@@ -242,6 +244,7 @@ describe("isolation", () => {
   });
 
   test("in process, module state is shared: faster, not isolated", async () => {
+    resetCalls();
     const run = await runFlow(isolation, "twice", { inProcess: true });
     expect(counts(run)).toEqual([1, 2]);
   });

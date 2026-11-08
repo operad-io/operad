@@ -307,6 +307,7 @@ the row fields.
 | T-0074-M4 | packages/engine/src/views/history.ts | `oneLine` cut details even with `full` | `readable run history > details are cut to one line, and --full keeps them` |
 | T-0074-M5 | packages/engine/src/views/presentation.ts | the run id was printed in the heading as well as at the end | `shows a row, the section directory, the kernel history and actions` |
 | T-0074-M6 | packages/engine/src/views/history.ts | an entered end step opened an attempt line (the end-step skip removed) | `readable run history > a run that ends on an end step has no line for that step` |
+| T-0053-M8 | packages/engine/src/views/presentation.ts | a list did not run the types' `prepare` first | `object type prepare > a list and a get see objects the type brings up to date first, once` |
 | T-0075-M20 | packages/engine/src/views/running.ts | a run waiting for a person counted as running, so a plugin view saw a current step | `the running view names the object and times the step > the current step of a run is what the running view reports, and nothing once it waits or ends` |
 | T-0075-M24 | packages/engine/src/views/running.ts | an ended run reported the step it ended in even when it was waiting for a person | `the running view names the object and times the step > an ended run reports the step it was in, but not a person wait` |
 | T-0075-M25 | packages/engine/src/views/running.ts | an ended run was read after its end, so no step was in flight | `the running view names the object and times the step > an ended run reports the step it was in, but not a person wait` |
@@ -316,3 +317,12 @@ the row fields.
 | T-0096-M4 | packages/engine/src/loop/serve.ts | serve spawned a child for a run whose called step is missing | `a start whose called step is not loaded > recovery leaves a run whose called step went missing, and says why` |
 | T-0096-M5 | packages/engine/src/plugin/registry.ts | a nested call was never checked against `calls` | `calls > a call the step did not declare fails in tests` |
 | T-0096-M6 | packages/engine/src/plugin/registry.ts | every nested call to a harness step was refused | `calls > a call a step of a harness plugin needs no declaration` |
+| T-0053-M10 | packages/engine/src/views/presentation.ts | a tree list did not run the types' `prepare` first | `object type prepare > a root list called first sees them too` |
+| T-0079-M1 | packages/engine/src/markdown.ts | number columns were shrinkable like text columns | `table fit > squeezed hard, text columns give way and number columns keep their width` |
+| T-0079-M2 | packages/engine/src/markdown.ts | numbers, durations and money were left-aligned | `table fit > numbers, durations and money are right-aligned` |
+| T-0079-M3 | packages/engine/src/markdown.ts | the column gap was three spaces instead of two | `table fit > a table narrower than the width keeps its content, without pipes` |
+| T-0075-M20 | packages/engine/src/views/running.ts | a run waiting for a person counted as running, so a plugin view saw a current step | `the running view names the object and times the step > the current step of a run is what the running view reports, and nothing once it waits or ends` |
+| T-0075-M24 | packages/engine/src/views/running.ts | an ended run reported the step it ended in even when it was waiting for a person | `the running view names the object and times the step > an ended run reports the step it was in, but not a person wait` |
+| T-0075-M25 | packages/engine/src/views/running.ts | an ended run was read after its end, so no step was in flight | `the running view names the object and times the step > an ended run reports the step it was in, but not a person wait` |
+| T-0079-M6 | packages/engine/src/markdown.ts | cell widths were counted in code points, not display columns | `table fit > wide characters are measured in columns, so a CJK title fits` |
+| T-0106-M1 | packages/engine/test/fixtures/plugins/testing-isolation.ts | `resetCalls` did nothing, so the in-process count kept growing across reruns | `isolation > in process, module state is shared: faster, not isolated` (fails on rerun 2 of `--rerun-each`) |

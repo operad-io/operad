@@ -3,6 +3,11 @@ import { defineFlow, definePlugin } from "../../../src/index.ts";
 /** Module state: a step run in a worker starts from a fresh module every time. */
 let calls = 0;
 
+/** A test that shares this module (in process) starts its count from zero. */
+export function resetCalls(): void {
+  calls = 0;
+}
+
 function flow(name: string, uses: readonly string[]) {
   return defineFlow({
     name,

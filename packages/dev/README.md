@@ -17,6 +17,30 @@ merge. It is a plugin: the kernel knows none of these words.
 | **auto** | how far a plan may run without you: off, run, merge |
 | **priority** | P0 (most urgent) to P5 (least urgent), default P3 |
 
+## The hierarchy
+
+`dev` is a hierarchy of three levels: repo → plan → task. Each level is an
+object type, and a row names the level above it as its `parent`:
+
+- A **repo** object exists for every repository registered with
+  `operad repo add`; its id is the repository name. It has no parent, so it is
+  a top-level object of `dev`. Its row has the name as id and title, the state
+  `active` (or `removed` after `repo remove`) and a note with the open plan and
+  open task counts. The default filter shows `active`; `--filter removed` shows
+  the removed ones. Its sections are Overview (the path, the default branch,
+  whether `.operad/dev.json` is in force, the worker and the reviewer) and the
+  kernel's History. A repo has no actions of its own: `repo add` and
+  `repo remove` stay commands. A repository registered before `repo` existed
+  is carried over the first time anything lists or reads `repo` objects, so
+  `operad list repo` works in a fresh process.
+- A **plan**'s parent is its repo (`repo:<name>`).
+- A **task**'s parent is its plan (`plan:<repo>/<plan id>`), so two repositories
+  that both have `P-0001-work` never share tasks.
+
+`operad list --root` lists the top level; `operad list --parent <id>` lists the
+next level down, with the child type's default filter (finished plans are
+hidden and counted in `hidden`).
+
 A plan id is `P-<4 digits>-<slug>`; a task id is `T-<4 digits>-<slug>`.
 Numbers count up per repository and are never reused, so two repositories may
 both have `T-0001-work`; a command accepts the bare id inside the repository it

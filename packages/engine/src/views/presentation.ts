@@ -382,6 +382,7 @@ export class Views {
   private readonly onLog: (message: string) => void;
   private readonly eventListeners = new Set<(id: string) => void>();
   private readonly unsubscribe: (() => void)[] = [];
+  private preparing: Promise<void> | undefined;
 
   constructor(options: ViewsOptions) {
     this.registry = options.registry;
@@ -416,6 +417,22 @@ export class Views {
     }
   }
 
+  /** Runs each object type's `prepare` once; a failure is tried again next time. */
+  private prepared(): Promise<void> {
+    if (this.preparing === undefined) {
+      const running = (async () => {
+        for (const entry of this.registry.objectTypes()) {
+          await entry.definition.prepare?.({ store: this.store });
+        }
+      })();
+      this.preparing = running;
+      running.catch(() => {
+        if (this.preparing === running) this.preparing = undefined;
+      });
+    }
+    return this.preparing;
+  }
+
   /** Closes the change listeners this view opened. */
   close(): void {
     for (const unsubscribe of this.unsubscribe.splice(0)) unsubscribe();
@@ -435,6 +452,7 @@ export class Views {
     type: string,
     options: TreeListOptions = {},
   ): Promise<ViewListPage> {
+    await this.prepared();
     const tree = options;
     const { filter, root: _root, parent: _parent, ...listOptions } = options;
     if (tree.root === true || tree.parent !== undefined) {
@@ -457,6 +475,7 @@ export class Views {
     type: string | undefined,
     options: TreeListOptions,
   ): Promise<ViewListPage> {
+    await this.prepared();
     const root = options.root === true;
     const parent = options.parent;
     if (root && parent !== undefined) {
@@ -1290,6 +1309,7 @@ export class Views {
   }
 
   private async resolve(id: string): Promise<ResolvedObject> {
+    await this.prepared();
     const typed = splitId(id);
     // A qualified id names its namespace; a different `--repo` is a mistake.
     const qualified = (typed?.id ?? id).split("/");

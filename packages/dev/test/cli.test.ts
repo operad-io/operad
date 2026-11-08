@@ -965,7 +965,7 @@ describe("operad with the dev plugin", () => {
     expect(lines).toHaveLength(11);
     expect(lines[10]).toBe("operad show <id>");
     // The plan changed with each task it gained; the newest change comes first.
-    expect(lines[0]).toMatch(/^(plan|task)\s{2}\S+\s{2}\S+\s{2}/);
+    expect(lines[0]).toMatch(/^(repo|plan|task)\s{2}\S+\s{2}\S+\s{2}/);
     expect(lines.join("\n")).not.toContain("T-0001-job1  ");
 
     const unknown = await run(home, repository, ["show", "T-0003-job"]);

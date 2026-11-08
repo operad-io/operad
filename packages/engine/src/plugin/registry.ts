@@ -396,6 +396,9 @@ function normalizeObjects(
       throw new PluginError(`${at}: duplicate object type "${name}"`);
     }
     names.add(name);
+    if (entry.prepare !== undefined && typeof entry.prepare !== "function") {
+      throw new PluginError(`${at}[${index}]: prepare: must be a function`);
+    }
     if (entry.resolve !== undefined && typeof entry.resolve !== "function") {
       throw new PluginError(`${at}[${index}]: resolve: must be a function`);
     }
@@ -434,6 +437,9 @@ function normalizeObjects(
               ObjectTypeDefinition["resolve"]
             >,
           }),
+      ...(entry.prepare === undefined
+        ? {}
+        : { prepare: entry.prepare as NonNullable<ObjectTypeDefinition["prepare"]> }),
       ...(fields === undefined ? {} : { index: fields }),
     });
   });
