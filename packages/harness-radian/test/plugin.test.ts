@@ -159,6 +159,15 @@ describe("harness-radian/agent", () => {
     expect(out).not.toContain("/secrets/key");
   });
 
+  test("a denied call's settled error is not logged", async () => {
+    const open = new Map();
+    const profile = { denyPaths: ["/secrets"] };
+    radianLogLine(JSON.stringify({ type: "ToolExecutionStarted", toolCallId: "t1", toolName: "Read", input: { file_path: "/secrets/key" } }), () => 5, open, "/work", profile);
+    const end = radianLogLine(JSON.stringify({ type: "ToolExecutionSettled", toolCallId: "t1", toolName: "Read", isError: true, error: "path /secrets/key denied" }), () => 9, open, "/work", profile);
+    expect(JSON.parse(end)).toMatchObject({ type: "tool_execution_end", isError: true });
+    expect(end).not.toContain("/secrets/key");
+  });
+
   test("a successful run records the Result record and writes the JSONL log", async () => {
     const env = await setup("done");
     const result = await runAgent(env, {

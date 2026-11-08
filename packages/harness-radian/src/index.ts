@@ -85,7 +85,7 @@ function firstString(record: Record<string, unknown>, keys: readonly string[]): 
 export function radianLogLine(
   line: string,
   now: () => number,
-  open: Map<string, { at: number; name: string }>,
+  open: Map<string, { at: number; name: string; denied?: boolean }>,
   cwd: string,
   profile: AccessProfile = {},
   secrets: readonly string[] = [],
@@ -107,9 +107,9 @@ export function radianLogLine(
   if (kind === "tool-start") {
     const at = now();
     const toolName = name ?? "tool";
-    open.set(id, { at, name: toolName });
     const args = value.input ?? value.args ?? value.arguments ?? nested.input ?? nested.args ?? nested.arguments;
     const summary = summarizeCall(profile, toolName, args, cwd, { secrets });
+    open.set(id, { at, name: toolName, denied: summary?.includes(" denied by the access profile") === true });
     return JSON.stringify({
       type: "tool_execution_start",
       toolCallId: id,
@@ -121,7 +121,7 @@ export function radianLogLine(
   const begun = open.get(id);
   open.delete(id);
   const isError = value.isError === true || nested.isError === true || value.is_error === true;
-  const error = isError ? firstErrorLine(field(["error", "message"])) : undefined;
+  const error = isError && begun?.denied !== true ? firstErrorLine(field(["error", "message"])) : undefined;
   return JSON.stringify({
     type: "tool_execution_end",
     toolCallId: id,

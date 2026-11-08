@@ -35,3 +35,4 @@ the row fields.
 | T-0063-M1 | packages/harness-radian/src/index.ts | `radianLogLine` returned radian's raw line instead of the rewritten one | `harness-radian/agent > tool lines carry the command summary, the duration and an error's first line` |
 | T-0063-M2 | packages/harness-radian/src/index.ts | `radianLogLine` summarized with an empty profile instead of the run's | `harness-radian/agent > a tool call the access profile refuses is only said to be denied in the log` |
 | T-0063-M3 | packages/harness-radian/src/index.ts | `radianLogLine` ignored the store secrets | `harness-radian/agent > a secret of the operad store is masked in the logged command` |
+| T-0063-M4 | packages/harness-radian/src/index.ts | `radianLogLine` logged the settled error of a denied call | `harness-radian/agent > a denied call's settled error is not logged` |
