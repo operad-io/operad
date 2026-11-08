@@ -11,6 +11,19 @@ import {
 
 const id = (path: string): string => path;
 
+describe("lines the task's change touched", () => {
+  test("a pure deletion marks the lines either side of the cut", () => {
+    const map = addedLinesOf("+++ b/f\n@@ -7 +6,0 @@\n-gone\n");
+    expect([...(map.get("f") ?? [])]).toEqual([6, 7]);
+    expect(
+      movesAsPreExisting({ severity: "major", file: "f", line: 7 }, map, [], id),
+    ).toBe(false);
+    expect(
+      movesAsPreExisting({ severity: "major", file: "f", line: 11 }, map, [], id),
+    ).toBe(true);
+  });
+});
+
 describe("pre-existing rules", () => {
   const own = addedLinesOf(
     ["+++ b/a.ts", "@@ -0,0 +50,2 @@", "+x", "+y"].join("\n"),
@@ -69,6 +82,13 @@ function patch(file: string, hunks: readonly (readonly string[])[]): string {
 }
 
 describe("increment", () => {
+  test("a hunk that is a subset of a previous hunk is new", () => {
+    const previous = patch("f", [["+five", "+six", " ctx"]]);
+    const current = patch("f", [["+five", " ctx"]]);
+    const result = incrementOf(filePatches(previous), filePatches(current));
+    expect(result.added).toContain("+five");
+    expect(result.removed).toContain("+six");
+  });
   const one = ["+added one", " ctx"];
   const two = ["-old two", "+new two", " ctx"];
   const cases: readonly {
@@ -81,7 +101,7 @@ describe("increment", () => {
     { name: "no change since the previous review", previous: patch("f", [one]), current: patch("f", [one]), added: [], removed: [] },
     { name: "a hunk added", previous: patch("f", [one]), current: patch("f", [one, two]), added: ["-old two", "+new two"], removed: [] },
     { name: "a line changed inside a hunk", previous: patch("f", [one]), current: patch("f", [["+changed one", " ctx"]]), added: ["+changed one"], removed: ["+added one"] },
-    { name: "a delete-only rework changes its hunk", previous: patch("f", [one]), current: patch("f", [["+added one", "-gone", " ctx"]]), added: ["+added one", "-gone"], removed: [] },
+    { name: "a delete-only rework changes its hunk", previous: patch("f", [one]), current: patch("f", [["+added one", "-gone", " ctx"]]), added: ["+added one", "-gone"], removed: ["+added one"] },
     { name: "a reverted hunk is listed as removed", previous: patch("f", [one, two]), current: patch("f", [one]), added: [], removed: ["-old two", "+new two"] },
     { name: "a whole file reverted", previous: patch("f", [one]), current: "", added: [], removed: ["+added one"] },
     {

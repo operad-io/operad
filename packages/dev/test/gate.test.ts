@@ -3126,4 +3126,27 @@ describe("dev/review rework rounds", () => {
     expect(prompt).not.toContain("No line of the task's own change was changed");
   });
 
+
+  test("a deleted file and a file left out are not reported as removed", async () => {
+    const dir = await tempRoot();
+    const findingsFile = join(dir, "findings.json");
+    writeFindings(findingsFile, []);
+    const state = await fixture({
+      reviewerArgs: [`file:${findingsFile}`],
+      commit: false,
+      baseFiles: { "old.txt": lines(30), "code.txt": lines(40) },
+    });
+    gitOrThrow(state.worktree, ["rm", "-q", "old.txt"]);
+    await commitIn(state.worktree, "code.txt", lines(40).replace("line 5\n", "changed 5\n"), "first");
+    await verify(state, "verify-1");
+    await review(state, "review-1");
+    await nextAttempt(state);
+    await commitIn(state.worktree, "extra.txt", "x\n", "more");
+    await verify(state, "verify-2");
+    await review(state, "review-2");
+    const prompt = state.reviewer.calls[1]?.prompt ?? "";
+    expect(prompt).toContain("## Previous review");
+    expect(prompt).not.toContain("## Removed since the previous review");
+    expect(prompt).not.toContain("-line 1\n");
+  });
 });

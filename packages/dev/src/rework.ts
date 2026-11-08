@@ -44,8 +44,8 @@ export function previousReview(
 }
 
 /**
- * The lines a diff text added, by new path (read from a `-U0` diff). A line a
- * change only removed has no new-side line and is not in the map.
+ * The lines a `-U0` diff text changed, by new path: the lines it added and,
+ * for a pure deletion, the two lines either side of the cut.
  */
 export function addedLinesOf(diff: string): LineMap {
   const map = new Map<string, Set<number>>();
@@ -67,6 +67,11 @@ export function addedLinesOf(diff: string): LineMap {
       const start = Number(hunk[1]);
       const count = hunk[2] === undefined ? 1 : Number(hunk[2]);
       for (let at = start; at < start + count; at += 1) current.add(at);
+      // A pure deletion changed the place between two lines: both count.
+      if (count === 0) {
+        if (start > 0) current.add(start);
+        current.add(start + 1);
+      }
     }
   }
   return map;
@@ -122,28 +127,29 @@ function changedOf(hunk: string): string[] {
     .filter((line) => line.startsWith("+") || line.startsWith("-"));
 }
 
-function counts(hunks: readonly string[]): Map<string, number> {
-  const map = new Map<string, number>();
-  for (const hunk of hunks) {
-    for (const line of changedOf(hunk)) map.set(line, (map.get(line) ?? 0) + 1);
-  }
-  return map;
+/** A hunk's identity: its changed lines, in order. */
+function keyOf(hunk: string): string {
+  return changedOf(hunk).join("\n");
 }
 
-/** The hunks that hold a changed line the other side does not account for. */
+/** The hunks with no hunk of the same changed lines on the other side. */
 function unmatched(
   hunks: readonly string[],
   other: readonly string[],
 ): readonly string[] {
-  const left = counts(other);
+  const left = new Map<string, number>();
+  for (const hunk of other) {
+    const key = keyOf(hunk);
+    left.set(key, (left.get(key) ?? 0) + 1);
+  }
   return hunks.filter((hunk) => {
-    let fresh = false;
-    for (const line of changedOf(hunk)) {
-      const have = left.get(line) ?? 0;
-      if (have > 0) left.set(line, have - 1);
-      else fresh = true;
+    const key = keyOf(hunk);
+    const have = left.get(key) ?? 0;
+    if (have > 0) {
+      left.set(key, have - 1);
+      return false;
     }
-    return fresh;
+    return true;
   });
 }
 
@@ -158,8 +164,8 @@ export interface Increment {
 /**
  * The increment, as `git range-diff` pairs commits: both sides are the task's
  * own diff (merge base to head), so a line that only came with a merge of main
- * is on neither side. A hunk counts as new when its `-`/`+` lines, ignoring line
- * numbers and context, are not in the previous diff of the same file; a hunk of
+ * is on neither side. A hunk counts as new when no hunk of the previous diff of the same
+ * file has exactly its `-`/`+` lines (line numbers and context are ignored); a hunk of
  * the previous diff that is gone is reported as removed with its old content.
  */
 export function incrementOf(

@@ -298,3 +298,5 @@ the row fields.
 | T-0087-M6 | packages/dev/src/rework.ts | the previous review was any report, not one for another commit | `dev/review rework rounds > reverify of the same commit: the first prompt, and a far finding is moved` |
 | T-0087-M9 | packages/dev/src/rework.ts | context lines counted as changed lines when matching hunks | `dev/review rework rounds > a main change near the task's change is not in the increment` |
 | T-0087-M10 | packages/dev/src/rework.ts | a hunk gone since the previous review was not listed as removed | `increment > a reverted hunk is listed as removed` |
+| T-0087-M11 | packages/dev/src/rework.ts | a hunk was matched on its first changed line only, so a subset of a previous hunk was unchanged | `increment > a hunk that is a subset of a previous hunk is new` |
+| T-0087-M12 | packages/dev/src/rework.ts | a pure deletion marked no line as changed | `lines the task's change touched > a pure deletion marks the lines either side of the cut` |

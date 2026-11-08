@@ -1625,7 +1625,9 @@ function reworkPromptOf(
   followed: ReviewHistoryEntry,
   sha: string,
   prepared: PreparedDiff,
+  gatePath: string,
 ): ReworkPrompt {
+  const reviewer = settings.reviewer;
   // The previous review's own diff: its recorded merge base, or the merge base
   // of the remote main and the previous commit when none was recorded.
   const recorded =
@@ -1633,21 +1635,19 @@ function reworkPromptOf(
     git(repositoryPath, ["cat-file", "-e", `${followed.base}^{commit}`]).ok
       ? followed.base
       : mergeBase(repositoryPath, settings, followed.sha);
+  // Both sides are prepared the same way, so a file the review diff leaves out
+  // (or shows as a one-line placeholder) is the same on both.
   const before =
     recorded === undefined
-      ? new Map<string, string>()
-      : filePatches(
-          gitZ(repositoryPath, [
-            "-c",
-            "core.quotepath=false",
-            "diff",
-            "--no-color",
-            "--no-ext-diff",
-            "-M",
-            recorded,
-            followed.sha,
-          ]).out,
-        );
+      ? []
+      : prepareDiff(repositoryPath, recorded, followed.sha, reviewer, gatePath)
+          .included;
+  const leftOutNow = new Set(prepared.leftOut.map((file) => file.path));
+  const previousPatches = new Map(
+    before
+      .filter((file) => !leftOutNow.has(file.path))
+      .map((file) => [file.path, file.patch]),
+  );
   const now = new Map(prepared.included.map((file) => [file.path, file.patch]));
   return {
     previousSha: followed.sha,
@@ -1657,7 +1657,7 @@ function reworkPromptOf(
       "--oneline",
       `${followed.sha}..${sha}`,
     ]).out,
-    increment: incrementOf(before, now),
+    increment: incrementOf(previousPatches, now),
   };
 }
 
@@ -1920,6 +1920,7 @@ export async function runReview(
           rework,
           sha,
           prepared,
+          path,
         );
 
   if (prepared.bytes > context.settings.reviewer.maxDiffBytes) {
