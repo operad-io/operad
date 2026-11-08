@@ -42,7 +42,7 @@
    - 插件在 schema 里给每个可改的设置标 `editable: true`，需要确认的再标 `confirm: true`；没标的客户端只能看不能改。
    - API 加两个调用：`settings [scope]` 列出设置（名字、当前值、默认值、schema 的说明、能不能改）；`set <名字> <值> [scope]` 改一个设置。内核按 schema 校验，不合法就拒绝并给出 schema 的理由，什么都不写；合法就原子写回文件（写临时文件再改名），保留文件里别的内容，然后像文件被手改一样让插件重新读。
    - 命令行、TUI 的 `:` 面板、iOS 的设置页都走这两个调用。秘密不在这里，仍然只用 `operad secret`。
-   - 用户看到的词“设置”（settings）待 owner 同意（决定 14 的新词规则）。
+   - 用户看到的新词（2026-11-08 owner 同意）：“设置”（settings，命令 `operad settings`、`operad settings set`）；TUI `:` 面板的分组名 actions、tui、settings。
 
 ## 样子
 
