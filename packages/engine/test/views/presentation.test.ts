@@ -187,8 +187,10 @@ describe("presentation views", () => {
     );
 
     const history = await views.section("item:one", "history");
-    expect(history.markdown).toContain(runId);
-    expect(history.markdown).toContain("run started");
+    expect(history.markdown.split(runId)).toHaveLength(2);
+    expect(history.markdown).toMatch(/^## demo-flow run · started \d\d:\d\d$/m);
+    expect(history.markdown).toContain(`<sub>run ${runId}</sub>`);
+    expect(history.markdown).not.toContain("run started:");
     views.close();
     await log.close();
   });
