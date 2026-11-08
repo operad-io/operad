@@ -235,7 +235,7 @@ const reworkTaskAction: ActionTypeDefinition = {
     await claimAndAnswer(
       ctx,
       "rework",
-      "reject",
+      "rework",
       (latest) => ({
         ...appendRework(latest, "lead", note),
         phase: "running",
