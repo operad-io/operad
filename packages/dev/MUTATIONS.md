@@ -278,3 +278,4 @@ the row fields.
 | T-0092-M12 | packages/dev/src/flaky.ts | a task's Changes section counted as naming the test | `a flaky test proposes a task > a task whose Changes only say the test passed on rerun does not stop the proposal` |
 | T-0092-M13 | packages/dev/src/flaky.ts | the no-plan notice was not returned to the check step | `a flaky test proposes a task > a repository without a confirmed plan records a notice and proposes nothing` |
 | T-0092-M14 | packages/dev/src/flaky.ts | an open task naming the test was linked only once the threshold was reached | `a flaky test proposes a task > an open task naming the test is linked on the first pass, so its end restarts the count` |
+| T-0092-M15 | packages/dev/src/flaky.ts | any open task containing the test name as a substring counted as naming it | `a flaky test proposes a task > an unrelated open task that only contains a short test name is not its task` |

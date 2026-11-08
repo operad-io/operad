@@ -248,6 +248,20 @@ async function newestOpenPlan(
   return best?.object;
 }
 
+/**
+ * Whether the text names the test: the whole name in quotes or backticks, as a
+ * line of its own, or after "Fix the flaky test: ". A bare substring does not
+ * count, or a short name such as "works" would match unrelated tasks.
+ */
+function namesTest(text: string, name: string): boolean {
+  if (text.trim() === name || text.endsWith(`: ${name}`)) return true;
+  if (text.split("\n").some((line) => line.trim() === name)) return true;
+  for (const quote of ["`", '"', "'"]) {
+    if (text.includes(`${quote}${name}${quote}`)) return true;
+  }
+  return false;
+}
+
 async function namingTask(
   store: ObjectStore,
   repository: string,
@@ -258,7 +272,7 @@ async function namingTask(
     return (
       task.repository === repository &&
       isOpenTask(task) &&
-      (task.title.includes(name) || splitBrief(task.brief).body.includes(name))
+      (namesTest(task.title, name) || namesTest(splitBrief(task.brief).body, name))
     );
   });
 }
