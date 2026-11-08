@@ -314,6 +314,13 @@ the row fields.
 | T-0087-M10 | packages/dev/src/rework.ts | a hunk gone since the previous review was not listed as removed | `increment > a reverted hunk is listed as removed` |
 | T-0087-M11 | packages/dev/src/rework.ts | a hunk was matched on its first changed line only, so a subset of a previous hunk was unchanged | `increment > a hunk that is a subset of a previous hunk is new` |
 | T-0087-M12 | packages/dev/src/rework.ts | a pure deletion marked no line as changed | `lines the task's change touched > a pure deletion marks the lines either side of the cut` |
+| T-0053-M1 | packages/dev/src/views.ts | a plan row left out its `parent` | `dev views > a plan row shows the derived state and merged/total` |
+| T-0053-M2 | packages/dev/src/views.ts | a task row's `parent` named the bare plan id, which two repositories share | `the repo type > parent=<plan> lists its tasks, and another repository's plan with the same id does not leak` |
+| T-0053-M3 | packages/dev/src/views.ts | a repo row showed 0 open tasks whatever the stored count | `the repo type > the row counts open plans and open tasks as they change` |
+| T-0053-M4 | packages/dev/src/service.ts | a plan write no longer refreshed its repository's open counts | `the repo type > the row counts open plans and open tasks as they change` |
+| T-0053-M5 | packages/dev/src/views.ts | a removed repository's row said `active`, so the default filter kept it | `the repo type > a repository added or removed after start fires an event and appears or disappears` |
+| T-0053-M6 | packages/dev/src/service.ts | repositories stored under the old `repository` type were not carried over to `repo` | `the repo type > a repository stored before dev declared repo shows up as a repo object` |
+| T-0053-M7 | packages/dev/src/views.ts | the Overview named `main` instead of the repository's configured default branch | `the repo type > the Overview names the path, the default branch, dev.json, worker and reviewer` |
 | T-0095-M1 | packages/dev/src/gate.ts | verify did not run the prepare commands in the gate checkout | `prepare > runs once per checkout, before verify and before review, and the review prompt says so` |
 | T-0095-M2 | packages/dev/src/gate.ts | review did not run the prepare commands in the recreated gate checkout | `prepare > a failing prepare fails review before a reviewer starts` |
 | T-0095-M3 | packages/dev/src/gate.ts | the review prompt did not say the checkout is prepared | `prepare > runs once per checkout, before verify and before review, and the review prompt says so` |
@@ -322,6 +329,7 @@ the row fields.
 | T-0095-M6 | packages/dev/src/integrate.ts | the integration checkout was not prepared | `dev/integrate > prepare runs in the integration checkout before the key commands` |
 | T-0095-M7 | packages/dev/src/prepare.ts | a failing prepare command counted as a pass | `prepare > a failing prepare fails verify with its reason and log, and no gate command runs` |
 | T-0095-M8 | packages/dev/src/gate.ts | review did not prepare its recreated checkout, so the test a reviewer runs there could not resolve the branch's package | `prepare > a change spanning two packages > with a prepare command that installs, the test passes in the review checkout` |
+| T-0053-M9 | packages/dev/src/index.ts | the repo type declared no `prepare`, so a list in a fresh process hid repositories stored under the old type | `the repo type > a repository stored before dev declared repo shows up as a repo object` |
 | T-0075-M21 | packages/dev/src/views.ts | a cancelled task's attempt ended at its last step record, not at the cancel | `metrics follow the run's own step > a task cancelled while its worker runs keeps the time up to the cancel, step included` |
 | T-0075-M22 | packages/dev/src/views.ts | the step in flight at a cancel added nothing to its line | `metrics follow the run's own step > a task cancelled while its worker runs keeps the time up to the cancel, step included` |
 | T-0075-M23 | packages/dev/src/views.ts | a task's time ignored the run's own end (the line and the row disagreed after a cancel) | `metrics follow the run's own step > a task cancelled while its review is in flight counts the review up to the cancel` |

@@ -582,6 +582,8 @@ The `dev` plugin declares these filters (`all` follows `active`):
 | plan | `active` (default) | draft, confirmed, paused |
 | plan | `done` | finished |
 | plan | `cancelled` | cancelled |
+| repo | `active` (default) | active |
+| repo | `removed` | removed |
 
 ## Where `dev` commands run
 

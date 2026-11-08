@@ -76,6 +76,7 @@ describe("dev views", () => {
       scope: "repository",
       final: false,
       mark: "proposed",
+      parent: "repo:repository",
     });
     await setTaskPhase(store, task.id, "merged");
     expect(planViews.row(await getPlan(store, plan.id)).note).toBe(
@@ -113,6 +114,7 @@ describe("dev views", () => {
       final: false,
       mark: "proposed",
       badge: "#0",
+      parent: "plan:repository/P-0001-storage",
     });
     for (const phase of ["merged", "cancelled"] as const) {
       await setTaskPhase(store, task.id, phase);
