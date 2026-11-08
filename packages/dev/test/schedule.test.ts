@@ -199,6 +199,26 @@ function startedId(request: { readonly object?: { readonly id: string } | undefi
 }
 
 describe("dev scheduling", () => {
+  test("a task behind a prior task is blocked until that task merges; the plan counts its active tasks", async () => {
+    const fixture = await setup({ concurrency: 1 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run" });
+    const first = await makeTask(fixture, plan.key, "first");
+    const second = await makeTask(fixture, plan.key, "second", [first.id]);
+    await confirm(fixture, plan.key);
+
+    await tick(fixture);
+    const blocked = await getTask(fixture.store, second.key);
+    expect(taskViews.row(blocked).mark).toBe("blocked");
+    const active = await getPlan(fixture.store, plan.key);
+    expect(planData(active.data).activeCount).toBe(1);
+
+    await phase(fixture, first.key, "merged");
+    await tick(fixture);
+    const started = await getTask(fixture.store, second.key);
+    expect(taskData(started.data).dependencyHeld).toBeUndefined();
+    expect(taskViews.row(started).mark).not.toBe("blocked");
+  });
+
   test("concurrency 1 starts one task and frees the slot on merge", async () => {
     const fixture = await setup({ concurrency: 1 });
     const plan = await makePlan(fixture, { slug: "plan", auto: "run" });

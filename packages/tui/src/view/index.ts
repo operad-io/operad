@@ -13,6 +13,7 @@ import {
   type CliRenderer,
   type TextChunk,
 } from "@opentui/core";
+import type { RowMark } from "@operad-io/engine";
 import { entryHint, paletteEntries } from "../actions.ts";
 import { chunksOfLine, type MarkdownPalette } from "../markdown.ts";
 import { sanitize } from "../sanitize.ts";
@@ -35,6 +36,7 @@ import {
   statusText,
   twoPane,
   type TuiObject,
+  rowMark,
   type TuiRow,
   type TuiSection,
   type TuiState,
@@ -51,6 +53,7 @@ export interface TuiPalette extends MarkdownPalette {
   readonly remove: string;
   readonly weak: string;
   readonly text: string;
+  readonly success: string;
 }
 
 /** Light and dark palettes; the accent, the run blue and the error red differ. */
@@ -63,6 +66,7 @@ export const TUI_PALETTE: Readonly<Record<TuiTheme, TuiPalette>> = {
     remove: "#cf222e",
     weak: "#6b7280",
     text: "#1f2937",
+    success: "#1a7f37",
   },
   dark: {
     accent: "#a793ff",
@@ -72,6 +76,7 @@ export const TUI_PALETTE: Readonly<Record<TuiTheme, TuiPalette>> = {
     remove: "#ff7b72",
     weak: "#8b8b8b",
     text: "#e6e6e6",
+    success: "#7ee787",
   },
 };
 
@@ -188,12 +193,39 @@ function dividerContent(state: TuiState, palette: TuiPalette): StyledText {
   ]);
 }
 
+type MarkColour = "weak" | "accent" | "run" | "success" | "error";
+
+/** One single-cell character and colour role per mark. */
+export const MARK_GLYPHS: Readonly<
+  Record<RowMark, { readonly char: string; readonly colour: MarkColour }>
+> = {
+  todo: { char: "○", colour: "weak" },
+  blocked: { char: "◌", colour: "weak" },
+  retry_wait: { char: "◷", colour: "weak" },
+  paused: { char: "‖", colour: "weak" },
+  proposed: { char: "+", colour: "accent" },
+  starting: { char: "◔", colour: "run" },
+  running: { char: "◐", colour: "run" },
+  reconciling: { char: "↻", colour: "run" },
+  checking: { char: "⌕", colour: "run" },
+  rework_pending: { char: "↩", colour: "accent" },
+  waiting: { char: "●", colour: "accent" },
+  integrating: { char: "⑂", colour: "run" },
+  ready_to_merge: { char: "◉", colour: "success" },
+  done: { char: "✓", colour: "success" },
+  failed: { char: "✗", colour: "error" },
+  cancelled: { char: "⊘", colour: "weak" },
+  broken: { char: "!", colour: "error" },
+};
+
 /** The glyph and colour of a list row. */
 function glyph(row: TuiRow, palette: TuiPalette): TextChunk {
   if (row.error !== undefined) return chunk("✗", palette.error);
-  if (row.waiting) return chunk("!", palette.accent);
-  if (row.running) return chunk("●", palette.run);
-  if (/^(done|merged)$/i.test(row.state)) return chunk("✓", palette.weak);
+  const mark = rowMark(row);
+  // A mark this client does not know (a newer server) draws as plain.
+  const shown = mark === "none" ? undefined : MARK_GLYPHS[mark];
+  if (shown !== undefined) return chunk(shown.char, palette[shown.colour]);
+  if (/^(done|merged)$/i.test(row.state)) return chunk("✓", palette.success);
   return chunk("○", palette.weak);
 }
 
@@ -284,6 +316,7 @@ function objectHeader(
 ): TextChunk[] {
   const row = object.row;
   const note = row.note === undefined ? "" : ` · ${row.note}`;
+  const badge = row.badge === undefined ? "" : ` ${row.badge}`;
   const title = row.title === "" || row.title === row.id ? "" : `  ${row.title}`;
   const third =
     object.error !== undefined
@@ -296,7 +329,7 @@ function objectHeader(
   return [
     chunk(fit(`${bareId(row.id)}${title}`, width), palette.text, TextAttributes.BOLD),
     chunk("\n"),
-    chunk(fit(`${row.state}${note}`, width), palette.weak),
+    chunk(fit(`${row.state}${badge}${note}`, width), palette.weak),
     chunk("\n"),
     third,
     chunk("\n"),
