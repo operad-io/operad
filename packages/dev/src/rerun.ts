@@ -13,6 +13,11 @@ import {
   type StepRunOptions,
 } from "@operad-io/engine";
 import { isRecord } from "./model.ts";
+import {
+  CheckPlaceCancelled,
+  withCheckPlace,
+  type CheckPlaces,
+} from "./places.ts";
 
 export interface CheckRun {
   readonly outcome: PluginStepResult | undefined;
@@ -30,13 +35,22 @@ async function once(
   runStep: NonNullable<StepContext["runStep"]>,
   params: Readonly<Record<string, unknown>>,
   options: StepRunOptions,
+  places: CheckPlaces | undefined,
 ): Promise<Pick<CheckRun, "outcome" | "hostError">> {
   try {
+    const run = (): Promise<PluginStepResult> =>
+      Promise.resolve(runStep("shell/check", params, options));
     return {
-      outcome: await runStep("shell/check", params, options),
+      outcome: await (places === undefined ? run() : withCheckPlace(places, run)),
       hostError: undefined,
     };
   } catch (error) {
+    if (error instanceof CheckPlaceCancelled) {
+      return {
+        outcome: { result: "interrupted", data: { reason: "cancelled" } },
+        hostError: undefined,
+      };
+    }
     return { outcome: undefined, hostError: messageOf(error) };
   }
 }
@@ -80,8 +94,9 @@ export async function runCheckWithRerun(
   params: Readonly<Record<string, unknown>>,
   options: StepRunOptions,
   rerun: number,
+  places?: CheckPlaces,
 ): Promise<CheckRun> {
-  const first = await once(runStep, params, options);
+  const first = await once(runStep, params, options, places);
   const firstData = dataOf(first.outcome);
   const failed = first.hostError !== undefined || first.outcome?.result === "fail";
   // Only a plain failure is rerun: not a cancel, not a hang.
@@ -96,7 +111,7 @@ export async function runCheckWithRerun(
   let attempts = 0;
   for (let round = 0; round < rerun; round += 1) {
     const offset = sizeOf(logOf(last.outcome));
-    last = await once(runStep, params, options);
+    last = await once(runStep, params, options, places);
     attempts += 1;
     markRerun(logOf(last.outcome), offset);
     if (
