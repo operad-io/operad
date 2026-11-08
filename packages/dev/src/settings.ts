@@ -119,6 +119,15 @@ export interface CheckSettings {
   readonly flakyTask: number;
 }
 
+/** What a task does when its step failed for a reason outside its own work. */
+export interface RetrySettings {
+  /**
+   * How long a retry waits for what was missing (a step that is not loaded,
+   * settings that cannot be read) before the task waits for a person.
+   */
+  readonly environmentWaitMinutes: number;
+}
+
 /** How the integrate step lands a verified commit on main. */
 export type IntegrationStyle = "merge" | "squash";
 
@@ -196,6 +205,7 @@ export interface DevSettings {
   readonly integration: IntegrationSettings;
   readonly hooks: HookSettings;
   readonly maxAutoRework: number;
+  readonly retry: RetrySettings;
 }
 
 /**
@@ -257,6 +267,7 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
     afterMerge: DEFAULT_AFTER_MERGE,
   },
   maxAutoRework: 2,
+  retry: { environmentWaitMinutes: 60 },
 };
 
 const KNOWN_FIELDS = new Set([
@@ -281,6 +292,7 @@ const KNOWN_FIELDS = new Set([
   "integration",
   "hooks",
   "maxAutoRework",
+  "retry",
 ]);
 
 function nonEmptyString(value: unknown, field: string): string {
@@ -541,6 +553,26 @@ function checkSettings(value: unknown, field: string): CheckSettings {
       value.flakyTask === undefined
         ? DEFAULT_DEV_SETTINGS.check.flakyTask
         : nonNegativeInteger(value.flakyTask, `${field}.flakyTask`),
+  };
+}
+
+function retrySettings(value: unknown, field: string): RetrySettings {
+  if (!isRecord(value)) {
+    throw new DevError(field, "must be an object");
+  }
+  for (const key of Object.keys(value)) {
+    if (key !== "environmentWaitMinutes") {
+      throw new DevError(`${field}.${key}`, "is not a retry setting");
+    }
+  }
+  return {
+    environmentWaitMinutes:
+      value.environmentWaitMinutes === undefined
+        ? DEFAULT_DEV_SETTINGS.retry.environmentWaitMinutes
+        : positiveInteger(
+            value.environmentWaitMinutes,
+            `${field}.environmentWaitMinutes`,
+          ),
   };
 }
 
@@ -838,6 +870,10 @@ export function validateDevSettings(value: unknown): DevSettings {
       value.maxAutoRework === undefined
         ? DEFAULT_DEV_SETTINGS.maxAutoRework
         : nonNegativeInteger(value.maxAutoRework, "maxAutoRework"),
+    retry:
+      value.retry === undefined
+        ? DEFAULT_DEV_SETTINGS.retry
+        : retrySettings(value.retry, "retry"),
   };
 }
 

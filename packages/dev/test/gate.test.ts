@@ -2391,15 +2391,15 @@ describe("the dev flow", () => {
       blocked: "announce_blocked",
       failed: "end_failed",
       cancelled: "end_cancelled",
-      interrupted: "announce_worktree_stopped",
+      interrupted: "retry_worktree",
     });
     expect(nextOf("work")).toEqual({
       done: "verify",
       nothing: "announce_nothing",
-      failed: "announce_work_failed",
+      failed: "retry_work_failed",
       unavailable: "work_retry",
       cancelled: "end_cancelled",
-      interrupted: "announce_work_stopped",
+      interrupted: "retry_work_stopped",
     });
     expect(nextOf("work_retry")).toEqual({
       ready: "work",

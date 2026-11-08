@@ -412,6 +412,22 @@
       "type": "integer",
       "minimum": 0,
       "default": 2
+    },
+    "retry": {
+      "description": "What a task does when its step failed for a reason outside its own work: dev runs the step once more by itself, and only a second failure waits for a person.",
+      "type": "object",
+      "properties": {
+        "environmentWaitMinutes": {
+          "description": "How many minutes the retry waits for what was missing (a step that is not loaded, settings that cannot be read) before the task waits for a person.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 60
+        }
+      },
+      "additionalProperties": false,
+      "default": {
+        "environmentWaitMinutes": 60
+      }
     }
   },
   "additionalProperties": false

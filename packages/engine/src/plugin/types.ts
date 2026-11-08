@@ -462,6 +462,8 @@ export interface StepContext extends PluginBaseContext {
    * used. Call it before the call the permission covers.
    */
   useGrant(waitId: string): Promise<boolean>;
+  /** Whether a plugin that declares this step is loaded now. */
+  readonly stepLoaded?: ((use: string) => boolean) | undefined;
   /**
    * Runs another loaded step in this run. The kernel offers it when a plugin
    * step delegates to a harness or another plugin; a direct call to a step's

@@ -17,6 +17,22 @@ export class AccessError extends PluginError {
   }
 }
 
+/**
+ * A step was called that no loaded plugin declares: its plugin is disabled or
+ * failed to load. `kind` lets a caller tell this from a step's own failure
+ * without reading the message.
+ */
+export class StepNotLoadedError extends PluginError {
+  readonly kind = "step_not_loaded";
+  readonly use: string;
+
+  constructor(use: string) {
+    super(`step "${use}": no loaded plugin declares it`);
+    this.name = "StepNotLoadedError";
+    this.use = use;
+  }
+}
+
 /** The message of an unknown thrown value. */
 export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

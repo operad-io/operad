@@ -5,7 +5,7 @@ import { loadFlow as loadFlowFile } from "../flow/load.ts";
 import { FlowError, validateFlow } from "../flow/validate.ts";
 import type { JsonValue } from "../log/types.ts";
 import { normalizeActionArgs, noteProperty, validateActionArgs } from "./action-schema.ts";
-import { AccessError, AskTimeoutError, messageOf, PluginError } from "./errors.ts";
+import { AccessError, AskTimeoutError, messageOf, PluginError, StepNotLoadedError } from "./errors.ts";
 import { defaultOperadHome } from "./home.ts";
 import { createPluginLogger } from "./logger.ts";
 import { FileSecretStore } from "./secrets.ts";
@@ -1400,7 +1400,7 @@ export class PluginRegistry {
   ): { readonly key: string; readonly concurrent: number } | undefined {
     const found = this.stepIndex.get(use);
     if (found === undefined) {
-      throw new PluginError(`step "${use}": no loaded plugin declares it`);
+      throw new StepNotLoadedError(use);
     }
     const limit = found.step.limit;
     if (limit === undefined) return undefined;
@@ -1469,7 +1469,7 @@ export class PluginRegistry {
     }
     const found = this.stepIndex.get(use);
     if (found === undefined) {
-      throw new PluginError(`step "${use}": no loaded plugin declares it`);
+      throw new StepNotLoadedError(use);
     }
     if (options.runId.trim().length === 0) {
       throw new PluginError(`step "${use}": runId: must be a non-empty string`);
@@ -1598,6 +1598,7 @@ export class PluginRegistry {
       trigger: options.trigger,
       emit,
       ask,
+      stepLoaded: (name) => this.stepIndex.has(name),
       runStep: (nestedUse, nestedParams, nestedOptions) =>
         this.runStepInner(nestedUse, nestedParams, {
           ...nestedOptions,

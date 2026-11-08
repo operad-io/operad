@@ -8,6 +8,7 @@ import { runAnnounce } from "./announce.ts";
 import { checkDev } from "./check.ts";
 import { commands } from "./commands.ts";
 import { runRework, runReview, runReviewDue, runVerify, runWorkDue } from "./gate.ts";
+import { runRetry, runRetryDue } from "./retry.ts";
 import { runCleanup, runIntegrate } from "./integrate.ts";
 import { runScheduler } from "./schedule.ts";
 import { devStanding } from "./standing.ts";
@@ -95,6 +96,19 @@ export function createDevPlugin() {
         run: runWorkDue,
       },
       {
+        name: "retry",
+        results: ["again", "hold", "ask", "give_up", "cancelled"],
+        run: runRetry,
+      },
+      {
+        // A wait: it holds until what a retry waits for is there or the bound
+        // has passed, in pieces below the step timeout.
+        name: "retry_due",
+        timeoutSecs: STEP_TIMEOUT_SECS,
+        results: ["ready", "waiting", "interrupted"],
+        run: runRetryDue,
+      },
+      {
         name: "rework",
         results: ["again", "ask", "cancelled"],
         run: runRework,
@@ -171,6 +185,8 @@ export * from "./model.ts";
 export * from "./schedule.ts";
 export * from "./service.ts";
 export * from "./places.ts";
+export * from "./retry.ts";
+export * from "./stops.ts";
 export * from "./settings.ts";
 export * from "./standing.ts";
 export * from "./steps.ts";
