@@ -253,3 +253,12 @@ the row fields.
 |---|---|---|---|
 | T-0047-M6 | packages/engine/src/views/presentation.ts | show accepted `--repo` that differs from a qualified id | `dev` cli test `a qualified id with an unknown repository, or a conflicting --repo, is refused` |
 | typed-bare-id-M1 | packages/engine/src/views/presentation.ts | a typed bare id (`task:T-0043-x`) skipped the scoped lookup | `presentation views > a typed bare id finds a scoped object of its type, as the app opens a row` |
+
+## T-0089 — fences per CommonMark
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0089-M1 | packages/engine/src/markdown.ts | an opening fence accepted only exactly three backticks (`{3}`), so `````diff` lost its language | `markdown fences > a four-backtick fence reads its language and colours a diff` |
+| T-0089-M2 | packages/engine/src/markdown.ts | a closing fence ignored its length (any fence of the same character closed) | `markdown fences > a ``` line inside a ```` fence is content` |
+| T-0089-M3 | packages/engine/src/markdown.ts | a closing fence ignored its character (a backtick fence closed a tilde fence) | `markdown fences > closing needs the same character and a length at least the opening's` |
+| T-0089-M4 | packages/engine/src/markdown.ts | the language was the whole info string, not its first word | `markdown fences > only the first word of the info string is the language` |

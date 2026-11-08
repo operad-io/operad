@@ -98,13 +98,33 @@ function visibleLength(text: string): number {
   return [...stripInline(text)].length;
 }
 
-function isFence(line: string): boolean {
-  return /^\s*```/.test(line);
+/** An opening fence: its character, length and language (the info string's first word). */
+interface Fence {
+  readonly char: string;
+  readonly length: number;
+  readonly language: string;
 }
 
-function fenceLanguage(line: string): string {
-  const match = /^\s*```\s*([^\s`]*)/.exec(line);
-  return match?.[1] ?? "";
+/** Reads an opening fence per CommonMark: 3+ backticks or tildes, indented at most 3 spaces. */
+function openingFence(line: string): Fence | undefined {
+  const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+  if (match === null) return undefined;
+  const run = match[1] ?? "";
+  const info = (match[2] ?? "").trim();
+  // A backtick fence's info string may not contain a backtick.
+  if (run.startsWith("`") && info.includes("`")) return undefined;
+  return {
+    char: run.charAt(0),
+    length: run.length,
+    language: info.split(/\s+/)[0] ?? "",
+  };
+}
+
+/** A closing fence: the same character, at least as long, then only spaces. */
+function closesFence(line: string, fence: Fence): boolean {
+  const match = /^ {0,3}(`{3,}|~{3,}) *$/.exec(line);
+  const run = match?.[1];
+  return run !== undefined && run.charAt(0) === fence.char && run.length >= fence.length;
 }
 
 function splitCells(line: string): string[] {
@@ -209,11 +229,12 @@ export function renderMarkdownLines(
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
 
-    if (isFence(line)) {
-      const language = fenceLanguage(line);
+    const opening = openingFence(line);
+    if (opening !== undefined) {
+      const language = opening.language;
       index += 1;
       const code: string[] = [];
-      while (index < lines.length && !isFence(lines[index] ?? "")) {
+      while (index < lines.length && !closesFence(lines[index] ?? "", opening)) {
         code.push(lines[index] ?? "");
         index += 1;
       }
