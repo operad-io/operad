@@ -475,6 +475,7 @@ export class Views {
     type: string | undefined,
     options: TreeListOptions,
   ): Promise<ViewListPage> {
+    await this.prepared();
     const root = options.root === true;
     const parent = options.parent;
     if (root && parent !== undefined) {

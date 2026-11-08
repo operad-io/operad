@@ -52,4 +52,10 @@ describe("object type prepare", () => {
     await views.listTree("new", { root: true });
     expect(runs()).toBe(1);
   });
+
+  test("a root list called first sees them too", async () => {
+    const { store, views } = setup();
+    await store.put("old", "a", {}, "seed");
+    expect((await views.listTree(undefined, { root: true })).rows.map((row) => row.id)).toEqual(["a"]);
+  });
 });
