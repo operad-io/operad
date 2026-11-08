@@ -207,6 +207,87 @@ describe("a start whose called step is not loaded", () => {
   });
 });
 
+describe("a candidate started while its plugin is disabled", () => {
+  test("stays pending with the reason, and starts after the plugin is enabled", async () => {
+    const root = await tempRoot();
+    const candidateRule: TriggerRule = { ...RULE, mode: "candidate" };
+    const make = async (plugins: readonly PluginDefinition[], disabled: readonly string[]) => {
+      const storeRoot = join(root, "store");
+      const log = openLog({ backend: "jsonl", path: storeRoot });
+      const registry = new PluginRegistry(plugins, {
+        home: root,
+        storeRoot,
+        store: new MemoryPluginStore({ root: storeRoot }),
+        onLog: () => undefined,
+        disabled,
+      });
+      const kernel = new Kernel({ log, registry, home: root, storeRoot, rules: [candidateRule] });
+      return { log, registry, kernel };
+    };
+
+    const before = await make([appPlugin()], ["pool"]);
+    const routed = await before.kernel.receive({ source: "cron", key: "k1", type: "tick", hops: 0 });
+    if (routed.kind !== "candidate" || routed.pendingId === undefined) {
+      throw new Error("not a candidate");
+    }
+    await expect(before.kernel.startCandidate(routed.pendingId)).rejects.toBeInstanceOf(
+      StartRefusedError,
+    );
+    const items = await listPending(before.log, before.registry, before.kernel);
+    expect(items.map((item) => item.kind)).toEqual(["candidate"]);
+    await before.log.close();
+
+    const after = await make([appPlugin(), poolPlugin()], []);
+    const started = await after.kernel.startCandidate(routed.pendingId);
+    expect(started.kind).toBe("started");
+    await after.log.close();
+  });
+
+  test("a choice recorded before the refusal is listed with the reason", async () => {
+    const root = await tempRoot();
+    const storeRoot = join(root, "store");
+    const open = () => openLog({ backend: "jsonl", path: storeRoot });
+    const build = (plugins: readonly PluginDefinition[], disabled: readonly string[], log: ReturnType<typeof open>) => {
+      const registry = new PluginRegistry(plugins, {
+        home: root,
+        storeRoot,
+        store: new MemoryPluginStore({ root: storeRoot }),
+        onLog: () => undefined,
+        disabled,
+      });
+      const kernel = new Kernel({
+        log,
+        registry,
+        home: root,
+        storeRoot,
+        rules: [{ ...RULE, mode: "candidate" }],
+      });
+      return { registry, kernel };
+    };
+    const log = open();
+    const ready = build([appPlugin(), poolPlugin()], [], log);
+    const routed = await ready.kernel.receive({ source: "cron", key: "k1", type: "tick", hops: 0 });
+    if (routed.kind !== "candidate" || routed.pendingId === undefined) {
+      throw new Error("not a candidate");
+    }
+    // The person's choice is recorded; the process died before the run existed.
+    await log.recordOutcome(routed.pendingId, "resolve", {
+      value: "started",
+      flow: "job",
+      object: "job:1",
+    });
+    const gone = build([appPlugin()], ["pool"], log);
+    const items = await listPending(log, gone.registry, gone.kernel);
+    expect(items.map((item) => [item.kind, item.prompt])).toEqual([
+      [
+        "refused",
+        'cannot start: needs "pool/agent" from plugin pool, which is disabled (operad plugin enable pool)',
+      ],
+    ]);
+    await log.close();
+  });
+});
+
 describe("calls", () => {
   test("a name that is not plugin/step is refused at load", () => {
     expect(() => appPlugin(["pool"])).not.toThrow();

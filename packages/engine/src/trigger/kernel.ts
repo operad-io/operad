@@ -560,8 +560,25 @@ export class Kernel {
   async refusedStarts(): Promise<readonly RefusedStart[]> {
     const list: RefusedStart[] = [];
     const runs = await this.log.runs();
+    const resolvedStarts = new Set<string>();
+    const outcomes: InputOutcome[] = [];
     for await (const outcome of this.log.readOutcomes()) {
-      if (outcome.kind !== ROUTE || valueOf(outcome) !== "started") continue;
+      outcomes.push(outcome);
+      if (outcome.kind === RESOLVE && valueOf(outcome) === "started") {
+        resolvedStarts.add(outcome.inputId);
+      }
+    }
+    for (const outcome of outcomes) {
+      // A route that starts, or a candidate a person already chose to start.
+      if (
+        outcome.kind !== ROUTE ||
+        !(
+          valueOf(outcome) === "started" ||
+          (valueOf(outcome) === "candidate" && resolvedStarts.has(outcome.inputId))
+        )
+      ) {
+        continue;
+      }
       const flow = field(outcome.payload, "flow");
       const object = field(outcome.payload, "object");
       if (flow === undefined || object === undefined) continue;
@@ -628,6 +645,10 @@ export class Kernel {
     if (candidate === undefined) {
       throw new Error(`no pending item "${pendingId}"`);
     }
+    // Refused before the person's choice is recorded, so the candidate stays
+    // pending and can be started once the plugin is enabled.
+    const problem = this.registry.startProblem(candidate.flow);
+    if (problem !== undefined) throw new StartRefusedError(problem);
 
     const recorded = await this.log.recordOutcome(
       pendingId,
