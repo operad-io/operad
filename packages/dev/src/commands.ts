@@ -6,6 +6,7 @@ import type {
   StoredObject,
 } from "@operad-io/engine";
 import { DevError, bareId, briefBody, storeKey, taskData, type RepositoryData } from "./model.ts";
+import { flakyTasksByName } from "./flaky.ts";
 import { listRerunCounts } from "./reruns.ts";
 import { readStdinText } from "./stdin.ts";
 import { editText } from "./editor.ts";
@@ -293,7 +294,13 @@ async function runReruns(
   if (argv.length > 0) throw new DevError("reruns", "takes no arguments");
   const counts = await listRerunCounts(ctx.store);
   if (counts.length === 0) return "no test has passed on a rerun yet";
-  return counts.map((entry) => `${entry.count}\t${entry.name}`).join("\n");
+  const tasks = await flakyTasksByName(ctx.store);
+  return counts
+    .map((entry) => {
+      const task = tasks.get(entry.name);
+      return `${entry.count}\t${entry.name}${task === undefined ? "" : `\t${task}`}`;
+    })
+    .join("\n");
 }
 
 export const commands: readonly CommandDefinition[] = [

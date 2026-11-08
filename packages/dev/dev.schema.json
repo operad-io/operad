@@ -231,11 +231,18 @@
           "type": "integer",
           "minimum": 0,
           "default": 1
+        },
+        "flakyTask": {
+          "description": "How many times one test passes only on its rerun, in one repository, before dev proposes a task to fix it; 0 turns the proposal off.",
+          "type": "integer",
+          "minimum": 0,
+          "default": 2
         }
       },
       "additionalProperties": false,
       "default": {
-        "rerun": 1
+        "rerun": 1,
+        "flakyTask": 2
       }
     },
     "reviewer": {
