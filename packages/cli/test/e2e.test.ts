@@ -399,7 +399,7 @@ describe("dogfood end to end", () => {
         await waitForStore(
           storeRoot,
           async () => {
-            const listed = await cli(["list", "task", "--json"]);
+            const listed = await cli(["list", "task", "--filter", "all", "--json"]);
             const page = JSON.parse(listed.out) as {
               rows: { id: string; state: string }[];
             };
