@@ -4,6 +4,7 @@ import {
   Kernel,
   MemoryPluginStore,
   PluginRegistry,
+  listPending,
   StartRefusedError,
   defineFlow,
   definePlugin,
@@ -147,10 +148,20 @@ describe("a start whose called step is not loaded", () => {
       );
     expect(received).toBeInstanceOf(StartRefusedError);
     expect(await before.log.runs()).toEqual([]);
+    const waiting = await listPending(before.log, before.registry, before.kernel);
+    expect(waiting.map((item) => [item.kind, item.flow, item.prompt])).toEqual([
+      [
+        "refused",
+        "job",
+        'cannot start: needs "pool/agent" from plugin pool, which is disabled (operad plugin enable pool)',
+      ],
+    ]);
+
     await before.log.close();
 
     const after = await env([appPlugin(), poolPlugin()], { root });
     await after.kernel.recoverUnrouted();
+    expect(await listPending(after.log, after.registry, after.kernel)).toEqual([]);
     const runs = await after.log.runs();
     expect(runs.map((run) => run.flow)).toEqual(["job"]);
     await after.log.close();

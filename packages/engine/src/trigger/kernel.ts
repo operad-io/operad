@@ -18,6 +18,7 @@ import { readState } from "../runner/service.ts";
 import { TriggerStore } from "./store.ts";
 import {
   MAX_TRIGGER_HOPS,
+  type RefusedStart,
   type StartRequest,
   type StartResult,
   type StepEvent,
@@ -549,6 +550,28 @@ export class Kernel {
       (left, right) =>
         left.at - right.at || left.pendingId.localeCompare(right.pendingId),
     );
+  }
+
+  /**
+   * Events the rules sent to a flow that cannot start now. Nothing is stored
+   * for them: they are read from the route decisions, so they leave this list
+   * when the plugin is enabled and the start goes through.
+   */
+  async refusedStarts(): Promise<readonly RefusedStart[]> {
+    const list: RefusedStart[] = [];
+    const runs = await this.log.runs();
+    for await (const outcome of this.log.readOutcomes()) {
+      if (outcome.kind !== ROUTE || valueOf(outcome) !== "started") continue;
+      const flow = field(outcome.payload, "flow");
+      const object = field(outcome.payload, "object");
+      if (flow === undefined || object === undefined) continue;
+      if (runs.some((run) => run.startInputId === outcome.inputId)) continue;
+      const reason = this.registry.startProblem(flow);
+      if (reason !== undefined) {
+        list.push({ inputId: outcome.inputId, flow, object, reason });
+      }
+    }
+    return list;
   }
 
   /** Cancels a candidate without starting it. */
