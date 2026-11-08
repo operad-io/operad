@@ -13,6 +13,7 @@ import {
   type StepRunOptions,
 } from "@operad-io/engine";
 import { isRecord } from "./model.ts";
+import type { CheckCommand, FailedRerun } from "./settings.ts";
 import {
   CheckPlaceCancelled,
   withCheckPlace,
@@ -26,6 +27,8 @@ export interface CheckRun {
   readonly rerun: boolean;
   /** A short note for a pass that needed the rerun, otherwise undefined. */
   readonly note: string | undefined;
+  /** The tests that failed in a first run and passed when run alone. */
+  readonly passedOnRerun: readonly string[];
 }
 
 /** The line drawn between the two runs in the check log. */
@@ -76,14 +79,18 @@ function sizeOf(path: string | undefined): number {
 }
 
 /** Draws the separator at `offset`, where the first run's output ended. */
-function markRerun(path: string | undefined, offset: number): void {
+function markRerun(
+  path: string | undefined,
+  offset: number,
+  heading: string = RERUN_SEPARATOR,
+): void {
   if (path === undefined) return;
   try {
     const bytes = readFileSync(path);
     const before = bytes.subarray(0, offset).toString("utf8");
     const after = bytes.subarray(offset).toString("utf8");
     const gap = before.endsWith("\n") || before.length === 0 ? "" : "\n";
-    writeFileSync(path, `${before}${gap}${RERUN_SEPARATOR}\n${after}`);
+    writeFileSync(path, `${before}${gap}${heading}\n${after}`);
   } catch {
     // A log that cannot be read stays as it is; the result does not depend on it.
   }
@@ -95,17 +102,18 @@ export async function runCheckWithRerun(
   options: StepRunOptions,
   rerun: number,
   places?: CheckPlaces,
+  lineOffset = 0,
 ): Promise<CheckRun> {
   const first = await once(runStep, params, options, places);
   const firstData = dataOf(first.outcome);
   const failed = first.hostError !== undefined || first.outcome?.result === "fail";
   // Only a plain failure is rerun: not a cancel, not a hang.
   if (!failed || rerun <= 0 || firstData.reason === "timeout" || first.hostError !== undefined) {
-    return { ...first, rerun: false, note: undefined };
+    return { ...first, rerun: false, note: undefined, passedOnRerun: [] };
   }
   const label =
     typeof firstData.lineNumber === "number"
-      ? `check line ${firstData.lineNumber}`
+      ? `check line ${firstData.lineNumber + lineOffset}`
       : "the check";
   let last = first;
   let attempts = 0;
@@ -121,6 +129,7 @@ export async function runCheckWithRerun(
       return {
         ...last,
         rerun: true,
+        passedOnRerun: [],
         note: `${label} failed, passed on rerun${attempts > 1 ? ` ${attempts}` : ""}`,
       };
     }
@@ -132,5 +141,214 @@ export async function runCheckWithRerun(
       break;
     }
   }
-  return { ...last, rerun: true, note: undefined };
+  return { ...last, rerun: true, note: undefined, passedOnRerun: [] };
+}
+
+/* ---------------------------------------------------------------------------
+ * Commands that rerun only their failed tests
+ * ------------------------------------------------------------------------- */
+
+/** `text` inside single quotes, safe for `sh -c`. */
+export function shellQuote(text: string): string {
+  return `'${text.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * A regex that matches exactly one test. A failure line joins describe blocks
+ * with " > ", while bun's `-t` matches the names joined with a space, so the
+ * separator is turned into a space.
+ */
+export function anchoredPattern(name: string): string {
+  const joined = name.replace(/ > /g, " ");
+  return `^${joined.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}$`;
+}
+
+/** The rerun command for one failed test. */
+export function rerunCommand(template: string, name: string): string {
+  return template
+    .replace(/\{(name|pattern)\}/g, (_, kind: string) =>
+      shellQuote(kind === "name" ? name : anchoredPattern(name)),
+    );
+}
+
+/** The failed test names `failed.match` finds in `text`, each once, in order. */
+export function failedNames(failed: FailedRerun, text: string): string[] {
+  const names = new Set<string>();
+  for (const found of text.matchAll(new RegExp(failed.match, "gm"))) {
+    const name = found[1];
+    if (name !== undefined && name.length > 0) names.add(name);
+  }
+  return [...names];
+}
+
+function withLineNumber(
+  outcome: PluginStepResult | undefined,
+  lineNumber: number,
+  message?: string,
+): PluginStepResult | undefined {
+  if (outcome === undefined) return undefined;
+  return {
+    ...outcome,
+    data: {
+      ...dataOf(outcome),
+      lineNumber,
+      ...(message === undefined ? {} : { message }),
+    },
+  };
+}
+
+/** Reads the log from `offset` on; a log that cannot be read holds no names. */
+function logSince(path: string | undefined, offset: number): string {
+  if (path === undefined) return "";
+  try {
+    return readFileSync(path).subarray(offset).toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
+function describePass(names: readonly string[]): string | undefined {
+  return names.length === 0
+    ? undefined
+    : `passed on rerun: ${names.join("; ")}`;
+}
+
+/**
+ * Runs a list of check commands. A list of plain strings is one `shell/check`
+ * with the whole-list rerun. A command with `failed` runs alone; when it exits
+ * non-zero and its log names a few failed tests, only those run again.
+ */
+export async function runCheckCommands(
+  runStep: NonNullable<StepContext["runStep"]>,
+  base: { readonly cwd: string; readonly timeoutSecs?: number },
+  commands: readonly CheckCommand[],
+  options: StepRunOptions,
+  rerun: number,
+  places?: CheckPlaces,
+): Promise<CheckRun> {
+  const runOf = (command: CheckCommand): string =>
+    typeof command === "string" ? command : command.run;
+  const failedOf = (command: CheckCommand): FailedRerun | undefined =>
+    typeof command === "string" ? undefined : command.failed;
+  const paramsFor = (lines: readonly string[]) => ({ ...base, lines });
+
+  if (!commands.some((command) => failedOf(command) !== undefined)) {
+    return runCheckWithRerun(
+      runStep,
+      paramsFor(commands.map(runOf)),
+      options,
+      rerun,
+      places,
+    );
+  }
+
+  const notes: string[] = [];
+  const passed: string[] = [];
+  let reran = false;
+  let last: Pick<CheckRun, "outcome" | "hostError"> = {
+    outcome: { result: "pass", data: { lines: 0, tail: [] } },
+    hostError: undefined,
+  };
+  let logSize = 0;
+  const finish = (
+    result: Pick<CheckRun, "outcome" | "hostError">,
+  ): CheckRun => ({
+    ...result,
+    rerun: reran,
+    passedOnRerun: passed,
+    note: notes.length === 0 ? undefined : notes.join("; "),
+  });
+
+  let index = 0;
+  while (index < commands.length) {
+    const command = commands[index];
+    if (command === undefined) break;
+    const failed = failedOf(command);
+    if (failed === undefined) {
+      // A run of commands without `failed` keeps the whole-list rerun.
+      let end = index;
+      while (end < commands.length) {
+        const next = commands[end];
+        if (next === undefined || failedOf(next) !== undefined) break;
+        end += 1;
+      }
+      const group = await runCheckWithRerun(
+        runStep,
+        paramsFor(commands.slice(index, end).map(runOf)),
+        options,
+        rerun,
+        places,
+        index,
+      );
+      reran = reran || group.rerun;
+      if (group.note !== undefined) notes.push(group.note);
+      const lineNumber = dataOf(group.outcome).lineNumber;
+      const outcome =
+        typeof lineNumber === "number"
+          ? withLineNumber(group.outcome, lineNumber + index)
+          : group.outcome;
+      last = { outcome, hostError: group.hostError };
+      if (group.hostError !== undefined || outcome?.result !== "pass") {
+        return finish(last);
+      }
+      logSize = sizeOf(logOf(outcome));
+      index = end;
+      continue;
+    }
+
+    const lineNumber = index + 1;
+    const first = await once(runStep, paramsFor([runOf(command)]), options, places);
+    const firstData = dataOf(first.outcome);
+    const numbered = {
+      outcome: withLineNumber(first.outcome, lineNumber),
+      hostError: first.hostError,
+    };
+    if (first.hostError === undefined && first.outcome?.result === "pass") {
+      last = numbered;
+      logSize = sizeOf(logOf(first.outcome));
+      index += 1;
+      continue;
+    }
+    if (
+      first.hostError !== undefined ||
+      first.outcome?.result !== "fail" ||
+      firstData.reason !== "exit"
+    ) {
+      return finish(numbered);
+    }
+    const log = logOf(first.outcome);
+    const names = failedNames(failed, logSince(log, logSize));
+    if (names.length === 0 || names.length > failed.max) return finish(numbered);
+
+    reran = true;
+    for (const name of names) {
+      const rerunLine = rerunCommand(failed.rerun, name);
+      const heading = `===== rerun of failed test: ${name} =====`;
+      const before = sizeOf(log);
+      const again = await once(runStep, paramsFor([rerunLine]), options, places);
+      markRerun(logOf(again.outcome) ?? log, before, heading);
+      const result = {
+        outcome: withLineNumber(again.outcome, lineNumber),
+        hostError: again.hostError,
+      };
+      if (again.hostError === undefined && again.outcome?.result === "pass") {
+        passed.push(name);
+        last = result;
+        continue;
+      }
+      return finish({
+        outcome: withLineNumber(
+          again.outcome,
+          lineNumber,
+          `the failed test "${name}" failed again when run alone`,
+        ),
+        hostError: again.hostError,
+      });
+    }
+    const note = describePass(passed);
+    if (note !== undefined) notes.push(note);
+    logSize = sizeOf(logOf(last.outcome) ?? log);
+    index += 1;
+  }
+  return finish(last);
 }
