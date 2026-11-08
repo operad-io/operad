@@ -31,14 +31,20 @@ export const PRIORITIES = ["P0", "P1", "P2", "P3", "P4", "P5"] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
 /** Where a task is. */
-export type TaskPhase =
-  | "proposed"
-  | "ready"
-  | "running"
-  | "review"
-  | "waiting"
-  | "merged"
-  | "cancelled";
+export const TASK_PHASES = [
+  "proposed",
+  "ready",
+  "running",
+  "review",
+  "waiting",
+  "merged",
+  "cancelled",
+] as const;
+export type TaskPhase = (typeof TASK_PHASES)[number];
+
+/** What a plan row shows as its state: its status, or `finished`. */
+export const PLAN_STATES = ["draft", "confirmed", "cancelled", "finished"] as const;
+export type PlanState = (typeof PLAN_STATES)[number];
 
 /** The data of a plan object. Counts are a cache over its tasks. */
 export type PlanData = {
@@ -53,6 +59,8 @@ export type PlanData = {
   readonly taskCount: number;
   readonly mergedCount: number;
   readonly cancelledCount: number;
+  /** Tasks being worked or reviewed now; the scheduler keeps it current. */
+  readonly activeCount?: number | undefined;
   /** True once the scheduler has reported that every task ended. */
   readonly finishedReported?: boolean | undefined;
 };
@@ -314,6 +322,8 @@ export type TaskData = {
   readonly area?: string | undefined;
   /** The running task that holds this ready task's area; the scheduler sets it. */
   readonly areaHeldBy?: string | undefined;
+  /** True while a task this ready task follows is not merged; the scheduler sets it. */
+  readonly dependencyHeld?: boolean | undefined;
   readonly phase: TaskPhase;
   readonly attempts: number;
   readonly run: string | null;
@@ -727,7 +737,7 @@ export function editBrief(brief: string, body: string): string {
  * ------------------------------------------------------------------------- */
 
 /** The state a plan row shows: `finished` is derived from its tasks. */
-export function planState(plan: PlanData): string {
+export function planState(plan: PlanData): PlanState {
   if (plan.status === "cancelled") return "cancelled";
   if (
     plan.status === "confirmed" &&

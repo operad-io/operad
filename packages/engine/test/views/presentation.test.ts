@@ -9,6 +9,7 @@ import {
   openLog,
   openSqliteLogBackend,
   PluginRegistry,
+  ROW_MARKS,
   ViewError,
   type LogBackend,
 } from "../../src/index.ts";
@@ -302,6 +303,47 @@ describe("presentation views", () => {
     expect(slowRow?.error).toContain("limit");
     expect(logs.some((line) => line.includes("row failed"))).toBe(true);
     views.close();
+    await log.close();
+  });
+
+  test("a valid mark and badge pass through list and get; a plain row is unchanged", async () => {
+    const { store, registry, log } = await fixture();
+    store.put("item", "marked", { title: "M", mark: "ready_to_merge", badge: "#2" }, "seed");
+    const views = trackedViews({ registry, store, log });
+    const page = await views.list("item");
+    const marked = page.rows.find((row) => row.id === "marked");
+    expect(marked?.mark).toBe("ready_to_merge");
+    expect(marked?.badge).toBe("#2");
+    const plain = page.rows.find((row) => row.id === "one");
+    expect(plain !== undefined && "mark" in plain).toBe(false);
+    expect(plain !== undefined && "badge" in plain).toBe(false);
+    const object = await views.get("item:marked");
+    expect(object.row.mark).toBe("ready_to_merge");
+    expect(object.row.badge).toBe("#2");
+    await log.close();
+  });
+
+  test("an unknown mark is an error row naming the allowed marks", async () => {
+    const { store, registry, log } = await fixture();
+    store.put("item", "bad", { title: "B", mark: "sparkly" }, "seed");
+    const views = trackedViews({ registry, store, log });
+    const row = (await views.list("item")).rows.find((r) => r.id === "bad");
+    expect(row?.state).toBe("error");
+    expect(row?.mark).toBeUndefined();
+    for (const name of ROW_MARKS) expect(row?.error).toContain(name);
+    await log.close();
+  });
+
+  test("a badge over 16 characters or over several lines is an error row", async () => {
+    const { store, registry, log } = await fixture();
+    store.put("item", "long", { title: "L", badge: "x".repeat(17) }, "seed");
+    store.put("item", "lines", { title: "L", badge: "a\nb" }, "seed");
+    store.put("item", "edge", { title: "L", badge: "x".repeat(16) }, "seed");
+    const views = trackedViews({ registry, store, log });
+    const rows = (await views.list("item")).rows;
+    expect(rows.find((r) => r.id === "long")?.state).toBe("error");
+    expect(rows.find((r) => r.id === "lines")?.state).toBe("error");
+    expect(rows.find((r) => r.id === "edge")?.badge).toBe("x".repeat(16));
     await log.close();
   });
 

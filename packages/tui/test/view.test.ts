@@ -5,7 +5,8 @@ import {
   reduce,
   type TuiState,
 } from "../src/state.ts";
-import { TUI_PALETTE, createTuiView, drawState } from "../src/view/index.ts";
+import { ROW_MARKS } from "@operad-io/engine";
+import { MARK_GLYPHS, TUI_PALETTE, createTuiView, drawState } from "../src/view/index.ts";
 
 function frameState(): TuiState {
   let state = initialState({ width: 120, height: 24, theme: "dark" });
@@ -70,7 +71,7 @@ describe("the TUI view", () => {
       const spans = setup
         .captureSpans()
         .lines.flatMap((line) => line.spans)
-        .filter((span) => span.text.includes("!"));
+        .filter((span) => span.text.includes("●"));
       expect(spans.length).toBeGreaterThan(0);
       const waiting = spans.find(
         (span) => span.fg.toInts().join(",") === "167,147,255,255",
@@ -115,8 +116,8 @@ describe("the TUI view", () => {
         expect(lines[1]?.startsWith(" ─")).toBe(true);
         expect(lines[22]?.trim()).toMatch(/^─+$/);
         expect(lines[23]?.startsWith(" j/k move")).toBe(true);
-        expect(lines[2]?.startsWith(" ❯ ! one")).toBe(true);
-        expect(lines[3]?.startsWith("   ● two")).toBe(true);
+        expect(lines[2]?.startsWith(" ❯ ● one")).toBe(true);
+        expect(lines[3]?.startsWith("   ◐ two")).toBe(true);
         expect(lines.join("\n")).not.toMatch(/[╭╮╰╯]/);
         const at = lines.slice(2, 22).map((line) => line.indexOf("│"));
         view.destroy();
@@ -251,5 +252,50 @@ describe("the TUI view", () => {
     } as never);
     const text = drawState(state).footer.chunks.map((c) => c.text).join("");
     expect(text).toContain("row is broken");
+  });
+
+  test("each mark draws its own single-cell character; waiting beats a mark; running without a mark draws running", async () => {
+    const width = 100;
+    const chars = ROW_MARKS.map((mark) => MARK_GLYPHS[mark].char);
+    expect(new Set(chars).size).toBe(ROW_MARKS.length);
+    for (const char of chars) expect(Array.from(char)).toHaveLength(1);
+
+    const rows = [
+      ...ROW_MARKS.map((mark, index) => ({
+        id: `m${index}`,
+        title: mark,
+        state: mark,
+        mark,
+        waiting: false,
+        running: false,
+      })),
+      { id: "w1", title: "w", state: "w", mark: "done" as const, waiting: true, running: false },
+      { id: "w2", title: "w", state: "w", mark: "ready_to_merge" as const, waiting: true, running: false },
+      { id: "r1", title: "r", state: "r", running: true, waiting: false },
+      { id: "r2", title: "r", state: "r", mark: "done" as const, running: true, waiting: false },
+    ];
+    let state = initialState({ width, height: 40, theme: "dark" });
+    state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
+    state = reduce(state, { type: "page", tabId: "type:item", replace: true, page: { rows } });
+    state = reduce(state, { type: "key", key: "3" });
+    const setup = await createTestRenderer({ width, height: 40 });
+    try {
+      const view = createTuiView(setup.renderer);
+      view.render({ ...state, width, height: 40 });
+      await setup.renderOnce();
+      const lines = setup.captureCharFrame().split("\n").slice(2);
+      const glyphOf = (id: string): string | undefined =>
+        lines.find((line) => line.includes(` ${id}`))?.slice(3, 4);
+      ROW_MARKS.forEach((mark, index) => {
+        expect(glyphOf(`m${index}`)).toBe(MARK_GLYPHS[mark].char);
+      });
+      expect(glyphOf("w1")).toBe(MARK_GLYPHS.waiting.char);
+      expect(glyphOf("w2")).toBe(MARK_GLYPHS.ready_to_merge.char);
+      expect(glyphOf("r1")).toBe(MARK_GLYPHS.running.char);
+      expect(glyphOf("r2")).toBe(MARK_GLYPHS.done.char);
+      view.destroy();
+    } finally {
+      await setup.dispose();
+    }
   });
 });

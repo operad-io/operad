@@ -25,8 +25,10 @@ import type {
   PluginFact,
   PluginStore,
   StoredObject,
+  RowMark,
   ViewContext,
 } from "../plugin/types.ts";
+import { ROW_BADGE_MAX, ROW_MARKS } from "../plugin/types.ts";
 import { historyEntries, formatHistoryEntry } from "./history.ts";
 import { readState } from "../runner/service.ts";
 
@@ -53,6 +55,10 @@ export interface ViewRow {
   readonly note?: string | undefined;
   /** The namespace the id lives in; set only when the list shows it. */
   readonly scope?: string | undefined;
+  /** The plugin's semantic mark; the precedence against the flags is the client's. */
+  readonly mark?: RowMark | undefined;
+  /** A short text shown after the state. */
+  readonly badge?: string | undefined;
   /** A person wait is open on this object. */
   readonly waiting: boolean;
   /** The object's run is working. */
@@ -1139,12 +1145,44 @@ export class Views {
     }
     const note = textOf(outcome.note);
     const scope = textOf(outcome.scope);
+    let mark: RowMark | undefined;
+    if (outcome.mark !== undefined) {
+      const found = ROW_MARKS.find((allowed) => allowed === outcome.mark);
+      if (found === undefined) {
+        return this.failRow(
+          plugin,
+          object,
+          new Error(
+            `row mark ${JSON.stringify(outcome.mark)} is not allowed; the marks are ${ROW_MARKS.join(", ")}`,
+          ),
+        );
+      }
+      mark = found;
+    }
+    const badge = outcome.badge;
+    if (badge !== undefined) {
+      if (
+        typeof badge !== "string" ||
+        /[\r\n]/.test(badge) ||
+        Array.from(badge).length > ROW_BADGE_MAX
+      ) {
+        return this.failRow(
+          plugin,
+          object,
+          new Error(
+            `row badge must be a single line of at most ${ROW_BADGE_MAX} characters`,
+          ),
+        );
+      }
+    }
     return {
       id,
       title,
       state,
       ...(note === undefined ? {} : { note }),
       ...(scope === undefined ? {} : { scope }),
+      ...(mark === undefined ? {} : { mark }),
+      ...(typeof badge === "string" ? { badge } : {}),
       waiting: false,
       running: false,
     };

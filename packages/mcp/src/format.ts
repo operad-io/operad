@@ -73,6 +73,8 @@ export function showMarkdown(object: ViewObject | McpViewObject): string {
   lines.push(`- id: \`${rowName(row)}\``);
   lines.push(`- type: \`${object.type}\``);
   lines.push(`- state: ${row.state}`);
+  if (row.mark !== undefined) lines.push(`- mark: ${row.mark}`);
+  if (row.badge !== undefined) lines.push(`- badge: ${row.badge}`);
   lines.push(`- flags: ${flags(row)}`);
   if (row.note !== undefined) lines.push(`- note: ${row.note}`);
   if (row.error !== undefined) lines.push(`- error: ${row.error}`);

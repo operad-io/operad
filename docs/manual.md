@@ -206,7 +206,7 @@ and an open object replaces it until `escape`. The header counts Pending and
 Running and then names every object type from `/v1/types`. The right pane says
 `select an object` until a row is opened. `enter` opens the selected row with
 `GET /v1/objects/<id>`: the pane starts with that row (id, title, state, note
-and mark), then the section tabs in the server's order (History last), then the
+badge and mark), then the section tabs in the server's order (History last), then the
 section's Markdown. A live section has a dot on its tab and follows its end
 while the pane is at the bottom (`following`); scrolling up stops following and
 `End` resumes it. A section the server cut at its size cap shows a `Truncated`
@@ -285,8 +285,8 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 |---|---|
 | `GET /v1/types` | `{ "types": [{ "type": "task", "title": "Task" }] }`: the object types with views and their display names. |
 | `GET /v1/keys` | `{ "keys": [{ "key": "m", "action": "dev:merge", "source": "plugin" }] }`: the key bindings in force, the plugins' defaults with the person's `keys.json` overrides applied; `source` is `user` for an override. |
-| `GET /v1/objects?type=<type>&cursor=<c>` | `{ "rows": [...], "next": "<c>" }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, plus `waiting` and `running`; an error row also carries `error`. |
-| `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. An item that is about an object also carries `object` (`<type>:<id>`), its `link` and its `row`: the same row `GET /v1/objects?type=…` returns for that object (`id`, `title`, `state`, optional `note`, `waiting`, `running`), so a client does not read each object. When the row cannot be built (the object is gone, no loaded plugin shows its type, or the plugin's row fails) the item carries the error row the list shows for a bad row, with `state` `error` and an `error` message; the list itself never fails for one object. A candidate has no object and no `row`. `operad pending` prints the row's title under each line that has one. |
+| `GET /v1/objects?type=<type>&cursor=<c>` | `{ "rows": [...], "next": "<c>" }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, `mark` and `badge` (see [Row marks](#row-marks)), plus `waiting` and `running`; an error row also carries `error`. |
+| `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. An item that is about an object also carries `object` (`<type>:<id>`), its `link` and its `row`: the same row `GET /v1/objects?type=…` returns for that object (`id`, `title`, `state`, optional `note`, `mark`, `badge`, `waiting`, `running`), so a client does not read each object. When the row cannot be built (the object is gone, no loaded plugin shows its type, or the plugin's row fails) the item carries the error row the list shows for a bad row, with `state` `error` and an `error` message; the list itself never fails for one object. A candidate has no object and no `row`. `operad pending` prints the row's title under each line that has one. |
 | `GET /v1/running` | The same list as `operad running`. |
 | `GET /v1/objects/<id>` | `{ "id", "type", "link", "row", "sections", "actions" }`: the link that opens the object, the row, the section directory, and the actions available now with their `args` schema, `note` field and `confirm` flag. |
 | `GET /v1/objects/<id>/sections/<section>?cursor=<c>&full=<bool>` | `{ "markdown": "...", "next": "<c>" }`. `full=true` skips the size cap. |
@@ -296,6 +296,53 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 `POST /v1/act` records the caller as `{ "via": "http", "id": "operad app" }`.
 It records the action the same way the command line does, and a running
 `operad serve` carries on the steps a waiting run asks for.
+
+### Row marks
+
+A plugin's `row` may return a `mark` and a `badge` besides `id`, `title`, `state`
+and `note`. `GET /v1/objects`, `GET /v1/objects/<id>`, the row of a pending
+item and the MCP `list` and `show` results pass them through unchanged.
+
+`mark` says what the object is doing, and the client chooses the icon and the
+colour. It is one of these 17 values, and the kernel turns any other value into
+the error row, naming them:
+
+| Mark | Meaning | TUI |
+|---|---|---|
+| `todo` | not started | `○` |
+| `blocked` | waits for another object or a held area | `◌` |
+| `retry_wait` | waits for a retry time | `◷` |
+| `paused` | paused | `‖` |
+| `proposed` | suggested, not yet accepted | `+` |
+| `starting` | being set up | `◔` |
+| `running` | work in progress | `◐` |
+| `reconciling` | being brought in line with a change elsewhere | `↻` |
+| `checking` | being verified or reviewed | `⌕` |
+| `rework_pending` | asked whether to redo it | `↩` |
+| `waiting` | waits for a person | `●` |
+| `integrating` | being merged | `⑂` |
+| `ready_to_merge` | checked, waits for the merge | `◉` |
+| `done` | finished | `✓` |
+| `failed` | gave up | `✗` |
+| `cancelled` | cancelled | `⊘` |
+| `broken` | cannot be used | `!` |
+
+The kernel's `waiting` and `running` flags stay as they are. A client picks what
+to draw in this order: an error row draws the error; when `waiting` is true, a
+`mark` of `waiting`, `proposed`, `rework_pending` or `ready_to_merge` is kept
+and any other mark (or none) draws `waiting`; when `waiting` is false, the
+`mark` is drawn if there is one; otherwise `running` true draws `running`; a row
+with none of these is plain. The TUI colours the marks by role: `proposed`,
+`rework_pending` and `waiting` use the accent, `starting`, `running`,
+`reconciling`, `checking` and `integrating` the run colour, `ready_to_merge` and
+`done` the success colour, `failed` and `broken` the error colour, and the
+rest the weak colour.
+
+`badge` is a short text the client shows as it is, after the state: one line of
+at most 16 characters, or the row is an error row. The `dev` plugin sets a
+task's badge to `#<attempt>` (`#0` before the first attempt) and marks its tasks
+and plans from their phase, the step the attempt has reached and the holds the
+scheduler records; `operad list` keeps its columns and does not show them.
 
 ### Links
 

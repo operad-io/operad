@@ -11,6 +11,7 @@ import {
   rowMark,
   tabLabel,
   twoPane,
+  type TuiRow,
   type TuiState,
 } from "../src/state.ts";
 
@@ -377,5 +378,25 @@ describe("rework 1 states", () => {
     state = reduce(state, { type: "row-gone", id: "one" });
     const ids = state.tabs.find((t) => t.id === "type:item")?.list.rows.map((r) => r.id);
     expect(ids).toEqual(["two"]);
+  });
+
+  test("rowMark: waiting keeps only the waiting-side marks, a mark beats running", () => {
+    const row = (patch: Partial<TuiRow>): TuiRow => ({
+      id: "x",
+      title: "x",
+      state: "x",
+      waiting: false,
+      running: false,
+      ...patch,
+    });
+    expect(rowMark(row({ waiting: true, mark: "done" }))).toBe("waiting");
+    expect(rowMark(row({ waiting: true, mark: "running" }))).toBe("waiting");
+    for (const mark of ["waiting", "proposed", "rework_pending", "ready_to_merge"] as const) {
+      expect(rowMark(row({ waiting: true, mark }))).toBe(mark);
+    }
+    expect(rowMark(row({ mark: "blocked" }))).toBe("blocked");
+    expect(rowMark(row({ running: true, mark: "checking" }))).toBe("checking");
+    expect(rowMark(row({ running: true }))).toBe("running");
+    expect(rowMark(row({}))).toBe("none");
   });
 });
