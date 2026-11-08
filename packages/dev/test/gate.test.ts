@@ -1927,7 +1927,7 @@ describe("the dev flow", () => {
       merge: "integrate",
       reject: "worktree",
       rework: "worktree",
-      reverify: "verify",
+      reverify: "reverify",
       interrupted: "end_cancelled",
     });
     expect(nextOf("integrate")).toEqual({

@@ -629,6 +629,84 @@ export async function runWorktree(
   return { result: prepared.kind, data };
 }
 
+/**
+ * Step `dev/reverify`: bring the branch up to date with main before a reverify
+ * gates it. It keeps the attempt, since the work is the same: a clean merge (or
+ * a main already contained) goes to verify, a conflict goes to the worker with
+ * the merge left open.
+ */
+export async function runReverify(
+  ctx: StepContext,
+): Promise<PluginStepResult> {
+  const context = await taskContext(ctx);
+  if (!claimAllows(ctx, context.task)) return cancelledStep();
+  const previous = context.task.attempt;
+  const attempt: TaskAttempt = previous ?? {
+    number: Math.max(context.task.attempts, 0) + 1,
+    run: ctx.runId,
+  };
+  const attempts = Math.max(context.task.attempts, attempt.number);
+  const prepared = prepareWorktree(
+    context.repository,
+    context.settings,
+    context.taskId,
+  );
+  const base = prepared.base ?? attempt.base ?? null;
+  const worktree = worktreePath(
+    context.repository.path,
+    context.settings,
+    context.taskId,
+  );
+  const message =
+    prepared.kind === "conflict"
+      ? "reverify: main conflicts, sending to work"
+      : prepared.kind === "ready"
+        ? prepared.merged === undefined
+          ? "reverify: main already contained, checking again"
+          : `reverify: merged main ${prepared.merged.commit}, checking again`
+        : undefined;
+  const nextAttempt: TaskAttempt = {
+    ...attempt,
+    run: ctx.runId,
+    worktree,
+    branch: workBranch(context.taskId),
+    base,
+    result: prepared.kind,
+    // A conflict is worked on again; a clean merge goes straight to the gate.
+    ...(prepared.kind === "conflict" ? { worked: false } : {}),
+    workWaits: 0,
+    workRetryAt: null,
+    merged: prepared.merged ?? attempt.merged ?? null,
+  };
+  const next: TaskData = {
+    ...context.task,
+    phase: "running",
+    run: ctx.runId,
+    attempts,
+    attempt: nextAttempt,
+    ...(message === undefined
+      ? {}
+      : { brief: appendChange(context.task.brief, message) }),
+  };
+  if (!(await saveTaskGuarded(ctx, context.taskKey, next, "dev:reverify"))) {
+    return cancelledStep();
+  }
+  return {
+    result: prepared.kind,
+    data: {
+      attempt: attempts,
+      worktree,
+      path: worktree,
+      branch: nextAttempt.branch,
+      base,
+      ...(message === undefined ? {} : { message }),
+      ...(prepared.message === undefined ? {} : { failure: prepared.message }),
+      ...(prepared.files === undefined ? {} : { files: prepared.files }),
+      ...(prepared.merged === undefined ? {} : { merged: prepared.merged }),
+    },
+  };
+}
+
 export function briefText(task: TaskData): string {
   const parts = splitBrief(task.brief);
   const pieces = [parts.body, parts.reworks].filter(

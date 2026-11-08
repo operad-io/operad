@@ -173,8 +173,8 @@ to send it to a channel.
    sends it back with a note.
 8. A task that waits after a gate failure, or after the worker returned nothing
    or failed (a model 429, a gate killed from outside):
-   - `operad dev:reverify <task>` runs verify and review again on the same
-     commit with no worker. Use it when the failure was flaky.
+   - `operad dev:reverify <task>` merges the current main into the branch,
+     then runs verify and review again with no worker. Use it when the failure was flaky.
    - `operad dev:rework <task> --note "what to do"` writes your own
      `## Rework <n> (lead)` into the brief and runs the worker again. Neither
      counts toward `maxAutoRework`.
