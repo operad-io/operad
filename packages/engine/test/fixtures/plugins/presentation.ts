@@ -2,6 +2,11 @@ import { definePlugin } from "../../../src/index.ts";
 import type { ObjectRow } from "../../../src/index.ts";
 
 let logReads = 0;
+
+/** The live `log` section grows per read; a test starts it from zero. */
+export function resetLogReads(): void {
+  logReads = 0;
+}
 const waiting = new Promise<never>(() => undefined);
 
 /**
