@@ -72,12 +72,13 @@ import {
 } from "./steps.ts";
 import {
   addedLinesOf,
+  filePatches,
+  incrementOf,
+  type Increment,
   fixedCount,
-  intersect,
   movesAsPreExisting,
   previousLine,
   previousReview,
-  restrictPatch,
   type LineMap,
   type PreviousFinding,
   type ReviewHistoryEntry,
@@ -835,7 +836,7 @@ interface ReworkPrompt {
   readonly previousSha: string;
   readonly previous: readonly PreviousFinding[];
   readonly commits: string;
-  readonly increment: string;
+  readonly increment: Increment;
 }
 
 function reviewPrompt(
@@ -864,10 +865,17 @@ function reviewPrompt(
       "## Commits since the previous review",
       rework.commits.length === 0 ? "(none)" : rework.commits,
       "## Increment",
-      `The task's own change restricted to the hunks that hold lines changed since ${rework.previousSha}. The full diff is not here; read any file you need.`,
-      rework.increment.length === 0
-        ? "No line of the task's own change was changed since the previous review."
-        : rework.increment,
+      `The task's own diff, restricted to the hunks that changed since ${rework.previousSha}. The full diff is not here; read any file you need.`,
+      rework.increment.added.length === 0
+        ? "No hunk of the task's own diff changed since the previous review."
+        : rework.increment.added,
+      ...(rework.increment.removed.length === 0
+        ? []
+        : [
+            "## Removed since the previous review",
+            "These hunks of the previous review's diff are gone or changed; this is their old content:",
+            rework.increment.removed,
+          ]),
     );
   } else if (prepared.included.length === 0) {
     pieces.push("## Diff", "The change has no diff to review.");
@@ -1601,6 +1609,7 @@ function historyOf(
     reviewHistory: [
       ...old,
       {
+        ...(typeof record.base === "string" ? { base: record.base } : {}),
         attempt,
         round: typeof record.round === "number" ? record.round : 1,
         sha: record.sha,
@@ -1610,37 +1619,36 @@ function historyOf(
   };
 }
 
-/** The new-side lines of a diff between two commits, by file. */
-function newSideLines(
-  repositoryPath: string,
-  from: string,
-  to: string,
-  context: number,
-): LineMap {
-  return addedLinesOf(
-    gitZ(repositoryPath, [
-      "-c",
-      "core.quotepath=false",
-      "diff",
-      `-U${context}`,
-      "--no-color",
-      "--no-ext-diff",
-      "-M",
-      from,
-      to,
-    ]).out,
-  );
-}
-
 function reworkPromptOf(
   repositoryPath: string,
+  settings: DevSettings,
   followed: ReviewHistoryEntry,
   sha: string,
-  own: LineMap,
   prepared: PreparedDiff,
 ): ReworkPrompt {
-  const since = newSideLines(repositoryPath, followed.sha, sha, 3);
-  const increment = intersect(since, own);
+  // The previous review's own diff: its recorded merge base, or the merge base
+  // of the remote main and the previous commit when none was recorded.
+  const recorded =
+    followed.base !== undefined &&
+    git(repositoryPath, ["cat-file", "-e", `${followed.base}^{commit}`]).ok
+      ? followed.base
+      : mergeBase(repositoryPath, settings, followed.sha);
+  const before =
+    recorded === undefined
+      ? new Map<string, string>()
+      : filePatches(
+          gitZ(repositoryPath, [
+            "-c",
+            "core.quotepath=false",
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "-M",
+            recorded,
+            followed.sha,
+          ]).out,
+        );
+  const now = new Map(prepared.included.map((file) => [file.path, file.patch]));
   return {
     previousSha: followed.sha,
     previous: followed.blocking,
@@ -1649,9 +1657,7 @@ function reworkPromptOf(
       "--oneline",
       `${followed.sha}..${sha}`,
     ]).out,
-    increment: prepared.included
-      .map((file) => restrictPatch(file.patch, increment.get(file.path)))
-      .join(""),
+    increment: incrementOf(before, now),
   };
 }
 
@@ -1876,12 +1882,12 @@ export async function runReview(
     path,
   );
 
-  // A rework round follows the newest earlier review of another commit; a
-  // commit the checkout does not have makes it a first review.
+  // The previous review is the newest report of the task for another commit,
+  // in any attempt; none, or a commit the checkout lacks, is a first review.
   const history: readonly ReviewHistoryEntry[] = Array.isArray(task.reviewHistory)
     ? task.reviewHistory
     : [];
-  const followed = previousReview(history, sha, attempt.number);
+  const followed = previousReview(history, sha);
   const rework =
     followed !== undefined &&
     git(context.repository.path, [
@@ -1891,19 +1897,30 @@ export async function runReview(
     ]).ok
       ? followed
       : undefined;
-  // The lines the task's own change added or changed, for the pre-existing
-  // rules; the increment reads the new side with its context lines.
-  const own: LineMap = newSideLines(context.repository.path, base, sha, 0);
-  const ownSide: LineMap = newSideLines(context.repository.path, base, sha, 3);
-  // A review of the same commit as the newest review, or one whose previous
-  // commit the checkout lacks, treats nothing as pre-existing.
-  const demote =
-    history[history.length - 1]?.sha !== sha &&
-    (followed === undefined || rework !== undefined);
+  // The lines the task's own change added, for the pre-existing rules.
+  const own: LineMap = addedLinesOf(
+    gitZ(context.repository.path, [
+      "-c",
+      "core.quotepath=false",
+      "diff",
+      "-U0",
+      "--no-color",
+      "--no-ext-diff",
+      "-M",
+      base,
+      sha,
+    ]).out,
+  );
   const reworkPrompt: ReworkPrompt | undefined =
     rework === undefined
       ? undefined
-      : reworkPromptOf(context.repository.path, rework, sha, ownSide, prepared);
+      : reworkPromptOf(
+          context.repository.path,
+          context.settings,
+          rework,
+          sha,
+          prepared,
+        );
 
   if (prepared.bytes > context.settings.reviewer.maxDiffBytes) {
     const largest = [...prepared.files]
@@ -2140,7 +2157,6 @@ export async function runReview(
         delete (finding as { preExisting?: unknown }).preExisting;
         delete (finding as { pre_existing?: unknown }).pre_existing;
         const moved =
-          demote &&
           atOrAbove(finding.severity, settings.fixLevel) &&
           movesAsPreExisting(
             {
@@ -2263,6 +2279,7 @@ export async function runReview(
       verified: last.verified ?? [],
       log: resultPath,
       message,
+      base,
       ...(reworkLine.length === 0 ? {} : { reworkLine }),
       ...(decision === "findings" ? { reason: "findings" } : {}),
     };

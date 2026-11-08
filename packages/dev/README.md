@@ -115,7 +115,7 @@ what happened and changes nothing.
 | `dev/reverify` | `ready`, `conflict`, `failed` | the first step of a reverify: fetches and merges the current main into the task branch in the existing worktree, keeping the attempt; `ready` goes to verify, `conflict` to the worker |
 | `dev/work` | `done`, `nothing`, `failed` | builds the worker prompt, runs the configured harness step in the worktree, then requires new commits, a clean tree and a pushed branch |
 | `dev/verify` | `pass`, `fail` | recreates `<worktreeRoot>/<task id>-gate` detached at the branch head, runs `gate.commands` through `shell/check`, and records the verified commit |
-| `dev/review` | `pass`, `fail`, `failed`, `unavailable`, `timed_out` | runs the reviewer harness step in the gate worktree on the diff from the merge base to the verified commit; a finding far from the task's own change is moved out of the failing set as pre-existing (see Rework rounds); a critical one or one without a place still fails |
+| `dev/review` | `pass`, `fail`, `failed`, `unavailable`, `timed_out` | runs the reviewer harness step in the gate worktree on the diff from the merge base to the verified commit; the previous review is the newest report for another commit (see Rework rounds); in every review a finding far from the task's own change and from the previous review's findings is moved out of the failing set as pre-existing, while a critical one or one without a place still fails |
 | `dev/review_due` | `ready`, `interrupted` | the wait a review enters after a model was unavailable; it lets the flow run the same review round again at the recorded time |
 | `dev/rework` | `again`, `ask` | appends `## Rework <n> (verify|review)` with the failed command or the counted findings and sends the task back to the worker; after `maxAutoRework` in a row it asks a person instead |
 | `dev/integrate` | `merged`, `conflict`, `fail`, `failed` | fetches, builds the candidate in the gate worktree by merging the verified commit onto `<remote>/<mainBranch>`, runs `integration.keyCommands` through `shell/check`, and pushes plainly; a moved main starts again from the fetch, at most three times |
@@ -322,35 +322,44 @@ same model again.
 
 ## Rework rounds
 
-A review is a **rework round** when an earlier attempt of the task has a review
-report for a different commit; the newest report is the previous review. A review of the same
-commit as the previous one (a reverify of an unchanged head) is a first review,
-and so is a review whose previous commit is not in the checkout. In both cases nothing is
-moved as pre-existing. A review of a new commit in the same attempt (a reverify
-after main moved) is a first review that still moves far findings.
+One rule says which review is which:
 
-A rework round's prompt holds the brief, the previous review's blocking findings
-(level, `file:line`, summary), the commits `<previous sha>..<sha>` and the
-increment, not the full diff. It asks the reviewer to say, in `verified`, which
-previous findings are fixed and which are not, to review the increment, and to
-list every problem it finds. The reviewer can still read any file.
+- The **previous review** is the newest review report of the task, in any
+  attempt, for a commit other than the one now reviewed. When there is none, or
+  its commit is not in the checkout, the review gets the first-review prompt
+  (brief and full diff).
+- With a previous review, the prompt is the rework-round prompt: the brief, the
+  previous review's blocking findings (level, `file:line`, summary), the commits
+  `<previous sha>..<sha>` and the increment, not the full diff. It asks the
+  reviewer to say, in `verified`, which previous findings are fixed and which are
+  not, to review the increment, and to list every problem it finds. The reviewer
+  can still read any file.
+- A reverify of an unchanged head finds the newest report is for the same
+  commit, skips it and follows the one before it, if any. A reverify after main
+  moved is a review of a new commit and follows the newest report.
+- Pre-existing is decided the same way in every review, the first one included.
 
-The increment is the new-side lines of `git diff <previous sha> <sha>` that are
-also new-side lines of the task's own diff (merge base of main and the head, to
-the head), so lines that came only with a merge of main drop out. The increment
-diff is the task's own diff restricted to the hunks that hold an increment line.
+The **increment** is built like `git range-diff`: take the task's own diff at the
+previous review (the merge base recorded then, or the merge base of the remote
+main and the previous commit, to the previous commit) and the task's own diff
+now. A hunk of the current diff is in the increment when its `-`/`+` lines,
+ignoring line numbers and context, are not in the previous diff of that file. A
+hunk of the previous diff that is gone or changed is listed as "Removed since the
+previous review" with its old content. Both sides are the task's own diff, so a
+line that only came with a merge of main is on neither side.
 
-In every round, dev, not the model, moves a failing finding out of the failing
-set and marks it `pre_existing` unless (a) its `file:line` is within 3 lines of
-a line the task's own change added or changed in that file, (b) it is in the same
-file as and within 10 lines of a blocking finding of the previous review, (c) its
-level is `critical`, or (d) it has no file or no line. A moved finding keeps its
-level, and a `pre_existing` mark the reviewer wrote is ignored. The grading in
-`.operad/review.json` applies first. The review's data records `moved`, and
-history and Changes say "rework round: n previous findings, m fixed, k moved as
-pre-existing"; a previous finding counts as fixed when no blocking finding of
-this review is in the same file within 10 lines of it. A rework round that
-crashed before its model answered asks again with the prompt it recorded.
+Dev, not the model, moves a failing finding out of the failing set and marks it
+`pre_existing` unless (a) its `file:line` is within 3 lines of a line the task's
+own change added or changed in that file, (b) it is in the same file as and
+within 10 lines of a blocking finding of the previous review (a first review has
+none to match), (c) its level is `critical`, or (d) it has no file or no line. A
+moved finding keeps its level, and a `pre_existing` mark the reviewer wrote is
+ignored. The grading in `.operad/review.json` applies first. The review's data
+records `moved`, and history and Changes say "rework round: n previous findings,
+m fixed, k moved as pre-existing"; a previous finding counts as fixed when no
+blocking finding of this review is in the same file within 10 lines of it. A
+review that crashed before its model answered asks again with the prompt it
+recorded.
 
 ## Review diff size
 

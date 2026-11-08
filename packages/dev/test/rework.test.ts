@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
   addedLinesOf,
+  filePatches,
   fixedCount,
-  intersect,
+  incrementOf,
   movesAsPreExisting,
   previousReview,
-  restrictPatch,
   type PreviousFinding,
 } from "../src/rework.ts";
 
@@ -57,41 +57,56 @@ describe("pre-existing rules", () => {
   });
 });
 
+/** A one-file diff whose hunks are given as `[old start, [lines]]`. */
+function patch(file: string, hunks: readonly (readonly string[])[]): string {
+  return [
+    `diff --git a/${file} b/${file}`,
+    `--- a/${file}`,
+    `+++ b/${file}`,
+    ...hunks.map((hunk, index) => [`@@ -${index * 20 + 1},3 +${index * 20 + 1},3 @@`, ...hunk].join("\n")),
+    "",
+  ].join("\n");
+}
+
 describe("increment", () => {
-  test("a pure deletion marks the lines on either side of the cut", () => {
-    const map = addedLinesOf("+++ b/f\n@@ -7,1 +6,0 @@\n");
-    expect([...(map.get("f") ?? [])]).toEqual([6, 7]);
-  });
-  test("only a review of an earlier attempt is followed", () => {
-    const entry = { attempt: 1, round: 1, sha: "a", blocking: [] };
-    expect(previousReview([entry], "b", 1)).toBeUndefined();
-    expect(previousReview([entry], "b", 2)).toBe(entry);
-    expect(previousReview([entry], "a", 2)).toBeUndefined();
-  });
-  test("restrictPatch keeps only hunks that hold a wanted line", () => {
-    const patch = [
-      "diff --git a/f b/f",
-      "--- a/f",
-      "+++ b/f",
-      "@@ -1,2 +1,3 @@",
-      " a",
-      "+b",
-      " c",
-      "@@ -20,2 +21,3 @@",
-      " x",
-      "+y",
-      " z",
-      "",
-    ].join("\n");
-    const kept = restrictPatch(patch, new Set([22]));
-    expect(kept).toContain("+y");
-    expect(kept).not.toContain("+b");
-    expect(kept).toContain("+++ b/f");
-    expect(restrictPatch(patch, new Set([99]))).toBe("");
-  });
-  test("intersect keeps lines both sides hold", () => {
-    const left = addedLinesOf("+++ b/f\n@@ -0,0 +1,3 @@\n");
-    const right = addedLinesOf("+++ b/f\n@@ -0,0 +2,3 @@\n");
-    expect([...(intersect(left, right).get("f") ?? [])]).toEqual([2, 3]);
-  });
+  const one = ["+added one", " ctx"];
+  const two = ["-old two", "+new two", " ctx"];
+  const cases: readonly {
+    readonly name: string;
+    readonly previous: string;
+    readonly current: string;
+    readonly added: string[];
+    readonly removed: string[];
+  }[] = [
+    { name: "no change since the previous review", previous: patch("f", [one]), current: patch("f", [one]), added: [], removed: [] },
+    { name: "a hunk added", previous: patch("f", [one]), current: patch("f", [one, two]), added: ["-old two", "+new two"], removed: [] },
+    { name: "a line changed inside a hunk", previous: patch("f", [one]), current: patch("f", [["+changed one", " ctx"]]), added: ["+changed one"], removed: ["+added one"] },
+    { name: "a delete-only rework changes its hunk", previous: patch("f", [one]), current: patch("f", [["+added one", "-gone", " ctx"]]), added: ["+added one", "-gone"], removed: [] },
+    { name: "a reverted hunk is listed as removed", previous: patch("f", [one, two]), current: patch("f", [one]), added: [], removed: ["-old two", "+new two"] },
+    { name: "a whole file reverted", previous: patch("f", [one]), current: "", added: [], removed: ["+added one"] },
+    {
+      name: "main changes the same file near the change: only context differs",
+      previous: patch("f", [["+added one", " ctx old from main"]]),
+      current: patch("f", [["+added one", " ctx new from main"]]),
+      added: [],
+      removed: [],
+    },
+    {
+      name: "a main-only merge: the own diff is the same",
+      previous: patch("f", [one]),
+      current: patch("f", [one]),
+      added: [],
+      removed: [],
+    },
+    { name: "a hunk in a new file", previous: patch("f", [one]), current: patch("f", [one]) + patch("g", [two]), added: ["-old two", "+new two"], removed: [] },
+  ];
+  for (const item of cases) {
+    test(item.name, () => {
+      const result = incrementOf(filePatches(item.previous), filePatches(item.current));
+      const lines = (text: string) =>
+        text.split("\n").filter((line) => /^[+-][^+-]/.test(line) || line === "-gone");
+      expect(lines(result.added)).toEqual(item.added);
+      expect(lines(result.removed)).toEqual(item.removed);
+    });
+  }
 });

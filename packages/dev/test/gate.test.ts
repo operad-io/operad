@@ -2812,6 +2812,7 @@ describe("dev/review rework rounds", () => {
       "## Previous review",
       "## Commits since the previous review",
       "## Increment",
+      "## Removed since the previous review",
       "## What to write",
     ]);
     expect(prompt).not.toContain("## Diff");
@@ -2989,19 +2990,120 @@ describe("dev/review rework rounds", () => {
     expect(reviewer.calls[0]?.prompt).toContain("## Previous review");
   });
 
-  test("a review later in the same attempt is a first review", async () => {
-    const round = await afterFirstReview([]);
+  async function mergeMain(round: Round): Promise<void> {
     await advanceMain(round.state.remote, "main.txt", "from main\n", "main moves");
     gitOrThrow(round.state.worktree, ["fetch", "origin"]);
     gitOrThrow(round.state.worktree, [
       "-c", "user.name=t", "-c", "user.email=t@example.com",
       "merge", "--no-ff", "--no-edit", "origin/main",
     ]);
-    await verify(round.state, "verify-2");
-    await review(round.state, "review-2");
+  }
+
+  // One rule for which review is which: the previous review is the newest
+  // report for another commit; pre-existing moves apply in every review.
+  const kinds: readonly {
+    readonly name: string;
+    readonly first: boolean;
+    readonly run: (round: Round) => Promise<Awaited<ReturnType<typeof review>>>;
+  }[] = [
+    {
+      name: "first review",
+      first: true,
+      run: async (round) => round.first,
+    },
+    {
+      name: "rework after a review",
+      first: false,
+      run: async (round) => {
+        writeFindings(round.findingsFile, [finding("code.txt", 20)]);
+        return secondReview(round, async () => {
+          await commitIn(round.state.worktree, "extra.txt", "x\n", "more");
+        });
+      },
+    },
+    {
+      name: "reverify of the same commit",
+      first: true,
+      run: async (round) => {
+        writeFindings(round.findingsFile, [finding("code.txt", 20)]);
+        return review(round.state, "review-again");
+      },
+    },
+    {
+      name: "reverify after main moved",
+      first: false,
+      run: async (round) => {
+        writeFindings(round.findingsFile, [finding("code.txt", 20)]);
+        await mergeMain(round);
+        await verify(round.state, "verify-2");
+        return review(round.state, "review-2");
+      },
+    },
+    {
+      name: "missing previous sha",
+      first: true,
+      run: async (round) => {
+        const object = await round.state.store.get("task", round.state.taskKey);
+        if (object === undefined) throw new Error("task disappeared");
+        const task = taskData(object.data);
+        await round.state.store.put(
+          "task",
+          round.state.taskKey,
+          {
+            ...task,
+            reviewHistory: (task.reviewHistory ?? []).map((entry) => ({
+              ...entry,
+              sha: "0123456789abcdef0123456789abcdef01234567",
+            })),
+          },
+          "test:history",
+        );
+        writeFindings(round.findingsFile, [finding("code.txt", 20)]);
+        await nextAttempt(round.state);
+        await commitIn(round.state.worktree, "extra.txt", "x\n", "more");
+        await verify(round.state, "verify-2");
+        return review(round.state, "review-2");
+      },
+    },
+  ];
+  for (const kind of kinds) {
+    test(`${kind.name}: ${kind.first ? "the first prompt" : "the rework prompt"}, and a far finding is moved`, async () => {
+      const round = await afterFirstReview([finding("code.txt", kind.name === "first review" ? 20 : 5)]);
+      const result = await kind.run(round);
+      const prompt = round.state.reviewer.calls.at(-1)?.prompt ?? "";
+      if (kind.first) {
+        expect(prompt).toContain("## Diff");
+        expect(prompt).not.toContain("## Previous review");
+      } else {
+        expect(prompt).toContain("## Previous review");
+        expect(prompt).not.toContain("## Diff");
+      }
+      expect(result.data?.moved).toBe(1);
+    });
+  }
+
+  test("a main change near the task's change is not in the increment", async () => {
+    const round = await afterFirstReview([]);
+    // Main changes line 8, three lines from the task's change at line 5.
+    await advanceMain(
+      round.state.remote,
+      "code.txt",
+      lines(40).replace("line 8\n", "main 8\n"),
+      "main edits code",
+    );
+    const second = await secondReview(round, async () => {
+      gitOrThrow(round.state.worktree, ["fetch", "origin"]);
+      gitOrThrow(round.state.worktree, [
+        "-c", "user.name=t", "-c", "user.email=t@example.com",
+        "merge", "--no-ff", "--no-edit", "origin/main",
+      ]);
+      await commitIn(round.state.worktree, "mine.txt", "mine\n", "mine");
+    });
+    expect(second.result).toBe("pass");
     const prompt = round.state.reviewer.calls[1]?.prompt ?? "";
-    expect(prompt).toContain("## Diff");
-    expect(prompt).not.toContain("## Previous review");
+    expect(prompt).toContain("+mine");
+    expect(prompt).not.toContain("changed 5");
+    expect(prompt).not.toContain("main 8");
   });
 
   test("a rework that only deletes a line keeps its hunk in the increment", async () => {
@@ -3024,48 +3126,4 @@ describe("dev/review rework rounds", () => {
     expect(prompt).not.toContain("No line of the task's own change was changed");
   });
 
-  test("a reverify of the same commit demotes nothing", async () => {
-    // Line 20 is far from the changes at lines 5 and 30: a first review moves it.
-    const round = await afterFirstReview([finding("code.txt", 20)]);
-    expect(round.first.result).toBe("pass");
-    expect(round.first.data?.moved).toBe(1);
-    const again = await review(round.state, "review-again");
-    expect(again.result).toBe("fail");
-    expect(again.data?.counted).toBe(1);
-    expect(again.data?.moved).toBe(0);
-  });
-
-  test("the increment reads context lines, so a deletion beside the task's change keeps its hunk", async () => {
-    const round = await afterFirstReview([]);
-    const second = await secondReview(round, async () => {
-      await commitIn(
-        round.state.worktree,
-        "code.txt",
-        lines(40)
-          .replace("line 5\n", "changed 5\n")
-          .replace("line 30\n", "changed 30\n")
-          .replace("line 7\n", ""),
-        "delete next to a change",
-      );
-    });
-    expect(second.result).toBe("pass");
-    const prompt = round.state.reviewer.calls[1]?.prompt ?? "";
-    expect(prompt).toContain("+changed 5");
-    expect(prompt).not.toContain("No line of the task's own change was changed");
-  });
-
-  test("a same-attempt review of a new commit still moves a far finding", async () => {
-    const round = await afterFirstReview([]);
-    writeFindings(round.findingsFile, [finding("code.txt", 20)]);
-    await advanceMain(round.state.remote, "main.txt", "from main\n", "main moves");
-    gitOrThrow(round.state.worktree, ["fetch", "origin"]);
-    gitOrThrow(round.state.worktree, [
-      "-c", "user.name=t", "-c", "user.email=t@example.com",
-      "merge", "--no-ff", "--no-edit", "origin/main",
-    ]);
-    await verify(round.state, "verify-2");
-    const again = await review(round.state, "review-2");
-    expect(again.result).toBe("pass");
-    expect(again.data?.moved).toBe(1);
-  });
 });
