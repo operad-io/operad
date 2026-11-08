@@ -16,13 +16,14 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import {
   firstErrorLine,
+  match,
   messageSummary,
   readProfile,
   REFUSED_IN_LOG,
   summarizeCall,
   type AccessProfile,
 } from "@operad-io/access-match";
-import { decideAccess } from "./access.ts";
+import { decideAccess, hasRules, translate } from "./access.ts";
 import { findClaude } from "./claude-install.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
@@ -158,11 +159,24 @@ export async function runWorker(
   // Tool calls that have started and not ended; a refused call ends here too,
   // so the host never sees a call stay open.
   const open = new Map<string, { readonly name: string; readonly startedAt: number }>();
+  // The same translation `decideAccess` uses, so a tool the summary does not
+  // know by name (NotebookEdit, MultiEdit) is still judged as its access-match tool.
+  const deniedByProfile = (name: string, toolInput: unknown): boolean => {
+    const record = typeof toolInput === "object" && toolInput !== null ? (toolInput as Record<string, unknown>) : {};
+    const translated = translate(name, record);
+    if (translated.kind === "inert") return false;
+    if (translated.kind === "mapped") {
+      return !match(profile, { tool: translated.tool, input: translated.input, cwd: input.cwd }).allow;
+    }
+    return hasRules(profile);
+  };
   const startCall = (id: string, name: string, toolInput: unknown): void => {
     if (open.has(id)) return;
     const startedAt = now();
     open.set(id, { name, startedAt });
-    const summary = summarizeCall(profile, name, toolInput, input.cwd, { secrets: input.secretValues });
+    const summary = deniedByProfile(name, toolInput)
+      ? `${name} denied by the access profile`
+      : summarizeCall(profile, name, toolInput, input.cwd, { secrets: input.secretValues });
     io.line({
       type: "tool_execution_start",
       toolCallId: id,

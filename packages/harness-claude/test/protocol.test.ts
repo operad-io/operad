@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EFFORT_LEVELS, parseInput } from "../src/protocol.ts";
+import { TOOL_TABLE } from "../src/access.ts";
 import {
   MISSING_SESSION,
   SESSION,
@@ -608,6 +609,45 @@ test("a Read under denyPaths is denied, and Read elsewhere is allowed", async ()
     reason: "refused by the access profile",
   });
   expect(JSON.stringify(run.lines)).not.toContain("/etc/passwd");
+});
+
+test("a denied NotebookEdit or MultiEdit start line shows no path", async () => {
+  const s = setup();
+  s.input["access"] = { denyPaths: ["/secrets"] };
+  const run = await runFake(s, {
+    steps: [
+      { say: systemInit() },
+      { hook: "PreToolUse", toolName: "NotebookEdit", toolUseId: "n1", input: { notebook_path: "/secrets/key" } },
+      { hook: "PreToolUse", toolName: "MultiEdit", toolUseId: "m1", input: { file_path: "/secrets/key" } },
+      { say: result() },
+    ],
+  });
+  const starts = run.lines.filter((line) => line["type"] === "tool_execution_start");
+  expect(starts.map((line) => line["input"])).toEqual([
+    "NotebookEdit denied by the access profile",
+    "MultiEdit denied by the access profile",
+  ]);
+  expect(JSON.stringify(run.lines)).not.toContain("/secrets/key");
+});
+
+test("every tool the translation maps shows only its denial when the profile denies it", async () => {
+  const s = setup();
+  s.input["access"] = { denyPaths: ["/secrets"], denyCommands: ["rm"] };
+  const calls = TOOL_TABLE.map((row, i) => ({
+    name: row.claude,
+    id: `t${i}`,
+    input: { [row.from]: row.tool === "bash" ? "rm /secrets/key" : "/secrets/key" },
+  }));
+  const run = await runFake(s, {
+    steps: [
+      { say: systemInit() },
+      ...calls.map((c) => ({ hook: "PreToolUse" as const, toolName: c.name, toolUseId: c.id, input: c.input })),
+      { say: result() },
+    ],
+  });
+  const starts = run.lines.filter((line) => line["type"] === "tool_execution_start");
+  expect(starts.map((line) => line["input"])).toEqual(calls.map((c) => `${c.name} denied by the access profile`));
+  expect(JSON.stringify(run.lines)).not.toContain("/secrets/key");
 });
 
 test("a tool outside the table is denied under a rule and allowed without one", async () => {

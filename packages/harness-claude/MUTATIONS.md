@@ -89,3 +89,5 @@ setup it depends on, in the order they were recorded. The root
 | T-0063-M2 | packages/harness-claude/src/worker.ts | a message's thinking block was written into its `text` | `an assistant message logs its first 300 characters as one paragraph, without thinking` |
 | T-0063-M30 | packages/harness-claude/src/worker.ts | the blocked line and the call end logged the real refusal reason | `a Read under denyPaths is denied, and Read elsewhere is allowed` |
 | T-0063-M31 | packages/harness-claude/src/worker.ts | the summary ignored `secretValues` | `a secret of the operad store sent as secretValues is masked in the logged command` |
+| T-0063-M32 | packages/harness-claude/src/worker.ts | the start summary judged the original tool name, not the access-match translation | `a denied NotebookEdit or MultiEdit start line shows no path` |
+| T-0063-M33 | packages/harness-claude/src/worker.ts | the denial check skipped the translation for one mapped tool (Grep/Glob) | `every tool the translation maps shows only its denial when the profile denies it` |
