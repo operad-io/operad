@@ -123,3 +123,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0068-M1 | packages/tui/src/state.ts | the running row showed the run id instead of the object | `the TUI reducer` state test (running row with an object) |
+| T-0068-M9 | packages/tui/src/state.ts | a running row with an object showed only its title, not the object id | `an object-backed running row shows the object and its title` |

@@ -256,4 +256,17 @@ describe("the TUI view", () => {
     const text = drawState(state).footer.chunks.map((c) => c.text).join("");
     expect(text).toContain("row is broken");
   });
+  test("an object-backed running row shows the object and its title", () => {
+    let state = initialState({ width: 120, height: 10, theme: "dark" });
+    state = reduce(state, {
+      type: "running",
+      items: [
+        { runId: "run-1", flow: "dev", step: "w", startedAt: 0, elapsedMs: 1, object: "operad/T-0048-x", title: "Type filters", stepStartedAt: null, stepElapsedMs: null, queued: null, stepLabel: "w" },
+      ],
+    });
+    state = reduce(state, { type: "key", key: "2" });
+    const text = drawState(state).list.chunks.map((c) => c.text).join("");
+    expect(text).toContain("operad/T-0048-x");
+    expect(text).toContain("Type filters");
+  });
 });

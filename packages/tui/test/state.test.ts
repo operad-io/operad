@@ -254,7 +254,7 @@ describe("the TUI reducer", () => {
     });
     expect(state.tabs.find((tab) => tab.id === "running")?.list.rows[0]).toMatchObject({
       id: "dev/T-1",
-      title: "A title",
+      title: "dev/T-1  A title",
       note: "2.5s",
     });
     expect(runningRow === undefined ? undefined : rowMark(runningRow)).toBe("running");

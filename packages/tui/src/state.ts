@@ -489,7 +489,13 @@ function rowFromPending(item: PendingItem): TuiRow {
 function rowFromRunning(item: RunningItem): TuiRow {
   return {
     id: sanitize(item.object ?? item.runId),
-    title: sanitize(item.title ?? item.flow),
+    title: sanitize(
+      item.object === null || item.object === undefined
+        ? (item.title ?? item.flow)
+        : item.title === null
+          ? item.object
+          : `${item.object}  ${item.title}`,
+    ),
     state: sanitize(item.stepLabel ?? "-"),
     note: formatElapsed(item.stepElapsedMs ?? item.elapsedMs),
     waiting: false,
