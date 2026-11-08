@@ -56,7 +56,6 @@ export function maskSecrets(
 }
 
 const FLAKY_TYPE = "flaky-test";
-const MAX_TITLE_NAME = 120;
 const EXCERPT_LINES = 30;
 const SHOWN_FAILURES = 2;
 const SHOWN_TIMES = 20;
@@ -250,7 +249,7 @@ async function newestOpenPlan(
 
 /** The title of the task dev proposes for a test. */
 function titleFor(name: string): string {
-  return `Fix the flaky test: ${name.slice(0, MAX_TITLE_NAME)}`;
+  return `Fix the flaky test: ${name}`;
 }
 
 /**

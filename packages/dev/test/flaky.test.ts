@@ -192,6 +192,18 @@ describe("a flaky test proposes a task", () => {
     }
   });
 
+  test("two long names that share their first 120 characters each get their own task with the full name", async () => {
+    const s = await setup(true);
+    const prefix = "long suite > ".padEnd(130, "x");
+    const first = `${prefix} > first`;
+    const second = `${prefix} > second`;
+    await s.track("T-0001-a", logWith(first), 1, [first, second]);
+    const titles = (await s.flaky()).map((object) => taskData(object.data).title).sort();
+    expect(titles).toEqual([`Fix the flaky test: ${first}`, `Fix the flaky test: ${second}`]);
+    const tasks = await flakyTasksByName(s.store);
+    expect(tasks.get(first)).not.toBe(tasks.get(second));
+  });
+
   test("a brief that quotes another test's (fail) line does not link that test", async () => {
     const s = await setup(true);
     const log = [`${FILE}:`, "(fail) beta > two [2ms]", "some output", logWith("alpha > one")].join("\n");
