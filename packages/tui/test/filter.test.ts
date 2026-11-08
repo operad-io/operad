@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { PendingItem, RunningItem, ViewListPage, ViewRow } from "@operad-io/engine";
+import type { PendingItem, RunningItem, ViewListPage, ViewObject, ViewRow } from "@operad-io/engine";
 import {
   startShell,
   type TuiEvent,
@@ -449,5 +449,82 @@ describe("filters: shell", () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 5));
     expect(ids(h.state())).toEqual(["new"]);
     h.shell.stop();
+  });
+
+  test("an event-triggered list answer for a filter cycled back to is dropped", async () => {
+    const held: { filter: string | undefined; resolve: (page: ViewListPage) => void }[] = [];
+    class Holding extends Client {
+      holding = false;
+      override objects(t: string, c?: string, s?: AbortSignal, filter?: string): Promise<ViewListPage> {
+        if (!this.holding) return super.objects(t, c, s, filter);
+        return new Promise((resolve) => held.push({ filter, resolve }));
+      }
+      object(id: string): Promise<ViewObject> {
+        return Promise.resolve({
+          id,
+          type: "task",
+          link: `operad://objects/${id}`,
+          row: row(id),
+          sections: [],
+          actions: [],
+        });
+      }
+    }
+    let push: (event: TuiEvent) => void = () => undefined;
+    const source: TuiEventSource = {
+      stop() {},
+      [Symbol.asyncIterator](): AsyncIterator<TuiEvent> {
+        return {
+          next: () =>
+            new Promise<IteratorResult<TuiEvent>>((resolve) => {
+              push = (value) => resolve({ done: false, value });
+            }),
+        };
+      },
+    };
+    const client = new Holding();
+    let last: TuiState = initialState();
+    const waiters: { test: (s: TuiState) => boolean; resolve: () => void }[] = [];
+    const shell = startShell({
+      client,
+      events: () => source,
+      view: {
+        render(state) {
+          last = state;
+          for (const w of waiters.splice(0)) {
+            if (w.test(state)) w.resolve();
+            else waiters.push(w);
+          }
+        },
+        destroy() {},
+      },
+      width: 120,
+      height: 24,
+      theme: "dark",
+      clock: immediateClock,
+    });
+    await new Promise<void>((resolve) =>
+      waiters.push({ test: (s) => task(s)?.list.loaded === true, resolve }),
+    );
+    client.holding = true;
+    shell.key({ name: "3" });
+    while (push.length === 0) await new Promise<void>((resolve) => setTimeout(resolve, 1));
+    push({ kind: "change", id: "new" }); // asks for active
+    while (held.filter((x) => x.filter === "active").length < 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 1));
+    }
+    for (let i = 0; i < 4; i++) shell.key({ name: "f" }); // back to active
+    while (held.filter((x) => x.filter === "active").length < 2) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 1));
+    }
+    const mine = held.filter((x) => x.filter === "active");
+    mine[1]?.resolve({ rows: [row("new")], hidden: 0 });
+    await new Promise<void>((resolve) =>
+      waiters.push({ test: (s) => ids(s).join() === "new", resolve }),
+    );
+    mine[0]?.resolve({ rows: [row("old")], hidden: 0 });
+    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    expect(ids(last)).toEqual(["new"]);
+    shell.stop();
   });
 });

@@ -612,10 +612,11 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     const tab = state.tabs.find((candidate) => candidate.type === result.value.type);
     if (tab?.type === undefined) return;
     const filter = tab.filter;
+    const filterSeq = tab.filterSeq ?? 0;
     const page = await settle(fetchTypeRows(tab.type, tab.list.rows.length, signal, filter));
     if (signal.aborted || finished) return;
     if (page.ok) {
-      dispatch({ type: "page", tabId: tab.id, page: page.value, replace: true, filter });
+      dispatch({ type: "page", tabId: tab.id, page: page.value, replace: true, filter, filterSeq });
     }
     else fail(page.error);
   }

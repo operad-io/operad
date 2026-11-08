@@ -146,3 +146,4 @@ the row fields.
 | T-0049-M12 | packages/tui/src/state.ts | a page was accepted without comparing its filter-cycle count | `filters: state > an old answer for a filter cycled back to is dropped` |
 | T-0049-M13 | packages/tui/src/view/index.ts | the empty text for the `all` filter fell back to `no <type> yet` | `filters: view > an empty all filter reads no all tasks` |
 | T-0049-M14 | packages/tui/src/app.ts | a refresh page carried no filter-cycle count | `filters: shell > a refresh answer for a filter cycled back to is dropped` |
+| T-0049-M15 | packages/tui/src/app.ts | an event-triggered list page carried no filter-cycle count | `filters: shell > an event-triggered list answer for a filter cycled back to is dropped` |
