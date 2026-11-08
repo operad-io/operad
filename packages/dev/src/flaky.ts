@@ -314,6 +314,15 @@ export async function trackFlakyTests(input: FlakyInput): Promise<string | undef
       if (record.task !== undefined && (await taskEnded(store, fresh.name, record.task))) {
         record = { repository: fresh.name, name, occurrences: [] };
       }
+      if (record.task === undefined) {
+        // An open task that names the test is its task from the first pass on:
+        // the count restarts when that task ends, however few passes came before.
+        const existing = await namingTask(store, fresh.name, name);
+        if (existing !== undefined) {
+          record = { ...record, task: bareId(existing.id) };
+          await store.put(FLAKY_TYPE, key, writableOf(record), "dev:flaky-task");
+        }
+      }
       // While its task is open the count does not grow: the fix is on its way.
       if (record.task !== undefined) continue;
       const found = failureExcerpt(log, name);

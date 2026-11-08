@@ -153,6 +153,18 @@ describe("a flaky test proposes a task", () => {
     expect(await s.flaky()).toHaveLength(1);
   });
 
+  test("an open task naming the test is linked on the first pass, so its end restarts the count", async () => {
+    const s = await setup(true);
+    const mine = await addTask(s.store, { plan: s.planId ?? "", slug: "mine", title: `Look at ${TEST}` });
+    await s.track("T-0001-a", logWith(TEST), 2);
+    expect((await flakyTasksByName(s.store)).get(TEST)).toBe(bareId(mine.id));
+    await setTaskPhase(s.store, mine.id, "merged");
+    await s.track("T-0002-b", logWith(TEST), 2);
+    expect(await s.flaky()).toHaveLength(0);
+    await s.track("T-0003-c", logWith(TEST), 2);
+    expect(await s.flaky()).toHaveLength(1);
+  });
+
   test("secrets in a failure excerpt are masked in the record and the brief", async () => {
     const s = await setup(true);
     const leaky = logWith(TEST, ["token=hunter2hunter2 seen", "plain"]);
