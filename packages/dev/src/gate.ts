@@ -1849,7 +1849,7 @@ export async function runReview(
   const history: readonly ReviewHistoryEntry[] = Array.isArray(task.reviewHistory)
     ? task.reviewHistory
     : [];
-  const followed = previousReview(history, sha);
+  const followed = previousReview(history, sha, attempt.number);
   const rework =
     followed !== undefined &&
     git(context.repository.path, [

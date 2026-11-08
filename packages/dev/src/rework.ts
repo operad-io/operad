@@ -28,19 +28,24 @@ export const CHANGE_WINDOW = 3;
 /** How near a finding must be to a previous blocking finding to stay blocking. */
 export const PREVIOUS_WINDOW = 10;
 
-/** The review the next one follows, or undefined for a first review. */
+/**
+ * The review the next one follows, or undefined for a first review. Only a
+ * review of an earlier attempt counts; one of the same attempt does not.
+ */
 export function previousReview(
   history: readonly ReviewHistoryEntry[] | undefined,
   sha: string,
+  attempt: number,
 ): ReviewHistoryEntry | undefined {
-  const newest = history?.[history.length - 1];
+  const earlier = (history ?? []).filter((entry) => entry.attempt < attempt);
+  const newest = earlier[earlier.length - 1];
   if (newest === undefined || newest.sha === sha) return undefined;
   return newest;
 }
 
 /**
- * The added lines of a `git diff -U0` text, by new path. A line is "added" when
- * the new side holds it as a `+` line; context is not read because there is none.
+ * The changed lines of a `git diff -U0` text, by new path: the added lines, and
+ * for a pure deletion the two lines on either side of the cut.
  */
 export function addedLinesOf(diff: string): LineMap {
   const map = new Map<string, Set<number>>();
@@ -62,6 +67,10 @@ export function addedLinesOf(diff: string): LineMap {
       const start = Number(hunk[1]);
       const count = hunk[2] === undefined ? 1 : Number(hunk[2]);
       for (let at = start; at < start + count; at += 1) current.add(at);
+      if (count === 0) {
+        if (start > 0) current.add(start);
+        current.add(start + 1);
+      }
     }
   }
   return map;
