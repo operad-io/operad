@@ -28,11 +28,12 @@
    - API：`list` 接受 `parent=<id>`（下一层）和 `root`（顶层）；类型声明的 filter 和默认 filter 照样作用在下一层的列表上，隐藏的个数照样给出。
    - `dev` 的层级是 仓库 → plan → task：`dev` 新增 `repo` 对象类型（`operad dev repo add` 登记的仓库），plan 的 `parent` 是它的仓库，task 的 `parent` 是它的 plan。
    - 客户端仍不认识插件：层级、名字都来自 `/v1`。命令行的 `operad list <类型>` 照旧平铺。
-10. **行带一个语义标记 `mark`，客户端照 arc 的图标表画。**（2026-11-08 owner 定：“operad 用回 arc 的 item 标记”，改决定 6 的“只按两个标记上色”。）
-   - `row(object)` 可以带 `mark`，取值只能是内核定的这一组：`proposed`、`todo`、`blocked`、`paused`、`starting`、`running`、`checking`、`integrating`、`waiting`、`done`、`failed`、`cancelled`。别的值在加载插件时报错。插件只选语义，不给颜色、不给图标名。
-   - 客户端的图标和颜色沿用 arc iOS 的状态表：`todo` 空心圆、`blocked` 虚线圆、`paused` 暂停圆、`proposed` 加号圆（等人色）、`starting` 点线圆、`running` 半实心圆（在跑色，呼吸）、`checking` 放大镜、`integrating` 合并箭头、`waiting` 实心圆（等人色）、`done` 实心勾（成功色）、`failed` 实心叉（错误色）、`cancelled` 禁止符号（灰）。TUI 用对应的单字符。
-   - 内核的两个标记优先：`waiting` 为真时画 `waiting`；否则有 `mark` 用 `mark`；否则 `running` 为真画 `running`；都没有就是普通的行。row 出错的行照旧画错误。
-   - `dev` 的映射：task 的 proposed→`proposed`，ready→`todo`（等前置任务或同区任务时→`blocked`），running 时按当前步骤：work→`running`、verify 和 review→`checking`、integrate→`integrating`，waiting→`waiting`，merged→`done`，cancelled→`cancelled`；plan 的 draft→`proposed`，confirmed→有任务在跑时 `running`、否则 `todo`，暂停→`paused`，finished→`done`，cancelled→`cancelled`。
+10. **行带一个语义标记 `mark`，客户端照 arc 的图标表画。**（2026-11-08 owner 定：“operad 用回 arc 的 item 标记”，改决定 6 的“只按两个标记上色”；图标表以 operad-ios `docs/design/operad/` 的 component sheet 为准，它和 arc 的表一致。）
+   - `row(object)` 可以带 `mark`，取值只能是内核定的这一组（括号里是 iOS 的 SF Symbol 和颜色角色）：
+     `todo`（circle，灰）、`blocked`（circle.dashed，灰）、`retry_wait`（clock，灰）、`paused`（pause.circle，灰）、`proposed`（plus.circle，等人色）、`starting`（circle.dotted，在跑色）、`running`（circle.lefthalf.filled，在跑色，呼吸）、`reconciling`（arrow.triangle.2.circlepath，在跑色）、`checking`（magnifyingglass，在跑色）、`rework_pending`（arrow.uturn.backward.circle，等人色）、`waiting`（circle.fill，等人色）、`integrating`（arrow.triangle.merge，在跑色）、`ready_to_merge`（checkmark.circle，成功色）、`done`（checkmark.circle.fill，成功色）、`failed`（xmark.circle.fill，错误色）、`cancelled`（nosign，灰）、`broken`（exclamationmark.triangle.fill，错误色）。
+     别的值在加载插件时报错。插件只选语义，不给颜色、不给图标名。TUI 每个 mark 用一个单字符。
+   - 内核的两个标记优先：`waiting` 为真时，`mark` 是 `waiting`、`proposed`、`rework_pending`、`ready_to_merge` 之一就用它，否则画 `waiting`；`waiting` 为假时有 `mark` 用 `mark`；否则 `running` 为真画 `running`；都没有就是普通的行。row 出错的行照旧画错误。
+   - `dev` 的映射：task 的 proposed→`proposed`；ready→`todo`（等前置任务或同区任务时→`blocked`，模型不可用、定了重试时间时→`retry_wait`）；running 时按当前步骤：worktree→`starting`、work 和 rework→`running`、verify 和 review→`checking`、integrate→`integrating`；waiting 时按等的原因：verify 和 review 都过了等合并→`ready_to_merge`，问要不要返工→`rework_pending`，其余→`waiting`；merged→`done`；cancelled→`cancelled`；auto rework 用完放弃→`failed`。plan 的 draft→`proposed`，confirmed→有任务在跑时 `running`、否则 `todo`，暂停→`paused`，finished→`done`，cancelled→`cancelled`。
    - `row` 还可以带 `badge`：一小段原样显示的文字，客户端放在状态后面（`done.merged · #2` 的 `#2`）。`dev` 的 task 填 `#<第几次 attempt>`，还没开始的填 `#0`。
    - 对象页的进度条：对象页在 row 下面、下一层列表上面画一条分段的条，下一层的每个对象占一格，按那个对象的 `mark` 上色（`done` 成功色、`running`/`checking`/`integrating` 在跑色、`waiting`/`proposed` 等人色、`failed` 错误色、其余灰），条的右边写“完成数 / 总数”。没有下一层的对象不画。这是客户端按决定 9 的下一层列表算出来的，插件不用多给东西。
 
