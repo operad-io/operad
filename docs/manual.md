@@ -249,7 +249,7 @@ theme is an error that names the file and the problem; the TUI does not start.
 Every theme defines the same tokens: `text`, `weak` (secondary text), `rule`
 (rules and borders), `accent` (needs you), `run` (in progress), `ok` (success),
 `error`, `add` and `remove` (diff lines), `tint` (the selected row's background)
-and `code` (a code block's background).
+`code` (a code block's background) and `background` (the fill of the palette, note, confirmation and key list boxes).
 
 `operad tui` uses the terminal size: at 100 columns or wider the list and the
 object pane sit side by side, and below 100 columns the list fills the screen
