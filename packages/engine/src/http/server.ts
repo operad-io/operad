@@ -457,6 +457,16 @@ function createHandler(
       return json({ types });
     }
 
+    if (method === "GET" && path === "/v1/keys") {
+      return json({
+        keys: options.registry.keyBindings().map((binding) => ({
+          key: binding.key,
+          action: binding.name,
+          source: binding.source,
+        })),
+      });
+    }
+
     if (method === "GET" && path === "/v1/objects") {
       const type = url.searchParams.get("type");
       if (type === null || type.trim().length === 0) {

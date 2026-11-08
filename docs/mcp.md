@@ -60,8 +60,13 @@ default). Each change re-reads that object's row. At start the server reads the
 current rows of every type that has views and sends nothing for them; if it
 cannot read a type's rows, the first row it sees for each object of that type is
 its baseline and also sends nothing. It remembers the last row it saw for each
-object and sends one notification only when that row's `state`, `waiting` or
-`running` changed. An object first seen after the starting read has the previous
+object and sends one notification only when that row's `state` changed or its `waiting`
+flag turned on (something now waits for a person). A `running` flip alone, or
+`waiting` turning off with the same state, sends nothing, and a row equal to the
+last one sent for that object (state, `waiting` and `running`) is not sent
+again. The last row sent for each object is kept in a file in the operad home
+(`mcp-channel-<hash of the store root>.json`), written when a block is delivered,
+so a change seen again after a reconnect or restart stays quiet. An object first seen after the starting read has the previous
 state `new`. An object that can no longer be found is forgotten.
 
 The server sends nothing until the client has sent `notifications/initialized`.
@@ -80,10 +85,15 @@ these parameters:
     "state": "waiting",
     "previous": "running",
     "waiting": "true",
-    "running": "false"
+    "running": "false",
+    "step": "review"
   }
 }
 ```
+
+`step` is the last step of the object's active run and is absent when the
+object has none, so a block reads `state="review" step="verify"` when verify
+failed inside the review state.
 
 `content` is one line, `<id> <old state> -> <new state>`, with `: <note>`
 appended when the row has a note. Every `meta` value is a string. The channel is
@@ -106,7 +116,8 @@ claude --dangerously-load-development-channels server:operad
 The tool table is exported as `TOOLS` from `@operad-io/mcp`; the server serves
 that same table. Every result is a normal MCP tool result with
 `structuredContent` and one text block whose text is the same content as
-Markdown. `next`, when present, is a cursor the caller passes back unchanged.
+Markdown. `structuredContent` is always an object: a list is wrapped as
+`{ "items": [...] }`. `next`, when present, is a cursor the caller passes back unchanged.
 
 ### `list`
 
@@ -190,7 +201,7 @@ Input:
 }
 ```
 
-Result: the same list as `operad pending` and `GET /v1/pending`, with only the
+Result: `{ "items": [...] }`, the same list as `operad pending` and `GET /v1/pending`, with only the
 actions the lead may run now. Each item that is about an object carries its
 `row`, as in `GET /v1/pending`. An action outside `mcp.actions`, or a
 `confirm: true` action that `mcp.confirmActions` does not name, is left out of
@@ -210,7 +221,7 @@ Input:
 }
 ```
 
-Result: the same list as `operad running` and `GET /v1/running`. The Markdown
+Result: `{ "items": [...] }`, the same list as `operad running` and `GET /v1/running`. The Markdown
 is a table of each active run, its flow, step and elapsed time.
 
 ### `history`
@@ -252,6 +263,8 @@ Input:
 ```
 
 Result: the plugin verb's output, the same value `operad <plugin> <verb>` prints.
+A value that is an object is the structured content as it is; any other value
+(a list, a string) is wrapped as `{ "value": ... }`.
 The call builds the CLI's `[plugin, verb, ...args]`, with `input` standing in
 for stdin, so `dev plan add` and `dev task add` take their brief from it. It
 resolves the pair against the loaded plugins, so a plugin verb runs even when

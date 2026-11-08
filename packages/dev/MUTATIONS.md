@@ -121,3 +121,32 @@ the row fields.
 | dirty-names-M4 | packages/dev/src/steps.ts | the name was cut at column 2 instead of 3 | `changedFiles > a modified tracked file that comes first keeps its whole name` |
 | dirty-names-M5 | packages/dev/src/steps.ts | `-z` left out of the status call | `changedFiles > a modified tracked file that comes first keeps its whole name` |
 | T-0048-M6 | packages/dev/src/model.ts | the task `done` filter also listed cancelled | `the task filters come from the phase list`, `docs/manual.md lists the dev filters with the states the code declares` |
+
+## T-0047 — repository hints and qualified ids
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0047-M1 | packages/dev/src/service.ts | the error listed no registered repositories | `outside every repository: the error says where, ...` |
+| T-0047-M2 | packages/dev/src/service.ts | a qualified id ignored its prefix and used the directory | `outside every repository: ...` (qualified start) |
+| T-0047-M3 | packages/dev/src/service.ts | a `--repo` that differs from the qualified id was accepted | `a qualified id with an unknown repository, or a conflicting --repo, is refused` |
+| T-0047-M4 | packages/dev/src/service.ts | a bare id outside a repository took the first repository that has it instead of refusing several | `outside every repository: ...` (ambiguous start) |
+| T-0047-M5 | packages/dev/src/service.ts | a repository with no path on disk was not marked missing | `a qualified id with an unknown repository, or a conflicting --repo, is refused` |
+| T-0047-M6 | packages/dev/src/service.ts | `resolveDevKey` swallowed the repository hint error | `outside every repository: ...` (show / dev action with an id nowhere) |
+| T-0047-M7 | packages/dev/src/service.ts | a qualified id skipped the registered-repository check | `outside every repository: ...` (unknown repository in show / dev action) |
+| T-0047-M8 | packages/engine/src/views/presentation.ts | a qualified id that matches a stored object skipped the registered-repository check | `a qualified id whose repository was removed is refused though its object is stored` |
+| T-0046-M1 | packages/dev/src/service.ts | the upper bound of a plan's concurrency was 100 instead of 16 | `dev actions > addPlan takes a concurrency and refuses one out of range` |
+| T-0046-M2 | packages/dev/src/service.ts | `setConcurrency` did not refuse a cancelled plan | `dev actions > concurrency is refused on a cancelled plan` |
+| T-0046-M3 | packages/dev/src/service.ts | `addPlan` ignored the given concurrency | `operad with the dev plugin > plan add takes --concurrency and dev:concurrency takes --count` |
+| T-0046-M4 | packages/dev/src/views.ts | the plan row left out the concurrency | `dev actions > concurrency sets the plan's count and the view shows it` |
+| T-0046-M5 | packages/dev/src/service.ts | `setConcurrency` accepted a finished plan | `dev actions > concurrency is refused on a finished plan` |
+| T-0046-M6 | packages/dev/src/actions.ts | `dev:concurrency` was available on a finished plan | `dev actions > concurrency is refused on a finished plan` |
+| T-0045-M5 | packages/dev/test/gate.test.ts | the FIFO the fake reviewer made was not removed after the test | `dev/review > the FIFO the previous test made is gone, and it was made outside the repository` |
+| T-0057-M1 | packages/dev/src/actions.ts | `dev:rework` answered the wait with the choice `reject` again | `dev actions > rework answers the wait with the choice rework and the note` |
+| T-0054-M1 | packages/dev/src/rerun.ts | a timeout was rerun like any other failure | `dev/verify > a timeout is not rerun` |
+| T-0054-M2 | packages/dev/src/rerun.ts | the rerun loop ran one time too many | `dev/verify > a check that fails twice is a fail` |
+| T-0054-M3 | packages/dev/src/rerun.ts | a pass on the rerun carried no note | `dev/verify > a check that fails once and then passes is a pass with a note` |
+| T-0054-M4 | packages/dev/src/rerun.ts | the separator was not drawn between the two runs in the log | `dev/verify > a check that fails once and then passes is a pass with a note` |
+| T-0054-M5 | packages/dev/src/integrate.ts | the merged task left out the rerun note | `dev/integrate > a key command that fails once and then passes lands with a note` |
+| T-0055-M1 | packages/dev/src/steps.ts | the base stayed the head before the merge of main, so the merge counted as the worker's work | `dev/work after main moved > a clean merge and no change by the worker is nothing` |
+| T-0055-M2 | packages/dev/src/steps.ts | the Changes section did not say what was merged | `dev/work after main moved > a rework gets main's commit, and the attempt and Changes say so` |
+| T-0055-M3 | packages/dev/src/steps.ts | the conflict prompt did not say resolving the merge is part of the attempt | `dev/work after main moved > a conflicting main is left for the worker and the prompt names the files` |

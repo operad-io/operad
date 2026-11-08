@@ -7,9 +7,11 @@ import {
   addTask,
   getPlan,
   getTask,
+  setConcurrency,
   setTaskPhase,
 } from "../src/service.ts";
-import { planData, taskData } from "../src/model.ts";
+import { planData, planState, taskData } from "../src/model.ts";
+import { planViews } from "../src/views.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
@@ -296,6 +298,36 @@ describe("dev actions", () => {
     expect(after.brief).toContain("cover the concurrent writers");
   });
 
+  test("rework answers the wait with the choice rework and the note", async () => {
+    const answers: [string, string | undefined][] = [];
+    const { store, registry, repository } = await setup(undefined, (_runId, choice, note) => {
+      answers.push([choice, note]);
+    });
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
+    await setTaskPhase(store, task.id, "waiting");
+
+    await registry.runAction(
+      "dev/rework",
+      { note: "cover the concurrent writers" },
+      { object: await getTask(store, task.id), runId: "run-1", actor: ACTOR },
+    );
+    expect(answers).toEqual([["rework", "cover the concurrent writers"]]);
+  });
+
+  test("every person wait of the dev flow accepts rework and routes it like reject", async () => {
+    const flow = (await import("../flows/dev.flow.ts")).default as unknown;
+    const waits = JSON.parse(JSON.stringify(flow)) as {
+      steps: { kind: string; choices?: string[]; params?: { choices?: string[] }; next?: Record<string, string> }[];
+    };
+    const people = waits.steps.filter((node) => node.kind === "wait_person");
+    expect(people.length).toBeGreaterThan(0);
+    for (const node of people) {
+      expect(node.choices ?? node.params?.choices).toContain("rework");
+      expect(node.next?.rework).toBe(node.next?.reject);
+    }
+  });
+
   test("merge and reject refuse a running task", async () => {
     const answers: string[] = [];
     const { store, registry, repository } = await setup(undefined, (_runId, choice) => {
@@ -350,5 +382,84 @@ describe("dev actions", () => {
         actor: ACTOR,
       }),
     ).rejects.toThrow(/no task/);
+  });
+
+  test("concurrency sets the plan's count and the view shows it", async () => {
+    const { store, registry, repository } = await setup();
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    for (const count of [1, 2, 16]) {
+      await registry.runAction(
+        "dev/concurrency",
+        { count },
+        { object: await getPlan(store, plan.id), actor: ACTOR },
+      );
+      expect(planData((await getPlan(store, plan.id)).data).concurrency).toBe(count);
+    }
+    expect(planViews.row(await getPlan(store, plan.id)).note).toContain("concurrency: 16");
+  });
+
+  test("concurrency refuses 0, 17, a fraction and a string and leaves the plan alone", async () => {
+    const { store, registry, repository } = await setup();
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    const object = await getPlan(store, plan.id);
+    await expect(
+      registry.runAction("dev/concurrency", { count: 0 }, { object, actor: ACTOR }),
+    ).rejects.toThrow(/count: must be at least 1/);
+    await expect(
+      registry.runAction("dev/concurrency", { count: 17 }, { object, actor: ACTOR }),
+    ).rejects.toThrow(/count: must be at most 16/);
+    await expect(
+      registry.runAction("dev/concurrency", { count: 1.5 }, { object, actor: ACTOR }),
+    ).rejects.toThrow(/count/);
+    await expect(
+      registry.runAction("dev/concurrency", { count: "3" }, { object, actor: ACTOR }),
+    ).rejects.toThrow(/count/);
+    await expect(
+      registry.runAction("dev/concurrency", {}, { object, actor: ACTOR }),
+    ).rejects.toThrow(/args\.count: is required/);
+    expect(planData((await getPlan(store, plan.id)).data).concurrency).toBe(1);
+    const action = registry
+      .actions()
+      .find((candidate) => candidate.name === "dev:concurrency");
+    expect(JSON.stringify(action?.args)).toContain("16");
+  });
+
+  test("concurrency is refused on a cancelled plan", async () => {
+    const { store, registry, repository } = await setup();
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    await registry.runAction("dev/cancel", {}, { object: await getPlan(store, plan.id), actor: ACTOR });
+    const object = await getPlan(store, plan.id);
+    await expect(
+      registry.runAction("dev/concurrency", { count: 2 }, { object, actor: ACTOR }),
+    ).rejects.toThrow(/cancelled|not cancelled/);
+    expect(planData((await getPlan(store, plan.id)).data).concurrency).toBe(1);
+  });
+
+  test("concurrency is refused on a finished plan", async () => {
+    const { store, registry, repository } = await setup();
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    const current = await getPlan(store, plan.id);
+    await store.put(
+      current.type,
+      current.id,
+      { ...current.data, status: "confirmed", taskCount: 2, mergedCount: 1, cancelledCount: 1 },
+      "test:finish",
+    );
+    const object = await getPlan(store, plan.id);
+    expect(planState(planData(object.data))).toBe("finished");
+    await expect(
+      registry.runAction("dev/concurrency", { count: 2 }, { object, actor: ACTOR }),
+    ).rejects.toThrow(/finished/);
+    await expect(setConcurrency(store, plan.id, 2)).rejects.toThrow(/finished/);
+    expect(planData((await getPlan(store, plan.id)).data).concurrency).toBe(1);
+  });
+
+  test("addPlan takes a concurrency and refuses one out of range", async () => {
+    const { store, repository } = await setup();
+    const plan = await addPlan(store, { repository, slug: "wide", title: "Wide", concurrency: 4 });
+    expect(planData(plan.data).concurrency).toBe(4);
+    await expect(
+      addPlan(store, { repository, slug: "bad", title: "Bad", concurrency: 17 }),
+    ).rejects.toThrow(/1 to 16/);
   });
 });

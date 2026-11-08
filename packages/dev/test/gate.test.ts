@@ -1,6 +1,6 @@
 import { chmodSync } from "node:fs";
-import { afterAll, describe, expect, test } from "bun:test";
-import { appendFileSync, existsSync, watch } from "node:fs";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { appendFileSync, existsSync, rmSync, watch } from "node:fs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -43,9 +43,15 @@ import {
   makeRemote,
   type RemoteSetup,
 } from "./git-support.ts";
-import { cleanupTempRoots, guardLockHandles, storeAt, tempRoot } from "./support.ts";
+import { cleanupTempRoots, guardLockHandles, osTempRoot, storeAt, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
+
+/** FIFOs a fake reviewer made; removed after each test, whether it passed, failed or threw. */
+const fifos: string[] = [];
+afterEach(() => {
+  for (const path of fifos) rmSync(path, { force: true });
+});
 guardLockHandles();
 
 const REVIEW_CRASH_CHILD = fileURLToPath(
@@ -239,6 +245,7 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             };
           }
           if (mode === "fifo") {
+            fifos.push(input.resultPath);
             const made = Bun.spawnSync({
               cmd: ["mkfifo", input.resultPath],
               stdout: "ignore",
@@ -314,6 +321,7 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
 interface FixtureOptions {
   readonly commands?: readonly string[];
   readonly commandTimeoutSecs?: number;
+  readonly rerun?: number;
   readonly reviewerArgs?: readonly string[];
   readonly firstArgs?: readonly string[];
   readonly reviewerStallSecs?: number;
@@ -352,7 +360,7 @@ interface Fixture {
 }
 
 async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
-  const root = await tempRoot();
+  const root = await osTempRoot();
   const remote = await makeRemote(root);
   for (const [file, text] of Object.entries(options.baseFiles ?? {})) {
     await advanceMain(remote, file, text, `add ${file}`);
@@ -372,6 +380,7 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
           commands: options.commands ?? ["true"],
           commandTimeoutSecs: options.commandTimeoutSecs ?? 60,
         },
+        ...(options.rerun === undefined ? {} : { check: { rerun: options.rerun } }),
         reviewer: {
           use: "fake-reviewer/agent",
           args: options.reviewerArgs ?? ["none"],
@@ -534,6 +543,62 @@ describe("dev/verify", () => {
     expect((await taskOf(state)).phase).toBe("review");
   });
 
+  test("a check that fails once and then passes is a pass with a note", async () => {
+    const root = await tempRoot();
+    const marker = join(root, "seen");
+    const state = await fixture({
+      commands: [`if [ -f '${marker}' ]; then echo second; else touch '${marker}'; echo first; exit 1; fi`],
+    });
+    const result = await verify(state);
+    expect(result.result).toBe("pass");
+    expect(result.data?.note).toBe("check line 1 failed, passed on rerun");
+    const task = await taskOf(state);
+    expect(task.attempt?.verify?.result).toBe("pass");
+    expect(task.brief).toContain("- check line 1 failed, passed on rerun");
+    const log = readFileSync(String(result.data?.log), "utf8");
+    expect(log).toContain("first");
+    expect(log).toContain("check failed; running it once more");
+    expect(log).toContain("second");
+    expect(log.indexOf("first")).toBeLessThan(log.indexOf("second"));
+  });
+
+  test("a check that fails twice is a fail", async () => {
+    const root = await tempRoot();
+    const count = join(root, "count");
+    const state = await fixture({ commands: [`echo x >> '${count}'; exit 1`] });
+    const result = await verify(state);
+    expect(result.result).toBe("fail");
+    expect(readFileSync(count, "utf8").trim().split("\n")).toHaveLength(2);
+    expect((await taskOf(state)).brief).not.toContain("passed on rerun");
+  });
+
+  test("rerun 0 fails at once", async () => {
+    const root = await tempRoot();
+    const count = join(root, "count");
+    const state = await fixture({ rerun: 0, commands: [`echo x >> '${count}'; exit 1`] });
+    const result = await verify(state);
+    expect(result.result).toBe("fail");
+    expect(readFileSync(count, "utf8").trim().split("\n")).toHaveLength(1);
+  });
+
+  test("a timeout is not rerun", async () => {
+    const clock = manualClock();
+    const root = await tempRoot();
+    const marker = join(root, "started");
+    const count = join(root, "count");
+    const state = await fixture({
+      clock,
+      commands: [`echo x >> '${count}'; trap '' TERM; echo $$ > '${marker}'; sleep 30`],
+      commandTimeoutSecs: 5,
+    });
+    const running = verify(state);
+    await waitForFile(marker);
+    expect(clock.fireTimeouts()).toBe(1);
+    const result = await running;
+    expect(result.result).toBe("fail");
+    expect(readFileSync(count, "utf8").trim().split("\n")).toHaveLength(1);
+  });
+
   test("a hanging command fails with a timeout", async () => {
     const clock = manualClock();
     const root = await tempRoot();
@@ -649,6 +714,14 @@ describe("dev/review", () => {
     expect(result.result).toBe("failed");
     expect(String(result.data?.message)).toContain("not a regular file");
     expect(state.reviewer.calls).toHaveLength(2);
+  });
+
+  test("the FIFO the previous test made is gone, and it was made outside the repository", () => {
+    expect(fifos.length).toBeGreaterThan(0);
+    for (const path of fifos) {
+      expect(existsSync(path)).toBe(false);
+      expect(path.startsWith(process.cwd())).toBe(false);
+    }
   });
 
   test("a finding on a file the change did not touch is pre-existing and does not count", async () => {
@@ -1747,6 +1820,7 @@ describe("the dev flow", () => {
       expect(nextOf(id)).toEqual({
         merge: "integrate",
         reject: "worktree",
+        rework: "worktree",
         interrupted: "end_cancelled",
       });
     }
@@ -1759,6 +1833,7 @@ describe("the dev flow", () => {
     expect(nextOf("wait_review_timeout")).toEqual({
       merge: "integrate",
       reject: "worktree",
+      rework: "worktree",
       interrupted: "end_cancelled",
     });
     expect(nextOf("rework")).toEqual({
@@ -1769,6 +1844,7 @@ describe("the dev flow", () => {
     expect(nextOf("wait")).toEqual({
       merge: "integrate",
       reject: "worktree",
+      rework: "worktree",
       reverify: "verify",
       interrupted: "end_cancelled",
     });

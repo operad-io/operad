@@ -193,7 +193,77 @@ describe("the channel's sources", () => {
     }
   });
 
-  test("a run log change with no object write reports the wait and the running flag", async () => {
+  const waitFact = (waitId: string) => ({
+    kind: "waiting_for_person",
+    payload: {
+      waitId,
+      step: "ask",
+      prompt: "Approve?",
+      choices: ["yes"],
+      waitKind: "step",
+      effectId: null,
+    },
+    cause: "test",
+  });
+
+  test("a running flag flip alone sends nothing, and a wait turning on sends with the step", async () => {
+    const s = await setup();
+    put(s, "task", "t-1", { title: "One", phase: "ready" });
+    const running = new Reads();
+    const realGet = s.views.get.bind(s.views);
+    Object.defineProperty(s.views, "get", {
+      value: async (id: string) => {
+        const current = await realGet(id);
+        if (current.row.running) running.push();
+        return current;
+      },
+    });
+    const sent = new Sent();
+    const channel = await startClaudeChannel({
+      views: s.views,
+      registry: s.registry,
+      log: s.log,
+      send: sent.push,
+    });
+    try {
+      const info = await s.log.startRun("demo-flow", "task:t-1");
+      await running.next();
+      await s.log.append(info.runId, 0, [
+        {
+          kind: "step_entered",
+          payload: { kind: "call", step: "verify" },
+          cause: "test",
+        },
+      ]);
+      await s.log.append(info.runId, 1, [waitFact("wait:1")]);
+      // The running flip and the step produced no block: the wait is the first.
+      const waiting = await sent.next();
+      expect(waiting.meta).toMatchObject({
+        id: "t-1",
+        waiting: "true",
+        running: "false",
+        step: "verify",
+      });
+      expect(waiting.content).toBe("t-1 ready -> ready");
+      // The run ends: waiting turns off with the same state, nothing is sent,
+      // and no step is reported once no run is active.
+      await s.log.endRun(info.runId);
+      put(s, "task", "t-1", { title: "One", phase: "review" });
+      const changed = await sent.next();
+      expect(changed.meta).toMatchObject({
+        state: "review",
+        previous: "ready",
+        waiting: "false",
+      });
+      expect(changed.meta.step).toBeUndefined();
+    } finally {
+      await channel.close();
+      s.views.close();
+      await s.log.close();
+    }
+  });
+
+  test("the step is the one of the run with the latest fact when two flows are active on one object", async () => {
     const s = await setup();
     put(s, "task", "t-1", { title: "One", phase: "ready" });
     const sent = new Sent();
@@ -204,32 +274,192 @@ describe("the channel's sources", () => {
       send: sent.push,
     });
     try {
-      const info = await s.log.startRun("demo-flow", "task:t-1");
-      const started = await sent.next();
-      expect(started.meta).toMatchObject({
-        id: "t-1",
-        waiting: "false",
-        running: "true",
-      });
-      await s.log.append(info.runId, 0, [
-        {
-          kind: "waiting_for_person",
-          payload: {
-            waitId: "wait:1",
-            step: "ask",
-            prompt: "Approve?",
-            choices: ["yes"],
-            waitKind: "step",
-            effectId: null,
-          },
-          cause: "test",
-        },
+      const first = await s.log.startRun("demo-flow", "task:t-1");
+      await s.log.append(first.runId, 0, [
+        { kind: "step_entered", payload: { kind: "call", step: "old" }, cause: "test" },
       ]);
+      const second = await s.log.startRun("other-flow", "task:t-1");
+      await s.log.append(second.runId, 0, [
+        { kind: "step_entered", payload: { kind: "call", step: "verify" }, cause: "test" },
+      ]);
+      await s.log.append(second.runId, 1, [waitFact("wait:2")]);
       const waiting = await sent.next();
-      expect(waiting.meta).toMatchObject({ waiting: "true", running: "false" });
-      expect(waiting.content).toBe("t-1 ready -> ready");
+      expect(waiting.meta).toMatchObject({ waiting: "true", step: "verify" });
     } finally {
       await channel.close();
+      s.views.close();
+      await s.log.close();
+    }
+  });
+
+  test("the step of two active runs with equal times is chosen the same way every time", async () => {
+    const s = await setup();
+    put(s, "task", "t-1", { title: "One", phase: "ready" });
+    // Every fact and run reads as made at one instant.
+    const real = s.log;
+    const fixed = new Proxy(real, {
+      get(target, name) {
+        if (name === "runs") {
+          return async (options: Parameters<LogBackend["runs"]>[0]) =>
+            (await real.runs(options)).map((run) => ({ ...run, startedAt: 1000 }));
+        }
+        if (name === "read") {
+          return async function* (...args: Parameters<LogBackend["read"]>) {
+            for await (const fact of real.read(...args)) {
+              yield { ...fact, time: 1000 };
+            }
+          };
+        }
+        const value: unknown = Reflect.get(target, name, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const sent = new Sent();
+    const channel = await startClaudeChannel({
+      views: s.views,
+      registry: s.registry,
+      log: fixed,
+      send: sent.push,
+    });
+    try {
+      const first = await s.log.startRun("demo-flow", "task:t-1");
+      await s.log.append(first.runId, 0, [
+        { kind: "step_entered", payload: { kind: "call", step: "a" }, cause: "test" },
+        { kind: "step_entered", payload: { kind: "call", step: "a2" }, cause: "test" },
+      ]);
+      const second = await s.log.startRun("other-flow", "task:t-1");
+      await s.log.append(second.runId, 0, [
+        { kind: "step_entered", payload: { kind: "call", step: "b" }, cause: "test" },
+      ]);
+      await s.log.append(second.runId, 1, [waitFact("wait:2")]);
+      const waiting = await sent.next();
+      // Equal time, start and last seq: the larger run id wins, whatever the order.
+      const expected = second.runId > first.runId ? "b" : "a2";
+      expect(waiting.meta.step).toBe(expected);
+    } finally {
+      await channel.close();
+      s.views.close();
+      await s.log.close();
+    }
+  });
+
+  test("a wait turning on again with the state and flags of the last block sent sends nothing", async () => {
+    const s = await setup();
+    put(s, "task", "t-1", { title: "One", phase: "ready" });
+    // Tells the test when the channel has read the object with no wait open.
+    const idle = new Reads();
+    const again = new Reads();
+    let armed = false;
+    const realGet = s.views.get.bind(s.views);
+    Object.defineProperty(s.views, "get", {
+      value: async (id: string) => {
+        const current = await realGet(id);
+        if (armed && !current.row.waiting) idle.push();
+        if (armed && current.row.waiting) again.push();
+        return current;
+      },
+    });
+    const sent = new Sent();
+    const channel = await startClaudeChannel({
+      views: s.views,
+      registry: s.registry,
+      log: s.log,
+      send: sent.push,
+    });
+    try {
+      const first = await s.log.startRun("demo-flow", "task:t-1");
+      await s.log.append(first.runId, 0, [waitFact("wait:1")]);
+      expect((await sent.next()).meta.waiting).toBe("true");
+      armed = true;
+      await s.log.endRun(first.runId);
+      await idle.next();
+      const second = await s.log.startRun("demo-flow", "task:t-1");
+      await s.log.append(second.runId, 0, [waitFact("wait:2")]);
+      await again.next();
+      put(s, "task", "t-1", { title: "One", phase: "done" });
+      const next = await sent.next();
+      expect(next.meta).toMatchObject({ state: "done", previous: "ready" });
+    } finally {
+      await channel.close();
+      s.views.close();
+      await s.log.close();
+    }
+  });
+
+  test("a change back to the starting row after a block is sent, since no block reported the starting row", async () => {
+    const s = await setup();
+    put(s, "task", "t-1", { title: "One", phase: "ready" });
+    const sent = new Sent();
+    const channel = await startClaudeChannel({
+      views: s.views,
+      registry: s.registry,
+      log: s.log,
+      send: sent.push,
+    });
+    try {
+      put(s, "task", "t-1", { title: "One", phase: "review" });
+      expect((await sent.next()).meta.state).toBe("review");
+      put(s, "task", "t-1", { title: "One", phase: "ready" });
+      expect((await sent.next()).meta).toMatchObject({
+        state: "ready",
+        previous: "review",
+      });
+    } finally {
+      await channel.close();
+      s.views.close();
+      await s.log.close();
+    }
+  });
+
+  test("a restarted channel does not send the row the last block reported again", async () => {
+    const s = await setup();
+    put(s, "task", "t-1", { title: "One", phase: "ready" });
+    const sentFile = join(await tempRoot(), "sent.json");
+    const first = new Sent();
+    const one = await startClaudeChannel({
+      views: s.views,
+      registry: s.registry,
+      log: s.log,
+      sentFile,
+      send: first.push,
+    });
+    try {
+      put(s, "task", "t-1", { title: "One", phase: "review" });
+      expect((await first.next()).meta.state).toBe("review");
+    } finally {
+      await one.close();
+    }
+    // The change back happens while no server runs; the new one seeds "ready".
+    put(s, "task", "t-1", { title: "One", phase: "ready" });
+    const second = new Sent();
+    const read = new Reads();
+    const realGet = s.views.get.bind(s.views);
+    Object.defineProperty(s.views, "get", {
+      value: async (id: string) => {
+        try {
+          return await realGet(id);
+        } finally {
+          read.push();
+        }
+      },
+    });
+    const two = await startClaudeChannel({
+      views: s.views,
+      registry: s.registry,
+      log: s.log,
+      sentFile,
+      send: second.push,
+    });
+    try {
+      put(s, "task", "t-1", { title: "One", phase: "review" });
+      await read.next();
+      put(s, "task", "t-1", { title: "One", phase: "done" });
+      const next = await second.next();
+      // "review" was already reported by the first server: only "done" is new.
+      expect(next.meta).toMatchObject({ state: "done", previous: "review" });
+      expect(second.all).toHaveLength(1);
+    } finally {
+      await two.close();
       s.views.close();
       await s.log.close();
     }

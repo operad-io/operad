@@ -330,6 +330,19 @@ describe("dev/integrate", () => {
     expect((await taskOf(state)).phase).toBe("merged");
   });
 
+  test("a key command that fails once and then passes lands with a note", async () => {
+    const state = await fixture({ style: "merge" });
+    const marker = join(state.root, "seen");
+    writeDevJson(state.remote.repository, {
+      style: "merge",
+      keyCommands: [`if [ -f '${marker}' ]; then exit 0; fi; touch '${marker}'; exit 1`],
+    });
+    const result = await integrate(state);
+    expect(result.result).toBe("merged");
+    const task = await taskOf(state);
+    expect(task.brief).toContain("- check line 1 failed, passed on rerun");
+  });
+
   test("a failing key command sends the task back to work", async () => {
     const state = await fixture({
       style: "merge",

@@ -24,7 +24,7 @@ this manual prints a secret.
   "http": { "enabled": true, "port": 7480, "listen": ["127.0.0.1"] },
   "notify": { "command": null, "on": ["waiting"] },
   "mcp": {
-    "actions": ["dev:rework", "dev:reverify", "dev:reject", "dev:priority"],
+    "actions": ["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency"],
     "confirmActions": []
   },
   "ask": { "graceSecs": 600 }
@@ -50,7 +50,7 @@ this manual prints a secret.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `actions` | array of `plugin:action` strings | `["dev:rework", "dev:reverify", "dev:reject", "dev:priority"]` | The actions `operad mcp` may run. Every other action is refused with a message naming it and saying the owner runs it. |
+| `actions` | array of `plugin:action` strings | `["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency"]` | The actions `operad mcp` may run. Every other action is refused with a message naming it and saying the owner runs it. |
 | `confirmActions` | array of `plugin:action` strings | `[]` | The allowed actions that also carry `confirm: true`. Such an action is refused even when `actions` names it unless this list names it too. |
 
 Both lists take effect the next time `operad mcp` starts. They do not change an
@@ -237,11 +237,43 @@ Switching tabs closes the object. Every key the app reads is below.
 | `f` | key | none | Load a capped section with `full=true`. |
 | `g` | key | none | The first row; under 100 columns with an object open, the top of the section. |
 | `G` | key | none | The last row; under 100 columns with an object open, the end of the section (it resumes following a live section). |
-| `r` | key | none | Fetch every list again, and the open object with its live sections. |
+| `r` | key | none | Fetch every list again, and the open object with its live sections. When the open section failed to load, it asks for that section again too. |
+| `a` | key | none | Run the open object's main action, the first one the object offers now (the footer names it with its key). A key bound to an action (below) wins over `a`. With no action, one footer line says so. |
+| a bound key | key | `GET /v1/keys` | Run that action on the open object. A user binding in `keys.json` beats a plugin default on the same key. Reserved keys cannot be bound: `enter`, `return`, `escape`, `esc`, `tab`, the arrows (`up`, `down`, `left`, `right`), `pageup`, `pagedown`, `home`, `end`, `space`, `[`, `]`, `:`, `?`, `/`, `b`, `f`, `g`, `j`, `k`, `q`, `r` (letters in either case) and `1`–`9`, as well as Ctrl-C and any Ctrl or Meta chord. A plugin default or `keys.json` entry on a reserved key is dropped; at start one footer line names each dropped key with its action and source. The action stays reachable from the `:` palette, with no key shown. If the object does not offer the action now, one footer line says it is not available. |
+| `:` | key | none | Open the palette: type to fuzzy match the `plugin:action` names the open object offers, each with its key and "needs a note" or "asks to confirm". `↑` / `↓` (or Ctrl-P / Ctrl-N) move, `enter` runs, `escape` closes. With no object open it lists nothing but "no object is selected". |
+| note input | key | none | An action with a note field opens a text input. Typing adds text, `backspace` deletes, `shift-enter` or `Ctrl-J` adds a line, `enter` sends and `escape` cancels. A required note cannot be sent empty. |
+| confirmation | key | none | An action that asks to confirm shows `<action> <id>? [y/N]` in red. `y` sends it with `confirmed: true`; any other key cancels. |
 | `?` | key | none | Show or hide the key list. |
 | `q` | key | none | Quit. |
 | `Ctrl-C` | key | none | Quit at once. The terminal restores itself; no other Ctrl or Meta chord does anything. |
 | `escape` | key | none | Close the key list, or close the open object and stop its requests. While the key list is open only `?`, `escape` and `q` act; the others leave the list alone. |
+
+#### Live updates, states and leaving
+
+The screen follows the event stream. An event for an object fetches that
+object's row again in every open list and, if it is the open object, the object
+and its open live sections. A `reset` (the server could not resume the stream,
+or the stream reconnected with nothing to resume from) fetches every open list
+and the open object again. Pending and Running are fetched again on any event.
+Events that arrive together are served in one batch, at most one batch every
+250 ms.
+
+| State | What the screen shows |
+|---|---|
+| Server unreachable | One footer line, `no server at <url>: is `operad serve` running? retrying`. The last lists stay on screen, dimmed. The screen asks again after 250 ms, then 500 ms, 1 s, 2 s, 4 s and every 5 s, and returns to normal when the server answers. |
+| 401 | `the token was rotated: run the TUI again or pass --token`. Nothing is retried; `q` quits. |
+| Empty Pending | `nothing waits for you` |
+| Empty list of an object type | `no <type title> yet` |
+| A section that failed to load | The server's message and `r retries` in place of the section; `r` asks for that section again (and fetches the lists again). |
+
+`q`, Ctrl-C, SIGINT and SIGTERM all end the screen the same way: the event
+stream is closed, the terminal is restored (alternate screen left, cursor
+shown), failures collected while the screen was open are printed, and the
+command exits 0. A `serve` that the TUI started keeps running.
+
+A refused action shows the server's status and message as they came (for
+example `409 …`) in one footer line until the next key. After a success the app
+fetches the lists and the open object again.
 
 ### Endpoints
 
@@ -252,6 +284,7 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 | Method and path | What it returns |
 |---|---|
 | `GET /v1/types` | `{ "types": [{ "type": "task", "title": "Task" }] }`: the object types with views and their display names. A type that declares filters also carries `"filters"`, in display order (`[{ "name": "active", "states": ["proposed", ...] }, { "name": "all" }, ...]`), and `"defaultFilter"`. A type without filters carries neither. |
+| `GET /v1/keys` | `{ "keys": [{ "key": "m", "action": "dev:merge", "source": "plugin" }] }`: the key bindings in force, the plugins' defaults with the person's `keys.json` overrides applied; `source` is `user` for an override. |
 | `GET /v1/objects?type=<type>&filter=<name>&cursor=<c>` | `{ "rows": [...], "next": "<c>", "hidden": 3 }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, plus `waiting` and `running`; an error row also carries `error`. `filter` keeps the rows the named filter shows, and `hidden` counts the rows of the type it left out (the whole type, not only this page). Without `filter` the type's default filter applies when it has filters; a type without filters lists every row and has no `hidden`. `filter=all` lists every row and has no `hidden`. An unknown name is a `400` that names the allowed ones. `next` pages within the filtered list. |
 | `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. An item that is about an object also carries `object` (`<type>:<id>`), its `link` and its `row`: the same row `GET /v1/objects?type=…` returns for that object (`id`, `title`, `state`, optional `note`, `waiting`, `running`), so a client does not read each object. When the row cannot be built (the object is gone, no loaded plugin shows its type, or the plugin's row fails) the item carries the error row the list shows for a bad row, with `state` `error` and an `error` message; the list itself never fails for one object. A candidate has no object and no `row`. `operad pending` prints the row's title under each line that has one. |
 | `GET /v1/running` | The same list as `operad running`. |
@@ -358,6 +391,13 @@ The `dev` plugin declares these filters (`all` follows `active`):
 | plan | `active` (default) | draft, confirmed |
 | plan | `done` | finished |
 | plan | `cancelled` | cancelled |
+
+## Where `dev` commands run
+
+A `dev` command takes its repository from the directory, from `--repo <name>`
+or from a qualified id such as `operad/T-0045-shell-hang-guards`; a bare id
+outside a repository works when only one repository has it. The rules are in
+[packages/dev/README.md](../packages/dev/README.md#where-a-command-runs-and-ids).
 
 ## Asking a person from a step
 
@@ -514,6 +554,49 @@ command such as the gate runs to its end inside the turn. The setting
 `bashTimeoutSecs` (integer, 1 or more, default `1800`) is the longest one Bash
 call may run, in seconds. If claude nevertheless starts a second session after it
 gave its result, the step ends `failed` with a message that says so.
+
+### Long commands under pi
+
+`harness-pi` gives each call of pi's bash tool a time limit, so a command that
+never ends (a read from a FIFO nobody writes to) cannot hold a run until its
+wall time. The setting `bashTimeoutSecs` (integer, 1 or more, default `1800`) is
+the longest one bash call may run, in seconds. It is both the default and the
+maximum: a call the model gives no timeout runs under it, and a timeout the model
+asks for above it is brought down to it. When a call reaches the limit, pi stops
+the command and its children and the model gets an error that says the command
+timed out; the run goes on, so the model can try something else. A value that is
+not an integer of 1 or more (0, a negative number, a string) is refused when the
+plugin loads, with the field path. The setting is read when a step starts, so a
+change takes effect with the next agent step.
+
+The default is 1800 s (30 minutes), the same as `harness-claude`, because a gate
+such as `bash scripts/verify.sh` (install, type-check and the whole test suite)
+runs in the foreground inside one call and must not be cut short. A project whose
+gate is faster can set a lower value to catch a stuck command sooner.
+
+`stallSecs` is unchanged: it measures silence while no tool call is open, and an
+open tool call is not a stall (see the README of `harness-pi`). The time limit
+above is what bounds a single tool call.
+
+### The agent's shell and the user's aliases
+
+An alias or function from the user's own shell setup, such as `ls` defined as
+`eza --git --hyperlink`, must not change what a command in an agent run does.
+
+- `harness-pi`: pi runs each command as `bash -c` (a non-interactive shell with
+  no rc files, so no aliases or functions). The worker also removes `BASH_ENV`
+  and `ENV` from its environment, the two variables that make a non-interactive
+  shell read a file.
+- `harness-radian`: radian runs `/bin/sh -c`, which reads no user setup.
+- `harness-claude`: claude's Bash tool sources a snapshot of the user's
+  `~/.zshrc` or `~/.bashrc` before each command, and claude has no
+  supported switch (environment variable or setting) that turns the snapshot
+  off. `CLAUDE_CODE_SHELL` only picks which of zsh and bash is used; the
+  snapshot is read from the home directory. operad does not work around this: a
+  user whose rc file defines an alias that hangs (or changes the output of) a
+  common command should guard it there, for example `[[ -o interactive ]]`
+  around the alias, or define it only in a file that agents do not read. The
+  `bashTimeoutSecs` limit above still stops a hung command after its time.
 
 ## Usage and end results
 

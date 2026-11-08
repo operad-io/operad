@@ -9,7 +9,9 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { ViewError } from "@operad-io/engine";
 import type { ObjectStore, StoredObject } from "@operad-io/engine";
 import { withRepositoryLock } from "./lock.ts";
 import {
@@ -25,6 +27,7 @@ import {
   nextId,
   parseId,
   planData,
+  planState,
   PRIORITIES,
   priorityIndex,
   repositoryData,
@@ -145,6 +148,69 @@ function inside(path: string, cwd: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
+function shortPath(path: string): string {
+  const home = homedir();
+  if (path === home) return "~";
+  return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+}
+
+function registeredLines(registered: readonly RepositoryData[]): string[] {
+  return registered.map(
+    (repository) =>
+      `  ${repository.name}  ${shortPath(repository.path)}${
+        existsSync(repository.path) ? "" : "  (missing)"
+      }`,
+  );
+}
+
+function noRepositoryHere(
+  registered: readonly RepositoryData[],
+  cwd: string,
+): DevError {
+  if (registered.length === 0) {
+    return new DevError(
+      "repo",
+      `no registered repository contains ${cwd}, and none is registered; register one with \`operad repo add <path>\``,
+    );
+  }
+  return new DevError(
+    "repo",
+    [
+      `no registered repository contains ${cwd}; run the command inside one of these, or pass --repo <name>:`,
+      ...registeredLines(registered),
+    ].join("\n"),
+  );
+}
+
+function unknownRepository(
+  registered: readonly RepositoryData[],
+  name: string,
+): DevError {
+  if (registered.length === 0) {
+    return new DevError(
+      "repo",
+      `no registered repository "${name}", and none is registered; register one with \`operad repo add <path>\``,
+    );
+  }
+  return new DevError(
+    "repo",
+    [`no registered repository "${name}"; registered:`, ...registeredLines(registered)].join(
+      "\n",
+    ),
+  );
+}
+
+function repositoryAt(
+  registered: readonly RepositoryData[],
+  cwd: string,
+): RepositoryData | undefined {
+  const matches = registered.filter((repository) =>
+    inside(resolve(repository.path), cwd),
+  );
+  matches.sort((left, right) => right.path.length - left.path.length);
+  return matches[0];
+}
+
 /** The repository the current directory belongs to, or the named one. */
 export async function resolveRepository(
   store: ObjectStore,
@@ -153,28 +219,67 @@ export async function resolveRepository(
   if (options.name !== undefined) {
     const found = await findRepository(store, options.name);
     if (found === undefined) {
-      throw new DevError(
-        "repo",
-        `no registered repository "${options.name}"`,
-      );
+      throw unknownRepository(await listRepositories(store), options.name);
     }
     return repositoryData(found.data);
   }
 
   const cwd = resolve(options.cwd ?? process.cwd());
   const registered = await listRepositories(store);
-  const matches = registered.filter((repository) =>
-    inside(resolve(repository.path), cwd),
-  );
-  matches.sort((left, right) => right.path.length - left.path.length);
-  const found = matches[0];
-  if (found === undefined) {
+  const found = repositoryAt(registered, cwd);
+  if (found === undefined) throw noRepositoryHere(registered, cwd);
+  return found;
+}
+
+/**
+ * The repository a plan or task id belongs to, and the id without its
+ * repository. A qualified id (`<repo>/<id>`) names its repository; a bare id
+ * means the repository of the current directory, or, outside every
+ * repository, the one repository that has an object with that id.
+ */
+export async function resolveObjectRepository(
+  store: ObjectStore,
+  kind: "plan" | "task",
+  id: string,
+  options: ResolveRepositoryOptions = {},
+): Promise<{ readonly repository: RepositoryData; readonly id: string }> {
+  const slash = id.indexOf("/");
+  if (slash >= 0) {
+    const named = id.slice(0, slash);
+    if (options.name !== undefined && options.name !== named) {
+      throw new DevError(
+        "repo",
+        `"${id}" is in repository "${named}", but --repo names "${options.name}"`,
+      );
+    }
+    return {
+      repository: await resolveRepository(store, { name: named }),
+      id: id.slice(slash + 1),
+    };
+  }
+  if (options.name !== undefined) {
+    return { repository: await resolveRepository(store, options), id };
+  }
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const registered = await listRepositories(store);
+  const here = repositoryAt(registered, cwd);
+  if (here !== undefined) return { repository: here, id };
+  const having: RepositoryData[] = [];
+  for (const repository of registered) {
+    const object = await store.get(kind, storeKey(repository.name, id));
+    if (object !== undefined) having.push(repository);
+  }
+  const only = having[0];
+  if (only === undefined) throw noRepositoryHere(registered, cwd);
+  if (having.length > 1) {
     throw new DevError(
-      "repo",
-      `no registered repository here; pass --repo <name>`,
+      "id",
+      `"${id}" is ambiguous, in more than one repository: use ${having
+        .map((repository) => storeKey(repository.name, id))
+        .join(", ")}`,
     );
   }
-  return found;
+  return { repository: only, id };
 }
 
 /**
@@ -196,18 +301,33 @@ export async function resolveDevKey(
   const kind =
     type === PLAN_TYPE ? "plan" : type === TASK_TYPE ? "task" : undefined;
   if (kind === undefined) return undefined;
-  if (parseId(id, kind) === undefined) return undefined;
-  let repository: RepositoryData;
+  const slash = id.indexOf("/");
+  if (parseId(slash >= 0 ? id.slice(slash + 1) : id, kind) === undefined) {
+    return undefined;
+  }
   try {
-    repository = await resolveRepository(
+    if (slash >= 0) {
+      // The kernel already looked the qualified key up; only an unknown
+      // repository is worth reporting here.
+      await resolveRepository(store, { name: id.slice(0, slash) });
+      return undefined;
+    }
+    const { repository } = await resolveObjectRepository(
       store,
+      kind,
+      id,
       scope === undefined ? { cwd } : { name: scope },
     );
+    return storeKey(repository.name, id);
   } catch (error) {
-    if (error instanceof DevError) return undefined;
+    if (error instanceof DevError) {
+      throw new ViewError(
+        error.field === "id" ? "ambiguous" : "not-found",
+        error.message,
+      );
+    }
     throw error;
   }
-  return storeKey(repository.name, id);
 }
 
 function ensureExcludes(repositoryPath: string): void {
@@ -461,6 +581,26 @@ export interface AddPlanOptions {
   readonly slug: string;
   readonly title: string;
   readonly request?: string | undefined;
+  readonly concurrency?: number | undefined;
+}
+
+/** The fixed range of a plan's concurrency. */
+export const MIN_PLAN_CONCURRENCY = 1;
+export const MAX_PLAN_CONCURRENCY = 16;
+
+export function validatePlanConcurrency(value: unknown): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < MIN_PLAN_CONCURRENCY ||
+    value > MAX_PLAN_CONCURRENCY
+  ) {
+    throw new DevError(
+      "concurrency",
+      `must be an integer from ${MIN_PLAN_CONCURRENCY} to ${MAX_PLAN_CONCURRENCY}`,
+    );
+  }
+  return value;
 }
 
 export async function addPlan(
@@ -469,6 +609,10 @@ export async function addPlan(
 ): Promise<StoredObject> {
   const slug = validateSlug(options.slug);
   const title = validateTitle(options.title);
+  const concurrency =
+    options.concurrency === undefined
+      ? 1
+      : validatePlanConcurrency(options.concurrency);
   return withRepoLock(store, options.repository.name, async (repository) => {
     const id = await nextId(store, "plan", repository.name, slug);
     const data: PlanData = {
@@ -478,7 +622,7 @@ export async function addPlan(
       status: "draft",
       auto: "off",
       priority: "P3",
-      concurrency: 1,
+      concurrency,
       taskCount: 0,
       mergedCount: 0,
       cancelledCount: 0,
@@ -1312,6 +1456,32 @@ export async function setPriority(
       id,
       { ...fresh, priority },
       `dev:plan-priority-${priority}`,
+    );
+  });
+}
+
+export async function setConcurrency(
+  store: ObjectStore,
+  id: string,
+  count: number,
+): Promise<StoredObject> {
+  const concurrency = validatePlanConcurrency(count);
+  const initial = await getPlan(store, id);
+  const data = planData(initial.data);
+  if (data.status === "cancelled" || planState(data) === "finished") {
+    throw new DevError("concurrency", `plan "${bareId(id)}" is ${planState(data)}`);
+  }
+  return withRepoLock(store, data.repository, async () => {
+    const plan = await getPlan(store, id);
+    const fresh = planData(plan.data);
+    if (fresh.status === "cancelled" || planState(fresh) === "finished") {
+      throw new DevError("concurrency", `plan "${bareId(id)}" is ${planState(fresh)}`);
+    }
+    return writePlan(
+      store,
+      id,
+      { ...fresh, concurrency },
+      `dev:plan-concurrency-${concurrency}`,
     );
   });
 }

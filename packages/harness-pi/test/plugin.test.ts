@@ -81,6 +81,16 @@ function dataOf(result: PluginStepResult): Record<string, unknown> {
   return (result.data ?? {}) as Record<string, unknown>;
 }
 
+/** Resolves true once the process is gone; the kill lands asynchronously. */
+async function gone(pid: number): Promise<boolean> {
+  const deadline = Date.now() + 10_000;
+  while (alive(pid)) {
+    if (Date.now() > deadline) return false;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  return true;
+}
+
 function alive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -165,6 +175,27 @@ describe("harness-pi/agent", () => {
     expect(result.result).toBe("done");
     expect(validateUsage(dataOf(result).usage).ok).toBe(true);
     expect((dataOf(result).usage as { costMicros: unknown }).costMicros).toBeNull();
+  });
+
+  test("bashTimeoutSecs reaches the worker; unset it is 1800", async () => {
+    const custom = await setup("done", { bashTimeoutSecs: 900 });
+    await runAgent(custom, { prompt: "hello", cwd: custom.root });
+    expect(recorded(custom).bashTimeoutSecs).toBe(900);
+    const plain = await setup("done");
+    await runAgent(plain, { prompt: "hello", cwd: plain.root });
+    expect(recorded(plain).bashTimeoutSecs).toBe(1800);
+  });
+
+  test("a bashTimeoutSecs of 0, below 0 or not a number refuses the plugin at load and names the field", () => {
+    for (const bad of [0, -5, "60", 1.5]) {
+      const registry = new PluginRegistry([createPiHarnessPlugin()], {
+        home: "/tmp",
+        cwd: "/tmp",
+        store: new MemoryPluginStore({ root: "/tmp/unused-store" }),
+        settings: { "harness-pi": { bashTimeoutSecs: bad } },
+      });
+      expect(registry.names()).toEqual([]);
+    }
   });
 
   test("the worker gets the prompt, the directories, the settings and no discovery", async () => {
@@ -374,7 +405,7 @@ describe("harness-pi/agent", () => {
     const data = dataOf(result);
     expect(data.reason).toBe("signal");
     expect(String(data.message)).toContain("SIGKILL");
-    expect(alive(Number(readFileSync(env.marker, "utf8")))).toBe(false);
+    expect(await gone(Number(readFileSync(env.marker, "utf8")))).toBe(true);
     expect(alive(process.pid)).toBe(true);
   });
 
@@ -422,7 +453,7 @@ describe("harness-pi/agent", () => {
     const result = await running;
     expect(result.result).toBe("failed");
     expect(dataOf(result).reason).toBe("stall");
-    expect(alive(pid)).toBe(false);
+    expect(await gone(pid)).toBe(true);
   });
 
   test("silence with an open tool call is not a stall", async () => {
@@ -458,7 +489,7 @@ describe("harness-pi/agent", () => {
     const result = await running;
     expect(result.result).toBe("failed");
     expect(dataOf(result).reason).toBe("wall");
-    expect(alive(pid)).toBe(false);
+    expect(await gone(pid)).toBe(true);
   });
 
   test("settings supply the limits and a step param overrides them", async () => {
@@ -494,7 +525,7 @@ describe("harness-pi/agent", () => {
     const result = await running;
     expect(result.result).toBe("interrupted");
     expect(dataOf(result).reason).toBe("cancelled");
-    expect(alive(pid)).toBe(false);
+    expect(await gone(pid)).toBe(true);
   });
 
   test("a cwd that does not exist fails with a clear reason", async () => {

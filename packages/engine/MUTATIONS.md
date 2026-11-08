@@ -245,3 +245,10 @@ the row fields.
 | T-0048-M3 | packages/engine/src/views/presentation.ts | a filtered page never gave a `next` cursor | `object type filters > paging works within the filtered list and never returns a short page early` |
 | T-0048-M4 | packages/engine/src/plugin/registry.ts | a plugin could declare a filter named `all` | `object type filters > plugin loading refuses a malformed declaration with the field path` |
 | T-0048-M5 | packages/engine/src/http/server.ts | `GET /v1/objects` without `filter` ignored the type's default | `filters over HTTP > /v1/types lists filters and /v1/objects applies them` |
+| T-0032-M1 | packages/engine/src/http/server.ts | `GET /v1/keys` reported every binding as `plugin`, hiding the person's override | `http server > GET /v1/keys lists the plugin defaults and the person's overrides` |
+
+## T-0047 — a qualified id and `--repo` must agree
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0047-M6 | packages/engine/src/views/presentation.ts | show accepted `--repo` that differs from a qualified id | `dev` cli test `a qualified id with an unknown repository, or a conflicting --repo, is refused` |

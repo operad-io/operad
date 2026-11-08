@@ -15,6 +15,7 @@ import {
   type TuiState,
   type TuiView,
 } from "../src/index.ts";
+import { immediateClock } from "./support.ts";
 
 function row(id: string, title = `Title ${id}`): ViewRow {
   return { id, title, state: "new", waiting: false, running: false };
@@ -118,7 +119,7 @@ describe("the TUI object app", () => {
       width: 80,
       height: 20,
       theme: "dark",
-      refreshDelayMs: 0,
+      clock: immediateClock,
     });
     try {
       await view.until((state) =>

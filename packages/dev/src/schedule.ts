@@ -261,9 +261,18 @@ async function scheduleRepository(
   // failure between the two writes): give it back to ready, and this tick
   // starts it again. A run that already exists is never duplicated, because
   // the kernel refuses a second run for an object.
+  // A claim whose run the kernel already holds is a start still landing: the
+  // run's first step records its id moments later. Releasing it would cancel
+  // that run and start another one on the next tick, forever.
   for (const object of tasksOf(initialTasks, repository.name)) {
     const task = taskData(object.data);
     if (task.phase !== "running" || task.run !== null) continue;
+    if (
+      ctx.runLookup !== undefined &&
+      (await ctx.runLookup.active(`task:${object.id}`)).length > 0
+    ) {
+      continue;
+    }
     if ((await releaseTaskClaim(ctx.store, object.id)) === undefined) continue;
     writeSchedulerLine(`${bareId(object.id)} running -> ready`);
   }

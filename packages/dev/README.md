@@ -29,15 +29,41 @@ views and `--after` accept both forms, and an id is matched exactly.
 operad repo add <path> [--name <name>]
 operad repo list
 operad repo remove <name>
-operad plan add --slug <slug> --title <title> [--repo <name>]   # request on stdin
+operad plan add --slug <slug> --title <title> [--concurrency <n>] [--repo <name>]   # request on stdin
 operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--repo <name>]   # brief on stdin
 operad task edit <id>      # $EDITOR on the brief body; proposed or ready only
 operad task update <id> [--title <title>] [--after <task>]... [--area <area>]   # --area "" clears it
 operad start <task>        # start one ready task now, whatever its plan's auto level
 ```
 
-Inside a registered repository the repository is inferred; elsewhere pass
-`--repo <name>`.
+### Where a command runs, and ids
+
+A command that looks up a plan or a task (`start`, `task edit`, `task update`,
+`show`, every `dev:<action>`) finds its repository in this order:
+
+1. A qualified id, `<repo>/<id>` as `operad list` prints it
+   (`operad start operad/T-0045-shell-hang-guards`), names the repository, from
+   any directory. `--repo` with a different repository is refused, naming both.
+2. `--repo <name>`.
+3. Inside a registered repository, a bare id means that repository's object.
+   The longest registered path that contains the directory wins.
+4. Outside every repository, a bare id resolves when exactly one registered
+   repository has an object with that id. When several do, the error lists the
+   qualified ids to choose from.
+
+`plan add` and `task add` create rather than look up, so they never guess from an
+id: they use the repository of the directory or `--repo`.
+
+When no repository applies, the error names the directory and lists the
+registered ones, a repository whose path is gone marked `(missing)`:
+
+```
+no registered repository contains /Users/hai/Code/radian; run the command inside one of these, or pass --repo <name>:
+  operad      ~/Code/operad
+  operad-ios  ~/Code/operad-ios
+```
+
+With nothing registered it points at `operad repo add <path>`.
 
 ## Actions
 
@@ -48,11 +74,12 @@ Every action is also a command: `operad dev:<action> <id>`.
 | `dev:confirm` | plan, task | `c` | confirm a draft plan (its tasks become ready) or a proposed task |
 | `dev:merge` | task | | answer the task's wait with `merge`; asks first |
 | `dev:reject` | task | | answer the task's wait with `reject` and append `## Rework <n> (owner)` with the note |
-| `dev:rework` | task | | add the lead's own rework: `--note <text>` becomes `## Rework <n> (lead)`, and the worker runs again |
+| `dev:rework` | task | | add the lead's own rework: `--note <text>` becomes `## Rework <n> (lead)`, and the worker runs again; history reads "you chose rework" with the note |
 | `dev:reverify` | task | | run verify and review again on the task's current commit, with no worker |
 | `dev:cancel` | plan, task | `x` | cancel a plan and its open tasks, or one task; asks first |
 | `dev:auto` | plan | | set auto: `--level off`, `--level run` or `--level merge` |
 | `dev:priority` | plan | | set the priority: `--level P0` (most urgent) to `--level P5` |
+| `dev:concurrency` | plan | | set how many of the plan's tasks may run at once: `--count 1` to `--count 16`; takes effect at the next tick, running tasks are not stopped |
 
 `merge` and `reject` answer the task's person wait. They appear in `pending`
 only while the task is waiting, and are refused with a clear message otherwise.
@@ -262,6 +289,7 @@ The file holds the repository's work settings:
 | `workerBrief` | `.operad/worker-brief.md` | the brief a worker reads first; a missing file means the built-in text |
 | `gate.commands` | `[]` | the commands the verify step runs on the task commit |
 | `gate.commandTimeoutSecs` | `1800` | the longest one gate command may run |
+| `check.rerun` | `1` | how many times a failed gate or integration check runs again before it counts as failed; `0` turns it off; a timeout is never rerun. A pass on the rerun is a pass, noted in the task's Changes and the check log holds both runs |
 | `reviewer.use` | `harness-radian/agent` | the harness step that reviews the diff |
 | `reviewer.args` | `[]` | the arguments every review gets |
 | `reviewer.firstArgs` | none | the arguments the first review of an attempt gets instead, including its one retry after an invalid report |

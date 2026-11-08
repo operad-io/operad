@@ -30,3 +30,7 @@ the row fields.
 | T-0036-M9 | packages/harness-pi/src/index.ts | the `command` setting was not passed to the worker | `harness-pi:prompt > the command setting reaches the worker as piCommand; unset it is pi` |
 | T-0036-M10 | packages/harness-pi/src/index.ts | `check` did not look for pi | `harness-pi check > refuses when there is no pi on PATH` |
 | T-0036-M11 | packages/harness-pi/src/pi-install.ts | an `exports` entry that is missing or outside the package was accepted | `findPi > an exports entry that is not a file in the package is refused` |
+| T-0045-M1 | packages/harness-pi/src/worker.ts | a bash call without a `timeout` got none instead of the limit | `a bash call that blocks on a FIFO is stopped by bashTimeoutSecs, the model gets an error and the run ends done` |
+| T-0045-M2 | packages/harness-pi/src/worker.ts | the worker kept `BASH_ENV` in its environment | `the agent's shell does not read BASH_ENV, where a user's aliases and functions could come from` |
+| T-0045-M3 | packages/harness-pi/src/index.ts | the `bashTimeoutSecs` setting was not passed to the worker | `harness-pi/agent > bashTimeoutSecs reaches the worker; unset it is 1800` |
+| T-0045-M4 | packages/harness-pi/src/protocol.ts | `parseInput` accepted a `bashTimeoutSecs` of 0 | `parseInput refuses a bashTimeoutSecs that is 0, negative, fractional or not a number, and names the field` |

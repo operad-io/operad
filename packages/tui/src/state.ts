@@ -8,6 +8,7 @@ import type {
   PendingItem,
   RunningItem,
   ViewListPage,
+  ViewAction,
   ViewObject,
   ViewRow,
   ViewSectionContent,
@@ -16,6 +17,19 @@ import type {
 import type { TuiTypeInfo } from "./client.ts";
 import { cachedLayout, layoutMarkdown, type LayoutLine } from "./layout.ts";
 import { sanitize } from "./sanitize.ts";
+import {
+  actionFailed,
+  bindingFor,
+  confirmText,
+  inputKey,
+  keyLabel,
+  mainAction,
+  mainKey,
+  runKey,
+  startAction,
+  isReserved,
+  resolveBindings,
+} from "./actions.ts";
 
 /** The two terminal themes the view knows. */
 export type TuiTheme = "light" | "dark";
@@ -76,10 +90,47 @@ export interface TuiObject {
   readonly active: number;
   /** The object response has not arrived yet; its row comes from the list. */
   readonly loading: boolean;
+  /** The actions the object offers now, in the server's order. */
+  readonly actions: readonly ViewAction[];
   readonly error?: string | undefined;
   readonly unavailable?: string | undefined;
   /** Grows with each open; an answer to an older open is dropped. */
   readonly version: number;
+}
+
+/** One key binding in force, from `GET /v1/keys`. */
+export interface TuiBinding {
+  readonly key: string;
+  /** `<plugin>:<action>`. */
+  readonly action: string;
+  readonly source: "plugin" | "user";
+}
+
+/** What the keys type into: the `:` palette, a note, or a confirmation. */
+export type TuiInput =
+  | { readonly kind: "palette"; readonly query: string; readonly cursor: number }
+  | {
+      readonly kind: "note";
+      readonly action: string;
+      readonly id: string;
+      readonly text: string;
+      readonly required: boolean;
+      /** The action asks to confirm after the note. */
+      readonly confirm: boolean;
+    }
+  | {
+      readonly kind: "confirm";
+      readonly action: string;
+      readonly id: string;
+      readonly note?: string | undefined;
+    };
+
+/** An action the reducer wants the caller to send with `POST /v1/act`. */
+export interface TuiActionRequest {
+  readonly action: string;
+  readonly id: string;
+  readonly note?: string | undefined;
+  readonly confirmed?: boolean | undefined;
 }
 
 /** An object the reducer wants the caller to fetch. */
@@ -163,7 +214,24 @@ export interface TuiState {
   readonly generation: number;
   /** The last failure to show in the footer; cleared by a good refresh. */
   readonly status?: string | undefined;
+  /** The key bindings in force; a user binding beats a plugin default. */
+  readonly bindings: readonly TuiBinding[];
+  /** The palette, note or confirmation the keys are typing into. */
+  readonly input?: TuiInput | undefined;
+  /** One footer line (a refusal, or "not available") until the next key. */
+  readonly notice?: string | undefined;
+  /** Set when an action must be sent; the caller clears it as it sends. */
+  readonly actionRequest?: TuiActionRequest | undefined;
+  /** An action is on its way; a second one waits for the answer. */
+  readonly acting: boolean;
+  /** The server this screen talks to, named in the unreachable line. */
+  readonly url?: string | undefined;
+  /** Whether the server answers; the lists stay as they were when it does not. */
+  readonly connection: TuiConnection;
 }
+
+/** What the last request said about the server. */
+export type TuiConnection = "ok" | "unreachable" | "unauthorized";
 
 /** The width at which the right pane appears. */
 export const TWO_PANE_WIDTH = 100;
@@ -179,6 +247,7 @@ export interface TuiStateOptions {
   readonly width?: number | undefined;
   readonly height?: number | undefined;
   readonly theme?: TuiTheme | undefined;
+  readonly url?: string | undefined;
 }
 
 function makeList(): TuiList {
@@ -224,6 +293,10 @@ export function initialState(options: TuiStateOptions = {}): TuiState {
     moveSeq: 0,
     followPending: false,
     generation: 0,
+    bindings: [],
+    acting: false,
+    connection: "ok",
+    ...(options.url === undefined ? {} : { url: options.url }),
   };
 }
 
@@ -324,6 +397,8 @@ export type TuiStateEvent =
   | {
       readonly type: "key";
       readonly key: string;
+      /** The printable text the key types, when it types any. */
+      readonly text?: string | undefined;
       readonly shift?: boolean | undefined;
       readonly ctrl?: boolean | undefined;
       readonly meta?: boolean | undefined;
@@ -335,7 +410,28 @@ export type TuiStateEvent =
       readonly theme?: TuiTheme | undefined;
     }
   | { readonly type: "theme"; readonly theme: TuiTheme }
-  | { readonly type: "refreshed" };
+  /** The key bindings in force arrived from `GET /v1/keys`. */
+  | {
+      readonly type: "keys";
+      readonly bindings: readonly TuiBinding[];
+      readonly generation?: number | undefined;
+    }
+  /** The caller sent the action request; it is sent once. */
+  | { readonly type: "action-launched" }
+  /** The action ran. */
+  | { readonly type: "action-done" }
+  /** The server refused the action; its status and message show as they came. */
+  | {
+      readonly type: "action-error";
+      readonly message: string;
+      readonly status?: number | undefined;
+    }
+  | { readonly type: "refreshed" }
+  /** The server answered, or did not, or refused the token. */
+  | { readonly type: "connection"; readonly connection: TuiConnection }
+  /** One row was fetched again; it replaces the rows with its id in every list. */
+  | { readonly type: "row"; readonly row: ViewRow }
+  | { readonly type: "row-gone"; readonly id: string };
 
 /** A duration as the Running list writes it. */
 export function formatElapsed(ms: number): string {
@@ -642,6 +738,7 @@ function openObject(state: TuiState): TuiState {
       loading: false,
     })),
     active: previous?.active ?? 0,
+    actions: previous?.actions ?? [],
     loading: true,
     version,
   };
@@ -703,6 +800,7 @@ function applyObject(
     row,
     sections,
     active,
+    actions: view.actions,
     loading: false,
     ...(view.unavailable === undefined
       ? {}
@@ -975,19 +1073,43 @@ function isKey(key: string, ...names: string[]): boolean {
   return names.some((name) => lowered === name.toLowerCase());
 }
 
+/** The name keys.json uses for a key: `enter` and `escape`, however the terminal names them. */
+function bindingLabel(label: string): string {
+  const lowered = label.toLowerCase();
+  if (lowered === "return") return "enter";
+  if (lowered === "esc") return "escape";
+  return label;
+}
+
 function handleKey(
   state: TuiState,
   event: {
     key: string;
+    text?: string | undefined;
     shift?: boolean | undefined;
     ctrl?: boolean | undefined;
     meta?: boolean | undefined;
   },
 ): TuiState {
+  const typing = state.input;
+  const calm = state.notice === undefined ? state : { ...state, notice: undefined };
+  if (typing !== undefined) return inputKey(calm, typing, event);
   // Ctrl-C is the renderer's exit; no other chord is ours.
-  if (event.ctrl === true || event.meta === true) return state;
+  if (event.ctrl === true || event.meta === true) return calm;
+  state = calm;
   const key = event.key;
   const shift = event.shift === true;
+  const label = keyLabel(key, shift);
+  // Reserved keys were dropped from the bindings; the rest, a user binding
+  // first, run their action.
+  const own = isReserved(label)
+    ? undefined
+    : bindingFor(state.bindings, bindingLabel(label));
+  // The key list closes first, so the action acts on what the person sees.
+  if (own !== undefined) return startAction({ ...state, keys: false }, own.action);
+  if (key === ":" && !state.keys) {
+    return { ...state, input: { kind: "palette", query: "", cursor: 0 } };
+  }
   if (key === "?" || (key === "/" && shift)) {
     return { ...state, keys: !state.keys };
   }
@@ -1026,14 +1148,24 @@ function handleKey(
       if (isKey(key, "g")) return jumpSection(state, "top");
     }
   }
-  if (isKey(key, "r")) return { ...state, refreshRequested: true };
+  // A rotated token is not retried: the person runs the TUI again.
+  if (isKey(key, "r") && state.connection === "unauthorized") return state;
+  if (isKey(key, "r")) {
+    const retry = { ...state, refreshRequested: true };
+    const object = state.object;
+    const section = object?.sections[object.active];
+    // A section that failed to load asks again; the others refresh with the lists.
+    return object !== undefined && section?.error !== undefined && !section.loading
+      ? requestSection(retry, object.active, { force: true })
+      : retry;
+  }
   if (isKey(key, "tab")) return cycle(state, shift ? -1 : 1);
   if (isKey(key, "up", "arrowup", "k")) return move(state, -1);
   if (isKey(key, "down", "arrowdown", "j")) return move(state, 1);
   if (key === "G" || (isKey(key, "g") && shift)) return jump(state, "bottom");
   if (isKey(key, "g")) return jump(state, "top");
   if (/^[1-9]$/.test(key)) return activate(state, Number(key) - 1);
-  return state;
+  return runKey(state, label) ?? state;
 }
 
 function typeTitle(type: TuiTypeInfo): string {
@@ -1071,6 +1203,45 @@ function cursorAfterReplace(old: TuiList, rows: readonly TuiRow[]): number {
     if (found >= 0) return found;
   }
   return clampCursor({ ...old, rows });
+}
+
+/** True when two ids name one object, with or without scope or type. */
+export function sameObject(a: string, b: string): boolean {
+  if (a === b) return true;
+  const tail = (id: string): string => id.slice(Math.max(id.lastIndexOf(":"), id.lastIndexOf("/")) + 1);
+  return tail(a) !== "" && tail(a) === tail(b);
+}
+
+/** Puts a fresh row in place of the rows of the same object; the cursor stays. */
+function replaceRow(state: TuiState, row: TuiRow): TuiState {
+  let changed = false;
+  const tabs = state.tabs.map((tab) => {
+    if (tab.kind !== "type") return tab;
+    const rows = tab.list.rows.map((old) => {
+      if (!sameObject(old.id, row.id)) return old;
+      changed = true;
+      return row;
+    });
+    return changed && rows.some((r, i) => r !== tab.list.rows[i])
+      ? { ...tab, list: { ...tab.list, rows } }
+      : tab;
+  });
+  return changed ? { ...state, tabs } : state;
+}
+
+/** Drops the row of an object that is gone from the server. */
+function removeRow(state: TuiState, id: string): TuiState {
+  let changed = false;
+  const tabs = state.tabs.map((tab) => {
+    if (tab.kind !== "type") return tab;
+    const at = tab.list.rows.findIndex((row) => sameObject(row.id, id));
+    if (at < 0) return tab;
+    changed = true;
+    const rows = tab.list.rows.filter((_, i) => i !== at);
+    const cursor = Math.min(tab.list.cursor, Math.max(0, rows.length - 1));
+    return { ...tab, list: { ...tab.list, rows, cursor } };
+  });
+  return changed ? { ...state, tabs } : state;
 }
 
 function replaceRows(
@@ -1258,6 +1429,32 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       };
     case "theme":
       return { ...state, theme: event.theme };
+    case "keys":
+    {
+      if (stale(state, event.generation)) return state;
+      const resolved = resolveBindings(event.bindings);
+      return {
+        ...state,
+        bindings: resolved.bindings,
+        ...(resolved.notice === undefined ? {} : { notice: resolved.notice }),
+      };
+    }
+    case "action-launched":
+      return state.actionRequest === undefined
+        ? state
+        : { ...state, actionRequest: undefined };
+    case "action-done":
+      return { ...state, acting: false, actionRequest: undefined };
+    case "action-error":
+      return actionFailed(state, event.status, event.message);
+    case "connection":
+      return state.connection === event.connection
+        ? state
+        : { ...state, connection: event.connection };
+    case "row-gone":
+      return removeRow(state, event.id);
+    case "row":
+      return replaceRow(state, rowFromView(event.row));
     case "refreshed":
       return state.refreshRequested
         ? { ...state, refreshRequested: false }
@@ -1315,7 +1512,12 @@ export function footerText(state: TuiState): string {
     common =
       "j/k scroll  space/b page  g/G ends  [ ] section  f full  esc back  ? keys  q quit";
   }
-  return state.keys ? `${common}  ? closes the key list` : common;
+  const main = mainAction(state);
+  const actions =
+    state.object === undefined || main === undefined
+      ? ""
+      : `${mainKey(state) === undefined ? "" : `${mainKey(state)} `}${main.name}${state.object.actions.length > 1 ? "  : more" : ""}  `;
+  return state.keys ? `${actions}${common}  ? closes the key list` : `${actions}${common}`;
 }
 
 /** Every key the TUI reads, in the order the key list shows them. */
@@ -1374,7 +1576,18 @@ export function listWindow(
   }
 }
 
+/** The red footer line an action leaves: a confirmation, or a refusal. */
+export function noticeText(state: TuiState): string | undefined {
+  return confirmText(state) ?? state.notice;
+}
+
 /** The footer when a failure is showing: the reason, then the way out. */
 export function statusText(state: TuiState): string | undefined {
+  if (state.connection === "unreachable") {
+    return `no server at ${state.url ?? "the address"}: is \`operad serve\` running? retrying  q quit`;
+  }
+  if (state.connection === "unauthorized") {
+    return "the token was rotated: run the TUI again or pass --token  q quit";
+  }
   return state.status === undefined ? undefined : `${state.status}  q quit`;
 }
