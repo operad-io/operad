@@ -346,6 +346,13 @@ Every error body is:
 | `504` | A section did not load in time. |
 | `500` | Anything else; the body carries no stack trace. |
 
+## Where `dev` commands run
+
+A `dev` command takes its repository from the directory, from `--repo <name>`
+or from a qualified id such as `operad/T-0045-shell-hang-guards`; a bare id
+outside a repository works when only one repository has it. The rules are in
+[packages/dev/README.md](../packages/dev/README.md#where-a-command-runs-and-ids).
+
 ## Asking a person from a step
 
 A step can ask a person a question and carry on with the answer. The step calls
