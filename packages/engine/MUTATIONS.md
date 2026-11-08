@@ -291,3 +291,11 @@ the row fields.
 | T-0089-M3 | packages/engine/src/markdown.ts | a closing fence ignored its character (a backtick fence closed a tilde fence) | `markdown fences > closing needs the same character and a length at least the opening's` |
 | T-0089-M4 | packages/engine/src/markdown.ts | the language was the whole info string, not its first word | `markdown fences > only the first word of the info string is the language` |
 | T-0089-M5 | packages/engine/src/markdown.ts | `---`/`+++` diff headers were drawn bold again instead of red/green | `markdown > a four-backtick diff colours + and - lines and keeps indentation` |
+| T-0052-M1 | packages/engine/src/views/presentation.ts | `root` kept the rows that have a parent instead of those without | `row parent > root lists only rows with no parent, across types in type order` |
+| T-0052-M2 | packages/engine/src/views/presentation.ts | a parent id matched only as written, not as the resolved `type:id` or bare id | `row parent > parent= lists only that parent's children and the row carries parent` |
+| T-0052-M3 | packages/engine/src/views/presentation.ts | the level list ignored the type's filter, so no row was hidden | `row parent > the default filter applies under parent= and hidden counts the filtered rows` |
+| T-0052-M4 | packages/engine/src/views/presentation.ts | a list without a type walked the types in reverse order | `row parent > root lists only rows with no parent, across types in type order` |
+| T-0052-M5 | packages/engine/src/views/presentation.ts | the kernel dropped the row's `parent` | `row parent > parent= lists only that parent's children and the row carries parent` |
+| T-0052-M6 | packages/engine/src/views/presentation.ts | a level cursor was accepted for a different parent | `row parent > pages keep the order and a cursor cannot be moved to another list` |
+| T-0052-M7 | packages/engine/src/http/server.ts | `/v1/types` left out each type's plugin | `hierarchy over HTTP > /v1/types names the plugin and /v1/objects takes root and parent` |
+| T-0052-M8 | packages/engine/src/http/server.ts | `/v1/objects` ignored `parent=` | `hierarchy over HTTP > /v1/types names the plugin and /v1/objects takes root and parent` |

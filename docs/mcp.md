@@ -153,10 +153,11 @@ Input:
 ```json
 {
   "type": "object",
-  "required": ["type"],
   "additionalProperties": false,
   "properties": {
-    "type": { "type": "string", "minLength": 1, "description": "An object type, such as task." },
+    "type": { "type": "string", "minLength": 1, "description": "An object type, such as task. Optional with root or parent: then every type is listed." },
+    "root": { "type": "boolean", "description": "Only rows with no parent." },
+    "parent": { "type": "string", "minLength": 1, "description": "Only rows whose parent is this object id." },
     "cursor": { "type": "string", "description": "The next cursor from an earlier list." }
   }
 }
@@ -167,6 +168,13 @@ object type, with the plugin's `id`, `title`, `state` and optional `note` and
 `scope`, plus the kernel's `waiting` and `running` flags. An error row also has
 `error`. The Markdown is a table of id, state, title, note and flags. An
 unknown type is a tool error with the view's message.
+
+`root` and `parent` list one level, as the manual's "Levels" section describes:
+with a `type` the rows of that type, without one the rows of all types in the
+types' order. The type's default filter applies in the level and `hidden` counts
+the rows it left out. A parent that names no object gives an empty list. A call
+with no `type`, `root` or `parent` is a tool error. A row's `parent`, when it
+has one, is in the structured row and in the `show` Markdown.
 
 ### `show`
 

@@ -58,3 +58,4 @@ the row fields.
 | T-0064-M5 | packages/mcp/src/channel.ts | an unknown notify entry was accepted | `the channel's sources > what the default sends > an unknown notify entry is refused with its name` |
 | T-0064-M6 | packages/mcp/src/channel.ts | the looped flag was not saved with the sent row, so a restart sent the loop block again | `a restarted channel does not send a loop block again for the same stretch` |
 | T-0064-M7 | packages/mcp/src/channel.ts | the pending item's prompt was never used as the wait's reason | `a wait carries the reason of its pending item when the row has no note` |
+| T-0052-M12 | packages/mcp/src/tools.ts | the `list` tool did not pass `parent` on | `operad mcp hierarchy > list takes root and parent, with or without a type` |

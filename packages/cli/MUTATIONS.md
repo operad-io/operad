@@ -45,3 +45,6 @@ the row fields.
 | T-0048-M9 | packages/cli/src/main.ts | the printed `next:` command dropped the `--where` predicates | `operad presentation commands > list filters on indexed fields and pages with --limit and --cursor` |
 | T-0048-M10 | packages/cli/src/main.ts | the printed `next:` command left the `--repo` value unquoted | `operad presentation commands > the printed next: command shell-quotes the repo value` |
 | serve-views-home-M1 | packages/cli/src/main.ts | serve opened its views in the directory it started in, so a bare id was scoped to that repository | `operad serve http > serve resolves ids from no directory: a bare id is not scoped to where serve started` |
+| T-0052-M9 | packages/cli/src/main.ts | `list --root` was not passed to the views | `operad list hierarchy > --root and --parent list one level; show prints the parent` |
+| T-0052-M10 | packages/cli/src/main.ts | `show` did not print the parent line | `operad list hierarchy > --root and --parent list one level; show prints the parent` |
+| T-0052-M11 | packages/cli/src/main.ts | `list --parent` was not passed to the views | `operad list hierarchy > --root and --parent list one level; show prints the parent` |

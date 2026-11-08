@@ -26,6 +26,8 @@ export const defaultFetch: FetchLike = (input, init) => fetch(input, init);
 export interface TuiTypeInfo {
   readonly type: string;
   readonly title: string;
+  /** The plugin the type belongs to. */
+  readonly plugin?: string;
   /** The type's filters in display order; absent when it declares none. */
   readonly filters?: readonly { readonly name: string; readonly states?: readonly string[] }[] | undefined;
   /** The filter a list opens on; present with `filters`. */
