@@ -235,7 +235,7 @@ function rowLine(
     chunk(" ", undefined, undefined, tint),
     glyph(row, palette, tint),
     chunk(" ", undefined, undefined, tint),
-    chunk(text, selected ? palette.accent : undefined, undefined, tint),
+    chunk(text, selected ? palette.accent : palette.text, undefined, tint),
     ...(pad === "" ? [] : [chunk(pad, undefined, undefined, tint)]),
     chunk("\n"),
   ];

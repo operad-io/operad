@@ -125,6 +125,20 @@ describe("rules, text and the selected row", () => {
     expect(prose?.chunks[0]?.fg?.toInts().join(",")).toBe(ints(BUILTIN_THEMES.dark.text));
   });
 
+  test("an unselected list label uses the text token", () => {
+    let state = stateOf("light");
+    state = reduce(state, {
+      type: "pending",
+      items: [
+        { runId: "run-1", flow: "flow", step: "ask", prompt: "A?", choices: ["yes"], actions: [], object: "item:one" },
+        { runId: "run-2", flow: "flow", step: "ask", prompt: "B?", choices: ["yes"], actions: [], object: "item:two" },
+      ],
+    });
+    const chunks = drawState(state, "light").list.chunks;
+    const label = chunks.find((c) => c.text.includes("two"));
+    expect(label?.fg?.toInts().join(",")).toBe(ints(BUILTIN_THEMES.light.text));
+  });
+
   test("the tint covers the whole selected row, padding included", () => {
     const state = stateOf("dark");
     const row = drawState(state, "dark").list.chunks.filter((c) => c.text !== "\n");
