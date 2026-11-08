@@ -46,6 +46,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@operad-io/engine": "workspace:*",
+        "@operad-io/review-grading": "workspace:*",
       },
       "devDependencies": {
         "@operad-io/shell": "workspace:*",
@@ -105,6 +106,10 @@
       "dependencies": {
         "@operad-io/engine": "workspace:*",
       },
+    },
+    "packages/review-grading": {
+      "name": "@operad-io/review-grading",
+      "version": "0.0.0",
     },
     "packages/shell": {
       "name": "@operad-io/shell",
@@ -261,6 +266,8 @@
     "@operad-io/mcp": ["@operad-io/mcp@workspace:packages/mcp"],
 
     "@operad-io/pool": ["@operad-io/pool@workspace:packages/pool"],
+
+    "@operad-io/review-grading": ["@operad-io/review-grading@workspace:packages/review-grading"],
 
     "@operad-io/shell": ["@operad-io/shell@workspace:packages/shell"],
 
