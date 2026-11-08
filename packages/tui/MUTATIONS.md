@@ -162,3 +162,8 @@ the row fields.
 | T-0070-M9 | packages/tui/src/view/index.ts | an unselected list label had no colour, so it kept the terminal foreground | `rules, text and the selected row > an unselected list label uses the text token` |
 | T-0070-M10 | packages/tui/src/view/index.ts | the typed note text had no colour, so it kept the terminal foreground | `rules, text and the selected row > note text and unselected palette entries use the text token` |
 | T-0070-M11 | packages/tui/src/view/index.ts | an unselected palette entry name had no colour | `rules, text and the selected row > note text and unselected palette entries use the text token` |
+| T-0078-M1 | packages/tui/src/view/index.ts | the overlay box was not filled with the theme background, so the list showed through | `overlays > the palette fills its box and closing repaints the list` |
+| T-0078-M2 | packages/tui/src/view/index.ts | the overlay sat at a fixed left edge instead of centred | `overlays > at 120x40 the palette, help, note and confirmation are centred` |
+| T-0078-M3 | packages/tui/src/view/index.ts | the palette was centred on its height, so its input line moved with the matches | `overlays > at 120x40 the palette input line stays on its row as matches change` |
+| T-0078-M4 | packages/tui/src/view/index.ts | the overlay had no one-cell margin inside its border | `overlays > the palette fills its box and closing repaints the list` |
+| T-0078-M5 | packages/tui/src/view/index.ts | the overlay box was filled with the `code` token instead of `background` | `overlays > under the dark theme the palette box is filled with the background token` |
