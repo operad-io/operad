@@ -26,6 +26,7 @@ import {
   gateWorktreePath,
   recreateGateWorktree,
 } from "./gate.ts";
+import { checkPlaces } from "./places.ts";
 import { runCheckWithRerun } from "./rerun.ts";
 import { getPlan, refreshPlanCounts } from "./service.ts";
 import {
@@ -421,6 +422,7 @@ export async function runIntegrate(
         { lines: keyCommands, cwd: gate },
         stepOptions(ctx, gate),
         settings.check.rerun,
+        checkPlaces(ctx),
       );
       const { outcome, hostError } = checked;
       checkNote = checked.note;

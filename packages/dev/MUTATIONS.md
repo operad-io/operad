@@ -149,3 +149,8 @@ the row fields.
 | T-0055-M1 | packages/dev/src/steps.ts | the base stayed the head before the merge of main, so the merge counted as the worker's work | `dev/work after main moved > a clean merge and no change by the worker is nothing` |
 | T-0055-M2 | packages/dev/src/steps.ts | the Changes section did not say what was merged | `dev/work after main moved > a rework gets main's commit, and the attempt and Changes say so` |
 | T-0055-M3 | packages/dev/src/steps.ts | the conflict prompt did not say resolving the merge is part of the attempt | `dev/work after main moved > a conflicting main is left for the worker and the prompt names the files` |
+| T-0056-M1 | packages/dev/src/places.ts | allowed one more place than `checks` | `check places > three checks with a limit of 2: two run, the third waits until one ends` |
+| T-0056-M2 | packages/dev/src/places.ts | a waiting check wrote nothing to the step log | `check places > three checks with a limit of 2: two run, the third waits until one ends` |
+| T-0056-M3 | packages/dev/src/places.ts | a cancelled step kept waiting for a place | `check places > a cancelled step stops waiting for a place` |
+| T-0056-M4 | packages/dev/src/rerun.ts | the check ran without taking a place | `check places > a check waits for a place before its command starts` |
+| T-0056-M5 | packages/dev/src/places.ts | a taken place made the taker wait for its holder instead of trying the next place | `check places > a killed check releases its place` |

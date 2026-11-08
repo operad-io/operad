@@ -100,6 +100,18 @@ export function createDevPlugin() {
         run: runAnnounce,
       },
     ],
+    settings: {
+      type: "object",
+      properties: {
+        checks: {
+          type: "integer",
+          minimum: 1,
+          description:
+            "How many verify and integrate checks may run at once in this home, across all repositories. Default 2.",
+        },
+      },
+      additionalProperties: false,
+    },
     flows: [devFlow],
     // Every stop that needs a person is in history; a user can route the event
     // to a channel by replacing this rule.
@@ -140,6 +152,7 @@ export * from "./integrate.ts";
 export * from "./model.ts";
 export * from "./schedule.ts";
 export * from "./service.ts";
+export * from "./places.ts";
 export * from "./settings.ts";
 export * from "./steps.ts";
 export * from "./timeouts.ts";
