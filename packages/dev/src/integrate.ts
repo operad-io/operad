@@ -570,6 +570,7 @@ export async function runIntegrate(
             : `The integration check failed: \`${command}\``,
           ...(log === undefined ? [] : [`Log: \`${log}\``]),
           detail,
+          ...(flakyNotice === undefined ? [] : [`Note: ${flakyNotice}`]),
         ];
         const withRework = appendRework(
           task,
@@ -591,7 +592,7 @@ export async function runIntegrate(
           ...(command === undefined ? {} : { command }),
           ...(log === undefined ? {} : { log }),
           ...(lineNumber === undefined ? {} : { lineNumber }),
-          message: detail,
+          message: flakyNotice === undefined ? detail : `${detail}; ${flakyNotice}`,
         };
         const written = await saveTaskGuarded(
           ctx,

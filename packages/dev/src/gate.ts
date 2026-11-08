@@ -339,12 +339,17 @@ export async function runVerify(
   const command =
     typeof outcomeData.line === "string" ? outcomeData.line : undefined;
   const log = typeof outcomeData.log === "string" ? outcomeData.log : undefined;
-  const message =
+  const failure =
     hostError ??
     (typeof outcomeData.message === "string" ? outcomeData.message : undefined) ??
     (result === "fail"
       ? `the gate commands failed (${outcome?.result ?? "unknown"})`
       : undefined);
+  // History shows the message before the reason, so a failure carries the notice.
+  const message =
+    failure !== undefined && flakyNotice !== undefined
+      ? `${failure}; ${flakyNotice}`
+      : failure;
   const lineNumber =
     typeof outcomeData.lineNumber === "number"
       ? outcomeData.lineNumber

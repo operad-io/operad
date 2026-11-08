@@ -250,14 +250,21 @@ async function newestOpenPlan(
 
 /**
  * Whether the text names the test: the whole name in quotes or backticks, as a
- * line of its own, or after "Fix the flaky test: ". A bare substring does not
- * count, or a short name such as "works" would match unrelated tasks.
+ * line of its own, after "Fix the flaky test: ", or, for a name of several
+ * words, as plain text. A bare substring of a one-word name such as "works"
+ * does not count, or it would match unrelated tasks.
  */
 function namesTest(text: string, name: string): boolean {
   if (text.trim() === name || text.endsWith(`: ${name}`)) return true;
   if (text.split("\n").some((line) => line.trim() === name)) return true;
   for (const quote of ["`", '"', "'"]) {
     if (text.includes(`${quote}${name}${quote}`)) return true;
+  }
+  // A name of several words or a describe path is specific enough to name a
+  // test in plain text; a single word such as "works" is not.
+  if (/\s/.test(name)) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(?<![\\w])${escaped}(?![\\w])`).test(text);
   }
   return false;
 }

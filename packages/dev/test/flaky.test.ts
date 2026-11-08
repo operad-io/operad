@@ -131,7 +131,7 @@ describe("a flaky test proposes a task", () => {
 
   test("an open task that already names the test stops a proposal", async () => {
     const s = await setup(true);
-    await addTask(s.store, { plan: s.planId ?? "", slug: "mine", title: `Look at "${TEST}"` });
+    await addTask(s.store, { plan: s.planId ?? "", slug: "mine", title: `Look at ${TEST}` });
     await s.track("T-0001-a", logWith(TEST), 1);
     expect(await s.flaky()).toHaveLength(0);
     // The open task is the one that counts: reruns shows it, and its end restarts the count.
@@ -155,7 +155,7 @@ describe("a flaky test proposes a task", () => {
 
   test("an open task naming the test is linked on the first pass, so its end restarts the count", async () => {
     const s = await setup(true);
-    const mine = await addTask(s.store, { plan: s.planId ?? "", slug: "mine", title: `Look at "${TEST}"` });
+    const mine = await addTask(s.store, { plan: s.planId ?? "", slug: "mine", title: `Look at ${TEST}` });
     await s.track("T-0001-a", logWith(TEST), 2);
     expect((await flakyTasksByName(s.store)).get(TEST)).toBe(bareId(mine.id));
     await setTaskPhase(s.store, mine.id, "merged");
@@ -171,6 +171,14 @@ describe("a flaky test proposes a task", () => {
     await s.track("T-0001-a", logWith("works"), 1, ["works"]);
     expect(await s.flaky()).toHaveLength(1);
     expect((await flakyTasksByName(s.store)).get("works")).toMatch(/flaky-works/);
+  });
+
+  test("a one-word name is named only quoted, a several-word name also in plain text", async () => {
+    const s = await setup(true);
+    await addTask(s.store, { plan: s.planId ?? "", slug: "quoted", title: 'Look at "solo"' });
+    await s.track("T-0001-a", logWith("solo"), 1, ["solo"]);
+    await s.track("T-0002-b", logWith("solo2"), 1, ["solo2"]);
+    expect((await s.flaky()).map((object) => taskData(object.data).title)).toEqual(["Fix the flaky test: solo2"]);
   });
 
   test("secrets in a failure excerpt are masked in the record and the brief", async () => {
