@@ -11,7 +11,7 @@ import { runRework, runReview, runReviewDue, runVerify, runWorkDue } from "./gat
 import { runCleanup, runIntegrate } from "./integrate.ts";
 import { runScheduler } from "./schedule.ts";
 import { resolveDevKey } from "./service.ts";
-import { runWork, runWorktree } from "./steps.ts";
+import { runReverify, runWork, runWorktree } from "./steps.ts";
 import { STEP_TIMEOUT_SECS } from "./timeouts.ts";
 import { planViews, taskViews } from "./views.ts";
 
@@ -40,6 +40,11 @@ export function createDevPlugin() {
         name: "worktree",
         results: ["ready", "conflict", "blocked", "failed", "cancelled", "interrupted"],
         run: runWorktree,
+      },
+      {
+        name: "reverify",
+        results: ["ready", "conflict", "failed", "cancelled", "interrupted"],
+        run: runReverify,
       },
       {
         name: "work",
