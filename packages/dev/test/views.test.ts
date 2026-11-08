@@ -213,6 +213,8 @@ describe("dev views", () => {
     expect(short.markdown).toContain("small.txt");
     expect(short.markdown).toContain("````diff");
     expect(short.markdown).toContain("+hello");
+    // The diffstat keeps git's leading space on its first line.
+    expect(short.markdown).toMatch(/^````diff\n small\.txt /);
     expect(short.next).toBeUndefined();
 
     gitOrThrow(remote.repository, ["checkout", "-q", branch]);
