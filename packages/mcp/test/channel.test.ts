@@ -263,6 +263,35 @@ describe("the channel's sources", () => {
     }
   });
 
+  test("the step is the one of the run with the latest fact when two flows are active on one object", async () => {
+    const s = await setup();
+    put(s, "task", "t-1", { title: "One", phase: "ready" });
+    const sent = new Sent();
+    const channel = await startClaudeChannel({
+      views: s.views,
+      registry: s.registry,
+      log: s.log,
+      send: sent.push,
+    });
+    try {
+      const first = await s.log.startRun("demo-flow", "task:t-1");
+      await s.log.append(first.runId, 0, [
+        { kind: "step_entered", payload: { kind: "call", step: "old" }, cause: "test" },
+      ]);
+      const second = await s.log.startRun("other-flow", "task:t-1");
+      await s.log.append(second.runId, 0, [
+        { kind: "step_entered", payload: { kind: "call", step: "verify" }, cause: "test" },
+      ]);
+      await s.log.append(second.runId, 1, [waitFact("wait:2")]);
+      const waiting = await sent.next();
+      expect(waiting.meta).toMatchObject({ waiting: "true", step: "verify" });
+    } finally {
+      await channel.close();
+      s.views.close();
+      await s.log.close();
+    }
+  });
+
   test("a wait turning on again with the state and flags of the last block sent sends nothing", async () => {
     const s = await setup();
     put(s, "task", "t-1", { title: "One", phase: "ready" });

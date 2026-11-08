@@ -356,20 +356,35 @@ class ClaudeChannel implements ChannelHandle {
     try {
       const key = `${object.type}:${object.id}`;
       const runs = await this.log.runs({ active: true });
-      const run = runs.find((entry) => entry.object === key);
-      if (run === undefined) return undefined;
+      // An object can have active runs of several flows: report the run with
+      // the latest fact, which is the one that changed the object just now.
       let step: string | undefined;
-      for await (const fact of this.log.read(run.runId)) {
-        const payload = fact.payload;
+      let latest: { time: number; started: number } | undefined;
+      for (const run of runs) {
+        if (run.object !== key) continue;
+        let runStep: string | undefined;
+        let time = run.startedAt;
+        for await (const fact of this.log.read(run.runId)) {
+          time = Math.max(time, fact.time);
+          const payload = fact.payload;
+          if (
+            fact.kind === "step_entered" &&
+            typeof payload === "object" &&
+            payload !== null &&
+            !Array.isArray(payload) &&
+            payload.kind !== "end" &&
+            typeof payload.step === "string"
+          ) {
+            runStep = payload.step;
+          }
+        }
         if (
-          fact.kind === "step_entered" &&
-          typeof payload === "object" &&
-          payload !== null &&
-          !Array.isArray(payload) &&
-          payload.kind !== "end" &&
-          typeof payload.step === "string"
+          latest === undefined ||
+          time > latest.time ||
+          (time === latest.time && run.startedAt >= latest.started)
         ) {
-          step = payload.step;
+          latest = { time, started: run.startedAt };
+          step = runStep;
         }
       }
       return step;
