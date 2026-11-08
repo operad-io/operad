@@ -437,6 +437,14 @@ describe("a followed merge and the code serve has loaded", () => {
     serveStartedAt(fixture.root, 1);
     const testHooks = await import("../src/integrate.ts");
     testHooks.integrateTestHooks.codeRoot = path;
+    // Like the real clone: cli lists the tui among its dependencies.
+    mkdirSync(join(path, "packages/cli"), { recursive: true });
+    writeFileSync(
+      join(path, "packages/cli/package.json"),
+      JSON.stringify({ dependencies: { "@operad-io/tui": "workspace:*" } }),
+    );
+    git(path, ["add", "packages/cli/package.json"]);
+    git(path, ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "cli"]);
     try {
       for (const file of [
         "packages/dev/test/x.test.ts",

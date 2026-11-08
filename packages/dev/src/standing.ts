@@ -67,7 +67,10 @@ interface ServeCodeRecord {
 
 /** Workspace packages whose code a serve of this home loads. */
 export function loadedPackages(home: string, codeRoot: string): ReadonlySet<string> {
-  const names = new Set<string>(["engine", "cli"]);
+  // The kernel's own dependencies are not expanded: cli lists clients it
+  // imports only for their own commands.
+  const kernel = ["engine", "cli"];
+  const names = new Set<string>(kernel);
   try {
     const raw: unknown = JSON.parse(readFileSync(join(home, "config.json"), "utf8"));
     const configured = isRecord(raw) ? raw.plugins : undefined;
@@ -102,8 +105,8 @@ export function loadedPackages(home: string, codeRoot: string): ReadonlySet<stri
   } catch {
     names.add("dev");
   }
-  // Their workspace dependencies are loaded with them.
-  const queue = [...names];
+  // The workspace dependencies of the loaded plugins are loaded with them.
+  const queue = [...names].filter((name) => !kernel.includes(name));
   while (queue.length > 0) {
     const name = queue.pop();
     if (name === undefined) break;

@@ -222,3 +222,4 @@ the row fields.
 | T-0073-M3 | packages/dev/src/announce.ts | the stopped-step lookup ignored the entry's time prefix | `dev scheduling > serve repairs a task whose run ended without an edge, and reject runs again` |
 | T-0073-M4 | packages/dev/src/model.ts | a reason was not cut to one short line | `the Changes story > a rework names who asked and the first finding, cut to one line` |
 | T-0073-M5 | packages/dev/src/gate.ts | the review and verify rework lost their reason | `dev/rework > a review failure appends the findings at or above the fix level` |
+| T-0094-M14 | packages/dev/src/standing.ts | the kernel packages' dependencies (cli lists the tui) were counted as loaded code | `a followed merge and the code serve has loaded > a package serve does not load, tests and a merge in another repository raise nothing` |
