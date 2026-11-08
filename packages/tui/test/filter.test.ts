@@ -421,4 +421,33 @@ describe("filters: shell", () => {
     expect(task(h.state())?.hidden).toBe(2);
     h.shell.stop();
   });
+
+  test("a refresh answer for a filter cycled back to is dropped", async () => {
+    const held: { filter: string | undefined; resolve: (page: ViewListPage) => void }[] = [];
+    class Holding extends Client {
+      holding = false;
+      override objects(t: string, c?: string, s?: AbortSignal, filter?: string): Promise<ViewListPage> {
+        if (!this.holding) return super.objects(t, c, s, filter);
+        return new Promise((resolve) => held.push({ filter, resolve }));
+      }
+    }
+    const client = new Holding();
+    const h = harness(client);
+    await h.until((s) => task(s)?.list.loaded === true);
+    client.holding = true;
+    h.shell.key({ name: "3" });
+    h.shell.key({ name: "r" }); // refresh asks for active
+    for (let i = 0; i < 4; i++) h.shell.key({ name: "f" }); // back to active
+    while (held.filter((x) => x.filter === "active").length < 2) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 1));
+    }
+    const mine = held.filter((x) => x.filter === "active");
+    expect(mine.length).toBe(2);
+    mine[0]?.resolve({ rows: [row("new")], hidden: 0 });
+    await h.until((s) => ids(s).join() === "new");
+    mine[1]?.resolve({ rows: [row("old")], hidden: 0 });
+    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    expect(ids(h.state())).toEqual(["new"]);
+    h.shell.stop();
+  });
 });

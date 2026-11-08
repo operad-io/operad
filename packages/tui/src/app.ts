@@ -436,6 +436,9 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     dispatch({ type: "refresh-start" });
     const generation = state.generation;
     const objectAtStart = state.object;
+    const filtersAtStart = new Map(
+      state.tabs.map((tab) => [tab.id, { filter: tab.filter, seq: tab.filterSeq ?? 0 }] as const),
+    );
     const depths = new Map(
       state.tabs.map((tab) => [tab.id, tab.list.rows.length] as const),
     );
@@ -476,7 +479,14 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       await Promise.all(
         typesResult.value.types.map(async (info) => {
           const tabId = `type:${info.type}`;
-          const filter = state.tabs.find((tab) => tab.id === tabId)?.filter;
+          const current = state.tabs.find((tab) => tab.id === tabId);
+          const asked =
+            filtersAtStart.get(tabId) ??
+            (current === undefined
+              ? undefined
+              : { filter: current.filter, seq: current.filterSeq ?? 0 });
+          const filter = asked?.filter;
+          const filterSeq = asked?.seq ?? 0;
           const result = await settle(
             fetchTypeRows(info.type, depths.get(tabId) ?? 0, signal, filter),
           );
@@ -489,6 +499,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
               replace: true,
               generation,
               filter,
+              filterSeq,
             });
           } else {
             dispatch({

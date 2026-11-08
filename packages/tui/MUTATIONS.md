@@ -145,3 +145,4 @@ the row fields.
 | T-0049-M11 | packages/tui/src/state.ts | the selected row leaving the filter did not make the pane follow | `filters: state > a live event that takes the selected object out of the filter moves to the next row` |
 | T-0049-M12 | packages/tui/src/state.ts | a page was accepted without comparing its filter-cycle count | `filters: state > an old answer for a filter cycled back to is dropped` |
 | T-0049-M13 | packages/tui/src/view/index.ts | the empty text for the `all` filter fell back to `no <type> yet` | `filters: view > an empty all filter reads no all tasks` |
+| T-0049-M14 | packages/tui/src/app.ts | a refresh page carried no filter-cycle count | `filters: shell > a refresh answer for a filter cycled back to is dropped` |
