@@ -124,6 +124,27 @@ function runAgent(
 }
 
 describe("harness-radian/agent", () => {
+  test("tool lines carry the command summary, the duration and an error's first line", async () => {
+    const times = [1_000, 73_000];
+    const env = await setup("tool-detail", { now: () => times.shift() ?? 0 });
+    const result = await runAgent(env, { prompt: "hello", cwd: env.root });
+    const text = await Bun.file(String(dataOf(result).log)).text();
+    const records = text
+      .split("\n")
+      .filter((l) => l.includes("tool_execution"))
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(records[0]).toEqual({
+      type: "tool_execution_start",
+      toolCallId: "t1",
+      toolName: "Bash",
+      at: 1_000,
+      input: "token=… make test",
+    });
+    expect(records[1]).toMatchObject({ type: "tool_execution_end", durationMs: 72_000, isError: true, error: "boom" });
+    expect(text).not.toContain("supersecret");
+    expect(text).not.toContain("SECRET OUTPUT");
+  });
+
   test("a successful run records the Result record and writes the JSONL log", async () => {
     const env = await setup("done");
     const result = await runAgent(env, {

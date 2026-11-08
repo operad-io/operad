@@ -300,6 +300,13 @@ function line(value) {
   console.log(JSON.stringify(value));
 }
 
+if (mode === "tool-detail") {
+  line({ type: "journal", event: "ToolExecutionStarted", toolCallId: "t1", toolName: "Bash", input: { command: "token=supersecret make test" } });
+  line({ type: "journal", event: "ToolExecutionSettled", toolCallId: "t1", toolName: "Bash", isError: true, error: "boom\nSECRET OUTPUT" });
+  line(result());
+  process.exit(0);
+}
+
 if (mode === "done") {
   line({ type: "journal", event: "TurnStarted" });
   line(result());

@@ -32,3 +32,4 @@ the row fields.
 | T-0022-M9 | packages/harness-radian/src/index.ts | `radianModel` prefixed a model that already names its provider | `harness-radian/agent > a model that already names its provider is not prefixed again` |
 | T-0025-M8 | `packages/harness-radian/src/index.ts` | the step ran radian when the profile had a one-time permission it cannot enforce | `harness-radian/agent > a one-time permission is refused before radian runs, naming radian` |
 | T-0025-M14 | `packages/harness-radian/src/index.ts` | a resumed run that answered with another session was accepted | `harness-radian/agent > a resumed run that answers with another session fails as session_missing` |
+| T-0063-M1 | packages/harness-radian/src/index.ts | `radianLogLine` returned radian's raw line instead of the rewritten one | `harness-radian/agent > tool lines carry the command summary, the duration and an error's first line` |

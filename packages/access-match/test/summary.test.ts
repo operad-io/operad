@@ -29,6 +29,10 @@ test("a call the profile refuses is redacted, and environment values never show"
   );
 });
 
+test("lowercase environment values never show", () => {
+  expect(summarizeCall({}, "Bash", { command: "token=supersecret make test" }, CWD)).toBe("token=… make test");
+});
+
 test("an error shows its first non-empty line and a message its first 300 characters", () => {
   expect(firstErrorLine("\n\nboom\nmore")).toBe("boom");
   expect(firstErrorLine(42)).toBeUndefined();

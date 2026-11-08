@@ -6,6 +6,7 @@
  */
 
 import { stat } from "node:fs/promises";
+import { firstErrorLine, summarizeCall } from "@operad-io/access-match";
 import {
   defineFlow,
   definePlugin,
@@ -65,6 +66,70 @@ export function radianToolEvent(line: string): ToolEvent | undefined {
   return undefined;
 }
 
+function firstString(record: Record<string, unknown>, keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return undefined;
+}
+
+/**
+ * Turns radian's tool journal lines into the log lines the other harnesses
+ * write: `tool_execution_start` with the command or path summary and its start
+ * time, `tool_execution_end` with the duration and an error's first line. Any
+ * other line, and a tool line it cannot read, is returned as radian wrote it.
+ * Radian cannot be asked for its profile, so the summary is cut and has
+ * environment values removed but is not otherwise redacted.
+ */
+export function radianLogLine(
+  line: string,
+  now: () => number,
+  open: Map<string, { at: number; name: string }>,
+  cwd: string,
+): string {
+  const kind = radianToolEvent(line);
+  if (kind === undefined) return line;
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    return line;
+  }
+  if (!isRecord(value)) return line;
+  const nested = isRecord(value.data) ? value.data : isRecord(value.payload) ? value.payload : {};
+  const field = (keys: readonly string[]): string | undefined =>
+    firstString(value as Record<string, unknown>, keys) ?? firstString(nested, keys);
+  const id = field(["toolCallId", "tool_call_id", "callId", "call_id", "id"]) ?? "";
+  const name = field(["toolName", "tool_name", "tool", "name"]);
+  if (kind === "tool-start") {
+    const at = now();
+    const toolName = name ?? "tool";
+    open.set(id, { at, name: toolName });
+    const args = value.input ?? value.args ?? value.arguments ?? nested.input ?? nested.args ?? nested.arguments;
+    const summary = summarizeCall({}, toolName, args, cwd);
+    return JSON.stringify({
+      type: "tool_execution_start",
+      toolCallId: id,
+      toolName,
+      at,
+      ...(summary === undefined ? {} : { input: summary }),
+    });
+  }
+  const begun = open.get(id);
+  open.delete(id);
+  const isError = value.isError === true || nested.isError === true || value.is_error === true;
+  const error = isError ? firstErrorLine(field(["error", "message"])) : undefined;
+  return JSON.stringify({
+    type: "tool_execution_end",
+    toolCallId: id,
+    toolName: name ?? begun?.name ?? "tool",
+    isError,
+    durationMs: begun === undefined ? 0 : Math.max(0, now() - begun.at),
+    ...(error === undefined ? {} : { error }),
+  });
+}
+
 /**
  * The model a step passes to radian as `<provider>/<model>`, from `--provider`
  * and `--model` in its args. A model that already names a provider (it has a
@@ -86,6 +151,8 @@ export interface RadianHarnessSettings {
   /** The default stall limit in seconds. */
   readonly stallSecs?: number | undefined;
   readonly clock?: Clock | undefined;
+  /** Milliseconds now, for tool call start times and durations; a test injects it. */
+  readonly now?: (() => number) | undefined;
 }
 
 interface ResolvedSettings {
@@ -93,6 +160,7 @@ interface ResolvedSettings {
   readonly wallTimeSecs: number;
   readonly stallSecs: number;
   readonly clock: Clock;
+  readonly now: () => number;
 }
 
 /** The settings a config.json section may set for this plugin. */
@@ -367,6 +435,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
     wallTimeSecs: settings.wallTimeSecs ?? DEFAULT_WALL_TIME_SECS,
     stallSecs: settings.stallSecs ?? DEFAULT_STALL_SECS,
     clock: settings.clock ?? systemClock,
+    now: settings.now ?? Date.now,
   };
 
   const promptFlow = defineFlow({
@@ -493,6 +562,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
           const started = Date.now();
           const jsonl = new JsonlLog(ctx.logger);
           let result: ParsedResult | undefined;
+          const openTools = new Map<string, { at: number; name: string }>();
 
           const outcome = await runAgent({
             command: commandName,
@@ -505,7 +575,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             clock: defaults.clock,
             toolEvent: radianToolEvent,
             onLine(line) {
-              const writing = jsonl.push(line);
+              const writing = jsonl.push(radianLogLine(line, defaults.now, openTools, cwd));
               const parsed = parseResult(line);
               if (parsed !== undefined) result = parsed;
               return writing;

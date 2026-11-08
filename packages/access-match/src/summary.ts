@@ -27,7 +27,7 @@ function oneLine(text: string, limit: number): string {
  * keep their name and lose their value.
  */
 function withoutEnvValues(command: string): string {
-  return command.replace(/(^|[\s;&|(])([A-Z_][A-Z0-9_]*)=(?:"[^"]*"|'[^']*'|\S*)/g, "$1$2=…");
+  return command.replace(/(^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=(?:"[^"]*"|'[^']*'|\S*)/g, "$1$2=…");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
