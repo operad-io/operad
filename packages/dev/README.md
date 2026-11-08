@@ -318,6 +318,18 @@ The file holds the repository's work settings:
 | `integration.keyCommands` | `[]` | commands the integrate step runs on the candidate before the push; a failure sends the task back to the worker |
 | `hooks.afterMerge` | removes both worktrees and both branches | commands cleanup runs after a merge, in the repository root, with `OPERAD_TASK`, `OPERAD_WORKTREE` and `OPERAD_REMOTE` set |
 
+### Check places
+
+The checks of verify and integrate share a limit per operad home, not per
+repository: tasks of different plans and repositories run on one machine. The
+limit is `checks` in the `dev` section of the home's `config.json` (default
+`2`); it is there and not in `dev.json` because `dev.json` belongs to one
+repository. A check takes a place before it runs. When none is free, the step
+log says `waiting for a check place: 2 in use` and the check waits without a
+time limit; its `gate.commandTimeoutSecs` starts when it runs. Places are lock
+files under `<home>/dev/check-places/`, so a check whose process dies gives its
+place back. A rerun of a failed check takes a place again.
+
 The built-in brief says to work only in the worktree, commit whole pieces, run
 the repository's verify command and end with a summary.
 
