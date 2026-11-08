@@ -28,6 +28,7 @@ import {
   type TaskData,
 } from "./model.ts";
 import { DEFAULT_POOL, resolvePool } from "@operad-io/pool";
+import { runPrepare } from "./prepare.ts";
 import { findRepository, withRepoLock } from "./service.ts";
 import { MAX_WORK_WAITS } from "./timeouts.ts";
 import {
@@ -285,6 +286,28 @@ interface Prepared {
   readonly files?: readonly string[] | undefined;
   /** The main this visit merged into the branch, when it merged one. */
   readonly merged?: MergedMain | undefined;
+  /** Set when the prepare commands failed. */
+  readonly reason?: string | undefined;
+  readonly log?: string | undefined;
+}
+
+/** Runs the prepare commands in a ready worktree; a failure turns it into a failed visit. */
+async function withPrepare(
+  ctx: StepContext,
+  settings: DevSettings,
+  path: string,
+  prepared: Prepared,
+): Promise<Prepared> {
+  if (prepared.kind !== "ready") return prepared;
+  const failure = await runPrepare(ctx, settings, path);
+  if (failure === undefined) return prepared;
+  return {
+    ...prepared,
+    kind: "failed",
+    message: failure.message,
+    reason: failure.reason,
+    log: failure.log,
+  };
 }
 
 /** What the worktree step merged: the remote main's commit, and whether it conflicted. */
@@ -576,10 +599,11 @@ export async function runWorktree(
     };
   }
   const { attempt, attempts, replay } = attemptFor(ctx, context.task);
-  const prepared = prepareWorktree(
-    context.repository,
+  const prepared = await withPrepare(
+    ctx,
     context.settings,
-    context.taskId,
+    worktreePath(context.repository.path, context.settings, context.taskId),
+    prepareWorktree(context.repository, context.settings, context.taskId),
   );
   const base = prepared.base ?? attempt.base ?? null;
   const nextAttempt: TaskAttempt = {
@@ -634,6 +658,8 @@ export async function runWorktree(
     branch: nextAttempt.branch,
     base,
     ...(prepared.message === undefined ? {} : { message: prepared.message }),
+    ...(prepared.reason === undefined ? {} : { reason: prepared.reason }),
+    ...(prepared.log === undefined ? {} : { log: prepared.log }),
     ...(prepared.files === undefined ? {} : { files: prepared.files }),
     ...(prepared.merged === undefined ? {} : { merged: prepared.merged }),
   };
@@ -657,10 +683,11 @@ export async function runReverify(
     run: ctx.runId,
   };
   const attempts = Math.max(context.task.attempts, attempt.number);
-  const prepared = prepareWorktree(
-    context.repository,
+  const prepared = await withPrepare(
+    ctx,
     context.settings,
-    context.taskId,
+    worktreePath(context.repository.path, context.settings, context.taskId),
+    prepareWorktree(context.repository, context.settings, context.taskId),
   );
   const base = prepared.base ?? attempt.base ?? null;
   const worktree = worktreePath(
@@ -712,6 +739,8 @@ export async function runReverify(
       base,
       ...(message === undefined ? {} : { message }),
       ...(prepared.message === undefined ? {} : { failure: prepared.message }),
+      ...(prepared.reason === undefined ? {} : { reason: prepared.reason }),
+      ...(prepared.log === undefined ? {} : { log: prepared.log }),
       ...(prepared.files === undefined ? {} : { files: prepared.files }),
       ...(prepared.merged === undefined ? {} : { merged: prepared.merged }),
     },

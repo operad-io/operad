@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -322,6 +323,32 @@ describe("dev/worktree", () => {
 
     await expect(runWorktree(state, "run-1")).rejects.toThrow(/worktreeRoot:/);
     expect(existsSync(join(outside, state.taskId))).toBe(false);
+  });
+
+  test("prepare runs in the new worktree before the visit reports ready", async () => {
+    const state = await fixture();
+    writeFileSync(
+      join(state.remote.repository, ".operad", "dev.json"),
+      JSON.stringify({ prepare: ["pwd > .prepared-in"] }),
+    );
+    const result = await runWorktree(state, "run-1");
+    expect(result.result).toBe("ready");
+    const path = String(result.data?.path);
+    expect(readFileSync(join(path, ".prepared-in"), "utf8").trim()).toBe(
+      realpathSync(path),
+    );
+  });
+
+  test("a failing prepare fails the worktree visit with its reason and log", async () => {
+    const state = await fixture();
+    writeFileSync(
+      join(state.remote.repository, ".operad", "dev.json"),
+      JSON.stringify({ prepare: ["echo nope >&2; exit 2"] }),
+    );
+    const result = await runWorktree(state, "run-1");
+    expect(result.result).toBe("failed");
+    expect(result.data?.reason).toBe("prepare failed");
+    expect(readFileSync(String(result.data?.log), "utf8")).toContain("nope");
   });
 
   test("settings errors name the field", async () => {
