@@ -428,7 +428,7 @@ describe("process groups", () => {
       readySeen: () => true,
       ready: Promise.resolve(),
       groupExists: () => looks.shift() ?? false,
-      pause: () => Promise.resolve(),
+      pause: () => undefined,
     });
     await stop();
     expect(signals).toEqual(["SIGTERM", "SIGKILL", "SIGKILL", "SIGKILL"]);
@@ -450,9 +450,31 @@ describe("process groups", () => {
       // `ready` never comes: the grace ends first and the stop sends KILL only.
       ready: new Promise<void>(() => undefined),
       groupExists: () => looks.shift() ?? false,
-      pause: () => Promise.resolve(),
+      pause: () => undefined,
     })();
     expect(signals).toEqual(["SIGKILL", "SIGKILL"]);
+  });
+
+  test("no signal goes to the group id once the sentinel is reaped", async () => {
+    // The reaped leader no longer owns the group id; the id may now belong to
+    // an unrelated group, so a group that still looks alive is left alone.
+    const signals: (string | number)[] = [];
+    let reaped = false;
+    await createGroupStop({
+      clock: manualClock(),
+      killGroup: (_pgid, signal) => {
+        signals.push(signal);
+        if (signal === "SIGKILL") reaped = true;
+        return true;
+      },
+      pid: () => 4242,
+      sentinelExited: () => reaped,
+      readySeen: () => true,
+      ready: Promise.resolve(),
+      groupExists: () => true,
+      pause: () => undefined,
+    })();
+    expect(signals).toEqual(["SIGTERM", "SIGKILL"]);
   });
 
   test("a group that is gone after the SIGKILL gets no more signals", async () => {
@@ -468,7 +490,7 @@ describe("process groups", () => {
       readySeen: () => true,
       ready: Promise.resolve(),
       groupExists: () => false,
-      pause: () => Promise.resolve(),
+      pause: () => undefined,
     })();
     expect(signals).toEqual(["SIGTERM", "SIGKILL"]);
   });
