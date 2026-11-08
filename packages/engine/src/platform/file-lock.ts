@@ -250,49 +250,28 @@ function isStaleUnreadable(path: string, clock: () => number): boolean {
 }
 
 /**
- * Takes over a lock whose record is dead. The rename decides the winner: only
- * one process can rename a given file, and `ENOENT` means another did.
- *
- * This protocol leaves one window: three processes can decide the lock is dead
- * inside the same few microseconds and one of them can rename a lock another
- * has just created. The rename-back below keeps that newer lock, and a third
- * process may still win the next acquire; the critical section stays single.
- * This is accepted: the window needs the old holder to die and three waiters to
- * interleave within microseconds.
+ * Takes over a lock whose record is dead. Takers go one at a time, under a
+ * kernel `flock` on a guard file that dies with its holder, and each re-reads
+ * the lock under the guard: it removes the file only if it is still the dead
+ * record the taker decided on. While that file exists nobody can link a new
+ * lock, and only a taker removes a dead record, so the removal cannot hit a
+ * live lock another process has just made. (An earlier version let every taker
+ * rename the file and put back a live lock it had renamed by mistake; with five
+ * waiters the put-back could find a third lock in its place, and two holders
+ * entered together.)
  */
-async function takeOver(
-  lockPath: string,
-  dead: LockFile,
-  log: (message: string) => void,
-): Promise<true> {
-  const stale = `${lockPath}.stale.${newNonce()}`;
-  lockTestHooks.beforeTakeoverRename?.(lockPath);
-  try {
-    renameSync(lockPath, stale);
-  } catch (error) {
-    if (errorCode(error) === "ENOENT") return true;
-    throw error;
-  }
-
-  const renamed = readLockFile(stale);
-  const same =
-    dead.record !== undefined && renamed.record !== undefined
-      ? dead.record.nonce === renamed.record.nonce
-      : dead.raw === renamed.raw;
-  if (same) {
-    safeUnlink(stale);
-    return true;
-  }
-
-  // We renamed a newer live lock: put it back and never delete it.
-  try {
-    linkSync(stale, lockPath);
-    safeUnlink(stale);
-  } catch (error) {
-    if (errorCode(error) !== "EEXIST") throw error;
-    log(`a newer lock appeared while taking over ${lockPath}; kept ${stale}`);
-  }
-  return true;
+function takeOver(lockPath: string, dead: LockFile): void {
+  withFileLock(`${lockPath}.takeover`, () => {
+    lockTestHooks.beforeTakeoverRename?.(lockPath);
+    const now = readLockFile(lockPath);
+    if (now.raw === undefined) return;
+    const same =
+      dead.record !== undefined && now.record !== undefined
+        ? dead.record.nonce === now.record.nonce
+        : dead.raw === now.raw;
+    if (!same) return;
+    safeUnlink(lockPath);
+  });
 }
 
 async function acquire(
@@ -336,7 +315,7 @@ async function acquire(
         ? isStaleUnreadable(lockPath, clock)
         : !isAlive(holder.record.pid);
     if (dead) {
-      await takeOver(lockPath, holder, log);
+      takeOver(lockPath, holder);
       continue;
     }
 

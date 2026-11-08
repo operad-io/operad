@@ -1500,7 +1500,13 @@ describe("dev/review crash recovery", () => {
         options.crash,
         callLog,
       ],
-      cwd: state.remote.repository,
+      // Not the repository: it lives under the temp directory, and bun reads
+      // every entry of each directory above its working directory while it
+      // starts. A temp directory with a million entries (a machine where other
+      // programs leave theirs there) made the child take 5 to 10 s to start,
+      // and three gates at once pushed the test past 30 s. The child gets the
+      // repository as an argument and gives it to the registry itself.
+      cwd: dirname(REVIEW_CRASH_CHILD),
       stdout: "ignore",
       stderr: "ignore",
     });

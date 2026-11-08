@@ -323,6 +323,44 @@ export interface GroupStopOptions {
   readonly readySeen: () => boolean;
   /** Settles when the sentinel announces `ready`. */
   readonly ready: Promise<void>;
+  /**
+   * True while any process is left in the group. The default asks the kernel
+   * with signal 0; a test replaces it. Not routed through `killGroup`, so a
+   * test that records signals sees only the TERM and KILL that were sent.
+   */
+  readonly groupExists?: ((pgid: number) => boolean) | undefined;
+  /** Waits a moment, in real time, between two sweeps of the group. */
+  readonly pause?: (() => Promise<void>) | undefined;
+}
+
+/** How often the last SIGKILL is repeated for a straggler, and the wait between. */
+export const SWEEP_ATTEMPTS = 100;
+export const SWEEP_PAUSE_MS = 5;
+
+/**
+ * Repeats SIGKILL while the group still has a member. A signal to a group
+ * reaches the processes that exist when it is delivered: a shell that forks at
+ * that instant leaves a child the signal missed, which then holds the line's
+ * output open for as long as it runs (a `sleep 30` outlived a cancelled line
+ * and the run waited for it). The child is in the group, so the group id stays
+ * taken by it and cannot name an unrelated group: signalling it again is safe.
+ */
+async function sweep(pgid: number, options: GroupStopOptions): Promise<void> {
+  const exists = options.groupExists ?? groupExists;
+  const pause =
+    options.pause ??
+    (() => new Promise<void>((resolve) => globalThis.setTimeout(resolve, SWEEP_PAUSE_MS)));
+  for (let attempt = 0; attempt < SWEEP_ATTEMPTS; attempt += 1) {
+    // A kill of the group can take a moment to show; look after a pause.
+    await pause();
+    if (!exists(pgid)) return;
+    options.killGroup(pgid, "SIGKILL");
+  }
+}
+
+/** True while the kernel still has a process in the group. */
+function groupExists(pgid: number): boolean {
+  return killProcessGroup(pgid, 0);
 }
 
 /**
@@ -353,6 +391,7 @@ export function createGroupStop(options: GroupStopOptions): () => Promise<void> 
         // The sentinel never announced its trap. There is no safe delay: one
         // immediate SIGKILL while our leader is still alive is the only signal.
         options.killGroup(pid, "SIGKILL");
+        await sweep(pid, options);
         return;
       }
       if (!options.killGroup(pid, "SIGTERM")) return;
@@ -361,6 +400,7 @@ export function createGroupStop(options: GroupStopOptions): () => Promise<void> 
       // unless it exited, in which case nothing is signaled at all.
       if (options.sentinelExited()) return;
       options.killGroup(pid, "SIGKILL");
+      await sweep(pid, options);
     })();
     return stopping;
   };
