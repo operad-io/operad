@@ -215,6 +215,7 @@ async function openContext(
   home: string,
   io: CliIo,
   scope?: string,
+  viewsCwd?: string,
 ): Promise<Context> {
   const cwd = process.cwd();
   const config = await readConfig(home);
@@ -281,7 +282,7 @@ async function openContext(
       registry,
       store,
       log,
-      cwd,
+      cwd: viewsCwd ?? cwd,
       ...(scope === undefined ? {} : { scope }),
       onLog: (message) => io.error(`${message}\n`),
     }),
@@ -2087,7 +2088,10 @@ export async function main(
       // is handed to `serve`, so there is no check and then act.
       const lock = acquireLock(serveLockPath(home));
       try {
-        const context = await openContext(home, io);
+        // serve answers clients that are in no directory: a bare id must not
+        // be scoped to the repository serve happened to start in, so its
+        // views resolve ids from the home, outside every repository.
+        const context = await openContext(home, io, undefined, home);
         try {
           await commandServe(context, io, args.slice(1), lock);
         } finally {
