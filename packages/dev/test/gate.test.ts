@@ -187,6 +187,16 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             return { result: "done", data: {} };
           }
           const mode = input.args?.[0] ?? "none";
+          if (mode === "run-test") {
+            // Runs a command in the review checkout, as a reviewer would, and
+            // records its exit code and output where the test can read them.
+            const [, outFile, ...cmd] = input.args ?? [];
+            const ran = Bun.spawnSync({ cmd, cwd: input.cwd, stdout: "pipe", stderr: "pipe" });
+            writeFileSync(
+              String(outFile),
+              `${ran.exitCode}\n${ran.stdout.toString()}${ran.stderr.toString()}`,
+            );
+          }
           if (mode === "unavailable") {
             return {
               result: "failed",
@@ -2796,7 +2806,7 @@ describe("prepare", () => {
         ...options,
         baseFiles: base,
         commit: false,
-        commands: ["bun test packages/b"],
+        commands: options.commands ?? ["bun test packages/b"],
       });
       // What main's node_modules has: package a without the branch's export.
       const stale = join(state.remote.repository, "node_modules", "a");
@@ -2829,11 +2839,33 @@ describe("prepare", () => {
     });
 
     test("with a prepare command that installs, the test passes in the review checkout", async () => {
-      const state = await spanning({ prepare: ["bun install"] });
+      const outFile = join(await tempRoot(), "review-test");
+      const state = await spanning({
+        prepare: ["bun install"],
+        reviewerArgs: ["run-test", outFile, "bun", "test", "packages/b"],
+      });
       const result = await verify(state);
       expect(String(result.data?.message ?? "")).toBe("");
       expect(result.result).toBe("pass");
       expect((await review(state)).result).toBe("pass");
+      // The test ran inside the review checkout itself.
+      const [code] = readFileSync(outFile, "utf8").split("\n");
+      expect(code).toBe("0");
+      expect(state.reviewer.calls[0]?.cwd).toContain("-gate");
+    });
+
+    test("a prepare that installs nothing leaves the review checkout unable to resolve the branch's package", async () => {
+      const outFile = join(await tempRoot(), "review-test");
+      const state = await spanning({
+        prepare: ["true"],
+        commands: ["true"],
+        reviewerArgs: ["run-test", outFile, "bun", "test", "packages/b"],
+      });
+      expect((await verify(state)).result).toBe("pass");
+      expect((await review(state)).result).toBe("pass");
+      const [code, ...rest] = readFileSync(outFile, "utf8").split("\n");
+      expect(code).not.toBe("0");
+      expect(rest.join("\n")).toContain("Export named 'fresh' not found");
     });
 
     test("with no prepare command the checkout still links its own packages", async () => {

@@ -290,3 +290,4 @@ the row fields.
 | T-0095-M5 | packages/dev/src/steps.ts | the worker's worktree was not prepared | `dev/worktree > prepare runs in the new worktree before the visit reports ready` |
 | T-0095-M6 | packages/dev/src/integrate.ts | the integration checkout was not prepared | `dev/integrate > prepare runs in the integration checkout before the key commands` |
 | T-0095-M7 | packages/dev/src/prepare.ts | a failing prepare command counted as a pass | `prepare > a failing prepare fails verify with its reason and log, and no gate command runs` |
+| T-0095-M8 | packages/dev/src/gate.ts | review did not prepare its recreated checkout, so the test a reviewer runs there could not resolve the branch's package | `prepare > a change spanning two packages > with a prepare command that installs, the test passes in the review checkout` |
