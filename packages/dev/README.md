@@ -269,7 +269,7 @@ non-zero has reviewed: its report is used and a retry never deletes it. `dev:rev
 again with no runs from the old round.
 
 A review that times out runs once more with the same arguments. A second
-timeout waits for a person with the note `review timed out twice`. Neither an
+timeout waits for a person with the note `review timed out twice` (followed by the reviewer's last message when it never wrote the report). Neither an
 unavailable reviewer nor a timeout counts toward `maxAutoRework`: only a review
 that returns findings at or above `reviewer.fixLevel` does.
 

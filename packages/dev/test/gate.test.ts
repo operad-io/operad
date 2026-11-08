@@ -3,6 +3,7 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import {
   appendFileSync,
   existsSync,
+  linkSync,
   lstatSync,
   mkdtempSync,
   readdirSync,
@@ -1325,12 +1326,13 @@ describe("dev/review fallback and retry", () => {
     await verify(state);
     const result = await review(state, "review-timeout-twice");
     expect(result.result).toBe("timed_out");
-    expect(result.data?.message).toBe("review timed out twice");
+    expect(result.data?.message).toContain("review timed out twice");
+    expect(result.data?.message).toContain("could not write the report");
     expect(state.reviewer.calls).toHaveLength(2);
     const task = await taskOf(state);
     expect(task.phase).toBe("waiting");
     expect(task.attempt?.review?.decision).toBe("timed_out");
-    expect(task.attempt?.review?.message).toBe("review timed out twice");
+    expect(task.attempt?.review?.message).toContain("review timed out twice");
     expect(task.attempt?.reviews).toBe(1);
     expect(task.reworkStreak).toBeUndefined();
   });
@@ -1998,13 +2000,50 @@ describe("dev/review report in the workspace", () => {
     }
   });
 
+  test("a folder swapped for a link only around the file look is not accepted", async () => {
+    const state = await fixture({ reviewerArgs: ["none"] });
+    await verify(state);
+    const gate = await gatePathOf(state);
+    const folder = join(gate, ".operad", "review");
+    const outside = mkdtempSync(join(tmpdir(), "operad-race2-"));
+    reviewTestHooks.betweenChecks = (step) => {
+      if (step === "before-stat") {
+        const name = readdirSync(folder)[0] ?? "";
+        // A second name for the same file, so the path through the link
+        // leads to the very file that was opened.
+        linkSync(join(folder, name), join(outside, name));
+        rmSync(folder, { recursive: true, force: true });
+        symlinkSync(outside, folder);
+      } else {
+        rmSync(folder, { force: true });
+        mkdirSync(folder);
+      }
+    };
+    try {
+      const result = await review(state);
+      expect(result.result).toBe("failed");
+      const stored = join(
+        state.store.root,
+        "dev",
+        "reviews",
+        "review-run",
+        `${state.taskId}-attempt-1-review-1.json`,
+      );
+      expect(existsSync(stored)).toBe(false);
+    } finally {
+      delete reviewTestHooks.betweenChecks;
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   test("a timed-out reviewer with no report says it could not write it", async () => {
     const state = await fixture({ reviewerArgs: ["timeout-no-write"] });
     await verify(state);
     const result = await review(state);
     const task = await taskOf(state);
     expect(task.attempt?.review?.runs?.[0]?.outcome).toBe("timed_out");
-    expect(result.data?.message).toBe("review timed out twice");
+    expect(result.data?.message).toContain("review timed out twice");
+    expect(result.data?.message).toContain("could not write the report");
     const message = String(task.attempt?.review?.runs?.[0]?.message);
     expect(message).toContain("could not write the report");
     expect(message).toContain("stuck on the file tool");

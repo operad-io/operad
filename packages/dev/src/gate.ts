@@ -870,9 +870,10 @@ interface ReportRead {
  */
 function readReport(
   resultPath: string,
-  guard?: () => boolean,
+  guard?: () => string | undefined,
 ): ReportRead {
-  if (guard !== undefined && !guard()) {
+  const before = guard?.();
+  if (guard !== undefined && before === undefined) {
     return { message: `the review folders of ${resultPath} are not plain directories` };
   }
   let details;
@@ -931,9 +932,17 @@ function readReport(
       // The folders above the file may have been swapped for a link while it
       // was open: they must still be plain directories and the path must
       // still lead to the very file that was read.
+      // The folders are looked at before and after the path is, and all
+      // three looks must agree on the same plain directories.
+      const mid = guard();
+      reviewTestHooks.betweenChecks?.("before-stat");
       const after = lstatOrUndefined(resultPath);
+      reviewTestHooks.betweenChecks?.("after-stat");
+      const end = guard();
       if (
-        !guard() ||
+        mid === undefined ||
+        mid !== before ||
+        end !== before ||
         after === undefined ||
         !after.isFile() ||
         after.ino !== opened.ino ||
@@ -1112,6 +1121,23 @@ function prepareReportFolder(
   return undefined;
 }
 
+/**
+ * The identity of `.operad` and `.operad/review` when both exist as plain
+ * directories, otherwise undefined. Two equal identities mean the same
+ * directories were there both times.
+ */
+function folderIdentity(gatePath: string): string | undefined {
+  const parts: string[] = [];
+  let folder = gatePath;
+  for (const name of [".operad", "review"]) {
+    folder = join(folder, name);
+    const details = lstatOrUndefined(folder);
+    if (details === undefined || !details.isDirectory()) return undefined;
+    parts.push(`${details.dev}:${details.ino}`);
+  }
+  return parts.join("/");
+}
+
 function lstatOrUndefined(path: string): ReturnType<typeof lstatSync> | undefined {
   try {
     return lstatSync(path);
@@ -1127,7 +1153,7 @@ function readValidReportText(
 ): { readonly report: Report; readonly text: string } | undefined {
   const read = readReport(
     path,
-    () => prepareReportFolder(gatePath, false) === undefined,
+    () => folderIdentity(gatePath),
   );
   if (read.text === undefined) return undefined;
   const report = parseReport(read.text);
@@ -1466,7 +1492,13 @@ function reviewMessage(
   runs: readonly ReviewRunRecord[],
   retryAt?: number,
 ): string {
-  if (decision === "timed_out") return "review timed out twice";
+  if (decision === "timed_out") {
+    // The reviewer's last words show when the file was never written.
+    const note = runs[runs.length - 1]?.message ?? "";
+    return note.length === 0
+      ? "review timed out twice"
+      : `review timed out twice (${note})`;
+  }
   const parts = runs.map(runPhrase);
   if (decision === "unavailable" && retryAt !== undefined) {
     parts.push(`it runs again at ${new Date(retryAt).toISOString()}`);
@@ -1493,6 +1525,8 @@ export const reviewTestHooks: {
   beforeCopy?: (() => void) | undefined;
   /** Runs while a workspace report is open, before the folders are checked again. */
   afterOpen?: (() => void) | undefined;
+  /** Runs between the folder looks that follow a workspace report read. */
+  betweenChecks?: ((step: "before-stat" | "after-stat") => void) | undefined;
 } = {};
 
 /** Step `dev/review`: have the reviewer read the verified commit's diff. */
@@ -2114,7 +2148,7 @@ export async function runReview(
   }
 
   if (next === "wait-timed-out") {
-    const message = "review timed out twice";
+    const message = reviewMessage("timed_out", runs);
     const record: ReviewRecord = {
       result: "timed_out",
       decision: "timed_out",
