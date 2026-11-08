@@ -17,6 +17,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { checkPlaces } from "./places.ts";
 import { runCheckWithRerun } from "./rerun.ts";
 import {
   messageOf,
@@ -309,6 +310,7 @@ export async function runVerify(
     },
     stepOptions(ctx, path),
     context.settings.check.rerun,
+    checkPlaces(ctx),
   );
   const { outcome, hostError, note } = checked;
 
