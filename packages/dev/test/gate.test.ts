@@ -223,6 +223,12 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             writeFileSync(input.resultPath, valid);
             return { result: "done", data: {} };
           }
+          if (mode === "untracked-report") {
+            // A repository file shaped like a dev report, untracked and unclaimed.
+            writeFileSync(join(dirname(input.resultPath), "other-attempt-1-review-1.json"), "{}");
+            writeFileSync(input.resultPath, valid);
+            return { result: "done", data: {} };
+          }
           if (mode === "symlinked-scratch") {
             // The scratch folder becomes a symlink to a folder outside the worktree.
             const outside = join(input.cwd, "..", "outside-review");
@@ -1746,6 +1752,17 @@ describe("dev/review report in the workspace", () => {
     const state = await fixture({ reviewerArgs: ["tracked-report"] });
     await verify(state);
     const result = await review(state, "review-tracked");
+    expect(result.result).toBe("pass");
+    const settings: DevSettings = await readDevSettings(state.remote.repository);
+    const gate = gateWorktreePath(state.remote.repository, settings, state.taskId);
+    const dir = join(gate, ".operad", "review");
+    expect(readdirSync(dir)).toEqual(["other-attempt-1-review-1.json"]);
+  });
+
+  test("an untracked file shaped like a report that dev did not claim is never removed", async () => {
+    const state = await fixture({ reviewerArgs: ["untracked-report"] });
+    await verify(state);
+    const result = await review(state, "review-untracked");
     expect(result.result).toBe("pass");
     const settings: DevSettings = await readDevSettings(state.remote.repository);
     const gate = gateWorktreePath(state.remote.repository, settings, state.taskId);

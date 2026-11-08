@@ -1032,19 +1032,52 @@ function isTracked(dir: string, name: string): boolean {
 }
 
 /**
- * Removes the reports dev wrote into the workspace so none outlives its round.
- * Only files named like a dev report go; whatever else the repository keeps in
- * that folder stays, and the folders go only when they are left empty.
+ * The file in the worktree's git dir that lists the report names dev claimed:
+ * a name dev found absent and handed to the reviewer. Only those are dev's to
+ * read back and remove; any other file, tracked or not, belongs to the repository.
+ */
+function ownedListPath(workPath: string): string | undefined {
+  const gatePath = dirname(dirname(dirname(workPath)));
+  const path = git(gatePath, ["rev-parse", "--git-path", "info/operad-review-owned"]);
+  return path.ok ? resolve(gatePath, path.out) : undefined;
+}
+
+function readOwned(workPath: string): string[] {
+  const path = ownedListPath(workPath);
+  if (path === undefined || !existsSync(path)) return [];
+  return readFileSync(path, "utf8").split("\n").filter((line) => line.length > 0);
+}
+
+function writeOwned(workPath: string, names: readonly string[]): void {
+  const path = ownedListPath(workPath);
+  if (path === undefined) throw new Error("not a git work tree");
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, names.map((name) => `${name}\n`).join(""));
+}
+
+/**
+ * Removes the reports dev claimed in the workspace so none outlives its round.
+ * Only claimed names go; whatever else the repository keeps in that folder
+ * stays, and the folders go only when they are left empty.
  */
 function removeWorkspaceReports(workPath: string): void {
   if (!scratchIsPlain(workPath)) return;
   const dir = dirname(workPath);
   try {
-    for (const name of readdirSync(dir)) {
-      if (WORKSPACE_REPORT_NAME.test(name) && !isTracked(dir, name)) {
+    const owned = readOwned(workPath);
+    const kept: string[] = [];
+    for (const name of owned) {
+      if (
+        WORKSPACE_REPORT_NAME.test(name) &&
+        !name.includes("/") &&
+        !isTracked(dir, name)
+      ) {
         rmSync(join(dir, name), { force: true });
+      } else {
+        kept.push(name);
       }
     }
+    if (kept.length !== owned.length) writeOwned(workPath, kept);
     rmdirSync(dir);
     // `.operad` is only dev's scratch parent; drop it when it is empty.
     rmdirSync(dirname(dir));
@@ -1059,6 +1092,7 @@ function removeWorkspaceReports(workPath: string): void {
  */
 function salvageWorkspaceReport(workPath: string, storePath: string): boolean {
   if (!scratchIsPlain(workPath)) return true;
+  if (!readOwned(workPath).includes(basename(workPath))) return true;
   const read = readReport(workPath);
   if (read.text === undefined || parseReport(read.text) === undefined) {
     return true;
@@ -1079,8 +1113,13 @@ function prepareWorkspaceReports(workPath: string): void {
   }
   mkdirSync(dir, { recursive: true });
   if (!scratchIsPlain(workPath)) throw new Error(`${dir} is a symlink`);
-  if (isTracked(dir, basename(workPath))) {
-    throw new Error(`${workPath} is a file the repository tracks`);
+  const owned = readOwned(workPath);
+  const name = basename(workPath);
+  if (!owned.includes(name)) {
+    if (existsSync(workPath) || isTracked(dir, name)) {
+      throw new Error(`${workPath} is a file the repository owns`);
+    }
+    writeOwned(workPath, [...owned, name]);
   }
   const gatePath = dirname(dirname(dir));
   const path = git(gatePath, ["rev-parse", "--git-path", "info/exclude"]);
