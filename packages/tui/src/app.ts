@@ -250,6 +250,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       retryCancel();
       retryCancel = undefined;
     }
+    if (lost === "unauthorized") batcher.stop();
     // Whoever lost the server, the lists are asked for again with backoff.
     if (lost === "unreachable") scheduleRetry();
     return true;
@@ -488,7 +489,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
 
   /** Fetches the targets an event asked for; a lost server asks for everything. */
   async function refetch(targets: Refetch): Promise<void> {
-    if (finished) return;
+    if (finished || state.connection === "unauthorized") return;
     if (targets.all || state.connection !== "ok") {
       await refresh();
       return;
@@ -635,6 +636,9 @@ export function startShell(deps: TuiShellDeps): TuiShell {
             );
           }
         } else {
+          if (result.error instanceof TuiError && result.error.status === 404) {
+            dispatch({ type: "row-gone", id });
+          }
           dispatch({
             type: "object-error",
             id,

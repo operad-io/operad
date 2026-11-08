@@ -113,3 +113,5 @@ the row fields.
 | T-0033-M11 | packages/tui/src/events.ts | a lost stream yielded no error event | `TuiEvents > a refused connection retries with the first backoff step` |
 | T-0033-M12 | packages/tui/src/events.ts | a stream that ended by itself was not reported as lost | `TuiEvents > a stream that ends by itself says the stream was lost once per outage` |
 | T-0033-M13 | packages/tui/src/app.ts | a 401 left the scheduled unreachable retry running | `live updates in the shell > a 401 after the server was lost cancels the scheduled retry` |
+| T-0033-M14 | packages/tui/src/app.ts | a deletion of the open object left its row in the lists | `live updates in the shell > a deletion event for the open object removes its row from the lists` |
+| T-0033-M15 | packages/tui/src/app.ts | a live batch queued before a 401 still fetched | `live updates in the shell > a batch queued before a 401 makes no fetch` |

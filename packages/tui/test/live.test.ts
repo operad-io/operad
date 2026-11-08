@@ -11,6 +11,7 @@ import {
   LIVE_DEBOUNCE_MS,
   LiveBatcher,
   TuiClient,
+  TuiError,
   TuiEvents,
   TuiUnreachableError,
   TuiUnauthorizedError,
@@ -82,6 +83,7 @@ class CountingClient implements TuiShellClient {
   async object(id: string): Promise<ViewObject> {
     this.objectCalls.push(id);
     this.check();
+    if (!this.titles.has(id)) throw new TuiError("gone", { status: 404 });
     return objectOf(id, this.titles.get(id) ?? id);
   }
   async section(id: string, section: string): Promise<{ readonly markdown: string }> {
@@ -379,6 +381,37 @@ describe("live updates in the shell", () => {
     s.clock.advance(60_000);
     await settled();
     expect(s.client.pendingCalls).toBe(seen);
+    s.shell.stop();
+  });
+
+  test("a deletion event for the open object removes its row from the lists", async () => {
+    const s = start();
+    await s.view.until((state) => titles(state).length === 1);
+    s.shell.key({ name: "3" });
+    s.shell.key({ name: "return" });
+    await s.view.until((state) => state.object?.sections[0]?.loaded === true);
+    s.client.titles.delete("a");
+    s.events.push({ kind: "change", id: "a" });
+    await settled();
+    s.clock.advance(LIVE_DEBOUNCE_MS);
+    await s.view.until((state) => titles(state).length === 0);
+    s.shell.stop();
+  });
+
+  test("a batch queued before a 401 makes no fetch", async () => {
+    const s = start();
+    await s.view.until((state) => titles(state).length === 1);
+    s.events.push({ kind: "change", id: "a" });
+    await settled();
+    s.events.push({ kind: "error", error: new TuiUnauthorizedError(undefined, "no") });
+    await s.view.until((state) => state.connection === "unauthorized");
+    await settled();
+    const seen = s.client.pendingCalls;
+    const rows = s.client.objectsCalls;
+    s.clock.advance(60_000);
+    await settled();
+    expect(s.client.pendingCalls).toBe(seen);
+    expect(s.client.objectsCalls).toBe(rows);
     s.shell.stop();
   });
 
