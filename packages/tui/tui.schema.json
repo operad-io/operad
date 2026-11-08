@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "operad tui.json",
+  "description": "The terminal app's settings, read from the operad home.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "theme": {
+      "description": "The colour theme: auto follows the terminal's light or dark mode; terminal uses the terminal's own 16 colours.",
+      "enum": ["auto", "light", "dark", "terminal"],
+      "default": "auto"
+    }
+  }
+}
