@@ -11,7 +11,7 @@ import { runRework, runReview, runReviewDue, runVerify, runWorkDue } from "./gat
 import { runCleanup, runIntegrate } from "./integrate.ts";
 import { runScheduler } from "./schedule.ts";
 import { devStanding } from "./standing.ts";
-import { resolveDevKey } from "./service.ts";
+import { migrateLegacyRepositories, resolveDevKey } from "./service.ts";
 import { runReverify, runWork, runWorktree } from "./steps.ts";
 import { STEP_TIMEOUT_SECS } from "./timeouts.ts";
 import { planViews, repoViews, taskViews } from "./views.ts";
@@ -25,6 +25,7 @@ export function createDevPlugin() {
     objects: [
       {
         name: "repo",
+        prepare: ({ store }) => migrateLegacyRepositories(store),
         filters: REPO_FILTERS,
       },
       {

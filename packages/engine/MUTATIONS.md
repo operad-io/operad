@@ -307,3 +307,4 @@ the row fields.
 | T-0074-M4 | packages/engine/src/views/history.ts | `oneLine` cut details even with `full` | `readable run history > details are cut to one line, and --full keeps them` |
 | T-0074-M5 | packages/engine/src/views/presentation.ts | the run id was printed in the heading as well as at the end | `shows a row, the section directory, the kernel history and actions` |
 | T-0074-M6 | packages/engine/src/views/history.ts | an entered end step opened an attempt line (the end-step skip removed) | `readable run history > a run that ends on an end step has no line for that step` |
+| T-0053-M8 | packages/engine/src/views/presentation.ts | a list did not run the types' `prepare` first | `object type prepare > a list and a get see objects the type brings up to date first, once` |

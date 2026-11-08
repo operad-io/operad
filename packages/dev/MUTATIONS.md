@@ -298,3 +298,4 @@ the row fields.
 | T-0095-M6 | packages/dev/src/integrate.ts | the integration checkout was not prepared | `dev/integrate > prepare runs in the integration checkout before the key commands` |
 | T-0095-M7 | packages/dev/src/prepare.ts | a failing prepare command counted as a pass | `prepare > a failing prepare fails verify with its reason and log, and no gate command runs` |
 | T-0095-M8 | packages/dev/src/gate.ts | review did not prepare its recreated checkout, so the test a reviewer runs there could not resolve the branch's package | `prepare > a change spanning two packages > with a prepare command that installs, the test passes in the review checkout` |
+| T-0053-M9 | packages/dev/src/index.ts | the repo type declared no `prepare`, so a list in a fresh process hid repositories stored under the old type | `the repo type > a repository stored before dev declared repo shows up as a repo object` |

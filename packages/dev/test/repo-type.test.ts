@@ -6,7 +6,6 @@ import { createDevPlugin } from "../src/index.ts";
 import {
   addPlan,
   confirmPlan,
-  listRepositories,
   refreshPlanCounts,
   getPlan,
   addRepository,
@@ -158,8 +157,7 @@ describe("the repo type", () => {
     const registry = new PluginRegistry([createDevPlugin()], { store: again, storeRoot: again.root });
     const fresh = createViews({ registry, store: again, onLog: () => undefined });
     opened.push(fresh);
-    // The scheduler tick, or any dev command, lists the repositories first.
-    await listRepositories(again);
+    // No dev command runs first: the list itself carries the repository over.
     expect(ids(await fresh.list("repo"))).toContain("legacy");
     void views;
   });

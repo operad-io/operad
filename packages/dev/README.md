@@ -31,8 +31,8 @@ object type, and a row names the level above it as its `parent`:
   whether `.operad/dev.json` is in force, the worker and the reviewer) and the
   kernel's History. A repo has no actions of its own: `repo add` and
   `repo remove` stay commands. A repository registered before `repo` existed
-  is carried over the first time `dev` lists repositories (any command, or the
-  next scheduler tick).
+  is carried over the first time anything lists or reads `repo` objects, so
+  `operad list repo` works in a fresh process.
 - A **plan**'s parent is its repo (`repo:<name>`).
 - A **task**'s parent is its plan (`plan:<repo>/<plan id>`), so two repositories
   that both have `P-0001-work` never share tasks.

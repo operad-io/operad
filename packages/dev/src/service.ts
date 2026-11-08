@@ -167,7 +167,7 @@ export async function refreshRepositoryCounts(
 const migrated = new WeakSet<ObjectStore>();
 
 /** Copies repositories stored under the old type name to `repo`, once per store. */
-async function migrateLegacyRepositories(store: ObjectStore): Promise<void> {
+export async function migrateLegacyRepositories(store: ObjectStore): Promise<void> {
   if (migrated.has(store)) return;
   migrated.add(store);
   for (const old of await listAll(store, LEGACY_REPOSITORY_TYPE)) {
