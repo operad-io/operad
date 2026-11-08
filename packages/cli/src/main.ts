@@ -109,6 +109,8 @@ export interface MainOptions {
   readonly io?: CliIo | undefined;
   /** Whether prompts and colours are available; defaults to the real terminal. */
   readonly isTTY?: boolean | undefined;
+  /** The terminal's width in columns; defaults to stdout's. */
+  readonly columns?: number | undefined;
   /** Replaces the OpenTUI app in a test; the real one is imported only by `tui`. */
   readonly tui?: TuiRunner | undefined;
 }
@@ -600,6 +602,7 @@ async function commandShow(
   io: CliIo,
   argv: readonly string[],
   tty: boolean,
+  columns?: number | undefined,
 ): Promise<void> {
   let rest = [...argv];
   const sectionFlag = takeValueFlag(rest, "--section");
@@ -697,7 +700,10 @@ async function commandShow(
     cursorFlag.value,
     { full: full.present },
   );
-  io.write(`\n${renderMarkdown(content.markdown, { colour: tty })}`);
+  io.write(`\n${renderMarkdown(content.markdown, {
+    colour: tty,
+    width: tty ? columns : undefined,
+  })}`);
   if (content.next !== undefined) {
     io.write(
       `next: operad show ${id} --section ${requested} --cursor ${content.next}\n`,
@@ -2216,7 +2222,7 @@ export async function main(
           return 0;
         }
         if (command === "show") {
-          await commandShow(context, io, showRepo?.args ?? args.slice(1), tty);
+          await commandShow(context, io, showRepo?.args ?? args.slice(1), tty, options.columns ?? process.stdout.columns);
           return 0;
         }
         const { args: rest, present } = splitFlag(args.slice(1), "--json");
