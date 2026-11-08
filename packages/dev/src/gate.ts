@@ -1701,6 +1701,9 @@ export async function runReview(
               : round,
         },
         ...(record.decision === "passed" ? { reworkStreak: 0 } : {}),
+        ...(typeof record.reworkLine === "string" && record.reworkLine.length > 0
+          ? { brief: appendChange(task.brief, record.reworkLine) }
+          : {}),
         ...historyOf(task, record, attempt.number, context.settings.reviewer.fixLevel),
         retryAt:
           record.decision === "unavailable" && typeof record.retryAt === "number"
@@ -2234,6 +2237,7 @@ export async function runReview(
       verified: last.verified ?? [],
       log: resultPath,
       message,
+      ...(reworkLine.length === 0 ? {} : { reworkLine }),
       ...(decision === "findings" ? { reason: "findings" } : {}),
     };
     return finish(record, stepResult, {

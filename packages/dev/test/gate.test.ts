@@ -43,6 +43,7 @@ import {
   reviewTestHooks,
   REVIEW_WAIT_CHUNK_MS,
   STEP_TIMEOUT_SECS,
+  splitBrief,
   taskData,
   validateDevSettings,
   workBranch,
@@ -2809,6 +2810,11 @@ describe("dev/review rework rounds", () => {
     expect(second.data?.message).toContain(
       "rework round: 1 previous findings, 1 fixed, 0 moved as pre-existing",
     );
+    const changes = splitBrief((await taskOf(round.state)).brief).changes;
+    expect(changes).toContain(
+      "rework round: 1 previous findings, 1 fixed, 0 moved as pre-existing",
+    );
+    expect(changes.split("rework round:").length).toBe(2);
   });
 
   test("a review of the same commit as the previous review gets the first prompt", async () => {

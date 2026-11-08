@@ -276,3 +276,4 @@ the row fields.
 | T-0087-M5 | packages/dev/src/gate.ts | a resumed call built its prompt again instead of reading the recorded one | `dev/review rework rounds > a rework round resumed after a crash asks with the prompt it recorded` |
 | T-0087-M6 | packages/dev/src/rework.ts | a review of the same attempt was followed as a rework round | `dev/review rework rounds > a review later in the same attempt is a first review` |
 | T-0087-M7 | packages/dev/src/rework.ts | a pure deletion marked no line, so its hunk left the increment | `dev/review rework rounds > a rework that only deletes a line keeps its hunk in the increment` |
+| T-0087-M8 | packages/dev/src/gate.ts | the rework-round line was not added to the task's Changes | `dev/review rework rounds > the first review gets the whole diff; a rework round gets the previous findings and the increment` |
