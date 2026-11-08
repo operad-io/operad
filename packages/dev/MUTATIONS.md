@@ -198,3 +198,11 @@ the row fields.
 | T-0066-M1 | packages/dev/src/steps.ts | the clean-merge history line lost "main" and "checking again" | `dev/reverify > a branch behind a non-conflicting main merges it and goes to verify, no work` |
 | T-0066-M2 | packages/dev/src/steps.ts | the reverify step opened a new attempt number | `dev/reverify > a branch behind a non-conflicting main merges it and goes to verify, no work` |
 | T-0066-M3 | packages/dev/flows/dev.flow.ts | the wait's reverify edge went straight to verify again | `the dev flow > loads with the gate and the rework edges` |
+
+## T-0076 — repository check places
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0076-M1 | packages/dev/src/places.ts | the repository place was never taken | `repository check places > two checks of a repository with places 1 take turns while another repository runs beside them` |
+| T-0076-M2 | packages/dev/src/places.ts | the home place was never taken | `repository check places > the home limit holds with repository limits that would allow more` |
+| T-0076-M3 | packages/dev/src/places.ts | every repository shared one set of place files | `repository check places > a check waiting for its repository does not hold a home place` |

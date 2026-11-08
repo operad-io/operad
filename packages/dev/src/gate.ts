@@ -314,7 +314,7 @@ export async function runVerify(
     commands,
     stepOptions(ctx, path),
     context.settings.check.rerun,
-    checkPlaces(ctx),
+    checkPlaces(ctx, context.repository, context.settings.gate.places),
   );
   await recordRerunPasses(ctx.store, checked.passedOnRerun);
   const { outcome, hostError, note } = checked;

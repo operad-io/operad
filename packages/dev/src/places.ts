@@ -32,11 +32,20 @@ export function checkPlacesOf(
   return value;
 }
 
+/** The repository's own limit: its name for the log, a key for the lock files. */
+export interface RepositoryPlaces {
+  readonly name: string;
+  readonly path: string;
+  readonly places: number;
+}
+
 /** Where a check takes its place and what it says while it waits. */
 export interface CheckPlaces {
   readonly home: string;
-  /** How many checks may run at once. */
+  /** How many checks may run at once in the home. */
   readonly checks: number;
+  /** The repository's limit, when `gate.places` sets one. */
+  readonly repository?: RepositoryPlaces | undefined;
   /** Writes a line to the step's log. */
   readonly log: (line: string) => Promise<unknown> | unknown;
   readonly signal?: AbortSignal | undefined;
@@ -52,11 +61,53 @@ export class CheckPlaceCancelled extends Error {
   }
 }
 
-class PlaceBusy extends Error {}
+/** A pool that had no free place; `pool` says which, so the log can name it. */
+class PlaceBusy extends Error {
+  constructor(
+    readonly pool: "home" | "repository",
+    readonly inUse: number,
+  ) {
+    super("busy");
+  }
+}
+
+/** The lock files of the repository's places, next to the home's. */
+function repositoryKey(repository: RepositoryPlaces): string {
+  const hash = new Bun.CryptoHasher("sha1").update(repository.path).digest("hex");
+  const name = repository.name.replace(/[^A-Za-z0-9._-]/g, "_");
+  return `repo-${name}-${hash.slice(0, 8)}`;
+}
+
+/** Takes one free place of a pool and runs `work`, or throws `PlaceBusy` at once. */
+async function takeOne<T>(
+  directory: string,
+  prefix: string,
+  count: number,
+  pool: "home" | "repository",
+  work: () => Promise<T> | T,
+): Promise<T> {
+  let busy = 0;
+  for (let index = 1; index <= count; index += 1) {
+    try {
+      // A live holder makes the lock wait; waiting here means "taken".
+      return await withLockFile(join(directory, `${prefix}-${index}.lock`), work, {
+        label: "check place",
+        onLog: () => {},
+        wait: () => Promise.reject(new PlaceBusy(pool, 0)),
+      });
+    } catch (error) {
+      if (!(error instanceof PlaceBusy) || error.pool !== pool) throw error;
+      busy += 1;
+    }
+  }
+  throw new PlaceBusy(pool, busy);
+}
 
 /**
- * Runs `work` holding one place. A check waiting for a place says so once per
- * change in how many are in use, and nothing times it out while it waits: the
+ * Runs `work` holding a home place and, when the repository has a limit, a
+ * repository place. Both are taken in one order, home first, and a check that
+ * finds the second busy gives the first back before it waits, so it never
+ * waits while it holds a place. Nothing times it out while it waits: the
  * check's own timeout starts when `work` does.
  */
 export async function withCheckPlace<T>(
@@ -64,42 +115,59 @@ export async function withCheckPlace<T>(
   work: () => Promise<T> | T,
 ): Promise<T> {
   const directory = checkPlacesDirectory(places.home);
-  const slots = Array.from({ length: places.checks }, (_, index) =>
-    join(directory, `place-${index + 1}.lock`),
-  );
+  const repository = places.repository;
+  let entry = "place-1.lock";
   const wait =
     places.wait ??
-    ((ms: number) => waitForChange(directory, "place-1.lock", ms));
-  let said: number | undefined;
+    ((ms: number) => waitForChange(directory, entry, ms));
+  const inner =
+    repository === undefined
+      ? work
+      : () =>
+          takeOne(
+            directory,
+            repositoryKey(repository),
+            repository.places,
+            "repository",
+            work,
+          );
+  let said: string | undefined;
   for (;;) {
     if (places.signal?.aborted === true) throw new CheckPlaceCancelled();
-    let busy = 0;
-    for (const slot of slots) {
-      try {
-        // A live holder makes the lock wait; waiting here means "taken".
-        return await withLockFile(slot, work, {
-          label: "check place",
-          onLog: () => {},
-          wait: () => Promise.reject(new PlaceBusy()),
-        });
-      } catch (error) {
-        if (!(error instanceof PlaceBusy)) throw error;
-        busy += 1;
+    try {
+      return await takeOne(directory, "place", places.checks, "home", inner);
+    } catch (error) {
+      if (!(error instanceof PlaceBusy)) throw error;
+      entry =
+        error.pool === "repository" && repository !== undefined
+          ? `${repositoryKey(repository)}-1.lock`
+          : "place-1.lock";
+      const line =
+        error.pool === "home" || repository === undefined
+          ? `waiting for a check place: ${error.inUse} in use`
+          : `waiting for a check place of ${repository.name}: ${error.inUse} in use`;
+      if (said !== line) {
+        said = line;
+        await places.log(line);
       }
-    }
-    if (said !== busy) {
-      said = busy;
-      await places.log(`waiting for a check place: ${busy} in use`);
     }
     await wait(RECHECK_MS);
   }
 }
 
-/** The places a step's checks take: the home's limit, the step's own log. */
-export function checkPlaces(ctx: StepContext): CheckPlaces {
+/** The places a step's checks take: the home's limit, the repository's, the step's own log. */
+export function checkPlaces(
+  ctx: StepContext,
+  repository?: { readonly name: string; readonly path: string },
+  repositoryLimit?: number,
+): CheckPlaces {
   return {
     home: ctx.home,
     checks: checkPlacesOf(ctx.settings),
+    repository:
+      repository === undefined || repositoryLimit === undefined
+        ? undefined
+        : { name: repository.name, path: repository.path, places: repositoryLimit },
     log: (line) => ctx.logger.write(line),
     signal: ctx.signal,
   };
