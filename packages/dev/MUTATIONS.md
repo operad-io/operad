@@ -283,3 +283,11 @@ the row fields.
 | T-0092-M18 | packages/dev/src/flaky.ts | a brief line that merely contains the name counted as naming the test | `a flaky test proposes a task > which open task names a test` |
 | T-0092-M17 | packages/dev/src/integrate.ts | a failing integration check left out the no-plan notice | `dev/integrate > a failing integration check still says why no flaky task was proposed` |
 | T-0092-M19 | packages/dev/src/flaky.ts | the task title cut the test name at 120 characters | `a flaky test proposes a task > two long names that share their first 120 characters each get their own task with the full name` |
+| T-0095-M1 | packages/dev/src/gate.ts | verify did not run the prepare commands in the gate checkout | `prepare > runs once per checkout, before verify and before review, and the review prompt says so` |
+| T-0095-M2 | packages/dev/src/gate.ts | review did not run the prepare commands in the recreated gate checkout | `prepare > a failing prepare fails review before a reviewer starts` |
+| T-0095-M3 | packages/dev/src/gate.ts | the review prompt did not say the checkout is prepared | `prepare > runs once per checkout, before verify and before review, and the review prompt says so` |
+| T-0095-M4 | packages/dev/src/gate.ts | the gate checkout did not link its own workspace packages when no prepare is set | `prepare > a change spanning two packages > with no prepare command the checkout still links its own packages` |
+| T-0095-M5 | packages/dev/src/steps.ts | the worker's worktree was not prepared | `dev/worktree > prepare runs in the new worktree before the visit reports ready` |
+| T-0095-M6 | packages/dev/src/integrate.ts | the integration checkout was not prepared | `dev/integrate > prepare runs in the integration checkout before the key commands` |
+| T-0095-M7 | packages/dev/src/prepare.ts | a failing prepare command counted as a pass | `prepare > a failing prepare fails verify with its reason and log, and no gate command runs` |
+| T-0095-M8 | packages/dev/src/gate.ts | review did not prepare its recreated checkout, so the test a reviewer runs there could not resolve the branch's package | `prepare > a change spanning two packages > with a prepare command that installs, the test passes in the review checkout` |
