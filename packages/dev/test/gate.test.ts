@@ -43,6 +43,7 @@ import {
   reviewTestHooks,
   REVIEW_WAIT_CHUNK_MS,
   STEP_TIMEOUT_SECS,
+  splitBrief,
   taskData,
   validateDevSettings,
   workBranch,
@@ -372,6 +373,17 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             writeFileSync(input.resultPath, "this is not JSON\n");
             return { result: "done", data: {} };
           }
+          if (mode.startsWith("file:")) {
+            // The findings come from a file, so a test can change them per round.
+            writeFileSync(
+              input.resultPath,
+              JSON.stringify({
+                findings: JSON.parse(readFileSync(mode.slice(5), "utf8")),
+                verified: ["the diff"],
+              }),
+            );
+            return { result: "done", data: {} };
+          }
           const finding =
             mode === "minor"
               ? {
@@ -393,7 +405,7 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
                   ? {
                       file: "other.txt",
                       line: 3,
-                      severity: "critical",
+                      severity: "major",
                       summary: "an old problem",
                       trigger: "when loaded",
                     }
@@ -897,7 +909,7 @@ describe("dev/review", () => {
   test("a finding on a file the change did not touch is pre-existing and does not count", async () => {
     const state = await fixture({
       reviewerArgs: ["pre-existing"],
-      fixLevel: "critical",
+      fixLevel: "major",
     });
     await verify(state);
     const result = await review(state);
@@ -2713,6 +2725,441 @@ describe("dev/verify reruns only the failed tests", () => {
       { name: "a", count: 1 },
       { name: "c", count: 1 },
     ]);
+  });
+});
+
+describe("dev/review rework rounds", () => {
+  const lines = (count: number, tag = "line") =>
+    Array.from({ length: count }, (_, index) => `${tag} ${index + 1}\n`).join("");
+
+  interface Round {
+    readonly state: Fixture;
+    readonly findingsFile: string;
+    readonly first: Awaited<ReturnType<typeof review>>;
+    readonly firstSha: string;
+  }
+
+  function writeFindings(path: string, findings: readonly unknown[]): void {
+    writeFileSync(path, JSON.stringify(findings));
+  }
+
+  function finding(file: string, line: number, severity = "major") {
+    return { file, line, severity, summary: `${severity} at ${file}:${line}`, trigger: "t" };
+  }
+
+  /** A task whose first review ran and reported `first`. */
+  async function afterFirstReview(first: readonly unknown[]): Promise<Round> {
+    const dir = await tempRoot();
+    const findingsFile = join(dir, "findings.json");
+    writeFindings(findingsFile, first);
+    const state = await fixture({
+      reviewerArgs: [`file:${findingsFile}`],
+      commit: false,
+      baseFiles: { "code.txt": lines(40) },
+    });
+    await commitIn(
+      state.worktree,
+      "code.txt",
+      lines(40)
+        .replace("line 5\n", "changed 5\n")
+        .replace("line 30\n", "changed 30\n"),
+      "first change",
+    );
+    const verified = await verify(state, "verify-1");
+    const firstResult = await review(state, "review-1");
+    return {
+      state,
+      findingsFile,
+      first: firstResult,
+      firstSha: verified.data?.verified as string,
+    };
+  }
+
+  /** Starts the next attempt, as a rework does. */
+  async function nextAttempt(state: Fixture): Promise<void> {
+    const object = await state.store.get("task", state.taskKey);
+    if (object === undefined) throw new Error("task disappeared");
+    const task = taskData(object.data);
+    await state.store.put(
+      "task",
+      state.taskKey,
+      {
+        ...task,
+        attempts: 2,
+        attempt: { number: 2, run: "rework-run", worktree: task.attempt?.worktree },
+      },
+      "test:attempt",
+    );
+  }
+
+  async function secondReview(round: Round, change: () => Promise<void>) {
+    await nextAttempt(round.state);
+    await change();
+    await verify(round.state, "verify-2");
+    return review(round.state, "review-2");
+  }
+
+  test("the first review gets the whole diff; a rework round gets the previous findings and the increment", async () => {
+    const round = await afterFirstReview([finding("code.txt", 5)]);
+    expect(round.first.result).toBe("fail");
+    const firstPrompt = round.state.reviewer.calls[0]?.prompt ?? "";
+    expect(firstPrompt).toContain("## Diff");
+    expect(firstPrompt).not.toContain("## Previous review");
+    writeFindings(round.findingsFile, []);
+    const second = await secondReview(round, async () => {
+      await commitIn(
+        round.state.worktree,
+        "code.txt",
+        lines(40)
+          .replace("line 5\n", "changed 5\n")
+          .replace("line 30\n", "again 30\n"),
+        "fix",
+      );
+    });
+    expect(second.result).toBe("pass");
+    const prompt = round.state.reviewer.calls[1]?.prompt ?? "";
+    const sections = prompt.split("\n").filter((line) => line.startsWith("## "));
+    expect(sections).toEqual([
+      "## Brief",
+      "## Previous review",
+      "## Commits since the previous review",
+      "## Increment",
+      "## Removed since the previous review",
+      "## What to write",
+    ]);
+    expect(prompt).not.toContain("## Diff");
+    expect(prompt).toContain(`looked at ${round.firstSha}`);
+    expect(prompt).toContain("- [major] code.txt:5 major at code.txt:5");
+    expect(prompt).toContain("fix");
+    expect(prompt).toContain("+again 30");
+    expect(prompt).not.toContain("+changed 5");
+    expect(prompt).toContain("whether it is fixed or not fixed");
+    expect(second.data?.message).toContain(
+      "rework round: 1 previous findings, 1 fixed, 0 moved as pre-existing",
+    );
+    const changes = splitBrief((await taskOf(round.state)).brief).changes;
+    expect(changes).toContain(
+      "rework round: 1 previous findings, 1 fixed, 0 moved as pre-existing",
+    );
+    expect(changes.split("rework round:").length).toBe(2);
+  });
+
+  test("a review of the same commit as the previous review gets the first prompt", async () => {
+    const round = await afterFirstReview([finding("code.txt", 5)]);
+    await review(round.state, "review-again");
+    const prompt = round.state.reviewer.calls[1]?.prompt ?? "";
+    expect(prompt).toContain("## Diff");
+    expect(prompt).not.toContain("## Previous review");
+    const result = await review(round.state, "review-third");
+    expect(result.data?.reworkRound).toBeUndefined();
+  });
+
+  test("lines that came only with a merge of main are not in the increment", async () => {
+    const round = await afterFirstReview([]);
+    await advanceMain(round.state.remote, "main.txt", "from main\n", "main moves");
+    const second = await secondReview(round, async () => {
+      gitOrThrow(round.state.worktree, ["fetch", "origin"]);
+      gitOrThrow(round.state.worktree, [
+        "-c", "user.name=t", "-c", "user.email=t@example.com",
+        "merge", "--no-ff", "--no-edit", "origin/main",
+      ]);
+      await commitIn(round.state.worktree, "mine.txt", "mine\n", "mine");
+    });
+    expect(second.result).toBe("pass");
+    const prompt = round.state.reviewer.calls[1]?.prompt ?? "";
+    expect(prompt).toContain("+mine");
+    expect(prompt).not.toContain("from main");
+    expect(prompt).not.toContain("main.txt");
+  });
+
+  test("a rework round keeps an unfixed finding near the previous one and moves a far one with its level", async () => {
+    const round = await afterFirstReview([finding("code.txt", 5)]);
+    writeFindings(round.findingsFile, [
+      finding("code.txt", 12), // 7 lines from the changed line 5, 7 from the previous finding
+      finding("code.txt", 20), // far from both
+    ]);
+    const second = await secondReview(round, async () => {
+      await commitIn(round.state.worktree, "extra.txt", "x\n", "more");
+    });
+    expect(second.result).toBe("fail");
+    expect(second.data?.counted).toBe(1);
+    expect(second.data?.moved).toBe(1);
+    const found = second.data?.findings as readonly {
+      readonly line: number;
+      readonly severity: string;
+      readonly pre_existing?: boolean;
+    }[];
+    expect(found[0]?.pre_existing).toBeUndefined();
+    expect(found[1]).toMatchObject({ line: 20, severity: "major", pre_existing: true });
+    expect(second.data?.message).toContain(
+      "rework round: 1 previous findings, 0 fixed, 1 moved as pre-existing",
+    );
+  });
+
+  test("a far critical finding still fails; a far major one in an untouched file is moved", async () => {
+    const dir = await tempRoot();
+    const findingsFile = join(dir, "findings.json");
+    writeFindings(findingsFile, [
+      finding("base.txt", 50, "critical"),
+      finding("base.txt", 60, "major"),
+    ]);
+    const state = await fixture({
+      reviewerArgs: [`file:${findingsFile}`],
+      baseFiles: { "base.txt": lines(100) },
+    });
+    await verify(state);
+    const result = await review(state);
+    expect(result.result).toBe("fail");
+    expect(result.data?.counted).toBe(1);
+    expect(result.data?.moved).toBe(1);
+    const found = result.data?.findings as readonly {
+      readonly severity: string;
+      readonly pre_existing?: boolean;
+    }[];
+    expect(found[0]?.pre_existing).toBeUndefined();
+    expect(found[1]).toMatchObject({ severity: "major", pre_existing: true });
+  });
+
+  test("a previous sha that is not a commit in the checkout makes a first review", async () => {
+    const round = await afterFirstReview([finding("code.txt", 5)]);
+    const key = round.state.taskKey;
+    const object = await round.state.store.get("task", key);
+    if (object === undefined) throw new Error("task disappeared");
+    const task = taskData(object.data);
+    await round.state.store.put("task", key, {
+      ...task,
+      reviewHistory: (task.reviewHistory ?? []).map((entry) => ({
+        ...entry,
+        sha: "0123456789abcdef0123456789abcdef01234567",
+      })),
+    }, "test:history");
+    await nextAttempt(round.state);
+    await commitIn(round.state.worktree, "code.txt", lines(41), "more");
+    await verify(round.state, "verify-2");
+    await review(round.state, "review-2");
+    const prompt = round.state.reviewer.calls[1]?.prompt ?? "";
+    expect(prompt).toContain("## Diff");
+    expect(prompt).not.toContain("## Previous review");
+  });
+
+  test("a model's own pre_existing mark is ignored", async () => {
+    const dir = await tempRoot();
+    const findingsFile = join(dir, "findings.json");
+    writeFindings(findingsFile, [{ ...finding("code.txt", 1), pre_existing: true }]);
+    const state = await fixture({ reviewerArgs: [`file:${findingsFile}`] });
+    await verify(state);
+    const result = await review(state);
+    expect(result.result).toBe("fail");
+    expect(result.data?.counted).toBe(1);
+  });
+
+  test("a rework round resumed after a crash asks with the prompt it recorded", async () => {
+    const round = await afterFirstReview([finding("code.txt", 5)]);
+    await nextAttempt(round.state);
+    await commitIn(round.state.worktree, "code.txt", lines(41), "fix");
+    await verify(round.state, "verify-2");
+    const callLog = join(await tempRoot(), "calls");
+    const child = Bun.spawn({
+      cmd: [
+        process.execPath,
+        REVIEW_CRASH_CHILD,
+        round.state.store.root,
+        round.state.remote.repository,
+        round.state.taskKey,
+        "review-crash",
+        "before-run",
+        callLog,
+      ],
+      cwd: dirname(REVIEW_CRASH_CHILD),
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    await child.exited;
+    expect(child.signalCode).toBe("SIGKILL");
+    const promptFile = join(
+      round.state.store.root,
+      "dev",
+      "reviews",
+      "review-crash",
+      `${round.state.taskId}-attempt-2-review-1.prompt.md`,
+    );
+    const recorded = readFileSync(promptFile, "utf8");
+    expect(recorded).toContain("## Previous review");
+    writeFileSync(promptFile, `${recorded}\nRECORDED-MARK\n`);
+    const store = new FilePluginStore({ root: round.state.store.root });
+    const reviewer = fakeReviewer({});
+    const registry = new PluginRegistry([createDevPlugin(), reviewer.plugin], {
+      home: round.state.root,
+      cwd: round.state.remote.repository,
+      store,
+    });
+    await registry.runStep("dev/review", {}, {
+      runId: "review-crash",
+      object: { type: "task", id: round.state.taskKey, data: {} },
+    });
+    expect(reviewer.calls).toHaveLength(1);
+    expect(reviewer.calls[0]?.prompt).toContain("RECORDED-MARK");
+    expect(reviewer.calls[0]?.prompt).toContain("## Previous review");
+  });
+
+  async function mergeMain(round: Round): Promise<void> {
+    await advanceMain(round.state.remote, "main.txt", "from main\n", "main moves");
+    gitOrThrow(round.state.worktree, ["fetch", "origin"]);
+    gitOrThrow(round.state.worktree, [
+      "-c", "user.name=t", "-c", "user.email=t@example.com",
+      "merge", "--no-ff", "--no-edit", "origin/main",
+    ]);
+  }
+
+  // One rule for which review is which: the previous review is the newest
+  // report for another commit; pre-existing moves apply in every review.
+  const kinds: readonly {
+    readonly name: string;
+    readonly first: boolean;
+    readonly run: (round: Round) => Promise<Awaited<ReturnType<typeof review>>>;
+  }[] = [
+    {
+      name: "first review",
+      first: true,
+      run: async (round) => round.first,
+    },
+    {
+      name: "rework after a review",
+      first: false,
+      run: async (round) => {
+        writeFindings(round.findingsFile, [finding("code.txt", 20)]);
+        return secondReview(round, async () => {
+          await commitIn(round.state.worktree, "extra.txt", "x\n", "more");
+        });
+      },
+    },
+    {
+      name: "reverify of the same commit",
+      first: true,
+      run: async (round) => {
+        writeFindings(round.findingsFile, [finding("code.txt", 20)]);
+        return review(round.state, "review-again");
+      },
+    },
+    {
+      name: "reverify after main moved",
+      first: false,
+      run: async (round) => {
+        writeFindings(round.findingsFile, [finding("code.txt", 20)]);
+        await mergeMain(round);
+        await verify(round.state, "verify-2");
+        return review(round.state, "review-2");
+      },
+    },
+    {
+      name: "missing previous sha",
+      first: true,
+      run: async (round) => {
+        const object = await round.state.store.get("task", round.state.taskKey);
+        if (object === undefined) throw new Error("task disappeared");
+        const task = taskData(object.data);
+        await round.state.store.put(
+          "task",
+          round.state.taskKey,
+          {
+            ...task,
+            reviewHistory: (task.reviewHistory ?? []).map((entry) => ({
+              ...entry,
+              sha: "0123456789abcdef0123456789abcdef01234567",
+            })),
+          },
+          "test:history",
+        );
+        writeFindings(round.findingsFile, [finding("code.txt", 20)]);
+        await nextAttempt(round.state);
+        await commitIn(round.state.worktree, "extra.txt", "x\n", "more");
+        await verify(round.state, "verify-2");
+        return review(round.state, "review-2");
+      },
+    },
+  ];
+  for (const kind of kinds) {
+    test(`${kind.name}: ${kind.first ? "the first prompt" : "the rework prompt"}, and a far finding is moved`, async () => {
+      const round = await afterFirstReview([finding("code.txt", kind.name === "first review" ? 20 : 5)]);
+      const result = await kind.run(round);
+      const prompt = round.state.reviewer.calls.at(-1)?.prompt ?? "";
+      if (kind.first) {
+        expect(prompt).toContain("## Diff");
+        expect(prompt).not.toContain("## Previous review");
+      } else {
+        expect(prompt).toContain("## Previous review");
+        expect(prompt).not.toContain("## Diff");
+      }
+      expect(result.data?.moved).toBe(1);
+    });
+  }
+
+  test("a main change near the task's change is not in the increment", async () => {
+    const round = await afterFirstReview([]);
+    // Main changes line 8, three lines from the task's change at line 5.
+    await advanceMain(
+      round.state.remote,
+      "code.txt",
+      lines(40).replace("line 8\n", "main 8\n"),
+      "main edits code",
+    );
+    const second = await secondReview(round, async () => {
+      gitOrThrow(round.state.worktree, ["fetch", "origin"]);
+      gitOrThrow(round.state.worktree, [
+        "-c", "user.name=t", "-c", "user.email=t@example.com",
+        "merge", "--no-ff", "--no-edit", "origin/main",
+      ]);
+      await commitIn(round.state.worktree, "mine.txt", "mine\n", "mine");
+    });
+    expect(second.result).toBe("pass");
+    const prompt = round.state.reviewer.calls[1]?.prompt ?? "";
+    expect(prompt).toContain("+mine");
+    expect(prompt).not.toContain("changed 5");
+    expect(prompt).not.toContain("main 8");
+  });
+
+  test("a rework that only deletes a line keeps its hunk in the increment", async () => {
+    const round = await afterFirstReview([]);
+    writeFindings(round.findingsFile, []);
+    const second = await secondReview(round, async () => {
+      await commitIn(
+        round.state.worktree,
+        "code.txt",
+        lines(40)
+          .replace("line 5\n", "changed 5\n")
+          .replace("line 30\n", "changed 30\n")
+          .replace("line 31\n", ""),
+        "delete",
+      );
+    });
+    expect(second.result).toBe("pass");
+    const prompt = round.state.reviewer.calls[1]?.prompt ?? "";
+    expect(prompt).toContain("-line 31");
+    expect(prompt).not.toContain("No line of the task's own change was changed");
+  });
+
+
+  test("a deleted file and a file left out are not reported as removed", async () => {
+    const dir = await tempRoot();
+    const findingsFile = join(dir, "findings.json");
+    writeFindings(findingsFile, []);
+    const state = await fixture({
+      reviewerArgs: [`file:${findingsFile}`],
+      commit: false,
+      baseFiles: { "old.txt": lines(30), "code.txt": lines(40) },
+    });
+    gitOrThrow(state.worktree, ["rm", "-q", "old.txt"]);
+    await commitIn(state.worktree, "code.txt", lines(40).replace("line 5\n", "changed 5\n"), "first");
+    await verify(state, "verify-1");
+    await review(state, "review-1");
+    await nextAttempt(state);
+    await commitIn(state.worktree, "extra.txt", "x\n", "more");
+    await verify(state, "verify-2");
+    await review(state, "review-2");
+    const prompt = state.reviewer.calls[1]?.prompt ?? "";
+    expect(prompt).toContain("## Previous review");
+    expect(prompt).not.toContain("## Removed since the previous review");
+    expect(prompt).not.toContain("-line 1\n");
   });
 });
 

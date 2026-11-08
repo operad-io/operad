@@ -1,6 +1,7 @@
 /** The objects the dev plugin owns, and the pure rules that change them. */
 
 import type { ObjectStore, StoredObject } from "@operad-io/engine";
+import type { ReviewHistoryEntry } from "./rework.ts";
 
 /**
  * Every object of a type, following the store's pages. The store returns one
@@ -376,6 +377,8 @@ export type TaskData = {
   readonly attempts: number;
   readonly run: string | null;
   readonly attempt?: TaskAttempt | undefined;
+  /** What each review reported, newest last; the next review follows it. */
+  readonly reviewHistory?: readonly ReviewHistoryEntry[] | undefined;
   readonly cost?: number | string | undefined;
   /** How far to trust `cost`; absent for a cost written before it was recorded. */
   readonly costQuality?: "exact" | "estimated" | "incomplete" | null | undefined;
