@@ -37,3 +37,4 @@ the row fields.
 | T-0057-M4 | packages/mcp/src/channel.ts | every changed row was sent, flag flips included | `a running flag flip alone sends nothing, and a wait turning on sends with the step`, `a wait turning on again with the state and flags of the last block sent sends nothing` |
 | T-0057-M5 | packages/mcp/src/channel.ts | the sent rows were not loaded at start, so a restart forgot the last block | `a restarted channel does not send the row the last block reported again` |
 | T-0057-M6 | packages/mcp/src/channel.ts | the step came from the first active run of the object, not the one with the latest fact | `the step is the one of the run with the latest fact when two flows are active on one object` |
+| T-0057-M7 | packages/mcp/src/channel.ts | runs with equal times were ordered by iteration order, not by start, last seq and run id | `the step of two active runs with equal times is chosen the same way every time` |

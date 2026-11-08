@@ -359,13 +359,17 @@ class ClaudeChannel implements ChannelHandle {
       // An object can have active runs of several flows: report the run with
       // the latest fact, which is the one that changed the object just now.
       let step: string | undefined;
-      let latest: { time: number; started: number } | undefined;
+      let latest:
+        | { time: number; started: number; seq: number; runId: string }
+        | undefined;
       for (const run of runs) {
         if (run.object !== key) continue;
         let runStep: string | undefined;
         let time = run.startedAt;
+        let seq = 0;
         for await (const fact of this.log.read(run.runId)) {
           time = Math.max(time, fact.time);
+          seq = Math.max(seq, fact.seq);
           const payload = fact.payload;
           if (
             fact.kind === "step_entered" &&
@@ -380,10 +384,12 @@ class ClaudeChannel implements ChannelHandle {
         }
         if (
           latest === undefined ||
-          time > latest.time ||
-          (time === latest.time && run.startedAt >= latest.started)
+          laterRun(
+            { time, started: run.startedAt, seq, runId: run.runId },
+            latest,
+          )
         ) {
-          latest = { time, started: run.startedAt };
+          latest = { time, started: run.startedAt, seq, runId: run.runId };
           step = runStep;
         }
       }
@@ -442,6 +448,21 @@ class ClaudeChannel implements ChannelHandle {
       await this.deliver(entry);
     }
   }
+}
+
+interface RunStamp {
+  readonly time: number;
+  readonly started: number;
+  readonly seq: number;
+  readonly runId: string;
+}
+
+/** Whether `a` is the later run: ties on time break on start, seq, then id. */
+function laterRun(a: RunStamp, b: RunStamp): boolean {
+  if (a.time !== b.time) return a.time > b.time;
+  if (a.started !== b.started) return a.started > b.started;
+  if (a.seq !== b.seq) return a.seq > b.seq;
+  return a.runId > b.runId;
 }
 
 /**

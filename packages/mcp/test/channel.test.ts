@@ -292,6 +292,57 @@ describe("the channel's sources", () => {
     }
   });
 
+  test("the step of two active runs with equal times is chosen the same way every time", async () => {
+    const s = await setup();
+    put(s, "task", "t-1", { title: "One", phase: "ready" });
+    // Every fact and run reads as made at one instant.
+    const real = s.log;
+    const fixed = new Proxy(real, {
+      get(target, name) {
+        if (name === "runs") {
+          return async (options: Parameters<LogBackend["runs"]>[0]) =>
+            (await real.runs(options)).map((run) => ({ ...run, startedAt: 1000 }));
+        }
+        if (name === "read") {
+          return async function* (...args: Parameters<LogBackend["read"]>) {
+            for await (const fact of real.read(...args)) {
+              yield { ...fact, time: 1000 };
+            }
+          };
+        }
+        const value: unknown = Reflect.get(target, name, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const sent = new Sent();
+    const channel = await startClaudeChannel({
+      views: s.views,
+      registry: s.registry,
+      log: fixed,
+      send: sent.push,
+    });
+    try {
+      const first = await s.log.startRun("demo-flow", "task:t-1");
+      await s.log.append(first.runId, 0, [
+        { kind: "step_entered", payload: { kind: "call", step: "a" }, cause: "test" },
+        { kind: "step_entered", payload: { kind: "call", step: "a2" }, cause: "test" },
+      ]);
+      const second = await s.log.startRun("other-flow", "task:t-1");
+      await s.log.append(second.runId, 0, [
+        { kind: "step_entered", payload: { kind: "call", step: "b" }, cause: "test" },
+      ]);
+      await s.log.append(second.runId, 1, [waitFact("wait:2")]);
+      const waiting = await sent.next();
+      // Equal time, start and last seq: the larger run id wins, whatever the order.
+      const expected = second.runId > first.runId ? "b" : "a2";
+      expect(waiting.meta.step).toBe(expected);
+    } finally {
+      await channel.close();
+      s.views.close();
+      await s.log.close();
+    }
+  });
+
   test("a wait turning on again with the state and flags of the last block sent sends nothing", async () => {
     const s = await setup();
     put(s, "task", "t-1", { title: "One", phase: "ready" });
