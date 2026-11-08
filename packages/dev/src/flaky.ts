@@ -248,23 +248,28 @@ async function newestOpenPlan(
   return best?.object;
 }
 
+/** The title of the task dev proposes for a test. */
+function titleFor(name: string): string {
+  return `Fix the flaky test: ${name.slice(0, MAX_TITLE_NAME)}`;
+}
+
 /**
- * Whether the text names the test: the whole name in quotes or backticks, as a
- * line of its own, after "Fix the flaky test: ", or, for a name of several
- * words, as plain text. A bare substring of a one-word name such as "works"
- * does not count, or it would match unrelated tasks.
+ * Whether an open task is the test's task: its title is exactly the title dev
+ * gives a flaky task, or a line of its brief, outside fenced code and quoted
+ * text, is exactly the full test name. A task dev proposed for the test is
+ * linked on the test's record, not found here. Nothing else counts, so a
+ * failure excerpt in another brief never links a test.
  */
-function namesTest(text: string, name: string): boolean {
-  if (text.trim() === name || text.endsWith(`: ${name}`)) return true;
-  if (text.split("\n").some((line) => line.trim() === name)) return true;
-  for (const quote of ["`", '"', "'"]) {
-    if (text.includes(`${quote}${name}${quote}`)) return true;
-  }
-  // A name of several words or a describe path is specific enough to name a
-  // test in plain text; a single word such as "works" is not.
-  if (/\s/.test(name)) {
-    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return new RegExp(`(?<![\\w])${escaped}(?![\\w])`).test(text);
+export function namesTest(title: string, brief: string, name: string): boolean {
+  if (title === titleFor(name)) return true;
+  let fenced = false;
+  for (const line of brief.replace(/\r\n/g, "\n").split("\n")) {
+    if (/^\s{0,3}(?:`{3,}|~{3,})/.test(line)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced || line.trimStart().startsWith(">")) continue;
+    if (line.trim() === name) return true;
   }
   return false;
 }
@@ -279,7 +284,7 @@ async function namingTask(
     return (
       task.repository === repository &&
       isOpenTask(task) &&
-      (namesTest(task.title, name) || namesTest(splitBrief(task.brief).body, name))
+      namesTest(task.title, splitBrief(task.brief).body, name)
     );
   });
 }
@@ -405,7 +410,7 @@ async function propose(
       {
         plan: plan.id,
         slug: slugOf(record.name),
-        title: `Fix the flaky test: ${record.name.slice(0, MAX_TITLE_NAME)}`,
+        title: titleFor(record.name),
         brief: flakyBrief(repository.path, record),
         area: packageOf(file),
       },

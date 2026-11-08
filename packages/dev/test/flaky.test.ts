@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { CommandContext } from "@operad-io/engine";
 import { commands } from "../src/commands.ts";
 import { recordRerunPasses } from "../src/reruns.ts";
-import { failureExcerpt, flakyTasksByName, flakyTestHooks, trackFlakyTests } from "../src/flaky.ts";
+import { failureExcerpt, flakyTasksByName, flakyTestHooks, namesTest, trackFlakyTests } from "../src/flaky.ts";
 import { appendChange, bareId, changeClock, listAll, repositoryData, taskData, type RepositoryData } from "../src/model.ts";
 import {
   addPlan,
@@ -131,11 +131,11 @@ describe("a flaky test proposes a task", () => {
 
   test("an open task that already names the test stops a proposal", async () => {
     const s = await setup(true);
-    await addTask(s.store, { plan: s.planId ?? "", slug: "mine", title: `Look at ${TEST}` });
+    await addTask(s.store, { plan: s.planId ?? "", slug: "mine", title: "Look at the shape", brief: `The flaky one:\n${TEST}\n` });
     await s.track("T-0001-a", logWith(TEST), 1);
     expect(await s.flaky()).toHaveLength(0);
     // The open task is the one that counts: reruns shows it, and its end restarts the count.
-    const mine = (await listAll(s.store, "task")).find((object) => taskData(object.data).title.startsWith("Look at"));
+    const mine = (await listAll(s.store, "task")).find((object) => taskData(object.data).title === "Look at the shape");
     expect((await flakyTasksByName(s.store)).get(TEST)).toBe(bareId(mine?.id ?? ""));
     await setTaskPhase(s.store, mine?.id ?? "", "merged");
     await s.track("T-0002-b", logWith(TEST), 2);
@@ -155,7 +155,7 @@ describe("a flaky test proposes a task", () => {
 
   test("an open task naming the test is linked on the first pass, so its end restarts the count", async () => {
     const s = await setup(true);
-    const mine = await addTask(s.store, { plan: s.planId ?? "", slug: "mine", title: `Look at ${TEST}` });
+    const mine = await addTask(s.store, { plan: s.planId ?? "", slug: "mine", title: "Look at the shape", brief: `The flaky one:\n${TEST}\n` });
     await s.track("T-0001-a", logWith(TEST), 2);
     expect((await flakyTasksByName(s.store)).get(TEST)).toBe(bareId(mine.id));
     await setTaskPhase(s.store, mine.id, "merged");
@@ -173,12 +173,33 @@ describe("a flaky test proposes a task", () => {
     expect((await flakyTasksByName(s.store)).get("works")).toMatch(/flaky-works/);
   });
 
-  test("a one-word name is named only quoted, a several-word name also in plain text", async () => {
+  test("which open task names a test", () => {
+    const cases: readonly (readonly [string, string, string, boolean])[] = [
+      ["its exact flaky title", `Fix the flaky test: ${TEST}`, "", true],
+      ["a title that only contains the name", `Look at ${TEST}`, "", false],
+      ["a title with a longer name after the prefix", `Fix the flaky test: ${TEST} again`, "", false],
+      ["a brief line that is exactly the name", "Other", `Intro\n  ${TEST}  \nEnd`, true],
+      ["a brief sentence that contains the name", "Other", `Please look at ${TEST} soon`, false],
+      ["the name in backticks", "Other", `The test \`${TEST}\` is slow`, false],
+      ["the name inside a fenced block", "Other", `\`\`\`\n${TEST}\n\`\`\``, false],
+      ["the name inside a quote", "Other", `> ${TEST}`, false],
+      ["the name's (fail) line in an excerpt", "Other", `\`\`\`\n(fail) ${TEST} [3.20ms]\n\`\`\``, false],
+      ["a one-word name in a sentence", "Make the retry works", "it works", false],
+    ];
+    for (const [label, title, brief, expected] of cases) {
+      const name = label === "a one-word name in a sentence" ? "works" : TEST;
+      expect([label, namesTest(title, brief, name)]).toEqual([label, expected]);
+    }
+  });
+
+  test("a brief that quotes another test's (fail) line does not link that test", async () => {
     const s = await setup(true);
-    await addTask(s.store, { plan: s.planId ?? "", slug: "quoted", title: 'Look at "solo"' });
-    await s.track("T-0001-a", logWith("solo"), 1, ["solo"]);
-    await s.track("T-0002-b", logWith("solo2"), 1, ["solo2"]);
-    expect((await s.flaky()).map((object) => taskData(object.data).title)).toEqual(["Fix the flaky test: solo2"]);
+    const log = [`${FILE}:`, "(fail) beta > two [2ms]", "some output", logWith("alpha > one")].join("\n");
+    await s.track("T-0001-a", log, 1, ["alpha > one", "beta > two"]);
+    const titles = (await s.flaky()).map((object) => taskData(object.data).title).sort();
+    expect(titles).toEqual(["Fix the flaky test: alpha > one", "Fix the flaky test: beta > two"]);
+    const tasks = await flakyTasksByName(s.store);
+    expect(tasks.get("alpha > one")).not.toBe(tasks.get("beta > two"));
   });
 
   test("secrets in a failure excerpt are masked in the record and the brief", async () => {
