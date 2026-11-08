@@ -275,3 +275,5 @@ the row fields.
 | T-0075-M4 | packages/dev/src/views.ts | a conflict attempt showed no result | `dev views > how an attempt ended: merged, verify failed, conflict, cancelled` |
 | T-0075-M5 | packages/dev/src/views.ts | the total row's cost kept only the last attempt's cost | `dev views > a review that waits for its reviewer is the running step, and the total sums every attempt's cost` |
 | T-0075-M6 | packages/dev/src/views.ts | a review with a pending run was reported as running integrate | `dev views > a review that waits for its reviewer is the running step, and the total sums every attempt's cost` |
+| T-0075-M7 | packages/dev/src/views.ts | an integrate in flight in phase waiting was not a running step | `dev views > an integrate in flight runs while the task waits, and a recorded failure is not a running step` |
+| T-0075-M8 | packages/dev/src/views.ts | an attempt whose verify, review or integrate already failed still counted as running | `dev views > an integrate in flight runs while the task waits, and a recorded failure is not a running step` |

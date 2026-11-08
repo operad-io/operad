@@ -648,9 +648,8 @@ function attemptResult(
 ): string {
   const last = entry.last;
   if (latest && phase === "cancelled") return "cancelled";
-  if (latest && (phase === "running" || phase === "review")) {
-    return `running ${runningStep(entry)}`;
-  }
+  const active = activeStep(entry, latest, phase);
+  if (active !== undefined) return `running ${active}`;
   const integration = last?.integration?.result;
   if (integration === "merged") return "merged";
   if (integration === "conflict") return "conflict";
@@ -664,6 +663,37 @@ function attemptResult(
   if (last?.verify?.result === "fail") return "verify failed";
   if (latest && phase === "merged") return "merged";
   return latest && phase === "waiting" ? "waiting" : "–";
+}
+
+/** Whether the attempt's record already says how it ended, so no step is running. */
+function hasEnded(last: TaskAttempt | undefined): boolean {
+  const integration = last?.integration?.result;
+  if (integration !== undefined && integration !== "pending") return true;
+  const review = last?.review?.result;
+  if (review !== undefined && review !== "pass" && review !== "passed") return true;
+  return last?.verify?.result === "fail";
+}
+
+/**
+ * The step the newest attempt is in, or undefined when it is not running. An
+ * integrate in flight runs while the task waits; any other step runs only in
+ * the running and review phases and only until a record says how it ended.
+ */
+function activeStep(
+  entry: AttemptMetrics,
+  latest: boolean,
+  phase: TaskData["phase"],
+): string | undefined {
+  if (!latest || phase === "cancelled" || phase === "merged") return undefined;
+  const last = entry.last;
+  if (
+    (last?.integrating !== undefined && last.integrating !== null) ||
+    last?.integration?.result === "pending"
+  ) {
+    return "integrate";
+  }
+  if (hasEnded(last)) return undefined;
+  return phase === "running" || phase === "review" ? runningStep(entry) : undefined;
 }
 
 /**
@@ -751,8 +781,9 @@ export async function metrics(
   );
   const phase = taskData(object.data).phase;
   const newest = entries[entries.length - 1]?.number;
-  const running = (entry: AttemptMetrics): boolean =>
-    entry.number === newest && (phase === "running" || phase === "review");
+  const activeOf = (entry: AttemptMetrics): string | undefined =>
+    activeStep(entry, entry.number === newest, phase);
+  const running = (entry: AttemptMetrics): boolean => activeOf(entry) !== undefined;
   const lines = ["| # | time | cost | result |", "| --- | --- | --- | --- |"];
   let totalMs = 0;
   let totalCost = 0;
@@ -776,7 +807,7 @@ export async function metrics(
     `| total | ${wallTime(totalMs)} | ${costed ? `$${totalCost.toFixed(2)}${quality}` : "–"} | |`,
   );
   const perAttempt = [...entries].reverse().map((entry) => {
-    const active = running(entry) ? runningStep(entry) : undefined;
+    const active = activeOf(entry);
     const parts = METRIC_STEPS.flatMap((step) => {
       const spent = entry.spent.get(step);
       if (step === active) {

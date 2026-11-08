@@ -480,6 +480,48 @@ describe("dev views", () => {
     expect(line).not.toContain("integrate");
   });
 
+  test("an integrate in flight runs while the task waits, and a recorded failure is not a running step", async () => {
+    const root = await tempRoot();
+    const repositoryPath = await makeGitRepository(root);
+    let clock = 0;
+    const store = new FilePluginStore({ root: join(root, "store"), clock: () => clock });
+    const repository = await addRepository(store, { path: repositoryPath });
+    const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
+    const stored = taskData((await getTask(store, task.id)).data);
+    const start = 1_000_000;
+    const put = async (at: number, cause: string, attempt: Record<string, unknown>, phase: string) => {
+      clock = at;
+      await store.put("task", task.id, { ...stored, phase, attempt }, cause);
+    };
+    const show = async (now: number) =>
+      (await metrics({ store } as never, await getTask(store, task.id), now)).split("\n");
+    await put(start - 1, "test:start", { number: 1 }, "running");
+    await put(start, "dev:worktree", { number: 1 }, "running");
+    await put(start + 10_000, "dev:review", { number: 1, review: { result: "passed" } }, "waiting");
+    // Integrating while the task still waits.
+    await put(start + 20_000, "dev:integrate", {
+      number: 1, review: { result: "passed" }, integrating: "run-1", integration: { result: "pending" },
+    }, "waiting");
+    let rows = await show(start + 50_000);
+    expect(rows[2]).toContain("| 1 | 50s … |");
+    expect(rows[2]).toContain("| running integrate |");
+    expect(rows[5]).toBe("**#1** worktree <1s · review 10s · integrate 40s (running)");
+    // Verify failed: phase review, nothing runs.
+    await put(start + 60_000, "dev:verify", { number: 1, verify: { result: "fail" } }, "review");
+    rows = await show(start + 90_000);
+    expect(rows[2]).toContain("| verify failed |");
+    expect(rows[5]).not.toContain("(running)");
+    // Review findings in phase review.
+    await put(start + 70_000, "dev:review", { number: 1, review: { result: "findings", findings: [{}] } }, "review");
+    expect((await show(start + 90_000))[2]).toContain("| review: 1 finding |");
+    // A conflict in phase running.
+    await put(start + 80_000, "dev:integrate", { number: 1, integration: { result: "conflict" } }, "running");
+    rows = await show(start + 90_000);
+    expect(rows[2]).toContain("| conflict |");
+    expect(rows[5]).not.toContain("(running)");
+  });
+
   test("how an attempt ended: merged, verify failed, conflict, cancelled", async () => {
     const { store, task } = await setup();
     const stored = taskData((await getTask(store, task.id)).data);
