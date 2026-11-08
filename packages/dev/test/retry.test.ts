@@ -452,6 +452,47 @@ describe("settings that cannot be read", () => {
   });
 });
 
+describe("settings that cannot be read, in the worktree step", () => {
+  test("a recovered worktree step waits for the settings, then runs again", async () => {
+    const clock = manualClock();
+    const w = await world(1);
+    const registry = registryOf(w, [createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
+    const key = w.tasks[0] as string;
+    const found = registry.flow("dev");
+    const steps = found?.flow.steps ?? [];
+    const next = (id: string): Readonly<Record<string, string>> => {
+      const step = steps.find((candidate) => candidate.id === id);
+      return step === undefined || step.kind === "end" ? {} : (step.next as Readonly<Record<string, string>>);
+    };
+    // The hold edge of the retry steps leads to a wait, never back to the retry itself.
+    for (const name of ["worktree", "reverify"]) {
+      expect(next(`retry_${name}`).hold).toBe(`retry_${name}_wait`);
+      expect(next(`retry_${name}_wait`).ready).toBe(`retry_${name}_after`);
+      expect(next(`retry_${name}_after`).again).toBe(name);
+    }
+    const object = { type: "task", id: key, data: {} };
+    const path = join(w.remote.repository, ".operad", "dev.json");
+    const valid = JSON.stringify({ name: "repository", worker: { use: "fake-harness/agent", args: [] } });
+    writeFileSync(path, "{ not json");
+    const hold = await registry.runStep(
+      "dev/retry",
+      { from: "worktree", result: "interrupted" },
+      { runId: "r4", object },
+    );
+    expect(hold.result).toBe("hold");
+    expect((await registry.runStep("dev/retry_due", {}, { runId: "r4", object })).result).toBe("waiting");
+    writeFileSync(path, valid);
+    expect((await registry.runStep("dev/retry_due", {}, { runId: "r4", object })).result).toBe("ready");
+    const after = await registry.runStep(
+      "dev/retry",
+      { from: "worktree", result: "waited" },
+      { runId: "r4", object },
+    );
+    expect(after.result).toBe("again");
+    clock.advance(1);
+  });
+});
+
 describe("a real process killed by a signal", () => {
   test("the work retries once by itself", async () => {
     const root = await tempRoot();
