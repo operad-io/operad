@@ -34,6 +34,7 @@ operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... 
 operad task edit <id>      # $EDITOR on the brief body; proposed or ready only
 operad task update <id> [--title <title>] [--after <task>]... [--area <area>]   # --area "" clears it
 operad start <task>        # start one ready task now, whatever its plan's auto level
+operad reruns              # how often each test passed only on its own rerun, most frequent first
 ```
 
 ### Where a command runs, and ids
@@ -322,7 +323,7 @@ The file holds the repository's work settings:
 | `worker.args` | `[]` | extra arguments for that harness step |
 | `worker.wallTimeSecs`, `worker.stallSecs` | harness defaults | the worker's time limits |
 | `workerBrief` | `.operad/worker-brief.md` | the brief a worker reads first; a missing file means the built-in text |
-| `gate.commands` | `[]` | the commands the verify step runs on the task commit |
+| `gate.commands` | `[]` | the commands the verify step runs on the task commit. A command is a string, or `{ "run": "…", "failed": { "match": "<regex, one capture group: the failed test's name>", "rerun": "<command with {name} (shell-quoted name) or {pattern} (shell-quoted anchored regex, \" > \" turned into a space as `bun test -t` matches)>", "max": 10 } }`: when `run` exits non-zero, the names found in its log are run again one by one (each taking a check place); the check passes when every rerun passes. No name, more than `max`, or a failing rerun fails it as before; a timeout is never rerun; `check.rerun` is not used for that command. The task's Changes say `passed on rerun: <test names>`, the check log holds each rerun under a heading, and `operad reruns` lists how often each test passed on a rerun, most frequent first |
 | `gate.commandTimeoutSecs` | `1800` | the longest one gate command may run |
 | `check.rerun` | `1` | how many times a failed gate or integration check runs again before it counts as failed; `0` turns it off; a timeout is never rerun. A pass on the rerun is a pass, noted in the task's Changes and the check log holds both runs |
 | `reviewer.use` | `harness-radian/agent` | the harness step that reviews the diff |
@@ -338,7 +339,7 @@ The file holds the repository's work settings:
 | `reviewer.maxDiffBytes` | `1000000` | the largest diff the review prompt may carry; counts the prompt's text, where a rename or a deleted file is one line |
 | `maxAutoRework` | `2` | how many automatic reworks in a row are allowed before waiting for a person |
 | `integration.style` | `merge` | `merge` lands a merge commit with `Merge work/<task id> (<short sha>)`; `squash` lands one squashed commit |
-| `integration.keyCommands` | `[]` | commands the integrate step runs on the candidate before the push; a failure sends the task back to the worker |
+| `integration.keyCommands` | `[]` | commands (strings or `{ run, failed }` as in `gate.commands`) the integrate step runs on the candidate before the push; a failure sends the task back to the worker |
 | `hooks.afterMerge` | removes both worktrees and both branches | commands cleanup runs after a merge, in the repository root, with `OPERAD_TASK`, `OPERAD_WORKTREE` and `OPERAD_REMOTE` set |
 
 ### Check places

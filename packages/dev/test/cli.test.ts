@@ -611,6 +611,13 @@ describe("operad with the dev plugin", () => {
     expect(acted.err).not.toContain("ambiguous");
   });
 
+  test("reruns: says so when nothing passed on a rerun yet", async () => {
+    const { home, repository } = await setup();
+    const shown = await run(home, repository, ["reruns"]);
+    expect(shown.code).toBe(0);
+    expect(shown.out).toContain("no test has passed on a rerun yet");
+  });
+
   test("outside every repository: the error says where, the qualified id and a unique bare id resolve, an ambiguous one lists both", async () => {
     const { root, home, repository } = await setup();
     const name = repository.split("/").pop() ?? "repository";

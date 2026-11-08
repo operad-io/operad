@@ -6,6 +6,7 @@ import type {
   StoredObject,
 } from "@operad-io/engine";
 import { DevError, bareId, briefBody, storeKey, taskData, type RepositoryData } from "./model.ts";
+import { listRerunCounts } from "./reruns.ts";
 import { readStdinText } from "./stdin.ts";
 import { editText } from "./editor.ts";
 import {
@@ -285,6 +286,16 @@ async function runStart(
   return `start requested for ${target.id}`;
 }
 
+async function runReruns(
+  ctx: CommandContext,
+  argv: readonly string[],
+): Promise<string> {
+  if (argv.length > 0) throw new DevError("reruns", "takes no arguments");
+  const counts = await listRerunCounts(ctx.store);
+  if (counts.length === 0) return "no test has passed on a rerun yet";
+  return counts.map((entry) => `${entry.count}\t${entry.name}`).join("\n");
+}
+
 export const commands: readonly CommandDefinition[] = [
   {
     name: "repo",
@@ -301,6 +312,11 @@ export const commands: readonly CommandDefinition[] = [
     args:
       "add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--repo <name>] | edit <id> [--repo <name>] | update <id> [--title <title>] [--after <task>]... [--area <area>] [--repo <name>]",
     run: runTask,
+  },
+  {
+    name: "reruns",
+    args: "",
+    run: runReruns,
   },
   {
     name: "start",
