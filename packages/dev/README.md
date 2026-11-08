@@ -124,6 +124,17 @@ remote's main contains the candidate instead of pushing again. Cleanup is also
 replay-safe; the default hooks remove both worktrees and the local and remote
 `work/<task id>` branch.
 
+A merge updates the main clone when it can. After the push, integrate
+fast-forwards the repository's own checkout (the one `operad serve` and every
+run execute) to the merged commit, but only when that checkout is on
+`<mainBranch>` and has no uncommitted changes to tracked files. Otherwise it
+leaves the checkout alone and says why in the step data (`mainClone`) and in
+the task's Changes ("main clone not updated: uncommitted changes"). It only
+fast-forwards through git: no reset, rebase or stash. When `bun.lock` changed
+in the merge it then runs `bun install --frozen-lockfile` there and reports the
+result the same way. A running serve keeps the code it loaded until it is
+restarted; new runs use the new code.
+
 A conflict leaves the worktree mid-merge. The next `dev/work` prompt starts by
 asking the worker to resolve it. A failed attempt names the uncommitted files.
 The task records its attempt count, phase, session id and cost while these steps

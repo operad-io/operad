@@ -21,7 +21,8 @@
     "@operad-io/harness-pi": "workspace:*",
     "@operad-io/harness-radian": "workspace:*",
     "@operad-io/source-cron": "workspace:*",
-    "@operad-io/harness-claude": "workspace:*"
+    "@operad-io/harness-claude": "workspace:*",
+    "@operad-io/pool": "workspace:*"
   },
   "overrides": {
     "@anthropic-ai/claude-agent-sdk-darwin-arm64": "npm:empty-npm-package@1.0.0",
