@@ -271,3 +271,10 @@ the row fields.
 | T-0065-M5 | packages/engine/src/platform/process-group.ts | the sweep signalled the group id after the sentinel was reaped, when an unrelated group could own it | `process groups > no signal goes to the group id once the sentinel is reaped` |
 | T-0065-M4 | packages/engine/src/platform/file-lock.ts | a lock takeover removed the lock file without checking, under the guard, that it was still the dead record | `the lock file > a newer live lock renamed during a takeover is put back` |
 | T-0065-M6 | packages/engine/src/platform/process-group.ts | the sweep ran although the first SIGKILL reported the group already gone, when an unrelated group could own the id | `process groups > a SIGKILL that finds no group starts no sweep` |
+
+## T-0064 — mcp.channel config
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0064-M8 | packages/engine/src/config/config.ts | an unknown mcp.channel.notify entry was accepted | `operad config > rejects a malformed mcp section and keeps it when written` |
+| T-0064-M6 | packages/engine/src/views/presentation.ts | the list row dropped the plugin's final flag | `the channel's sources > what the default sends > a plan-like object reaching its final state sends with reason ended` |

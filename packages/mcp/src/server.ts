@@ -428,6 +428,8 @@ export async function runMcpServer(
         registry: opened.registry,
         log: opened.log,
         hold: true,
+        notify: opened.mcp.channel.notify,
+        loopAfter: opened.mcp.channel.loopAfter,
         sentFile: join(
           home,
           `mcp-channel-${new Bun.CryptoHasher("sha1").update(opened.storeRoot).digest("hex").slice(0, 12)}.json`,

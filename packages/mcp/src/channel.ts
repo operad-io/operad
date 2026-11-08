@@ -13,7 +13,10 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
+  CHANNEL_NOTIFY_KINDS,
+  DEFAULT_MCP_CHANNEL,
   messageOf,
+  type ChannelNotifyKind,
   ViewError,
   type LogBackend,
   type ObjectRef,
@@ -34,7 +37,7 @@ export const CHANNEL_METHOD = "notifications/claude/channel";
 
 /** The paragraph the channel adds to the server's instructions. */
 export const CHANNEL_INSTRUCTIONS =
-  "Changes arrive as `<channel>` blocks, one per change, with the meta attributes `id`, `type`, `state`, `previous`, `waiting` and `running`, and `step` while the object has an active run. A block is sent when the state changes or something starts waiting for a person; a flag flipping alone sends nothing. They are one-way: there is no reply tool. Read the details with `show`, `section`, `pending` and `history`.";
+  "Events arrive as `<channel>` blocks with the meta attributes `id`, `type`, `state`, `previous`, `waiting`, `running` and `reason`, and `step` while the object has an active run. `reason` says why the block was sent: `waiting` (something now waits for a person; the content carries the reason when the object has one), `ended` (the object reached a final state) or `loop` (the object reached the same state several times in a row with no wait or end between, so it is going round in circles). Other state changes send nothing unless `mcp.channel.notify` in the operad config.json lists `changes`, which sends every state change with reason `changes`. They are one-way: there is no reply tool. Read the details with `show`, `section`, `pending` and `history`.";
 
 /** One notification's parameters: a one-line content and string meta. */
 export interface ChannelNotification {
@@ -46,9 +49,22 @@ export interface ChannelNotification {
     readonly previous: string;
     readonly waiting: string;
     readonly running: string;
+    /** Why the block was sent. */
+    readonly reason: ChannelReason;
     /** The active run's last step; absent when the object has no active run. */
     readonly step?: string;
   };
+}
+
+/** Why a block was sent; `changes` is only used when `notify` lists it. */
+export type ChannelReason = "waiting" | "ended" | "loop" | "changes";
+
+/** A `notify` entry that is not a kind of block. */
+export class ChannelNotifyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ChannelNotifyError";
+  }
 }
 
 /** A `--types` entry that is not an object type with views. */
@@ -73,6 +89,10 @@ export interface ChannelOptions {
   readonly hold?: boolean | undefined;
   /** The object types to report; the default is every type with views. */
   readonly types?: readonly string[] | undefined;
+  /** What to send a block for; the default is waits, ends and loops. */
+  readonly notify?: readonly ChannelNotifyKind[] | undefined;
+  /** How many arrivals at one state make a loop; the default is 3. */
+  readonly loopAfter?: number | undefined;
   /**
    * A JSON file that keeps the row each object's last delivered block reported,
    * so a restarted server does not send a block again. Without it the memory
@@ -96,6 +116,8 @@ interface SeenRow {
   readonly state: string;
   readonly waiting: boolean;
   readonly running: boolean;
+  /** The plugin marked the state final; not part of what was sent. */
+  readonly final: boolean;
 }
 
 /** Reads a run's object key, such as `task:42`. */
@@ -115,6 +137,7 @@ function seenRow(row: ViewRow): SeenRow {
     state: row.state,
     waiting: row.waiting,
     running: row.running,
+    final: row.final === true,
   };
 }
 
@@ -143,6 +166,7 @@ function notificationOf(
   row: ViewRow,
   previous: string,
   step: string | undefined,
+  reason: ChannelReason,
 ): ChannelNotification {
   return {
     content: contentOf(row, previous),
@@ -153,6 +177,7 @@ function notificationOf(
       previous: oneLine(previous),
       waiting: row.waiting ? "true" : "false",
       running: row.running ? "true" : "false",
+      reason,
       ...(step === undefined ? {} : { step: oneLine(step) }),
     },
   };
@@ -188,6 +213,16 @@ class ClaudeChannel implements ChannelHandle {
   private readonly sent = new Map<string, SeenRow>();
   /** Rows of blocks held for release, which count as sent for comparing. */
   private readonly pendingSent = new Map<string, SeenRow>();
+  private readonly notify: ReadonlySet<ChannelNotifyKind>;
+  private readonly loopAfter: number;
+  /**
+   * Per object: how often each state was reached since the last wait or end,
+   * and whether a loop block was already sent for that stretch.
+   */
+  private readonly visits = new Map<
+    string,
+    { counts: Map<string, number>; looped: boolean }
+  >();
   private readonly sentFile: string | undefined;
   private readonly log: LogBackend | undefined;
   /** Types whose starting rows could not be read: a first sighting is a baseline. */
@@ -218,6 +253,15 @@ class ClaudeChannel implements ChannelHandle {
               .filter((type) => this.registry.viewsFor(type) !== undefined),
           )
         : new Set(options.types);
+    for (const kind of options.notify ?? []) {
+      if (!CHANNEL_NOTIFY_KINDS.includes(kind)) {
+        throw new ChannelNotifyError(
+          `mcp channel notify: unknown entry "${String(kind)}"`,
+        );
+      }
+    }
+    this.notify = new Set(options.notify ?? DEFAULT_MCP_CHANNEL.notify);
+    this.loopAfter = options.loopAfter ?? DEFAULT_MCP_CHANNEL.loopAfter;
     this.log = options.log;
     this.sentFile = options.sentFile;
     this.held = options.hold === true ? [] : undefined;
@@ -305,6 +349,7 @@ class ClaudeChannel implements ChannelHandle {
             state: value.state,
             waiting: value.waiting,
             running: value.running,
+            final: false,
           });
         }
       }
@@ -339,6 +384,41 @@ class ClaudeChannel implements ChannelHandle {
       if (page.next === undefined) return;
       cursor = page.next;
     }
+  }
+
+  /**
+   * Counts the arrival at the row's state. A wait or an end starts a new
+   * stretch. Returns true once per stretch, when a state is reached
+   * `loopAfter` times.
+   */
+  private countVisit(
+    key: string,
+    row: SeenRow,
+    stateChanged: boolean,
+    reset: boolean,
+  ): boolean {
+    if (reset) {
+      const fresh = {
+        counts: new Map<string, number>(),
+        looped: false,
+      };
+      if (!row.final && stateChanged) fresh.counts.set(row.state, 1);
+      this.visits.set(key, fresh);
+      return false;
+    }
+    let entry = this.visits.get(key);
+    if (entry === undefined) {
+      entry = { counts: new Map(), looped: false };
+      this.visits.set(key, entry);
+    }
+    if (!stateChanged) return false;
+    const count = (entry.counts.get(row.state) ?? 0) + 1;
+    entry.counts.set(row.state, count);
+    if (count >= this.loopAfter && !entry.looped) {
+      entry.looped = true;
+      return true;
+    }
+    return false;
   }
 
   private enqueue(object: ObjectRef): void {
@@ -410,6 +490,7 @@ class ClaudeChannel implements ChannelHandle {
         // A deleted object: forget it, so a new one with the same id is new.
         this.last.delete(rowKey(object.type, object.id));
         this.pendingSent.delete(rowKey(object.type, object.id));
+        this.visits.delete(rowKey(object.type, object.id));
         if (this.sent.delete(rowKey(object.type, object.id))) {
           await this.saveSent();
         }
@@ -426,18 +507,34 @@ class ClaudeChannel implements ChannelHandle {
     const previous = this.last.get(key);
     this.last.set(key, next);
     if (previous === undefined && this.unseeded.has(object.type)) return;
-    if (previous !== undefined) {
-      const stateChanged = previous.state !== next.state;
-      const waitingOn = next.waiting && !previous.waiting;
-      if (!stateChanged && !waitingOn) return;
-    }
+    const stateChanged = previous === undefined || previous.state !== next.state;
+    const waitingOn = next.waiting && previous?.waiting !== true;
+    const ended = next.final && previous?.final !== true;
+    const looped = this.countVisit(key, next, stateChanged, waitingOn || ended);
+    // What happened, in order of weight; a kind that is not listed sends only
+    // when `changes` is, which sends every state change and wait.
+    const kind: ChannelReason | undefined = ended
+      ? "ended"
+      : waitingOn
+        ? "waiting"
+        : looped
+          ? "loop"
+          : undefined;
+    const every = this.notify.has("changes") && (stateChanged || waitingOn);
+    if (kind === undefined && !every) return;
+    const reason: ChannelReason = kind ?? "changes";
+    if (kind !== undefined && !this.notify.has(kind) && !every) return;
     const lastSent = this.pendingSent.get(key) ?? this.sent.get(key);
-    if (lastSent !== undefined && sameRow(lastSent, next)) return;
+    // A loop is counted in memory, so it is never a repeat of a sent row.
+    if (reason !== "loop" && lastSent !== undefined && sameRow(lastSent, next)) {
+      return;
+    }
     const notification = notificationOf(
       object.type,
       row,
       previous?.state ?? "new",
       await this.stepOf(object),
+      reason,
     );
     const entry: Held = { notification, key, row: next };
     if (this.held !== undefined) {

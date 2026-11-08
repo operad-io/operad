@@ -119,6 +119,36 @@
       "description": "What the MCP server may write for a lead. The owner's decisions are not in this list unless it names them.",
       "type": "object",
       "properties": {
+        "channel": {
+          "description": "When the MCP channel (operad mcp --claude-channel) sends a block. Takes effect at the next operad mcp start.",
+          "type": "object",
+          "properties": {
+            "notify": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "waiting",
+                  "ended",
+                  "loop",
+                  "changes"
+                ]
+              },
+              "default": [
+                "waiting",
+                "ended",
+                "loop"
+              ],
+              "description": "waiting: a wait opens. ended: the object reaches a final state. loop: the same state is reached loopAfter times with no wait or end between. changes: every state change."
+            },
+            "loopAfter": {
+              "type": "integer",
+              "minimum": 2,
+              "default": 3,
+              "description": "How many times an object reaches the same state before a loop block is sent."
+            }
+          },
+          "additionalProperties": false
+        },
         "actions": {
           "type": "array",
           "items": {

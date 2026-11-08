@@ -16,6 +16,7 @@ export default definePlugin({
           title: String(object.data.title ?? ""),
           state: String(object.data.phase ?? "new"),
           ...(typeof note === "string" ? { note } : {}),
+          final: object.data.phase === "merged",
         };
       },
       sections() {
@@ -31,6 +32,7 @@ export default definePlugin({
           id: object.id,
           title: String(object.data.title ?? ""),
           state: String(object.data.state ?? "new"),
+          final: object.data.state === "finished",
         };
       },
       sections() {

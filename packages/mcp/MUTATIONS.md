@@ -44,3 +44,13 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0068-M1 | packages/mcp/src/tools.ts | the running tool did not pass the views, so no title was found | `operad mcp > initializes, lists the table and reads every tool on fixture objects` |
+
+## T-0064 — the channel sends waits, ends and loops
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0064-M1 | packages/mcp/src/channel.ts | an end was never recognised from the row's final flag | `the channel's sources > what the default sends > a start and a check starting send nothing; a wait opening and an end send with their reason`, `the channel's sources > what the default sends > a plan-like object reaching its final state sends with reason ended` |
+| T-0064-M2 | packages/mcp/src/channel.ts | the loop block was sent again on each later arrival | `the channel's sources > what the default sends > three returns to one state without a wait send one loop block, not three` |
+| T-0064-M3 | packages/mcp/src/channel.ts | a wait did not start the loop count again | `the channel's sources > what the default sends > a wait between the returns starts the count again` |
+| T-0064-M4 | packages/mcp/src/channel.ts | the default notify list was `changes` instead of waiting, ended and loop | `the channel's sources > what the default sends > a start and a check starting send nothing; a wait opening and an end send with their reason` |
+| T-0064-M5 | packages/mcp/src/channel.ts | an unknown notify entry was accepted | `the channel's sources > what the default sends > an unknown notify entry is refused with its name` |

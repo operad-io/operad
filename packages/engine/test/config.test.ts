@@ -305,13 +305,31 @@ describe("operad config", () => {
       }),
     );
     expect((await readConfig(home)).mcp).toEqual({
+      channel: { notify: ["waiting", "ended", "loop"], loopAfter: 3 },
       actions: ["dev:merge", "demo:approve"],
       confirmActions: ["dev:merge"],
     });
     await Bun.write(join(home, "config.json"), JSON.stringify({ mcp: {} }));
     expect((await readConfig(home)).mcp).toEqual({
+      channel: { notify: ["waiting", "ended", "loop"], loopAfter: 3 },
       actions: [...DEFAULT_MCP.actions],
       confirmActions: [],
+    });
+  });
+
+  test("reads mcp.channel and keeps it when written", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    await Bun.write(
+      join(home, "config.json"),
+      JSON.stringify({ mcp: { channel: { notify: ["changes"], loopAfter: 5 } } }),
+    );
+    const config = await readConfig(home);
+    expect(config.mcp.channel).toEqual({ notify: ["changes"], loopAfter: 5 });
+    await writeConfig(home, config);
+    expect((await readConfig(home)).mcp.channel).toEqual({
+      notify: ["changes"],
+      loopAfter: 5,
     });
   });
 
@@ -323,6 +341,10 @@ describe("operad config", () => {
       [{ actions: ["dev:merge", 3] }, /mcp.actions/],
       [{ confirmActions: [""] }, /mcp.confirmActions/],
       ["all", /mcp: must be an object/],
+      [{ channel: { notify: ["waiting", "bogus"] } }, /mcp.channel.notify.*"bogus"/],
+      [{ channel: { notify: "waiting" } }, /mcp.channel.notify/],
+      [{ channel: { loopAfter: 1 } }, /mcp.channel.loopAfter/],
+      [{ channel: [] }, /mcp.channel: must be an object/],
     ] as const) {
       await Bun.write(join(home, "config.json"), JSON.stringify({ mcp }));
       await expect(readConfig(home)).rejects.toThrow(pattern);
@@ -335,6 +357,7 @@ describe("operad config", () => {
     const config = await readConfig(home);
     await writeConfig(home, config);
     expect((await readConfig(home)).mcp).toEqual({
+      channel: { notify: ["waiting", "ended", "loop"], loopAfter: 3 },
       actions: ["dev:merge"],
       confirmActions: ["dev:merge"],
     });

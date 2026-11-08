@@ -63,6 +63,8 @@ export interface ViewRow {
   readonly note?: string | undefined;
   /** The namespace the id lives in; set only when the list shows it. */
   readonly scope?: string | undefined;
+  /** The row's state is final for its type; absent when the plugin did not say. */
+  readonly final?: boolean | undefined;
   /** A person wait is open on this object. */
   readonly waiting: boolean;
   /** The object's run is working. */
@@ -1326,6 +1328,7 @@ export class Views {
       state,
       ...(note === undefined ? {} : { note }),
       ...(scope === undefined ? {} : { scope }),
+      ...(outcome.final === true ? { final: true } : {}),
       waiting: false,
       running: false,
     };

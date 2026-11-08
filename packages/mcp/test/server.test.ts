@@ -860,7 +860,10 @@ describe("operad mcp", () => {
 
 describe("operad mcp --claude-channel", () => {
   test("reports a phase change with its meta and stays silent for the rest", async () => {
-    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    const { home } = await makeHome({
+      plugins: [channelPluginPath],
+      mcp: { channel: { notify: ["changes"] } },
+    });
     putObject(home, "task", "T-0001-one", {
       title: "First",
       phase: "ready",
@@ -912,6 +915,7 @@ describe("operad mcp --claude-channel", () => {
             previous: "ready",
             waiting: "true",
             running: "false",
+            reason: "waiting",
           },
         },
       });
@@ -937,6 +941,7 @@ describe("operad mcp --claude-channel", () => {
             previous: "ready",
             waiting: "true",
             running: "false",
+            reason: "changes",
           },
         },
       });
@@ -947,7 +952,10 @@ describe("operad mcp --claude-channel", () => {
   });
 
   test("--types limits the channel to the named object types", async () => {
-    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    const { home } = await makeHome({
+      plugins: [channelPluginPath],
+      mcp: { channel: { notify: ["changes"] } },
+    });
     putObject(home, "task", "T-0001-one", {
       title: "First",
       phase: "ready",
@@ -986,6 +994,7 @@ describe("operad mcp --claude-channel", () => {
             previous: "open",
             waiting: "false",
             running: "false",
+            reason: "changes",
           },
         },
       });
@@ -996,7 +1005,10 @@ describe("operad mcp --claude-channel", () => {
   });
 
   test("without the flag there is no capability and no notification", async () => {
-    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    const { home } = await makeHome({
+      plugins: [channelPluginPath],
+      mcp: { channel: { notify: ["changes"] } },
+    });
     putObject(home, "task", "T-0001-one", {
       title: "First",
       phase: "ready",
@@ -1025,7 +1037,10 @@ describe("operad mcp --claude-channel", () => {
   });
 
   test("a flipped running flag alone is not reported", async () => {
-    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    const { home } = await makeHome({
+      plugins: [channelPluginPath],
+      mcp: { channel: { notify: ["changes"] } },
+    });
     putObject(home, "task", "T-0001-one", { title: "First", phase: "ready" });
     const child = start(home, home, ["--claude-channel"]);
     try {
@@ -1051,7 +1066,10 @@ describe("operad mcp --claude-channel", () => {
   });
 
   test("nothing is written before notifications/initialized arrives", async () => {
-    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    const { home } = await makeHome({
+      plugins: [channelPluginPath],
+      mcp: { channel: { notify: ["changes"] } },
+    });
     putObject(home, "task", "T-0001-one", { title: "First", phase: "ready" });
     const child = start(home, home, ["--claude-channel"]);
     try {
@@ -1075,7 +1093,10 @@ describe("operad mcp --claude-channel", () => {
   });
 
   test("a new object reports new -> state, and a --types list names several types", async () => {
-    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    const { home } = await makeHome({
+      plugins: [channelPluginPath],
+      mcp: { channel: { notify: ["changes"] } },
+    });
     putObject(home, "task", "T-0001-one", { title: "First", phase: "ready" });
     const child = start(home, home, [
       "--claude-channel",
@@ -1105,7 +1126,10 @@ describe("operad mcp --claude-channel", () => {
   });
 
   test("--types names an unknown type, and a missing value, as a usage error", async () => {
-    const { home } = await makeHome({ plugins: [channelPluginPath] });
+    const { home } = await makeHome({
+      plugins: [channelPluginPath],
+      mcp: { channel: { notify: ["changes"] } },
+    });
     for (const [args, message] of [
       [["--claude-channel", "--types", "task,ghost"], '"ghost"'],
       [["--claude-channel", "--types"], "--types needs"],
