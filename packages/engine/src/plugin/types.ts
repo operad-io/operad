@@ -547,6 +547,11 @@ export interface StepTypeDefinition {
    */
   readonly grants?: boolean | undefined;
   readonly results: readonly string[];
+  /**
+   * The steps this one calls through `ctx.runStep`, as `plugin/step`. A run
+   * does not start when one of them is not loaded.
+   */
+  readonly calls?: readonly string[] | undefined;
   /** Access profile fields this step applies, such as `denyPaths`. */
   readonly enforces?: readonly string[] | undefined;
   /**

@@ -7,11 +7,15 @@ import type { Views, ViewRow } from "./presentation.ts";
 import type { PendingActionView } from "../plugin/types.ts";
 import { answerableAsks, scanAsks } from "../runner/ask.ts";
 import { parseObjectKey, readState } from "../runner/service.ts";
-import type { TriggerCandidate } from "../trigger/types.ts";
+import type { RefusedStart, TriggerCandidate } from "../trigger/types.ts";
 
 /** Where the pending view gets candidates the kernel derived from the log. */
 export interface CandidateSource {
   candidates(): Promise<readonly TriggerCandidate[]> | readonly TriggerCandidate[];
+  /** Events whose start is refused for now, each with the reason. */
+  refusedStarts?():
+    | Promise<readonly RefusedStart[]>
+    | readonly RefusedStart[];
 }
 
 export interface PendingItem {
@@ -22,7 +26,7 @@ export interface PendingItem {
   readonly prompt: string;
   readonly choices: readonly string[];
   readonly actions: readonly PendingActionView[];
-  readonly kind?: "run" | "candidate" | "standing";
+  readonly kind?: "run" | "candidate" | "refused" | "standing";
   readonly pendingId?: string;
   /** The object the run is about, as `<type>:<id>`; absent for a candidate. */
   readonly object?: string;
@@ -97,6 +101,19 @@ export async function listPending(
       ],
       kind: "candidate",
       pendingId: candidate.pendingId,
+    });
+  }
+
+  for (const refused of (await triggers?.refusedStarts?.()) ?? []) {
+    items.push({
+      runId: refused.inputId,
+      flow: refused.flow,
+      step: null,
+      prompt: refused.reason,
+      choices: [],
+      actions: [],
+      kind: "refused",
+      pendingId: refused.inputId,
     });
   }
 

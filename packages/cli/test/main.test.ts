@@ -31,6 +31,12 @@ const notesPath = fileURLToPath(
   new URL("../../engine/test/fixtures/plugins/notes.ts", import.meta.url),
 );
 
+const poolPluginPath = fileURLToPath(
+  new URL("../../pool/src/index.ts", import.meta.url),
+);
+const shellPluginPath = fileURLToPath(
+  new URL("../../shell/src/index.ts", import.meta.url),
+);
 const devPluginPath = fileURLToPath(
   new URL("../../dev/src/index.ts", import.meta.url),
 );
@@ -282,6 +288,30 @@ describe("operad command", () => {
     expect(await main(["flows"], { home, io: output.io })).toBe(0);
     expect(output.text()).toContain("crash  test");
     expect(output.text()).toContain(pluginPath);
+  });
+
+  test("flows shows a flow that cannot start, and why, on its line", async () => {
+    const { home } = await makeNamedHome({
+      dev: { module: devPluginPath },
+      pool: { module: poolPluginPath, enabled: false },
+      shell: { module: shellPluginPath },
+    });
+    const output = capture();
+    expect(await main(["flows"], { home, io: output.io })).toBe(0);
+    const line = output.text().split("\n").find((item) => item.startsWith("dev  "));
+    expect(line).toContain(
+      'cannot start: needs "pool/agent" from plugin pool, which is disabled (operad plugin enable pool)',
+    );
+
+    const json = capture();
+    expect(await main(["flows", "--json"], { home, io: json.io })).toBe(0);
+    expect(json.text()).toContain('"startable": false');
+
+    const enabled = capture();
+    expect(await main(["plugin", "enable", "pool"], { home, io: enabled.io })).toBe(0);
+    const again = capture();
+    expect(await main(["flows"], { home, io: again.io })).toBe(0);
+    expect(again.text()).not.toContain("cannot start");
   });
 
   test("pending, running and history answer in user words", async () => {

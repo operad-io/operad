@@ -120,6 +120,14 @@ export interface TriggerCandidate {
   readonly at: number;
 }
 
+/** An event routed to a flow that cannot start yet, and why. */
+export interface RefusedStart {
+  readonly inputId: string;
+  readonly flow: string;
+  readonly object: string;
+  readonly reason: string;
+}
+
 /** An event a step sends; the kernel adds the source, run scope and hops. */
 export interface StepEvent {
   readonly type: string;
