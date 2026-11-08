@@ -19,6 +19,11 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { runCheckWithRerun } from "./rerun.ts";
 import {
+  ReviewGradingError,
+  readReviewGrading,
+  type Grading,
+} from "@operad-io/review-grading";
+import {
   messageOf,
   type PluginStepResult,
   type StepContext,
@@ -26,6 +31,7 @@ import {
 } from "@operad-io/engine";
 import {
   appendRework,
+  DevError,
   isRecord,
   type PendingReviewRun,
   type ReviewFinding,
@@ -740,18 +746,72 @@ function parseReport(text: string): Report | undefined {
   };
 }
 
+/** The flow whose grading the review reads; the dev plugin has one. */
+const REVIEW_FLOW = "dev";
+
+/**
+ * The repository's grading for this flow. An invalid review.json fails the
+ * step the way an invalid dev.json does.
+ */
+function gradingOf(context: TaskContext): Grading {
+  try {
+    return readReviewGrading(context.repository.path, REVIEW_FLOW);
+  } catch (error) {
+    if (error instanceof ReviewGradingError) {
+      throw new DevError(
+        "review.json",
+        error.message.slice("review.json: ".length),
+      );
+    }
+    throw error;
+  }
+}
+
+/** The context with review.json's fixLevel, when set, over dev.json's. */
+function gradedContext(context: TaskContext): {
+  readonly context: TaskContext;
+  readonly grading: Grading;
+} {
+  const grading = gradingOf(context);
+  if (grading.fixLevel === undefined) return { context, grading };
+  return {
+    grading,
+    context: {
+      ...context,
+      settings: {
+        ...context.settings,
+        reviewer: { ...context.settings.reviewer, fixLevel: grading.fixLevel },
+      },
+    },
+  };
+}
+
+/** The "## Grading" section's lines: the levels and rules, verbatim. */
+function gradingLines(grading: Grading): string[] {
+  const lines: string[] = [];
+  for (const level of ["critical", "major", "minor"] as const) {
+    const text = grading.levels?.[level];
+    if (text !== undefined) lines.push(`- ${level}: ${text}`);
+  }
+  for (const rule of grading.rules ?? []) lines.push(`- ${rule}`);
+  return lines;
+}
+
 function reviewPrompt(
   task: TaskData,
   sha: string,
   base: string,
   prepared: PreparedDiff,
   resultPath: string,
+  grading: Grading,
 ): string {
   const pieces: string[] = [
     `Review the changes of task ${task.title}.`,
     "## Brief",
     briefText(task).trim(),
   ];
+  const graded = gradingLines(grading);
+  if (graded.length > 0) pieces.push("## Grading", graded.join("\n"));
   if (prepared.included.length === 0) {
     pieces.push("## Diff", "The change has no diff to review.");
   } else {
@@ -1265,7 +1325,7 @@ export const reviewTestHooks: {
 export async function runReview(
   ctx: StepContext,
 ): Promise<PluginStepResult> {
-  const context = await taskContext(ctx);
+  const { context, grading } = gradedContext(await taskContext(ctx));
   if (!claimAllows(ctx, context.task)) return cancelledStep();
   const task = context.task;
   const attempt = attemptOf(ctx, task);
@@ -1506,7 +1566,7 @@ export async function runReview(
     reviewDir,
     `${context.taskId}-attempt-${attempt.number}-review-${round}.json`,
   );
-  const prompt = reviewPrompt(task, sha, base, prepared, resultPath);
+  const prompt = reviewPrompt(task, sha, base, prepared, resultPath, grading);
   // Keep the prompt for a person to read without putting its bytes in a fact.
   const promptPath = join(
     reviewDir,
@@ -2016,7 +2076,7 @@ export async function runRework(
 
   if (source === "review") {
     const review = attempt?.review;
-    const level = context.settings.reviewer.fixLevel;
+    const level = gradedContext(context).context.settings.reviewer.fixLevel;
     const findings = (review?.findings ?? []).filter(
       (finding) =>
         finding.preExisting !== true &&

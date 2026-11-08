@@ -246,6 +246,30 @@ timeout waits for a person with the note `review timed out twice`. Neither an
 unavailable reviewer nor a timeout counts toward `maxAutoRework`: only a review
 that returns findings at or above `reviewer.fixLevel` does.
 
+### Grading: `.operad/review.json`
+
+What critical, major and minor mean is a project setting, not text in the
+plugin. A repository may keep `.operad/review.json` (schema:
+`packages/review-grading/review.schema.json`; the reader is the
+`@operad-io/review-grading` package, whose README describes every field):
+
+```json
+{ "flows": { "dev": { "levels": { "critical": "…", "major": "…", "minor": "…" },
+                      "rules": ["…"], "fixLevel": "major" } },
+  "default": { "…": "…" } }
+```
+
+The review prompt gets a `## Grading` section with the `dev` flow's levels and
+rules, word for word; `dev` adds no grading words of its own, and a repository
+with no file gets no section. An entry for the flow falls back field by field
+to `default`.
+
+`fixLevel` in `review.json`, when set, wins over `reviewer.fixLevel` in
+`dev.json`, for the review and for the rework that follows it. `reviewer.fixLevel`
+keeps working when `review.json` sets none. An invalid `review.json` fails the
+review step with a message naming `review.json` and what is wrong, as an invalid
+`dev.json` does.
+
 The task's history names the model that reviewed each round and why a fallback
 or a retry happened.
 
