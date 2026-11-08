@@ -323,6 +323,52 @@ export interface GroupStopOptions {
   readonly readySeen: () => boolean;
   /** Settles when the sentinel announces `ready`. */
   readonly ready: Promise<void>;
+  /**
+   * True while any process is left in the group. The default asks the kernel
+   * with signal 0; a test replaces it. Not routed through `killGroup`, so a
+   * test that records signals sees only the TERM and KILL that were sent.
+   */
+  readonly groupExists?: ((pgid: number) => boolean) | undefined;
+  /** Waits a moment, in real time, between two sweeps of the group. Blocks. */
+  readonly pause?: (() => void) | undefined;
+}
+
+/** How often the last SIGKILL is repeated for a straggler, and the wait between. */
+export const SWEEP_ATTEMPTS = 50;
+export const SWEEP_PAUSE_MS = 1;
+
+/**
+ * Repeats SIGKILL while the group still has a member. A signal to a group
+ * reaches the processes that exist when it is delivered: a shell that forks at
+ * that instant leaves a child the signal missed, which then holds the line's
+ * output open for as long as it runs (a `sleep 30` outlived a cancelled line
+ * and the run waited for it).
+ *
+ * The group id is safe to signal only while its leader still owns it. The
+ * killed leader stays a zombie until the event loop reaps it, so the whole
+ * sweep is one synchronous step, with no yield: no exit event is handled
+ * inside it, the id cannot have been freed and reused, and every signal goes
+ * to the line's own group. The check below covers a leader reaped earlier.
+ */
+function sweep(pgid: number, options: GroupStopOptions): void {
+  const exists = options.groupExists ?? groupExists;
+  const pause = options.pause ?? sleepSync;
+  for (let attempt = 0; attempt < SWEEP_ATTEMPTS; attempt += 1) {
+    // A kill of the group can take a moment to show; look after a pause.
+    pause();
+    if (options.sentinelExited() || !exists(pgid)) return;
+    options.killGroup(pgid, "SIGKILL");
+  }
+}
+
+/** Blocks the thread for one sweep pause. */
+function sleepSync(): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, SWEEP_PAUSE_MS);
+}
+
+/** True while the kernel still has a process in the group. */
+function groupExists(pgid: number): boolean {
+  return killProcessGroup(pgid, 0);
 }
 
 /**
@@ -352,7 +398,7 @@ export function createGroupStop(options: GroupStopOptions): () => Promise<void> 
       if (!ready) {
         // The sentinel never announced its trap. There is no safe delay: one
         // immediate SIGKILL while our leader is still alive is the only signal.
-        options.killGroup(pid, "SIGKILL");
+        if (options.killGroup(pid, "SIGKILL")) sweep(pid, options);
         return;
       }
       if (!options.killGroup(pid, "SIGTERM")) return;
@@ -360,7 +406,9 @@ export function createGroupStop(options: GroupStopOptions): () => Promise<void> 
       // The sentinel ignores SIGTERM, so its group id is still this command's
       // unless it exited, in which case nothing is signaled at all.
       if (options.sentinelExited()) return;
-      options.killGroup(pid, "SIGKILL");
+      // A SIGKILL that found no group means the leader is gone and the id may
+      // already be someone else's: sweeping then would signal a stranger.
+      if (options.killGroup(pid, "SIGKILL")) sweep(pid, options);
     })();
     return stopping;
   };

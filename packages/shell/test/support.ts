@@ -1,7 +1,7 @@
-import { existsSync, readFileSync, watch } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import type { Clock } from "@operad-io/engine/platform";
+import { basename, dirname, join } from "node:path";
+import { waitForChange, type Clock } from "@operad-io/engine/platform";
 
 const roots: string[] = [];
 
@@ -20,24 +20,18 @@ export async function cleanupTempRoots(): Promise<void> {
   }
 }
 
-/** Resolves when the file exists, without asking repeatedly: watches the directory. */
-export function waitForFile(path: string): Promise<void> {
-  if (existsSync(path)) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const watcher = watch(dirname(path), () => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      resolve();
-    });
-    watcher.on("error", (error) => {
-      watcher.close();
-      reject(error);
-    });
-    if (existsSync(path)) {
-      watcher.close();
-      resolve();
-    }
-  });
+/**
+ * How long a wait for a file sleeps between two looks when no directory event
+ * comes. A directory watch can miss a file made while it was starting, so the
+ * wait never relies on the event alone (see `waitForChange`).
+ */
+const LOOK_MS = 100;
+
+/** Resolves when the file exists. Event first; a look every `LOOK_MS` besides. */
+export async function waitForFile(path: string): Promise<void> {
+  while (!existsSync(path)) {
+    await waitForChange(dirname(path), basename(path), LOOK_MS);
+  }
 }
 
 /** True for a pid a test may signal: a finite integer above 1 (never 0, 1 or a group). */
@@ -49,34 +43,16 @@ export function signalable(pid: number | undefined): pid is number {
  * Resolves with the pid a shell wrote to `path`, once the file holds one. The
  * file exists, empty, before the shell writes to it, so existence is not enough.
  */
-export function waitForPid(path: string): Promise<number> {
-  const read = (): number | undefined => {
+export async function waitForPid(path: string): Promise<number> {
+  for (;;) {
     try {
       const pid = Number(readFileSync(path, "utf8").trim());
-      return signalable(pid) ? pid : undefined;
+      if (signalable(pid)) return pid;
     } catch {
-      return undefined;
+      // Not there yet.
     }
-  };
-  const first = read();
-  if (first !== undefined) return Promise.resolve(first);
-  return new Promise((resolve, reject) => {
-    const watcher = watch(dirname(path), () => {
-      const pid = read();
-      if (pid === undefined) return;
-      watcher.close();
-      resolve(pid);
-    });
-    watcher.on("error", (error) => {
-      watcher.close();
-      reject(error);
-    });
-    const again = read();
-    if (again !== undefined) {
-      watcher.close();
-      resolve(again);
-    }
-  });
+    await waitForChange(dirname(path), basename(path), LOOK_MS);
+  }
 }
 
 export interface ManualClock extends Clock {
