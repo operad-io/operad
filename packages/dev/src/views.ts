@@ -22,6 +22,7 @@ import {
   type TaskAttempt,
   type TaskData,
 } from "./model.ts";
+import { planMark, taskBadge, taskMark } from "./marks.ts";
 import { git, workBranch } from "./steps.ts";
 import { findRepository, listRepositories } from "./service.ts";
 import { readDevSettings } from "./settings.ts";
@@ -88,6 +89,7 @@ export const planViews: ObjectViews = {
       state: planState(plan),
       note: `${planNote(plan)}  auto: ${plan.auto}  ${plan.priority}  concurrency: ${plan.concurrency}`,
       scope: plan.repository,
+      mark: planMark(plan),
     };
   },
 
@@ -142,6 +144,8 @@ export const taskViews: ObjectViews = {
       state: task.phase,
       ...(note === undefined ? {} : { note }),
       scope: task.repository,
+      mark: taskMark(task),
+      badge: taskBadge(task),
     };
   },
 
