@@ -57,16 +57,30 @@ export type WorkerLine =
   | {
       readonly type: "message_end";
       readonly role: "assistant";
+      /** The first 300 characters of the message's text, one paragraph; absent when it has none. */
+      readonly text?: string;
       readonly stopReason: string;
       readonly usage: Required<WorkerUsage>;
       readonly cost: { readonly total: number } | null;
     }
-  | { readonly type: "tool_execution_start"; readonly toolCallId: string; readonly toolName: string }
+  | {
+      readonly type: "tool_execution_start";
+      readonly toolCallId: string;
+      readonly toolName: string;
+      /** When the call started, in epoch milliseconds. */
+      readonly at: number;
+      /** What ran: the command (500 characters), the path, or the main argument; absent when there is none. */
+      readonly input?: string;
+    }
   | {
       readonly type: "tool_execution_end";
       readonly toolCallId: string;
       readonly toolName: string;
       readonly isError: boolean;
+      /** How long the call took. */
+      readonly durationMs: number;
+      /** The first line of the error, when the call failed. */
+      readonly error?: string;
     }
   | { readonly type: "blocked"; readonly toolName: string; readonly reason: string }
   /**

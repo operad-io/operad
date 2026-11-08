@@ -14,7 +14,13 @@ import {
   type Options,
   type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { readProfile, type AccessProfile } from "@operad-io/access-match";
+import {
+  firstErrorLine,
+  messageSummary,
+  readProfile,
+  summarizeCall,
+  type AccessProfile,
+} from "@operad-io/access-match";
 import { decideAccess } from "./access.ts";
 import { findClaude } from "./claude-install.ts";
 import {
@@ -77,6 +83,8 @@ export interface WorkerIo {
 export interface WorkerHooks {
   /** Replaces the process the SDK starts; the tests use it for a fake `claude`. */
   spawnClaudeCodeProcess?: Options["spawnClaudeCodeProcess"];
+  /** The clock for tool call times, in epoch milliseconds; the tests inject one. */
+  now?: () => number;
 }
 
 function failure(reason: FailureReason, message: string): WorkerResult {
@@ -141,34 +149,53 @@ export async function runWorker(
   if (cancelled) controller.abort();
   cancel.addEventListener("abort", onCancel, { once: true });
 
+  // The profile was checked when the input was read; a bad one never gets here.
+  const read = readProfile(input.access ?? {});
+  const profile: AccessProfile = read.ok ? read.profile : {};
+  const now = hooks.now ?? Date.now;
+
   // Tool calls that have started and not ended; a refused call ends here too,
   // so the host never sees a call stay open.
-  const open = new Map<string, string>();
-  const startCall = (id: string, name: string): void => {
+  const open = new Map<string, { readonly name: string; readonly startedAt: number }>();
+  const startCall = (id: string, name: string, toolInput: unknown): void => {
     if (open.has(id)) return;
-    open.set(id, name);
-    io.line({ type: "tool_execution_start", toolCallId: id, toolName: name });
+    const startedAt = now();
+    open.set(id, { name, startedAt });
+    const summary = summarizeCall(profile, name, toolInput, input.cwd);
+    io.line({
+      type: "tool_execution_start",
+      toolCallId: id,
+      toolName: name,
+      at: startedAt,
+      ...(summary === undefined ? {} : { input: summary }),
+    });
   };
-  const endCall = (id: string, name: string, isError: boolean): void => {
-    if (!open.delete(id)) return;
-    io.line({ type: "tool_execution_end", toolCallId: id, toolName: name, isError });
+  const endCall = (id: string, name: string, isError: boolean, error?: unknown): void => {
+    const call = open.get(id);
+    if (call === undefined) return;
+    open.delete(id);
+    const firstLine = isError ? firstErrorLine(error) : undefined;
+    io.line({
+      type: "tool_execution_end",
+      toolCallId: id,
+      toolName: name,
+      isError,
+      durationMs: Math.max(0, now() - call.startedAt),
+      ...(firstLine === undefined ? {} : { error: firstLine }),
+    });
   };
   const toolHook =
     (kind: "start" | "end" | "failed"): HookCallback =>
     async (event) => {
       if (event.hook_event_name === "PreToolUse" && kind === "start") {
-        startCall(event.tool_use_id, event.tool_name);
+        startCall(event.tool_use_id, event.tool_name, event.tool_input);
       } else if (event.hook_event_name === "PostToolUse" && kind === "end") {
         endCall(event.tool_use_id, event.tool_name, false);
       } else if (event.hook_event_name === "PostToolUseFailure" && kind === "failed") {
-        endCall(event.tool_use_id, event.tool_name, true);
+        endCall(event.tool_use_id, event.tool_name, true, event.error);
       }
       return {};
     };
-
-  // The profile was checked when the input was read; a bad one never gets here.
-  const read = readProfile(input.access ?? {});
-  const profile: AccessProfile = read.ok ? read.profile : {};
 
   // The only permission surface (`permissionMode: 'default'` sends every call
   // that is not already allowed here). A refusal goes to the model as the
@@ -178,7 +205,7 @@ export async function runWorker(
     const verdict = await decideAccess(profile, toolName, toolInput, input.cwd, io.useGrant);
     if (verdict.allow) return { behavior: "allow", updatedInput: toolInput };
     io.line({ type: "blocked", toolName, reason: verdict.reason });
-    endCall(options.toolUseID, toolName, true);
+    endCall(options.toolUseID, toolName, true, verdict.reason);
     return { behavior: "deny", message: verdict.reason };
   };
 
@@ -257,9 +284,15 @@ export async function runWorker(
           const id = message.message.id;
           if (seenMessages.has(id)) break;
           seenMessages.add(id);
+          const said = messageSummary(
+            message.message.content
+              .map((block) => (block.type === "text" ? block.text : ""))
+              .join(" "),
+          );
           io.line({
             type: "message_end",
             role: "assistant",
+            ...(said === undefined ? {} : { text: said }),
             stopReason: message.message.stop_reason,
             usage: usageOf(message.message.usage),
             cost: null,

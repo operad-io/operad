@@ -8,11 +8,12 @@ import {
   getTask,
   setTaskPhase,
 } from "../src/service.ts";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   DIFF_PAGE_CHARS,
   planViews,
+  readableLog,
   readableLogLine,
   taskViews,
 } from "../src/views.ts";
@@ -190,6 +191,93 @@ describe("dev views", () => {
     expect(section.markdown).not.toContain("assistant: step 0\n");
     expect(section.markdown.split("\n\n")).toHaveLength(80);
     expect(taskViews.sections(await getTask(store, task.id)).find((item) => item.id === "log")?.live).toBe(true);
+  });
+
+  test("a tool call is one line with what ran and how long it took", () => {
+    const lines = [
+      { type: "tool_execution_start", toolCallId: "a", toolName: "Bash", at: 1, input: "xcodebuild test -only-testing X" },
+      { type: "tool_execution_end", toolCallId: "a", toolName: "Bash", isError: false, durationMs: 72000 },
+      { type: "tool_execution_start", toolCallId: "b", toolName: "Read", at: 2, input: "/w/a.ts" },
+      { type: "tool_execution_end", toolCallId: "b", toolName: "Read", isError: false, durationMs: 400 },
+    ].map((line) => JSON.stringify(line));
+    expect(readableLog(lines)).toEqual([
+      "tool Bash 1m12s  xcodebuild test -only-testing X",
+      "tool Read <1s  /w/a.ts",
+    ]);
+  });
+
+  test("a call without an end line is marked running, with its start time", () => {
+    const start = { type: "tool_execution_start", toolCallId: "a", toolName: "Bash", at: Date.UTC(2026, 10, 7, 14, 3, 22), input: "sleep 9999" };
+    expect(readableLog([JSON.stringify(start)])).toEqual(["tool Bash running since 14:03:22Z  sleep 9999"]);
+    // After the result line nothing is running any more.
+    expect(readableLog([JSON.stringify(start), JSON.stringify({ type: "result", result: "failed" })])[0]).toBe(
+      "tool Bash no end logged (started 14:03:22Z)  sleep 9999",
+    );
+  });
+
+  test("the agent's text, a tool error's first line and a turn's end are shown; tool output is not", () => {
+    const lines = [
+      { type: "message_end", role: "assistant", text: "I will run the tests.", stopReason: "tool_use", usage: { input: 120, output: 30 }, cost: { total: 0.0123 } },
+      { type: "tool_execution_start", toolCallId: "a", toolName: "Bash", at: 1, input: "false" },
+      { type: "tool_execution_end", toolCallId: "a", toolName: "Bash", isError: true, durationMs: 2000, error: "exit code 1" },
+      { type: "message_end", role: "assistant", stopReason: "end_turn", usage: { input: 1, output: 2 }, cost: null },
+      { type: "result", result: "done", usage: { input: 5, output: 6 }, cost: { micros: 12346, quality: "exact" } },
+    ].map((line) => JSON.stringify(line));
+    expect(readableLog(lines)).toEqual([
+      "**agent:** I will run the tests.",
+      "turn ended: tool_use · 120 in / 30 out tokens · $0.0123",
+      "tool Bash 2s  false",
+      "tool Bash failed: exit code 1",
+      "turn ended: end_turn · 1 in / 2 out tokens",
+      "result: done · 5 in / 6 out tokens · $0.0123",
+    ]);
+  });
+
+  test("an agent paragraph of 300 characters is shown whole", () => {
+    const text = "w".repeat(300);
+    const line = JSON.stringify({ type: "message_end", role: "assistant", text, stopReason: "stop" });
+    expect(readableLog([line])[0]).toBe(`**agent:** ${text}`);
+  });
+
+  test("the log section says which agent each block is from when it mixes them", async () => {
+    const { store, task } = await setup();
+    const root = await tempRoot();
+    const workLog = join(root, "worker.log");
+    writeFileSync(
+      workLog,
+      `${JSON.stringify({ type: "tool_execution_start", toolCallId: "w", toolName: "Bash", at: 1, input: "make" })}\n`,
+    );
+    const reviewDir = join(store.root, "logs", "harness-pi", "runs", "run-9");
+    mkdirSync(reviewDir, { recursive: true });
+    writeFileSync(
+      join(reviewDir, "agent.log"),
+      `${JSON.stringify({ type: "message_end", role: "assistant", text: "Looks fine.", stopReason: "stop" })}\n`,
+    );
+    const stored = await getTask(store, task.id);
+    await store.put(
+      "task",
+      task.id,
+      {
+        ...taskData(stored.data),
+        attempt: {
+          number: 2,
+          workLog,
+          reviewRuns: [
+            { round: 1, role: "primary", use: "harness-pi/agent", args: [], model: "gpt", reason: "initial", outcome: "report", run: "run-9" },
+          ],
+        },
+      },
+      "test:log",
+    );
+    const section = (await taskViews.load({ store } as never, await getTask(store, task.id), "log", {})) as {
+      markdown: string;
+    };
+    const text = section.markdown;
+    expect(text).toContain("**Worker, attempt 2**");
+    expect(text).toContain("**Reviewer, round 1 (gpt)**");
+    expect(text.indexOf("Worker, attempt 2")).toBeLessThan(text.indexOf("tool Bash"));
+    expect(text.indexOf("tool Bash")).toBeLessThan(text.indexOf("Reviewer, round 1"));
+    expect(text.indexOf("Reviewer, round 1")).toBeLessThan(text.indexOf("**agent:** Looks fine."));
   });
 
   test("the diff section is the stat and the diff, and pages by file when long", async () => {

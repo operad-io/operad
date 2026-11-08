@@ -32,3 +32,13 @@ The `harness-radian` section of `config.json`.
 
 How `concurrency` limits runs, what the key is and how a queued step shows
 are in [the manual](../../docs/manual.md#limiting-runs-of-one-model).
+
+## The log's tool lines
+
+The step writes radian's own JSONL lines to the log as they come, and radian
+chooses their fields. This repository's tests know the `ToolExecutionStarted`
+and `ToolExecutionSettled` journal events and nothing about what they carry, so
+the step cannot add the command, the path or the duration that `harness-claude`
+and `harness-pi` write; the dev task's Log section shows a radian tool line as
+`tool: <event>`. Closing this gap needs radian to write the summary and the duration, and a
+task that teaches the Log section radian's field names.

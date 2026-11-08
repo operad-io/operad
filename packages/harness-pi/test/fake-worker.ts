@@ -46,4 +46,13 @@ provider.onStream = () => {
   process.stderr.write("fake-stream-started\n");
 };
 
-await main({ registerProviders: (runtime) => provider.register(runtime) });
+// FAKE_CLOCK_STEP: every reading of the clock moves on by this many milliseconds.
+const step = Number(process.env["FAKE_CLOCK_STEP"] ?? "0");
+let reading = 1_700_000_000_000;
+const now = (): number => {
+  const value = reading;
+  reading += step;
+  return value;
+};
+
+await main({ registerProviders: (runtime) => provider.register(runtime), ...(step > 0 ? { now } : {}) });

@@ -61,9 +61,9 @@ One JSON object per line, flushed per line, each with a `type`:
 | type | other fields | meaning |
 |---|---|---|
 | `session` | `claudeVersion`, `apiKeySource`, `model` | claude started a session; written once, first. `apiKeySource` says which credential it uses: `none` for a subscription login, `ANTHROPIC_API_KEY` when that variable is set in the environment |
-| `message_end` | `role` (`"assistant"`), `stopReason` (string or null), `usage` (`{input, output, cache_read, cache_write}`), `cost` (always `null`: claude prices a run, not a message) | an assistant message finished; written once per message |
-| `tool_execution_start` | `toolCallId`, `toolName` | a tool call began (the `PreToolUse` hook) |
-| `tool_execution_end` | `toolCallId`, `toolName`, `isError` | a tool call ended (`PostToolUse`, `PostToolUseFailure`, or a refusal) |
+| `message_end` | `role` (`"assistant"`), `text` (optional: the first 300 characters of the message's text as one paragraph; thinking and tool calls left out), `stopReason` (string or null), `usage` (`{input, output, cache_read, cache_write}`), `cost` (always `null`: claude prices a run, not a message) | an assistant message finished; written once per message |
+| `tool_execution_start` | `toolCallId`, `toolName`, `at`, `input` (optional) | a tool call began (the `PreToolUse` hook). `at` is the start time in epoch milliseconds. `input` says what ran: for `Bash` the command (one line, first 500 characters), for `Read`, `Edit` and `Write` the path, for another tool its main argument (path, pattern, query, URL or description) when it has one; absent otherwise. Never file contents or tool output. A command shows environment assignments (`NAME=value`) as `NAME=…`, and a call the access profile refuses shows `[redacted]` |
+| `tool_execution_end` | `toolCallId`, `toolName`, `isError`, `durationMs`, `error` (optional) | a tool call ended (`PostToolUse`, `PostToolUseFailure`, or a refusal). `durationMs` is how long the call took, measured from its start line. `error` is the first line of the error (at most 300 characters) when `isError` is true; the rest of the error and every successful result stay out of the log |
 | `blocked` | `toolName`, `reason` | `canUseTool` refused a call; its `tool_execution_end` has `isError: true`; the run continues |
 | `rate_limit` | `status`, `rateLimitType` (or null), `resetsAt` (or null) | claude reported its rate limit state |
 | `grant_use` | `id`, `waitId` | asks the host to use up a one-time permission; answered on stdin by `{"type":"grant_ack","id":n,"used":true\|false}` |

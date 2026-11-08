@@ -159,3 +159,5 @@ the row fields.
 | T-0056-M4 | packages/dev/src/rerun.ts | the check ran without taking a place | `check places > a check waits for a place before its command starts` |
 | T-0056-M5 | packages/dev/src/places.ts | a taken place made the taker wait for its holder instead of trying the next place | `check places > a killed check releases its place` |
 | T-0058-M4 | packages/dev/src/mainclone.ts | the clean-tree check ignored untracked files | `dev/integrate main clone > an untracked file makes the clone dirty and it is left alone` |
+| T-0063-M1 | packages/dev/src/views.ts | a call without an end line was not marked running | `dev views > a call without an end line is marked running, with its start time` |
+| T-0063-M2 | packages/dev/src/views.ts | a log of two agents showed the first one only, unlabelled | `dev views > the log section says which agent each block is from when it mixes them` |
