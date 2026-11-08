@@ -151,13 +151,13 @@ function headerContent(state: TuiState, palette: TuiPalette): StyledText {
 /** A thin horizontal rule from column 1 to the last column but one. */
 function ruleContent(state: TuiState, palette: TuiPalette): StyledText {
   return styled([
-    chunk(` ${"─".repeat(Math.max(0, state.width - 2))}`, palette.weak),
+    chunk(` ${"─".repeat(Math.max(0, state.width - 2))}`, palette.rule),
   ]);
 }
 
 function dividerContent(state: TuiState, palette: TuiPalette): StyledText {
   return styled([
-    chunk(Array.from({ length: bodyHeight(state) }, () => "│").join("\n"), palette.weak),
+    chunk(Array.from({ length: bodyHeight(state) }, () => "│").join("\n"), palette.rule),
   ]);
 }
 
@@ -187,14 +187,14 @@ export const MARK_GLYPHS: Readonly<
 };
 
 /** The glyph and colour of a list row. */
-function glyph(row: TuiRow, palette: TuiPalette): TextChunk {
-  if (row.error !== undefined) return chunk("✗", palette.error);
+function glyph(row: TuiRow, palette: TuiPalette, tint?: string): TextChunk {
+  if (row.error !== undefined) return chunk("✗", palette.error, undefined, tint);
   const mark = rowMark(row);
   // A mark this client does not know (a newer server) draws as plain.
   const shown = mark === "none" ? undefined : MARK_GLYPHS[mark];
-  if (shown !== undefined) return chunk(shown.char, palette[shown.colour]);
-  if (/^(done|merged)$/i.test(row.state)) return chunk("✓", palette.ok);
-  return chunk("○", palette.weak);
+  if (shown !== undefined) return chunk(shown.char, palette[shown.colour], undefined, tint);
+  if (/^(done|merged)$/i.test(row.state)) return chunk("✓", palette.ok, undefined, tint);
+  return chunk("○", palette.weak, undefined, tint);
 }
 
 /** The row id without its type: `item:T-1-x` is `T-1-x`. */
@@ -226,17 +226,17 @@ function rowLine(
   palette: TuiPalette,
   width: number,
 ): TextChunk[] {
+  const tint = selected ? palette.tint : undefined;
+  const text = fit(rowText(row, kind), width - 4);
+  // The tint covers the whole row: the label is padded to the row's width.
+  const pad = selected ? " ".repeat(Math.max(0, width - 4 - displayWidth(text))) : "";
   return [
-    chunk(selected ? "❯" : " ", palette.accent),
-    chunk(" "),
-    glyph(row, palette),
-    chunk(" "),
-    chunk(
-      fit(rowText(row, kind), width - 4),
-      selected ? palette.accent : undefined,
-      undefined,
-      selected ? palette.tint : undefined,
-    ),
+    chunk(selected ? "❯" : " ", palette.accent, undefined, tint),
+    chunk(" ", undefined, undefined, tint),
+    glyph(row, palette, tint),
+    chunk(" ", undefined, undefined, tint),
+    chunk(text, selected ? palette.accent : undefined, undefined, tint),
+    ...(pad === "" ? [] : [chunk(pad, undefined, undefined, tint)]),
     chunk("\n"),
   ];
 }
@@ -327,7 +327,7 @@ function sectionTabs(object: TuiObject, palette: TuiPalette, width: number): Tex
     used += gap.length + label.length;
   });
   chunks.push(chunk("\n"));
-  chunks.push(chunk(rule.trimEnd(), palette.weak));
+  chunks.push(chunk(rule.trimEnd(), palette.rule));
   chunks.push(chunk("\n"));
   return chunks;
 }

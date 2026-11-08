@@ -14,6 +14,7 @@ import {
   tuiConfigPath,
 } from "../src/theme.ts";
 import { runTui } from "../src/app.ts";
+import { markdownLines } from "../src/markdown.ts";
 import { drawState } from "../src/view/index.ts";
 
 function home(config?: string): string {
@@ -105,6 +106,33 @@ describe("the theme tokens", () => {
   test("the selected row has the tint as its background", () => {
     const selected = chunksOf(stateOf("dark"), "dark").find((c) => c.bg !== undefined);
     expect(selected?.bg?.toInts().join(",")).toBe(toRgba(BUILTIN_THEMES.dark.tint).toInts().join(","));
+  });
+});
+
+describe("rules, text and the selected row", () => {
+  const ints = (colour: string): string => toRgba(colour).toInts().join(",");
+
+  test("rules and the divider use the rule token", () => {
+    const drawing = drawState(stateOf("light"), "light");
+    for (const text of [drawing.rule, drawing.divider]) {
+      expect(text.chunks[0]?.fg?.toInts().join(",")).toBe(ints(BUILTIN_THEMES.light.rule));
+    }
+  });
+
+  test("plain markdown text and code use the text token", () => {
+    const lines = markdownLines("plain prose\n\n```\ncode\n```", BUILTIN_THEMES.dark);
+    const prose = lines.find((line) => line.text.includes("plain prose"));
+    expect(prose?.chunks[0]?.fg?.toInts().join(",")).toBe(ints(BUILTIN_THEMES.dark.text));
+  });
+
+  test("the tint covers the whole selected row, padding included", () => {
+    const state = stateOf("dark");
+    const row = drawState(state, "dark").list.chunks.filter((c) => c.text !== "\n");
+    const tint = ints(BUILTIN_THEMES.dark.tint);
+    expect(row.length).toBeGreaterThan(4);
+    for (const piece of row) expect(piece.bg?.toInts().join(",")).toBe(tint);
+    const width = row.reduce((sum, c) => sum + c.text.length, 0);
+    expect(width).toBeGreaterThanOrEqual(20);
   });
 });
 

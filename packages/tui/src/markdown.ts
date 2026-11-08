@@ -26,7 +26,7 @@ export interface TuiMarkdownLine {
 function colourFor(
   role: LayoutRole,
   palette: MarkdownPalette,
-): string | undefined {
+): string {
   switch (role) {
     case "add":
       return palette.add;
@@ -37,7 +37,7 @@ function colourFor(
     case "weak":
       return palette.weak;
     default:
-      return undefined;
+      return palette.text;
   }
 }
 
@@ -51,7 +51,7 @@ export function chunksOfLine(
     return {
       __isChunk: true,
       text: run.text,
-      ...(colour === undefined ? {} : { fg: toRgba(colour) }),
+      fg: toRgba(colour),
       ...(line.code ? { bg: toRgba(palette.code) } : {}),
       ...(run.style.attributes === 0 ? {} : { attributes: run.style.attributes }),
     };

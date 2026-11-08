@@ -156,3 +156,6 @@ the row fields.
 | T-0049-M13 | packages/tui/src/view/index.ts | the empty text for the `all` filter fell back to `no <type> yet` | `filters: view > an empty all filter reads no all tasks` |
 | T-0049-M14 | packages/tui/src/app.ts | a refresh page carried no filter-cycle count | `filters: shell > a refresh answer for a filter cycled back to is dropped` |
 | T-0049-M15 | packages/tui/src/app.ts | an event-triggered list page carried no filter-cycle count | `filters: shell > an event-triggered list answer for a filter cycled back to is dropped` |
+| T-0070-M6 | packages/tui/src/view/index.ts | the header and footer rule used the weak token | `rules, text and the selected row > rules and the divider use the rule token` |
+| T-0070-M7 | packages/tui/src/markdown.ts | plain markdown text used the weak token instead of text | `rules, text and the selected row > plain markdown text and code use the text token` |
+| T-0070-M8 | packages/tui/src/view/index.ts | the selected row's label was not padded, so the tint stopped short | `rules, text and the selected row > the tint covers the whole selected row, padding included` |
