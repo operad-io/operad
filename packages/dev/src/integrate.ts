@@ -188,7 +188,7 @@ async function writeIntegration(
   const brief =
     options.change === undefined
       ? task.brief
-      : [options.change].flat().reduce(appendChange, task.brief);
+      : [options.change].flat().reduce((text, line) => appendChange(text, line), task.brief);
   const next: TaskData = {
     ...task,
     ...(options.phase === undefined ? {} : { phase: options.phase }),
@@ -318,7 +318,7 @@ export async function runIntegrate(
         phase: "merged",
         change: [
           ...(typeof note === "string" ? [note] : []),
-          `merged ${shortSha(sha)}`,
+          `merged as ${shortSha(sha)}`,
           ...(cloneChange === undefined ? [] : [cloneChange]),
         ],
       })) === undefined
@@ -383,7 +383,7 @@ export async function runIntegrate(
             ...(typeof previous.checkNote === "string"
               ? [previous.checkNote]
               : []),
-            `merged ${shortSha(previous.candidate)}`,
+            `merged as ${shortSha(previous.candidate)}`,
             ...(cloneChange === undefined ? [] : [cloneChange]),
           ],
         })) === undefined
@@ -444,7 +444,14 @@ export async function runIntegrate(
             ].join("\n"),
         "Merge the latest main into the task branch, resolve the conflict, and continue.",
       ].join("\n\n");
-      const withRework = appendRework(task, "conflict with main", text);
+      const withRework = appendRework(
+        task,
+        "conflict with main",
+        text,
+        files.length === 0
+          ? "the verified commit conflicts with the latest main"
+          : `conflicts with the latest main in ${files.join(", ")}`,
+      );
       const record: IntegrationRecord = {
         result: "conflict",
         run: ctx.runId,
@@ -517,6 +524,9 @@ export async function runIntegrate(
           task,
           "integration",
           pieces.join("\n\n"),
+          command === undefined
+            ? detail
+            : `the integration check failed: ${command}`,
         );
         const record: IntegrationRecord = {
           result: "fail",

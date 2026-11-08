@@ -251,6 +251,7 @@ describe("dev/integrate", () => {
 
     const task = await taskOf(state);
     expect(task.phase).toBe("merged");
+    expect(task.brief).toMatch(/\] merged as [0-9a-f]{7,}/);
     expect(task.attempt?.integration?.result).toBe("merged");
     expect(task.attempt?.integration?.verified).toBe(verified);
     expect(task.attempt?.integration?.headMoved).toBe(false);
@@ -301,6 +302,9 @@ describe("dev/integrate", () => {
     const task = await taskOf(state);
     expect(task.phase).toBe("running");
     expect(task.brief).toContain("## Rework 1 (conflict with main)");
+    expect(task.brief).toContain(
+      "] rework 1 — conflict: conflicts with the latest main in code.txt",
+    );
     expect(task.brief).toContain("code.txt");
     expect(task.attempt?.integrating).toBeNull();
     expect(remoteMain(state)).toBe(before);
@@ -345,7 +349,7 @@ describe("dev/integrate", () => {
     const result = await integrate(state);
     expect(result.result).toBe("merged");
     const task = await taskOf(state);
-    expect(task.brief).toContain("- check line 1 failed, passed on rerun");
+    expect(task.brief).toContain("] check line 1 failed, passed on rerun");
   });
 
   test("a failing key command sends the task back to work", async () => {

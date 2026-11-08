@@ -201,3 +201,13 @@ the row fields.
 | T-0044-M1 | packages/dev/src/views.ts | a long worker name was not cut in the row | `dev views > a task row shows the last attempt's worker, short, and nothing before pools` |
 | T-0044-M2 | packages/dev/src/views.ts | an attempt with no worker got a row named "undefined" | `dev views > the metrics section splits cost, time and first pass by worker` |
 | T-0044-M3 | packages/dev/src/views.ts | a pass in a later review round counted as first pass | `dev views > the metrics section splits cost, time and first pass by worker` |
+
+## T-0073 — Changes tells the story
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0073-M1 | packages/dev/src/model.ts | no date line began a new day | `the Changes story > an entry shows its local time, and a date line starts each day` |
+| T-0073-M2 | packages/dev/src/model.ts | a conflict rework was named by its section source, not "conflict" | `dev/integrate > a conflict appends the conflict rework and leaves main alone` |
+| T-0073-M3 | packages/dev/src/announce.ts | the stopped-step lookup ignored the entry's time prefix | `dev scheduling > serve repairs a task whose run ended without an edge, and reject runs again` |
+| T-0073-M4 | packages/dev/src/model.ts | a reason was not cut to one short line | `the Changes story > a rework names who asked and the first finding, cut to one line` |
+| T-0073-M5 | packages/dev/src/gate.ts | the review and verify rework lost their reason | `dev/rework > a review failure appends the findings at or above the fix level` |
