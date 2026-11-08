@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readHttpToken } from "@operad-io/engine";
+import { openPluginStore, readHttpToken } from "@operad-io/engine";
 import { main } from "../src/main.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 
@@ -11,6 +11,9 @@ afterAll(cleanupTempRoots);
 const CLI_ENTRY = fileURLToPath(new URL("../bin/operad.ts", import.meta.url));
 const pluginPath = fileURLToPath(
   new URL("../../engine/test/fixtures/plugins/http.ts", import.meta.url),
+);
+const scopedPluginPath = fileURLToPath(
+  new URL("./fixtures/scoped-plugin.ts", import.meta.url),
 );
 
 async function freePort(): Promise<number> {
@@ -145,6 +148,54 @@ describe("operad serve http", () => {
         headers: { authorization: `Bearer ${rotated.token}` },
       });
       expect(next.status).toBe(200);
+    } finally {
+      await stopChild(child);
+    }
+  });
+
+  test("serve resolves ids from no directory: a bare id is not scoped to where serve started", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    const repoA = join(root, "repo-a");
+    mkdirSync(home, { recursive: true });
+    mkdirSync(repoA, { recursive: true });
+    const port = await freePort();
+    const storePath = join(root, "store");
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({
+        plugins: [scopedPluginPath],
+        store: { backend: "jsonl", path: storePath },
+        http: { enabled: true, port, listen: ["127.0.0.1"] },
+      }),
+    );
+    // The task lives in the other namespace; inside repo-a the plugin would
+    // scope its bare id to a/T-0017-x, which does not exist.
+    const store = openPluginStore({ backend: "jsonl", root: storePath });
+    await store.put("task", "b/T-0017-x", { title: "B" }, "seed");
+
+    const child = Bun.spawn({
+      cmd: [process.execPath, CLI_ENTRY, "serve"],
+      cwd: repoA,
+      env: env(home),
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    try {
+      await waitForOutput(child, `http http://127.0.0.1:${port}`);
+      const token = await readHttpToken(home);
+      expect(token).toBeDefined();
+      if (token === undefined) return;
+      for (const id of ["T-0017-x", "task:T-0017-x", "b/T-0017-x"]) {
+        const response = await fetch(
+          `http://127.0.0.1:${port}/v1/objects/${encodeURIComponent(id)}`,
+          { headers: { authorization: `Bearer ${token.token}` } },
+        );
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as { readonly id: string };
+        expect(body.id).toBe("b/T-0017-x");
+      }
     } finally {
       await stopChild(child);
     }
