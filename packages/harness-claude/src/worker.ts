@@ -161,21 +161,23 @@ export async function runWorker(
   const open = new Map<string, { readonly name: string; readonly startedAt: number }>();
   // The same translation `decideAccess` uses, so a tool the summary does not
   // know by name (NotebookEdit, MultiEdit) is still judged as its access-match tool.
-  const deniedByProfile = (name: string, toolInput: unknown): boolean => {
+  const deniedByProfile = (name: string, toolInput: unknown): { readonly rule?: string } | undefined => {
     const record = typeof toolInput === "object" && toolInput !== null ? (toolInput as Record<string, unknown>) : {};
     const translated = translate(name, record);
-    if (translated.kind === "inert") return false;
+    if (translated.kind === "inert") return undefined;
     if (translated.kind === "mapped") {
-      return !match(profile, { tool: translated.tool, input: translated.input, cwd: input.cwd }).allow;
+      const verdict = match(profile, { tool: translated.tool, input: translated.input, cwd: input.cwd });
+      return verdict.allow ? undefined : verdict.rule === undefined ? {} : { rule: verdict.rule };
     }
-    return hasRules(profile);
+    return hasRules(profile) ? {} : undefined;
   };
   const startCall = (id: string, name: string, toolInput: unknown): void => {
     if (open.has(id)) return;
     const startedAt = now();
     open.set(id, { name, startedAt });
-    const summary = deniedByProfile(name, toolInput)
-      ? `${name} denied by the access profile`
+    const denied = deniedByProfile(name, toolInput);
+    const summary = denied !== undefined
+      ? `${name} denied by the access profile${denied.rule === undefined ? "" : ` (rule: ${denied.rule.replace(/\s+/g, " ").slice(0, 300)})`}`
       : summarizeCall(profile, name, toolInput, input.cwd, { secrets: input.secretValues });
     io.line({
       type: "tool_execution_start",

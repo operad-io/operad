@@ -561,7 +561,7 @@ test("a Bash command that denyCommands refuses is denied with the reason, logged
   expect(answer["behavior"]).toBe("deny");
   expect(String(answer["message"])).toContain('denyCommands rule "rm"');
   expect(run.lines.slice(0, 3)).toEqual([
-    { type: "tool_execution_start", toolCallId: "tool-1", toolName: "Bash", at: expect.any(Number), input: "Bash denied by the access profile" },
+    { type: "tool_execution_start", toolCallId: "tool-1", toolName: "Bash", at: expect.any(Number), input: "Bash denied by the access profile (rule: rm)" },
     { type: "blocked", toolName: "Bash", reason: "refused by the access profile" },
     {
       type: "tool_execution_end",
@@ -624,8 +624,8 @@ test("a denied NotebookEdit or MultiEdit start line shows no path", async () => 
   });
   const starts = run.lines.filter((line) => line["type"] === "tool_execution_start");
   expect(starts.map((line) => line["input"])).toEqual([
-    "NotebookEdit denied by the access profile",
-    "MultiEdit denied by the access profile",
+    "NotebookEdit denied by the access profile (rule: /secrets)",
+    "MultiEdit denied by the access profile (rule: /secrets)",
   ]);
   expect(JSON.stringify(run.lines)).not.toContain("/secrets/key");
 });
@@ -646,7 +646,7 @@ test("every tool the translation maps shows only its denial when the profile den
     ],
   });
   const starts = run.lines.filter((line) => line["type"] === "tool_execution_start");
-  expect(starts.map((line) => line["input"])).toEqual(calls.map((c) => `${c.name} denied by the access profile`));
+  expect(starts.map((line) => line["input"])).toEqual(calls.map((c) => `${c.name} denied by the access profile (rule: ${c.name === "Bash" ? "rm" : "/secrets"})`));
   expect(JSON.stringify(run.lines)).not.toContain("/secrets/key");
 });
 
@@ -930,7 +930,7 @@ test("a call the access profile refuses, and an environment value, are not logge
     ],
   });
   const { start } = toolLines(run);
-  expect(start[0]?.["input"]).toBe("Read denied by the access profile");
+  expect(start[0]?.["input"]).toBe("Read denied by the access profile (rule: /secrets)");
   expect(start[1]?.["input"]).toBe("API_TOKEN=*** make test");
   expect(run.stdout).not.toContain("hunter2");
   expect(run.stdout).not.toContain("/secrets/key");

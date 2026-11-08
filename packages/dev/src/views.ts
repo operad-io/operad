@@ -320,7 +320,7 @@ export function readableLog(lines: readonly string[]): string[] {
     }
     if (record !== undefined && kind === "message_end") {
       const text = stringField(record, ["text"]);
-      if (text !== undefined) out.push(`**agent:** ${text.replace(/\s+/g, " ")}`);
+      if (text !== undefined) out.push(`**agent:** ${agentText(text)}`);
       const stop = stringField(record, ["stopReason"]);
       const parts = [stop, tokenText(record.usage), costText(record.cost)].filter(
         (part): part is string => part !== undefined,

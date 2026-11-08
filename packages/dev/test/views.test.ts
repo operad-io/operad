@@ -258,6 +258,11 @@ describe("dev views", () => {
     expect(readableLog([line])[0]).toBe(`**agent:** ${text}`);
   });
 
+  test("a message_end text longer than 300 characters is cut at 300", () => {
+    const line = JSON.stringify({ type: "message_end", role: "assistant", text: "w".repeat(400) });
+    expect(readableLog([line])[0]).toBe(`**agent:** ${"w".repeat(299)}…`);
+  });
+
   test("the log section says which agent each block is from when it mixes them", async () => {
     const { store, task } = await setup();
     const root = await tempRoot();

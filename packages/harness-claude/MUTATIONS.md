@@ -91,3 +91,4 @@ setup it depends on, in the order they were recorded. The root
 | T-0063-M31 | packages/harness-claude/src/worker.ts | the summary ignored `secretValues` | `a secret of the operad store sent as secretValues is masked in the logged command` |
 | T-0063-M32 | packages/harness-claude/src/worker.ts | the start summary judged the original tool name, not the access-match translation | `a denied NotebookEdit or MultiEdit start line shows no path` |
 | T-0063-M33 | packages/harness-claude/src/worker.ts | the denial check skipped the translation for one mapped tool (Grep/Glob) | `every tool the translation maps shows only its denial when the profile denies it` |
+| T-0063-M34 | packages/harness-claude/src/worker.ts | the denied-call summary dropped the matching rule's name | `a Bash command that denyCommands refuses is denied with the reason, logged, and the run goes on` |
