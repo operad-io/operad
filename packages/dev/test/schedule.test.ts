@@ -15,6 +15,7 @@ import {
   type RunInfo,
   type RunLookup,
 } from "@operad-io/engine";
+import poolPlugin from "@operad-io/pool";
 import plugin from "../src/index.ts";
 import {
   addPlan,
@@ -88,7 +89,7 @@ async function setup(
   const store = storeAt(root);
   const answers: { readonly runId: string; readonly choice: string }[] = [];
   const cancelled: string[] = [];
-  const registry = new PluginRegistry([plugin], {
+  const registry = new PluginRegistry([plugin, poolPlugin], {
     home: root,
     cwd: repositoryPath,
     store,
@@ -818,7 +819,7 @@ describe("dev scheduling", () => {
 
       // The normal task action reaches the run: the wait has an answer handler.
       const answers: string[] = [];
-      const answering = new PluginRegistry([plugin], {
+      const answering = new PluginRegistry([plugin, poolPlugin], {
         home: fixture.root,
         cwd: fixture.repositoryPath,
         store: fixture.store,
@@ -870,7 +871,7 @@ describe("dev scheduling", () => {
 
       let registry: PluginRegistry;
       const answers: { readonly runId: string; readonly choice: string }[] = [];
-      registry = new PluginRegistry([plugin], {
+      registry = new PluginRegistry([plugin, poolPlugin], {
         home: fixture.root,
         cwd: fixture.repositoryPath,
         store: fixture.store,
@@ -1120,7 +1121,7 @@ describe("dev scheduling", () => {
     const second = await addTask(fixture.store, { plan: plan.key, slug: "a-two", title: "a-two", area: "core" });
     await confirm(fixture, plan.key);
 
-    const other = new PluginRegistry([plugin], {
+    const other = new PluginRegistry([plugin, poolPlugin], {
       home: fixture.root,
       cwd: fixture.repositoryPath,
       store: fixture.store,

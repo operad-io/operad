@@ -5,6 +5,7 @@
  */
 
 import { FilePluginStore, PluginRegistry } from "@operad-io/engine";
+import { createPoolPlugin } from "@operad-io/pool";
 import { createDevPlugin } from "../../src/index.ts";
 
 const [storeRoot, repository, taskKey] = process.argv.slice(2);
@@ -13,7 +14,7 @@ if (storeRoot === undefined || repository === undefined || taskKey === undefined
 }
 
 const store = new FilePluginStore({ root: storeRoot });
-const registry = new PluginRegistry([createDevPlugin()], {
+const registry = new PluginRegistry([createDevPlugin(), createPoolPlugin()], {
   home: storeRoot,
   cwd: repository,
   store,

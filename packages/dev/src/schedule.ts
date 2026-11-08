@@ -34,7 +34,13 @@ import {
   releaseTaskClaim,
   setTaskPhase,
 } from "./service.ts";
-import { readDevSettings, runningTaskCap, type DevSettings } from "./settings.ts";
+import { missingPlugins } from "./standing.ts";
+import {
+  readDevSettings,
+  runningTaskCap,
+  settingsProblem,
+  type DevSettings,
+} from "./settings.ts";
 
 /** Where a scheduler change goes: the kernel loop's output. */
 export const schedulerTestHooks: {
@@ -247,13 +253,43 @@ async function reconcileTaskRuns(
   }
 }
 
+/** What the scheduler last said about each repository's settings file. */
+const reportedProblems = new Map<string, string>();
+
+/**
+ * Says once per change of the settings file that it is not valid, and says
+ * nothing while it stays the same or is valid. The last valid settings stay
+ * in force either way.
+ */
+function reportSettingsProblem(repository: RepositoryData): void {
+  const problem = settingsProblem(repository.path);
+  if (problem === undefined) {
+    reportedProblems.delete(repository.path);
+    return;
+  }
+  if (reportedProblems.get(repository.path) === problem) return;
+  reportedProblems.set(repository.path, problem);
+  console.error(`dev: repository "${repository.name}": ${problem}`);
+}
+
 async function scheduleRepository(
   ctx: TickContext,
   repository: RepositoryData,
   initialTasks: readonly StoredObject[],
   initialPlans: readonly StoredObject[],
 ): Promise<void> {
-  const settings = await readDevSettings(repository.path);
+  reportSettingsProblem(repository);
+  let settings: DevSettings;
+  try {
+    settings = await readDevSettings(repository.path);
+  } catch {
+    // Never valid: the problem is reported and shown as pending. Nothing
+    // here may touch the repository's running steps.
+    return;
+  }
+  // Work needs the plugins dev runs its steps through; without them a task
+  // stays ready instead of failing.
+  const canStartWork = missingPlugins(ctx.loaded).length === 0;
 
   // Repair a run that ended without an edge, or one whose phase was left
   // behind, before the scheduler reads phases and starts anything else.
@@ -335,6 +371,7 @@ async function scheduleRepository(
       return;
     }
     if (!dependencies.ready) return;
+    if (!canStartWork) return;
     if (task.area !== undefined && areaActive.has(task.area)) return;
     if (planConcurrency(plan) - (planActive.get(planId) ?? 0) <= 0) return;
     if (repositoryActive >= repositoryConcurrency(settings)) return;

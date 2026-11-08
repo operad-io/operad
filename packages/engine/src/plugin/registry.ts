@@ -37,6 +37,8 @@ import {
   type KeyBindings,
   type PendingActionView,
   type PendingEntry,
+  type StandingContext,
+  type StandingItem,
   type PluginBaseContext,
   type PluginCheck,
   type PluginKind,
@@ -132,6 +134,9 @@ interface NormalizedPlugin {
   readonly keys: KeyBindings;
   readonly rules: readonly TriggerRule[];
   readonly onTick: ((ctx: TickContext) => MaybePromise<void>) | undefined;
+  readonly standing:
+    | ((ctx: StandingContext) => MaybePromise<readonly StandingItem[]>)
+    | undefined;
   readonly start:
     | ((ctx: SourceContext) => MaybePromise<SourceHandle> | SourceHandle)
     | undefined;
@@ -676,6 +681,14 @@ function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     onTick = raw.onTick as (ctx: TickContext) => MaybePromise<void>;
   }
 
+  let standing: NormalizedPlugin["standing"];
+  if (raw.standing !== undefined) {
+    if (typeof raw.standing !== "function") {
+      throw new PluginError(`${at}: standing: must be a function`);
+    }
+    standing = raw.standing as NormalizedPlugin["standing"];
+  }
+
   let check:
     | ((ctx: PluginBaseContext) => MaybePromise<string | void>)
     | undefined;
@@ -722,6 +735,7 @@ function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     keys: normalizeKeys(raw.keys, `${at}: keys`),
     rules: normalizeRules(raw.rules, at),
     onTick,
+    standing,
     start,
     check,
     settingsSchema,
@@ -1806,6 +1820,39 @@ export class PluginRegistry {
   }
 
   /**
+   * The items plugins ask a person to know about. A hook that throws is
+   * logged and shows nothing, so one plugin cannot hide the others.
+   */
+  async standing(): Promise<
+    readonly { readonly plugin: string; readonly id: string; readonly prompt: string }[]
+  > {
+    const items: { plugin: string; id: string; prompt: string }[] = [];
+    for (const plugin of this.plugins) {
+      if (plugin.standing === undefined) continue;
+      try {
+        const found = await plugin.standing({
+          plugin: plugin.name,
+          home: this.home,
+          cwd: this.cwd,
+          store: this.store,
+          facts: this.factsFor(`standing:${plugin.name}`),
+          logger: createPluginLogger(this.store.root, plugin.name, "standing"),
+          signal: new AbortController().signal,
+          settings: this.settingsFor(plugin.name),
+          secrets: this.secretsFor(plugin.name),
+          loaded: this.plugins.map((item) => item.name),
+        });
+        for (const item of found) {
+          items.push({ plugin: plugin.name, id: item.id, prompt: item.prompt });
+        }
+      } catch (error) {
+        this.log(`plugin "${plugin.name}": standing failed: ${messageOf(error)}`);
+      }
+    }
+    return items;
+  }
+
+  /**
    * Computes the pending view: for each waiting run, the object's state and
    * the actions whose `when` holds. A throwing `when` is logged and hidden.
    */
@@ -1879,6 +1926,7 @@ export class PluginRegistry {
         settings: this.settingsFor(plugin.name),
         secrets: this.secretsFor(plugin.name),
         ...(runs === undefined ? {} : { runLookup: runs }),
+        loaded: this.plugins.map((item) => item.name),
         start: async (flowOrRequest, objectArg, accessArg) => {
           const request: StartRunRequest =
             typeof flowOrRequest === "string"
