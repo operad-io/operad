@@ -350,6 +350,7 @@ export async function runTool(
       const running: readonly RunningItem[] = await listRunning(
         context.log,
         context.clock,
+        context.views,
       );
       return {
         content: [text(runningMarkdown(running))],

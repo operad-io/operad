@@ -165,3 +165,14 @@ the row fields.
 | T-0059-M6 | packages/dev/src/gate.ts | review.json's fixLevel was ignored | `dev/review > review.json > fixLevel in review.json decides whether a minor finding fails` |
 | T-0059-M7 | packages/dev/src/gate.ts | an invalid review.json was swallowed instead of failing the step | `dev/review > review.json > an invalid file fails the review step naming the file` |
 | T-0063-M3 | packages/dev/src/views.ts | a radian `Result` line lost its stop reason, tokens and cost | `a radian Result line shows its stop reason, tokens and cost` |
+
+## T-0086 — rerun only the failed tests
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0086-M1 | packages/dev/src/rerun.ts | the limit on failed names was ignored | `dev/verify reruns only the failed tests > more names than max fails without a rerun` |
+| T-0086-M2 | packages/dev/src/rerun.ts | any failure, a timeout too, was searched for names | `dev/verify reruns only the failed tests > a timeout is not rerun` |
+| T-0086-M3 | packages/dev/src/rerun.ts | the pattern kept " > " instead of a space | `dev/verify reruns only the failed tests > the pattern is anchored and joins describe names with a space, as bun test -t does` |
+| T-0086-M4 | packages/dev/src/rerun.ts | the shell quoting of a name was dropped | `dev/verify reruns only the failed tests > names with quotes and regex characters reach the rerun intact` |
+| T-0086-M5 | packages/dev/src/rerun.ts | a failed rerun counted as a pass | `dev/verify reruns only the failed tests > a rerun that fails fails the check` |
+| T-0086-M6 | packages/dev/src/reruns.ts | the count was set to 1 instead of added to | `dev/verify reruns only the failed tests > the count accumulates across tasks` |
