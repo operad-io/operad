@@ -127,8 +127,10 @@ class PushEvents implements TuiEventSource {
 
 class Screen implements TuiView {
   last: TuiState | undefined;
+  renders = 0;
   private readonly waiters: { test: (s: TuiState) => boolean; resolve: () => void }[] = [];
   render(state: TuiState): void {
+    this.renders += 1;
     this.last = state;
     for (const waiter of this.waiters.splice(0)) {
       if (waiter.test(state)) waiter.resolve();
@@ -590,6 +592,28 @@ describe("against the in-process server", () => {
     } finally {
       shell.stop();
       await h.close();
+    }
+  });
+});
+
+describe("a changed theme file", () => {
+  test("repaints, shows one line when it is invalid and clears that line when it is good again", () => {
+    const { view, shell } = start();
+    try {
+      const renders = (): number => view.renders;
+      const before = renders();
+      shell.repaintTheme();
+      expect(renders()).toBe(before + 1);
+      expect(shell.state.status).toBeUndefined();
+
+      shell.repaintTheme("/h/themes/mine.json: colors.accent is 3");
+      expect(shell.state.status).toBe("theme not changed: /h/themes/mine.json: colors.accent is 3");
+      expect(statusText(shell.state)).toContain("theme not changed");
+
+      shell.repaintTheme();
+      expect(shell.state.status).toBeUndefined();
+    } finally {
+      shell.stop();
     }
   });
 });

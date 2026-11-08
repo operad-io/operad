@@ -5,10 +5,13 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "$schema": { "type": "string" },
+    "$schema": {
+      "type": "string"
+    },
     "theme": {
-      "description": "The colour theme: auto follows the terminal's light or dark mode; terminal uses the terminal's own 16 colours.",
-      "enum": ["auto", "light", "dark", "terminal"],
+      "description": "The colour theme: auto follows the terminal's light or dark mode; light and dark are the built-in palettes; terminal uses the terminal's own 16 colours; any other name is a theme file themes/<name>.json in the operad home (not the name of a built-in).",
+      "type": "string",
+      "minLength": 1,
       "default": "auto"
     }
   }

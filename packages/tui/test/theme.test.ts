@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import type { TextChunk } from "@opentui/core";
@@ -8,7 +8,11 @@ import {
   BUILTIN_THEMES,
   THEME_NAMES,
   TUI_TOKENS,
+  chooseSelection,
   chooseTheme,
+  resolveSelection,
+  watchThemes,
+  type ThemeHolder,
   resolvePalette,
   toRgba,
   tuiConfigPath,
@@ -219,7 +223,7 @@ describe("choosing the theme", () => {
 
   test("the schema lists the same names", () => {
     const schema = JSON.parse(readFileSync(join(import.meta.dir, "..", "tui.schema.json"), "utf8"));
-    expect(schema.properties.theme.enum).toEqual([...THEME_NAMES]);
+    expect(schema.properties.theme.type).toBe("string");
     expect(schema.additionalProperties).toBe(false);
   });
 });
@@ -239,5 +243,169 @@ describe("colours live in the theme module", () => {
     };
     walk(root);
     expect(found).toEqual([]);
+  });
+});
+
+describe("file themes", () => {
+  function withThemes(files: Record<string, string>, config?: string): string {
+    const dir = home(config);
+    mkdirSync(join(dir, "themes"));
+    for (const [name, text] of Object.entries(files)) {
+      writeFileSync(join(dir, "themes", `${name}.json`), text);
+    }
+    return dir;
+  }
+
+  test("a theme names only what it changes and extends dark by default", () => {
+    const dir = withThemes({ mine: '{ "colors": { "accent": "#ff8800", "error": 9 } }' });
+    const palette = resolveSelection(dir, "mine").palette;
+    expect(palette).toEqual({ ...BUILTIN_THEMES.dark, accent: "#ff8800", error: "ansi:9" });
+  });
+
+  test("extends follows built-ins and other themes", () => {
+    const dir = withThemes({
+      a: '{ "extends": "light", "colors": { "text": "#000001" } }',
+      b: '{ "extends": "a", "colors": { "weak": "#000002" } }',
+      c: '{ "extends": "terminal" }',
+    });
+    expect(resolveSelection(dir, "b").palette).toEqual({
+      ...BUILTIN_THEMES.light,
+      text: "#000001",
+      weak: "#000002",
+    });
+    expect(resolveSelection(dir, "c").palette).toEqual(BUILTIN_THEMES.terminal);
+  });
+
+  test("a cycle in extends names the file and the key", () => {
+    const dir = withThemes({ a: '{ "extends": "b" }', b: '{ "extends": "a" }' });
+    expect(() => resolveSelection(dir, "a")).toThrow(/b\.json: "extends" makes a cycle: a -> b -> a/);
+  });
+
+  test("an unknown token, a bad colour and an unknown extends name the file and the key", () => {
+    const dir = withThemes({
+      token: '{ "colors": { "glow": "#ffffff" } }',
+      colour: '{ "colors": { "accent": "red" } }',
+      index: '{ "colors": { "accent": 16 } }',
+      parent: '{ "extends": "nope" }',
+    });
+    expect(() => resolveSelection(dir, "token")).toThrow(/token\.json: colors\.glow is not a token/);
+    expect(() => resolveSelection(dir, "colour")).toThrow(/colour\.json: colors\.accent is "red"/);
+    expect(() => resolveSelection(dir, "index")).toThrow(/index\.json: colors\.accent is 16/);
+    expect(() => resolveSelection(dir, "parent")).toThrow(/parent\.json: "extends" names "nope"/);
+  });
+
+  test("a file with the name of a built-in is refused", () => {
+    const dir = withThemes({ dark: "{}" }, '{ "theme": "dark" }');
+    expect(() => chooseTheme({ home: dir })).toThrow(/dark\.json has the name of the built-in theme/);
+    expect(() => chooseTheme({ home: dir, flag: "light" })).not.toThrow();
+  });
+
+  test("tui.json and --theme may name a file theme", () => {
+    const dir = withThemes({ mine: "{}" }, '{ "theme": "mine" }');
+    expect(chooseTheme({ home: dir })).toBe("mine");
+    expect(() => chooseTheme({ home: dir, flag: "other" })).toThrow(/the themes are .*mine/);
+  });
+
+  test("a file theme is what the view draws", () => {
+    const dir = withThemes({ mine: '{ "colors": { "accent": "#123456" } }' });
+    const drawing = drawState(stateOf("dark"), resolveSelection(dir, "mine"));
+    const colours = drawing.header.chunks.map((c) => c.fg?.toInts().slice(0, 3).join(","));
+    expect(colours).toContain("18,52,86");
+  });
+
+  /** A watch the test drives: `fire` delivers a change the way the platform does. */
+  function fakeWatch(): {
+    watch: (directory: string, onChange: (filename: string | null) => void) => () => void;
+    fire: (directory: string, filename: string) => void;
+    open: () => number;
+  } {
+    const listeners = new Map<string, (filename: string | null) => void>();
+    return {
+      watch: (directory, onChange) => {
+        listeners.set(directory, onChange);
+        return () => listeners.delete(directory);
+      },
+      fire: (directory, filename) => listeners.get(directory)?.(filename),
+      open: () => listeners.size,
+    };
+  }
+
+  test("a change to the theme file or tui.json is applied; an invalid edit keeps the last good theme", () => {
+    const dir = withThemes({ mine: '{ "colors": { "accent": "#111111" } }' }, '{ "theme": "mine" }');
+    const holder: ThemeHolder = { current: chooseSelection({ home: dir }) };
+    const changes: (string | undefined)[] = [];
+    const fake = fakeWatch();
+    const stop = watchThemes({
+      home: dir,
+      holder,
+      watch: fake.watch,
+      onChange: (problem) => changes.push(problem),
+    });
+    const file = join(dir, "themes", "mine.json");
+    writeFileSync(file, '{ "colors": { "accent": "#222222" } }');
+    fake.fire(join(dir, "themes"), "mine.json");
+    expect(holder.current.palette?.accent).toBe("#222222");
+    expect(changes).toEqual([undefined]);
+
+    writeFileSync(file, '{ "colors": { "accent": "nope" } }');
+    fake.fire(join(dir, "themes"), "mine.json");
+    expect(holder.current.palette?.accent).toBe("#222222");
+    expect(changes[1]).toContain("mine.json: colors.accent");
+
+    writeFileSync(tuiConfigPath(dir), '{ "theme": "light" }');
+    fake.fire(dir, "other.txt");
+    expect(changes).toHaveLength(2);
+    fake.fire(dir, "tui.json");
+    expect(holder.current.name).toBe("light");
+    expect(changes[2]).toBeUndefined();
+    stop();
+    expect(fake.open()).toBe(0);
+  });
+
+  test("a themes directory that appears later is watched", () => {
+    const dir = home('{ "theme": "mine" }');
+    const holder: ThemeHolder = { current: { name: "dark" } };
+    const fake = fakeWatch();
+    const stop = watchThemes({ home: dir, holder, watch: fake.watch, onChange: () => undefined });
+    expect(fake.open()).toBe(1);
+    mkdirSync(join(dir, "themes"));
+    writeFileSync(join(dir, "themes", "mine.json"), '{ "colors": { "accent": "#333333" } }');
+    fake.fire(dir, "themes");
+    expect(fake.open()).toBe(2);
+    expect(holder.current.palette?.accent).toBe("#333333");
+    stop();
+  });
+
+  test("the real directory watch reports an edit", async () => {
+    const dir = withThemes({ mine: '{ "colors": { "accent": "#111111" } }' }, '{ "theme": "mine" }');
+    const holder: ThemeHolder = { current: chooseSelection({ home: dir }) };
+    let seen: () => void = () => undefined;
+    const stop = watchThemes({
+      home: dir,
+      holder,
+      onChange: () => {
+        if (holder.current.palette?.accent === "#222222") seen();
+      },
+    });
+    try {
+      await new Promise<void>((resolve) => {
+        seen = resolve;
+        writeFileSync(join(dir, "themes", "mine.json"), '{ "colors": { "accent": "#222222" } }');
+      });
+    } finally {
+      stop();
+    }
+  });
+});
+
+describe("the example themes", () => {
+  test("both load", () => {
+    const dir = home();
+    mkdirSync(join(dir, "themes"));
+    for (const name of ["high-contrast", "low-saturation"]) {
+      const text = readFileSync(join(import.meta.dir, "..", "..", "..", "docs", "themes", `${name}.json`), "utf8");
+      writeFileSync(join(dir, "themes", `${name}.json`), text);
+      expect(resolveSelection(dir, name).palette).toBeDefined();
+    }
   });
 });
