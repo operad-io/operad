@@ -205,3 +205,6 @@ the row fields.
 | T-0094-M5 | packages/dev/src/standing.ts | a changed `*.schema.json` of a loaded package was not serve code | `a followed merge and the code serve has loaded > a merge that changes a schema serve validates with raises the item` |
 | T-0094-M6 | packages/dev/src/standing.ts | every file of a loaded package counted as serve code (tests, MUTATIONS.md) | `a followed merge and the code serve has loaded > a package serve does not load, tests and a merge in another repository raise nothing` |
 | T-0094-M7 | packages/dev/src/settings.ts | the home kept no copy of the last valid settings | `a repository whose dev.json becomes invalid > a process that starts while the file is invalid reads the copy the home kept` |
+| T-0044-M1 | packages/dev/src/views.ts | a long worker name was not cut in the row | `dev views > a task row shows the last attempt's worker, short, and nothing before pools` |
+| T-0044-M2 | packages/dev/src/views.ts | an attempt with no worker got a row named "undefined" | `dev views > the metrics section splits cost, time and first pass by worker` |
+| T-0044-M3 | packages/dev/src/views.ts | a pass in a later review round counted as first pass | `dev views > the metrics section splits cost, time and first pass by worker` |
