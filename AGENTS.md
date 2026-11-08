@@ -62,6 +62,14 @@ package whose code the mutation broke (`packages/<name>/MUTATIONS.md`); the root
 `MUTATIONS.md` indexes the package files. A row's id is the arc task id followed
 by `-M` and a number starting at 1 for each task: `TK0001-M1`.
 
+## Flaky tests
+
+A test that failed and then passed on rerun is a bug until shown otherwise. A
+task that fixes one states the stress command and its result before and after
+the fix in its final answer, and is done when
+`bash scripts/stress.sh --runs 200 --load 2 <file>` passes. Never raise a
+timeout or add a retry inside a test to make it pass.
+
 ## Verify
 
 Run this before you say a change is done. It must pass.

@@ -807,3 +807,13 @@ each task: `TK0001-M1`.
 | T-0030-M6 | packages/tui/src/view/index.ts | the view always drew both panes, ignoring the width | `the TUI view > below 100 columns the right pane is gone` |
 | T-0030-M7 | packages/cli/src/main.ts | `tui --url` dropped the URL instead of handing it to the app | `operad tui > passes the url and token to the terminal app` |
 | T-0030-M8 | packages/cli/src/main.ts | `tui` no longer refused a non-terminal without a runner | `operad tui > needs a terminal unless a runner is injected` |
+
+## T-0091 — scripts/stress.sh
+
+The script lives in `scripts/`, which has no package of its own, so its rows are here.
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0091-M1 | scripts/stress.sh | the final exit status ignored failures | `scripts/stress.sh > a fixture failing every third run reports the counts and exits 1` |
+| T-0091-M2 | scripts/stress.sh | `stop_helpers` no longer killed the helpers | `scripts/stress.sh > --load starts busy helpers and none is left after exit` |
+| T-0091-M3 | scripts/stress.sh | removed the cap of `--load` at the CPU count | `scripts/stress.sh > --load never starts more helpers than there are CPUs` |

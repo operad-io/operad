@@ -46,3 +46,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0068-M1 | packages/mcp/src/tools.ts | the running tool did not pass the views, so no title was found | `operad mcp > initializes, lists the table and reads every tool on fixture objects` |
+| T-0052-M12 | packages/mcp/src/tools.ts | the `list` tool did not pass `parent` on | `operad mcp hierarchy > list takes root and parent, with or without a type` |

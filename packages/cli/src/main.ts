@@ -158,7 +158,7 @@ const HELP = [
   "  serve stop [--timeout <secs>]",
   "                       stop this home's serve (SIGTERM; default timeout 30)",
   "  pending [--json]     things waiting for a person",
-  "  list <type>          objects of one type (--filter <name>, --repo <name>)",
+  "  list <type>          objects of one type (--filter <name>, --repo <name>, --parent <id>, --root)",
   "  show <id>            one object, its sections and its actions",
   "  history <id> [--json] steps of a run, or of a plugin object's runs",
   "  running              runs in progress",
@@ -495,11 +495,18 @@ async function commandList(
     readonly cursor: string | undefined;
     readonly filter: string | undefined;
     readonly repo: string | undefined;
+    readonly parent: string | undefined;
+    readonly root: boolean;
   },
 ): Promise<void> {
   const limit = parseLimit(options.limit);
+  if (options.root && options.parent !== undefined) {
+    throw new UsageError("list takes --root or --parent, not both");
+  }
   const filter = options.filter ?? context.views.defaultFilterOf(type);
   const page = await context.views.list(type, {
+    ...(options.root ? { root: true } : {}),
+    ...(options.parent === undefined ? {} : { parent: options.parent }),
     ...(filter === undefined ? {} : { filter }),
     ...(options.where.length === 0 && options.repo === undefined
       ? {}
@@ -529,8 +536,13 @@ async function commandList(
   if (page.next !== undefined) {
     const withFilter = options.filter === undefined ? "" : ` --filter ${shellQuote(options.filter)}`;
     const withRepo = options.repo === undefined ? "" : ` --repo ${shellQuote(options.repo)}`;
+    const withLevel = options.root
+      ? " --root"
+      : options.parent === undefined
+        ? ""
+        : ` --parent ${shellQuote(options.parent)}`;
     const withWhere = options.where.map((item) => ` --where ${shellQuote(item)}`).join("");
-    io.write(`next: operad list ${type}${withFilter}${withRepo}${withWhere} --cursor ${page.next}\n`);
+    io.write(`next: operad list ${type}${withLevel}${withFilter}${withRepo}${withWhere} --cursor ${page.next}\n`);
   }
   if (page.hidden !== undefined && page.hidden > 0) {
     io.write(`${page.hidden} hidden (--filter all to show)\n`);
@@ -665,6 +677,7 @@ async function commandShow(
   const state = paintState(object.row, object.row.state, tty);
   const note = object.row.note === undefined ? "" : `  ${object.row.note}`;
   io.write(`${object.row.id}  ${state}  ${object.row.title}${note}\n`);
+  if (object.row.parent !== undefined) io.write(`parent: ${object.row.parent}\n`);
   if (object.unavailable !== undefined) {
     io.error(`operad: ${object.unavailable}\n`);
   }
@@ -2177,6 +2190,10 @@ export async function main(
           rest = filterFlag.args;
           const repoFlag = takeValueFlag(rest, "--repo");
           rest = repoFlag.args;
+          const parentFlag = takeValueFlag(rest, "--parent");
+          rest = parentFlag.args;
+          const rootFlag = splitFlag(rest, "--root");
+          rest = rootFlag.args;
           const type = rest[0];
           if (type === undefined) throw new UsageError("list needs an object type");
           if (rest.length > 1) throw new UsageError("list takes one object type");
@@ -2186,6 +2203,8 @@ export async function main(
             cursor: cursorFlag.value,
             filter: filterFlag.value,
             repo: repoFlag.value,
+            parent: parentFlag.value,
+            root: rootFlag.present,
           });
           return 0;
         }
