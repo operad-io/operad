@@ -2,6 +2,7 @@
 
 import { ActiveRunError, SeqConflictError } from "../log/errors.ts";
 import type { InputRecord, JsonValue, LogBackend } from "../log/types.ts";
+import { StartRefusedError } from "../plugin/errors.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { RunLookup, StartRunRequest } from "../plugin/types.ts";
 import type { Input, PersonAnswerInput } from "../kernel/types.ts";
@@ -32,6 +33,8 @@ export interface ServePassOptions {
   readonly isRunnerAlive?: ((runId: string) => boolean) | undefined;
   readonly isRecentlySpawned?: ((runId: string) => boolean) | undefined;
   readonly shouldStop?: (() => boolean) | undefined;
+  /** Where a refused start or recovery is reported. */
+  readonly onLog?: ((message: string) => void) | undefined;
   /** When given, every start request goes through this kernel entry point. */
   readonly kernel?: Kernel | undefined;
   /** The operad home; defaults to the registry's home. */
@@ -255,7 +258,9 @@ export async function serveOnce(
       });
       if (result.kind === "started") started.push(result.runId);
     } catch (error) {
-      if (!(error instanceof ActiveRunError)) throw error;
+      if (error instanceof StartRefusedError) {
+        options.onLog?.(`${request.plugin}/${request.flow}: ${error.message}`);
+      } else if (!(error instanceof ActiveRunError)) throw error;
     }
   }
 
@@ -302,6 +307,13 @@ export async function serveOnce(
 
     if (isRunnerAlive(run.runId)) continue;
     if (options.isRecentlySpawned?.(run.runId) === true) continue;
+
+    // A step the flow needs went missing: the run waits for the plugin.
+    const problem = options.registry.startProblem(run.flow);
+    if (problem !== undefined) {
+      options.onLog?.(`run ${run.runId}: ${problem}`);
+      continue;
+    }
 
     // A start that died after creating its run must not become a run with no
     // record of the event that made it: restore the start files first, so the

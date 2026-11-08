@@ -5,7 +5,7 @@ import { loadFlow as loadFlowFile } from "../flow/load.ts";
 import { FlowError, validateFlow } from "../flow/validate.ts";
 import type { JsonValue } from "../log/types.ts";
 import { normalizeActionArgs, noteProperty, validateActionArgs } from "./action-schema.ts";
-import { AccessError, AskTimeoutError, messageOf, PluginError } from "./errors.ts";
+import { AccessError, AskTimeoutError, messageOf, PluginError, StartRefusedError } from "./errors.ts";
 import { defaultOperadHome } from "./home.ts";
 import { createPluginLogger } from "./logger.ts";
 import { FileSecretStore } from "./secrets.ts";
@@ -495,6 +495,26 @@ function normalizeRequires(value: unknown, at: string): PluginRequires | undefin
   return { ...(plugins === undefined ? {} : { plugins }), ...(api === undefined ? {} : { api }) };
 }
 
+/** A step's `calls`: a list of distinct `plugin/step` names. */
+function normalizeCalls(value: unknown, at: string): readonly string[] {
+  if (!Array.isArray(value)) {
+    throw new PluginError(`${at}: calls: must be an array`);
+  }
+  const seen = new Set<string>();
+  for (const [index, call] of (value as readonly unknown[]).entries()) {
+    if (typeof call !== "string" || !/^[^/\s]+\/[^/\s]+$/.test(call)) {
+      throw new PluginError(
+        `${at}: calls[${index}]: must be a step name like "plugin/step"`,
+      );
+    }
+    if (seen.has(call)) {
+      throw new PluginError(`${at}: calls[${index}]: duplicate "${call}"`);
+    }
+    seen.add(call);
+  }
+  return [...seen];
+}
+
 function normalizeSteps(
   value: unknown,
   at: string,
@@ -539,6 +559,9 @@ function normalizeSteps(
     steps.push({
       name,
       results: normalizedResults,
+      ...(entry.calls === undefined
+        ? {}
+        : { calls: normalizeCalls(entry.calls, `${at}[${index}]`) }),
       ...(entry.grants === undefined
         ? {}
         : { grants: normalizeFlag(entry.grants, "grants", `${at}[${index}]`) }),
@@ -1303,6 +1326,48 @@ export class PluginRegistry {
     }
   }
 
+  /**
+   * Why a run of this flow cannot start, or undefined when it can: a step the
+   * flow uses, or a step one of those calls, is not loaded.
+   */
+  startProblem(flowName: string): string | undefined {
+    const found = this.flow(flowName);
+    if (found === undefined) return undefined;
+    const seen = new Set<string>();
+    const queue: string[] = [];
+    for (const step of found.flow.steps) {
+      if (step.kind !== "plugin") continue;
+      const use = (step.params as { readonly use?: unknown }).use;
+      if (typeof use === "string") queue.push(use);
+    }
+    while (queue.length > 0) {
+      const use = queue.shift() as string;
+      if (seen.has(use)) continue;
+      seen.add(use);
+      const loaded = this.stepIndex.get(use);
+      if (loaded === undefined) return this.missingStep(use);
+      queue.push(...(loaded.step.calls ?? []));
+    }
+    return undefined;
+  }
+
+  private missingStep(use: string): string {
+    const plugin = use.split("/")[0] ?? use;
+    const needs = `cannot start: needs "${use}" from plugin ${plugin}`;
+    if (this.disabledNames.has(plugin)) {
+      return `${needs}, which is disabled (operad plugin enable ${plugin})`;
+    }
+    const refusal = this.refusalList.find((item) => item.plugin === plugin);
+    if (refusal !== undefined) {
+      const reason = refusal.message.replace(`plugin "${plugin}": `, "");
+      return `${needs}, which was refused: ${reason}`;
+    }
+    if (this.byName.has(plugin)) {
+      return `${needs}, which has no step "${use.slice(plugin.length + 1)}"`;
+    }
+    return `${needs}, which is not loaded`;
+  }
+
   /** The step type registry the flow loader and validator receive. */
   stepTypes(): readonly StepType[] {
     return collectStepTypes(this.plugins);
@@ -1592,14 +1657,30 @@ export class PluginRegistry {
       trigger: options.trigger,
       emit,
       ask,
-      runStep: (nestedUse, nestedParams, nestedOptions) =>
-        this.runStepInner(nestedUse, nestedParams, {
+      runStep: (nestedUse, nestedParams, nestedOptions) => {
+        // Declarations must not drift: tests fail on a call the step did not
+        // declare; production still runs it.
+        if (
+          process.env.NODE_ENV === "test" &&
+          !(found.step.calls ?? []).includes(nestedUse) &&
+          // A harness step is named by settings (a worker, a reviewer), so a
+          // caller cannot list it.
+          this.stepIndex.get(nestedUse)?.plugin.kind !== "harness"
+        ) {
+          return Promise.reject(
+            new PluginError(
+              `step "${use}": calls "${nestedUse}" without declaring it in calls`,
+            ),
+          );
+        }
+        return this.runStepInner(nestedUse, nestedParams, {
           ...nestedOptions,
           limits: nestedOptions.limits ?? options.limits,
           asker: nestedOptions.asker ?? options.asker,
           // A nested step reports its events to the same destination.
           emit: nestedOptions.emit ?? options.emit,
-        }, true),
+        }, true);
+      },
     };
 
     let outcome: unknown;

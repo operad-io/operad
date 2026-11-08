@@ -47,3 +47,11 @@ export class AskTimeoutError extends Error {
     this.resume = question.resume;
   }
 }
+
+/** A run cannot start because a step it needs is not loaded. */
+export class StartRefusedError extends PluginError {
+  constructor(message: string) {
+    super(message);
+    this.name = "StartRefusedError";
+  }
+}

@@ -24,6 +24,8 @@ guardLockHandles();
 
 const CLI_ENTRY = fileURLToPath(new URL("../../cli/bin/operad.ts", import.meta.url));
 const PLUGIN = fileURLToPath(new URL("../src/index.ts", import.meta.url));
+const POOL = fileURLToPath(new URL("../../pool/src/index.ts", import.meta.url));
+const SHELL = fileURLToPath(new URL("../../shell/src/index.ts", import.meta.url));
 
 interface RunResult {
   readonly code: number;
@@ -43,7 +45,7 @@ async function setup(): Promise<{
     join(home, "config.json"),
     `${JSON.stringify(
       {
-        plugins: [PLUGIN],
+        plugins: [PLUGIN, POOL, SHELL],
         store: { backend: "jsonl", path: join(root, "store") },
       },
       null,

@@ -13,7 +13,7 @@ import type {
 } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { SourceHandle } from "../plugin/types.ts";
-import { messageOf } from "../plugin/errors.ts";
+import { messageOf, StartRefusedError } from "../plugin/errors.ts";
 import { readState } from "../runner/service.ts";
 import { TriggerStore } from "./store.ts";
 import {
@@ -1001,6 +1001,11 @@ export class Kernel {
         return { kind: "started", runId: existing.runId };
       }
     }
+
+    // Nothing is written for a refused start: the claimed event stays
+    // unrealised and is tried again once the plugin is enabled.
+    const problem = this.registry.startProblem(flow);
+    if (problem !== undefined) throw new StartRefusedError(problem);
 
     const view = input === undefined ? undefined : viewFromPayload(input.payload);
     const event: TriggerEvent | undefined =

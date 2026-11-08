@@ -310,3 +310,9 @@ the row fields.
 | T-0075-M20 | packages/engine/src/views/running.ts | a run waiting for a person counted as running, so a plugin view saw a current step | `the running view names the object and times the step > the current step of a run is what the running view reports, and nothing once it waits or ends` |
 | T-0075-M24 | packages/engine/src/views/running.ts | an ended run reported the step it ended in even when it was waiting for a person | `the running view names the object and times the step > an ended run reports the step it was in, but not a person wait` |
 | T-0075-M25 | packages/engine/src/views/running.ts | an ended run was read after its end, so no step was in flight | `the running view names the object and times the step > an ended run reports the step it was in, but not a person wait` |
+| T-0096-M1 | packages/engine/src/plugin/registry.ts | `startProblem` did not follow a step's `calls` | `a start whose called step is not loaded > absent: the plugin is not loaded at all` |
+| T-0096-M2 | packages/engine/src/plugin/registry.ts | a disabled plugin was reported as not loaded | `a start whose called step is not loaded > disabled: refused with the step, the plugin and the command` |
+| T-0096-M3 | packages/engine/src/trigger/kernel.ts | `realizeStart` did not refuse a flow with a missing step | `a start whose called step is not loaded > absent: the plugin is not loaded at all` |
+| T-0096-M4 | packages/engine/src/loop/serve.ts | serve spawned a child for a run whose called step is missing | `a start whose called step is not loaded > recovery leaves a run whose called step went missing, and says why` |
+| T-0096-M5 | packages/engine/src/plugin/registry.ts | a nested call was never checked against `calls` | `calls > a call the step did not declare fails in tests` |
+| T-0096-M6 | packages/engine/src/plugin/registry.ts | every nested call to a harness step was refused | `calls > a call a step of a harness plugin needs no declaration` |

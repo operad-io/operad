@@ -1389,11 +1389,16 @@ function commandFlows(context: Context, io: CliIo, json: boolean): void {
   if (json) {
     io.write(
       `${JSON.stringify(
-        flows.map((entry) => ({
-          name: entry.flow.name,
-          plugin: entry.plugin,
-          source: entry.source ?? null,
-        })),
+        flows.map((entry) => {
+          const problem = context.registry.startProblem(entry.flow.name);
+          return {
+            name: entry.flow.name,
+            plugin: entry.plugin,
+            source: entry.source ?? null,
+            startable: problem === undefined,
+            ...(problem === undefined ? {} : { problem }),
+          };
+        }),
         null,
         2,
       )}\n`,
@@ -1409,7 +1414,10 @@ function commandFlows(context: Context, io: CliIo, json: boolean): void {
       entry.source === undefined || entry.source === entry.plugin
         ? ""
         : `  (${entry.source})`;
-    io.write(`${entry.flow.name}  ${entry.plugin}${source}\n`);
+    const problem = context.registry.startProblem(entry.flow.name);
+    io.write(
+      `${entry.flow.name}  ${entry.plugin}${source}${problem === undefined ? "" : `  ${problem}`}\n`,
+    );
   }
 }
 
@@ -1510,6 +1518,7 @@ async function commandServe(
       lockRoot: context.storeRoot,
       kernel,
       spawnRun: spawnChild(context.home, context.storeRoot),
+      onLog: (message) => io.error(`${message}\n`),
       intervalMs: Number.isFinite(parsed) && parsed > 0 ? parsed : 1_000,
       signal: controller.signal,
       clock: () => Date.now(),
@@ -1545,6 +1554,8 @@ async function commandRunInternal(
   if (found === undefined) {
     throw new StateError(`run "${runId}": flow "${run.flow}" is not loaded`);
   }
+  const problem = context.registry.startProblem(run.flow);
+  if (problem !== undefined) throw new StateError(`run "${runId}": ${problem}`);
   const object = parseObjectKey(run.object);
   let rules: readonly TriggerRule[] = [];
   try {

@@ -76,6 +76,7 @@ export default definePlugin({
     },
     {
       name: "outer",
+      calls: ["lim/hold"],
       results: ["ok", "failed", "interrupted"],
       async run(ctx, params) {
         const run = ctx.runStep;
