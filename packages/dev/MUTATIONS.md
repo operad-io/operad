@@ -278,4 +278,3 @@ the row fields.
 | T-0087-M7 | packages/dev/src/rework.ts | a pure deletion marked no line, so its hunk left the increment | `dev/review rework rounds > a rework that only deletes a line keeps its hunk in the increment` |
 | T-0087-M8 | packages/dev/src/gate.ts | the rework-round line was not added to the task's Changes | `dev/review rework rounds > the first review gets the whole diff; a rework round gets the previous findings and the increment` |
 | T-0087-M9 | packages/dev/src/gate.ts | a review of an unfollowed earlier review still moved findings as pre-existing | `dev/review rework rounds > a reverify of the same commit demotes nothing` |
-| T-0087-M10 | packages/dev/src/gate.ts | the increment read the new side without context lines | `dev/review rework rounds > the increment reads context lines, so a deletion beside the task's change keeps its hunk` |
