@@ -74,6 +74,49 @@ export async function currentRunStep(
   return { step: state.step, startedAt: stepStartedAt };
 }
 
+/** How an ended run stopped: the step it was in, if a step was in flight. */
+export interface RunEnd {
+  /** The step in flight when the run ended; null when it ended from a person wait or before any step. */
+  readonly step: string | null;
+  /** When that step's current attempt started; null with no step. */
+  readonly startedAt: number | null;
+  readonly endedAt: number;
+}
+
+/**
+ * Where an ended run stopped, from its own facts: the step it was in and when
+ * that attempt started, unless it was waiting for a person, which is not a
+ * step in flight. Undefined for a run that is unknown or still active.
+ */
+export async function endedRunStep(
+  log: LogBackend,
+  runId: string,
+): Promise<RunEnd | undefined> {
+  const info = (await log.runs()).find((run) => run.runId === runId);
+  if (info === undefined || info.active) return undefined;
+  let state = initialState();
+  let before: KernelState | undefined;
+  let stepStartedAt: number | null = null;
+  let endedAt = info.endedAt ?? info.startedAt;
+  for await (const fact of log.read(runId)) {
+    if (fact.kind === "run_ended") {
+      before = state;
+      endedAt = fact.time;
+    }
+    state = evolve(state, fact);
+    if (fact.kind === "step_entered" || fact.kind === "effect_requested") {
+      stepStartedAt = fact.time;
+    }
+  }
+  const last = before ?? state;
+  const inFlight = isRunning(last) && last.step !== null && stepStartedAt !== null;
+  return {
+    step: inFlight ? last.step : null,
+    startedAt: inFlight ? stepStartedAt : null,
+    endedAt,
+  };
+}
+
 export async function listRunning(
   log: LogBackend,
   clock: () => number = () => Date.now(),

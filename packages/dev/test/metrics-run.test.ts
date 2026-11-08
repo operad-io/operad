@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
   currentRunStep,
+  endedRunStep,
   decide,
   evolve,
   FilePluginStore,
@@ -80,6 +81,9 @@ async function world() {
     async result(result: string): Promise<void> {
       await feed((inputId) => ({ kind: "step_result", effectId, result, inputId }));
     },
+    async cancel(): Promise<void> {
+      await feed((inputId) => ({ kind: "cancel", inputId }));
+    },
     async answer(choice: string): Promise<void> {
       await feed((inputId) => ({
         kind: "person_answer",
@@ -97,7 +101,11 @@ async function world() {
     async show(ms: number): Promise<{ row: string; line: string; text: string }> {
       this.at(ms);
       const text = await metrics(
-        { store, runStep: (id: string) => currentRunStep(log, id) } as never,
+        {
+          store,
+          runStep: (id: string) => currentRunStep(log, id),
+          runEnd: (id: string) => endedRunStep(log, id),
+        } as never,
         await getTask(store, task.id),
         now,
       );
@@ -287,7 +295,7 @@ describe("metrics follow the run's own step", () => {
     });
   }
 
-  test("a task cancelled while its worker runs keeps the time up to the cancel", async () => {
+  test("a task cancelled while its worker runs keeps the time up to the cancel, step included", async () => {
     const w = await world();
     try {
       await w.put("test:start", { number: 1 });
@@ -298,11 +306,49 @@ describe("metrics follow the run's own step", () => {
       // The worker runs for twenty minutes, then the task is cancelled.
       w.at(1200);
       await w.put("dev:task-cancel", { number: 1 }, "cancelled");
-      await w.log.endRun((await w.log.runs())[0]?.runId ?? "");
+      await w.cancel();
       const seen = await w.show(1500);
       expect(seen.row).toBe("| 1 | 20m | – | cancelled |");
       expect(seen.text).toContain("| total | 20m | – | |");
+      expect(seen.line).toBe("**#1** worktree 2s · work 19m58s");
       expect(seen.text).not.toContain("(running)");
+    } finally {
+      await w.log.close();
+    }
+  });
+
+  test("a task cancelled while its review is in flight counts the review up to the cancel", async () => {
+    const w = await world();
+    try {
+      await toVerify(w);
+      w.at(72);
+      await w.put("dev:verify", { number: 1, verify: { result: "pass" } });
+      await w.result("pass");
+      // The review's pending record is its start; the task is cancelled 18 minutes later.
+      w.at(73);
+      await w.put("dev:review", { number: 1, reviewPending: { round: 1 } });
+      w.at(1153);
+      await w.put("dev:task-cancel", { number: 1, reviewPending: { round: 1 } }, "cancelled");
+      await w.cancel();
+      const seen = await w.show(1500);
+      expect(seen.row).toBe("| 1 | 19m | – | cancelled |");
+      expect(seen.line).toBe("**#1** worktree 2s · work 1m00s · verify 10s · review 18m01s");
+    } finally {
+      await w.log.close();
+    }
+  });
+
+  test("a task cancelled from a person wait does not count the wait", async () => {
+    const w = await world();
+    try {
+      await toWait(w);
+      w.at(1100);
+      await w.put("dev:task-cancel", { number: 1, review: { result: "passed" } }, "cancelled");
+      await w.cancel();
+      const seen = await w.show(1200);
+      expect(seen.row).toBe("| 1 | 2m | – | cancelled |");
+      expect(seen.text).toContain("| total | 2m | – | |");
+      expect(seen.line).toBe("**#1** worktree 2s · work 1m00s · verify 10s · review 20s");
     } finally {
       await w.log.close();
     }
