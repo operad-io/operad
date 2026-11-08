@@ -109,4 +109,26 @@ describe("the TUI Markdown", () => {
     expect(mermaid?.code).toBe(true);
     expect(lines.find((line) => line.text.includes("| alpha"))?.code).toBe(false);
   });
+
+  test("a four-backtick diff colours + and - lines and keeps indentation", () => {
+    const lines = markdownLines(
+      "````diff\n--- a/f\n+++ b/f\n docs/manual.md | 2 +-\n docs/other.md | 1 +\n@@ -1 +1 @@\n-old\n+```\n+new\n````",
+      TUI_PALETTE.dark,
+    );
+    const colourOf = (needle: string): string | undefined => {
+      const found = lines.find((line) => line.text.includes(needle));
+      const fg = found?.chunks.find((chunk) => chunk.fg !== undefined)?.fg;
+      return fg?.toInts().join(",");
+    };
+    const ints = (hex: string): string => RGBA.fromHex(hex).toInts().join(",");
+    expect(colourOf("+new")).toBe(ints(TUI_PALETTE.dark.add));
+    expect(colourOf("+```")).toBe(ints(TUI_PALETTE.dark.add));
+    expect(colourOf("-old")).toBe(ints(TUI_PALETTE.dark.remove));
+    expect(colourOf("+++ b/f")).toBe(ints(TUI_PALETTE.dark.add));
+    expect(colourOf("--- a/f")).toBe(ints(TUI_PALETTE.dark.remove));
+    expect(colourOf("@@")).toBe(ints(TUI_PALETTE.dark.accent));
+    const texts = lines.map((line) => line.text);
+    expect(texts).toContain("   docs/manual.md | 2 +-");
+    expect(texts).toContain("   docs/other.md | 1 +");
+  });
 });

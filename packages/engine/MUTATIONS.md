@@ -271,3 +271,12 @@ the row fields.
 | T-0065-M5 | packages/engine/src/platform/process-group.ts | the sweep signalled the group id after the sentinel was reaped, when an unrelated group could own it | `process groups > no signal goes to the group id once the sentinel is reaped` |
 | T-0065-M4 | packages/engine/src/platform/file-lock.ts | a lock takeover removed the lock file without checking, under the guard, that it was still the dead record | `the lock file > a newer live lock renamed during a takeover is put back` |
 | T-0065-M6 | packages/engine/src/platform/process-group.ts | the sweep ran although the first SIGKILL reported the group already gone, when an unrelated group could own the id | `process groups > a SIGKILL that finds no group starts no sweep` |
+## T-0089 — fences per CommonMark
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0089-M1 | packages/engine/src/markdown.ts | an opening fence accepted only exactly three backticks (`{3}`), so `````diff` lost its language | `markdown fences > a four-backtick fence reads its language and colours a diff` |
+| T-0089-M2 | packages/engine/src/markdown.ts | a closing fence ignored its length (any fence of the same character closed) | `markdown fences > a ``` line inside a ```` fence is content` |
+| T-0089-M3 | packages/engine/src/markdown.ts | a closing fence ignored its character (a backtick fence closed a tilde fence) | `markdown fences > closing needs the same character and a length at least the opening's` |
+| T-0089-M4 | packages/engine/src/markdown.ts | the language was the whole info string, not its first word | `markdown fences > only the first word of the info string is the language` |
+| T-0089-M5 | packages/engine/src/markdown.ts | `---`/`+++` diff headers were drawn bold again instead of red/green | `markdown > a four-backtick diff colours + and - lines and keeps indentation` |
