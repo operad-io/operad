@@ -139,6 +139,40 @@ describe("rules, text and the selected row", () => {
     expect(label?.fg?.toInts().join(",")).toBe(ints(BUILTIN_THEMES.light.text));
   });
 
+  test("note text and unselected palette entries use the text token", () => {
+    let state = initialState({ width: 120, height: 24, theme: "dark" });
+    state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
+    state = reduce(state, {
+      type: "rows",
+      tabId: "type:item",
+      rows: [{ id: "item:one", title: "One", state: "new", waiting: false, running: false }],
+    });
+    state = reduce(state, { type: "key", key: "3" });
+    state = reduce(state, { type: "key", key: "enter" });
+    state = reduce(state, {
+      type: "object",
+      object: {
+        id: "item:one",
+        type: "item",
+        link: "x",
+        row: { id: "item:one", title: "One", state: "new", waiting: false, running: false },
+        sections: [],
+        actions: ["a", "b"].map((short) => ({
+          plugin: "tuitest", action: short, on: "item", name: `tuitest:${short}`,
+          noteRequired: false, confirm: false,
+        })),
+      },
+    });
+    const text = ints(BUILTIN_THEMES.dark.text);
+    const note = drawState(
+      { ...state, input: { kind: "note", action: "tuitest:a", id: "item:one", text: "hello", required: false, confirm: false } },
+      "dark",
+    ).overlay;
+    expect(note?.chunks.find((c) => c.text.includes("hello"))?.fg?.toInts().join(",")).toBe(text);
+    const palette = drawState({ ...state, input: { kind: "palette", query: "", cursor: 0 } }, "dark").overlay;
+    expect(palette?.chunks.find((c) => c.text === "tuitest:b")?.fg?.toInts().join(",")).toBe(text);
+  });
+
   test("the tint covers the whole selected row, padding included", () => {
     const state = stateOf("dark");
     const row = drawState(state, "dark").list.chunks.filter((c) => c.text !== "\n");

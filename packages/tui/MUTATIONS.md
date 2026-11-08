@@ -160,3 +160,5 @@ the row fields.
 | T-0070-M7 | packages/tui/src/markdown.ts | plain markdown text used the weak token instead of text | `rules, text and the selected row > plain markdown text and code use the text token` |
 | T-0070-M8 | packages/tui/src/view/index.ts | the selected row's label was not padded, so the tint stopped short | `rules, text and the selected row > the tint covers the whole selected row, padding included` |
 | T-0070-M9 | packages/tui/src/view/index.ts | an unselected list label had no colour, so it kept the terminal foreground | `rules, text and the selected row > an unselected list label uses the text token` |
+| T-0070-M10 | packages/tui/src/view/index.ts | the typed note text had no colour, so it kept the terminal foreground | `rules, text and the selected row > note text and unselected palette entries use the text token` |
+| T-0070-M11 | packages/tui/src/view/index.ts | an unselected palette entry name had no colour | `rules, text and the selected row > note text and unselected palette entries use the text token` |

@@ -407,7 +407,7 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
   if (input.kind === "note") {
     const chunks: TextChunk[] = [
       chunk(`${input.action} · note${input.required ? " (required)" : ""}\n`, palette.accent, TextAttributes.BOLD),
-      chunk(`${input.text}${bar}\n`),
+      chunk(`${input.text}${bar}\n`, palette.text),
       chunk("enter sends · shift-enter or ctrl-j adds a line · esc cancels", palette.weak),
     ];
     return styled(chunks);
@@ -422,7 +422,7 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
   entries.forEach((entry, at) => {
     const hint = entryHint(entry);
     chunks.push(chunk(at === input.cursor ? "❯ " : "  ", palette.accent));
-    chunks.push(chunk(entry.name, at === input.cursor ? palette.accent : undefined));
+    chunks.push(chunk(entry.name, at === input.cursor ? palette.accent : palette.text));
     chunks.push(chunk(hint === "" ? "\n" : `  ${hint}\n`, palette.weak));
   });
   return styled(chunks);
