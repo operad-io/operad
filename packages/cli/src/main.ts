@@ -24,6 +24,7 @@ import {
   historyEntries,
   listPending,
   listRunning,
+  type RunningItem,
   loadConfiguredPlugins,
   loadPlugin,
   loadPluginRegistry,
@@ -315,15 +316,6 @@ function splitFlag(
     else args.push(arg);
   }
   return { args, present };
-}
-
-function seconds(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const whole = Math.floor(ms / 1000);
-  if (whole < 60) return `${(ms / 1000).toFixed(1)}s`;
-  const minutes = Math.floor(whole / 60);
-  const rest = whole % 60;
-  return `${minutes}m ${rest}s`;
 }
 
 function printValue(io: CliIo, value: unknown): void {
@@ -1341,7 +1333,7 @@ async function commandRunning(
   io: CliIo,
   json: boolean,
 ): Promise<void> {
-  const running = await listRunning(context.log);
+  const running = await listRunning(context.log, undefined, context.views);
   if (json) {
     io.write(`${JSON.stringify(running, null, 2)}\n`);
     return;
@@ -1352,9 +1344,29 @@ async function commandRunning(
   }
   for (const item of running) {
     io.write(
-      `${item.runId}  ${item.flow}  ${item.stepLabel ?? "-"}  ${seconds(item.elapsedMs)}\n`,
+      `${runningLine(item)}\n`,
     );
   }
+}
+
+/** One `operad running` line: object (run id without one), step, step time, title, run age. */
+export function runningLine(item: RunningItem): string {
+  const parts = [
+    item.object ?? item.runId,
+    item.stepLabel ?? "-",
+    item.stepElapsedMs === null ? "-" : age(item.stepElapsedMs),
+  ];
+  if (item.title !== null) parts.push(item.title);
+  parts.push(`run ${age(item.elapsedMs)}`);
+  return parts.join("  ");
+}
+
+function age(ms: number): string {
+  const total = Math.floor(Math.max(0, ms) / 1000);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+  return minutes > 0 ? `${minutes}m ${String(total % 60).padStart(2, "0")}s` : `${total}s`;
 }
 
 function commandFlows(context: Context, io: CliIo, json: boolean): void {
