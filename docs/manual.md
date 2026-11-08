@@ -436,6 +436,35 @@ Every error body is:
 | `504` | A section did not load in time. |
 | `500` | Anything else; the body carries no stack trace. |
 
+## The History section
+
+Every object has a History section (`operad show <id> --section history`, the
+last tab in the web page and the terminal screen). It groups by run, then by
+attempt of each step. A run's heading names the flow and when it started; the
+run id comes once at the end of the run's block, in small text, for support.
+A step attempt is one line: the local time of the host that serves it, the step,
+the attempt when it is above 1, why it started when that is not the plain next
+step (`after fail`, `after reverify`), the outcome, how long it took (a running
+step shows `running` and how long so far) and the outcome's detail cut to one
+line with `…`. People's answers and events keep their own line. A date line
+starts each new day.
+
+```
+## dev run · started 21:38
+**2026-11-08**
+- 21:38:41  worktree  ready  1s
+- 21:38:44  work  done  41m
+- 22:20:01  review  fail  58s  packages/dev/src/gate.ts:1059 major …
+- 22:21:01  work  attempt 2  after fail  done  1m
+- 22:22:02  confirm  reverify  8m
+- 22:30:02  you chose merge: via plugin, as dev
+- 22:30:04  verify  after reverify  running  2m
+<sub>run 01bb7a85-d171-4d83-81d0-8990b77dab78</sub>
+```
+
+`operad show <id> --section history --full` keeps each detail whole.
+`operad history <id>` is unchanged: it prints every step with a UTC time.
+
 ## Levels
 
 A plugin can arrange its objects in levels. A row may carry `parent`: the id of
