@@ -77,7 +77,11 @@ interface Fixture {
 }
 
 async function setup(
-  options: { readonly concurrency?: number | undefined } = {},
+  options: {
+    readonly concurrency?: number | undefined;
+    /** Extra dev.json fields, such as workers and pools. */
+    readonly devJson?: Readonly<Record<string, unknown>> | undefined;
+  } = {},
 ): Promise<Fixture> {
   const root = await tempRoot();
   const repositoryPath = await makeGitRepository(root);
@@ -97,10 +101,14 @@ async function setup(
     },
   });
   const repository = await addRepository(store, { path: repositoryPath });
-  if (options.concurrency !== undefined) {
+  if (options.concurrency !== undefined || options.devJson !== undefined) {
     writeFileSync(
       join(repositoryPath, ".operad", "dev.json"),
-      `${JSON.stringify({ name: repository.name, concurrency: options.concurrency })}\n`,
+      `${JSON.stringify({
+        name: repository.name,
+        ...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
+        ...options.devJson,
+      })}\n`,
     );
   }
   const lines: string[] = [];
@@ -251,6 +259,38 @@ describe("dev scheduling", () => {
     await makeTask(limited, limitedPlan.key, "second");
     await confirm(limited, limitedPlan.key);
     expect((await tick(limited)).length).toBe(1);
+  });
+
+  test("the running-task cap is the sum of the default pool's counts", async () => {
+    const workers = {
+      claude: { use: "harness-claude/agent", count: 2 },
+      pi: { use: "harness-pi/agent", count: 1 },
+      codex: { use: "harness-codex/agent", count: 5 },
+    };
+    const fixture = await setup({
+      devJson: { workers, pools: { default: ["claude", "pi"], design: ["codex"] } },
+    });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run", concurrency: 9 });
+    for (const slug of ["a", "b", "c", "d"]) await makeTask(fixture, plan.key, slug);
+    await confirm(fixture, plan.key);
+    // 2 + 1 from default; the design pool's 5 does not count.
+    expect((await tick(fixture)).length).toBe(3);
+  });
+
+  test("concurrency caps the sum of the default pool's counts further", async () => {
+    const fixture = await setup({
+      concurrency: 2,
+      devJson: {
+        workers: {
+          claude: { use: "harness-claude/agent", count: 2 },
+          pi: { use: "harness-pi/agent", count: 2 },
+        },
+      },
+    });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run", concurrency: 9 });
+    for (const slug of ["a", "b", "c"]) await makeTask(fixture, plan.key, slug);
+    await confirm(fixture, plan.key);
+    expect((await tick(fixture)).length).toBe(2);
   });
 
   test("a task starts only after every task it follows has merged", async () => {

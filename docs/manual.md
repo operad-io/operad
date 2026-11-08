@@ -557,7 +557,7 @@ An alias or function from the user's own shell setup, such as `ls` defined as
 Agent runs cost an account, not a repository: one Claude or Codex login serves
 every repository on the machine. The `pool` plugin has one step, `pool/agent`,
 that picks a worker with room, runs that worker's harness step and hands the
-result back. A flow that uses it (the `dev` flow will) describes its workers;
+result back. A flow that uses it (the `dev` flow does) describes its workers;
 the home says how many runs one harness may have in all.
 
 The plugin is shipped but not installed by `operad init`; `operad plugin enable
@@ -655,6 +655,58 @@ are kept in one file under the home, `pool/places.json`, changed under a lock
 file. Steps in any thread or process of the home see the same counts. A place
 records the process that holds it; when that process is gone (a crashed serve)
 the place is dropped the next time a `pool/agent` step looks.
+
+## `dev.json`: workers and pools
+
+The `dev` plugin's work step runs every task through `pool/agent`, so `dev`
+needs the `pool` plugin enabled (`operad plugin enable pool`). The repository
+chooses its workers in `<repository>/.operad/dev.json`; `dev` reads that file in
+the registered repository's main clone, never the copy in a task's worktree,
+which carries whatever the task's branch had when it started.
+
+| Field | Type | What it does |
+|---|---|---|
+| `workers` | object | The repository's workers. Same fields as in [A flow: `workers` and `pools`](#a-flow-workers-and-pools); that table is the one place the worker fields, defaults and refusals are listed. |
+| `pools` | object | Pool groups. `dev` uses the pool named `default`, so a `pools` setting must define it. Without `pools`, `default` holds every worker in the order written. |
+| `concurrency` | integer, 1 or more | An extra cap on running tasks; see below. |
+
+```json
+{
+  "workers": {
+    "claude": { "use": "harness-claude/agent", "args": ["--model", "sonnet"], "fallback": "pi" },
+    "pi": { "use": "harness-pi/agent", "args": ["--model", "opencode-go/deepseek-v4.1-flash"] }
+  },
+  "pools": { "default": ["claude", "pi"] }
+}
+```
+
+Errors in `workers` and `pools` name the field path, such as
+`workers.claude.fallback` or `pools.default[1]`.
+
+**The old `worker` form.** `worker` (`use`, `args`, `wallTimeSecs`,
+`stallSecs`) still works and means one worker named after its harness plugin
+(`harness-radian` for `harness-radian/agent`), with `count` equal to
+`concurrency`, alone in the pool `default`. Its runs count under the home cap of
+its harness like any worker's. A file that has both `worker` and `workers`, or
+`pools` without `workers`, is refused when it is read.
+
+**How many tasks run at once.** A repository runs at most as many tasks as the
+sum of the `count` of the workers in its `default` pool. When the file sets
+`concurrency` it caps that sum further and never raises it. A plan's own
+`concurrency` still applies on top of this. A task past the cap waits for a
+free place; one past a worker's own `count` or the home cap waits in
+`pool/agent`.
+
+**Which worker.** The work step passes the `default` pool and the key
+`<repository>/default` to `pool/agent`. The attempt records the `worker` that
+ran (after a fallback, the fallback worker, with `fallbackFrom` naming the one
+that failed), and the work result says `work: claude` or
+`work: pi (fallback from claude)`. After a rework or a reject, the next work
+attempt asks for the worker of the attempt before, so it resumes that worker's
+session when the harness can. If that worker is busy the work waits for it;
+another worker does not take it. If the worker is no longer in the `default`
+pool the pool picks any worker with room and the result says
+`work: pi; claude is no longer in the pool`.
 
 ## Usage and end results
 

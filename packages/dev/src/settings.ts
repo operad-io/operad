@@ -14,6 +14,14 @@ import {
   resolve,
   sep,
 } from "node:path";
+import {
+  DEFAULT_POOL,
+  harnessOf,
+  parseWorkers,
+  WorkerDefinitionError,
+  type ParsedWorkers,
+  type WorkerDefinition,
+} from "@operad-io/pool";
 import { DevError, isRecord } from "./model.ts";
 
 /** Where a repository keeps its dev settings. */
@@ -37,6 +45,32 @@ export interface WorkerSettings {
   readonly args: readonly string[];
   readonly wallTimeSecs?: number | undefined;
   readonly stallSecs?: number | undefined;
+}
+
+/** The name of a harness step's plugin, or the whole text when it has no `/`. */
+function workerNameOf(use: string): string {
+  return use.includes("/") ? harnessOf(use) : use;
+}
+
+/**
+ * The old single `worker` as a pool: one worker named after its harness,
+ * `count` = `concurrency`, in a pool named `default`.
+ */
+function legacyWorkers(worker: WorkerSettings, concurrency: number): ParsedWorkers {
+  const name = workerNameOf(worker.use);
+  return {
+    workers: [
+      {
+        name,
+        use: worker.use,
+        args: worker.args,
+        count: concurrency,
+        ...(worker.wallTimeSecs === undefined ? {} : { wallTimeSecs: worker.wallTimeSecs }),
+        ...(worker.stallSecs === undefined ? {} : { stallSecs: worker.stallSecs }),
+      },
+    ],
+    pools: { [DEFAULT_POOL]: [name] },
+  };
 }
 
 /** How serious a review finding must be before it fails the gate. */
@@ -101,9 +135,23 @@ export interface DevSettings {
   readonly remote: string;
   readonly mainBranch: string;
   readonly worktreeRoot: string;
-  /** How many tasks this repository may run at once. */
+  /**
+   * The cap `concurrency` sets on running tasks. When the file does not set
+   * it, the default pool's counts alone decide (see `runningTaskCap`).
+   */
   readonly concurrency: number;
+  /** Whether the file wrote `concurrency` itself. */
+  readonly concurrencySet: boolean;
+  /**
+   * The worker the repository's work step runs first: the old `worker`
+   * setting, or the first worker of the `default` pool.
+   */
   readonly worker: WorkerSettings;
+  /**
+   * Every worker and pool of the repository. The old `worker` setting is one
+   * worker named after its harness, with `count` = `concurrency`, in `default`.
+   */
+  readonly workers: ParsedWorkers;
   readonly workerBrief: string;
   readonly gate: GateSettings;
   readonly check: CheckSettings;
@@ -142,10 +190,12 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
   mainBranch: "main",
   worktreeRoot: ".operad-worktrees",
   concurrency: 1,
+  concurrencySet: false,
   worker: {
     use: DEFAULT_WORKER_USE,
     args: [],
   },
+  workers: legacyWorkers({ use: DEFAULT_WORKER_USE, args: [] }, 1),
   workerBrief: WORKER_BRIEF_FILE,
   gate: {
     commands: [],
@@ -183,6 +233,8 @@ const KNOWN_FIELDS = new Set([
   "sandbox",
   "concurrency",
   "worker",
+  "workers",
+  "pools",
   "workerBrief",
   "gate",
   "check",
@@ -529,6 +581,83 @@ function worktreeRootOf(value: Record<string, unknown>): {
   return { root: DEFAULT_DEV_SETTINGS.worktreeRoot, field: "worktreeRoot" };
 }
 
+/** The first worker of the `default` pool, as the single-worker settings. */
+function firstWorker(workers: ParsedWorkers): WorkerSettings {
+  const name = workers.pools[DEFAULT_POOL]?.[0];
+  const found = workers.workers.find((worker) => worker.name === name);
+  if (found === undefined) {
+    throw new DevError("pools", `needs a pool named "${DEFAULT_POOL}"`);
+  }
+  return {
+    use: found.use,
+    args: found.args,
+    ...(found.wallTimeSecs === undefined ? {} : { wallTimeSecs: found.wallTimeSecs }),
+    ...(found.stallSecs === undefined ? {} : { stallSecs: found.stallSecs }),
+  };
+}
+
+/** Reads `worker` or `workers` and `pools`; both forms together are refused. */
+function workerSettingsOf(
+  value: Readonly<Record<string, unknown>>,
+  concurrency: number,
+): { readonly worker: WorkerSettings; readonly workers: ParsedWorkers } {
+  if (value.workers === undefined) {
+    if (value.pools !== undefined) {
+      throw new DevError("pools", "needs workers; the single worker setting has no pools");
+    }
+    const worker =
+      value.worker === undefined
+        ? DEFAULT_DEV_SETTINGS.worker
+        : workerSettings(value.worker, "worker");
+    return { worker, workers: legacyWorkers(worker, concurrency) };
+  }
+  if (value.worker !== undefined) {
+    throw new DevError(
+      "worker",
+      "cannot be set together with workers; use one or the other",
+    );
+  }
+  let workers: ParsedWorkers;
+  try {
+    workers = parseWorkers(value.workers, value.pools);
+  } catch (error) {
+    if (error instanceof WorkerDefinitionError) {
+      throw new DevError(error.field, error.message.slice(error.field.length + 2));
+    }
+    throw error;
+  }
+  if (workers.pools[DEFAULT_POOL] === undefined) {
+    throw new DevError("pools", `needs a pool named "${DEFAULT_POOL}", the one the dev flow uses`);
+  }
+  return { worker: firstWorker(workers), workers };
+}
+
+/** The workers of one pool, in the order the pool lists them. */
+export function poolWorkers(
+  settings: DevSettings,
+  pool: string,
+): readonly WorkerDefinition[] {
+  const names = settings.workers.pools[pool] ?? [];
+  const found: WorkerDefinition[] = [];
+  for (const name of names) {
+    const worker = settings.workers.workers.find((item) => item.name === name);
+    if (worker !== undefined) found.push(worker);
+  }
+  return found;
+}
+
+/**
+ * How many tasks the repository runs at once: the sum of the `default` pool's
+ * counts, further capped by `concurrency` when the file sets it.
+ */
+export function runningTaskCap(settings: DevSettings): number {
+  const total = poolWorkers(settings, DEFAULT_POOL).reduce(
+    (sum, worker) => sum + worker.count,
+    0,
+  );
+  return settings.concurrencySet ? Math.min(total, settings.concurrency) : total;
+}
+
 /** Validates one parsed dev.json value and fills the defaults. */
 export function validateDevSettings(value: unknown): DevSettings {
   if (!isRecord(value)) {
@@ -540,6 +669,11 @@ export function validateDevSettings(value: unknown): DevSettings {
     }
   }
   const worktreeRoot = worktreeRootOf(value);
+  const concurrency =
+    value.concurrency === undefined
+      ? DEFAULT_DEV_SETTINGS.concurrency
+      : positiveInteger(value.concurrency, "concurrency");
+  const { worker, workers } = workerSettingsOf(value, concurrency);
   return {
     ...(value.name === undefined
       ? {}
@@ -553,14 +687,10 @@ export function validateDevSettings(value: unknown): DevSettings {
         ? DEFAULT_DEV_SETTINGS.mainBranch
         : nonEmptyString(value.mainBranch, "mainBranch"),
     worktreeRoot: worktreeRoot.root,
-    concurrency:
-      value.concurrency === undefined
-        ? DEFAULT_DEV_SETTINGS.concurrency
-        : positiveInteger(value.concurrency, "concurrency"),
-    worker:
-      value.worker === undefined
-        ? DEFAULT_DEV_SETTINGS.worker
-        : workerSettings(value.worker, "worker"),
+    concurrency,
+    concurrencySet: value.concurrency !== undefined,
+    worker,
+    workers,
     workerBrief:
       value.workerBrief === undefined
         ? DEFAULT_DEV_SETTINGS.workerBrief

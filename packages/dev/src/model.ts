@@ -258,6 +258,14 @@ export type TaskAttempt = {
   readonly costMicros?: number | null;
   /** How far to trust the cost: `exact`, `estimated` or `incomplete`. */
   readonly costQuality?: "exact" | "estimated" | "incomplete" | null;
+  /** The worker the pool ran for this attempt's work (the fallback one when it fell back). */
+  readonly worker?: string | null;
+  /** The worker that failed over to `worker`, when the pool fell back. */
+  readonly fallbackFrom?: string | null;
+  /** The worker of the attempt before, which this attempt's work asks for again. */
+  readonly previousWorker?: string | null;
+  /** The earlier worker that was no longer in the pool, when the work changed hands. */
+  readonly workerChanged?: string | null;
   /** Whether the work step consumed this attempt; a later worktree visit is new work. */
   readonly worked?: boolean;
   /** The file the worker's own log was written to. */

@@ -247,3 +247,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0047-M6 | packages/engine/src/views/presentation.ts | show accepted `--repo` that differs from a qualified id | `dev` cli test `a qualified id with an unknown repository, or a conflicting --repo, is refused` |
+| T-0043-M8 | packages/engine/src/plugin/registry.ts | a nested step did not pass the parent's event destination on | `dev/work with workers > a rework waits for its worker while another worker is free` (`pool.waiting` could not be sent) |

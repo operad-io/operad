@@ -27,10 +27,12 @@ import {
   type TaskAttempt,
   type TaskData,
 } from "./model.ts";
+import { DEFAULT_POOL, resolvePool } from "@operad-io/pool";
 import { findRepository, withRepoLock } from "./service.ts";
 import { MAX_WORK_WAITS } from "./timeouts.ts";
 import {
   assertInsideRepository,
+  poolWorkers,
   readDevSettings,
   readWorkerBrief,
   type DevSettings,
@@ -148,8 +150,15 @@ function attemptFor(ctx: StepContext, task: TaskData): AttemptState {
     return { attempt: previous, attempts: task.attempts, replay: true };
   }
   const number = Math.max(task.attempts, previous?.number ?? 0) + 1;
+  // The worker of the attempt before this one, so the work goes back to it.
+  const previousWorker =
+    typeof previous?.worker === "string" ? previous.worker : previous?.previousWorker;
   return {
-    attempt: { number, run: ctx.runId },
+    attempt: {
+      number,
+      run: ctx.runId,
+      ...(typeof previousWorker === "string" ? { previousWorker } : {}),
+    },
     attempts: number,
     replay: false,
   };
@@ -721,24 +730,37 @@ function resultData(
   };
 }
 
-function harnessParams(
+/**
+ * The params of the `pool/agent` call: the `default` pool's definitions, the
+ * key prefix `<repository>/default`, and the worker a rework goes back to.
+ */
+function poolParams(
   prompt: string,
   worktree: string,
+  repository: RepositoryData,
   settings: DevSettings,
+  worker: string | undefined,
 ): Record<string, unknown> {
+  const resolved = resolvePool(settings.workers, DEFAULT_POOL);
   return {
     prompt,
     cwd: worktree,
-    // An empty list is still a configured value: leaving it out would let the
-    // flow's params provide the harness arguments the repository did not set.
-    args: settings.worker.args,
-    ...(settings.worker.wallTimeSecs === undefined
-      ? {}
-      : { wallTimeSecs: settings.worker.wallTimeSecs }),
-    ...(settings.worker.stallSecs === undefined
-      ? {}
-      : { stallSecs: settings.worker.stallSecs }),
+    prefix: `${repository.name}/${DEFAULT_POOL}`,
+    workers: resolved.workers,
+    fallbacks: resolved.fallbacks,
+    ...(worker === undefined ? {} : { worker }),
   };
+}
+
+/** The history line of a work run: `claude`, or `pi (fallback from claude)`. */
+function workLine(attempt: TaskAttempt): string {
+  const base = `work: ${String(attempt.worker)}`;
+  const from = attempt.fallbackFrom;
+  const changed = attempt.workerChanged;
+  return [
+    typeof from === "string" ? `${base} (fallback from ${from})` : base,
+    typeof changed === "string" ? `; ${changed} is no longer in the pool` : "",
+  ].join("");
 }
 
 /** Step `dev/work`: run the configured harness step and decide what it left. */
@@ -844,12 +866,24 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
     signal: ctx.signal,
   };
+  // A rework or reject goes back to the worker that ran the attempt before,
+  // and resumes its session when the harness can. When that worker is no
+  // longer in the pool, any free worker takes it and the change is recorded.
+  const before =
+    typeof attempt.previousWorker === "string" && attempt.previousWorker.length > 0
+      ? attempt.previousWorker
+      : undefined;
+  const stillThere =
+    before !== undefined &&
+    poolWorkers(context.settings, DEFAULT_POOL).some((worker) => worker.name === before);
+  const asked = stillThere ? before : undefined;
+  const workerChangedFrom = before !== undefined && !stillThere ? before : undefined;
   let outcome: PluginStepResult | undefined;
   let hostError: string | undefined;
   try {
     outcome = await runStep(
-      context.settings.worker.use,
-      harnessParams(prompt, path, context.settings),
+      "pool/agent",
+      poolParams(prompt, path, context.repository, context.settings, asked),
       options,
     );
   } catch (error) {
@@ -882,6 +916,11 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     tokens: reading.tokens,
     workMs: reading.durationMs,
     worked: true,
+    // The worker the pool ran, so the next attempt can ask for it again.
+    worker: typeof outcomeData.worker === "string" ? outcomeData.worker : null,
+    fallbackFrom:
+      typeof outcomeData.fallbackFrom === "string" ? outcomeData.fallbackFrom : null,
+    workerChanged: workerChangedFrom ?? null,
   };
 
   const finish = async (
@@ -922,6 +961,15 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
         branch,
         base,
         prompt,
+        ...(nextAttempt.worker === null || nextAttempt.worker === undefined
+          ? {}
+          : {
+              work: workLine(nextAttempt),
+              worker: nextAttempt.worker,
+              ...(typeof nextAttempt.fallbackFrom === "string"
+                ? { fallbackFrom: nextAttempt.fallbackFrom }
+                : {}),
+            }),
         ...extra,
       }),
     };

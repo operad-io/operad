@@ -39,10 +39,9 @@
       "deprecated": true
     },
     "concurrency": {
-      "description": "How many tasks this repository may run at once.",
+      "description": "An extra cap on running tasks. The repository runs at most as many tasks as the sum of the counts of the default pool's workers, and this caps that sum further. With the single worker setting it is that worker's count.",
       "type": "integer",
-      "minimum": 1,
-      "default": 1
+      "minimum": 1
     },
     "sandbox": {
       "description": "Deprecated and ignored; kept so settings written by an earlier version still validate.",
@@ -51,7 +50,7 @@
       "deprecated": true
     },
     "worker": {
-      "description": "The harness step that works a task and the limits it runs under.",
+      "description": "The old single-worker form: one worker named after its harness, with count equal to concurrency, in the pool default. Not allowed together with workers.",
       "type": "object",
       "properties": {
         "use": {
@@ -63,7 +62,9 @@
         "args": {
           "description": "Extra arguments the harness step passes to its command.",
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": []
         },
         "wallTimeSecs": {
@@ -78,7 +79,70 @@
         }
       },
       "additionalProperties": false,
-      "default": { "use": "harness-radian/agent", "args": [] }
+      "default": {
+        "use": "harness-radian/agent",
+        "args": []
+      }
+    },
+    "workers": {
+      "description": "The repository's workers, by name. At least one. Not allowed together with worker.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "use": {
+            "description": "The harness step, as plugin/step, such as harness-claude/agent.",
+            "type": "string",
+            "pattern": "^[^/\\s]+/[^/\\s]+$"
+          },
+          "args": {
+            "description": "Arguments passed to the harness step.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "count": {
+            "description": "How many runs of this worker may go at once in this repository.",
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          "wallTimeSecs": {
+            "description": "The longest a run may take, in seconds.",
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "stallSecs": {
+            "description": "How long a run may print nothing, in seconds.",
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "fallback": {
+            "description": "Another worker to run once when this worker's model is unavailable.",
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "use"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pools": {
+      "description": "Groups of workers by pool name. dev uses the pool default, which must be defined here; without pools, default holds every worker in the order written. Needs workers.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "string"
+        }
+      }
     },
     "workerBrief": {
       "description": "The Markdown a worker reads before the task brief; a missing file means the built-in text.",
@@ -93,7 +157,10 @@
         "commands": {
           "description": "The commands the verify step runs, in order, in a detached checkout of the task commit.",
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "default": []
         },
         "commandTimeoutSecs": {
@@ -104,7 +171,10 @@
         }
       },
       "additionalProperties": false,
-      "default": { "commands": [], "commandTimeoutSecs": 1800 }
+      "default": {
+        "commands": [],
+        "commandTimeoutSecs": 1800
+      }
     },
     "check": {
       "description": "What a failed gate or integration check does before it counts as a failure.",
@@ -118,7 +188,9 @@
         }
       },
       "additionalProperties": false,
-      "default": { "rerun": 1 }
+      "default": {
+        "rerun": 1
+      }
     },
     "reviewer": {
       "description": "The harness step that reviews a task's diff and the limits it runs under.",
@@ -133,13 +205,17 @@
         "args": {
           "description": "Extra arguments the harness step passes to its command.",
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": []
         },
         "firstArgs": {
           "description": "Arguments used for the first review of an attempt, when they differ from args.",
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "fallback": {
           "description": "A second harness step and arguments used when the primary reviewer is unavailable.",
@@ -153,11 +229,15 @@
             "args": {
               "description": "Arguments the fallback harness step passes to its command.",
               "type": "array",
-              "items": { "type": "string" },
+              "items": {
+                "type": "string"
+              },
               "default": []
             }
           },
-          "required": ["use"],
+          "required": [
+            "use"
+          ],
           "additionalProperties": false
         },
         "timeoutSecs": {
@@ -174,7 +254,11 @@
         "fixLevel": {
           "description": "The lowest finding severity that fails the gate.",
           "type": "string",
-          "enum": ["critical", "major", "minor"],
+          "enum": [
+            "critical",
+            "major",
+            "minor"
+          ],
           "default": "major"
         },
         "retrySecs": {
@@ -214,18 +298,27 @@
         "style": {
           "description": "Merge the verified commit with a merge commit, or squash it into one commit.",
           "type": "string",
-          "enum": ["merge", "squash"],
+          "enum": [
+            "merge",
+            "squash"
+          ],
           "default": "merge"
         },
         "keyCommands": {
           "description": "Commands the integrate step runs on the candidate before it pushes; the first failure sends the task back to the worker.",
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "default": []
         }
       },
       "additionalProperties": false,
-      "default": { "style": "merge", "keyCommands": [] }
+      "default": {
+        "style": "merge",
+        "keyCommands": []
+      }
     },
     "hooks": {
       "description": "Commands the cleanup step runs after a merge, in the repository root, with OPERAD_TASK and OPERAD_WORKTREE set.",
@@ -234,7 +327,10 @@
         "afterMerge": {
           "description": "The commands cleanup runs after a merge; a failure is recorded and does not fail the task.",
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "default": [
             "git worktree remove --force \"$OPERAD_WORKTREE\"",
             "git worktree remove --force \"$OPERAD_WORKTREE-gate\"",

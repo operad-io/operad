@@ -282,8 +282,9 @@ The file holds the repository's work settings:
 | `remote` | `origin` | the remote a task branch is fetched from and pushed to |
 | `mainBranch` | `main` | the branch a task starts from and merges on each attempt |
 | `worktreeRoot` | `.operad-worktrees` | where task worktrees live, relative to the repository and inside it |
-| `concurrency` | `1` | how many tasks this repository may run at once; each plan also has its own limit |
-| `worker.use` | `harness-radian/agent` | the harness step that works a task |
+| `concurrency` | none | a cap on running tasks, applied to the sum of the `default` pool's counts; with the old `worker` form it is the one worker's `count` (default `1`); each plan also has its own limit |
+| `workers`, `pools` | none | the repository's workers and pools; fields are in the manual ("`dev.json`: workers and pools"). Not allowed together with `worker` |
+| `worker.use` | `harness-radian/agent` | the harness step that works a task; the old single-worker form, one worker named after its harness |
 | `worker.args` | `[]` | extra arguments for that harness step |
 | `worker.wallTimeSecs`, `worker.stallSecs` | harness defaults | the worker's time limits |
 | `workerBrief` | `.operad/worker-brief.md` | the brief a worker reads first; a missing file means the built-in text |
