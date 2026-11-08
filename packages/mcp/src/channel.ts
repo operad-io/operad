@@ -20,6 +20,7 @@ import {
   ViewError,
   type LogBackend,
   type ObjectRef,
+  type PendingItem,
   type PluginRegistry,
   type ViewObject,
   type ViewRow,
@@ -93,6 +94,8 @@ export interface ChannelOptions {
   readonly notify?: readonly ChannelNotifyKind[] | undefined;
   /** How many arrivals at one state make a loop; the default is 3. */
   readonly loopAfter?: number | undefined;
+  /** Reads the pending items, whose prompt is the reason of a wait. */
+  readonly pending?: (() => Promise<readonly PendingItem[]>) | undefined;
   /**
    * A JSON file that keeps the row each object's last delivered block reported,
    * so a restarted server does not send a block again. Without it the memory
@@ -118,6 +121,8 @@ interface SeenRow {
   readonly running: boolean;
   /** The plugin marked the state final; not part of what was sent. */
   readonly final: boolean;
+  /** A loop block was delivered for the stretch this row belongs to. */
+  readonly looped?: boolean;
 }
 
 /** Reads a run's object key, such as `task:42`. */
@@ -153,11 +158,17 @@ function oneLine(value: string): string {
   return value.replace(/[\r\n]+/g, " ");
 }
 
-function contentOf(row: ViewRow, previous: string): string {
-  const note =
+function contentOf(
+  row: ViewRow,
+  previous: string,
+  fallback: string | undefined,
+): string {
+  const text =
     typeof row.note === "string" && row.note.trim().length > 0
-      ? `: ${oneLine(row.note)}`
-      : "";
+      ? row.note
+      : fallback;
+  const note =
+    text !== undefined && text.trim().length > 0 ? `: ${oneLine(text)}` : "";
   return `${oneLine(row.id)} ${previous} -> ${oneLine(row.state)}${note}`;
 }
 
@@ -167,9 +178,10 @@ function notificationOf(
   previous: string,
   step: string | undefined,
   reason: ChannelReason,
+  fallback?: string,
 ): ChannelNotification {
   return {
-    content: contentOf(row, previous),
+    content: contentOf(row, previous, fallback),
     meta: {
       id: oneLine(row.id),
       type,
@@ -215,6 +227,9 @@ class ClaudeChannel implements ChannelHandle {
   private readonly pendingSent = new Map<string, SeenRow>();
   private readonly notify: ReadonlySet<ChannelNotifyKind>;
   private readonly loopAfter: number;
+  private readonly pendingItems:
+    | (() => Promise<readonly PendingItem[]>)
+    | undefined;
   /**
    * Per object: how often each state was reached since the last wait or end,
    * and whether a loop block was already sent for that stretch.
@@ -262,6 +277,7 @@ class ClaudeChannel implements ChannelHandle {
     }
     this.notify = new Set(options.notify ?? DEFAULT_MCP_CHANNEL.notify);
     this.loopAfter = options.loopAfter ?? DEFAULT_MCP_CHANNEL.loopAfter;
+    this.pendingItems = options.pending;
     this.log = options.log;
     this.sentFile = options.sentFile;
     this.held = options.hold === true ? [] : undefined;
@@ -323,7 +339,8 @@ class ClaudeChannel implements ChannelHandle {
   /** Sends one block, then records its row as the last one delivered. */
   private async deliver(entry: Held): Promise<void> {
     await this.sendNotification(entry.notification);
-    this.sent.set(entry.key, entry.row);
+    const looped = this.visits.get(entry.key)?.looped === true;
+    this.sent.set(entry.key, looped ? { ...entry.row, looped } : entry.row);
     if (this.pendingSent.get(entry.key) === entry.row) {
       this.pendingSent.delete(entry.key);
     }
@@ -351,6 +368,9 @@ class ClaudeChannel implements ChannelHandle {
             running: value.running,
             final: false,
           });
+          if ((value as { looped?: unknown }).looped === true) {
+            this.visits.set(key, { counts: new Map(), looped: true });
+          }
         }
       }
     } catch (error) {
@@ -480,6 +500,19 @@ class ClaudeChannel implements ChannelHandle {
     }
   }
 
+  /** The prompt of the pending item of the object's wait, if it has one. */
+  private async waitReason(object: ObjectRef): Promise<string | undefined> {
+    if (this.pendingItems === undefined) return undefined;
+    try {
+      const key = `${object.type}:${object.id}`;
+      const item = (await this.pendingItems()).find((entry) => entry.object === key);
+      return item?.prompt;
+    } catch (error) {
+      this.onLog(`channel: the pending items could not be read: ${messageOf(error)}`);
+      return undefined;
+    }
+  }
+
   private async handle(object: ObjectRef): Promise<void> {
     if (this.closed || !this.types.has(object.type)) return;
     let current: ViewObject;
@@ -535,6 +568,7 @@ class ClaudeChannel implements ChannelHandle {
       previous?.state ?? "new",
       await this.stepOf(object),
       reason,
+      next.waiting ? await this.waitReason(object) : undefined,
     );
     const entry: Held = { notification, key, row: next };
     if (this.held !== undefined) {

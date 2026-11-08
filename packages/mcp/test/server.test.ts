@@ -907,7 +907,7 @@ describe("operad mcp --claude-channel", () => {
         jsonrpc: "2.0",
         method: CHANNEL_METHOD,
         params: {
-          content: "T-0001-one ready -> ready",
+          content: "T-0001-one ready -> ready: Approve?",
           meta: {
             id: "T-0001-one",
             type: "task",

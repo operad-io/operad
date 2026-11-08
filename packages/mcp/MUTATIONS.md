@@ -54,3 +54,5 @@ the row fields.
 | T-0064-M3 | packages/mcp/src/channel.ts | a wait did not start the loop count again | `the channel's sources > what the default sends > a wait between the returns starts the count again` |
 | T-0064-M4 | packages/mcp/src/channel.ts | the default notify list was `changes` instead of waiting, ended and loop | `the channel's sources > what the default sends > a start and a check starting send nothing; a wait opening and an end send with their reason` |
 | T-0064-M5 | packages/mcp/src/channel.ts | an unknown notify entry was accepted | `the channel's sources > what the default sends > an unknown notify entry is refused with its name` |
+| T-0064-M6 | packages/mcp/src/channel.ts | the looped flag was not saved with the sent row, so a restart sent the loop block again | `a restarted channel does not send a loop block again for the same stretch` |
+| T-0064-M7 | packages/mcp/src/channel.ts | the pending item's prompt was never used as the wait's reason | `a wait carries the reason of its pending item when the row has no note` |

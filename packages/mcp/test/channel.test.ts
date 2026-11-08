@@ -10,6 +10,7 @@ import {
   openPluginStore,
   readConfig,
   type LogBackend,
+  type PendingItem,
   type PluginStore,
   type Views,
 } from "@operad-io/engine";
@@ -570,7 +571,11 @@ describe("the channel's sources", () => {
     async function open(
       s: Setup,
       sent: Sent,
-      extra: { loopAfter?: number } = {},
+      extra: {
+        loopAfter?: number;
+        sentFile?: string;
+        pending?: () => Promise<readonly PendingItem[]>;
+      } = {},
     ): Promise<ChannelHandle> {
       return startClaudeChannel({
         views: s.views,
@@ -678,6 +683,57 @@ describe("the channel's sources", () => {
         const ended = await sent.next();
         expect(ended.meta.reason).toBe("ended");
         expect(sent.all.map((one) => one.meta.reason)).toEqual(["loop", "ended"]);
+      } finally {
+        await shut(s, channel);
+      }
+    });
+
+    test("a restarted channel does not send a loop block again for the same stretch", async () => {
+      const s = await setup();
+      put(s, "task", "t-1", { title: "One", phase: "ready" });
+      const sentFile = join(await tempRoot(), "sent.json");
+      const first = new Sent();
+      const step = stepper(s);
+      const one = await open(s, first, { sentFile });
+      try {
+        await step("task", ["running", "review", "running", "review", "running"]);
+        expect((await first.next()).meta.reason).toBe("loop");
+      } finally {
+        await one.close();
+      }
+      const second = new Sent();
+      const two = await open(s, second, { sentFile });
+      try {
+        await step("task", ["review", "running", "review", "running", "review", "running", "merged"]);
+        expect((await second.next()).meta.reason).toBe("ended");
+        expect(second.all.map((x) => x.meta.reason)).toEqual(["ended"]);
+      } finally {
+        await shut(s, two);
+      }
+    });
+
+    test("a wait carries the reason of its pending item when the row has no note", async () => {
+      const s = await setup();
+      put(s, "task", "t-1", { title: "One", phase: "ready" });
+      const sent = new Sent();
+      const pending = async (): Promise<readonly PendingItem[]> => [
+        {
+          runId: "r-1",
+          flow: "demo-flow",
+          step: "gate",
+          prompt: "ready to merge",
+          choices: [],
+          actions: [],
+          object: "task:t-1",
+        },
+      ];
+      const channel = await open(s, sent, { pending });
+      try {
+        const info = await s.log.startRun("demo-flow", "task:t-1");
+        await s.log.append(info.runId, 0, [waitFact("wait:1")]);
+        const waiting = await sent.next();
+        expect(waiting.meta.reason).toBe("waiting");
+        expect(waiting.content).toContain("ready to merge");
       } finally {
         await shut(s, channel);
       }
