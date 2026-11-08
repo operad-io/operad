@@ -732,7 +732,7 @@ test("a path the access profile refuses, and an environment value, are not logge
     { text: "ok" },
   ]);
   const { start } = toolLines(run);
-  expect(start[0]?.["input"]).toBe("read denied by the access profile");
+  expect(start[0]?.["input"]).toBe(`read denied by the access profile (rule: ${secrets})`);
   expect(start[1]?.["input"]).toBe("API_TOKEN=*** true");
   expect(run.raw.join("\n")).not.toContain("hunter2");
 });

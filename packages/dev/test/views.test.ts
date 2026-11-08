@@ -55,6 +55,12 @@ describe("dev views", () => {
     expect(readableLog([line])).toEqual(["**agent:** All done. Bye", "result: end_turn · 5 in / 6 out tokens"]);
   });
 
+  test("a radian Result text is cut at 300 characters", () => {
+    const line = JSON.stringify({ type: "Result", text: "x".repeat(400), stop_reason: "end_turn" });
+    const out = readableLog([line]);
+    expect(out[0]).toBe(`**agent:** ${"x".repeat(299)}…`);
+  });
+
   test("a plan row shows the derived state and merged/total", async () => {
     const { store, plan, task } = await setup();
     const confirmed = await getPlan(store, plan.id);

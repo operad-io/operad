@@ -149,7 +149,10 @@ export function summarizeCall(
 ): string | undefined {
   if (!isRecord(input)) return undefined;
   const tool = toolName.toLowerCase();
-  if (!match(profile, { tool, input, cwd }).allow) return `${toolName} denied by the access profile`;
+  const verdict = match(profile, { tool, input, cwd });
+  if (!verdict.allow) {
+    return `${toolName} denied by the access profile${verdict.rule === undefined ? "" : ` (rule: ${oneLine(verdict.rule, SUMMARY_CHARS)})`}`;
+  }
   let text: string | undefined;
   let limit = SUMMARY_CHARS;
   if (tool === "bash") {

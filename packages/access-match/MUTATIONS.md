@@ -15,3 +15,4 @@ and the row fields.
 | T-0063-M5 | `packages/access-match/src/summary.ts` | a leading assignment with a substitution was shown instead of withheld | `bash command: command substitution` |
 | T-0063-M6 | `packages/access-match/src/summary.ts` | the shell-word reader took an unbalanced quote as readable | `bash command: unbalanced single quote` |
 | T-0063-M10 | `packages/access-match/src/summary.ts` | `firstErrorLine` skipped the secret-value masking | `an error line masks secret values, from the store and from the environment` |
+| T-0063-M11 | `packages/access-match/src/summary.ts` | a denied call dropped the rule name | `a call the profile denies is logged as denied, never its arguments or reason` |

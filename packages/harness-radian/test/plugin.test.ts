@@ -155,7 +155,7 @@ describe("harness-radian/agent", () => {
   test("a tool call the access profile refuses is only said to be denied in the log", async () => {
     const line = JSON.stringify({ type: "ToolExecutionStarted", toolCallId: "t1", toolName: "Read", input: { file_path: "/secrets/key" } });
     const out = radianLogLine(line, () => 5, new Map(), "/work", { denyPaths: ["/secrets"] });
-    expect(JSON.parse(out)).toMatchObject({ type: "tool_execution_start", input: "Read denied by the access profile" });
+    expect(JSON.parse(out)).toMatchObject({ type: "tool_execution_start", input: "Read denied by the access profile (rule: /secrets)" });
     expect(out).not.toContain("/secrets/key");
   });
 

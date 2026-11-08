@@ -193,6 +193,12 @@ const LOG_TAIL_LINES = 80;
 const LOG_EARLIER_LINES = 20;
 const LOG_LINE_CHARS = 240;
 
+/** An agent message as one paragraph of at most 300 characters. */
+function agentText(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length <= 300 ? flat : `${flat.slice(0, 299)}…`;
+}
+
 function oneLine(text: string): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length <= LOG_LINE_CHARS
@@ -332,7 +338,7 @@ export function readableLog(lines: readonly string[]): string[] {
     if (record !== undefined && (kind === "result" || kind === "Result")) {
       if (kind === "Result") {
         const said = stringField(record, ["text"]);
-        if (said !== undefined) out.push(`**agent:** ${said.replace(/\s+/g, " ")}`);
+        if (said !== undefined) out.push(`**agent:** ${agentText(said)}`);
       }
       const parts = [
         stringField(record, kind === "Result" ? ["stop_reason"] : ["result"]),

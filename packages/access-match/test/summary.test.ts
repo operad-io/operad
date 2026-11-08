@@ -84,9 +84,9 @@ test("a store's values are read, and an unreadable store has none", async () => 
 
 test("a call the profile denies is logged as denied, never its arguments or reason", () => {
   const profile = { denyPaths: ["/secrets"], denyCommands: ["rm"] };
-  expect(summarizeCall(profile, "Read", { file_path: "/secrets/k" }, CWD)).toBe("Read denied by the access profile");
-  expect(summarizeCall(profile, "Bash", { command: "rm -rf /w" }, CWD)).toBe("Bash denied by the access profile");
-  expect(summarizeCall(profile, "Grep", { pattern: "x", path: "/secrets" }, CWD)).toBe("Grep denied by the access profile");
+  expect(summarizeCall(profile, "Read", { file_path: "/secrets/k" }, CWD)).toBe("Read denied by the access profile (rule: /secrets)");
+  expect(summarizeCall(profile, "Bash", { command: "rm -rf /w" }, CWD)).toBe("Bash denied by the access profile (rule: rm)");
+  expect(summarizeCall(profile, "Grep", { pattern: "x", path: "/secrets" }, CWD)).toBe("Grep denied by the access profile (rule: /secrets)");
 });
 
 test("an error shows its first non-empty line and a message its first 300 characters", () => {
