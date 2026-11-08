@@ -65,6 +65,8 @@ export interface ViewRow {
   readonly note?: string | undefined;
   /** The namespace the id lives in; set only when the list shows it. */
   readonly scope?: string | undefined;
+  /** The row's state is final for its type; absent when the plugin did not say. */
+  readonly final?: boolean | undefined;
   /** The plugin's semantic mark; the precedence against the flags is the client's. */
   readonly mark?: RowMark | undefined;
   /** A short text shown after the state. */
@@ -1566,6 +1568,7 @@ export class Views {
       ...(note === undefined ? {} : { note }),
       ...(typeof parent === "string" ? { parent } : {}),
       ...(scope === undefined ? {} : { scope }),
+      ...(outcome.final === true ? { final: true } : {}),
       ...(mark === undefined ? {} : { mark }),
       ...(typeof badge === "string" ? { badge } : {}),
       waiting: false,

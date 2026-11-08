@@ -10,10 +10,12 @@ import {
   openPluginStore,
   readConfig,
   type LogBackend,
+  type PendingItem,
   type PluginStore,
   type Views,
 } from "@operad-io/engine";
 import {
+  ChannelNotifyError,
   ChannelTypeError,
   startClaudeChannel,
   type ChannelHandle,
@@ -136,6 +138,7 @@ describe("the channel's sources", () => {
     });
     const sent = new Sent();
     const channel: ChannelHandle = await startClaudeChannel({
+      notify: ["changes"],
       views: s.views,
       registry: s.registry,
       log: s.log,
@@ -163,6 +166,7 @@ describe("the channel's sources", () => {
     put(s, "task", "t-1", { title: "One", phase: "ready" });
     const sent = new Sent();
     const channel = await startClaudeChannel({
+      notify: ["changes"],
       views: s.views,
       registry: s.registry,
       log: s.log,
@@ -220,6 +224,7 @@ describe("the channel's sources", () => {
     });
     const sent = new Sent();
     const channel = await startClaudeChannel({
+      notify: ["changes"],
       views: s.views,
       registry: s.registry,
       log: s.log,
@@ -268,6 +273,7 @@ describe("the channel's sources", () => {
     put(s, "task", "t-1", { title: "One", phase: "ready" });
     const sent = new Sent();
     const channel = await startClaudeChannel({
+      notify: ["changes"],
       views: s.views,
       registry: s.registry,
       log: s.log,
@@ -316,6 +322,7 @@ describe("the channel's sources", () => {
     });
     const sent = new Sent();
     const channel = await startClaudeChannel({
+      notify: ["changes"],
       views: s.views,
       registry: s.registry,
       log: fixed,
@@ -361,6 +368,7 @@ describe("the channel's sources", () => {
     });
     const sent = new Sent();
     const channel = await startClaudeChannel({
+      notify: ["changes"],
       views: s.views,
       registry: s.registry,
       log: s.log,
@@ -391,6 +399,7 @@ describe("the channel's sources", () => {
     put(s, "task", "t-1", { title: "One", phase: "ready" });
     const sent = new Sent();
     const channel = await startClaudeChannel({
+      notify: ["changes"],
       views: s.views,
       registry: s.registry,
       log: s.log,
@@ -417,6 +426,7 @@ describe("the channel's sources", () => {
     const sentFile = join(await tempRoot(), "sent.json");
     const first = new Sent();
     const one = await startClaudeChannel({
+      notify: ["changes"],
       views: s.views,
       registry: s.registry,
       log: s.log,
@@ -444,6 +454,7 @@ describe("the channel's sources", () => {
       },
     });
     const two = await startClaudeChannel({
+      notify: ["changes"],
       views: s.views,
       registry: s.registry,
       log: s.log,
@@ -470,6 +481,7 @@ describe("the channel's sources", () => {
     put(s, "task", "t-1", { title: "One", phase: "ready" });
     const sent = new Sent();
     const channel = await startClaudeChannel({
+      notify: ["changes"],
       views: s.views,
       registry: s.registry,
       log: s.log,
@@ -527,6 +539,7 @@ describe("the channel's sources", () => {
     put(s, "task", "t-1", { title: "One", phase: "ready" });
     const sent = new Sent();
     const channel = await startClaudeChannel({
+      notify: ["changes"],
       views: s.views,
       registry: s.registry,
       log: s.log,
@@ -552,5 +565,253 @@ describe("the channel's sources", () => {
       s.views.close();
       await s.log.close();
     }
+  });
+
+  describe("what the default sends", () => {
+    async function open(
+      s: Setup,
+      sent: Sent,
+      extra: {
+        loopAfter?: number;
+        sentFile?: string;
+        pending?: () => Promise<readonly PendingItem[]>;
+      } = {},
+    ): Promise<ChannelHandle> {
+      return startClaudeChannel({
+        views: s.views,
+        registry: s.registry,
+        log: s.log,
+        send: sent.push,
+        ...extra,
+      });
+    }
+
+    async function shut(s: Setup, channel: ChannelHandle): Promise<void> {
+      await channel.close();
+      s.views.close();
+      await s.log.close();
+    }
+
+    /** Puts each phase and waits until the channel has read it. */
+    function stepper(s: Setup): (type: string, phases: readonly string[]) => Promise<void> {
+      const states: string[] = [];
+      const waiting: (() => void)[] = [];
+      const realGet = s.views.get.bind(s.views);
+      Object.defineProperty(s.views, "get", {
+        value: async (id: string) => {
+          const current = await realGet(id);
+          states.push(current.row.state);
+          for (const wake of waiting.splice(0)) wake();
+          return current;
+        },
+      });
+      return async (type, phases) => {
+        for (const phase of phases) {
+          put(s, type, "t-1", { title: "One", phase });
+          while (!states.includes(phase)) {
+            await new Promise<void>((resolve) => waiting.push(resolve));
+          }
+          states.length = 0;
+        }
+      };
+    }
+
+    test("a start and a check starting send nothing; a wait opening and an end send with their reason", async () => {
+      const s = await setup();
+      put(s, "task", "t-1", { title: "One", phase: "ready" });
+      const sent = new Sent();
+      const step = stepper(s);
+      const channel = await open(s, sent);
+      try {
+        await step("task", ["running", "review"]);
+        const info = await s.log.startRun("demo-flow", "task:t-1");
+        await s.log.append(info.runId, 0, [waitFact("wait:1")]);
+        const waiting = await sent.next();
+        // Nothing before the wait: the two state changes were silent.
+        expect(sent.all).toHaveLength(1);
+        expect(waiting.meta).toMatchObject({
+          state: "review",
+          waiting: "true",
+          reason: "waiting",
+        });
+        put(s, "task", "t-1", { title: "One", phase: "merged" });
+        const ended = await sent.next();
+        expect(ended.meta).toMatchObject({
+          state: "merged",
+          previous: "review",
+          reason: "ended",
+        });
+        expect(sent.all).toHaveLength(2);
+      } finally {
+        await shut(s, channel);
+      }
+    });
+
+    test("a plan-like object reaching its final state sends with reason ended", async () => {
+      const s = await setup();
+      put(s, "note", "n-1", { title: "Plan", state: "open" });
+      const sent = new Sent();
+      const channel = await open(s, sent);
+      try {
+        put(s, "note", "n-1", { title: "Plan", state: "closed" });
+        put(s, "note", "n-1", { title: "Plan", state: "finished" });
+        const ended = await sent.next();
+        expect(ended.meta).toMatchObject({
+          type: "note",
+          state: "finished",
+          reason: "ended",
+        });
+        expect(sent.all).toHaveLength(1);
+      } finally {
+        await shut(s, channel);
+      }
+    });
+
+    test("three returns to one state without a wait send one loop block, not three", async () => {
+      const s = await setup();
+      put(s, "task", "t-1", { title: "One", phase: "ready" });
+      const sent = new Sent();
+      const step = stepper(s);
+      const channel = await open(s, sent);
+      try {
+        await step("task", ["running", "review", "running", "review", "running"]);
+        const loop = await sent.next();
+        expect(loop.meta).toMatchObject({ state: "running", reason: "loop" });
+        // More rounds are the same loop: still one block. The end that
+        // follows proves the earlier changes were read and stayed silent.
+        await step("task", ["review", "running", "review", "merged"]);
+        const ended = await sent.next();
+        expect(ended.meta.reason).toBe("ended");
+        expect(sent.all.map((one) => one.meta.reason)).toEqual(["loop", "ended"]);
+      } finally {
+        await shut(s, channel);
+      }
+    });
+
+    test("a restarted channel does not send a loop block again for the same stretch", async () => {
+      const s = await setup();
+      put(s, "task", "t-1", { title: "One", phase: "ready" });
+      const sentFile = join(await tempRoot(), "sent.json");
+      const first = new Sent();
+      const step = stepper(s);
+      const one = await open(s, first, { sentFile });
+      try {
+        await step("task", ["running", "review", "running", "review", "running"]);
+        expect((await first.next()).meta.reason).toBe("loop");
+      } finally {
+        await one.close();
+      }
+      const second = new Sent();
+      const two = await open(s, second, { sentFile });
+      try {
+        await step("task", ["review", "running", "review", "running", "review", "running", "merged"]);
+        expect((await second.next()).meta.reason).toBe("ended");
+        expect(second.all.map((x) => x.meta.reason)).toEqual(["ended"]);
+      } finally {
+        await shut(s, two);
+      }
+    });
+
+    test("a wait carries the reason of its pending item when the row has no note", async () => {
+      const s = await setup();
+      put(s, "task", "t-1", { title: "One", phase: "ready" });
+      const sent = new Sent();
+      const pending = async (): Promise<readonly PendingItem[]> => [
+        {
+          runId: "r-1",
+          flow: "demo-flow",
+          step: "gate",
+          prompt: "ready to merge",
+          choices: [],
+          actions: [],
+          object: "task:t-1",
+        },
+      ];
+      const channel = await open(s, sent, { pending });
+      try {
+        const info = await s.log.startRun("demo-flow", "task:t-1");
+        await s.log.append(info.runId, 0, [waitFact("wait:1")]);
+        const waiting = await sent.next();
+        expect(waiting.meta.reason).toBe("waiting");
+        expect(waiting.content).toContain("ready to merge");
+      } finally {
+        await shut(s, channel);
+      }
+    });
+
+    test("a wait between the returns starts the count again", async () => {
+      const s = await setup();
+      put(s, "task", "t-1", { title: "One", phase: "ready" });
+      const sent = new Sent();
+      const step = stepper(s);
+      const channel = await open(s, sent, { loopAfter: 2 });
+      try {
+        await step("task", ["running", "review"]);
+        const info = await s.log.startRun("demo-flow", "task:t-1");
+        await s.log.append(info.runId, 0, [waitFact("wait:1")]);
+        await sent.next();
+        await s.log.endRun(info.runId);
+        // Without the wait this second arrival at running would be a loop.
+        await step("task", ["running", "merged"]);
+        const ended = await sent.next();
+        expect(ended.meta.reason).toBe("ended");
+        expect(sent.all.map((one) => one.meta.reason)).toEqual([
+          "waiting",
+          "ended",
+        ]);
+      } finally {
+        await shut(s, channel);
+      }
+    });
+
+    test("notify \"changes\" sends every state change", async () => {
+      const s = await setup();
+      put(s, "task", "t-1", { title: "One", phase: "ready" });
+      const sent = new Sent();
+      const channel = await startClaudeChannel({
+        views: s.views,
+        registry: s.registry,
+        log: s.log,
+        notify: ["changes"],
+        send: sent.push,
+      });
+      try {
+        put(s, "task", "t-1", { title: "One", phase: "running" });
+        expect((await sent.next()).meta).toMatchObject({
+          state: "running",
+          reason: "changes",
+        });
+        put(s, "task", "t-1", { title: "One", phase: "review" });
+        expect((await sent.next()).meta.state).toBe("review");
+      } finally {
+        await shut(s, channel);
+      }
+    });
+
+    test("an unknown notify entry is refused with its name", async () => {
+      const s = await setup();
+      try {
+        await expect(
+          startClaudeChannel({
+            views: s.views,
+            registry: s.registry,
+            log: s.log,
+            notify: ["waiting", "bogus"] as never,
+            send: () => {},
+          }),
+        ).rejects.toThrow(ChannelNotifyError);
+        await expect(
+          startClaudeChannel({
+            views: s.views,
+            registry: s.registry,
+            send: () => {},
+            notify: ["bogus"] as never,
+          }),
+        ).rejects.toThrow(/"bogus"/);
+      } finally {
+        s.views.close();
+        await s.log.close();
+      }
+    });
   });
 });

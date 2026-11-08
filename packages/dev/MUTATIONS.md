@@ -191,6 +191,11 @@ the row fields.
 | T-0086-M5 | packages/dev/src/rerun.ts | a failed rerun counted as a pass | `dev/verify reruns only the failed tests > a rerun that fails fails the check` |
 | T-0086-M6 | packages/dev/src/reruns.ts | the count was set to 1 instead of added to | `dev/verify reruns only the failed tests > the count accumulates across tasks` |
 
+## T-0064 — final states
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0064-M7 | packages/dev/src/model.ts | a finished plan was not a final state | `dev views > a plan row shows the derived state and merged/total` |
 ## T-0066 — reverify merges main first
 
 | id | file | mutation | failing test |

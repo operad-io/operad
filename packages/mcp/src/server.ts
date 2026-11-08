@@ -8,6 +8,7 @@ import {
   createViews,
   defaultOperadHome,
   loadPluginRegistry,
+  listPending,
   messageOf,
   openConfigLog,
   openPluginStore,
@@ -428,6 +429,15 @@ export async function runMcpServer(
         registry: opened.registry,
         log: opened.log,
         hold: true,
+        notify: opened.mcp.channel.notify,
+        loopAfter: opened.mcp.channel.loopAfter,
+        pending: () =>
+          listPending(
+            opened.log,
+            opened.registry,
+            opened.kernel,
+            opened.views,
+          ),
         sentFile: join(
           home,
           `mcp-channel-${new Bun.CryptoHasher("sha1").update(opened.storeRoot).digest("hex").slice(0, 12)}.json`,

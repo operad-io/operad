@@ -79,6 +79,11 @@ export interface ObjectRow {
    * only when the type's `showScope` says so.
    */
   readonly scope?: string | undefined;
+  /**
+   * Whether `state` is final for the type: the object will not move on. A
+   * client that reports ends reads this and no state name.
+   */
+  readonly final?: boolean | undefined;
   /** What the object is doing, as one of `ROW_MARKS`; clients choose the icon. */
   readonly mark?: RowMark | undefined;
   /** A short single-line text clients show after the state, such as `#2`. */

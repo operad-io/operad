@@ -13,6 +13,8 @@ import {
   bareId,
   hasRework,
   listAll,
+  PLAN_FINAL_STATES,
+  TASK_FINAL_STATES,
   planData,
   planNote,
   planState,
@@ -104,6 +106,7 @@ export const planViews: ObjectViews = {
       state: planState(plan),
       note: `${planNote(plan)}  auto: ${plan.auto}  ${plan.priority}  concurrency: ${plan.concurrency}`,
       scope: plan.repository,
+      final: PLAN_FINAL_STATES.includes(planState(plan)),
       mark: planMark(plan),
     };
   },
@@ -163,6 +166,7 @@ export const taskViews: ObjectViews = {
       state: task.phase,
       ...(note === undefined ? {} : { note }),
       scope: task.repository,
+      final: TASK_FINAL_STATES.includes(task.phase),
       mark: taskMark(task),
       badge: taskBadge(task),
     };

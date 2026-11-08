@@ -57,8 +57,35 @@ export const DEFAULT_NOTIFY: NotifyConfig = {
   on: ["waiting"],
 };
 
+/** What the MCP channel sends a block for. */
+export type ChannelNotifyKind = "waiting" | "ended" | "loop" | "changes";
+
+/** The kinds `mcp.channel.notify` accepts. */
+export const CHANNEL_NOTIFY_KINDS: readonly ChannelNotifyKind[] = [
+  "waiting",
+  "ended",
+  "loop",
+  "changes",
+];
+
+/** When the MCP channel sends a block. */
+export interface McpChannelConfig {
+  /** `changes` sends every state change, as well as what else is listed. */
+  readonly notify: readonly ChannelNotifyKind[];
+  /** How many times in a row an object reaches one state before a loop block. */
+  readonly loopAfter: number;
+}
+
+/** The channel defaults: waits, ends and loops of three. */
+export const DEFAULT_MCP_CHANNEL: McpChannelConfig = {
+  notify: ["waiting", "ended", "loop"],
+  loopAfter: 3,
+};
+
 /** The actions the MCP server may run for a lead. */
 export interface McpConfig {
+  /** When the channel sends a block. */
+  readonly channel: McpChannelConfig;
   /** Actions named `<plugin>:<action>`; every other action is the owner's. */
   readonly actions: readonly string[];
   /** Allowed actions that also need this extra confirmation to run. */
@@ -67,6 +94,7 @@ export interface McpConfig {
 
 /** The MCP defaults: the dev plugin's lead actions, and no confirm actions. */
 export const DEFAULT_MCP: McpConfig = {
+  channel: DEFAULT_MCP_CHANNEL,
   actions: ["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency"],
   confirmActions: [],
 };
@@ -325,9 +353,41 @@ function readMcp(value: unknown, file: string): McpConfig {
     return [...raw];
   };
   return {
+    channel: readChannel(value.channel, file),
     actions: readNames("actions"),
     confirmActions: readNames("confirmActions"),
   };
+}
+
+function readChannel(value: unknown, file: string): McpChannelConfig {
+  if (value === undefined) return DEFAULT_MCP_CHANNEL;
+  if (!isRecord(value)) {
+    throw new ConfigError(`${file}: mcp.channel: must be an object`);
+  }
+  let notify: readonly ChannelNotifyKind[] = DEFAULT_MCP_CHANNEL.notify;
+  if (value.notify !== undefined) {
+    if (!Array.isArray(value.notify)) {
+      throw new ConfigError(`${file}: mcp.channel.notify: must be an array`);
+    }
+    const kinds: ChannelNotifyKind[] = [];
+    for (const entry of value.notify) {
+      const kind = CHANNEL_NOTIFY_KINDS.find((known) => known === entry);
+      if (kind === undefined) {
+        throw new ConfigError(
+          `${file}: mcp.channel.notify: unknown entry ${JSON.stringify(entry)}; use ${CHANNEL_NOTIFY_KINDS.map((known) => `"${known}"`).join(", ")}`,
+        );
+      }
+      kinds.push(kind);
+    }
+    notify = kinds;
+  }
+  const loopAfter = value.loopAfter ?? DEFAULT_MCP_CHANNEL.loopAfter;
+  if (typeof loopAfter !== "number" || !Number.isInteger(loopAfter) || loopAfter < 2) {
+    throw new ConfigError(
+      `${file}: mcp.channel.loopAfter: must be an integer of 2 or more`,
+    );
+  }
+  return { notify, loopAfter };
 }
 
 function readStore(value: unknown, file: string, home: string): StoreConfig {
@@ -439,6 +499,10 @@ export function configJson(config: OperadConfig): Record<string, unknown> {
       ? {}
       : { notify: { command: config.notify.command, on: [...config.notify.on] } }),
     mcp: {
+      channel: {
+        notify: [...config.mcp.channel.notify],
+        loopAfter: config.mcp.channel.loopAfter,
+      },
       actions: [...config.mcp.actions],
       confirmActions: [...config.mcp.confirmActions],
     },

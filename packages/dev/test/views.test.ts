@@ -18,7 +18,7 @@ import {
   taskViews,
 } from "../src/views.ts";
 import { commitIn, gitOrThrow, makeRemote } from "./git-support.ts";
-import { bareId, taskData } from "../src/model.ts";
+import { bareId, planData, taskData } from "../src/model.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
@@ -54,12 +54,32 @@ describe("dev views", () => {
       state: "draft",
       note: "0/1  auto: off  P3  concurrency: 1",
       scope: "repository",
+      final: false,
       mark: "proposed",
     });
     await setTaskPhase(store, task.id, "merged");
     expect(planViews.row(await getPlan(store, plan.id)).note).toBe(
       "1/1  auto: off  P3  concurrency: 1",
     );
+    // A confirmed plan whose tasks are all merged is finished, which is final;
+    // a cancelled plan is final too.
+    const done = await getPlan(store, plan.id);
+    await store.put(
+      "plan",
+      plan.id,
+      { ...planData(done.data), status: "confirmed" },
+      "test:finish",
+    );
+    const finished = planViews.row(await getPlan(store, plan.id));
+    expect(finished.state).toBe("finished");
+    expect(finished.final).toBe(true);
+    await store.put(
+      "plan",
+      plan.id,
+      { ...planData(done.data), status: "cancelled" },
+      "test:cancel",
+    );
+    expect(planViews.row(await getPlan(store, plan.id)).final).toBe(true);
   });
 
   test("a task row reads the phase and the cost", async () => {
@@ -70,9 +90,16 @@ describe("dev views", () => {
       title: "JSONL",
       state: "proposed",
       scope: "repository",
+      final: false,
       mark: "proposed",
       badge: "#0",
     });
+    for (const phase of ["merged", "cancelled"] as const) {
+      await setTaskPhase(store, task.id, phase);
+      expect(taskViews.row(await getTask(store, task.id)).final).toBe(true);
+    }
+    await setTaskPhase(store, task.id, "review");
+    expect(taskViews.row(await getTask(store, task.id)).final).toBe(false);
     await store.put(
       "task",
       task.id,

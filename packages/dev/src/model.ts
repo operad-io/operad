@@ -52,6 +52,12 @@ export type TaskPhase = (typeof TASK_PHASES)[number];
  * The list filters of plans and tasks. The declaration and the tests read
  * these; no state name is copied anywhere else.
  */
+/** The task phases that end a task; a view row marks them `final`. */
+export const TASK_FINAL_STATES: readonly string[] = ["merged", "cancelled"];
+
+/** The plan states that end a plan. */
+export const PLAN_FINAL_STATES: readonly string[] = ["finished", "cancelled"];
+
 export const TASK_FILTERS = [
   {
     name: "active",
