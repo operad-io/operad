@@ -126,6 +126,14 @@ process when `serve` stops keeps running, and the next `serve` for the home
 picks the run up again. Nothing starts new work or advances waits and timers
 while no `serve` runs; `operad serve` or `operad tui` resumes it.
 
+A restart does not disturb a check or command that is running. Each run is a
+process of its own, and the command a step starts is held by that run, not by
+`serve`: stopping and starting `serve` sends no signal to it, does not stop its
+line and does not run it a second time. The command ends on its own, and the run
+records its exit code as if nothing had happened. Only the death of the run's
+own process stops its command (and the next `serve` then starts the step
+again).
+
 ### Pairing the app
 
 `operad pair` shows what the app needs to reach this `serve`:

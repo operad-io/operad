@@ -48,3 +48,4 @@ the row fields.
 | T-0052-M9 | packages/cli/src/main.ts | `list --root` was not passed to the views | `operad list hierarchy > --root and --parent list one level; show prints the parent` |
 | T-0052-M10 | packages/cli/src/main.ts | `show` did not print the parent line | `operad list hierarchy > --root and --parent list one level; show prints the parent` |
 | T-0052-M11 | packages/cli/src/main.ts | `list --parent` was not passed to the views | `operad list hierarchy > --root and --parent list one level; show prints the parent` |
+| T-0077-M1 | packages/cli/src/main.ts | serve killed every run process it had started (SIGKILL) when it stopped, so the sentinel of the running check stopped its line | `a serve restart while a check runs > the check's command is not signalled and finishes with its exit code` |
