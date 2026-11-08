@@ -469,8 +469,13 @@ describe("operad mcp", () => {
       });
       const runningItems = structuredOf(running).items as {
         runId: string;
+        object?: string | null;
+        title?: string | null;
       }[];
       expect(runningItems.map((item) => item.runId)).toContain(runningRun);
+      const mine = runningItems.find((item) => item.runId === runningRun);
+      expect(mine).toMatchObject({ object: "two", title: "Second" });
+      expect(mine).toHaveProperty("stepElapsedMs");
 
       const history = await child.request(8, "tools/call", {
         name: "history",

@@ -37,9 +37,11 @@ function waitingMark(task: TaskData): RowMark {
   if (integration !== undefined && integration !== null) return "waiting";
   const rework = attempt?.rework;
   if (rework?.result === "ask") {
-    // The first automatic pass is `streak` 1; a limit of 0 asks at once and a
-    // higher limit asks only after the passes ran out, which is giving up.
-    return rework.streak > 1 ? "failed" : "rework_pending";
+    // An ask is written when the streak passed the configured limit (a limit
+    // of 0 included): the automatic passes ran out, which is giving up.
+    return rework.limit !== undefined && rework.streak > rework.limit
+      ? "failed"
+      : "rework_pending";
   }
   return reviewPassed(task) ? "ready_to_merge" : "waiting";
 }

@@ -2122,6 +2122,7 @@ export async function runRework(
     run: ctx.runId,
     source,
     streak,
+    limit: context.settings.maxAutoRework,
     result: again ? "again" : "ask",
   };
   const next: TaskData = {

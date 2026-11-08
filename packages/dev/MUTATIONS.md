@@ -166,6 +166,7 @@ the row fields.
 | T-0069-M5 | packages/dev/src/marks.ts | read the integrating mark from the integration record, not from the step's own marker | `task marks > waiting while integrate builds the candidate` |
 | T-0069-M6 | packages/dev/src/integrate.ts | kept the integrating marker after a conflict or a refused push | `dev/integrate > a conflict appends the conflict rework and leaves main alone` |
 | T-0069-M7 | packages/dev/src/marks.ts | had no paused plan mapping | `plan marks > each plan state maps` |
+| T-0069-M8 | packages/dev/src/marks.ts | classified a given-up rework by a hard-coded streak instead of the limit in force | `task marks > waiting, given up with a limit of 0` |
 | T-0059-M5 | packages/dev/src/gate.ts | the Grading section's text was altered instead of given verbatim | `dev/review > review.json > the prompt carries the flow's grading verbatim` |
 | T-0059-M6 | packages/dev/src/gate.ts | review.json's fixLevel was ignored | `dev/review > review.json > fixLevel in review.json decides whether a minor finding fails` |
 | T-0059-M7 | packages/dev/src/gate.ts | an invalid review.json was swallowed instead of failing the step | `dev/review > review.json > an invalid file fails the review step naming the file` |

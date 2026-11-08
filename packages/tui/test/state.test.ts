@@ -51,6 +51,10 @@ const running: RunningItem = {
   step: "work",
   startedAt: 0,
   elapsedMs: 1_500,
+  object: null,
+  title: null,
+  stepStartedAt: null,
+  stepElapsedMs: null,
   queued: null,
   stepLabel: "work",
 };
@@ -243,6 +247,16 @@ describe("the TUI reducer", () => {
       state: "work",
       note: "1.5s",
       running: true,
+    });
+
+    state = reduce(state, {
+      type: "running",
+      items: [{ ...running, object: "dev/T-1", title: "A title", stepElapsedMs: 2_500 }],
+    });
+    expect(state.tabs.find((tab) => tab.id === "running")?.list.rows[0]).toMatchObject({
+      id: "dev/T-1",
+      title: "dev/T-1  A title",
+      note: "2.5s",
     });
     expect(runningRow === undefined ? undefined : rowMark(runningRow)).toBe("running");
 

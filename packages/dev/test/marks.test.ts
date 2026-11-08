@@ -121,7 +121,12 @@ describe("task marks", () => {
     ],
     [
       "waiting, given up after the auto rework limit",
-      task({ phase: "waiting", attempt: attempt({ rework: { source: "review", streak: 3, result: "ask" } }) }),
+      task({ phase: "waiting", attempt: attempt({ rework: { source: "review", streak: 3, limit: 2, result: "ask" } }) }),
+      "failed",
+    ],
+    [
+      "waiting, given up with a limit of 0",
+      task({ phase: "waiting", attempt: attempt({ rework: { source: "gate", streak: 1, limit: 0, result: "ask" } }) }),
       "failed",
     ],
     ["waiting for another reason", task({ phase: "waiting", attempt: attempt() }), "waiting"],

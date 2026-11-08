@@ -120,3 +120,10 @@ the row fields.
 | T-0069-M1 | packages/tui/src/state.ts | `ready_to_merge` was not kept while the waiting flag is on | `rowMark: waiting keeps only the waiting-side marks, a mark beats running` |
 | T-0069-M2 | packages/tui/src/state.ts | a mark did not beat the running flag | `the TUI view > each mark draws its own single-cell character; waiting beats a mark; running without a mark draws running` |
 | T-0069-M3 | packages/tui/src/view/index.ts | the object header left out the badge | `the object pane view > the badge follows the state in the object's header` |
+
+## T-0068 — running rows show the object
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0068-M1 | packages/tui/src/state.ts | the running row showed the run id instead of the object | `the TUI reducer` state test (running row with an object) |
+| T-0068-M9 | packages/tui/src/state.ts | a running row with an object showed only its title, not the object id | `an object-backed running row shows the object and its title` |

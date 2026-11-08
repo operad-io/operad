@@ -255,4 +255,11 @@ the row fields.
 | T-0069-M1 | packages/engine/src/views/presentation.ts | the mark check never rejected a value | `presentation views > an unknown mark is an error row naming the allowed marks` |
 | T-0069-M2 | packages/engine/src/views/presentation.ts | the badge limit refused 16 characters instead of 17 | `presentation views > a badge over 16 characters or over several lines is an error row` |
 | T-0069-M3 | packages/engine/src/views/presentation.ts | a valid mark was left off the row | `presentation views > a valid mark and badge pass through list and get; a plain row is unchanged` |
+
+## T-0068 — the running view names the object and times the step
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0068-M1 | packages/engine/src/views/running.ts | a new attempt (`effect_requested`) no longer reset the step time | `the running view names the object and times the step > step time resets on a new step and on a new attempt` |
+| T-0068-M2 | packages/engine/src/views/running.ts | an error row's message was returned as the title | `the running view names the object and times the step > a throwing row leaves the title null` |
 | typed-bare-id-M1 | packages/engine/src/views/presentation.ts | a typed bare id (`task:T-0043-x`) skipped the scoped lookup | `presentation views > a typed bare id finds a scoped object of its type, as the app opens a row` |

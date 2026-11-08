@@ -274,6 +274,8 @@ export interface ReworkRecord {
   readonly run?: string | null;
   readonly source: string;
   readonly streak: number;
+  /** The automatic rework limit in force when the record was written. */
+  readonly limit?: number;
   readonly result: "again" | "ask";
 }
 

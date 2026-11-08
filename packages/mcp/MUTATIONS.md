@@ -40,3 +40,9 @@ the row fields.
 | T-0057-M7 | packages/mcp/src/channel.ts | runs with equal times were ordered by iteration order, not by start, last seq and run id | `the step of two active runs with equal times is chosen the same way every time` |
 | T-0069-M1 | packages/mcp/src/format.ts | `show` left the mark out of its Markdown | `operad mcp > initializes, lists the table and reads every tool on fixture objects` |
 | T-0069-M2 | packages/mcp/src/format.ts | `list` table left the mark and badge columns out | `operad mcp > initializes, lists the table and reads every tool on fixture objects` |
+
+## T-0068 — the running tool returns object and title
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0068-M1 | packages/mcp/src/tools.ts | the running tool did not pass the views, so no title was found | `operad mcp > initializes, lists the table and reads every tool on fixture objects` |
