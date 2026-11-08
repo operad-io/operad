@@ -914,6 +914,24 @@ harness: its steps run a command or a check and give a verdict, so they end in
 `pass` and `fail` (and `ready` or `waiting` for a check), and the end results
 do not apply to them.
 
+## Reproducing a flaky test
+
+```sh
+bash scripts/stress.sh [--runs N] [--load K] [-t <name pattern>] <test files...>
+```
+
+The script runs `bun test` on the files with `--rerun-each N` (default 50) and
+`--timeout 30000`. `-t` limits the run to tests whose name matches the pattern.
+`--load K` starts K busy background processes for the length of the run (one
+loops forking a short process, the rest spin), never more than the CPU count, to
+imitate a gate under load; they are stopped when the script exits, however it
+exits.
+
+It prints the number of runs, passes and failures, each failing test name with
+its count, and the path of the full log, and exits 1 when anything failed, when
+no test ran, or when bun itself failed. A fix for a flaky test is done when
+`bash scripts/stress.sh --runs 200 --load 2 <file>` passes.
+
 ## Notifications
 
 `notify` in `config.json` names a command for `serve` to run when something
