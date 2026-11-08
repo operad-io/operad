@@ -1079,7 +1079,8 @@ function prepareReportFolder(
       }
       details = lstatOrUndefined(folder);
     }
-    if (details === undefined) return `cannot create ${folder}`;
+    // Checking only: a folder that is not there holds no report to follow.
+    if (details === undefined) return create ? `cannot create ${folder}` : undefined;
     if (!details.isDirectory()) {
       return `${folder} is not a plain directory (a link or a file), so the review report cannot be written under it`;
     }
@@ -1171,7 +1172,7 @@ async function callReviewerOnce(
     };
   }
   const settings = context.settings.reviewer;
-  if (resuming) {
+  if (resuming && prepareReportFolder(gatePath, false) === undefined) {
     // A valid report already on disk is the answer: a crash between the
     // report and its recorded outcome must not ask the model again. The
     // workspace path comes first; a run whose older prompt named the store
@@ -1250,13 +1251,15 @@ async function callReviewerOnce(
       typeof data.message === "string"
         ? data.message
         : `the reviewer ended "${outcome.result}"`;
-    // No file at the path: say so, with the reviewer's last words.
+    // No file at the path: a failed run is "could not write the report".
+    const missing = lstatOrUndefined(reportPath) === undefined;
     const last = lastMessageOf(outcome);
-    const full =
-      lstatOrUndefined(reportPath) === undefined
-        ? `${message}; the reviewer could not write the report${last.length === 0 ? "" : ` (last message: ${last})`}`
-        : message;
-    return { outcome: failureOutcome(data, message), message: full };
+    const full = missing && last.length > 0 ? last : message;
+    const kind = failureOutcome(data, message);
+    return {
+      outcome: missing && kind === "failed" ? "no_report" : kind,
+      message: full,
+    };
   }
   if (lstatOrUndefined(reportPath) === undefined) {
     return { outcome: "no_report", message: lastMessageOf(outcome) };
@@ -1612,7 +1615,8 @@ export async function runReview(
     pendingReport !== null &&
     pendingReport.round === round &&
     typeof pendingReport.report === "string" &&
-    pendingReport.report.startsWith(path)
+    pendingReport.report.startsWith(path) &&
+    prepareReportFolder(path, false) === undefined
   ) {
     const old = readValidReportText(pendingReport.report);
     if (old !== undefined) {

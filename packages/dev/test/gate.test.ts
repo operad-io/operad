@@ -5,6 +5,7 @@ import {
   existsSync,
   lstatSync,
   mkdtempSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   watch,
@@ -1375,8 +1376,12 @@ describe("dev/review hardening", () => {
     await verify(state);
     const result = await review(state, "review-not-429");
     expect(result.result).toBe("failed");
-    // No fallback was tried: the failure is not an unavailable model.
-    expect(state.reviewer.calls).toHaveLength(1);
+    // No fallback was tried: the failure is not an unavailable model. A run
+    // that failed without a report is tried once more, like a missing report.
+    expect(state.reviewer.calls).toHaveLength(2);
+    expect(
+      (await taskOf(state)).attempt?.review?.runs?.map((run) => run.role),
+    ).toEqual(["primary", "primary"]);
   }, 30_000);
 
   test("a usage limit reported as a model error falls back", async () => {
@@ -1956,6 +1961,67 @@ describe("dev/review report in the workspace", () => {
     const message = String(result.data?.message);
     expect(message).toContain("could not write the report");
     expect(message).toContain("no file tool");
+    expect(state.reviewer.calls).toHaveLength(2);
+    const task = await taskOf(state);
+    expect(task.attempt?.review?.runs?.map((run) => run.outcome)).toEqual([
+      "no_report",
+      "no_report",
+    ]);
+  });
+
+  test("a report found through a link swapped in after a crash is not read", async () => {
+    const callLog = join(await tempRoot(), "review-calls");
+    const state = await fixture({ reviewerArgs: ["none"], callLog });
+    await verify(state);
+    const child = Bun.spawn({
+      cmd: [
+        process.execPath,
+        REVIEW_CRASH_CHILD,
+        state.store.root,
+        state.remote.repository,
+        state.taskKey,
+        "review-crash",
+        "before-copy",
+        callLog,
+      ],
+      cwd: dirname(REVIEW_CRASH_CHILD),
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    await child.exited;
+    const gate = await gatePathOf(state);
+    const folder = join(gate, ".operad", "review");
+    const name = readdirSync(folder)[0] ?? "";
+    const outside = mkdtempSync(join(tmpdir(), "operad-after-crash-"));
+    writeFileSync(
+      join(outside, name),
+      JSON.stringify({ findings: [], verified: ["outside"] }),
+    );
+    rmSync(folder, { recursive: true, force: true });
+    symlinkSync(outside, folder);
+    const stored = join(
+      state.store.root,
+      "dev",
+      "reviews",
+      "review-crash",
+      `${state.taskId}-attempt-1-review-1.json`,
+    );
+    try {
+      const store = new FilePluginStore({ root: state.store.root });
+      const reviewer = fakeReviewer({ callLog });
+      const registry = new PluginRegistry([createDevPlugin(), reviewer.plugin], {
+        home: state.root,
+        cwd: state.remote.repository,
+        store,
+      });
+      await registry.runStep("dev/review", {}, {
+        runId: "review-crash",
+        object: { type: "task", id: state.taskKey, data: {} },
+      });
+      expect(existsSync(stored) ? readFileSync(stored, "utf8") : "").not.toContain("outside");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   test("a review folder swapped for a link during the call is not read through", async () => {
