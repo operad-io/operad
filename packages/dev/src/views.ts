@@ -24,6 +24,7 @@ import {
   type TaskAttempt,
   type TaskData,
 } from "./model.ts";
+import { planMark, taskBadge, taskMark } from "./marks.ts";
 import { git, workBranch } from "./steps.ts";
 import { findRepository, listRepositories } from "./service.ts";
 import { readDevSettings } from "./settings.ts";
@@ -91,6 +92,7 @@ export const planViews: ObjectViews = {
       note: `${planNote(plan)}  auto: ${plan.auto}  ${plan.priority}  concurrency: ${plan.concurrency}`,
       scope: plan.repository,
       final: PLAN_FINAL_STATES.includes(planState(plan)),
+      mark: planMark(plan),
     };
   },
 
@@ -146,6 +148,8 @@ export const taskViews: ObjectViews = {
       ...(note === undefined ? {} : { note }),
       scope: task.repository,
       final: TASK_FINAL_STATES.includes(task.phase),
+      mark: taskMark(task),
+      badge: taskBadge(task),
     };
   },
 
@@ -269,7 +273,8 @@ async function workerLogPath(
   const found = await findRepository(ctx.store, task.repository);
   if (found === undefined) return undefined;
   const settings = await readDevSettings(repositoryData(found.data).path);
-  const [plugin, step] = settings.worker.use.split("/");
+  const ran = settings.workers.workers.find((worker) => worker.name === attempt.worker);
+  const [plugin, step] = (ran?.use ?? settings.worker.use).split("/");
   if (plugin === undefined || step === undefined) return undefined;
   return join(
     ctx.store.root,

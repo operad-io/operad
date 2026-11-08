@@ -57,6 +57,8 @@ Both lists take effect the next time `operad mcp` starts. They do not change an
 action already running. The MCP server never offers the owner's actions as its
 own; `show` lists them separately so the lead can tell the owner what to run.
 
+`dev:reverify` merges the current main into the task branch first, then runs verify and review again with no worker. A clean merge goes straight to verify; a conflicting main sends the task to the worker.
+
 ### http
 
 | Key | Type | Default | What it does |
@@ -206,7 +208,7 @@ and an open object replaces it until `escape`. The header counts Pending and
 Running and then names every object type from `/v1/types`. The right pane says
 `select an object` until a row is opened. `enter` opens the selected row with
 `GET /v1/objects/<id>`: the pane starts with that row (id, title, state, note
-and mark), then the section tabs in the server's order (History last), then the
+badge and mark), then the section tabs in the server's order (History last), then the
 section's Markdown. A live section has a dot on its tab and follows its end
 while the pane is at the bottom (`following`); scrolling up stops following and
 `End` resumes it. A section the server cut at its size cap shows a `Truncated`
@@ -285,8 +287,8 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 |---|---|
 | `GET /v1/types` | `{ "types": [{ "type": "task", "title": "Task" }] }`: the object types with views and their display names. A type that declares filters also carries `"filters"`, in display order (`[{ "name": "active", "states": ["proposed", ...] }, { "name": "all" }, ...]`), and `"defaultFilter"`. A type without filters carries neither. |
 | `GET /v1/keys` | `{ "keys": [{ "key": "m", "action": "dev:merge", "source": "plugin" }] }`: the key bindings in force, the plugins' defaults with the person's `keys.json` overrides applied; `source` is `user` for an override. |
-| `GET /v1/objects?type=<type>&filter=<name>&cursor=<c>` | `{ "rows": [...], "next": "<c>", "hidden": 3 }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, plus `waiting` and `running`; an error row also carries `error`. `filter` keeps the rows the named filter shows, and `hidden` counts the rows of the type it left out (the whole type, not only this page). Without `filter` the type's default filter applies when it has filters; a type without filters lists every row and has no `hidden`. `filter=all` lists every row and has no `hidden`. An unknown name is a `400` that names the allowed ones. `next` pages within the filtered list. |
-| `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. An item that is about an object also carries `object` (`<type>:<id>`), its `link` and its `row`: the same row `GET /v1/objects?type=…` returns for that object (`id`, `title`, `state`, optional `note`, `waiting`, `running`), so a client does not read each object. When the row cannot be built (the object is gone, no loaded plugin shows its type, or the plugin's row fails) the item carries the error row the list shows for a bad row, with `state` `error` and an `error` message; the list itself never fails for one object. A candidate has no object and no `row`. `operad pending` prints the row's title under each line that has one. |
+| `GET /v1/objects?type=<type>&filter=<name>&cursor=<c>` | `{ "rows": [...], "next": "<c>", "hidden": 3 }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, `mark` and `badge` (see [Row marks](#row-marks)), plus `waiting` and `running`; an error row also carries `error`. `filter` keeps the rows the named filter shows, and `hidden` counts the rows of the type it left out (the whole type, not only this page). Without `filter` the type's default filter applies when it has filters; a type without filters lists every row and has no `hidden`. `filter=all` lists every row and has no `hidden`. An unknown name is a `400` that names the allowed ones. `next` pages within the filtered list. |
+| `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. An item that is about an object also carries `object` (`<type>:<id>`), its `link` and its `row`: the same row `GET /v1/objects?type=…` returns for that object (`id`, `title`, `state`, optional `note`, `mark`, `badge`, `waiting`, `running`), so a client does not read each object. When the row cannot be built (the object is gone, no loaded plugin shows its type, or the plugin's row fails) the item carries the error row the list shows for a bad row, with `state` `error` and an `error` message; the list itself never fails for one object. A candidate has no object and no `row`. `operad pending` prints the row's title under each line that has one. |
 | `GET /v1/running` | The same list as `operad running`. Each item has `runId`, `flow`, `step`, `stepLabel`, `queued`, `startedAt` and `elapsedMs` (the run's age), and: `object`, the object's id as rows and `operad show` name it (for example `operad/T-0048-type-filters`), or `null` for a run with no object; `title`, that object's row title, or `null` when there is no object or the lookup failed (a failed lookup never fails the list); `stepStartedAt` and `stepElapsedMs`, when the current step's current attempt started and how long it has run (`null` before the first step). The step time starts again when the step changes and on a new attempt. |
 | `GET /v1/objects/<id>` | `{ "id", "type", "link", "row", "sections", "actions" }`: the link that opens the object, the row, the section directory, and the actions available now with their `args` schema, `note` field and `confirm` flag. |
 | `GET /v1/objects/<id>/sections/<section>?cursor=<c>&full=<bool>` | `{ "markdown": "...", "next": "<c>" }`. `full=true` skips the size cap. |
@@ -296,6 +298,53 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 `POST /v1/act` records the caller as `{ "via": "http", "id": "operad app" }`.
 It records the action the same way the command line does, and a running
 `operad serve` carries on the steps a waiting run asks for.
+
+### Row marks
+
+A plugin's `row` may return a `mark` and a `badge` besides `id`, `title`, `state`
+and `note`. `GET /v1/objects`, `GET /v1/objects/<id>`, the row of a pending
+item and the MCP `list` and `show` results pass them through unchanged.
+
+`mark` says what the object is doing, and the client chooses the icon and the
+colour. It is one of these 17 values, and the kernel turns any other value into
+the error row, naming them:
+
+| Mark | Meaning | TUI |
+|---|---|---|
+| `todo` | not started | `○` |
+| `blocked` | waits for another object or a held area | `◌` |
+| `retry_wait` | waits for a retry time | `◷` |
+| `paused` | paused | `‖` |
+| `proposed` | suggested, not yet accepted | `+` |
+| `starting` | being set up | `◔` |
+| `running` | work in progress | `◐` |
+| `reconciling` | being brought in line with a change elsewhere | `↻` |
+| `checking` | being verified or reviewed | `⌕` |
+| `rework_pending` | asked whether to redo it | `↩` |
+| `waiting` | waits for a person | `●` |
+| `integrating` | being merged | `⑂` |
+| `ready_to_merge` | checked, waits for the merge | `◉` |
+| `done` | finished | `✓` |
+| `failed` | gave up | `✗` |
+| `cancelled` | cancelled | `⊘` |
+| `broken` | cannot be used | `!` |
+
+The kernel's `waiting` and `running` flags stay as they are. A client picks what
+to draw in this order: an error row draws the error; when `waiting` is true, a
+`mark` of `waiting`, `proposed`, `rework_pending` or `ready_to_merge` is kept
+and any other mark (or none) draws `waiting`; when `waiting` is false, the
+`mark` is drawn if there is one; otherwise `running` true draws `running`; a row
+with none of these is plain. The TUI colours the marks by role: `proposed`,
+`rework_pending` and `waiting` use the accent, `starting`, `running`,
+`reconciling`, `checking` and `integrating` the run colour, `ready_to_merge` and
+`done` the success colour, `failed` and `broken` the error colour, and the
+rest the weak colour.
+
+`badge` is a short text the client shows as it is, after the state: one line of
+at most 16 characters, or the row is an error row. The `dev` plugin sets a
+task's badge to `#<attempt>` (`#0` before the first attempt) and marks its tasks
+and plans from their phase, the step the attempt has reached and the holds the
+scheduler records; `operad list` keeps its columns and does not show them.
 
 ### Links
 
@@ -388,7 +437,7 @@ The `dev` plugin declares these filters (`all` follows `active`):
 | task | `active` (default) | proposed, ready, running, review, waiting |
 | task | `done` | merged |
 | task | `cancelled` | cancelled |
-| plan | `active` (default) | draft, confirmed |
+| plan | `active` (default) | draft, confirmed, paused |
 | plan | `done` | finished |
 | plan | `cancelled` | cancelled |
 
@@ -605,7 +654,7 @@ An alias or function from the user's own shell setup, such as `ls` defined as
 Agent runs cost an account, not a repository: one Claude or Codex login serves
 every repository on the machine. The `pool` plugin has one step, `pool/agent`,
 that picks a worker with room, runs that worker's harness step and hands the
-result back. A flow that uses it (the `dev` flow will) describes its workers;
+result back. A flow that uses it (the `dev` flow does) describes its workers;
 the home says how many runs one harness may have in all.
 
 The plugin is shipped but not installed by `operad init`; `operad plugin enable
@@ -703,6 +752,58 @@ are kept in one file under the home, `pool/places.json`, changed under a lock
 file. Steps in any thread or process of the home see the same counts. A place
 records the process that holds it; when that process is gone (a crashed serve)
 the place is dropped the next time a `pool/agent` step looks.
+
+## `dev.json`: workers and pools
+
+The `dev` plugin's work step runs every task through `pool/agent`, so `dev`
+needs the `pool` plugin enabled (`operad plugin enable pool`). The repository
+chooses its workers in `<repository>/.operad/dev.json`; `dev` reads that file in
+the registered repository's main clone, never the copy in a task's worktree,
+which carries whatever the task's branch had when it started.
+
+| Field | Type | What it does |
+|---|---|---|
+| `workers` | object | The repository's workers. Same fields as in [A flow: `workers` and `pools`](#a-flow-workers-and-pools); that table is the one place the worker fields, defaults and refusals are listed. |
+| `pools` | object | Pool groups. `dev` uses the pool named `default`, so a `pools` setting must define it. Without `pools`, `default` holds every worker in the order written. |
+| `concurrency` | integer, 1 or more | An extra cap on running tasks; see below. |
+
+```json
+{
+  "workers": {
+    "claude": { "use": "harness-claude/agent", "args": ["--model", "sonnet"], "fallback": "pi" },
+    "pi": { "use": "harness-pi/agent", "args": ["--model", "opencode-go/deepseek-v4.1-flash"] }
+  },
+  "pools": { "default": ["claude", "pi"] }
+}
+```
+
+Errors in `workers` and `pools` name the field path, such as
+`workers.claude.fallback` or `pools.default[1]`.
+
+**The old `worker` form.** `worker` (`use`, `args`, `wallTimeSecs`,
+`stallSecs`) still works and means one worker named after its harness plugin
+(`harness-radian` for `harness-radian/agent`), with `count` equal to
+`concurrency`, alone in the pool `default`. Its runs count under the home cap of
+its harness like any worker's. A file that has both `worker` and `workers`, or
+`pools` without `workers`, is refused when it is read.
+
+**How many tasks run at once.** A repository runs at most as many tasks as the
+sum of the `count` of the workers in its `default` pool. When the file sets
+`concurrency` it caps that sum further and never raises it. A plan's own
+`concurrency` still applies on top of this. A task past the cap waits for a
+free place; one past a worker's own `count` or the home cap waits in
+`pool/agent`.
+
+**Which worker.** The work step passes the `default` pool and the key
+`<repository>/default` to `pool/agent`. The attempt records the `worker` that
+ran (after a fallback, the fallback worker, with `fallbackFrom` naming the one
+that failed), and the work result says `work: claude` or
+`work: pi (fallback from claude)`. After a rework or a reject, the next work
+attempt asks for the worker of the attempt before, so it resumes that worker's
+session when the harness can. If that worker is busy the work waits for it;
+another worker does not take it. If the worker is no longer in the `default`
+pool the pool picks any worker with room and the result says
+`work: pi; claude is no longer in the pool`.
 
 ## Usage and end results
 

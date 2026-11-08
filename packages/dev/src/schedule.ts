@@ -23,15 +23,18 @@ import {
 } from "./model.ts";
 import {
   claimTaskStart,
+  getPlan,
   setAreaHold,
+  setDependencyHold,
   listRepositories,
   recordAutoMerge,
   recordMergeReported,
+  refreshPlanCounts,
   reopenTask,
   releaseTaskClaim,
   setTaskPhase,
 } from "./service.ts";
-import { readDevSettings, type DevSettings } from "./settings.ts";
+import { readDevSettings, runningTaskCap, type DevSettings } from "./settings.ts";
 
 /** Where a scheduler change goes: the kernel loop's output. */
 export const schedulerTestHooks: {
@@ -115,7 +118,7 @@ function planConcurrency(plan: PlanData): number {
 }
 
 function repositoryConcurrency(settings: DevSettings): number {
-  const value: unknown = settings.concurrency;
+  const value: unknown = runningTaskCap(settings);
   return typeof value === "number" && Number.isFinite(value) ? value : 1;
 }
 
@@ -417,6 +420,17 @@ async function scheduleRepository(
         ? areaActive.get(task.area)
         : undefined;
     await setAreaHold(ctx.store, object.id, holder);
+    const dependencies = dependencyState(task, byId);
+    await setDependencyHold(
+      ctx.store,
+      object.id,
+      !dependencies.ready && dependencies.cancelled === undefined,
+    );
+  }
+
+  // Keep each plan's cached counts, and with them its row's mark, current.
+  for (const planObject of plans) {
+    await refreshPlanCounts(ctx.store, await getPlan(ctx.store, planObject.id));
   }
 }
 

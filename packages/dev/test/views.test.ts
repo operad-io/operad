@@ -54,6 +54,7 @@ describe("dev views", () => {
       note: "0/1  auto: off  P3  concurrency: 1",
       scope: "repository",
       final: false,
+      mark: "proposed",
     });
     await setTaskPhase(store, task.id, "merged");
     expect(planViews.row(await getPlan(store, plan.id)).note).toBe(
@@ -89,6 +90,8 @@ describe("dev views", () => {
       state: "proposed",
       scope: "repository",
       final: false,
+      mark: "proposed",
+      badge: "#0",
     });
     for (const phase of ["merged", "cancelled"] as const) {
       await setTaskPhase(store, task.id, phase);

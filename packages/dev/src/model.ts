@@ -21,10 +21,11 @@ export async function listAll(
 }
 
 /** A plan is a request the owner confirmed into work. */
-export type PlanStatus = "draft" | "confirmed" | "cancelled";
+export type PlanStatus = "draft" | "confirmed" | "paused" | "cancelled";
 
 /** Every state a plan row shows: its status, or `finished` once its tasks ended. */
-export const PLAN_STATES = ["draft", "confirmed", "finished", "cancelled"] as const;
+export const PLAN_STATES = ["draft", "confirmed", "paused", "finished", "cancelled"] as const;
+export type PlanState = (typeof PLAN_STATES)[number];
 
 /** How far a plan may run without a person. */
 export type AutoMode = "off" | "run" | "merge";
@@ -90,6 +91,8 @@ export type PlanData = {
   readonly taskCount: number;
   readonly mergedCount: number;
   readonly cancelledCount: number;
+  /** Tasks being worked or reviewed now; the scheduler keeps it current. */
+  readonly activeCount?: number | undefined;
   /** True once the scheduler has reported that every task ended. */
   readonly finishedReported?: boolean | undefined;
 };
@@ -277,6 +280,8 @@ export interface ReworkRecord {
   readonly run?: string | null;
   readonly source: string;
   readonly streak: number;
+  /** The automatic rework limit in force when the record was written. */
+  readonly limit?: number;
   readonly result: "again" | "ask";
 }
 
@@ -295,6 +300,15 @@ export type TaskAttempt = {
   readonly costMicros?: number | null;
   /** How far to trust the cost: `exact`, `estimated` or `incomplete`. */
   readonly costQuality?: "exact" | "estimated" | "incomplete" | null;
+  /** The worker the pool ran for this attempt's work (the fallback one when it fell back). */
+  readonly worker?: string | null;
+  /** The worker that failed over to `worker`, when the pool fell back. */
+  readonly fallbackFrom?: string | null;
+  /** The worker of the attempt before, which this attempt's work asks for again. */
+  readonly previousWorker?: string | null;
+  readonly previousSession?: string | null;
+  /** The earlier worker that was no longer in the pool, when the work changed hands. */
+  readonly workerChanged?: string | null;
   /** Whether the work step consumed this attempt; a later worktree visit is new work. */
   readonly worked?: boolean;
   /** The file the worker's own log was written to. */
@@ -324,6 +338,8 @@ export type TaskAttempt = {
   readonly rework?: ReworkRecord | null;
   /** What the integrate step did on main. */
   readonly integration?: IntegrationRecord | null;
+  /** The run whose integrate step is working now; null once it wrote its result. */
+  readonly integrating?: string | null;
   /** What the cleanup step ran after the merge. */
   readonly cleanup?: CleanupRecord | null;
 };
@@ -351,6 +367,8 @@ export type TaskData = {
   readonly area?: string | undefined;
   /** The running task that holds this ready task's area; the scheduler sets it. */
   readonly areaHeldBy?: string | undefined;
+  /** True while a task this ready task follows is not merged; the scheduler sets it. */
+  readonly dependencyHeld?: boolean | undefined;
   readonly phase: TaskPhase;
   readonly attempts: number;
   readonly run: string | null;
@@ -764,7 +782,7 @@ export function editBrief(brief: string, body: string): string {
  * ------------------------------------------------------------------------- */
 
 /** The state a plan row shows: `finished` is derived from its tasks. */
-export function planState(plan: PlanData): (typeof PLAN_STATES)[number] {
+export function planState(plan: PlanData): PlanState {
   if (plan.status === "cancelled") return "cancelled";
   if (
     plan.status === "confirmed" &&

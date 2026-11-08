@@ -42,6 +42,21 @@ export default defineFlow({
       },
     },
     {
+      // A reverify checks the same work again, on a branch brought up to date
+      // with main first. No worker turn unless the merge conflicts.
+      id: "reverify",
+      kind: "plugin",
+      params: { use: "dev/reverify", params: {} },
+      replay: "unsafe",
+      next: {
+        ready: "verify",
+        conflict: "work",
+        failed: "end_failed",
+        cancelled: "end_cancelled",
+        interrupted: "announce_reverify_stopped",
+      },
+    },
+    {
       id: "work",
       kind: "plugin",
       params: { use: "dev/work", params: {} },
@@ -160,6 +175,7 @@ export default defineFlow({
     },
     announce("announce_blocked", "worktree", "blocked"),
     announce("announce_worktree_stopped", "worktree", "interrupted"),
+    announce("announce_reverify_stopped", "reverify", "interrupted"),
     announce("announce_nothing", "work", "nothing"),
     announce("announce_work_failed", "work", "failed"),
     announce("announce_work_stopped", "work", "interrupted"),
@@ -181,7 +197,7 @@ export default defineFlow({
         merge: "integrate",
         reject: "worktree",
         rework: "worktree",
-        reverify: "verify",
+        reverify: "reverify",
         interrupted: "end_cancelled",
       },
     },

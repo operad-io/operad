@@ -1583,6 +1583,8 @@ export class PluginRegistry {
           ...nestedOptions,
           limits: nestedOptions.limits ?? options.limits,
           asker: nestedOptions.asker ?? options.asker,
+          // A nested step reports its events to the same destination.
+          emit: nestedOptions.emit ?? options.emit,
         }, true),
     };
 

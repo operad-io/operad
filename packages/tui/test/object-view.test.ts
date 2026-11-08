@@ -74,6 +74,25 @@ describe("the object pane view", () => {
     }
   });
 
+  test("the badge follows the state in the object's header", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 20 });
+    try {
+      const view = createTuiView(setup.renderer);
+      const state = opened();
+      const open = state.object;
+      if (open === undefined) throw new Error("no object is open");
+      view.render({
+        ...state,
+        object: { ...open, row: { ...open.row, badge: "#2" } },
+      });
+      await setup.renderOnce();
+      expect(setup.captureCharFrame()).toContain("open #2 · $1");
+      view.destroy();
+    } finally {
+      await setup.dispose();
+    }
+  });
+
   test("a narrow screen gives the open object the whole body", async () => {
     const setup = await createTestRenderer({ width: 80, height: 20 });
     try {

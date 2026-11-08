@@ -252,6 +252,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0047-M6 | packages/engine/src/views/presentation.ts | show accepted `--repo` that differs from a qualified id | `dev` cli test `a qualified id with an unknown repository, or a conflicting --repo, is refused` |
+| T-0043-M8 | packages/engine/src/plugin/registry.ts | a nested step did not pass the parent's event destination on | `dev/work with workers > a rework waits for its worker while another worker is free` (`pool.waiting` could not be sent) |
+| T-0069-M1 | packages/engine/src/views/presentation.ts | the mark check never rejected a value | `presentation views > an unknown mark is an error row naming the allowed marks` |
+| T-0069-M2 | packages/engine/src/views/presentation.ts | the badge limit refused 16 characters instead of 17 | `presentation views > a badge over 16 characters or over several lines is an error row` |
+| T-0069-M3 | packages/engine/src/views/presentation.ts | a valid mark was left off the row | `presentation views > a valid mark and badge pass through list and get; a plain row is unchanged` |
 
 ## T-0068 — the running view names the object and times the step
 

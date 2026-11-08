@@ -95,9 +95,13 @@ They are listed in `pending` after `merge` and `reject`.
 - `rework --note <text>` appends `## Rework <n> (lead)` and sends the task to a
   worker. It does not count toward `maxAutoRework`, and it resets the count of
   automatic reworks in a row to 0.
-- `reverify` re-runs verify and review on the current head, with no worker, for
-  example after a flaky failure. The result follows the normal gate path, and it
-  does not count toward `maxAutoRework`.
+- `reverify` merges the current `<remote>/<mainBranch>` into the task branch,
+  then re-runs verify and review on the result, with no worker, for example
+  after a flaky failure. A clean merge (or a main already contained) goes
+  straight to verify; a main that conflicts goes to the worker with the
+  conflict prompt. The history says `reverify: merged main <sha>, checking
+  again` or `reverify: main conflicts, sending to work`. The result follows the
+  normal gate path, and it does not count toward `maxAutoRework`.
 
 Each action claims the task at the version it saw. A `merge`, `reject`, `cancel`
 or second `rework` or `reverify` that got there first wins; the other reports
@@ -108,6 +112,7 @@ what happened and changes nothing.
 | step | results | what it does |
 |---|---|---|
 | `dev/worktree` | `ready`, `conflict`, `blocked`, `failed` | fetches, creates `worktreeRoot/<task id>` on `work/<task id>` from `<remote>/<mainBranch>`, and on a later attempt reuses it after merging the latest main; a start that carries a `blockedBy` dependency records the person wait instead |
+| `dev/reverify` | `ready`, `conflict`, `failed` | the first step of a reverify: fetches and merges the current main into the task branch in the existing worktree, keeping the attempt; `ready` goes to verify, `conflict` to the worker |
 | `dev/work` | `done`, `nothing`, `failed` | builds the worker prompt, runs the configured harness step in the worktree, then requires new commits, a clean tree and a pushed branch |
 | `dev/verify` | `pass`, `fail` | recreates `<worktreeRoot>/<task id>-gate` detached at the branch head, runs `gate.commands` through `shell/check`, and records the verified commit |
 | `dev/review` | `pass`, `fail`, `failed`, `unavailable`, `timed_out` | runs the reviewer harness step in the gate worktree on the diff from the merge base to the verified commit; a finding on a file the change did not touch is pre-existing and does not count |
@@ -193,8 +198,8 @@ repository lock and reads the stored tasks inside that lock, so two ticks or two
 ## Flow
 
 `dev` is the coding flow: worktree → work → verify → review → a person decides
-`merge`, `reject` or `reverify` (the last runs verify and review again on the same
-commit). A task whose dependency was cancelled enters the same
+`merge`, `reject` or `reverify` (the last merges the current main into the branch, then runs verify and
+review again on it with no worker). A task whose dependency was cancelled enters the same
 person wait directly from the worktree step. A failing verify or review goes to
 `rework`, which sends the task back to the worktree until `maxAutoRework`
 automatic reworks have run in a row; then it waits for a person. `nothing` and
@@ -318,8 +323,9 @@ The file holds the repository's work settings:
 | `remote` | `origin` | the remote a task branch is fetched from and pushed to |
 | `mainBranch` | `main` | the branch a task starts from and merges on each attempt |
 | `worktreeRoot` | `.operad-worktrees` | where task worktrees live, relative to the repository and inside it |
-| `concurrency` | `1` | how many tasks this repository may run at once; each plan also has its own limit |
-| `worker.use` | `harness-radian/agent` | the harness step that works a task |
+| `concurrency` | none | a cap on running tasks, applied to the sum of the `default` pool's counts; with the old `worker` form it is the one worker's `count` (default `1`); each plan also has its own limit |
+| `workers`, `pools` | none | the repository's workers and pools; fields are in the manual ("`dev.json`: workers and pools"). Not allowed together with `worker` |
+| `worker.use` | `harness-radian/agent` | the harness step that works a task; the old single-worker form, one worker named after its harness |
 | `worker.args` | `[]` | extra arguments for that harness step |
 | `worker.wallTimeSecs`, `worker.stallSecs` | harness defaults | the worker's time limits |
 | `workerBrief` | `.operad/worker-brief.md` | the brief a worker reads first; a missing file means the built-in text |

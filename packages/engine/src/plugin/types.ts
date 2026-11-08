@@ -40,6 +40,33 @@ export interface Actor {
   readonly id: string;
 }
 
+/** The semantic marks a row may carry; clients draw one icon per value. */
+export const ROW_MARKS = [
+  "todo",
+  "blocked",
+  "retry_wait",
+  "paused",
+  "proposed",
+  "starting",
+  "running",
+  "reconciling",
+  "checking",
+  "rework_pending",
+  "waiting",
+  "integrating",
+  "ready_to_merge",
+  "done",
+  "failed",
+  "cancelled",
+  "broken",
+] as const;
+
+/** One of the values in `ROW_MARKS`. */
+export type RowMark = (typeof ROW_MARKS)[number];
+
+/** The longest `badge` a row may carry, in characters. */
+export const ROW_BADGE_MAX = 16;
+
 /** One line of a list: what the plugin shows for an object. */
 export interface ObjectRow {
   readonly id: string;
@@ -57,6 +84,10 @@ export interface ObjectRow {
    * client that reports ends reads this and no state name.
    */
   readonly final?: boolean | undefined;
+  /** What the object is doing, as one of `ROW_MARKS`; clients choose the icon. */
+  readonly mark?: RowMark | undefined;
+  /** A short single-line text clients show after the state, such as `#2`. */
+  readonly badge?: string | undefined;
 }
 
 /** One section a detail page offers. `live` means its content still grows. */

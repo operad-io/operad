@@ -27,6 +27,7 @@ import {
   type TaskAttempt,
   type TaskData,
 } from "./model.ts";
+import { DEFAULT_POOL, resolvePool } from "@operad-io/pool";
 import { findRepository, withRepoLock } from "./service.ts";
 import { MAX_WORK_WAITS } from "./timeouts.ts";
 import {
@@ -148,8 +149,18 @@ function attemptFor(ctx: StepContext, task: TaskData): AttemptState {
     return { attempt: previous, attempts: task.attempts, replay: true };
   }
   const number = Math.max(task.attempts, previous?.number ?? 0) + 1;
+  // The worker of the attempt before this one, so the work goes back to it.
+  const previousWorker =
+    typeof previous?.worker === "string" ? previous.worker : previous?.previousWorker;
+  const ran = typeof previous?.worker === "string";
+  const previousSession = ran ? previous?.sessionId : previous?.previousSession;
   return {
-    attempt: { number, run: ctx.runId },
+    attempt: {
+      number,
+      run: ctx.runId,
+      ...(typeof previousWorker === "string" ? { previousWorker } : {}),
+      ...(typeof previousSession === "string" ? { previousSession } : {}),
+    },
     attempts: number,
     replay: false,
   };
@@ -629,6 +640,84 @@ export async function runWorktree(
   return { result: prepared.kind, data };
 }
 
+/**
+ * Step `dev/reverify`: bring the branch up to date with main before a reverify
+ * gates it. It keeps the attempt, since the work is the same: a clean merge (or
+ * a main already contained) goes to verify, a conflict goes to the worker with
+ * the merge left open.
+ */
+export async function runReverify(
+  ctx: StepContext,
+): Promise<PluginStepResult> {
+  const context = await taskContext(ctx);
+  if (!claimAllows(ctx, context.task)) return cancelledStep();
+  const previous = context.task.attempt;
+  const attempt: TaskAttempt = previous ?? {
+    number: Math.max(context.task.attempts, 0) + 1,
+    run: ctx.runId,
+  };
+  const attempts = Math.max(context.task.attempts, attempt.number);
+  const prepared = prepareWorktree(
+    context.repository,
+    context.settings,
+    context.taskId,
+  );
+  const base = prepared.base ?? attempt.base ?? null;
+  const worktree = worktreePath(
+    context.repository.path,
+    context.settings,
+    context.taskId,
+  );
+  const message =
+    prepared.kind === "conflict"
+      ? "reverify: main conflicts, sending to work"
+      : prepared.kind === "ready"
+        ? prepared.merged === undefined
+          ? "reverify: main already contained, checking again"
+          : `reverify: merged main ${prepared.merged.commit}, checking again`
+        : undefined;
+  const nextAttempt: TaskAttempt = {
+    ...attempt,
+    run: ctx.runId,
+    worktree,
+    branch: workBranch(context.taskId),
+    base,
+    result: prepared.kind,
+    // A conflict is worked on again; a clean merge goes straight to the gate.
+    ...(prepared.kind === "conflict" ? { worked: false } : {}),
+    workWaits: 0,
+    workRetryAt: null,
+    merged: prepared.merged ?? attempt.merged ?? null,
+  };
+  const next: TaskData = {
+    ...context.task,
+    phase: "running",
+    run: ctx.runId,
+    attempts,
+    attempt: nextAttempt,
+    ...(message === undefined
+      ? {}
+      : { brief: appendChange(context.task.brief, message) }),
+  };
+  if (!(await saveTaskGuarded(ctx, context.taskKey, next, "dev:reverify"))) {
+    return cancelledStep();
+  }
+  return {
+    result: prepared.kind,
+    data: {
+      attempt: attempts,
+      worktree,
+      path: worktree,
+      branch: nextAttempt.branch,
+      base,
+      ...(message === undefined ? {} : { message }),
+      ...(prepared.message === undefined ? {} : { failure: prepared.message }),
+      ...(prepared.files === undefined ? {} : { files: prepared.files }),
+      ...(prepared.merged === undefined ? {} : { merged: prepared.merged }),
+    },
+  };
+}
+
 export function briefText(task: TaskData): string {
   const parts = splitBrief(task.brief);
   const pieces = [parts.body, parts.reworks].filter(
@@ -721,24 +810,45 @@ function resultData(
   };
 }
 
-function harnessParams(
+/**
+ * The params of the `pool/agent` call: the `default` pool's definitions, the
+ * key prefix `<repository>/default`, and the worker a rework goes back to.
+ */
+function poolParams(
   prompt: string,
   worktree: string,
+  repository: RepositoryData,
   settings: DevSettings,
+  worker: string | undefined,
+  resumeSession: string | undefined,
 ): Record<string, unknown> {
+  const resolved = resolvePool(settings.workers, DEFAULT_POOL);
+  // A fallback worker that ran is not a member of the pool; hand it over as
+  // one so pool/agent can be asked for it by name.
+  const fallback =
+    worker === undefined || resolved.workers.some((item) => item.name === worker)
+      ? undefined
+      : resolved.fallbacks.find((item) => item.name === worker);
   return {
     prompt,
     cwd: worktree,
-    // An empty list is still a configured value: leaving it out would let the
-    // flow's params provide the harness arguments the repository did not set.
-    args: settings.worker.args,
-    ...(settings.worker.wallTimeSecs === undefined
-      ? {}
-      : { wallTimeSecs: settings.worker.wallTimeSecs }),
-    ...(settings.worker.stallSecs === undefined
-      ? {}
-      : { stallSecs: settings.worker.stallSecs }),
+    prefix: `${repository.name}/${DEFAULT_POOL}`,
+    workers: fallback === undefined ? resolved.workers : [...resolved.workers, fallback],
+    fallbacks: resolved.fallbacks,
+    ...(worker === undefined ? {} : { worker }),
+    ...(worker !== undefined && resumeSession !== undefined ? { resumeSession } : {}),
   };
+}
+
+/** The history line of a work run: `claude`, or `pi (fallback from claude)`. */
+function workLine(attempt: TaskAttempt): string {
+  const base = `work: ${String(attempt.worker)}`;
+  const from = attempt.fallbackFrom;
+  const changed = attempt.workerChanged;
+  return [
+    typeof from === "string" ? `${base} (fallback from ${from})` : base,
+    typeof changed === "string" ? `; ${changed} is no longer in the pool` : "",
+  ].join("");
 }
 
 /** Step `dev/work`: run the configured harness step and decide what it left. */
@@ -844,12 +954,36 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
     signal: ctx.signal,
   };
+  // A rework or reject goes back to the worker that ran the attempt before,
+  // and resumes its session when the harness can. When that worker is no
+  // longer in the pool, any free worker takes it and the change is recorded.
+  const before =
+    typeof attempt.previousWorker === "string" && attempt.previousWorker.length > 0
+      ? attempt.previousWorker
+      : undefined;
+  const stillThere =
+    before !== undefined &&
+    (() => {
+      const resolved = resolvePool(context.settings.workers, DEFAULT_POOL);
+      return [...resolved.workers, ...resolved.fallbacks].some(
+        (worker) => worker.name === before,
+      );
+    })();
+  const asked = stillThere ? before : undefined;
+  const workerChangedFrom = before !== undefined && !stillThere ? before : undefined;
   let outcome: PluginStepResult | undefined;
   let hostError: string | undefined;
   try {
     outcome = await runStep(
-      context.settings.worker.use,
-      harnessParams(prompt, path, context.settings),
+      "pool/agent",
+      poolParams(
+        prompt,
+        path,
+        context.repository,
+        context.settings,
+        asked,
+        typeof attempt.previousSession === "string" ? attempt.previousSession : undefined,
+      ),
       options,
     );
   } catch (error) {
@@ -882,6 +1016,11 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     tokens: reading.tokens,
     workMs: reading.durationMs,
     worked: true,
+    // The worker the pool ran, so the next attempt can ask for it again.
+    worker: typeof outcomeData.worker === "string" ? outcomeData.worker : null,
+    fallbackFrom:
+      typeof outcomeData.fallbackFrom === "string" ? outcomeData.fallbackFrom : null,
+    workerChanged: workerChangedFrom ?? null,
   };
 
   const finish = async (
@@ -922,6 +1061,15 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
         branch,
         base,
         prompt,
+        ...(nextAttempt.worker === null || nextAttempt.worker === undefined
+          ? {}
+          : {
+              work: workLine(nextAttempt),
+              worker: nextAttempt.worker,
+              ...(typeof nextAttempt.fallbackFrom === "string"
+                ? { fallbackFrom: nextAttempt.fallbackFrom }
+                : {}),
+            }),
         ...extra,
       }),
     };

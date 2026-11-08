@@ -153,12 +153,29 @@ the row fields.
 | T-0055-M1 | packages/dev/src/steps.ts | the base stayed the head before the merge of main, so the merge counted as the worker's work | `dev/work after main moved > a clean merge and no change by the worker is nothing` |
 | T-0055-M2 | packages/dev/src/steps.ts | the Changes section did not say what was merged | `dev/work after main moved > a rework gets main's commit, and the attempt and Changes say so` |
 | T-0055-M3 | packages/dev/src/steps.ts | the conflict prompt did not say resolving the merge is part of the attempt | `dev/work after main moved > a conflicting main is left for the worker and the prompt names the files` |
+| T-0043-M1 | packages/dev/src/steps.ts | the work never asked for the previous attempt's worker | `dev/work with workers > a rework goes back to the worker that ran the attempt before` |
+| T-0043-M2 | packages/dev/src/steps.ts | the work result did not say the earlier worker is no longer in the pool | `dev/work with workers > a worker removed from dev.json is replaced and the change is recorded` |
+| T-0043-M3 | packages/dev/src/settings.ts | `concurrency` did not cap the sum of the default pool's counts | `the running-task cap > concurrency, when set, caps it further and never raises it` |
+| T-0043-M4 | packages/dev/src/steps.ts | the settings were read from the task's worktree instead of the main clone | `dev/work with workers > the work reads the main clone's dev.json, not the worktree's older copy` |
+| T-0043-M5 | packages/dev/src/settings.ts | `worker` together with `workers` was accepted | `dev.json workers and pools > worker and workers together refuse the file` |
+| T-0043-M6 | packages/dev/src/steps.ts | the attempt did not record `fallbackFrom` | `dev/work with workers > a fallback attempt records the worker that ran, and the rework goes to it` |
+| T-0043-M7 | packages/dev/src/steps.ts | an attempt that never reached a worker dropped the earlier worker | `dev/work with workers > an attempt that never reached a worker passes the earlier worker on` |
+| T-0043-M8 | packages/dev/src/steps.ts | poolParams sent no `resumeSession` on a rework | `dev/work with workers > a rework resumes the session of the worker it goes back to` |
+| T-0043-M9 | packages/dev/src/steps.ts | a fallback worker outside the default pool counted as removed | `dev/work with workers > a fallback outside the default pool is still the worker a rework goes back to` |
 | T-0056-M1 | packages/dev/src/places.ts | allowed one more place than `checks` | `check places > three checks with a limit of 2: two run, the third waits until one ends` |
 | T-0056-M2 | packages/dev/src/places.ts | a waiting check wrote nothing to the step log | `check places > three checks with a limit of 2: two run, the third waits until one ends` |
 | T-0056-M3 | packages/dev/src/places.ts | a cancelled step kept waiting for a place | `check places > a cancelled step stops waiting for a place` |
 | T-0056-M4 | packages/dev/src/rerun.ts | the check ran without taking a place | `check places > a check waits for a place before its command starts` |
 | T-0056-M5 | packages/dev/src/places.ts | a taken place made the taker wait for its holder instead of trying the next place | `check places > a killed check releases its place` |
 | T-0058-M4 | packages/dev/src/mainclone.ts | the clean-tree check ignored untracked files | `dev/integrate main clone > an untracked file makes the clone dirty and it is left alone` |
+| T-0069-M1 | packages/dev/src/marks.ts | a ready task behind a prior task was `todo`, not `blocked` | `task marks > ready behind a prior task`, `dev scheduling > a task behind a prior task is blocked until that task merges; the plan counts its active tasks` |
+| T-0069-M2 | packages/dev/src/marks.ts | a task given up after the auto rework limit was `rework_pending` | `task marks > waiting, given up after the auto rework limit` |
+| T-0069-M3 | packages/dev/src/marks.ts | the badge read the task's attempt count only | `task badge > follows the attempt` |
+| T-0069-M4 | packages/dev/src/marks.ts | a task whose work is done drew `running`, not `checking` | `task marks > running, work done, verify next` |
+| T-0069-M5 | packages/dev/src/marks.ts | read the integrating mark from the integration record, not from the step's own marker | `task marks > waiting while integrate builds the candidate` |
+| T-0069-M6 | packages/dev/src/integrate.ts | kept the integrating marker after a conflict or a refused push | `dev/integrate > a conflict appends the conflict rework and leaves main alone` |
+| T-0069-M7 | packages/dev/src/marks.ts | had no paused plan mapping | `plan marks > each plan state maps` |
+| T-0069-M8 | packages/dev/src/marks.ts | classified a given-up rework by a hard-coded streak instead of the limit in force | `task marks > waiting, given up with a limit of 0` |
 | T-0059-M5 | packages/dev/src/gate.ts | the Grading section's text was altered instead of given verbatim | `dev/review > review.json > the prompt carries the flow's grading verbatim` |
 | T-0059-M6 | packages/dev/src/gate.ts | review.json's fixLevel was ignored | `dev/review > review.json > fixLevel in review.json decides whether a minor finding fails` |
 | T-0059-M7 | packages/dev/src/gate.ts | an invalid review.json was swallowed instead of failing the step | `dev/review > review.json > an invalid file fails the review step naming the file` |
@@ -179,3 +196,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0064-M7 | packages/dev/src/model.ts | a finished plan was not a final state | `dev views > a plan row shows the derived state and merged/total` |
+## T-0066 — reverify merges main first
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0066-M1 | packages/dev/src/steps.ts | the clean-merge history line lost "main" and "checking again" | `dev/reverify > a branch behind a non-conflicting main merges it and goes to verify, no work` |
+| T-0066-M2 | packages/dev/src/steps.ts | the reverify step opened a new attempt number | `dev/reverify > a branch behind a non-conflicting main merges it and goes to verify, no work` |
+| T-0066-M3 | packages/dev/flows/dev.flow.ts | the wait's reverify edge went straight to verify again | `the dev flow > loads with the gate and the rework edges` |
