@@ -102,13 +102,14 @@ export default defineFlow({
       params: {
         prompt:
           "The task is waiting for you: merge it or reject it.\n\nreview timed out twice",
-        choices: ["merge", "reject"],
+        choices: ["merge", "reject", "rework"],
         note: "review timed out twice",
       },
       replay: "safe",
       next: {
         merge: "integrate",
         reject: "worktree",
+        rework: "worktree",
         interrupted: "end_cancelled",
       },
     },
@@ -118,13 +119,14 @@ export default defineFlow({
       params: {
         prompt:
           "The task is waiting for you: merge it or reject it.\n\nreview did not finish (model unavailable)",
-        choices: ["merge", "reject"],
+        choices: ["merge", "reject", "rework"],
         note: "review did not finish (model unavailable)",
       },
       replay: "safe",
       next: {
         merge: "integrate",
         reject: "worktree",
+        rework: "worktree",
         interrupted: "end_cancelled",
       },
     },
@@ -134,13 +136,14 @@ export default defineFlow({
       params: {
         prompt:
           "The task is waiting for you: merge it or reject it.\n\nreview did not finish (out of time)",
-        choices: ["merge", "reject"],
+        choices: ["merge", "reject", "rework"],
         note: "review did not finish (out of time)",
       },
       replay: "safe",
       next: {
         merge: "integrate",
         reject: "worktree",
+        rework: "worktree",
         interrupted: "end_cancelled",
       },
     },
@@ -170,13 +173,14 @@ export default defineFlow({
       params: {
         prompt:
           "The task is waiting for you: merge it, reject it, or verify and review it again.",
-        choices: ["merge", "reject", "reverify"],
+        choices: ["merge", "reject", "rework", "reverify"],
         note: "the run stopped during {step}; reject to run it again, or reverify to check the same commit again",
       },
       replay: "safe",
       next: {
         merge: "integrate",
         reject: "worktree",
+        rework: "worktree",
         reverify: "verify",
         interrupted: "end_cancelled",
       },

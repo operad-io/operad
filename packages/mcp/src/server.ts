@@ -1,5 +1,6 @@
 /** The MCP stdio server: JSON-RPC framing, method dispatch and read tools. */
 
+import { join } from "node:path";
 import {
   ENGINE_VERSION,
   Kernel,
@@ -93,6 +94,7 @@ interface OpenContext {
   readonly kernel: Kernel;
   readonly mcp: OperadConfig["mcp"];
   readonly cwd: string;
+  readonly storeRoot: string;
 }
 
 class RpcError extends Error {
@@ -205,7 +207,7 @@ async function openContext(
       void onLog(message);
     },
   });
-  return { views, log, registry, kernel, mcp: config.mcp, cwd };
+  return { views, log, registry, kernel, mcp: config.mcp, cwd, storeRoot };
 }
 
 function toolContext(
@@ -426,6 +428,10 @@ export async function runMcpServer(
         registry: opened.registry,
         log: opened.log,
         hold: true,
+        sentFile: join(
+          home,
+          `mcp-channel-${new Bun.CryptoHasher("sha1").update(opened.storeRoot).digest("hex").slice(0, 12)}.json`,
+        ),
         ...(options.types === undefined ? {} : { types: options.types }),
         send: async (notification) => {
           await write(

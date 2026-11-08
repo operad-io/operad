@@ -128,14 +128,14 @@ const WAITS: Readonly<Record<string, Partial<TaskData>>> = {
 
 describe("dev:rework and dev:reverify", () => {
   for (const [state, data] of Object.entries(WAITS)) {
-    test(`rework from ${state} writes a lead section and answers reject`, async () => {
+    test(`rework from ${state} writes a lead section and answers rework`, async () => {
       const fixture = await setup();
       await setTaskPhase(fixture.store, fixture.task.id, "waiting");
       await patch(fixture, data);
 
       await run(fixture, "rework", "cover the empty case");
 
-      expect(fixture.answers).toEqual([["reject", "cover the empty case"]]);
+      expect(fixture.answers).toEqual([["rework", "cover the empty case"]]);
       const after = taskData((await getTask(fixture.store, fixture.task.id)).data);
       expect(after.brief).toContain("## Rework 1 (lead)");
       expect(after.brief).toContain("cover the empty case");
@@ -386,7 +386,7 @@ describe("dev:rework and dev:reverify", () => {
       const brief = taskData((await getTask(fixture.store, fixture.task.id)).data).brief;
       // The loser leaves nothing behind: a rework section only if rework won.
       expect(brief.includes("## Rework 1 (lead)")).toBe(
-        answers[0] === "dev/rework:reject",
+        answers[0] === "dev/rework:rework",
       );
     }
   });
