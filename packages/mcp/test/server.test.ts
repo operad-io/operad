@@ -401,7 +401,8 @@ describe("operad mcp", () => {
         },
       ]);
       const listText = (resultOf(list).content as { text: string }[])[0]?.text ?? "";
-      expect(listText).toContain("| one | new | First | $1 | waiting |");
+      expect(listText).toContain("| one | new |  |  | First | $1 | waiting |");
+      expect(listText).toContain("| two | open | integrating | #2 | Second |  | running |");
 
       const show = await child.request(4, "tools/call", {
         name: "show",

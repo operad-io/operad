@@ -31,11 +31,11 @@ export function listMarkdown(page: ViewListPage): string {
   if (page.rows.length === 0) {
     lines.push("No objects.");
   } else {
-    lines.push("| id | state | title | note | flags |");
-    lines.push("| --- | --- | --- | --- | --- |");
+    lines.push("| id | state | mark | badge | title | note | flags |");
+    lines.push("| --- | --- | --- | --- | --- | --- | --- |");
     for (const row of page.rows) {
       lines.push(
-        `| ${cell(rowName(row))} | ${cell(row.state)} | ${cell(row.title)} | ${cell(row.note ?? "")} | ${flags(row)} |`,
+        `| ${cell(rowName(row))} | ${cell(row.state)} | ${cell(row.mark ?? "")} | ${cell(row.badge ?? "")} | ${cell(row.title)} | ${cell(row.note ?? "")} | ${flags(row)} |`,
       );
     }
   }
