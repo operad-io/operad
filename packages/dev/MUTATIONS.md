@@ -149,3 +149,6 @@ the row fields.
 | T-0058-M1 | packages/dev/src/mainclone.ts | the clean-tree check was skipped | `dev/integrate main clone > a dirty clone is left alone with the note` |
 | T-0058-M2 | packages/dev/src/mainclone.ts | the branch check was skipped | `dev/integrate main clone > a clone on another branch is left alone` |
 | T-0058-M3 | packages/dev/src/mainclone.ts | the install ran when bun.lock did not change and not when it did | `dev/integrate main clone > a lockfile change runs the install in the clone, once, after the fast-forward` |
+| T-0055-M1 | packages/dev/src/steps.ts | the base stayed the head before the merge of main, so the merge counted as the worker's work | `dev/work after main moved > a clean merge and no change by the worker is nothing` |
+| T-0055-M2 | packages/dev/src/steps.ts | the Changes section did not say what was merged | `dev/work after main moved > a rework gets main's commit, and the attempt and Changes say so` |
+| T-0055-M3 | packages/dev/src/steps.ts | the conflict prompt did not say resolving the merge is part of the attempt | `dev/work after main moved > a conflicting main is left for the worker and the prompt names the files` |
