@@ -19,7 +19,7 @@
    - `load(ctx, object, sectionId, { cursor })` → `{ markdown, next? }`：一段的内容，只在用户打开时调用，可以慢；太长就分页。
 5. **内容只有 Markdown 一种**（CommonMark 加 GFM 表格和围栏代码块）：diff 是 ```` ```diff ````，表格是 GFM 表格，图是 ```` ```mermaid ````。每个客户端只要一个渲染器；命令行在终端里转成带颜色的文本，`--raw` 给原文。逐文件的 diff 靠把每个文件做成一段来表达，不加新的内容类型。
 6. **内核做的事**：列表上给每行加两个它自己知道的标记，**等人**和**在跑**，两个标记盖过行的 `mark`（决定 10）：等人的行一律画成等人，在跑而插件没给 `mark` 的行画成在跑；详情末尾自动加一段**历史**；`load` 有超时和大小上限，截断时说明完整内容怎么看（`operad show <id> --section <段> --full`）；对象一变就推“某 id 变了”，客户端重取 `row` 和打开着的 `live` 段。
-7. **客户端的 API**，三个客户端共用：`list <类型>`、`get <id>`（row、段的目录、可用动作）、`section <id> <段> [cursor]`、`events`（变化推送）、`act <插件:动作> <id> [note]`。命令行在本机直接调用，TUI 和 iOS 走同样的接口。
+7. **客户端的 API**，三个客户端共用：`list <类型>`、`get <id>`（row、段的目录、可用动作）、`section <id> <段> [cursor]`、`events`（变化推送）、`act <插件:动作> <id> [note]`，以及决定 11 的 `settings` 和 `set`。命令行在本机直接调用，TUI 和 iOS 走同样的接口。
 8. **插件不碰颜色、布局、导航。** 插件给的是语义（决定 10 的 `mark`），不是颜色或图标名。 主按钮是第一个动作，其余在 `⋯`；需要确认的动作在确认时用红色；导航是待处理、正在跑，再加按层级浏览（决定 9）；插件只写英文，界面上其余的字由客户端翻译；不做批量动作。
 9. **层级由插件用 `parent` 说出来，客户端一层层往下点。**（2026-11-07 owner 定，替换原来决定 8 的“没有层级”。）
    - 第一层是插件：`/v1/types` 的每个类型带上它所属的插件，客户端按插件分组。
@@ -36,6 +36,13 @@
    - `dev` 的映射：task 的 proposed→`proposed`；ready→`todo`（等前置任务或同区任务时→`blocked`，模型不可用、定了重试时间时→`retry_wait`）；running 时按当前步骤：worktree→`starting`、work 和 rework→`running`、verify 和 review→`checking`、integrate→`integrating`；waiting 时按等的原因：verify 和 review 都过了等合并→`ready_to_merge`，问要不要返工→`rework_pending`，其余→`waiting`；merged→`done`；cancelled→`cancelled`；auto rework 用完放弃→`failed`。plan 的 draft→`proposed`，confirmed→有任务在跑时 `running`、否则 `todo`，暂停→`paused`，finished→`done`，cancelled→`cancelled`。
    - `row` 还可以带 `badge`：一小段原样显示的文字，客户端放在状态后面（`done.merged · #2` 的 `#2`）。`dev` 的 task 填 `#<第几次 attempt>`，还没开始的填 `#0`。
    - 对象页的进度条：对象页在 row 下面、下一层列表上面画一条分段的条，下一层的每个对象占一格，按那个对象的 `mark` 上色（`done` 成功色、`running`/`checking`/`integrating` 在跑色、`waiting`/`proposed` 等人色、`failed` 错误色、其余灰），条的右边写“完成数 / 总数”。没有下一层的对象不画。这是客户端按决定 9 的下一层列表算出来的，插件不用多给东西。
+
+11. **设置由内核读写，客户端通过同一套 API 改。**（2026-11-08 owner 定：“放进 kernel”，P-0014。）
+   - 设置有两种：全局设置是 `~/.operad/config.json` 里每个插件的那一段（`plugins.<插件>.settings`，插件声明 JSON Schema，内核加载时已经校验）；项目设置是插件声明的、放在登记仓库 `.operad/` 下的 JSON 文件（比如 `dev` 的 `review.json`），也带 schema。
+   - 插件在 schema 里给每个可改的设置标 `editable: true`，需要确认的再标 `confirm: true`；没标的客户端只能看不能改。
+   - API 加两个调用：`settings [scope]` 列出设置（名字、当前值、默认值、schema 的说明、能不能改）；`set <名字> <值> [scope]` 改一个设置。内核按 schema 校验，不合法就拒绝并给出 schema 的理由，什么都不写；合法就原子写回文件（写临时文件再改名），保留文件里别的内容，然后像文件被手改一样让插件重新读。
+   - 命令行、TUI 的 `:` 面板、iOS 的设置页都走这两个调用。秘密不在这里，仍然只用 `operad secret`。
+   - 用户看到的新词（2026-11-08 owner 同意）：“设置”（settings，命令 `operad settings`、`operad settings set`）；TUI `:` 面板的分组名 actions、tui、settings。
 
 ## 样子
 

@@ -679,6 +679,79 @@ describe("dev/review", () => {
     ]);
   });
 
+  describe("review.json", () => {
+    function grading(state: Fixture, content: string): void {
+      mkdirSync(join(state.remote.repository, ".operad"), { recursive: true });
+      writeFileSync(join(state.remote.repository, ".operad", "review.json"), content);
+    }
+
+    test("the prompt carries the flow's grading verbatim", async () => {
+      const state = await fixture({ reviewerArgs: ["none"] });
+      grading(
+        state,
+        JSON.stringify({
+          default: { levels: { minor: "default minor" } },
+          flows: {
+            dev: {
+              levels: { critical: "C <b>text</b>", major: "M text" },
+              rules: ["Rule one.", "Rule two."],
+            },
+            other: { levels: { critical: "NOT THIS" } },
+          },
+        }),
+      );
+      await verify(state);
+      await review(state);
+      const prompt = state.reviewer.calls[0]?.prompt ?? "";
+      expect(prompt).toContain(
+        [
+          "## Grading",
+          "- critical: C <b>text</b>\n- major: M text\n- minor: default minor\n- Rule one.\n- Rule two.",
+        ].join("\n\n"),
+      );
+      expect(prompt).not.toContain("NOT THIS");
+    });
+
+    test("no file means no grading section", async () => {
+      const state = await fixture({ reviewerArgs: ["none"] });
+      await verify(state);
+      await review(state);
+      expect(state.reviewer.calls[0]?.prompt).not.toContain("## Grading");
+    });
+
+    test("fixLevel in review.json decides whether a minor finding fails", async () => {
+      const state = await fixture({ reviewerArgs: ["minor"], fixLevel: "major" });
+      grading(state, JSON.stringify({ flows: { dev: { fixLevel: "minor" } } }));
+      await verify(state);
+      const result = await review(state);
+      expect(result.result).toBe("fail");
+      expect(result.data?.counted).toBe(1);
+    });
+
+    test("fixLevel in review.json can also be higher than dev.json's", async () => {
+      const state = await fixture({ reviewerArgs: ["major"], fixLevel: "minor" });
+      grading(state, JSON.stringify({ default: { fixLevel: "critical" } }));
+      await verify(state);
+      const result = await review(state);
+      expect(result.result).toBe("pass");
+    });
+
+    test("an invalid file fails the review step naming the file", async () => {
+      const state = await fixture({ reviewerArgs: ["none"] });
+      grading(state, JSON.stringify({ default: { fixLevel: "huge" } }));
+      await verify(state);
+      let message = "";
+      try {
+        await review(state);
+      } catch (error) {
+        message = String(error);
+      }
+      expect(message).toContain("review.json");
+      expect(message).toContain("default.fixLevel");
+      expect(state.reviewer.calls).toHaveLength(0);
+    });
+  });
+
   test("invalid JSON is retried once and the second report passes", async () => {
     const state = await fixture({ reviewerArgs: ["invalid-then-valid"] });
     await verify(state);

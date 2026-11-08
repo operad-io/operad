@@ -222,7 +222,7 @@ Input:
 ```
 
 Result: `{ "items": [...] }`, the same list as `operad running` and `GET /v1/running`. The Markdown
-is a table of each active run, its flow, step and elapsed time.
+is a table of each active run: its object, title, flow, step, step time and run age. Each item also has `object`, `title`, `stepStartedAt` and `stepElapsedMs` (see `GET /v1/running` in the manual).
 
 ### `history`
 
