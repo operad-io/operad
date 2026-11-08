@@ -51,6 +51,7 @@ import {
   type TuiStateEvent,
   type TuiTheme,
 } from "./state.ts";
+import { chooseTheme } from "./theme.ts";
 import { createTuiView, type TuiView } from "./view/index.ts";
 import type { TuiTypeInfo } from "./client.ts";
 
@@ -72,6 +73,8 @@ export interface TuiRunOptions {
   readonly serveEntry?: string | undefined;
   /** Prints a line before the full screen opens. */
   readonly write?: ((line: string) => void) | undefined;
+  /** `--theme`: the theme name for this session; it beats `tui.json`. */
+  readonly theme?: string | undefined;
   /** Replaces the terminal pieces in a test. */
   readonly hooks?: TuiRunHooks | undefined;
 }
@@ -865,6 +868,11 @@ export function startShell(deps: TuiShellDeps): TuiShell {
  * reported after that.
  */
 export async function runTui(options: TuiRunOptions = {}): Promise<number> {
+  // A broken config or an unknown theme stops here, before a server is started.
+  const themeName = chooseTheme({
+    home: options.home ?? defaultOperadHome(),
+    flag: options.theme,
+  });
   // With no --url, make sure a serve answers (starting one) before the screen.
   if (options.url === undefined && options.noStart !== true) {
     const home = options.home ?? defaultOperadHome();
@@ -909,7 +917,7 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
         screenMode: "alternate-screen",
       }));
     renderer = created;
-    const createdView = (options.hooks?.view ?? createTuiView)(created);
+    const createdView = (options.hooks?.view ?? ((ctx) => createTuiView(ctx, themeName)))(created);
     view = createdView;
     const started = startShell({
       client,
