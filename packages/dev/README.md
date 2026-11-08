@@ -381,6 +381,17 @@ time limit; its `gate.commandTimeoutSecs` starts when it runs. Places are lock
 files under `<home>/dev/check-places/`, so a check whose process dies gives its
 place back. A rerun of a failed check takes a place again.
 
+A repository can also limit itself: `gate.places` in its `dev.json` (an integer
+of 1 or more, unset by default) is the most checks of that repository that run
+at once. It is for checks that cannot share a machine, such as full UI test
+runs on a simulator, so that they do not hold back the checks of other
+repositories. A check takes a place of the home and a place of its repository,
+waits without a time limit until both are free, and says which it waits for:
+`waiting for a check place of operad-ios: 1 in use`. It takes them in one order
+(home, then repository) and gives the home place back while it waits for the
+repository's, so two checks cannot wait for each other. The repository's places
+are lock files in the same directory, so a dead check gives both back.
+
 The built-in brief says to work only in the worktree, commit whole pieces, run
 the repository's verify command and end with a summary.
 

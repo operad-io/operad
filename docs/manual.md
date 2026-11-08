@@ -213,10 +213,35 @@ or starts the server like this:
 |---|---|---|---|
 | `--url` | string | `http://<first http.listen address>:<http.port>`, which is `http://127.0.0.1:7480` with no `http` section | An `http` or `https` URL without credentials, a query or a fragment. |
 | `--no-start` | flag | off | Never start `operad serve`, even when none answers. |
+| `--theme` | string | `theme` in `$OPERAD_HOME/tui.json`, else `auto` | `auto`, `light`, `dark` or `terminal`. Beats `tui.json` for this session. |
 | `--token` | string | The token in `$OPERAD_HOME/secrets/http.json` | The bearer token of the running `serve`. |
 | `OPERAD_HOME` | environment variable | `~/.operad` | The directory holding `config.json`, `secrets/http.json`, `serve.lock` and the `serve.log` a started `serve` writes. |
 | `http.listen` | array of strings in `config.json` | `["127.0.0.1"]` | IP literals `serve` may listen on; the first one is the default TUI address. |
 | `http.port` | integer in `config.json` | `7480` | `0` to `65535`; the TUI needs the port `serve` actually uses, so `0` needs `--url`. |
+
+#### Themes
+
+The colours come from a theme. Choose one in `$OPERAD_HOME/tui.json` (its JSON
+Schema is `packages/tui/tui.schema.json`) or for one session with `--theme`:
+
+```json
+{ "theme": "terminal" }
+```
+
+| Name | Look |
+|---|---|
+| `auto` (default) | `light` or `dark` by the terminal's theme mode, and it switches live when the terminal switches. |
+| `light`, `dark` | The operad app's colours. |
+| `terminal` | The terminal's own 16 colours (accent magenta, run blue, ok green, error red, weak bright black), so its scheme decides the look; it works without truecolor. |
+
+An unknown name is an error that lists the names. A `tui.json` that is not a
+JSON object, is not valid JSON, has a key other than `theme`, or names no known
+theme is an error that names the file and the problem; the TUI does not start.
+
+Every theme defines the same tokens: `text`, `weak` (secondary text), `rule`
+(rules and borders), `accent` (needs you), `run` (in progress), `ok` (success),
+`error`, `add` and `remove` (diff lines), `tint` (the selected row's background)
+and `code` (a code block's background).
 
 `operad tui` uses the terminal size: at 100 columns or wider the list and the
 object pane sit side by side, and below 100 columns the list fills the screen

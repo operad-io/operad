@@ -180,7 +180,8 @@ describe("server text never reaches the terminal as a control", () => {
       const chunks = drawState(shell.state).right.chunks;
       const fake = chunks.find((chunk) => chunk.text.includes("fake red"));
       expect(fake?.text).toContain("�[31mfake red");
-      expect(fake?.fg).toBeUndefined();
+      // Plain text is the text token, never an escape-made colour.
+      expect(fake?.fg?.toInts().join(",")).toBe("236,236,242,255");
     } finally {
       shell.stop();
       await shell.done;

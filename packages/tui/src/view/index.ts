@@ -6,7 +6,6 @@
 
 import {
   BoxRenderable,
-  RGBA,
   StyledText,
   TextAttributes,
   TextRenderable,
@@ -15,7 +14,8 @@ import {
 } from "@opentui/core";
 import type { RowMark } from "@operad-io/engine";
 import { entryHint, paletteEntries } from "../actions.ts";
-import { chunksOfLine, type MarkdownPalette } from "../markdown.ts";
+import { chunksOfLine } from "../markdown.ts";
+import { TUI_PALETTE, resolvePalette, toRgba, type TuiPalette } from "../theme.ts";
 import { sanitize } from "../sanitize.ts";
 import { displayWidth, graphemes } from "../wrap.ts";
 import {
@@ -44,58 +44,26 @@ import {
   type TuiTheme,
 } from "../state.ts";
 
-/** The colours of one theme. The accent values are the app's design tokens. */
-export interface TuiPalette extends MarkdownPalette {
-  readonly accent: string;
-  readonly run: string;
-  readonly error: string;
-  readonly add: string;
-  readonly remove: string;
-  readonly weak: string;
-  readonly text: string;
-  readonly success: string;
-}
-
-/** Light and dark palettes; the accent, the run blue and the error red differ. */
-export const TUI_PALETTE: Readonly<Record<TuiTheme, TuiPalette>> = {
-  light: {
-    accent: "#5b3fd0",
-    run: "#1f6feb",
-    error: "#c62828",
-    add: "#1a7f37",
-    remove: "#cf222e",
-    weak: "#6b7280",
-    text: "#1f2937",
-    success: "#1a7f37",
-  },
-  dark: {
-    accent: "#a793ff",
-    run: "#4f8cff",
-    error: "#ff6b6b",
-    add: "#7ee787",
-    remove: "#ff7b72",
-    weak: "#8b8b8b",
-    text: "#e6e6e6",
-    success: "#7ee787",
-  },
-};
+export { TUI_PALETTE, type TuiPalette };
 
 /** The palette a state's theme names. */
-export function paletteFor(theme: TuiTheme): TuiPalette {
-  return TUI_PALETTE[theme];
+export function paletteFor(theme: TuiTheme, name = "auto"): TuiPalette {
+  return resolvePalette(name, theme);
 }
 
 function chunk(
   text: string,
   color?: string,
   attributes?: number,
+  background?: string,
 ): TextChunk {
   return {
     __isChunk: true,
     // Whatever reaches the screen is cleaned here too, so a string that came
     // by another way than the reducer cannot carry a control character.
     text: sanitize(text),
-    ...(color === undefined ? {} : { fg: RGBA.fromHex(color) }),
+    ...(color === undefined ? {} : { fg: toRgba(color) }),
+    ...(background === undefined ? {} : { bg: toRgba(background) }),
     ...(attributes === undefined ? {} : { attributes }),
   };
 }
@@ -107,7 +75,7 @@ function styled(chunks: readonly TextChunk[]): StyledText {
 /** The last lists stay visible but weak while the server does not answer. */
 function dimmed(text: StyledText, on: boolean, palette: TuiPalette): StyledText {
   if (!on) return text;
-  const fg = RGBA.fromHex(palette.weak);
+  const fg = toRgba(palette.weak);
   return new StyledText(text.chunks.map((part) => ({ ...part, fg })));
 }
 
@@ -183,17 +151,17 @@ function headerContent(state: TuiState, palette: TuiPalette): StyledText {
 /** A thin horizontal rule from column 1 to the last column but one. */
 function ruleContent(state: TuiState, palette: TuiPalette): StyledText {
   return styled([
-    chunk(` ${"─".repeat(Math.max(0, state.width - 2))}`, palette.weak),
+    chunk(` ${"─".repeat(Math.max(0, state.width - 2))}`, palette.rule),
   ]);
 }
 
 function dividerContent(state: TuiState, palette: TuiPalette): StyledText {
   return styled([
-    chunk(Array.from({ length: bodyHeight(state) }, () => "│").join("\n"), palette.weak),
+    chunk(Array.from({ length: bodyHeight(state) }, () => "│").join("\n"), palette.rule),
   ]);
 }
 
-type MarkColour = "weak" | "accent" | "run" | "success" | "error";
+type MarkColour = "weak" | "accent" | "run" | "ok" | "error";
 
 /** One single-cell character and colour role per mark. */
 export const MARK_GLYPHS: Readonly<
@@ -211,22 +179,22 @@ export const MARK_GLYPHS: Readonly<
   rework_pending: { char: "↩", colour: "accent" },
   waiting: { char: "●", colour: "accent" },
   integrating: { char: "⑂", colour: "run" },
-  ready_to_merge: { char: "◉", colour: "success" },
-  done: { char: "✓", colour: "success" },
+  ready_to_merge: { char: "◉", colour: "ok" },
+  done: { char: "✓", colour: "ok" },
   failed: { char: "✗", colour: "error" },
   cancelled: { char: "⊘", colour: "weak" },
   broken: { char: "!", colour: "error" },
 };
 
 /** The glyph and colour of a list row. */
-function glyph(row: TuiRow, palette: TuiPalette): TextChunk {
-  if (row.error !== undefined) return chunk("✗", palette.error);
+function glyph(row: TuiRow, palette: TuiPalette, tint?: string): TextChunk {
+  if (row.error !== undefined) return chunk("✗", palette.error, undefined, tint);
   const mark = rowMark(row);
   // A mark this client does not know (a newer server) draws as plain.
   const shown = mark === "none" ? undefined : MARK_GLYPHS[mark];
-  if (shown !== undefined) return chunk(shown.char, palette[shown.colour]);
-  if (/^(done|merged)$/i.test(row.state)) return chunk("✓", palette.success);
-  return chunk("○", palette.weak);
+  if (shown !== undefined) return chunk(shown.char, palette[shown.colour], undefined, tint);
+  if (/^(done|merged)$/i.test(row.state)) return chunk("✓", palette.ok, undefined, tint);
+  return chunk("○", palette.weak, undefined, tint);
 }
 
 /** The row id without its type: `item:T-1-x` is `T-1-x`. */
@@ -258,15 +226,17 @@ function rowLine(
   palette: TuiPalette,
   width: number,
 ): TextChunk[] {
+  const tint = selected ? palette.tint : undefined;
+  const text = fit(rowText(row, kind), width - 4);
+  // The tint covers the whole row: the label is padded to the row's width.
+  const pad = selected ? " ".repeat(Math.max(0, width - 4 - displayWidth(text))) : "";
   return [
-    chunk(selected ? "❯" : " ", palette.accent),
-    chunk(" "),
-    glyph(row, palette),
-    chunk(" "),
-    chunk(
-      fit(rowText(row, kind), width - 4),
-      selected ? palette.accent : undefined,
-    ),
+    chunk(selected ? "❯" : " ", palette.accent, undefined, tint),
+    chunk(" ", undefined, undefined, tint),
+    glyph(row, palette, tint),
+    chunk(" ", undefined, undefined, tint),
+    chunk(text, selected ? palette.accent : palette.text, undefined, tint),
+    ...(pad === "" ? [] : [chunk(pad, undefined, undefined, tint)]),
     chunk("\n"),
   ];
 }
@@ -357,7 +327,7 @@ function sectionTabs(object: TuiObject, palette: TuiPalette, width: number): Tex
     used += gap.length + label.length;
   });
   chunks.push(chunk("\n"));
-  chunks.push(chunk(rule.trimEnd(), palette.weak));
+  chunks.push(chunk(rule.trimEnd(), palette.rule));
   chunks.push(chunk("\n"));
   return chunks;
 }
@@ -437,7 +407,7 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
   if (input.kind === "note") {
     const chunks: TextChunk[] = [
       chunk(`${input.action} · note${input.required ? " (required)" : ""}\n`, palette.accent, TextAttributes.BOLD),
-      chunk(`${input.text}${bar}\n`),
+      chunk(`${input.text}${bar}\n`, palette.text),
       chunk("enter sends · shift-enter or ctrl-j adds a line · esc cancels", palette.weak),
     ];
     return styled(chunks);
@@ -452,7 +422,7 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
   entries.forEach((entry, at) => {
     const hint = entryHint(entry);
     chunks.push(chunk(at === input.cursor ? "❯ " : "  ", palette.accent));
-    chunks.push(chunk(entry.name, at === input.cursor ? palette.accent : undefined));
+    chunks.push(chunk(entry.name, at === input.cursor ? palette.accent : palette.text));
     chunks.push(chunk(hint === "" ? "\n" : `  ${hint}\n`, palette.weak));
   });
   return styled(chunks);
@@ -479,8 +449,8 @@ export interface TuiDrawing {
 }
 
 /** The styled text of every area for one state; the view only places it. */
-export function drawState(state: TuiState): TuiDrawing {
-  const palette = paletteFor(state.theme);
+export function drawState(state: TuiState, themeName = "auto"): TuiDrawing {
+  const palette = paletteFor(state.theme, themeName);
   const tab = activeTab(state);
   const rowError = tab?.list.rows[tab.list.cursor]?.error;
   const notice = noticeText(state);
@@ -511,7 +481,7 @@ export interface TuiView {
 }
 
 /** Builds the render tree once and updates it on every state. */
-export function createTuiView(ctx: CliRenderer): TuiView {
+export function createTuiView(ctx: CliRenderer, themeName = "auto"): TuiView {
   const root = new BoxRenderable(ctx, {
     id: "operad-tui",
     width: "100%",
@@ -584,7 +554,7 @@ export function createTuiView(ctx: CliRenderer): TuiView {
     height: KEY_LIST.length + 4,
     border: true,
     borderStyle: "rounded",
-    borderColor: TUI_PALETTE.dark.weak,
+    borderColor: toRgba(TUI_PALETTE.dark.rule),
     paddingX: 1,
     visible: false,
   });
@@ -611,9 +581,9 @@ export function createTuiView(ctx: CliRenderer): TuiView {
 
   return {
     render(state: TuiState): void {
-      const palette = paletteFor(state.theme);
+      const palette = paletteFor(state.theme, themeName);
       const wide = twoPane(state);
-      const drawing = drawState(state);
+      const drawing = drawState(state, themeName);
 
       header.content = drawing.header;
       headerRule.content = drawing.rule;
@@ -633,7 +603,7 @@ export function createTuiView(ctx: CliRenderer): TuiView {
       right.content = drawing.right;
 
       overlayBox.visible = drawing.overlay !== undefined;
-      overlayBox.borderColor = palette.weak;
+      overlayBox.borderColor = toRgba(palette.rule);
       overlayBox.width = Math.max(10, Math.min(60, state.width - 4));
       const wanted = state.keys ? KEY_LIST.length + 4 : inputLines(state) + 2;
       overlayBox.height = Math.max(3, Math.min(wanted, state.height - 3));
