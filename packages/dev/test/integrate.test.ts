@@ -302,6 +302,7 @@ describe("dev/integrate", () => {
     expect(task.phase).toBe("running");
     expect(task.brief).toContain("## Rework 1 (conflict with main)");
     expect(task.brief).toContain("code.txt");
+    expect(task.attempt?.integrating).toBeNull();
     expect(remoteMain(state)).toBe(before);
   });
 
@@ -406,6 +407,8 @@ describe("dev/integrate", () => {
     const task = taskData(object.data);
     expect(task.phase).toBe("waiting");
     expect(task.attempt?.integration?.result).toBe("failed");
+    expect(task.attempt?.integrating).toBeNull();
+    expect(taskViews.row(object).mark).toBe("waiting");
     // The person sees the wait note next to the task: what failed, where, and
     // what git said. Nothing was pushed, so every remote ref is unchanged.
     const note = taskViews.row(object).note ?? "";

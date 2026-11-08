@@ -23,9 +23,16 @@ function reviewPassed(task: TaskData): boolean {
   );
 }
 
+/** The integrate step is working: it marks the attempt until it writes a result. */
+function isIntegrating(task: TaskData): boolean {
+  const run = task.attempt?.integrating;
+  return typeof run === "string" && run.length > 0;
+}
+
 /** A task that waits: for a merge, a rework answer, or something else. */
 function waitingMark(task: TaskData): RowMark {
   const attempt = task.attempt;
+  if (isIntegrating(task)) return "integrating";
   const integration = attempt?.integration;
   if (integration !== undefined && integration !== null) return "waiting";
   const rework = attempt?.rework;
@@ -40,9 +47,9 @@ function waitingMark(task: TaskData): RowMark {
 /** A task that runs: the step is told by what the attempt has recorded. */
 function runningMark(task: TaskData): RowMark {
   const attempt = task.attempt;
-  if (attempt?.integration !== undefined && attempt.integration !== null) {
-    return "integrating";
-  }
+  // A conflict or failed check sent the flow back to the worktree step; the
+  // record stays, but the step is no longer integrate.
+  if (isIntegrating(task)) return "integrating";
   if (typeof attempt?.workRetryAt === "number") return "retry_wait";
   if (attempt === undefined || typeof attempt.worktree !== "string") {
     return "starting";
@@ -81,6 +88,7 @@ export function taskBadge(task: TaskData): string {
 const PLAN_MARKS: Readonly<Record<PlanState, (plan: PlanData) => RowMark>> = {
   draft: () => "proposed",
   confirmed: (plan) => ((plan.activeCount ?? 0) > 0 ? "running" : "todo"),
+  paused: () => "paused",
   cancelled: () => "cancelled",
   finished: () => "done",
 };

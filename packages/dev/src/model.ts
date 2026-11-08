@@ -21,7 +21,11 @@ export async function listAll(
 }
 
 /** A plan is a request the owner confirmed into work. */
-export type PlanStatus = "draft" | "confirmed" | "cancelled";
+export type PlanStatus = "draft" | "confirmed" | "paused" | "cancelled";
+
+/** Every state a plan row shows: its status, or `finished` once its tasks ended. */
+export const PLAN_STATES = ["draft", "confirmed", "paused", "finished", "cancelled"] as const;
+export type PlanState = (typeof PLAN_STATES)[number];
 
 /** How far a plan may run without a person. */
 export type AutoMode = "off" | "run" | "merge";
@@ -30,7 +34,7 @@ export type AutoMode = "off" | "run" | "merge";
 export const PRIORITIES = ["P0", "P1", "P2", "P3", "P4", "P5"] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
-/** Where a task is. */
+/** Every phase a task can be in, in the order it usually passes through them. */
 export const TASK_PHASES = [
   "proposed",
   "ready",
@@ -40,11 +44,33 @@ export const TASK_PHASES = [
   "merged",
   "cancelled",
 ] as const;
+
+/** Where a task is. */
 export type TaskPhase = (typeof TASK_PHASES)[number];
 
-/** What a plan row shows as its state: its status, or `finished`. */
-export const PLAN_STATES = ["draft", "confirmed", "cancelled", "finished"] as const;
-export type PlanState = (typeof PLAN_STATES)[number];
+/**
+ * The list filters of plans and tasks. The declaration and the tests read
+ * these; no state name is copied anywhere else.
+ */
+export const TASK_FILTERS = [
+  {
+    name: "active",
+    default: true,
+    states: TASK_PHASES.filter((phase) => phase !== "merged" && phase !== "cancelled"),
+  },
+  { name: "done", states: ["merged"] },
+  { name: "cancelled", states: ["cancelled"] },
+] as const;
+
+export const PLAN_FILTERS = [
+  {
+    name: "active",
+    default: true,
+    states: PLAN_STATES.filter((state) => state !== "finished" && state !== "cancelled"),
+  },
+  { name: "done", states: ["finished"] },
+  { name: "cancelled", states: ["cancelled"] },
+] as const;
 
 /** The data of a plan object. Counts are a cache over its tasks. */
 export type PlanData = {
@@ -295,6 +321,8 @@ export type TaskAttempt = {
   readonly rework?: ReworkRecord | null;
   /** What the integrate step did on main. */
   readonly integration?: IntegrationRecord | null;
+  /** The run whose integrate step is working now; null once it wrote its result. */
+  readonly integrating?: string | null;
   /** What the cleanup step ran after the merge. */
   readonly cleanup?: CleanupRecord | null;
 };

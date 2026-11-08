@@ -283,9 +283,9 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 
 | Method and path | What it returns |
 |---|---|
-| `GET /v1/types` | `{ "types": [{ "type": "task", "title": "Task" }] }`: the object types with views and their display names. |
+| `GET /v1/types` | `{ "types": [{ "type": "task", "title": "Task" }] }`: the object types with views and their display names. A type that declares filters also carries `"filters"`, in display order (`[{ "name": "active", "states": ["proposed", ...] }, { "name": "all" }, ...]`), and `"defaultFilter"`. A type without filters carries neither. |
 | `GET /v1/keys` | `{ "keys": [{ "key": "m", "action": "dev:merge", "source": "plugin" }] }`: the key bindings in force, the plugins' defaults with the person's `keys.json` overrides applied; `source` is `user` for an override. |
-| `GET /v1/objects?type=<type>&cursor=<c>` | `{ "rows": [...], "next": "<c>" }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, `mark` and `badge` (see [Row marks](#row-marks)), plus `waiting` and `running`; an error row also carries `error`. |
+| `GET /v1/objects?type=<type>&filter=<name>&cursor=<c>` | `{ "rows": [...], "next": "<c>", "hidden": 3 }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, `mark` and `badge` (see [Row marks](#row-marks)), plus `waiting` and `running`; an error row also carries `error`. `filter` keeps the rows the named filter shows, and `hidden` counts the rows of the type it left out (the whole type, not only this page). Without `filter` the type's default filter applies when it has filters; a type without filters lists every row and has no `hidden`. `filter=all` lists every row and has no `hidden`. An unknown name is a `400` that names the allowed ones. `next` pages within the filtered list. |
 | `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. An item that is about an object also carries `object` (`<type>:<id>`), its `link` and its `row`: the same row `GET /v1/objects?type=…` returns for that object (`id`, `title`, `state`, optional `note`, `mark`, `badge`, `waiting`, `running`), so a client does not read each object. When the row cannot be built (the object is gone, no loaded plugin shows its type, or the plugin's row fails) the item carries the error row the list shows for a bad row, with `state` `error` and an `error` message; the list itself never fails for one object. A candidate has no object and no `row`. `operad pending` prints the row's title under each line that has one. |
 | `GET /v1/running` | The same list as `operad running`. |
 | `GET /v1/objects/<id>` | `{ "id", "type", "link", "row", "sections", "actions" }`: the link that opens the object, the row, the section directory, and the actions available now with their `args` schema, `note` field and `confirm` flag. |
@@ -392,6 +392,52 @@ Every error body is:
 | `422` | The action's plugin refused it; `message` is the plugin's own message. |
 | `504` | A section did not load in time. |
 | `500` | Anything else; the body carries no stack trace. |
+
+## Filtering a list
+
+A plugin can give an object type filters, so a list does not show every old
+object. In the plugin, the object type has an optional `filters` field, an
+ordered list of `{ "name": string, "states": string[], "default"?: boolean }`:
+
+```ts
+objects: [
+  {
+    name: "task",
+    filters: [
+      { name: "active", states: ["proposed", "ready", "running"], default: true },
+      { name: "done", states: ["merged"] },
+    ],
+  },
+],
+```
+
+A filter is data: a row matches when its `state` is one of `states`. A row whose
+`state` is `error` (its view failed) is shown by every filter, so a broken row
+is never hidden. At most one filter has `default: true`; with none marked, the
+first is the default. Loading the plugin refuses an empty or duplicate name, two
+defaults, an empty `states`, and the name `all`, and names the field.
+
+The kernel adds the filter `all`, which tests no state, right after the
+default. The tasks above list as `active`, `all`, `done`.
+
+`operad list <type> [--filter <name>] [--repo <name>]` uses the type's default
+filter when it has one and `--filter` is not given. `--filter all` lists
+everything. When the filter left rows out, the last line is
+`N hidden (--filter all to show)`. `--repo` keeps the objects of one
+repository, and works together with `--filter`. A type without filters refuses
+`--filter` with "this type has no filters". The HTTP interface takes the same
+choice as `filter` (see the endpoints below).
+
+The `dev` plugin declares these filters (`all` follows `active`):
+
+| Type | Filter | States |
+|---|---|---|
+| task | `active` (default) | proposed, ready, running, review, waiting |
+| task | `done` | merged |
+| task | `cancelled` | cancelled |
+| plan | `active` (default) | draft, confirmed, paused |
+| plan | `done` | finished |
+| plan | `cancelled` | cancelled |
 
 ## Where `dev` commands run
 

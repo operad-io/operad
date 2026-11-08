@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { ALL_FILTER } from "./filters.ts";
 import type { FlowDefinition, StepType } from "../flow/types.ts";
 import { loadFlow as loadFlowFile } from "../flow/load.ts";
 import { FlowError, validateFlow } from "../flow/validate.ts";
@@ -29,6 +30,7 @@ import {
   type FactInput,
   type FactWriter,
   type MaybePromise,
+  type ObjectFilterDefinition,
   type ObjectTypeDefinition,
   type RunLookup,
   type ObjectViews,
@@ -326,6 +328,54 @@ function optionalArray(value: unknown, at: string): readonly unknown[] {
   return value as readonly unknown[];
 }
 
+function normalizeFilters(
+  value: unknown,
+  at: string,
+): readonly ObjectFilterDefinition[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw new PluginError(`${at}: must be an array of filters`);
+  }
+  const names = new Set<string>();
+  const filters: ObjectFilterDefinition[] = [];
+  let defaultName: string | undefined;
+  value.forEach((raw: unknown, index: number) => {
+    const here = `${at}[${index}]`;
+    if (!isRecord(raw)) throw new PluginError(`${here}: must be an object`);
+    const name = requireName(raw.name, `${here}: name`);
+    if (name === ALL_FILTER) {
+      throw new PluginError(`${here}: name: "${ALL_FILTER}" is added by the kernel`);
+    }
+    if (names.has(name)) {
+      throw new PluginError(`${here}: name: duplicate filter "${name}"`);
+    }
+    names.add(name);
+    if (!Array.isArray(raw.states) || raw.states.length === 0) {
+      throw new PluginError(`${here}: states: must be a non-empty array of state names`);
+    }
+    const states: string[] = [];
+    raw.states.forEach((state: unknown, stateIndex: number) => {
+      if (typeof state !== "string" || state.trim().length === 0) {
+        throw new PluginError(`${here}: states[${stateIndex}]: must be a non-empty string`);
+      }
+      if (!states.includes(state)) states.push(state);
+    });
+    if (raw.default !== undefined && typeof raw.default !== "boolean") {
+      throw new PluginError(`${here}: default: must be a boolean`);
+    }
+    if (raw.default === true) {
+      if (defaultName !== undefined) {
+        throw new PluginError(
+          `${here}: default: "${defaultName}" is already the default filter`,
+        );
+      }
+      defaultName = name;
+    }
+    filters.push({ name, states, ...(raw.default === true ? { default: true } : {}) });
+  });
+  return filters;
+}
+
 function normalizeObjects(
   value: unknown,
   at: string,
@@ -366,8 +416,11 @@ function normalizeObjects(
       });
     }
 
+    const filters = normalizeFilters(entry.filters, `${at}[${index}]: filters`);
+
     objects.push({
       name,
+      ...(filters === undefined ? {} : { filters }),
       ...(entry.schema === undefined ? {} : { schema: entry.schema }),
       ...(entry.resolve === undefined
         ? {}

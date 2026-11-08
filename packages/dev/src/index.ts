@@ -1,6 +1,7 @@
 /** The dev plugin: repositories, plans, tasks and their commands and views. */
 
 import { definePlugin } from "@operad-io/engine";
+import { PLAN_FILTERS, TASK_FILTERS } from "./model.ts";
 import devFlow from "../flows/dev.flow.ts";
 import { actions } from "./actions.ts";
 import { runAnnounce } from "./announce.ts";
@@ -23,10 +24,14 @@ export function createDevPlugin() {
     objects: [
       {
         name: "plan",
+        filters: PLAN_FILTERS,
+        index: ["repository"],
         resolve: (ctx, type, id) => resolveDevKey(ctx.store, type, id, ctx.cwd, ctx.scope),
       },
       {
         name: "task",
+        filters: TASK_FILTERS,
+        index: ["repository"],
         resolve: (ctx, type, id) => resolveDevKey(ctx.store, type, id, ctx.cwd, ctx.scope),
       },
     ],
@@ -100,6 +105,18 @@ export function createDevPlugin() {
         run: runAnnounce,
       },
     ],
+    settings: {
+      type: "object",
+      properties: {
+        checks: {
+          type: "integer",
+          minimum: 1,
+          description:
+            "How many verify and integrate checks may run at once in this home, across all repositories. Default 2.",
+        },
+      },
+      additionalProperties: false,
+    },
     flows: [devFlow],
     // Every stop that needs a person is in history; a user can route the event
     // to a channel by replacing this rule.
@@ -140,6 +157,7 @@ export * from "./integrate.ts";
 export * from "./model.ts";
 export * from "./schedule.ts";
 export * from "./service.ts";
+export * from "./places.ts";
 export * from "./settings.ts";
 export * from "./steps.ts";
 export * from "./timeouts.ts";

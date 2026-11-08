@@ -536,6 +536,18 @@ export interface ObjectResolveContext {
   readonly store: ObjectStore;
 }
 
+/**
+ * A named subset of a type's rows, by state. A row matches when its `state` is
+ * in `states`. The kernel adds an implicit `all` filter; a plugin may not
+ * declare that name.
+ */
+export interface ObjectFilterDefinition {
+  readonly name: string;
+  readonly states: readonly string[];
+  /** At most one filter is the default; with none marked, the first is. */
+  readonly default?: boolean | undefined;
+}
+
 /** An object type a plugin owns, such as `task`. */
 export interface ObjectTypeDefinition {
   readonly name: string;
@@ -552,6 +564,8 @@ export interface ObjectTypeDefinition {
   ) => MaybePromise<string | undefined>;
   /** The fields a person may filter on with `list(..., { where })`. */
   readonly index?: readonly string[] | undefined;
+  /** Ordered row filters for lists; see {@link ObjectFilterDefinition}. */
+  readonly filters?: readonly ObjectFilterDefinition[] | undefined;
 }
 
 /** The value types an action argument may have. */

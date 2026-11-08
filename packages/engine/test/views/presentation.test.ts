@@ -621,6 +621,50 @@ describe("presentation views", () => {
     views.close();
   });
 
+  test("a typed bare id finds a scoped object of its type, as the app opens a row", async () => {
+    const root = await tempRoot();
+    const store = new MemoryPluginStore({ root: join(root, "plugins") });
+    const view = {
+      row: (object: { readonly id: string }) => ({
+        id: object.id,
+        title: object.id,
+        state: "new",
+      }),
+      sections: () => [],
+      load: () => ({ markdown: "" }),
+    };
+    const plugin = definePlugin({
+      name: "typed",
+      kind: "domain",
+      version: "0.0.1",
+      objects: [{ name: "task" }, { name: "note" }],
+      views: { task: view, note: view },
+    });
+    store.put("task", "repo/T-0043-pools", {}, "seed");
+    store.put("note", "repo/T-0043-pools", {}, "seed");
+    store.put("task", "a/T-0001-twice", {}, "seed");
+    store.put("task", "b/T-0001-twice", {}, "seed");
+    const views = trackedViews({
+      registry: new PluginRegistry([plugin], { store }),
+      store,
+      cwd: root,
+    });
+    const found = await views.get("task:T-0043-pools");
+    expect(found.type).toBe("task");
+    expect(found.id).toBe("repo/T-0043-pools");
+    // The bare id alone is ambiguous across the two types; the type settles it.
+    await expect(views.get("T-0043-pools")).rejects.toMatchObject({
+      kind: "ambiguous",
+    });
+    await expect(views.get("task:T-0001-twice")).rejects.toMatchObject({
+      kind: "ambiguous",
+    });
+    await expect(views.get("task:T-0404-none")).rejects.toMatchObject({
+      kind: "not-found",
+    });
+    views.close();
+  });
+
   test("events reach a reader when another store writes the object", async () => {
     const root = await tempRoot();
     const directory = join(root, "plugins");

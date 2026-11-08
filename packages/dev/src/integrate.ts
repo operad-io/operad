@@ -26,6 +26,7 @@ import {
   gateWorktreePath,
   recreateGateWorktree,
 } from "./gate.ts";
+import { checkPlaces } from "./places.ts";
 import {
   mainCloneChange,
   runCommand,
@@ -171,6 +172,8 @@ function clearConflict(path: string): void {
 interface SaveOptions {
   readonly phase?: TaskData["phase"] | undefined;
   readonly change?: string | readonly string[] | undefined;
+  /** Keep the task marked as integrating: the push has not happened yet. */
+  readonly integrating?: boolean | undefined;
 }
 
 async function writeIntegration(
@@ -190,7 +193,12 @@ async function writeIntegration(
     ...(options.phase === undefined ? {} : { phase: options.phase }),
     run: ctx.runId,
     attempts: Math.max(task.attempts, attempt.number),
-    attempt: { ...attempt, run: ctx.runId, integration: record },
+    attempt: {
+      ...attempt,
+      run: ctx.runId,
+      integration: record,
+      ...(options.integrating === true ? { integrating: ctx.runId } : {}),
+    },
     brief,
   };
   const written = await saveTaskGuarded(
@@ -248,9 +256,14 @@ export async function runIntegrate(
   if (!claimAllows(ctx, context.task)) return cancelledStep();
   const task = context.task;
   const settings = context.settings;
-  const attempt = task.attempt ?? {
-    number: Math.max(task.attempts, 0) + 1,
-    run: ctx.runId,
+  // Every result this step writes ends the "integrating" mark; only the start
+  // and the pending record, written before the push, set it.
+  const attempt: TaskAttempt = {
+    ...(task.attempt ?? {
+      number: Math.max(task.attempts, 0) + 1,
+      run: ctx.runId,
+    }),
+    integrating: null,
   };
   const verified = task.attempt?.verified;
   const repository = context.repository.path;
@@ -384,6 +397,18 @@ export async function runIntegrate(
     }
   }
 
+  // From here the step builds and checks the candidate: the row says integrating.
+  if (
+    !(await saveTaskGuarded(
+      ctx,
+      context.taskKey,
+      { ...task, attempt: { ...attempt, integrating: ctx.runId } },
+      "dev:integrate",
+    ))
+  ) {
+    return cancelledStep();
+  }
+
   let lastError = "";
   for (let round = 0; round < MAX_INTEGRATION_ROUNDS; round += 1) {
     const fetched = git(repository, ["fetch", "--prune", settings.remote]);
@@ -462,6 +487,7 @@ export async function runIntegrate(
         { lines: keyCommands, cwd: gate },
         stepOptions(ctx, gate),
         settings.check.rerun,
+        checkPlaces(ctx),
       );
       const { outcome, hostError } = checked;
       checkNote = checked.note;
@@ -537,7 +563,9 @@ export async function runIntegrate(
       pushed: false,
       ...(checkNote === undefined ? {} : { checkNote }),
     };
-    if ((await writeIntegration(ctx, context, task, attempt, pending)) === undefined) {
+    if ((await writeIntegration(ctx, context, task, attempt, pending, {
+        integrating: true,
+      })) === undefined) {
       return cancelledStep();
     }
 

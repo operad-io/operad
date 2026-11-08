@@ -11,7 +11,17 @@ import { splitActionName } from "../plugin/registry.ts";
 import { messageOf } from "../plugin/errors.ts";
 import { createPluginLogger } from "../plugin/logger.ts";
 import { FileSecretStore } from "../plugin/secrets.ts";
-import { assertWhere, CursorError, WhereError } from "../plugin/paging.ts";
+import {
+  assertWhere,
+  CursorError,
+  decodeCursor,
+  encodeCursor,
+  MAX_PAGE_LIMIT,
+  pageLimit,
+  whereFingerprint,
+  WhereError,
+} from "../plugin/paging.ts";
+import { ALL_FILTER, filterShows, typeFilters } from "../plugin/filters.ts";
 import { ActionArgsError, noteProperty, validateActionArgs } from "../plugin/action-schema.ts";
 import type {
   ActionTypeDefinition,
@@ -118,6 +128,7 @@ export type ViewErrorKind =
   | "confirm"
   | "args"
   | "where"
+  | "filter"
   | "cursor";
 
 /** A presentation call cannot do what was asked. */
@@ -162,6 +173,8 @@ export interface ActOptions {
 export interface ViewListPage {
   readonly rows: readonly ViewRow[];
   readonly next?: string | undefined;
+  /** How many rows of the type the filter left out; absent without a filter or on `all`. */
+  readonly hidden?: number | undefined;
 }
 
 /** An action that ran. */
@@ -389,8 +402,144 @@ export class Views {
     for (const unsubscribe of this.unsubscribe.splice(0)) unsubscribe();
   }
 
-  /** One page of rows for a type, with the kernel's flags. */
-  async list(type: string, options: ListOptions = {}): Promise<ViewListPage> {
+  /** The filter a list of this type uses when the caller names none. */
+  defaultFilterOf(type: string): string | undefined {
+    return typeFilters(this.registry.objectType(type))?.default;
+  }
+
+  /**
+   * One page of rows for a type, with the kernel's flags. A `filter` keeps the
+   * rows whose state it names and counts the rest in `hidden`; a list without
+   * one shows every row.
+   */
+  async list(
+    type: string,
+    options: ListOptions & { readonly filter?: string | undefined } = {},
+  ): Promise<ViewListPage> {
+    const { filter, ...listOptions } = options;
+    if (filter !== undefined) return this.listFiltered(type, filter, listOptions);
+    return this.listPlain(type, listOptions);
+  }
+
+  private async listFiltered(
+    type: string,
+    name: string,
+    options: ListOptions,
+  ): Promise<ViewListPage> {
+    const declared = typeFilters(this.registry.objectType(type));
+    if (declared === undefined) {
+      throw new ViewError("filter", `type "${type}": this type has no filters`);
+    }
+    const chosen = declared.filters.find((candidate) => candidate.name === name);
+    if (chosen === undefined) {
+      throw new ViewError(
+        "filter",
+        `type "${type}": unknown filter "${name}"; allowed: ${declared.filters
+          .map((candidate) => candidate.name)
+          .join(", ")}`,
+      );
+    }
+    if (chosen.name === ALL_FILTER) return this.listPlain(type, options);
+
+    const owner = this.registry.viewsFor(type);
+    if (owner === undefined) {
+      throw new ViewError(
+        "no-views",
+        `no loaded plugin shows objects of type "${type}"`,
+      );
+    }
+    const label = `list "${type}"`;
+    const fingerprint = whereFingerprint(options.where ?? {});
+    let after: string | undefined;
+    if (options.cursor !== undefined) {
+      try {
+        const cursor = decodeCursor(options.cursor, label);
+        if (
+          cursor.kind !== "filtered" ||
+          cursor.type !== type ||
+          cursor.filter !== chosen.name ||
+          cursor.where !== fingerprint ||
+          typeof cursor.after !== "string"
+        ) {
+          throw new CursorError(`${label}: the cursor was made for a different list`);
+        }
+        after = cursor.after;
+      } catch (error) {
+        if (error instanceof CursorError) {
+          throw new ViewError("cursor", error.message, { cause: error });
+        }
+        throw error;
+      }
+    }
+    const limit = (() => {
+      try {
+        return pageLimit(options.limit);
+      } catch (error) {
+        throw new ViewError("args", messageOf(error), { cause: error });
+      }
+    })();
+
+    // The state is the plugin's row, so every object is read to be judged.
+    const flags = await this.allRunFlags();
+    const withScope = await this.scopeShown(owner.plugin, type, owner.views);
+    const shown: { readonly id: string; readonly row: ViewRow }[] = [];
+    let hidden = 0;
+    let cursor: string | undefined;
+    do {
+      let page;
+      try {
+        page = await this.store.list(type, {
+          ...(options.where === undefined ? {} : { where: options.where }),
+          ...(options.index === undefined ? {} : { index: options.index }),
+          ...(cursor === undefined ? {} : { cursor }),
+          limit: MAX_PAGE_LIMIT,
+        });
+      } catch (error) {
+        if (error instanceof WhereError || error instanceof CursorError) {
+          throw new ViewError(
+            error instanceof CursorError ? "cursor" : "where",
+            error.message,
+            { cause: error },
+          );
+        }
+        throw error;
+      }
+      for (const object of page.objects) {
+        const row = this.listRow(owner.plugin, type, object, flags, withScope);
+        if (filterShows(chosen, row.state)) shown.push({ id: object.id, row });
+        else hidden += 1;
+      }
+      cursor = page.next;
+    } while (cursor !== undefined);
+
+    let start = 0;
+    if (after !== undefined) {
+      const resume = after;
+      const at = shown.findIndex((entry) => entry.id === resume);
+      const next = shown.findIndex((entry) => entry.id > resume);
+      start = at >= 0 ? at + 1 : next >= 0 ? next : shown.length;
+    }
+    const slice = shown.slice(start, start + limit);
+    const last = slice[slice.length - 1];
+    const more = start + limit < shown.length && last !== undefined;
+    return {
+      rows: slice.map((entry) => entry.row),
+      ...(more
+        ? {
+            next: encodeCursor({
+              kind: "filtered",
+              type,
+              filter: chosen.name,
+              where: fingerprint,
+              after: last.id,
+            }),
+          }
+        : {}),
+      hidden,
+    };
+  }
+
+  private async listPlain(type: string, options: ListOptions): Promise<ViewListPage> {
     const owner = this.registry.viewsFor(type);
     if (owner === undefined) {
       throw new ViewError(
@@ -954,6 +1103,38 @@ export class Views {
       const object = await this.store.get(typed.type, typed.id);
       if (object !== undefined || (await this.hasRun(typed.type, typed.id))) {
         return { type: typed.type, id: typed.id, object };
+      }
+      // A typed bare id (`task:T-0043-x`) names a scoped object the same way
+      // the bare id does, limited to its type: the operad app opens a row as
+      // `<type>:<row id>`, and a row's id carries no namespace.
+      if (!typed.id.includes("/")) {
+        const scoped = await this.resolveWithPlugins(typed.id, typed.type);
+        if (scoped !== undefined) return scoped;
+        const suffixed: ResolvedObject[] = [];
+        let cursor: string | undefined;
+        for (;;) {
+          const page = await this.store.list(
+            typed.type,
+            cursor === undefined ? {} : { cursor },
+          );
+          for (const object of page.objects) {
+            if (!object.id.endsWith(`/${typed.id}`)) continue;
+            suffixed.push({ type: typed.type, id: object.id, object });
+          }
+          if (page.next === undefined) break;
+          cursor = page.next;
+        }
+        if (suffixed.length > 1) {
+          throw new ViewError(
+            "ambiguous",
+            `"${id}" is ambiguous: use ${suffixed
+              .map((match) => `${match.type}:${match.id}`)
+              .sort()
+              .join(", ")}`,
+          );
+        }
+        const only = suffixed[0];
+        if (only !== undefined) return only;
       }
     }
 

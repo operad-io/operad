@@ -8,6 +8,7 @@ import { randomBytes } from "node:crypto";
 import type { HttpConfig } from "../config/config.ts";
 import type { LogBackend } from "../log/types.ts";
 import { messageOf } from "../plugin/errors.ts";
+import { typeFilters } from "../plugin/filters.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { Actor } from "../plugin/types.ts";
 import type { Kernel } from "../trigger/kernel.ts";
@@ -224,6 +225,7 @@ function viewErrorStatus(kind: ViewError["kind"]): number {
     case "args":
     case "note":
     case "where":
+    case "filter":
     case "cursor":
     case "ambiguous":
       return 400;
@@ -433,12 +435,24 @@ function createHandler(
 
     if (method === "GET" && path === "/v1/types") {
       const seen = new Set<string>();
-      const types: { type: string; title: string }[] = [];
+      const types: {
+        type: string;
+        title: string;
+        filters?: readonly { name: string; states?: readonly string[] | undefined }[];
+        defaultFilter?: string;
+      }[] = [];
       for (const entry of options.registry.objectTypes()) {
         if (seen.has(entry.type)) continue;
         if (options.registry.viewsFor(entry.type) === undefined) continue;
         seen.add(entry.type);
-        types.push({ type: entry.type, title: displayNameOf(entry.type) });
+        const filters = typeFilters(entry.definition);
+        types.push({
+          type: entry.type,
+          title: displayNameOf(entry.type),
+          ...(filters === undefined
+            ? {}
+            : { filters: filters.filters, defaultFilter: filters.default }),
+        });
       }
       return json({ types });
     }
@@ -459,11 +473,13 @@ function createHandler(
         return errorResponse(400, "args", "the query needs a type");
       }
       const cursor = url.searchParams.get("cursor") ?? undefined;
+      const filter =
+        url.searchParams.get("filter") ?? options.views.defaultFilterOf(type);
       return json(
-        await options.views.list(
-          type,
-          cursor === undefined ? {} : { cursor },
-        ),
+        await options.views.list(type, {
+          ...(cursor === undefined ? {} : { cursor }),
+          ...(filter === undefined ? {} : { filter }),
+        }),
       );
     }
 

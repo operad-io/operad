@@ -73,9 +73,28 @@ describe("task marks", () => {
       "running, integrating",
       task({
         phase: "running",
-        attempt: attempt({ worked: true, integration: { result: "pending" } }),
+        attempt: attempt({ worked: true, integrating: "run-1", integration: { result: "pending" } }),
       }),
       "integrating",
+    ],
+    [
+      "waiting while integrate builds the candidate",
+      task({
+        phase: "waiting",
+        attempt: attempt({
+          review: { result: "pass", decision: "passed" },
+          integrating: "run-1",
+        }),
+      }),
+      "integrating",
+    ],
+    [
+      "running again after a conflict, the flow is back at the worker",
+      task({
+        phase: "running",
+        attempt: attempt({ worked: true, integration: { result: "conflict" } }),
+      }),
+      "checking",
     ],
     ["review", task({ phase: "review", attempt: attempt() }), "checking"],
     ["review, unavailable with a retry time", task({ phase: "review", retryAt: 9 }), "retry_wait"],
@@ -127,7 +146,10 @@ describe("plan marks", () => {
     expect(planMark(plan({ activeCount: 1 }))).toBe("running");
     expect(planMark(plan({ mergedCount: 1, cancelledCount: 1 }))).toBe("done");
     expect(planMark(plan({ status: "cancelled" }))).toBe("cancelled");
-    expect(PLAN_STATES).toHaveLength(4);
+    expect(planMark(plan({ status: "paused" }))).toBe("paused");
+    for (const state of PLAN_STATES) {
+      expect(ROW_MARKS).toContain(planMark(plan({ status: state === "finished" ? "confirmed" : state })));
+    }
   });
 });
 

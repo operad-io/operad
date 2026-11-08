@@ -68,7 +68,7 @@ operad dev:confirm P-0001-dogfood
 Confirmation moves the plan's draft tasks to ready. A confirmed plan is what the
 loop schedules.
 
-`operad list plan`, `operad list task` and `operad show <id>` show what is
+`operad list plan`, `operad list task` (the active ones; `--filter all` for every one) and `operad show <id>` show what is
 recorded. `operad show <task> --section brief` shows the brief. Add to a task's
 brief with `operad task edit <id>`.
 
