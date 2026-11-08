@@ -9,6 +9,7 @@ import {
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { PluginRegistry } from "@operad-io/engine";
+import { createShellPlugin } from "@operad-io/shell";
 import {
   addPlan,
   addRepository,
@@ -73,7 +74,7 @@ async function fixture(): Promise<Fixture> {
     title: "Task",
     brief: "Change the README.",
   });
-  const registry = new PluginRegistry([createDevPlugin()], {
+  const registry = new PluginRegistry([createDevPlugin(), createShellPlugin()], {
     home: root,
     cwd: remote.repository,
     store,
@@ -403,6 +404,25 @@ describe("dev/reverify", () => {
     expect(task.attempt?.number).toBe(before.attempt?.number);
     expect(JSON.stringify(task.attempt?.merged)).toContain(mainSha);
     expect(task.brief).toContain(`reverify: merged main ${mainSha}, checking again`);
+
+    // The gate that follows checks the merged head, not the old branch tip.
+    const settingsPath = join(state.remote.repository, ".operad", "dev.json");
+    const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as object;
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        ...settings,
+        gate: { commands: ["test -f main.txt && test -f branch.txt"], commandTimeoutSecs: 60 },
+      }),
+    );
+    const merged = gitOrThrow(path, ["rev-parse", "HEAD"]);
+    const verified = await state.registry.runStep("dev/verify", {}, {
+      runId: "run-1",
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+    expect(verified.result).toBe("pass");
+    expect(verified.data?.verified).toBe(merged);
+    expect((await taskDataOf(state)).attempt?.verified).toBe(merged);
   });
 
   test("a conflicting main leaves the merge open and says so", async () => {
