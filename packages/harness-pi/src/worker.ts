@@ -292,7 +292,7 @@ export async function runWorker(
       case "tool_execution_end": {
         const begun = started.get(event.toolCallId);
         started.delete(event.toolCallId);
-        const firstLine = blockedCalls.has(event.toolCallId) ? REFUSED_IN_LOG : event.isError ? firstErrorLine(textOf(typeof event.result === "object" && event.result !== null ? Reflect.get(event.result, "content") : event.result)) : undefined;
+        const firstLine = blockedCalls.has(event.toolCallId) ? REFUSED_IN_LOG : event.isError ? firstErrorLine(textOf(typeof event.result === "object" && event.result !== null ? Reflect.get(event.result, "content") : event.result), { secrets: input.secretValues }) : undefined;
         io.line({
           type: "tool_execution_end",
           toolCallId: event.toolCallId,

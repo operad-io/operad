@@ -189,7 +189,7 @@ export async function runWorker(
     const call = open.get(id);
     if (call === undefined) return;
     open.delete(id);
-    const firstLine = isError ? firstErrorLine(error) : undefined;
+    const firstLine = isError ? firstErrorLine(error, { secrets: input.secretValues }) : undefined;
     io.line({
       type: "tool_execution_end",
       toolCallId: id,

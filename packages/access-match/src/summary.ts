@@ -172,9 +172,10 @@ export function summarizeCall(
 }
 
 /** The first non-empty line of an error text, cut; undefined when there is none. */
-export function firstErrorLine(error: unknown): string | undefined {
+export function firstErrorLine(error: unknown, options: SummaryOptions = {}): string | undefined {
   if (typeof error !== "string") return undefined;
-  for (const line of error.split("\n")) {
+  const masked = withoutSecretValues(error, options);
+  for (const line of masked.split("\n")) {
     if (line.trim().length > 0) return oneLine(line, SUMMARY_CHARS);
   }
   return undefined;

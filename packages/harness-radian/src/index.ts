@@ -121,7 +121,7 @@ export function radianLogLine(
   const begun = open.get(id);
   open.delete(id);
   const isError = value.isError === true || nested.isError === true || value.is_error === true;
-  const error = isError && begun?.denied !== true ? firstErrorLine(field(["error", "message"])) : undefined;
+  const error = isError && begun?.denied !== true ? firstErrorLine(field(["error", "message"]), { secrets }) : undefined;
   return JSON.stringify({
     type: "tool_execution_end",
     toolCallId: id,

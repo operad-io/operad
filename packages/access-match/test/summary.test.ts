@@ -97,3 +97,8 @@ test("an error shows its first non-empty line and a message its first 300 charac
   expect(messageSummary("  ")).toBeUndefined();
   expect(messageSummary("y".repeat(400))?.length).toBe(300);
 });
+
+test("an error line masks secret values, from the store and from the environment", () => {
+  expect(firstErrorLine("bad token store-secret-1\nmore", { secrets: ["store-secret-1"], env: {} })).toBe("bad token ***");
+  expect(firstErrorLine("OPERAD_API_TOKEN=abcdef123", { env: { OPERAD_API_TOKEN: "abcdef123" } })).toBe("OPERAD_API_TOKEN=***");
+});
