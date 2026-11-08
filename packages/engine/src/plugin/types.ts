@@ -83,6 +83,12 @@ export interface ObjectRow {
   readonly mark?: RowMark | undefined;
   /** A short single-line text clients show after the state, such as `#2`. */
   readonly badge?: string | undefined;
+  /**
+   * The object one level up: a full object id (`type:id`) or a bare id that
+   * resolves the way `get` resolves it. The kernel passes it through untouched
+   * and never invents one.
+   */
+  readonly parent?: string | undefined;
 }
 
 /** One section a detail page offers. `live` means its content still grows. */
