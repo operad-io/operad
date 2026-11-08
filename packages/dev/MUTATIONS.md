@@ -335,3 +335,11 @@ the row fields.
 | T-0075-M23 | packages/dev/src/views.ts | a task's time ignored the run's own end (the line and the row disagreed after a cancel) | `metrics follow the run's own step > a task cancelled while its review is in flight counts the review up to the cancel` |
 | T-0075-M26 | packages/dev/src/views.ts | a cancelled task's run was read from `task.run` only, which the real cancel clears | `metrics follow the run's own step > a task cancelled while its worker runs keeps the time up to the cancel, step included` |
 | T-0096-M7 | packages/dev/src/index.ts | `work` did not declare `pool/agent` in `calls` | `dev/work > done: new commits and a clean tree are pushed (cost from the old fields of an old fact)` (the undeclared call fails in tests) |
+| T-0088-M1 | packages/dev/src/followups.ts | a finding seen in an earlier round was listed again | `review follow-ups > collects the findings of every round and task, deduplicated, grouped by level` |
+| T-0088-M2 | packages/dev/src/followups.ts | a crash between the proposal and the marks left the tasks collectable again | `review follow-ups > a crash between the proposal and the marks proposes exactly one` |
+| T-0088-M3 | packages/dev/src/followups.ts | a follow-up task's own findings were marked for collection | `review follow-ups > a follow-up is not collected` |
+| T-0088-M4 | packages/dev/src/followups.ts | a follow-up was proposed while a task of the plan was open | `review follow-ups > nothing is proposed while a task is open` |
+| T-0088-M5 | packages/dev/src/followups.ts | `reviewer.followups: false` did not stop the collection | `review follow-ups > followups false turns the mark and the collection off` |
+| T-0088-M6 | packages/dev/src/followups.ts | the follow-up's `after` followed id order, not merge order | `review follow-ups > the merge order, not the id order, orders after` |
+| T-0088-M7 | packages/dev/src/gate.ts | a review round recorded no notes for findings that did not fail it | `dev/review > a finding that did not fail the round is kept as a note of the round` |
+| T-0088-M8 | packages/dev/src/integrate.ts | a merge did not mark the task for collection | `dev/integrate > a merge marks a task that has notes, unless followups is false` |

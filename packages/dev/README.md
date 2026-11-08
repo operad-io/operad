@@ -303,6 +303,21 @@ timeout waits for a person with the note `review timed out twice`. Neither an
 unavailable reviewer nor a timeout counts toward `maxAutoRework`: only a review
 that returns findings at or above `reviewer.fixLevel` does.
 
+### Follow-ups
+
+Findings that did not fail a review are not lost. When a task merges and any
+review round of it had such a finding, dev marks the task. When a plan has no
+ready, running, review or waiting task, dev collects every such finding of
+every round of the plan's marked tasks (oldest first, one line per
+`file:line` and summary) and proposes one task, `<plan slug>-followups` (then
+`-2`, `-3` when the slug is taken), titled `Follow-ups from <plan id>'s
+reviews`, that follows the collected tasks. Its brief lists each finding as
+`[level] path:line summary (from T-xxxx round n)`, grouped by level, and tells
+the worker to fix what still applies and say which findings no longer apply.
+A task is collected once, even when its follow-up is cancelled; a follow-up's
+own findings are never collected; tasks merged before this existed carry no
+mark. `reviewer.followups: false` turns it off.
+
 ### Grading: `.operad/review.json`
 
 What critical, major and minor mean is a project setting, not text in the
@@ -434,6 +449,7 @@ The file holds the repository's work settings:
 | `reviewer.timeoutSecs` | `600` | the longest a review may run |
 | `reviewer.stallSecs` | harness default | how long a review may print no new line before it is stopped |
 | `reviewer.fixLevel` | `major` | the lowest finding severity that fails the gate: `critical`, `major` or `minor` |
+| `reviewer.followups` | `true` | whether findings that did not fail a review (below `fixLevel`, or moved as pre-existing) are collected into a follow-up task |
 | `reviewer.retrySecs` | `120` | how long an unavailable review waits before the same round runs again |
 | `reviewer.maxFileDiffBytes` | `200000` | the largest diff one file may put in the review prompt |
 | `reviewer.maxDiffBytes` | `1000000` | the largest diff the review prompt may carry; counts the prompt's text, where a rename or a deleted file is one line |
