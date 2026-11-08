@@ -33,6 +33,10 @@ test("lowercase environment values never show", () => {
   expect(summarizeCall({}, "Bash", { command: "token=supersecret make test" }, CWD)).toBe("token=… make test");
 });
 
+test("an environment value of shell-quoted fragments is hidden whole", () => {
+  expect(summarizeCall({}, "Bash", { command: `token='super secret'"more" make test` }, CWD)).toBe("token=… make test");
+});
+
 test("an error shows its first non-empty line and a message its first 300 characters", () => {
   expect(firstErrorLine("\n\nboom\nmore")).toBe("boom");
   expect(firstErrorLine(42)).toBeUndefined();

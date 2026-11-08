@@ -45,6 +45,11 @@ async function setup() {
 }
 
 describe("dev views", () => {
+  test("a radian Result line shows its stop reason, tokens and cost", () => {
+    const line = JSON.stringify({ type: "Result", stop_reason: "end_turn", usage: { input: 5, output: 6 }, cost: { micros: 12346 } });
+    expect(readableLog([line])).toEqual(["result: end_turn · 5 in / 6 out tokens · $0.0123"]);
+  });
+
   test("a plan row shows the derived state and merged/total", async () => {
     const { store, plan, task } = await setup();
     const confirmed = await getPlan(store, plan.id);

@@ -325,9 +325,9 @@ export function readableLog(lines: readonly string[]): string[] {
       );
       continue;
     }
-    if (record !== undefined && kind === "result") {
+    if (record !== undefined && (kind === "result" || kind === "Result")) {
       const parts = [
-        stringField(record, ["result"]),
+        stringField(record, kind === "Result" ? ["stop_reason", "text"] : ["result"]),
         tokenText(record.usage),
         costText(record.cost),
       ].filter((part): part is string => part !== undefined);

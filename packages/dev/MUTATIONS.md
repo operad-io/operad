@@ -164,3 +164,4 @@ the row fields.
 | T-0059-M5 | packages/dev/src/gate.ts | the Grading section's text was altered instead of given verbatim | `dev/review > review.json > the prompt carries the flow's grading verbatim` |
 | T-0059-M6 | packages/dev/src/gate.ts | review.json's fixLevel was ignored | `dev/review > review.json > fixLevel in review.json decides whether a minor finding fails` |
 | T-0059-M7 | packages/dev/src/gate.ts | an invalid review.json was swallowed instead of failing the step | `dev/review > review.json > an invalid file fails the review step naming the file` |
+| T-0063-M3 | packages/dev/src/views.ts | a radian `Result` line lost its stop reason, tokens and cost | `a radian Result line shows its stop reason, tokens and cost` |
