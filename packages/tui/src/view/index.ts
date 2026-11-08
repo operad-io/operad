@@ -13,7 +13,7 @@ import {
   type TextChunk,
 } from "@opentui/core";
 import type { RowMark } from "@operad-io/engine";
-import { entryHint, paletteEntries } from "../actions.ts";
+import { confirmText, entryHint, paletteEntries } from "../actions.ts";
 import { chunksOfLine } from "../markdown.ts";
 import { TUI_PALETTE, resolvePalette, toRgba, type TuiPalette } from "../theme.ts";
 import { sanitize } from "../sanitize.ts";
@@ -428,6 +428,48 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
   return styled(chunks);
 }
 
+function confirmContent(state: TuiState, palette: TuiPalette): StyledText | undefined {
+  const text = confirmText(state);
+  if (text === undefined) return undefined;
+  return styled([
+    chunk(`${text}\n`, palette.accent, TextAttributes.BOLD),
+    chunk("y confirms · any other key cancels", palette.weak),
+  ]);
+}
+
+/** The widest an overlay gets. */
+export const OVERLAY_WIDTH = 80;
+
+/** Where one overlay box sits, border included. */
+export interface OverlayBox {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * The box of the open overlay, or undefined. The width is fixed while it is
+ * open; the box is centred horizontally. The palette keeps its top at a third
+ * of the height so the input line stays put as the matches change; the others
+ * are centred vertically.
+ */
+export function overlayBox(state: TuiState): OverlayBox | undefined {
+  const kind = state.keys ? "keys" : state.input?.kind;
+  if (kind === undefined) return undefined;
+  const width = Math.max(10, Math.min(OVERLAY_WIDTH, state.width - 4));
+  const lines = kind === "keys" ? KEY_LIST.length + 1 : kind === "confirm" ? 2 : inputLines(state);
+  // Border (2) and a one-cell margin of background (2) around the text.
+  const wanted = lines + 4;
+  const left = Math.max(0, Math.floor((state.width - width) / 2));
+  if (kind === "palette") {
+    const top = Math.floor(state.height / 3);
+    return { left, top, width, height: Math.max(5, Math.min(wanted, state.height - top)) };
+  }
+  const height = Math.max(5, Math.min(wanted, state.height));
+  return { left, top: Math.max(0, Math.floor((state.height - height) / 2)), width, height };
+}
+
 /** The line count the box needs for the input it draws. */
 function inputLines(state: TuiState): number {
   const input = state.input;
@@ -444,7 +486,7 @@ export interface TuiDrawing {
   readonly list: StyledText;
   readonly right: StyledText;
   readonly footer: StyledText;
-  /** The `?` key list, the one place a closed box is drawn. */
+  /** The `?` key list, the palette, the note or the confirmation, drawn in a filled box. */
   readonly overlay: StyledText | undefined;
 }
 
@@ -470,7 +512,9 @@ export function drawState(state: TuiState, themeName = "auto"): TuiDrawing {
       palette,
     ),
     right: objectContent(state, palette),
-    overlay: state.keys ? keyContent(palette) : inputContent(state, palette),
+    overlay: state.keys
+      ? keyContent(palette)
+      : (inputContent(state, palette) ?? confirmContent(state, palette)),
   };
 }
 
@@ -545,18 +589,20 @@ export function createTuiView(ctx: CliRenderer, themeName = "auto"): TuiView {
     truncate: true,
   });
   // The one closed box: the key list floats over the body.
-  const overlayBox = new BoxRenderable(ctx, {
+  const overlayPane = new BoxRenderable(ctx, {
     id: "operad-keys",
     position: "absolute",
     left: 2,
     top: 2,
     width: 60,
-    height: KEY_LIST.length + 4,
+    height: KEY_LIST.length + 5,
     border: true,
     borderStyle: "rounded",
     borderColor: toRgba(TUI_PALETTE.dark.rule),
     paddingX: 1,
+    paddingY: 1,
     visible: false,
+    shouldFill: true,
   });
   const overlay = new TextRenderable(ctx, {
     id: "operad-keys-text",
@@ -568,7 +614,7 @@ export function createTuiView(ctx: CliRenderer, themeName = "auto"): TuiView {
 
   listPane.add(list);
   rightPane.add(right);
-  overlayBox.add(overlay);
+  overlayPane.add(overlay);
   body.add(listPane);
   body.add(divider);
   body.add(rightPane);
@@ -577,7 +623,7 @@ export function createTuiView(ctx: CliRenderer, themeName = "auto"): TuiView {
   root.add(body);
   root.add(footerRule);
   root.add(footer);
-  root.add(overlayBox);
+  root.add(overlayPane);
 
   return {
     render(state: TuiState): void {
@@ -602,11 +648,16 @@ export function createTuiView(ctx: CliRenderer, themeName = "auto"): TuiView {
       divider.content = drawing.divider;
       right.content = drawing.right;
 
-      overlayBox.visible = drawing.overlay !== undefined;
-      overlayBox.borderColor = toRgba(palette.rule);
-      overlayBox.width = Math.max(10, Math.min(60, state.width - 4));
-      const wanted = state.keys ? KEY_LIST.length + 4 : inputLines(state) + 2;
-      overlayBox.height = Math.max(3, Math.min(wanted, state.height - 3));
+      overlayPane.visible = drawing.overlay !== undefined;
+      overlayPane.borderColor = toRgba(palette.rule);
+      overlayPane.backgroundColor = toRgba(palette.background);
+      const place = overlayBox(state);
+      if (place !== undefined) {
+        overlayPane.left = place.left;
+        overlayPane.top = place.top;
+        overlayPane.width = place.width;
+        overlayPane.height = place.height;
+      }
       if (drawing.overlay !== undefined) overlay.content = drawing.overlay;
 
       root.requestRender();

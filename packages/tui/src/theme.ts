@@ -35,6 +35,8 @@ export interface TuiPalette {
   readonly tint: string;
   /** A code block's background. */
   readonly code: string;
+  /** The fill of an overlay box (palette, note, confirmation, key list). */
+  readonly background: string;
 }
 
 export type TuiToken = keyof TuiPalette;
@@ -52,6 +54,7 @@ export const TUI_TOKENS: readonly TuiToken[] = [
   "remove",
   "tint",
   "code",
+  "background",
 ];
 
 const LIGHT: TuiPalette = {
@@ -66,6 +69,7 @@ const LIGHT: TuiPalette = {
   remove: "#cf222e",
   tint: "#f1eefc",
   code: "#f4f3f7",
+  background: "#ffffff",
 };
 
 const DARK: TuiPalette = {
@@ -80,6 +84,7 @@ const DARK: TuiPalette = {
   remove: "#ff7b72",
   tint: "#1c1830",
   code: "#16161c",
+  background: "#0e0e12",
 };
 
 /** The terminal's own 16 colours: its scheme decides the look. */
@@ -95,6 +100,7 @@ const TERMINAL: TuiPalette = {
   remove: "ansi:1",
   tint: "default-bg",
   code: "default-bg",
+  background: "default-bg",
 };
 
 /** Light and dark palettes, for code that has a mode and no theme name. */
