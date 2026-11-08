@@ -15,7 +15,7 @@ import {
   type LogBackend,
 } from "@operad-io/engine";
 import plugin from "../src/index.ts";
-import { addPlan, addRepository, addTask, getTask } from "../src/service.ts";
+import { addPlan, addRepository, addTask, cancelTask, getTask } from "../src/service.ts";
 import { taskData } from "../src/model.ts";
 import { metrics } from "../src/views.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, tempRoot } from "./support.ts";
@@ -81,6 +81,11 @@ async function world() {
     async result(result: string): Promise<void> {
       await feed((inputId) => ({ kind: "step_result", effectId, result, inputId }));
     },
+    /** The real task cancel, which clears the task's run, then the run's own cancel. */
+    async cancelTask(): Promise<void> {
+      await cancelTask(store, task.id);
+      await feed((inputId) => ({ kind: "cancel", inputId }));
+    },
     async cancel(): Promise<void> {
       await feed((inputId) => ({ kind: "cancel", inputId }));
     },
@@ -95,7 +100,7 @@ async function world() {
     },
     /** Writes the task as a dev step does, with the run that is on it. */
     async put(cause: string, attempt: Record<string, unknown>, phase = "running"): Promise<void> {
-      await store.put("task", task.id, { ...stored, phase, run: runId, attempt }, cause);
+      await store.put("task", task.id, { ...stored, phase, run: runId, attempt: { run: runId, ...attempt } }, cause);
     },
     /** The Metrics text at the given second. */
     async show(ms: number): Promise<{ row: string; line: string; text: string }> {
@@ -305,8 +310,7 @@ describe("metrics follow the run's own step", () => {
       await w.result("ready");
       // The worker runs for twenty minutes, then the task is cancelled.
       w.at(1200);
-      await w.put("dev:task-cancel", { number: 1 }, "cancelled");
-      await w.cancel();
+      await w.cancelTask();
       const seen = await w.show(1500);
       expect(seen.row).toBe("| 1 | 20m | – | cancelled |");
       expect(seen.text).toContain("| total | 20m | – | |");
@@ -328,8 +332,7 @@ describe("metrics follow the run's own step", () => {
       w.at(73);
       await w.put("dev:review", { number: 1, reviewPending: { round: 1 } });
       w.at(1153);
-      await w.put("dev:task-cancel", { number: 1, reviewPending: { round: 1 } }, "cancelled");
-      await w.cancel();
+      await w.cancelTask();
       const seen = await w.show(1500);
       expect(seen.row).toBe("| 1 | 19m | – | cancelled |");
       expect(seen.line).toBe("**#1** worktree 2s · work 1m00s · verify 10s · review 18m01s");
@@ -343,8 +346,7 @@ describe("metrics follow the run's own step", () => {
     try {
       await toWait(w);
       w.at(1100);
-      await w.put("dev:task-cancel", { number: 1, review: { result: "passed" } }, "cancelled");
-      await w.cancel();
+      await w.cancelTask();
       const seen = await w.show(1200);
       expect(seen.row).toBe("| 1 | 2m | – | cancelled |");
       expect(seen.text).toContain("| total | 2m | – | |");

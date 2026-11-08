@@ -763,12 +763,16 @@ export async function metrics(
   // A cancelled task's run has ended: the step in flight at the cancel still
   // counts up to the cancel, while a wait for a person does not.
   let live: { step: string; startedAt: number; until: number; running: boolean } | undefined;
-  if (typeof task.run === "string" && phase !== "merged") {
+  // A cancel clears the task's run; the attempt still names the run that ran it.
+  const newestRun = entries[entries.length - 1]?.last?.run;
+  const runId =
+    task.run ?? (phase === "cancelled" && typeof newestRun === "string" ? newestRun : null);
+  if (runId !== null && phase !== "merged") {
     if (phase !== "cancelled") {
-      const step = ctx.runStep === undefined ? undefined : await ctx.runStep(task.run);
+      const step = ctx.runStep === undefined ? undefined : await ctx.runStep(runId);
       if (step !== undefined) live = { ...step, until: now, running: true };
     } else {
-      const end = ctx.runEnd === undefined ? undefined : await ctx.runEnd(task.run);
+      const end = ctx.runEnd === undefined ? undefined : await ctx.runEnd(runId);
       if (end !== undefined && end.step !== null && end.startedAt !== null) {
         live = { step: end.step, startedAt: end.startedAt, until: end.endedAt, running: false };
       }
