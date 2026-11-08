@@ -6,6 +6,7 @@
  * on it.
  */
 
+import { createPoolPlugin } from "@operad-io/pool";
 import { afterAll, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -67,7 +68,7 @@ describe("dev with the pi harness", () => {
         title: "Task",
         brief: "Write the worker file.",
       });
-      const registry = new PluginRegistry([createDevPlugin(), createShellPlugin(), await piPlugin()], {
+      const registry = new PluginRegistry([createDevPlugin(), createPoolPlugin(), createShellPlugin(), await piPlugin()], {
         home: root,
         cwd: remote.repository,
         store,

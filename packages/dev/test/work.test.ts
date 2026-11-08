@@ -1,6 +1,8 @@
+import { createPoolPlugin } from "@operad-io/pool";
+import { FilePlaces } from "@operad-io/pool";
 import { afterAll, describe, expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import {
   definePlugin,
   PluginRegistry,
@@ -49,6 +51,7 @@ function fakeHarness(record: string) {
             readonly prompt: string;
             readonly cwd: string;
             readonly args?: readonly string[];
+            readonly resumeSession?: string;
           };
           // Mirror harness-radian: an absent args falls back to the flow's.
           const flow =
@@ -68,6 +71,7 @@ function fakeHarness(record: string) {
               prompt: input.prompt,
               cwd: input.cwd,
               args,
+              resumeSession: input.resumeSession ?? null,
             }),
           );
           if (mode === "fail") {
@@ -168,6 +172,9 @@ interface Fixture {
 
 interface FixtureOptions {
   readonly workerUse?: string;
+  /** Written as `workers` and `pools` instead of the single `worker`. */
+  readonly workers?: Readonly<Record<string, unknown>>;
+  readonly pools?: Readonly<Record<string, unknown>>;
   readonly args?: readonly string[];
   readonly workerBrief?: string;
   /** Extra plugins to load next to dev and the fake harness. */
@@ -194,10 +201,17 @@ async function fixture(
         remote: "origin",
         mainBranch: "main",
         worktreeRoot: ".operad-worktrees",
-        worker: {
-          use: options.workerUse ?? "fake-harness/agent",
-          args: options.args ?? [mode],
-        },
+        ...(options.workers === undefined
+          ? {
+              worker: {
+                use: options.workerUse ?? "fake-harness/agent",
+                args: options.args ?? [mode],
+              },
+            }
+          : {
+              workers: options.workers,
+              ...(options.pools === undefined ? {} : { pools: options.pools }),
+            }),
         workerBrief: ".operad/worker-brief.md",
       },
       null,
@@ -230,6 +244,7 @@ async function fixture(
   });
   const plugins = [
     createDevPlugin(),
+    createPoolPlugin(),
     fakeHarness(record),
     ...(options.plugins ?? []),
   ];
@@ -257,10 +272,17 @@ async function fixture(
   return state;
 }
 
-function runWork(state: Fixture, runId = "work-run") {
+function runWork(
+  state: Fixture,
+  runId = "work-run",
+  onEvent: (plugin: string, type: string) => void = () => undefined,
+) {
   return state.registry.runStep("dev/work", {}, {
     runId,
     object: { type: "task", id: state.taskKey, data: {} },
+    emit: (plugin, event) => {
+      onEvent(plugin, event.type);
+    },
   });
 }
 
@@ -607,5 +629,194 @@ describe("dev/work after main moved", () => {
     gitOrThrow(path, ["add", "README.md"]);
     gitOrThrow(path, ["-c", "user.name=w", "-c", "user.email=w@example.com", "commit", "-qm", "resolve"]);
     expect((await runWork(state, "rework-work")).result).toBe("done");
+  });
+});
+
+describe("dev/work with workers", () => {
+  const visit = (state: Fixture, runId: string) =>
+    state.registry.runStep("dev/worktree", {}, {
+      runId,
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+  const devJson = (state: Fixture) =>
+    join(state.remote.repository, ".operad", "dev.json");
+  const rewrite = (state: Fixture, change: Record<string, unknown>) => {
+    const current = JSON.parse(readFileSync(devJson(state), "utf8")) as Record<string, unknown>;
+    writeFileSync(devJson(state), JSON.stringify({ ...current, ...change }, null, 2));
+  };
+  const fake = (mode: string, extra: Record<string, unknown> = {}) => ({
+    use: "fake-harness/agent",
+    args: [mode],
+    ...extra,
+  });
+
+  test("the old single worker runs as one worker named after its harness", async () => {
+    const state = await fixture("commit");
+    const result = await runWork(state);
+    expect(result.result).toBe("done");
+    expect(result.data).toMatchObject({ worker: "fake-harness", work: "work: fake-harness" });
+    const task = await taskDataOf(state);
+    expect(task.attempt?.worker).toBe("fake-harness");
+    expect(task.attempt?.fallbackFrom).toBeNull();
+  });
+
+  test("the attempt records the worker the pool picked, the first one listed with room", async () => {
+    const state = await fixture("nothing", {
+      workers: { first: fake("nothing"), second: fake("nothing") },
+    });
+    await runWork(state);
+    expect((await taskDataOf(state)).attempt?.worker).toBe("first");
+  });
+
+  test("a rework goes back to the worker that ran the attempt before", async () => {
+    const state = await fixture("nothing", {
+      workers: { second: fake("nothing") },
+    });
+    await runWork(state, "run-1");
+    expect((await taskDataOf(state)).attempt?.worker).toBe("second");
+    // A worker listed first now has room too; the rework still asks for "second".
+    rewrite(state, { workers: { first: fake("nothing"), second: fake("nothing") } });
+    expect((await visit(state, "rework-run")).result).toBe("ready");
+    expect((await taskDataOf(state)).attempt?.previousWorker).toBe("second");
+    const result = await runWork(state, "run-2");
+    expect(result.data).toMatchObject({ worker: "second" });
+    const task = await taskDataOf(state);
+    expect(task.attempt?.worker).toBe("second");
+    expect(task.attempt?.workerChanged).toBeNull();
+  });
+
+  test("an attempt that never reached a worker passes the earlier worker on", async () => {
+    const state = await fixture("nothing", { workers: { second: fake("nothing") } });
+    await runWork(state, "run-1");
+    rewrite(state, { workers: { first: fake("nothing"), second: fake("nothing") } });
+    await visit(state, "rework-a");
+    // That attempt ended before any work; the next one still goes to "second".
+    await visit(state, "rework-b");
+    const result = await runWork(state, "run-2");
+    expect(result.data).toMatchObject({ worker: "second" });
+  });
+
+  test("a rework waits for its worker while another worker is free", async () => {
+    const state = await fixture("nothing", {
+      workers: { second: fake("nothing") },
+    });
+    await runWork(state, "run-1");
+    rewrite(state, { workers: { first: fake("nothing"), second: fake("nothing") } });
+    await visit(state, "rework-run");
+    // Another task holds the only place of "second".
+    const places = new FilePlaces(join(state.root, "pool"));
+    const held = await places.claim([
+      {
+        own: "count:repository/default/second",
+        ownLimit: 1,
+        home: "harness:fake-harness",
+        homeLimit: undefined,
+      },
+    ]);
+    if (held.kind !== "taken") throw new Error("the place was not free");
+    let waiting: () => void = () => undefined;
+    const sawWaiting = new Promise<void>((resolve) => {
+      waiting = resolve;
+    });
+    let finished = false;
+    const work = runWork(state, "run-2", (plugin, type) => {
+      if (plugin === "pool" && type === "pool.waiting") waiting();
+    }).then((result) => {
+      finished = true;
+      return result;
+    });
+    await sawWaiting;
+    expect(finished).toBe(false);
+    await held.release();
+    const result = await work;
+    expect(result.data).toMatchObject({ worker: "second" });
+  });
+
+  test("a worker removed from dev.json is replaced and the change is recorded", async () => {
+    const state = await fixture("nothing", {
+      workers: { gone: fake("nothing") },
+    });
+    await runWork(state, "run-1");
+    rewrite(state, { workers: { other: fake("nothing") } });
+    await visit(state, "rework-run");
+    const result = await runWork(state, "run-2");
+    expect(result.result).toBe("nothing");
+    expect(result.data).toMatchObject({
+      worker: "other",
+      work: "work: other; gone is no longer in the pool",
+    });
+    const task = await taskDataOf(state);
+    expect(task.attempt?.worker).toBe("other");
+    expect(task.attempt?.workerChanged).toBe("gone");
+  });
+
+  test("a fallback attempt records the worker that ran, and the rework goes to it", async () => {
+    const state = await fixture("nothing", {
+      workers: {
+        claude: fake("usage_limit", { fallback: "pi" }),
+        pi: fake("nothing"),
+      },
+    });
+    const first = await runWork(state, "run-1");
+    expect(first.data).toMatchObject({
+      worker: "pi",
+      fallbackFrom: "claude",
+      work: "work: pi (fallback from claude)",
+    });
+    const attempt = (await taskDataOf(state)).attempt;
+    expect(attempt?.worker).toBe("pi");
+    expect(attempt?.fallbackFrom).toBe("claude");
+    await visit(state, "rework-run");
+    const second = await runWork(state, "run-2");
+    expect(second.data).toMatchObject({ worker: "pi", work: "work: pi" });
+    expect((await taskDataOf(state)).attempt?.fallbackFrom).toBeNull();
+  });
+
+  test("a rework resumes the session of the worker it goes back to", async () => {
+    const state = await fixture("nothing", { workers: { only: fake("nothing") } });
+    await runWork(state, "run-1");
+    await visit(state, "rework-run");
+    await runWork(state, "run-2");
+    const record = JSON.parse(readFileSync(state.record, "utf8")) as {
+      readonly resumeSession: string | null;
+    };
+    expect(record.resumeSession).toBe("fake-session");
+  });
+
+  test("a fallback outside the default pool is still the worker a rework goes back to", async () => {
+    const state = await fixture("nothing", {
+      workers: {
+        claude: fake("usage_limit", { fallback: "pi" }),
+        pi: fake("nothing"),
+      },
+      pools: { default: ["claude"] },
+    });
+    await runWork(state, "run-1");
+    expect((await taskDataOf(state)).attempt?.worker).toBe("pi");
+    await visit(state, "rework-run");
+    const second = await runWork(state, "run-2");
+    expect(second.data).toMatchObject({ worker: "pi", work: "work: pi" });
+    expect((await taskDataOf(state)).attempt?.workerChanged).toBeNull();
+  });
+
+  test("the work reads the main clone's dev.json, not the worktree's older copy", async () => {
+    const state = await fixture("nothing", { workers: { old: fake("nothing") } });
+    const stale = join(
+      state.remote.repository,
+      ".operad-worktrees",
+      state.taskId,
+      ".operad",
+      "dev.json",
+    );
+    mkdirSync(dirname(stale), { recursive: true });
+    writeFileSync(stale, readFileSync(devJson(state)));
+    const tree = dirname(dirname(stale));
+    gitOrThrow(tree, ["add", "-f", ".operad/dev.json"]);
+    gitOrThrow(tree, ["-c", "user.name=w", "-c", "user.email=w@example.com", "commit", "-qm", "old copy"]);
+    // main moves on: the worktree keeps the old copy.
+    rewrite(state, { workers: { fresh: fake("nothing") } });
+    const result = await runWork(state);
+    expect(result.data).toMatchObject({ worker: "fresh" });
+    expect(JSON.parse(readFileSync(stale, "utf8"))).toHaveProperty("workers.old");
   });
 });

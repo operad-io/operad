@@ -269,7 +269,8 @@ async function workerLogPath(
   const found = await findRepository(ctx.store, task.repository);
   if (found === undefined) return undefined;
   const settings = await readDevSettings(repositoryData(found.data).path);
-  const [plugin, step] = settings.worker.use.split("/");
+  const ran = settings.workers.workers.find((worker) => worker.name === attempt.worker);
+  const [plugin, step] = (ran?.use ?? settings.worker.use).split("/");
   if (plugin === undefined || step === undefined) return undefined;
   return join(
     ctx.store.root,
