@@ -522,16 +522,62 @@ describe("dev views", () => {
     expect(rows[5]).not.toContain("(running)");
   });
 
+  test("a retried review, a work retry and a reverify are judged by the latest step's record", async () => {
+    const root = await tempRoot();
+    const repositoryPath = await makeGitRepository(root);
+    let clock = 1_000_000;
+    const store = new FilePluginStore({ root: join(root, "store"), clock: () => clock });
+    const repository = await addRepository(store, { path: repositoryPath });
+    const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
+    const stored = taskData((await getTask(store, task.id)).data);
+    const put = async (cause: string, attempt: Record<string, unknown>, phase: string) => {
+      clock += 10_000;
+      await store.put("task", task.id, { ...stored, phase, attempt }, cause);
+    };
+    const show = async (number: number) => {
+      const rows = (await metrics({ store } as never, await getTask(store, task.id), clock + 5_000)).split("\n");
+      return {
+        row: rows.find((row) => row.startsWith(`| ${number} |`)) ?? "",
+        line: rows.find((row) => row.startsWith(`**#${number}**`)) ?? "",
+      };
+    };
+    // 1: the review model was unavailable and its retry is pending, in phase waiting.
+    await put("dev:worktree", { number: 1 }, "running");
+    await put("dev:review", { number: 1, review: { result: "unavailable" } }, "waiting");
+    expect((await show(1)).row).toContain("| review unavailable |");
+    await put("dev:review", { number: 1, review: { result: "unavailable" }, reviewPending: { round: 2 } }, "waiting");
+    let seen = await show(1);
+    expect(seen.row).toContain("| running review |");
+    expect(seen.line).toMatch(/review 25s \(running\)$/);
+    // 2: the work step waits for its model and runs again.
+    await put("dev:worktree", { number: 2 }, "running");
+    await put("dev:work", { number: 2, result: "unavailable", workRetryAt: clock + 60_000 }, "running");
+    seen = await show(2);
+    expect(seen.row).toContain("| running work |");
+    expect(seen.line).not.toContain("verify");
+    expect(seen.line).toContain("work 15s (running)");
+    // 3: a reverify keeps the passed review; the verify after it fails.
+    await put("dev:worktree", { number: 3 }, "running");
+    await put("dev:review", { number: 3, review: { result: "passed" } }, "waiting");
+    await put("dev:reverify", { number: 3, result: "ready", review: { result: "passed" } }, "running");
+    seen = await show(3);
+    expect(seen.row).toContain("| running verify |");
+    expect(seen.line).not.toContain("integrate");
+    await put("dev:verify", { number: 3, review: { result: "passed" }, verify: { result: "fail" } }, "review");
+    expect((await show(3)).row).toContain("| verify failed |");
+  });
+
   test("how an attempt ended: merged, verify failed, conflict, cancelled", async () => {
     const { store, task } = await setup();
     const stored = taskData((await getTask(store, task.id)).data);
-    const result = async (attempt: Record<string, unknown>, phase: string) => {
-      await store.put("task", task.id, { ...stored, phase, attempt }, "dev:integrate");
+    const result = async (attempt: Record<string, unknown>, phase: string, cause = "dev:integrate") => {
+      await store.put("task", task.id, { ...stored, phase, attempt }, cause);
       const text = await metrics({ store } as never, await getTask(store, task.id), Date.now());
       return text.split("\n")[2]?.split("|")[4]?.trim();
     };
     expect(await result({ number: 1, integration: { result: "merged" } }, "merged")).toBe("merged");
-    expect(await result({ number: 1, verify: { result: "fail" } }, "waiting")).toBe("verify failed");
+    expect(await result({ number: 1, verify: { result: "fail" } }, "waiting", "dev:verify")).toBe("verify failed");
     expect(await result({ number: 1, integration: { result: "conflict" } }, "waiting")).toBe("conflict");
     expect(await result({ number: 1 }, "cancelled")).toBe("cancelled");
   });

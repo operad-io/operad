@@ -599,7 +599,7 @@ async function diffSection(
  * Metrics: a narrow summary table and one line per attempt.
  * ------------------------------------------------------------------------- */
 
-const METRIC_STEPS = ["worktree", "work", "verify", "review", "integrate"] as const;
+const METRIC_STEPS = ["worktree", "work", "reverify", "verify", "review", "integrate"] as const;
 
 function seconds(ms: number): string {
   if (ms < 1000) return "<1s";
@@ -640,44 +640,38 @@ function findingsText(review: ReviewRecord): string {
   return `review: ${count} ${count === 1 ? "finding" : "findings"}`;
 }
 
-/** How an attempt ended, or what it is doing while it has not. */
-function attemptResult(
-  entry: AttemptMetrics,
-  latest: boolean,
-  phase: TaskData["phase"],
-): string {
+/**
+ * How the attempt's latest step ended it, when it did. Only the record that
+ * step wrote counts: an older review or verify record of the same attempt
+ * (a reverify keeps them) says nothing about it.
+ */
+function endedBy(entry: AttemptMetrics): string | undefined {
   const last = entry.last;
-  if (latest && phase === "cancelled") return "cancelled";
-  const active = activeStep(entry, latest, phase);
-  if (active !== undefined) return `running ${active}`;
-  const integration = last?.integration?.result;
-  if (integration === "merged") return "merged";
-  if (integration === "conflict") return "conflict";
-  if (integration === "fail" || integration === "failed") return "integrate failed";
-  const review = last?.review;
-  if (review !== undefined && review !== null) {
+  if (entry.lastStep === "verify") {
+    return last?.verify?.result === "fail" ? "verify failed" : undefined;
+  }
+  if (entry.lastStep === "review") {
+    const review = last?.review;
+    if (review === undefined || review === null) return undefined;
     if (review.result === "findings" || review.result === "fail") return findingsText(review);
-    if (review.result === "pass" || review.result === "passed") return "review passed";
+    if (review.result === "pass" || review.result === "passed") return undefined;
     return `review ${review.result.replace("_", " ")}`;
   }
-  if (last?.verify?.result === "fail") return "verify failed";
-  if (latest && phase === "merged") return "merged";
-  return latest && phase === "waiting" ? "waiting" : "–";
-}
-
-/** Whether the attempt's record already says how it ended, so no step is running. */
-function hasEnded(last: TaskAttempt | undefined): boolean {
-  const integration = last?.integration?.result;
-  if (integration !== undefined && integration !== "pending") return true;
-  const review = last?.review?.result;
-  if (review !== undefined && review !== "pass" && review !== "passed") return true;
-  return last?.verify?.result === "fail";
+  if (entry.lastStep === "integrate") {
+    const integration = last?.integration?.result;
+    if (integration === "merged") return "merged";
+    if (integration === "conflict") return "conflict";
+    if (integration === "fail" || integration === "failed") return "integrate failed";
+  }
+  return undefined;
 }
 
 /**
- * The step the newest attempt is in, or undefined when it is not running. An
- * integrate in flight runs while the task waits; any other step runs only in
- * the running and review phases and only until a record says how it ended.
+ * The step the newest attempt is in, or undefined when it is not running. A
+ * review or integrate in flight (its record says so) runs in any phase, even
+ * a retried review whose earlier try is on the record; a work step that waits
+ * for its model runs again; any other step runs only in the running and
+ * review phases and only until a record says how it ended.
  */
 function activeStep(
   entry: AttemptMetrics,
@@ -686,31 +680,45 @@ function activeStep(
 ): string | undefined {
   if (!latest || phase === "cancelled" || phase === "merged") return undefined;
   const last = entry.last;
+  if (entry.lastStep === "review" && last?.reviewPending !== undefined && last.reviewPending !== null) {
+    return "review";
+  }
   if (
-    (last?.integrating !== undefined && last.integrating !== null) ||
-    last?.integration?.result === "pending"
+    entry.lastStep === "integrate" &&
+    ((last?.integrating !== undefined && last.integrating !== null) ||
+      last?.integration?.result === "pending")
   ) {
     return "integrate";
   }
-  if (hasEnded(last)) return undefined;
-  return phase === "running" || phase === "review" ? runningStep(entry) : undefined;
+  if (entry.lastStep === "work" && typeof last?.workRetryAt === "number") return "work";
+  if (endedBy(entry) !== undefined) return undefined;
+  if (phase !== "running" && phase !== "review") return undefined;
+  // A reverify that found a conflict sends the attempt back to the worker.
+  if (entry.lastStep === "reverify") return last?.result === "conflict" ? "work" : "verify";
+  return nextStep(entry.lastStep);
 }
 
-/**
- * The step a running attempt is in. A review writes its record before the
- * reviewer answers, so a review with a pending run is still the running step;
- * otherwise it is the one after the last recorded step.
- */
-function runningStep(entry: AttemptMetrics): string {
-  const pending = entry.last?.reviewPending;
-  if (entry.lastStep === "review" && pending !== undefined && pending !== null) return "review";
-  return nextStep(entry.lastStep);
+/** How an attempt ended, or what it is doing while it has not. */
+function attemptResult(
+  entry: AttemptMetrics,
+  latest: boolean,
+  phase: TaskData["phase"],
+): string {
+  if (latest && phase === "cancelled") return "cancelled";
+  const active = activeStep(entry, latest, phase);
+  if (active !== undefined) return `running ${active}`;
+  const ended = endedBy(entry);
+  if (ended !== undefined) return ended;
+  if (entry.lastStep === "review") return "review passed";
+  if (latest && phase === "merged") return "merged";
+  return latest && phase === "waiting" ? "waiting" : "–";
 }
 
 /** The step that follows `step` in an attempt; a repeat of the last one at its end. */
 function nextStep(step: string): string {
-  const at = (METRIC_STEPS as readonly string[]).indexOf(step);
-  return METRIC_STEPS[Math.min(at + 1, METRIC_STEPS.length - 1)] ?? step;
+  const flow = METRIC_STEPS.filter((name) => name !== "reverify");
+  const at = (flow as readonly string[]).indexOf(step);
+  return flow[Math.min(at + 1, flow.length - 1)] ?? step;
 }
 
 /**
