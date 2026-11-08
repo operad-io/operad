@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   decide,
@@ -258,6 +258,23 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
                 message: "the harness ran longer than 600s",
               },
             };
+          }
+          if (mode === "exit-no-write") {
+            return {
+              result: "failed",
+              data: { reason: "exit", message: "the harness exited 1", finalMessage: "no file tool" },
+            };
+          }
+          if (mode === "swap-review") {
+            const folder = dirname(input.resultPath);
+            const outside = mkdtempSync(join(tmpdir(), "operad-swap-"));
+            writeFileSync(
+              join(outside, basename(input.resultPath)),
+              JSON.stringify({ findings: [], verified: ["outside"] }),
+            );
+            rmSync(folder, { recursive: true, force: true });
+            symlinkSync(outside, folder);
+            return { result: "done", data: {} };
           }
           if (mode === "no-write") {
             return {
@@ -1929,6 +1946,24 @@ describe("dev/review report in the workspace", () => {
     const bad = await review(invalid);
     expect(String(bad.data?.message)).toContain("wrote an invalid report");
     expect(String(bad.data?.message)).not.toContain("could not write");
+  });
+
+  test("a reviewer that exits without a report is labelled as unable to write it", async () => {
+    const state = await fixture({ reviewerArgs: ["exit-no-write"] });
+    await verify(state);
+    const result = await review(state);
+    expect(result.result).toBe("failed");
+    const message = String(result.data?.message);
+    expect(message).toContain("could not write the report");
+    expect(message).toContain("no file tool");
+  });
+
+  test("a review folder swapped for a link during the call is not read through", async () => {
+    const state = await fixture({ reviewerArgs: ["swap-review"] });
+    await verify(state);
+    const result = await review(state);
+    expect(result.result).toBe("failed");
+    expect(String(result.data?.message)).toContain("not a plain directory");
   });
 
   test("a report at the store path from an older prompt is read when the workspace has none", async () => {

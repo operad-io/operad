@@ -1063,12 +1063,15 @@ function workspaceReportPath(
  * link. Returns the reason when it cannot, so no report is written there. It
  * creates folders and removes nothing.
  */
-function prepareReportFolder(gatePath: string): string | undefined {
+function prepareReportFolder(
+  gatePath: string,
+  create = true,
+): string | undefined {
   let folder = gatePath;
   for (const name of [".operad", "review"]) {
     folder = join(folder, name);
     let details = lstatOrUndefined(folder);
-    if (details === undefined) {
+    if (details === undefined && create) {
       try {
         mkdirSync(folder);
       } catch {
@@ -1225,6 +1228,10 @@ async function callReviewerOnce(
   } catch (error) {
     thrown = messageOf(error);
   }
+  // The reviewer owned the worktree during the call and may have swapped a
+  // folder for a link: look at the folders again before reading through them.
+  const swapped = prepareReportFolder(gatePath, false);
+  if (swapped !== undefined) return { outcome: "failed", message: swapped };
   // The report is read before the outcome is judged: a reviewer that wrote a
   // valid report and then stalled, timed out or exited non-zero still reviewed.
   const written = readValidReportText(reportPath);
@@ -1243,7 +1250,13 @@ async function callReviewerOnce(
       typeof data.message === "string"
         ? data.message
         : `the reviewer ended "${outcome.result}"`;
-    return { outcome: failureOutcome(data, message), message };
+    // No file at the path: say so, with the reviewer's last words.
+    const last = lastMessageOf(outcome);
+    const full =
+      lstatOrUndefined(reportPath) === undefined
+        ? `${message}; the reviewer could not write the report${last.length === 0 ? "" : ` (last message: ${last})`}`
+        : message;
+    return { outcome: failureOutcome(data, message), message: full };
   }
   if (lstatOrUndefined(reportPath) === undefined) {
     return { outcome: "no_report", message: lastMessageOf(outcome) };
