@@ -222,6 +222,7 @@ async function reconcileTaskRuns(
   ctx: TickContext,
   repository: string,
   tasks: readonly StoredObject[],
+  canStartWork: boolean,
 ): Promise<void> {
   const runs = ctx.runLookup;
   if (runs === undefined) return;
@@ -242,6 +243,9 @@ async function reconcileTaskRuns(
     // A running task with no run id is a start that never landed; the claim
     // release below gives it back to ready.
     if (task.phase === "running" && task.run === null) continue;
+    // A recovered run starts the dev flow again; without the plugins it
+    // runs through, the task waits where it is.
+    if (!canStartWork) continue;
     const step = task.run === null ? null : await runs.lastStep(task.run);
     if ((await reopenTask(ctx.store, object.id)) === undefined) continue;
     try {
@@ -305,7 +309,7 @@ async function scheduleRepository(
 
   // Repair a run that ended without an edge, or one whose phase was left
   // behind, before the scheduler reads phases and starts anything else.
-  await reconcileTaskRuns(ctx, repository.name, initialTasks);
+  await reconcileTaskRuns(ctx, repository.name, initialTasks, canStartWork);
 
   // A claim is not durable until the kernel records the run. A task left
   // running with no run is a start that never landed (a crash or a kernel

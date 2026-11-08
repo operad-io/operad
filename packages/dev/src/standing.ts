@@ -70,19 +70,33 @@ export function loadedPackages(home: string, codeRoot: string): ReadonlySet<stri
   const names = new Set<string>(["engine", "cli"]);
   try {
     const raw: unknown = JSON.parse(readFileSync(join(home, "config.json"), "utf8"));
-    const plugins = isRecord(raw) && isRecord(raw.plugins) ? raw.plugins : {};
-    for (const entry of Object.values(plugins)) {
-      if (!isRecord(entry) || entry.enabled === false) continue;
-      const module = entry.module;
-      if (typeof module === "string" && module.startsWith("@operad-io/")) {
+    const configured = isRecord(raw) ? raw.plugins : undefined;
+    // `plugins` is an object keyed by name (a module string or an options
+    // object) or an array of module names.
+    const modules: string[] = [];
+    if (Array.isArray(configured)) {
+      for (const item of configured) if (typeof item === "string") modules.push(item);
+    } else if (isRecord(configured)) {
+      for (const [key, entry] of Object.entries(configured)) {
+        if (typeof entry === "string") modules.push(entry);
+        else if (isRecord(entry) && entry.enabled !== false) {
+          modules.push(typeof entry.module === "string" ? entry.module : key);
+        }
+      }
+    }
+    for (const module of modules) {
+      if (module.startsWith("@operad-io/")) {
         names.add(module.slice("@operad-io/".length));
-      } else if (typeof module === "string" && (module.startsWith(".") || isAbsolute(module))) {
+      } else if (module.startsWith(".") || isAbsolute(module)) {
         // A module given as a path counts when it lies in a package of the code root.
         const inside = relative(join(codeRoot, "packages"), resolve(home, module));
         const name = inside.split(sep)[0];
         if (name !== undefined && name.length > 0 && name !== ".." && !isAbsolute(inside)) {
           names.add(name);
         }
+      } else if (existsSync(join(codeRoot, "packages", module, "package.json"))) {
+        // A bare name of a workspace package.
+        names.add(module);
       }
     }
   } catch {

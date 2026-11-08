@@ -278,6 +278,34 @@ describe("a plugin dev needs that the home does not load", () => {
   });
 });
 
+describe("a stopped task when a plugin dev needs is missing", () => {
+  test("is not started again by the repair, and is while the plugin is loaded", async () => {
+    const lookup = {
+      active: async () => [],
+      state: async () => undefined,
+      lastStep: async () => "work",
+    };
+    const fixture = await setup("dev-only");
+    const alpha = await addRepo(fixture, "alpha");
+    const task = await readyTask(fixture, alpha.repository, "stopped");
+    await fixture.registry.tick();
+    fixture.registry.takeStartedRuns();
+    await setTaskPhase(fixture.store, task, "running", { run: "run-1" });
+    await fixture.registry.tick(lookup);
+    expect(fixture.registry.takeStartedRuns()).toEqual([]);
+    expect(taskData((await getTask(fixture.store, task)).data).phase).toBe("running");
+
+    const loaded = new PluginRegistry([plugin, poolPlugin], {
+      home: fixture.root,
+      cwd: fixture.root,
+      store: fixture.store,
+      storeRoot: fixture.store.root,
+    });
+    await loaded.tick(lookup);
+    expect(loaded.takeStartedRuns().length).toBe(1);
+  });
+});
+
 describe("a followed merge and the code serve has loaded", () => {
   function git(cwd: string, args: readonly string[]): string {
     return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" }).trim();
@@ -357,6 +385,32 @@ describe("a followed merge and the code serve has loaded", () => {
       const sha = commitOnSide(path, branch, "packages/dev/src/p.ts");
       followMain(repository, fixture.root, branch, sha);
       expect((await fixture.registry.standing()).map((item) => item.id)).toEqual(["serve-older"]);
+    } finally {
+      testHooks.integrateTestHooks.codeRoot = undefined;
+    }
+  });
+
+  test("string and array plugin entries count as loaded too", async () => {
+    const fixture = await setup();
+    const { path, branch, repository } = await mainClone(fixture);
+    serveStartedAt(fixture.root, 1);
+    const testHooks = await import("../src/integrate.ts");
+    testHooks.integrateTestHooks.codeRoot = path;
+    const dev = join(path, "packages/dev/src/index.ts");
+    mkdirSync(join(path, "packages/dev"), { recursive: true });
+    writeFileSync(join(path, "packages/dev/package.json"), "{}\n");
+    git(path, ["add", "packages/dev/package.json"]);
+    git(path, ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "pkg"]);
+    try {
+      let count = 0;
+      for (const plugins of [{ dev }, [dev], { dev: "dev" }, { dev: { enabled: true } }]) {
+        writeFileSync(join(fixture.root, "config.json"), JSON.stringify({ plugins }));
+        rmSync(join(fixture.root, "dev", "serve-code"), { recursive: true, force: true });
+        count += 1;
+        const sha = commitOnSide(path, branch, `packages/dev/src/q${count}.ts`);
+        followMain(repository, fixture.root, branch, sha);
+        expect((await fixture.registry.standing()).map((item) => item.id)).toEqual(["serve-older"]);
+      }
     } finally {
       testHooks.integrateTestHooks.codeRoot = undefined;
     }
