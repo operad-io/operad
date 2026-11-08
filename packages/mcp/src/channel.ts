@@ -10,6 +10,8 @@
  * differs or its waiting flag turns on, and never repeats the row it last sent.
  */
 
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import {
   messageOf,
   ViewError,
@@ -71,6 +73,12 @@ export interface ChannelOptions {
   readonly hold?: boolean | undefined;
   /** The object types to report; the default is every type with views. */
   readonly types?: readonly string[] | undefined;
+  /**
+   * A JSON file that keeps the row each object's last delivered block reported,
+   * so a restarted server does not send a block again. Without it the memory
+   * lasts as long as the channel.
+   */
+  readonly sentFile?: string | undefined;
   readonly send: (
     notification: ChannelNotification,
   ) => void | Promise<void>;
@@ -150,6 +158,23 @@ function notificationOf(
   };
 }
 
+/** A notification with the key and row its delivery records as sent. */
+interface Held {
+  readonly notification: ChannelNotification;
+  readonly key: string;
+  readonly row: SeenRow;
+}
+
+function isSeenRow(value: unknown): value is SeenRow {
+  if (typeof value !== "object" || value === null) return false;
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.state === "string" &&
+    typeof row.waiting === "boolean" &&
+    typeof row.running === "boolean"
+  );
+}
+
 class ClaudeChannel implements ChannelHandle {
   private readonly views: Views;
   private readonly registry: PluginRegistry;
@@ -161,10 +186,13 @@ class ClaudeChannel implements ChannelHandle {
   private readonly last = new Map<string, SeenRow>();
   /** The row each object's last block reported. */
   private readonly sent = new Map<string, SeenRow>();
+  /** Rows of blocks held for release, which count as sent for comparing. */
+  private readonly pendingSent = new Map<string, SeenRow>();
+  private readonly sentFile: string | undefined;
   private readonly log: LogBackend | undefined;
   /** Types whose starting rows could not be read: a first sighting is a baseline. */
   private readonly unseeded = new Set<string>();
-  private held: ChannelNotification[] | undefined;
+  private held: Held[] | undefined;
   private stops: (() => void)[] = [];
   private queue: Promise<void> = Promise.resolve();
   private closed = false;
@@ -191,12 +219,14 @@ class ClaudeChannel implements ChannelHandle {
           )
         : new Set(options.types);
     this.log = options.log;
+    this.sentFile = options.sentFile;
     this.held = options.hold === true ? [] : undefined;
     this.sendNotification = options.send;
     this.onLog = options.onLog ?? ((message) => console.error(message));
   }
 
   async start(): Promise<void> {
+    await this.loadSent();
     for (const type of this.types) {
       try {
         await this.seed(type);
@@ -231,9 +261,9 @@ class ClaudeChannel implements ChannelHandle {
     this.queue = this.queue.then(async () => {
       const held = this.held;
       this.held = undefined;
-      for (const notification of held ?? []) {
+      for (const entry of held ?? []) {
         if (this.closed) return;
-        await this.sendNotification(notification);
+        await this.deliver(entry);
       }
     });
     await this.queue;
@@ -244,6 +274,55 @@ class ClaudeChannel implements ChannelHandle {
     for (const stop of this.stops) stop();
     this.stops = [];
     await this.queue;
+  }
+
+  /** Sends one block, then records its row as the last one delivered. */
+  private async deliver(entry: Held): Promise<void> {
+    await this.sendNotification(entry.notification);
+    this.sent.set(entry.key, entry.row);
+    if (this.pendingSent.get(entry.key) === entry.row) {
+      this.pendingSent.delete(entry.key);
+    }
+    await this.saveSent();
+  }
+
+  private async loadSent(): Promise<void> {
+    if (this.sentFile === undefined) return;
+    let text: string;
+    try {
+      text = await readFile(this.sentFile, "utf8");
+    } catch (error) {
+      if ((error as { code?: unknown }).code === "ENOENT") return;
+      this.onLog(`channel: the sent rows could not be read: ${messageOf(error)}`);
+      return;
+    }
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (typeof parsed !== "object" || parsed === null) return;
+      for (const [key, value] of Object.entries(parsed)) {
+        if (isSeenRow(value)) {
+          this.sent.set(key, {
+            state: value.state,
+            waiting: value.waiting,
+            running: value.running,
+          });
+        }
+      }
+    } catch (error) {
+      this.onLog(`channel: the sent rows could not be read: ${messageOf(error)}`);
+    }
+  }
+
+  private async saveSent(): Promise<void> {
+    if (this.sentFile === undefined) return;
+    try {
+      await mkdir(dirname(this.sentFile), { recursive: true });
+      const temp = `${this.sentFile}.${process.pid}.tmp`;
+      await writeFile(temp, JSON.stringify(Object.fromEntries(this.sent)));
+      await rename(temp, this.sentFile);
+    } catch (error) {
+      this.onLog(`channel: the sent rows could not be saved: ${messageOf(error)}`);
+    }
   }
 
   /** Reads the rows that exist now; none of them is a change to report. */
@@ -309,7 +388,10 @@ class ClaudeChannel implements ChannelHandle {
       if (error instanceof ViewError && error.kind === "not-found") {
         // A deleted object: forget it, so a new one with the same id is new.
         this.last.delete(rowKey(object.type, object.id));
-        this.sent.delete(rowKey(object.type, object.id));
+        this.pendingSent.delete(rowKey(object.type, object.id));
+        if (this.sent.delete(rowKey(object.type, object.id))) {
+          await this.saveSent();
+        }
         return;
       }
       this.onLog(
@@ -328,17 +410,22 @@ class ClaudeChannel implements ChannelHandle {
       const waitingOn = next.waiting && !previous.waiting;
       if (!stateChanged && !waitingOn) return;
     }
-    const lastSent = this.sent.get(key);
+    const lastSent = this.pendingSent.get(key) ?? this.sent.get(key);
     if (lastSent !== undefined && sameRow(lastSent, next)) return;
-    this.sent.set(key, next);
     const notification = notificationOf(
       object.type,
       row,
       previous?.state ?? "new",
       await this.stepOf(object),
     );
-    if (this.held !== undefined) this.held.push(notification);
-    else await this.sendNotification(notification);
+    const entry: Held = { notification, key, row: next };
+    if (this.held !== undefined) {
+      this.held.push(entry);
+      // Held, not yet delivered: later changes still compare against it.
+      this.pendingSent.set(key, next);
+    } else {
+      await this.deliver(entry);
+    }
   }
 }
 

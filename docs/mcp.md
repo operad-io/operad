@@ -64,7 +64,9 @@ object and sends one notification only when that row's `state` changed or its `w
 flag turned on (something now waits for a person). A `running` flip alone, or
 `waiting` turning off with the same state, sends nothing, and a row equal to the
 last one sent for that object (state, `waiting` and `running`) is not sent
-again, so a change seen again after a reconnect or restart stays quiet. An object first seen after the starting read has the previous
+again. The last row sent for each object is kept in a file in the operad home
+(`mcp-channel-<hash of the store root>.json`), written when a block is delivered,
+so a change seen again after a reconnect or restart stays quiet. An object first seen after the starting read has the previous
 state `new`. An object that can no longer be found is forgotten.
 
 The server sends nothing until the client has sent `notifications/initialized`.

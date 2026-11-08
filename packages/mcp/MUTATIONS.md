@@ -35,3 +35,4 @@ the row fields.
 | T-0057-M2 | packages/mcp/src/channel.ts | the row equal to the last block sent was sent again | `a wait turning on again with the state and flags of the last block sent sends nothing` |
 | T-0057-M3 | packages/mcp/src/channel.ts | the `step` meta was never added | `a running flag flip alone sends nothing, and a wait turning on sends with the step` |
 | T-0057-M4 | packages/mcp/src/channel.ts | every changed row was sent, flag flips included | `a running flag flip alone sends nothing, and a wait turning on sends with the step`, `a wait turning on again with the state and flags of the last block sent sends nothing` |
+| T-0057-M5 | packages/mcp/src/channel.ts | the sent rows were not loaded at start, so a restart forgot the last block | `a restarted channel does not send the row the last block reported again` |

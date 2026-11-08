@@ -331,6 +331,60 @@ describe("the channel's sources", () => {
     }
   });
 
+  test("a restarted channel does not send the row the last block reported again", async () => {
+    const s = await setup();
+    put(s, "task", "t-1", { title: "One", phase: "ready" });
+    const sentFile = join(await tempRoot(), "sent.json");
+    const first = new Sent();
+    const one = await startClaudeChannel({
+      views: s.views,
+      registry: s.registry,
+      log: s.log,
+      sentFile,
+      send: first.push,
+    });
+    try {
+      put(s, "task", "t-1", { title: "One", phase: "review" });
+      expect((await first.next()).meta.state).toBe("review");
+    } finally {
+      await one.close();
+    }
+    // The change back happens while no server runs; the new one seeds "ready".
+    put(s, "task", "t-1", { title: "One", phase: "ready" });
+    const second = new Sent();
+    const read = new Reads();
+    const realGet = s.views.get.bind(s.views);
+    Object.defineProperty(s.views, "get", {
+      value: async (id: string) => {
+        try {
+          return await realGet(id);
+        } finally {
+          read.push();
+        }
+      },
+    });
+    const two = await startClaudeChannel({
+      views: s.views,
+      registry: s.registry,
+      log: s.log,
+      sentFile,
+      send: second.push,
+    });
+    try {
+      put(s, "task", "t-1", { title: "One", phase: "review" });
+      await read.next();
+      put(s, "task", "t-1", { title: "One", phase: "done" });
+      const next = await second.next();
+      // "review" was already reported by the first server: only "done" is new.
+      expect(next.meta).toMatchObject({ state: "done", previous: "review" });
+      expect(second.all).toHaveLength(1);
+    } finally {
+      await two.close();
+      s.views.close();
+      await s.log.close();
+    }
+  });
+
   test("an object with a new id after the start reports new -> state, and several types are watched", async () => {
     const s = await setup();
     put(s, "task", "t-1", { title: "One", phase: "ready" });
