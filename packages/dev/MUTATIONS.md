@@ -155,6 +155,7 @@ the row fields.
 | T-0051-M7 | packages/dev/src/gate.ts | a failed store copy still completed the review from the workspace report | `dev/review report in the workspace > a store that cannot take the copy does not lose a valid workspace report` |
 | T-0051-M8 | packages/dev/src/gate.ts | the cleanup removed the whole `.operad/review` folder instead of only dev's report files | `dev/review report in the workspace > a file the repository keeps beside the report is not removed or ignored away` |
 | T-0051-M9 | packages/dev/src/gate.ts | the cleanup removed a git-tracked file only because its name looked like a dev report | `dev/review report in the workspace > a tracked file shaped like a report is never removed` |
+| T-0051-M10 | packages/dev/src/gate.ts | the cleanup and read followed a symlinked `.operad/review` folder | `dev/review report in the workspace > a symlinked scratch folder is never followed or emptied` |
 | T-0055-M1 | packages/dev/src/steps.ts | the base stayed the head before the merge of main, so the merge counted as the worker's work | `dev/work after main moved > a clean merge and no change by the worker is nothing` |
 | T-0055-M2 | packages/dev/src/steps.ts | the Changes section did not say what was merged | `dev/work after main moved > a rework gets main's commit, and the attempt and Changes say so` |
 | T-0055-M3 | packages/dev/src/steps.ts | the conflict prompt did not say resolving the merge is part of the attempt | `dev/work after main moved > a conflicting main is left for the worker and the prompt names the files` |

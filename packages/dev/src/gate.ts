@@ -1009,6 +1009,22 @@ function copyToStore(text: string, storePath: string): boolean {
 const WORKSPACE_REPORT_NAME = /-attempt-\d+-review-\d+\.json$/;
 const WORKSPACE_REPORT_EXCLUDE = "/.operad/review/*-attempt-*-review-*.json";
 
+/**
+ * True when neither scratch folder (`.operad`, `.operad/review`) is a symlink.
+ * A reviewed commit can plant one; dev never reads, writes or removes through it.
+ */
+function scratchIsPlain(workPath: string): boolean {
+  const dir = dirname(workPath);
+  for (const path of [dirname(dir), dir]) {
+    try {
+      if (lstatSync(path).isSymbolicLink()) return false;
+    } catch {
+      // A folder that is not there holds nothing to follow.
+    }
+  }
+  return true;
+}
+
 /** True when git tracks the file: a repository file is never dev's to remove. */
 function isTracked(dir: string, name: string): boolean {
   const listed = git(dir, ["ls-files", "--error-unmatch", "--", name]);
@@ -1021,6 +1037,7 @@ function isTracked(dir: string, name: string): boolean {
  * that folder stays, and the folders go only when they are left empty.
  */
 function removeWorkspaceReports(workPath: string): void {
+  if (!scratchIsPlain(workPath)) return;
   const dir = dirname(workPath);
   try {
     for (const name of readdirSync(dir)) {
@@ -1041,6 +1058,7 @@ function removeWorkspaceReports(workPath: string): void {
  * clears the workspace. An unreadable one is left for the next run to remove.
  */
 function salvageWorkspaceReport(workPath: string, storePath: string): boolean {
+  if (!scratchIsPlain(workPath)) return true;
   const read = readReport(workPath);
   if (read.text === undefined || parseReport(read.text) === undefined) {
     return true;
@@ -1056,7 +1074,11 @@ function salvageWorkspaceReport(workPath: string, storePath: string): boolean {
  */
 function prepareWorkspaceReports(workPath: string): void {
   const dir = dirname(workPath);
+  if (!scratchIsPlain(workPath)) {
+    throw new Error(`${dirname(dir)} or ${dir} is a symlink`);
+  }
   mkdirSync(dir, { recursive: true });
+  if (!scratchIsPlain(workPath)) throw new Error(`${dir} is a symlink`);
   if (isTracked(dir, basename(workPath))) {
     throw new Error(`${workPath} is a file the repository tracks`);
   }
@@ -1177,7 +1199,9 @@ async function callReviewerOnce(
   // The reviewer wrote inside its workspace. The store copy is the record, and
   // the workspace file is removed once it is copied (a harness that still
   // writes straight to the store path is read from there).
-  const inWorkspace = readReport(workPath);
+  const inWorkspace: ReportRead = scratchIsPlain(workPath)
+    ? readReport(workPath)
+    : { message: `${dirname(workPath)} is a symlink`, missing: true };
   // A copy that fails keeps the workspace file and answers from it: the only
   // valid report is never deleted because the store was unwritable.
   if (inWorkspace.text !== undefined) {

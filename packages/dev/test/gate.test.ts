@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { chmodSync } from "node:fs";
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, existsSync, rmSync, watch } from "node:fs";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -221,6 +221,15 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             writeFileSync(tracked, "{}");
             execFileSync("git", ["add", "-f", tracked], { cwd: input.cwd });
             writeFileSync(input.resultPath, valid);
+            return { result: "done", data: {} };
+          }
+          if (mode === "symlinked-scratch") {
+            // The scratch folder becomes a symlink to a folder outside the worktree.
+            const outside = join(input.cwd, "..", "outside-review");
+            mkdirSync(outside, { recursive: true });
+            writeFileSync(join(outside, "x-attempt-1-review-1.json"), valid);
+            rmSync(dirname(input.resultPath), { recursive: true, force: true });
+            symlinkSync(outside, dirname(input.resultPath));
             return { result: "done", data: {} };
           }
           if (mode === "cwd-only") {
@@ -1742,6 +1751,17 @@ describe("dev/review report in the workspace", () => {
     const gate = gateWorktreePath(state.remote.repository, settings, state.taskId);
     const dir = join(gate, ".operad", "review");
     expect(readdirSync(dir)).toEqual(["other-attempt-1-review-1.json"]);
+  });
+
+  test("a symlinked scratch folder is never followed or emptied", async () => {
+    const state = await fixture({ reviewerArgs: ["symlinked-scratch"] });
+    await verify(state);
+    const result = await review(state, "review-symlink");
+    expect(result.result).toBe("failed");
+    const settings: DevSettings = await readDevSettings(state.remote.repository);
+    const gate = gateWorktreePath(state.remote.repository, settings, state.taskId);
+    const outside = join(gate, "..", "outside-review");
+    expect(readdirSync(outside)).toEqual(["x-attempt-1-review-1.json"]);
   });
 
   test("an old prompt that writes to the store path is still read", async () => {
