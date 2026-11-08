@@ -14,5 +14,4 @@ and the row fields.
 | T-0063-M4 | `packages/access-match/src/summary.ts` | the minimum length of an environment secret was 1 instead of 6 | `bash command: env secret under 6 characters stays` |
 | T-0063-M5 | `packages/access-match/src/summary.ts` | a leading assignment with a substitution was shown instead of withheld | `bash command: command substitution` |
 | T-0063-M6 | `packages/access-match/src/summary.ts` | the shell-word reader took an unbalanced quote as readable | `bash command: unbalanced single quote` |
-
-| T-0063-M10 | `firstErrorLine` skips `withoutSecretValues` | "an error line masks secret values" fails |
+| T-0063-M10 | `packages/access-match/src/summary.ts` | `firstErrorLine` skipped the secret-value masking | `an error line masks secret values, from the store and from the environment` |
