@@ -18,9 +18,9 @@
    - `sections(object)` → `[{ id, title, live? }]`：详情页有哪几段，只是目录。`live` 表示内容还在增长（worker 的日志）。
    - `load(ctx, object, sectionId, { cursor })` → `{ markdown, next? }`：一段的内容，只在用户打开时调用，可以慢；太长就分页。
 5. **内容只有 Markdown 一种**（CommonMark 加 GFM 表格和围栏代码块）：diff 是 ```` ```diff ````，表格是 GFM 表格，图是 ```` ```mermaid ````。每个客户端只要一个渲染器；命令行在终端里转成带颜色的文本，`--raw` 给原文。逐文件的 diff 靠把每个文件做成一段来表达，不加新的内容类型。
-6. **内核做的事**：列表上给每行加两个它自己知道的标记，**等人**和**在跑**，客户端只按这两个标记上色（等人醒目、在跑蓝色、其余普通）；详情末尾自动加一段**历史**；`load` 有超时和大小上限，截断时说明完整内容怎么看（`operad show <id> --section <段> --full`）；对象一变就推“某 id 变了”，客户端重取 `row` 和打开着的 `live` 段。
+6. **内核做的事**：列表上给每行加两个它自己知道的标记，**等人**和**在跑**，两个标记盖过行的 `mark`（决定 10）：等人的行一律画成等人，在跑而插件没给 `mark` 的行画成在跑；详情末尾自动加一段**历史**；`load` 有超时和大小上限，截断时说明完整内容怎么看（`operad show <id> --section <段> --full`）；对象一变就推“某 id 变了”，客户端重取 `row` 和打开着的 `live` 段。
 7. **客户端的 API**，三个客户端共用：`list <类型>`、`get <id>`（row、段的目录、可用动作）、`section <id> <段> [cursor]`、`events`（变化推送）、`act <插件:动作> <id> [note]`。命令行在本机直接调用，TUI 和 iOS 走同样的接口。
-8. **插件不碰颜色、布局、导航。** 主按钮是第一个动作，其余在 `⋯`；需要确认的动作在确认时用红色；导航是待处理、正在跑，再加按层级浏览（决定 9）；插件只写英文，界面上其余的字由客户端翻译；不做批量动作。
+8. **插件不碰颜色、布局、导航。** 插件给的是语义（决定 10 的 `mark`），不是颜色或图标名。 主按钮是第一个动作，其余在 `⋯`；需要确认的动作在确认时用红色；导航是待处理、正在跑，再加按层级浏览（决定 9）；插件只写英文，界面上其余的字由客户端翻译；不做批量动作。
 9. **层级由插件用 `parent` 说出来，客户端一层层往下点。**（2026-11-07 owner 定，替换原来决定 8 的“没有层级”。）
    - 第一层是插件：`/v1/types` 的每个类型带上它所属的插件，客户端按插件分组。
    - 点进一个插件，列出它的顶层对象：这个插件各类型里没有 `parent` 的对象。
@@ -28,6 +28,11 @@
    - API：`list` 接受 `parent=<id>`（下一层）和 `root`（顶层）；类型声明的 filter 和默认 filter 照样作用在下一层的列表上，隐藏的个数照样给出。
    - `dev` 的层级是 仓库 → plan → task：`dev` 新增 `repo` 对象类型（`operad dev repo add` 登记的仓库），plan 的 `parent` 是它的仓库，task 的 `parent` 是它的 plan。
    - 客户端仍不认识插件：层级、名字都来自 `/v1`。命令行的 `operad list <类型>` 照旧平铺。
+10. **行带一个语义标记 `mark`，客户端照 arc 的图标表画。**（2026-11-08 owner 定：“operad 用回 arc 的 item 标记”，改决定 6 的“只按两个标记上色”。）
+   - `row(object)` 可以带 `mark`，取值只能是内核定的这一组：`proposed`、`todo`、`blocked`、`paused`、`starting`、`running`、`checking`、`integrating`、`waiting`、`done`、`failed`、`cancelled`。别的值在加载插件时报错。插件只选语义，不给颜色、不给图标名。
+   - 客户端的图标和颜色沿用 arc iOS 的状态表：`todo` 空心圆、`blocked` 虚线圆、`paused` 暂停圆、`proposed` 加号圆（等人色）、`starting` 点线圆、`running` 半实心圆（在跑色，呼吸）、`checking` 放大镜、`integrating` 合并箭头、`waiting` 实心圆（等人色）、`done` 实心勾（成功色）、`failed` 实心叉（错误色）、`cancelled` 禁止符号（灰）。TUI 用对应的单字符。
+   - 内核的两个标记优先：`waiting` 为真时画 `waiting`；否则有 `mark` 用 `mark`；否则 `running` 为真画 `running`；都没有就是普通的行。row 出错的行照旧画错误。
+   - `dev` 的映射：task 的 proposed→`proposed`，ready→`todo`（等前置任务或同区任务时→`blocked`），running 时按当前步骤：work→`running`、verify 和 review→`checking`、integrate→`integrating`，waiting→`waiting`，merged→`done`，cancelled→`cancelled`；plan 的 draft→`proposed`，confirmed→有任务在跑时 `running`、否则 `todo`，暂停→`paused`，finished→`done`，cancelled→`cancelled`。
 
 ## 样子
 
