@@ -245,6 +245,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   function noteConnection(error: unknown): boolean {
     const lost = connectionOf(error);
     if (lost === undefined) return false;
+    // A 401 is terminal: a later transport failure does not replace it.
+    if (state.connection === "unauthorized" && lost !== "unauthorized") return true;
     dispatch({ type: "connection", connection: lost });
     if (lost === "unauthorized" && retryCancel !== undefined) {
       retryCancel();
@@ -467,7 +469,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     }
     await refreshObjectPane(signal, objectAtStart, fail);
     if (signal.aborted || finished) return;
-    if (!lost) {
+    if (!lost && state.connection !== "unauthorized") {
       dispatch({ type: "connection", connection: "ok" });
       retryAttempt = 0;
     }
@@ -621,7 +623,20 @@ export function startShell(deps: TuiShellDeps): TuiShell {
                   ),
                 );
                 if (scoped.signal.aborted || finished) return;
-                if (!fetched.ok || fetched.value === undefined) return;
+                if (!fetched.ok) {
+                  if (!noteConnection(fetched.error)) {
+                    dispatch({
+                      type: "section-error",
+                      objectId,
+                      sectionId: section.id,
+                      message: messageOf(fetched.error),
+                      version: section.version,
+                      objectVersion,
+                    });
+                  }
+                  return;
+                }
+                if (fetched.value === undefined) return;
                 dispatch({
                   type: "section",
                   objectId,

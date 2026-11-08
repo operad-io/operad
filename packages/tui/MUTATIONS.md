@@ -115,3 +115,5 @@ the row fields.
 | T-0033-M13 | packages/tui/src/app.ts | a 401 left the scheduled unreachable retry running | `live updates in the shell > a 401 after the server was lost cancels the scheduled retry` |
 | T-0033-M14 | packages/tui/src/app.ts | a deletion of the open object left its row in the lists | `live updates in the shell > a deletion event for the open object removes its row from the lists` |
 | T-0033-M15 | packages/tui/src/app.ts | a live batch queued before a 401 still fetched | `live updates in the shell > a batch queued before a 401 makes no fetch` |
+| T-0033-M16 | packages/tui/src/app.ts | a transport failure replaced the 401 state | `live updates in the shell > a transport failure after the 401 does not replace it or restart retries` |
+| T-0033-M17 | packages/tui/src/app.ts | a failed live-section refresh was dropped silently | `live updates in the shell > a live section that fails to refresh shows its error` |

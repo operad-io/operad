@@ -58,6 +58,7 @@ class CountingClient implements TuiShellClient {
   objectCalls: string[] = [];
   sectionCalls: string[] = [];
   log = "one";
+  sectionFailure: Error | undefined;
 
   private check(): void {
     if (this.failure !== undefined) throw this.failure;
@@ -88,6 +89,7 @@ class CountingClient implements TuiShellClient {
   }
   async section(id: string, section: string): Promise<{ readonly markdown: string }> {
     this.sectionCalls.push(`${id}/${section}`);
+    if (this.sectionFailure !== undefined) throw this.sectionFailure;
     this.check();
     return { markdown: section === "log" ? this.log : "info" };
   }
@@ -395,6 +397,39 @@ describe("live updates in the shell", () => {
     await settled();
     s.clock.advance(LIVE_DEBOUNCE_MS);
     await s.view.until((state) => titles(state).length === 0);
+    s.shell.stop();
+  });
+
+  test("a transport failure after the 401 does not replace it or restart retries", async () => {
+    const s = start();
+    await s.view.until((state) => titles(state).length === 1);
+    s.events.push({ kind: "error", error: new TuiUnauthorizedError(undefined, "no") });
+    await s.view.until((state) => state.connection === "unauthorized");
+    s.client.failure = new TuiUnreachableError("no server answered");
+    s.shell.key({ name: "3" });
+    s.shell.key({ name: "return" });
+    await settled();
+    expect(s.shell.state.connection).toBe("unauthorized");
+    const seen = s.client.pendingCalls;
+    s.clock.advance(60_000);
+    await settled();
+    expect(s.client.pendingCalls).toBe(seen);
+    s.shell.stop();
+  });
+
+  test("a live section that fails to refresh shows its error", async () => {
+    const s = start();
+    await s.view.until((state) => titles(state).length === 1);
+    s.shell.key({ name: "3" });
+    s.shell.key({ name: "return" });
+    await s.view.until((state) => state.object?.sections[0]?.loaded === true);
+    s.shell.key({ name: "]", sequence: "]" });
+    await s.view.until((state) => state.object?.sections[1]?.markdown === "one");
+    s.client.sectionFailure = new TuiError("log broke", { status: 500 });
+    s.events.push({ kind: "change", id: "a" });
+    await settled();
+    s.clock.advance(LIVE_DEBOUNCE_MS);
+    await s.view.until((state) => state.object?.sections[1]?.error !== undefined);
     s.shell.stop();
   });
 
