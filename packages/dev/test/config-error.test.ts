@@ -157,6 +157,12 @@ describe("a repository whose dev.json becomes invalid", () => {
     writeSettings(path, BROKEN);
     await fixture.registry.tick();
     expect(fixture.errors.filter((line) => line.includes('repository "alpha"')).length).toBe(2);
+
+    // Another edit with the same message is another change of the file.
+    writeSettings(path, { gate: { commands: [43] } });
+    await fixture.registry.tick();
+    await fixture.registry.tick();
+    expect(fixture.errors.filter((line) => line.includes('repository "alpha"')).length).toBe(3);
   });
 
   test("a process that starts while the file is invalid reads the copy the home kept", async () => {

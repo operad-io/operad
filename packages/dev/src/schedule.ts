@@ -4,6 +4,8 @@
  * plan is finished. Scheduling lives here, not in the kernel (operad decision 12).
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   ActiveRunError,
   StateError,
@@ -36,6 +38,7 @@ import {
 } from "./service.ts";
 import { missingPlugins } from "./standing.ts";
 import {
+  DEV_SETTINGS_FILE,
   readDevSettings,
   runningTaskCap,
   settingsProblem,
@@ -267,8 +270,17 @@ function reportSettingsProblem(repository: RepositoryData): void {
     reportedProblems.delete(repository.path);
     return;
   }
-  if (reportedProblems.get(repository.path) === problem) return;
-  reportedProblems.set(repository.path, problem);
+  // The file's text counts, not only the message: two different edits can
+  // fail with the same message.
+  let text = "";
+  try {
+    text = readFileSync(join(repository.path, DEV_SETTINGS_FILE), "utf8");
+  } catch {
+    // The problem is the missing or unreadable file itself.
+  }
+  const state = `${problem}\n${text}`;
+  if (reportedProblems.get(repository.path) === state) return;
+  reportedProblems.set(repository.path, state);
   console.error(`dev: repository "${repository.name}": ${problem}`);
 }
 
