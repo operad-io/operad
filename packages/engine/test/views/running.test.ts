@@ -5,6 +5,7 @@ import {
   PluginRegistry,
   createViews,
   definePlugin,
+  currentRunStep,
   listRunning,
   openLog,
   type LogBackend,
@@ -183,6 +184,37 @@ describe("the running view names the object and times the step", () => {
     expect(third?.stepStartedAt).toBe(1_045_000);
     expect(third?.stepElapsedMs).toBe(5_000);
     expect(third?.elapsedMs).toBe(50_000);
+  });
+
+  test("the current step of a run is what the running view reports, and nothing once it waits or ends", async () => {
+    seq = new Map();
+    const e = await env();
+    expect(await currentRunStep(e.log, "no-such-run")).toBeUndefined();
+    now = 1_000_000;
+    const run = await e.log.startRun("flow", "item:one");
+    expect(await currentRunStep(e.log, run.runId)).toBeUndefined();
+    now = 1_010_000;
+    await add(e.log, run.runId, [enter("a"), request("a", "a:1")]);
+    expect(await currentRunStep(e.log, run.runId)).toEqual({ step: "a", startedAt: 1_010_000 });
+    now = 1_020_000;
+    await add(e.log, run.runId, [
+      { kind: "step_interrupted", payload: { effectId: "a:1" } },
+      request("a", "a:1", true),
+    ]);
+    expect(await currentRunStep(e.log, run.runId)).toEqual({ step: "a", startedAt: 1_020_000 });
+    await add(e.log, run.runId, [
+      enter("ask"),
+      {
+        kind: "waiting_for_person",
+        payload: { waitId: "ask:1", step: "ask", prompt: "p", choices: ["x"], waitKind: "step", effectId: null },
+      },
+    ]);
+    expect(await currentRunStep(e.log, run.runId)).toBeUndefined();
+    const other = await e.log.startRun("flow", "item:two");
+    await add(e.log, other.runId, [enter("b")]);
+    expect((await currentRunStep(e.log, other.runId))?.step).toBe("b");
+    await e.log.endRun(other.runId);
+    expect(await currentRunStep(e.log, other.runId)).toBeUndefined();
   });
 
   test("titles come from one rowsOf call, one read per object", async () => {

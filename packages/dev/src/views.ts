@@ -618,11 +618,6 @@ interface AttemptMetrics {
   endedAt: number;
   /** The latest step recorded for it. */
   lastStep: string;
-  /**
-   * A person's answer that sent the attempt back to work (rework, reject,
-   * reverify), written after its latest step and before the next step records.
-   */
-  restart: { readonly step: string; readonly at: number } | undefined;
 }
 
 /** A token count: whole below 10k, then in k with one decimal. */
@@ -668,67 +663,30 @@ function endedBy(entry: AttemptMetrics): string | undefined {
     if (integration === "conflict") return "conflict";
     if (integration === "fail" || integration === "failed") return "integrate failed";
   }
+  const result = last?.result;
+  if (
+    (entry.lastStep === "worktree" || entry.lastStep === "reverify" || entry.lastStep === "work") &&
+    (result === "failed" || result === "blocked" || result === "nothing")
+  ) {
+    return `${entry.lastStep} ${result}`;
+  }
   return undefined;
 }
 
-/**
- * The step the newest attempt is in, or undefined when it is not running. A
- * review or integrate in flight (its record says so) runs in any phase, even
- * a retried review whose earlier try is on the record; a work step that waits
- * for its model runs again; any other step runs only in the running and
- * review phases and only until a record says how it ended.
- */
-function activeStep(
-  entry: AttemptMetrics,
-  latest: boolean,
-  phase: TaskData["phase"],
-): string | undefined {
-  if (!latest || phase === "cancelled" || phase === "merged") return undefined;
-  const last = entry.last;
-  // An answer that sent the attempt back to work: the step it enters runs,
-  // whatever the records of the step before it say.
-  if (entry.restart !== undefined && (phase === "running" || phase === "review")) {
-    return entry.restart.step;
-  }
-  if (entry.lastStep === "review" && last?.reviewPending !== undefined && last.reviewPending !== null) {
-    return "review";
-  }
-  if (
-    entry.lastStep === "integrate" &&
-    ((last?.integrating !== undefined && last.integrating !== null) ||
-      last?.integration?.result === "pending")
-  ) {
-    return "integrate";
-  }
-  if (entry.lastStep === "work" && typeof last?.workRetryAt === "number") return "work";
-  if (endedBy(entry) !== undefined) return undefined;
-  if (phase !== "running" && phase !== "review") return undefined;
-  // A reverify that found a conflict sends the attempt back to the worker.
-  if (entry.lastStep === "reverify") return last?.result === "conflict" ? "work" : "verify";
-  return nextStep(entry.lastStep);
-}
-
-/** How an attempt ended, or what it is doing while it has not. */
+/** How an attempt that is not running ended, from its recorded results only. */
 function attemptResult(
   entry: AttemptMetrics,
   latest: boolean,
   phase: TaskData["phase"],
+  current: string | undefined,
 ): string {
   if (latest && phase === "cancelled") return "cancelled";
-  const active = activeStep(entry, latest, phase);
-  if (active !== undefined) return `running ${active}`;
+  if (current !== undefined) return `running ${current.replaceAll("_", " ")}`;
   const ended = endedBy(entry);
   if (ended !== undefined) return ended;
   if (entry.lastStep === "review") return "review passed";
   if (latest && phase === "merged") return "merged";
   return latest && phase === "waiting" ? "waiting" : "–";
-}
-
-/** The step that follows `step` in an attempt; a repeat of the last one at its end. */
-function nextStep(step: string): string {
-  const flow = METRIC_STEPS.filter((name) => name !== "reverify");
-  const at = (flow as readonly string[]).indexOf(step);
-  return flow[Math.min(at + 1, flow.length - 1)] ?? step;
 }
 
 /**
@@ -771,7 +729,6 @@ export async function metrics(
             startedAt: previous ?? fact.at,
             endedAt: fact.at,
             lastStep: step,
-            restart: undefined,
           };
           byAttempt.set(attempt.number, entry);
         }
@@ -785,17 +742,9 @@ export async function metrics(
         entry.last = attempt;
         entry.endedAt = fact.at;
         entry.lastStep = step;
-        entry.restart = undefined;
       } else if (attempt !== undefined) {
         const entry = byAttempt.get(attempt.number);
-        if (entry !== undefined) {
-          entry.last = attempt;
-          // Reverify enters the reverify step; rework and reject enter a new worktree.
-          const answer = /^dev:task-(reverify|rework|reject)$/.exec(fact.cause)?.[1];
-          if (answer !== undefined) {
-            entry.restart = { step: answer === "reverify" ? "reverify" : "worktree", at: fact.at };
-          }
-        }
+        if (entry !== undefined) entry.last = attempt;
       }
       previous = fact.at;
     }
@@ -806,11 +755,17 @@ export async function metrics(
   const entries = [...byAttempt.values()].sort(
     (left, right) => left.number - right.number,
   );
-  const phase = taskData(object.data).phase;
+  const task = taskData(object.data);
+  const phase = task.phase;
   const newest = entries[entries.length - 1]?.number;
-  const activeOf = (entry: AttemptMetrics): string | undefined =>
-    activeStep(entry, entry.number === newest, phase);
-  const running = (entry: AttemptMetrics): boolean => activeOf(entry) !== undefined;
+  // What the run is doing now comes from the run itself, as `operad running`
+  // reports it; with no active run nothing is running, whatever the phase says.
+  const current =
+    typeof task.run === "string" && ctx.runStep !== undefined && phase !== "cancelled" && phase !== "merged"
+      ? await ctx.runStep(task.run)
+      : undefined;
+  const runningOf = (entry: AttemptMetrics): string | undefined =>
+    entry.number === newest ? current?.step : undefined;
   const lines = ["| # | time | cost | result |", "| --- | --- | --- | --- |"];
   let totalMs = 0;
   let totalCost = 0;
@@ -818,7 +773,8 @@ export async function metrics(
   let quality = "";
   for (const entry of entries) {
     const last = entry.last;
-    const ms = Math.max(0, (running(entry) ? Math.max(now, entry.endedAt) : entry.endedAt) - entry.startedAt);
+    const step = runningOf(entry);
+    const ms = Math.max(0, (step === undefined ? entry.endedAt : Math.max(now, entry.endedAt)) - entry.startedAt);
     totalMs += ms;
     if (typeof last?.cost === "number" && Number.isFinite(last.cost)) {
       totalCost += last.cost;
@@ -827,23 +783,28 @@ export async function metrics(
       else if (last.costQuality === "estimated" && quality === "") quality = " (estimated)";
     }
     lines.push(
-      `| ${entry.number} | ${wallTime(ms)}${running(entry) ? " …" : ""} | ${costNote(last?.cost, last?.costQuality) ?? "–"} | ${attemptResult(entry, entry.number === newest, phase)} |`,
+      `| ${entry.number} | ${wallTime(ms)}${step === undefined ? "" : " …"} | ${costNote(last?.cost, last?.costQuality) ?? "–"} | ${attemptResult(entry, entry.number === newest, phase, step)} |`,
     );
   }
   lines.push(
     `| total | ${wallTime(totalMs)} | ${costed ? `$${totalCost.toFixed(2)}${quality}` : "–"} | |`,
   );
   const perAttempt = [...entries].reverse().map((entry) => {
-    const active = activeOf(entry);
-    const parts = METRIC_STEPS.flatMap((step) => {
-      const spent = entry.spent.get(step);
-      if (step === active) {
-        // The running step's time so far: what it recorded plus the time since.
-        const ms = (spent ?? 0) + Math.max(0, now - (entry.restart?.at ?? entry.endedAt));
-        return [`${step} ${seconds(ms)} (running)`];
+    const step = runningOf(entry);
+    const parts: string[] = METRIC_STEPS.flatMap((name) => {
+      const spent = entry.spent.get(name);
+      if (name === step && current !== undefined) {
+        // A record written while the step was in flight (a pending review) is
+        // part of the current visit; a record from an earlier visit is not.
+        const covered = entry.lastStep === name && entry.endedAt >= current.startedAt;
+        const ms = (covered ? 0 : (spent ?? 0)) + Math.max(0, now - current.startedAt);
+        return [`${name} ${seconds(ms)} (running)`];
       }
-      return spent === undefined ? [] : [`${step} ${seconds(spent)}`];
+      return spent === undefined ? [] : [`${name} ${seconds(spent)}`];
     });
+    if (step !== undefined && current !== undefined && !(METRIC_STEPS as readonly string[]).includes(step)) {
+      parts.push(`${step.replaceAll("_", " ")} ${seconds(Math.max(0, now - current.startedAt))} (running)`);
+    }
     const tokens = entry.last?.tokens;
     if (tokens !== undefined && tokens !== null) {
       parts.push(`${tokenCount(tokens.input)} in / ${tokenCount(tokens.output)} out tokens`);

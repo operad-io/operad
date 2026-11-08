@@ -28,6 +28,52 @@ export interface RunningItem {
   readonly stepLabel: string | null;
 }
 
+/** Reads a run's state and when its current step's current attempt started. */
+async function readRun(
+  log: LogBackend,
+  runId: string,
+): Promise<{ state: KernelState; stepStartedAt: number | null }> {
+  let state = initialState();
+  let stepStartedAt: number | null = null;
+  for await (const fact of log.read(runId)) {
+    state = evolve(state, fact);
+    // A new step, or a new request for the step (a retry or a recovery),
+    // starts the attempt over.
+    if (fact.kind === "step_entered" || fact.kind === "effect_requested") {
+      stepStartedAt = fact.time;
+    }
+  }
+  return { state, stepStartedAt };
+}
+
+/** A run that waits for a person or has ended is not running. */
+function isRunning(state: KernelState): boolean {
+  return state.status !== "waiting_person" && state.status !== "ended";
+}
+
+/** The step a run is in now and when that step's current attempt started. */
+export interface RunStep {
+  readonly step: string;
+  readonly startedAt: number;
+}
+
+/**
+ * What `operad running` reports for one run: its current step and the start
+ * of that step's current attempt. Undefined when the run is not active (it
+ * has ended, waits for a person, is unknown, or has not entered a step), so a
+ * reader never shows a step as running that the run is not in.
+ */
+export async function currentRunStep(
+  log: LogBackend,
+  runId: string,
+): Promise<RunStep | undefined> {
+  const active = await log.runs({ active: true });
+  if (!active.some((run) => run.runId === runId)) return undefined;
+  const { state, stepStartedAt } = await readRun(log, runId);
+  if (!isRunning(state) || state.step === null || stepStartedAt === null) return undefined;
+  return { step: state.step, startedAt: stepStartedAt };
+}
+
 export async function listRunning(
   log: LogBackend,
   clock: () => number = () => Date.now(),
@@ -45,17 +91,8 @@ export async function listRunning(
   }[] = [];
 
   for (const run of runs) {
-    let state = initialState();
-    let stepStartedAt: number | null = null;
-    for await (const fact of log.read(run.runId)) {
-      state = evolve(state, fact);
-      // A new step, or a new request for the step (a retry or a recovery),
-      // starts the attempt over.
-      if (fact.kind === "step_entered" || fact.kind === "effect_requested") {
-        stepStartedAt = fact.time;
-      }
-    }
-    if (state.status === "waiting_person" || state.status === "ended") continue;
+    const { state, stepStartedAt } = await readRun(log, run.runId);
+    if (!isRunning(state)) continue;
     live.push({ run, state, stepStartedAt });
   }
 

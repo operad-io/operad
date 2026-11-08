@@ -436,7 +436,7 @@ attempt (number, wall time from its first step to its last, cost, how it ended:
 `merged`, `review: n findings`, `verify failed`, `conflict`, `cancelled`,
 `running <step>`) and a total row that sums time and cost over all attempts.
 Under it, one line per attempt, newest first, gives the per-step times and the
-tokens (in k with one decimal from 10k); steps that did not run are left out:
+tokens (in k with one decimal from 10k); steps that did not run are left out. What is running comes from the task's run itself, the step and start time `operad running` reports; when the run is not active (it waits for a person, has ended, or the task was cancelled) nothing is shown as running, whatever the task's phase says. Finished steps and how an attempt ended come only from recorded results:
 
 ```
 | # | time | cost | result |

@@ -407,7 +407,7 @@ describe("dev views", () => {
     const MIN = 60_000;
     const put = async (at: number, cause: string, attempt: Record<string, unknown>, phase = "running") => {
       clock = at;
-      await store.put("task", task.id, { ...stored, phase, attempt }, cause);
+      await store.put("task", task.id, { ...stored, phase, run: "run-1", attempt }, cause);
     };
     const start = 1_000_000;
     // Attempt 1: worktree 2s, work 22m10s, verify 4m35s, review 18m, two findings.
@@ -428,7 +428,9 @@ describe("dev views", () => {
     await put(end1 + 1_000, "test:rework", { number: 2 });
     await put(end1 + 3_000, "dev:worktree", { number: 2 });
     const now = end1 + 3_000 + 3 * MIN;
-    const text = await metrics({ store } as never, await getTask(store, task.id), now);
+    // The run is in its work step, which began when the worktree step ended.
+    const runStep = async () => ({ step: "work", startedAt: end1 + 3_000 });
+    const text = await metrics({ store, runStep } as never, await getTask(store, task.id), now);
     const rows = text.split("\n");
     for (const row of rows.filter((line) => line.startsWith("|"))) {
       expect(row.split("|").length - 2).toBeLessThanOrEqual(4);
@@ -446,7 +448,7 @@ describe("dev views", () => {
     );
   });
 
-  test("a review that waits for its reviewer is the running step, and the total sums every attempt's cost", async () => {
+  test("the total row sums the cost of every attempt", async () => {
     const root = await tempRoot();
     const repositoryPath = await makeGitRepository(root);
     let clock = 0;
@@ -455,153 +457,20 @@ describe("dev views", () => {
     const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
     const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
     const stored = taskData((await getTask(store, task.id)).data);
-    const put = async (at: number, cause: string, attempt: Record<string, unknown>, phase = "running") => {
-      clock = at;
-      await store.put("task", task.id, { ...stored, phase, attempt }, cause);
-    };
-    const start = 1_000_000;
-    // Attempt 1 failed verify and cost $0.50; attempt 2 costs $0.75 and waits for its reviewer.
-    await put(start - 1_000, "test:start", { number: 1 });
-    await put(start, "dev:worktree", { number: 1, cost: 0.5 });
-    await put(start + 60_000, "dev:verify", { number: 1, cost: 0.5, verify: { result: "fail" } }, "waiting");
-    await put(start + 61_000, "dev:worktree", { number: 2, cost: 0.75 });
-    await put(start + 62_000, "dev:work", { number: 2, cost: 0.75, workMs: 1_000 });
-    await put(start + 63_000, "dev:verify", { number: 2, cost: 0.75, verify: { result: "pass" } });
-    await put(start + 93_000, "dev:review", {
-      number: 2, cost: 0.75, reviewPending: { round: 1 },
-    }, "review");
-    const now = start + 93_000 + 5_000;
-    const rows = (await metrics({ store } as never, await getTask(store, task.id), now)).split("\n");
-    expect(rows[2]).toBe("| 1 | 1m | $0.50 | verify failed |");
-    expect(rows[3]).toContain("| running review |");
-    expect(rows[4]).toBe("| total | 2m | $1.25 | |");
-    const line = rows.find((row) => row.startsWith("**#2**"));
-    expect(line).toBe("**#2** worktree 1s · work 1s · verify 1s · review 35s (running)");
-    expect(line).not.toContain("integrate");
-  });
-
-  test("an integrate in flight runs while the task waits, and a recorded failure is not a running step", async () => {
-    const root = await tempRoot();
-    const repositoryPath = await makeGitRepository(root);
-    let clock = 0;
-    const store = new FilePluginStore({ root: join(root, "store"), clock: () => clock });
-    const repository = await addRepository(store, { path: repositoryPath });
-    const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
-    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
-    const stored = taskData((await getTask(store, task.id)).data);
-    const start = 1_000_000;
     const put = async (at: number, cause: string, attempt: Record<string, unknown>, phase: string) => {
       clock = at;
       await store.put("task", task.id, { ...stored, phase, attempt }, cause);
     };
-    const show = async (now: number) =>
-      (await metrics({ store } as never, await getTask(store, task.id), now)).split("\n");
-    await put(start - 1, "test:start", { number: 1 }, "running");
-    await put(start, "dev:worktree", { number: 1 }, "running");
-    await put(start + 10_000, "dev:review", { number: 1, review: { result: "passed" } }, "waiting");
-    // Integrating while the task still waits.
-    await put(start + 20_000, "dev:integrate", {
-      number: 1, review: { result: "passed" }, integrating: "run-1", integration: { result: "pending" },
-    }, "waiting");
-    let rows = await show(start + 50_000);
-    expect(rows[2]).toContain("| 1 | 50s … |");
-    expect(rows[2]).toContain("| running integrate |");
-    expect(rows[5]).toBe("**#1** worktree <1s · review 10s · integrate 40s (running)");
-    // Verify failed: phase review, nothing runs.
-    await put(start + 60_000, "dev:verify", { number: 1, verify: { result: "fail" } }, "review");
-    rows = await show(start + 90_000);
-    expect(rows[2]).toContain("| verify failed |");
-    expect(rows[5]).not.toContain("(running)");
-    // Review findings in phase review.
-    await put(start + 70_000, "dev:review", { number: 1, review: { result: "findings", findings: [{}] } }, "review");
-    expect((await show(start + 90_000))[2]).toContain("| review: 1 finding |");
-    // A conflict in phase running.
-    await put(start + 80_000, "dev:integrate", { number: 1, integration: { result: "conflict" } }, "running");
-    rows = await show(start + 90_000);
-    expect(rows[2]).toContain("| conflict |");
-    expect(rows[5]).not.toContain("(running)");
-  });
-
-  test("a retried review, a work retry and a reverify are judged by the latest step's record", async () => {
-    const root = await tempRoot();
-    const repositoryPath = await makeGitRepository(root);
-    let clock = 1_000_000;
-    const store = new FilePluginStore({ root: join(root, "store"), clock: () => clock });
-    const repository = await addRepository(store, { path: repositoryPath });
-    const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
-    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
-    const stored = taskData((await getTask(store, task.id)).data);
-    const put = async (cause: string, attempt: Record<string, unknown>, phase: string) => {
-      clock += 10_000;
-      await store.put("task", task.id, { ...stored, phase, attempt }, cause);
-    };
-    const show = async (number: number) => {
-      const rows = (await metrics({ store } as never, await getTask(store, task.id), clock + 5_000)).split("\n");
-      return {
-        row: rows.find((row) => row.startsWith(`| ${number} |`)) ?? "",
-        line: rows.find((row) => row.startsWith(`**#${number}**`)) ?? "",
-      };
-    };
-    // 1: the review model was unavailable and its retry is pending, in phase waiting.
-    await put("dev:worktree", { number: 1 }, "running");
-    await put("dev:review", { number: 1, review: { result: "unavailable" } }, "waiting");
-    expect((await show(1)).row).toContain("| review unavailable |");
-    await put("dev:review", { number: 1, review: { result: "unavailable" }, reviewPending: { round: 2 } }, "waiting");
-    let seen = await show(1);
-    expect(seen.row).toContain("| running review |");
-    expect(seen.line).toMatch(/review 25s \(running\)$/);
-    // 2: the work step waits for its model and runs again.
-    await put("dev:worktree", { number: 2 }, "running");
-    await put("dev:work", { number: 2, result: "unavailable", workRetryAt: clock + 60_000 }, "running");
-    seen = await show(2);
-    expect(seen.row).toContain("| running work |");
-    expect(seen.line).not.toContain("verify");
-    expect(seen.line).toContain("work 15s (running)");
-    // 3: a reverify keeps the passed review; the verify after it fails.
-    await put("dev:worktree", { number: 3 }, "running");
-    await put("dev:review", { number: 3, review: { result: "passed" } }, "waiting");
-    await put("dev:reverify", { number: 3, result: "ready", review: { result: "passed" } }, "running");
-    seen = await show(3);
-    expect(seen.row).toContain("| running verify |");
-    expect(seen.line).not.toContain("integrate");
-    await put("dev:verify", { number: 3, review: { result: "passed" }, verify: { result: "fail" } }, "review");
-    expect((await show(3)).row).toContain("| verify failed |");
-  });
-
-  test("a rework or reverify answer starts the step it enters, not the step after the last record", async () => {
-    const root = await tempRoot();
-    const repositoryPath = await makeGitRepository(root);
-    let clock = 1_000_000;
-    const store = new FilePluginStore({ root: join(root, "store"), clock: () => clock });
-    const repository = await addRepository(store, { path: repositoryPath });
-    const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
-    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
-    const stored = taskData((await getTask(store, task.id)).data);
-    const put = async (cause: string, attempt: Record<string, unknown>, phase: string) => {
-      clock += 10_000;
-      await store.put("task", task.id, { ...stored, phase, attempt }, cause);
-    };
-    const show = async () => {
-      const rows = (await metrics({ store } as never, await getTask(store, task.id), clock + 5_000)).split("\n");
-      return { row: rows[2] ?? "", line: rows.find((row) => row.startsWith("**#1**")) ?? "" };
-    };
-    await put("dev:worktree", { number: 1 }, "running");
-    await put("dev:review", { number: 1, review: { result: "passed" } }, "waiting");
-    // A rework answer: the next step is a worktree, and integrate never ran.
-    await put("dev:task-rework", { number: 1, review: { result: "passed" } }, "running");
-    let seen = await show();
-    expect(seen.row).toContain("| running worktree |");
-    expect(seen.line).toContain("worktree 15s (running)");
-    expect(seen.line).not.toContain("integrate");
-    // A reverify answer clears the old gate records and enters the reverify step.
-    await put("dev:task-reverify", { number: 1, review: null }, "running");
-    seen = await show();
-    expect(seen.row).toContain("| running reverify |");
-    expect(seen.line).toContain("reverify 5s (running)");
-    expect(seen.line).not.toContain("integrate");
-    // Once the reverify records, verify is next.
-    await put("dev:reverify", { number: 1, result: "ready", review: null }, "running");
-    expect((await show()).row).toContain("| running verify |");
+    const start = 1_000_000;
+    await put(start - 1_000, "test:start", { number: 1 }, "running");
+    await put(start, "dev:worktree", { number: 1, cost: 0.5 }, "running");
+    await put(start + 60_000, "dev:verify", { number: 1, cost: 0.5, verify: { result: "fail" } }, "waiting");
+    await put(start + 61_000, "dev:worktree", { number: 2, cost: 0.75 }, "running");
+    await put(start + 93_000, "dev:review", { number: 2, cost: 0.75, review: { result: "passed" } }, "waiting");
+    const rows = (await metrics({ store } as never, await getTask(store, task.id), start + 100_000)).split("\n");
+    expect(rows[2]).toBe("| 1 | 1m | $0.50 | verify failed |");
+    expect(rows[3]).toBe("| 2 | 33s | $0.75 | review passed |");
+    expect(rows[4]).toBe("| total | 2m | $1.25 | |");
   });
 
   test("how an attempt ended: merged, verify failed, conflict, cancelled", async () => {
