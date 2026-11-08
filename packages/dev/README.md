@@ -325,7 +325,9 @@ same model again.
 A review is a **rework round** when an earlier attempt of the task has a review
 report for a different commit; the newest report is the previous review. A review of the same
 commit as the previous one (a reverify of an unchanged head) is a first review,
-and so is a review whose previous commit is not in the checkout.
+and so is a review whose previous commit is not in the checkout. In both cases nothing is
+moved as pre-existing. A review of a new commit in the same attempt (a reverify
+after main moved) is a first review that still moves far findings.
 
 A rework round's prompt holds the brief, the previous review's blocking findings
 (level, `file:line`, summary), the commits `<previous sha>..<sha>` and the

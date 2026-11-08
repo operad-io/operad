@@ -3053,4 +3053,19 @@ describe("dev/review rework rounds", () => {
     expect(prompt).toContain("+changed 5");
     expect(prompt).not.toContain("No line of the task's own change was changed");
   });
+
+  test("a same-attempt review of a new commit still moves a far finding", async () => {
+    const round = await afterFirstReview([]);
+    writeFindings(round.findingsFile, [finding("code.txt", 20)]);
+    await advanceMain(round.state.remote, "main.txt", "from main\n", "main moves");
+    gitOrThrow(round.state.worktree, ["fetch", "origin"]);
+    gitOrThrow(round.state.worktree, [
+      "-c", "user.name=t", "-c", "user.email=t@example.com",
+      "merge", "--no-ff", "--no-edit", "origin/main",
+    ]);
+    await verify(round.state, "verify-2");
+    const again = await review(round.state, "review-2");
+    expect(again.result).toBe("pass");
+    expect(again.data?.moved).toBe(1);
+  });
 });

@@ -1895,9 +1895,11 @@ export async function runReview(
   // rules; the increment reads the new side with its context lines.
   const own: LineMap = newSideLines(context.repository.path, base, sha, 0);
   const ownSide: LineMap = newSideLines(context.repository.path, base, sha, 3);
-  // A review that has an earlier review it does not follow (the same commit,
-  // or a commit the checkout lacks) treats nothing as pre-existing.
-  const demote = rework !== undefined || history.length === 0;
+  // A review of the same commit as the newest review, or one whose previous
+  // commit the checkout lacks, treats nothing as pre-existing.
+  const demote =
+    history[history.length - 1]?.sha !== sha &&
+    (followed === undefined || rework !== undefined);
   const reworkPrompt: ReworkPrompt | undefined =
     rework === undefined
       ? undefined
