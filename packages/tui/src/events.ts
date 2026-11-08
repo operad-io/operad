@@ -4,7 +4,13 @@
  * cannot resume, and a reconnect with capped backoff until the caller stops it.
  */
 
-import { defaultFetch, httpError, type FetchLike, type TuiError } from "./client.ts";
+import {
+  defaultFetch,
+  httpError,
+  TuiUnreachableError,
+  type FetchLike,
+  type TuiError,
+} from "./client.ts";
 
 /** The first delay before a reconnect. */
 export const DEFAULT_RETRY_MIN_MS = 250;
@@ -136,6 +142,7 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
   private connectedBefore = false;
   private started = false;
   private closed = false;
+  private down = false;
 
   constructor(options: TuiEventsOptions) {
     this.baseUrl = options.url.replace(/\/+$/, "");
@@ -221,8 +228,19 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
       let delivered = false;
       try {
         delivered = await this.connect();
-      } catch {
-        // A refused connection or a dropped stream is retried below.
+      } catch (error) {
+        // A refused connection or a dropped stream is retried below, and said
+        // once per outage so the app can show it and ask the lists again.
+        if (!this.closed && !this.down) {
+          this.down = true;
+          this.push({
+            kind: "error",
+            error: new TuiUnreachableError(
+              `the event stream to ${this.baseUrl} was lost`,
+              error,
+            ),
+          });
+        }
       }
       if (this.closed) break;
       // A server that accepts and then closes without an event is still a
@@ -264,6 +282,7 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
       this.push({ kind: "reset" });
     }
     this.connectedBefore = true;
+    this.down = false;
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -281,6 +300,8 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
     } finally {
       await reader.cancel().catch(() => undefined);
     }
+    // The stream is meant to stay open: an end that was not asked for is a loss.
+    if (!this.closed) throw new Error("the event stream ended");
     return delivered;
   }
 

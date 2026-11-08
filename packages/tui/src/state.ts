@@ -224,7 +224,14 @@ export interface TuiState {
   readonly actionRequest?: TuiActionRequest | undefined;
   /** An action is on its way; a second one waits for the answer. */
   readonly acting: boolean;
+  /** The server this screen talks to, named in the unreachable line. */
+  readonly url?: string | undefined;
+  /** Whether the server answers; the lists stay as they were when it does not. */
+  readonly connection: TuiConnection;
 }
+
+/** What the last request said about the server. */
+export type TuiConnection = "ok" | "unreachable" | "unauthorized";
 
 /** The width at which the right pane appears. */
 export const TWO_PANE_WIDTH = 100;
@@ -240,6 +247,7 @@ export interface TuiStateOptions {
   readonly width?: number | undefined;
   readonly height?: number | undefined;
   readonly theme?: TuiTheme | undefined;
+  readonly url?: string | undefined;
 }
 
 function makeList(): TuiList {
@@ -287,6 +295,8 @@ export function initialState(options: TuiStateOptions = {}): TuiState {
     generation: 0,
     bindings: [],
     acting: false,
+    connection: "ok",
+    ...(options.url === undefined ? {} : { url: options.url }),
   };
 }
 
@@ -416,7 +426,12 @@ export type TuiStateEvent =
       readonly message: string;
       readonly status?: number | undefined;
     }
-  | { readonly type: "refreshed" };
+  | { readonly type: "refreshed" }
+  /** The server answered, or did not, or refused the token. */
+  | { readonly type: "connection"; readonly connection: TuiConnection }
+  /** One row was fetched again; it replaces the rows with its id in every list. */
+  | { readonly type: "row"; readonly row: ViewRow }
+  | { readonly type: "row-gone"; readonly id: string };
 
 /** A duration as the Running list writes it. */
 export function formatElapsed(ms: number): string {
@@ -1133,7 +1148,17 @@ function handleKey(
       if (isKey(key, "g")) return jumpSection(state, "top");
     }
   }
-  if (isKey(key, "r")) return { ...state, refreshRequested: true };
+  // A rotated token is not retried: the person runs the TUI again.
+  if (isKey(key, "r") && state.connection === "unauthorized") return state;
+  if (isKey(key, "r")) {
+    const retry = { ...state, refreshRequested: true };
+    const object = state.object;
+    const section = object?.sections[object.active];
+    // A section that failed to load asks again; the others refresh with the lists.
+    return object !== undefined && section?.error !== undefined && !section.loading
+      ? requestSection(retry, object.active, { force: true })
+      : retry;
+  }
   if (isKey(key, "tab")) return cycle(state, shift ? -1 : 1);
   if (isKey(key, "up", "arrowup", "k")) return move(state, -1);
   if (isKey(key, "down", "arrowdown", "j")) return move(state, 1);
@@ -1178,6 +1203,45 @@ function cursorAfterReplace(old: TuiList, rows: readonly TuiRow[]): number {
     if (found >= 0) return found;
   }
   return clampCursor({ ...old, rows });
+}
+
+/** True when two ids name one object, with or without scope or type. */
+export function sameObject(a: string, b: string): boolean {
+  if (a === b) return true;
+  const tail = (id: string): string => id.slice(Math.max(id.lastIndexOf(":"), id.lastIndexOf("/")) + 1);
+  return tail(a) !== "" && tail(a) === tail(b);
+}
+
+/** Puts a fresh row in place of the rows of the same object; the cursor stays. */
+function replaceRow(state: TuiState, row: TuiRow): TuiState {
+  let changed = false;
+  const tabs = state.tabs.map((tab) => {
+    if (tab.kind !== "type") return tab;
+    const rows = tab.list.rows.map((old) => {
+      if (!sameObject(old.id, row.id)) return old;
+      changed = true;
+      return row;
+    });
+    return changed && rows.some((r, i) => r !== tab.list.rows[i])
+      ? { ...tab, list: { ...tab.list, rows } }
+      : tab;
+  });
+  return changed ? { ...state, tabs } : state;
+}
+
+/** Drops the row of an object that is gone from the server. */
+function removeRow(state: TuiState, id: string): TuiState {
+  let changed = false;
+  const tabs = state.tabs.map((tab) => {
+    if (tab.kind !== "type") return tab;
+    const at = tab.list.rows.findIndex((row) => sameObject(row.id, id));
+    if (at < 0) return tab;
+    changed = true;
+    const rows = tab.list.rows.filter((_, i) => i !== at);
+    const cursor = Math.min(tab.list.cursor, Math.max(0, rows.length - 1));
+    return { ...tab, list: { ...tab.list, rows, cursor } };
+  });
+  return changed ? { ...state, tabs } : state;
 }
 
 function replaceRows(
@@ -1383,6 +1447,14 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       return { ...state, acting: false, actionRequest: undefined };
     case "action-error":
       return actionFailed(state, event.status, event.message);
+    case "connection":
+      return state.connection === event.connection
+        ? state
+        : { ...state, connection: event.connection };
+    case "row-gone":
+      return removeRow(state, event.id);
+    case "row":
+      return replaceRow(state, rowFromView(event.row));
     case "refreshed":
       return state.refreshRequested
         ? { ...state, refreshRequested: false }
@@ -1511,5 +1583,11 @@ export function noticeText(state: TuiState): string | undefined {
 
 /** The footer when a failure is showing: the reason, then the way out. */
 export function statusText(state: TuiState): string | undefined {
+  if (state.connection === "unreachable") {
+    return `no server at ${state.url ?? "the address"}: is \`operad serve\` running? retrying  q quit`;
+  }
+  if (state.connection === "unauthorized") {
+    return "the token was rotated: run the TUI again or pass --token  q quit";
+  }
   return state.status === undefined ? undefined : `${state.status}  q quit`;
 }

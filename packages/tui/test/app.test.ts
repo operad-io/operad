@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
 import type { PendingItem, RunningItem, ViewListPage, ViewRow } from "@operad-io/engine";
 import {
+  TuiError,
   TuiUnauthorizedError,
   runTui,
   startShell,
@@ -13,6 +14,8 @@ import {
   createTuiView,
   type TuiView,
 } from "../src/index.ts";
+
+import { immediateClock } from "./support.ts";
 
 class Deferred<T> {
   readonly promise: Promise<T>;
@@ -148,7 +151,7 @@ function setup(configure: (client: FakeClient) => void = () => undefined): Setup
     width: 80,
     height: 20,
     theme: "dark",
-    refreshDelayMs: 0,
+    clock: immediateClock,
     onMessage: (message) => messages.push(message),
   });
   return { client, events, view, messages, shell };
@@ -295,9 +298,9 @@ describe("the TUI app", () => {
     await s.view.until((state) => typeList(state)?.loaded === true);
     s.events.push({
       kind: "error",
-      error: new TuiUnauthorizedError("unauthorized", "bad token"),
+      error: new TuiError("the server is unwell", { status: 500 }),
     });
-    await s.view.until((state) => state.status === "bad token");
+    await s.view.until((state) => state.status === "the server is unwell");
     s.shell.stop();
     expect(s.events.stopped).toBe(true);
   });
@@ -404,4 +407,39 @@ describe("runTui", () => {
       await test.dispose();
     }
   });
+
+  for (const name of ["SIGINT", "SIGTERM"] as const) {
+    test(`${name} restores the terminal, stops the event stream and exits 0`, async () => {
+      const before = process.listenerCount(name);
+      const test = await createTestRenderer({ width: 60, height: 10 });
+      let sent = false;
+      try {
+        const code = await runTui({
+          url: "http://127.0.0.1:1",
+          token: "t",
+          hooks: {
+            renderer: async () => test.renderer,
+            view: (renderer) => {
+              const real = createTuiView(renderer);
+              return {
+                render(state) {
+                  real.render(state);
+                  if (!sent) {
+                    sent = true;
+                    queueMicrotask(() => process.emit(name, name));
+                  }
+                },
+                destroy: () => real.destroy(),
+              };
+            },
+          },
+        });
+        expect(code).toBe(0);
+        expect(test.renderer.isDestroyed).toBe(true);
+      } finally {
+        await test.dispose();
+      }
+      expect(process.listenerCount(name)).toBe(before);
+    });
+  }
 });
