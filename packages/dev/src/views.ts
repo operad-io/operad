@@ -16,6 +16,7 @@ import {
   planData,
   planNote,
   planState,
+  renderChanges,
   repositoryData,
   splitBrief,
   taskData,
@@ -194,7 +195,7 @@ export const taskViews: ObjectViews = {
       };
     }
     if (sectionId === "rework") return { markdown: parts.reworks };
-    if (sectionId === "changes") return { markdown: parts.changes };
+    if (sectionId === "changes") return { markdown: renderChanges(parts.changes) };
     if (sectionId === "log") return { markdown: await workerLog(ctx, task) };
     if (sectionId === "diff") return diffSection(ctx, object, options.cursor);
     if (sectionId === "metrics") return { markdown: metrics(ctx, object) };

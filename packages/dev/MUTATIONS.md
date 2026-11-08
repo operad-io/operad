@@ -212,3 +212,13 @@ the row fields.
 | T-0094-M11 | packages/dev/src/standing.ts | a plugin configured by a path to a package was not counted as loaded | `a followed merge and the code serve has loaded > a plugin loaded by a path to a package of the clone counts as loaded` |
 | T-0094-M12 | packages/dev/src/standing.ts | a plugin entry given as a module string was not counted as loaded | `a followed merge and the code serve has loaded > string and array plugin entries count as loaded too` |
 | T-0094-M13 | packages/dev/src/schedule.ts | the repair of a stopped task started the flow although a needed plugin is missing | `a stopped task when a plugin dev needs is missing > is not started again by the repair, and is while the plugin is loaded` |
+
+## T-0073 — Changes tells the story
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0073-M1 | packages/dev/src/model.ts | no date line began a new day | `the Changes story > an entry shows its local time, and a date line starts each day` |
+| T-0073-M2 | packages/dev/src/model.ts | a conflict rework was named by its section source, not "conflict" | `dev/integrate > a conflict appends the conflict rework and leaves main alone` |
+| T-0073-M3 | packages/dev/src/announce.ts | the stopped-step lookup ignored the entry's time prefix | `dev scheduling > serve repairs a task whose run ended without an edge, and reject runs again` |
+| T-0073-M4 | packages/dev/src/model.ts | a reason was not cut to one short line | `the Changes story > a rework names who asked and the first finding, cut to one line` |
+| T-0073-M5 | packages/dev/src/gate.ts | the review and verify rework lost their reason | `dev/rework > a review failure appends the findings at or above the fix level` |
