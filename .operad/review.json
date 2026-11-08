@@ -1,0 +1,18 @@
+{
+  "$schema": "../packages/review-grading/review.schema.json",
+  "flows": {
+    "dev": {
+      "levels": {
+        "critical": "Merging causes harm: data loss or corruption, a security hole, a crash or hang in normal use, or main's build or tests break.",
+        "major": "Something the brief asks for is wrong or missing on a path a user or caller takes in normal use; a decided point in docs/backlog is contradicted; or a behaviour the brief requires has no test.",
+        "minor": "Anything the brief does not ask for: rare inputs, extra robustness, wording, style, refactors."
+      },
+      "rules": [
+        "Grade against the brief. A decision the brief or a lead rework note states is not a finding.",
+        "Each critical or major finding names a concrete trigger a user or caller hits; without one it is minor.",
+        "Do not raise again, in other words, a finding the previous review raised and this change addressed."
+      ],
+      "fixLevel": "major"
+    }
+  }
+}

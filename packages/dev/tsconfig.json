@@ -2,5 +2,5 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "rootDir": ".", "outDir": "../../.tsbuild/dev" },
   "include": ["src", "test", "flows"],
-  "references": [{ "path": "../engine" }]
+  "references": [{ "path": "../engine" }, { "path": "../review-grading" }]
 }

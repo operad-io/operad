@@ -13,6 +13,7 @@
     { "path": "packages/harness-pi" },
     { "path": "packages/harness-claude" },
     { "path": "packages/tui" },
-    { "path": "packages/pool" }
+    { "path": "packages/pool" },
+    { "path": "packages/review-grading" }
   ]
 }
