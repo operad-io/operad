@@ -832,10 +832,10 @@ function reviewPrompt(
   pieces.push(
     "## What to write",
     [
-      `Write a JSON object to ${resultPath}. The file must contain exactly:`,
+      `Write a JSON object to ${resultPath} (inside the worktree you are in). The file must contain exactly:`,
       '{ "findings": [{ "file": "<path>", "line": <number>, "severity": "critical|major|minor", "summary": "<one line>", "trigger": "<what causes it>" }], "verified": ["<what you checked>"] }',
       "A finding on a file the change did not touch is pre-existing; say so in its summary.",
-      "Write only the JSON file. Do not change the worktree.",
+      "Write only the JSON file. Do not change anything else in the worktree.",
     ].join("\n"),
   );
   return pieces.join("\n\n");
@@ -843,7 +843,13 @@ function reviewPrompt(
 
 /** What one call to a reviewer harness step produced. */
 interface ReviewerCall {
-  readonly outcome: "report" | "invalid" | "unavailable" | "timed_out" | "failed";
+  readonly outcome:
+    | "report"
+    | "invalid"
+    | "no_report"
+    | "unavailable"
+    | "timed_out"
+    | "failed";
   readonly report?: Report | undefined;
   readonly message: string;
 }
@@ -1002,6 +1008,7 @@ function writeReviewOutcome(path: string, call: ReviewerCall): void {
 const REVIEW_OUTCOMES: readonly ReviewerCall["outcome"][] = [
   "report",
   "invalid",
+  "no_report",
   "unavailable",
   "timed_out",
   "failed",
@@ -1034,6 +1041,78 @@ function readReviewOutcome(resultPath: string): ReviewerCall | undefined {
   return { outcome: "report", report, message };
 }
 
+/** The report path of one reviewer call, relative to the gate worktree. */
+function workspaceReportPath(
+  gatePath: string,
+  runId: string,
+  attempt: number,
+  round: number,
+  tryNo: number,
+): string {
+  return join(
+    gatePath,
+    ".operad",
+    "review",
+    `${runId}-attempt-${attempt}-review-${round}-try-${tryNo}.json`,
+  );
+}
+
+/**
+ * Makes sure `.operad/review` exists in the gate worktree as plain
+ * directories, looking at every component with `lstat` and never following a
+ * link. Returns the reason when it cannot, so no report is written there. It
+ * creates folders and removes nothing.
+ */
+function prepareReportFolder(gatePath: string): string | undefined {
+  let folder = gatePath;
+  for (const name of [".operad", "review"]) {
+    folder = join(folder, name);
+    let details = lstatOrUndefined(folder);
+    if (details === undefined) {
+      try {
+        mkdirSync(folder);
+      } catch {
+        // Another process may have made it; look again below.
+      }
+      details = lstatOrUndefined(folder);
+    }
+    if (details === undefined) return `cannot create ${folder}`;
+    if (!details.isDirectory()) {
+      return `${folder} is not a plain directory (a link or a file), so the review report cannot be written under it`;
+    }
+  }
+  return undefined;
+}
+
+function lstatOrUndefined(path: string): ReturnType<typeof lstatSync> | undefined {
+  try {
+    return lstatSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The valid report at a path with its text, otherwise undefined. */
+function readValidReportText(
+  path: string,
+): { readonly report: Report; readonly text: string } | undefined {
+  const read = readReport(path);
+  if (read.text === undefined) return undefined;
+  const report = parseReport(read.text);
+  return report === undefined ? undefined : { report, text: read.text };
+}
+
+/** Copies a valid report to the store record. Returns the failure, if any. */
+function copyToStore(storePath: string, text: string): string | undefined {
+  try {
+    reviewTestHooks.beforeCopy?.();
+    writeFileSync(storePath, text);
+    return undefined;
+  } catch (error) {
+    return `cannot write the review record at ${storePath}: ${messageOf(error)} (the report is still in the review workspace)`;
+  }
+}
+
 /**
  * One call to the reviewer, with its outcome written to disk before it
  * returns. A crash after the model answered therefore reads the outcome back
@@ -1044,7 +1123,8 @@ async function callReviewer(
   context: TaskContext,
   gatePath: string,
   prompt: string,
-  resultPath: string,
+  reportPath: string,
+  storePath: string,
   reviewer: { readonly use: string; readonly args: readonly string[] },
   resuming: boolean,
 ): Promise<ReviewerCall> {
@@ -1053,12 +1133,21 @@ async function callReviewer(
     context,
     gatePath,
     prompt,
-    resultPath,
+    reportPath,
+    storePath,
     reviewer,
     resuming,
   );
-  writeReviewOutcome(reviewOutcomePath(resultPath), call);
+  writeReviewOutcome(reviewOutcomePath(storePath), call);
   return call;
+}
+
+/** The reviewer's last words, from what its harness step reported. */
+function lastMessageOf(outcome: PluginStepResult): string {
+  const data = isRecord(outcome.data) ? outcome.data : {};
+  if (typeof data.finalMessage === "string") return data.finalMessage;
+  if (typeof data.message === "string") return data.message;
+  return "";
 }
 
 async function callReviewerOnce(
@@ -1066,7 +1155,8 @@ async function callReviewerOnce(
   context: TaskContext,
   gatePath: string,
   prompt: string,
-  resultPath: string,
+  reportPath: string,
+  storePath: string,
   reviewer: { readonly use: string; readonly args: readonly string[] },
   resuming: boolean,
 ): Promise<ReviewerCall> {
@@ -1078,22 +1168,42 @@ async function callReviewerOnce(
     };
   }
   const settings = context.settings.reviewer;
-  // A valid report already on disk is the answer: a crash between the report
-  // and its recorded outcome must not ask the model again, and a retry never
-  // deletes a report that can be read. Only an unreadable one is removed.
-  const existing = resuming ? readValidReport(resultPath) : undefined;
-  if (existing !== undefined) {
-    return { outcome: "report", report: existing, message: "" };
+  if (resuming) {
+    // A valid report already on disk is the answer: a crash between the
+    // report and its recorded outcome must not ask the model again. The
+    // workspace path comes first; a run whose older prompt named the store
+    // path left its report there.
+    const inWorkspace = readValidReportText(reportPath);
+    if (inWorkspace !== undefined) {
+      const failure = copyToStore(storePath, inWorkspace.text);
+      if (failure !== undefined) return { outcome: "failed", message: failure };
+      return { outcome: "report", report: inWorkspace.report, message: "" };
+    }
+    if (lstatOrUndefined(reportPath) === undefined) {
+      const inStore = readValidReport(storePath);
+      if (inStore !== undefined) {
+        return { outcome: "report", report: inStore, message: "" };
+      }
+    }
   }
-  try {
-    rmSync(resultPath, { force: true });
-  } catch {
-    // A result file that cannot be removed is read only if it is fresh enough.
+  // The store copy and its sidecar belong to dev; the review workspace is
+  // never cleaned.
+  for (const stale of [storePath, reviewOutcomePath(storePath)]) {
+    try {
+      rmSync(stale, { force: true });
+    } catch {
+      // A record that cannot be removed is overwritten when a report is copied.
+    }
   }
-  try {
-    rmSync(reviewOutcomePath(resultPath), { force: true });
-  } catch {
-    // A sidecar left behind is never trusted unless the task names the run.
+  const folderFailure = prepareReportFolder(gatePath);
+  if (folderFailure !== undefined) {
+    return { outcome: "failed", message: folderFailure };
+  }
+  if (lstatOrUndefined(reportPath) !== undefined) {
+    return {
+      outcome: "failed",
+      message: `a file already exists at the report path ${reportPath}; it is left as it is and no report is written there`,
+    };
   }
   let outcome: PluginStepResult | undefined;
   let thrown: string | undefined;
@@ -1108,7 +1218,7 @@ async function callReviewerOnce(
         ...(settings.stallSecs === undefined
           ? {}
           : { stallSecs: settings.stallSecs }),
-        resultPath,
+        resultPath: reportPath,
       },
       stepOptions(ctx, gatePath),
     );
@@ -1117,9 +1227,11 @@ async function callReviewerOnce(
   }
   // The report is read before the outcome is judged: a reviewer that wrote a
   // valid report and then stalled, timed out or exited non-zero still reviewed.
-  const written = readValidReport(resultPath);
+  const written = readValidReportText(reportPath);
   if (written !== undefined) {
-    return { outcome: "report", report: written, message: "" };
+    const failure = copyToStore(storePath, written.text);
+    if (failure !== undefined) return { outcome: "failed", message: failure };
+    return { outcome: "report", report: written.report, message: "" };
   }
   if (outcome === undefined) {
     const message = thrown ?? "the reviewer did not run";
@@ -1133,16 +1245,19 @@ async function callReviewerOnce(
         : `the reviewer ended "${outcome.result}"`;
     return { outcome: failureOutcome(data, message), message };
   }
-  const read = readReport(resultPath);
+  if (lstatOrUndefined(reportPath) === undefined) {
+    return { outcome: "no_report", message: lastMessageOf(outcome) };
+  }
+  const read = readReport(reportPath);
   if (read.text === undefined) {
     return {
       outcome: "invalid",
-      message: read.message ?? `cannot read ${resultPath}`,
+      message: read.message ?? `cannot read ${reportPath}`,
     };
   }
   return {
     outcome: "invalid",
-    message: `the review report at ${resultPath} is not the expected JSON`,
+    message: `the review report at ${reportPath} is not the expected JSON`,
   };
 }
 
@@ -1258,11 +1373,12 @@ function nextReviewAction(
       }
       return { role: last.role, reason: "retry" };
     }
-    case "invalid": {
+    case "invalid":
+    case "no_report": {
       const before = runs[runs.length - 2];
       if (
         before !== undefined &&
-        before.outcome === "invalid" &&
+        (before.outcome === "invalid" || before.outcome === "no_report") &&
         before.role === last.role
       ) {
         return "failed";
@@ -1286,6 +1402,8 @@ function runPhrase(run: ReviewRunRecord): string {
       return `${who} timed out`;
     case "invalid":
       return `${who} wrote an invalid report`;
+    case "no_report":
+      return `${who} could not write the report${run.message === undefined || run.message === null || run.message.length === 0 ? "" : ` (last message: ${run.message})`}`;
     case "failed":
       return `${who} failed${run.message === undefined || run.message === null ? "" : ` (${run.message})`}`;
   }
@@ -1320,6 +1438,8 @@ export const reviewTestHooks: {
     | ((run: { readonly role: ReviewRunRole; readonly reason: ReviewRunReason }) => void)
     | undefined;
   afterRunSaved?: ((run: ReviewRunRecord) => void) | undefined;
+  /** Runs after the reviewer wrote a valid report, before the store copy. */
+  beforeCopy?: (() => void) | undefined;
 } = {};
 
 /** Step `dev/review`: have the reviewer read the verified commit's diff. */
@@ -1470,6 +1590,44 @@ export async function runReview(
     context.settings,
     context.taskId,
   );
+  // A crash after the reviewer wrote its report and before the store copy
+  // left the report in the old gate worktree, which is about to be replaced:
+  // copy it first, so the resumed round reads it instead of asking again.
+  const pendingReport = attempt.reviewPending;
+  if (
+    pendingReport !== undefined &&
+    pendingReport !== null &&
+    pendingReport.round === round &&
+    typeof pendingReport.report === "string" &&
+    pendingReport.report.startsWith(path)
+  ) {
+    const old = readValidReportText(pendingReport.report);
+    if (old !== undefined) {
+      const savedDir = join(ctx.store.root, "dev", "reviews", ctx.runId);
+      mkdirSync(savedDir, { recursive: true });
+      const failure = copyToStore(
+        join(
+          savedDir,
+          `${context.taskId}-attempt-${attempt.number}-review-${round}.json`,
+        ),
+        old.text,
+      );
+      if (failure !== undefined) {
+        return finish(
+          {
+            result: "failed",
+            run: ctx.runId,
+            sha,
+            round,
+            reason: "review_failed",
+            message: failure,
+          },
+          "failed",
+          { reason: "review_failed", message: failure },
+        );
+      }
+    }
+  }
   const preparedWorktree = recreateGateWorktree(
     context.repository.path,
     path,
@@ -1567,17 +1725,10 @@ export async function runReview(
     reviewDir,
     `${context.taskId}-attempt-${attempt.number}-review-${round}.json`,
   );
-  const prompt = reviewPrompt(task, sha, base, prepared, resultPath, grading);
-  // Keep the prompt for a person to read without putting its bytes in a fact.
   const promptPath = join(
     reviewDir,
     `${context.taskId}-attempt-${attempt.number}-review-${round}.prompt.md`,
   );
-  try {
-    writeFileSync(promptPath, prompt);
-  } catch {
-    // A prompt file is a convenience; the reviewer still gets the text.
-  }
 
   const settings = context.settings.reviewer;
   // The retry is the same review round, so it keeps the round's arguments:
@@ -1651,6 +1802,23 @@ export async function runReview(
       resume?.args ??
       (action.role === "fallback" ? settings.fallback?.args ?? [] : roundArgs);
     const model = resume?.model ?? modelOf(use, args);
+    // One path per call: the calls before it in this round are the try number,
+    // so a stale report of an earlier call is never read and never removed.
+    const reportPath = workspaceReportPath(
+      path,
+      ctx.runId,
+      attempt.number,
+      round,
+      runs.length,
+    );
+    const prompt = reviewPrompt(
+      task,
+      sha,
+      base,
+      prepared,
+      reportPath,
+      grading,
+    );
     let call =
       resume === undefined ? undefined : readReviewOutcome(resultPath);
     if (
@@ -1663,6 +1831,12 @@ export async function runReview(
     }
     if (call === undefined) {
       ranHere += 1;
+      // Keep the prompt for a person to read without putting its bytes in a fact.
+      try {
+        writeFileSync(promptPath, prompt);
+      } catch {
+        // A prompt file is a convenience; the reviewer still gets the text.
+      }
       // Record the run before the model is asked: a crash after it answers
       // finds the run and its outcome on disk instead of repeating the call.
       current = {
@@ -1677,6 +1851,7 @@ export async function runReview(
           model,
           reason: action.reason,
           run: ctx.runId,
+          report: reportPath,
         },
       };
       const pendingWritten = await saveTaskGuarded(
@@ -1697,6 +1872,7 @@ export async function runReview(
         context,
         path,
         prompt,
+        reportPath,
         resultPath,
         { use, args },
         resume !== undefined,

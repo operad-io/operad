@@ -145,6 +145,7 @@ export type ReviewResult =
 export type ReviewRunOutcome =
   | "report"
   | "invalid"
+  | "no_report"
   | "unavailable"
   | "timed_out"
   | "failed";
@@ -197,6 +198,8 @@ export interface PendingReviewRun {
   readonly model: string;
   readonly reason: ReviewRunReason;
   readonly run?: string | null;
+  /** The report path inside the gate worktree this call was given. */
+  readonly report?: string | null;
 }
 
 /** One review of a task's verified commit: one decision for the round. */

@@ -198,3 +198,14 @@ the row fields.
 | T-0066-M1 | packages/dev/src/steps.ts | the clean-merge history line lost "main" and "checking again" | `dev/reverify > a branch behind a non-conflicting main merges it and goes to verify, no work` |
 | T-0066-M2 | packages/dev/src/steps.ts | the reverify step opened a new attempt number | `dev/reverify > a branch behind a non-conflicting main merges it and goes to verify, no work` |
 | T-0066-M3 | packages/dev/flows/dev.flow.ts | the wait's reverify edge went straight to verify again | `the dev flow > loads with the gate and the rework edges` |
+
+## T-0067 — review report in the workspace, no deletion
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0067-M1 | packages/dev/src/gate.ts | a link in place of `.operad` or `.operad/review` was accepted as a plain directory | `dev/review report in the workspace > a symlinked operad is not followed and the review fails with the reason`, `... a symlinked review ...` |
+| T-0067-M2 | packages/dev/src/gate.ts | every call got try number 0, so a retry reused the first path | `dev/review report in the workspace > a retry after an invalid report uses a new path and never reads the old file` |
+| T-0067-M3 | packages/dev/src/gate.ts | a finished call with no file was labelled an invalid report | `dev/review report in the workspace > a missing report and an invalid report have different labels` |
+| T-0067-M4 | packages/dev/src/gate.ts | the report was not copied from the old worktree before it was replaced | `dev/review crash before the store copy > a crash after the report was written and before its copy resumes by copying it` |
+| T-0067-M5 | packages/dev/src/gate.ts | a failed store write was swallowed and the report counted | `dev/review report in the workspace > a failed store write fails the step and leaves the workspace report` |
+| T-0067-M6 | packages/dev/src/gate.ts | the store path was not read when the workspace had no file | `dev/review report in the workspace > a report at the store path from an older prompt is read when the workspace has none` |
