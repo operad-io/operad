@@ -185,6 +185,8 @@ export interface TuiList {
   readonly error?: string | undefined;
   /** Grows with each replace; an appended page for an older one is dropped. */
   readonly version: number;
+  /** The filter changed and the rows of the new one have not arrived yet. */
+  readonly switching?: boolean | undefined;
 }
 
 /** One tab: Pending, Running or one object type. */
@@ -195,6 +197,28 @@ export interface TuiTab {
   readonly type?: string | undefined;
   readonly title: string;
   readonly list: TuiList;
+  /** The filters the type declares, in the server's order; unset without any. */
+  readonly filters?: readonly TuiFilterInfo[] | undefined;
+  /** The filter the list shows now; per tab, never saved. */
+  readonly filter?: string | undefined;
+  /** How many rows of the type the filter left out; unset on `all`. */
+  readonly hidden?: number | undefined;
+  /** How many times `f` cycled this tab's filter. */
+  readonly filterSeq?: number | undefined;
+}
+
+/** One filter of a type: its name and the states it shows (`all` has none). */
+export interface TuiFilterInfo {
+  readonly name: string;
+  readonly states?: readonly string[] | undefined;
+}
+
+/** The first page of a tab's list under a new filter, to be fetched. */
+export interface TuiFilterRequest {
+  readonly tabId: string;
+  readonly filter: string;
+  /** The tab's filter-cycle count when `f` was pressed; a later answer wins. */
+  readonly seq: number;
 }
 
 /** Everything the view needs; nothing here is derived from a terminal handle. */
@@ -209,6 +233,8 @@ export interface TuiState {
   readonly quit: boolean;
   /** `r` asked for a fresh set of lists; the caller clears it after fetching. */
   readonly refreshRequested: boolean;
+  /** Set when `f` chose a filter and its first page must be fetched. */
+  readonly filterRequest?: TuiFilterRequest | undefined;
   /** Set when the cursor nears the end of a list that has another page. */
   readonly pageRequest?: TuiPageRequest | undefined;
   /** The open object, if any. */
@@ -278,14 +304,26 @@ function makeTab(
   kind: TuiTabKind,
   title: string,
   type?: string,
+  info?: TuiTypeInfo,
 ): TuiTab {
+  const filters = filtersOf(info);
+  const filter =
+    filters === undefined
+      ? undefined
+      : (filters.find((f) => f.name === info?.defaultFilter) ?? filters[0])?.name;
   return {
     id,
     kind,
     ...(type === undefined ? {} : { type }),
     title,
     list: makeList(),
+    ...(filters === undefined ? {} : { filters, filter }),
   };
+}
+
+function filtersOf(info: TuiTypeInfo | undefined): readonly TuiFilterInfo[] | undefined {
+  const filters = info?.filters;
+  return filters === undefined || filters.length === 0 ? undefined : filters;
 }
 
 /** The two fixed tabs; `/v1/types` adds the rest. */
@@ -323,6 +361,7 @@ export type TuiStateEvent =
       readonly types: readonly TuiTypeInfo[];
       readonly generation?: number | undefined;
     }
+  | { readonly type: "filter-launched" }
   | {
       readonly type: "pending";
       readonly items: readonly PendingItem[];
@@ -339,6 +378,10 @@ export type TuiStateEvent =
       readonly page: ViewListPage;
       /** Replace the list instead of appending one page. */
       readonly replace?: boolean | undefined;
+      /** The filter the page was asked under; a page for another one is dropped. */
+      readonly filter?: string | undefined;
+      /** The filter-cycle count it was asked under; an older one is dropped. */
+      readonly filterSeq?: number | undefined;
       /** For a replace: the refresh it belongs to. */
       readonly generation?: number | undefined;
       /** For an append: the list version it was asked for. */
@@ -1165,9 +1208,10 @@ function handleKey(
     if (isKey(key, "end")) return jumpSection(state, "bottom");
     if (isKey(key, "f")) {
       const section = activeSection(state);
-      return section !== undefined && section.capped && !section.full
-        ? requestSection(state, object.active, { full: true })
-        : state;
+      if (section !== undefined && section.capped && !section.full) {
+        return requestSection(state, object.active, { full: true });
+      }
+      return filterKeyApplies(state) ? cycleFilter(state) : state;
     }
     if (!twoPane(state)) {
       if (isKey(key, "up", "arrowup", "k")) return scrollSection(state, -1);
@@ -1176,6 +1220,7 @@ function handleKey(
       if (isKey(key, "g")) return jumpSection(state, "top");
     }
   }
+  if (isKey(key, "f")) return cycleFilter(state);
   // A rotated token is not retried: the person runs the TUI again.
   if (isKey(key, "r") && state.connection === "unauthorized") return state;
   if (isKey(key, "r")) {
@@ -1196,6 +1241,56 @@ function handleKey(
   return runKey(state, label) ?? state;
 }
 
+/** The filters are shown and `f` cycles them: the list is on screen. */
+function filterKeyApplies(state: TuiState): boolean {
+  const tab = activeTabOf(state);
+  if (tab?.filters === undefined) return false;
+  return state.object === undefined || twoPane(state);
+}
+
+/** `f`: the next filter of the type tab, its first page fetched again. */
+function cycleFilter(state: TuiState): TuiState {
+  const tab = activeTabOf(state);
+  const filters = tab?.filters;
+  if (tab === undefined || filters === undefined || filters.length === 0) return state;
+  const at = filters.findIndex((f) => f.name === tab.filter);
+  const next = filters[(at + 1) % filters.length]?.name;
+  if (next === undefined || next === tab.filter) return state;
+  const changed = withTab(state, tab.id, (current) => ({
+    ...current,
+    filter: next,
+    filterSeq: (current.filterSeq ?? 0) + 1,
+    hidden: undefined,
+    // The rows stay until the new ones arrive; a page of the old filter is
+    // dropped by its version, and its paging cursor is no longer valid.
+    list: {
+      ...current.list,
+      next: undefined,
+      loading: false,
+      switching: true,
+      version: current.list.version + 1,
+    },
+  }));
+  const quiet =
+    changed.pageRequest?.tabId === tab.id ? { ...changed, pageRequest: undefined } : changed;
+  return {
+    ...quiet,
+    filterRequest: { tabId: tab.id, filter: next, seq: (tab.filterSeq ?? 0) + 1 },
+  };
+}
+
+/** What the header adds after the current type tab: the filter and what it hides. */
+export function filterHeader(
+  tab: TuiTab | undefined,
+): { readonly filter: string; readonly hidden: string } | undefined {
+  if (tab?.kind !== "type" || tab.filters === undefined || tab.filter === undefined) {
+    return undefined;
+  }
+  const hidden =
+    tab.filter !== "all" && (tab.hidden ?? 0) > 0 ? ` · ${tab.hidden} hidden` : "";
+  return { filter: ` · ${tab.filter}`, hidden };
+}
+
 function typeTitle(type: TuiTypeInfo): string {
   return type.title.length === 0 ? type.type : type.title;
 }
@@ -1209,9 +1304,19 @@ function applyTypes(state: TuiState, types: readonly TuiTypeInfo[]): TuiState {
     if (seen.has(info.type)) continue;
     seen.add(info.type);
     const id = `type:${info.type}`;
-    typeTabs.push(
-      existing.get(id) ?? makeTab(id, "type", typeTitle(info), info.type),
-    );
+    const old = existing.get(id);
+    if (old === undefined) {
+      typeTabs.push(makeTab(id, "type", typeTitle(info), info.type, info));
+      continue;
+    }
+    // A known tab keeps its chosen filter while the type still declares it.
+    const fresh = makeTab(id, "type", old.title, info.type, info);
+    const kept = fresh.filters?.some((f) => f.name === old.filter) === true;
+    typeTabs.push({
+      ...old,
+      filters: fresh.filters,
+      filter: kept ? old.filter : fresh.filter,
+    });
   }
   const tabs = [...fixed, ...typeTabs];
   const activeId = state.tabs[state.active]?.id;
@@ -1230,6 +1335,9 @@ function cursorAfterReplace(old: TuiList, rows: readonly TuiRow[]): number {
     const found = rows.findIndex((row) => row.id === selected);
     if (found >= 0) return found;
   }
+  // A new filter that hides the selection starts at the top; a live refresh
+  // keeps the place, which is the next row.
+  if (old.switching === true) return 0;
   return clampCursor({ ...old, rows });
 }
 
@@ -1243,8 +1351,29 @@ export function sameObject(a: string, b: string): boolean {
 /** Puts a fresh row in place of the rows of the same object; the cursor stays. */
 function replaceRow(state: TuiState, row: TuiRow): TuiState {
   let changed = false;
-  const tabs = state.tabs.map((tab) => {
+  let selectedLeft = false;
+  const tabs = state.tabs.map((tab, index) => {
     if (tab.kind !== "type") return tab;
+    const states = tab.filters?.find((f) => f.name === tab.filter)?.states;
+    const at = tab.list.rows.findIndex((old) => sameObject(old.id, row.id));
+    if (
+      at >= 0 &&
+      states !== undefined &&
+      row.state !== "error" &&
+      !states.includes(row.state)
+    ) {
+      // The object no longer matches the filter: it leaves the list, and the
+      // cursor keeps its place, which is now the next row.
+      changed = true;
+      if (index === state.active && at === tab.list.cursor) selectedLeft = true;
+      const rows = tab.list.rows.filter((_, i) => i !== at);
+      const cursor = Math.min(tab.list.cursor, Math.max(0, rows.length - 1));
+      return {
+        ...tab,
+        hidden: (tab.hidden ?? 0) + 1,
+        list: { ...tab.list, rows, cursor },
+      };
+    }
     const rows = tab.list.rows.map((old) => {
       if (!sameObject(old.id, row.id)) return old;
       changed = true;
@@ -1254,7 +1383,11 @@ function replaceRow(state: TuiState, row: TuiRow): TuiState {
       ? { ...tab, list: { ...tab.list, rows } }
       : tab;
   });
-  return changed ? { ...state, tabs } : state;
+  if (!changed) return state;
+  const next = { ...state, tabs };
+  return selectedLeft
+    ? { ...next, moveSeq: next.moveSeq + 1, followPending: true }
+    : next;
 }
 
 /** Drops the row of an object that is gone from the server. */
@@ -1289,6 +1422,7 @@ function replaceRows(
       // The page that was in flight for the old rows is dropped when it lands.
       loading: false,
       error: undefined,
+      switching: undefined,
       version: tab.list.version + 1,
     },
   };
@@ -1317,14 +1451,24 @@ function appendPage(
   next: string | undefined,
   replace: boolean,
   version: number | undefined,
+  filter?: string | undefined,
+  hidden?: number | undefined,
+  filterSeq?: number | undefined,
 ): TuiState {
   const tab = state.tabs.find((candidate) => candidate.id === tabId);
   if (tab === undefined) return state;
+  if (filterSeq !== undefined && filterSeq !== (tab.filterSeq ?? 0)) return state;
   if (!replace && version !== undefined && version !== tab.list.version) {
     return state;
   }
+  // An answer to a filter that is no longer the chosen one is never shown.
+  if (filter !== undefined && tab.filter !== undefined && filter !== tab.filter) {
+    return state;
+  }
+  const wasSwitching = replace && tab.list.switching === true;
+  const selected = tab.list.rows[tab.list.cursor]?.id;
   const updated = withTab(state, tabId, (current) => {
-    if (replace) return replaceRows(current, rows, next);
+    if (replace) return { ...replaceRows(current, rows, next), hidden };
     const list: TuiList = {
       ...current.list,
       rows: [...current.list.rows, ...rows],
@@ -1333,9 +1477,22 @@ function appendPage(
       next,
       error: undefined,
     };
-    return { ...current, list: { ...list, cursor: clampCursor(list) } };
+    return {
+      ...current,
+      ...(hidden === undefined ? {} : { hidden }),
+      list: { ...list, cursor: clampCursor(list) },
+    };
   });
-  return clearRequest(state, updated, tabId);
+  const cleared = clearRequest(state, updated, tabId);
+  if (!wasSwitching) return cleared;
+  // The new filter moved the selection: the object pane follows it.
+  const after = cleared.tabs.find((candidate) => candidate.id === tabId);
+  if (after === undefined || after.list.rows[after.list.cursor]?.id === selected) {
+    return cleared;
+  }
+  if (cleared.tabs[cleared.active]?.id !== tabId) return cleared;
+  if (after.list.rows.length === 0) return closeObject(cleared);
+  return { ...cleared, moveSeq: cleared.moveSeq + 1, followPending: true };
 }
 
 function applyPageError(
@@ -1387,7 +1544,14 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
         event.page.next,
         event.replace === true,
         event.version,
+        event.filter,
+        event.page.hidden,
+        event.filterSeq,
       );
+    case "filter-launched":
+      return state.filterRequest === undefined
+        ? state
+        : { ...state, filterRequest: undefined };
     case "rows":
       return appendPage(
         state,
@@ -1530,12 +1694,13 @@ export function headerText(state: TuiState): string {
 /** The footer for the current screen. */
 export function footerText(state: TuiState): string {
   let common: string;
+  const filtering = filterKeyApplies(state);
   if (state.object === undefined) {
-    common =
-      "j/k move  enter open  1-9 tab  g/G ends  r refresh  ? keys  q quit";
+    common = `j/k move  enter open  1-9 tab  g/G ends  ${filtering ? "f filter  " : ""}r refresh  ? keys  q quit`;
   } else if (twoPane(state)) {
-    common =
-      "j/k row  space/b scroll  [ ] section  f full  esc close  ? keys  q quit";
+    const section = activeSection(state);
+    const capped = section !== undefined && section.capped && !section.full;
+    common = `j/k row  space/b scroll  [ ] section  ${filtering && !capped ? "f filter" : "f full"}  esc close  ? keys  q quit`;
   } else {
     common =
       "j/k scroll  space/b page  g/G ends  [ ] section  f full  esc back  ? keys  q quit";
@@ -1558,7 +1723,7 @@ export const KEY_LIST: readonly (readonly [string, string])[] = [
   ["PgUp PgDn / b space", "scroll the open section a page"],
   ["Home / End", "top of the open section, or its end (follows a live one)"],
   ["[ ] / ← →", "the previous or next section"],
-  ["f", "load the whole open section when it is capped"],
+  ["f", "load the whole open section when it is capped; otherwise, on a tab with filters, the next filter"],
   ["r", "fetch the lists again"],
   ["escape", "close the key list, or the open object"],
   ["?", "show or hide this key list"],

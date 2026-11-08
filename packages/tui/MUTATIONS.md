@@ -137,3 +137,22 @@ the row fields.
 | T-0070-M3 | packages/tui/src/theme.ts | the terminal theme's accent was an RGB hex, not an ANSI index | `the theme tokens > the terminal theme draws ANSI indexes, not RGB` |
 | T-0070-M4 | packages/tui/src/app.ts | `runTui` skipped the config check and took the flag unchecked | `choosing the theme > the app does not start on an unknown theme or a broken file` |
 | T-0070-M5 | packages/tui/src/view/index.ts | the selected row lost its tint background | `the theme tokens > the selected row has the tint as its background` |
+## T-0049 — the filter key
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0049-M1 | packages/tui/src/state.ts | a page asked under another filter was shown | `filters: state > a page of an older filter is dropped, whatever order the answers come in` |
+| T-0049-M2 | packages/tui/src/state.ts | a selection the new filter hides stayed at the old index, not the first row | `filters: state > a selection the new filter hides moves to the first row and the pane follows` |
+| T-0049-M3 | packages/tui/src/state.ts | a live row that left the filter stayed in the list | `filters: state > a live event that takes the selected object out of the filter moves to the next row` |
+| T-0049-M4 | packages/tui/src/state.ts | the footer offered `f filter` on every tab | `filters: view > the footer offers f filter only on a tab that has filters` |
+| T-0049-M5 | packages/tui/src/state.ts | the header counted hidden rows under `all` | `filters: view > no hidden count when nothing is hidden or the filter is all` |
+| T-0049-M6 | packages/tui/src/state.ts | cycling did not bump the list version, so a page of the old rows appended | `filters: state > a page for the old list version is dropped after a cycle` |
+| T-0049-M7 | packages/tui/src/view/index.ts | the header was not cut to the terminal width | `filters: view > a 99-column terminal shows the same header, cut with … when it does not fit` |
+| T-0049-M8 | packages/tui/src/app.ts | a refresh fetched the type without the chosen filter | `filters: shell > the first fetch uses the default filter, and a refresh the chosen one` |
+| T-0049-M9 | packages/tui/src/state.ts | `f` did nothing | `filters: state > f with an object open cycles the filter in two panes and does nothing on a narrow screen` |
+| T-0049-M10 | packages/tui/src/state.ts | an empty list under the new filter left the old object open | `filters: state > an empty list under the new filter closes the object pane` |
+| T-0049-M11 | packages/tui/src/state.ts | the selected row leaving the filter did not make the pane follow | `filters: state > a live event that takes the selected object out of the filter moves to the next row` |
+| T-0049-M12 | packages/tui/src/state.ts | a page was accepted without comparing its filter-cycle count | `filters: state > an old answer for a filter cycled back to is dropped` |
+| T-0049-M13 | packages/tui/src/view/index.ts | the empty text for the `all` filter fell back to `no <type> yet` | `filters: view > an empty all filter reads no all tasks` |
+| T-0049-M14 | packages/tui/src/app.ts | a refresh page carried no filter-cycle count | `filters: shell > a refresh answer for a filter cycled back to is dropped` |
+| T-0049-M15 | packages/tui/src/app.ts | an event-triggered list page carried no filter-cycle count | `filters: shell > an event-triggered list answer for a filter cycled back to is dropped` |
