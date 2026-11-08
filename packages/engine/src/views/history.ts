@@ -431,6 +431,11 @@ export function runHistoryLines(
       case "effect_requested":
         break;
       case "step_entered": {
+        // An end step is not work; the run's own closing line says it.
+        if (payload.kind === "end") {
+          reason = "";
+          break;
+        }
         const step = text(payload.step) ?? "a step";
         const attempt: Attempt = {
           time: fact.time,

@@ -306,3 +306,4 @@ the row fields.
 | T-0074-M3 | packages/engine/src/views/history.ts | the date line was never written | `readable run history > a new day gets a date line` |
 | T-0074-M4 | packages/engine/src/views/history.ts | `oneLine` cut details even with `full` | `readable run history > details are cut to one line, and --full keeps them` |
 | T-0074-M5 | packages/engine/src/views/presentation.ts | the run id was printed in the heading as well as at the end | `shows a row, the section directory, the kernel history and actions` |
+| T-0074-M6 | packages/engine/src/views/history.ts | an entered end step opened an attempt line (the end-step skip removed) | `readable run history > a run that ends on an end step has no line for that step` |

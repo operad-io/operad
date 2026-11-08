@@ -209,4 +209,18 @@ describe("readable run history", () => {
   test("no internal words", () => {
     for (const line of runHistoryLines(facts, { now, full: false })) assertUserWords(line);
   });
+
+  test("a run that ends on an end step has no line for that step", () => {
+    const lines = runHistoryLines(
+      [
+        timed("step_entered", { step: "work", visit: 1, kind: "plugin" }, at(8, 9, 0, 0)),
+        timed("step_result", { step: "work", result: "done", data: {} }, at(8, 9, 0, 5)),
+        timed("edge_taken", { step: "work", result: "done", target: "end_done" }, at(8, 9, 0, 5)),
+        timed("step_entered", { step: "end_done", visit: 1, kind: "end" }, at(8, 9, 0, 5)),
+        timed("run_ended", { status: "done", reason: null }, at(8, 9, 0, 5)),
+      ],
+      { now: at(8, 9, 1, 0), full: false },
+    );
+    expect(lines).toEqual(["**2026-11-08**", "09:00:00  work  done  5s", "09:00:05  run done"]);
+  });
 });
