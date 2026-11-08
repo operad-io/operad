@@ -5,7 +5,8 @@
  * it is given.
  */
 
-import { RGBA, type TextChunk } from "@opentui/core";
+import type { TextChunk } from "@opentui/core";
+import { toRgba, type TuiPalette } from "./theme.ts";
 import {
   layoutMarkdown,
   type LayoutLine,
@@ -13,15 +14,7 @@ import {
 } from "./layout.ts";
 
 /** The colours Markdown needs; the view's palette has them. */
-export interface MarkdownPalette {
-  readonly accent: string;
-  readonly run: string;
-  readonly error: string;
-  readonly add: string;
-  readonly remove: string;
-  readonly weak: string;
-  readonly text: string;
-}
+export type MarkdownPalette = Pick<TuiPalette, "accent" | "run" | "error" | "add" | "remove" | "weak" | "text" | "code">;
 
 /** One drawn line: its chunks, its plain text and whether it is fenced code. */
 export interface TuiMarkdownLine {
@@ -58,7 +51,8 @@ export function chunksOfLine(
     return {
       __isChunk: true,
       text: run.text,
-      ...(colour === undefined ? {} : { fg: RGBA.fromHex(colour) }),
+      ...(colour === undefined ? {} : { fg: toRgba(colour) }),
+      ...(line.code ? { bg: toRgba(palette.code) } : {}),
       ...(run.style.attributes === 0 ? {} : { attributes: run.style.attributes }),
     };
   });

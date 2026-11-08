@@ -127,3 +127,13 @@ the row fields.
 |---|---|---|---|
 | T-0068-M1 | packages/tui/src/state.ts | the running row showed the run id instead of the object | `the TUI reducer` state test (running row with an object) |
 | T-0068-M9 | packages/tui/src/state.ts | a running row with an object showed only its title, not the object id | `an object-backed running row shows the object and its title` |
+
+## T-0070 — theme tokens
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0070-M1 | packages/tui/src/theme.ts | tui.json beat the `--theme` flag | `choosing the theme > tui.json names the theme and --theme beats it` |
+| T-0070-M2 | packages/tui/src/theme.ts | `auto` always used the dark palette | `the theme tokens > auto follows the terminal's theme mode, also when it switches` |
+| T-0070-M3 | packages/tui/src/theme.ts | the terminal theme's accent was an RGB hex, not an ANSI index | `the theme tokens > the terminal theme draws ANSI indexes, not RGB` |
+| T-0070-M4 | packages/tui/src/app.ts | `runTui` skipped the config check and took the flag unchecked | `choosing the theme > the app does not start on an unknown theme or a broken file` |
+| T-0070-M5 | packages/tui/src/view/index.ts | the selected row lost its tint background | `the theme tokens > the selected row has the tint as its background` |

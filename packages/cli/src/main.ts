@@ -120,6 +120,8 @@ export interface TuiCommand {
   readonly token?: string | undefined;
   /** `--no-start`: never start `operad serve`. */
   readonly noStart?: boolean | undefined;
+  /** `--theme`: the colour theme for this session. */
+  readonly theme?: string | undefined;
   /** The entry file a started `operad serve` runs: this process's own. */
   readonly serveEntry?: string | undefined;
   /** Prints a line before the full screen opens. */
@@ -173,7 +175,7 @@ const HELP = [
   "  http token rotate    replace the token the operad app uses",
   "  pair [--url <url>] [--show-token]",
   "                       show the address and token as a QR code for the operad app",
-  "  tui [--url <url>] [--token <token>] [--no-start]",
+  "  tui [--url <url>] [--token <token>] [--no-start] [--theme <name>]",
   "                       open the terminal client; starts serve when none answers",
   "  mcp [--claude-channel] [--types t,...]",
   "                       run the MCP server on stdio; --claude-channel",
@@ -1888,7 +1890,7 @@ async function commandPair(
   return 0;
 }
 
-/** `operad tui [--url <url>] [--token <token>] [--no-start]`. */
+/** `operad tui [--url <url>] [--token <token>] [--no-start] [--theme <name>]`. */
 async function commandTui(
   home: string,
   io: CliIo,
@@ -1899,20 +1901,24 @@ async function commandTui(
   let url: string | undefined;
   let token: string | undefined;
   let noStart = false;
+  let theme: string | undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index] ?? "";
     if (arg === "--no-start") {
       noStart = true;
-    } else if (arg === "--url" || arg === "--token") {
+    } else if (arg === "--url" || arg === "--token" || arg === "--theme") {
       const value = argv[index + 1];
       if (value === undefined) throw new UsageError(`${arg} needs a value`);
       if (arg === "--url") url = value;
+      else if (arg === "--theme") theme = value;
       else token = value;
       index += 1;
     } else if (arg.startsWith("--url=")) {
       url = arg.slice("--url=".length);
     } else if (arg.startsWith("--token=")) {
       token = arg.slice("--token=".length);
+    } else if (arg.startsWith("--theme=")) {
+      theme = arg.slice("--theme=".length);
     } else {
       throw new UsageError(`tui: unknown argument "${arg}"`);
     }
@@ -1931,6 +1937,7 @@ async function commandTui(
     ...(url === undefined ? {} : { url }),
     ...(token === undefined ? {} : { token }),
     ...(noStart ? { noStart } : {}),
+    ...(theme === undefined ? {} : { theme }),
     serveEntry: CLI_ENTRY,
     write: (line) => io.write(`${line}\n`),
     onError: (message) => {
