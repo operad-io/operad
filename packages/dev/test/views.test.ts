@@ -446,6 +446,40 @@ describe("dev views", () => {
     );
   });
 
+  test("a review that waits for its reviewer is the running step, and the total sums every attempt's cost", async () => {
+    const root = await tempRoot();
+    const repositoryPath = await makeGitRepository(root);
+    let clock = 0;
+    const store = new FilePluginStore({ root: join(root, "store"), clock: () => clock });
+    const repository = await addRepository(store, { path: repositoryPath });
+    const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
+    const stored = taskData((await getTask(store, task.id)).data);
+    const put = async (at: number, cause: string, attempt: Record<string, unknown>, phase = "running") => {
+      clock = at;
+      await store.put("task", task.id, { ...stored, phase, attempt }, cause);
+    };
+    const start = 1_000_000;
+    // Attempt 1 failed verify and cost $0.50; attempt 2 costs $0.75 and waits for its reviewer.
+    await put(start - 1_000, "test:start", { number: 1 });
+    await put(start, "dev:worktree", { number: 1, cost: 0.5 });
+    await put(start + 60_000, "dev:verify", { number: 1, cost: 0.5, verify: { result: "fail" } }, "waiting");
+    await put(start + 61_000, "dev:worktree", { number: 2, cost: 0.75 });
+    await put(start + 62_000, "dev:work", { number: 2, cost: 0.75, workMs: 1_000 });
+    await put(start + 63_000, "dev:verify", { number: 2, cost: 0.75, verify: { result: "pass" } });
+    await put(start + 93_000, "dev:review", {
+      number: 2, cost: 0.75, reviewPending: { round: 1 },
+    }, "review");
+    const now = start + 93_000 + 5_000;
+    const rows = (await metrics({ store } as never, await getTask(store, task.id), now)).split("\n");
+    expect(rows[2]).toBe("| 1 | 1m | $0.50 | verify failed |");
+    expect(rows[3]).toContain("| running review |");
+    expect(rows[4]).toBe("| total | 2m | $1.25 | |");
+    const line = rows.find((row) => row.startsWith("**#2**"));
+    expect(line).toBe("**#2** worktree 1s · work 1s · verify 1s · review 35s (running)");
+    expect(line).not.toContain("integrate");
+  });
+
   test("how an attempt ended: merged, verify failed, conflict, cancelled", async () => {
     const { store, task } = await setup();
     const stored = taskData((await getTask(store, task.id)).data);

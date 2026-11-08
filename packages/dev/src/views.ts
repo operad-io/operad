@@ -649,7 +649,7 @@ function attemptResult(
   const last = entry.last;
   if (latest && phase === "cancelled") return "cancelled";
   if (latest && (phase === "running" || phase === "review")) {
-    return `running ${nextStep(entry.lastStep)}`;
+    return `running ${runningStep(entry)}`;
   }
   const integration = last?.integration?.result;
   if (integration === "merged") return "merged";
@@ -664,6 +664,17 @@ function attemptResult(
   if (last?.verify?.result === "fail") return "verify failed";
   if (latest && phase === "merged") return "merged";
   return latest && phase === "waiting" ? "waiting" : "–";
+}
+
+/**
+ * The step a running attempt is in. A review writes its record before the
+ * reviewer answers, so a review with a pending run is still the running step;
+ * otherwise it is the one after the last recorded step.
+ */
+function runningStep(entry: AttemptMetrics): string {
+  const pending = entry.last?.reviewPending;
+  if (entry.lastStep === "review" && pending !== undefined && pending !== null) return "review";
+  return nextStep(entry.lastStep);
 }
 
 /** The step that follows `step` in an attempt; a repeat of the last one at its end. */
@@ -765,14 +776,16 @@ export async function metrics(
     `| total | ${wallTime(totalMs)} | ${costed ? `$${totalCost.toFixed(2)}${quality}` : "–"} | |`,
   );
   const perAttempt = [...entries].reverse().map((entry) => {
+    const active = running(entry) ? runningStep(entry) : undefined;
     const parts = METRIC_STEPS.flatMap((step) => {
       const spent = entry.spent.get(step);
+      if (step === active) {
+        // The running step's time so far: what it recorded plus the time since.
+        const ms = (spent ?? 0) + Math.max(0, now - entry.endedAt);
+        return [`${step} ${seconds(ms)} (running)`];
+      }
       return spent === undefined ? [] : [`${step} ${seconds(spent)}`];
     });
-    if (running(entry)) {
-      const step = nextStep(entry.lastStep);
-      parts.push(`${step} ${seconds(Math.max(0, now - entry.endedAt))} (running)`);
-    }
     const tokens = entry.last?.tokens;
     if (tokens !== undefined && tokens !== null) {
       parts.push(`${tokenCount(tokens.input)} in / ${tokenCount(tokens.output)} out tokens`);

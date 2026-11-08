@@ -273,3 +273,5 @@ the row fields.
 | T-0075-M2 | packages/dev/src/views.ts | the total row left out the attempts' time | `dev views > the metrics summary has at most four columns, a row per attempt and a total` |
 | T-0075-M3 | packages/dev/src/views.ts | a step that did not run was listed as `<1s` | `dev views > per-attempt lines leave out steps that did not run, and tokens show in k from 10k` |
 | T-0075-M4 | packages/dev/src/views.ts | a conflict attempt showed no result | `dev views > how an attempt ended: merged, verify failed, conflict, cancelled` |
+| T-0075-M5 | packages/dev/src/views.ts | the total row's cost kept only the last attempt's cost | `dev views > a review that waits for its reviewer is the running step, and the total sums every attempt's cost` |
+| T-0075-M6 | packages/dev/src/views.ts | a review with a pending run was reported as running integrate | `dev views > a review that waits for its reviewer is the running step, and the total sums every attempt's cost` |
