@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { chmodSync } from "node:fs";
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, existsSync, rmSync, watch } from "node:fs";
@@ -211,6 +212,14 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
           if (mode === "foreign-file") {
             // A repository file that sits beside dev's report in the folder.
             writeFileSync(join(dirname(input.resultPath), "notes.txt"), "keep");
+            writeFileSync(input.resultPath, valid);
+            return { result: "done", data: {} };
+          }
+          if (mode === "tracked-report") {
+            // A repository file shaped like a dev report, tracked by git.
+            const tracked = join(dirname(input.resultPath), "other-attempt-1-review-1.json");
+            writeFileSync(tracked, "{}");
+            execFileSync("git", ["add", "-f", tracked], { cwd: input.cwd });
             writeFileSync(input.resultPath, valid);
             return { result: "done", data: {} };
           }
@@ -1722,6 +1731,17 @@ describe("dev/review report in the workspace", () => {
     const gate = gateWorktreePath(state.remote.repository, settings, state.taskId);
     const dir = join(gate, ".operad", "review");
     expect(readdirSync(dir)).toEqual(["notes.txt"]);
+  });
+
+  test("a tracked file shaped like a report is never removed", async () => {
+    const state = await fixture({ reviewerArgs: ["tracked-report"] });
+    await verify(state);
+    const result = await review(state, "review-tracked");
+    expect(result.result).toBe("pass");
+    const settings: DevSettings = await readDevSettings(state.remote.repository);
+    const gate = gateWorktreePath(state.remote.repository, settings, state.taskId);
+    const dir = join(gate, ".operad", "review");
+    expect(readdirSync(dir)).toEqual(["other-attempt-1-review-1.json"]);
   });
 
   test("an old prompt that writes to the store path is still read", async () => {

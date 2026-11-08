@@ -20,7 +20,7 @@ import {
   rmdirSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { runCheckWithRerun } from "./rerun.ts";
 import {
   messageOf,
@@ -1009,6 +1009,12 @@ function copyToStore(text: string, storePath: string): boolean {
 const WORKSPACE_REPORT_NAME = /-attempt-\d+-review-\d+\.json$/;
 const WORKSPACE_REPORT_EXCLUDE = "/.operad/review/*-attempt-*-review-*.json";
 
+/** True when git tracks the file: a repository file is never dev's to remove. */
+function isTracked(dir: string, name: string): boolean {
+  const listed = git(dir, ["ls-files", "--error-unmatch", "--", name]);
+  return listed.ok;
+}
+
 /**
  * Removes the reports dev wrote into the workspace so none outlives its round.
  * Only files named like a dev report go; whatever else the repository keeps in
@@ -1018,7 +1024,7 @@ function removeWorkspaceReports(workPath: string): void {
   const dir = dirname(workPath);
   try {
     for (const name of readdirSync(dir)) {
-      if (WORKSPACE_REPORT_NAME.test(name)) {
+      if (WORKSPACE_REPORT_NAME.test(name) && !isTracked(dir, name)) {
         rmSync(join(dir, name), { force: true });
       }
     }
@@ -1051,6 +1057,9 @@ function salvageWorkspaceReport(workPath: string, storePath: string): boolean {
 function prepareWorkspaceReports(workPath: string): void {
   const dir = dirname(workPath);
   mkdirSync(dir, { recursive: true });
+  if (isTracked(dir, basename(workPath))) {
+    throw new Error(`${workPath} is a file the repository tracks`);
+  }
   const gatePath = dirname(dirname(dir));
   const path = git(gatePath, ["rev-parse", "--git-path", "info/exclude"]);
   if (!path.ok) throw new Error(`not a git work tree: ${path.err}`);
