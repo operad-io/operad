@@ -73,7 +73,9 @@ import {
 import { ChannelTypeError, runMcpServer } from "@operad-io/mcp";
 import {
   codeChecker,
-  reexecServe,
+  RELOAD_EXIT,
+  SUPERVISED_ENV,
+  superviseServe,
   settingsRoots,
   takeCodeSnapshot,
 } from "./code-reload.ts";
@@ -1515,6 +1517,9 @@ async function commandServe(
       `operad: ${error instanceof Error ? error.message : String(error)}\n`,
     );
   }
+  // What did not load at start; later log lines are failures of a running
+  // plugin, not a measure of what the process loaded.
+  const startProblems = [...context.problems];
   const kernel = kernelFor(context, io, rules);
   const notifier = new Notifier({
     home: context.home,
@@ -1548,7 +1553,7 @@ async function commandServe(
       const check = codeChecker({
         home: context.home,
         snapshot: context.code,
-        known: context.problems,
+        known: startProblems,
         onProblem: (message) => io.error(`operad: ${message}\n`),
       });
       watch = new CodeWatch({
@@ -1637,6 +1642,7 @@ async function commandRunInternal(
     // The run still has to finish; a broken rule file is not a run error.
     io.error(`${error instanceof Error ? error.message : String(error)}\n`);
   }
+  const startProblems = [...context.problems];
   const kernel = kernelFor(context, io, rules);
   // A start that died after creating its run left no start files; restore
   // them so this runner starts from the input and event that were recorded.
@@ -1667,7 +1673,7 @@ async function commandRunInternal(
           handover: codeChecker({
             home: context.home,
             snapshot: context.code,
-            known: context.problems,
+            known: startProblems,
             onProblem: (message) => io.error(`operad: ${message}\n`),
             waitPollMs: envNumber("OPERAD_RELOAD_POLL_MS", 5_000),
           }),
@@ -2247,8 +2253,12 @@ export async function main(
       } finally {
         lock.release();
       }
-      // The home lock and the port are free; the same command line starts again.
-      if (reload) reexecServe();
+      // The home lock and the port are free; the same command line starts
+      // again under the process that was started: a supervised serve hands
+      // the restart back with a code, the first one becomes the supervisor.
+      if (reload) {
+        return process.env[SUPERVISED_ENV] === "1" ? RELOAD_EXIT : await superviseServe();
+      }
       return 0;
     }
 

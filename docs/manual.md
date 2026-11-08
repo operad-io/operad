@@ -158,7 +158,8 @@ plugin's package (source, flows, schemas) and the workspace packages that
 package depends on. After the files have been quiet for a second it starts a
 fresh process to check that the new code loads. If it does, `serve` stops the
 way `operad serve stop` does, prints `reloading: <what changed>` and starts again
-from the same command line and environment. A step that is running keeps the
+from the same command line and environment, under the process you started (it stays
+in your terminal, passes Ctrl-C on, and ends with the serve's exit code). A step that is running keeps the
 code it started with and finishes; a run's process looks at the files between
 steps, and when they changed it stops so that a new process takes the next step.
 `operad history` shows one line, `continuing on updated code`, for that.

@@ -57,9 +57,14 @@ export function takeCodeSnapshot(
   return { roots, baseline: fingerprintCode(roots, cache), cache };
 }
 
-/** What a plugin problem line is about: its plugin, else the line itself. */
+/**
+ * A problem line, without the counter the loader adds to every import. Two
+ * lines are the same problem only when they say the same thing: a plugin that
+ * fails in another way (an import that no longer works, after its tick failed)
+ * is a new problem.
+ */
 export function problemKey(line: string): string {
-  return /^plugin "([^"]+)"/.exec(line)?.[1] ?? line;
+  return line.replace(/[?&]operad-plugin-load=\d+/g, "");
 }
 
 /**
@@ -155,15 +160,46 @@ export function codeChecker(
   };
 }
 
-/** Starts the same command line again once this process is gone. */
-export function reexecServe(): void {
-  const child = Bun.spawn({
-    cmd: [process.execPath, ...process.argv.slice(1)],
-    cwd: process.cwd(),
-    env: process.env,
-    stdin: "ignore",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  child.unref();
+/** Set in the environment of a serve that a supervisor started. */
+export const SUPERVISED_ENV = "OPERAD_SERVE_SUPERVISED";
+
+/** The exit code of a serve that stopped only to load new code. */
+export const RELOAD_EXIT = 75;
+
+/**
+ * Starts the same command line again, in place: the process the user (or a
+ * supervisor) started stays, with its terminal and its process group, and runs
+ * the serve as a child with the same arguments and environment. It starts the
+ * child again each time the child stops for new code, passes a stop signal on,
+ * and ends with the child's exit code.
+ */
+export async function superviseServe(): Promise<number> {
+  let stopping: NodeJS.Signals | undefined;
+  let child: Bun.Subprocess | undefined;
+  const pass = (signal: NodeJS.Signals) => (): void => {
+    stopping = signal;
+    child?.kill(signal);
+  };
+  const interrupt = pass("SIGINT");
+  const terminate = pass("SIGTERM");
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", terminate);
+  try {
+    for (;;) {
+      child = Bun.spawn({
+        cmd: [process.execPath, ...process.argv.slice(1)],
+        cwd: process.cwd(),
+        env: { ...process.env, [SUPERVISED_ENV]: "1" },
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+      });
+      if (stopping !== undefined) child.kill(stopping);
+      const code = await child.exited;
+      if (code !== RELOAD_EXIT || stopping !== undefined) return code;
+    }
+  } finally {
+    process.removeListener("SIGINT", interrupt);
+    process.removeListener("SIGTERM", terminate);
+  }
 }

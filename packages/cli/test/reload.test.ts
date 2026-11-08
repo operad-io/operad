@@ -40,6 +40,9 @@ export default definePlugin({
   version: "0.0.1",
   objects: [{ name: "job" }],
   flows: [flow],
+  onTick() {
+    if (existsSync(WORK + "/tick-fails")) throw new Error("tick broke");
+  },
   steps: [
     {
       name: "hold",
@@ -193,6 +196,9 @@ describe("a serve picks up changed code", () => {
       await output.until(/serving /, 2);
       const secondPid = readLockPid(join(s.home, "serve.lock"));
       expect(secondPid).not.toBe(firstPid);
+      // The process that was started is still the one running: the restart
+      // happened under it, so a terminal or supervisor still holds it.
+      expect(serve.exitCode).toBeNull();
 
       // The step that was running when the file changed goes on and ends on v1.
       expect(existsSync(join(s.work, "hold-finished"))).toBe(false);
@@ -203,9 +209,15 @@ describe("a serve picks up changed code", () => {
 
       const history = await operad(s, ["history", runId]);
       expect(history.split("\n").filter((line) => line.includes("continuing on updated code"))).toHaveLength(1);
+
+      // A serve that came from a reload reloads again, under the same process.
+      writeFileSync(s.plugin, pluginSource("v4", s.work));
+      await output.until(/serving /, 3);
+      expect(readLockPid(join(s.home, "serve.lock"))).not.toBe(secondPid);
+      expect(serve.exitCode).toBeNull();
     } finally {
       await stopServe(s);
-      await serve.exited;
+      expect(await serve.exited).toBe(0);
     }
   }, 60_000);
 
@@ -278,6 +290,26 @@ describe("a serve picks up changed code", () => {
       await waitForFile(join(s.work, "stamp"));
       expect(readFileSync(join(s.work, "stamp"), "utf8")).toBe("v2");
       expect(readLockPid(join(s.home, "serve.lock"))).not.toBe(pid);
+    } finally {
+      await stopServe(s);
+      await serve.exited;
+    }
+  }, 60_000);
+
+  test("a failure the running code logged does not make code that does not load pass", async () => {
+    const s = await setup();
+    const serve = spawnOperad(s, ["serve"]);
+    const output = new Output(serve.stdout, serve.stderr);
+    try {
+      await output.until(/serving /);
+      const pid = readLockPid(join(s.home, "serve.lock"));
+      writeFileSync(join(s.work, "tick-fails"), "");
+      await output.until(/plugin "reloadflow": onTick failed/);
+
+      writeFileSync(s.plugin, "export default {{ not typescript\n");
+      await output.until(/does not load; the old code keeps running/);
+      expect(readLockPid(join(s.home, "serve.lock"))).toBe(pid);
+      expect(output.text).not.toContain("reloading:");
     } finally {
       await stopServe(s);
       await serve.exited;
