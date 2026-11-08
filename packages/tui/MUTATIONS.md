@@ -124,3 +124,19 @@ the row fields.
 |---|---|---|---|
 | T-0068-M1 | packages/tui/src/state.ts | the running row showed the run id instead of the object | `the TUI reducer` state test (running row with an object) |
 | T-0068-M9 | packages/tui/src/state.ts | a running row with an object showed only its title, not the object id | `an object-backed running row shows the object and its title` |
+
+## T-0049 — the filter key
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0049-M1 | packages/tui/src/state.ts | a page asked under another filter was shown | `filters: state > a page of an older filter is dropped, whatever order the answers come in` |
+| T-0049-M2 | packages/tui/src/state.ts | a selection the new filter hides stayed at the old index, not the first row | `filters: state > a selection the new filter hides moves to the first row and the pane follows` |
+| T-0049-M3 | packages/tui/src/state.ts | a live row that left the filter stayed in the list | `filters: state > a live event that takes the selected object out of the filter moves to the next row` |
+| T-0049-M4 | packages/tui/src/state.ts | the footer offered `f filter` on every tab | `filters: view > the footer offers f filter only on a tab that has filters` |
+| T-0049-M5 | packages/tui/src/state.ts | the header counted hidden rows under `all` | `filters: view > no hidden count when nothing is hidden or the filter is all` |
+| T-0049-M6 | packages/tui/src/state.ts | cycling did not bump the list version, so a page of the old rows appended | `filters: state > a page for the old list version is dropped after a cycle` |
+| T-0049-M7 | packages/tui/src/view/index.ts | the header was not cut to the terminal width | `filters: view > a 99-column terminal shows the same header, cut with … when it does not fit` |
+| T-0049-M8 | packages/tui/src/app.ts | a refresh fetched the type without the chosen filter | `filters: shell > the first fetch uses the default filter, and a refresh the chosen one` |
+| T-0049-M9 | packages/tui/src/state.ts | `f` did nothing | `filters: state > f with an object open cycles the filter in two panes and does nothing on a narrow screen` |
+| T-0049-M10 | packages/tui/src/state.ts | an empty list under the new filter left the old object open | `filters: state > an empty list under the new filter closes the object pane` |
+| T-0049-M11 | packages/tui/src/state.ts | the selected row leaving the filter did not make the pane follow | `filters: state > a live event that takes the selected object out of the filter moves to the next row` |

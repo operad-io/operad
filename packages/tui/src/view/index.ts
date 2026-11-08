@@ -25,6 +25,7 @@ import {
   LIST_X,
   RIGHT_X,
   bodyHeight,
+  filterHeader,
   footerText,
   noticeText,
   sectionLayout,
@@ -130,6 +131,24 @@ function tabCount(tab: TuiTab): number | undefined {
   return tab.list.rows.length;
 }
 
+/** Cuts a line of chunks to `width` cells; the cut chunk ends in `…`. */
+function truncateChunks(chunks: readonly TextChunk[], width: number): TextChunk[] {
+  const out: TextChunk[] = [];
+  let left = width;
+  for (const part of chunks) {
+    if (left <= 0) break;
+    const cells = displayWidth(part.text);
+    if (cells <= left) {
+      out.push(part);
+      left -= cells;
+      continue;
+    }
+    out.push({ ...part, text: fit(part.text, left) });
+    break;
+  }
+  return out;
+}
+
 function headerContent(state: TuiState, palette: TuiPalette): StyledText {
   const chunks: TextChunk[] = [
     chunk(" "),
@@ -147,8 +166,13 @@ function headerContent(state: TuiState, palette: TuiPalette): StyledText {
         active ? TextAttributes.BOLD : TextAttributes.NONE,
       ),
     );
+    const extra = active ? filterHeader(tab) : undefined;
+    if (extra !== undefined) {
+      chunks.push(chunk(extra.filter, palette.accent));
+      if (extra.hidden !== "") chunks.push(chunk(extra.hidden, palette.weak));
+    }
   });
-  return styled(chunks);
+  return styled(truncateChunks(chunks, state.width));
 }
 
 /** A thin horizontal rule from column 1 to the last column but one. */
@@ -232,7 +256,9 @@ function listContent(
       : tab.kind === "pending"
         ? "nothing waits for you"
         : tab.kind === "type"
-          ? `no ${tab.title.toLowerCase()} yet`
+          ? tab.filters !== undefined && tab.filter !== undefined && tab.filter !== "all"
+            ? `no ${tab.filter} ${tab.title.toLowerCase()}s`
+            : `no ${tab.title.toLowerCase()} yet`
           : `nothing in ${tab.title.toLowerCase()}`;
     return styled([chunk(message, palette.weak)]);
   }

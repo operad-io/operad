@@ -44,6 +44,7 @@ import {
   reduce,
   type TuiActionRequest,
   type TuiObjectRequest,
+  type TuiFilterRequest,
   type TuiPageRequest,
   type TuiSectionRequest,
   type TuiState,
@@ -104,6 +105,7 @@ export interface TuiShellClient {
     type: string,
     cursor?: string,
     signal?: AbortSignal,
+    filter?: string,
   ): Promise<ViewListPage>;
   /** Optional: a server without `/v1/keys` leaves the bindings empty. */
   keys?(signal?: AbortSignal): Promise<readonly TuiKeyBinding[]>;
@@ -262,12 +264,13 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     const tab = state.tabs.find((candidate) => candidate.id === request.tabId);
     if (tab?.type === undefined) return;
     try {
-      const page = await client.objects(tab.type, request.cursor, abort.signal);
+      const page = await client.objects(tab.type, request.cursor, abort.signal, tab.filter);
       dispatch({
         type: "page",
         tabId: request.tabId,
         page,
         version: request.version,
+        filter: tab.filter,
       });
     } catch (error) {
       if (abort.signal.aborted) return;
@@ -382,17 +385,45 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     type: string,
     depth: number,
     signal: AbortSignal,
+    filter?: string,
   ): Promise<ViewListPage> {
     const rows: ViewRow[] = [];
     let cursor: string | undefined;
     let next: string | undefined;
+    let hidden: number | undefined;
     do {
-      const page = await client.objects(type, cursor, signal);
+      const page = await client.objects(type, cursor, signal, filter);
       rows.push(...page.rows);
+      hidden ??= page.hidden;
       next = page.next;
       cursor = next;
     } while (next !== undefined && rows.length < depth);
-    return next === undefined ? { rows } : { rows, next };
+    return {
+      rows,
+      ...(next === undefined ? {} : { next }),
+      ...(hidden === undefined ? {} : { hidden }),
+    };
+  }
+
+  /** The first page of a tab under the filter `f` chose. */
+  async function loadFilter(request: TuiFilterRequest): Promise<void> {
+    const tab = state.tabs.find((candidate) => candidate.id === request.tabId);
+    if (tab?.type === undefined) return;
+    try {
+      const page = await client.objects(tab.type, undefined, abort.signal, request.filter);
+      dispatch({
+        type: "page",
+        tabId: request.tabId,
+        page,
+        replace: true,
+        filter: request.filter,
+      });
+    } catch (error) {
+      if (abort.signal.aborted) return;
+      noteConnection(error);
+      dispatch({ type: "page-error", tabId: request.tabId, message: messageOf(error) });
+      report(error);
+    }
   }
 
   async function refresh(): Promise<void> {
@@ -444,8 +475,9 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       await Promise.all(
         typesResult.value.types.map(async (info) => {
           const tabId = `type:${info.type}`;
+          const filter = state.tabs.find((tab) => tab.id === tabId)?.filter;
           const result = await settle(
-            fetchTypeRows(info.type, depths.get(tabId) ?? 0, signal),
+            fetchTypeRows(info.type, depths.get(tabId) ?? 0, signal, filter),
           );
           if (signal.aborted || finished) return;
           if (result.ok) {
@@ -455,6 +487,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
               page: result.value,
               replace: true,
               generation,
+              filter,
             });
           } else {
             dispatch({
@@ -566,9 +599,12 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     }
     const tab = state.tabs.find((candidate) => candidate.type === result.value.type);
     if (tab?.type === undefined) return;
-    const page = await settle(fetchTypeRows(tab.type, tab.list.rows.length, signal));
+    const filter = tab.filter;
+    const page = await settle(fetchTypeRows(tab.type, tab.list.rows.length, signal, filter));
     if (signal.aborted || finished) return;
-    if (page.ok) dispatch({ type: "page", tabId: tab.id, page: page.value, replace: true });
+    if (page.ok) {
+      dispatch({ type: "page", tabId: tab.id, page: page.value, replace: true, filter });
+    }
     else fail(page.error);
   }
 
@@ -717,6 +753,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     if (sectionRequest !== undefined) {
       state = reduce(state, { type: "section-launched" });
     }
+    const filterRequest = state.filterRequest;
+    if (filterRequest !== undefined) state = reduce(state, { type: "filter-launched" });
     const actionRequest = state.actionRequest;
     if (actionRequest !== undefined) state = reduce(state, { type: "action-launched" });
     const refreshing = state.refreshRequested;
@@ -744,6 +782,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       return;
     }
     if (request !== undefined) void loadPage(request);
+    if (filterRequest !== undefined) void loadFilter(filterRequest);
     if (objectRequest !== undefined) void loadObject(objectRequest);
     if (sectionRequest !== undefined) void loadSection(sectionRequest);
     if (actionRequest !== undefined) void sendAction(actionRequest);
