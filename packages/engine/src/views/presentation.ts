@@ -39,7 +39,11 @@ import type {
   ViewContext,
 } from "../plugin/types.ts";
 import { ROW_BADGE_MAX, ROW_MARKS } from "../plugin/types.ts";
-import { historyEntries, formatHistoryEntry } from "./history.ts";
+import {
+  localMinute,
+  runHistoryLines,
+  type HistoryFact,
+} from "./history.ts";
 import { readState } from "../runner/service.ts";
 
 /** The final section the kernel adds to every object. */
@@ -930,7 +934,11 @@ export class Views {
   ): Promise<ViewSectionContent> {
     const resolved = await this.resolve(id);
     if (sectionId === HISTORY_SECTION) {
-      const markdown = await this.historyMarkdown(resolved.type, resolved.id);
+      const markdown = await this.historyMarkdown(
+        resolved.type,
+        resolved.id,
+        options.full === true,
+      );
       return this.finishSection(
         id,
         sectionId,
@@ -1705,7 +1713,11 @@ export class Views {
     return undefined;
   }
 
-  private async historyMarkdown(type: string, id: string): Promise<string> {
+  private async historyMarkdown(
+    type: string,
+    id: string,
+    full: boolean,
+  ): Promise<string> {
     const actions = this.personActions(type, id);
     const runs =
       this.log === undefined
@@ -1723,14 +1735,17 @@ export class Views {
     }
     for (const run of runs) {
       if (this.log === undefined) break;
-      lines.push(`## ${run.runId} (${run.flow})`);
+      lines.push(`## ${run.flow} run · started ${localMinute(run.startedAt)}`);
       try {
-        for await (const entry of historyEntries(this.log.read(run.runId))) {
-          lines.push(`- ${formatHistoryEntry(entry)}`);
+        const facts: HistoryFact[] = [];
+        for await (const fact of this.log.read(run.runId)) facts.push(fact);
+        for (const line of runHistoryLines(facts, { now: this.clock(), full })) {
+          lines.push(line.startsWith("**") ? line : `- ${line}`);
         }
       } catch (error) {
         lines.push(`- could not read this run: ${messageOf(error)}`);
       }
+      lines.push(`<sub>run ${run.runId}</sub>`);
       lines.push("");
     }
     return `${lines.join("\n").trimEnd()}\n`;
