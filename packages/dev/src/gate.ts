@@ -1591,6 +1591,28 @@ function historyOf(
   };
 }
 
+/** The new-side lines of a diff between two commits, by file. */
+function newSideLines(
+  repositoryPath: string,
+  from: string,
+  to: string,
+  context: number,
+): LineMap {
+  return addedLinesOf(
+    gitZ(repositoryPath, [
+      "-c",
+      "core.quotepath=false",
+      "diff",
+      `-U${context}`,
+      "--no-color",
+      "--no-ext-diff",
+      "-M",
+      from,
+      to,
+    ]).out,
+  );
+}
+
 function reworkPromptOf(
   repositoryPath: string,
   followed: ReviewHistoryEntry,
@@ -1598,19 +1620,7 @@ function reworkPromptOf(
   own: LineMap,
   prepared: PreparedDiff,
 ): ReworkPrompt {
-  const since = addedLinesOf(
-    gitZ(repositoryPath, [
-      "-c",
-      "core.quotepath=false",
-      "diff",
-      "-U0",
-      "--no-color",
-      "--no-ext-diff",
-      "-M",
-      followed.sha,
-      sha,
-    ]).out,
-  );
+  const since = newSideLines(repositoryPath, followed.sha, sha, 3);
   const increment = intersect(since, own);
   return {
     previousSha: followed.sha,
@@ -1862,23 +1872,17 @@ export async function runReview(
     ]).ok
       ? followed
       : undefined;
-  const own: LineMap = addedLinesOf(
-    gitZ(context.repository.path, [
-      "-c",
-      "core.quotepath=false",
-      "diff",
-      "-U0",
-      "--no-color",
-      "--no-ext-diff",
-      "-M",
-      base,
-      sha,
-    ]).out,
-  );
+  // The lines the task's own change added or changed, for the pre-existing
+  // rules; the increment reads the new side with its context lines.
+  const own: LineMap = newSideLines(context.repository.path, base, sha, 0);
+  const ownSide: LineMap = newSideLines(context.repository.path, base, sha, 3);
+  // A review that has an earlier review it does not follow (the same commit,
+  // or a commit the checkout lacks) treats nothing as pre-existing.
+  const demote = rework !== undefined || history.length === 0;
   const reworkPrompt: ReworkPrompt | undefined =
     rework === undefined
       ? undefined
-      : reworkPromptOf(context.repository.path, rework, sha, own, prepared);
+      : reworkPromptOf(context.repository.path, rework, sha, ownSide, prepared);
 
   if (prepared.bytes > context.settings.reviewer.maxDiffBytes) {
     const largest = [...prepared.files]
@@ -2115,6 +2119,7 @@ export async function runReview(
         delete (finding as { preExisting?: unknown }).preExisting;
         delete (finding as { pre_existing?: unknown }).pre_existing;
         const moved =
+          demote &&
           atOrAbove(finding.severity, settings.fixLevel) &&
           movesAsPreExisting(
             {

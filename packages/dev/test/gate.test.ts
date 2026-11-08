@@ -3009,4 +3009,34 @@ describe("dev/review rework rounds", () => {
     expect(prompt).toContain("-line 31");
     expect(prompt).not.toContain("No line of the task's own change was changed");
   });
+
+  test("a reverify of the same commit demotes nothing", async () => {
+    // Line 20 is far from the changes at lines 5 and 30: a first review moves it.
+    const round = await afterFirstReview([finding("code.txt", 20)]);
+    expect(round.first.result).toBe("pass");
+    expect(round.first.data?.moved).toBe(1);
+    const again = await review(round.state, "review-again");
+    expect(again.result).toBe("fail");
+    expect(again.data?.counted).toBe(1);
+    expect(again.data?.moved).toBe(0);
+  });
+
+  test("the increment reads context lines, so a deletion beside the task's change keeps its hunk", async () => {
+    const round = await afterFirstReview([]);
+    const second = await secondReview(round, async () => {
+      await commitIn(
+        round.state.worktree,
+        "code.txt",
+        lines(40)
+          .replace("line 5\n", "changed 5\n")
+          .replace("line 30\n", "changed 30\n")
+          .replace("line 7\n", ""),
+        "delete next to a change",
+      );
+    });
+    expect(second.result).toBe("pass");
+    const prompt = round.state.reviewer.calls[1]?.prompt ?? "";
+    expect(prompt).toContain("+changed 5");
+    expect(prompt).not.toContain("No line of the task's own change was changed");
+  });
 });

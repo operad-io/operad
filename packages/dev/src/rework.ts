@@ -44,8 +44,9 @@ export function previousReview(
 }
 
 /**
- * The changed lines of a `git diff -U0` text, by new path: the added lines, and
- * for a pure deletion the two lines on either side of the cut.
+ * The new-side lines of a diff text, by new path: every line a hunk covers
+ * (context included), and for a pure deletion the two lines on either side of
+ * the cut. With `-U0` these are the changed lines.
  */
 export function addedLinesOf(diff: string): LineMap {
   const map = new Map<string, Set<number>>();
