@@ -34,7 +34,7 @@ import {
   releaseTaskClaim,
   setTaskPhase,
 } from "./service.ts";
-import { readDevSettings, type DevSettings } from "./settings.ts";
+import { readDevSettings, runningTaskCap, type DevSettings } from "./settings.ts";
 
 /** Where a scheduler change goes: the kernel loop's output. */
 export const schedulerTestHooks: {
@@ -118,7 +118,7 @@ function planConcurrency(plan: PlanData): number {
 }
 
 function repositoryConcurrency(settings: DevSettings): number {
-  const value: unknown = settings.concurrency;
+  const value: unknown = runningTaskCap(settings);
   return typeof value === "number" && Number.isFinite(value) ? value : 1;
 }
 

@@ -285,7 +285,9 @@ export function createPoolPlugin(options: PoolPluginOptions = {}) {
           }
 
           // The first worker's places are already released; wait for the fallback's.
-          const second = await attempt(ctx, prefix, [target], params, options);
+          // A session belongs to the worker that was asked for; the fallback starts its own.
+          const { resumeSession: _session, ...fallbackParams } = params;
+          const second = await attempt(ctx, prefix, [target], fallbackParams, options);
           if (second.kind === "aborted") return interrupted();
           if (second.kind === "threw") throw second.error;
           return record(second.result, second.worker, first.worker);

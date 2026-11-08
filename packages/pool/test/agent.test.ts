@@ -321,6 +321,19 @@ describe("fallback", () => {
     });
   }
 
+  test("the fallback does not receive the requested worker's resume session", async () => {
+    const r = await rig();
+    const run = r.run(params([claude, pi], { worker: "claude", resumeSession: "claude-session" }));
+    const first = await r.calls.next();
+    expect(first.params.resumeSession).toBe("claude-session");
+    first.finish(usage);
+    const call = await r.calls.next();
+    expect(call.use).toBe("harness-b/agent");
+    expect("resumeSession" in call.params).toBe(false);
+    call.finish(done);
+    await run;
+  });
+
   test("the fallback may be a worker outside the pool", async () => {
     const r = await rig();
     const run = r.run(params([claude], { fallbacks: [pi] }));

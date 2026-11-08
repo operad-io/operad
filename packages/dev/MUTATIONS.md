@@ -153,6 +153,15 @@ the row fields.
 | T-0055-M1 | packages/dev/src/steps.ts | the base stayed the head before the merge of main, so the merge counted as the worker's work | `dev/work after main moved > a clean merge and no change by the worker is nothing` |
 | T-0055-M2 | packages/dev/src/steps.ts | the Changes section did not say what was merged | `dev/work after main moved > a rework gets main's commit, and the attempt and Changes say so` |
 | T-0055-M3 | packages/dev/src/steps.ts | the conflict prompt did not say resolving the merge is part of the attempt | `dev/work after main moved > a conflicting main is left for the worker and the prompt names the files` |
+| T-0043-M1 | packages/dev/src/steps.ts | the work never asked for the previous attempt's worker | `dev/work with workers > a rework goes back to the worker that ran the attempt before` |
+| T-0043-M2 | packages/dev/src/steps.ts | the work result did not say the earlier worker is no longer in the pool | `dev/work with workers > a worker removed from dev.json is replaced and the change is recorded` |
+| T-0043-M3 | packages/dev/src/settings.ts | `concurrency` did not cap the sum of the default pool's counts | `the running-task cap > concurrency, when set, caps it further and never raises it` |
+| T-0043-M4 | packages/dev/src/steps.ts | the settings were read from the task's worktree instead of the main clone | `dev/work with workers > the work reads the main clone's dev.json, not the worktree's older copy` |
+| T-0043-M5 | packages/dev/src/settings.ts | `worker` together with `workers` was accepted | `dev.json workers and pools > worker and workers together refuse the file` |
+| T-0043-M6 | packages/dev/src/steps.ts | the attempt did not record `fallbackFrom` | `dev/work with workers > a fallback attempt records the worker that ran, and the rework goes to it` |
+| T-0043-M7 | packages/dev/src/steps.ts | an attempt that never reached a worker dropped the earlier worker | `dev/work with workers > an attempt that never reached a worker passes the earlier worker on` |
+| T-0043-M8 | packages/dev/src/steps.ts | poolParams sent no `resumeSession` on a rework | `dev/work with workers > a rework resumes the session of the worker it goes back to` |
+| T-0043-M9 | packages/dev/src/steps.ts | a fallback worker outside the default pool counted as removed | `dev/work with workers > a fallback outside the default pool is still the worker a rework goes back to` |
 | T-0056-M1 | packages/dev/src/places.ts | allowed one more place than `checks` | `check places > three checks with a limit of 2: two run, the third waits until one ends` |
 | T-0056-M2 | packages/dev/src/places.ts | a waiting check wrote nothing to the step log | `check places > three checks with a limit of 2: two run, the third waits until one ends` |
 | T-0056-M3 | packages/dev/src/places.ts | a cancelled step kept waiting for a place | `check places > a cancelled step stops waiting for a place` |
