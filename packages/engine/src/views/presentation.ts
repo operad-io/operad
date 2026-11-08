@@ -6,6 +6,7 @@
 
 import { objectLink } from "../http/link.ts";
 import type { LogBackend } from "../log/types.ts";
+import { currentRunStep, endedRunStep } from "./running.ts";
 import type { PluginRegistry, ActionInfo } from "../plugin/registry.ts";
 import { splitActionName } from "../plugin/registry.ts";
 import { messageOf } from "../plugin/errors.ts";
@@ -1663,6 +1664,7 @@ export class Views {
   }
 
   private viewContext(plugin: string, signal: AbortSignal): ViewContext {
+    const log = this.log;
     return {
       plugin,
       home: this.registry.home,
@@ -1673,6 +1675,12 @@ export class Views {
       signal,
       settings: this.registry.settingsFor(plugin),
       secrets: new FileSecretStore({ home: this.registry.home, plugin }),
+      ...(log === undefined
+        ? {}
+        : {
+            runStep: (runId: string) => currentRunStep(log, runId),
+            runEnd: (runId: string) => endedRunStep(log, runId),
+          }),
     };
   }
 

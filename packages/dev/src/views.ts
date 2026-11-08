@@ -23,6 +23,7 @@ import {
   splitBrief,
   storeKey,
   taskData,
+  type ReviewRecord,
   type TaskAttempt,
   type TaskData,
 } from "./model.ts";
@@ -253,7 +254,7 @@ export const taskViews: ObjectViews = {
     if (sectionId === "changes") return { markdown: renderChanges(parts.changes) };
     if (sectionId === "log") return { markdown: await workerLog(ctx, task) };
     if (sectionId === "diff") return diffSection(ctx, object, options.cursor);
-    if (sectionId === "metrics") return { markdown: metrics(ctx, object) };
+    if (sectionId === "metrics") return { markdown: await metrics(ctx, object) };
     return { markdown: "" };
   },
 };
@@ -646,10 +647,10 @@ async function diffSection(
 }
 
 /* ---------------------------------------------------------------------------
- * Metrics: one row per attempt.
+ * Metrics: a narrow summary table and one line per attempt.
  * ------------------------------------------------------------------------- */
 
-const METRIC_STEPS = ["worktree", "work", "verify", "review", "integrate"] as const;
+const METRIC_STEPS = ["worktree", "work", "reverify", "verify", "review", "integrate"] as const;
 
 function seconds(ms: number): string {
   if (ms < 1000) return "<1s";
@@ -662,19 +663,101 @@ interface AttemptMetrics {
   readonly number: number;
   readonly spent: Map<string, number>;
   last: TaskAttempt | undefined;
+  /** When the attempt's first step began: the record before its first one. */
+  readonly startedAt: number;
+  /** When its latest step ended. */
+  endedAt: number;
+  /** The latest step recorded for it. */
+  lastStep: string;
+}
+
+/** A token count: whole below 10k, then in k with one decimal. */
+export function tokenCount(count: number): string {
+  return count < 10_000 ? String(count) : `${(count / 1000).toFixed(1)}k`;
+}
+
+/** A wall time for the narrow table: seconds, minutes, or hours and minutes. */
+function wallTime(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  if (total < 60) return `${total}s`;
+  const minutes = Math.round(total / 60);
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, "0")}m`;
+}
+
+function findingsText(review: ReviewRecord): string {
+  const count = review.findings?.length;
+  if (count === undefined) return "review: findings";
+  return `review: ${count} ${count === 1 ? "finding" : "findings"}`;
 }
 
 /**
- * A table of the task's attempts. Each step's time is the time between its
- * record and the record before it, so it is the step's wall time as the
- * task saw it; the worker's own time replaces it when the harness reported it.
+ * How the attempt's latest step ended it, when it did. Only the record that
+ * step wrote counts: an older review or verify record of the same attempt
+ * (a reverify keeps them) says nothing about it.
  */
-function metrics(ctx: ViewContext, object: StoredObject): string {
+function endedBy(entry: AttemptMetrics): string | undefined {
+  const last = entry.last;
+  if (entry.lastStep === "verify") {
+    return last?.verify?.result === "fail" ? "verify failed" : undefined;
+  }
+  if (entry.lastStep === "review") {
+    const review = last?.review;
+    if (review === undefined || review === null) return undefined;
+    if (review.result === "findings" || review.result === "fail") return findingsText(review);
+    if (review.result === "pass" || review.result === "passed") return undefined;
+    return `review ${review.result.replace("_", " ")}`;
+  }
+  if (entry.lastStep === "integrate") {
+    const integration = last?.integration?.result;
+    if (integration === "merged") return "merged";
+    if (integration === "conflict") return "conflict";
+    if (integration === "fail" || integration === "failed") return "integrate failed";
+  }
+  const result = last?.result;
+  if (
+    (entry.lastStep === "worktree" || entry.lastStep === "reverify" || entry.lastStep === "work") &&
+    (result === "failed" || result === "blocked" || result === "nothing")
+  ) {
+    return `${entry.lastStep} ${result}`;
+  }
+  return undefined;
+}
+
+/** How an attempt that is not running ended, from its recorded results only. */
+function attemptResult(
+  entry: AttemptMetrics,
+  latest: boolean,
+  phase: TaskData["phase"],
+  current: string | undefined,
+): string {
+  if (latest && phase === "cancelled") return "cancelled";
+  if (current !== undefined) return `running ${current.replaceAll("_", " ")}`;
+  const ended = endedBy(entry);
+  if (ended !== undefined) return ended;
+  if (entry.lastStep === "review") return "review passed";
+  if (latest && phase === "merged") return "merged";
+  return latest && phase === "waiting" ? "waiting" : "–";
+}
+
+/**
+ * The task's attempts: a narrow summary table (number, time, cost, result;
+ * one row per attempt and a total), then one short line per attempt, newest
+ * first, with its per-step times and tokens. Each step's time is the time
+ * between its record and the record before it, so it is the step's wall time
+ * as the task saw it; the worker's own time replaces it when the harness
+ * reported it. `now` closes the time of an attempt that is still running.
+ */
+export async function metrics(
+  ctx: ViewContext,
+  object: StoredObject,
+  now: number = Date.now(),
+): Promise<string> {
   const byAttempt = new Map<number, AttemptMetrics>();
   let previous: number | undefined;
   let cursor: string | undefined;
   for (;;) {
-    const page = ctx.store.facts(
+    const page = await ctx.store.facts(
       { type: object.type, id: object.id },
       cursor === undefined ? {} : { cursor },
     );
@@ -690,7 +773,14 @@ function metrics(ctx: ViewContext, object: StoredObject): string {
       ) {
         let entry = byAttempt.get(attempt.number);
         if (entry === undefined) {
-          entry = { number: attempt.number, spent: new Map(), last: undefined };
+          entry = {
+            number: attempt.number,
+            spent: new Map(),
+            last: undefined,
+            startedAt: previous ?? fact.at,
+            endedAt: fact.at,
+            lastStep: step,
+          };
           byAttempt.set(attempt.number, entry);
         }
         const measured =
@@ -701,6 +791,8 @@ function metrics(ctx: ViewContext, object: StoredObject): string {
               : Math.max(0, fact.at - previous);
         entry.spent.set(step, (entry.spent.get(step) ?? 0) + measured);
         entry.last = attempt;
+        entry.endedAt = fact.at;
+        entry.lastStep = step;
       } else if (attempt !== undefined) {
         const entry = byAttempt.get(attempt.number);
         if (entry !== undefined) entry.last = attempt;
@@ -714,28 +806,83 @@ function metrics(ctx: ViewContext, object: StoredObject): string {
   const entries = [...byAttempt.values()].sort(
     (left, right) => left.number - right.number,
   );
-  const lines = [
-    `| attempt | ${METRIC_STEPS.join(" | ")} | cost | tokens | review |`,
-    `| --- | ${METRIC_STEPS.map(() => "---").join(" | ")} | --- | --- | --- |`,
-  ];
+  const task = taskData(object.data);
+  const phase = task.phase;
+  const newest = entries[entries.length - 1]?.number;
+  // What the run is doing comes from the run itself, as `operad running`
+  // reports it; with no active run nothing is running, whatever the phase says.
+  // A cancelled task's run has ended: the step in flight at the cancel still
+  // counts up to the cancel, while a wait for a person does not.
+  let live: { step: string; startedAt: number; until: number; running: boolean } | undefined;
+  // A cancel clears the task's run; the attempt still names the run that ran it.
+  const newestRun = entries[entries.length - 1]?.last?.run;
+  const runId =
+    task.run ?? (phase === "cancelled" && typeof newestRun === "string" ? newestRun : null);
+  if (runId !== null && phase !== "merged") {
+    if (phase !== "cancelled") {
+      const step = ctx.runStep === undefined ? undefined : await ctx.runStep(runId);
+      if (step !== undefined) live = { ...step, until: now, running: true };
+    } else {
+      const end = ctx.runEnd === undefined ? undefined : await ctx.runEnd(runId);
+      if (end !== undefined && end.step !== null && end.startedAt !== null) {
+        live = { step: end.step, startedAt: end.startedAt, until: end.endedAt, running: false };
+      }
+    }
+  }
+  const liveOf = (entry: AttemptMetrics): typeof live =>
+    entry.number === newest ? live : undefined;
+  const lines = ["| # | time | cost | result |", "| --- | --- | --- | --- |"];
+  let totalMs = 0;
+  let totalCost = 0;
+  let costed = false;
+  let quality = "";
   for (const entry of entries) {
     const last = entry.last;
-    const cost = costNote(last?.cost, last?.costQuality) ?? "-";
-    const tokens =
-      last?.tokens === undefined || last.tokens === null
-        ? "-"
-        : `${last.tokens.input} in / ${last.tokens.output} out`;
-    const review = last?.review?.result ?? "-";
-    const times = METRIC_STEPS.map((step) => {
-      const spent = entry.spent.get(step);
-      return spent === undefined ? "-" : seconds(spent);
-    });
+    const own = liveOf(entry);
+    const step = own?.running === true ? own.step : undefined;
+    const ms = Math.max(
+      0,
+      (own === undefined ? entry.endedAt : Math.max(own.until, entry.endedAt)) - entry.startedAt,
+    );
+    totalMs += ms;
+    if (typeof last?.cost === "number" && Number.isFinite(last.cost)) {
+      totalCost += last.cost;
+      costed = true;
+      if (last.costQuality === "incomplete") quality = " (incomplete)";
+      else if (last.costQuality === "estimated" && quality === "") quality = " (estimated)";
+    }
     lines.push(
-      `| ${entry.number} | ${times.join(" | ")} | ${cost} | ${tokens} | ${review} |`,
+      `| ${entry.number} | ${wallTime(ms)}${step === undefined ? "" : " …"} | ${costNote(last?.cost, last?.costQuality) ?? "–"} | ${attemptResult(entry, entry.number === newest, phase, step)} |`,
     );
   }
+  lines.push(
+    `| total | ${wallTime(totalMs)} | ${costed ? `$${totalCost.toFixed(2)}${quality}` : "–"} | |`,
+  );
+  const perAttempt = [...entries].reverse().map((entry) => {
+    const own = liveOf(entry);
+    const mark = own?.running === true ? " (running)" : "";
+    const parts: string[] = METRIC_STEPS.flatMap((name) => {
+      const spent = entry.spent.get(name);
+      if (own !== undefined && name === own.step) {
+        // Everything recorded for the step stays; this visit adds what came
+        // since the later of its last record and its start.
+        const ms = (spent ?? 0) + Math.max(0, own.until - Math.max(own.startedAt, entry.endedAt));
+        return [`${name} ${seconds(ms)}${mark}`];
+      }
+      return spent === undefined ? [] : [`${name} ${seconds(spent)}`];
+    });
+    if (own !== undefined && !(METRIC_STEPS as readonly string[]).includes(own.step)) {
+      parts.push(`${own.step.replaceAll("_", " ")} ${seconds(Math.max(0, own.until - own.startedAt))}${mark}`);
+    }
+    const tokens = entry.last?.tokens;
+    if (tokens !== undefined && tokens !== null) {
+      parts.push(`${tokenCount(tokens.input)} in / ${tokenCount(tokens.output)} out tokens`);
+    }
+    return `**#${entry.number}** ${parts.join(" · ")}`;
+  });
+  const summary = `${lines.join("\n")}\n\n${perAttempt.join("\n\n")}`;
   const perWorker = workerTable(entries);
-  return perWorker === undefined ? lines.join("\n") : `${lines.join("\n")}\n\n${perWorker}`;
+  return perWorker === undefined ? summary : `${summary}\n\n${perWorker}`;
 }
 
 /**

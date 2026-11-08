@@ -272,6 +272,21 @@ the row fields.
 | T-0092-M7 | packages/dev/src/flaky.ts | the failure excerpt held 31 lines before the (fail) line | `a flaky test proposes a task > the failure excerpt holds the (fail) line and up to 30 lines before it` |
 | T-0092-M8 | packages/dev/src/flaky.ts | `operad reruns` showed the task of an ended fix | `a flaky test proposes a task > operad reruns shows the task beside its test while it is open` |
 | T-0067-M12 | packages/dev/src/gate.ts | a file that fails validation was named no_report instead of invalid | `dev/review report in the workspace > harness failed with invalid file is invalid` |
+
+## T-0075 — narrow metrics
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0075-M1 | packages/dev/src/views.ts | tokens switched to k from 1k, not 10k | `dev views > per-attempt lines leave out steps that did not run, and tokens show in k from 10k` |
+| T-0075-M2 | packages/dev/src/views.ts | the total row left out the attempts' time | `dev views > the metrics summary has at most four columns, a row per attempt and a total` |
+| T-0075-M3 | packages/dev/src/views.ts | a step that did not run was listed as `<1s` | `dev views > per-attempt lines leave out steps that did not run, and tokens show in k from 10k` |
+| T-0075-M4 | packages/dev/src/views.ts | a conflict attempt showed no result | `dev views > how an attempt ended: merged, verify failed, conflict, cancelled` |
+| T-0075-M5 | packages/dev/src/views.ts | the total row's cost kept only the last attempt's cost | `dev views > the total row sums the cost of every attempt` |
+| T-0075-M15 | packages/dev/src/views.ts | the running step was taken only while the task's phase said running or review | `metrics follow the run's own step > an integrate in flight while the task waits` |
+| T-0075-M16 | packages/dev/src/views.ts | the running step's time dropped what its earlier records already hold (a retried review lost its first visit) | `metrics follow the run's own step > a retried review: the retry wait runs, then the review with its pending run` |
+| T-0075-M17 | packages/dev/src/views.ts | a worktree, reverify or work step that failed showed no result | `metrics follow the run's own step > a failed worktree ends the run: nothing runs and no later step is shown` |
+| T-0075-M18 | packages/dev/src/views.ts | a current step that is not a recorded one (rework, a retry wait) was not shown | `metrics follow the run's own step > a failed gate: the rework step runs, then the person wait shows the failure` |
+| T-0075-M19 | packages/dev/src/views.ts | a cancelled task did not show cancelled | `dev views > how an attempt ended: merged, verify failed, conflict, cancelled` |
 | T-0092-M9 | packages/dev/src/flaky.ts | the failure excerpt kept secret values | `a flaky test proposes a task > secrets in a failure excerpt are masked in the record and the brief` |
 | T-0092-M10 | packages/dev/src/flaky.ts | the log was cut at the first rerun heading before the failure was searched | `a flaky test proposes a task > a failure after an earlier command's rerun keeps its excerpt and file` |
 | T-0092-M11 | packages/dev/src/flaky.ts | an existing open task that names the test was not linked to the record | `a flaky test proposes a task > an open task that already names the test stops a proposal` |
@@ -299,3 +314,7 @@ the row fields.
 | T-0095-M7 | packages/dev/src/prepare.ts | a failing prepare command counted as a pass | `prepare > a failing prepare fails verify with its reason and log, and no gate command runs` |
 | T-0095-M8 | packages/dev/src/gate.ts | review did not prepare its recreated checkout, so the test a reviewer runs there could not resolve the branch's package | `prepare > a change spanning two packages > with a prepare command that installs, the test passes in the review checkout` |
 | T-0053-M9 | packages/dev/src/index.ts | the repo type declared no `prepare`, so a list in a fresh process hid repositories stored under the old type | `the repo type > a repository stored before dev declared repo shows up as a repo object` |
+| T-0075-M21 | packages/dev/src/views.ts | a cancelled task's attempt ended at its last step record, not at the cancel | `metrics follow the run's own step > a task cancelled while its worker runs keeps the time up to the cancel, step included` |
+| T-0075-M22 | packages/dev/src/views.ts | the step in flight at a cancel added nothing to its line | `metrics follow the run's own step > a task cancelled while its worker runs keeps the time up to the cancel, step included` |
+| T-0075-M23 | packages/dev/src/views.ts | a task's time ignored the run's own end (the line and the row disagreed after a cancel) | `metrics follow the run's own step > a task cancelled while its review is in flight counts the review up to the cancel` |
+| T-0075-M26 | packages/dev/src/views.ts | a cancelled task's run was read from `task.run` only, which the real cancel clears | `metrics follow the run's own step > a task cancelled while its worker runs keeps the time up to the cancel, step included` |
