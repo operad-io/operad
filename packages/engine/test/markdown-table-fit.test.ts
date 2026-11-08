@@ -59,4 +59,18 @@ describe("table fit", () => {
     const lines = renderMarkdownLines(TABLE, { width: 50, colour: true });
     expect(lines[0]?.text).toContain("\x1b[1m\x1b[90m");
   });
+
+  test("wide characters are measured in columns, so a CJK title fits", () => {
+    const table = [
+      "| id | title | cost |",
+      "| -- | ----- | ---- |",
+      "| T-1 | 这是一个很长的中文任务标题需要显示 | $1.00 |",
+      "| T-2 | 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀 | $2.00 |",
+    ].join("\n");
+    const lines = fit(table, 40);
+    for (const line of lines) expect(Bun.stringWidth(line)).toBeLessThanOrEqual(40);
+    expect(lines[2]).toContain("…");
+    expect(lines[3]).toContain("…");
+    expect(lines[2]).toContain("$1.00");
+  });
 });

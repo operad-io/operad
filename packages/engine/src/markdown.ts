@@ -213,10 +213,25 @@ function shrinkWidest(
   return left;
 }
 
+/** Terminal columns a text takes: CJK and emoji are two wide. */
+function displayWidth(text: string): number {
+  return Bun.stringWidth(stripInline(text));
+}
+
+const SEGMENTER = new Intl.Segmenter();
+
 function cut(text: string, size: number): string {
-  const chars = [...stripInline(text)];
-  if (chars.length <= size) return chars.join("");
-  return `${chars.slice(0, Math.max(0, size - 1)).join("")}…`;
+  const plain = stripInline(text);
+  if (Bun.stringWidth(plain) <= size) return plain;
+  let kept = "";
+  let used = 0;
+  for (const { segment } of SEGMENTER.segment(plain)) {
+    const next = Bun.stringWidth(segment);
+    if (used + next > size - 1) break;
+    kept += segment;
+    used += next;
+  }
+  return `${kept}…`;
 }
 
 /** A table laid out for `available` columns: no pipes, one line per row. */
@@ -233,7 +248,7 @@ function renderFittedTable(
   const numeric: boolean[] = [];
   for (let index = 0; index < count; index += 1) {
     widths.push(
-      Math.max(1, ...cells.map((row) => visibleLength(row[index] ?? ""))),
+      Math.max(1, ...cells.map((row) => displayWidth(row[index] ?? ""))),
     );
     const body = cells
       .slice(1)
@@ -263,7 +278,7 @@ function renderFittedTable(
     for (let index = 0; index < count; index += 1) {
       const cell = row[index] ?? "";
       const size = widths[index] ?? 1;
-      const length = visibleLength(cell);
+      const length = displayWidth(cell);
       const fits = length <= size;
       const shown = fits ? cell : cut(cell, size);
       const body = header
@@ -271,7 +286,7 @@ function renderFittedTable(
         : fits
           ? renderInline(shown, colour)
           : shown;
-      const pad = " ".repeat(Math.max(0, size - Math.min(length, size)));
+      const pad = " ".repeat(Math.max(0, size - (fits ? length : Bun.stringWidth(shown))));
       const styledBody =
         header && colour ? styled(body, `${ANSI.bold}${ANSI.weak}`) : body;
       parts.push(numeric[index] === true ? `${pad}${styledBody}` : `${styledBody}${pad}`);
