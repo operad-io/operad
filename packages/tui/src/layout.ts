@@ -40,6 +40,8 @@ function roleFor(code: number): LayoutRole | null {
       return "add";
     case 36:
       return "accent";
+    case 90:
+      return "weak";
     default:
       return null;
   }
@@ -119,7 +121,10 @@ export function layoutMarkdown(
   const rows: LayoutLine[] = [];
   // Cleaned before the renderer adds its own styles, so a literal escape in
   // the text cannot pass for one of them.
-  for (const line of renderMarkdownLines(sanitize(markdown), { colour: true })) {
+  for (const line of renderMarkdownLines(sanitize(markdown), {
+    colour: true,
+    width,
+  })) {
     const glyphs = glyphsFor(line.text, line.code);
     const wrapped = width === undefined ? [glyphs] : wrapGlyphs(glyphs, width);
     for (const row of wrapped) {

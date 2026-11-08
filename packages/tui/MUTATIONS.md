@@ -167,3 +167,4 @@ the row fields.
 | T-0078-M3 | packages/tui/src/view/index.ts | the palette was centred on its height, so its input line moved with the matches | `overlays > at 120x40 the palette input line stays on its row as matches change` |
 | T-0078-M4 | packages/tui/src/view/index.ts | the overlay had no one-cell margin inside its border | `overlays > the palette fills its box and closing repaints the list` |
 | T-0078-M5 | packages/tui/src/view/index.ts | the overlay box was filled with the `code` token instead of `background` | `overlays > under the dark theme the palette box is filled with the background token` |
+| T-0079-M5 | packages/tui/src/layout.ts | the weak colour code (90) was not read, so the table header lost its weak role | `tables fit the pane > 13 tasks at 100 columns take 15 rows none wider than the pane, and a resize re-lays them` |

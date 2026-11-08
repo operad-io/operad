@@ -15,11 +15,17 @@ const ANSI = {
   red: "\x1b[31m",
   green: "\x1b[32m",
   cyan: "\x1b[36m",
+  weak: "\x1b[90m",
 } as const;
 
 export interface RenderOptions {
   /** Add ANSI styling, for a terminal; off by default. */
   readonly colour?: boolean | undefined;
+  /**
+   * Terminal columns available. With it a table is laid out to fit: one line
+   * per row, no pipes. Without it a table keeps its natural width.
+   */
+  readonly width?: number | undefined;
 }
 
 /** One rendered line. `code` marks a fenced code line, including its label. */
@@ -177,6 +183,109 @@ function renderTable(rows: readonly string[], colour: boolean): string[] {
   return lines;
 }
 
+const NUMERIC_CELL =
+  /^[-+~≈]?[$€£¥]?\s?\d[\d,]*(\.\d+)?\s?(%|ms|s|m|h|d|w|[kKMB])?(\s\d+(\.\d+)?\s?(ms|s|m|h|d))*$/;
+
+/** True for a number, a duration or an amount of money. */
+function isNumericCell(text: string): boolean {
+  return NUMERIC_CELL.test(stripInline(text).trim());
+}
+
+/** The widest columns shrink first, down to `floor`, until `excess` is gone. */
+function shrinkWidest(
+  widths: number[],
+  eligible: readonly boolean[],
+  floor: number,
+  excess: number,
+): number {
+  let left = excess;
+  while (left > 0) {
+    let pick = -1;
+    for (let index = 0; index < widths.length; index += 1) {
+      const size = widths[index] ?? 0;
+      if (eligible[index] !== true || size <= floor) continue;
+      if (pick < 0 || size > (widths[pick] ?? 0)) pick = index;
+    }
+    if (pick < 0) break;
+    widths[pick] = (widths[pick] ?? 0) - 1;
+    left -= 1;
+  }
+  return left;
+}
+
+function cut(text: string, size: number): string {
+  const chars = [...stripInline(text)];
+  if (chars.length <= size) return chars.join("");
+  return `${chars.slice(0, Math.max(0, size - 1)).join("")}…`;
+}
+
+/** A table laid out for `available` columns: no pipes, one line per row. */
+function renderFittedTable(
+  rows: readonly string[],
+  colour: boolean,
+  available: number,
+): string[] {
+  const cells = rows
+    .map(splitCells)
+    .filter((row, index) => index === 0 || !isTableSeparator(row.join("|")));
+  const count = Math.max(1, ...cells.map((row) => row.length));
+  const widths: number[] = [];
+  const numeric: boolean[] = [];
+  for (let index = 0; index < count; index += 1) {
+    widths.push(
+      Math.max(1, ...cells.map((row) => visibleLength(row[index] ?? ""))),
+    );
+    const body = cells
+      .slice(1)
+      .map((row) => row[index] ?? "")
+      .filter((cell) => cell.length > 0);
+    numeric.push(body.length > 0 && body.every(isNumericCell));
+  }
+  const gap = 2;
+  const total = (): number =>
+    widths.reduce((sum, size) => sum + size, 0) + gap * (count - 1);
+  const text = numeric.map((flag) => !flag);
+  const all = numeric.map(() => true);
+  // Long text columns first, keeping short ones whole; only then anything.
+  for (const [eligible, floor] of [
+    [text, 12],
+    [text, 4],
+    [all, 3],
+    [all, 1],
+  ] as const) {
+    const excess = total() - available;
+    if (excess <= 0) break;
+    shrinkWidest(widths, eligible, floor, excess);
+  }
+
+  const draw = (row: readonly string[], header: boolean): string => {
+    const parts: string[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const cell = row[index] ?? "";
+      const size = widths[index] ?? 1;
+      const length = visibleLength(cell);
+      const fits = length <= size;
+      const shown = fits ? cell : cut(cell, size);
+      const body = header
+        ? stripInline(shown)
+        : fits
+          ? renderInline(shown, colour)
+          : shown;
+      const pad = " ".repeat(Math.max(0, size - Math.min(length, size)));
+      const styledBody =
+        header && colour ? styled(body, `${ANSI.bold}${ANSI.weak}`) : body;
+      parts.push(numeric[index] === true ? `${pad}${styledBody}` : `${styledBody}${pad}`);
+    }
+    return parts.join(" ".repeat(gap)).replace(/\s+$/, "");
+  };
+
+  const lines = [draw(cells[0] ?? [], true)];
+  const rule = "─".repeat(Math.max(1, Math.min(total(), available)));
+  lines.push(colour ? styled(rule, ANSI.weak) : rule);
+  for (const row of cells.slice(1)) lines.push(draw(row, false));
+  return lines;
+}
+
 function renderCode(
   language: string,
   code: readonly string[],
@@ -218,6 +327,10 @@ export function renderMarkdownLines(
   options: RenderOptions = {},
 ): MarkdownLine[] {
   const colour = options.colour === true;
+  const width =
+    options.width !== undefined && Number.isFinite(options.width) && options.width > 0
+      ? Math.floor(options.width)
+      : undefined;
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const output: MarkdownLine[] = [];
   const push = (text: string): void => {
@@ -249,7 +362,10 @@ export function renderMarkdownLines(
         index += 1;
       }
       index -= 1;
-      renderTable(table, colour).forEach(push);
+      (width === undefined
+        ? renderTable(table, colour)
+        : renderFittedTable(table, colour, width)
+      ).forEach(push);
       continue;
     }
 

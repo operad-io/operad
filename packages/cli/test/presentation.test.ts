@@ -282,6 +282,34 @@ describe("operad presentation commands", () => {
     assertUserWords(raw.text());
   });
 
+  test("show lays a table out for the terminal's width; a pipe keeps the old output", async () => {
+    const { home } = await makeHome();
+    seed(home, { title: "First", state: "new", note: "$1" }, "one");
+
+    const tty = capture();
+    expect(
+      await main(["show", "item:one", "--section", "info"], {
+        home,
+        io: tty.io,
+        isTTY: true,
+        columns: 60,
+      }),
+    ).toBe(0);
+    expect(tty.text()).not.toContain("| alpha");
+    expect(tty.text()).toContain("─────");
+
+    const piped = capture();
+    expect(
+      await main(["show", "item:one", "--section", "info"], {
+        home,
+        io: piped.io,
+        isTTY: false,
+        columns: 60,
+      }),
+    ).toBe(0);
+    expect(piped.text()).toContain("| alpha | 1");
+  });
+
   test("show prints the row, the sections, the actions and the first section", async () => {
     const { home } = await makeHome();
     seed(home, { title: "First", state: "new" }, "one");

@@ -307,3 +307,6 @@ the row fields.
 | T-0074-M4 | packages/engine/src/views/history.ts | `oneLine` cut details even with `full` | `readable run history > details are cut to one line, and --full keeps them` |
 | T-0074-M5 | packages/engine/src/views/presentation.ts | the run id was printed in the heading as well as at the end | `shows a row, the section directory, the kernel history and actions` |
 | T-0074-M6 | packages/engine/src/views/history.ts | an entered end step opened an attempt line (the end-step skip removed) | `readable run history > a run that ends on an end step has no line for that step` |
+| T-0079-M1 | packages/engine/src/markdown.ts | number columns were shrinkable like text columns | `table fit > squeezed hard, text columns give way and number columns keep their width` |
+| T-0079-M2 | packages/engine/src/markdown.ts | numbers, durations and money were left-aligned | `table fit > numbers, durations and money are right-aligned` |
+| T-0079-M3 | packages/engine/src/markdown.ts | the column gap was three spaces instead of two | `table fit > a table narrower than the width keeps its content, without pipes` |
