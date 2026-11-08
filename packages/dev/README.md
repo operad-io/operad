@@ -199,6 +199,21 @@ skipped, and the round waits for a person with the note `review did not finish
 (out of time)`. While a review waits for its model, `merge`, `reject`, `rework`
 and `reverify` are not offered.
 
+The reviewer writes its report inside the review workspace (the gate worktree),
+at `.operad/review/<task>-attempt-<n>-review-<round>.json`, because some
+harnesses (radian) refuse paths outside their workspace. The folder holds a
+`.gitignore` of `*`, so `git status` stays clean and the repository's own
+`.gitignore` is not touched. When the reviewer ends, dev copies the report to
+`<store>/dev/reviews/<run>/<same name>`, which is the record, and removes the
+workspace folder; the next run of the round removes any old one first, and a
+recreated gate worktree starts without one. A valid report left in the workspace
+by a crash is copied to the store before the worktree is recreated, so the
+resumed round uses it instead of reviewing again. A report an older prompt wrote
+straight to the store path is read from there. A reviewer that ends without any
+file is recorded as `the reviewer could not write the report` with its last
+message (one retry, like an invalid report); a file that is not a valid report is
+`wrote an invalid report`.
+
 A reviewer that wrote a valid report and then stalled, timed out or exited
 non-zero has reviewed: its report is used and a retry never deletes it. Only an
 unreadable report is removed before a run. `dev:reverify` starts review round 1

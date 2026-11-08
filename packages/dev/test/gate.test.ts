@@ -3,7 +3,7 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, existsSync, rmSync, watch } from "node:fs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   decide,
@@ -120,6 +120,8 @@ interface ReviewCall {
 interface FakeReviewer {
   readonly plugin: ReturnType<typeof definePlugin>;
   readonly calls: ReviewCall[];
+  /** `git status --porcelain` of the cwd, taken while the report is written. */
+  readonly statuses: string[];
 }
 
 interface FakeReviewerOptions {
@@ -127,10 +129,13 @@ interface FakeReviewerOptions {
   readonly retryInvalid?: boolean;
   /** Append one line per model call, so a test can count calls across processes. */
   readonly callLog?: string;
+  /** The store root, for the mode that writes to the old store path. */
+  readonly storeRoot?: string;
 }
 
 function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
   const calls: ReviewCall[] = [];
+  const statuses: string[] = [];
   const seenResults = new Set<string>();
   let count = 0;
   const plugin = definePlugin({
@@ -141,7 +146,7 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
       {
         name: "agent",
         results: ["done", "failed", "interrupted"],
-        async run(_ctx, params): Promise<PluginStepResult> {
+        async run(stepCtx, params): Promise<PluginStepResult> {
           count += 1;
           const input = params as {
             readonly prompt: string;
@@ -169,6 +174,45 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             return { result: "done", data: {} };
           }
           const mode = input.args?.[0] ?? "none";
+          const valid = JSON.stringify({ findings: [], verified: ["the diff"] });
+          if (mode === "silent") {
+            // The reviewer finished but its file tool refused the path.
+            return {
+              result: "done",
+              data: { finalMessage: "the file tool refused the path" },
+            };
+          }
+          if (mode === "legacy-store") {
+            // An older prompt in a resumed run: the store path is written.
+            const legacy = join(
+              options.storeRoot ?? "",
+              "dev",
+              "reviews",
+              stepCtx.runId,
+              basename(input.resultPath),
+            );
+            mkdirSync(dirname(legacy), { recursive: true });
+            writeFileSync(legacy, valid);
+            return { result: "done", data: {} };
+          }
+          if (mode === "cwd-only") {
+            // Only a path under cwd can be written, as with radian's file tool.
+            if (!input.resultPath.startsWith(`${input.cwd}/`)) {
+              return {
+                result: "done",
+                data: { finalMessage: "outside this workspace" },
+              };
+            }
+            writeFileSync(input.resultPath, valid);
+            statuses.push(
+              Bun.spawnSync({
+                cmd: ["git", "status", "--porcelain"],
+                cwd: input.cwd,
+                stdout: "pipe",
+              }).stdout.toString(),
+            );
+            return { result: "done", data: {} };
+          }
           if (mode === "unavailable") {
             return {
               result: "failed",
@@ -315,7 +359,7 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
       },
     ],
   });
-  return { plugin, calls };
+  return { plugin, calls, statuses };
 }
 
 interface FixtureOptions {
@@ -422,6 +466,7 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
   const reviewer = fakeReviewer({
     retryInvalid: options.retryInvalid === true,
     ...(options.callLog === undefined ? {} : { callLog: options.callLog }),
+    storeRoot: store.root,
   });
   const registry = new PluginRegistry(
     [
@@ -1280,7 +1325,13 @@ describe("dev/review hardening", () => {
       const result = await review(state, `review-${mode}`);
       expect(result.result).toBe("pass");
       expect(state.reviewer.calls).toHaveLength(1);
-      const path = state.reviewer.calls[0]?.resultPath ?? "";
+      const path = join(
+        state.store.root,
+        "dev",
+        "reviews",
+        `review-${mode}`,
+        basename(state.reviewer.calls[0]?.resultPath ?? ""),
+      );
       expect(existsSync(path)).toBe(true);
       const task = await taskOf(state);
       expect(task.attempt?.review?.runs?.[0]?.outcome).toBe("report");
@@ -1465,7 +1516,8 @@ describe("dev/review crash recovery", () => {
     readonly crash:
       | "after-first-result"
       | "during-fallback"
-      | "after-first-saved";
+      | "after-first-saved"
+      | "after-write";
     readonly reviewerArgs: readonly string[];
     readonly fallback?: {
       readonly use: string;
@@ -1582,6 +1634,16 @@ describe("dev/review crash recovery", () => {
     });
   });
 
+  test("a crash after the reviewer wrote its workspace report copies it instead of reviewing again", async () => {
+    await crashReview({
+      crash: "after-write",
+      reviewerArgs: ["kill-after-write"],
+      resumedCalls: 0,
+      totalCalls: 1,
+      roles: ["primary"],
+    });
+  });
+
   test("a crash after the first run was saved resumes on the fallback", async () => {
     await crashReview({
       crash: "after-first-saved",
@@ -1595,6 +1657,68 @@ describe("dev/review crash recovery", () => {
       totalCalls: 2,
       roles: ["primary", "fallback"],
     });
+  });
+});
+
+describe("dev/review report in the workspace", () => {
+  function storeCopy(state: Fixture, runId: string): string {
+    return join(
+      state.store.root,
+      "dev",
+      "reviews",
+      runId,
+      basename(state.reviewer.calls[0]?.resultPath ?? ""),
+    );
+  }
+
+  test("a reviewer that can only write inside its cwd passes; the report is copied to the store and git ignores the path", async () => {
+    const state = await fixture({ reviewerArgs: ["cwd-only"] });
+    await verify(state);
+    const result = await review(state, "review-ws");
+    expect(result.result).toBe("pass");
+    const call = state.reviewer.calls[0];
+    expect(call?.resultPath.startsWith(`${call?.cwd}/`)).toBe(true);
+    expect(call?.prompt).toContain(`Write a JSON object to ${call?.resultPath}`);
+    expect(state.reviewer.statuses).toEqual([""]);
+    const copy = storeCopy(state, "review-ws");
+    expect(JSON.parse(readFileSync(copy, "utf8")).verified).toEqual(["the diff"]);
+    expect(existsSync(call?.resultPath ?? "")).toBe(false);
+  });
+
+  test("the workspace report folder is gone after a review that wrote nothing", async () => {
+    const state = await fixture({ reviewerArgs: ["silent"] });
+    await verify(state);
+    const gate = join(state.remote.repository, ".operad-worktrees", `${state.taskId}-gate`);
+    const result = await review(state, "review-stale");
+    expect(result.result).toBe("failed");
+    expect(existsSync(join(gate, ".operad", "review"))).toBe(false);
+  });
+
+  test("an old prompt that writes to the store path is still read", async () => {
+    const state = await fixture({ reviewerArgs: ["legacy-store"] });
+    await verify(state);
+    const result = await review(state, "review-legacy");
+    expect(result.result).toBe("pass");
+    expect(state.reviewer.calls).toHaveLength(1);
+  });
+
+  test("no file at the path says the reviewer could not write the report, with its last message", async () => {
+    const state = await fixture({ reviewerArgs: ["silent"] });
+    await verify(state);
+    const result = await review(state, "review-silent");
+    expect(result.result).toBe("failed");
+    const message = String(result.data?.message);
+    expect(message).toContain("could not write the report (the file tool refused the path)");
+    expect(message).not.toContain("invalid report");
+    expect(state.reviewer.calls).toHaveLength(2);
+  });
+
+  test("an invalid report keeps its wording", async () => {
+    const state = await fixture({ reviewerArgs: ["invalid"] });
+    await verify(state);
+    const result = await review(state, "review-invalid");
+    expect(String(result.data?.message)).toContain("wrote an invalid report");
+    expect(String(result.data?.message)).not.toContain("could not write");
   });
 });
 

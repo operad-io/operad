@@ -14,6 +14,7 @@ import {
   openSync,
   readSync,
   rmSync,
+  rmdirSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -745,7 +746,7 @@ function reviewPrompt(
   sha: string,
   base: string,
   prepared: PreparedDiff,
-  resultPath: string,
+  reportPath: string,
 ): string {
   const pieces: string[] = [
     `Review the changes of task ${task.title}.`,
@@ -771,10 +772,10 @@ function reviewPrompt(
   pieces.push(
     "## What to write",
     [
-      `Write a JSON object to ${resultPath}. The file must contain exactly:`,
+      `Write a JSON object to ${reportPath}. The file must contain exactly:`,
       '{ "findings": [{ "file": "<path>", "line": <number>, "severity": "critical|major|minor", "summary": "<one line>", "trigger": "<what causes it>" }], "verified": ["<what you checked>"] }',
       "A finding on a file the change did not touch is pre-existing; say so in its summary.",
-      "Write only the JSON file. Do not change the worktree.",
+      "Write only the JSON file. Change nothing else in the worktree.",
     ].join("\n"),
   );
   return pieces.join("\n\n");
@@ -782,7 +783,13 @@ function reviewPrompt(
 
 /** What one call to a reviewer harness step produced. */
 interface ReviewerCall {
-  readonly outcome: "report" | "invalid" | "unavailable" | "timed_out" | "failed";
+  readonly outcome:
+    | "report"
+    | "invalid"
+    | "missing"
+    | "unavailable"
+    | "timed_out"
+    | "failed";
   readonly report?: Report | undefined;
   readonly message: string;
 }
@@ -793,6 +800,8 @@ const MAX_REPORT_BYTES = 1_000_000;
 interface ReportRead {
   readonly text?: string;
   readonly message?: string;
+  /** True when nothing exists at the path (as opposed to a bad file). */
+  readonly missing?: boolean;
 }
 
 /**
@@ -806,7 +815,10 @@ function readReport(resultPath: string): ReportRead {
   try {
     details = lstatSync(resultPath);
   } catch {
-    return { message: `the reviewer wrote no report at ${resultPath}` };
+    return {
+      message: `the reviewer wrote no report at ${resultPath}`,
+      missing: true,
+    };
   }
   if (!details.isFile()) {
     return {
@@ -941,6 +953,7 @@ function writeReviewOutcome(path: string, call: ReviewerCall): void {
 const REVIEW_OUTCOMES: readonly ReviewerCall["outcome"][] = [
   "report",
   "invalid",
+  "missing",
   "unavailable",
   "timed_out",
   "failed",
@@ -973,6 +986,52 @@ function readReviewOutcome(resultPath: string): ReviewerCall | undefined {
   return { outcome: "report", report, message };
 }
 
+/** Where, inside the gate worktree, the reviewer writes its report. */
+function workspaceReportPath(gatePath: string, reportName: string): string {
+  return join(gatePath, ".operad", "review", reportName);
+}
+
+/** Copies the text of a report to the store path; false when it cannot. */
+function copyToStore(text: string, storePath: string): boolean {
+  try {
+    mkdirSync(dirname(storePath), { recursive: true });
+    writeFileSync(storePath, text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Removes the workspace report directory so no report outlives its round. */
+function removeWorkspaceReports(workPath: string): void {
+  const dir = dirname(workPath);
+  try {
+    rmSync(dir, { recursive: true, force: true });
+    // `.operad` is only dev's scratch parent; drop it when it is empty.
+    rmdirSync(dirname(dir));
+  } catch {
+    // A directory that is not empty or not there is left as it is.
+  }
+}
+
+/**
+ * Moves a valid report the reviewer left in the workspace to the store, then
+ * clears the workspace. An unreadable one is left for the next run to remove.
+ */
+function salvageWorkspaceReport(workPath: string, storePath: string): void {
+  const read = readReport(workPath);
+  if (read.text === undefined || parseReport(read.text) === undefined) return;
+  if (copyToStore(read.text, storePath)) removeWorkspaceReports(workPath);
+}
+
+/** Makes the workspace report directory, ignored by git whatever it holds. */
+function prepareWorkspaceReports(workPath: string): void {
+  const dir = dirname(workPath);
+  mkdirSync(dir, { recursive: true });
+  // The directory ignores itself, so no repository file is edited.
+  writeFileSync(join(dir, ".gitignore"), "*\n");
+}
+
 /**
  * One call to the reviewer, with its outcome written to disk before it
  * returns. A crash after the model answered therefore reads the outcome back
@@ -984,6 +1043,7 @@ async function callReviewer(
   gatePath: string,
   prompt: string,
   resultPath: string,
+  workPath: string,
   reviewer: { readonly use: string; readonly args: readonly string[] },
   resuming: boolean,
 ): Promise<ReviewerCall> {
@@ -993,6 +1053,7 @@ async function callReviewer(
     gatePath,
     prompt,
     resultPath,
+    workPath,
     reviewer,
     resuming,
   );
@@ -1006,6 +1067,7 @@ async function callReviewerOnce(
   gatePath: string,
   prompt: string,
   resultPath: string,
+  workPath: string,
   reviewer: { readonly use: string; readonly args: readonly string[] },
   resuming: boolean,
 ): Promise<ReviewerCall> {
@@ -1024,6 +1086,9 @@ async function callReviewerOnce(
   if (existing !== undefined) {
     return { outcome: "report", report: existing, message: "" };
   }
+  // No report of an earlier run is read: the workspace one is cleared, and so
+  // is the store one, which an older prompt may still write to.
+  removeWorkspaceReports(workPath);
   try {
     rmSync(resultPath, { force: true });
   } catch {
@@ -1033,6 +1098,14 @@ async function callReviewerOnce(
     rmSync(reviewOutcomePath(resultPath), { force: true });
   } catch {
     // A sidecar left behind is never trusted unless the task names the run.
+  }
+  try {
+    prepareWorkspaceReports(workPath);
+  } catch (error) {
+    return {
+      outcome: "failed",
+      message: `cannot prepare ${dirname(workPath)}: ${messageOf(error)}`,
+    };
   }
   let outcome: PluginStepResult | undefined;
   let thrown: string | undefined;
@@ -1047,13 +1120,19 @@ async function callReviewerOnce(
         ...(settings.stallSecs === undefined
           ? {}
           : { stallSecs: settings.stallSecs }),
-        resultPath,
+        resultPath: workPath,
       },
       stepOptions(ctx, gatePath),
     );
   } catch (error) {
     thrown = messageOf(error);
   }
+  // The reviewer wrote inside its workspace. The store copy is the record, and
+  // the workspace file is removed once it is copied (a harness that still
+  // writes straight to the store path is read from there).
+  const inWorkspace = readReport(workPath);
+  if (inWorkspace.text !== undefined) copyToStore(inWorkspace.text, resultPath);
+  removeWorkspaceReports(workPath);
   // The report is read before the outcome is judged: a reviewer that wrote a
   // valid report and then stalled, timed out or exited non-zero still reviewed.
   const written = readValidReport(resultPath);
@@ -1072,8 +1151,18 @@ async function callReviewerOnce(
         : `the reviewer ended "${outcome.result}"`;
     return { outcome: failureOutcome(data, message), message };
   }
-  const read = readReport(resultPath);
+  const read =
+    inWorkspace.text === undefined && inWorkspace.missing !== true
+      ? inWorkspace
+      : readReport(resultPath);
   if (read.text === undefined) {
+    if (read.missing === true) {
+      // The reviewer ended without a file: say so, with what it last said.
+      const data = isRecord(outcome.data) ? outcome.data : {};
+      const last =
+        typeof data.finalMessage === "string" ? data.finalMessage.trim() : "";
+      return { outcome: "missing", message: last };
+    }
     return {
       outcome: "invalid",
       message: read.message ?? `cannot read ${resultPath}`,
@@ -1197,11 +1286,12 @@ function nextReviewAction(
       }
       return { role: last.role, reason: "retry" };
     }
-    case "invalid": {
+    case "invalid":
+    case "missing": {
       const before = runs[runs.length - 2];
       if (
         before !== undefined &&
-        before.outcome === "invalid" &&
+        (before.outcome === "invalid" || before.outcome === "missing") &&
         before.role === last.role
       ) {
         return "failed";
@@ -1225,6 +1315,8 @@ function runPhrase(run: ReviewRunRecord): string {
       return `${who} timed out`;
     case "invalid":
       return `${who} wrote an invalid report`;
+    case "missing":
+      return `${who} could not write the report${run.message === undefined || run.message === null || run.message.length === 0 ? "" : ` (${run.message})`}`;
     case "failed":
       return `${who} failed${run.message === undefined || run.message === null ? "" : ` (${run.message})`}`;
   }
@@ -1404,11 +1496,18 @@ export async function runReview(
     });
   }
 
+  const reviewDir = join(ctx.store.root, "dev", "reviews", ctx.runId);
+  const reportName = `${context.taskId}-attempt-${attempt.number}-review-${round}.json`;
+  const resultPath = join(reviewDir, reportName);
   const path = gateWorktreePath(
     context.repository.path,
     context.settings,
     context.taskId,
   );
+  const workPath = workspaceReportPath(path, reportName);
+  // A crash after the reviewer wrote its report and before dev copied it: the
+  // gate worktree is about to be recreated, so keep a valid report first.
+  salvageWorkspaceReport(workPath, resultPath);
   const preparedWorktree = recreateGateWorktree(
     context.repository.path,
     path,
@@ -1500,13 +1599,8 @@ export async function runReview(
     });
   }
 
-  const reviewDir = join(ctx.store.root, "dev", "reviews", ctx.runId);
   mkdirSync(reviewDir, { recursive: true });
-  const resultPath = join(
-    reviewDir,
-    `${context.taskId}-attempt-${attempt.number}-review-${round}.json`,
-  );
-  const prompt = reviewPrompt(task, sha, base, prepared, resultPath);
+  const prompt = reviewPrompt(task, sha, base, prepared, workPath);
   // Keep the prompt for a person to read without putting its bytes in a fact.
   const promptPath = join(
     reviewDir,
@@ -1637,6 +1731,7 @@ export async function runReview(
         path,
         prompt,
         resultPath,
+        workPath,
         { use, args },
         resume !== undefined,
       );

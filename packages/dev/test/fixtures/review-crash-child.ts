@@ -57,6 +57,7 @@ const reviewer = definePlugin({
           input.resultPath,
           JSON.stringify({ findings: [], verified: ["the diff"] }),
         );
+        if (mode === "kill-after-write") process.kill(process.pid, "SIGKILL");
         return { result: "done", data: {} };
       },
     },

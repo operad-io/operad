@@ -132,3 +132,8 @@ the row fields.
 | T-0054-M3 | packages/dev/src/rerun.ts | a pass on the rerun carried no note | `dev/verify > a check that fails once and then passes is a pass with a note` |
 | T-0054-M4 | packages/dev/src/rerun.ts | the separator was not drawn between the two runs in the log | `dev/verify > a check that fails once and then passes is a pass with a note` |
 | T-0054-M5 | packages/dev/src/integrate.ts | the merged task left out the rerun note | `dev/integrate > a key command that fails once and then passes lands with a note` |
+| T-0051-M1 | packages/dev/src/gate.ts | the report was not copied from the workspace to the store | `dev/review report in the workspace > a reviewer that can only write inside its cwd passes; the report is copied to the store and git ignores the path` |
+| T-0051-M2 | packages/dev/src/gate.ts | the workspace folder did not write its self-ignoring `.gitignore` | `dev/review report in the workspace > a reviewer that can only write inside its cwd passes; the report is copied to the store and git ignores the path` |
+| T-0051-M3 | packages/dev/src/gate.ts | a missing file was labelled `invalid` instead of `missing` | `dev/review report in the workspace > no file at the path says the reviewer could not write the report, with its last message` |
+| T-0051-M4 | packages/dev/src/gate.ts | the workspace report was not salvaged before the gate worktree was recreated | `dev/review crash recovery > a crash after the reviewer wrote its workspace report copies it instead of reviewing again` |
+| T-0051-M5 | packages/dev/src/gate.ts | the report at the store path was not read after the run | `dev/review report in the workspace > an old prompt that writes to the store path is still read` |

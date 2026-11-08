@@ -111,6 +111,7 @@ export type ReviewResult =
 export type ReviewRunOutcome =
   | "report"
   | "invalid"
+  | "missing"
   | "unavailable"
   | "timed_out"
   | "failed";

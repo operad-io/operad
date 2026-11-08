@@ -627,6 +627,19 @@ curl -s \
 with `"command": "sh ~/.operad/notify.sh"`. A topic name is a password for
 anyone who guesses it; pick a long random one or use a self-hosted server.
 
+## Where the reviewer writes its report
+
+The `dev` plugin's reviewer runs in the task's review workspace (the gate
+worktree) and writes its report inside it, at
+`.operad/review/<task>-attempt-<n>-review-<round>.json`. A harness that refuses
+paths outside its workspace (radian does) can therefore write it. The folder
+ignores itself, so `git status` shows nothing and no commit can pick the report
+up. Once the reviewer ends, dev copies the report to
+`<home>/store/plugins/dev/reviews/<run>/` under the same name, which stays the
+record, and removes the workspace file. A review that ends without a file says
+`the reviewer could not write the report` and the reviewer's last message; a
+file that is not a valid report says `wrote an invalid report`.
+
 ## MCP server
 
 `operad mcp` runs an MCP server on stdio for a lead agent. It reads the same
