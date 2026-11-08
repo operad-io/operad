@@ -405,6 +405,7 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
 
 interface FixtureOptions {
   readonly commands?: readonly CheckCommand[];
+  readonly prepare?: readonly string[];
   readonly commandTimeoutSecs?: number;
   readonly rerun?: number;
   readonly reviewerArgs?: readonly string[];
@@ -461,6 +462,7 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
     JSON.stringify(
       {
         name: "repository",
+        ...(options.prepare === undefined ? {} : { prepare: options.prepare }),
         gate: {
           commands: options.commands ?? ["true"],
           commandTimeoutSecs: options.commandTimeoutSecs ?? 60,
@@ -2701,5 +2703,145 @@ describe("dev/verify reruns only the failed tests", () => {
       { name: "a", count: 1 },
       { name: "c", count: 1 },
     ]);
+  });
+});
+
+describe("prepare", () => {
+  test("runs once per checkout, before verify and before review, and the review prompt says so", async () => {
+    const root = await tempRoot();
+    const order = join(root, "order");
+    const state = await fixture({
+      prepare: [`touch .prepared; echo prepare >> '${order}'`],
+      commands: [`test -f .prepared && echo verify >> '${order}'`],
+    });
+    // The worker's worktree was prepared when the fixture made it.
+    expect(readFileSync(order, "utf8").trim().split("\n")).toEqual(["prepare"]);
+    writeFileSync(order, "");
+    expect((await verify(state)).result).toBe("pass");
+    expect(readFileSync(order, "utf8").trim().split("\n")).toEqual(["prepare", "verify"]);
+    expect((await review(state)).result).toBe("pass");
+    // The review recreates the checkout at the verified commit: a new state, prepared again.
+    expect(readFileSync(order, "utf8").trim().split("\n")).toEqual([
+      "prepare",
+      "verify",
+      "prepare",
+    ]);
+    const call = state.reviewer.calls[0];
+    expect(call?.prompt).toContain("is prepared");
+    expect(call?.prompt).toContain(`touch .prepared; echo prepare >> '${order}'`);
+    expect(existsSync(join(call?.cwd ?? "", ".prepared"))).toBe(true);
+  });
+
+  test("the review prompt says nothing about preparation when there are no prepare commands", async () => {
+    const state = await fixture();
+    await verify(state);
+    await review(state);
+    expect(state.reviewer.calls[0]?.prompt).not.toContain("is prepared");
+  });
+
+  test("a failing prepare fails verify with its reason and log, and no gate command runs", async () => {
+    const root = await tempRoot();
+    const ran = join(root, "ran");
+    const flag = join(root, "fail-now");
+    const state = await fixture({
+      prepare: [`if [ -f '${flag}' ]; then echo boom >&2; exit 3; fi`],
+      commands: [`touch '${ran}'`],
+    });
+    writeFileSync(flag, "");
+    const result = await verify(state);
+    expect(result.result).toBe("fail");
+    expect(result.data?.reason).toBe("prepare failed");
+    expect(String(result.data?.message)).toContain("prepare failed");
+    expect(readFileSync(String(result.data?.log), "utf8")).toContain("boom");
+    expect(String(result.data?.message)).toContain(String(result.data?.log));
+    expect(existsSync(ran)).toBe(false);
+    expect((await taskOf(state)).attempt?.verify?.result).toBe("fail");
+  });
+
+  test("a failing prepare fails review before a reviewer starts", async () => {
+    const root = await tempRoot();
+    const flag = join(root, "fail-now");
+    const state = await fixture({ prepare: [`test ! -f '${flag}'`] });
+    expect((await verify(state)).result).toBe("pass");
+    writeFileSync(flag, "");
+    const result = await review(state);
+    expect(result.result).toBe("failed");
+    expect(result.data?.reason).toBe("prepare failed");
+    expect(state.reviewer.calls).toHaveLength(0);
+  });
+
+  test("prepare must be an array of non-empty lines", () => {
+    expect(validateDevSettings({ prepare: ["a", "b"] }).prepare).toEqual(["a", "b"]);
+    expect(validateDevSettings({}).prepare).toEqual([]);
+    expect(() => validateDevSettings({ prepare: "bun install" })).toThrow("prepare");
+    expect(() => validateDevSettings({ prepare: [""] })).toThrow("prepare[0]");
+  });
+
+  describe("a change spanning two packages", () => {
+    const base = {
+      ".gitignore": "node_modules\n.operad-worktrees\n",
+      "package.json": JSON.stringify({ name: "root", private: true, workspaces: ["packages/*"] }),
+      "packages/a/package.json": JSON.stringify({ name: "a", version: "1.0.0", main: "index.ts" }),
+      "packages/a/index.ts": "export const old = 1;\n",
+      "packages/b/package.json": JSON.stringify({
+        name: "b",
+        version: "1.0.0",
+        dependencies: { a: "workspace:*" },
+      }),
+    };
+
+    /** The branch adds an export to a and a test in b that imports it. */
+    async function spanning(options: FixtureOptions): Promise<Fixture> {
+      const state = await fixture({
+        ...options,
+        baseFiles: base,
+        commit: false,
+        commands: ["bun test packages/b"],
+      });
+      // What main's node_modules has: package a without the branch's export.
+      const stale = join(state.remote.repository, "node_modules", "a");
+      mkdirSync(stale, { recursive: true });
+      writeFileSync(join(stale, "package.json"), base["packages/a/package.json"]);
+      writeFileSync(join(stale, "index.ts"), "export const old = 1;\n");
+      mkdirSync(join(state.worktree, "packages", "b"), { recursive: true });
+      await commitIn(
+        state.worktree,
+        "packages/a/index.ts",
+        "export const old = 1;\nexport const fresh = 2;\n",
+        "a: fresh",
+      );
+      await commitIn(
+        state.worktree,
+        "packages/b/b.test.ts",
+        'import { expect, test } from "bun:test";\nimport { fresh } from "a";\ntest("fresh", () => expect(fresh).toBe(2));\n',
+        "b: use it",
+      );
+      return state;
+    }
+
+    test("the cause: a plain checkout resolves a upward to the stale copy and fails", async () => {
+      const state = await spanning({ prepare: ["true"] });
+      const plain = join(state.remote.repository, ".operad-worktrees", "plain");
+      gitOrThrow(state.remote.repository, ["worktree", "add", "--detach", plain, await head(state)]);
+      const run = Bun.spawnSync({ cmd: ["bun", "test", "packages/b"], cwd: plain, stderr: "pipe", stdout: "pipe" });
+      expect(run.exitCode).not.toBe(0);
+      expect(run.stderr.toString() + run.stdout.toString()).toContain("Export named 'fresh' not found");
+    });
+
+    test("with a prepare command that installs, the test passes in the review checkout", async () => {
+      const state = await spanning({ prepare: ["bun install"] });
+      const result = await verify(state);
+      expect(String(result.data?.message ?? "")).toBe("");
+      expect(result.result).toBe("pass");
+      expect((await review(state)).result).toBe("pass");
+    });
+
+    test("with no prepare command the checkout still links its own packages", async () => {
+      const state = await spanning({});
+      expect((await verify(state)).result).toBe("pass");
+      const settings = await readDevSettings(state.remote.repository);
+      const gate = gateWorktreePath(state.remote.repository, settings, state.taskId);
+      expect(lstatSync(join(gate, "node_modules", "a")).isSymbolicLink()).toBe(true);
+    });
   });
 });

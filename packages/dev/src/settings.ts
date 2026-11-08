@@ -184,6 +184,12 @@ export interface DevSettings {
    */
   readonly workers: ParsedWorkers;
   readonly workerBrief: string;
+  /**
+   * Commands run in every checkout dev makes (the worker's worktree, the gate
+   * checkout, the integration checkout) after it is created or moved to a new
+   * commit and before a step uses it.
+   */
+  readonly prepare: readonly string[];
   readonly gate: GateSettings;
   readonly check: CheckSettings;
   readonly reviewer: ReviewerSettings;
@@ -228,6 +234,7 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
   },
   workers: legacyWorkers({ use: DEFAULT_WORKER_USE, args: [] }, 1),
   workerBrief: WORKER_BRIEF_FILE,
+  prepare: [],
   gate: {
     commands: [],
     commandTimeoutSecs: 1800,
@@ -267,6 +274,7 @@ const KNOWN_FIELDS = new Set([
   "workers",
   "pools",
   "workerBrief",
+  "prepare",
   "gate",
   "check",
   "reviewer",
@@ -473,6 +481,15 @@ function commandList(value: unknown, field: string): readonly CheckCommand[] {
       ? { run }
       : { run, failed: failedRerun(command.failed, `${at}.failed`) };
   });
+}
+
+function prepareList(value: unknown, field: string): readonly string[] {
+  if (!Array.isArray(value)) {
+    throw new DevError(field, "must be an array of command lines");
+  }
+  return value.map((line: unknown, index) =>
+    nonEmptyString(line, `${field}[${index}]`),
+  );
 }
 
 function positiveCount(value: unknown, field: string): number {
@@ -793,6 +810,10 @@ export function validateDevSettings(value: unknown): DevSettings {
       value.workerBrief === undefined
         ? DEFAULT_DEV_SETTINGS.workerBrief
         : nonEmptyString(value.workerBrief, "workerBrief"),
+    prepare:
+      value.prepare === undefined
+        ? DEFAULT_DEV_SETTINGS.prepare
+        : prepareList(value.prepare, "prepare"),
     gate:
       value.gate === undefined
         ? DEFAULT_DEV_SETTINGS.gate

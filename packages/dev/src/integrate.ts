@@ -27,6 +27,7 @@ import {
   gateWorktreePath,
   recreateGateWorktree,
 } from "./gate.ts";
+import { runPrepare, stepOptions } from "./prepare.ts";
 import { checkPlaces } from "./places.ts";
 import {
   mainCloneChange,
@@ -129,18 +130,6 @@ function contains(
   descendant: string,
 ): boolean {
   return git(cwd, ["merge-base", "--is-ancestor", ancestor, descendant]).ok;
-}
-
-function stepOptions(ctx: StepContext, cwd: string): StepRunOptions {
-  return {
-    runId: ctx.runId,
-    cwd,
-    ...(ctx.object === undefined ? {} : { object: ctx.object }),
-    params: ctx.params,
-    access: ctx.access,
-    ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
-    signal: ctx.signal,
-  };
 }
 
 interface Candidate {
@@ -463,7 +452,7 @@ export async function runIntegrate(
       return fail(`"${settings.remote}/${settings.mainBranch}" does not exist after the fetch`);
     }
 
-    const prepared = recreateGateWorktree(repository, gate, base);
+    const prepared = recreateGateWorktree(repository, gate, base, settings);
     if (prepared !== undefined) return fail(prepared);
 
     const candidate = mergeCandidate(
@@ -527,6 +516,15 @@ export async function runIntegrate(
 
     let checkNote: string | undefined;
     if (keyCommands.length > 0) {
+      const prepareFailure = await runPrepare(ctx, settings, gate);
+      if (prepareFailure !== undefined) {
+        return fail(prepareFailure.message, {
+          candidate: sha,
+          base,
+          reason: prepareFailure.reason,
+          ...(prepareFailure.log === undefined ? {} : { log: prepareFailure.log }),
+        });
+      }
       if (runStep === undefined) {
         return fail("the kernel did not offer a way to run the integration checks");
       }

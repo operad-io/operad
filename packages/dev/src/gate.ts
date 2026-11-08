@@ -18,6 +18,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { checkPlaces } from "./places.ts";
+import { linkWorkspacePackages, runPrepare, stepOptions } from "./prepare.ts";
 import { runCheckCommands } from "./rerun.ts";
 import { reportFlakyTests } from "./flaky.ts";
 import { recordRerunPasses } from "./reruns.ts";
@@ -149,6 +150,7 @@ export function recreateGateWorktree(
   repositoryPath: string,
   path: string,
   sha: string,
+  settings: DevSettings,
 ): string | undefined {
   if (existsSync(path)) {
     if (isRegistered(repositoryPath, path)) {
@@ -175,23 +177,12 @@ export function recreateGateWorktree(
     path,
     sha,
   ]);
-  if (add.ok) return undefined;
+  if (add.ok) {
+    // Without a prepare command the checkout still resolves its own packages.
+    if (settings.prepare.length === 0) linkWorkspacePackages(path);
+    return undefined;
+  }
   return `cannot check out ${sha} at ${path}: ${add.err || add.out}`;
-}
-
-function stepOptions(
-  ctx: StepContext,
-  cwd: string,
-): StepRunOptions {
-  return {
-    runId: ctx.runId,
-    cwd,
-    ...(ctx.object === undefined ? {} : { object: ctx.object }),
-    params: ctx.params,
-    access: ctx.access,
-    ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
-    signal: ctx.signal,
-  };
 }
 
 function attemptOf(ctx: StepContext, task: TaskData): TaskAttempt {
@@ -297,8 +288,22 @@ export async function runVerify(
       `no branch "${workBranch(context.taskId)}" or "${context.settings.remote}/${workBranch(context.taskId)}" to verify`,
     );
   }
-  const prepared = recreateGateWorktree(context.repository.path, path, sha);
+  const prepared = recreateGateWorktree(
+    context.repository.path,
+    path,
+    sha,
+    context.settings,
+  );
   if (prepared !== undefined) return failed(prepared, { sha, verified: sha });
+  const prepareFailure = await runPrepare(ctx, context.settings, path);
+  if (prepareFailure !== undefined) {
+    return failed(prepareFailure.message, {
+      sha,
+      verified: sha,
+      reason: prepareFailure.reason,
+      ...(prepareFailure.log === undefined ? {} : { log: prepareFailure.log }),
+    });
+  }
 
   const commands = context.settings.gate.commands;
   const runStep = ctx.runStep;
@@ -824,6 +829,7 @@ function reviewPrompt(
   prepared: PreparedDiff,
   resultPath: string,
   grading: Grading,
+  prepare: readonly string[] = [],
 ): string {
   const pieces: string[] = [
     `Review the changes of task ${task.title}.`,
@@ -846,6 +852,15 @@ function reviewPrompt(
       "## Files left out of the diff",
       "These files changed but their content is not in the diff:",
       prepared.leftOut.map(leftOutLine).join("\n"),
+    );
+  }
+  if (prepare.length > 0) {
+    pieces.push(
+      "## The checkout",
+      [
+        "The checkout you are in is prepared: these commands already ran in it, so do not install anything. Packages of this repository resolve to the code in this checkout.",
+        ...prepare.map((line) => `- \`${line}\``),
+      ].join("\n"),
     );
   }
   pieces.push(
@@ -1718,6 +1733,7 @@ export async function runReview(
     context.repository.path,
     path,
     sha,
+    context.settings,
   );
   if (preparedWorktree !== undefined) {
     const record: ReviewRecord = {
@@ -1731,6 +1747,24 @@ export async function runReview(
     return finish(record, "failed", {
       reason: "worktree",
       message: preparedWorktree,
+    });
+  }
+
+  const prepareFailure = await runPrepare(ctx, context.settings, path);
+  if (prepareFailure !== undefined) {
+    const record: ReviewRecord = {
+      result: "failed",
+      run: ctx.runId,
+      sha,
+      round,
+      reason: prepareFailure.reason,
+      message: prepareFailure.message,
+      ...(prepareFailure.log === undefined ? {} : { log: prepareFailure.log }),
+    };
+    return finish(record, "failed", {
+      reason: prepareFailure.reason,
+      message: prepareFailure.message,
+      ...(prepareFailure.log === undefined ? {} : { log: prepareFailure.log }),
     });
   }
 
@@ -1904,6 +1938,7 @@ export async function runReview(
       prepared,
       reportPath,
       grading,
+      context.settings.prepare,
     );
     let call =
       resume === undefined ? undefined : readReviewOutcome(resultPath);
