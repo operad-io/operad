@@ -57,7 +57,7 @@ function typeList(width: number, count: number, height = 24): TuiState {
   state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
   state = reduce(state, {
     type: "page",
-    tabId: "type:item",
+    tabId: "plugin:item",
     replace: true,
     page: {
       rows: Array.from({ length: count }, (_, at) => ({
@@ -75,12 +75,12 @@ function typeList(width: number, count: number, height = 24): TuiState {
 }
 
 describe("two-line rows", () => {
-  test("a type list row: id and slug, title, then the dim state, badge and note", () => {
+  test("a plugin list row: mark, id and slug only, then the dim state, badge and note", () => {
     const lines = drawnLines(typeList(120, 3));
     // lines[0] is the blank line above the title, lines[1] the title.
-    expect(textOf(lines[2]).trimEnd()).toBe("❯ ◐ T-0000 flaky-survey  Survey the flaky tests");
+    expect(textOf(lines[2]).trimEnd()).toBe("❯ ◐ T-0000 flaky-survey");
     expect(textOf(lines[4])).toBe("");
-    expect(textOf(lines[5]).trimEnd()).toBe("  ◐ T-0001 flaky-survey  Survey the flaky tests");
+    expect(textOf(lines[5]).trimEnd()).toBe("  ◐ T-0001 flaky-survey");
     expect(textOf(lines[6]).trimEnd()).toBe("    running #2 · work 16m");
     expect(textOf(lines[2])).not.toContain("ops");
   });
@@ -157,7 +157,7 @@ describe("two-line rows", () => {
     // Two lines per object: nothing wraps into a third.
     expect(lines.filter((line) => textOf(line).trim() !== "")).toHaveLength(3);
     const narrow = drawnLines(typeList(width, 2));
-    expect(textOf(narrow[2]).trimEnd()).toBe("❯ ◐ T-0000 flaky-survey  Survey the flaky tests");
+    expect(textOf(narrow[2]).trimEnd()).toBe("❯ ◐ T-0000 flaky-survey");
     expect(textOf(narrow[3]).trimEnd()).toBe("    running #2");
   });
 
@@ -177,7 +177,8 @@ describe("two-line rows", () => {
 
   test("the selection tint covers both lines to the pane edge and not the blank line", () => {
     const lines = drawnLines(typeList(120, 3));
-    const width = 48;
+    // The column is as wide as the longest line needs: the id and slug, or the note line.
+    const width = 25;
     for (const at of [2, 3]) {
       expect(textOf(lines[at]).length).toBe(width);
       expect((lines[at] ?? []).every((piece) => sameColour(piece.bg, TINT))).toBe(true);

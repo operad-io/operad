@@ -58,7 +58,8 @@ class Failing implements TuiShellClient {
   running(): Promise<readonly RunningItem[]> {
     return Promise.resolve([]);
   }
-  objects(): Promise<ViewListPage> {
+  objects(_t?: string, _c?: string, _s?: AbortSignal, _f?: string, level?: { readonly parent?: string | undefined }): Promise<ViewListPage> {
+    if (level?.parent !== undefined) return Promise.resolve({ rows: [] });
     return Promise.resolve({ rows: [row] });
   }
   object(): Promise<ViewObject> {
@@ -80,7 +81,7 @@ describe("a request that fails", () => {
       clock: immediateClock,
       onMessage: (message) => failures.push(message),
     });
-    await view.until((s) => s.tabs.find((t) => t.id === "type:item")?.list.loaded === true);
+    await view.until((s) => s.tabs.find((t) => t.id === "plugin:item")?.list.loaded === true);
     shell.key({ name: "3" });
     shell.key({ name: "enter" });
     await view.until((s) => s.object?.error?.includes("is ambiguous") === true);
@@ -198,7 +199,7 @@ describe("a fault in the app's own loops", () => {
     let armed = false;
     const view: TuiView = {
       render(state) {
-        if (state.tabs.find((tab) => tab.id === "type:item")?.list.loaded === true) {
+        if (state.tabs.find((tab) => tab.id === "plugin:item")?.list.loaded === true) {
           if (!armed) {
             armed = true;
             throw new Error("view broke");

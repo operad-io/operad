@@ -55,7 +55,7 @@ function state(): TuiState {
   });
   next = reduce(next, {
     type: "page",
-    tabId: "type:item",
+    tabId: "plugin:item",
     replace: true,
     page: { rows: [row("one")] },
   });

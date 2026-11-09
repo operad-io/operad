@@ -26,7 +26,7 @@ function opened(rowId = "one"): TuiState {
   });
   state = reduce(state, {
     type: "page",
-    tabId: "type:item",
+    tabId: "plugin:item",
     replace: true,
     page: { rows: [row(rowId)] },
   });
@@ -62,7 +62,7 @@ describe("the object pane reducer", () => {
     });
     state = reduce(state, {
       type: "page",
-      tabId: "type:item",
+      tabId: "plugin:item",
       replace: true,
       page: { rows: [row("one"), row("two")], next: "more" },
     });
@@ -264,7 +264,7 @@ describe("the object pane reducer", () => {
     });
     state = reduce(state, {
       type: "page",
-      tabId: "type:item",
+      tabId: "plugin:item",
       replace: true,
       page: { rows: [row("one"), row("two")] },
     });

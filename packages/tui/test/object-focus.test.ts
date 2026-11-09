@@ -93,7 +93,8 @@ class Client implements TuiShellClient {
   running(): Promise<readonly RunningItem[]> {
     return Promise.resolve([]);
   }
-  objects(): Promise<ViewListPage> {
+  objects(_t?: string, _c?: string, _s?: AbortSignal, _f?: string, level?: { readonly parent?: string | undefined }): Promise<ViewListPage> {
+    if (level?.parent !== undefined) return Promise.resolve({ rows: [] });
     return Promise.resolve({ rows: [row("one"), row("two")] });
   }
   object(requested: string): Promise<ViewObject> {
@@ -159,7 +160,7 @@ async function start(width: number): Promise<{
     followDelayMs: 0,
   });
   await view.until((state) =>
-    state.tabs.find((tab) => tab.id === "type:item")?.list.loaded === true,
+    state.tabs.find((tab) => tab.id === "plugin:item")?.list.loaded === true,
   );
   shell.key({ name: "3" });
   return { client, events, view, shell };

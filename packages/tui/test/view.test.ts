@@ -30,7 +30,7 @@ function frameState(): TuiState {
   });
   state = reduce(state, {
     type: "page",
-    tabId: "type:item",
+    tabId: "plugin:item",
     replace: true,
     page: {
       rows: [
@@ -128,11 +128,12 @@ describe("the TUI view", () => {
         await setup.dispose();
       }
     };
-    // The list is 40 columns at 100, 48 at 120 and 60 at 200; the divider
-    // follows after one column of padding on each side of the text.
-    expect(new Set(await dividerAt(100))).toEqual(new Set([42]));
-    expect(new Set(await dividerAt(120))).toEqual(new Set([50]));
-    expect(new Set(await dividerAt(200))).toEqual(new Set([62]));
+    // A plugin tab's column is as wide as its rows need (24 at least), so the
+    // divider is where the narrow column ends at every width; the terminal's
+    // share (40, 48 and 60 columns) is only the upper bound.
+    expect(new Set(await dividerAt(100))).toEqual(new Set([26]));
+    expect(new Set(await dividerAt(120))).toEqual(new Set([26]));
+    expect(new Set(await dividerAt(200))).toEqual(new Set([26]));
     // 99 columns: the list only, no divider.
     expect((await dividerAt(99)).every((x) => x === -1)).toBe(true);
   });
@@ -283,7 +284,7 @@ describe("the TUI view", () => {
     ];
     let state = initialState({ width, height: 80, theme: "dark" });
     state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
-    state = reduce(state, { type: "page", tabId: "type:item", replace: true, page: { rows } });
+    state = reduce(state, { type: "page", tabId: "plugin:item", replace: true, page: { rows } });
     state = reduce(state, { type: "key", key: "3" });
     const setup = await createTestRenderer({ width, height: 80 });
     try {
