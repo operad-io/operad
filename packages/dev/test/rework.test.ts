@@ -8,6 +8,7 @@ import {
   movesIn,
   type ReviewKind,
   previousReview,
+  reviewSettingsOf,
   type PreviousFinding,
 } from "../src/rework.ts";
 
@@ -163,4 +164,34 @@ describe("increment", () => {
       expect(lines(result.removed)).toEqual(item.removed);
     });
   }
+});
+
+describe("review settings by round", () => {
+  const reviewer = {
+    use: "h/agent",
+    args: ["big"],
+    timeoutSecs: 600,
+    first: { args: ["small"], timeoutSecs: 900 },
+  };
+  test("only a first review reads the first block, value by value", () => {
+    const first = reviewSettingsOf("first", reviewer, true);
+    expect(first).toEqual({
+      round: "first",
+      use: "h/agent",
+      args: ["small"],
+      timeoutSecs: 900,
+      sources: { use: "default", args: "first", timeoutSecs: "first", stallSecs: "default" },
+    });
+    for (const kind of ["rework", "reverify"] as const) {
+      const later = reviewSettingsOf(kind, reviewer, false);
+      expect(later.round).toBe("rework");
+      expect(later.args).toEqual(["big"]);
+      expect(later.timeoutSecs).toBe(600);
+      expect(later.sources.args).toBe("default");
+    }
+  });
+  test("without a first block every value is the default's", () => {
+    const used = reviewSettingsOf("first", { use: "h/agent", args: [], timeoutSecs: 600 }, true);
+    expect(used.sources).toEqual({ use: "default", args: "default", timeoutSecs: "default", stallSecs: "default" });
+  });
 });

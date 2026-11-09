@@ -161,12 +161,25 @@ export interface ReviewerFallback {
   readonly args: readonly string[];
 }
 
+/** What a first review may set differently from the default block. */
+export interface ReviewerFirst {
+  readonly use?: string | undefined;
+  readonly args?: readonly string[] | undefined;
+  readonly timeoutSecs?: number | undefined;
+  readonly stallSecs?: number | undefined;
+}
+
 /** What a repository may configure for the review harness step. */
 export interface ReviewerSettings {
   readonly use: string;
   readonly args: readonly string[];
   /** The arguments of the first review of an attempt, when they differ. */
   readonly firstArgs?: readonly string[] | undefined;
+  /**
+   * The first review of a task: a block whose set values replace the
+   * reviewer's own for that review. Every later review uses the reviewer's.
+   */
+  readonly first?: ReviewerFirst | undefined;
   /** The step used when the primary reviewer is unavailable. */
   readonly fallback?: ReviewerFallback | undefined;
   readonly timeoutSecs: number;
@@ -644,6 +657,34 @@ function booleanOf(value: unknown, field: string): boolean {
   return value;
 }
 
+function reviewerFirst(value: unknown, field: string): ReviewerFirst {
+  if (!isRecord(value)) throw new DevError(field, "must be an object");
+  for (const key of Object.keys(value)) {
+    if (
+      key !== "use" &&
+      key !== "args" &&
+      key !== "timeoutSecs" &&
+      key !== "stallSecs"
+    ) {
+      throw new DevError(`${field}.${key}`, "is not a first review setting");
+    }
+  }
+  return {
+    ...(value.use === undefined
+      ? {}
+      : { use: nonEmptyString(value.use, `${field}.use`) }),
+    ...(value.args === undefined
+      ? {}
+      : { args: stringList(value.args, `${field}.args`) }),
+    ...(value.timeoutSecs === undefined
+      ? {}
+      : { timeoutSecs: positiveSeconds(value.timeoutSecs, `${field}.timeoutSecs`) }),
+    ...(value.stallSecs === undefined
+      ? {}
+      : { stallSecs: positiveSeconds(value.stallSecs, `${field}.stallSecs`) }),
+  };
+}
+
 function reviewerSettings(value: unknown, field: string): ReviewerSettings {
   if (!isRecord(value)) {
     throw new DevError(field, "must be an object");
@@ -653,6 +694,7 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
       key !== "use" &&
       key !== "args" &&
       key !== "firstArgs" &&
+      key !== "first" &&
       key !== "fallback" &&
       key !== "timeoutSecs" &&
       key !== "stallSecs" &&
@@ -669,6 +711,10 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
     value.firstArgs === undefined
       ? undefined
       : stringList(value.firstArgs, `${field}.firstArgs`);
+  const first =
+    value.first === undefined
+      ? undefined
+      : reviewerFirst(value.first, `${field}.first`);
   const fallback =
     value.fallback === undefined
       ? undefined
@@ -683,6 +729,7 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
         ? []
         : stringList(value.args, `${field}.args`),
     ...(firstArgs === undefined ? {} : { firstArgs }),
+    ...(first === undefined ? {} : { first }),
     ...(fallback === undefined ? {} : { fallback }),
     timeoutSecs:
       value.timeoutSecs === undefined

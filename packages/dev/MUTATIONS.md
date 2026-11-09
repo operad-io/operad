@@ -404,3 +404,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0118-M1 | packages/dev/src/rework.ts | a same-commit reverify applied the line rules (the kind check for `reverify` removed) | `pre-existing by kind of review > reverify: far, in a touched file` and `dev/review rework rounds > what moves as pre-existing, by kind of review > same-commit reverify` |
+
+## T-0119 — review settings by round
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0119-M1 | packages/dev/src/rework.ts | a rework round or reverify also read the `first` block (the `kind === "first"` guard removed) | `review settings by round > only a first review reads the first block, value by value` and `dev/review rework rounds > settings by round > the first review reads the first block; a rework round and a same-commit reverify read the default block` |
+| T-0119-M2 | packages/dev/src/gate.ts | the harness call kept the reviewer's `timeoutSecs` instead of the round's | `dev/review rework rounds > settings by round > the first review reads the first block; a rework round and a same-commit reverify read the default block` |

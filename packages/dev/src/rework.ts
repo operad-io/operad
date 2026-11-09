@@ -295,3 +295,70 @@ export function previousLine(finding: PreviousFinding): string {
     finding.line === null ? finding.file : `${finding.file}:${finding.line}`;
   return `- [${finding.severity}] ${place} ${finding.summary}`;
 }
+
+/** Which block of reviewer settings a value came from. */
+export type ReviewSettingSource = "first" | "default";
+
+/** The settings one review round ran with, and where each came from. */
+export interface ReviewSettingsUsed {
+  /** `first` for the task's first review; `rework` for every later one. */
+  readonly round: "first" | "rework";
+  readonly use: string;
+  readonly args: readonly string[];
+  readonly timeoutSecs: number;
+  readonly stallSecs?: number;
+  readonly sources: {
+    readonly use: ReviewSettingSource;
+    readonly args: ReviewSettingSource;
+    readonly timeoutSecs: ReviewSettingSource;
+    readonly stallSecs: ReviewSettingSource;
+  };
+}
+
+/** The reviewer values the round's settings are chosen from. */
+export interface ReviewerValues {
+  readonly use: string;
+  readonly args: readonly string[];
+  readonly firstArgs?: readonly string[] | undefined;
+  readonly first?:
+    | {
+        readonly use?: string | undefined;
+        readonly args?: readonly string[] | undefined;
+        readonly timeoutSecs?: number | undefined;
+        readonly stallSecs?: number | undefined;
+      }
+    | undefined;
+  readonly timeoutSecs: number;
+  readonly stallSecs?: number | undefined;
+}
+
+/**
+ * The settings of a review round. Only a first review reads the `first`
+ * block, value by value; a rework round and a review of the same commit read
+ * the default values. `firstArgs` (an older setting) still gives a first
+ * review of an attempt its arguments when `first.args` is not set.
+ */
+export function reviewSettingsOf(
+  kind: ReviewKind,
+  reviewer: ReviewerValues,
+  firstOfAttempt: boolean,
+): ReviewSettingsUsed {
+  const first = kind === "first" ? reviewer.first : undefined;
+  const legacy =
+    kind === "first" && firstOfAttempt ? reviewer.firstArgs : undefined;
+  const args = first?.args ?? legacy;
+  const stall = first?.stallSecs ?? reviewer.stallSecs;
+  return {
+    round: kind === "first" ? "first" : "rework",
+    use: first?.use ?? reviewer.use,
+    args: args ?? reviewer.args,
+    timeoutSecs: first?.timeoutSecs ?? reviewer.timeoutSecs,
+    ...(stall === undefined ? {} : { stallSecs: stall }),
+    sources: {
+      use: first?.use === undefined ? "default" : "first",
+      args: args === undefined ? "default" : "first",
+      timeoutSecs: first?.timeoutSecs === undefined ? "default" : "first",
+      stallSecs: first?.stallSecs === undefined ? "default" : "first",
+    },
+  };
+}
