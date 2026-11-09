@@ -26,6 +26,8 @@ export interface RunningItem {
   readonly queued: { readonly key: string; readonly ahead: number } | null;
   /** The step in words: `queued (<key>, <n> ahead)` while it waits. */
   readonly stepLabel: string | null;
+  /** The object's row note (a plugin's word on what it waits for); null for none. */
+  readonly note?: string | null;
 }
 
 /** Reads a run's state and when its current step's current attempt started. */
@@ -157,6 +159,7 @@ export async function listRunning(
       elapsedMs: Math.max(0, now - run.startedAt),
       object: named === undefined ? null : named.object,
       title: named === undefined ? null : named.title,
+      note: named?.note ?? null,
       stepStartedAt,
       stepElapsedMs: stepStartedAt === null ? null : Math.max(0, now - stepStartedAt),
     });
@@ -168,6 +171,7 @@ export async function listRunning(
 interface Named {
   readonly object: string;
   readonly title: string | null;
+  readonly note?: string | null;
 }
 
 /**
@@ -202,6 +206,7 @@ async function rowsFor(
     named.set(key, {
       object: row.scope === undefined ? row.id : `${row.scope}/${row.id}`,
       title: row.error === undefined ? row.title : null,
+      note: row.error === undefined ? (row.note ?? null) : null,
     });
   }
   return named;

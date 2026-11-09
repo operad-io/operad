@@ -79,7 +79,8 @@ import {
   incrementOf,
   type Increment,
   fixedCount,
-  movesAsPreExisting,
+  movesIn,
+  type ReviewKind,
   previousLine,
   previousReview,
   type LineMap,
@@ -1968,6 +1969,14 @@ export async function runReview(
     ]).ok
       ? followed
       : undefined;
+  // A rework round applies the line rules; a first review only the per-file
+  // rule; a review of the same commit as an earlier one moves nothing.
+  const kind: ReviewKind =
+    rework !== undefined
+      ? "rework"
+      : followed === undefined && history.length > 0
+        ? "reverify"
+        : "first";
   // The lines the task's own change added, for the pre-existing rules.
   const own: LineMap = addedLinesOf(
     gitZ(context.repository.path, [
@@ -2234,7 +2243,8 @@ export async function runReview(
         delete (finding as { pre_existing?: unknown }).pre_existing;
         const moved =
           atOrAbove(finding.severity, settings.fixLevel) &&
-          movesAsPreExisting(
+          movesIn(
+            kind,
             {
               severity: finding.severity,
               file: finding.file,

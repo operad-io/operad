@@ -30,6 +30,13 @@ import {
 import { runPrepare, stepOptions } from "./prepare.ts";
 import { checkPlaces } from "./places.ts";
 import {
+  IntegrationQueue,
+  IntegrationQueueCancelled,
+  type BatchResult,
+  type Ticket,
+  type Turn,
+} from "./integration-queue.ts";
+import {
   mainCloneChange,
   runCommand,
   updateMainClone,
@@ -70,6 +77,14 @@ export const integrateTestHooks: {
   runCommand?: CommandRunner | undefined;
   /** The repository serve's code comes from; tests name a scratch one. */
   codeRoot?: string | undefined;
+  /** Called once a task has taken its ticket in the integration queue. */
+  queued?: ((task: string) => void) | undefined;
+  /** Awaited once a task has the turn, before it builds anything. */
+  turnTaken?: ((task: string) => Promise<void> | void) | undefined;
+  /** Awaited by a batch's leader once it has claimed the tasks queued behind it. */
+  claimed?: ((followers: readonly string[]) => Promise<void> | void) | undefined;
+  /** How a task waits for its turn before it looks again. */
+  wait?: ((ms: number) => Promise<void>) | undefined;
 } = {};
 
 /** The repository whose code this module was loaded from. */
@@ -291,6 +306,7 @@ export async function runIntegrate(
       run: ctx.runId,
     }),
     integrating: null,
+    integrationWait: null,
   };
   const verified = task.attempt?.verified;
   const repository = context.repository.path;
@@ -331,13 +347,16 @@ export async function runIntegrate(
   };
 
   let flakyReason: string | undefined;
+  /** The other tasks this task was merged with in one batch. */
+  let batchWith: readonly string[] = [];
   const recordMerged = async (
     record: IntegrationRecord,
     sha: string,
     extra: Readonly<Record<string, unknown>> = {},
+    cloneSha: string = sha,
   ): Promise<PluginStepResult> => {
     const note = record.checkNote;
-    const clone = followMain(context.repository, ctx.home, settings.mainBranch, sha);
+    const clone = followMain(context.repository, ctx.home, settings.mainBranch, cloneSha);
     const cloneChange = mainCloneChange(clone);
     const withClone: IntegrationRecord = { ...record, mainClone: { ...clone } };
     if (
@@ -345,6 +364,9 @@ export async function runIntegrate(
         phase: "merged",
         change: [
           ...(typeof note === "string" ? [note] : []),
+          ...(batchWith.length === 0
+            ? []
+            : [`integrated in a batch with ${batchWith.join(", ")}`]),
           `merged as ${shortSha(sha)}`,
           ...(cloneChange === undefined ? [] : [cloneChange]),
         ],
@@ -357,6 +379,7 @@ export async function runIntegrate(
       result: "merged",
       data: integrationData(withClone, attempt, {
         ...extra,
+        ...(batchWith.length === 0 ? {} : { batch: batchWith }),
         ...(flakyReason === undefined ? {} : { reason: flakyReason }),
       }),
     };
@@ -429,170 +452,255 @@ export async function runIntegrate(
     }
   }
 
-  // From here the step builds and checks the candidate: the row says integrating.
-  if (
-    !(await saveTaskGuarded(
-      ctx,
-      context.taskKey,
-      { ...task, attempt: { ...attempt, integrating: ctx.runId } },
-      "dev:integrate",
-    ))
-  ) {
-    return cancelledStep();
-  }
-
-  let lastError = "";
-  for (let round = 0; round < MAX_INTEGRATION_ROUNDS; round += 1) {
-    const fetched = git(repository, ["fetch", "--prune", settings.remote]);
-    if (!fetched.ok) {
-      return fail(
-        `cannot fetch "${settings.remote}": ${fetched.err || fetched.out || "git fetch failed"}`,
-      );
-    }
-    const base = revParse(repository, mainRef);
-    if (base === undefined) {
-      return fail(`"${settings.remote}/${settings.mainBranch}" does not exist after the fetch`);
-    }
-
-    const prepared = recreateGateWorktree(repository, gate, base, settings);
-    if (prepared !== undefined) return fail(prepared);
-
-    const candidate = mergeCandidate(
-      gate,
-      verified,
-      settings.integration.style,
-      message,
-    );
-    if (candidate.kind === "conflict") {
-      clearConflict(gate);
-      const files = candidate.files ?? [];
-      const text = [
-        files.length === 0
-          ? "The verified commit conflicts with the latest main."
-          : [
-              "The verified commit conflicts with the latest main in these files:",
-              ...files.map((file) => `- ${file}`),
-            ].join("\n"),
-        "Merge the latest main into the task branch, resolve the conflict, and continue.",
-      ].join("\n\n");
-      const withRework = appendRework(
-        task,
-        "conflict with main",
-        text,
-        files.length === 0
-          ? "the verified commit conflicts with the latest main"
-          : `conflicts with the latest main in ${files.join(", ")}`,
-      );
-      const record: IntegrationRecord = {
-        result: "conflict",
-        run: ctx.runId,
-        style: settings.integration.style,
-        verified,
-        base,
-        head: head ?? null,
-        headMoved,
-        files,
-      };
-      const written = await saveTaskGuarded(
+  const queue = new IntegrationQueue({
+    home: ctx.home,
+    repository: context.repository,
+    task: context.taskId,
+    run: ctx.runId,
+    verified,
+    message,
+    signal: ctx.signal,
+    wait: integrateTestHooks.wait,
+    say: async (line, holder) => {
+      await ctx.logger.write(line);
+      const saved = await saveTaskGuarded(
         ctx,
         context.taskKey,
         {
-          ...withRework,
-          phase: "running",
-          run: ctx.runId,
-          attempts: Math.max(task.attempts, attempt.number),
-          attempt: { ...attempt, run: ctx.runId, integration: record },
+          ...task,
+          attempt: {
+            ...attempt,
+            integrating: ctx.runId,
+            integrationWait: `${holder} is integrating`,
+          },
         },
         "dev:integrate",
       );
-      if (!written) return cancelledStep();
-      return {
-        result: "conflict",
-        data: integrationData(record, attempt, { files, rework: true }),
-      };
-    }
-    if (candidate.kind === "failed" || candidate.sha === undefined) {
-      return fail(candidate.message ?? "cannot build the candidate");
-    }
-    const sha = candidate.sha;
+      if (!saved) throw new IntegrationQueueCancelled();
+    },
+  });
+  await queue.join();
+  integrateTestHooks.queued?.(context.taskId);
 
-    let checkNote: string | undefined;
-    if (keyCommands.length > 0) {
-      const prepareFailure = await runPrepare(ctx, settings, gate);
-      if (prepareFailure !== undefined) {
-        return fail(prepareFailure.message, {
-          candidate: sha,
-          base,
-          reason: prepareFailure.reason,
-          ...(prepareFailure.log === undefined ? {} : { log: prepareFailure.log }),
+  /** Lands the tasks of a batch with one candidate; undefined means fall back to one by one. */
+  const landBatch = async (
+    followers: readonly Ticket[],
+  ): Promise<PluginStepResult | undefined> => {
+    const entries = [
+      { task: context.taskId, verified, message },
+      ...followers.map((ticket) => ({
+        task: ticket.task,
+        verified: ticket.verified,
+        message: ticket.message,
+      })),
+    ];
+    for (let round = 0; round < MAX_INTEGRATION_ROUNDS; round += 1) {
+      const fetched = git(repository, ["fetch", "--prune", settings.remote]);
+      if (!fetched.ok) return undefined;
+      const base = revParse(repository, mainRef);
+      if (base === undefined) return undefined;
+      if (recreateGateWorktree(repository, gate, base, settings) !== undefined) {
+        return undefined;
+      }
+      const members: { task: string; sha: string }[] = [];
+      for (const entry of entries) {
+        const built = mergeCandidate(
+          gate,
+          entry.verified,
+          settings.integration.style,
+          entry.message,
+        );
+        if (built.kind === "conflict") clearConflict(gate);
+        if (built.kind !== "ok" || built.sha === undefined) return undefined;
+        members.push({ task: entry.task, sha: built.sha });
+      }
+      const batchHead = headOf(gate);
+      const own = members[0];
+      if (batchHead === undefined || own === undefined) return undefined;
+
+      let checkNote: string | undefined;
+      if (keyCommands.length > 0) {
+        if ((await runPrepare(ctx, settings, gate)) !== undefined) return undefined;
+        if (runStep === undefined) return undefined;
+        const checked = await runCheckCommands(
+          runStep,
+          { cwd: gate },
+          keyCommands,
+          stepOptions(ctx, gate),
+          settings.check.rerun,
+          checkPlaces(ctx, context.repository, settings.gate.places),
+        );
+        await recordRerunPasses(ctx.store, checked.passedOnRerun);
+        if (checked.hostError !== undefined || checked.outcome?.result !== "pass") {
+          return undefined;
+        }
+        const flakyNotice = await reportFlakyTests({
+          ctx,
+          repository: context.repository,
+          taskId: context.taskId,
+          threshold: context.settings.check.flakyTask,
+          check: checked,
         });
+        checkNote =
+          flakyNotice === undefined
+            ? checked.note
+            : [checked.note, flakyNotice].filter((part) => part !== undefined).join("; ");
+        flakyReason = flakyNotice;
       }
-      if (runStep === undefined) {
-        return fail("the kernel did not offer a way to run the integration checks");
+
+      // A claimed task that left (cancelled) is not merged: one by one instead.
+      if (queue.stillQueued(followers).length !== followers.length) return undefined;
+
+      const pending: IntegrationRecord = {
+        result: "pending",
+        run: ctx.runId,
+        style: settings.integration.style,
+        verified,
+        candidate: own.sha,
+        base,
+        head: head ?? null,
+        headMoved,
+        pushed: false,
+        ...(checkNote === undefined ? {} : { checkNote }),
+      };
+      if ((await writeIntegration(ctx, context, task, attempt, pending, {
+          integrating: true,
+        })) === undefined) {
+        return cancelledStep();
       }
-      const checked = await runCheckCommands(
-        runStep,
-        { cwd: gate },
-        keyCommands,
-        stepOptions(ctx, gate),
-        settings.check.rerun,
-        checkPlaces(ctx, context.repository, settings.gate.places),
-      );
-      await recordRerunPasses(ctx.store, checked.passedOnRerun);
-      const flakyNotice = await reportFlakyTests({
+      const land = async (extra: Readonly<Record<string, unknown>>): Promise<PluginStepResult> => {
+        const result: BatchResult = {
+          base,
+          head: batchHead,
+          ...(checkNote === undefined ? {} : { note: checkNote }),
+          members,
+        };
+        queue.publish(result);
+        batchWith = members.filter((member) => member.task !== context.taskId).map((member) => member.task);
+        return recordMerged({ ...pending, result: "merged", pushed: true }, own.sha, extra, batchHead);
+      };
+      const push = git(gate, ["push", settings.remote, `HEAD:refs/heads/${settings.mainBranch}`]);
+      if (push.ok) {
+        integrateTestHooks.afterPush?.(batchHead);
+        return land({});
+      }
+      git(repository, ["fetch", "--prune", settings.remote]);
+      const now = revParse(repository, mainRef);
+      if (now !== undefined && contains(repository, batchHead, now)) {
+        return land({ landed: true });
+      }
+      if (now !== undefined && now !== base) continue;
+      return undefined;
+    }
+    return undefined;
+  };
+
+  /** Records the merge a batch's leader made for this task. */
+  const recordBatched = async (
+    leaderResult: BatchResult,
+  ): Promise<PluginStepResult> => {
+    const mine = leaderResult.members.find((member) => member.task === context.taskId);
+    if (mine === undefined) return fail("the batch that merged this task does not list it");
+    batchWith = leaderResult.members
+      .filter((member) => member.task !== context.taskId)
+      .map((member) => member.task);
+    const record: IntegrationRecord = {
+      result: "merged",
+      run: ctx.runId,
+      style: settings.integration.style,
+      verified,
+      candidate: mine.sha,
+      base: leaderResult.base,
+      head: head ?? null,
+      headMoved,
+      pushed: true,
+      ...(leaderResult.note === undefined ? {} : { checkNote: leaderResult.note }),
+    };
+    return recordMerged(record, mine.sha, {}, leaderResult.head);
+  };
+
+  try {
+    let turn: Turn;
+    try {
+      turn = await queue.turn();
+    } catch (error) {
+      if (error instanceof IntegrationQueueCancelled) return cancelledStep();
+      throw error;
+    }
+    if (turn.kind === "batched") return await recordBatched(turn.result);
+    await integrateTestHooks.turnTaken?.(context.taskId);
+
+    // From here the step builds and checks the candidate: the row says integrating.
+    if (
+      !(await saveTaskGuarded(
         ctx,
-        repository: context.repository,
-        taskId: context.taskId,
-        threshold: context.settings.check.flakyTask,
-        check: checked,
-      });
-      const { outcome, hostError } = checked;
-      checkNote =
-        flakyNotice === undefined
-          ? checked.note
-          : [checked.note, flakyNotice].filter((part) => part !== undefined).join("; ");
-      flakyReason = flakyNotice;
-      if (hostError !== undefined || outcome?.result !== "pass") {
-        const data =
-          outcome !== undefined && isRecord(outcome.data) ? outcome.data : {};
-        const command =
-          typeof data.line === "string" ? data.line : undefined;
-        const log = typeof data.log === "string" ? data.log : undefined;
-        const lineNumber =
-          typeof data.lineNumber === "number" ? data.lineNumber : undefined;
-        const detail =
-          hostError ??
-          (typeof data.message === "string" ? data.message : undefined) ??
-          `the integration checks failed (${outcome?.result ?? "unknown"})`;
-        const pieces = [
-          command === undefined
-            ? "An integration check failed."
-            : `The integration check failed: \`${command}\``,
-          ...(log === undefined ? [] : [`Log: \`${log}\``]),
-          detail,
-          ...(flakyNotice === undefined ? [] : [`Note: ${flakyNotice}`]),
-        ];
+        context.taskKey,
+        { ...task, attempt: { ...attempt, integrating: ctx.runId } },
+        "dev:integrate",
+      ))
+    ) {
+      return cancelledStep();
+    }
+
+    const followers = queue.claim(settings.integration.batch);
+    if (followers.length > 0) {
+      await integrateTestHooks.claimed?.(followers.map((ticket) => ticket.task));
+      const landed = await landBatch(followers);
+      if (landed !== undefined) return landed;
+      queue.fallBack(followers);
+    }
+
+    let lastError = "";
+    for (let round = 0; round < MAX_INTEGRATION_ROUNDS; round += 1) {
+      const fetched = git(repository, ["fetch", "--prune", settings.remote]);
+      if (!fetched.ok) {
+        return fail(
+          `cannot fetch "${settings.remote}": ${fetched.err || fetched.out || "git fetch failed"}`,
+        );
+      }
+      const base = revParse(repository, mainRef);
+      if (base === undefined) {
+        return fail(`"${settings.remote}/${settings.mainBranch}" does not exist after the fetch`);
+      }
+
+      const prepared = recreateGateWorktree(repository, gate, base, settings);
+      if (prepared !== undefined) return fail(prepared);
+
+      const candidate = mergeCandidate(
+        gate,
+        verified,
+        settings.integration.style,
+        message,
+      );
+      if (candidate.kind === "conflict") {
+        clearConflict(gate);
+        const files = candidate.files ?? [];
+        const text = [
+          files.length === 0
+            ? "The verified commit conflicts with the latest main."
+            : [
+                "The verified commit conflicts with the latest main in these files:",
+                ...files.map((file) => `- ${file}`),
+              ].join("\n"),
+          "Merge the latest main into the task branch, resolve the conflict, and continue.",
+        ].join("\n\n");
         const withRework = appendRework(
           task,
-          "integration",
-          pieces.join("\n\n"),
-          command === undefined
-            ? detail
-            : `the integration check failed: ${command}`,
+          "conflict with main",
+          text,
+          files.length === 0
+            ? "the verified commit conflicts with the latest main"
+            : `conflicts with the latest main in ${files.join(", ")}`,
         );
         const record: IntegrationRecord = {
-          result: "fail",
+          result: "conflict",
           run: ctx.runId,
           style: settings.integration.style,
           verified,
-          candidate: sha,
           base,
           head: head ?? null,
           headMoved,
-          ...(command === undefined ? {} : { command }),
-          ...(log === undefined ? {} : { log }),
-          ...(lineNumber === undefined ? {} : { lineNumber }),
-          message: flakyNotice === undefined ? detail : `${detail}; ${flakyNotice}`,
+          files,
         };
         const written = await saveTaskGuarded(
           ctx,
@@ -608,70 +716,174 @@ export async function runIntegrate(
         );
         if (!written) return cancelledStep();
         return {
-          result: "fail",
-          data: integrationData(record, attempt, { rework: true }),
+          result: "conflict",
+          data: integrationData(record, attempt, { files, rework: true }),
         };
       }
-    }
+      if (candidate.kind === "failed" || candidate.sha === undefined) {
+        return fail(candidate.message ?? "cannot build the candidate");
+      }
+      const sha = candidate.sha;
 
-    // Record the candidate before the push: a crash after the push finds it and
-    // the remote's main, and finishes without pushing again.
-    const pending: IntegrationRecord = {
-      result: "pending",
-      run: ctx.runId,
-      style: settings.integration.style,
-      verified,
-      candidate: sha,
-      base,
-      head: head ?? null,
-      headMoved,
-      pushed: false,
-      ...(checkNote === undefined ? {} : { checkNote }),
-    };
-    if ((await writeIntegration(ctx, context, task, attempt, pending, {
-        integrating: true,
-      })) === undefined) {
-      return cancelledStep();
-    }
+      let checkNote: string | undefined;
+      if (keyCommands.length > 0) {
+        const prepareFailure = await runPrepare(ctx, settings, gate);
+        if (prepareFailure !== undefined) {
+          return fail(prepareFailure.message, {
+            candidate: sha,
+            base,
+            reason: prepareFailure.reason,
+            ...(prepareFailure.log === undefined ? {} : { log: prepareFailure.log }),
+          });
+        }
+        if (runStep === undefined) {
+          return fail("the kernel did not offer a way to run the integration checks");
+        }
+        const checked = await runCheckCommands(
+          runStep,
+          { cwd: gate },
+          keyCommands,
+          stepOptions(ctx, gate),
+          settings.check.rerun,
+          checkPlaces(ctx, context.repository, settings.gate.places),
+        );
+        await recordRerunPasses(ctx.store, checked.passedOnRerun);
+        const flakyNotice = await reportFlakyTests({
+          ctx,
+          repository: context.repository,
+          taskId: context.taskId,
+          threshold: context.settings.check.flakyTask,
+          check: checked,
+        });
+        const { outcome, hostError } = checked;
+        checkNote =
+          flakyNotice === undefined
+            ? checked.note
+            : [checked.note, flakyNotice].filter((part) => part !== undefined).join("; ");
+        flakyReason = flakyNotice;
+        if (hostError !== undefined || outcome?.result !== "pass") {
+          const data =
+            outcome !== undefined && isRecord(outcome.data) ? outcome.data : {};
+          const command =
+            typeof data.line === "string" ? data.line : undefined;
+          const log = typeof data.log === "string" ? data.log : undefined;
+          const lineNumber =
+            typeof data.lineNumber === "number" ? data.lineNumber : undefined;
+          const detail =
+            hostError ??
+            (typeof data.message === "string" ? data.message : undefined) ??
+            `the integration checks failed (${outcome?.result ?? "unknown"})`;
+          const pieces = [
+            command === undefined
+              ? "An integration check failed."
+              : `The integration check failed: \`${command}\``,
+            ...(log === undefined ? [] : [`Log: \`${log}\``]),
+            detail,
+            ...(flakyNotice === undefined ? [] : [`Note: ${flakyNotice}`]),
+          ];
+          const withRework = appendRework(
+            task,
+            "integration",
+            pieces.join("\n\n"),
+            command === undefined
+              ? detail
+              : `the integration check failed: ${command}`,
+          );
+          const record: IntegrationRecord = {
+            result: "fail",
+            run: ctx.runId,
+            style: settings.integration.style,
+            verified,
+            candidate: sha,
+            base,
+            head: head ?? null,
+            headMoved,
+            ...(command === undefined ? {} : { command }),
+            ...(log === undefined ? {} : { log }),
+            ...(lineNumber === undefined ? {} : { lineNumber }),
+            message: flakyNotice === undefined ? detail : `${detail}; ${flakyNotice}`,
+          };
+          const written = await saveTaskGuarded(
+            ctx,
+            context.taskKey,
+            {
+              ...withRework,
+              phase: "running",
+              run: ctx.runId,
+              attempts: Math.max(task.attempts, attempt.number),
+              attempt: { ...attempt, run: ctx.runId, integration: record },
+            },
+            "dev:integrate",
+          );
+          if (!written) return cancelledStep();
+          return {
+            result: "fail",
+            data: integrationData(record, attempt, { rework: true }),
+          };
+        }
+      }
 
-    const push = git(gate, [
-      "push",
-      settings.remote,
-      `HEAD:refs/heads/${settings.mainBranch}`,
-    ]);
-    if (push.ok) {
-      integrateTestHooks.afterPush?.(sha);
-      const record: IntegrationRecord = {
-        ...pending,
-        result: "merged",
-        pushed: true,
+      // Record the candidate before the push: a crash after the push finds it and
+      // the remote's main, and finishes without pushing again.
+      const pending: IntegrationRecord = {
+        result: "pending",
+        run: ctx.runId,
+        style: settings.integration.style,
+        verified,
+        candidate: sha,
+        base,
+        head: head ?? null,
+        headMoved,
+        pushed: false,
+        ...(checkNote === undefined ? {} : { checkNote }),
       };
-      return recordMerged(record, sha);
+      if ((await writeIntegration(ctx, context, task, attempt, pending, {
+          integrating: true,
+        })) === undefined) {
+        return cancelledStep();
+      }
+
+      const push = git(gate, [
+        "push",
+        settings.remote,
+        `HEAD:refs/heads/${settings.mainBranch}`,
+      ]);
+      if (push.ok) {
+        integrateTestHooks.afterPush?.(sha);
+        const record: IntegrationRecord = {
+          ...pending,
+          result: "merged",
+          pushed: true,
+        };
+        return recordMerged(record, sha);
+      }
+
+      lastError = `cannot push "${settings.mainBranch}" to "${settings.remote}": ${push.err || push.out || "git push failed"}`;
+      git(repository, ["fetch", "--prune", settings.remote]);
+      const now = revParse(repository, mainRef);
+      // A push can land on the remote and still report an error (the client lost
+      // the answer). The remote's main then contains the candidate: it is
+      // merged, and building and pushing a second candidate would be wrong.
+      if (now !== undefined && contains(repository, sha, now)) {
+        const record: IntegrationRecord = {
+          ...pending,
+          result: "merged",
+          pushed: true,
+        };
+        return recordMerged(record, sha, { landed: true });
+      }
+      // Only a main that moved makes the same candidate worth building again; a
+      // remote that refused the push for another reason is a failure.
+      if (now !== undefined && now !== base) continue;
+      return fail(lastError, { candidate: sha, base, head, headMoved });
     }
 
-    lastError = `cannot push "${settings.mainBranch}" to "${settings.remote}": ${push.err || push.out || "git push failed"}`;
-    git(repository, ["fetch", "--prune", settings.remote]);
-    const now = revParse(repository, mainRef);
-    // A push can land on the remote and still report an error (the client lost
-    // the answer). The remote's main then contains the candidate: it is
-    // merged, and building and pushing a second candidate would be wrong.
-    if (now !== undefined && contains(repository, sha, now)) {
-      const record: IntegrationRecord = {
-        ...pending,
-        result: "merged",
-        pushed: true,
-      };
-      return recordMerged(record, sha, { landed: true });
-    }
-    // Only a main that moved makes the same candidate worth building again; a
-    // remote that refused the push for another reason is a failure.
-    if (now !== undefined && now !== base) continue;
-    return fail(lastError, { candidate: sha, base, head, headMoved });
+    return fail(
+      `main moved ${MAX_INTEGRATION_ROUNDS} times while the candidate was built; ${lastError}`,
+    );
+  } finally {
+    queue.leave();
   }
-
-  return fail(
-    `main moved ${MAX_INTEGRATION_ROUNDS} times while the candidate was built; ${lastError}`,
-  );
 }
 
 /** Step `dev/cleanup`: run the after-merge hooks and remove the task's traces. */

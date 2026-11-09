@@ -2345,7 +2345,7 @@ describe("gate settings", () => {
       maxDiffBytes: 1_000_000,
     });
     expect(settings.maxAutoRework).toBe(2);
-    expect(settings.integration).toEqual({ style: "merge", keyCommands: [] });
+    expect(settings.integration).toEqual({ style: "merge", keyCommands: [], batch: 1 });
     expect(settings.hooks.afterMerge).toContain(
       'git push "$OPERAD_REMOTE" --delete "work/$OPERAD_TASK"',
     );
@@ -3035,7 +3035,7 @@ describe("dev/review rework rounds", () => {
   }
 
   // One rule for which review is which: the previous review is the newest
-  // report for another commit; pre-existing moves apply in every review.
+  // report for another commit. Line rules apply only in a rework round.
   const kinds: readonly {
     readonly name: string;
     readonly first: boolean;
@@ -3102,7 +3102,7 @@ describe("dev/review rework rounds", () => {
     },
   ];
   for (const kind of kinds) {
-    test(`${kind.name}: ${kind.first ? "the first prompt" : "the rework prompt"}, and a far finding is moved`, async () => {
+    test(`${kind.name}: ${kind.first ? "the first prompt" : "the rework prompt"}, and a far finding is ${kind.first ? "kept" : "moved"}`, async () => {
       const round = await afterFirstReview([finding("code.txt", kind.name === "first review" ? 20 : 5)]);
       const result = await kind.run(round);
       const prompt = round.state.reviewer.calls.at(-1)?.prompt ?? "";
@@ -3113,9 +3113,63 @@ describe("dev/review rework rounds", () => {
         expect(prompt).toContain("## Previous review");
         expect(prompt).not.toContain("## Diff");
       }
-      expect(result.data?.moved).toBe(1);
+      expect(result.data?.moved).toBe(kind.first ? 0 : 1);
     });
   }
+
+  // Which findings move as pre-existing, by kind of review.
+  describe("what moves as pre-existing, by kind of review", () => {
+    const set = (): readonly unknown[] => [
+      finding("code.txt", 6),
+      finding("code.txt", 20),
+      finding("other.txt", 3),
+      finding("other.txt", 3, "critical"),
+    ];
+    // A report without a line is malformed and is asked again, so the
+    // "no line" row is in the rework tests' table over movesIn.
+    const kinds: readonly {
+      readonly name: string;
+      readonly moved: readonly boolean[];
+      readonly run: (setup: () => Promise<Round>) => Promise<Awaited<ReturnType<typeof review>>>;
+    }[] = [
+      {
+        name: "first review",
+        moved: [false, false, true, false],
+        run: async (setup) => (await setup()).first,
+      },
+      {
+        name: "same-commit reverify",
+        moved: [false, false, false, false],
+        run: async (setup) => {
+          const round = await setup();
+          writeFindings(round.findingsFile, set());
+          return review(round.state, "review-again");
+        },
+      },
+      {
+        name: "rework round",
+        moved: [false, true, true, false],
+        run: async (setup) => {
+          const round = await setup();
+          writeFindings(round.findingsFile, set());
+          return secondReview(round, async () => {
+            await commitIn(round.state.worktree, "extra.txt", "x\n", "more");
+          });
+        },
+      },
+    ];
+    for (const kind of kinds) {
+      test(kind.name, async () => {
+        const result = await kind.run(() =>
+          afterFirstReview(kind.name === "first review" ? set() : []),
+        );
+        const found = result.data?.findings as readonly {
+          readonly preExisting?: boolean;
+        }[];
+        expect(found.map((item) => item.preExisting === true)).toEqual([...kind.moved]);
+      });
+    }
+  });
 
   test("a main change near the task's change is not in the increment", async () => {
     const round = await afterFirstReview([]);

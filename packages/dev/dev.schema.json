@@ -391,12 +391,19 @@
           "type": "array",
           "items": { "$ref": "#/$defs/checkCommand" },
           "default": []
+        },
+        "batch": {
+          "description": "The most tasks one integration merges onto main together, running keyCommands once and pushing once; each task keeps its own merge commit. Tasks of one repository integrate one at a time, in the order their merges were chosen; with a batch above 1, the tasks queued when a turn starts land together. A merge conflict or a failing key command falls back to one by one. 1 (or unset) means one at a time.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
         }
       },
       "additionalProperties": false,
       "default": {
         "style": "merge",
-        "keyCommands": []
+        "keyCommands": [],
+        "batch": 1
       }
     },
     "hooks": {
