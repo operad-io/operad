@@ -352,3 +352,9 @@ the row fields.
 | T-0088-M7 | packages/dev/src/gate.ts | a review round recorded no notes for findings that did not fail it | `dev/review > a finding that did not fail the round is kept as a note of the round` |
 | T-0088-M8 | packages/dev/src/integrate.ts | a merge did not mark the task for collection | `dev/integrate > a merge marks a task that has notes, unless followups is false` |
 | T-0097-M9 | packages/dev/flows/dev.flow.ts | the worktree retry held onto itself instead of a wait for the settings | `settings that cannot be read, in the worktree step > a recovered worktree step waits for the settings, then runs again` |
+
+## T-0118 — pre-existing by kind of review
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0118-M1 | packages/dev/src/rework.ts | a same-commit reverify applied the line rules (the kind check for `reverify` removed) | `pre-existing by kind of review > reverify: far, in a touched file` and `dev/review rework rounds > what moves as pre-existing, by kind of review > same-commit reverify` |

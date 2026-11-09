@@ -5,6 +5,8 @@ import {
   fixedCount,
   incrementOf,
   movesAsPreExisting,
+  movesIn,
+  type ReviewKind,
   previousReview,
   type PreviousFinding,
 } from "../src/rework.ts";
@@ -22,6 +24,38 @@ describe("lines the task's change touched", () => {
       movesAsPreExisting({ severity: "major", file: "f", line: 11 }, map, [], id),
     ).toBe(true);
   });
+});
+
+describe("pre-existing by kind of review", () => {
+  const own = addedLinesOf(
+    ["+++ b/a.ts", "@@ -0,0 +50,2 @@", "+x", "+y"].join("\n"),
+  );
+  const rows: readonly {
+    readonly name: string;
+    readonly finding: { severity: string; file?: string; line?: number };
+    readonly moved: Record<ReviewKind, boolean>;
+  }[] = [
+    { name: "near the change", finding: { severity: "major", file: "a.ts", line: 52 }, moved: { first: false, reverify: false, rework: false } },
+    { name: "far, in a touched file", finding: { severity: "major", file: "a.ts", line: 200 }, moved: { first: false, reverify: false, rework: true } },
+    { name: "in an untouched file", finding: { severity: "major", file: "b.ts", line: 3 }, moved: { first: true, reverify: false, rework: true } },
+    { name: "critical, far", finding: { severity: "critical", file: "b.ts", line: 3 }, moved: { first: false, reverify: false, rework: false } },
+    { name: "no line", finding: { severity: "major", file: "b.ts" }, moved: { first: false, reverify: false, rework: false } },
+  ];
+  for (const row of rows) {
+    for (const kind of ["first", "reverify", "rework"] as const) {
+      test(`${kind}: ${row.name}`, () => {
+        expect(
+          movesIn(
+            kind,
+            { severity: row.finding.severity, file: row.finding.file, line: row.finding.line },
+            own,
+            [],
+            id,
+          ),
+        ).toBe(row.moved[kind]);
+      });
+    }
+  }
 });
 
 describe("pre-existing rules", () => {

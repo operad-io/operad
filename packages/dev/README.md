@@ -378,7 +378,12 @@ One rule says which review is which:
 - A reverify of an unchanged head finds the newest report is for the same
   commit, skips it and follows the one before it, if any. A reverify after main
   moved is a review of a new commit and follows the newest report.
-- Pre-existing is decided the same way in every review, the first one included.
+- Which findings move as pre-existing depends on the review. A **first review**
+  keeps only the per-file rule: a finding in a file the task's change does not
+  touch is moved (the prompt is the whole diff, and a reviewer can still wander
+  into untouched files). A **reverify of the same commit** gets the first
+  prompt and moves nothing. A **rework round** applies the line rules below.
+  In every review a critical finding, and one without a file or a line, stays.
 
 The **increment** is built like `git range-diff`: take the task's own diff at the
 previous review (the merge base recorded then, or the merge base of the remote
@@ -389,11 +394,10 @@ hunk of the previous diff that is gone or changed is listed as "Removed since th
 previous review" with its old content. Both sides are the task's own diff, so a
 line that only came with a merge of main is on neither side.
 
-Dev, not the model, moves a failing finding out of the failing set and marks it
+In a rework round, dev, not the model, moves a failing finding out of the failing set and marks it
 `pre_existing` unless (a) its `file:line` is within 3 lines of a line the task's
 own change added or changed in that file, (b) it is in the same file as and
-within 10 lines of a blocking finding of the previous review (a first review has
-none to match), (c) its level is `critical`, or (d) it has no file or no line. A
+within 10 lines of a blocking finding of the previous review, (c) its level is `critical`, or (d) it has no file or no line. A
 moved finding keeps its level, and a `pre_existing` mark the reviewer wrote is
 ignored. The grading in `.operad/review.json` applies first. The review's data
 records `moved`, and history and Changes say "rework round: n previous findings,
