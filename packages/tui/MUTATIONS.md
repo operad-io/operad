@@ -202,3 +202,4 @@ the row fields.
 | T-0101-M3 | packages/tui/src/state.ts | the window gave every list two lines more than it has | `the TUI reducer > the window around the cursor counts objects of three lines, the last one's blank line not needed` |
 | T-0082-M1 | packages/tui/src/actions.ts | the palette listed the TUI commands before the open object's actions | `actions in the reducer > groups are shown in the order actions, tui; search reads the title` |
 | T-0082-M2 | packages/tui/src/state.ts | the go back command did nothing instead of doing what escape does | `actions in the reducer > each TUI command does what its key does > go back closes the open object, as escape does` |
+| T-0117-M1 | packages/tui/src/args.ts | a number above the schema's maximum was accepted | `arguments of an action > an integer outside its bounds is refused locally; one inside is sent` |

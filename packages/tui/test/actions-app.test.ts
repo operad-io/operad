@@ -105,12 +105,12 @@ describe("actions against the in-process server", () => {
       await view.until((state) => state.object?.row.state === "dropped" && !state.acting);
       expect(bodies[1]).toEqual({ action: "tuitest:drop", id: "one", confirmed: true });
 
-      // The plugin's refusal shows the server's status and message verbatim.
+      // The plugin's refusal shows the server's line without the HTTP status.
       shell.key({ name: ":", sequence: ":" });
       type("fail");
       shell.key({ name: "enter" });
       await view.until((state) => state.notice !== undefined && !state.acting);
-      expect(view.last?.notice).toBe("422 the plugin refused");
+      expect(view.last?.notice).toBe("the plugin refused");
       shell.key({ name: "j" });
       expect(view.last?.notice).toBeUndefined();
     } finally {

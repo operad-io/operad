@@ -18,6 +18,7 @@ import type {
 } from "@operad-io/engine";
 import type { TuiTypeInfo } from "./client.ts";
 import { cachedLayout, layoutMarkdown, type LayoutLine } from "./layout.ts";
+import type { ArgField } from "./args.ts";
 import { sanitize } from "./sanitize.ts";
 import {
   actionFailed,
@@ -147,12 +148,34 @@ export type TuiInput =
       readonly required: boolean;
       /** The action asks to confirm after the note. */
       readonly confirm: boolean;
+      readonly args?: Readonly<Record<string, unknown>> | undefined;
+    }
+  | {
+      /** One argument of an action is being asked: a list, a number or a text. */
+      readonly kind: "args";
+      readonly action: string;
+      readonly id: string;
+      readonly fields: readonly ArgField[];
+      /** The field being asked. */
+      readonly at: number;
+      /** The answers so far, by argument name. */
+      readonly values: Readonly<Record<string, unknown>>;
+      /** The cursor in a list. */
+      readonly cursor: number;
+      /** What is typed into a number or a text. */
+      readonly text: string;
+      /** Why the last answer was refused. */
+      readonly error?: string | undefined;
+      /** The note comes after the arguments: whether it is required. */
+      readonly note?: { readonly required: boolean } | undefined;
+      readonly confirm: boolean;
     }
   | {
       readonly kind: "confirm";
       readonly action: string;
       readonly id: string;
       readonly note?: string | undefined;
+      readonly args?: Readonly<Record<string, unknown>> | undefined;
     };
 
 /** An action the reducer wants the caller to send with `POST /v1/act`. */
@@ -160,6 +183,7 @@ export interface TuiActionRequest {
   readonly action: string;
   readonly id: string;
   readonly note?: string | undefined;
+  readonly args?: Readonly<Record<string, unknown>> | undefined;
   readonly confirmed?: boolean | undefined;
 }
 

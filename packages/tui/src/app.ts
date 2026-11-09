@@ -762,6 +762,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         action: request.action,
         id: request.id,
         ...(request.note === undefined ? {} : { note: request.note }),
+        ...(request.args === undefined ? {} : { args: request.args }),
         ...(request.confirmed === true ? { confirmed: true } : {}),
         signal: abort.signal,
       });
