@@ -346,7 +346,8 @@ export const actions: readonly ActionTypeDefinition[] = [
     name: "confirm",
     on: "plan",
     when(state) {
-      return planData(state).status === "draft";
+      const plan = planData(state);
+      return plan.status === "draft" && plan.taskCount > 0;
     },
     why: planWhy("confirm"),
     settled: planSettled("confirm"),

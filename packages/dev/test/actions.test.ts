@@ -94,6 +94,7 @@ describe("dev actions", () => {
   test("pending offers the plan's available actions with the default keys", async () => {
     const { store, registry, repository } = await setup();
     const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    await addTask(store, { plan: plan.id, slug: "one", title: "One" });
     const pending = await registry.pending([
       { runId: "r1", object: { type: "plan", id: plan.id } },
     ]);

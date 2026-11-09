@@ -292,7 +292,17 @@ describe("dev:rework and dev:reverify", () => {
     await claimWaitingTask(fixture.store, fixture.task.id, seen, "rework", (latest) => latest);
     await expect(
       claimWaitingTask(fixture.store, fixture.task.id, seen, "rework", (latest) => latest),
-    ).rejects.toThrow(/changed since you looked/);
+    ).rejects.toMatchObject({
+      message: "T-0001-one changed since you looked; look again, then dev:rework",
+    });
+  });
+
+  test("a claim on a task that left the wait says where it is, in the table's words", async () => {
+    const fixture = await setup();
+    await setTaskPhase(fixture.store, fixture.task.id, "merged");
+    await expect(
+      claimWaitingTask(fixture.store, fixture.task.id, 1, "merge", (latest) => latest),
+    ).rejects.toMatchObject({ message: "T-0001-one is already merged; nothing to do" });
   });
 
   test("an action offered a stale object loses even while the task still waits", async () => {
@@ -313,7 +323,7 @@ describe("dev:rework and dev:reverify", () => {
         { note: "again" },
         { object: stale, runId: "run-1", actor: ACTOR },
       ),
-    ).rejects.toThrow(/changed since you looked/);
+    ).rejects.toThrow("T-0001-one changed since you looked; look again, then dev:rework");
     expect(fixture.answers).toHaveLength(1);
   });
 
@@ -325,7 +335,7 @@ describe("dev:rework and dev:reverify", () => {
     await fixture.registry.runAction("dev/cancel", {}, { object: stale, actor: ACTOR });
     await expect(
       claimWaitingTask(fixture.store, fixture.task.id, stale.version, "rework", (l) => l),
-    ).rejects.toThrow(/it is cancelled/);
+    ).rejects.toThrow("T-0001-one was cancelled; nothing can be reworked");
   });
 
   async function race(first: [string, unknown], second: [string, unknown]) {

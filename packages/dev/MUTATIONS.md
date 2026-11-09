@@ -436,3 +436,5 @@ the row fields.
 | T-0112-M4 | packages/dev/src/model.ts | a refusal put its field name in front of the line again | `dev actions > the same action name runs on its own object type` |
 | T-0112-M5 | packages/dev/src/refusals.ts | a line said "phase", an internal word | `the table of refusal lines > every line is one plain sentence with no internal word and no trailing ';'` |
 | T-0112-M6 | packages/dev/src/service.ts | confirming a task skipped the plan check, so a draft plan's task was confirmed | `dev actions > the same action name runs on its own object type` |
+| T-0112-M14 | packages/dev/src/actions.ts | dev:confirm was offered on a draft plan with no tasks | `the table agrees with what each action does > a draft plan with no task is not offered confirm, and says when it works` |
+| T-0112-M15 | packages/dev/src/service.ts | a claim that lost a race to a cancel or merge gave no line for where the task is | `dev:rework and dev:reverify > a claim on a task that left the wait says where it is, in the table's words` |

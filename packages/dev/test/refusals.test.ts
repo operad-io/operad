@@ -209,6 +209,21 @@ describe("the table agrees with what each action does", () => {
     expect(await settle("cancel", "task", ready)).toBeUndefined();
   });
 
+  test("a draft plan with no task is not offered confirm, and says when it works", async () => {
+    const { store, repository } = await world();
+    const env = { store };
+    const plan = await addPlan(store, { repository, slug: "empty", title: "Work" });
+    const object = await getPlan(store, plan.id);
+    const confirm = actions.find((a) => a.name === "confirm" && a.on === "plan");
+    expect(await confirm?.when(object.data, env)).toBe(false);
+    expect(await confirm?.why?.(object, env)).toBe(
+      `${bareId(plan.id)} is a draft with no tasks; dev:confirm works once it has a task`,
+    );
+    await addTask(store, { plan: plan.id, slug: "t", title: "T" });
+    const filled = await getPlan(store, plan.id);
+    expect(await confirm?.when(filled.data, env)).toBe(true);
+  });
+
   test("a value a plan already has is settled, and another value is not", async () => {
     const { store, repository } = await world();
     const env = { store };

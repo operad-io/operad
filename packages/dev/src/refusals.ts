@@ -220,6 +220,11 @@ export function taskLine(
   return sayLine(TASK_LINES[action][taskStateOf(task)], facts, false);
 }
 
+/** A draft with no task has nothing to confirm yet. */
+export const EMPTY_DRAFT: Line = refuse(
+  ({ id }) => `${id} is a draft with no tasks; dev:confirm works once it has a task`,
+);
+
 /** A plan action's line for a plan's state; undefined when it works. */
 export function planLine(
   action: PlanActionName,
@@ -227,5 +232,10 @@ export function planLine(
   facts: Facts,
   sameValue = false,
 ): Said | undefined {
-  return sayLine(PLAN_LINES[action][planState(plan)], facts, sameValue);
+  const state = planState(plan);
+  const line =
+    action === "confirm" && state === "draft" && plan.taskCount === 0
+      ? EMPTY_DRAFT
+      : PLAN_LINES[action][state];
+  return sayLine(line, facts, sameValue);
 }

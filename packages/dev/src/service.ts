@@ -1341,19 +1341,19 @@ export async function claimWaitingTask(
   store: ObjectStore,
   id: string,
   seen: number,
-  action: string,
+  action: TaskActionName,
   change: (latest: TaskData) => TaskData,
 ): Promise<{ readonly claimed: StoredObject; readonly before: TaskData }> {
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
-  const at = `task "${bareId(id)}"`;
   return withRepoLock(store, data.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
-    if (current.version !== seen || latest.phase !== "waiting") {
-      throw new DevError(
-        action,
-        `${at} changed since you looked (it is ${latest.phase}); ${action} did nothing`,
+    // Where the task is now: the table's line for this action.
+    refuseTask(action, latest, id);
+    if (current.version !== seen) {
+      throw new DevRefusal(
+        `${bareId(id)} changed since you looked; look again, then dev:${action}`,
       );
     }
     const claimed = await writeTask(
@@ -1439,7 +1439,7 @@ export async function confirmPlan(
     refusePlan("confirm", data, id);
     const tasks = await tasksOfPlan(store, id);
     if (tasks.length === 0) {
-      throw new DevError("confirm", `plan "${bareId(id)}" has no tasks`);
+      refusePlan("confirm", { ...data, taskCount: 0 }, id);
     }
     for (const object of tasks) {
       const task = taskData(object.data);
