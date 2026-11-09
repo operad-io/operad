@@ -9,7 +9,7 @@
       "type": "string"
     },
     "theme": {
-      "description": "The colour theme: auto follows the terminal's light or dark mode; light and dark are the built-in palettes; terminal uses the terminal's own 16 colours; any other name is a theme file themes/<name>.json in the operad home (not the name of a built-in).",
+      "description": "The colour theme: auto follows the terminal's light or dark mode; light and dark are the built-in palettes; terminal uses the terminal's own 16 colours; a family name (catppuccin, solarized, tokyo-night, one, rose-pine, github, kanagawa) follows the terminal's mode like auto; a shipped theme name (for example dracula or nord) is fixed; any other name is a theme file themes/<name>.json in the operad home (not the name of a built-in).",
       "type": "string",
       "minLength": 1,
       "default": "auto"

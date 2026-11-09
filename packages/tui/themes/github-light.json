@@ -1,0 +1,18 @@
+{
+  "$schema": "../theme.schema.json",
+  "comment": "GitHub Light. Source: https://github.com/primer/primitives (src/tokens/functional/color/*.json5 resolved through src/tokens/base/color/light/light.json5). Licence: MIT, Copyright (c) 2018 GitHub Inc.; the text is in LICENSE-github. Roles: text = fgColor.default, weak = fgColor.muted, rule = borderColor.default, accent = fgColor.done, run = fgColor.accent, ok = fgColor.success, error = fgColor.danger, add = fgColor.success, remove = fgColor.danger, tint = bgColor.accent.muted, code = bgColor.muted, background = bgColor.default. No colour adjusted.",
+  "colors": {
+    "text": "#1f2328",
+    "weak": "#59636e",
+    "rule": "#d1d9e0",
+    "accent": "#8250df",
+    "run": "#0969da",
+    "ok": "#1a7f37",
+    "error": "#d1242f",
+    "add": "#1a7f37",
+    "remove": "#d1242f",
+    "tint": "#ddf4ff",
+    "code": "#f6f8fa",
+    "background": "#ffffff"
+  }
+}

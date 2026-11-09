@@ -1,0 +1,18 @@
+{
+  "$schema": "../theme.schema.json",
+  "comment": "Solarized Dark. Source: https://github.com/altercation/solarized (README.md, the scss snippet with the rebase mixin). Licence: MIT, Copyright (c) 2011 Ethan Schoonover; the text is in LICENSE-solarized. Roles: text = base0, weak = base01, rule = base02, accent = violet, run = blue, ok = green, error = red, add = green, remove = red, tint = base02, code = base02, background = base03. Solarized names one background tone beyond the base, so rule, tint and code are the same value. Adjusted for contrast, nothing else changed: weak #586e75 (base01) -> #5e767d: lightness 40% -> 43% for 3:1 on #002b36 (was 2.79:1).",
+  "colors": {
+    "text": "#839496",
+    "weak": "#5e767d",
+    "rule": "#073642",
+    "accent": "#6c71c4",
+    "run": "#268bd2",
+    "ok": "#859900",
+    "error": "#dc322f",
+    "add": "#859900",
+    "remove": "#dc322f",
+    "tint": "#073642",
+    "code": "#073642",
+    "background": "#002b36"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "../theme.schema.json",
+  "comment": "Rosé Pine Dawn. Source: https://github.com/rose-pine/palette (palette.json, dawn). Licence: MIT, Copyright (c) mvllow; the text is in LICENSE-rose-pine. Roles: text = text, weak = subtle, rule = overlay, accent = iris, run = foam, ok = pine, error = love, add = foam, remove = love, tint = surface, code = overlay, background = base. Rosé Pine has no green or blue: ok is pine and run is foam, as its own editor themes use them. No colour adjusted.",
+  "colors": {
+    "text": "#464261",
+    "weak": "#797593",
+    "rule": "#f2e9e1",
+    "accent": "#907aa9",
+    "run": "#56949f",
+    "ok": "#286983",
+    "error": "#b4637a",
+    "add": "#56949f",
+    "remove": "#b4637a",
+    "tint": "#fffaf3",
+    "code": "#f2e9e1",
+    "background": "#faf4ed"
+  }
+}

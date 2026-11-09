@@ -1,0 +1,18 @@
+{
+  "$schema": "../theme.schema.json",
+  "comment": "Catppuccin Macchiato. Source: https://github.com/catppuccin/palette (palette.json, macchiato; version 1.8.0). Licence: MIT, Copyright (c) 2021 Catppuccin; the text is in LICENSE-catppuccin. Roles: text = text, weak = subtext0, rule = surface1, accent = mauve, run = blue, ok = green, error = red, add = green, remove = red, tint = surface0, code = mantle, background = base. No colour adjusted.",
+  "colors": {
+    "text": "#cad3f5",
+    "weak": "#a5adcb",
+    "rule": "#494d64",
+    "accent": "#c6a0f6",
+    "run": "#8aadf4",
+    "ok": "#a6da95",
+    "error": "#ed8796",
+    "add": "#a6da95",
+    "remove": "#ed8796",
+    "tint": "#363a4f",
+    "code": "#1e2030",
+    "background": "#24273a"
+  }
+}
