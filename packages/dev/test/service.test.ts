@@ -151,7 +151,7 @@ describe("dev plans and tasks", () => {
       addTask(store, { plan: "P-9999-nope", slug: "one", title: "One" }),
     ).rejects.toThrow(/^plan:/);
     const empty = await addPlan(store, { repository, slug: "empty", title: "Empty" });
-    await expect(confirmPlan(store, empty.id)).rejects.toThrow(/^confirm:/);
+    await expect(confirmPlan(store, empty.id)).rejects.toThrow(/^P-\d+-empty is a draft with no tasks/);
   });
 
   test("a plan starts as a draft with the defaults", async () => {
@@ -194,7 +194,9 @@ describe("dev plans and tasks", () => {
       slug: "empty",
       title: "Empty",
     });
-    await expect(confirmPlan(store, empty.id)).rejects.toThrow(/has no tasks/);
+    await expect(confirmPlan(store, empty.id)).rejects.toMatchObject({
+      message: `${bareId(empty.id)} is a draft with no tasks; dev:confirm works once it has a task`,
+    });
 
     const plan = await addPlan(store, {
       repository,

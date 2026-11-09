@@ -1056,11 +1056,13 @@ async function commandAction(
   const available = object.actions.find((action) => action.name === request.name);
   if (available === undefined) {
     // Let the kernel say why: unavailable now, or not declared at all.
-    await context.views.act(request.name, request.id, {
+    // A result that is already true succeeds with its line instead.
+    const run = await context.views.act(request.name, request.id, {
       args: {},
       yes: args.yes,
       actor: actorOfCli(),
     });
+    printValue(io, run.value);
     return true;
   }
 

@@ -105,7 +105,7 @@ describe("actions against the in-process server", () => {
       await view.until((state) => state.object?.row.state === "dropped" && !state.acting);
       expect(bodies[1]).toEqual({ action: "tuitest:drop", id: "item:one", confirmed: true });
 
-      // The plugin's refusal shows the server's line without the HTTP status.
+      // The plugin's refusal shows its line, without the status.
       shell.key({ name: ":", sequence: ":" });
       type("fail");
       shell.key({ name: "enter" });

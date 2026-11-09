@@ -19,6 +19,7 @@ import {
   appendRework,
   bareId,
   DevError,
+  DevRefusal,
   editBrief,
   isOpenTask,
   keyRepository,
@@ -44,11 +45,18 @@ import {
   validateTitle,
   type AutoMode,
   type PlanData,
+  type PlanState,
   type Priority,
   type RepositoryData,
   type TaskData,
   type TaskPhase,
 } from "./model.ts";
+import {
+  planLine,
+  taskLine,
+  type PlanActionName,
+  type TaskActionName,
+} from "./refusals.ts";
 import { DEFAULT_DEV_SETTINGS, DEV_SETTINGS_SCHEMA } from "./settings.ts";
 
 /** An optional way for the dev plugin to ask the kernel to cancel a run. */
@@ -598,6 +606,26 @@ async function tasksOfPlan(
     const task = taskData(object.data);
     return task.repository === repository && task.plan === plan;
   });
+}
+
+/** Throws the table's line when a task action cannot run on this task now. */
+function refuseTask(
+  action: TaskActionName,
+  task: TaskData,
+  key: string,
+  plan?: { readonly id: string; readonly state: PlanState },
+): void {
+  if (action === "confirm" && task.phase === "proposed" && plan?.state === "confirmed") {
+    return;
+  }
+  const said = taskLine(action, task, { id: bareId(key), plan });
+  if (said !== undefined) throw new DevRefusal(said.text);
+}
+
+/** Throws the table's line when a plan action cannot run on this plan now. */
+function refusePlan(action: PlanActionName, plan: PlanData, key: string): void {
+  const said = planLine(action, plan, { id: bareId(key) });
+  if (said !== undefined) throw new DevRefusal(said.text);
 }
 
 export async function getPlan(
@@ -1313,19 +1341,25 @@ export async function claimWaitingTask(
   store: ObjectStore,
   id: string,
   seen: number,
-  action: string,
+  action: TaskActionName,
   change: (latest: TaskData) => TaskData,
-): Promise<{ readonly claimed: StoredObject; readonly before: TaskData }> {
+): Promise<
+  | { readonly claimed: StoredObject; readonly before: TaskData; readonly settled?: undefined }
+  | { readonly settled: string }
+> {
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
-  const at = `task "${bareId(id)}"`;
   return withRepoLock(store, data.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
-    if (current.version !== seen || latest.phase !== "waiting") {
-      throw new DevError(
-        action,
-        `${at} changed since you looked (it is ${latest.phase}); ${action} did nothing`,
+    // Where the task is now: the table's line for this action. A result that
+    // is already true (another merge won) succeeds with its line.
+    const said = taskLine(action, latest, { id: bareId(id) });
+    if (said?.kind === "done") return { settled: said.text };
+    refuseTask(action, latest, id);
+    if (current.version !== seen) {
+      throw new DevRefusal(
+        `${bareId(id)} changed since you looked; look again, then dev:${action}`,
       );
     }
     const claimed = await writeTask(
@@ -1361,13 +1395,7 @@ export async function rejectTask(
 ): Promise<StoredObject> {
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
-  const at = `task "${bareId(id)}"`;
-  if (data.phase !== "waiting") {
-    throw new DevError(
-      "reject",
-      `${at} is ${data.phase}, not waiting; only a waiting task can be rejected`,
-    );
-  }
+  refuseTask("reject", data, id);
   const text = note.trim();
   if (text.length === 0) {
     throw new DevError("note", "must be a non-empty string");
@@ -1375,12 +1403,7 @@ export async function rejectTask(
   return withRepoLock(store, data.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
-    if (latest.phase !== "waiting") {
-      throw new DevError(
-        "reject",
-        `${at} is ${latest.phase}, not waiting; only a waiting task can be rejected`,
-      );
-    }
+    refuseTask("reject", latest, id);
     return writeTask(
       store,
       id,
@@ -1419,18 +1442,10 @@ export async function confirmPlan(
   return withRepoLock(store, planData(initial.data).repository, async () => {
     const plan = await getPlan(store, id);
     const data = planData(plan.data);
-    if (data.status === "confirmed") {
-      throw new DevError(
-        "confirm",
-        `plan "${bareId(id)}" is already confirmed`,
-      );
-    }
-    if (data.status === "cancelled") {
-      throw new DevError("confirm", `plan "${bareId(id)}" is cancelled`);
-    }
+    refusePlan("confirm", data, id);
     const tasks = await tasksOfPlan(store, id);
     if (tasks.length === 0) {
-      throw new DevError("confirm", `plan "${bareId(id)}" has no tasks`);
+      refusePlan("confirm", { ...data, taskCount: 0 }, id);
     }
     for (const object of tasks) {
       const task = taskData(object.data);
@@ -1460,25 +1475,14 @@ export async function confirmTask(
   return withRepoLock(store, initialData.repository, async () => {
     const task = await getTask(store, id);
     const data = taskData(task.data);
-    if (data.phase === "ready") {
-      throw new DevError("confirm", `task "${bareId(id)}" is already ready`);
-    }
-    if (data.phase !== "proposed") {
-      throw new DevError(
-        "confirm",
-        `task "${bareId(id)}" is ${data.phase}; only a proposed task can be confirmed`,
-      );
-    }
     const plan = await getPlan(
       store,
       storeKey(data.repository, data.plan),
     );
-    if (planData(plan.data).status !== "confirmed") {
-      throw new DevError(
-        "confirm",
-        `plan "${data.plan}" is not confirmed`,
-      );
-    }
+    refuseTask("confirm", data, id, {
+      id: data.plan,
+      state: planState(planData(plan.data)),
+    });
     return writeTask(
       store,
       id,
@@ -1530,12 +1534,7 @@ export async function cancelPlan(
     async () => {
       const plan = await getPlan(store, id);
       const data = planData(plan.data);
-      if (data.status === "cancelled") {
-        throw new DevError(
-          "cancel",
-          `plan "${bareId(id)}" is already cancelled`,
-        );
-      }
+      refusePlan("cancel", data, id);
       const tasks = await tasksOfPlan(store, id);
       const runs = await cancelTasks(store, tasks);
       const next: PlanData = { ...data, status: "cancelled" };
@@ -1563,15 +1562,7 @@ export async function cancelTask(
     async () => {
       const task = await getTask(store, id);
       const data = taskData(task.data);
-      if (data.phase === "cancelled") {
-        throw new DevError(
-          "cancel",
-          `task "${bareId(id)}" is already cancelled`,
-        );
-      }
-      if (data.phase === "merged") {
-        throw new DevError("cancel", `task "${bareId(id)}" is already merged`);
-      }
+      refuseTask("cancel", data, id);
       const runs = data.run === null ? [] : [data.run];
       const written = await writeTask(
         store,
@@ -1606,15 +1597,11 @@ export async function setAuto(
 ): Promise<StoredObject> {
   const initial = await getPlan(store, id);
   const data = planData(initial.data);
-  if (data.status === "cancelled") {
-    throw new DevError("auto", `plan "${bareId(id)}" is cancelled`);
-  }
+  refusePlan("auto", data, id);
   return withRepoLock(store, data.repository, async () => {
     const plan = await getPlan(store, id);
     const fresh = planData(plan.data);
-    if (fresh.status === "cancelled") {
-      throw new DevError("auto", `plan "${bareId(id)}" is cancelled`);
-    }
+    refusePlan("auto", fresh, id);
     return writePlan(
       store,
       id,
@@ -1634,15 +1621,11 @@ export async function setPriority(
   }
   const initial = await getPlan(store, id);
   const data = planData(initial.data);
-  if (data.status === "cancelled") {
-    throw new DevError("priority", `plan "${bareId(id)}" is cancelled`);
-  }
+  refusePlan("priority", data, id);
   return withRepoLock(store, data.repository, async () => {
     const plan = await getPlan(store, id);
     const fresh = planData(plan.data);
-    if (fresh.status === "cancelled") {
-      throw new DevError("priority", `plan "${bareId(id)}" is cancelled`);
-    }
+    refusePlan("priority", fresh, id);
     return writePlan(
       store,
       id,
@@ -1660,15 +1643,11 @@ export async function setConcurrency(
   const concurrency = validatePlanConcurrency(count);
   const initial = await getPlan(store, id);
   const data = planData(initial.data);
-  if (data.status === "cancelled" || planState(data) === "finished") {
-    throw new DevError("concurrency", `plan "${bareId(id)}" is ${planState(data)}`);
-  }
+  refusePlan("concurrency", data, id);
   return withRepoLock(store, data.repository, async () => {
     const plan = await getPlan(store, id);
     const fresh = planData(plan.data);
-    if (fresh.status === "cancelled" || planState(fresh) === "finished") {
-      throw new DevError("concurrency", `plan "${bareId(id)}" is ${planState(fresh)}`);
-    }
+    refusePlan("concurrency", fresh, id);
     return writePlan(
       store,
       id,

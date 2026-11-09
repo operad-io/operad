@@ -191,17 +191,24 @@ describe("dev:rework and dev:reverify", () => {
     expect(fixture.answers).toEqual([]);
   });
 
+  const LINES = {
+    running: "T-0001-one is running; dev:%s works once it waits for you",
+    merged: "T-0001-one was merged; nothing can be %s",
+    ready: "T-0001-one is ready; dev:%s works once it has run and waits for you",
+  } as const;
   for (const phase of ["running", "merged", "ready"] as const) {
     test(`both refuse a ${phase} task and change nothing`, async () => {
       const fixture = await setup();
       await patch(fixture, { phase, attempt: GATED });
       const before = await getTask(fixture.store, fixture.task.id);
 
+      const line = (action: string, participle: string) =>
+        LINES[phase].replace("%s", phase === "merged" ? participle : action);
       await expect(run(fixture, "rework", "x")).rejects.toThrow(
-        new RegExp(`is ${phase}, not waiting`),
+        line("rework", "reworked"),
       );
       await expect(run(fixture, "reverify")).rejects.toThrow(
-        new RegExp(`is ${phase}, not waiting`),
+        line("reverify", "reverified"),
       );
       expect(fixture.answers).toEqual([]);
       expect((await getTask(fixture.store, fixture.task.id)).version).toBe(
@@ -270,7 +277,7 @@ describe("dev:rework and dev:reverify", () => {
     await patch(fixture, { attempt: GATED, reworkStreak: 2 });
     const before = taskData((await getTask(fixture.store, fixture.task.id)).data);
 
-    await expect(run(fixture, "rework", "x")).rejects.toThrow(/not waiting/);
+    await expect(run(fixture, "rework", "x")).rejects.toThrow(/T-0001-one is not waiting for an answer now|waiting/);
     const after = taskData((await getTask(fixture.store, fixture.task.id)).data);
     expect(after.brief).toBe(before.brief);
     expect(after.phase).toBe("waiting");
@@ -285,7 +292,41 @@ describe("dev:rework and dev:reverify", () => {
     await claimWaitingTask(fixture.store, fixture.task.id, seen, "rework", (latest) => latest);
     await expect(
       claimWaitingTask(fixture.store, fixture.task.id, seen, "rework", (latest) => latest),
-    ).rejects.toThrow(/changed since you looked/);
+    ).rejects.toMatchObject({
+      message: "T-0001-one changed since you looked; look again, then dev:rework",
+    });
+  });
+
+  test("a claim on a task that left the wait says where it is, in the table's words", async () => {
+    const fixture = await setup();
+    await setTaskPhase(fixture.store, fixture.task.id, "merged");
+    await expect(
+      claimWaitingTask(fixture.store, fixture.task.id, 1, "rework", (latest) => latest),
+    ).rejects.toMatchObject({ message: "T-0001-one was merged; nothing can be reworked" });
+  });
+
+  test("a merge that loses the race to another merge succeeds with the already-merged line", async () => {
+    const fixture = await setup();
+    await setTaskPhase(fixture.store, fixture.task.id, "waiting");
+    await patch(fixture, { attempt: GATED });
+    const stale = await getTask(fixture.store, fixture.task.id);
+    // The other merge won: the task is merged by the time this claim runs.
+    await setTaskPhase(fixture.store, fixture.task.id, "merged");
+    const claim = await claimWaitingTask(
+      fixture.store,
+      fixture.task.id,
+      stale.version,
+      "merge",
+      (latest) => latest,
+    );
+    expect(claim).toEqual({ settled: "T-0001-one is already merged; nothing to do" });
+    const run = await fixture.registry.runAction(
+      "dev/merge",
+      {},
+      { object: stale, runId: "run-1", actor: ACTOR },
+    );
+    expect(run.value).toBe("T-0001-one is already merged; nothing to do");
+    expect(fixture.answers).toEqual([]);
   });
 
   test("an action offered a stale object loses even while the task still waits", async () => {
@@ -306,7 +347,7 @@ describe("dev:rework and dev:reverify", () => {
         { note: "again" },
         { object: stale, runId: "run-1", actor: ACTOR },
       ),
-    ).rejects.toThrow(/changed since you looked/);
+    ).rejects.toThrow("T-0001-one changed since you looked; look again, then dev:rework");
     expect(fixture.answers).toHaveLength(1);
   });
 
@@ -318,7 +359,7 @@ describe("dev:rework and dev:reverify", () => {
     await fixture.registry.runAction("dev/cancel", {}, { object: stale, actor: ACTOR });
     await expect(
       claimWaitingTask(fixture.store, fixture.task.id, stale.version, "rework", (l) => l),
-    ).rejects.toThrow(/it is cancelled/);
+    ).rejects.toThrow("T-0001-one was cancelled; nothing can be reworked");
   });
 
   async function race(first: [string, unknown], second: [string, unknown]) {
