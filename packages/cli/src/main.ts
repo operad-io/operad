@@ -155,6 +155,7 @@ const KERNEL_VERBS = [
   "show",
   "plugin",
   "secret",
+  "settings",
   "http",
   "pair",
   "tui",
@@ -185,6 +186,10 @@ const HELP = [
   "  secret set <plugin> <name>   store a secret (value from the terminal or stdin)",
   "  secret list <plugin>         secret names, never values",
   "  secret delete <plugin> <name>",
+  "  settings [--repo <name>] [--json]",
+  "                       every setting with its value, default and whether it can be changed",
+  "  settings set <name> <value> [--repo <name>] [--yes]",
+  "                       change a setting (the value is JSON, or a plain string)",
   "  http token rotate    replace the token the operad app uses",
   "  pair [--url <url>] [--show-token]",
   "                       show the address and token as a QR code for the operad app",
@@ -1938,6 +1943,88 @@ async function commandSecret(
   throw new UsageError("secret needs set, list or delete");
 }
 
+function settingsCell(value: unknown): string {
+  return value === undefined ? "-" : JSON.stringify(value);
+}
+
+/** `operad settings` and `operad settings set`: the views' two settings calls. */
+async function commandSettings(
+  home: string,
+  io: CliIo,
+  args: readonly string[],
+): Promise<number> {
+  const repoFlag = takeValueFlag(args, "--repo");
+  const jsonFlag = splitFlag(repoFlag.args, "--json");
+  const yesFlag = splitFlag(jsonFlag.args, "--yes");
+  const rest = yesFlag.args;
+  const setting = rest[0] === "set";
+  const context = await openContext(home, io);
+  try {
+    if (!setting) {
+      if (rest.length > 0) throw new UsageError("settings takes no arguments");
+      if (yesFlag.present) throw new UsageError("settings does not take --yes");
+      const settings = await context.views.settings(repoFlag.value);
+      if (jsonFlag.present) {
+        io.write(`${JSON.stringify(settings, null, 2)}\n`);
+        return 0;
+      }
+      if (settings.length === 0) {
+        io.write("no settings\n");
+        return 0;
+      }
+      for (const item of settings) {
+        const marks = [
+          item.editable ? "editable" : "read-only",
+          ...(item.confirm ? ["confirm"] : []),
+        ].join(",");
+        io.write(
+          [
+            item.scope,
+            item.name,
+            settingsCell(item.value),
+            `default ${settingsCell(item.default)}`,
+            marks,
+            ...(item.description === undefined ? [] : [item.description]),
+          ].join("  ") + "\n",
+        );
+      }
+      return 0;
+    }
+    const [, name, raw, ...extra] = rest;
+    if (name === undefined || raw === undefined) {
+      throw new UsageError("settings set needs a name and a value");
+    }
+    if (extra.length > 0) throw new UsageError("settings set takes a name and one value");
+    if (jsonFlag.present) throw new UsageError("settings set does not take --json");
+    let value: unknown;
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      value = raw;
+    }
+    try {
+      const changed = await context.views.set(name, value, {
+        ...(repoFlag.value === undefined ? {} : { scope: repoFlag.value }),
+        confirmed: yesFlag.present,
+      });
+      io.write(
+        `${changed.name} = ${settingsCell(changed.value)}${
+          changed.scope === "global" ? "" : ` (${changed.scope})`
+        }\n`,
+      );
+      return 0;
+    } catch (error) {
+      if (error instanceof ViewError && error.kind === "confirm") {
+        throw new ViewError("confirm", `${error.message}; pass --yes to change it`);
+      }
+      throw error;
+    }
+  } finally {
+    context.views.close();
+    await context.log.close();
+  }
+}
+
 async function commandHttp(
   home: string,
   io: CliIo,
@@ -2182,6 +2269,10 @@ export async function main(
 
     if (command === "secret") {
       return await commandSecret(home, io, args.slice(1));
+    }
+
+    if (command === "settings") {
+      return await commandSettings(home, io, args.slice(1));
     }
 
     if (command === "http") {

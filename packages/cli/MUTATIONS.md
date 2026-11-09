@@ -65,3 +65,5 @@ the row fields.
 | T-0132-M1 | packages/cli/src/code-reload.ts | `takeSupervisedFlag` did not delete the flag from the environment | `a serve restart while a check runs > a supervised serve keeps the supervisor's flag from its run process and the commands it runs` |
 | T-0132-M2 | packages/cli/test/reload.test.ts | `childEnv` passed the test's own `OPERAD_SERVE_SUPERVISED` on to the serve | `a serve picks up changed code > the same case passes when the test itself runs inside a supervised serve` |
 | T-0090-M6 | packages/cli/src/main.ts | `--page` ignored a label and only took a number | `operad presentation commands > show --page prints one page by number or by label` |
+| T-0080-M9 | packages/cli/src/main.ts | `settings set` took the value as a string and never parsed JSON | `operad settings > set parses JSON, falls back to a string, and keeps the rest of the file` |
+| T-0080-M10 | packages/cli/src/main.ts | `settings set` ignored `--yes` | `operad settings > set refuses an invalid value, a read-only setting and a missing confirmation` |

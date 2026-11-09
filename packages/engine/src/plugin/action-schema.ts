@@ -20,6 +20,8 @@ const KEYWORDS = new Set([
   "default",
   "description",
   "role",
+  "editable",
+  "confirm",
 ]);
 
 const TYPES = new Set([
@@ -80,6 +82,12 @@ function normalizeSchema(value: unknown, at: string): ActionArgSchema {
   }
   if (role === "note" && type !== "string") {
     throw new Error(`${at}.role: a note property must have type "string"`);
+  }
+
+  for (const key of ["editable", "confirm"] as const) {
+    if (value[key] !== undefined && typeof value[key] !== "boolean") {
+      throw new Error(`${at}.${key}: must be a boolean`);
+    }
   }
 
   const enumValues = value.enum;
@@ -164,6 +172,8 @@ function normalizeSchema(value: unknown, at: string): ActionArgSchema {
     ...(value.default === undefined ? {} : { default: value.default }),
     ...(description === undefined ? {} : { description }),
     ...(role === "note" ? { role } : {}),
+    ...(value.editable === undefined ? {} : { editable: value.editable as boolean }),
+    ...(value.confirm === undefined ? {} : { confirm: value.confirm as boolean }),
   };
 }
 

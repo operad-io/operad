@@ -341,3 +341,11 @@ the row fields.
 | T-0107-M3 | packages/engine/src/platform/process-group.ts | a passed line no longer got the SIGKILL to its group, so a backgrounded child lived on | `shell/command > a child that outlives the line is in the group and is stopped` (child now `sleep 30`, longer than `waitForGone` waits) |
 | T-0107-M4 | packages/engine/src/platform/process-group.ts | a cancelled command was sent no signal at all | `a flow through the runner > a run cancel stops the command's process group in a worker` (line now `sleep 30`) |
 | T-0090-M1 | packages/engine/src/views/presentation.ts | a section result dropped the plugin's `pages` | `presentation views > reads sections, pages with next and grows a live section` |
+| T-0080-M1 | packages/engine/src/views/settings.ts | `setSetting` skipped the schema validation | `settings > an invalid value is refused with the schema's reason and nothing is written` |
+| T-0080-M2 | packages/engine/src/views/settings.ts | a confirm setting was written without `confirmed` | `settings > a confirm setting needs confirmed` |
+| T-0080-M3 | packages/engine/src/views/settings.ts | a setting not marked editable could be changed | `settings > a setting that is not editable, or unknown, is refused` |
+| T-0080-M4 | packages/engine/src/views/settings.ts | `writeFileAtomic` wrote part of the text into the target before the rename | `settings > a writer killed before the rename leaves the old file whole` |
+| T-0080-M5 | packages/engine/src/views/settings.ts | the write replaced the file with only the changed key | `settings > the rest of the file keeps its keys, order and indent` |
+| T-0080-M6 | packages/engine/src/views/settings.ts | a project setting was written to `config.json` instead of the repository's `.operad/` file | `settings > project scope names the repository and writes its own file` |
+| T-0080-M7 | packages/engine/src/http/server.ts | `POST /v1/settings` treated every request as confirmed | `http server > GET and POST /v1/settings list, change and refuse settings` |
+| T-0080-M8 | packages/engine/src/plugin/action-schema.ts | the `editable` and `confirm` marks were not checked to be booleans | `settings declarations > editable and confirm must be booleans` |
