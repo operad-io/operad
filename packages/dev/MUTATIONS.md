@@ -491,3 +491,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0157-M1 | packages/dev/src/gate.ts | a verify failure kept the previous review failure (`reviewFailed` set for every source) | `dev/rework after two review failures in a row > review fail, verify fail, review fail reworks again` |
+
+## T-0163 — rework 1
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0163-M2 | packages/dev/test/gate.test.ts | the hook remover deleted a hook it had not installed (identity check replaced by `true`) | `review test hooks > a test that ends late removes only the hooks it installed` |
+| T-0163-M3 | packages/dev/test/gate.test.ts | the out-of-time test's clock moved on a call its own reviewer did not make (own-call check removed) | `dev/review hardening > runs that cannot fit in the step deadline are skipped and a person decides` |

@@ -602,6 +602,25 @@ function review(state: Fixture, runId = "review-run") {
   });
 }
 
+/**
+ * Installs test hooks and returns the call that removes them. The hooks are one
+ * shared object, so a test that outlived its timeout and ends later must remove
+ * only what it installed, never the hooks of the test that runs now.
+ */
+function useHooks(hooks: Partial<typeof reviewTestHooks>): () => void {
+  const installed = Object.entries(hooks) as [
+    keyof typeof reviewTestHooks,
+    unknown,
+  ][];
+  const shared: Record<string, unknown> = reviewTestHooks;
+  for (const [name, hook] of installed) shared[name] = hook;
+  return () => {
+    for (const [name, hook] of installed) {
+      if (shared[name] === hook) delete shared[name];
+    }
+  };
+}
+
 function reviewDue(state: Fixture, runId = "review-due") {
   return state.registry.runStep("dev/review_due", {}, {
     runId,
@@ -1341,7 +1360,7 @@ describe("dev/review fallback and retry", () => {
     });
     await verify(state);
     let clock = 10_000;
-    reviewTestHooks.now = () => clock;
+    const restoreHooks = useHooks({ now: () => clock });
     try {
       const first = await review(state, "review-wait");
       expect(first.result).toBe("unavailable");
@@ -1381,7 +1400,7 @@ describe("dev/review fallback and retry", () => {
       expect(task.reworkStreak).toBe(0);
       expect(task.retryAt ?? null).toBeNull();
     } finally {
-      delete reviewTestHooks.now;
+      restoreHooks();
     }
   });
 
@@ -1396,12 +1415,12 @@ describe("dev/review fallback and retry", () => {
     });
     await verify(state);
     let clock = 5_000;
-    reviewTestHooks.now = () => clock;
+    const restoreHooks = useHooks({ now: () => clock });
     let result: PluginStepResult;
     try {
       result = await review(state, "review-both-unavailable");
     } finally {
-      delete reviewTestHooks.now;
+      restoreHooks();
     }
     expect(result.result).toBe("unavailable");
     expect(state.reviewer.calls).toHaveLength(2);
@@ -1428,7 +1447,7 @@ describe("dev/review fallback and retry", () => {
     });
     await verify(state);
     let clock = 5_000;
-    reviewTestHooks.now = () => clock;
+    const restoreHooks = useHooks({ now: () => clock });
     try {
       const first = await review(state, "review-fallback-once");
       expect(first.result).toBe("unavailable");
@@ -1453,7 +1472,7 @@ describe("dev/review fallback and retry", () => {
       expect(task.attempt?.reviews).toBe(0);
       expect(task.attempt?.review?.retryAt).toBe(65_000);
     } finally {
-      delete reviewTestHooks.now;
+      restoreHooks();
     }
   });
 
@@ -1465,12 +1484,14 @@ describe("dev/review fallback and retry", () => {
     await verify(state);
     let clock = 5_000;
     const waits: number[] = [];
-    reviewTestHooks.now = () => clock;
-    reviewTestHooks.wait = async (ms) => {
-      waits.push(ms);
-      clock += ms;
-      return true;
-    };
+    const restoreHooks = useHooks({
+      now: () => clock,
+      wait: async (ms) => {
+        waits.push(ms);
+        clock += ms;
+        return true;
+      },
+    });
     try {
       const first = await review(state, "review-long-wait");
       expect(first.result).toBe("unavailable");
@@ -1498,8 +1519,7 @@ describe("dev/review fallback and retry", () => {
       expect(state.reviewer.calls).toHaveLength(2);
       expect((await taskOf(state)).attempt?.number).toBe(1);
     } finally {
-      delete reviewTestHooks.now;
-      delete reviewTestHooks.wait;
+      restoreHooks();
     }
   });
 
@@ -1718,7 +1738,7 @@ describe("dev/review hardening", () => {
     });
     await verify(state);
     let clock = 1_000_000;
-    reviewTestHooks.now = () => clock;
+    const restoreHooks = useHooks({ now: () => clock });
     try {
       let registry = state.registry;
       // Real model calls are slow under load, and a test that outlives its
@@ -1787,7 +1807,7 @@ describe("dev/review hardening", () => {
       expect(replay.result).toBe("exhausted");
       expect(state.reviewer.calls).toHaveLength(MAX_REVIEW_WAITS - seeded + 1);
     } finally {
-      delete reviewTestHooks.now;
+      restoreHooks();
     }
   }, 60_000);
 
@@ -1802,11 +1822,23 @@ describe("dev/review hardening", () => {
     });
     await verify(state);
     let clock = 1_000_000;
-    reviewTestHooks.now = () => clock;
-    // Each run uses its whole hour.
-    reviewTestHooks.afterCall = () => {
-      clock += 3_600_000;
-    };
+    // Each run of this test's reviewer uses its whole hour. Only its own
+    // calls count: a review of an earlier test that outlived its timeout
+    // reaches the same shared hook and must not move this clock.
+    let seen = 0;
+    const restoreHooks = useHooks({
+      now: () => clock,
+      afterCall: () => {
+        if (state.reviewer.calls.length === seen) return;
+        seen = state.reviewer.calls.length;
+        clock += 3_600_000;
+      },
+      // A call of another test's review reaches the same hook while this
+      // review runs: no time passes for this test.
+      beforeRun: () => {
+        reviewTestHooks.afterCall?.({ role: "primary", reason: "initial" });
+      },
+    });
     try {
       const result = await review(state, "review-out-of-time");
       expect(result.result).toBe("out_of_time");
@@ -1820,9 +1852,21 @@ describe("dev/review hardening", () => {
       expect(task.attempt?.reviews).toBe(1);
       expect(task.reworkStreak ?? 0).toBe(0);
     } finally {
-      delete reviewTestHooks.now;
-      delete reviewTestHooks.afterCall;
+      restoreHooks();
     }
+  });
+});
+
+describe("review test hooks", () => {
+  test("a test that ends late removes only the hooks it installed", () => {
+    const early = (): number => 1;
+    const late = (): number => 2;
+    const removeEarly = useHooks({ now: early });
+    const removeLate = useHooks({ now: late });
+    removeEarly();
+    expect(reviewTestHooks.now).toBe(late);
+    removeLate();
+    expect(reviewTestHooks.now).toBeUndefined();
   });
 });
 
