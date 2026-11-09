@@ -10,6 +10,7 @@ import {
 import {
   enterStep,
   markerEnv,
+  parseEnvColumn,
   StepTracker,
   type ProcessRow,
   reapStale,
@@ -256,5 +257,17 @@ describe("what a step leaves behind", () => {
     expect(messages).toHaveLength(1);
     expect(messages[0]).toContain("no longer active");
     expect(messages[0]).toContain(`${stale.pid}: `);
+  });
+});
+
+describe("the ps -E command column", () => {
+  test("an argument that spells the variables does not override the environment", () => {
+    const column =
+      "node run.js OPERAD_RUN=fake:arg OPERAD_RUN_HOME=fakehome HOME=/h OPERAD_RUN=real:step OPERAD_RUN_HOME=realhome PATH=/bin";
+    expect(parseEnvColumn(column)).toEqual({ marker: "real:step", home: "realhome" });
+  });
+
+  test("a column without the variable carries no marker", () => {
+    expect(parseEnvColumn("node run.js HOME=/h")).toBeUndefined();
   });
 });

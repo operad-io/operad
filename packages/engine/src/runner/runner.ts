@@ -16,7 +16,7 @@ import type { ObjectRef } from "../plugin/types.ts";
 import { messageOf } from "../plugin/errors.ts";
 import type { StepEvent, TriggerView } from "../trigger/types.ts";
 import { Worker } from "node:worker_threads";
-import { KILL_GRACE_MS, systemClock, type Clock } from "../platform/index.ts";
+import { KILL_GRACE_MS, REAP_ROUNDS, systemClock, type Clock } from "../platform/index.ts";
 import { acquireLock, runLockPath, type LockHandle } from "./lock.ts";
 import { AskHost, type AskTimer } from "./ask.ts";
 import { StepLimits } from "./limits.ts";
@@ -30,9 +30,12 @@ export const DEFAULT_STEP_TIMEOUT_MS = 5 * 60 * 1000;
  * How long a worker gets to stop what it started before it is terminated. A
  * process-group stop may wait one grace for the sentinel's `ready` and one more
  * after SIGTERM before it sends SIGKILL, so this exceeds both plus latency;
- * terminating sooner would leave the sentinel and its line running.
+ * terminating sooner would leave the sentinel and its line running. The sweep
+ * of what the step left behind runs after the stop, in the same worker, and
+ * gets its own budget.
  */
-export const WORKER_ABORT_GRACE_MS = 2 * KILL_GRACE_MS + 1000;
+export const REAP_BUDGET_MS = REAP_ROUNDS * (KILL_GRACE_MS + 2000);
+export const WORKER_ABORT_GRACE_MS = 2 * KILL_GRACE_MS + 1000 + REAP_BUDGET_MS;
 
 const STEP_WORKER = new URL("./step-worker.ts", import.meta.url);
 

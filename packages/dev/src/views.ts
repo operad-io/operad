@@ -49,7 +49,12 @@ function costNote(cost: unknown, quality?: unknown): string | undefined {
  */
 function waitNote(task: TaskData): string | undefined {
   const turn = task.attempt?.integrationWait;
-  if (typeof turn === "string" && turn.length > 0) {
+  // A task that ended (cancelled while it waited) is not waiting any more.
+  if (
+    typeof turn === "string" &&
+    turn.length > 0 &&
+    !TASK_FINAL_STATES.includes(task.phase)
+  ) {
     return `waiting to integrate: ${turn}`;
   }
   if (task.phase !== "waiting") return undefined;

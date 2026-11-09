@@ -85,8 +85,28 @@ export interface MarkedProcess {
 /** Lists the user's live processes that carry a marker. */
 export type ProcessLister = () => Promise<readonly MarkedProcess[]>;
 
-const MARKER_PATTERN = new RegExp(`(?:^|\\s)${MARKER_ENV}=(\\S+)`);
-const HOME_PATTERN = new RegExp(`(?:^|\\s)${MARKER_HOME_ENV}=(\\S+)`);
+const MARKER_PATTERN = new RegExp(`(?:^|\\s)${MARKER_ENV}=(\\S+)`, "g");
+const HOME_PATTERN = new RegExp(`(?:^|\\s)${MARKER_HOME_ENV}=(\\S+)`, "g");
+
+/**
+ * The last value of a variable in a `ps -E` command column. The environment
+ * follows the arguments, so the last match is the real one: an argument that
+ * spells `OPERAD_RUN=` cannot override it.
+ */
+function lastValue(pattern: RegExp, text: string): string | undefined {
+  let value: string | undefined;
+  for (const match of text.matchAll(pattern)) value = match[1];
+  return value;
+}
+
+/** The marker and home a `ps -E` command column carries, or undefined without a marker. */
+export function parseEnvColumn(
+  text: string,
+): { readonly marker: string; readonly home: string } | undefined {
+  const marker = lastValue(MARKER_PATTERN, text);
+  if (marker === undefined) return undefined;
+  return { marker, home: lastValue(HOME_PATTERN, text) ?? "" };
+}
 
 function run(command: string, args: readonly string[]): Promise<{ pid: number | undefined; out: string }> {
   return new Promise((resolve) => {
@@ -112,10 +132,9 @@ async function listWithPs(): Promise<readonly MarkedProcess[]> {
   for (const line of withEnv.out.split("\n")) {
     const match = /^\s*(\d+)\s(.*)$/.exec(line);
     if (match === null) continue;
-    const marker = MARKER_PATTERN.exec(match[2] ?? "");
-    if (marker === null) continue;
-    const home = HOME_PATTERN.exec(match[2] ?? "");
-    found.set(Number(match[1]), { marker: marker[1] ?? "", home: home?.[1] ?? "" });
+    const carried = parseEnvColumn(match[2] ?? "");
+    if (carried === undefined) continue;
+    found.set(Number(match[1]), carried);
   }
   if (found.size === 0) return [];
   const plain = await run("ps", [...who, "-ww", "-o", "pid=,command="]);
@@ -478,6 +497,12 @@ export function describeProcess(found: Reaped): string {
 
 /** The most rounds of looking and stopping; a parent that starts more is stopped first. */
 const ROUNDS = 3;
+
+/**
+ * The longest a sweep may take is this many rounds, each of which lists the
+ * table (twice on macOS), signals TERM, polls for one grace and signals KILL.
+ */
+export const REAP_ROUNDS = ROUNDS;
 
 /**
  * What to stop now: the marked processes `select` picks, the processes the
