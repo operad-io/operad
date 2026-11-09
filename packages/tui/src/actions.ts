@@ -6,6 +6,7 @@
 
 import type { ViewAction, ViewRow } from "@operad-io/engine";
 import { argFields, parseArg, type ArgField } from "./args.ts";
+import type { TuiSetting } from "./client.ts";
 import { sanitize } from "./sanitize.ts";
 import type { TuiBinding, TuiInput, TuiState } from "./state.ts";
 import { graphemes } from "./wrap.ts";
@@ -58,7 +59,7 @@ export function resolveBindings(bindings: readonly TuiBinding[]): {
 }
 
 /** The palette's groups, in the order they are shown. */
-export const PALETTE_GROUPS = ["actions", "tui"] as const;
+export const PALETTE_GROUPS = ["actions", "tui", "settings"] as const;
 export type TuiPaletteGroup = (typeof PALETTE_GROUPS)[number];
 
 /** One line of the palette. */
@@ -73,6 +74,8 @@ export interface TuiPaletteEntry {
   readonly key: string | undefined;
   readonly needsNote: boolean;
   readonly confirm: boolean;
+  /** Set on a settings entry: the setting it opens. */
+  readonly setting?: TuiSetting | undefined;
   /** Set when the query carries a value for the action's first argument. */
   readonly typed?: { readonly value: unknown } | undefined;
   /** Set when that value does not fit: the values the argument allows. */
@@ -268,6 +271,79 @@ export type TuiCommand =
   | { readonly kind: "help" | "refresh" | "back" | "quit" | "themes" }
   | { readonly kind: "go"; readonly tabId: string };
 
+/** The scopes the palette lists settings of: global, and the open object's repository. */
+export function settingScopes(state: TuiState): readonly string[] {
+  const object = state.object;
+  if (object === undefined) return ["global"];
+  const bare = object.id.slice(object.id.indexOf(":") + 1);
+  // A repository's own page is named by the repository; other objects carry it before the last slash.
+  if (object.type === "repo") return ["global", bare];
+  const slash = bare.lastIndexOf("/");
+  return slash < 0 ? ["global"] : ["global", bare.slice(0, slash)];
+}
+
+/** A value as the person reads it: text as it is, anything else as JSON. */
+export function settingText(value: unknown): string {
+  if (value === undefined) return "none";
+  return sanitize(typeof value === "string" ? value : (JSON.stringify(value) ?? "none"));
+}
+
+function settingEntries(state: TuiState): readonly TuiPaletteEntry[] {
+  return state.settings.map((setting) => ({
+    group: "settings",
+    name: sanitize(setting.name),
+    title: sanitize(setting.description ?? ""),
+    key: undefined,
+    needsNote: false,
+    confirm: setting.confirm,
+    setting,
+  }));
+}
+
+/** The field a setting's value prompt asks: a list for an enum or a boolean, else text. */
+export function settingField(setting: TuiSetting): ArgField {
+  const name = sanitize(setting.name);
+  const description = setting.description === undefined ? undefined : sanitize(setting.description);
+  const shown = settingText(setting.value);
+  const pick = (options: ArgField["options"]): ArgField => ({
+    name,
+    kind: "pick",
+    integer: false,
+    options,
+    description,
+    current: options.findIndex((o) => o.value === setting.value) >= 0
+      ? options.findIndex((o) => o.value === setting.value)
+      : undefined,
+    initial: "",
+  });
+  if (setting.enum !== undefined && setting.enum.length > 0) {
+    return pick(setting.enum.map((value) => ({ value, label: sanitize(String(value)) })));
+  }
+  if (setting.type === "boolean" || typeof setting.value === "boolean" || typeof setting.default === "boolean") {
+    return pick([
+      { value: true, label: "yes" },
+      { value: false, label: "no" },
+    ]);
+  }
+  return {
+    name,
+    kind: "text",
+    integer: false,
+    options: [],
+    description,
+    initial: setting.value === undefined ? "" : shown,
+  };
+}
+
+/** What the server is sent for typed text: JSON when it reads as JSON, else the text; the server checks it. */
+export function settingValue(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
 function commandEntries(state: TuiState): readonly TuiPaletteEntry[] {
   const make = (
     name: string,
@@ -339,7 +415,7 @@ export function paletteEntries(state: TuiState): readonly TuiPaletteEntry[] {
       // Equal scores keep the order the entries were listed in.
       .sort((a, b) => (b.found?.score ?? 0) - (a.found?.score ?? 0) || a.order - b.order)
       .map((item) => item.entry);
-  const all = [...rank(actions), ...rank(commandEntries(state))];
+  const all = [...rank(actions), ...rank(commandEntries(state)), ...rank(settingEntries(state))];
   if (words.length > 0) return all;
   // With no query the last used entries come first, the latest first.
   const used = state.recent
@@ -381,6 +457,15 @@ export function chosenEntry(state: TuiState): TuiPaletteEntry | undefined {
 /** The words after an entry: its key and what it asks. */
 export function entryHint(entry: TuiPaletteEntry): string {
   if (entry.refusal !== undefined) return entry.refusal;
+  if (entry.setting !== undefined) {
+    return [
+      settingText(entry.setting.value),
+      entry.setting.scope === "global" ? undefined : sanitize(entry.setting.scope),
+      entry.setting.editable ? undefined : "read-only",
+    ]
+      .filter((part): part is string => part !== undefined)
+      .join(" · ");
+  }
   return [
     entry.key,
     entry.needsNote ? "needs a note" : undefined,
@@ -392,6 +477,70 @@ export function entryHint(entry: TuiPaletteEntry): string {
 
 function withNotice(state: TuiState, notice: string): TuiState {
   return { ...state, notice: sanitize(notice) };
+}
+
+/** Opens a setting: its value prompt when it can change, a read-only page when not. */
+function openSetting(state: TuiState, setting: TuiSetting): TuiState {
+  const field = setting.editable ? settingField(setting) : undefined;
+  return {
+    ...state,
+    input: {
+      kind: "setting",
+      setting,
+      ...(field === undefined ? {} : { field }),
+      cursor: field?.current ?? 0,
+      text: field?.initial ?? "",
+    },
+  };
+}
+
+function sendSetting(state: TuiState, setting: TuiSetting, value: unknown, confirmed: boolean): TuiState {
+  if (state.acting) return withNotice({ ...state, input: undefined }, "the last change has not answered yet");
+  return {
+    ...state,
+    input: undefined,
+    acting: true,
+    settingRequest: {
+      name: setting.name,
+      scope: setting.scope,
+      value,
+      ...(confirmed ? { confirmed: true } : {}),
+    },
+  };
+}
+
+/** A value is chosen or typed: ask to confirm when the setting says so, else send. */
+function settingAnswered(state: TuiState, setting: TuiSetting, value: unknown): TuiState {
+  return setting.confirm
+    ? { ...state, input: { kind: "setting-confirm", setting, value } }
+    : sendSetting(state, setting, value, false);
+}
+
+/** A key arrives while a setting is open. */
+function settingKey(
+  state: TuiState,
+  input: Extract<TuiInput, { readonly kind: "setting" }>,
+  event: { readonly text?: string | undefined; readonly ctrl?: boolean | undefined; readonly meta?: boolean | undefined },
+  key: string,
+  enter: boolean,
+): TuiState {
+  const field = input.field;
+  // A read-only setting only shows; Enter closes it as Escape does.
+  if (field === undefined) return enter ? { ...state, input: undefined } : state;
+  if (field.kind === "pick") {
+    const down = key === "down" || key === "arrowdown" || (event.ctrl !== true && event.text === "j") || (event.ctrl === true && (key === "n" || key === "j"));
+    const up = key === "up" || key === "arrowup" || (event.ctrl !== true && event.text === "k") || (event.ctrl === true && (key === "p" || key === "k"));
+    if (down || up) {
+      const cursor = Math.min(Math.max(0, input.cursor + (down ? 1 : -1)), field.options.length - 1);
+      return { ...state, input: { ...input, cursor } };
+    }
+    const option = field.options[input.cursor];
+    return enter && option !== undefined ? settingAnswered(state, input.setting, option.value) : state;
+  }
+  if (enter) return settingAnswered(state, input.setting, settingValue(input.text));
+  if (key === "backspace") return { ...state, input: { ...input, text: dropLast(input.text) } };
+  const text = event.ctrl === true || event.meta === true ? undefined : typed(event);
+  return text === undefined ? state : { ...state, input: { ...input, text: input.text + text } };
 }
 
 /** Runs an action on the open object, or says why it cannot. */
@@ -532,9 +681,10 @@ export function inputKey(
   const key = event.key.toLowerCase();
   const escape = key === "escape" || key === "esc";
   const enter = key === "enter" || key === "return";
-  if (input.kind === "confirm") {
+  if (input.kind === "confirm" || input.kind === "setting-confirm") {
     const yes = event.ctrl !== true && event.meta !== true && (key === "y" || event.text === "y" || event.text === "Y");
     if (!yes) return { ...state, input: undefined };
+    if (input.kind === "setting-confirm") return sendSetting(state, input.setting, input.value, true);
     return send(state, {
       action: input.action,
       id: input.id,
@@ -544,6 +694,7 @@ export function inputKey(
     });
   }
   if (escape) return { ...state, input: undefined };
+  if (input.kind === "setting") return settingKey(state, input, event, key, enter);
   if (input.kind === "args") return argsKey(state, input, event, key, enter);
   if (input.kind === "palette") {
     const entries = paletteEntries(state);
@@ -560,6 +711,9 @@ export function inputKey(
       const chosen = chosenEntry(state);
       // A command is run by the reducer that owns the state it changes.
       // A value that does not fit stays in the palette, with what is allowed.
+      if (chosen?.setting !== undefined) {
+        return openSetting(remember({ ...state, input: undefined }, chosen), chosen.setting);
+      }
       return chosen === undefined || chosen.command !== undefined || chosen.refusal !== undefined
         ? state
         : startAction(remember({ ...state, input: undefined }, chosen), chosen.name, chosen.typed);
@@ -660,6 +814,9 @@ function argsKey(
 /** The footer line a confirmation asks, in red. */
 export function confirmText(state: TuiState): string | undefined {
   const input = state.input;
+  if (input?.kind === "setting-confirm") {
+    return `set ${sanitize(input.setting.name)} to ${settingText(input.value)}? [y/N]`;
+  }
   return input?.kind === "confirm"
     ? `${input.action} ${bareId(input.id)}? [y/N]`
     : undefined;

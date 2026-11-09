@@ -95,6 +95,7 @@ describe("settings", () => {
       value: 3,
       default: 2,
       description: "How many at once.",
+      type: "integer",
       editable: true,
       confirm: false,
     });
@@ -108,6 +109,8 @@ describe("settings", () => {
       scope: "alpha",
       value: "low",
       default: "low",
+      type: "string",
+      enum: ["low", "high"],
       editable: true,
       confirm: false,
     });
