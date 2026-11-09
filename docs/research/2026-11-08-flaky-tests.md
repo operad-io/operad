@@ -346,3 +346,20 @@ Each ends with: the stress command must reach 0 failures of 200 runs.
     test print `env.order()` source lines and the child exits on failure, then decide
     test bug or replay bug. Check:
     `bash scripts/stress.sh --runs 200 --load 2 packages/engine/test/runner/limits.test.ts`.
+
+### gate.test.ts alone, and what is left (stopped at the 120-minute limit)
+
+`packages/dev/test/gate.test.ts` ran as its own job, `--runs 5 --load 2`, with the
+install current: 625 test runs, 0 failures, 958 s (16 min; other sessions' stress
+runs were still active). It was cut to 5 reruns, not 10 or 20, to fit the limit. The
+first pass's "10 of 10" gate failures were the stale install (T-0109), so this is
+the first valid gate measurement. It does not reach the 20-run bar.
+
+Left, not run in this task:
+- `packages/dev/test`, 21 of 22 files at 20 runs (only `actions.test.ts` was done:
+  440 runs, 0 failures). The first pass's 10-rerun whole-package run stands for them
+  (the two unclassified repository failures, proposed task 6).
+- `gate.test.ts` at 10 and 20 runs.
+- A quiet-machine run of anything: no package was run on a quiet machine.
+- `bash scripts/verify.sh` was not run after the last commit; the change is this
+  file only.
