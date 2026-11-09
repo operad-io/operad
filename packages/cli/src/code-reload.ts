@@ -53,6 +53,10 @@ export function takeCodeSnapshot(
       .filter((plugin) => plugin.enabled)
       .map((plugin) => ({ name: plugin.name ?? basename(plugin.module, extname(plugin.module)), module: plugin.module })),
   });
+  // config.json holds each plugin's settings, which a plugin is given when it
+  // loads: a change to it (by hand or through `settings set`) is taken up the
+  // way changed code is.
+  roots.push({ label: "settings", path: join(home, "config.json") });
   const cache = newHashCache();
   return { roots, baseline: fingerprintCode(roots, cache), cache };
 }

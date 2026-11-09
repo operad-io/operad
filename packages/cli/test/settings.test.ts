@@ -2,7 +2,7 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readHttpToken } from "@operad-io/engine";
+import { openPluginStore, readHttpToken } from "@operad-io/engine";
 import { main, type CliIo } from "../src/main.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 
@@ -142,10 +142,12 @@ describe("operad settings", () => {
         http: { enabled: true, port, listen: ["127.0.0.1"] },
       }),
     );
+    const store = openPluginStore({ backend: "jsonl", root: join(root, "store") });
+    await store.put("item", "one", { title: "One", state: "new" }, "seed");
     const child = Bun.spawn({
       cmd: [process.execPath, CLI_ENTRY, "serve"],
       cwd: home,
-      env: { ...(process.env as Record<string, string>), OPERAD_HOME: home },
+      env: { ...(process.env as Record<string, string>), OPERAD_HOME: home, OPERAD_RELOAD_QUIET_MS: "50", OPERAD_RELOAD_POLL_MS: "200" },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
@@ -153,11 +155,15 @@ describe("operad settings", () => {
     try {
       const reader = child.stdout.getReader();
       let seen = "";
-      while (!seen.includes(`http http://127.0.0.1:${port}`)) {
-        const read = await reader.read();
-        if (read.done) throw new Error(`serve ended: ${seen}`);
-        seen += new TextDecoder().decode(read.value);
-      }
+      const until = async (pattern: RegExp): Promise<void> => {
+        while (!pattern.test(seen)) {
+          const read = await reader.read();
+          if (read.done) throw new Error(`serve ended: ${seen}`);
+          seen += new TextDecoder().decode(read.value);
+        }
+      };
+      const listening = new RegExp(`http http://127.0.0.1:${port}`);
+      await until(listening);
       const token = await readHttpToken(home);
       if (token === undefined) throw new Error("no token");
       const headers = { authorization: `Bearer ${token.token}`, "content-type": "application/json" };
@@ -172,6 +178,16 @@ describe("operad settings", () => {
         settings: { name: string; value: number }[];
       };
       expect(listed.settings.find((item) => item.name === "webtest.limit")?.value).toBe(6);
+      // The serve takes the new value up: it reloads, and the plugin's action
+      // then sees 6, not the default 2.
+      await until(/reloading: settings[\s\S]*http http/);
+      const acted = await fetch(`http://127.0.0.1:${port}/v1/act`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ action: "webtest:limit", id: "one" }),
+      });
+      expect(acted.status).toBe(200);
+      expect(JSON.stringify(await acted.json())).toContain("6");
       const shown = await operad(home, "settings");
       expect(shown.out).toContain("global  webtest.limit  6  default 2");
     } finally {

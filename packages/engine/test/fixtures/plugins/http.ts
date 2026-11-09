@@ -51,6 +51,12 @@ export default definePlugin({
   },
   actions: [
     {
+      name: "limit",
+      on: "item",
+      when: () => true,
+      run: (ctx) => ctx.settings.limit,
+    },
+    {
       name: "approve",
       on: "item",
       args: {
