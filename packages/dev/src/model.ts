@@ -42,7 +42,7 @@ export const TASK_PHASES = [
   "running",
   "review",
   "waiting",
-  "held",
+  "paused",
   "merged",
   "cancelled",
 ] as const;

@@ -635,7 +635,7 @@ The `dev` plugin declares these filters (`all` follows `active`):
 
 | Type | Filter | States |
 |---|---|---|
-| task | `active` (default) | proposed, ready, running, review, waiting, held |
+| task | `active` (default) | proposed, ready, running, review, waiting, paused |
 | task | `done` | merged |
 | task | `cancelled` | cancelled |
 | plan | `active` (default) | draft, confirmed, paused |

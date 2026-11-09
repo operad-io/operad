@@ -514,7 +514,7 @@ export function runToken(ctx: StepContext): string | undefined {
  * started by the scheduler (a step test or a direct call), so it is allowed.
  */
 export function claimAllows(ctx: StepContext, task: TaskData): boolean {
-  if (task.phase === "cancelled" || task.phase === "held") return false;
+  if (task.phase === "cancelled" || task.phase === "paused") return false;
   const claim = task.claim;
   if (claim === undefined || claim === null) return true;
   if (runToken(ctx) !== claim.token) return false;

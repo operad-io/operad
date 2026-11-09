@@ -74,7 +74,7 @@ const TASK_MARKS: Readonly<Record<TaskPhase, (task: TaskData) => RowMark>> = {
   running: runningMark,
   review: reviewMark,
   waiting: waitingMark,
-  held: () => "paused",
+  paused: () => "paused",
   merged: () => "done",
   cancelled: () => "cancelled",
 };

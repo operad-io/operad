@@ -14,7 +14,7 @@ merge. It is a plugin: the kernel knows none of these words.
 | **rework** | another pass over a task, added as `## Rework <n> (<source>)` |
 | **confirm** | accept a plan (its tasks then become ready) or a single proposed task |
 | **cancel** | stop a plan and its open tasks, or one task |
-| **hold** | stop a task for a while; **release** undoes it |
+| **pause** | stop a task for a while; **resume** undoes it |
 | **auto** | how far a plan may run without you: off, run, merge |
 | **priority** | P0 (most urgent) to P5 (least urgent), default P3 |
 
@@ -103,8 +103,8 @@ Every action is also a command: `operad dev:<action> <id>`.
 | `dev:rework` | task | | add the lead's own rework: `--note <text>` becomes `## Rework <n> (lead)`, and the worker runs again; history reads "you chose rework" with the note |
 | `dev:reverify` | task | | run verify and review again on the task's current commit, with no worker |
 | `dev:cancel` | plan, task | `x` | cancel a plan and its open tasks, or one task; asks first |
-| `dev:hold` | task | | stop a ready, running or reviewing task for a while: the step stops as `cancel` stops it (its processes too), but the task keeps its branch, worktree, commits, attempt count and place. It shows as held (mark `paused`), holds no concurrency slot, and is not started; a task that follows it stays queued as for any unmerged task. Owner action, not offered through MCP; asks first |
-| `dev:release` | task | | undo hold: the task is ready again, and its next start is a new attempt that begins with the worktree step on the existing branch, as a rework does. Owner action, not offered through MCP; asks first |
+| `dev:pause` | task | | stop a ready, running or reviewing task for a while: the step stops as `cancel` stops it (its processes too), but the task keeps its branch, worktree, commits, attempt count and place. It shows as paused (mark `paused`), holds no concurrency slot, and is not started; a task that follows it stays queued as for any unmerged task. Owner action, not offered through MCP; asks first |
+| `dev:resume` | task | | undo pause: the task is ready again, and its next start is a new attempt that begins with the worktree step on the existing branch, as a rework does. Owner action, not offered through MCP; asks first |
 | `dev:auto` | plan | | set auto: `--level off`, `--level run` or `--level merge` |
 | `dev:priority` | plan | | set the priority: `--level P0` (most urgent) to `--level P5` |
 | `dev:concurrency` | plan | | set how many of the plan's tasks may run at once: `--count 1` to `--count 16`; takes effect at the next tick, running tasks are not stopped |

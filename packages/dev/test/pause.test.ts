@@ -89,8 +89,8 @@ async function runWorktree(s: Setup, key: string, runId: string) {
   });
 }
 
-describe("dev:hold and dev:release", () => {
-  test("hold stops the running step, keeps the branch and commits, and frees the slot", async () => {
+describe("dev:pause and dev:resume", () => {
+  test("pause stops the running step, keeps the branch and commits, and frees the slot", async () => {
     const s = await setup();
     const first = await s.add("first");
     const second = await s.add("second");
@@ -102,15 +102,15 @@ describe("dev:hold and dev:release", () => {
     await commitIn(worktree, "work.txt", "done so far\n", "partial work");
     const claimToken = before.claim?.token;
 
-    await act(s, "hold", first);
+    await act(s, "pause", first);
 
     expect(s.cancelled).toEqual(["run-1"]);
-    const held = await task(s, first);
-    expect(held.phase).toBe("held");
-    expect(held.run).toBeNull();
-    expect(held.claim).toBeNull();
-    expect(held.attempts).toBe(1);
-    expect(held.attempt?.branch).toBe(`work/${bareId(first)}`);
+    const paused = await task(s, first);
+    expect(paused.phase).toBe("paused");
+    expect(paused.run).toBeNull();
+    expect(paused.claim).toBeNull();
+    expect(paused.attempts).toBe(1);
+    expect(paused.attempt?.branch).toBe(`work/${bareId(first)}`);
     expect(existsSync(worktree)).toBe(true);
     expect(git(worktree, ["log", "--format=%s", "-n", "1"]).out).toBe("partial work");
     expect(taskViews.row(await getTask(s.store, first)).mark).toBe("paused");
@@ -122,20 +122,20 @@ describe("dev:hold and dev:release", () => {
       params: { token: claimToken ?? "" },
     });
     expect(stale.result).toBe("cancelled");
-    expect((await task(s, first)).phase).toBe("held");
+    expect((await task(s, first)).phase).toBe("paused");
 
-    // The slot is free: the next task starts, the held one does not.
+    // The slot is free: the next task starts, the paused one does not.
     expect(await tick(s)).toEqual([second]);
-    expect((await task(s, first)).phase).toBe("held");
+    expect((await task(s, first)).phase).toBe("paused");
   });
 
-  test("a held ready task is not started, and its dependent stays queued", async () => {
+  test("a paused ready task is not started, and its dependent stays queued", async () => {
     const s = await setup();
     const first = await s.add("first");
     const second = await s.add("second", [bareId(first)]);
     await confirmPlan(s.store, s.plan.id);
-    await act(s, "hold", first);
-    expect((await task(s, first)).phase).toBe("held");
+    await act(s, "pause", first);
+    expect((await task(s, first)).phase).toBe("paused");
 
     expect(await tick(s)).toEqual([]);
     const dependent = await task(s, second);
@@ -144,7 +144,7 @@ describe("dev:hold and dev:release", () => {
     expect(taskViews.row(await getTask(s.store, second)).mark).toBe("blocked");
   });
 
-  test("release makes the task ready and the next run continues on its branch", async () => {
+  test("resume makes the task ready and the next run continues on its branch", async () => {
     const s = await setup();
     const first = await s.add("first");
     await confirmPlan(s.store, s.plan.id);
@@ -152,10 +152,10 @@ describe("dev:hold and dev:release", () => {
     await runWorktree(s, first, "run-1");
     const worktree = (await task(s, first)).attempt?.worktree ?? "";
     await commitIn(worktree, "work.txt", "kept\n", "partial work");
-    await act(s, "hold", first);
+    await act(s, "pause", first);
     expect(await tick(s)).toEqual([]);
 
-    await act(s, "release", first);
+    await act(s, "resume", first);
     expect((await task(s, first)).phase).toBe("ready");
     expect(await tick(s)).toEqual([first]);
     const result = await runWorktree(s, first, "run-2");
@@ -169,25 +169,34 @@ describe("dev:hold and dev:release", () => {
     expect(gitOrThrow(worktree, ["log", "--format=%s", "-n", "1"])).toBe("partial work");
   });
 
-  test("hold and release refuse where they cannot work, and stay with the owner", async () => {
+  test("pause and resume refuse where they cannot work, and stay with the owner", async () => {
     const s = await setup();
     const first = await s.add("first");
-    await expect(act(s, "release", first)).rejects.toThrow();
+    await expect(act(s, "resume", first)).rejects.toThrow();
     await setTaskPhase(s.store, first, "waiting", { run: "run-9" });
-    await expect(act(s, "hold", first)).rejects.toThrow(/waiting for you/);
+    await expect(act(s, "pause", first)).rejects.toThrow(/waiting for you/);
     await setTaskPhase(s.store, first, "cancelled");
-    await expect(act(s, "hold", first)).rejects.toThrow(/cancelled/);
+    await expect(act(s, "pause", first)).rejects.toThrow(/cancelled/);
 
     const names = s.registry
       .actions()
       .filter((action) => action.on === "task")
       .map((action) => action.name);
-    expect(names).toContain("dev:hold");
-    expect(names).toContain("dev:release");
-    for (const name of ["dev:hold", "dev:release"]) {
+    expect(names).toContain("dev:pause");
+    expect(names).toContain("dev:resume");
+    for (const name of ["dev:pause", "dev:resume"]) {
       expect(s.registry.actions().find((action) => action.name === name)?.confirm).toBe(true);
       expect(DEFAULT_MCP.actions).not.toContain(name);
     }
+  });
+
+  test("dev:hold and dev:release are no longer actions", async () => {
+    const s = await setup();
+    const names = s.registry.actions().map((action) => action.name);
+    expect(names).not.toContain("dev:hold");
+    expect(names).not.toContain("dev:release");
+    expect(names).toContain("dev:pause");
+    expect(names).toContain("dev:resume");
   });
 
   test("task update --after releases a task waiting on a cancelled dependency", async () => {
