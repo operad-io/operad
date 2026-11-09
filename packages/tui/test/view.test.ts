@@ -64,7 +64,7 @@ describe("the TUI view", () => {
 
       const frame = setup.captureCharFrame();
       expect(frame).toContain("operad   Pending 1 · Running 0 · Item 2");
-      expect(frame).toContain("item:one");
+      expect(frame).toContain("one  Approve?");
       expect(frame).toContain("select an object");
       expect(frame).toContain("q quit");
 
@@ -117,7 +117,8 @@ describe("the TUI view", () => {
         expect(lines[22]?.trim()).toMatch(/^─+$/);
         expect(lines[23]?.startsWith(" j/k move")).toBe(true);
         expect(lines[4]?.startsWith(" ❯ ● one")).toBe(true);
-        expect(lines[5]?.startsWith("   ◐ two")).toBe(true);
+        expect(lines[5]?.startsWith("     new")).toBe(true);
+        expect(lines[7]?.startsWith("   ◐ two")).toBe(true);
         expect(lines.join("\n")).not.toMatch(/[╭╮╰╯]/);
         const at = lines.slice(2, 22).map((line) => line.indexOf("│"));
         view.destroy();
@@ -279,14 +280,14 @@ describe("the TUI view", () => {
       { id: "r1", title: "r", state: "r", running: true, waiting: false },
       { id: "r2", title: "r", state: "r", mark: "done" as const, running: true, waiting: false },
     ];
-    let state = initialState({ width, height: 40, theme: "dark" });
+    let state = initialState({ width, height: 80, theme: "dark" });
     state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
     state = reduce(state, { type: "page", tabId: "type:item", replace: true, page: { rows } });
     state = reduce(state, { type: "key", key: "3" });
-    const setup = await createTestRenderer({ width, height: 40 });
+    const setup = await createTestRenderer({ width, height: 80 });
     try {
       const view = createTuiView(setup.renderer);
-      view.render({ ...state, width, height: 40 });
+      view.render({ ...state, width, height: 80 });
       await setup.renderOnce();
       const lines = setup.captureCharFrame().split("\n").slice(2);
       const glyphOf = (id: string): string | undefined =>
@@ -314,7 +315,8 @@ describe("the TUI view", () => {
     });
     state = reduce(state, { type: "key", key: "2" });
     const text = drawState(state).list.chunks.map((c) => c.text).join("");
-    expect(text).toContain("operad/T-0048-x");
-    expect(text).toContain("Type filters");
+    expect(text).toContain("T-0048 x  Type filters");
+    expect(text).not.toContain("operad/T-0048");
+    expect(text).toContain("w · 1ms · operad");
   });
 });
