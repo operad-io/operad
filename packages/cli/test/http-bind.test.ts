@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ConfigError } from "@operad-io/engine";
-import { BindFailed, startWithRetry } from "../src/http-bind.ts";
+import { BindFailed, HandOverStuck, leaveStuck, startWithRetry, type StuckActions } from "../src/http-bind.ts";
 
 /** A clock that only moves when the code under test waits. */
 function clock(): { now: () => number; wait: (ms: number) => Promise<void>; waits: number[] } {
@@ -61,5 +61,42 @@ describe("startWithRetry", () => {
     ).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(ConfigError);
     expect(tries).toBe(1);
+  });
+});
+
+describe("leaveStuck", () => {
+  function actions(supervised: boolean): { calls: string[]; value: StuckActions } {
+    const calls: string[] = [];
+    return {
+      calls,
+      value: {
+        supervised,
+        startReplacement: () => calls.push("replace"),
+        exit: (code) => {
+          calls.push(`exit ${code}`);
+          throw new Error("exited");
+        },
+        log: () => calls.push("log"),
+      },
+    };
+  }
+  const stuck = (reload: boolean): HandOverStuck => new HandOverStuck(new Error("http: 192.168.6.64 did not release the port"), reload);
+
+  test("a reload that cannot release ends the process, and a new serve starts first", () => {
+    const a = actions(false);
+    expect(() => leaveStuck(stuck(true), a.value)).toThrow("exited");
+    expect(a.calls).toEqual(["log", "replace", "exit 1"]);
+  });
+
+  test("under a supervisor the process ends with the reload code and starts nothing itself", () => {
+    const a = actions(true);
+    expect(() => leaveStuck(stuck(true), a.value)).toThrow("exited");
+    expect(a.calls).toEqual(["log", "exit 75"]);
+  });
+
+  test("a stop that cannot release ends the process and starts nothing", () => {
+    const a = actions(false);
+    expect(() => leaveStuck(stuck(false), a.value)).toThrow("exited");
+    expect(a.calls).toEqual(["log", "exit 1"]);
   });
 });

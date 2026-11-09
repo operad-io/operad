@@ -82,7 +82,14 @@ import {
   takeCodeSnapshot,
 } from "./code-reload.ts";
 import type { CodeSnapshot } from "./code-reload.ts";
-import { BindFailed, startWithRetry } from "./http-bind.ts";
+import {
+  BindFailed,
+  HandOverStuck,
+  REPLACES_ENV,
+  leaveStuck,
+  startWithRetry,
+  takeReplacesFlag,
+} from "./http-bind.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { QrTooLongError, encodeQr, renderQr } from "./qr.ts";
 import {
@@ -1568,7 +1575,7 @@ async function commandServe(
     onLog: (message) => io.error(`${message}\n`),
   });
   let http: HttpServerHandle | undefined;
-  let outcome: "stopped" | "reload" = "stopped";
+  let outcome = "stopped" as "stopped" | "reload";
   let unreleased: HttpStopError | undefined;
   let watch: CodeWatch | undefined;
   try {
@@ -1665,7 +1672,7 @@ async function commandServe(
     process.removeListener("SIGINT", stop);
     process.removeListener("SIGTERM", stop);
   }
-  if (unreleased !== undefined) throw unreleased;
+  if (unreleased !== undefined) throw new HandOverStuck(unreleased, outcome === "reload");
   return outcome;
 }
 
@@ -2391,7 +2398,8 @@ export async function main(
       // a second serve fails here, with exit 4, and touches nothing. The lock
       // is handed to `serve`, so there is no check and then act.
       const supervised = takeSupervisedFlag();
-      const runOnce = async (isSupervised: boolean, retryBind: boolean): Promise<"stopped" | "reload"> => {
+      const replaces = takeReplacesFlag();
+      const runChecked = async (isSupervised: boolean, retryBind: boolean): Promise<"stopped" | "reload"> => {
         const lock = acquireLock(serveLockPath(home));
         try {
           // serve answers clients that are in no directory: a bare id must not
@@ -2408,9 +2416,35 @@ export async function main(
           lock.release();
         }
       };
+      const runOnce = async (
+        isSupervised: boolean,
+        retryBind: boolean,
+      ): Promise<"stopped" | "reload"> => {
+        try {
+          return await runChecked(isSupervised, retryBind);
+        } catch (error) {
+          // The lock is released by now; see leaveStuck.
+          if (!(error instanceof HandOverStuck)) throw error;
+          return leaveStuck(error, {
+            supervised: isSupervised,
+            log: (message) => io.error(message),
+            exit: (code) => process.exit(code),
+            startReplacement: () => {
+              Bun.spawn({
+                cmd: [process.execPath, ...process.argv.slice(1)],
+                cwd: process.cwd(),
+                env: { ...process.env, [REPLACES_ENV]: "1" },
+                stdin: "ignore",
+                stdout: "inherit",
+                stderr: "inherit",
+              }).unref();
+            },
+          });
+        }
+      };
       let result: "stopped" | "reload";
       try {
-        result = await runOnce(supervised, supervised);
+        result = await runOnce(supervised, supervised || replaces);
       } catch (error) {
         if (supervised && error instanceof BindFailed) {
           // One line, then the process that started the serve serves again.

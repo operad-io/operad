@@ -6,6 +6,7 @@
  */
 
 import { ConfigError } from "@operad-io/engine";
+import { RELOAD_EXIT } from "./code-reload.ts";
 
 export interface BindRetryOptions {
   /** How long to keep trying, in milliseconds. */
@@ -42,4 +43,47 @@ export async function startWithRetry<T>(
     }
     await options.wait(options.stepMs);
   }
+}
+
+/** A serve whose listener would not release its address: this process cannot go on. */
+export class HandOverStuck extends Error {
+  readonly reload: boolean;
+  constructor(cause: Error, reload: boolean) {
+    super(cause.message);
+    this.name = "HandOverStuck";
+    this.reload = reload;
+  }
+}
+
+/** Set in the environment of a serve that a stuck serve started in its place. */
+export const REPLACES_ENV = "OPERAD_SERVE_REPLACES";
+
+/** True when a stuck serve started this one; removes the flag from `env`. */
+export function takeReplacesFlag(env: NodeJS.ProcessEnv = process.env): boolean {
+  const replaces = env[REPLACES_ENV] === "1";
+  delete env[REPLACES_ENV];
+  return replaces;
+}
+
+export interface StuckActions {
+  readonly supervised: boolean;
+  /** Starts the same command line as a new process that retries its bind. */
+  readonly startReplacement: () => void;
+  /** Ends this process now, whatever handles it still holds. */
+  readonly exit: (code: number) => never;
+  readonly log: (message: string) => void;
+}
+
+/**
+ * A listener that will not release its address is still a live handle, so the
+ * process must end rather than return: it would go on serving only that
+ * address. A reload still needs a serve afterwards: under a supervisor the
+ * supervisor starts the next one; otherwise a replacement starts here, after
+ * the home lock was released and before this process ends.
+ */
+export function leaveStuck(error: HandOverStuck, actions: StuckActions): never {
+  actions.log(`${error.message}; this serve ends${error.reload ? " and a new one starts" : ""}\n`);
+  if (error.reload && actions.supervised) return actions.exit(RELOAD_EXIT);
+  if (error.reload) actions.startReplacement();
+  return actions.exit(1);
 }
