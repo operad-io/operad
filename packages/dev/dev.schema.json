@@ -243,6 +243,11 @@
           "type": "integer",
           "minimum": 0,
           "default": 2
+        },
+        "flakyPlan": {
+          "description": "The id of the plan dev proposes the flaky-test tasks in. When it is not set, or that plan is finished or cancelled, dev makes a plan flaky-tests (title Flaky tests) once and uses it.",
+          "type": "string",
+          "minLength": 1
         }
       },
       "additionalProperties": false,
