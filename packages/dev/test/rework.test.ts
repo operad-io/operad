@@ -194,4 +194,10 @@ describe("review settings by round", () => {
     const used = reviewSettingsOf("first", { use: "h/agent", args: [], timeoutSecs: 600 }, true);
     expect(used.sources).toEqual({ use: "default", args: "default", timeoutSecs: "default", stallSecs: "default" });
   });
+  test("firstArgs still belongs to the first review of every attempt, rework round included", () => {
+    const old = { use: "h/agent", args: ["big"], firstArgs: ["old"], timeoutSecs: 600 };
+    expect(reviewSettingsOf("rework", old, true).args).toEqual(["old"]);
+    expect(reviewSettingsOf("reverify", old, true).args).toEqual(["old"]);
+    expect(reviewSettingsOf("rework", old, false).args).toEqual(["big"]);
+  });
 });

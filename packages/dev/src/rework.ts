@@ -344,8 +344,9 @@ export function reviewSettingsOf(
   firstOfAttempt: boolean,
 ): ReviewSettingsUsed {
   const first = kind === "first" ? reviewer.first : undefined;
-  const legacy =
-    kind === "first" && firstOfAttempt ? reviewer.firstArgs : undefined;
+  // `firstArgs` is older than rounds: it belongs to the first review of every
+  // attempt, whatever the round's kind.
+  const legacy = firstOfAttempt ? reviewer.firstArgs : undefined;
   const args = first?.args ?? legacy;
   const stall = first?.stallSecs ?? reviewer.stallSecs;
   return {
