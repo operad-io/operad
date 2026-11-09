@@ -151,3 +151,26 @@ Each ends with: the stress command must reach 0 failures of 200 runs.
    classify (transient git failure under load, a shared scratch path, or a race with
    cleanup) before fixing. Check: `bash scripts/stress.sh --runs 200 --load 2 packages/dev/test/service.test.ts`
    and the same for `packages/dev/test/cli.test.ts` each report 0 failures.
+
+## Follow-up (T-0109): why the tests passed with the link "absent"
+
+The link that mattered was never the root one. `node_modules/@operad-io` at the
+repository root links only what the root `package.json` depends on (dev, engine,
+harness-claude, harness-pi, harness-radian, pool, shell, source-cron);
+`@operad-io/access-match` is a dependency of harness-claude, harness-pi and
+harness-radian, so bun links it under each of those packages
+(`packages/harness-radian/node_modules/@operad-io/access-match`), and
+`packages/harness-radian/src/index.ts` resolves it from there, never from the root.
+So the root link was absent before and after `bun install --frozen-lockfile`, and
+should be. The stale install was the per-package link: the old worktree lacked it,
+and the install, though it printed "no changes" for the lockfile, created it
+(`Checked ... installs`, links are made from the manifests). The tests resolve
+modules normally; nothing resolves in source.
+
+A check that compares the workspace packages with the root `node_modules/@operad-io`
+would therefore always complain about access-match. `scripts/check-install.ts`
+instead reads every `package.json` (root and `packages/*`) and requires the
+`node_modules/<name>` link under that same directory for each `workspace:`
+dependency. `scripts/stress.sh` runs it first, and the `bunfig.toml` test preload
+runs it for every `bun test`; a stale install ends with one line, `stale install:
+<links> missing; run bun install`.
