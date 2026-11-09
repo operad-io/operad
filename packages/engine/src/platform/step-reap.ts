@@ -182,42 +182,258 @@ function signalProcess(pid: number, signal: NodeJS.Signals): boolean {
   }
 }
 
+/** One live process of the user, from the process table. */
+export interface ProcessRow {
+  readonly pid: number;
+  readonly ppid: number;
+  readonly pgid: number;
+  /** When it started; with the pid it names one process for good. */
+  readonly start: string;
+  readonly command: string;
+}
+
+/** Reads the user's process table. */
+export type ProcessTable = () => Promise<readonly ProcessRow[]>;
+
+const ROW_PATTERN =
+  /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\w{3}\s+\S+\s+\S+\s+[\d:]+\s+\d{4})\s+(.*)$/;
+
+/** The table of this user's processes, by `ps`; it works the same on macOS and Linux. */
+export const readProcessTable: ProcessTable = async () => {
+  const uid = String(process.getuid?.() ?? "");
+  const who = uid === "" ? ["-x"] : ["-U", uid];
+  const listing = await run("ps", [...who, "-ww", "-o", "pid=,ppid=,pgid=,lstart=,command="]);
+  const rows: ProcessRow[] = [];
+  for (const line of listing.out.split("\n")) {
+    const match = ROW_PATTERN.exec(line);
+    if (match === null) continue;
+    if (Number(match[1]) === listing.pid) continue;
+    rows.push({
+      pid: Number(match[1]),
+      ppid: Number(match[2]),
+      pgid: Number(match[3]),
+      start: (match[4] ?? "").replace(/\s+/g, " "),
+      command: match[5] ?? "",
+    });
+  }
+  return rows;
+};
+
+function identity(row: ProcessRow): string {
+  return `${row.pid}@${row.start}`;
+}
+
+/** The pids of this process and of everything above it: never swept. */
+function protectedPids(rows: readonly ProcessRow[]): Set<number> {
+  const byPid = new Map(rows.map((row) => [row.pid, row]));
+  const kept = new Set<number>([process.pid, process.ppid]);
+  let at = byPid.get(process.pid)?.ppid;
+  while (at !== undefined && at > 1 && !kept.has(at)) {
+    kept.add(at);
+    at = byPid.get(at)?.ppid;
+  }
+  return kept;
+}
+
+/**
+ * Follows the processes a step started, by the process table instead of the
+ * environment. macOS withholds the environment of Apple's own binaries
+ * (`/bin/sh`, `/bin/bash`, `/bin/zsh`), so a shell loop a command left in the
+ * background carries the marker without showing it. The table still names it
+ * while its parent lives, and the group it belongs to afterwards: a process
+ * that was seen below the step's root stays on the list when its parent ends
+ * and it moves to init, and so does every later member of its process group.
+ */
+export class StepTracker {
+  private readonly roots = new Set<number>();
+  private readonly seen = new Map<string, ProcessRow>();
+  private readonly groups = new Set<number>();
+  private timer: unknown;
+  private stopped = false;
+  private polling: Promise<void> = Promise.resolve();
+
+  /** A process the step started itself: the sentinel that leads its group. */
+  addRoot(pid: number): void {
+    this.roots.add(pid);
+  }
+
+  has(row: ProcessRow): boolean {
+    return this.seen.has(identity(row)) || (row.pgid > 1 && this.groups.has(row.pgid));
+  }
+
+  /** Adds what the table shows below the roots, and below what is already followed. */
+  observe(rows: readonly ProcessRow[]): void {
+    const own = rows.find((row) => row.pid === process.pid)?.pgid;
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const row of rows) {
+        if (this.seen.has(identity(row))) continue;
+        const parent = rows.find((one) => one.pid === row.ppid);
+        const below =
+          this.roots.has(row.pid) ||
+          (parent !== undefined && this.seen.has(identity(parent))) ||
+          (row.pgid > 1 && row.pgid !== own && this.groups.has(row.pgid));
+        if (!below || row.pid === process.pid) continue;
+        this.seen.set(identity(row), row);
+        if (row.pgid > 1 && row.pgid !== own) this.groups.add(row.pgid);
+        grew = true;
+      }
+    }
+  }
+
+  /** Looks at the table once; calls queue, so two looks never overlap. */
+  poll(table: ProcessTable = readProcessTable): Promise<void> {
+    this.polling = this.polling.then(async () => {
+      this.observe(await table());
+    });
+    return this.polling;
+  }
+
+  start(clock: Clock = systemClock, table: ProcessTable = readProcessTable): void {
+    const again = (): void => {
+      if (this.stopped) return;
+      this.timer = clock.setTimeout(() => {
+        void this.poll(table).then(again, again);
+      }, TRACK_MS);
+      // A step that never ends must not keep its process alive by being looked at.
+      if (typeof this.timer === "object" && this.timer !== null && "unref" in this.timer) {
+        (this.timer as { unref(): void }).unref();
+      }
+    };
+    void this.poll(table);
+    again();
+  }
+
+  stop(clock: Clock = systemClock): void {
+    this.stopped = true;
+    if (this.timer !== undefined) clock.clearTimeout(this.timer);
+  }
+}
+
+/** How often a running step's processes are looked at. */
+export const TRACK_MS = 200;
+
+const trackers = new Map<string, StepTracker>();
+
+function keyOf(marker: StepMarker): string {
+  return `${homeToken(marker.home)}/${markerValue(marker)}`;
+}
+
+/**
+ * Tells the platform that the running step started a process of its own (the
+ * sentinel of a command or of a harness), so its descendants are followed.
+ */
+export function trackRoot(pid: number | undefined): void {
+  const marker = currentStepMarker();
+  if (marker === undefined || pid === undefined) return;
+  const tracker = trackers.get(keyOf(marker));
+  if (tracker === undefined) return;
+  tracker.addRoot(pid);
+  void tracker.poll();
+}
+
+/** Looks at the table now for every running step. For a test that must not wait for the timer. */
+export async function pollTrackedSteps(table: ProcessTable = readProcessTable): Promise<void> {
+  await Promise.all([...trackers.values()].map((tracker) => tracker.poll(table)));
+}
+
 export interface ReapOptions {
   /** Which marked processes to stop. */
   readonly select: (found: MarkedProcess) => boolean;
+  /** Processes the step's own tracker followed. */
+  readonly tracker?: StepTracker | undefined;
   /** Where the line about what was stopped goes. */
   readonly write?: ((text: string) => Promise<unknown>) | undefined;
   /** What the first line says the processes were left behind by. */
   readonly what: string;
   readonly clock?: Clock | undefined;
   readonly list?: ProcessLister | undefined;
+  readonly table?: ProcessTable | undefined;
   readonly graceMs?: number | undefined;
 }
 
-/** `pid 12: command`, the command cut to `COMMAND_WIDTH` characters. */
-export function describeProcess(found: MarkedProcess): string {
+/** The part of a stopped process the logs show. */
+export interface Reaped {
+  readonly pid: number;
+  readonly command: string;
+}
+
+/** `pid: command`, the command cut to `COMMAND_WIDTH` characters. */
+export function describeProcess(found: Reaped): string {
   const command = found.command.replace(/\s+/g, " ");
   const cut =
     command.length > COMMAND_WIDTH ? `${command.slice(0, COMMAND_WIDTH - 1)}…` : command;
   return `${found.pid}: ${cut}`;
 }
 
+/** The most rounds of looking and stopping; a parent that starts more is stopped first. */
+const ROUNDS = 3;
+
 /**
- * Stops the marked processes `select` picks: TERM, a bounded wait, then KILL
- * for those that are still marked. The listing is taken again before the KILL,
- * so a pid that was reused meanwhile is not signaled. Writes how many and which
- * commands, one line each. Returns what it found first.
+ * What to stop now: the marked processes `select` picks, the processes the
+ * tracker followed that still live, and the parents of the marked ones. A
+ * marked process that is a child of a shell whose own environment the system
+ * withholds is the shell's work: the shell goes first, or it starts the next
+ * one. This process and everything above it are never picked.
  */
-export async function reapMarked(options: ReapOptions): Promise<readonly MarkedProcess[]> {
-  const list = options.list ?? listMarkedProcesses;
+async function collect(options: ReapOptions): Promise<readonly ProcessRow[]> {
+  const rows = await (options.table ?? readProcessTable)();
+  const byPid = new Map(rows.map((row) => [row.pid, row]));
+  const never = protectedPids(rows);
+  const picked = new Map<string, ProcessRow>();
+  const add = (row: ProcessRow | undefined): row is ProcessRow => {
+    if (row === undefined || never.has(row.pid) || row.pid <= 1) return false;
+    picked.set(identity(row), row);
+    return true;
+  };
+  for (const one of (await (options.list ?? listMarkedProcesses)()).filter(options.select)) {
+    let row = byPid.get(one.pid);
+    if (!add(row)) continue;
+    // Climb to the parents: the first one that is not ours to stop ends it.
+    while (row !== undefined && row.ppid > 1) {
+      row = byPid.get(row.ppid);
+      if (row === undefined || picked.has(identity(row)) || !add(row)) break;
+    }
+  }
+  if (options.tracker !== undefined) {
+    for (const row of rows) if (options.tracker.has(row)) add(row);
+  }
+  return [...picked.values()];
+}
+
+/**
+ * Stops what a step left running: TERM, a bounded wait, then KILL for what
+ * lives on, named by pid and start time so a pid that was reused meanwhile is
+ * not signaled. A shell loop can start something new, so it looks again up to
+ * `ROUNDS` times. Writes how many and which commands, one line each. Returns
+ * what it found.
+ */
+export async function reapMarked(options: ReapOptions): Promise<readonly Reaped[]> {
   const clock = options.clock ?? systemClock;
-  const found = (await list()).filter(options.select);
-  if (found.length === 0) return [];
-  if (options.write !== undefined) {
-    const noun = found.length === 1 ? "process" : "processes";
+  const grace = options.graceMs ?? KILL_GRACE_MS;
+  const all: ProcessRow[] = [];
+  for (let round = 0; round < ROUNDS; round += 1) {
+    const found = await collect(options);
+    if (found.length === 0) break;
+    all.push(...found);
+    for (const one of found) signalProcess(one.pid, "SIGTERM");
+    const names = new Set(found.map(identity));
+    let waited = 0;
+    let left = found;
+    while (waited < grace && left.length > 0) {
+      const step = Math.min(50, grace - waited);
+      await clock.sleep(step);
+      waited += step;
+      left = (await (options.table ?? readProcessTable)()).filter((row) => names.has(identity(row)));
+    }
+    for (const one of left) signalProcess(one.pid, "SIGKILL");
+  }
+  if (all.length > 0 && options.write !== undefined) {
+    const noun = all.length === 1 ? "process" : "processes";
     const lines = [
-      `${options.what}: stopping ${found.length} ${noun} it left running`,
-      ...found.map((one) => `  ${describeProcess(one)}`),
+      `${options.what}: stopping ${all.length} ${noun} it left running`,
+      ...all.map((one) => `  ${describeProcess(one)}`),
     ];
     try {
       await options.write(lines.join("\n"));
@@ -225,22 +441,7 @@ export async function reapMarked(options: ReapOptions): Promise<readonly MarkedP
       // A log that cannot be written must not keep the processes alive.
     }
   }
-  for (const one of found) signalProcess(one.pid, "SIGTERM");
-  // Wait for them to end, up to the grace; a sweep of the list says when.
-  const grace = options.graceMs ?? KILL_GRACE_MS;
-  let waited = 0;
-  let left = found;
-  while (waited < grace) {
-    const step = Math.min(50, grace - waited);
-    await clock.sleep(step);
-    waited += step;
-    left = (await list()).filter(
-      (one) => options.select(one) && found.some((first) => first.pid === one.pid),
-    );
-    if (left.length === 0) return found;
-  }
-  for (const one of left) signalProcess(one.pid, "SIGKILL");
-  return found;
+  return all;
 }
 
 /** The step markers that are running in this process, by marker value and home. */
@@ -252,8 +453,13 @@ const running = new Map<string, number>();
  * at once share a marker, so only the last to end may sweep.
  */
 export function enterStep(marker: StepMarker): () => boolean {
-  const key = `${homeToken(marker.home)}/${markerValue(marker)}`;
+  const key = keyOf(marker);
   running.set(key, (running.get(key) ?? 0) + 1);
+  if (!trackers.has(key)) {
+    const tracker = new StepTracker();
+    trackers.set(key, tracker);
+    tracker.start();
+  }
   return () => {
     const count = (running.get(key) ?? 1) - 1;
     if (count <= 0) {
@@ -269,16 +475,27 @@ export function enterStep(marker: StepMarker): () => boolean {
 export async function reapStep(
   marker: StepMarker,
   logger: PluginLogger | undefined,
-  options: { readonly clock?: Clock | undefined; readonly list?: ProcessLister | undefined } = {},
-): Promise<readonly MarkedProcess[]> {
+  options: {
+    readonly clock?: Clock | undefined;
+    readonly list?: ProcessLister | undefined;
+    readonly table?: ProcessTable | undefined;
+  } = {},
+): Promise<readonly Reaped[]> {
   const value = markerValue(marker);
   const home = homeToken(marker.home);
+  const key = keyOf(marker);
+  const tracker = trackers.get(key);
+  tracker?.stop(options.clock);
+  trackers.delete(key);
+  if (tracker !== undefined) await tracker.poll(options.table);
   return reapMarked({
     select: (one) => one.marker === value && one.home === home,
+    tracker,
     what: `step ${marker.step}`,
     write: logger === undefined ? undefined : (text) => logger.write(text),
     clock: options.clock,
     list: options.list,
+    table: options.table,
   });
 }
 
@@ -292,7 +509,8 @@ export async function reapStale(options: {
   readonly log: (message: string) => void;
   readonly clock?: Clock | undefined;
   readonly list?: ProcessLister | undefined;
-}): Promise<readonly MarkedProcess[]> {
+  readonly table?: ProcessTable | undefined;
+}): Promise<readonly Reaped[]> {
   const home = homeToken(options.home);
   const active = options.activeRunIds.map((id) => `${token(id)}:`);
   const lines: string[] = [];
@@ -305,6 +523,7 @@ export async function reapStale(options: {
     },
     clock: options.clock,
     list: options.list,
+    table: options.table,
   });
   if (found.length > 0) {
     options.log(`${lines.join("\n")} (runs that are no longer active)`);

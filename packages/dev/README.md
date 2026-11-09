@@ -189,13 +189,23 @@ and which commands, one line each, cut to 120 characters. `operad serve` does th
 same at start for the markers of runs that are no longer active, which a serve
 that died left behind, and says so once in the serve log.
 
-Limits. A process that removes `OPERAD_RUN` from its own environment is not found,
-and the sweep does not chase it. On Linux the environment is read from
-`/proc/<pid>/environ`. On macOS it is read with `ps -E`, and macOS withholds the
-environment of Apple's own binaries (`/bin/sh`, `/bin/bash`, `/bin/zsh`,
-`/bin/sleep`, and the like): a leftover that is one of those, such as a shell
-spin loop, is not found there, while a leftover that is any other program (`bun`,
-`node`, `git`, a Homebrew shell) is.
+The environment alone is not enough on macOS: the system withholds the
+environment of Apple's own binaries (`/bin/sh`, `/bin/bash`, `/bin/zsh`), so a
+shell loop a command leaves behind carries the marker without showing it. The
+platform therefore also follows the process table. While a step runs it looks
+every 200 ms at what runs below the processes the step started, and remembers
+each one (pid and start time) and its process group; those that are still alive
+when the step ends are stopped even after they moved to init. The sweep also
+stops the parent of a marked process, so a shell loop that starts one program
+after another is stopped before it starts the next, and it looks again up to
+three times for what a stopped process started.
+
+Limits. A process that removes `OPERAD_RUN` from its own environment is not
+found by the marker, and the sweep does not chase it. A system shell loop on
+macOS is found by the table only if it was seen below the step while its parent
+still lived, so a command that starts it and ends within one 200 ms look can
+escape. On Linux the environment is read from `/proc/<pid>/environ` and shows
+every process.
 
 ## Scheduling
 

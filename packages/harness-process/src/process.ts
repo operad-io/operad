@@ -21,6 +21,7 @@ import {
   killProcessGroup,
   lastLines,
   markerEnv,
+  trackRoot,
   systemClock,
   type Clock,
   type Ended,
@@ -354,6 +355,7 @@ export async function runAgent(
     return empty({ spawnError: messageOf(error) });
   }
 
+  trackRoot(child.pid);
   let sentinelExited = false;
   const failed = new Promise<string>((resolve) => {
     child.once("error", (error) => resolve(messageOf(error)));

@@ -13,7 +13,7 @@ import { constants as osConstants } from "node:os";
 import { Readable } from "node:stream";
 import { messageOf } from "../plugin/errors.ts";
 import type { PluginLogger } from "../plugin/types.ts";
-import { markerEnv } from "./step-reap.ts";
+import { markerEnv, trackRoot } from "./step-reap.ts";
 
 /** How long a group gets to end after SIGTERM before SIGKILL. */
 export const KILL_GRACE_MS = 500;
@@ -472,6 +472,7 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
     };
   }
 
+  trackRoot(child.pid);
   let sentinelExited = false;
   const failed = new Promise<string>((resolve) => {
     child.once("error", (error) => resolve(messageOf(error)));

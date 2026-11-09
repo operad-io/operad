@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, watch, writeFileSync } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   MemoryPluginStore,
   PluginRegistry,
@@ -10,6 +10,7 @@ import {
 import {
   enterStep,
   markerEnv,
+  pollTrackedSteps,
   reapStale,
   runLine,
   type StepMarker,
@@ -91,6 +92,22 @@ async function stepWith(line: string, runId: string, root: string, home: string)
   return registry.runStep("leaver/run", { line }, { runId, cwd: root });
 }
 
+/** Resolves when the file exists; a directory event says so. */
+async function waitForFile(path: string): Promise<void> {
+  if (existsSync(path)) return;
+  await new Promise<void>((resolve) => {
+    const watcher = watch(dirname(path), () => {
+      if (!existsSync(path)) return;
+      watcher.close();
+      resolve();
+    });
+    if (existsSync(path)) {
+      watcher.close();
+      resolve();
+    }
+  });
+}
+
 function marker(runId: string, home: string): StepMarker {
   return { runId, step: "leaver/run", home };
 }
@@ -149,6 +166,48 @@ describe("what a step leaves behind", () => {
     expect(first()).toBe(false);
     expect(second()).toBe(true);
     expect(enterStep(one)()).toBe(true);
+  });
+
+  test("a system shell loop left in the background is stopped, though the system hides its environment", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    const pidFile = join(root, "pid");
+    const fifo = join(root, "go");
+    Bun.spawnSync(["mkfifo", fifo]);
+    // The loop is a /bin/sh process in a process group of its own (`set -m`),
+    // out of reach of the group stop, as a loop a worker's tool shell starts is.
+    // The command waits on the fifo, so the
+    // shell that started the loop is alive when the table is read, then ends:
+    // the loop moves to init, the way a loop a worker's tool shell started does.
+    const line = `set -m; /bin/sh -c 'while :; do :; done' & echo $! > "${pidFile}"; read ready < "${fifo}"`;
+    const running = stepWith(line, "run-6", root, home);
+    await waitForFile(pidFile);
+    const pid = Number(readFileSync(pidFile, "utf8").trim());
+    await pollTrackedSteps();
+    writeFileSync(fifo, "go\n");
+    await running;
+    await gone(pid);
+  });
+
+  test("a system shell that starts the marked process again is stopped with it", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    const pidFile = join(root, "pid");
+    const loop = spawn(
+      "/bin/sh",
+      ["-c", `echo $$ > "${pidFile}"; while :; do "$0" -e "${IDLE}"; done`, process.execPath],
+      { env: { ...process.env, ...markerEnv(marker("run-dead", home)) }, stdio: "ignore" },
+    );
+    started.push(loop);
+    await waitForFile(pidFile);
+    const shell = loop.pid ?? 0;
+    // The loop must have started its first child before the sweep looks.
+    while (!Bun.spawnSync(["pgrep", "-P", String(shell)]).stdout.toString().trim()) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    await reapStale({ home, activeRunIds: [], log: () => undefined });
+    await gone(shell);
+    expect(Bun.spawnSync(["pgrep", "-P", String(shell)]).stdout.toString().trim()).toBe("");
   });
 
   test("the serve-start sweep stops a marked process whose run is not active", async () => {

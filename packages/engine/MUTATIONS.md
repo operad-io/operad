@@ -348,3 +348,5 @@ the row fields.
 | T-0146-M5 | packages/engine/src/platform/step-reap.ts | the serve-start sweep stopped processes of active runs too | `serve loop > serve start stops marked processes of runs that are not active, and says so once` |
 | T-0146-M6 | packages/engine/src/loop/serve.ts | `serve` did not run the start sweep | `serve loop > serve start stops marked processes of runs that are not active, and says so once` |
 | T-0146-M7 | packages/engine/src/platform/step-reap.ts | the first of two steps with one marker swept when it ended | `what a step leaves behind > of two steps with one marker at once, only the last to end sweeps` |
+| T-0146-M8 | packages/engine/src/platform/step-reap.ts | the sweep no longer climbed from a marked process to the shell that started it | `what a step leaves behind > a system shell that starts the marked process again is stopped with it` |
+| T-0146-M9 | packages/engine/src/platform/process-group.ts | `runLine` no longer told the platform its sentinel, so nothing below it was followed | `what a step leaves behind > a system shell loop left in the background is stopped, though the system hides its environment` |
