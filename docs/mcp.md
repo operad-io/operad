@@ -66,6 +66,15 @@ below):
 - **waiting**: the `waiting` flag turns on. The content carries the row's note,
   which holds the reason when there is one (rework limit, work failed, ready to
   merge).
+  A wait the object's own plugin answers automatically is not announced: dev
+  does this for a task whose plan is at auto merge and whose review passed,
+  because dev answers "merge" a moment later. The kernel asks the plugin (the
+  object type's `answeredAutomatically` hook) each time, and the pending item
+  carries `auto: true` for the channel only. If the answer does not come (dev
+  refuses it, or the plan's auto level changes) the next change finds the wait
+  unmarked and the block is sent then. A wait the plugin does not answer
+  (rework asked, work did nothing, new words, review failed twice) is sent as
+  before.
 - **ended**: the object reaches a final state. The plugin declares which states
   are final by setting `final: true` on the row it returns (dev: a task that is
   merged or cancelled, a plan that is finished or cancelled); the channel knows

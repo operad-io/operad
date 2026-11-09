@@ -238,6 +238,8 @@ class ClaudeChannel implements ChannelHandle {
     string,
     { counts: Map<string, number>; looped: boolean }
   >();
+  /** Objects whose current wait was skipped because its plugin answers it. */
+  private readonly quiet = new Map<string, ObjectRef>();
   private readonly sentFile: string | undefined;
   private readonly log: LogBackend | undefined;
   /** Types whose starting rows could not be read: a first sighting is a baseline. */
@@ -500,21 +502,29 @@ class ClaudeChannel implements ChannelHandle {
     }
   }
 
-  /** The prompt of the pending item of the object's wait, if it has one. */
-  private async waitReason(object: ObjectRef): Promise<string | undefined> {
+  /** The pending item of the object's wait, if it has one. */
+  private async waitItem(object: ObjectRef): Promise<PendingItem | undefined> {
     if (this.pendingItems === undefined) return undefined;
     try {
       const key = `${object.type}:${object.id}`;
-      const item = (await this.pendingItems()).find((entry) => entry.object === key);
-      return item?.prompt;
+      return (await this.pendingItems()).find((entry) => entry.object === key);
     } catch (error) {
       this.onLog(`channel: the pending items could not be read: ${messageOf(error)}`);
       return undefined;
     }
   }
 
-  private async handle(object: ObjectRef): Promise<void> {
-    if (this.closed || !this.types.has(object.type)) return;
+  private async handle(object: ObjectRef, recheck = true): Promise<void> {
+    if (this.closed) return;
+    if (recheck && this.quiet.size > 0) {
+      // A change elsewhere (a plan's auto level) can end an automatic answer.
+      for (const [quietKey, ref] of [...this.quiet]) {
+        if (quietKey !== rowKey(object.type, object.id)) {
+          await this.handle(ref, false);
+        }
+      }
+    }
+    if (!this.types.has(object.type)) return;
     let current: ViewObject;
     try {
       current = await this.views.get(`${object.type}:${object.id}`);
@@ -524,6 +534,7 @@ class ClaudeChannel implements ChannelHandle {
         this.last.delete(rowKey(object.type, object.id));
         this.pendingSent.delete(rowKey(object.type, object.id));
         this.visits.delete(rowKey(object.type, object.id));
+        this.quiet.delete(rowKey(object.type, object.id));
         if (this.sent.delete(rowKey(object.type, object.id))) {
           await this.saveSent();
         }
@@ -541,9 +552,25 @@ class ClaudeChannel implements ChannelHandle {
     this.last.set(key, next);
     if (previous === undefined && this.unseeded.has(object.type)) return;
     const stateChanged = previous === undefined || previous.state !== next.state;
-    const waitingOn = next.waiting && previous?.waiting !== true;
+    const waitStart = next.waiting && previous?.waiting !== true;
+    // A wait the plugin answers itself is not announced; if the answer does
+    // not come, the next change finds the wait no longer marked and announces.
+    let item: PendingItem | undefined;
+    let waitingOn = waitStart;
+    if (next.waiting && (waitStart || this.quiet.has(key))) {
+      item = await this.waitItem(object);
+      if (item?.auto === true) {
+        this.quiet.set(key, object);
+        waitingOn = false;
+      } else {
+        this.quiet.delete(key);
+        waitingOn = true;
+      }
+    } else if (!next.waiting) {
+      this.quiet.delete(key);
+    }
     const ended = next.final && previous?.final !== true;
-    const looped = this.countVisit(key, next, stateChanged, waitingOn || ended);
+    const looped = this.countVisit(key, next, stateChanged, waitStart || ended);
     // What happened, in order of weight; a kind that is not listed sends only
     // when `changes` is, which sends every state change and wait.
     const kind: ChannelReason | undefined = ended
@@ -553,7 +580,8 @@ class ClaudeChannel implements ChannelHandle {
         : looped
           ? "loop"
           : undefined;
-    const every = this.notify.has("changes") && (stateChanged || waitingOn);
+    const every =
+      this.notify.has("changes") && (stateChanged || waitingOn) && !this.quiet.has(key);
     if (kind === undefined && !every) return;
     const reason: ChannelReason = kind ?? "changes";
     if (kind !== undefined && !this.notify.has(kind) && !every) return;
@@ -568,7 +596,7 @@ class ClaudeChannel implements ChannelHandle {
       previous?.state ?? "new",
       await this.stepOf(object),
       reason,
-      next.waiting ? await this.waitReason(object) : undefined,
+      next.waiting ? item?.prompt : undefined,
     );
     const entry: Held = { notification, key, row: next };
     if (this.held !== undefined) {

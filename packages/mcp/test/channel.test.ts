@@ -9,6 +9,7 @@ import {
   openConfigLog,
   openPluginStore,
   readConfig,
+  listPending,
   type LogBackend,
   type PendingItem,
   type PluginStore,
@@ -813,5 +814,205 @@ describe("the channel's sources", () => {
         await s.log.close();
       }
     });
+  });
+});
+
+describe("a wait the plugin answers itself", () => {
+  const waitFact = (waitId: string) => ({
+    kind: "waiting_for_person",
+    payload: {
+      waitId,
+      step: "ask",
+      prompt: "Approve?",
+      choices: ["yes"],
+      waitKind: "step",
+      effectId: null,
+    },
+    cause: "test",
+  });
+
+  function item(auto: boolean): PendingItem {
+    return {
+      runId: "r",
+      flow: "demo-flow",
+      step: "ask",
+      prompt: "ready to merge",
+      choices: [],
+      actions: [],
+      object: "task:t-1",
+      ...(auto ? { auto: true as const } : {}),
+    };
+  }
+
+  test("is not announced, and its end is", async () => {
+    const s = await setup();
+    put(s, "task", "t-1", { title: "One", phase: "ready" });
+    const sent = new Sent();
+    const read = new Reads();
+    const channel = await startClaudeChannel({
+      views: s.views,
+      registry: s.registry,
+      log: s.log,
+      pending: async () => {
+        read.push();
+        return [item(true)];
+      },
+      send: sent.push,
+    });
+    try {
+      const info = await s.log.startRun("demo-flow", "task:t-1");
+      await s.log.append(info.runId, 0, [waitFact("wait:1")]);
+      // The channel saw the wait and skipped it.
+      await read.next();
+      await s.log.endRun(info.runId);
+      put(s, "task", "t-1", { title: "One", phase: "merged" });
+      const ended = await sent.next();
+      expect(ended.meta.reason).toBe("ended");
+      expect(sent.all).toHaveLength(1);
+    } finally {
+      await channel.close();
+      s.views.close();
+      await s.log.close();
+    }
+  });
+
+  test("is announced when the automatic answer is withdrawn", async () => {
+    const s = await setup();
+    put(s, "task", "t-1", { title: "One", phase: "ready" });
+    put(s, "task", "t-2", { title: "Two", phase: "ready" });
+    const sent = new Sent();
+    let auto = true;
+    const read = new Reads();
+    const channel = await startClaudeChannel({
+      views: s.views,
+      registry: s.registry,
+      log: s.log,
+      pending: async () => {
+        read.push();
+        return [item(auto)];
+      },
+      send: sent.push,
+    });
+    try {
+      const info = await s.log.startRun("demo-flow", "task:t-1");
+      await s.log.append(info.runId, 0, [waitFact("wait:1")]);
+      await read.next();
+      // The same change that makes the wait a person's, seen on another object.
+      auto = false;
+      put(s, "task", "t-2", { title: "Two", phase: "review" });
+      const waiting = await sent.next();
+      expect(waiting.meta).toMatchObject({ id: "t-1", reason: "waiting" });
+      expect(waiting.content).toContain("ready to merge");
+      expect(sent.all).toHaveLength(1);
+    } finally {
+      await channel.close();
+      s.views.close();
+      await s.log.close();
+    }
+  });
+
+  test("a wait without the mark is announced as before", async () => {
+    const s = await setup();
+    put(s, "task", "t-1", { title: "One", phase: "ready" });
+    const sent = new Sent();
+    const channel = await startClaudeChannel({
+      views: s.views,
+      registry: s.registry,
+      log: s.log,
+      pending: async () => [item(false)],
+      send: sent.push,
+    });
+    try {
+      const info = await s.log.startRun("demo-flow", "task:t-1");
+      await s.log.append(info.runId, 0, [waitFact("wait:1")]);
+      expect((await sent.next()).meta.reason).toBe("waiting");
+    } finally {
+      await channel.close();
+      s.views.close();
+      await s.log.close();
+    }
+  });
+});
+
+describe("the pending view and the plugin's automatic answer", () => {
+  const waitFact = {
+    kind: "waiting_for_person",
+    payload: {
+      waitId: "wait:1",
+      step: "ask",
+      prompt: "ready to merge",
+      choices: ["merge"],
+      waitKind: "step",
+      effectId: null,
+    },
+    cause: "test",
+  };
+
+  test("a marked wait is left out of the pending view unless asked for", async () => {
+    const s = await setup();
+    put(s, "task", "t-1", { title: "One", phase: "ready", auto: true });
+    put(s, "task", "t-2", { title: "Two", phase: "ready" });
+    for (const id of ["t-1", "t-2"]) {
+      const info = await s.log.startRun("demo-flow", `task:${id}`);
+      await s.log.append(info.runId, 0, [waitFact]);
+    }
+    try {
+      const shown = await listPending(s.log, s.registry);
+      expect(shown.map((item) => item.object)).toEqual(["task:t-2"]);
+      const all = await listPending(s.log, s.registry, undefined, undefined, {
+        withAuto: true,
+      });
+      expect(all.map((item) => [item.object, item.auto])).toEqual([
+        ["task:t-1", true],
+        ["task:t-2", undefined],
+      ]);
+    } finally {
+      s.views.close();
+      await s.log.close();
+    }
+  });
+
+  test("an auto wait sends no block and its merge sends ended; a refused answer is announced", async () => {
+    const s = await setup();
+    put(s, "task", "t-1", { title: "One", phase: "ready", auto: true });
+    put(s, "task", "t-2", { title: "Two", phase: "ready", auto: true });
+    const sent = new Sent();
+    const skipped = new Reads();
+    const channel = await startClaudeChannel({
+      views: s.views,
+      registry: s.registry,
+      log: s.log,
+      pending: async () => {
+        const items = await listPending(s.log, s.registry, undefined, s.views, {
+          withAuto: true,
+        });
+        for (const item of items) if (item.auto === true) skipped.push();
+        return items;
+      },
+      send: sent.push,
+    });
+    try {
+      const merged = await s.log.startRun("demo-flow", "task:t-1");
+      await s.log.append(merged.runId, 0, [waitFact]);
+      const refused = await s.log.startRun("demo-flow", "task:t-2");
+      await s.log.append(refused.runId, 0, [waitFact]);
+      // Both waits were seen and skipped before anything changes.
+      await skipped.next();
+      await skipped.next();
+      await s.log.endRun(merged.runId);
+      put(s, "task", "t-1", { title: "One", phase: "merged", auto: true });
+      const ended = await sent.next();
+      expect(ended.meta).toMatchObject({ id: "t-1", reason: "ended" });
+      // The answer for t-2 is refused: the mark ends and the wait is announced.
+      put(s, "task", "t-2", { title: "Two", phase: "ready", auto: false });
+      const waiting = await sent.next();
+      expect(waiting.meta).toMatchObject({ id: "t-2", reason: "waiting" });
+      expect(waiting.content).toContain("ready to merge");
+      expect(sent.all).toHaveLength(2);
+    } finally {
+      await channel.close();
+      s.views.close();
+      await s.log.close();
+    }
   });
 });
