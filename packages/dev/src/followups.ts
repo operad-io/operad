@@ -52,6 +52,16 @@ interface Line {
   readonly round: number;
 }
 
+/** The text without a leading tag that repeats the finding's own level, whitespace collapsed. */
+function textOf(note: ReviewNote): string {
+  const text = note.summary.replace(/\s+/g, " ").trim();
+  const tag = /^\[\s*([^\]]*?)\s*\]\s*/.exec(text);
+  if (tag !== null && tag[1]?.toLowerCase() === note.severity.toLowerCase()) {
+    return text.slice(tag[0].length);
+  }
+  return text;
+}
+
 /**
  * The findings of the tasks, oldest first. Within one task a finding with the
  * same file, line and text (whitespace collapsed) is kept once; findings of
@@ -63,7 +73,7 @@ function linesOf(tasks: readonly StoredObject[]): Line[] {
     const seen = new Set<string>();
     for (const round of taskData(object.data).reviewNotes ?? []) {
       for (const note of round.findings) {
-        const key = JSON.stringify([note.file, note.line, note.summary.replace(/\s+/g, " ").trim()]);
+        const key = JSON.stringify([note.file, note.line, textOf(note)]);
         if (seen.has(key)) continue;
         seen.add(key);
         lines.push({ note, task: bareId(object.id), round: round.round });
@@ -83,7 +93,7 @@ export function followupBrief(planId: string, lines: readonly Line[]): string {
     out.push("", `## From ${task}`, "");
     for (const { note, round } of lines.filter((line) => line.task === task)) {
       const where = note.line === null ? note.file : `${note.file}:${note.line}`;
-      out.push(`- [${note.severity}] ${where} ${note.summary} (round ${round})`);
+      out.push(`- [${note.severity}] ${where} ${textOf(note)} (round ${round})`);
     }
   }
   return out.join("\n");

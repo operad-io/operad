@@ -96,6 +96,25 @@ describe("review follow-ups", () => {
     expect(brief).toContain("Fix what still applies, and say which of them no longer apply.");
   });
 
+  test("a leading tag that repeats the level does not make a finding different, and prints once", async () => {
+    const s = await setup();
+    const a = await s.task(
+      "tagged",
+      "merged",
+      [
+        { attempt: 1, round: 1, findings: [note("minor", "a.ts", 3, "naming")] },
+        { attempt: 1, round: 2, findings: [note("minor", "a.ts", 3, "[Minor]  naming"), note("minor", "a.ts", 3, "[major] naming")] },
+      ],
+      1,
+    );
+    await s.collect();
+    const brief = (await s.followupTasks())[0]?.data.brief ?? "";
+    expect(brief.match(/\[minor\] a\.ts:3 naming \(round 1\)/g)).toHaveLength(1);
+    expect(brief).not.toMatch(/\[minor\] a\.ts:3 \[minor\]/i);
+    expect(brief).toContain("[minor] a.ts:3 [major] naming (round 2)");
+    expect(brief).toContain(`## From ${a}`);
+  });
+
   test("the merge order, not the id order, orders after", async () => {
     const s = await setup();
     const n = [{ attempt: 1, round: 1, findings: [note("minor", "a.ts", 1, "x")] }];
