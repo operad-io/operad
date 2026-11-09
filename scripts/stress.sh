@@ -2,6 +2,9 @@
 # Reproduce a flaky test on demand: run test files many times, optionally under load.
 #   bash scripts/stress.sh [--runs N] [--load K] [-t <name pattern>] <test files...>
 # Set STRESS_PIDFILE to a path to have the load helpers' pids written there.
+# Set STRESS_CPUS to override the detected CPU count that caps --load.
+# Each helper also stops when this script is gone, so a SIGKILL of the script
+# (which runs no trap) leaves no helper behind.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -26,7 +29,7 @@ case "$load" in ''|*[!0-9]*) echo "--load wants a number" >&2; exit 2 ;; esac
 
 bun scripts/check-install.ts || exit 2
 
-cpus=$( (getconf _NPROCESSORS_ONLN || nproc || sysctl -n hw.ncpu) 2>/dev/null | head -n 1)
+cpus=${STRESS_CPUS:-$( (getconf _NPROCESSORS_ONLN || nproc || sysctl -n hw.ncpu) 2>/dev/null | head -n 1)}
 case "$cpus" in ''|*[!0-9]*) cpus=1 ;; esac
 [ "$load" -le "$cpus" ] || load="$cpus"
 
@@ -42,13 +45,15 @@ trap stop_helpers EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# A helper runs while this script's pid exists; kill -0 is a builtin.
+parent=$$
 # Helper 1 forks a short process in a loop; the others spin.
 i=0
 while [ "$i" -lt "$load" ]; do
   if [ "$i" -eq 0 ]; then
-    ( while :; do /usr/bin/true; done ) </dev/null >/dev/null 2>&1 &
+    ( while kill -0 "$parent" 2>/dev/null; do /usr/bin/true; done ) </dev/null >/dev/null 2>&1 &
   else
-    ( while :; do :; done ) </dev/null >/dev/null 2>&1 &
+    ( while kill -0 "$parent" 2>/dev/null; do :; done ) </dev/null >/dev/null 2>&1 &
   fi
   helpers+=("$!")
   i=$((i + 1))

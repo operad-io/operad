@@ -1,24 +1,14 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { killAll, root, runStress, spawnStress } from "./stress-group.ts";
 
-const root = join(import.meta.dir, "..", "..");
-const script = join(root, "scripts", "stress.sh");
 const flaky = join(import.meta.dir, "flaky.fixture.ts");
 const steady = join(import.meta.dir, "steady.fixture.ts");
+const leak = join(import.meta.dir, "leak.fixture.ts");
 
-async function stress(args: string[], env: Record<string, string> = {}) {
-  const child = Bun.spawn(["bash", script, ...args], {
-    cwd: root,
-    env: { ...process.env, ...env },
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [out, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);
-  return { out, code };
-}
+const stress = runStress;
 
 function scratch(): string {
   return mkdtempSync(join(tmpdir(), "stress-test-"));
@@ -34,6 +24,8 @@ function alive(pid: number): boolean {
 }
 
 describe("scripts/stress.sh", () => {
+  afterEach(killAll);
+
   test("a fixture failing every third run reports the counts and exits 1", async () => {
     const counter = join(scratch(), "counter");
     writeFileSync(counter, "0");
@@ -85,10 +77,9 @@ describe("scripts/stress.sh", () => {
 
   test("--load never starts more helpers than there are CPUs", async () => {
     const pidfile = join(scratch(), "pids");
-    await stress(["--runs", "1", "--load", "100000", steady], { STRESS_PIDFILE: pidfile });
+    await stress(["--runs", "1", "--load", "100000", steady], { STRESS_PIDFILE: pidfile, STRESS_CPUS: "2" });
     const pids = readFileSync(pidfile, "utf8").split("\n").filter(Boolean);
-    expect(pids.length).toBeGreaterThan(0);
-    expect(pids.length).toBeLessThanOrEqual(navigator.hardwareConcurrency);
+    expect(pids.length).toBe(2);
   });
 
   test("the load helpers are alive while the tests run", async () => {
@@ -110,4 +101,74 @@ test("helpers are running", () => {
     expect(out).toContain("failures: 0\n");
     expect(code).toBe(0);
   });
+
+  test("SIGKILL of the script leaves no helper alive", async () => {
+    const pidfile = join(scratch(), "pids");
+    const run = spawnStress(["--runs", "100000", "--load", "2", steady], { STRESS_PIDFILE: pidfile, STRESS_CPUS: "2" });
+    try {
+      const helpers = await waitForPids(pidfile, 2);
+      process.kill(run.pid, "SIGKILL"); // the script only, not the group: no trap runs
+      await run.child.exited;
+      await expectGone(helpers);
+    } finally {
+      run.kill();
+    }
+  });
+
+  test("killing the test runner mid-test leaves no stress.sh or helper", async () => {
+    const pidfile = join(scratch(), "pids");
+    const runner = Bun.spawn(["bun", "test", leak], {
+      cwd: root,
+      env: { ...process.env, LEAK_PIDFILE: pidfile },
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    try {
+      const pids = await readReady(runner.stdout);
+      expect(pids.length).toBe(3);
+      runner.kill("SIGTERM");
+      await runner.exited;
+      await expectGone(pids);
+    } finally {
+      runner.kill("SIGKILL");
+    }
+  }, 60000);
 });
+
+function readPids(pidfile: string): number[] {
+  try {
+    return readFileSync(pidfile, "utf8").split("\n").filter(Boolean).map(Number);
+  } catch {
+    return []; // the script has not created it yet
+  }
+}
+
+async function waitForPids(pidfile: string, count: number): Promise<number[]> {
+  const deadline = Date.now() + 3000;
+  for (;;) {
+    const pids = readPids(pidfile);
+    if (pids.length >= count) return pids;
+    if (Date.now() > deadline) throw new Error("the helpers did not start");
+    await Bun.sleep(5);
+  }
+}
+
+/** Reads the runner's stdout until the fixture prints `ready <pids...>`. */
+async function readReady(stream: ReadableStream<Uint8Array>): Promise<number[]> {
+  const decoder = new TextDecoder();
+  let text = "";
+  for await (const chunk of stream) {
+    text += decoder.decode(chunk, { stream: true });
+    const m = /^ready (.+)$/m.exec(text);
+    if (m) return (m[1] ?? "").split(" ").map(Number);
+  }
+  throw new Error("the runner ended before it was ready");
+}
+
+/** A pid that is not a child has no exit event; wait for it with a bound. */
+async function expectGone(pids: number[]): Promise<void> {
+  const deadline = Date.now() + 3000;
+  while (pids.some(alive) && Date.now() < deadline) await Bun.sleep(10);
+  expect(pids.filter(alive)).toEqual([]);
+}

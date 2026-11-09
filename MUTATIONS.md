@@ -818,6 +818,9 @@ The script lives in `scripts/`, which has no package of its own, so its rows are
 | T-0091-M1 | scripts/stress.sh | the final exit status ignored failures | `scripts/stress.sh > a fixture failing every third run reports the counts and exits 1` |
 | T-0091-M2 | scripts/stress.sh | `stop_helpers` no longer killed the helpers | `scripts/stress.sh > --load starts busy helpers and none is left after exit` |
 | T-0091-M3 | scripts/stress.sh | removed the cap of `--load` at the CPU count | `scripts/stress.sh > --load never starts more helpers than there are CPUs` |
+| T-0115-M1 | scripts/stress.sh | the helper loops no longer checked that the script is alive | `scripts/stress.sh > SIGKILL of the script leaves no helper alive` |
+| T-0115-M2 | scripts/test/stress-group.ts | the runner's SIGINT/SIGTERM handlers no longer killed the stress group | `scripts/stress.sh > killing the test runner mid-test leaves no stress.sh or helper` |
+| T-0115-M3 | scripts/stress.sh | `STRESS_CPUS` was ignored | `scripts/stress.sh > --load never starts more helpers than there are CPUs` |
 
 ## T-0109 — stale install check
 
