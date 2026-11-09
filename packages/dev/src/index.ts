@@ -15,6 +15,7 @@ import { devStanding } from "./standing.ts";
 import { migrateLegacyRepositories, resolveDevKey } from "./service.ts";
 import { runReverify, runWork, runWorktree } from "./steps.ts";
 import { STEP_TIMEOUT_SECS } from "./timeouts.ts";
+import { DEV_PROJECT_SETTINGS } from "./project-settings.ts";
 import { planViews, repoViews, taskViews } from "./views.ts";
 
 /** Builds the dev plugin. Tests build it directly when they need a fake host. */
@@ -143,12 +144,15 @@ export function createDevPlugin() {
         checks: {
           type: "integer",
           minimum: 1,
+          default: 2,
+          editable: true,
           description:
-            "How many verify and integrate checks may run at once in this home, across all repositories. Default 2.",
+            "How many checks (a task's verify, and the checks before a merge) may run at the same time on this machine, across all repositories.",
         },
       },
       additionalProperties: false,
     },
+    projectSettings: DEV_PROJECT_SETTINGS,
     flows: [devFlow],
     // Every stop that needs a person is in history; a user can route the event
     // to a channel by replacing this rule.
@@ -192,6 +196,7 @@ export * from "./model.ts";
 export * from "./schedule.ts";
 export * from "./service.ts";
 export * from "./places.ts";
+export * from "./project-settings.ts";
 export * from "./retry.ts";
 export * from "./stops.ts";
 export * from "./settings.ts";

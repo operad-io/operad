@@ -510,6 +510,18 @@ A `dev.json` written by an earlier version still loads: `worktrees` is read as
 climbs out of the repository, or resolves outside it through a symlink is
 refused when the file is read and again before a worktree is created.
 
+## Settings from a client
+
+`operad settings` lists what a person may tune and `operad settings set <name>
+<value>` changes it (add `--repo <name>` for a repository's files). The home's
+`checks` is `dev.checks`. A repository's `.operad/dev.json` is `dev.dev.*`
+(`concurrency`, `gate.commands`, `gate.commandTimeoutSecs`, `reviewer.use`,
+`reviewer.args`, `reviewer.timeoutSecs`, `reviewer.fixLevel`) and its
+`.operad/review.json` is `dev.review.default.*` (`levels`, `rules`,
+`fixLevel`). Changing what fails a review (`fixLevel`, the levels and rules)
+asks for `--yes`, because it changes what merges. Other settings can be read
+there but are changed in the file.
+
 ## Views
 
 A plan shows a request and a table of its tasks. A task shows its brief, its

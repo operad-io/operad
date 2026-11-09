@@ -425,3 +425,5 @@ the row fields.
 | T-0120-M2 | packages/dev/src/followups.ts | two findings that differ only in whitespace were both kept | `review follow-ups > collects the findings of every round and task, deduplicated, grouped by task, duplicates kept once within a task` |
 | T-0124-M8 | packages/dev/src/views.ts | the metrics total row dropped the quality symbol of the summed attempts | `dev views > the total row marks its weakest quality with a symbol, never a word` |
 | T-0120-M3 | packages/dev/src/followups.ts | a leading tag that repeats the level was kept, so the finding was listed twice | `review follow-ups > a leading tag that repeats the level does not make a finding different, and prints once` |
+| T-0081-M1 | packages/dev/src/places.ts | verify ignored the home's `checks` setting and used the default | `dev/verify > a checks setting changed with operad settings set is used by the next verify` |
+| T-0081-M2 | packages/dev/src/project-settings.ts | review.json's `fixLevel` lost its list of levels, so any text was accepted | `dev settings through operad settings > an invalid review.json level is refused and nothing is written; a valid one needs --yes` |

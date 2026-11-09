@@ -52,6 +52,7 @@ import {
   type FixLevel,
   type ReviewRunOutcome,
   type TaskData,
+  withCheckPlace,
 } from "../src/index.ts";
 import {
   advanceMain,
@@ -460,6 +461,10 @@ interface FixtureOptions {
   readonly clock?: ManualClock;
   /** Files already on main when the task's worktree is made. */
   readonly baseFiles?: Readonly<Record<string, string>>;
+  /** The operad home to use instead of a new one. */
+  readonly home?: string;
+  /** The dev plugin's settings section, as `config.json` holds it. */
+  readonly settings?: Readonly<Record<string, unknown>>;
 }
 
 interface Fixture {
@@ -474,7 +479,7 @@ interface Fixture {
 }
 
 async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
-  const root = await osTempRoot();
+  const root = options.home ?? (await osTempRoot());
   const remote = await makeRemote(root);
   for (const [file, text] of Object.entries(options.baseFiles ?? {})) {
     await advanceMain(remote, file, text, `add ${file}`);
@@ -547,7 +552,12 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
       ),
       reviewer.plugin,
     ],
-    { home: root, cwd: remote.repository, store },
+    {
+      home: root,
+      cwd: remote.repository,
+      store,
+      ...(options.settings === undefined ? {} : { settings: { dev: options.settings } }),
+    },
   );
   const taskId = task.id.slice(task.id.indexOf("/") + 1);
   const prepared = await registry.runStep("dev/worktree", {}, {
@@ -612,7 +622,52 @@ async function head(state: Fixture): Promise<string> {
   return gitOrThrow(state.worktree, ["rev-parse", "HEAD"]);
 }
 
+function deferredPlace(): { promise: Promise<void>; release: () => void } {
+  let release: () => void = () => {};
+  const promise = new Promise<void>((done) => {
+    release = done;
+  });
+  return { promise, release };
+}
+
 describe("dev/verify", () => {
+  test("a checks setting changed with operad settings set is used by the next verify", async () => {
+    const home = await osTempRoot();
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({ plugins: { dev: fileURLToPath(new URL("../src/index.ts", import.meta.url)) } }),
+    );
+    const cli = fileURLToPath(new URL("../../cli/bin/operad.ts", import.meta.url));
+    const set = Bun.spawn({
+      cmd: [process.execPath, cli, "settings", "set", "dev.checks", "3"],
+      env: { ...process.env, OPERAD_HOME: home },
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(await set.exited).toBe(0);
+    const written = JSON.parse(readFileSync(join(home, "config.json"), "utf8")) as {
+      plugins: { dev: { settings: Record<string, unknown> } };
+    };
+    expect(written.plugins.dev.settings).toEqual({ checks: 3 });
+
+    const state = await fixture({ home, settings: written.plugins.dev.settings });
+    const held = deferredPlace();
+    const places = { home, checks: 3, log: () => {} };
+    const holders = [
+      withCheckPlace(places, () => held.promise),
+      withCheckPlace(places, () => held.promise),
+    ];
+    try {
+      // Two places are taken; the default limit of 2 would make verify wait.
+      const result = await verify(state);
+      expect(result.result).toBe("pass");
+    } finally {
+      held.release();
+      await Promise.all(holders);
+    }
+  });
+
   test("passing commands record the verified commit in a detached gate worktree", async () => {
     const state = await fixture({ commands: ["test -f code.txt"] });
     const sha = await head(state);
