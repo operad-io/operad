@@ -37,7 +37,7 @@
    - `dev` 的映射：task 的 proposed→`proposed`；ready→`todo`（等前置任务或同区任务时→`blocked`，模型不可用、定了重试时间时→`retry_wait`）；running 时按当前步骤：worktree→`starting`、work 和 rework→`running`、verify 和 review→`checking`、integrate→`integrating`；waiting 时按等的原因：verify 和 review 都过了等合并→`ready_to_merge`，问要不要返工→`rework_pending`，其余→`waiting`；merged→`done`；cancelled→`cancelled`；auto rework 用完放弃→`failed`。plan 的 draft→`proposed`，confirmed→有任务在跑时 `running`、否则 `todo`，暂停→`paused`，finished→`done`，cancelled→`cancelled`。
    - `row` 还可以带 `badge`：一小段原样显示的文字，客户端放在状态后面（`done.merged · #2` 的 `#2`）。`dev` 的 task 填 `#<第几次 attempt>`，还没开始的填 `#0`。
    - `row` 还可以带 `after`：同一个上一层下、这个对象要等的兄弟对象的 id 列表（2026-11-08 owner 定：plan 下的 task 列表照 arc 画）。客户端画下一层列表时按它排成树：一行挂在它 `after` 里排在最前的那个兄弟下面，用 `└─` 缩进；`after` 里其余的兄弟写在行尾，`also after <id>`。`after` 指向不在列表里的对象时忽略那一项；有环时按原顺序平铺。`dev` 的 task 填它的 `after`。
-   - 对象页的进度条：对象页在 row 下面、下一层列表上面画一条分段的条，下一层的每个对象占一格，按那个对象的 `mark` 上色（`done` 成功色、`running`/`checking`/`integrating` 在跑色、`waiting`/`proposed` 等人色、`failed` 错误色、其余灰），条的右边写“完成数 / 总数”。没有下一层的对象不画。这是客户端按决定 9 的下一层列表算出来的，插件不用多给东西。
+   - 对象页的进度条：对象页在 row 下面、下一层列表上面画一条分段的条，下一层的每个对象占一格，按那个对象的 `mark` 上色（`done` 成功色、`running`/`checking`/`integrating` 在跑色、`waiting`/`proposed` 等人色、`failed` 错误色、`cancelled` 暗红（错误色调暗，和 `failed` 分得开；2026-11-08 owner 定）、其余灰），条的右边写“完成数 / 总数”，只写数字，后面不跟状态词（2026-11-08 owner 定）。没有下一层的对象不画。这是客户端按决定 9 的下一层列表算出来的，插件不用多给东西。
 
 11. **设置由内核读写，客户端通过同一套 API 改。**（2026-11-08 owner 定：“放进 kernel”，P-0014。）
    - 设置有两种：全局设置是 `~/.operad/config.json` 里每个插件的那一段（`plugins.<插件>.settings`，插件声明 JSON Schema，内核加载时已经校验）；项目设置是插件声明的、放在登记仓库 `.operad/` 下的 JSON 文件（比如 `dev` 的 `review.json`），也带 schema。
@@ -78,7 +78,7 @@ TUI：
 
 打开一个对象：上面是 row，下面是各段做成的标签页（`dev` 的 task 是 Brief、Log、Diff、Metrics，再加内核的历史）。
 
-iOS 和今天的 arc app 一个样：底部标签栏是待处理、正在跑、浏览（插件 → 顶层对象 → 下一层……）、设置；对象页是 row 加分段标签；底部操作栏是第一个动作的按钮和 `⋯` 菜单；`note` 的动作弹出输入框；待处理的项发推送。
+iOS 和今天的 arc app 一个样：底部标签栏是待处理、正在跑、每个插件一个标签、设置（2026-11-08 owner 定，和 TUI 一样）：插件标签列出它的顶层对象，标签名是顶层类型的名字（`dev` 是 Repo），不在顶层的类型（plan、task）没有自己的标签，只从上一层的页面、待处理、正在跑打开；对象页是 row 加分段标签；底部操作栏是第一个动作的按钮和 `⋯` 菜单；`note` 的动作弹出输入框；待处理的项发推送。
 
 ## 验收
 
