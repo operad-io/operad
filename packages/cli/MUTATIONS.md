@@ -51,3 +51,4 @@ the row fields.
 | T-0077-M1 | packages/cli/src/main.ts | serve killed every run process it had started (SIGKILL) when it stopped, so the sentinel of the running check stopped its line | `a serve restart while a check runs > the check's command is not signalled and finishes with its exit code` |
 | T-0096-M8 | packages/cli/src/main.ts | `operad flows` left the reason off the flow line | `operad command > flows shows a flow that cannot start, and why, on its line` |
 | T-0079-M4 | packages/cli/src/main.ts | `show` passed the terminal width even when stdout was a pipe | `operad presentation commands > show lays a table out for the terminal's width; a pipe keeps the old output` |
+| T-0108-M1 | packages/cli/src/serve-stop.ts | `serve stop` asked `ps` for the serve's command line only once, so an empty answer under load refused with exit 3 | `serve stop > a ps that answers nothing for a live serve is asked again, then the serve is stopped` |
