@@ -106,7 +106,11 @@ export default definePlugin({
         }
         if (sectionId === "pages") {
           if (cursor === undefined) {
-            return { markdown: "page one", next: "two" };
+            return {
+              markdown: "page one",
+              next: "two",
+              pages: [{ label: "one" }, { label: "two", cursor: "two" }],
+            };
           }
           return { markdown: `page ${cursor}` };
         }

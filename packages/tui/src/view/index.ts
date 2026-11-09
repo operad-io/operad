@@ -35,6 +35,8 @@ import {
   filterHeader,
   footerText,
   noticeText,
+  pageEntries,
+  pagePosition,
   sectionLayout,
   sectionWidth,
   listWindow,
@@ -290,6 +292,7 @@ function objectHeader(
   object: TuiObject,
   palette: TuiPalette,
   width: number,
+  position?: string | undefined,
 ): TextChunk[] {
   const row = object.row;
   const note = row.note === undefined ? "" : ` · ${row.note}`;
@@ -302,7 +305,9 @@ function objectHeader(
         ? chunk(fit(row.error, width), palette.error)
         : object.unavailable !== undefined
         ? chunk(fit(object.unavailable, width), palette.weak)
-        : chunk("");
+        : position !== undefined
+          ? chunk(fit(position, width), palette.accent)
+          : chunk("");
   return [
     chunk(fit(`${bareId(row.id)}${title}`, width), palette.text, TextAttributes.BOLD),
     chunk("\n"),
@@ -386,7 +391,7 @@ function objectContent(state: TuiState, palette: TuiPalette): StyledText {
   const section = activeSection(state);
   const width = sectionWidth(state);
   return styled([
-    ...objectHeader(object, palette, width),
+    ...objectHeader(object, palette, width, pagePosition(section)),
     ...sectionTabs(object, palette, width),
     ...(section === undefined
       ? sectionContent(state, section, palette)
@@ -417,6 +422,23 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
       chunk(`${input.text}${bar}\n`, palette.text),
       chunk("enter sends · shift-enter or ctrl-j adds a line · esc cancels", palette.weak),
     ];
+    return styled(chunks);
+  }
+  if (input.kind === "pages") {
+    const chunks: TextChunk[] = [chunk(`page: ${input.query}${bar}\n`, palette.accent)];
+    const pages = pageEntries(state);
+    if (pages.length === 0) chunks.push(chunk("no page matches", palette.weak));
+    // The box holds fewer lines than a long table of contents: keep the cursor in view.
+    const rows = Math.max(1, (overlayBox(state)?.height ?? 5) - 4 - 1);
+    const start = Math.max(
+      0,
+      Math.min(input.cursor - Math.floor(rows / 2), pages.length - rows),
+    );
+    pages.slice(start, start + rows).forEach((entry, offset) => {
+      const at = start + offset;
+      chunks.push(chunk(at === input.cursor ? "❯ " : "  ", palette.accent));
+      chunks.push(chunk(`${entry.label}\n`, at === input.cursor ? palette.accent : palette.text));
+    });
     return styled(chunks);
   }
   const chunks: TextChunk[] = [chunk(`: ${input.query}${bar}\n`, palette.accent)];
@@ -469,7 +491,7 @@ export function overlayBox(state: TuiState): OverlayBox | undefined {
   // Border (2) and a one-cell margin of background (2) around the text.
   const wanted = lines + 4;
   const left = Math.max(0, Math.floor((state.width - width) / 2));
-  if (kind === "palette") {
+  if (kind === "palette" || kind === "pages") {
     const top = Math.floor(state.height / 3);
     return { left, top, width, height: Math.max(5, Math.min(wanted, state.height - top)) };
   }
@@ -482,6 +504,7 @@ function inputLines(state: TuiState): number {
   const input = state.input;
   if (input?.kind === "note") return input.text.split("\n").length + 2;
   if (input?.kind === "palette") return Math.max(1, paletteEntries(state).length) + 1;
+  if (input?.kind === "pages") return Math.max(1, pageEntries(state).length) + 1;
   return 0;
 }
 

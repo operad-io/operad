@@ -30,7 +30,7 @@ export default definePlugin({
         }
         if (sectionId === "pages") {
           return cursor === undefined
-            ? { markdown: "page one", next: "two" }
+            ? { markdown: "page one", next: "two", pages: [{ label: "one" }, { label: "two", cursor: "two" }] }
             : { markdown: `page ${cursor}` };
         }
         if (sectionId === "hang") {

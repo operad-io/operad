@@ -64,3 +64,4 @@ the row fields.
 | T-0128-M1 | packages/cli/src/code-reload.ts | problemKey kept newlines, so a multi-line known problem never matched its one-line form | `what counts as loading > a message that spans lines is the same problem as its one-line form` |
 | T-0132-M1 | packages/cli/src/code-reload.ts | `takeSupervisedFlag` did not delete the flag from the environment | `a serve restart while a check runs > a supervised serve keeps the supervisor's flag from its run process and the commands it runs` |
 | T-0132-M2 | packages/cli/test/reload.test.ts | `childEnv` passed the test's own `OPERAD_SERVE_SUPERVISED` on to the serve | `a serve picks up changed code > the same case passes when the test itself runs inside a supervised serve` |
+| T-0090-M6 | packages/cli/src/main.ts | `--page` ignored a label and only took a number | `operad presentation commands > show --page prints one page by number or by label` |

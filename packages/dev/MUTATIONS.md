@@ -404,3 +404,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0118-M1 | packages/dev/src/rework.ts | a same-commit reverify applied the line rules (the kind check for `reverify` removed) | `pre-existing by kind of review > reverify: far, in a touched file` and `dev/review rework rounds > what moves as pre-existing, by kind of review > same-commit reverify` |
+| T-0090-M2 | packages/dev/src/views.ts | a file's page entry pointed at the previous file's cursor | `dev views > the diff section is the stat and the diff, and pages by file when long` |
