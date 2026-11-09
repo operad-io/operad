@@ -33,6 +33,7 @@ import {
   type FactWriter,
   type MaybePromise,
   type ObjectFilterDefinition,
+  type ObjectRef,
   type ObjectTypeDefinition,
   type RunLookup,
   type ObjectViews,
@@ -474,10 +475,26 @@ function normalizeObjects(
       });
     }
 
+    if (
+      entry.answeredAutomatically !== undefined &&
+      typeof entry.answeredAutomatically !== "function"
+    ) {
+      throw new PluginError(
+        `${at}[${index}]: answeredAutomatically: must be a function`,
+      );
+    }
+
     const filters = normalizeFilters(entry.filters, `${at}[${index}]: filters`);
 
     objects.push({
       name,
+      ...(entry.answeredAutomatically === undefined
+        ? {}
+        : {
+            answeredAutomatically: entry.answeredAutomatically as NonNullable<
+              ObjectTypeDefinition["answeredAutomatically"]
+            >,
+          }),
       ...(filters === undefined ? {} : { filters }),
       ...(entry.schema === undefined ? {} : { schema: entry.schema }),
       ...(entry.resolve === undefined
@@ -1500,6 +1517,25 @@ export class PluginRegistry {
         definition: object,
       })),
     );
+  }
+
+  /**
+   * Whether the object's plugin answers its wait automatically. A hook that
+   * throws is logged and counts as no.
+   */
+  async answeredAutomatically(object: ObjectRef): Promise<boolean> {
+    const hook = this.objectType(object.type)?.answeredAutomatically;
+    if (hook === undefined) return false;
+    try {
+      const stored = await this.store.get(object.type, object.id);
+      if (stored === undefined) return false;
+      return (await hook(stored.data, { store: this.store })) === true;
+    } catch (error) {
+      this.log(
+        `answeredAutomatically failed for ${object.type} "${object.id}": ${messageOf(error)}`,
+      );
+      return false;
+    }
   }
 
   /** The object type definitions of one type, or undefined. */

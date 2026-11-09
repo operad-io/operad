@@ -18,6 +18,7 @@ import {
   listAll,
   planData,
   priorityIndex,
+  storeKey,
   taskData,
   type PlanData,
   type RepositoryData,
@@ -80,6 +81,45 @@ function plansOf(
   return plans.filter(
     (object) => planData(object.data).repository === repository,
   );
+}
+
+/**
+ * Whether a task waits for a merge answer the scheduler gives at auto merge:
+ * its review passed, its integrate has not run and it was not answered for
+ * this attempt yet. Whether the plan is at auto merge is the caller's check.
+ */
+function autoMergeWaits(task: TaskData): boolean {
+  const attempt = task.attempt;
+  if (task.phase !== "waiting" || task.run === null) return false;
+  if (attempt === undefined) return false;
+  const review = attempt.review;
+  const passed =
+    review?.decision === "passed" ||
+    review?.result === "pass" ||
+    review?.result === "passed";
+  if (!passed) return false;
+  // An integrate that failed is a person wait, never a second answer.
+  if (attempt.integration !== undefined && attempt.integration !== null) {
+    return false;
+  }
+  return task.autoMergeAttempt !== attempt.number;
+}
+
+/**
+ * Whether a task's wait is one the scheduler is about to answer: the task's
+ * plan is confirmed at auto merge and the wait is a merge wait. It reads the
+ * plan now, so a changed auto level or a refused answer ends the mark.
+ */
+export async function taskWaitAnsweredAutomatically(
+  data: Record<string, unknown>,
+  ctx: { readonly store: ObjectStore },
+): Promise<boolean> {
+  const task = taskData(data);
+  if (!autoMergeWaits(task)) return false;
+  const plan = await ctx.store.get("plan", storeKey(task.repository, planOf(task)));
+  if (plan === undefined) return false;
+  const found = planData(plan.data);
+  return found.status === "confirmed" && found.auto === "merge";
 }
 
 function planTasks(
@@ -411,19 +451,9 @@ async function scheduleRepository(
     for (const object of planTasks(current, bareId(planObject.id))) {
       const task = taskData(object.data);
       const attempt = task.attempt;
-      if (task.phase !== "waiting" || task.run === null) continue;
-      if (attempt === undefined) continue;
-      const review = attempt.review;
-      const passed =
-        review?.decision === "passed" ||
-        review?.result === "pass" ||
-        review?.result === "passed";
-      if (!passed) continue;
-      // An integrate that failed is a person wait, never a second answer.
-      if (attempt.integration !== undefined && attempt.integration !== null) {
+      if (!autoMergeWaits(task) || attempt === undefined || task.run === null) {
         continue;
       }
-      if (task.autoMergeAttempt === attempt.number) continue;
       try {
         await ctx.answer(task.run, "merge");
       } catch (error) {

@@ -6,7 +6,15 @@ export default definePlugin({
   name: "channel-demo",
   kind: "domain",
   version: "0.0.1",
-  objects: [{ name: "task", index: ["phase"] }, { name: "note" }],
+  objects: [
+    {
+      name: "task",
+      index: ["phase"],
+      // A wait the plugin answers itself, for the channel's quiet waits.
+      answeredAutomatically: (data) => data.auto === true,
+    },
+    { name: "note" },
+  ],
   views: {
     task: {
       row(object): ObjectRow {

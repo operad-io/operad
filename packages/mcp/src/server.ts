@@ -437,6 +437,7 @@ export async function runMcpServer(
             opened.registry,
             opened.kernel,
             opened.views,
+            { withAuto: true },
           ),
         sentFile: join(
           home,
