@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SUPERVISED_ENV } from "../src/code-reload.ts";
 import { readLockPid } from "../../engine/src/index.ts";
 import { waitForChange } from "../../engine/src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
@@ -156,7 +157,8 @@ function spawnOperad(setupValue: Setup, args: readonly string[]): Bun.Subprocess
   return Bun.spawn({
     cmd: [process.execPath, CLI_ENTRY, ...args],
     cwd: setupValue.home,
-    env: { ...(process.env as Record<string, string>), ...setupValue.env },
+    // A test run from inside a supervised serve must not make its own serve think it is supervised.
+    env: { ...(process.env as Record<string, string>), [SUPERVISED_ENV]: "", ...setupValue.env },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
