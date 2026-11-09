@@ -1,5 +1,6 @@
 /** The running view: active runs, their current step and how long they took. */
 
+import type { RowMark } from "../plugin/types.ts";
 import type { LogBackend } from "../log/types.ts";
 import { evolve, initialState } from "../kernel/state.ts";
 import type { KernelState } from "../kernel/types.ts";
@@ -28,6 +29,8 @@ export interface RunningItem {
   readonly stepLabel: string | null;
   /** The object's row note (a plugin's word on what it waits for); null for none. */
   readonly note?: string | null;
+  /** The object's row mark; omitted when the row has none. */
+  readonly mark?: RowMark;
 }
 
 /** Reads a run's state and when its current step's current attempt started. */
@@ -156,6 +159,7 @@ export async function listRunning(
       object: named === undefined ? null : named.object,
       title: named === undefined ? null : named.title,
       note: named?.note ?? null,
+      ...(named?.mark === undefined ? {} : { mark: named.mark }),
       stepStartedAt,
       stepElapsedMs: stepStartedAt === null ? null : Math.max(0, now - stepStartedAt),
     });
@@ -168,6 +172,7 @@ interface Named {
   readonly object: string;
   readonly title: string | null;
   readonly note?: string | null;
+  readonly mark?: RowMark;
 }
 
 /**
@@ -203,6 +208,7 @@ async function rowsFor(
       object: row.scope === undefined ? row.id : `${row.scope}/${row.id}`,
       title: row.error === undefined ? row.title : null,
       note: row.error === undefined ? (row.note ?? null) : null,
+      ...(row.error === undefined && row.mark !== undefined ? { mark: row.mark } : {}),
     });
   }
   return named;
