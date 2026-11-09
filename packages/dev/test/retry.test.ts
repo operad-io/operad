@@ -1,5 +1,5 @@
 import { createPoolPlugin } from "@operad-io/pool";
-import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,6 +30,10 @@ import {
 } from "../src/index.ts";
 import { makeRemote, type RemoteSetup } from "./git-support.ts";
 import { cleanupTempRoots, guardLockHandles, storeAt, tempRoot } from "./support.ts";
+
+// Every test here makes real git worktrees, which takes longer than bun's
+// default 5 s when the machine is busy.
+setDefaultTimeout(60_000);
 
 afterAll(cleanupTempRoots);
 guardLockHandles();
@@ -373,8 +377,7 @@ describe("the night of 2026-11-08 at 08:01", () => {
     // Every task now waits for a reason of its own (the fake worker changed
     // nothing); none waits because of the incident.
     expect(waitingReasons(w)).toEqual(Array(9).fill("work did nothing"));
-    // Nine tasks in real git worktrees: more than bun's default 5 s on a busy machine.
-  }, 60_000);
+  });
 });
 
 describe("settings that cannot be read", () => {
