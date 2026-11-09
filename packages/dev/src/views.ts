@@ -27,7 +27,7 @@ import {
   type TaskAttempt,
   type TaskData,
 } from "./model.ts";
-import { planMark, taskBadge, taskMark } from "./marks.ts";
+import { planMark, repositoryMark, taskBadge, taskMark } from "./marks.ts";
 import { git, workBranch } from "./steps.ts";
 import { findRepository, listRepositories } from "./service.ts";
 import { DEV_SETTINGS_FILE, readDevSettings, settingsProblem } from "./settings.ts";
@@ -119,6 +119,7 @@ export const repoViews: ObjectViews = {
       state,
       note: `plans: ${repository.openPlans ?? 0} · tasks: ${repository.openTasks ?? 0}`,
       final: repository.removed,
+      mark: repositoryMark(repository),
     };
   },
 

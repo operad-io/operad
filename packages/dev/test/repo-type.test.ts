@@ -49,6 +49,7 @@ describe("the repo type", () => {
         title: "alpha",
         state: "active",
         note: "plans: 0 · tasks: 0",
+        mark: "done",
         waiting: undefined,
         running: undefined,
       },
@@ -57,6 +58,7 @@ describe("the repo type", () => {
         title: "beta",
         state: "active",
         note: "plans: 0 · tasks: 0",
+        mark: "done",
         waiting: undefined,
         running: undefined,
       },
@@ -112,6 +114,52 @@ describe("the repo type", () => {
     await setTaskPhase(store, task.id, "merged");
     await refreshPlanCounts(store, await getPlan(store, plan.id));
     expect(await note()).toBe("plans: 0 · tasks: 0");
+  });
+
+  describe("the row mark follows the repository's work", () => {
+    const mark = async (views: ReturnType<typeof createViews>) =>
+      (await views.get("repo:alpha")).row.mark;
+
+    test("running while a task has a run in progress", async () => {
+      const { views, store, alpha } = await setup();
+      const plan = await addPlan(store, { repository: alpha, slug: "work", title: "Work" });
+      const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
+      await setTaskPhase(store, task.id, "running", { run: "r1" });
+      expect(await mark(views)).toBe("running");
+    });
+
+    test("todo while plans or tasks are not yet ended", async () => {
+      const { views, store, alpha } = await setup();
+      const plan = await addPlan(store, { repository: alpha, slug: "work", title: "Work" });
+      await addTask(store, { plan: plan.id, slug: "one", title: "One" });
+      expect(await mark(views)).toBe("todo");
+    });
+
+    test("done when every plan and task has ended", async () => {
+      const { views, store, alpha } = await setup();
+      const plan = await addPlan(store, { repository: alpha, slug: "work", title: "Work" });
+      const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
+      await confirmPlan(store, plan.id);
+      await setTaskPhase(store, task.id, "merged");
+      expect(await mark(views)).toBe("done");
+    });
+
+    test("a removed repository reads as cancelled", async () => {
+      const { views, store } = await setup();
+      await removeRepository(store, "alpha");
+      expect(await mark(views)).toBe("cancelled");
+    });
+
+    test("a task starting and ending its run changes the mark", async () => {
+      const { views, store, alpha } = await setup();
+      const plan = await addPlan(store, { repository: alpha, slug: "work", title: "Work" });
+      const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
+      expect(await mark(views)).toBe("todo");
+      await setTaskPhase(store, task.id, "running", { run: "r1" });
+      expect(await mark(views)).toBe("running");
+      await setTaskPhase(store, task.id, "ready");
+      expect(await mark(views)).toBe("todo");
+    });
   });
 
   test("the Overview names the path, the default branch, dev.json, worker and reviewer", async () => {

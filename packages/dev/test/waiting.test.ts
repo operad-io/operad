@@ -164,6 +164,19 @@ const CASES: readonly Case[] = [
     summary: "T-0001-one waiting: ready to merge",
   },
   {
+    name: "a passed review with new words waits for approval",
+    params: { from: "review", result: "pass" },
+    change: {
+      attempts: 1,
+      attempt: {
+        ...GOOD,
+        review: { result: "pass", sha: "abc123", newWords: ["alpha", "beta"] },
+      },
+    },
+    reason: "new words need approval: alpha, beta",
+    summary: "T-0001-one waiting: new words need approval: alpha, beta",
+  },
+  {
     name: "a review that timed out",
     params: { from: "review", result: "failed" },
     change: {
@@ -344,6 +357,17 @@ describe("waitingReason", () => {
         false,
       ).reason,
     ).toBe("gate failed");
+  });
+
+  test("a second review failure in a row has its own reason", () => {
+    expect(
+      waitingReason(
+        { from: "rework", result: "ask" },
+        task({ number: 1, rework: { run: "r", source: "review", streak: 2, result: "ask", twice: true } }),
+        4,
+        false,
+      ).reason,
+    ).toBe("review failed twice in a row");
   });
 
   test("an unresolved merge after the worker is a conflict", () => {

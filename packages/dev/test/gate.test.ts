@@ -421,6 +421,9 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             JSON.stringify({
               findings: finding === undefined ? [] : [finding],
               verified: ["the diff"],
+              ...(mode.startsWith("words:")
+                ? { words: mode.slice("words:".length).split(",") }
+                : {}),
             }),
           );
           return { result: "done", data: {} };
@@ -817,6 +820,62 @@ describe("dev/review", () => {
     expect(state.reviewer.calls[0]?.cwd).toBe(gate);
     expect(existsSync(join(gate, "junk.txt"))).toBe(false);
     expect(result.data?.findings).toEqual([]);
+  });
+
+  describe("new words", () => {
+    async function withBrief(state: Fixture, brief: string, workWords?: readonly string[]) {
+      const task = await taskOf(state);
+      await state.store.put("task", state.taskKey, {
+        ...task,
+        brief,
+        attempt: {
+          ...(task.attempt ?? { number: 1, run: "worktree-run" }),
+          ...(workWords === undefined ? {} : { workWords }),
+        },
+      }, "test:words");
+    }
+
+    test("a word the worker named and nobody approved is recorded on the passed review", async () => {
+      const state = await fixture({ reviewerArgs: ["none"] });
+      await verify(state);
+      await withBrief(state, "Make the code do the thing.", ["reviewer.first.use"]);
+      const result = await review(state);
+      expect(result.result).toBe("pass");
+      expect((await taskOf(state)).attempt?.review?.newWords).toEqual(["reviewer.first.use"]);
+    });
+
+    test("a word marked approved in the brief is not recorded", async () => {
+      const state = await fixture({ reviewerArgs: ["none"] });
+      await verify(state);
+      await withBrief(state, "Make it.\nApproved words: Reviewer.First.Use, other", [
+        "reviewer.first.use",
+      ]);
+      await review(state);
+      expect((await taskOf(state)).attempt?.review?.newWords).toBeUndefined();
+    });
+
+    test("a word already in main's README is not recorded", async () => {
+      const state = await fixture({
+        reviewerArgs: ["none"],
+        baseFiles: { "README.md": "# Tool\n\nThe `pending` list shows waits.\n" },
+      });
+      await verify(state);
+      await withBrief(state, "Make it.", ["pending"]);
+      await review(state);
+      expect((await taskOf(state)).attempt?.review?.newWords).toBeUndefined();
+    });
+
+    test("a word the reviewer reports and the worker omitted is recorded", async () => {
+      const state = await fixture({ reviewerArgs: ["words:stallSecs,timeoutSecs"] });
+      await verify(state);
+      await withBrief(state, "Make it.", []);
+      const result = await review(state);
+      expect(result.result).toBe("pass");
+      const recorded = (await taskOf(state)).attempt?.review;
+      expect(recorded?.words).toEqual(["stallSecs", "timeoutSecs"]);
+      expect(recorded?.newWords).toEqual(["stallSecs", "timeoutSecs"]);
+      expect(state.reviewer.calls[0]?.prompt).toContain("new user-visible words");
+    });
   });
 
   test("a minor finding under a major fix level passes", async () => {
@@ -2427,6 +2486,63 @@ describe("dev/rework", () => {
     expect(task.brief).toContain(
       "] rework 1 — review: code.txt:2 major: a real problem — when called",
     );
+  });
+});
+
+describe("dev/rework after two review failures in a row", () => {
+  async function again(state: Fixture, n: number) {
+    const prepared = await state.registry.runStep("dev/worktree", {}, {
+      runId: `worktree-${n}`,
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+    expect(prepared.result).toBe("ready");
+    await commitIn(state.worktree, `more-${n}.txt`, "x\n", `more ${n}`);
+  }
+
+  test("review fail, rework, review fail waits for a person with both rounds' findings", async () => {
+    const state = await fixture({ reviewerArgs: ["major"], maxAutoRework: 4 });
+    await verify(state, "verify-1");
+    expect((await review(state, "review-1")).result).toBe("fail");
+    expect((await rework(state, "rework-1")).result).toBe("again");
+    await again(state, 2);
+    await verify(state, "verify-2");
+    expect((await review(state, "review-2")).result).toBe("fail");
+    const second = await rework(state, "rework-2");
+    expect(second.result).toBe("ask");
+    const task = await taskOf(state);
+    expect(task.phase).toBe("waiting");
+    expect(task.attempt?.rework?.twice).toBe(true);
+    expect(task.reworkStreak).toBe(2);
+    expect(task.brief).toContain("review failed twice in a row");
+    const section = task.brief.slice(task.brief.indexOf("## Rework 2 (review)"));
+    expect(section.match(/code\.txt:2` major: a real problem/g)?.length).toBe(2);
+  });
+
+  test("review fail, verify fail, review fail reworks again", async () => {
+    const state = await fixture({
+      reviewerArgs: ["major"],
+      commands: ["test ! -f more-2.txt"],
+      maxAutoRework: 4,
+    });
+    await verify(state, "verify-1");
+    expect((await review(state, "review-1")).result).toBe("fail");
+    expect((await rework(state, "rework-1")).result).toBe("again");
+    await again(state, 2);
+    expect((await verify(state, "verify-2")).result).toBe("fail");
+    expect((await rework(state, "rework-2")).result).toBe("again");
+    const between = await taskOf(state);
+    expect(between.reviewFailed).toBeUndefined();
+    await state.registry.runStep("dev/worktree", {}, {
+      runId: "worktree-3",
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+    await gitOrThrow(state.worktree, ["rm", "-q", "more-2.txt"]);
+    await commitIn(state.worktree, "more-3.txt", "x\n", "more 3");
+    expect((await verify(state, "verify-3")).result).toBe("pass");
+    expect((await review(state, "review-3")).result).toBe("fail");
+    const third = await rework(state, "rework-3");
+    expect(third.result).toBe("again");
+    expect((await taskOf(state)).attempt?.rework?.twice).toBeUndefined();
   });
 });
 

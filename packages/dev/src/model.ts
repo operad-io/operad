@@ -42,6 +42,7 @@ export const TASK_PHASES = [
   "running",
   "review",
   "waiting",
+  "held",
   "merged",
   "cancelled",
 ] as const;
@@ -210,6 +211,8 @@ export interface ReviewRunRecord {
   /** The findings a report run returned, with pre-existing marks. */
   readonly findings?: readonly ReviewFinding[] | null;
   readonly verified?: readonly string[] | null;
+  /** The user-visible words this run found in the diff. */
+  readonly words?: readonly string[];
   /** How many of the findings are at or above the fix level. */
   readonly counted?: number | null;
 }
@@ -257,6 +260,10 @@ export interface ReviewRecord {
   readonly reason?: string | null;
   /** The commit the reviewer saw. */
   readonly sha?: string | null;
+  /** The user-visible words the reviewer found in the diff. */
+  readonly words?: readonly string[];
+  /** The words of the worker and the reviewer that nobody approved; a passed review waits on them. */
+  readonly newWords?: readonly string[];
 }
 
 /** What the integrate step found while landing the verified commit. */
@@ -313,6 +320,8 @@ export interface ReworkRecord {
   /** The automatic rework limit in force when the record was written. */
   readonly limit?: number;
   readonly result: "again" | "ask";
+  /** True when the wait is because review failed twice in a row. */
+  readonly twice?: boolean;
 }
 
 /** One run of a task's worker, with what the worktree step learned. */
@@ -349,6 +358,8 @@ export type TaskAttempt = {
   readonly workMs?: number | null;
   /** Why the work step did not finish cleanly, in the harness's words. */
   readonly workNote?: string | null;
+  /** The words the worker's final answer named in its `New words:` line. */
+  readonly workWords?: readonly string[] | null;
   /** How many times the work step waited for an unavailable model in this attempt. */
   readonly workWaits?: number | null;
   /** When a work step that found its model unavailable may run again (epoch ms). */
@@ -438,6 +449,11 @@ export type TaskData = {
   readonly costQuality?: "exact" | "estimated" | "incomplete" | null | undefined;
   /** How many automatic reworks ran in a row; a passing gate resets it. */
   readonly reworkStreak?: number | undefined;
+  /**
+   * The findings text of the last review failure when the attempt before the
+   * current rework also ended in one; absent after anything else.
+   */
+  readonly reviewFailed?: string | undefined;
   /** Why the last step that records one stopped; the retry step consumes it. */
   readonly stop?: StopRecord | null | undefined;
   /** The automatic retry this task's attempt used. */
@@ -491,6 +507,8 @@ export type RepositoryData = {
   /** Plans and tasks not yet ended; a cache the repository's row reads. */
   readonly openPlans?: number | undefined;
   readonly openTasks?: number | undefined;
+  /** Tasks with a run in progress (working or in review); a cache for the row's mark. */
+  readonly activeTasks?: number | undefined;
 };
 
 /** The two kinds of object the dev plugin numbers. */

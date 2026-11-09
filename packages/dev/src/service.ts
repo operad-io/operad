@@ -151,7 +151,11 @@ export async function withRepoLock<T>(
 async function openCounts(
   store: ObjectStore,
   name: string,
-): Promise<{ readonly openPlans: number; readonly openTasks: number }> {
+): Promise<{
+  readonly openPlans: number;
+  readonly openTasks: number;
+  readonly activeTasks: number;
+}> {
   const plans = (await listAll(store, PLAN_TYPE)).filter(
     (object) => planData(object.data).repository === name,
   );
@@ -165,6 +169,10 @@ async function openCounts(
     openTasks: tasks.filter(
       (object) => !TASK_FINAL_STATES.includes(taskData(object.data).phase),
     ).length,
+    activeTasks: tasks.filter((object) => {
+      const phase = taskData(object.data).phase;
+      return phase === "running" || phase === "review";
+    }).length,
   };
 }
 
@@ -180,7 +188,11 @@ export async function refreshRepositoryCounts(
   if (found === undefined) return;
   const data = repositoryData(found.data);
   const counts = await openCounts(store, name);
-  if (data.openPlans === counts.openPlans && data.openTasks === counts.openTasks) {
+  if (
+    data.openPlans === counts.openPlans &&
+    data.openTasks === counts.openTasks &&
+    data.activeTasks === counts.activeTasks
+  ) {
     return;
   }
   await store.put(
@@ -526,6 +538,7 @@ export async function addRepository(
     removed: false,
     openPlans: 0,
     openTasks: 0,
+    activeTasks: 0,
   };
   await store.put(REPOSITORY_TYPE, name, data, "dev:repo-add");
   writeSettings(path, name);
@@ -1021,10 +1034,28 @@ export interface UpdateTaskOptions {
   readonly area?: string | undefined;
 }
 
+/**
+ * True while a task waits only because a task it follows was cancelled: its
+ * dependencies are the cause, so changing them releases the wait.
+ */
+function waitsForCancelledDependency(
+  data: TaskData,
+  tasks: readonly StoredObject[],
+): boolean {
+  if (data.phase !== "waiting") return false;
+  return data.after.some((dependency) =>
+    tasks.some(
+      (object) =>
+        object.id === storeKey(data.repository, dependency) &&
+        taskData(object.data).phase === "cancelled",
+    ),
+  );
+}
+
 export async function updateTask(
   store: ObjectStore,
   id: string,
-  options: UpdateTaskOptions,
+  options: UpdateTaskOptions & { readonly runs?: DevRunControl | undefined },
 ): Promise<StoredObject> {
   if (
     options.title === undefined &&
@@ -1042,12 +1073,15 @@ export async function updateTask(
     options.area === undefined ? undefined : validateArea(options.area);
   const initial = await getTask(store, id);
   const initialData = taskData(initial.data);
-  requireEditable(initialData);
-  return withRepoLock(store, initialData.repository, async () => {
+  const releasable = (data: TaskData, tasks: readonly StoredObject[]) =>
+    options.after !== undefined && waitsForCancelledDependency(data, tasks);
+  if (!releasable(initialData, await allTasks(store))) requireEditable(initialData);
+  const updated = await withRepoLock(store, initialData.repository, async () => {
     const current = await getTask(store, id);
-    const data = taskData(current.data);
-    requireEditable(data);
     const tasks = await allTasks(store);
+    const data = taskData(current.data);
+    const releases = releasable(data, tasks);
+    if (!releases) requireEditable(data);
     const after =
       options.after === undefined
         ? data.after
@@ -1086,12 +1120,20 @@ export async function updateTask(
       ...kept,
       ...(title === undefined ? {} : { title }),
       after,
-      brief,
+      // The wait on a cancelled dependency ends: the task is ready again and
+      // starts on a later tick like any ready task.
+      ...(releases ? { phase: "ready" as const, run: null, claim: null } : {}),
+      brief: releases ? appendChange(brief, "ready") : brief,
       ...(nextArea === undefined ? {} : { area: nextArea }),
       ...(nextHeld === undefined ? {} : { areaHeldBy: nextHeld }),
     };
-    return writeTask(store, id, next, "dev:task-update");
+    return {
+      object: await writeTask(store, id, next, "dev:task-update"),
+      released: releases ? data.run : null,
+    };
   });
+  if (updated.released !== null) await options.runs?.cancel(updated.released);
+  return updated.object;
 }
 
 /** The task after a run changed its phase. Used by later tasks and by tests. */
@@ -1620,6 +1662,67 @@ export async function cancelTask(
     await options.runs?.cancel(run);
   }
   return cancelled;
+}
+
+/**
+ * Stops a task for a while: its run is cancelled as `cancel` cancels it, but
+ * the task keeps its branch, worktree, commits, attempt count and place. It
+ * holds no concurrency slot and the scheduler does not start it.
+ */
+export async function holdTask(
+  store: ObjectStore,
+  id: string,
+  options: CancelOptions = {},
+): Promise<{ readonly task: StoredObject; readonly runs: readonly string[] }> {
+  const initial = await getTask(store, id);
+  const initialData = taskData(initial.data);
+  const held = await withRepoLock(store, initialData.repository, async () => {
+    const task = await getTask(store, id);
+    const data = taskData(task.data);
+    refuseTask("hold", data, id);
+    const runs = data.run === null ? [] : [data.run];
+    const { areaHeldBy: _area, dependencyHeld: _waits, ...rest } = data;
+    const written = await writeTask(
+      store,
+      id,
+      {
+        ...rest,
+        phase: "held",
+        run: null,
+        claim: null,
+        startRequested: false,
+        brief: appendChange(data.brief, "held"),
+      },
+      "dev:task-hold",
+    );
+    const plan = await getPlan(store, storeKey(data.repository, data.plan));
+    await refreshPlanCounts(store, plan);
+    return { task: written, runs };
+  });
+  for (const run of held.runs) {
+    await options.runs?.cancel(run);
+  }
+  return held;
+}
+
+/** Returns a held task to ready; its next start continues from its branch. */
+export async function releaseTask(
+  store: ObjectStore,
+  id: string,
+): Promise<StoredObject> {
+  const initial = await getTask(store, id);
+  const initialData = taskData(initial.data);
+  return withRepoLock(store, initialData.repository, async () => {
+    const task = await getTask(store, id);
+    const data = taskData(task.data);
+    refuseTask("release", data, id);
+    return writeTask(
+      store,
+      id,
+      { ...data, phase: "ready", brief: appendChange(data.brief, "ready") },
+      "dev:task-release",
+    );
+  });
 }
 
 export async function setAuto(

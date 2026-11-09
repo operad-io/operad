@@ -19,6 +19,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { checkPlaces } from "./places.ts";
+import { approvedWordsOf, cleanWords, unapprovedWords } from "./words.ts";
 import { linkWorkspacePackages, runPrepare, stepOptions } from "./prepare.ts";
 import { runCheckCommands } from "./rerun.ts";
 import { reportFlakyTests } from "./flaky.ts";
@@ -162,6 +163,21 @@ function mergeBase(
   const main = `${settings.remote}/${settings.mainBranch}`;
   const result = git(repositoryPath, ["merge-base", main, sha]);
   return result.ok && result.out.length > 0 ? result.out : undefined;
+}
+
+/** The text of main's user docs at a commit: README files and docs/manual.md. */
+function userDocsAt(repositoryPath: string, commit: string): string {
+  const listed = git(repositoryPath, ["ls-tree", "-r", "--name-only", commit]);
+  if (!listed.ok) return "";
+  const parts: string[] = [];
+  for (const path of listed.out.split("\n")) {
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    const isDoc = /^readme.*\.md$/i.test(name) || path === "docs/manual.md";
+    if (!isDoc) continue;
+    const shown = git(repositoryPath, ["show", `${commit}:${path}`], true);
+    if (shown.ok) parts.push(shown.out);
+  }
+  return parts.join("\n").toLowerCase();
 }
 
 /** Removes whatever is at the gate path and checks a commit out detached. */
@@ -775,6 +791,7 @@ function parseFinding(value: unknown): FindingShape | undefined {
 interface Report {
   readonly findings: readonly FindingShape[];
   readonly verified: readonly string[];
+  readonly words: readonly string[];
 }
 
 function parseReport(text: string): Report | undefined {
@@ -794,9 +811,16 @@ function parseReport(text: string): Report | undefined {
     if (finding === undefined) return undefined;
     findings.push(finding);
   }
+  // `words` is optional: a report without it names no new word.
+  const words =
+    Array.isArray(value.words) &&
+    value.words.every((item) => typeof item === "string")
+      ? cleanWords(value.words as readonly string[])
+      : [];
   return {
     findings,
     verified: value.verified as readonly string[],
+    words,
   };
 }
 
@@ -937,7 +961,8 @@ function reviewPrompt(
     "## What to write",
     [
       `Write a JSON object to ${resultPath} (inside the worktree you are in). The file must contain exactly:`,
-      '{ "findings": [{ "file": "<path>", "line": <number>, "severity": "critical|major|minor", "summary": "<one line>", "trigger": "<what causes it>" }], "verified": ["<what you checked>"] }',
+      '{ "findings": [{ "file": "<path>", "line": <number>, "severity": "critical|major|minor", "summary": "<one line>", "trigger": "<what causes it>" }], "verified": ["<what you checked>"], "words": ["<word>"] }',
+      "Check the diff for new user-visible words: command and action names, setting keys, words in command output, errors meant for users, words in user docs. List each one the change adds in `words` (an empty list when there is none), whatever the worker said. Internal names are not user-visible words.",
       "List every problem you find; the gate decides which of them are old, not you.",
       ...(rework === undefined
         ? []
@@ -1796,8 +1821,19 @@ export async function runReview(
         sources: { ...used.sources, use: "fallback", args: "fallback" },
       };
     }
-    const record: ReviewRecord =
+    const withSettings: ReviewRecord =
       used === undefined ? recorded : { ...recorded, reviewSettings: used };
+    // A review that passed still waits for a person when the worker or the
+    // reviewer names a user-visible word nobody approved.
+    let record: ReviewRecord = withSettings;
+    if (withSettings.decision === "passed" && typeof sha === "string") {
+      const named = [...(attempt.workWords ?? []), ...(withSettings.words ?? [])];
+      const mergeBaseSha = mergeBase(context.repository.path, context.settings, sha);
+      const docs =
+        mergeBaseSha === undefined ? "" : userDocsAt(context.repository.path, mergeBaseSha);
+      const unapproved = unapprovedWords(named, approvedWordsOf(task.brief), docs);
+      if (unapproved.length > 0) record = { ...withSettings, newWords: unapproved };
+    }
     const written = await saveTaskGuarded(
       ctx,
       context.taskKey,
@@ -1824,6 +1860,7 @@ export async function runReview(
               : round,
         },
         ...(record.decision === "passed" ? { reworkStreak: 0 } : {}),
+        ...(record.decision === "passed" ? { reviewFailed: undefined } : {}),
         ...(typeof record.reworkLine === "string" && record.reworkLine.length > 0
           ? { brief: appendChange(task.brief, record.reworkLine) }
           : {}),
@@ -2319,6 +2356,7 @@ export async function runReview(
         run: ctx.runId,
         findings,
         verified: call.report.verified,
+        words: call.report.words,
         counted,
       };
     } else {
@@ -2406,6 +2444,7 @@ export async function runReview(
       runs,
       findings,
       verified: last.verified ?? [],
+      words: last.words ?? [],
       log: resultPath,
       message,
       base,
@@ -2723,6 +2762,18 @@ export async function runRework(
       );
     }
   }
+  const failedText = pieces.slice(0, 2).join("\n\n");
+  const streak = (task.reworkStreak ?? 0) + 1;
+  const twice =
+    source === "review" &&
+    task.reviewFailed !== undefined &&
+    streak <= context.settings.maxAutoRework;
+  if (twice) {
+    pieces.push(
+      "The review failed twice in a row. The previous round's findings:",
+      task.reviewFailed ?? "",
+    );
+  }
   pieces.push(REWORK_INSTRUCTION);
 
   const withRework = appendRework(
@@ -2731,17 +2782,18 @@ export async function runRework(
     pieces.join("\n\n"),
     reason,
   );
-  const streak = (task.reworkStreak ?? 0) + 1;
-  const again = streak <= context.settings.maxAutoRework;
+  const again = !twice && streak <= context.settings.maxAutoRework;
   const record: ReworkRecord = {
     run: ctx.runId,
     source,
     streak,
     limit: context.settings.maxAutoRework,
     result: again ? "again" : "ask",
+    ...(twice ? { twice: true } : {}),
   };
   const next: TaskData = {
     ...withRework,
+    reviewFailed: source === "review" ? failedText : undefined,
     phase: again ? "review" : "waiting",
     run: ctx.runId,
     attempts: Math.max(task.attempts, attempt.number),
