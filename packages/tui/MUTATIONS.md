@@ -175,3 +175,5 @@ the row fields.
 | T-0071-M5 | packages/tui/src/app.ts | a good theme change did not clear the footer line about the bad one | `a changed theme file > repaints, shows one line when it is invalid and clears that line when it is good again` |
 | T-0071-M6 | packages/tui/src/theme.ts | ANSI index 16 was accepted as a colour | `file themes > an unknown token, a bad colour and an unknown extends name the file and the key` |
 | T-0071-M7 | packages/tui/src/theme.ts | a change to tui.json was ignored by the watch | `file themes > a change to the theme file or tui.json is applied; an invalid edit keeps the last good theme` |
+| T-0126-M1 | packages/tui/src/theme.ts | the fallback timer never re-read the files, so an edit the directory watch missed was not applied | `file themes > the fallback timer picks up an edit the watch missed, and reports a problem once` |
+| T-0126-M2 | packages/tui/src/theme.ts | the fallback timer reported every tick, so an unchanged invalid file repeated its problem | `file themes > the fallback timer picks up an edit the watch missed, and reports a problem once` |

@@ -362,6 +362,43 @@ describe("file themes", () => {
     expect(fake.open()).toBe(0);
   });
 
+  test("the fallback timer picks up an edit the watch missed, and reports a problem once", () => {
+    const dir = withThemes({ mine: '{ "colors": { "accent": "#111111" } }' }, '{ "theme": "mine" }');
+    const holder: ThemeHolder = { current: chooseSelection({ home: dir }) };
+    const changes: (string | undefined)[] = [];
+    const fake = fakeWatch();
+    let tick: () => void = () => undefined;
+    let stopped = 0;
+    const stop = watchThemes({
+      home: dir,
+      holder,
+      watch: fake.watch,
+      repeat: (_ms, callback) => {
+        tick = callback;
+        return () => {
+          stopped += 1;
+        };
+      },
+      onChange: (problem) => changes.push(problem),
+    });
+    tick();
+    expect(changes).toEqual([]);
+    const file = join(dir, "themes", "mine.json");
+    writeFileSync(file, '{ "colors": { "accent": "#222222" } }');
+    tick();
+    expect(holder.current.palette?.accent).toBe("#222222");
+    expect(changes).toEqual([undefined]);
+    tick();
+    expect(changes).toHaveLength(1);
+    writeFileSync(file, '{ "colors": { "accent": "nope" } }');
+    tick();
+    tick();
+    expect(changes).toHaveLength(2);
+    expect(changes[1]).toContain("mine.json: colors.accent");
+    stop();
+    expect(stopped).toBe(1);
+  });
+
   test("a themes directory that appears later is watched", () => {
     const dir = home('{ "theme": "mine" }');
     const holder: ThemeHolder = { current: { name: "dark" } };
