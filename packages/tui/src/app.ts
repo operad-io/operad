@@ -767,8 +767,24 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     const known = state.tabs.some(
       (tab) => tab.kind === "plugin" && tab.list.rows.some((row) => sameObject(row.id, id)),
     );
-    if (known) {
+    // A child on the open page: its row there is refreshed, and a new child is read in.
+    const page = state.object;
+    const onPage = page?.children?.rows.some((row) => sameObject(row.id, id)) === true;
+    const parent = result.value.row.parent;
+    const underPage =
+      page !== undefined &&
+      parent !== undefined &&
+      (parent === page.id || parent === `${page.type}:${page.id}`);
+    if (known || onPage) {
       dispatch({ type: "row", row: result.value.row });
+      if (known || !underPage) return;
+    }
+    if (underPage && page !== undefined && !onPage) {
+      await loadChildren(
+        { ...result.value, id: page.id, type: page.type },
+        page.version,
+        signal,
+      );
       return;
     }
     const tab = pluginTabOf(state, result.value.type);

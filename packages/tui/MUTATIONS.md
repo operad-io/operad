@@ -241,3 +241,4 @@ the row fields.
 | T-0121-M3 | packages/tui/src/state.ts | escape on a child's page closed the pane instead of returning to the plan | `one tab per plugin > enter on a child in the page opens its own page, and back returns to the plan` |
 | T-0121-M4 | packages/tui/src/view/index.ts | a plugin tab's rows drew their title after the id and slug | `two-line rows > at the one-pane width nothing is wider than the pane, and a long id and title cut with …` |
 | T-0121-M5 | packages/tui/src/state.ts | a child's page took the child's id as its source, so a refresh of the left list reopened the plan | `one tab per plugin > a refresh of the left list leaves a child's page open` |
+| T-0121-M6 | packages/tui/src/state.ts | a changed row was not put in place on the open page's next-level list | `one tab per plugin > a change to a child refreshes its row on the open plan page` |

@@ -319,4 +319,37 @@ describe("one tab per plugin", () => {
     expect(state.followPending).toBe(false);
     expect(state.moveSeq).toBe(before);
   });
+
+  test("a change to a child refreshes its row on the open plan page", async () => {
+    const data: Stored[] = [...DATA];
+    const client = new TreeClient(data);
+    // A source the test pushes one change into.
+    let push: (event: TuiEvent) => void = () => undefined;
+    const events: TuiEventSource = {
+      stop() {},
+      [Symbol.asyncIterator]: () => ({
+        next: () => new Promise((resolve) => (push = (value) => resolve({ done: false, value }))),
+      }),
+    };
+    const view = new View();
+    const shell = startShell({
+      client,
+      events: () => events,
+      view,
+      width: 120,
+      height: 30,
+      theme: "dark",
+      clock: immediateClock,
+    });
+    await view.until((state) => tabOf(state, "plugin:dev")?.list.loaded === true);
+    shell.key({ name: "3" });
+    await view.until((state) => state.object?.children?.rows.length === 2);
+    const index = data.findIndex((one) => one.row.id === "ops/T-0001-first");
+    const old = data[index] as Stored;
+    data[index] = { ...old, row: { ...old.row, state: "running", note: "work 9m" } };
+    push({ kind: "change", id: "task:ops/T-0001-first" });
+    await view.until((state) => state.object?.children?.rows[0]?.state === "running");
+    expect(shell.state.object?.children?.rows[0]?.note).toBe("work 9m");
+    shell.stop();
+  });
 });

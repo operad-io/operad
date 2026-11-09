@@ -1976,6 +1976,26 @@ function dropRow(rows: readonly TuiRow[], at: number): TuiRow[] {
 
 /** Puts a fresh row in place of the rows of the same object; the cursor stays. */
 function replaceRow(state: TuiState, row: TuiRow): TuiState {
+  return replacePageRow(replaceListRow(state, row), row);
+}
+
+/** Puts a fresh row in place of the same object's row on the open page's next level. */
+function replacePageRow(state: TuiState, row: TuiRow): TuiState {
+  const children = state.object?.children;
+  if (children === undefined || !children.rows.some((old) => sameObject(old.id, row.id))) {
+    return state;
+  }
+  return withChildren(state, (c) => ({
+    ...c,
+    rows: c.rows.map((old) =>
+      sameObject(old.id, row.id)
+        ? { ...row, ...(old.type === undefined ? {} : { type: old.type }) }
+        : old,
+    ),
+  }));
+}
+
+function replaceListRow(state: TuiState, row: TuiRow): TuiState {
   let changed = false;
   let selectedLeft = false;
   const tabs = state.tabs.map((tab, index) => {
