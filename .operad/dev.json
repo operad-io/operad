@@ -48,6 +48,7 @@
     ]
   },
   "integration": {
+    "batch": 3,
     "keyCommands": [
       {
         "run": "bash scripts/verify.sh",
