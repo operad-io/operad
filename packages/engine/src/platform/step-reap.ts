@@ -372,12 +372,13 @@ export class StepTracker {
       const alive = present.has(`${pgid}@${leader.startSec}`);
       if (!alive && leader.goneSec === undefined) leader.goneSec = this.now();
     }
+    const byPid = new Map(rows.map((row) => [row.pid, row]));
     let grew = true;
     while (grew) {
       grew = false;
       for (const row of rows) {
         if (this.seen.has(identity(row)) || row.pid === process.pid) continue;
-        const parent = rows.find((one) => one.pid === row.ppid);
+        const parent = byPid.get(row.ppid);
         const below =
           this.roots.has(row.pid) || (parent !== undefined && this.seen.has(identity(parent)));
         if (below && this.remember(row)) grew = true;
