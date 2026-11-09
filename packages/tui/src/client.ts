@@ -41,6 +41,30 @@ export interface TuiKeyBinding {
   readonly source: "plugin" | "user";
 }
 
+/** One entry of `GET /v1/settings`. */
+export interface TuiSetting {
+  /** `<plugin>.<path>`; a project file adds its name. */
+  readonly name: string;
+  /** `global`, or the name of the repository the setting belongs to. */
+  readonly scope: string;
+  readonly value?: unknown;
+  readonly default?: unknown;
+  readonly description?: string | undefined;
+  readonly type?: string | undefined;
+  readonly enum?: readonly (string | number | boolean)[] | undefined;
+  readonly editable: boolean;
+  readonly confirm: boolean;
+}
+
+/** What `POST /v1/settings` carries. */
+export interface TuiSetInput {
+  readonly name: string;
+  readonly value: unknown;
+  readonly scope?: string | undefined;
+  readonly confirmed?: boolean | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
 /** The body of `GET /v1/types`. */
 export interface TuiTypes {
   readonly types: readonly TuiTypeInfo[];
@@ -341,6 +365,29 @@ export class TuiClient {
           : { confirmed: input.confirmed }),
       },
     })) as ViewActionRun;
+  }
+
+  /** The settings of one scope (`global`, or a repository's name). */
+  async settings(scope?: string, signal?: AbortSignal): Promise<readonly TuiSetting[]> {
+    const body = (await this.request("/v1/settings", {
+      query: { scope },
+      signal,
+    })) as { readonly settings: readonly TuiSetting[] };
+    return body.settings;
+  }
+
+  /** Change one setting; the server validates the value and refuses with its reason. */
+  async setSetting(input: TuiSetInput): Promise<TuiSetting> {
+    return (await this.request("/v1/settings", {
+      method: "POST",
+      signal: input.signal,
+      body: {
+        name: input.name,
+        value: input.value,
+        ...(input.scope === undefined ? {} : { scope: input.scope }),
+        ...(input.confirmed === true ? { confirmed: true } : {}),
+      },
+    })) as TuiSetting;
   }
 
   private async request(path: string, options: RequestOptions = {}): Promise<unknown> {

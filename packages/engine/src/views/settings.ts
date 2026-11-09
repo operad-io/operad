@@ -28,6 +28,9 @@ export interface SettingInfo {
   readonly value?: JsonValue | undefined;
   readonly default?: JsonValue | undefined;
   readonly description?: string | undefined;
+  /** The schema's type and allowed values, so a client can offer a choice list. */
+  readonly type?: string | undefined;
+  readonly enum?: readonly (string | number | boolean)[] | undefined;
   readonly editable: boolean;
   readonly confirm: boolean;
 }
@@ -280,6 +283,8 @@ function infoOf(place: Place, leaf: Leaf, section: unknown): SettingInfo {
     ...(leaf.schema.description === undefined
       ? {}
       : { description: leaf.schema.description }),
+    ...(leaf.schema.type === undefined ? {} : { type: leaf.schema.type }),
+    ...(leaf.schema.enum === undefined ? {} : { enum: leaf.schema.enum }),
     editable: leaf.schema.editable === true,
     confirm: leaf.schema.confirm === true,
   };

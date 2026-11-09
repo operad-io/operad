@@ -44,6 +44,7 @@ import {
   joinMarkdown,
   reduce,
   type TuiActionRequest,
+  type TuiSettingRequest,
   type TuiObjectRequest,
   type TuiFilterRequest,
   type TuiPageRequest,
@@ -61,7 +62,8 @@ import {
   type ThemeHolder,
 } from "./theme.ts";
 import { createTuiView, type TuiView } from "./view/index.ts";
-import type { TuiTypeInfo } from "./client.ts";
+import type { TuiSetInput, TuiSetting, TuiTypeInfo } from "./client.ts";
+import { settingScopes } from "./actions.ts";
 
 /** How `operad tui` finds its server and reports a problem. */
 export interface TuiRunOptions {
@@ -120,6 +122,10 @@ export interface TuiShellClient {
   ): Promise<ViewListPage>;
   /** Optional: a server without `/v1/keys` leaves the bindings empty. */
   keys?(signal?: AbortSignal): Promise<readonly TuiKeyBinding[]>;
+  /** Optional: a server without `/v1/settings` lists none. */
+  settings?(scope?: string, signal?: AbortSignal): Promise<readonly TuiSetting[]>;
+  /** Optional: changes one setting. */
+  setSetting?(input: TuiSetInput): Promise<unknown>;
   /** Optional so an older test client still fits; the actions need it. */
   act?(input: TuiActInput): Promise<unknown>;
   /** Optional so an older test client still fits; the object pane needs it. */
@@ -824,6 +830,49 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     }
   }
 
+  /** Reads the settings of the scopes the palette lists; a scope that cannot be read adds none. */
+  async function loadSettings(): Promise<void> {
+    const list = client.settings;
+    if (list === undefined) return;
+    const scopes = settingScopes(state);
+    const found = await Promise.all(
+      scopes.map((scope) => settle(list.call(client, scope, abort.signal))),
+    );
+    if (abort.signal.aborted || finished) return;
+    dispatch({
+      type: "settings",
+      settings: found.flatMap((result) => (result.ok ? result.value : [])),
+    });
+  }
+
+  /** Sends one setting change; the server's refusal comes back as the footer notice. */
+  async function sendSetting(request: TuiSettingRequest): Promise<void> {
+    const set = client.setSetting;
+    if (set === undefined) {
+      dispatch({ type: "action-error", message: "this client cannot change settings" });
+      return;
+    }
+    try {
+      await set.call(client, {
+        name: request.name,
+        value: request.value,
+        scope: request.scope,
+        ...(request.confirmed === true ? { confirmed: true } : {}),
+        signal: abort.signal,
+      });
+      if (abort.signal.aborted) return;
+      dispatch({ type: "action-done" });
+      await loadSettings();
+    } catch (error) {
+      if (abort.signal.aborted) return;
+      dispatch({
+        type: "action-error",
+        message: messageOf(error),
+        status: error instanceof TuiError ? error.status : undefined,
+      });
+    }
+  }
+
   function requestRefresh(): void {
     if (finished) return;
     guard(refresh());
@@ -849,6 +898,11 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     if (filterRequest !== undefined) state = reduce(state, { type: "filter-launched" });
     const actionRequest = state.actionRequest;
     if (actionRequest !== undefined) state = reduce(state, { type: "action-launched" });
+    const settingRequest = state.settingRequest;
+    const settingsRequested = state.settingsRequest;
+    if (settingRequest !== undefined || settingsRequested) {
+      state = reduce(state, { type: "setting-launched" });
+    }
     const themes = deps.themes;
     if (themes !== undefined) {
       const problem = (error: unknown): void => {
@@ -902,6 +956,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     if (objectRequest !== undefined) guard(loadObject(objectRequest));
     if (sectionRequest !== undefined) guard(loadSection(sectionRequest));
     if (actionRequest !== undefined) guard(sendAction(actionRequest));
+    if (settingRequest !== undefined) guard(sendSetting(settingRequest));
+    if (settingsRequested) guard(loadSettings());
     if (refreshing) requestRefresh();
   }
 
