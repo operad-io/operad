@@ -27,6 +27,9 @@ import {
   nextId,
   parseId,
   planData,
+  shiftCostTotals,
+  taskCostShare,
+  type PlanCostTotals,
   planState,
   PLAN_FINAL_STATES,
   TASK_FINAL_STATES,
@@ -636,7 +639,43 @@ async function writeTask(
   data: TaskData,
   cause: string,
 ): Promise<StoredObject> {
-  return store.put(TASK_TYPE, id, data, cause);
+  return putTaskKeepingPlanCost(store, id, data, cause);
+}
+
+/**
+ * Writes a task and, when its cost share changed, moves its plan's running
+ * cost total by the difference in the same operation. A plan stored before the
+ * total existed gets it computed from its tasks now.
+ */
+export async function putTaskKeepingPlanCost(
+  store: ObjectStore,
+  id: string,
+  data: TaskData,
+  cause: string,
+): Promise<StoredObject> {
+  const before = await store.get(TASK_TYPE, id);
+  const written = await store.put(TASK_TYPE, id, data, cause);
+  const previous = before === undefined ? undefined : taskData(before.data);
+  const a = previous === undefined ? undefined : taskCostShare(previous);
+  const b = taskCostShare(data);
+  if (a?.micros === b?.micros && a?.quality === b?.quality) return written;
+  const plan = await store.get(PLAN_TYPE, storeKey(data.repository, data.plan));
+  if (plan === undefined) return written;
+  const planned = planData(plan.data);
+  const totals =
+    planned.costTotals === undefined
+      ? await totalsOfTasks(store, plan.id)
+      : shiftCostTotals(planned.costTotals, previous, data);
+  await store.put(PLAN_TYPE, plan.id, { ...planned, costTotals: totals }, "dev:plan-cost");
+  return written;
+}
+
+async function totalsOfTasks(store: ObjectStore, planKey: string): Promise<PlanCostTotals> {
+  let totals = shiftCostTotals(undefined, undefined, undefined);
+  for (const object of await tasksOfPlan(store, planKey)) {
+    totals = shiftCostTotals(totals, undefined, taskData(object.data));
+  }
+  return totals;
 }
 
 /** Recomputes the counts a plan row reads, writing the plan only on a change. */
@@ -657,7 +696,9 @@ export async function refreshPlanCounts(
     const phase = taskData(object.data).phase;
     return phase === "running" || phase === "review";
   }).length;
+  const costTotals = data.costTotals ?? (await totalsOfTasks(store, plan.id));
   if (
+    data.costTotals !== undefined &&
     data.taskCount === taskCount &&
     data.mergedCount === mergedCount &&
     data.cancelledCount === cancelledCount &&
@@ -671,6 +712,7 @@ export async function refreshPlanCounts(
     mergedCount,
     cancelledCount,
     activeCount,
+    costTotals,
     // A new task reopens a plan the scheduler already called finished.
     ...(taskCount > 0 && mergedCount + cancelledCount === taskCount
       ? {}

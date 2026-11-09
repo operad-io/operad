@@ -350,3 +350,13 @@ the row fields.
 | T-0146-M7 | packages/engine/src/platform/step-reap.ts | the first of two steps with one marker swept when it ended | `what a step leaves behind > of two steps with one marker at once, only the last to end sweeps` |
 | T-0146-M8 | packages/engine/src/platform/step-reap.ts | the sweep no longer climbed from a marked process to the shell that started it | `what a step leaves behind > a system shell that starts the marked process again is stopped with it` |
 | T-0146-M9 | packages/engine/src/platform/process-group.ts | `runLine` no longer told the platform its sentinel, so nothing below it was followed | `what a step leaves behind > a system shell loop left in the background is stopped, though the system hides its environment` |
+| T-0080-M1 | packages/engine/src/views/settings.ts | `setSetting` skipped the schema validation | `settings > an invalid value is refused with the schema's reason and nothing is written` |
+| T-0080-M2 | packages/engine/src/views/settings.ts | a confirm setting was written without `confirmed` | `settings > a confirm setting needs confirmed` |
+| T-0080-M3 | packages/engine/src/views/settings.ts | a setting not marked editable could be changed | `settings > a setting that is not editable, or unknown, is refused` |
+| T-0080-M4 | packages/engine/src/views/settings.ts | `writeFileAtomic` wrote part of the text into the target before the rename | `settings > a writer killed before the rename leaves the old file whole` |
+| T-0080-M5 | packages/engine/src/views/settings.ts | the write replaced the file with only the changed key | `settings > the rest of the file keeps its keys, order and indent` |
+| T-0080-M6 | packages/engine/src/views/settings.ts | a project setting was written to `config.json` instead of the repository's `.operad/` file | `settings > project scope names the repository and writes its own file` |
+| T-0080-M7 | packages/engine/src/http/server.ts | `POST /v1/settings` treated every request as confirmed | `http server > GET and POST /v1/settings list, change and refuse settings` |
+| T-0080-M8 | packages/engine/src/plugin/action-schema.ts | the `editable` and `confirm` marks were not checked to be booleans | `settings declarations > editable and confirm must be booleans` |
+| T-0123-M1 | packages/engine/src/views/presentation.ts | the row no longer carried the plugin's `after` | `hierarchy over HTTP > /v1/types names the plugin and /v1/objects takes root and parent` |
+| T-0123-M2 | packages/engine/src/views/presentation.ts | `after` entries were not checked, so a non-string or empty id passed | `hierarchy over HTTP > /v1/types names the plugin and /v1/objects takes root and parent` |

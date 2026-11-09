@@ -21,6 +21,7 @@ import {
   taskViews,
   tokenCount,
 } from "../src/views.ts";
+import { planNote } from "../src/model.ts";
 import { commitIn, gitOrThrow, makeRemote } from "./git-support.ts";
 import { bareId, planData, taskData } from "../src/model.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "./support.ts";
@@ -72,7 +73,7 @@ describe("dev views", () => {
       id: "P-0001-storage",
       title: "Storage",
       state: "draft",
-      note: "0/1  auto: off  P3  concurrency: 1",
+      note: "0/1 · off · P3 // 1",
       scope: "repository",
       final: false,
       mark: "proposed",
@@ -80,7 +81,7 @@ describe("dev views", () => {
     });
     await setTaskPhase(store, task.id, "merged");
     expect(planViews.row(await getPlan(store, plan.id)).note).toBe(
-      "1/1  auto: off  P3  concurrency: 1",
+      "1/1 · off · P3 // 1",
     );
     // A confirmed plan whose tasks are all merged is finished, which is final;
     // a cancelled plan is final too.
@@ -103,6 +104,19 @@ describe("dev views", () => {
     expect(planViews.row(await getPlan(store, plan.id)).final).toBe(true);
   });
 
+  test("a task row carries the tasks it waits for, and none when it waits for none", async () => {
+    const { store, plan, task } = await setup();
+    expect("after" in taskViews.row(await getTask(store, task.id))).toBe(false);
+    const second = await addTask(store, {
+      plan: plan.id,
+      slug: "second",
+      title: "Second",
+      brief: "# Brief\n\nx",
+      after: [bareId(task.id)],
+    });
+    expect(taskViews.row(await getTask(store, second.id)).after).toEqual([bareId(task.id)]);
+  });
+
   test("a task row reads the phase and the cost", async () => {
     const { store, task } = await setup();
     const stored = await getTask(store, task.id);
@@ -110,6 +124,7 @@ describe("dev views", () => {
       id: "T-0001-jsonl",
       title: "JSONL",
       state: "proposed",
+      note: "$0.00",
       scope: "repository",
       final: false,
       mark: "proposed",
@@ -139,7 +154,7 @@ describe("dev views", () => {
         "test:cost",
       );
       expect(taskViews.row(await getTask(store, task.id))).toMatchObject({
-        note: `$0.31 (${quality})`,
+        note: quality === "estimated" ? "~$0.31" : "≥$0.31",
       });
     }
   });
@@ -483,6 +498,27 @@ describe("dev views", () => {
     expect(rows[4]).toBe("| total | 2m | $1.25 | |");
   });
 
+  test("the total row marks its weakest quality with a symbol, never a word", async () => {
+    const root = await tempRoot();
+    const repositoryPath = await makeGitRepository(root);
+    let clock = 0;
+    const store = new FilePluginStore({ root: join(root, "store"), clock: () => clock });
+    const repository = await addRepository(store, { path: repositoryPath });
+    const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
+    const stored = taskData((await getTask(store, task.id)).data);
+    const put = async (at: number, cause: string, attempt: Record<string, unknown>) => {
+      clock = at;
+      await store.put("task", task.id, { ...stored, phase: "running", attempt }, cause);
+    };
+    const total = async () =>
+      (await metrics({ store } as never, await getTask(store, task.id), 2_000_000)).split("\n").find((l) => l.startsWith("| total"));
+    await put(1_000_000, "dev:worktree", { number: 1, cost: 0.5, costQuality: "estimated" });
+    expect(await total()).toMatch(/\| ~\$0\.50 \| \|$/);
+    await put(1_000_001, "dev:worktree", { number: 1, cost: 0.5, costQuality: "incomplete" });
+    expect(await total()).toMatch(/\| ≥\$0\.50 \| \|$/);
+  });
+
   test("how an attempt ended: merged, verify failed, conflict, cancelled", async () => {
     const { store, task } = await setup();
     const stored = taskData((await getTask(store, task.id)).data);
@@ -514,7 +550,7 @@ describe("dev views", () => {
     const stored = taskData((await getTask(store, task.id)).data);
     const row = async () => taskViews.row(await getTask(store, task.id));
     await store.put("task", task.id, { ...stored, attempt: { number: 1 } }, "test:a");
-    expect((await row()).note).toBeUndefined();
+    expect((await row()).note).toBe("$0.00");
     await store.put("task", task.id, { ...stored, attempt: { number: 1, worker: null } }, "test:a");
     expect((await row()).note ?? "").not.toContain("null");
     await store.put(
@@ -523,17 +559,17 @@ describe("dev views", () => {
       { ...stored, cost: 0.31, attempt: { number: 1, worker: "claude", fallbackFrom: null } },
       "test:a",
     );
-    expect((await row()).note).toBe("$0.31  claude");
+    expect((await row()).note).toBe("$0.31 · claude");
     await store.put(
       "task",
       task.id,
       { ...stored, attempt: { number: 2, worker: "pi", fallbackFrom: "claude" } },
       "test:a",
     );
-    expect((await row()).note).toBe("pi");
+    expect((await row()).note).toBe("$0.00 · pi");
     const long = "a-very-long-worker-name-indeed";
     await store.put("task", task.id, { ...stored, attempt: { number: 2, worker: long } }, "test:a");
-    const note = (await row()).note ?? "";
+    const note = ((await row()).note ?? "").replace(/^\$0\.00 · /, "");
     expect(note.length).toBeLessThanOrEqual(ROW_WORKER_CHARS);
     expect(note.endsWith("…")).toBe(true);
   });
@@ -597,5 +633,80 @@ describe("dev views", () => {
       "| claude | 2 | $0.30 | <1s | 1/2 |",
       "| pi | 1 | $0.05 | <1s | 0/1 |",
     ]);
+  });
+
+  test("a task note is cost, worker, area, then a refused push", async () => {
+    const { store, task } = await setup();
+    const stored = taskData((await getTask(store, task.id)).data);
+    const row = async () => taskViews.row(await getTask(store, task.id)).note;
+    await store.put("task", task.id, { ...stored, area: "app-core" }, "test:a");
+    expect(await row()).toBe("$0.00 · area: app-core");
+    await store.put(
+      "task",
+      task.id,
+      { ...stored, phase: "ready", area: "app-core", areaHeldBy: "T-0023-action-numbers" },
+      "test:a",
+    );
+    expect(await row()).toBe("$0.00 · waiting for area app-core (T-0023-action-numbers)");
+    await store.put(
+      "task",
+      task.id,
+      {
+        ...stored,
+        phase: "waiting",
+        cost: 1.5,
+        costQuality: "exact",
+        area: "app-core",
+        attempt: { number: 1, worker: "harness-claude", integration: { result: "failed", message: "push refused" } },
+      },
+      "test:a",
+    );
+    expect(await row()).toBe("$1.50 · harness-claude · area: app-core · push refused");
+  });
+
+  test("a plan note shows the cost of its tasks at the weakest quality", async () => {
+    const { store, plan, task } = await setup();
+    const second = await addTask(store, { plan: plan.id, slug: "two", title: "Two", brief: "# Brief\n\nx" });
+    const note = async () => planViews.row(await getPlan(store, plan.id)).note;
+    expect(await note()).toBe("0/2 · off · P3 // 1");
+    const { putTaskKeepingPlanCost } = await import("../src/service.ts");
+    const put = async (id: string, cost: number, q: "exact" | "estimated" | "incomplete" | undefined) => {
+      const current = taskData((await getTask(store, id)).data);
+      const { costQuality: _drop, ...rest } = current;
+      await putTaskKeepingPlanCost(store, id, { ...rest, cost, ...(q === undefined ? {} : { costQuality: q }) }, "test:cost");
+    };
+    await put(task.id, 1.1, "exact");
+    expect(await note()).toBe("0/2 · $1.10 · off · P3 // 1");
+    await put(second.id, 0.2, undefined);
+    expect(await note()).toBe("0/2 · ~$1.30 · off · P3 // 1");
+    await put(second.id, 0.1, "incomplete");
+    expect(await note()).toBe("0/2 · ≥$1.20 · off · P3 // 1");
+    // A rework round raises the first task's cost: the total moves by the difference.
+    await put(task.id, 1.6, "exact");
+    expect(await note()).toBe("0/2 · ≥$1.70 · off · P3 // 1");
+    await put(second.id, 0.1, "exact");
+    expect(await note()).toBe("0/2 · $1.70 · off · P3 // 1");
+  });
+
+  test("a plan stored without a total gets one when its tasks are refreshed", async () => {
+    const { store, plan, task } = await setup();
+    const stored = taskData((await getTask(store, task.id)).data);
+    await store.put("task", task.id, { ...stored, cost: 2, costQuality: "exact" }, "test:raw");
+    const { costTotals: _gone, ...old } = planData((await getPlan(store, plan.id)).data);
+    await store.put("plan", plan.id, old, "test:old");
+    expect(planViews.row(await getPlan(store, plan.id)).note).toBe("0/1 · off · P3 // 1");
+    const { refreshPlanCounts } = await import("../src/service.ts");
+    await refreshPlanCounts(store, await getPlan(store, plan.id));
+    expect(planViews.row(await getPlan(store, plan.id)).note).toBe("0/1 · $2.00 · off · P3 // 1");
+  });
+
+  test("the plan note by auto level, and the total leaves cancelled tasks out", () => {
+    const base = planData((({
+      repository: "r", title: "t", request: "", status: "confirmed", auto: "off", priority: "P2",
+      concurrency: 2, taskCount: 12, mergedCount: 1, cancelledCount: 5,
+    }) as unknown) as Record<string, unknown>);
+    expect(planNote(base)).toBe("1/7 · off · P2 // 2");
+    expect(planNote({ ...base, auto: "run" })).toBe("1/7 · run · P2 // 2");
+    expect(planNote({ ...base, auto: "merge" })).toBe("1/7 · merge · P2 // 2");
   });
 });

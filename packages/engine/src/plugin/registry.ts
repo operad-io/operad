@@ -18,6 +18,7 @@ import {
   OPERAD_PLUGIN_VERSION,
   PLUGIN_API_VERSION,
   type ActionArgsSchema,
+  type ProjectSettingsDeclaration,
   type ActionContext,
   type ActionRun,
   type ActionRunOptions,
@@ -145,6 +146,7 @@ interface NormalizedPlugin {
     | ((ctx: PluginBaseContext) => MaybePromise<string | void>)
     | undefined;
   readonly settingsSchema: ActionArgsSchema | undefined;
+  readonly projectSettings: ProjectSettingsDeclaration | undefined;
   readonly enforces: readonly string[];
   readonly requires: PluginRequires | undefined;
 }
@@ -283,6 +285,53 @@ function normalizeViews(
     };
   }
   return views;
+}
+
+function normalizeProjectSettings(
+  value: unknown,
+  at: string,
+): ProjectSettingsDeclaration | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new PluginError(`${at}: must be an object`);
+  if (typeof value.repositories !== "function") {
+    throw new PluginError(`${at}: repositories: must be a function of ({ store })`);
+  }
+  if (!Array.isArray(value.files)) {
+    throw new PluginError(`${at}: files: must be an array`);
+  }
+  const seen = new Set<string>();
+  const files = value.files.map((item: unknown, index: number) => {
+    const where = `${at}: files[${index}]`;
+    if (!isRecord(item)) throw new PluginError(`${where}: must be an object`);
+    const { name, path } = item;
+    if (typeof name !== "string" || !/^[a-z][a-z0-9-]*$/.test(name)) {
+      throw new PluginError(`${where}: name: must be lowercase letters, digits and -`);
+    }
+    if (seen.has(name)) throw new PluginError(`${where}: name "${name}" is declared twice`);
+    seen.add(name);
+    if (
+      typeof path !== "string" ||
+      !path.endsWith(".json") ||
+      path.startsWith("/") ||
+      path.split("/").some((part) => part === ".." || part === "" || part === ".")
+    ) {
+      throw new PluginError(
+        `${where}: path: must be a relative .json path under .operad/ without ".."`,
+      );
+    }
+    let schema: ActionArgsSchema | undefined;
+    try {
+      schema = normalizeActionArgs(item.schema, `${where}: schema`);
+    } catch (error) {
+      throw new PluginError(messageOf(error), { cause: error });
+    }
+    if (schema === undefined) throw new PluginError(`${where}: schema: is required`);
+    return { name, path, schema };
+  });
+  return {
+    repositories: value.repositories as ProjectSettingsDeclaration["repositories"],
+    files,
+  };
 }
 
 function normalizeKeys(value: unknown, at: string): KeyBindings {
@@ -748,6 +797,11 @@ function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     throw new PluginError(messageOf(error), { cause: error });
   }
 
+  const projectSettings = normalizeProjectSettings(
+    raw.projectSettings,
+    `${at}: projectSettings`,
+  );
+
   return {
     name,
     kind,
@@ -769,6 +823,7 @@ function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     start,
     check,
     settingsSchema,
+    projectSettings,
     enforces: normalizeEnforces(raw.enforces, `${at}: enforces`) ?? [],
     requires: normalizeRequires(raw.requires, at),
   };
@@ -1281,6 +1336,19 @@ export class PluginRegistry {
   /** The plugins left out at load, with the line that says why. */
   refusals(): readonly PluginRefusal[] {
     return this.refusalList;
+  }
+
+  /** What each loaded plugin declares for settings, in load order. */
+  settingsDeclarations(): readonly {
+    readonly plugin: string;
+    readonly schema: ActionArgsSchema | undefined;
+    readonly project: ProjectSettingsDeclaration | undefined;
+  }[] {
+    return this.plugins.map((plugin) => ({
+      plugin: plugin.name,
+      schema: plugin.settingsSchema,
+      project: plugin.projectSettings,
+    }));
   }
 
   /** The validated settings of one loaded plugin. */

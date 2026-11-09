@@ -6,6 +6,7 @@ const views = {
     title: String(object.data.title ?? object.id),
     state: String(object.data.state ?? "open"),
     ...(typeof object.data.parent === "string" ? { parent: object.data.parent } : {}),
+    ...(object.data.after === undefined ? {} : { after: object.data.after as readonly string[] }),
   }),
   sections: () => [],
   load: () => ({ markdown: "" }),

@@ -345,11 +345,11 @@ that returns findings at or above `reviewer.fixLevel` does.
 Findings that did not fail a review are not lost. When a task merges and any
 review round of it had such a finding, dev marks the task. When a plan has no
 ready, running, review or waiting task, dev collects every such finding of
-every round of the plan's marked tasks (oldest first, one line per
-`file:line` and summary) and proposes one task, `<plan slug>-followups` (then
+every round of the plan's marked tasks (oldest first; within one task, a
+finding with the same `file:line` and text, whitespace collapsed, is kept once) and proposes one task, `<plan slug>-followups` (then
 `-2`, `-3` when the slug is taken), titled `Follow-ups from <plan id>'s
 reviews`, that follows the collected tasks. Its brief lists each finding as
-`[level] path:line summary (from T-xxxx round n)`, grouped by level, and tells
+`[level] path:line summary (round n)` under a `From T-xxxx` heading per task, and tells
 the worker to fix what still applies and say which findings no longer apply.
 A task is collected once, even when its follow-up is cancelled; a follow-up's
 own findings are never collected; tasks merged before this existed carry no

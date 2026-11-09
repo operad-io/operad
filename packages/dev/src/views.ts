@@ -34,9 +34,9 @@ import { DEV_SETTINGS_FILE, readDevSettings, settingsProblem } from "./settings.
 
 function costNote(cost: unknown, quality?: unknown): string | undefined {
   if (typeof cost === "number" && Number.isFinite(cost)) {
-    // An estimated or incomplete cost says so; an exact one is just the amount.
-    const label = quality === "estimated" || quality === "incomplete" ? ` (${quality})` : "";
-    return `$${cost.toFixed(2)}${label}`;
+    // `~` marks an estimated cost, `≥` an incomplete one; an exact one is bare.
+    const symbol = quality === "estimated" ? "~" : quality === "incomplete" ? "≥" : "";
+    return `${symbol}$${cost.toFixed(2)}`;
   }
   if (typeof cost === "string" && cost.trim().length > 0) return cost.trim();
   return undefined;
@@ -112,7 +112,7 @@ export const repoViews: ObjectViews = {
       id: repository.name,
       title: repository.name,
       state,
-      note: `open plans: ${repository.openPlans ?? 0}  open tasks: ${repository.openTasks ?? 0}`,
+      note: `plans: ${repository.openPlans ?? 0} · tasks: ${repository.openTasks ?? 0}`,
       final: repository.removed,
     };
   },
@@ -158,7 +158,7 @@ export const planViews: ObjectViews = {
       id: bareId(object.id),
       title: plan.title,
       state: planState(plan),
-      note: `${planNote(plan)}  auto: ${plan.auto}  ${plan.priority}  concurrency: ${plan.concurrency}`,
+      note: planNote(plan),
       scope: plan.repository,
       final: PLAN_FINAL_STATES.includes(planState(plan)),
       mark: planMark(plan),
@@ -207,24 +207,26 @@ export const taskViews: ObjectViews = {
         : task.area === undefined
           ? undefined
           : `area: ${task.area}`;
-    const note =
-      [
-        waitNote(task) ?? costNote(task.cost, task.costQuality),
-        workerNote(task),
-        areaNote,
-      ]
-        .filter((part): part is string => part !== undefined)
-        .join("  ") || undefined;
+    // The cost is always first, so the app's split at the first ` · ` keeps it.
+    const note = [
+      costNote(task.cost, task.costQuality) ?? "$0.00",
+      workerNote(task),
+      areaNote,
+      waitNote(task),
+    ]
+      .filter((part): part is string => part !== undefined)
+      .join(" · ");
     return {
       id: bareId(object.id),
       title: task.title,
       state: task.phase,
-      ...(note === undefined ? {} : { note }),
+      note,
       scope: task.repository,
       final: TASK_FINAL_STATES.includes(task.phase),
       mark: taskMark(task),
       badge: taskBadge(task),
       parent: `plan:${storeKey(task.repository, task.plan)}`,
+      ...(task.after.length === 0 ? {} : { after: [...task.after] }),
     };
   },
 
@@ -862,15 +864,15 @@ export async function metrics(
     if (typeof last?.cost === "number" && Number.isFinite(last.cost)) {
       totalCost += last.cost;
       costed = true;
-      if (last.costQuality === "incomplete") quality = " (incomplete)";
-      else if (last.costQuality === "estimated" && quality === "") quality = " (estimated)";
+      if (last.costQuality === "incomplete") quality = "incomplete";
+      else if (last.costQuality === "estimated" && quality === "") quality = "estimated";
     }
     lines.push(
       `| ${entry.number} | ${wallTime(ms)}${step === undefined ? "" : " …"} | ${costNote(last?.cost, last?.costQuality) ?? "–"} | ${attemptResult(entry, entry.number === newest, phase, step)} |`,
     );
   }
   lines.push(
-    `| total | ${wallTime(totalMs)} | ${costed ? `$${totalCost.toFixed(2)}${quality}` : "–"} | |`,
+    `| total | ${wallTime(totalMs)} | ${costed ? costNote(totalCost, quality) : "–"} | |`,
   );
   const perAttempt = [...entries].reverse().map((entry) => {
     const own = liveOf(entry);

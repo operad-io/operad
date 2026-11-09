@@ -94,6 +94,11 @@ export interface ObjectRow {
    * and never invents one.
    */
   readonly parent?: string | undefined;
+  /**
+   * The siblings (same `parent`) this object waits for, as row ids. The kernel
+   * passes it through untouched; clients draw it.
+   */
+  readonly after?: readonly string[] | undefined;
 }
 
 /** One section a detail page offers. `live` means its content still grows. */
@@ -655,6 +660,10 @@ export interface ActionArgSchema {
   readonly description?: string | undefined;
   /** A note is prompted for in a terminal and accepted as `--note`. */
   readonly role?: "note" | undefined;
+  /** In a settings schema: a client may change this setting. */
+  readonly editable?: boolean | undefined;
+  /** In a settings schema: changing it needs the person's confirmation. */
+  readonly confirm?: boolean | undefined;
 }
 
 /** The arguments of an action: a JSON Schema object. */
@@ -865,6 +874,8 @@ export interface PluginShape {
     | undefined;
   /** The JSON Schema of this plugin's `config.json` settings section. */
   readonly settings?: ActionArgsSchema | undefined;
+  /** Settings files this plugin keeps under a registered repository's `.operad/`. */
+  readonly projectSettings?: ProjectSettingsDeclaration | undefined;
   /** Access profile fields this plugin's steps apply. */
   readonly enforces?: readonly string[] | undefined;
   /** What this plugin needs loaded before it can be used. */
@@ -873,6 +884,30 @@ export interface PluginShape {
   readonly start?: ((ctx: SourceContext) => MaybePromise<SourceHandle> | SourceHandle) | undefined;
   /** Runs when `operad init` checks the plugin; a string is the check's note. */
   readonly check?: ((ctx: PluginBaseContext) => MaybePromise<string | void>) | undefined;
+}
+
+/** One settings file under a repository's `.operad/`, with its schema. */
+export interface ProjectSettingsFile {
+  /** The file's name in a setting's qualified name: `<plugin>.<name>.<path>`. */
+  readonly name: string;
+  /** Where the file is, relative to the repository's `.operad/`. */
+  readonly path: string;
+  readonly schema: ActionArgsSchema;
+}
+
+/** A repository a plugin has registered. */
+export interface SettingsRepository {
+  readonly name: string;
+  readonly path: string;
+}
+
+/** The project settings a plugin declares. */
+export interface ProjectSettingsDeclaration {
+  /** The registered repositories whose `.operad/` holds the files. */
+  readonly repositories: (ctx: {
+    readonly store: ObjectStore;
+  }) => MaybePromise<readonly SettingsRepository[]>;
+  readonly files: readonly ProjectSettingsFile[];
 }
 
 /** A plugin definition ready for the registry. */

@@ -358,6 +358,10 @@ function errorOf(response: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe("operad mcp", () => {
+  test("offers no tool to read or change settings: owner decisions are not offered here", () => {
+    expect(TOOLS.map((tool) => tool.name).filter((name) => /set/i.test(name))).toEqual([]);
+  });
+
   test("initializes, lists the table and reads every tool on fixture objects", async () => {
     const { home } = await makeHome({
       mcp: {

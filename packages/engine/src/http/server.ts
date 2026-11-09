@@ -516,6 +516,39 @@ function createHandler(
       return json(await listRunning(options.log, options.clock, options.views));
     }
 
+    if (path === "/v1/settings") {
+      if (method === "GET") {
+        const scope = url.searchParams.get("scope") ?? undefined;
+        return json({ settings: await options.views.settings(scope) });
+      }
+      if (method !== "POST") {
+        return errorResponse(405, "method", "this endpoint takes GET or POST");
+      }
+      const body = await readBody(request);
+      if (!isRecord(body)) {
+        return errorResponse(400, "args", "the body must be an object");
+      }
+      const { name, scope, confirmed } = body;
+      if (typeof name !== "string" || name.length === 0) {
+        return errorResponse(400, "args", "the body needs a name");
+      }
+      if (!("value" in body)) {
+        return errorResponse(400, "args", "the body needs a value");
+      }
+      if (scope !== undefined && typeof scope !== "string") {
+        return errorResponse(400, "args", "scope must be a string");
+      }
+      if (confirmed !== undefined && typeof confirmed !== "boolean") {
+        return errorResponse(400, "args", "confirmed must be a boolean");
+      }
+      return json(
+        await options.views.set(name, body.value, {
+          ...(scope === undefined ? {} : { scope }),
+          confirmed: confirmed === true,
+        }),
+      );
+    }
+
     if (method === "POST" && path === "/v1/act") {
       const body = await readBody(request);
       if (!isRecord(body)) {

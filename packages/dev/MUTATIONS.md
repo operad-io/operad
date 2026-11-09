@@ -344,7 +344,7 @@ the row fields.
 | T-0097-M8 | packages/dev/src/retry.ts | a stopped run was retried at once although the settings still could not be read | `settings that cannot be read > a stopped run whose settings still cannot be read waits for them instead of spending its retry` |
 | T-0097-M9 | packages/dev/flows/dev.flow.ts | the worktree retry held onto itself instead of a wait for the settings | `settings that cannot be read, in the worktree step > a recovered worktree step waits for the settings, then runs again` |
 | T-0096-M7 | packages/dev/src/index.ts | `work` did not declare `pool/agent` in `calls` | `dev/work > done: new commits and a clean tree are pushed (cost from the old fields of an old fact)` (the undeclared call fails in tests) |
-| T-0088-M1 | packages/dev/src/followups.ts | a finding seen in an earlier round was listed again | `review follow-ups > collects the findings of every round and task, deduplicated, grouped by level` |
+| T-0088-M1 | packages/dev/src/followups.ts | a finding seen in an earlier round was listed again | `review follow-ups > collects the findings of every round and task, deduplicated, grouped by task, duplicates kept once within a task` |
 | T-0088-M2 | packages/dev/src/followups.ts | a crash between the proposal and the marks left the tasks collectable again | `review follow-ups > a crash between the proposal and the marks proposes exactly one` |
 | T-0088-M3 | packages/dev/src/followups.ts | a follow-up task's own findings were marked for collection | `review follow-ups > a follow-up is not collected` |
 | T-0088-M4 | packages/dev/src/followups.ts | a follow-up was proposed while a task of the plan was open | `review follow-ups > nothing is proposed while a task is open` |
@@ -391,6 +391,13 @@ the row fields.
 | T-0110-M1 | packages/dev/src/service.ts | `gitPrinting` stopped rerunning a git query that exited 0 with no output | `git that succeeds without printing > repo add runs a query again when git exits 0 and prints nothing` |
 | T-0110-M2 | packages/dev/src/service.ts | `addRepository` dropped git's stderr from the "not a git work tree" refusal | `repo add reports git's stderr > a failing rev-parse puts its stderr in the refusal` |
 | T-0145-M1 | packages/dev/src/gate.ts | left the gate commands out of the review prompt's checks section | `prepare > the review prompt names the gate commands and says not to run them again` |
+| T-0124-M1 | packages/dev/src/views.ts | `costNote` swapped the `~` and `≥` symbols | `dev views > a task row reads the phase and the cost` |
+| T-0124-M2 | packages/dev/src/model.ts | a task's cost change added its full new amount to the plan total instead of the difference | `dev views > a plan note shows the cost of its tasks at the weakest quality` |
+| T-0124-M3 | packages/dev/src/model.ts | the plan cost took the strongest quality of its tasks, not the weakest | `dev views > a plan note shows the cost of its tasks at the weakest quality` |
+| T-0124-M4 | packages/dev/src/model.ts | the plan note's total counted cancelled tasks | `dev views > the plan note by auto level, and the total leaves cancelled tasks out` |
+| T-0124-M5 | packages/dev/src/views.ts | a task with no cost had no `$0.00` first part | `dev views > a task note is cost, worker, area, then a refused push` |
+| T-0124-M6 | packages/dev/src/views.ts | a refused push's message came before the area instead of last | `dev views > a task note is cost, worker, area, then a refused push` |
+| T-0124-M7 | packages/dev/src/service.ts | a plan stored without a cost total was never given one on refresh | `dev views > a plan stored without a total gets one when its tasks are refreshed` |
 
 ## T-0144 — rework 1: a claimed task that leaves
 
@@ -414,3 +421,8 @@ the row fields.
 | T-0119-M2 | packages/dev/src/gate.ts | the harness call kept the reviewer's `timeoutSecs` instead of the round's | `dev/review rework rounds > settings by round > the first review reads the first block; a rework round and a same-commit reverify read the default block` |
 | T-0090-M2 | packages/dev/src/views.ts | a file's page entry pointed at the previous file's cursor | `dev views > the diff section is the stat and the diff, and pages by file when long` |
 | T-0119-M3 | packages/dev/src/rework.ts | `firstArgs` applied only to a round of kind first, so the first review of a later attempt got `args` | `review settings by round > firstArgs still belongs to the first review of every attempt, rework round included` |
+| T-0120-M1 | packages/dev/src/followups.ts | a finding was dropped when another task had listed it | `review follow-ups > collects the findings of every round and task, deduplicated, grouped by task, duplicates kept once within a task` |
+| T-0120-M2 | packages/dev/src/followups.ts | two findings that differ only in whitespace were both kept | `review follow-ups > collects the findings of every round and task, deduplicated, grouped by task, duplicates kept once within a task` |
+| T-0124-M8 | packages/dev/src/views.ts | the metrics total row dropped the quality symbol of the summed attempts | `dev views > the total row marks its weakest quality with a symbol, never a word` |
+| T-0120-M3 | packages/dev/src/followups.ts | a leading tag that repeats the level was kept, so the finding was listed twice | `review follow-ups > a leading tag that repeats the level does not make a finding different, and prints once` |
+| T-0123-M1 | packages/dev/src/views.ts | a task row dropped its `after` | `dev views > a task row carries the tasks it waits for, and none when it waits for none` |
