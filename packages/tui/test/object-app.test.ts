@@ -159,14 +159,21 @@ describe("the TUI object app", () => {
         if (!id.includes(":")) {
           return Promise.reject(new Error(`"${id}" is ambiguous: use item:${id}, legacy:${id}`));
         }
-        return super.object(id);
+        return super.object(id).then((object) => ({ ...object, id: id.replace(/^item:/, "") }));
+      }
+      override section(id: string, section: string): Promise<ViewSectionContent> {
+        if (!id.includes(":")) {
+          return Promise.reject(new Error(`"${id}" is ambiguous: use item:${id}, legacy:${id}`));
+        }
+        return super.section(id, section);
       }
     }
     const client = new Strict();
+    const events = new Events();
     const view = new View();
     const shell = startShell({
       client,
-      events: () => new Events(),
+      events: () => events,
       view,
       width: 80,
       height: 20,
@@ -181,6 +188,13 @@ describe("the TUI object app", () => {
       shell.key({ name: "enter" });
       await view.until((state) => state.object?.row.title === "One");
       expect(client.objectCalls).toEqual(["item:one"]);
+      // The answer carries a bare id; the sections and the refresh still name the type.
+      await view.until((state) => state.object?.sections[0]?.markdown === "info one");
+      expect(view.last?.object?.id).toBe("one");
+      events.push({ kind: "change", id: "item:one" });
+      await view.until(() => client.objectCalls.length >= 2);
+      expect(client.objectCalls.every((id) => id === "item:one")).toBe(true);
+      expect(client.sectionCalls.every((call) => call.id === "item:one")).toBe(true);
       expect(view.last?.object?.error).toBeUndefined();
     } finally {
       shell.stop();

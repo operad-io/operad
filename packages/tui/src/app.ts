@@ -344,13 +344,23 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     }
   }
 
+  /**
+   * The id a request sends: the open object's answer carries a bare id, and a
+   * bare id can be ambiguous across types, so the type goes in front of it.
+   */
+  function wire(id: string): string {
+    const open = state.object;
+    if (open === undefined || open.id !== id || id.startsWith(`${open.type}:`)) return id;
+    return `${open.type}:${id}`;
+  }
+
   async function loadSection(request: TuiSectionRequest): Promise<void> {
     const load = client.section;
     if (load === undefined) return;
     const mine = new AbortController();
     objectRequests.add(mine);
     try {
-      const content = await load.call(client, request.objectId, request.sectionId, {
+      const content = await load.call(client, wire(request.objectId), request.sectionId, {
         ...(request.cursor === undefined ? {} : { cursor: request.cursor }),
         ...(request.full ? { full: true } : {}),
         signal: mine.signal,
@@ -401,7 +411,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     let cursor: string | undefined;
     let read = 0;
     do {
-      const content = await load.call(client, id, sectionId, {
+      const content = await load.call(client, wire(id), sectionId, {
         ...(cursor === undefined ? {} : { cursor }),
         ...(full ? { full: true } : {}),
         signal,
@@ -684,7 +694,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     signal.addEventListener("abort", stop, { once: true });
     objectRequests.add(scoped);
     try {
-      const result = await settle(client.object(id, scoped.signal));
+      const result = await settle(client.object(wire(id), scoped.signal));
       if (!scoped.signal.aborted && !finished) {
         if (result.ok) {
           dispatch({ type: "object", object: result.value, version });
@@ -766,7 +776,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     try {
       await act.call(client, {
         action: request.action,
-        id: request.id,
+        id: wire(request.id),
         ...(request.note === undefined ? {} : { note: request.note }),
         ...(request.args === undefined ? {} : { args: request.args }),
         ...(request.confirmed === true ? { confirmed: true } : {}),
