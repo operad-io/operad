@@ -6,6 +6,7 @@ import { readLockPid } from "../../engine/src/index.ts";
 import { waitForChange } from "../../engine/src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 import { waitForFile } from "../../shell/test/support.ts";
+import { SUPERVISED_ENV } from "../src/code-reload.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -153,10 +154,14 @@ async function setup(): Promise<Setup> {
 }
 
 function spawnOperad(setupValue: Setup, args: readonly string[]): Bun.Subprocess<"ignore", "pipe", "pipe"> {
+  // A test run started under a supervised serve inherits its marker; with it
+  // the serve under test would exit with the reload code instead of restarting.
+  const env: Record<string, string> = { ...(process.env as Record<string, string>), ...setupValue.env };
+  delete env[SUPERVISED_ENV];
   return Bun.spawn({
     cmd: [process.execPath, CLI_ENTRY, ...args],
     cwd: setupValue.home,
-    env: { ...(process.env as Record<string, string>), ...setupValue.env },
+    env,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
