@@ -112,6 +112,14 @@ export interface SectionReadOptions {
 export interface SectionContent {
   readonly markdown: string;
   readonly next?: string | undefined;
+  /** A table of contents: one entry per page; the first page's cursor is absent. */
+  readonly pages?: readonly SectionPage[] | undefined;
+}
+
+/** One page of a long section, as the section API takes it. */
+export interface SectionPage {
+  readonly label: string;
+  readonly cursor?: string | undefined;
 }
 
 /** The context a `load` call receives. */

@@ -116,6 +116,14 @@ export interface ViewObject {
 export interface ViewSectionContent {
   readonly markdown: string;
   readonly next?: string | undefined;
+  /** The section's table of contents, passed through from the plugin. */
+  readonly pages?: readonly ViewSectionPage[] | undefined;
+}
+
+/** One entry of a section's table of contents. */
+export interface ViewSectionPage {
+  readonly label: string;
+  readonly cursor?: string | undefined;
 }
 
 /** One change a client may react to. */
@@ -219,6 +227,19 @@ function isThenable(value: unknown): boolean {
     value !== null &&
     typeof (value as { then?: unknown }).then === "function"
   );
+}
+
+function pagesOf(value: unknown): readonly ViewSectionPage[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const pages: ViewSectionPage[] = [];
+  for (const entry of value as unknown[]) {
+    if (!isRecord(entry)) continue;
+    const label = textOf(entry.label);
+    if (label === undefined) continue;
+    const cursor = textOf(entry.cursor);
+    pages.push(cursor === undefined ? { label } : { label, cursor });
+  }
+  return pages;
 }
 
 function textOf(value: unknown): string | undefined {
@@ -1037,7 +1058,8 @@ export class Views {
       );
     }
     const next = isRecord(content) ? textOf(content.next) : undefined;
-    return this.finishSection(
+    const pages = isRecord(content) ? pagesOf(content.pages) : undefined;
+    const finished = this.finishSection(
       id,
       section.id,
       section.title,
@@ -1045,6 +1067,7 @@ export class Views {
       next,
       options.full === true,
     );
+    return pages === undefined ? finished : { ...finished, pages };
   }
 
   /** An async stream of ids that changed. Repeated ids coalesce. */

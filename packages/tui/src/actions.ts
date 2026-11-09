@@ -23,7 +23,7 @@ export const RESERVED_KEYS: readonly string[] = [
   "pageup", "page-up", "prior", "pagedown", "page-down", "next",
   "home", "end", "space", " ",
   "[", "]", ":", "?", "/",
-  "b", "f", "g", "j", "k", "q", "r",
+  "b", "f", "g", "j", "k", "n", "p", "q", "r",
   "1", "2", "3", "4", "5", "6", "7", "8", "9",
 ];
 
@@ -216,14 +216,14 @@ export function runKey(state: TuiState, label: string): TuiState | undefined {
 }
 
 /** The text a key adds to an input, if it adds any. */
-function typed(event: { readonly text?: string | undefined }): string | undefined {
+export function typed(event: { readonly text?: string | undefined }): string | undefined {
   const text = event.text;
   return text === undefined || text === "" || /[\u0000-\u001f\u007f]/.test(text)
     ? undefined
     : text;
 }
 
-function dropLast(text: string): string {
+export function dropLast(text: string): string {
   const all = graphemes(text);
   all.pop();
   return all.join("");
@@ -232,7 +232,7 @@ function dropLast(text: string): string {
 /** A key arrives while the palette, a note or a confirmation is open. */
 export function inputKey(
   state: TuiState,
-  input: TuiInput,
+  input: Exclude<TuiInput, { readonly kind: "pages" }>,
   event: {
     readonly key: string;
     readonly text?: string | undefined;

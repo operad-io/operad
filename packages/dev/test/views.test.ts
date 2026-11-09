@@ -371,6 +371,7 @@ describe("dev views", () => {
     // The diffstat keeps git's leading space on its first line.
     expect(short.markdown).toMatch(/^````diff\n small\.txt /);
     expect(short.next).toBeUndefined();
+    expect((short as { pages?: unknown }).pages).toBeUndefined();
 
     gitOrThrow(remote.repository, ["checkout", "-q", branch]);
     await commitIn(remote.repository, "big.txt", `${"x".repeat(100)}\n`.repeat(DIFF_PAGE_CHARS / 100 + 10), "big");
@@ -383,12 +384,19 @@ describe("dev views", () => {
     expect(first.markdown).toContain("one page per file");
     expect(first.markdown).toContain("big.txt");
     expect(first.next).toBe("1");
+    const tableOfContents = [
+      { label: "overview" },
+      { label: "big.txt", cursor: "1" },
+      { label: "small.txt", cursor: "2" },
+    ];
+    expect((first as { pages?: unknown }).pages).toEqual(tableOfContents);
     const page1 = (await taskViews.load({ store } as never, object, "diff", { cursor: "1" })) as {
       markdown: string;
       next?: string;
     };
     expect(page1.markdown).toContain("### big.txt");
     expect(page1.next).toBe("2");
+    expect((page1 as { pages?: unknown }).pages).toEqual(tableOfContents);
     const page2 = (await taskViews.load({ store } as never, object, "diff", { cursor: "2" })) as {
       markdown: string;
       next?: string;

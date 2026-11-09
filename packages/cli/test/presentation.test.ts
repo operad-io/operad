@@ -566,6 +566,30 @@ describe("operad presentation commands", () => {
     expect(parsed.section.next).toBe("two");
   });
 
+  test("show --page prints one page by number or by label", async () => {
+    const { home } = await makeHome();
+    seed(home, { title: "One", state: "new" }, "one");
+    const page = async (value: string): Promise<{ code: number; text: string; error: string }> => {
+      const output = capture();
+      const code = await main(
+        ["show", "item:one", "--section", "pages", "--page", value, "--raw"],
+        { home, io: output.io },
+      );
+      return { code, text: output.text(), error: output.errors() };
+    };
+    expect((await page("2")).text).toBe("page two\n");
+    expect((await page("two")).text).toBe("page two\n");
+    expect((await page("1")).text).toBe("page one\n");
+    expect((await page("one")).text).toBe("page one\n");
+    const missing = await page("9");
+    expect(missing.code).not.toBe(0);
+    expect(missing.error).toContain('has no page "9"');
+    const flat = capture();
+    expect(
+      await main(["show", "item:one", "--section", "info", "--page", "1"], { home, io: flat.io }),
+    ).not.toBe(0);
+  });
+
   test("colours follow only waiting and running", async () => {
     const { home } = await makeHome();
     seed(home, { title: "Plain", state: "new" }, "plain");
