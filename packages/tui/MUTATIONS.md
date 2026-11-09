@@ -220,6 +220,10 @@ the row fields.
 | T-0112-M11 | packages/tui/src/actions.ts | a `field: ` prefix in front of a refusal was kept | `a refusal line > drops a status number and a field prefix, and keeps the sentence` |
 | T-0117-M2 | packages/tui/src/args.ts | a boolean argument was not recognised, so no yes/no list was asked | `arguments of an action > a boolean is a yes/no list that starts on its default` |
 | T-0129-M3 | packages/tui/src/app.ts | the section request sent the answer's bare id instead of `<type>:<id>` | `the TUI object app > a row opens by its typed id; a server that refuses bare ids is never asked for one` |
+| T-0102-M1 | packages/tui/src/state.ts | a list that loaded did not ask the object pane to show the cursor row | `the object pane follows the cursor > a list that loads under the open tab shows its first row` |
+| T-0102-M2 | packages/tui/src/app.ts | a new cursor move did not cancel the pending follow, so every row in a fast run was fetched | `the object pane follows the cursor > three fast moves fetch only the last row` |
+| T-0102-M3 | packages/tui/src/state.ts | the follow opened the row also in one-pane layout | `the object pane follows the cursor > one pane opens nothing until enter` |
+| T-0102-M4 | packages/tui/src/view/index.ts | a cursor row that names no object showed "loading…" instead of "select an object" | `a row that names no object > the pane asks to select an object instead of loading forever` |
 | T-0085-M1 | packages/tui/src/actions.ts | a setting's description was left out of what the palette searches | `settings in the palette > every setting is listed, and search reads the name and the description` |
 | T-0085-M2 | packages/tui/src/actions.ts | a confirm setting was sent without asking | `settings in the palette > a confirm setting asks first; any key but y cancels, y sends it confirmed` |
 | T-0085-M3 | packages/tui/src/actions.ts | a setting that cannot change was given a value prompt | `settings in the palette > a setting that cannot change opens read-only and sends nothing` |
