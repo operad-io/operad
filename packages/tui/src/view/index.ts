@@ -13,6 +13,7 @@ import {
   type TextChunk,
 } from "@opentui/core";
 import type { RowMark } from "@operad-io/engine";
+import { allowedText } from "../args.ts";
 import { confirmText, entryHint, matchPositions, paletteEntries } from "../actions.ts";
 import { chunksOfLine } from "../markdown.ts";
 import {
@@ -481,6 +482,26 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
     ];
     return styled(chunks);
   }
+  if (input.kind === "args") {
+    const field = input.fields[input.at];
+    const chunks: TextChunk[] = [
+      chunk(`${input.action} · ${field?.name ?? ""} (${input.at + 1} of ${input.fields.length})\n`, palette.accent, TextAttributes.BOLD),
+    ];
+    if (field?.description !== undefined) chunks.push(chunk(`${field.description}\n`, palette.weak));
+    if (field?.kind === "pick") {
+      field.options.forEach((option, at) => {
+        chunks.push(chunk(at === input.cursor ? "❯ " : "  ", palette.accent));
+        chunks.push(chunk(option.label, at === input.cursor ? palette.accent : palette.text));
+        chunks.push(chunk(at === field.current ? "  current\n" : "\n", palette.weak));
+      });
+      chunks.push(chunk("j/k or arrows move · enter picks · esc cancels", palette.weak));
+    } else if (field !== undefined) {
+      chunks.push(chunk(`${input.text}${bar}\n`, palette.text));
+      chunks.push(chunk(`${allowedText(field)}\n`, input.error === undefined ? palette.weak : palette.accent));
+      chunks.push(chunk("enter sends · esc cancels", palette.weak));
+    }
+    return styled(chunks);
+  }
   if (input.kind === "pages") {
     const chunks: TextChunk[] = [chunk(`page: ${input.query}${bar}\n`, palette.accent)];
     const pages = pageEntries(state);
@@ -568,6 +589,11 @@ export function overlayBox(state: TuiState): OverlayBox | undefined {
 /** The line count the box needs for the input it draws. */
 function inputLines(state: TuiState): number {
   const input = state.input;
+  if (input?.kind === "args") {
+    const field = input.fields[input.at];
+    const body = field?.kind === "pick" ? field.options.length + 1 : 3;
+    return body + 1 + (field?.description === undefined ? 0 : 1);
+  }
   if (input?.kind === "note") return input.text.split("\n").length + 2;
   if (input?.kind === "palette") return Math.max(1, paletteEntries(state).length) + 1;
   if (input?.kind === "pages") return Math.max(1, pageEntries(state).length) + 1;

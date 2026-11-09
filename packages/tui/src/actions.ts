@@ -4,7 +4,8 @@
  * state; the shell sends the request this code leaves in `actionRequest`.
  */
 
-import type { ViewAction } from "@operad-io/engine";
+import type { ViewAction, ViewRow } from "@operad-io/engine";
+import { argFields, parseArg, type ArgField } from "./args.ts";
 import { sanitize } from "./sanitize.ts";
 import type { TuiBinding, TuiInput, TuiState } from "./state.ts";
 import { graphemes } from "./wrap.ts";
@@ -72,6 +73,10 @@ export interface TuiPaletteEntry {
   readonly key: string | undefined;
   readonly needsNote: boolean;
   readonly confirm: boolean;
+  /** Set when the query carries a value for the action's first argument. */
+  readonly typed?: { readonly value: unknown } | undefined;
+  /** Set when that value does not fit: the values the argument allows. */
+  readonly refusal?: string | undefined;
 }
 
 /** The key that should reach `bindings`: a shifted letter is upper case. */
@@ -307,6 +312,7 @@ function commandEntries(state: TuiState): readonly TuiPaletteEntry[] {
 export function paletteEntries(state: TuiState): readonly TuiPaletteEntry[] {
   const object = state.object;
   const query = state.input?.kind === "palette" ? state.input.query : "";
+  const raw = query.trim().split(/\s+/);
   const actions: readonly TuiPaletteEntry[] =
     object === undefined
       ? []
@@ -317,11 +323,17 @@ export function paletteEntries(state: TuiState): readonly TuiPaletteEntry[] {
           key: keyOf(state.bindings, action),
           needsNote: action.note !== undefined,
           confirm: action.confirm,
+          ...typedValue(action, object.row, raw),
         }));
   const words = wordsOf(query);
   const rank = (entries: readonly TuiPaletteEntry[]): readonly TuiPaletteEntry[] =>
     entries
-      .map((entry, order) => ({ entry, order, found: matchEntry(words, entry) }))
+      .map((entry, order) => {
+        // Words after the action's name are its first argument, not part of the search.
+        const hasValue = entry.typed !== undefined || entry.refusal !== undefined;
+        const search = hasValue ? words.slice(0, 1) : words;
+        return { entry, order, found: matchEntry(search, entry) };
+      })
       .filter((item) => item.found !== undefined)
       // Equal scores keep the order the entries were listed in.
       .sort((a, b) => (b.found?.score ?? 0) - (a.found?.score ?? 0) || a.order - b.order)
@@ -342,6 +354,21 @@ export function remember(state: TuiState, entry: TuiPaletteEntry): TuiState {
   return { ...state, recent: [id, ...state.recent.filter((one) => one !== id)].slice(0, RECENT_ENTRIES) };
 }
 
+/** The value typed after an action's name, checked against its first argument. */
+function typedValue(
+  action: ViewAction,
+  row: ViewRow,
+  words: readonly string[],
+): Pick<TuiPaletteEntry, "typed" | "refusal"> {
+  if (words.length < 2) return {};
+  const field = argFields(action, row)[0];
+  if (field === undefined) return {};
+  // Only an action that the first word names takes the rest as its value.
+  if (fuzzyScore(words[0] ?? "", action.name) < 0) return {};
+  const parsed = parseArg(field, words.slice(1).join(" "));
+  return parsed.ok ? { typed: { value: parsed.value } } : { refusal: parsed.reason };
+}
+
 /** The entry the palette cursor is on. */
 export function chosenEntry(state: TuiState): TuiPaletteEntry | undefined {
   const input = state.input;
@@ -352,6 +379,7 @@ export function chosenEntry(state: TuiState): TuiPaletteEntry | undefined {
 
 /** The words after an entry: its key and what it asks. */
 export function entryHint(entry: TuiPaletteEntry): string {
+  if (entry.refusal !== undefined) return entry.refusal;
   return [
     entry.key,
     entry.needsNote ? "needs a note" : undefined,
@@ -366,7 +394,11 @@ function withNotice(state: TuiState, notice: string): TuiState {
 }
 
 /** Runs an action on the open object, or says why it cannot. */
-export function startAction(state: TuiState, name: string): TuiState {
+export function startAction(
+  state: TuiState,
+  name: string,
+  first?: { readonly value: unknown },
+): TuiState {
   const object = state.object;
   const closed: TuiState = { ...state, input: undefined };
   if (object === undefined) return withNotice(closed, "no object is selected");
@@ -375,28 +407,84 @@ export function startAction(state: TuiState, name: string): TuiState {
   if (action === undefined) {
     return withNotice(closed, `${name} is not available for ${bareId(object.id)}`);
   }
-  if (action.note !== undefined) {
+  const fields = argFields(action, object.row);
+  const note = action.note === undefined ? undefined : { required: action.noteRequired };
+  if (fields.length > 0) {
+    const asking = argsInput(action.name, object.id, fields, 0, {}, note, action.confirm);
+    return first === undefined ? { ...closed, input: asking } : answer(closed, asking, first.value);
+  }
+  return afterArgs(closed, action.name, object.id, {}, note, action.confirm);
+}
+
+type ArgsInput = Extract<TuiInput, { readonly kind: "args" }>;
+
+function argsInput(
+  action: string,
+  id: string,
+  fields: readonly ArgField[],
+  at: number,
+  values: Readonly<Record<string, unknown>>,
+  note: ArgsInput["note"],
+  confirm: boolean,
+): ArgsInput {
+  const field = fields[at];
+  return {
+    kind: "args",
+    action,
+    id,
+    fields,
+    at,
+    values,
+    cursor: field?.current ?? 0,
+    text: field?.initial ?? "",
+    note,
+    confirm,
+  };
+}
+
+/** Records the answer to the field being asked and moves to the next step. */
+function answer(state: TuiState, input: ArgsInput, value: unknown): TuiState {
+  const field = input.fields[input.at];
+  if (field === undefined) return { ...state, input: undefined };
+  const values = { ...input.values, [field.name]: value };
+  if (input.at + 1 < input.fields.length) {
     return {
-      ...closed,
-      input: {
-        kind: "note",
-        action: action.name,
-        id: object.id,
-        text: "",
-        required: action.noteRequired,
-        confirm: action.confirm,
-      },
+      ...state,
+      input: argsInput(input.action, input.id, input.fields, input.at + 1, values, input.note, input.confirm),
     };
   }
-  if (action.confirm) {
-    return { ...closed, input: { kind: "confirm", action: action.name, id: object.id } };
+  return afterArgs({ ...state, input: undefined }, input.action, input.id, values, input.note, input.confirm);
+}
+
+/** Every argument is in: the note, the confirmation or the request comes next. */
+function afterArgs(
+  state: TuiState,
+  action: string,
+  id: string,
+  args: Readonly<Record<string, unknown>>,
+  note: ArgsInput["note"],
+  confirm: boolean,
+): TuiState {
+  const given = Object.keys(args).length === 0 ? {} : { args };
+  if (note !== undefined) {
+    return {
+      ...state,
+      input: { kind: "note", action, id, text: "", required: note.required, confirm, ...given },
+    };
   }
-  return send(closed, { action: action.name, id: object.id });
+  if (confirm) return { ...state, input: { kind: "confirm", action, id, ...given } };
+  return send(state, { action, id, ...given });
 }
 
 function send(
   state: TuiState,
-  request: { action: string; id: string; note?: string; confirmed?: boolean },
+  request: {
+    action: string;
+    id: string;
+    note?: string;
+    args?: Readonly<Record<string, unknown>>;
+    confirmed?: boolean;
+  },
 ): TuiState {
   return { ...state, input: undefined, acting: true, actionRequest: request };
 }
@@ -450,10 +538,12 @@ export function inputKey(
       action: input.action,
       id: input.id,
       ...(input.note === undefined ? {} : { note: input.note }),
+      ...(input.args === undefined ? {} : { args: input.args }),
       confirmed: true,
     });
   }
   if (escape) return { ...state, input: undefined };
+  if (input.kind === "args") return argsKey(state, input, event, key, enter);
   if (input.kind === "palette") {
     const entries = paletteEntries(state);
     const down = key === "down" || key === "arrowdown" || (event.ctrl === true && (key === "n" || key === "j"));
@@ -468,9 +558,10 @@ export function inputKey(
     if (enter) {
       const chosen = chosenEntry(state);
       // A command is run by the reducer that owns the state it changes.
-      return chosen === undefined || chosen.command !== undefined
+      // A value that does not fit stays in the palette, with what is allowed.
+      return chosen === undefined || chosen.command !== undefined || chosen.refusal !== undefined
         ? state
-        : startAction(remember({ ...state, input: undefined }, chosen), chosen.name);
+        : startAction(remember({ ...state, input: undefined }, chosen), chosen.name, chosen.typed);
     }
     if (key === "backspace") {
       return { ...state, input: { ...input, query: dropLast(input.query), cursor: 0 } };
@@ -494,6 +585,7 @@ export function inputKey(
           action: input.action,
           id: input.id,
           ...(note === "" ? {} : { note }),
+          ...(input.args === undefined ? {} : { args: input.args }),
         },
       };
     }
@@ -501,6 +593,7 @@ export function inputKey(
       action: input.action,
       id: input.id,
       ...(note === "" ? {} : { note }),
+      ...(input.args === undefined ? {} : { args: input.args }),
     });
   }
   if (key === "backspace") return { ...state, input: { ...input, text: dropLast(input.text) } };
@@ -508,14 +601,48 @@ export function inputKey(
   return text === undefined ? state : { ...state, input: { ...input, text: input.text + text } };
 }
 
-/** The server refused (or the network failed): show it verbatim. */
+/** The server refused (or the network failed): show its line, without the HTTP status. */
 export function actionFailed(
   state: TuiState,
-  status: number | undefined,
+  _status: number | undefined,
   message: string,
 ): TuiState {
-  const line = status === undefined ? message : `${status} ${message}`;
-  return { ...withNotice(state, line), acting: false, actionRequest: undefined };
+  return { ...withNotice(state, message), acting: false, actionRequest: undefined };
+}
+
+/** A key arrives while an argument is asked. */
+function argsKey(
+  state: TuiState,
+  input: ArgsInput,
+  event: { readonly text?: string | undefined; readonly ctrl?: boolean | undefined; readonly meta?: boolean | undefined },
+  key: string,
+  enter: boolean,
+): TuiState {
+  const field = input.fields[input.at];
+  if (field === undefined) return { ...state, input: undefined };
+  if (field.kind === "pick") {
+    const down = key === "down" || key === "arrowdown" || (event.ctrl !== true && event.text === "j") || (event.ctrl === true && (key === "n" || key === "j"));
+    const up = key === "up" || key === "arrowup" || (event.ctrl !== true && event.text === "k") || (event.ctrl === true && (key === "p" || key === "k"));
+    if (down || up) {
+      const cursor = Math.min(Math.max(0, input.cursor + (down ? 1 : -1)), field.options.length - 1);
+      return { ...state, input: { ...input, cursor } };
+    }
+    const option = field.options[input.cursor];
+    return enter && option !== undefined ? answer(state, input, option.value) : state;
+  }
+  if (enter) {
+    const parsed = parseArg(field, input.text);
+    return parsed.ok
+      ? answer(state, input, parsed.value)
+      : { ...state, input: { ...input, error: parsed.reason } };
+  }
+  if (key === "backspace") {
+    return { ...state, input: { ...input, text: dropLast(input.text), error: undefined } };
+  }
+  const text = event.ctrl === true || event.meta === true ? undefined : typed(event);
+  return text === undefined
+    ? state
+    : { ...state, input: { ...input, text: input.text + text, error: undefined } };
 }
 
 /** The footer line a confirmation asks, in red. */

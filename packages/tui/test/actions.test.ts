@@ -340,14 +340,14 @@ describe("actions in the reducer", () => {
     });
   });
 
-  test("a refusal shows the server's status and message until the next key", () => {
+  test("a refusal shows the server's line without the HTTP status until the next key", () => {
     let state = press(opened(), "a", ...typeText("ok"), "enter");
     expect(state.acting).toBe(true);
     state = reduce(state, { type: "action-launched" });
     expect(state.actionRequest).toBeUndefined();
     const message = "item one: already approved by someone else";
     state = reduce(state, { type: "action-error", status: 409, message });
-    expect(noticeText(state)).toBe(`409 ${message}`);
+    expect(noticeText(state)).toBe(message);
     expect(state.acting).toBe(false);
     expect(footerText(state)).toContain("tuitest:approve");
     expect(noticeText(press(state, "j"))).toBeUndefined();
