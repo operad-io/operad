@@ -1,8 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
-  currentRunStep,
-  endedRunStep,
+  runTimes,
   decide,
   evolve,
   FilePluginStore,
@@ -30,7 +29,7 @@ const SECOND = 1000;
  * One task and one run of the real dev flow. The run's facts come from the
  * kernel's own `decide` and `evolve` and are written to a real log; the
  * task's facts are written the way the dev steps write them. Metrics reads
- * the run's step through `currentRunStep`, the source `operad running` uses.
+ * every time from the run's own facts through `runTimes`.
  */
 async function world() {
   const root = await tempRoot();
@@ -108,8 +107,7 @@ async function world() {
       const text = await metrics(
         {
           store,
-          runStep: (id: string) => currentRunStep(log, id),
-          runEnd: (id: string) => endedRunStep(log, id),
+          runTimes: (id: string) => runTimes(log, id),
         } as never,
         await getTask(store, task.id),
         now,
@@ -191,7 +189,7 @@ const CASES: readonly Case[] = [
       return w.show(107);
     },
     row: "| running review |",
-    line: "worktree 2s · work 1m00s · verify 10s · review 35s (running)",
+    line: "worktree 2s · work 1m00s · verify 10s · review 30s (running) · review retry 5s",
   },
   {
     name: "a work retry after an unavailable model: the wait runs and verify never did",
@@ -221,18 +219,7 @@ const CASES: readonly Case[] = [
       return w.show(114);
     },
     row: "| running reverify |",
-    line: "work 1m00s · reverify 4s (running) · verify 10s · review 20s",
-  },
-  {
-    name: "a rework after a person's answer starts a worktree, not integrate",
-    run: async (w) => {
-      await toWait(w);
-      w.at(110);
-      await w.answer("rework");
-      return w.show(114);
-    },
-    row: "| running worktree |",
-    line: "worktree 6s (running) · work 1m00s · verify 10s · review 20s",
+    line: "worktree 2s · work 1m00s · reverify 4s (running) · verify 10s · review 20s",
   },
   {
     name: "an integrate in flight while the task waits",
@@ -251,7 +238,7 @@ const CASES: readonly Case[] = [
       return w.show(117);
     },
     row: "| running integrate |",
-    line: "review 20s · integrate 7s (running)",
+    line: "worktree 2s · work 1m00s · verify 10s · review 20s · integrate 7s (running)",
   },
   {
     name: "a failed worktree ends the run: nothing runs and no later step is shown",
@@ -285,6 +272,162 @@ const CASES: readonly Case[] = [
   },
 ];
 
+interface Lines {
+  readonly name: string;
+  readonly run: (w: World) => Promise<string>;
+  /** Whole lines the text must hold, each exactly. */
+  readonly lines: readonly string[];
+  /** Words the text must not hold. */
+  readonly absent?: readonly string[];
+}
+
+const TIMES: readonly Lines[] = [
+  {
+    name: "a normal run to its person wait: the wait is its own line, inside no attempt or step",
+    run: async (w) => {
+      await toWait(w);
+      return (await w.show(1100)).text;
+    },
+    lines: [
+      "| 1 | 2m | – | review passed |",
+      "| total | 2m | – | |",
+      "**#1** worktree 2s · work 1m00s · verify 10s · review 20s",
+      "**Waiting for a person** 16m48s (waiting)",
+    ],
+    absent: ["(running)", "…"],
+  },
+  {
+    name: "cancelled while a step is in flight: the attempt and the step end at the run's end",
+    run: async (w) => {
+      await w.put("test:start", { number: 1 });
+      await w.start();
+      w.at(2);
+      await w.put("dev:worktree", { number: 1 });
+      await w.result("ready");
+      w.at(1200);
+      await w.cancelTask();
+      return (await w.show(1500)).text;
+    },
+    lines: ["| 1 | 20m | – | cancelled |", "| total | 20m | – | |", "**#1** worktree 2s · work 19m58s"],
+    absent: ["(running)", "Waiting for a person"],
+  },
+  {
+    name: "cancelled while the review is in flight: the review counts up to the cancel",
+    run: async (w) => {
+      await toVerify(w);
+      w.at(72);
+      await w.put("dev:verify", { number: 1, verify: { result: "pass" } });
+      await w.result("pass");
+      w.at(1153);
+      await w.cancelTask();
+      return (await w.show(1500)).text;
+    },
+    lines: ["| 1 | 19m | – | cancelled |", "**#1** worktree 2s · work 1m00s · verify 10s · review 18m01s"],
+    absent: ["(running)"],
+  },
+  {
+    name: "cancelled while the task waits for a person: the wait is its own line, up to the cancel",
+    run: async (w) => {
+      await toWait(w);
+      w.at(1100);
+      await w.cancelTask();
+      return (await w.show(1200)).text;
+    },
+    lines: [
+      "| 1 | 2m | – | cancelled |",
+      "| total | 2m | – | |",
+      "**#1** worktree 2s · work 1m00s · verify 10s · review 20s",
+      "**Waiting for a person** 16m48s",
+    ],
+    absent: ["(running)", "(waiting)"],
+  },
+  {
+    name: "a rework after a person's answer: the next attempt starts with its worktree, not after the wait",
+    run: async (w) => {
+      await toWait(w);
+      w.at(110);
+      await w.answer("rework");
+      await w.put("dev:worktree", { number: 2 });
+      return (await w.show(114)).text;
+    },
+    lines: [
+      "| 1 | 2m | – | review passed |",
+      "| 2 | 4s … | – | running worktree |",
+      "| total | 2m | – | |",
+      "**#2** worktree 4s (running)",
+      "**#1** worktree 2s · work 1m00s · verify 10s · review 20s",
+      "**Waiting for a person** 18s",
+    ],
+  },
+  {
+    name: "a rework whose worktree is still being prepared: the next attempt is already running it",
+    run: async (w) => {
+      await toWait(w);
+      w.at(110);
+      await w.answer("rework");
+      return (await w.show(114)).text;
+    },
+    lines: [
+      "| 1 | 2m | – | review passed |",
+      "| 2 | 4s … | – | running worktree |",
+      "| total | 2m | – | |",
+      "**#2** worktree 4s (running)",
+      "**Waiting for a person** 18s",
+    ],
+  },
+  {
+    name: "cancelled while the worktree of a rework is being prepared: its time is the next attempt's",
+    run: async (w) => {
+      await toWait(w);
+      w.at(110);
+      await w.answer("rework");
+      w.at(130);
+      await w.cancelTask();
+      return (await w.show(200)).text;
+    },
+    lines: [
+      "| 2 | 20s | – | cancelled |",
+      "**#2** worktree 20s",
+    ],
+    absent: ["(running)"],
+  },
+  {
+    name: "a retried review: the first visit, the retry wait and the second visit all count",
+    run: async (w) => {
+      await toVerify(w);
+      w.at(72);
+      await w.put("dev:verify", { number: 1, verify: { result: "pass" } });
+      await w.result("pass");
+      w.at(92);
+      await w.put("dev:review", { number: 1, review: { result: "unavailable" } }, "waiting");
+      await w.result("unavailable");
+      w.at(97);
+      await w.result("ready");
+      return (await w.show(107)).text;
+    },
+    lines: [
+      "| 1 | 2m … | – | running review |",
+      "**#1** worktree 2s · work 1m00s · verify 10s · review 30s (running) · review retry 5s",
+    ],
+    absent: ["Waiting for a person"],
+  },
+];
+
+describe("metrics times come from the run's own facts", () => {
+  for (const item of TIMES) {
+    test(item.name, async () => {
+      const w = await world();
+      try {
+        const lines = (await item.run(w)).split("\n");
+        for (const line of item.lines) expect(lines).toContain(line);
+        for (const word of item.absent ?? []) expect(lines.join("\n")).not.toContain(word);
+      } finally {
+        await w.log.close();
+      }
+    });
+  }
+});
+
 describe("metrics follow the run's own step", () => {
   for (const item of CASES) {
     test(item.name, async () => {
@@ -299,62 +442,6 @@ describe("metrics follow the run's own step", () => {
       }
     });
   }
-
-  test("a task cancelled while its worker runs keeps the time up to the cancel, step included", async () => {
-    const w = await world();
-    try {
-      await w.put("test:start", { number: 1 });
-      await w.start();
-      w.at(2);
-      await w.put("dev:worktree", { number: 1 });
-      await w.result("ready");
-      // The worker runs for twenty minutes, then the task is cancelled.
-      w.at(1200);
-      await w.cancelTask();
-      const seen = await w.show(1500);
-      expect(seen.row).toBe("| 1 | 20m | – | cancelled |");
-      expect(seen.text).toContain("| total | 20m | – | |");
-      expect(seen.line).toBe("**#1** worktree 2s · work 19m58s");
-      expect(seen.text).not.toContain("(running)");
-    } finally {
-      await w.log.close();
-    }
-  });
-
-  test("a task cancelled while its review is in flight counts the review up to the cancel", async () => {
-    const w = await world();
-    try {
-      await toVerify(w);
-      w.at(72);
-      await w.put("dev:verify", { number: 1, verify: { result: "pass" } });
-      await w.result("pass");
-      // The review's pending record is its start; the task is cancelled 18 minutes later.
-      w.at(73);
-      await w.put("dev:review", { number: 1, reviewPending: { round: 1 } });
-      w.at(1153);
-      await w.cancelTask();
-      const seen = await w.show(1500);
-      expect(seen.row).toBe("| 1 | 19m | – | cancelled |");
-      expect(seen.line).toBe("**#1** worktree 2s · work 1m00s · verify 10s · review 18m01s");
-    } finally {
-      await w.log.close();
-    }
-  });
-
-  test("a task cancelled from a person wait does not count the wait", async () => {
-    const w = await world();
-    try {
-      await toWait(w);
-      w.at(1100);
-      await w.cancelTask();
-      const seen = await w.show(1200);
-      expect(seen.row).toBe("| 1 | 2m | – | cancelled |");
-      expect(seen.text).toContain("| total | 2m | – | |");
-      expect(seen.line).toBe("**#1** worktree 2s · work 1m00s · verify 10s · review 20s");
-    } finally {
-      await w.log.close();
-    }
-  });
 
   test("a run that is not active shows nothing as running, whatever the phase says", async () => {
     const w = await world();

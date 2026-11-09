@@ -130,27 +130,25 @@ export interface SectionPage {
 /** The context a `load` call receives. */
 export interface ViewContext extends PluginBaseContext {
   /**
-   * Where an ended run stopped: the step in flight and when it started, null
-   * when it ended from a person wait; undefined for a run that is unknown or
-   * still active. Absent when the kernel has no run log to read.
+   * A run's own times from its facts: when it started and ended, and its
+   * steps and waits for a person in order, each with when it began and ended.
+   * Undefined for a run the log does not know. Absent when the kernel has no
+   * run log to read.
    */
-  readonly runEnd?:
+  readonly runTimes?:
     | ((runId: string) => Promise<
         | {
-            readonly step: string | null;
-            readonly startedAt: number | null;
-            readonly endedAt: number;
+            readonly startedAt: number;
+            readonly endedAt: number | null;
+            readonly segments: readonly {
+              readonly step: string;
+              readonly person: boolean;
+              readonly from: number;
+              readonly to: number | null;
+            }[];
           }
         | undefined
       >)
-    | undefined;
-  /**
-   * The step a run is in now, and when that step's current attempt started,
-   * as `operad running` reports them; undefined when the run is not active.
-   * Absent when the kernel has no run log to read.
-   */
-  readonly runStep?:
-    | ((runId: string) => Promise<{ readonly step: string; readonly startedAt: number } | undefined>)
     | undefined;
 }
 
