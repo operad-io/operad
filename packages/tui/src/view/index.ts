@@ -443,14 +443,15 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
   }
   const chunks: TextChunk[] = [chunk(`: ${input.query}${bar}\n`, palette.accent)];
   const entries = paletteEntries(state);
-  if (state.object === undefined) {
-    chunks.push(chunk("no object is selected", palette.weak));
-  } else if (entries.length === 0) {
-    chunks.push(chunk("no action matches", palette.weak));
-  }
-  entries.forEach((entry, at) => {
+  if (entries.length === 0) chunks.push(chunk("nothing matches", palette.weak));
+  // The box holds fewer lines than a long list: keep the cursor in view.
+  const rows = Math.max(1, (overlayBox(state)?.height ?? 5) - 4 - 1);
+  const start = Math.max(0, Math.min(input.cursor - Math.floor(rows / 2), entries.length - rows));
+  entries.slice(start, start + rows).forEach((entry, offset) => {
+    const at = start + offset;
     const hint = entryHint(entry);
     chunks.push(chunk(at === input.cursor ? "❯ " : "  ", palette.accent));
+    chunks.push(chunk(`${entry.group.padEnd(7)} `, palette.weak));
     chunks.push(chunk(entry.name, at === input.cursor ? palette.accent : palette.text));
     chunks.push(chunk(hint === "" ? "\n" : `  ${hint}\n`, palette.weak));
   });

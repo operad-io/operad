@@ -192,3 +192,5 @@ the row fields.
 | T-0072-M6 | packages/tui/themes/dracula.json | the file left out the `code` token and inherited it from dark | `shipped themes: the files > every file matches the theme schema and sets every token itself` |
 | T-0072-M7 | packages/tui/themes/LICENSE-nord | the bundled licence text was missing | `shipped themes: the files > themes/ holds exactly the listed themes, each with its licence text` |
 | T-0072-M8 | packages/tui/themes/nord.json | the adjusted colour differed from the one its comment names | `contrast > a colour below its need is adjusted in the file, and the file's comment says so` |
+| T-0082-M1 | packages/tui/src/actions.ts | the palette listed the TUI commands before the open object's actions | `actions in the reducer > groups are shown in the order actions, tui; search reads the title` |
+| T-0082-M2 | packages/tui/src/state.ts | the go back command did nothing instead of doing what escape does | `actions in the reducer > each TUI command does what its key does > go back closes the open object, as escape does` |

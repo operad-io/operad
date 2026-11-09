@@ -22,6 +22,7 @@ import { sanitize } from "./sanitize.ts";
 import {
   actionFailed,
   bindingFor,
+  chosenEntry,
   confirmText,
   dropLast,
   fuzzyScore,
@@ -34,6 +35,7 @@ import {
   typed,
   isReserved,
   resolveBindings,
+  type TuiCommand,
 } from "./actions.ts";
 
 /** The two terminal themes the view knows. */
@@ -1279,6 +1281,22 @@ function bindingLabel(label: string): string {
   return label;
 }
 
+/** A palette command does what its key does. */
+function runCommand(state: TuiState, command: TuiCommand): TuiState {
+  switch (command.kind) {
+    case "help":
+      return handleKey(state, { key: "?", text: "?" });
+    case "refresh":
+      return handleKey(state, { key: "r", text: "r" });
+    case "back":
+      return handleKey(state, { key: "escape" });
+    case "quit":
+      return handleKey(state, { key: "q", text: "q" });
+    case "go":
+      return activate(state, state.tabs.findIndex((tab) => tab.id === command.tabId));
+  }
+}
+
 function handleKey(
   state: TuiState,
   event: {
@@ -1292,6 +1310,10 @@ function handleKey(
   const typing = state.input;
   const calm = state.notice === undefined ? state : { ...state, notice: undefined };
   if (typing?.kind === "pages") return pagesKey(calm, typing, event);
+  if (typing?.kind === "palette" && isKey(event.key, "enter", "return")) {
+    const command = chosenEntry(calm)?.command;
+    if (command !== undefined) return runCommand({ ...calm, input: undefined }, command);
+  }
   if (typing !== undefined) return inputKey(calm, typing, event);
   // Ctrl-C is the renderer's exit; no other chord is ours.
   if (event.ctrl === true || event.meta === true) return calm;
