@@ -48,7 +48,7 @@ describe("the repo type", () => {
         id: "alpha",
         title: "alpha",
         state: "active",
-        note: "open plans: 0  open tasks: 0",
+        note: "plans: 0 · tasks: 0",
         waiting: undefined,
         running: undefined,
       },
@@ -56,7 +56,7 @@ describe("the repo type", () => {
         id: "beta",
         title: "beta",
         state: "active",
-        note: "open plans: 0  open tasks: 0",
+        note: "plans: 0 · tasks: 0",
         waiting: undefined,
         running: undefined,
       },
@@ -107,11 +107,11 @@ describe("the repo type", () => {
     const plan = await addPlan(store, { repository: alpha, slug: "work", title: "Work" });
     const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
     const note = async () => (await views.get("repo:alpha")).row.note;
-    expect(await note()).toBe("open plans: 1  open tasks: 1");
+    expect(await note()).toBe("plans: 1 · tasks: 1");
     await confirmPlan(store, plan.id);
     await setTaskPhase(store, task.id, "merged");
     await refreshPlanCounts(store, await getPlan(store, plan.id));
-    expect(await note()).toBe("open plans: 0  open tasks: 0");
+    expect(await note()).toBe("plans: 0 · tasks: 0");
   });
 
   test("the Overview names the path, the default branch, dev.json, worker and reviewer", async () => {

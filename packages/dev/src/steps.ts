@@ -31,7 +31,7 @@ import {
 import { DEFAULT_POOL, resolvePool } from "@operad-io/pool";
 import { runPrepare } from "./prepare.ts";
 import { classifyStop, STOP_REASONS } from "./stops.ts";
-import { findRepository, withRepoLock } from "./service.ts";
+import { findRepository, putTaskKeepingPlanCost, withRepoLock } from "./service.ts";
 import {
   createOutbox,
   NOTE_REMOVED_MESSAGE,
@@ -493,7 +493,7 @@ export async function saveTask(
   data: TaskData,
   cause: string,
 ): Promise<void> {
-  await ctx.store.put("task", key, data, cause);
+  await putTaskKeepingPlanCost(ctx.store, key, data, cause);
 }
 
 /** The claim token the scheduler put in the run's start parameters. */
