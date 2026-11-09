@@ -15,6 +15,7 @@ import {
   reduce,
   type TuiStateEvent,
 } from "../src/state.ts";
+import { BUILTIN_THEMES, toRgba } from "../src/theme.ts";
 import { drawState } from "../src/view/index.ts";
 import { immediateClock } from "./support.ts";
 
@@ -244,11 +245,23 @@ describe("filters: view", () => {
 
   test("the filter shows only on the current tab; a type without filters has no suffix", () => {
     let state = onTasks();
-    expect(headerOf(state)).toMatch(/Task \d+ · \w+/);
+    expect(headerOf(state)).toBe(" operad   Pending 0 · Running 0 · Task 3 · active · 4 hidden · Note");
     state = key(state, "4");
-    expect(headerOf(state)).toMatch(/Task \d+ · Note/);
+    expect(headerOf(state)).toBe(" operad   Pending 0 · Running 0 · Task 3 · Note");
     state = key(state, "1");
-    expect(headerOf(state)).toMatch(/Task \d+ · Note/);
+    expect(headerOf(state)).toBe(" operad   Pending 0 · Running 0 · Task 3 · Note");
+  });
+
+  test("the list title names the page and a type list's filter, in the weak colour", () => {
+    const state = onTasks();
+    const [blank, title] = drawState(state, "dark").list.chunks;
+    expect(blank?.text).toBe("\n");
+    expect(title?.text).toBe("TASK · active");
+    expect(title?.fg?.toInts().join(",")).toBe(toRgba(BUILTIN_THEMES.dark.weak).toInts().join(","));
+    const cycled = drawState(key(state, "f"), "dark").list.chunks[1];
+    expect(cycled?.text).toBe("TASK · all");
+    // A type without filters has the page name alone.
+    expect(drawState(key(state, "4"), "dark").list.chunks[1]?.text).toBe("NOTE");
   });
 
   test("a 99-column terminal shows the same header, cut with … when it does not fit", () => {

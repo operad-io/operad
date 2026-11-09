@@ -194,3 +194,6 @@ the row fields.
 | T-0072-M6 | packages/tui/themes/dracula.json | the file left out the `code` token and inherited it from dark | `shipped themes: the files > every file matches the theme schema and sets every token itself` |
 | T-0072-M7 | packages/tui/themes/LICENSE-nord | the bundled licence text was missing | `shipped themes: the files > themes/ holds exactly the listed themes, each with its licence text` |
 | T-0072-M8 | packages/tui/themes/nord.json | the adjusted colour differed from the one its comment names | `contrast > a colour below its need is adjusted in the file, and the file's comment says so` |
+| T-0100-M3 | packages/tui/src/view/index.ts | the list title left out the type list's filter | `filters: view > the list title names the page and a type list's filter, in the weak colour` |
+| T-0100-M4 | packages/tui/src/view/index.ts | the list title was drawn in the text colour instead of the weak colour | `filters: view > the list title names the page and a type list's filter, in the weak colour` |
+| T-0100-M5 | packages/tui/src/view/index.ts | the header showed the filter on every tab, not only the active one | `filters: view > the filter shows only on the current tab; a type without filters has no suffix` |
