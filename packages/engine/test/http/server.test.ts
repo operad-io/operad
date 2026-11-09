@@ -635,6 +635,56 @@ describe("http server", () => {
     }
   });
 
+  test("GET and POST /v1/settings list, change and refuse settings", async () => {
+    const h = await makeHarness();
+    try {
+      // a config that keys its plugins by name, as a person's has
+      writeFileSync(
+        join(h.home, "config.json"),
+        JSON.stringify({ plugins: { webtest: { module: pluginPath } }, keep: { me: 1 } }),
+      );
+      const post = (body: unknown): Promise<Response> =>
+        api(h, "/v1/settings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+      const listed = (await json(await api(h, "/v1/settings?scope=global"))).settings as {
+        name: string;
+        value?: unknown;
+        editable: boolean;
+      }[];
+      expect(listed.map((item) => item.name)).toEqual([
+        "webtest.limit",
+        "webtest.mode",
+        "webtest.fixed",
+      ]);
+      expect(listed[0]?.value).toBe(2);
+
+      const changed = await post({ name: "webtest.limit", value: 5 });
+      expect(changed.status).toBe(200);
+      expect(await json(changed)).toMatchObject({ name: "webtest.limit", value: 5 });
+      const file = JSON.parse(readFileSync(join(h.home, "config.json"), "utf8"));
+      expect(file.plugins.webtest).toEqual({ module: pluginPath, settings: { limit: 5 } });
+      expect(file.keep).toEqual({ me: 1 });
+
+      const invalid = await post({ name: "webtest.limit", value: 0 });
+      expect(invalid.status).toBe(400);
+      expect(((await json(invalid)).error as { message: string }).message).toContain("at least 1");
+      expect((await post({ name: "webtest.fixed", value: "y" })).status).toBe(409);
+      expect((await post({ name: "webtest.nope", value: 1 })).status).toBe(404);
+      const unconfirmed = await post({ name: "webtest.mode", value: "b" });
+      expect(unconfirmed.status).toBe(409);
+      expect((await json(unconfirmed)).error).toMatchObject({ kind: "confirm" });
+      expect((await post({ name: "webtest.mode", value: "b", confirmed: true })).status).toBe(200);
+      expect((await post({ value: 1 })).status).toBe(400);
+      expect((await api(h, "/v1/settings", { method: "DELETE" })).status).toBe(405);
+    } finally {
+      await h.close();
+    }
+  });
+
   test("accepts an act body without an id and lets the views name the missing object", async () => {
     const h = await makeHarness();
     try {

@@ -46,6 +46,13 @@ import {
   type HistoryFact,
 } from "./history.ts";
 import { readState } from "../runner/service.ts";
+import {
+  listSettings,
+  setSetting,
+  SettingsError,
+  type SettingInfo,
+  type SettingsOptions,
+} from "./settings.ts";
 
 /** The final section the kernel adds to every object. */
 export const HISTORY_SECTION = "history";
@@ -148,6 +155,12 @@ export type ViewErrorKind =
   | "filter"
   | "cursor";
 
+function settingsViewError(error: unknown): unknown {
+  return error instanceof SettingsError
+    ? new ViewError(error.kind, error.message, { cause: error })
+    : error;
+}
+
 /** A presentation call cannot do what was asked. */
 export class ViewError extends Error {
   readonly kind: ViewErrorKind;
@@ -172,6 +185,8 @@ export interface ViewsOptions {
   readonly sectionCapBytes?: number | undefined;
   readonly maxEventIds?: number | undefined;
   readonly onLog?: ((message: string) => void) | undefined;
+  /** The operad home whose `config.json` holds the global settings. */
+  readonly home?: string | undefined;
 }
 
 export interface ActOptions {
@@ -401,6 +416,7 @@ export class Views {
   private readonly sectionCapBytes: number;
   private readonly maxEventIds: number;
   private readonly onLog: (message: string) => void;
+  private readonly home: string;
   private readonly eventListeners = new Set<(id: string) => void>();
   private readonly unsubscribe: (() => void)[] = [];
   private preparing: Promise<void> | undefined;
@@ -418,6 +434,7 @@ export class Views {
       options.sectionCapBytes ?? DEFAULT_SECTION_CAP_BYTES;
     this.maxEventIds = options.maxEventIds ?? DEFAULT_MAX_EVENT_IDS;
     this.onLog = options.onLog ?? ((message) => console.error(message));
+    this.home = options.home ?? options.registry.home;
 
     if (typeof this.store.subscribe === "function") {
       this.unsubscribe.push(
@@ -1073,6 +1090,32 @@ export class Views {
   /** An async stream of ids that changed. Repeated ids coalesce. */
   events(): AsyncIterable<ViewEvent> {
     return new EventStream(this.maxEventIds, this.eventListeners);
+  }
+
+  /** Every setting in a scope (global and every repository when omitted). */
+  async settings(scope?: string | undefined): Promise<readonly SettingInfo[]> {
+    try {
+      return await listSettings(this.settingsOptions(), scope);
+    } catch (error) {
+      throw settingsViewError(error);
+    }
+  }
+
+  /** Changes one setting; a refusal writes nothing. */
+  async set(
+    name: string,
+    value: unknown,
+    options: { readonly scope?: string | undefined; readonly confirmed?: boolean | undefined } = {},
+  ): Promise<SettingInfo> {
+    try {
+      return await setSetting(this.settingsOptions(), name, value, options);
+    } catch (error) {
+      throw settingsViewError(error);
+    }
+  }
+
+  private settingsOptions(): SettingsOptions {
+    return { registry: this.registry, store: this.store, home: this.home };
   }
 
   /** Runs one action by `<plugin>:<action>`, honouring note and confirm. */
