@@ -12,7 +12,8 @@ import {
   type TuiState,
   type TuiView,
 } from "../src/index.ts";
-import { paletteEntries } from "../src/actions.ts";
+import { paletteEntries, settingScopes } from "../src/actions.ts";
+import { initialState, reduce } from "../src/state.ts";
 import { drawState } from "../src/view/index.ts";
 import { immediateClock } from "./support.ts";
 
@@ -287,5 +288,26 @@ describe("settings in the palette", () => {
     expect(text).toContain("value: 3");
     expect(text).toContain("default: 2");
     s.shell.stop();
+  });
+});
+
+describe("the scopes the palette lists", () => {
+  function open(type: string, id: string): TuiState {
+    let state = initialState({ width: 100 });
+    state = reduce(state, { type: "types", types: [{ type, title: type }] });
+    const row = { id, title: "x", state: "new", waiting: false, running: false };
+    state = reduce(state, { type: "rows", tabId: `type:${type}`, rows: [row] });
+    state = reduce(state, { type: "key", key: "3" });
+    state = reduce(state, { type: "key", key: "enter" });
+    return reduce(state, {
+      type: "object",
+      object: { id, type, link: "x", row, sections: [], actions: [] },
+    });
+  }
+
+  test("no object lists global only; a task names its repository; a repository's own page names itself", () => {
+    expect(settingScopes(initialState())).toEqual(["global"]);
+    expect(settingScopes(open("task", "task:operad/T-0085"))).toEqual(["global", "operad"]);
+    expect(settingScopes(open("repo", "repo:operad"))).toEqual(["global", "operad"]);
   });
 });

@@ -273,8 +273,11 @@ export type TuiCommand =
 
 /** The scopes the palette lists settings of: global, and the open object's repository. */
 export function settingScopes(state: TuiState): readonly string[] {
-  const id = state.object?.id;
-  const bare = id === undefined ? "" : id.slice(id.indexOf(":") + 1);
+  const object = state.object;
+  if (object === undefined) return ["global"];
+  const bare = object.id.slice(object.id.indexOf(":") + 1);
+  // A repository's own page is named by the repository; other objects carry it before the last slash.
+  if (object.type === "repo") return ["global", bare];
   const slash = bare.lastIndexOf("/");
   return slash < 0 ? ["global"] : ["global", bare.slice(0, slash)];
 }
