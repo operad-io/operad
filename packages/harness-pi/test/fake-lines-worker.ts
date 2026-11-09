@@ -91,6 +91,15 @@ switch (mode) {
     line(result());
     process.exit(0);
     break;
+  case "message": {
+    // Waits for a message from the host and records it.
+    mark();
+    const said = await stdinLine();
+    if (recordPath !== undefined) writeFileSync(`${recordPath}.message`, said);
+    line(result());
+    process.exit(0);
+    break;
+  }
   case "grant": {
     // Asks to use up a one-time permission, as the real program does before a
     // call the profile refuses, and records the host's answer.

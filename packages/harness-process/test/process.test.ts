@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runAgent, type Clock } from "../src/index.ts";
+import { inboxOf, messageLine, messageText, runAgent, type Clock } from "../src/index.ts";
 
 const roots: string[] = [];
 
@@ -276,5 +276,68 @@ describe("runAgent with an interactive stdin", () => {
     });
     expect(outcome.exitCode).toBe(0);
     expect(lines.map((line) => JSON.parse(line))).toEqual([{ first: "the prompt" }, { answer: null }]);
+  });
+});
+
+describe("runAgent with an inbox", () => {
+  const script = [
+    "const reader = Bun.stdin.stream().getReader();",
+    "let text = '';",
+    "const next = async () => { for (;;) { const i = text.indexOf('\\n'); if (i !== -1) { const l = text.slice(0, i); text = text.slice(i + 1); return l; } const c = await reader.read(); if (c.done) return null; text += new TextDecoder().decode(c.value); } };",
+    "await next();",
+    "console.log(JSON.stringify({ ready: true }));",
+    "console.log(JSON.stringify({ got: await next() }));",
+    "process.exit(0);",
+  ].join("\n");
+
+  test("a message sent while the command runs is written to its stdin as a message line, and the listener is dropped at the end", async () => {
+    const lines: string[] = [];
+    let stopped = 0;
+    let send: (text: string) => void = () => undefined;
+    const began: number[] = [];
+    const inbox = {
+      begin(limitMs: number): void {
+        began.push(limitMs);
+      },
+      listen(handler: (text: string) => void): () => void {
+        send = handler;
+        return () => {
+          stopped += 1;
+        };
+      },
+    };
+    const outcome = await runAgent({
+      command: process.execPath,
+      args: ["-e", script],
+      cwd: process.cwd(),
+      stdin: "the prompt",
+      interactive: true,
+      inbox,
+      wallMs: 30_000,
+      stallMs: 30_000,
+      signal: new AbortController().signal,
+      onLine(line) {
+        lines.push(line);
+        if (line.includes("ready")) send("wrap up");
+      },
+    });
+    expect(outcome.exitCode).toBe(0);
+    expect(lines.map((line) => JSON.parse(line))).toEqual([
+      { ready: true },
+      { got: JSON.stringify({ type: "message", text: "wrap up" }) },
+    ]);
+    expect(stopped).toBe(1);
+    // The run reports its wall time when it begins.
+    expect(began).toEqual([30_000]);
+  });
+
+  test("inboxOf reads only an object with a listen method; messageText only a message line", () => {
+    expect(inboxOf({ inbox: { listen: () => () => undefined } })).toBeDefined();
+    expect(inboxOf({ inbox: {} })).toBeUndefined();
+    expect(inboxOf({})).toBeUndefined();
+    expect(inboxOf(undefined)).toBeUndefined();
+    expect(messageText(messageLine("hi"))).toBe("hi");
+    expect(messageText('{"type":"grant_ack","id":1,"used":true}')).toBeUndefined();
+    expect(messageText("not json")).toBeUndefined();
   });
 });

@@ -163,6 +163,10 @@ class FakeProcess extends EventEmitter implements SpawnedProcess {
       this.#started = true;
       record(this.recordFile, { user: message["message"] });
       void this.#play();
+    } else if (type === "user") {
+      // A message the host sent while the turn runs.
+      record(this.recordFile, { userLater: message["message"] });
+      process.stderr.write("fake-claude-user-later\n");
     }
   }
 

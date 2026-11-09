@@ -14,7 +14,8 @@
  * It writes `fake-stream-started` to stderr when a call begins.
  */
 
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync, watch } from "node:fs";
+import { dirname } from "node:path";
 import { FakeProvider, type FakeResponse, type FakeToolCall } from "./fake-provider.ts";
 import { main } from "../src/worker.ts";
 
@@ -23,7 +24,22 @@ interface ScriptEntry {
   cost?: number;
   noPrice?: boolean;
   hang?: boolean;
+  /** Waits for the file named by `FAKE_RELEASE` to exist before it answers. */
+  gate?: boolean;
   toolCall?: FakeToolCall;
+}
+
+/** Resolves when the release file exists; the directory watch wakes it. */
+function released(): Promise<void> {
+  const release = process.env["FAKE_RELEASE"];
+  if (release === undefined || existsSync(release)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const watcher = watch(dirname(release), () => {
+      if (!existsSync(release)) return;
+      watcher.close();
+      resolve();
+    });
+  });
 }
 
 const provider = new FakeProvider();
@@ -34,6 +50,7 @@ for (const entry of script) {
   if (entry.noPrice === true) response.noPrice = true;
   if (entry.toolCall !== undefined) response.toolCall = entry.toolCall;
   if (entry.hang === true) response.before = new Promise<void>(() => {});
+  if (entry.gate === true) response.before = released();
   provider.enqueue(response);
 }
 

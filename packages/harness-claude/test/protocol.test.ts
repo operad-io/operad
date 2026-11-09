@@ -382,6 +382,21 @@ test("SIGTERM mid-turn aborts claude, writes a cancelled Result and exits 143", 
   expect(kinds(run).at(-1)).toBe("result");
 });
 
+test("a message line from the host reaches claude as a user turn while the run hangs", async () => {
+  const s = setup();
+  const child = new Child(FAKE_WORKER, s.env({ steps: [{ say: systemInit() }, { hang: true }] }), s.recordFile);
+  child.sendLine(JSON.stringify(s.input));
+  await child.stderrHas("fake-claude-hanging");
+  child.sendLine(JSON.stringify({ type: "message", text: "wrap up now" }));
+  await child.stderrHas("fake-claude-user-later");
+  child.signal("SIGTERM");
+  const run = await child.finish();
+
+  const later = run.record.find((entry) => "userLater" in entry);
+  expect(later).toMatchObject({ userLater: { role: "user", content: "wrap up now" } });
+  expect(last(run)).toMatchObject({ type: "result", result: "cancelled" });
+});
+
 test("an unknown input field such as args is refused with exit 2", async () => {
   const s = setup();
   s.input["args"] = ["--model", "opus"];

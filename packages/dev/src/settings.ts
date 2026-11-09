@@ -100,6 +100,16 @@ export type CheckCommand =
   | string
   | { readonly run: string; readonly failed?: FailedRerun };
 
+/** How a work step that is running out of time is told to stop. */
+export interface WorkSettings {
+  /**
+   * The share of the work step's time limit, above 0 and below 1, at which the
+   * worker is asked to stop starting new things, commit and write a progress
+   * note.
+   */
+  readonly wrapUpAt: number;
+}
+
 /** The commands a task's gate runs and how long each may take. */
 export interface GateSettings {
   readonly commands: readonly CheckCommand[];
@@ -203,6 +213,7 @@ export interface DevSettings {
   readonly prepare: readonly string[];
   readonly gate: GateSettings;
   readonly check: CheckSettings;
+  readonly work: WorkSettings;
   readonly reviewer: ReviewerSettings;
   readonly integration: IntegrationSettings;
   readonly hooks: HookSettings;
@@ -252,6 +263,7 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
     commandTimeoutSecs: 1800,
   },
   check: { rerun: 1, flakyTask: 2 },
+  work: { wrapUpAt: 0.85 },
   reviewer: {
     use: DEFAULT_WORKER_USE,
     args: [],
@@ -291,6 +303,7 @@ const KNOWN_FIELDS = new Set([
   "prepare",
   "gate",
   "check",
+  "work",
   "reviewer",
   "integration",
   "hooks",
@@ -557,6 +570,26 @@ function checkSettings(value: unknown, field: string): CheckSettings {
         ? DEFAULT_DEV_SETTINGS.check.flakyTask
         : nonNegativeInteger(value.flakyTask, `${field}.flakyTask`),
   };
+}
+
+function workSettings(value: unknown, field: string): WorkSettings {
+  if (!isRecord(value)) {
+    throw new DevError(field, "must be an object");
+  }
+  for (const key of Object.keys(value)) {
+    if (key !== "wrapUpAt") {
+      throw new DevError(`${field}.${key}`, "is not a work setting");
+    }
+  }
+  const at = value.wrapUpAt;
+  if (at === undefined) return DEFAULT_DEV_SETTINGS.work;
+  if (typeof at !== "number" || !Number.isFinite(at) || at <= 0 || at >= 1) {
+    throw new DevError(
+      `${field}.wrapUpAt`,
+      "must be a number above 0 and below 1",
+    );
+  }
+  return { wrapUpAt: at };
 }
 
 function retrySettings(value: unknown, field: string): RetrySettings {
@@ -867,6 +900,10 @@ export function validateDevSettings(value: unknown): DevSettings {
       value.check === undefined
         ? DEFAULT_DEV_SETTINGS.check
         : checkSettings(value.check, "check"),
+    work:
+      value.work === undefined
+        ? DEFAULT_DEV_SETTINGS.work
+        : workSettings(value.work, "work"),
     reviewer:
       value.reviewer === undefined
         ? DEFAULT_DEV_SETTINGS.reviewer

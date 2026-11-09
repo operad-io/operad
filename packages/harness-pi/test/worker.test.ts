@@ -104,6 +104,16 @@ class Child {
     void this.#process.stdin.end();
   }
 
+  /** Writes one input line and leaves stdin open, so the host can say more later. */
+  sendLine(text: string): void {
+    this.#process.stdin.write(`${text}\n`);
+    void this.#process.stdin.flush();
+  }
+
+  endInput(): void {
+    void this.#process.stdin.end();
+  }
+
   /** Waits until stderr holds the text, or the child ends. */
   async stderrHas(text: string): Promise<void> {
     let ended = false;
@@ -433,6 +443,31 @@ test("parseInput accepts every documented field and every thinking level", () =>
     expect(parsed.ok).toBe(true);
     if (parsed.ok) expect(parsed.input.thinkingLevel).toBe(level);
   }
+});
+
+test("a message line from the host steers the agent: the model's next call sees it", async () => {
+  const s = setup();
+  const contexts = join(s.dir, "contexts.jsonl");
+  const release = join(s.dir, "release");
+  const child = new Child(FAKE_WORKER, s.home, {
+    FAKE_SCRIPT: JSON.stringify([{ text: "FIRST", gate: true }, { text: "SECOND" }]),
+    FAKE_CONTEXT_FILE: contexts,
+    FAKE_RELEASE: release,
+  });
+  child.sendLine(JSON.stringify(s.input));
+  await child.stderrHas("fake-stream-started");
+  child.sendLine(JSON.stringify({ type: "message", text: "WRAP_UP_MARKER" }));
+  await child.stderrHas("a message from the host is given to pi");
+  writeFileSync(release, "go");
+  child.endInput();
+  const run = await child.finish();
+
+  expect(run.exitCode).toBe(0);
+  const calls = readFileSync(contexts, "utf-8").split("\n").filter((line) => line.length > 0);
+  expect(calls.length).toBe(2);
+  expect(calls[0]).not.toContain("WRAP_UP_MARKER");
+  expect(calls[1]).toContain("WRAP_UP_MARKER");
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "SECOND" });
 });
 
 test("SIGTERM during a slow fake stream writes a cancelled Result and exits 143", async () => {
