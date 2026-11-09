@@ -134,6 +134,19 @@ export interface EnsureServerOptions {
   readonly lockHeld?: ((path: string) => boolean) | undefined;
 }
 
+/** True when a serve's log says it could not listen because the port is taken. */
+export function portInUse(text: string): boolean {
+  return /Failed to start server|EADDRINUSE|address already in use|port \d+ in use/i.test(text);
+}
+
+function readLog(log: string): string {
+  try {
+    return readFileSync(log, "utf8");
+  } catch {
+    return "";
+  }
+}
+
 function tailOf(log: string): string {
   try {
     const lines = lastLines(readFileSync(log, "utf8"), 10);
@@ -177,6 +190,8 @@ export async function ensureServer(options: EnsureServerOptions): Promise<string
   }
 
   const log = join(home, "serve.log");
+  // Only what the started serve writes counts, not what older ones left.
+  const logBefore = readLog(log).length;
   options.write?.(`starting operad serve (log: ${log})`);
   const started = options.spawn(log);
   let exitCode: number | null | undefined;
@@ -195,6 +210,11 @@ export async function ensureServer(options: EnsureServerOptions): Promise<string
   for (;;) {
     if (exitCode !== undefined && !adopted) {
       if (!lockCheck(serveLockPath(home))) {
+        if (portInUse(readLog(log).slice(logBefore))) {
+          throw new TuiStartError(
+            `operad serve could not start: port ${config.http.port} is in use and nothing answers on ${url}; an operad serve of this home that still runs does not answer on ${url}; log ${log}:\n${tailOf(log)}`,
+          );
+        }
         throw new TuiStartError(
           `operad serve exited at once${exitCode === null ? "" : ` (code ${exitCode})`}; log ${log}:\n${tailOf(log)}`,
         );
@@ -206,6 +226,12 @@ export async function ensureServer(options: EnsureServerOptions): Promise<string
     }
     if (now() >= deadline) break;
     await wait(step);
+  }
+  if (adopted) {
+    // The serve that holds the home lock is not ours and did not answer.
+    throw new TuiStartError(
+      `an operad serve already runs for this home but does not answer at ${url} within ${Math.round(timeout / 1000)} seconds; check http.enabled, http.listen and http.port in config.json; log ${log}:\n${tailOf(log)}`,
+    );
   }
   throw new TuiStartError(
     `operad serve did not answer at ${url} within ${Math.round(timeout / 1000)} seconds; log ${log}:\n${tailOf(log)}`,

@@ -202,6 +202,9 @@ the row fields.
 | T-0101-M3 | packages/tui/src/state.ts | the window gave every list two lines more than it has | `the TUI reducer > the window around the cursor counts objects of three lines, the last one's blank line not needed` |
 | T-0082-M1 | packages/tui/src/actions.ts | the palette listed the TUI commands before the open object's actions | `actions in the reducer > groups are shown in the order actions, tui; search reads the title` |
 | T-0082-M2 | packages/tui/src/state.ts | the go back command did nothing instead of doing what escape does | `actions in the reducer > each TUI command does what its key does > go back closes the open object, as escape does` |
+| T-0117-M1 | packages/tui/src/args.ts | a number above the schema's maximum was accepted | `arguments of an action > an integer outside its bounds is refused locally; one inside is sent` |
+| T-0127-M1 | packages/tui/src/autostart.ts | a start that failed on a taken port was reported as "exited at once" | `ensureServer > a child that cannot listen because the port is taken says the port is in use` |
+| T-0127-M2 | packages/tui/src/autostart.ts | a serve of the home that never answers was reported as a start that did not answer | `ensureServer > a child that lost the home lock to a serve that never answers says that serve runs and does not answer` |
 | T-0083-M1 | packages/tui/src/actions.ts | a match at the start of a word got no bonus over a match in the middle | `palette search: query to first entry > "rec" finds ops:reconcile first` |
 | T-0083-M2 | packages/tui/src/actions.ts | the group was not searched | `palette search: query to first entry > a group word keeps only the entries of that group` |
 | T-0083-M3 | packages/tui/src/actions.ts | the recent list put the newest entry last | `palette search: recent entries > an empty query lists the last five used first, the latest first, then the group order` |
@@ -209,3 +212,4 @@ the row fields.
 | T-0083-M5 | packages/tui/src/view/index.ts | the matched characters of the name were not drawn in the accent | `palette search: highlight positions > the matched characters are drawn in the accent colour` |
 | T-0112-M10 | packages/tui/src/actions.ts | a status number in front of a refusal was kept | `a refusal line > drops a status number and a field prefix, and keeps the sentence` |
 | T-0112-M11 | packages/tui/src/actions.ts | a `field: ` prefix in front of a refusal was kept | `a refusal line > drops a status number and a field prefix, and keeps the sentence` |
+| T-0117-M2 | packages/tui/src/args.ts | a boolean argument was not recognised, so no yes/no list was asked | `arguments of an action > a boolean is a yes/no list that starts on its default` |
