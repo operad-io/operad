@@ -26,6 +26,7 @@ function worktree(complete = false): string {
   const manifests = [dir];
   for (const name of readdirSync(join(root, "packages"))) {
     cpSync(join(root, "packages", name, "package.json"), join(dir, "packages", name, "package.json"));
+    cpSync(join(root, "packages", name, "bunfig.toml"), join(dir, "packages", name, "bunfig.toml"));
     manifests.push(join(dir, "packages", name));
   }
   for (const m of manifests) {
@@ -81,6 +82,18 @@ describe("scripts/check-install.ts", () => {
       expect(code).not.toBe(0);
       expect(err).toContain("run bun install");
       expect(err).not.toContain("Cannot find module");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("bun test run from a package directory stops on the same line", async () => {
+    const dir = worktree();
+    try {
+      writeFileSync(join(dir, "packages", "dev", "trivial.test.ts"), 'import { test } from "bun:test";\ntest("runs", () => {});\n');
+      const { code, err } = await run(["bun", "test", "./trivial.test.ts"], join(dir, "packages", "dev"));
+      expect(code).not.toBe(0);
+      expect(err).toContain("run bun install");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

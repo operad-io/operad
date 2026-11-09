@@ -826,3 +826,4 @@ The script lives in `scripts/`, which has no package of its own, so its rows are
 | T-0109-M1 | scripts/check-install.ts | the link-exists test never reported a missing link | `scripts/check-install.ts > a worktree with the access-match link removed fails fast with the bun install line` |
 | T-0109-M2 | scripts/stress.sh | removed the `check-install.ts` call | `scripts/check-install.ts > scripts/stress.sh refuses to start on a stale install` |
 | T-0109-M3 | bunfig.toml | emptied the test preload | `scripts/check-install.ts > bun test in such a worktree stops on the same line before running a test` |
+| T-0109-M4 | packages/dev/bunfig.toml | emptied the package's test preload | `scripts/check-install.ts > bun test run from a package directory stops on the same line` |
