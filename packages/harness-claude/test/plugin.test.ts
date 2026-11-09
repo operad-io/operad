@@ -16,7 +16,7 @@ import {
 } from "@operad-io/engine";
 import { EVENT_NOTE_TEMPLATE } from "@operad-io/harness-process";
 import { claudeToolEvent, createClaudeHarnessPlugin, modelErrorOf } from "../src/index.ts";
-import { cleanupTempRoots, manualClock, tempRoot, waitForFile, type ManualClock } from "./support.ts";
+import { alive, cleanupTempRoots, manualClock, tempRoot, waitForFile, waitForGone, waitForPid, type ManualClock } from "./support.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -70,15 +70,6 @@ async function setup(mode: string, settings?: Readonly<Record<string, unknown>>)
 
 function dataOf(result: PluginStepResult): Record<string, unknown> {
   return (result.data ?? {}) as Record<string, unknown>;
-}
-
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function recorded(env: TestEnv): Record<string, unknown> {
@@ -362,7 +353,7 @@ describe("harness-claude/agent", () => {
     const data = dataOf(result);
     expect(data.reason).toBe("signal");
     expect(String(data.message)).toContain("SIGKILL");
-    expect(alive(Number(readFileSync(env.marker, "utf8")))).toBe(false);
+    await waitForGone(await waitForPid(env.marker));
     expect(alive(process.pid)).toBe(true);
   });
 
@@ -404,13 +395,13 @@ describe("harness-claude/agent", () => {
     const running = runAgent(env, { prompt: "hello", cwd: env.root, wallTimeSecs: 300, stallSecs: 1 });
     await waitForFile(env.marker);
     await env.clock.when(() => env.clock.clears > 0);
-    const pid = Number(readFileSync(env.marker, "utf8"));
+    const pid = await waitForPid(env.marker);
     env.clock.fireUpTo(1000);
 
     const result = await running;
     expect(result.result).toBe("failed");
     expect(dataOf(result).reason).toBe("stall");
-    expect(alive(pid)).toBe(false);
+    await waitForGone(pid);
   });
 
   test("silence with an open tool call is not a stall", async () => {
@@ -430,13 +421,13 @@ describe("harness-claude/agent", () => {
     const env = await setup("tool-silent");
     const running = runAgent(env, { prompt: "hello", cwd: env.root, wallTimeSecs: 1, stallSecs: 300 });
     await waitForFile(env.marker);
-    const pid = Number(readFileSync(env.marker, "utf8"));
+    const pid = await waitForPid(env.marker);
     env.clock.fireUpTo(1_000);
 
     const result = await running;
     expect(result.result).toBe("failed");
     expect(dataOf(result).reason).toBe("wall");
-    expect(alive(pid)).toBe(false);
+    await waitForGone(pid);
   });
 
   test("settings supply the limits and a step param overrides them", async () => {
@@ -466,13 +457,13 @@ describe("harness-claude/agent", () => {
       { signal: controller.signal },
     );
     await waitForFile(env.marker);
-    const pid = Number(readFileSync(env.marker, "utf8"));
+    const pid = await waitForPid(env.marker);
     controller.abort();
 
     const result = await running;
     expect(result.result).toBe("interrupted");
     expect(dataOf(result).reason).toBe("cancelled");
-    expect(alive(pid)).toBe(false);
+    await waitForGone(pid);
   });
 
   test("a cwd that does not exist fails with a clear reason", async () => {

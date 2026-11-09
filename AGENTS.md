@@ -64,11 +64,25 @@ by `-M` and a number starting at 1 for each task: `TK0001-M1`.
 
 ## Flaky tests
 
-A test that failed and then passed on rerun is a bug until shown otherwise. A
-task that fixes one states the stress command and its result before and after
-the fix in its final answer, and is done when
-`bash scripts/stress.sh --runs 200 --load 2 <file>` passes. Never raise a
-timeout or add a retry inside a test to make it pass.
+A test that failed and then passed on rerun is a bug until shown otherwise.
+Never raise a timeout or add a retry inside a test to make it pass.
+
+Only a task that fixes a flaky test runs `scripts/stress.sh`, and it runs it
+twice: once to reproduce before the fix and once to confirm after it. Every
+other task's check is `bash scripts/verify.sh`.
+
+Size a stress run by time, not by a fixed count: time one run of the file
+alone, then choose `--runs` so the stress run takes about ten minutes, at least
+20 runs and at most 200, with `--load 2`. The task is done when that run
+passes; its final answer states the command, the number of runs and the result
+before and after the fix.
+
+Run one stress run at a time, in the foreground: never two at once, never in
+the background, never left running when the task ends.
+
+A failure seen only while the machine was overloaded (load average far above
+the number of cores) is not yet a flaky test. Note the load, and reproduce it
+with a stress run before you change anything.
 
 ## Verify
 

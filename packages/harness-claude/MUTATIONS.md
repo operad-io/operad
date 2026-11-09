@@ -92,6 +92,7 @@ setup it depends on, in the order they were recorded. The root
 | T-0063-M32 | packages/harness-claude/src/worker.ts | the start summary judged the original tool name, not the access-match translation | `a denied NotebookEdit or MultiEdit start line shows no path` |
 | T-0063-M33 | packages/harness-claude/src/worker.ts | the denial check skipped the translation for one mapped tool (Grep/Glob) | `every tool the translation maps shows only its denial when the profile denies it` |
 | T-0063-M34 | packages/harness-claude/src/worker.ts | the denied-call summary dropped the matching rule's name | `a Bash command that denyCommands refuses is denied with the reason, logged, and the run goes on` |
+| T-0107-M1 | packages/harness-claude/test/support.ts | `alive` always reported the pid present, so `waitForGone` never saw it go | `harness-claude/agent > cancel stops the worker and reports interrupted` (fails after 5 s with the `ps -o stat,ppid` line); the `waitForPid` guard against an empty marker (pid 0) is a race of microseconds and no single run catches it: the unfixed file failed 5 of 9600 runs on it under `--load 2` |
 
 ## T-0099 — a message to a running agent
 

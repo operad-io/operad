@@ -1105,8 +1105,9 @@ exits.
 
 It prints the number of runs, passes and failures, each failing test name with
 its count, and the path of the full log, and exits 1 when anything failed, when
-no test ran, or when bun itself failed. A fix for a flaky test is done when
-`bash scripts/stress.sh --runs 200 --load 2 <file>` passes.
+no test ran, or when bun itself failed. A fix for a flaky test is done when a
+stress run with `--load 2` passes whose `--runs` is chosen to take about ten
+minutes (at least 20, at most 200); run one stress run at a time.
 
 ## Notifications
 

@@ -64,7 +64,10 @@ export function takeCodeSnapshot(
  * is a new problem.
  */
 export function problemKey(line: string): string {
-  return line.replace(/[?&]operad-plugin-load=\d+/g, "");
+  return line
+    .replace(/[?&]operad-plugin-load=\d+/g, "")
+    .replace(/\s*\n\s*/g, " ")
+    .trim();
 }
 
 /**
@@ -163,6 +166,16 @@ export function codeChecker(
 /** Set in the environment of a serve that a supervisor started. */
 export const SUPERVISED_ENV = "OPERAD_SERVE_SUPERVISED";
 
+/**
+ * True when a supervisor started this serve. Removes the flag from `env`, so
+ * no process the serve starts (run processes, steps, their commands) sees it.
+ */
+export function takeSupervisedFlag(env: NodeJS.ProcessEnv = process.env): boolean {
+  const supervised = env[SUPERVISED_ENV] === "1";
+  delete env[SUPERVISED_ENV];
+  return supervised;
+}
+
 /** The exit code of a serve that stopped only to load new code. */
 export const RELOAD_EXIT = 75;
 
@@ -196,7 +209,9 @@ export async function superviseServe(): Promise<number> {
       });
       if (stopping !== undefined) child.kill(stopping);
       const code = await child.exited;
-      if (code !== RELOAD_EXIT || stopping !== undefined) return code;
+      // A stop that reached the supervisor while the child left for new code is still a stop.
+      if (stopping !== undefined) return code === RELOAD_EXIT ? 0 : code;
+      if (code !== RELOAD_EXIT) return code;
     }
   } finally {
     process.removeListener("SIGINT", interrupt);
