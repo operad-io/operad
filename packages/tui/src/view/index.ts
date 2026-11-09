@@ -428,7 +428,14 @@ function sectionContent(
 function objectContent(state: TuiState, palette: TuiPalette): StyledText {
   const object = state.object;
   if (object === undefined) {
-    return styled([chunk("\n"), chunk("select an object", palette.weak)]);
+    // An openable cursor row is on the way; a row that names no object, or an empty list, asks.
+    const tab = state.tabs[state.active];
+    const under = tab?.list.rows[tab.list.cursor];
+    const waiting = under !== undefined && under.openable !== false;
+    return styled([
+      chunk("\n"),
+      chunk(waiting ? "loading…" : "select an object", palette.weak),
+    ]);
   }
   const section = activeSection(state);
   const width = sectionWidth(state);

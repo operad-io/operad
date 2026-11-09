@@ -399,6 +399,7 @@ export async function runVerify(
   const record: VerifyRecord = {
     result,
     run: ctx.runId,
+    commands: commands.map((line) => (typeof line === "string" ? line : line.run)),
     ...(command === undefined ? {} : { command }),
     ...(log === undefined ? {} : { log }),
     ...(message === undefined ? {} : { message }),
@@ -437,6 +438,14 @@ export async function runVerify(
       ...(outcomeData.tail === undefined ? {} : { tail: outcomeData.tail }),
     }),
   };
+}
+
+/** The gate commands the attempt's verify ran, from its record. */
+function verifiedCommands(verify: VerifyRecord | undefined | null): readonly string[] {
+  const named = verify?.commands;
+  return Array.isArray(named)
+    ? named.filter((line): line is string => typeof line === "string")
+    : [];
 }
 
 interface FileDiff {
@@ -943,9 +952,11 @@ function reviewPrompt(
     "## Checks already run",
     [
       checks.length === 0
-        ? "The repository's checks already passed on this commit."
+        ? "No checks ran on this commit: the repository has none configured."
         : `These checks already passed on this commit:\n${checks.map((line) => `- \`${line}\``).join("\n")}`,
-      "Do not run them again, nor the repository's full test suite, nor anything that starts a simulator, a browser or a server. You may run one focused test file to confirm a suspicion, inside this checkout only. Do not copy the checkout elsewhere.",
+      checks.length === 0
+        ? "Do not run the repository's full test suite, nor anything that starts a simulator, a browser or a server. You may run one focused test file to confirm a suspicion, inside this checkout only. Do not copy the checkout elsewhere."
+        : "Do not run them again, nor the repository's full test suite, nor anything that starts a simulator, a browser or a server. You may run one focused test file to confirm a suspicion, inside this checkout only. Do not copy the checkout elsewhere.",
     ].join("\n"),
     "## What to write",
     [
@@ -1798,6 +1809,18 @@ export async function runReview(
     stepResult: string,
     extra: Readonly<Record<string, unknown>> = {},
   ): Promise<PluginStepResult> => {
+    // A report from the fallback harness ran with the fallback's harness and
+    // arguments; only the limits carried over from the round.
+    const lastRun = recorded.runs?.[recorded.runs.length - 1];
+    const fallback = context.settings.reviewer.fallback;
+    if (used !== undefined && lastRun?.role === "fallback" && fallback !== undefined) {
+      used = {
+        ...used,
+        use: fallback.use,
+        args: fallback.args ?? [],
+        sources: { ...used.sources, use: "fallback", args: "fallback" },
+      };
+    }
     const withSettings: ReviewRecord =
       used === undefined ? recorded : { ...recorded, reviewSettings: used };
     // A review that passed still waits for a person when the worker or the
@@ -2027,7 +2050,13 @@ export async function runReview(
       : followed === undefined && history.length > 0
         ? "reverify"
         : "first";
-  used = reviewSettingsOf(kind, context.settings.reviewer, reviews === 0);
+  // A review of a task that already had one is a later review for its
+  // settings, even when the followed commit is missing and it reads like a first.
+  used = reviewSettingsOf(
+    kind === "first" && history.length > 0 ? "rework" : kind,
+    context.settings.reviewer,
+    reviews === 0,
+  );
   // The lines the task's own change added, for the pre-existing rules.
   const own: LineMap = addedLinesOf(
     gitZ(context.repository.path, [
@@ -2215,9 +2244,7 @@ export async function runReview(
       grading,
       context.settings.prepare,
       reworkPrompt,
-      context.settings.gate.commands.map((command) =>
-        typeof command === "string" ? command : command.run,
-      ),
+      verifiedCommands(attempt.verify),
     );
     // A resumed call asks with the prompt it recorded, not one built again.
     const recorded =

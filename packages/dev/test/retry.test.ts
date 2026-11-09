@@ -1,5 +1,5 @@
 import { createPoolPlugin } from "@operad-io/pool";
-import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,6 +30,10 @@ import {
 } from "../src/index.ts";
 import { makeRemote, type RemoteSetup } from "./git-support.ts";
 import { cleanupTempRoots, guardLockHandles, storeAt, tempRoot } from "./support.ts";
+
+// Every test here makes real git worktrees, which takes longer than bun's
+// default 5 s when the machine is busy.
+setDefaultTimeout(60_000);
 
 afterAll(cleanupTempRoots);
 guardLockHandles();

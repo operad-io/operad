@@ -26,7 +26,7 @@ import {
   type LogBackend,
 } from "../../src/index.ts";
 import plugin from "../fixtures/plugins/runner.ts";
-import { WORKER_ABORT_GRACE_MS } from "../../src/runner/runner.ts";
+import { REAP_BUDGET_MS, WORKER_ABORT_GRACE_MS } from "../../src/runner/runner.ts";
 import { KILL_GRACE_MS } from "../../src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
 
@@ -454,6 +454,8 @@ describe("runner", () => {
   test("an aborted worker gets longer than the slowest process-group stop", () => {
     // Up to one grace for `ready`, one more after SIGTERM, plus message latency.
     expect(WORKER_ABORT_GRACE_MS).toBeGreaterThan(2 * KILL_GRACE_MS);
+    // The sweep after the stop has its own budget on top.
+    expect(WORKER_ABORT_GRACE_MS).toBeGreaterThanOrEqual(2 * KILL_GRACE_MS + REAP_BUDGET_MS);
   });
 
   test("a step that throws is not recorded as its success result", async () => {
