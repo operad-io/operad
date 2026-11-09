@@ -51,6 +51,25 @@ export interface HttpServerOptions {
   readonly keepAliveMs?: number | undefined;
   readonly tokenCheckMs?: number | undefined;
   readonly clock?: (() => number) | undefined;
+  /** How long `stop` waits for the addresses to release; default 5 seconds. */
+  readonly stopTimeoutMs?: number | undefined;
+  /** Waits `ms`; tests inject it instead of a timer. */
+  readonly wait?: ((ms: number) => Promise<void>) | undefined;
+  /** Starts one listener; tests replace it to fake a listener that will not stop. */
+  readonly listener?: typeof Bun.serve | undefined;
+}
+
+/** How long `stop` waits for every listen address to be released. */
+export const DEFAULT_STOP_TIMEOUT_MS = 5_000;
+
+/** `stop` could not release an address in time; the process still holds it. */
+export class HttpStopError extends Error {
+  readonly addresses: readonly string[];
+  constructor(addresses: readonly string[]) {
+    super(`http: ${addresses.join(", ")} did not release the port`);
+    this.name = "HttpStopError";
+    this.addresses = addresses;
+  }
 }
 
 export interface HttpServerHandle {
@@ -588,6 +607,8 @@ function createHandler(
         return json(result);
       } catch (error) {
         if (error instanceof ViewError) throw error;
+        // The status stays in the log; a client shows the line itself.
+        onLog(`http: action "${action}" refused (422): ${messageOf(error)}`);
         return errorResponse(422, "refused", messageOf(error));
       }
     }
@@ -660,6 +681,30 @@ export async function startHttpServer(
   const streams = new StreamRegistry();
   const handler = createHandler(options, hub, streams, onLog);
   const servers: { readonly address: string; readonly server: ReturnType<typeof Bun.serve> }[] = [];
+  const listener = options.listener ?? Bun.serve;
+  const wait =
+    options.wait ??
+    ((ms: number) =>
+      new Promise<void>((resolve) => {
+        // Unref'd: a stop that finished in time must not keep the process up.
+        (setTimeout(resolve, ms) as { unref?: () => void }).unref?.();
+      }));
+  const stopTimeoutMs = options.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS;
+
+  /**
+   * Stops every listener at once, so one that will not stop (a peer that
+   * never reads its stream) cannot keep the others bound, and waits a bounded
+   * time. The addresses that did not release in time are named.
+   */
+  const stopAll = async (): Promise<readonly string[]> => {
+    const pending = new Set(servers.map(({ address }) => address));
+    const stops = servers.map(async ({ address, server }) => {
+      await Promise.resolve(server.stop(true)).catch(() => undefined);
+      pending.delete(address);
+    });
+    await Promise.race([Promise.all(stops), wait(stopTimeoutMs)]);
+    return [...pending];
+  };
 
   // A rotation happens in another process (`operad http token rotate`), so the
   // server notices it by reading the secret file again. A stream opened with the
@@ -684,7 +729,7 @@ export async function startHttpServer(
 
   try {
     for (const address of options.config.listen) {
-      const server = Bun.serve({
+      const server = listener({
         hostname: address,
         port: options.config.port,
         // An event stream is quiet by design; the 15-second comment keeps it
@@ -703,9 +748,7 @@ export async function startHttpServer(
     clearInterval(tokenCheck);
     hub.stop();
     streams.closeAll();
-    for (const { server } of servers) {
-      await server.stop(true).catch(() => undefined);
-    }
+    await stopAll();
     throw error;
   }
 
@@ -722,9 +765,8 @@ export async function startHttpServer(
       clearInterval(tokenCheck);
       hub.stop();
       streams.closeAll();
-      for (const { server } of servers) {
-        await server.stop(true).catch(() => undefined);
-      }
+      const unreleased = await stopAll();
+      if (unreleased.length > 0) throw new HttpStopError(unreleased);
     },
   };
 }

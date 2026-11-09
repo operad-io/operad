@@ -202,6 +202,9 @@ the row fields.
 | T-0101-M3 | packages/tui/src/state.ts | the window gave every list two lines more than it has | `the TUI reducer > the window around the cursor counts objects of three lines, the last one's blank line not needed` |
 | T-0082-M1 | packages/tui/src/actions.ts | the palette listed the TUI commands before the open object's actions | `actions in the reducer > groups are shown in the order actions, tui; search reads the title` |
 | T-0082-M2 | packages/tui/src/state.ts | the go back command did nothing instead of doing what escape does | `actions in the reducer > each TUI command does what its key does > go back closes the open object, as escape does` |
+| T-0117-M1 | packages/tui/src/args.ts | a number above the schema's maximum was accepted | `arguments of an action > an integer outside its bounds is refused locally; one inside is sent` |
+| T-0127-M1 | packages/tui/src/autostart.ts | a start that failed on a taken port was reported as "exited at once" | `ensureServer > a child that cannot listen because the port is taken says the port is in use` |
+| T-0127-M2 | packages/tui/src/autostart.ts | a serve of the home that never answers was reported as a start that did not answer | `ensureServer > a child that lost the home lock to a serve that never answers says that serve runs and does not answer` |
 | T-0083-M1 | packages/tui/src/actions.ts | a match at the start of a word got no bonus over a match in the middle | `palette search: query to first entry > "rec" finds ops:reconcile first` |
 | T-0083-M2 | packages/tui/src/actions.ts | the group was not searched | `palette search: query to first entry > a group word keeps only the entries of that group` |
 | T-0083-M3 | packages/tui/src/actions.ts | the recent list put the newest entry last | `palette search: recent entries > an empty query lists the last five used first, the latest first, then the group order` |
@@ -212,3 +215,8 @@ the row fields.
 | T-0084-M3 | packages/tui/src/theme.ts | saving the theme replaced tui.json with only the theme key | `saving the choice > it writes tui.json, keeps the other keys and the next start reads it` |
 | T-0084-M4 | packages/tui/src/app.ts | Enter kept the theme for the session but did not write tui.json | `the theme command in the running app > enter keeps the theme, writes tui.json, and a new start uses it` |
 | T-0084-M5 | packages/tui/src/app.ts | the view ignored the preview and always drew the theme in force | `the theme command in the running app > moving the selection changes the drawn colours; escape puts them back` |
+| T-0129-M2 | packages/tui/src/state.ts | opening a type-tab row asked for the bare id instead of `<type>:<id>` | `the TUI object app > a row opens by its typed id; a server that refuses bare ids is never asked for one` |
+| T-0112-M10 | packages/tui/src/actions.ts | a status number in front of a refusal was kept | `a refusal line > drops a status number and a field prefix, and keeps the sentence` |
+| T-0112-M11 | packages/tui/src/actions.ts | a `field: ` prefix in front of a refusal was kept | `a refusal line > drops a status number and a field prefix, and keeps the sentence` |
+| T-0117-M2 | packages/tui/src/args.ts | a boolean argument was not recognised, so no yes/no list was asked | `arguments of an action > a boolean is a yes/no list that starts on its default` |
+| T-0129-M3 | packages/tui/src/app.ts | the section request sent the answer's bare id instead of `<type>:<id>` | `the TUI object app > a row opens by its typed id; a server that refuses bare ids is never asked for one` |

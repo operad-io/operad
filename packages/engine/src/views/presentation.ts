@@ -227,6 +227,8 @@ export interface ViewActionRun {
   readonly action: string;
   readonly name: string;
   readonly value: unknown;
+  /** The result was already true, so nothing ran; `value` says so. */
+  readonly settled?: true | undefined;
 }
 
 export interface SectionOptions {
@@ -1145,21 +1147,50 @@ export class Views {
       );
     }
 
-    const target = this.resolveAction(name, resolved.type);
+    const owner = this.registry.viewsFor(resolved.type);
+    const subject =
+      owner === undefined
+        ? resolved.id
+        : this.guardedRow(owner.plugin, resolved.type, object).id;
+    const target = this.resolveAction(name, resolved.type, subject);
+    const env = { store: this.store };
+
+    // A result that is already true is not an error: the plugin says so and
+    // nothing runs.
+    if (target.action.settled !== undefined) {
+      let message: string | undefined;
+      try {
+        message = await target.action.settled(object, options.args ?? {}, env);
+      } catch (error) {
+        this.onLog(
+          `plugin "${target.plugin}": action "${target.action.name}": settled failed: ${messageOf(error)}`,
+        );
+      }
+      if (message !== undefined && message.length > 0) {
+        return {
+          plugin: target.plugin,
+          action: target.action.name,
+          name: target.info.name,
+          value: message,
+          settled: true,
+        };
+      }
+    }
+
     let holds: unknown;
     try {
-      holds = await target.action.when(object.data);
+      holds = await target.action.when(object.data, env);
     } catch (error) {
       this.onLog(
         `plugin "${target.plugin}": action "${target.action.name}": when failed: ${messageOf(error)}`,
       );
       throw new ViewError(
         "not-available",
-        `action "${target.info.name}" is not available now`,
+        `${subject} cannot ${target.info.name} now`,
       );
     }
     if (holds !== true) {
-      throw new ViewError("not-available", this.refusal(target, object));
+      throw new ViewError("not-available", await this.refusal(target, object, subject));
     }
 
     const args: Record<string, unknown> = { ...(options.args ?? {}) };
@@ -1267,7 +1298,7 @@ export class Views {
     if (candidates.length === 0) {
       throw new ViewError(
         "action",
-        `no loaded plugin declares action "${name}"`,
+        `there is no action "${name}"`,
       );
     }
     if (candidates.length > 1) {
@@ -1278,14 +1309,41 @@ export class Views {
     }
     const only = candidates[0];
     if (only === undefined) {
-      throw new ViewError("action", `no loaded plugin declares action "${name}"`);
+      throw new ViewError("action", `there is no action "${name}"`);
     }
     return only;
+  }
+
+  /**
+   * The line for an action this object cannot take at all: it starts with the
+   * object's own name, like every refusal, and says where the action works.
+   */
+  private notOffered(subject: string, name: string, type: string): ViewError {
+    const target = splitActionName(name);
+    const types = [
+      ...new Set(
+        this.registry
+          .actions()
+          .filter((info) =>
+            target === undefined
+              ? info.action === name
+              : info.plugin === target.plugin && info.action === target.action,
+          )
+          .map((info) => info.on),
+      ),
+    ];
+    return new ViewError(
+      "action",
+      types.length === 0
+        ? `${subject} has no action "${name}"`
+        : `${subject} is a ${type}; ${name} works on ${types.join(" or ")}`,
+    );
   }
 
   private resolveAction(
     name: string,
     type: string,
+    subject: string,
   ): {
     readonly plugin: string;
     readonly action: ActionTypeDefinition;
@@ -1296,12 +1354,7 @@ export class Views {
       const candidates = this.registry
         .actions()
         .filter((info) => info.action === name && info.on === type);
-      if (candidates.length === 0) {
-        throw new ViewError(
-          "action",
-          `no loaded plugin declares action "${name}"`,
-        );
-      }
+      if (candidates.length === 0) throw this.notOffered(subject, name, type);
       if (candidates.length > 1) {
         throw new ViewError(
           "ambiguous",
@@ -1309,9 +1362,7 @@ export class Views {
         );
       }
       const only = candidates[0];
-      if (only === undefined) {
-        throw new ViewError("action", `no loaded plugin declares action "${name}"`);
-      }
+      if (only === undefined) throw this.notOffered(subject, name, type);
       target = { plugin: only.plugin, action: only.action };
     }
 
@@ -1322,16 +1373,9 @@ export class Views {
           entry.name === `${target.plugin}:${target.action}` &&
           entry.on === type,
       );
-    if (info === undefined) {
-      throw new ViewError(
-        "action",
-        `action "${name}" is not available for objects of type "${type}"`,
-      );
-    }
+    if (info === undefined) throw this.notOffered(subject, name, type);
     const found = this.actionDefinition(target.plugin, target.action, type);
-    if (found === undefined) {
-      throw new ViewError("action", `action "${name}" is not loaded`);
-    }
+    if (found === undefined) throw this.notOffered(subject, name, type);
     return { plugin: target.plugin, action: found, info };
   }
 
@@ -1359,7 +1403,7 @@ export class Views {
       if (action === undefined) continue;
       let holds: unknown;
       try {
-        holds = await action.when(object.data);
+        holds = await action.when(object.data, { store: this.store });
       } catch (error) {
         this.onLog(
           `plugin "${info.plugin}": action "${info.action}": when failed: ${messageOf(error)}`,
@@ -1439,8 +1483,11 @@ export class Views {
         matches.push({ type: entry.type, id, object });
       }
     }
+    // A match in a declared type wins: types seen only in the facts (a type no
+    // loaded plugin declares any more) are looked at when no declared type holds
+    // the id.
     const seen = new Set(matches.map((match) => match.type));
-    for (const fact of this.store.facts?.() ?? []) {
+    for (const fact of matches.length > 0 ? [] : (this.store.facts?.() ?? [])) {
       const object = fact.object;
       if (object === undefined || object.id !== id) continue;
       if (seen.has(object.type)) continue;
@@ -1963,17 +2010,18 @@ export class Views {
   }
 
   /** The line an action refusal prints: the plugin's reason, or a plain one. */
-  private refusal(
+  private async refusal(
     target: { readonly action: ActionTypeDefinition; readonly info: ActionInfo },
     object: StoredObject,
-  ): string {
+    subject: string,
+  ): Promise<string> {
     try {
-      const why = target.action.why?.(object);
+      const why = await target.action.why?.(object, { store: this.store });
       if (why !== undefined && why.length > 0) return why;
     } catch (error) {
       this.onLog(`action "${target.info.name}": why failed: ${messageOf(error)}`);
     }
-    return `action "${target.info.name}" is not available now`;
+    return `${subject} cannot ${target.info.name} now`;
   }
 
   private async scopeShown(

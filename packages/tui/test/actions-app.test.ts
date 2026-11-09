@@ -89,7 +89,7 @@ describe("actions against the in-process server", () => {
       type("fine work");
       shell.key({ name: "enter" });
       await view.until((state) => state.object?.row.state === "approved" && !state.acting);
-      expect(bodies).toEqual([{ action: "tuitest:approve", id: "one", note: "fine work" }]);
+      expect(bodies).toEqual([{ action: "tuitest:approve", id: "item:one", note: "fine work" }]);
       expect((await h.store.get("item", "one"))?.data.approvedNote).toBe("fine work");
       // Approved is no longer offered: the key says so.
       shell.key({ name: "m" });
@@ -103,14 +103,14 @@ describe("actions against the in-process server", () => {
       shell.key({ name: "d" });
       shell.key({ name: "y", sequence: "y" });
       await view.until((state) => state.object?.row.state === "dropped" && !state.acting);
-      expect(bodies[1]).toEqual({ action: "tuitest:drop", id: "one", confirmed: true });
+      expect(bodies[1]).toEqual({ action: "tuitest:drop", id: "item:one", confirmed: true });
 
-      // The plugin's refusal shows the server's status and message verbatim.
+      // The plugin's refusal shows its line, without the status.
       shell.key({ name: ":", sequence: ":" });
       type("fail");
       shell.key({ name: "enter" });
       await view.until((state) => state.notice !== undefined && !state.acting);
-      expect(view.last?.notice).toBe("422 the plugin refused");
+      expect(view.last?.notice).toBe("the plugin refused");
       shell.key({ name: "j" });
       expect(view.last?.notice).toBeUndefined();
     } finally {

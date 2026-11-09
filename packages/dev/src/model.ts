@@ -523,6 +523,18 @@ export class DevError extends Error {
   }
 }
 
+/**
+ * An action cannot run, or a race made it stale. The message is the line a
+ * person reads, as it is: no field name in front, no status.
+ */
+export class DevRefusal extends DevError {
+  constructor(line: string) {
+    super("", line);
+    this.name = "DevRefusal";
+    this.message = line;
+  }
+}
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

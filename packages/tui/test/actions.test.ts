@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type { ViewAction, ViewObject } from "@operad-io/engine";
-import { RESERVED_KEYS, entryHint, keyOf, paletteEntries } from "../src/actions.ts";
+import {
+  RESERVED_KEYS,
+  actionFailed,
+  entryHint,
+  keyOf,
+  paletteEntries,
+  refusalLine,
+} from "../src/actions.ts";
 import {
   footerText,
   initialState,
@@ -340,14 +347,14 @@ describe("actions in the reducer", () => {
     });
   });
 
-  test("a refusal shows the server's status and message until the next key", () => {
+  test("a refusal shows the line without the status until the next key", () => {
     let state = press(opened(), "a", ...typeText("ok"), "enter");
     expect(state.acting).toBe(true);
     state = reduce(state, { type: "action-launched" });
     expect(state.actionRequest).toBeUndefined();
     const message = "item one: already approved by someone else";
     state = reduce(state, { type: "action-error", status: 409, message });
-    expect(noticeText(state)).toBe(`409 ${message}`);
+    expect(noticeText(state)).toBe(message);
     expect(state.acting).toBe(false);
     expect(footerText(state)).toContain("tuitest:approve");
     expect(noticeText(press(state, "j"))).toBeUndefined();
@@ -359,5 +366,16 @@ describe("actions in the reducer", () => {
     expect(second.actionRequest).toEqual(sent.actionRequest);
     expect(noticeText(second)).toBe("the last action has not answered yet");
     expect(reduce(sent, { type: "action-done" }).acting).toBe(false);
+  });
+});
+
+describe("a refusal line", () => {
+  test("drops a status number and a field prefix, and keeps the sentence", () => {
+    const line = 'T-0114-x is in draft plan P-0018-y; confirm the plan first (dev:confirm P-0018-y)';
+    expect(refusalLine(`422 confirm: ${line}`)).toBe(line);
+    expect(refusalLine(`confirm: ${line}`)).toBe(line);
+    expect(refusalLine(line)).toBe(line);
+    const state = actionFailed(opened(), `422 confirm: ${line}`);
+    expect(noticeText(state)).toBe(line);
   });
 });

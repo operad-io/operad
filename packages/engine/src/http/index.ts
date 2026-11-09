@@ -16,7 +16,9 @@ export {
 } from "./token.ts";
 export {
   DEFAULT_KEEP_ALIVE_MS,
+  DEFAULT_STOP_TIMEOUT_MS,
   displayNameOf,
+  HttpStopError,
   startHttpServer,
   type HttpServerHandle,
   type HttpServerOptions,

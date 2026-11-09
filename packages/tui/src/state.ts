@@ -18,6 +18,7 @@ import type {
 } from "@operad-io/engine";
 import type { TuiTypeInfo } from "./client.ts";
 import { cachedLayout, layoutMarkdown, type LayoutLine } from "./layout.ts";
+import type { ArgField } from "./args.ts";
 import { sanitize } from "./sanitize.ts";
 import {
   actionFailed,
@@ -149,12 +150,34 @@ export type TuiInput =
       readonly required: boolean;
       /** The action asks to confirm after the note. */
       readonly confirm: boolean;
+      readonly args?: Readonly<Record<string, unknown>> | undefined;
+    }
+  | {
+      /** One argument of an action is being asked: a list, a number or a text. */
+      readonly kind: "args";
+      readonly action: string;
+      readonly id: string;
+      readonly fields: readonly ArgField[];
+      /** The field being asked. */
+      readonly at: number;
+      /** The answers so far, by argument name. */
+      readonly values: Readonly<Record<string, unknown>>;
+      /** The cursor in a list. */
+      readonly cursor: number;
+      /** What is typed into a number or a text. */
+      readonly text: string;
+      /** Why the last answer was refused. */
+      readonly error?: string | undefined;
+      /** The note comes after the arguments: whether it is required. */
+      readonly note?: { readonly required: boolean } | undefined;
+      readonly confirm: boolean;
     }
   | {
       readonly kind: "confirm";
       readonly action: string;
       readonly id: string;
       readonly note?: string | undefined;
+      readonly args?: Readonly<Record<string, unknown>> | undefined;
     };
 
 /** An action the reducer wants the caller to send with `POST /v1/act`. */
@@ -162,6 +185,7 @@ export interface TuiActionRequest {
   readonly action: string;
   readonly id: string;
   readonly note?: string | undefined;
+  readonly args?: Readonly<Record<string, unknown>> | undefined;
   readonly confirmed?: boolean | undefined;
 }
 
@@ -516,7 +540,7 @@ export type TuiStateEvent =
   | { readonly type: "theme-launched" }
   /** The action ran. */
   | { readonly type: "action-done" }
-  /** The server refused the action; its status and message show as they came. */
+  /** The server refused the action; the message shows as the line, the status does not. */
   | {
       readonly type: "action-error";
       readonly message: string;
@@ -890,10 +914,20 @@ function openObject(state: TuiState): TuiState {
   if (row === undefined || row.openable === false) return state;
   const previous = state.object?.source === row.id ? state.object : undefined;
   const version = state.objectVersion + 1;
+  // A type tab knows the type of its rows, so the request names it: a bare id
+  // can be ambiguous across types.
+  const typeName = tab?.kind === "type" ? tab.type : undefined;
+  const requestId =
+    typeName !== undefined && !row.id.startsWith(`${typeName}:`)
+      ? `${typeName}:${row.id}`
+      : row.id;
   const object: TuiObject = {
-    id: row.id,
+    id: requestId,
     source: row.id,
-    type: previous?.type ?? (row.id.includes(":") ? row.id.slice(0, row.id.indexOf(":")) : row.id),
+    type:
+      previous?.type ??
+      typeName ??
+      (row.id.includes(":") ? row.id.slice(0, row.id.indexOf(":")) : row.id),
     link: previous?.link ?? "",
     row,
     // A request for the sections died with the old open, so none is loading.
@@ -910,7 +944,7 @@ function openObject(state: TuiState): TuiState {
     ...state,
     object,
     objectVersion: version,
-    objectRequest: { id: row.id, version },
+    objectRequest: { id: requestId, version },
     sectionRequest: undefined,
   };
 }
@@ -1913,7 +1947,7 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
     case "action-done":
       return { ...state, acting: false, actionRequest: undefined };
     case "action-error":
-      return actionFailed(state, event.status, event.message);
+      return actionFailed(state, event.message);
     case "connection":
       return state.connection === event.connection
         ? state

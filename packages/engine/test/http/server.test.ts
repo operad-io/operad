@@ -29,7 +29,8 @@ import {
   type ViewEvent,
   type Views,
 } from "../../src/index.ts";
-import { EventHub, eventResponse } from "../../src/http/server.ts";
+import { EventHub, eventResponse, HttpStopError } from "../../src/http/server.ts";
+import { networkInterfaces } from "node:os";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
 
 afterAll(cleanupTempRoots);
@@ -39,6 +40,8 @@ const pluginPath = fileURLToPath(
 );
 
 interface Harness {
+  /** What the server logged. */
+  readonly logs: string[];
   readonly root: string;
   readonly home: string;
   readonly storeRoot: string;
@@ -58,8 +61,22 @@ interface HarnessOptions {
   readonly keepAliveMs?: number;
   readonly tokenCheckMs?: number;
   readonly loadTimeoutMs?: number;
+  /** The addresses the server listens on; default one loopback address. */
+  readonly listen?: readonly string[];
   /** Written to `<home>/keys.json` before the plugins load. */
   readonly userKeys?: Record<string, string>;
+}
+
+/** A private IPv4 address of this machine, when it has one. */
+function privateAddress(): string | undefined {
+  for (const list of Object.values(networkInterfaces())) {
+    for (const entry of list ?? []) {
+      if (entry.family === "IPv4" && !entry.internal && /^(10\.|192\.168\.)/.test(entry.address)) {
+        return entry.address;
+      }
+    }
+  }
+  return undefined;
 }
 
 async function freePort(): Promise<number> {
@@ -104,10 +121,11 @@ async function makeHarness(options: HarnessOptions = {}): Promise<Harness> {
     loadTimeoutMs: options.loadTimeoutMs ?? 200,
     onLog: () => undefined,
   });
+  const logs: string[] = [];
   const port = await freePort();
   const server = await startHttpServer({
     home,
-    config: { enabled: true, port, listen: ["127.0.0.1"] },
+    config: { enabled: true, port, listen: options.listen ?? ["127.0.0.1"] },
     views,
     log,
     registry,
@@ -120,12 +138,13 @@ async function makeHarness(options: HarnessOptions = {}): Promise<Harness> {
     ...(options.tokenCheckMs === undefined
       ? {}
       : { tokenCheckMs: options.tokenCheckMs }),
-    onLog: () => undefined,
+    onLog: (message) => logs.push(message),
   });
   const token = await readHttpToken(home);
   if (token === undefined) throw new Error("the server created no token");
 
   return {
+    logs,
     root,
     home,
     storeRoot,
@@ -588,6 +607,8 @@ describe("http server", () => {
         kind: "refused",
         message: "the plugin refused",
       });
+      // The status is for the log; the body's message is the line itself.
+      expect(h.logs.some((line) => line.includes("(422)") && line.includes("the plugin refused"))).toBe(true);
 
       const unknown = await api(h, "/v1/act", {
         method: "POST",
@@ -863,6 +884,70 @@ describe("http server", () => {
       await rotateHttpToken(h.home);
       expect(await readUntilDone(response)).toBe(true);
       stream.abort();
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("stop releases every address while an event stream is open on the second", async () => {
+    // 127.0.0.2 is not bound on macOS without an alias, so the second address
+    // is the machine's own private address when it has one and ::1 otherwise.
+    const second = privateAddress() ?? "::1";
+    const h = await makeHarness({ listen: ["127.0.0.1", second] });
+    const url = h.server.urls[1];
+    if (url === undefined) throw new Error("two urls expected");
+    const port = h.server.port;
+    try {
+      const stream = openStream(h, {}, url);
+      await stream.response;
+      await h.server.stop();
+      for (const address of ["127.0.0.1", second]) {
+        const probe = Bun.serve({ hostname: address, port, fetch: () => new Response("") });
+        await probe.stop(true);
+      }
+      stream.abort();
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("stop does not wait for ever on a listener that will not stop, and names its address", async () => {
+    const stopped: string[] = [];
+    const listener = ((init: { hostname?: string }) => {
+      const hostname = init.hostname ?? "";
+      return {
+        port: 1,
+        stop: (): Promise<void> => {
+          stopped.push(hostname);
+          // The second address never finishes stopping.
+          return hostname === "127.0.0.1" ? Promise.resolve() : new Promise<void>(() => undefined);
+        },
+      };
+    }) as unknown as typeof Bun.serve;
+    const h = await makeHarness();
+    const ticks: Array<() => void> = [];
+    const server = await startHttpServer({
+      home: h.home,
+      config: { enabled: true, port: 1, listen: ["127.0.0.1", "127.0.0.9"] },
+      views: h.views,
+      log: h.log,
+      registry: h.registry,
+      listener,
+      wait: () => new Promise<void>((resolve) => ticks.push(resolve)),
+    });
+    try {
+      const stopping = server.stop();
+      const settled = stopping.then(
+        () => "stopped",
+        (error: unknown) => error,
+      );
+      // Both listeners were asked to stop before the first finished.
+      expect(stopped).toEqual(["127.0.0.1", "127.0.0.9"]);
+      while (ticks.length === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+      for (const tick of ticks) tick();
+      const error = await settled;
+      expect(error).toBeInstanceOf(HttpStopError);
+      expect((error as HttpStopError).addresses).toEqual(["127.0.0.9"]);
     } finally {
       await h.close();
     }

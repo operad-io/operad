@@ -146,8 +146,8 @@ describe("operad with the dev plugin", () => {
     expect(ready.out).toContain(`${taskId}  ready  First task`);
 
     const second = await run(home, repository, ["dev:confirm", planId]);
-    expect(second.code).toBe(3);
-    expect(second.err).toContain("is confirmed; dev:confirm needs draft");
+    expect(second.code).toBe(0);
+    expect(second.out).toContain(`${planId} is already confirmed; nothing to do`);
 
     const changes = await run(home, repository, [
       "show",
@@ -1052,11 +1052,11 @@ describe("operad with the dev plugin", () => {
     expect((await run(home, repository, ["dev:confirm", planId])).code).toBe(0);
 
     const refused = await run(home, repository, ["dev:confirm", taskId]);
-    expect(refused.code).toBe(3);
-    expect(refused.err).toContain(`${taskId} is ready; dev:confirm needs proposed`);
+    expect(refused.code).toBe(0);
+    expect(refused.out).toContain(`${taskId} is already ready; nothing to do`);
     const merge = await run(home, repository, ["dev:merge", taskId, "--yes"]);
     expect(merge.code).toBe(3);
-    expect(merge.err).toContain(`${taskId} is ready; dev:merge needs waiting`);
+    expect(merge.err).toContain(`${taskId} is ready; dev:merge works once it has run and waits for you`);
   });
 
   test("a task that never ran has a history, and sections for its log, diff and metrics", async () => {
