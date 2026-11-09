@@ -424,6 +424,8 @@ async function scheduleRepository(
         continue;
       }
       if (task.autoMergeAttempt === attempt.number) continue;
+      // New words wait for the owner; the plan's auto level does not answer them.
+      if ((review?.newWords ?? []).length > 0) continue;
       try {
         await ctx.answer(task.run, "merge");
       } catch (error) {

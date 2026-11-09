@@ -421,6 +421,9 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             JSON.stringify({
               findings: finding === undefined ? [] : [finding],
               verified: ["the diff"],
+              ...(mode.startsWith("words:")
+                ? { words: mode.slice("words:".length).split(",") }
+                : {}),
             }),
           );
           return { result: "done", data: {} };
@@ -817,6 +820,62 @@ describe("dev/review", () => {
     expect(state.reviewer.calls[0]?.cwd).toBe(gate);
     expect(existsSync(join(gate, "junk.txt"))).toBe(false);
     expect(result.data?.findings).toEqual([]);
+  });
+
+  describe("new words", () => {
+    async function withBrief(state: Fixture, brief: string, workWords?: readonly string[]) {
+      const task = await taskOf(state);
+      await state.store.put("task", state.taskKey, {
+        ...task,
+        brief,
+        attempt: {
+          ...(task.attempt ?? { number: 1, run: "worktree-run" }),
+          ...(workWords === undefined ? {} : { workWords }),
+        },
+      }, "test:words");
+    }
+
+    test("a word the worker named and nobody approved is recorded on the passed review", async () => {
+      const state = await fixture({ reviewerArgs: ["none"] });
+      await verify(state);
+      await withBrief(state, "Make the code do the thing.", ["reviewer.first.use"]);
+      const result = await review(state);
+      expect(result.result).toBe("pass");
+      expect((await taskOf(state)).attempt?.review?.newWords).toEqual(["reviewer.first.use"]);
+    });
+
+    test("a word marked approved in the brief is not recorded", async () => {
+      const state = await fixture({ reviewerArgs: ["none"] });
+      await verify(state);
+      await withBrief(state, "Make it.\nApproved words: Reviewer.First.Use, other", [
+        "reviewer.first.use",
+      ]);
+      await review(state);
+      expect((await taskOf(state)).attempt?.review?.newWords).toBeUndefined();
+    });
+
+    test("a word already in main's README is not recorded", async () => {
+      const state = await fixture({
+        reviewerArgs: ["none"],
+        baseFiles: { "README.md": "# Tool\n\nThe `pending` list shows waits.\n" },
+      });
+      await verify(state);
+      await withBrief(state, "Make it.", ["pending"]);
+      await review(state);
+      expect((await taskOf(state)).attempt?.review?.newWords).toBeUndefined();
+    });
+
+    test("a word the reviewer reports and the worker omitted is recorded", async () => {
+      const state = await fixture({ reviewerArgs: ["words:stallSecs,timeoutSecs"] });
+      await verify(state);
+      await withBrief(state, "Make it.", []);
+      const result = await review(state);
+      expect(result.result).toBe("pass");
+      const recorded = (await taskOf(state)).attempt?.review;
+      expect(recorded?.words).toEqual(["stallSecs", "timeoutSecs"]);
+      expect(recorded?.newWords).toEqual(["stallSecs", "timeoutSecs"]);
+      expect(state.reviewer.calls[0]?.prompt).toContain("new user-visible words");
+    });
   });
 
   test("a minor finding under a major fix level passes", async () => {

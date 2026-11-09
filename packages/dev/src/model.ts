@@ -210,6 +210,8 @@ export interface ReviewRunRecord {
   /** The findings a report run returned, with pre-existing marks. */
   readonly findings?: readonly ReviewFinding[] | null;
   readonly verified?: readonly string[] | null;
+  /** The user-visible words this run found in the diff. */
+  readonly words?: readonly string[];
   /** How many of the findings are at or above the fix level. */
   readonly counted?: number | null;
 }
@@ -257,6 +259,10 @@ export interface ReviewRecord {
   readonly reason?: string | null;
   /** The commit the reviewer saw. */
   readonly sha?: string | null;
+  /** The user-visible words the reviewer found in the diff. */
+  readonly words?: readonly string[];
+  /** The words of the worker and the reviewer that nobody approved; a passed review waits on them. */
+  readonly newWords?: readonly string[];
 }
 
 /** What the integrate step found while landing the verified commit. */
@@ -349,6 +355,8 @@ export type TaskAttempt = {
   readonly workMs?: number | null;
   /** Why the work step did not finish cleanly, in the harness's words. */
   readonly workNote?: string | null;
+  /** The words the worker's final answer named in its `New words:` line. */
+  readonly workWords?: readonly string[] | null;
   /** How many times the work step waited for an unavailable model in this attempt. */
   readonly workWaits?: number | null;
   /** When a work step that found its model unavailable may run again (epoch ms). */

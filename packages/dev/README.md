@@ -279,6 +279,28 @@ twice waits for a person. `merge` builds the candidate on main and pushes it,
 then cleanup removes the worktrees and branches. A plan is finished when every
 task is merged or cancelled.
 
+## New words
+
+A new user-visible word needs the owner's approval: a command or action name, a
+setting key, a word in command output, an error meant for users, a word in user
+docs. Internal names are not user-visible words. Two readers look for them:
+
+- The built-in worker brief asks the worker to end its final answer with a line
+  `New words: none` or `New words: <word>, <word>`. `dev/work` reads that line
+  from the harness's final message and keeps the words on the attempt.
+- The review prompt asks the reviewer to check the diff for new user-visible
+  words, whatever the worker said. The report is
+  `{ "findings": [...], "verified": [...], "words": ["<word>"] }`; `words` is
+  optional, and a report without it names no word.
+
+A word is approved when a brief has a line `Approved words: <word>, <word>`, or
+when it is already in main's user docs (any README file and `docs/manual.md`, at
+the commit the task branched from; the match ignores case). When a passed review
+has a word from either reader that is not approved, the task does not auto merge.
+It waits for a person with the reason `new words need approval: <words>`, and the
+plan's auto level does not answer that wait. `merge` answers it as it answers any
+other wait: the owner's merge is the approval.
+
 ## Review fallback and retry
 
 One review round is keyed by the attempt and the review number. It ends once,
