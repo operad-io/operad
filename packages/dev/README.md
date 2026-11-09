@@ -172,6 +172,50 @@ asking the worker to resolve it. A failed attempt names the uncommitted files.
 The task records its attempt count, phase, session id and cost while these steps
 run.
 
+### What a step cleans up
+
+Every process a step starts (the worker's harness, the reviewer's harness, a
+check) carries `OPERAD_RUN=<run id>:<step>` in its environment, with
+`OPERAD_RUN_HOME` naming the home so two homes never meet. Children inherit it
+whatever process group or session they move to, which a command a worker runs
+can do: the Bash tool of a coding agent starts each command in a process group
+of its own, so a loop it leaves in the background is outside the group the
+harness stops.
+
+When a step ends, however it ends (done, nothing, failed, timeout, cancelled),
+the platform finds every live process of the same user that still carries the
+step's marker and stops it: TERM, a short wait, KILL. The step log says how many
+and which commands, one line each, cut to 120 characters. `operad serve` does the
+same at start for the markers of runs that are no longer active, which a serve
+that died left behind, and says so once in the serve log.
+
+The environment alone is not enough on macOS: the system withholds the
+environment of Apple's own binaries (`/bin/sh`, `/bin/bash`, `/bin/zsh`), so a
+shell loop a command leaves behind carries the marker without showing it. The
+platform therefore also follows the processes themselves. While a step runs, a
+kernel watch (kqueue, reached with `bun:ffi`) reports every fork of a process
+below the ones the step started, and each fork is answered at once with a look
+at that process's children. The kernel keeps the reports until they are read,
+and they are read every 2 ms, so a shell that ends right after it started its
+loops is still seen while it lives. A table read with `ps` every 200 ms backs
+this up (and is all there is where the watch is not available). What was seen is
+remembered by pid and start time. A command's shell leads a process group of its
+own, and what it left behind keeps that group id, so a later member of the group
+is stopped too, if it started while the leader lived: a process that was given
+the leader's pid after the leader was gone started later and is left alone. At
+the end of the step the sweep stops all of these and the parent of every marked
+process, so a shell loop that starts one program after another is stopped before
+it starts the next, and it looks again up to three times for what a stopped
+process started.
+
+Limits. A process that removes `OPERAD_RUN` from its own environment is not
+found by the marker, and the sweep does not chase it. On macOS a system shell
+loop is found through the watch, not the marker, so one that leaves its parent
+and its process group before the watch has looked at it (a `setsid` or a
+double fork) is not found, and neither is a loop whose parent ends within a few
+milliseconds of starting it, before the watch has looked at the parent. On Linux the environment
+is read from `/proc/<pid>/environ` and shows every process.
+
 ## Scheduling
 
 On every tick of the kernel loop, `dev` starts ready tasks whose dependencies

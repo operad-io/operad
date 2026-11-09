@@ -11,6 +11,7 @@ import { createPluginLogger } from "./logger.ts";
 import { FileSecretStore } from "./secrets.ts";
 import { isRangeSyntax, satisfiesRange } from "./semver.ts";
 import { END_RESULTS, isEndResult } from "./usage.ts";
+import { enterStep, reapStep, withStepMarker, type StepMarker } from "../platform/step-reap.ts";
 import { prepareSettings } from "./settings.ts";
 import { MemoryPluginStore } from "./store.ts";
 import {
@@ -1759,8 +1760,10 @@ export class PluginRegistry {
     };
 
     let outcome: unknown;
+    const marker: StepMarker = { runId: options.runId, step: use, home: this.home };
+    const leave = enterStep(marker);
     try {
-      outcome = await found.step.run(ctx, params);
+      outcome = await withStepMarker(marker, () => found.step.run(ctx, params));
     } catch (error) {
       if (!(error instanceof AskTimeoutError)) throw error;
       // The grace passed: the step ends, and the flow's wait carries on.
@@ -1773,6 +1776,9 @@ export class PluginRegistry {
           resume: error.resume ?? null,
         },
       };
+    } finally {
+      // However the step ended, what it left running goes with it.
+      if (leave()) await reapStep(marker, ctx.logger);
     }
     if (!isRecord(outcome) || typeof outcome.result !== "string") {
       throw new PluginError(
