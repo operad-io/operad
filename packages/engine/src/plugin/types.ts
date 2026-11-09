@@ -621,6 +621,18 @@ export interface ObjectTypeDefinition {
    * first list or get; it must be safe to run again.
    */
   readonly prepare?: (ctx: { readonly store: ObjectStore }) => MaybePromise<void>;
+  /**
+   * Whether the plugin itself will answer this object's wait for a person
+   * automatically. It runs each time the pending view is built and returns
+   * what holds now, so a wait whose automatic answer is refused, or whose
+   * auto level changes, stops being marked.
+   */
+  readonly answeredAutomatically?:
+    | ((
+        data: Record<string, unknown>,
+        ctx: { readonly store: ObjectStore },
+      ) => MaybePromise<boolean>)
+    | undefined;
   /** The fields a person may filter on with `list(..., { where })`. */
   readonly index?: readonly string[] | undefined;
   /** Ordered row filters for lists; see {@link ObjectFilterDefinition}. */

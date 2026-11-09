@@ -480,6 +480,40 @@ describe("dev scheduling", () => {
     }
   });
 
+  test("a merge wait is marked as answered automatically only at auto merge", async () => {
+    const passedAttempt = { number: 1, run: "run-1", review: { result: "pass" } };
+    const marked = async (
+      auto: "run" | "merge",
+      attempt: Record<string, unknown>,
+      change?: (fixture: Fixture, planKey: string) => Promise<void>,
+    ): Promise<boolean> => {
+      const fixture = await setup();
+      const plan = await makePlan(fixture, { slug: "plan", auto });
+      const task = await makeTask(fixture, plan.key, "task");
+      await confirm(fixture, plan.key);
+      await phase(fixture, task.key, "waiting", "run-1");
+      await putTask(fixture, task.key, { attempt });
+      if (change !== undefined) await change(fixture, plan.key);
+      return fixture.registry.answeredAutomatically({ type: "task", id: task.key });
+    };
+    expect(await marked("merge", passedAttempt)).toBe(true);
+    expect(await marked("run", passedAttempt)).toBe(false);
+    // The plan's auto level changes while the task waits.
+    expect(
+      await marked("merge", passedAttempt, async (fixture, key) => {
+        const plan = await getPlan(fixture.store, key);
+        fixture.store.put("plan", key, { ...plan.data, auto: "run" }, "test");
+      }),
+    ).toBe(false);
+    // Waits the scheduler never answers, and an integrate that was refused.
+    expect(
+      await marked("merge", { number: 1, run: "run-1", result: "nothing" }),
+    ).toBe(false);
+    expect(
+      await marked("merge", { ...passedAttempt, integration: { result: "failed" } }),
+    ).toBe(false);
+  });
+
   test("start starts one ready task while its plan is at auto off", async () => {
     const fixture = await setup();
     const plan = await makePlan(fixture, { slug: "plan", auto: "off" });

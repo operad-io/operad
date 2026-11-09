@@ -32,6 +32,8 @@ export interface PendingItem {
   readonly object?: string;
   /** The link that opens the object in the app; absent for a candidate. */
   readonly link?: string;
+  /** The object's plugin answers this wait automatically; set only when asked for. */
+  readonly auto?: true;
   /**
    * The object's row, the same one the list shows; an error row when it cannot
    * be built. Absent for a candidate, and when the caller gave no views.
@@ -45,6 +47,7 @@ export async function listPending(
   registry: PluginRegistry,
   triggers?: CandidateSource,
   views?: Views,
+  options: { readonly withAuto?: boolean } = {},
 ): Promise<readonly PendingItem[]> {
   const runs = (await log.runs({ active: true })).sort(
     (left, right) => left.startedAt - right.startedAt,
@@ -73,6 +76,11 @@ export async function listPending(
     }
     if (state.status !== "waiting_person" || state.wait === null) continue;
 
+    const waitObject = parseObjectKey(run.object);
+    const auto =
+      waitObject !== undefined && (await registry.answeredAutomatically(waitObject));
+    // A wait that is about to be answered automatically is no person's to answer.
+    if (auto && options.withAuto !== true) continue;
     const actions = await actionsFor(registry, log, run);
     items.push({
       runId: run.runId,
@@ -82,6 +90,7 @@ export async function listPending(
       choices: state.wait.choices,
       actions,
       kind: "run",
+      ...(auto ? { auto: true as const } : {}),
       ...objectFields(run.object),
     });
   }

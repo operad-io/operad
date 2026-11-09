@@ -10,7 +10,7 @@ import { commands } from "./commands.ts";
 import { runRework, runReview, runReviewDue, runVerify, runWorkDue } from "./gate.ts";
 import { runRetry, runRetryDue } from "./retry.ts";
 import { runCleanup, runIntegrate } from "./integrate.ts";
-import { runScheduler } from "./schedule.ts";
+import { runScheduler, taskWaitAnsweredAutomatically } from "./schedule.ts";
 import { devStanding } from "./standing.ts";
 import { migrateLegacyRepositories, resolveDevKey } from "./service.ts";
 import { runReverify, runWork, runWorktree } from "./steps.ts";
@@ -40,6 +40,7 @@ export function createDevPlugin() {
         name: "task",
         filters: TASK_FILTERS,
         index: ["repository"],
+        answeredAutomatically: taskWaitAnsweredAutomatically,
         resolve: (ctx, type, id) => resolveDevKey(ctx.store, type, id, ctx.cwd, ctx.scope),
       },
     ],

@@ -467,6 +467,18 @@ the row fields.
 |---|---|---|---|
 | T-0151-M3 | packages/dev/src/gate.ts | a review whose followed commit is missing was given the settings of a first review (the `rework` mapping removed) | `dev/review rework rounds > settings by round > a review whose followed commit is missing from the checkout is a later review for its settings` |
 | T-0151-M4 | packages/dev/src/gate.ts | a report from the fallback was recorded with the primary's harness and arguments (the fallback block switched off) | `dev/review fallback and retry > a 429 falls back once, and the round passes without a rework` |
+
+## T-0158 — a merge wait at auto merge is marked as answered automatically
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0158-M4 | packages/dev/src/schedule.ts | the mark did not require the plan to be at auto merge | `dev scheduling > a merge wait is marked as answered automatically only at auto merge` |
+| T-0158-M5 | packages/dev/src/schedule.ts | a refused integrate still counted as a wait the scheduler answers | `dev scheduling > auto merge answers a passed review once and never answers other waits`, `dev scheduling > a merge wait is marked as answered automatically only at auto merge` |
+## T-0163 — flaky review hardening tests
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0163-M1 | packages/dev/src/gate.ts | the review wait bound allowed one wait too many (`> MAX_REVIEW_WAITS + 1`), which the seeded waits must still count | `dev/review hardening > an unavailable model waits at most MAX_REVIEW_WAITS times, across a restart` |
 | T-0156-M1 | packages/dev/src/steps.ts | a held task still let the step that was running write the task (the claim check ignored `held`) | `dev:hold and dev:release > hold stops the running step, keeps the branch and commits, and frees the slot` |
 | T-0156-M2 | packages/dev/src/schedule.ts | a held dependency was treated as cancelled, so its dependent went into a person wait | `dev:hold and dev:release > a held ready task is not started, and its dependent stays queued` |
 | T-0156-M3 | packages/dev/src/service.ts | release left the task held instead of making it ready | `dev:hold and dev:release > release makes the task ready and the next run continues on its branch` |
@@ -485,3 +497,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0157-M1 | packages/dev/src/gate.ts | a verify failure kept the previous review failure (`reviewFailed` set for every source) | `dev/rework after two review failures in a row > review fail, verify fail, review fail reworks again` |
+
+## T-0163 — rework 1
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0163-M2 | packages/dev/test/gate.test.ts | the hook remover deleted a hook it had not installed (identity check replaced by `true`) | `review test hooks > a test that ends late removes only the hooks it installed` |
+| T-0163-M3 | packages/dev/test/gate.test.ts | the out-of-time test's clock moved on a call its own reviewer did not make (own-call check removed) | `dev/review hardening > runs that cannot fit in the step deadline are skipped and a person decides` |
