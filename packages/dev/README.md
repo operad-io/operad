@@ -192,20 +192,29 @@ that died left behind, and says so once in the serve log.
 The environment alone is not enough on macOS: the system withholds the
 environment of Apple's own binaries (`/bin/sh`, `/bin/bash`, `/bin/zsh`), so a
 shell loop a command leaves behind carries the marker without showing it. The
-platform therefore also follows the process table. While a step runs it looks
-every 200 ms at what runs below the processes the step started, and remembers
-each one (pid and start time) and its process group; those that are still alive
-when the step ends are stopped even after they moved to init. The sweep also
-stops the parent of a marked process, so a shell loop that starts one program
-after another is stopped before it starts the next, and it looks again up to
-three times for what a stopped process started.
+platform therefore also follows the processes themselves. While a step runs, a
+kernel watch (kqueue, reached with `bun:ffi`) reports every fork of a process
+below the ones the step started, and each fork is answered at once with a look
+at that process's children. The kernel keeps the reports until they are read,
+and they are read every 2 ms, so a shell that ends right after it started its
+loops is still seen while it lives. A table read with `ps` every 200 ms backs
+this up (and is all there is where the watch is not available). What was seen is
+remembered by pid and start time. A command's shell leads a process group of its
+own, and what it left behind keeps that group id, so a later member of the group
+is stopped too, if it started while the leader lived: a process that was given
+the leader's pid after the leader was gone started later and is left alone. At
+the end of the step the sweep stops all of these and the parent of every marked
+process, so a shell loop that starts one program after another is stopped before
+it starts the next, and it looks again up to three times for what a stopped
+process started.
 
 Limits. A process that removes `OPERAD_RUN` from its own environment is not
-found by the marker, and the sweep does not chase it. A system shell loop on
-macOS is found by the table only if it was seen below the step while its parent
-still lived, so a command that starts it and ends within one 200 ms look can
-escape. On Linux the environment is read from `/proc/<pid>/environ` and shows
-every process.
+found by the marker, and the sweep does not chase it. On macOS a system shell
+loop is found through the watch, not the marker, so one that leaves its parent
+and its process group before the watch has looked at it (a `setsid` or a
+double fork) is not found, and neither is a loop whose parent ends within a few
+milliseconds of starting it, before the watch has looked at the parent. On Linux the environment
+is read from `/proc/<pid>/environ` and shows every process.
 
 ## Scheduling
 

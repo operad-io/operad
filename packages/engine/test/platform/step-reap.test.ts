@@ -10,7 +10,8 @@ import {
 import {
   enterStep,
   markerEnv,
-  pollTrackedSteps,
+  StepTracker,
+  type ProcessRow,
   reapStale,
   runLine,
   type StepMarker,
@@ -168,25 +169,51 @@ describe("what a step leaves behind", () => {
     expect(enterStep(one)()).toBe(true);
   });
 
-  test("a system shell loop left in the background is stopped, though the system hides its environment", async () => {
+  test("loops a command's shell left in the background are stopped, though the system hides their environment", async () => {
     const root = await tempRoot();
     const home = join(root, "home");
-    const pidFile = join(root, "pid");
-    const fifo = join(root, "go");
-    Bun.spawnSync(["mkfifo", fifo]);
-    // The loop is a /bin/sh process in a process group of its own (`set -m`),
-    // out of reach of the group stop, as a loop a worker's tool shell starts is.
-    // The command waits on the fifo, so the
-    // shell that started the loop is alive when the table is read, then ends:
-    // the loop moves to init, the way a loop a worker's tool shell started does.
-    const line = `set -m; /bin/sh -c 'while :; do :; done' & echo $! > "${pidFile}"; read ready < "${fifo}"`;
-    const running = stepWith(line, "run-6", root, home);
-    await waitForFile(pidFile);
-    const pid = Number(readFileSync(pidFile, "utf8").trim());
-    await pollTrackedSteps();
-    writeFileSync(fifo, "go\n");
-    await running;
-    await gone(pid);
+    const pids = join(root, "pids");
+    // What a coding agent's Bash tool does: its own process starts a shell in a
+    // process group of its own; the shell starts loops in the background and
+    // ends a few tens of milliseconds later, so the loops move to init. Nothing
+    // waits for the step to look: the step watches the processes itself, as it runs.
+    writeFileSync(
+      join(root, "tool.sh"),
+      `for k in 1 2 3; do ( while :; do :; done ) & echo $! >> "${pids}"; done\nsleep 0.05\n`,
+    );
+    writeFileSync(
+      join(root, "agent.js"),
+      `require("child_process").spawn("/bin/sh", [${JSON.stringify(join(root, "tool.sh"))}], { detached: true, stdio: "ignore" });\n`,
+    );
+    await stepWith(`"${process.execPath}" "${join(root, "agent.js")}"`, "run-6", root, home);
+    const loops = readFileSync(pids, "utf8").trim().split("\n").map(Number);
+    expect(loops).toHaveLength(3);
+    for (const pid of loops) await gone(pid);
+  });
+
+  test("a process group id that was reused later is not taken for the step's", () => {
+    let now = 100;
+    const tracker = new StepTracker({ now: () => now });
+    const row = (pid: number, ppid: number, pgid: number, startSec: number): ProcessRow => ({
+      pid,
+      ppid,
+      pgid,
+      startSec,
+      command: `c${pid}`,
+    });
+    tracker.addRoot(10);
+    // The step's process 10 starts a shell 500, which leads its own group.
+    tracker.observe([row(10, 1, 10, 90), row(500, 10, 500, 95)]);
+    // The shell ends; a loop it left keeps the group id.
+    now = 120;
+    const loop = row(501, 1, 500, 96);
+    tracker.observe([loop]);
+    expect(tracker.has(loop)).toBe(true);
+    // The pid 500 is given to a stranger long after, and so is a member of its group.
+    expect(tracker.has(row(500, 1, 500, 900))).toBe(false);
+    expect(tracker.has(row(777, 1, 500, 900))).toBe(false);
+    // A process of another group is not ours.
+    expect(tracker.has(row(778, 1, 778, 97))).toBe(false);
   });
 
   test("a system shell that starts the marked process again is stopped with it", async () => {

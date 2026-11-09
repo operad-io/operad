@@ -16,6 +16,7 @@ import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { PluginLogger } from "../plugin/types.ts";
+import { createProcessWatch, type ProcessWatch } from "./process-watch.ts";
 import { KILL_GRACE_MS, systemClock, type Clock } from "./process-group.ts";
 
 /** The variable that names the run and the step: `<run id>:<step>`. */
@@ -92,7 +93,11 @@ function run(command: string, args: readonly string[]): Promise<{ pid: number | 
     const child = execFile(
       command,
       [...args],
-      { maxBuffer: 512 * 1024 * 1024, encoding: "utf8" },
+      {
+        maxBuffer: 512 * 1024 * 1024,
+        encoding: "utf8",
+        env: { ...process.env, TZ: "UTC", LC_ALL: "C" },
+      },
       (error, stdout) => resolve({ pid: child.pid, out: error === null ? stdout : "" }),
     );
   });
@@ -187,8 +192,8 @@ export interface ProcessRow {
   readonly pid: number;
   readonly ppid: number;
   readonly pgid: number;
-  /** When it started; with the pid it names one process for good. */
-  readonly start: string;
+  /** When it started, in whole seconds; with the pid it names one process. */
+  readonly startSec: number;
   readonly command: string;
 }
 
@@ -197,6 +202,18 @@ export type ProcessTable = () => Promise<readonly ProcessRow[]>;
 
 const ROW_PATTERN =
   /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\w{3}\s+\S+\s+\S+\s+[\d:]+\s+\d{4})\s+(.*)$/;
+
+/** Seconds since the epoch of a `ps` start time (`Mon  9 Nov 00:26:59 2026` or `Mon Nov  9 00:26:59 2026`). */
+export function parseStart(text: string): number {
+  const [, first = "", second = "", time = "", year = ""] = text.trim().split(/\s+/);
+  const numeric = /^\d+$/.test(first);
+  const day = numeric ? first : second;
+  const month = numeric ? second : first;
+  const [hours = 0, minutes = 0, seconds = 0] = time.split(":").map(Number);
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  // `ps` is asked for UTC (see `run`), so the time is read as UTC, whatever zone this process has.
+  return Math.floor(Date.UTC(Number(year), months.indexOf(month), Number(day), hours, minutes, seconds) / 1000);
+}
 
 /** The table of this user's processes, by `ps`; it works the same on macOS and Linux. */
 export const readProcessTable: ProcessTable = async () => {
@@ -212,15 +229,15 @@ export const readProcessTable: ProcessTable = async () => {
       pid: Number(match[1]),
       ppid: Number(match[2]),
       pgid: Number(match[3]),
-      start: (match[4] ?? "").replace(/\s+/g, " "),
+      startSec: parseStart(match[4] ?? ""),
       command: match[5] ?? "",
     });
   }
   return rows;
 };
 
-function identity(row: ProcessRow): string {
-  return `${row.pid}@${row.start}`;
+function identity(row: { readonly pid: number; readonly startSec: number }): string {
+  return `${row.pid}@${row.startSec}`;
 }
 
 /** The pids of this process and of everything above it: never swept. */
@@ -235,49 +252,116 @@ function protectedPids(rows: readonly ProcessRow[]): Set<number> {
   return kept;
 }
 
+/** A process that leads its own process group, seen while it lived. */
+interface Leader {
+  readonly startSec: number;
+  /** When it was seen to be gone, in seconds; undefined while it lives. */
+  goneSec: number | undefined;
+}
+
 /**
  * Follows the processes a step started, by the process table instead of the
  * environment. macOS withholds the environment of Apple's own binaries
  * (`/bin/sh`, `/bin/bash`, `/bin/zsh`), so a shell loop a command left in the
- * background carries the marker without showing it. The table still names it
- * while its parent lives, and the group it belongs to afterwards: a process
- * that was seen below the step's root stays on the list when its parent ends
- * and it moves to init, and so does every later member of its process group.
+ * background carries the marker without showing it. It is seen while it has a
+ * parent: a process seen below the step stays on the list when its parent ends
+ * and it moves to init. A command's shell leads a process group of its own, and
+ * what it left behind keeps that group id, so a later member of the group is
+ * followed too, as long as it started while the leader lived: a process that
+ * got the leader's pid after the leader was gone started later and is not
+ * ours.
+ *
+ * On macOS a `ProcessWatch` feeds it within milliseconds of each fork, which
+ * is what catches a shell that ends right after it started its loops.
  */
 export class StepTracker {
   private readonly roots = new Set<number>();
   private readonly seen = new Map<string, ProcessRow>();
-  private readonly groups = new Set<number>();
+  private readonly leaders = new Map<number, Leader>();
   private timer: unknown;
   private stopped = false;
   private polling: Promise<void> = Promise.resolve();
+  private readonly watcher: ProcessWatch | undefined;
+  private readonly now: () => number;
+  private readonly uid: number | undefined;
+
+  constructor(options: { readonly watcher?: ProcessWatch | undefined; readonly now?: (() => number) | undefined } = {}) {
+    this.watcher = options.watcher;
+    this.now = options.now ?? (() => Math.floor(Date.now() / 1000));
+    this.uid = process.getuid?.();
+  }
 
   /** A process the step started itself: the sentinel that leads its group. */
   addRoot(pid: number): void {
     this.roots.add(pid);
+    this.follow(pid);
   }
 
+  /** Whether a live process is one the step started. */
   has(row: ProcessRow): boolean {
-    return this.seen.has(identity(row)) || (row.pgid > 1 && this.groups.has(row.pgid));
+    if (this.seen.has(identity(row))) return true;
+    const leader = this.leaders.get(row.pgid);
+    if (leader === undefined || row.pgid <= 1) return false;
+    return (
+      row.startSec >= leader.startSec &&
+      (leader.goneSec === undefined || row.startSec <= leader.goneSec)
+    );
+  }
+
+  private remember(row: { readonly pid: number; readonly pgid: number; readonly startSec: number; readonly command?: string }): boolean {
+    const id = identity(row);
+    if (this.seen.has(id)) return false;
+    this.seen.set(id, { command: "", ppid: 0, ...row });
+    if (row.pid === row.pgid && !this.leaders.has(row.pgid)) {
+      this.leaders.set(row.pgid, { startSec: row.startSec, goneSec: undefined });
+    }
+    return true;
+  }
+
+  /** Looks at one process and below it, now, through the watch. */
+  private follow(pid: number): void {
+    const watcher = this.watcher;
+    if (watcher === undefined) return;
+    if (!watcher.watch(pid)) return;
+    const own = watcher.info(pid);
+    if (own !== undefined && own.uid === this.uid) this.remember(own);
+    // Watched first, listed after: a fork before the watch shows in the list,
+    // a fork after it shows as an event.
+    for (const kid of watcher.children(pid)) {
+      const info = watcher.info(kid);
+      if (info === undefined || info.uid !== this.uid) continue;
+      if (this.remember(info)) this.follow(kid);
+    }
+  }
+
+  /** Reads what the watch has kept: follows the children of what forked. */
+  tick(): void {
+    const watcher = this.watcher;
+    if (watcher === undefined) return;
+    const { forked, exited } = watcher.drain();
+    for (const pid of forked) this.follow(pid);
+    for (const pid of exited) {
+      const leader = this.leaders.get(pid);
+      if (leader !== undefined && leader.goneSec === undefined) leader.goneSec = this.now();
+    }
   }
 
   /** Adds what the table shows below the roots, and below what is already followed. */
   observe(rows: readonly ProcessRow[]): void {
-    const own = rows.find((row) => row.pid === process.pid)?.pgid;
+    const present = new Set(rows.map(identity));
+    for (const [pgid, leader] of this.leaders) {
+      const alive = present.has(`${pgid}@${leader.startSec}`);
+      if (!alive && leader.goneSec === undefined) leader.goneSec = this.now();
+    }
     let grew = true;
     while (grew) {
       grew = false;
       for (const row of rows) {
-        if (this.seen.has(identity(row))) continue;
+        if (this.seen.has(identity(row)) || row.pid === process.pid) continue;
         const parent = rows.find((one) => one.pid === row.ppid);
         const below =
-          this.roots.has(row.pid) ||
-          (parent !== undefined && this.seen.has(identity(parent))) ||
-          (row.pgid > 1 && row.pgid !== own && this.groups.has(row.pgid));
-        if (!below || row.pid === process.pid) continue;
-        this.seen.set(identity(row), row);
-        if (row.pgid > 1 && row.pgid !== own) this.groups.add(row.pgid);
-        grew = true;
+          this.roots.has(row.pid) || (parent !== undefined && this.seen.has(identity(parent)));
+        if (below && this.remember(row)) grew = true;
       }
     }
   }
@@ -296,20 +380,45 @@ export class StepTracker {
       this.timer = clock.setTimeout(() => {
         void this.poll(table).then(again, again);
       }, TRACK_MS);
-      // A step that never ends must not keep its process alive by being looked at.
-      if (typeof this.timer === "object" && this.timer !== null && "unref" in this.timer) {
-        (this.timer as { unref(): void }).unref();
-      }
+      unref(this.timer);
     };
+    if (this.watcher !== undefined) {
+      const quick = (): void => {
+        if (this.stopped) return;
+        this.tick();
+        this.quick = clock.setTimeout(quick, WATCH_MS);
+        unref(this.quick);
+      };
+      quick();
+    }
     void this.poll(table);
     again();
   }
 
+  private quick: unknown;
+
   stop(clock: Clock = systemClock): void {
     this.stopped = true;
     if (this.timer !== undefined) clock.clearTimeout(this.timer);
+    if (this.quick !== undefined) clock.clearTimeout(this.quick);
+  }
+
+  /** Reads the watch a last time and lets it go. */
+  finish(): void {
+    this.tick();
+    this.watcher?.close();
   }
 }
+
+/** A step that never ends must not keep its process alive by being looked at. */
+function unref(timer: unknown): void {
+  if (typeof timer === "object" && timer !== null && "unref" in timer) {
+    (timer as { unref(): void }).unref();
+  }
+}
+
+/** How often the watch is read: a few milliseconds, since reading it is cheap. */
+export const WATCH_MS = 2;
 
 /** How often a running step's processes are looked at. */
 export const TRACK_MS = 200;
@@ -456,7 +565,7 @@ export function enterStep(marker: StepMarker): () => boolean {
   const key = keyOf(marker);
   running.set(key, (running.get(key) ?? 0) + 1);
   if (!trackers.has(key)) {
-    const tracker = new StepTracker();
+    const tracker = new StepTracker({ watcher: createProcessWatch() });
     trackers.set(key, tracker);
     tracker.start();
   }
@@ -486,6 +595,7 @@ export async function reapStep(
   const key = keyOf(marker);
   const tracker = trackers.get(key);
   tracker?.stop(options.clock);
+  tracker?.finish();
   trackers.delete(key);
   if (tracker !== undefined) await tracker.poll(options.table);
   return reapMarked({
