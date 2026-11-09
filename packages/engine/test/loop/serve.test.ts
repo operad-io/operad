@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, watch, writeFileSync } from "node:fs";
+import { spawn as nodeSpawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -23,6 +24,7 @@ import {
   sleepUntilAborted,
   storeRootOf,
 } from "../../src/index.ts";
+import { markerEnv } from "../../src/platform/index.ts";
 import plugin from "../fixtures/plugins/runner.ts";
 import triggerPlugin from "../fixtures/plugins/trigger.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
@@ -98,6 +100,59 @@ function spawn(home: Home, runId: string, recover: boolean) {
 }
 
 describe("serve loop", () => {
+  test("serve start stops marked processes of runs that are not active, and says so once", async () => {
+    const home = await makeHome();
+    const log = openConfigLog(home.config);
+    const registry = await loadPluginRegistry({
+      home: home.home,
+      store: new MemoryPluginStore({ root: home.storeRoot }),
+    });
+    const idle = ["-e", "setTimeout(() => {}, 300000)"];
+    const marked = (runId: string): ReturnType<typeof nodeSpawn> => {
+      const child = nodeSpawn(process.execPath, idle, {
+        env: {
+          ...process.env,
+          ...markerEnv({ runId, step: "test/step", home: home.home }),
+        },
+        stdio: "ignore",
+      });
+      return child;
+    };
+    const active = await log.startRun("retry", "job:7");
+    const stale = marked("run-gone");
+    const kept = marked(active.runId);
+    try {
+      const messages: string[] = [];
+      const controller = new AbortController();
+      controller.abort();
+      await serve({
+        home: home.home,
+        log,
+        registry,
+        lockRoot: home.storeRoot,
+        signal: controller.signal,
+        spawnRun: () => undefined,
+        onLog: (message) => messages.push(message),
+      });
+      await new Promise<void>((resolve) => {
+        if (stale.exitCode !== null || stale.signalCode !== null) resolve();
+        else stale.once("exit", () => resolve());
+      });
+      // Still ours to kill: a TERM from the sweep would have ended it already.
+      kept.kill("SIGKILL");
+      await new Promise<void>((resolve) => {
+        if (kept.exitCode !== null || kept.signalCode !== null) resolve();
+        else kept.once("exit", () => resolve());
+      });
+      expect(kept.signalCode).toBe("SIGKILL");
+      expect(messages.filter((m) => m.includes("no longer active"))).toHaveLength(1);
+    } finally {
+      stale.kill("SIGKILL");
+      kept.kill("SIGKILL");
+      await log.close();
+    }
+  });
+
   test("a recorded answer runs the next step in serve's process", async () => {
     const home = await makeHome();
     const log = openConfigLog(home.config);

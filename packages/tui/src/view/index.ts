@@ -13,7 +13,7 @@ import {
   type TextChunk,
 } from "@opentui/core";
 import type { RowMark } from "@operad-io/engine";
-import { confirmText, entryHint, paletteEntries } from "../actions.ts";
+import { confirmText, entryHint, matchPositions, paletteEntries } from "../actions.ts";
 import { chunksOfLine } from "../markdown.ts";
 import {
   TUI_PALETTE,
@@ -233,33 +233,59 @@ function splitId(id: string): { readonly short: string; readonly slug: string } 
   return { short: match[1] ?? id, slug: match[2] ?? "" };
 }
 
-function rowText(row: TuiRow, kind: TuiTab["kind"]): string {
-  if (kind !== "type") {
-    return row.openable === false && row.title !== "" ? row.title : row.id;
-  }
-  const { short, slug } = splitId(bareId(row.id));
+/** The short id and slug of a row, without its type or repository. */
+function rowName(row: TuiRow): string {
+  const bare = bareId(row.id);
+  const { short, slug } = splitId(bare.slice(bare.lastIndexOf("/") + 1));
   if (row.error !== undefined || slug === "") return short;
   return `${short} ${slug}`;
 }
 
-function rowLine(
+/** The parts of a row's dim line: state and badge, then the note, unless the row says. */
+function rowDetail(row: TuiRow): string {
+  const parts =
+    row.detail ?? [`${row.state}${row.badge === undefined ? "" : ` ${row.badge}`}`, row.note ?? ""];
+  return parts
+    .map((part) => sanitize(part).replace(/\n/g, " ").trim())
+    .filter((part) => part !== "")
+    .join(" · ");
+}
+
+/** The columns before a row's text: marker, glyph and their spaces. */
+const ROW_INDENT = 4;
+
+/** One object: its line, its dim line, both tinted to the pane's edge when selected. */
+function drawRow(
   row: TuiRow,
-  kind: TuiTab["kind"],
   selected: boolean,
   palette: TuiPalette,
   width: number,
 ): TextChunk[] {
   const tint = selected ? palette.tint : undefined;
-  const text = fit(rowText(row, kind), width - 4);
-  // The tint covers the whole row: the label is padded to the row's width.
-  const pad = selected ? " ".repeat(Math.max(0, width - 4 - displayWidth(text))) : "";
+  const room = Math.max(0, width - ROW_INDENT);
+  const name = row.unnamed === true && row.title !== "" ? row.title : rowName(row);
+  const head = fit(name, room);
+  const left = room - displayWidth(head);
+  const title =
+    row.unnamed === true || row.title === "" || left < 4 ? "" : fit(row.title, left - 2);
+  const first = title === "" ? head : `${head}  `;
+  const pad1 = " ".repeat(Math.max(0, room - displayWidth(first) - displayWidth(title)));
+  const detail = fit(rowDetail(row), room);
+  const pad2 = " ".repeat(Math.max(0, room - displayWidth(detail)));
+  const fill = (text: string): TextChunk[] =>
+    text === "" || !selected ? [] : [chunk(text, undefined, undefined, tint)];
   return [
     chunk(selected ? "❯" : " ", palette.accent, undefined, tint),
     chunk(" ", undefined, undefined, tint),
     glyph(row, palette, tint),
     chunk(" ", undefined, undefined, tint),
-    chunk(text, selected ? palette.accent : palette.text, undefined, tint),
-    ...(pad === "" ? [] : [chunk(pad, undefined, undefined, tint)]),
+    chunk(first, selected ? palette.accent : palette.text, undefined, tint),
+    ...(title === "" ? [] : [chunk(title, palette.text, undefined, tint)]),
+    ...fill(pad1),
+    chunk("\n"),
+    chunk(" ".repeat(ROW_INDENT), undefined, undefined, tint),
+    ...(detail === "" ? [] : [chunk(detail, palette.weak, undefined, tint)]),
+    ...fill(pad2),
     chunk("\n"),
   ];
 }
@@ -291,9 +317,8 @@ function listContent(
   const chunks: TextChunk[] = [chunk("\n"), ...listTitle(tab, palette)];
   const window = listWindow(tab.list, Math.max(1, bodyHeight(state) - LIST_HEAD));
   tab.list.rows.slice(window.start, window.end).forEach((row, offset) => {
-    chunks.push(
-      ...rowLine(row, tab.kind, window.start + offset === tab.list.cursor, palette, width),
-    );
+    if (offset > 0) chunks.push(chunk("\n"));
+    chunks.push(...drawRow(row, window.start + offset === tab.list.cursor, palette, width));
   });
   if (tab.list.loading) chunks.push(chunk("loading more…\n", palette.weak));
   if (tab.list.error !== undefined) {
@@ -428,6 +453,21 @@ function keyContent(palette: TuiPalette): StyledText {
   return styled(chunks);
 }
 
+/** An entry's name cut into runs, each wholly matched or wholly not. */
+function nameRuns(
+  name: string,
+  marked: ReadonlySet<number>,
+): { readonly text: string; readonly marked: boolean }[] {
+  const runs: { text: string; marked: boolean }[] = [];
+  graphemes(name).forEach((unit, place) => {
+    const on = marked.has(place);
+    const last = runs[runs.length - 1];
+    if (last !== undefined && last.marked === on) last.text += unit;
+    else runs.push({ text: unit, marked: on });
+  });
+  return runs;
+}
+
 /** The palette or the note input, drawn in the box; undefined when neither is open. */
 function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefined {
   const input = state.input;
@@ -469,7 +509,15 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
     const hint = entryHint(entry);
     chunks.push(chunk(at === input.cursor ? "❯ " : "  ", palette.accent));
     chunks.push(chunk(`${entry.group.padEnd(7)} `, palette.weak));
-    chunks.push(chunk(entry.name, at === input.cursor ? palette.accent : palette.text));
+    const marked = new Set(matchPositions(input.query, entry));
+    const colour = at === input.cursor ? palette.accent : palette.text;
+    for (const run of nameRuns(entry.name, marked)) {
+      chunks.push(
+        run.marked
+          ? chunk(run.text, palette.accent, TextAttributes.BOLD | TextAttributes.UNDERLINE)
+          : chunk(run.text, colour),
+      );
+    }
     chunks.push(chunk(hint === "" ? "\n" : `  ${hint}\n`, palette.weak));
   });
   return styled(chunks);

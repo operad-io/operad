@@ -124,23 +124,138 @@ export function mainKey(state: TuiState): string | undefined {
   return bindingFor(state.bindings, MAIN_KEY) === undefined ? MAIN_KEY : undefined;
 }
 
-/** Does `query` match `name` as a subsequence? Lower is better; -1 is none. */
-export function fuzzyScore(query: string, name: string): number {
-  const wanted = query.toLowerCase().replace(/\s+/g, "");
-  if (wanted === "") return 0;
-  const text = name.toLowerCase();
-  let at = 0;
-  let first = -1;
-  let last = -1;
-  for (const char of graphemes(wanted)) {
-    const found = text.indexOf(char, at);
-    if (found < 0) return -1;
-    if (first < 0) first = found;
-    last = found;
-    at = found + char.length;
+/** The characters after which a letter starts a word. */
+const WORD_BREAKS = ":-. /";
+
+const HIT = 1;
+const RUN = 4;
+const WORD_START = 10;
+
+/** The best way `word` is a subsequence of `text`: its score (higher is better) and where it matched. */
+function matchWord(
+  word: readonly string[],
+  text: readonly string[],
+): { readonly score: number; readonly at: readonly number[] } | undefined {
+  const n = text.length;
+  const m = word.length;
+  if (m === 0) return { score: 0, at: [] };
+  if (m > n) return undefined;
+  const start = (i: number): boolean => i === 0 || WORD_BREAKS.includes(text[i - 1] ?? "");
+  // best[j][i]: the best score with word[j] matched at text[i]; from[j][i] is the previous index.
+  const best: number[][] = [];
+  const from: number[][] = [];
+  for (let j = 0; j < m; j++) {
+    const row: number[] = new Array<number>(n).fill(-1);
+    const back: number[] = new Array<number>(n).fill(-1);
+    for (let i = j; i < n; i++) {
+      if (text[i] !== word[j]) continue;
+      const own = HIT + (start(i) ? WORD_START : 0);
+      if (j === 0) {
+        row[i] = own;
+        continue;
+      }
+      const previous = best[j - 1] ?? [];
+      let top = -1;
+      let topAt = -1;
+      for (let k = j - 1; k < i; k++) {
+        const base = previous[k] ?? -1;
+        if (base < 0) continue;
+        const value = base + (k === i - 1 ? RUN : 0);
+        if (value > top) {
+          top = value;
+          topAt = k;
+        }
+      }
+      if (topAt >= 0) {
+        row[i] = top + own;
+        back[i] = topAt;
+      }
+    }
+    best.push(row);
+    from.push(back);
   }
-  // A tight match near the start of the name ranks first.
-  return (last - first) * 100 + first;
+  const last = best[m - 1] ?? [];
+  let end = -1;
+  for (let i = 0; i < n; i++) {
+    // An earlier end wins a tie, so the match sits near the start.
+    if ((last[i] ?? -1) > (last[end] ?? -1)) end = i;
+  }
+  if (end < 0) return undefined;
+  const at: number[] = [];
+  for (let j = m - 1, i = end; j >= 0; j--) {
+    at.unshift(i);
+    i = from[j]?.[i] ?? -1;
+  }
+  return { score: last[end] ?? 0, at };
+}
+
+function unitsOf(text: string): string[] {
+  return graphemes(text.toLowerCase());
+}
+
+function wordsOf(query: string): string[][] {
+  return query
+    .split(/\s+/)
+    .filter((word) => word !== "")
+    .map(unitsOf);
+}
+
+/**
+ * Does `query` match `name`? A space in the query separates words that may
+ * match in any order; each word is a subsequence, best where it starts a word.
+ * Lower is better; -1 is no match.
+ */
+export function fuzzyScore(query: string, name: string): number {
+  const words = wordsOf(query);
+  if (words.length === 0) return 0;
+  const text = unitsOf(name);
+  let total = 0;
+  for (const word of words) {
+    const found = matchWord(word, text);
+    if (found === undefined) return -1;
+    total += found.score;
+  }
+  return Math.max(0, 100000 - total * 10) + text.length;
+}
+
+/** What a palette entry is called in the list of recent entries. */
+export function entryId(entry: Pick<TuiPaletteEntry, "group" | "name">): string {
+  return `${entry.group}/${entry.name}`;
+}
+
+/** How many entries the palette remembers as the last used. */
+export const RECENT_ENTRIES = 5;
+
+/** The matches of one entry: its rank (higher first) and the characters of its name that matched. */
+function matchEntry(
+  words: readonly (readonly string[])[],
+  entry: TuiPaletteEntry,
+): { readonly score: number; readonly name: readonly number[] } | undefined {
+  const fields = [
+    { units: unitsOf(entry.name), bonus: 2000, name: true },
+    { units: unitsOf(entry.group), bonus: 1000, name: false },
+    { units: unitsOf(entry.title), bonus: 0, name: false },
+  ];
+  let score = 0;
+  const marked = new Set<number>();
+  for (const word of words) {
+    let top: { score: number; at: readonly number[]; name: boolean } | undefined;
+    for (const field of fields) {
+      const found = matchWord(word, field.units);
+      if (found === undefined) continue;
+      const value = found.score + field.bonus;
+      if (top === undefined || value > top.score) top = { score: value, at: found.at, name: field.name };
+    }
+    if (top === undefined) return undefined;
+    score += top.score;
+    if (top.name) for (const index of top.at) marked.add(index);
+  }
+  return { score, name: [...marked].sort((a, b) => a - b) };
+}
+
+/** The positions (grapheme indexes) in an entry's name that `query` matched. */
+export function matchPositions(query: string, entry: TuiPaletteEntry): readonly number[] {
+  return matchEntry(wordsOf(query), entry)?.name ?? [];
 }
 
 /** What a TUI command does; each is what a key does. */
@@ -203,19 +318,28 @@ export function paletteEntries(state: TuiState): readonly TuiPaletteEntry[] {
           needsNote: action.note !== undefined,
           confirm: action.confirm,
         }));
+  const words = wordsOf(query);
   const rank = (entries: readonly TuiPaletteEntry[]): readonly TuiPaletteEntry[] =>
     entries
-      .map((entry, order) => {
-        const byName = fuzzyScore(query, entry.name);
-        const byTitle = fuzzyScore(query, entry.title);
-        // A name match outranks a match that only the title has.
-        const score = byName >= 0 ? byName : byTitle >= 0 ? byTitle + 100000 : -1;
-        return { entry, order, score };
-      })
-      .filter((item) => item.score >= 0)
-      .sort((a, b) => a.score - b.score || a.order - b.order)
+      .map((entry, order) => ({ entry, order, found: matchEntry(words, entry) }))
+      .filter((item) => item.found !== undefined)
+      // Equal scores keep the order the entries were listed in.
+      .sort((a, b) => (b.found?.score ?? 0) - (a.found?.score ?? 0) || a.order - b.order)
       .map((item) => item.entry);
-  return [...rank(actions), ...rank(commandEntries(state))];
+  const all = [...rank(actions), ...rank(commandEntries(state))];
+  if (words.length > 0) return all;
+  // With no query the last used entries come first, the latest first.
+  const used = state.recent
+    .map((id) => all.find((entry) => entryId(entry) === id))
+    .filter((entry): entry is TuiPaletteEntry => entry !== undefined)
+    .slice(0, RECENT_ENTRIES);
+  return [...used, ...all.filter((entry) => !used.includes(entry))];
+}
+
+/** The state after an entry ran: it is now the latest of the recent ones. */
+export function remember(state: TuiState, entry: TuiPaletteEntry): TuiState {
+  const id = entryId(entry);
+  return { ...state, recent: [id, ...state.recent.filter((one) => one !== id)].slice(0, RECENT_ENTRIES) };
 }
 
 /** The entry the palette cursor is on. */
@@ -346,7 +470,7 @@ export function inputKey(
       // A command is run by the reducer that owns the state it changes.
       return chosen === undefined || chosen.command !== undefined
         ? state
-        : startAction({ ...state, input: undefined }, chosen.name);
+        : startAction(remember({ ...state, input: undefined }, chosen), chosen.name);
     }
     if (key === "backspace") {
       return { ...state, input: { ...input, query: dropLast(input.query), cursor: 0 } };

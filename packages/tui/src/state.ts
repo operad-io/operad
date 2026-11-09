@@ -35,6 +35,7 @@ import {
   typed,
   isReserved,
   resolveBindings,
+  remember,
   type TuiCommand,
 } from "./actions.ts";
 
@@ -73,6 +74,10 @@ export interface TuiRow {
   readonly error?: string | undefined;
   /** False for a row that names no object (a run, a candidate): it never opens. */
   readonly openable?: boolean | undefined;
+  /** The parts of the dim second line; unset means state, badge and note. */
+  readonly detail?: readonly string[] | undefined;
+  /** The row names no object: its first line is the title alone. */
+  readonly unnamed?: boolean | undefined;
 }
 
 /** One section of the open object, with the content fetched so far. */
@@ -270,6 +275,8 @@ export interface TuiState {
   readonly status?: string | undefined;
   /** The key bindings in force; a user binding beats a plugin default. */
   readonly bindings: readonly TuiBinding[];
+  /** The palette entries used last, the latest first; the shell keeps them between runs. */
+  readonly recent: readonly string[];
   /** The palette, note or confirmation the keys are typing into. */
   readonly input?: TuiInput | undefined;
   /** One footer line (a refusal, or "not available") until the next key. */
@@ -299,6 +306,7 @@ export interface TuiStateOptions {
   readonly height?: number | undefined;
   readonly theme?: TuiTheme | undefined;
   readonly url?: string | undefined;
+  readonly recent?: readonly string[] | undefined;
 }
 
 function makeList(): TuiList {
@@ -357,6 +365,7 @@ export function initialState(options: TuiStateOptions = {}): TuiState {
     followPending: false,
     generation: 0,
     bindings: [],
+    recent: options.recent ?? [],
     acting: false,
     connection: "ok",
     ...(options.url === undefined ? {} : { url: options.url }),
@@ -542,12 +551,13 @@ function rowFromPending(item: PendingItem): TuiRow {
       title: sanitize(item.row.title),
       state: sanitize(item.row.state),
       note: sanitize(item.prompt),
+      detail: detailOf([item.prompt, repositoryOf(item.object)]),
       waiting: true,
       running: false,
       ...(item.row.mark === undefined ? {} : { mark: item.row.mark }),
       ...(item.row.badge === undefined ? {} : { badge: sanitize(item.row.badge) }),
       ...(item.row.error === undefined ? {} : { error: sanitize(item.row.error) }),
-      ...(item.object === undefined ? { openable: false } : {}),
+      ...(item.object === undefined ? { openable: false, unnamed: true } : {}),
     };
   }
   return {
@@ -555,28 +565,47 @@ function rowFromPending(item: PendingItem): TuiRow {
     title: sanitize(item.prompt),
     state: sanitize(item.flow),
     ...(item.step === null ? {} : { note: sanitize(item.step) }),
+    detail: detailOf([item.flow, item.step ?? "", repositoryOf(item.object)]),
     waiting: true,
     running: false,
-    ...(item.object === undefined ? { openable: false } : {}),
+    ...(item.object === undefined ? { openable: false, unnamed: true } : {}),
   };
 }
 
 function rowFromRunning(item: RunningItem): TuiRow {
+  const named = item.object !== null && item.object !== undefined;
+  const stepMs = item.stepElapsedMs ?? item.elapsedMs;
   return {
     id: sanitize(item.object ?? item.runId),
-    title: sanitize(
-      item.object === null || item.object === undefined
-        ? (item.title ?? item.flow)
-        : item.title === null
-          ? item.object
-          : `${item.object}  ${item.title}`,
-    ),
+    title: sanitize(named ? (item.title ?? "") : (item.title ?? item.flow)),
     state: sanitize(item.stepLabel ?? "-"),
-    note: formatElapsed(item.stepElapsedMs ?? item.elapsedMs),
+    note: formatElapsed(stepMs),
+    detail: detailOf([
+      item.stepLabel ?? "",
+      item.stepElapsedMs === null || item.stepElapsedMs === undefined
+        ? ""
+        : formatElapsed(item.stepElapsedMs),
+      formatElapsed(item.elapsedMs),
+      repositoryOf(item.object),
+    ]),
     waiting: false,
     running: true,
     openable: false,
+    ...(named ? {} : { unnamed: true }),
   };
+}
+
+/** The dim line's parts, cleaned, without the empty ones. */
+function detailOf(parts: readonly string[]): readonly string[] {
+  return parts.map((part) => sanitize(part).trim()).filter((part) => part !== "");
+}
+
+/** The repository an object name carries: `operad` in `ops/T-1-x`. */
+function repositoryOf(object: string | null | undefined): string {
+  if (object === null || object === undefined) return "";
+  const bare = object.slice(object.indexOf(":") + 1);
+  const slash = bare.lastIndexOf("/");
+  return slash < 0 ? "" : bare.slice(0, slash);
 }
 
 /** The marker a row puts in its first column. */
@@ -1332,8 +1361,10 @@ function handleKey(
   const calm = state.notice === undefined ? state : { ...state, notice: undefined };
   if (typing?.kind === "pages") return pagesKey(calm, typing, event);
   if (typing?.kind === "palette" && isKey(event.key, "enter", "return")) {
-    const command = chosenEntry(calm)?.command;
-    if (command !== undefined) return runCommand({ ...calm, input: undefined }, command);
+    const chosen = chosenEntry(calm);
+    if (chosen?.command !== undefined) {
+      return runCommand(remember({ ...calm, input: undefined }, chosen), chosen.command);
+    }
   }
   if (typing !== undefined) return inputKey(calm, typing, event);
   // Ctrl-C is the renderer's exit; no other chord is ours.
@@ -1915,9 +1946,12 @@ export const KEY_LIST: readonly (readonly [string, string])[] = [
   ["q", "quit"],
 ];
 
-/** The lines one row takes: always one; an error row shows its text elsewhere. */
+/** The lines one object takes in a list: two, and the blank line after them. */
+export const ROW_LINES = 3;
+
+/** The lines one row takes; an error row shows its text elsewhere. */
 export function rowLines(_row: TuiRow): number {
-  return 1;
+  return ROW_LINES;
 }
 
 /**
@@ -1931,7 +1965,8 @@ export function listWindow(
   const count = list.rows.length;
   if (count === 0) return { start: 0, end: 0 };
   const tail = (list.loading ? 1 : 0) + (list.error === undefined ? 0 : 1);
-  const room = Math.max(1, Math.trunc(available) - tail);
+  // The blank line after the last object is not drawn, so it needs no room.
+  const room = Math.max(1, Math.trunc(available) - tail + 1);
   const cursor = Math.min(Math.max(0, list.cursor), count - 1);
   let start = cursor;
   let end = cursor + 1;

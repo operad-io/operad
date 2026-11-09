@@ -2,7 +2,12 @@
 # Reproduce a flaky test on demand: run test files many times, optionally under load.
 #   bash scripts/stress.sh [--runs N] [--load K] [-t <name pattern>] <test files...>
 # Set STRESS_PIDFILE to a path to have the load helpers' pids written there.
+# Set STRESS_CPUS to override the detected CPU count that caps --load.
+# Each helper also stops when this script is gone, so a SIGKILL of the script
+# (which runs no trap) leaves no helper behind. The script itself stops when
+# its own parent is gone, so a SIGKILL of the runner that started it ends all.
 set -uo pipefail
+starter=$PPID
 cd "$(dirname "$0")/.."
 
 runs=50
@@ -26,7 +31,7 @@ case "$load" in ''|*[!0-9]*) echo "--load wants a number" >&2; exit 2 ;; esac
 
 bun scripts/check-install.ts || exit 2
 
-cpus=$( (getconf _NPROCESSORS_ONLN || nproc || sysctl -n hw.ncpu) 2>/dev/null | head -n 1)
+cpus=${STRESS_CPUS:-$( (getconf _NPROCESSORS_ONLN || nproc || sysctl -n hw.ncpu) 2>/dev/null | head -n 1)}
 case "$cpus" in ''|*[!0-9]*) cpus=1 ;; esac
 [ "$load" -le "$cpus" ] || load="$cpus"
 
@@ -42,13 +47,15 @@ trap stop_helpers EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# A helper runs while this script's pid exists; kill -0 is a builtin.
+parent=$$
 # Helper 1 forks a short process in a loop; the others spin.
 i=0
 while [ "$i" -lt "$load" ]; do
   if [ "$i" -eq 0 ]; then
-    ( while :; do /usr/bin/true; done ) </dev/null >/dev/null 2>&1 &
+    ( while kill -0 "$parent" 2>/dev/null; do /usr/bin/true; done ) </dev/null >/dev/null 2>&1 &
   else
-    ( while :; do :; done ) </dev/null >/dev/null 2>&1 &
+    ( while kill -0 "$parent" 2>/dev/null; do :; done ) </dev/null >/dev/null 2>&1 &
   fi
   helpers+=("$!")
   i=$((i + 1))
@@ -58,10 +65,19 @@ if [ -n "${STRESS_PIDFILE:-}" ]; then
   [ ${#helpers[@]} -eq 0 ] || printf '%s\n' "${helpers[@]}" > "$STRESS_PIDFILE"
 fi
 
+# Stop with the process that started this script (the TERM trap then runs).
+( while kill -0 "$parent" 2>/dev/null && kill -0 "$starter" 2>/dev/null; do sleep 0.5; done
+  kill -TERM "$parent" 2>/dev/null ) </dev/null >/dev/null 2>&1 &
+helpers+=("$!")
+
 log=$(mktemp "${TMPDIR:-/tmp}/stress.XXXXXX") || exit 2
 args=(test "${files[@]}" --rerun-each "$runs" --timeout 30000)
 [ -z "$pattern" ] || args+=(-t "$pattern")
-bun "${args[@]}" > "$log" 2>&1 < /dev/null
+# In the background, so that a trap runs while it works.
+bun "${args[@]}" > "$log" 2>&1 < /dev/null &
+bunpid=$!
+helpers+=("$bunpid")
+wait "$bunpid"
 status=$?
 stop_helpers
 
