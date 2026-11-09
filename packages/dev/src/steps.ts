@@ -24,11 +24,13 @@ import {
   storeKey,
   taskData,
   type RepositoryData,
+  type StopRecord,
   type TaskAttempt,
   type TaskData,
 } from "./model.ts";
 import { DEFAULT_POOL, resolvePool } from "@operad-io/pool";
 import { runPrepare } from "./prepare.ts";
+import { classifyStop, STOP_REASONS } from "./stops.ts";
 import { findRepository, withRepoLock } from "./service.ts";
 import { MAX_WORK_WAITS } from "./timeouts.ts";
 import {
@@ -87,6 +89,15 @@ export function workBranch(taskId: string): string {
   return `work/${taskId}`;
 }
 
+/** The step a host error says was not loaded; undefined for any other error. */
+function notLoadedStep(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const record = error as { readonly kind?: unknown; readonly use?: unknown };
+  return record.kind === "step_not_loaded" && typeof record.use === "string"
+    ? record.use
+    : undefined;
+}
+
 export interface TaskContext {
   readonly task: TaskData;
   readonly repository: RepositoryData;
@@ -96,6 +107,39 @@ export interface TaskContext {
 }
 
 export async function taskContext(ctx: StepContext): Promise<TaskContext> {
+  const parts = await taskParts(ctx);
+  const settings = await readDevSettings(parts.repository.path);
+  return { ...parts, settings };
+}
+
+/** A task context whose settings may be missing: a step that can retry reads it. */
+export type LooseTaskContext = Omit<TaskContext, "settings"> & {
+  readonly settings?: DevSettings | undefined;
+  /** Why the settings could not be read, when `settings` is absent. */
+  readonly settingsError?: string | undefined;
+};
+
+/**
+ * Like `taskContext`, but a repository whose settings cannot be read comes
+ * back with `settingsError` instead of throwing, so the step can say so.
+ */
+export async function looseTaskContext(
+  ctx: StepContext,
+): Promise<LooseTaskContext> {
+  const parts = await taskParts(ctx);
+  try {
+    return { ...parts, settings: await readDevSettings(parts.repository.path) };
+  } catch (error) {
+    if (error instanceof DevError && error.field === "dev.json") {
+      return { ...parts, settingsError: error.message };
+    }
+    throw error;
+  }
+}
+
+async function taskParts(
+  ctx: StepContext,
+): Promise<Omit<TaskContext, "settings">> {
   const object = ctx.object;
   if (object === undefined || object.type !== "task") {
     throw new DevError("object", "this step runs on a task");
@@ -116,19 +160,12 @@ export async function taskContext(ctx: StepContext): Promise<TaskContext> {
     );
   }
   const repository = repositoryData(found.data);
-  const settings = await readDevSettings(repository.path);
   const taskId = bareId(stored?.id ?? object.id);
   let taskKey = stored?.id ?? object.id;
   if ((await ctx.store.get("task", taskKey)) === undefined) {
     taskKey = storeKey(repository.name, taskId);
   }
-  return {
-    task,
-    repository,
-    taskKey,
-    taskId,
-    settings,
-  };
+  return { task, repository, taskKey, taskId };
 }
 
 interface AttemptState {
@@ -555,6 +592,13 @@ export async function runWorktree(
         phase: "waiting",
         run: ctx.runId,
         startRequested: false,
+        // The run that stopped is over: this one only asks a person, so the
+        // retry step must not run anything again.
+        stop: {
+          step: "worktree",
+          result: "interrupted",
+          reason: STOP_REASONS.runEnded,
+        },
         brief: appendChange(
           context.task.brief,
           `waiting: ${stoppedAt} stopped`,
@@ -890,8 +934,31 @@ function modelUnavailable(data: Record<string, unknown>): boolean {
 }
 
 export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
-  const context = await taskContext(ctx);
-  if (!claimAllows(ctx, context.task)) return cancelledStep();
+  const loose = await looseTaskContext(ctx);
+  if (!claimAllows(ctx, loose.task)) return cancelledStep();
+  if (loose.settings === undefined) {
+    // Not the task's fault: record why, and the flow retries once.
+    const message = loose.settingsError ?? "the settings could not be read";
+    const written = await saveTaskGuarded(
+      ctx,
+      loose.taskKey,
+      {
+        ...loose.task,
+        stop: {
+          step: "work",
+          result: "failed",
+          reason: STOP_REASONS.settingsUnreadable,
+        },
+      },
+      "dev:work",
+    );
+    if (!written) return cancelledStep();
+    return {
+      result: "failed",
+      data: { reason: STOP_REASONS.settingsUnreadable, message },
+    };
+  }
+  const context: TaskContext = { ...loose, settings: loose.settings };
   const task = context.task;
   const path =
     task.attempt?.worktree ??
@@ -1002,6 +1069,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   const workerChangedFrom = before !== undefined && !stillThere ? before : undefined;
   let outcome: PluginStepResult | undefined;
   let hostError: string | undefined;
+  let notLoaded: string | undefined;
   try {
     outcome = await runStep(
       "pool/agent",
@@ -1017,6 +1085,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     );
   } catch (error) {
     hostError = messageOf(error);
+    notLoaded = notLoadedStep(error);
   }
   const outcomeData =
     outcome !== undefined &&
@@ -1063,15 +1132,32 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       workNote: typeof extra.message === "string" ? extra.message : null,
       ...(waitsForModel ? {} : { workRetryAt: null }),
     };
+    const reason = typeof extra.reason === "string" ? extra.reason : "";
+    const stop: StopRecord | null =
+      result === "failed"
+        ? {
+            step: "work",
+            result,
+            reason,
+            ...(typeof extra.use === "string" ? { use: extra.use } : {}),
+          }
+        : null;
+    // A failure outside the task's work is retried by the flow, not by a person.
+    const retried =
+      stop !== null &&
+      classifyStop({ step: "work", result, reason, use: stop.use }).kind ===
+        "environment";
     const written = await saveTaskGuarded(
       ctx,
       context.taskKey,
       {
         ...task,
+        stop,
         // Only `done` continues to the gate; every other result goes to the
         // person wait, and the task says so while it waits. A model that is
         // unavailable is not a person's business: the work step runs again.
-        phase: result === "done" || waitsForModel ? "running" : "waiting",
+        phase:
+          result === "done" || waitsForModel || retried ? "running" : "waiting",
         run: ctx.runId,
         attempts,
         attempt: nextAttempt,
@@ -1110,7 +1196,8 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
 
   if (hostError !== undefined) {
     return finish("failed", {
-      reason: "harness",
+      reason: notLoaded === undefined ? "harness" : STOP_REASONS.stepNotLoaded,
+      ...(notLoaded === undefined ? {} : { use: notLoaded }),
       message: hostError,
       ...(dirty.length === 0 ? {} : { files: dirty }),
     });
@@ -1139,8 +1226,13 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       typeof outcomeData.message === "string"
         ? outcomeData.message
         : `the harness step ended "${outcome?.result ?? "unknown"}"`;
+    // A harness that was stopped, or killed by a signal no cancel sent, says
+    // nothing about the work.
+    const stopped =
+      outcome?.result === "interrupted" &&
+      (outcomeData.reason === "signal" || outcomeData.reason === "cancelled");
     return finish("failed", {
-      reason: "harness",
+      reason: stopped ? STOP_REASONS.stopped : "harness",
       harnessResult: outcome?.result ?? "unknown",
       // A failed attempt still reports the files it left behind.
       message:

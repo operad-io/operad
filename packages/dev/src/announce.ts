@@ -69,6 +69,11 @@ export function waitingReason(
   conflicted: boolean,
 ): WaitingReason {
   const attempt = task.attempt;
+  if (edge.result === "environment") {
+    // The one automatic retry did not help: the line says what was wrong.
+    const cause = task.retry?.cause ?? `run stopped during ${edge.from}`;
+    return { reason: cause, step: edge.from };
+  }
   switch (edge.from) {
     case "worktree":
       if (edge.result === "blocked") {
@@ -139,6 +144,7 @@ export async function runAnnounce(
   const conflicted =
     edge.from === "work" &&
     edge.result !== "interrupted" &&
+    edge.result !== "environment" &&
     typeof path === "string" &&
     mergeInProgress(path);
   const found = waitingReason(

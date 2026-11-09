@@ -1,5 +1,5 @@
 export { definePlugin } from "./define-plugin.ts";
-export { AccessError, AskTimeoutError, messageOf, PluginError, StartRefusedError } from "./errors.ts";
+export { AccessError, AskTimeoutError, messageOf, PluginError, StartRefusedError, StepNotLoadedError } from "./errors.ts";
 export { defaultOperadHome } from "./home.ts";
 export { keysPathFor, readKeysFile } from "./keys.ts";
 export {
