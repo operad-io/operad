@@ -693,9 +693,11 @@ async function commandShow(
     if (pages === undefined || pages.length === 0) {
       throw new Error(`section "${requested}" of "${id}" has no pages`);
     }
-    const byLabel = pages.find((entry) => entry.label === pageFlag.value);
+    // A number is the page at that position, even when another page is labelled with it.
     const number = /^[0-9]+$/.test(pageFlag.value) ? Number(pageFlag.value) : undefined;
-    const chosen = byLabel ?? (number === undefined ? undefined : pages[number - 1]);
+    const chosen =
+      (number === undefined ? undefined : pages[number - 1]) ??
+      pages.find((entry) => entry.label === pageFlag.value);
     if (chosen === undefined) {
       throw new Error(
         `section "${requested}" of "${id}" has no page "${pageFlag.value}"; it has ${pages.length}: ${pages

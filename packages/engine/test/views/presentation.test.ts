@@ -169,6 +169,7 @@ describe("presentation views", () => {
       "info",
       "log",
       "pages",
+      "digits",
       "hang",
       "big",
       "history",

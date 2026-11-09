@@ -224,3 +224,10 @@ the row fields.
 | T-0085-M2 | packages/tui/src/actions.ts | a confirm setting was sent without asking | `settings in the palette > a confirm setting asks first; any key but y cancels, y sends it confirmed` |
 | T-0085-M3 | packages/tui/src/actions.ts | a setting that cannot change was given a value prompt | `settings in the palette > a setting that cannot change opens read-only and sends nothing` |
 | T-0085-M5 | packages/tui/src/actions.ts | a repository's own page listed global settings only | `the scopes the palette lists > no object lists global only; a task names its repository; a repository's own page names itself` |
+| T-0148-M1 | packages/tui/src/app.ts | a refresh read from the first page, not from the page the text starts at | `a live section that was jumped to a later page > a change reads it again from that page and keeps the position` |
+| T-0148-M2 | packages/tui/src/state.ts | a replace reset pageStart to 0 instead of keeping the start | `a live section that was jumped to a later page > a change reads it again from that page and keeps the position` |
+| T-0148-M3 | packages/tui/src/state.ts | the position counted every loaded page, not the page under the scroll | `a section with pages > the position is the page under the top of the pane, not the last one loaded` |
+| T-0148-M4 | packages/tui/src/state.ts | the picker opened with its cursor on the first entry | `a section with pages > the picker opens with its cursor on the page shown` |
+| T-0148-M5 | packages/tui/src/app.ts | a fault before the shell existed did not stop it when it started | `runTui > a fault before the shell exists still ends the app, with the message` |
+| T-0148-M6 | packages/tui/src/app.ts | runTui did not pass onMessage, so request failures were not echoed at exit | `runTui > a server that cannot be reached is echoed after the screen closes` |
+| T-0148-M7 | packages/tui/src/app.ts | the request guard swallowed a rejection | `a fault in the app's own loops > a view that throws while a request is answered ends the app through the request guard` |

@@ -119,7 +119,8 @@ describe("a section with pages", () => {
 
   test("a jump to the first page asks without a cursor", () => {
     let state = answer(key(opened(), "n"), "manual");
-    state = key(key(state, "p"), "enter");
+    // The picker opens on the page shown (the second); one up is the first.
+    state = key(key(key(state, "p"), "up"), "enter");
     expect(state.sectionRequest?.jump).toBe(0);
     expect(state.sectionRequest?.cursor).toBeUndefined();
     state = answer(state, "first again");
@@ -145,13 +146,55 @@ describe("a section with pages", () => {
     expect(pagePosition(activeSection(state))).toBe("page 3/4 · src/main.ts");
   });
 
-  test("scrolling into the next page keeps the position on the page that was added", () => {
+  test("the position is the page under the top of the pane, not the last one loaded", () => {
+    const long = (name: string): string =>
+      Array.from({ length: 60 }, (_, at) => `${name} ${at}`).join("\n\n");
     let state = opened();
+    state = reduce(state, {
+      type: "section",
+      objectId: "one",
+      sectionId: "diff",
+      content: { markdown: long("first"), next: "1", pages: TOC },
+      version: activeSection(state)?.version,
+      objectVersion: state.object?.version,
+    });
     state = key(state, "end");
-    state = answer(state, "second");
-    expect(pagePosition(activeSection(state))).toBe("page 2/4 · docs/manual.md");
+    state = answer(state, long("second"));
+    const section = activeSection(state);
+    expect(section?.pages).toBe(2);
+    // The scroll has not moved: the top of the pane is still the first page.
+    expect(pagePosition(section, state)).toBe("page 1/4 · overview");
+    // Scrolled to the end, the top of the pane has crossed into the added page.
+    state = key(state, "end");
+    expect(pagePosition(activeSection(state), state)).toBe("page 2/4 · docs/manual.md");
+    state = key(state, "home");
+    expect(pagePosition(activeSection(state), state)).toBe("page 1/4 · overview");
+    // n steps from the page shown.
     state = key(state, "n");
-    expect(state.sectionRequest).toMatchObject({ cursor: "2", jump: 2 });
+    expect(state.sectionRequest).toMatchObject({ cursor: "1", jump: 1 });
+  });
+
+  test("the picker opens with its cursor on the page shown", () => {
+    let state = answer(key(opened(), "n"), "manual");
+    state = key(state, "p");
+    expect(state.input).toMatchObject({ kind: "pages", cursor: 1 });
+  });
+
+  test("a refresh that keeps the page the text starts at keeps the position", () => {
+    let state = answer(key(opened(), "n"), "manual");
+    const request = { version: activeSection(state)?.version, objectVersion: state.object?.version };
+    state = reduce(state, {
+      type: "section",
+      objectId: "one",
+      sectionId: "diff",
+      content: { markdown: "manual again" },
+      pages: 1,
+      marks: [],
+      start: 1,
+      ...request,
+    });
+    expect(activeSection(state)?.pageStart).toBe(1);
+    expect(pagePosition(activeSection(state), state)).toBe("page 2/4 · docs/manual.md");
   });
 
   test("a section without pages ignores p, n and N", () => {
@@ -191,6 +234,10 @@ describe("a section with pages", () => {
       state = key(state, "down");
       const text = drawState(state).overlay?.chunks.map((c) => c.text).join("") ?? "";
       expect(text).toContain(`❯ file-${at + 1}.ts\n`);
+      // A window, not every entry: the drawn entries fit the box and the screen.
+      const drawn = text.split("\n").filter((line) => /file-\d+\.ts/.test(line)).length;
+      expect(drawn).toBeLessThan(many.length);
+      expect(drawn).toBeLessThanOrEqual(state.height - 2);
     }
   });
 });

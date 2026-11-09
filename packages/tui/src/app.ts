@@ -42,7 +42,9 @@ import {
   sameObject,
   type TuiObject,
   joinMarkdown,
+  markPage,
   reduce,
+  type TuiSection,
   type TuiActionRequest,
   type TuiSettingRequest,
   type TuiObjectRequest,
@@ -425,6 +427,14 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     }
   }
 
+  /** The page a refresh starts from: the one the text starts at, if the contents still list it. */
+  function startOf(section: TuiSection): { readonly index: number; readonly cursor: string | undefined } {
+    const page = section.toc?.[section.pageStart];
+    return page === undefined
+      ? { index: 0, cursor: undefined }
+      : { index: section.pageStart, cursor: page.cursor };
+  }
+
   /**
    * Reads a section from its first page to as many pages as it holds now, so a
    * refresh keeps what the person paged to instead of cutting it back to one.
@@ -434,20 +444,30 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     sectionId: string,
     pages: number,
     full: boolean,
+    start: { readonly index: number; readonly cursor: string | undefined },
     signal: AbortSignal,
-  ): Promise<{ readonly content: ViewSectionContent; readonly pages: number } | undefined> {
+  ): Promise<
+    | {
+        readonly content: ViewSectionContent;
+        readonly pages: number;
+        readonly marks: readonly number[];
+      }
+    | undefined
+  > {
     const load = client.section;
     if (load === undefined) return undefined;
     let markdown = "";
     let next: string | undefined;
-    let cursor: string | undefined;
+    let cursor: string | undefined = start.cursor;
     let read = 0;
+    const marks: number[] = [];
     do {
       const content = await load.call(client, wire(id), sectionId, {
         ...(cursor === undefined ? {} : { cursor }),
         ...(full ? { full: true } : {}),
         signal,
       });
+      if (read > 0) marks.push(markPage(markdown, content.markdown));
       markdown = read === 0 ? content.markdown : joinMarkdown(markdown, content.markdown);
       next = content.next;
       cursor = next;
@@ -456,6 +476,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     return {
       content: next === undefined ? { markdown } : { markdown, next },
       pages: read,
+      marks,
     };
   }
 
@@ -747,6 +768,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
                     section.id,
                     section.pages,
                     section.full,
+                    startOf(section),
                     scoped.signal,
                   ),
                 );
@@ -771,6 +793,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
                   sectionId: section.id,
                   content: fetched.value.content,
                   pages: fetched.value.pages,
+                  marks: fetched.value.marks,
+                  start: startOf(section).index,
                   full: section.full,
                   version: section.version,
                   objectVersion,
@@ -1099,9 +1123,12 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
 
   // The renderer keeps its own handlers that only print; an error nobody
   // caught ends the app the way every other fault does.
+  // A fault before the shell exists is remembered and stops it as it starts.
+  let faulted = false;
   const onUncaught = (error: unknown): void => {
     messages.push(messageOf(error));
     code = 1;
+    faulted = true;
     shell?.stop();
   };
   process.on("uncaughtException", onUncaught);
@@ -1125,6 +1152,8 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
       events: (signal) =>
         new TuiEvents({ url: location.url, token: location.token, signal }),
       view: createdView,
+      // Request failures show on the page and are echoed after the screen closes.
+      onMessage: (message) => messages.push(message),
       width: created.width,
       height: created.height,
       theme: themeOf(created, "dark"),
@@ -1143,6 +1172,7 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
       },
     });
     shell = started;
+    if (faulted) started.stop();
     stopThemeWatch = watchThemes({
       home: themeHome,
       flag: () => flag,

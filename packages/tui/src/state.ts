@@ -101,6 +101,8 @@ export interface TuiSection {
   readonly toc?: readonly ViewSectionPage[] | undefined;
   /** The index in `toc` of the first page `markdown` holds. */
   readonly pageStart: number;
+  /** Where in `markdown` each page after the first one it holds begins (a character offset). */
+  readonly pageMarks: readonly number[];
   /** The first content line the pane shows. */
   readonly scroll: number;
   /** A live section keeps its end in view. */
@@ -515,6 +517,10 @@ export type TuiStateEvent =
       readonly objectVersion?: number | undefined;
       /** For a replace: how many pages the text holds. */
       readonly pages?: number | undefined;
+      /** For a replace: where the pages after the first begin in the text. */
+      readonly marks?: readonly number[] | undefined;
+      /** For a replace: the table-of-contents index of the first page, kept from before. */
+      readonly start?: number | undefined;
     }
   | {
       readonly type: "section-error";
@@ -835,6 +841,7 @@ function makeSection(info: ViewSectionInfo, previous?: TuiSection): TuiSection {
     capped: false,
     pages: 0,
     pageStart: 0,
+    pageMarks: [],
     scroll: 0,
     following: live,
     version: 0,
@@ -1088,6 +1095,11 @@ export function isTruncated(markdown: string): boolean {
   return TRUNCATION_LINE.test(lines[lines.length - 1] ?? "");
 }
 
+/** The offset in `joinMarkdown(before, after)` where `after` begins. */
+export function markPage(before: string, after: string): number {
+  return joinMarkdown(before, after).length - after.length;
+}
+
 /** Joins a page after the text before it. */
 export function joinMarkdown(before: string, after: string): string {
   if (before.length === 0) return after;
@@ -1106,6 +1118,8 @@ function applySection(
   objectVersion: number | undefined,
   pages: number | undefined,
   jump: number | undefined,
+  marks: readonly number[] | undefined,
+  start: number | undefined,
 ): TuiState {
   const object = state.object;
   if (object === undefined || object.id !== objectId) return state;
@@ -1130,7 +1144,10 @@ function applySection(
       full: full || value.full,
       capped,
       pages: appended ? value.pages + 1 : (pages ?? 1),
-      pageStart: jump ?? (appended ? value.pageStart : 0),
+      pageStart: jump ?? (appended ? value.pageStart : (start ?? 0)),
+      pageMarks: appended
+        ? [...value.pageMarks, markPage(section.markdown, content.markdown)]
+        : (marks ?? []),
       ...(content.pages === undefined ? {} : { toc: content.pages }),
       error: undefined,
       version: value.version + 1,
@@ -1201,18 +1218,39 @@ function scrollSection(state: TuiState, delta: number): TuiState {
   return moved;
 }
 
-/** The page of the open section's table of contents the text ends in. */
-export function currentPage(section: TuiSection): number {
-  return section.pageStart + Math.max(1, section.pages) - 1;
+/** The layout line each loaded page starts at, for the width in force. */
+let startsMemo: { key: string; starts: readonly number[] } | undefined;
+function pageStarts(state: TuiState, section: TuiSection): readonly number[] {
+  const width = sectionWidth(state);
+  const key = `${width}\u0000${section.id}\u0000${section.version}\u0000${section.markdown.length}`;
+  if (startsMemo?.key === key) return startsMemo.starts;
+  const starts = section.pageMarks.map(
+    (offset) => layoutMarkdown(section.markdown.slice(0, offset), width).length,
+  );
+  startsMemo = { key, starts };
+  return starts;
+}
+
+/**
+ * The page of the table of contents under the top of the pane. Without a state
+ * it is the first page the text holds.
+ */
+export function shownPage(section: TuiSection, state?: TuiState): number {
+  if (state === undefined) return section.pageStart;
+  const passed = pageStarts(state, section).filter((line) => line <= section.scroll).length;
+  return section.pageStart + passed;
 }
 
 /** "page 3/27 · docs/manual.md" for a section with a table of contents. */
-export function pagePosition(section: TuiSection | undefined): string | undefined {
+export function pagePosition(
+  section: TuiSection | undefined,
+  state?: TuiState,
+): string | undefined {
   const toc = section?.toc;
   if (section === undefined || toc === undefined || toc.length === 0 || !section.loaded) {
     return undefined;
   }
-  const at = Math.min(currentPage(section), toc.length - 1);
+  const at = Math.min(shownPage(section, state), toc.length - 1);
   return `page ${at + 1}/${toc.length} · ${toc[at]?.label ?? ""}`;
 }
 
@@ -1236,7 +1274,7 @@ function stepPage(state: TuiState, delta: number): TuiState {
   if (section === undefined || toc === undefined || toc.length === 0 || section.loading) {
     return state;
   }
-  const target = currentPage(section) + delta;
+  const target = shownPage(section, state) + delta;
   if (target < 0) return { ...state, notice: "first page" };
   if (target >= toc.length) return { ...state, notice: "last page" };
   return loadPage(state, target);
@@ -1246,7 +1284,10 @@ function stepPage(state: TuiState, delta: number): TuiState {
 function openPagePicker(state: TuiState): TuiState {
   const toc = activeSection(state)?.toc;
   if (toc === undefined || toc.length === 0 || state.keys) return state;
-  return { ...state, input: { kind: "pages", query: "", cursor: 0 } };
+  const section = activeSection(state);
+  const shown = section === undefined ? 0 : Math.min(shownPage(section, state), toc.length - 1);
+  // With no query the entries are in order, so the page shown is at its index.
+  return { ...state, input: { kind: "pages", query: "", cursor: shown } };
 }
 
 /** One line of the page picker: a page of the table of contents. */
@@ -1915,6 +1956,8 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
         event.objectVersion,
         event.pages,
         event.jump,
+        event.marks,
+        event.start,
       );
     case "section-error":
       return applySectionError(
