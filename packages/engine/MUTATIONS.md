@@ -366,4 +366,4 @@ the row fields.
 | T-0146-M11 | packages/engine/src/platform/step-reap.ts | a member of a followed process group was taken whatever its start time | `what a step leaves behind > a process group id that was reused later is not taken for the step's` |
 | T-0146-M12 | packages/engine/src/platform/step-reap.ts | a group leader that ended was never noted as gone | `what a step leaves behind > a process group id that was reused later is not taken for the step's` |
 | T-0129-M1 | packages/engine/src/views/presentation.ts | a bare id still collected matches from the facts after a declared type matched | `presentation views > a bare id found in a declared type wins over a type only the facts remember` |
-| T-0085-M1 | packages/engine/src/views/settings.ts | a listed setting left out its allowed values | `settings > lists every setting with value, default, description and marks` |
+| T-0085-M4 | packages/engine/src/views/settings.ts | a listed setting left out its allowed values | `settings > lists every setting with value, default, description and marks` |
