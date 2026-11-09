@@ -631,6 +631,22 @@ describe("git that succeeds without printing", () => {
   });
 });
 
+describe("repo add reports git's stderr", () => {
+  test("a failing rev-parse puts its stderr in the refusal", async () => {
+    const root = await tempRoot();
+    const path = await makeGitRepository(root, "broken");
+    const store = storeAt(root);
+    devTestHooks.gitQuery = () => ({ ok: false, out: "", err: "fatal: simulated git failure" });
+    try {
+      await expect(addRepository(store, { path })).rejects.toThrow(
+        /is not a git work tree: fatal: simulated git failure/,
+      );
+    } finally {
+      devTestHooks.gitQuery = undefined;
+    }
+  });
+});
+
 describe("dev checks inside the lock", () => {
   test("task add rechecks that its plan is not cancelled", async () => {
     const { repository, store } = await setup();
