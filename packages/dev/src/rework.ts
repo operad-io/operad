@@ -239,6 +239,37 @@ export function movesAsPreExisting(
   return true;
 }
 
+/** Which review is being decided: the round fixes which pre-existing rule applies. */
+export type ReviewKind = "first" | "reverify" | "rework";
+
+/**
+ * Whether a finding moves as pre-existing in a review of this kind.
+ * A first review keeps only the per-file rule: a finding in a file the task's
+ * change does not touch does not block (critical, and a finding without file
+ * or line, never move). A reverify of the same commit moves nothing. A rework
+ * round applies the line rules of `movesAsPreExisting`.
+ */
+export function movesIn(
+  kind: ReviewKind,
+  finding: Placed,
+  own: LineMap,
+  previous: readonly PreviousFinding[],
+  normalize: (path: string) => string,
+): boolean {
+  if (kind === "reverify") return false;
+  if (kind === "rework") return movesAsPreExisting(finding, own, previous, normalize);
+  if (finding.severity === "critical") return false;
+  if (
+    finding.file === undefined ||
+    finding.file.length === 0 ||
+    finding.line === undefined ||
+    !Number.isFinite(finding.line)
+  ) {
+    return false;
+  }
+  return !own.has(normalize(finding.file));
+}
+
 /** How many previous findings have no blocking finding of this review near them. */
 export function fixedCount(
   previous: readonly PreviousFinding[],

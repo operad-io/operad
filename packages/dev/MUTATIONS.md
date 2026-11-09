@@ -397,3 +397,10 @@ the row fields.
 |---|---|---|---|
 | T-0144-M7 | packages/dev/src/integrate.ts | a batch did not check that its claimed tasks were still queued before it pushed | `a task that leaves a batch > a claimed task that is cancelled is not merged, and the others land one by one` |
 | T-0144-M8 | packages/dev/src/integration-queue.ts | a fallback wrote the claimed task's ticket back with the leader's pid | `a claimed task that leaves the queue > a batch that falls back does not write its ticket back` |
+| T-0097-M9 | packages/dev/flows/dev.flow.ts | the worktree retry held onto itself instead of a wait for the settings | `settings that cannot be read, in the worktree step > a recovered worktree step waits for the settings, then runs again` |
+
+## T-0118 — pre-existing by kind of review
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0118-M1 | packages/dev/src/rework.ts | a same-commit reverify applied the line rules (the kind check for `reverify` removed) | `pre-existing by kind of review > reverify: far, in a touched file` and `dev/review rework rounds > what moves as pre-existing, by kind of review > same-commit reverify` |
