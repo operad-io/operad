@@ -78,6 +78,8 @@ export interface ViewRow {
   readonly badge?: string | undefined;
   /** The object one level up, exactly as the plugin's row names it. */
   readonly parent?: string | undefined;
+  /** The siblings this object waits for, exactly as the plugin's row names them. */
+  readonly after?: readonly string[] | undefined;
   /** A person wait is open on this object. */
   readonly waiting: boolean;
   /** The object's run is working. */
@@ -1613,12 +1615,25 @@ export class Views {
         new Error("row parent must be a non-empty object id"),
       );
     }
+    const after = outcome.after;
+    if (
+      after !== undefined &&
+      (!Array.isArray(after) ||
+        after.some((entry) => typeof entry !== "string" || entry.length === 0))
+    ) {
+      return this.failRow(
+        plugin,
+        object,
+        new Error("row after must be an array of non-empty object ids"),
+      );
+    }
     return {
       id,
       title,
       state,
       ...(note === undefined ? {} : { note }),
       ...(typeof parent === "string" ? { parent } : {}),
+      ...(Array.isArray(after) ? { after: [...after] } : {}),
       ...(scope === undefined ? {} : { scope }),
       ...(outcome.final === true ? { final: true } : {}),
       ...(mark === undefined ? {} : { mark }),

@@ -65,6 +65,8 @@ export interface TuiRow {
   readonly mark?: RowMark | undefined;
   /** A short text shown after the state. */
   readonly badge?: string | undefined;
+  /** The sibling ids this row waits for. */
+  readonly after?: readonly string[] | undefined;
   /** Set on an error row; the view adds one red line under the row. */
   readonly error?: string | undefined;
   /** False for a row that names no object (a run, a candidate): it never opens. */
@@ -526,6 +528,7 @@ export function rowFromView(row: ViewRow): TuiRow {
     running: row.running,
     ...(row.mark === undefined ? {} : { mark: row.mark }),
     ...(row.badge === undefined ? {} : { badge: sanitize(row.badge) }),
+    ...(row.after === undefined ? {} : { after: row.after.map(sanitize) }),
     ...(row.error === undefined ? {} : { error: sanitize(row.error) }),
   };
 }

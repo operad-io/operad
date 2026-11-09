@@ -422,3 +422,4 @@ the row fields.
 | T-0090-M2 | packages/dev/src/views.ts | a file's page entry pointed at the previous file's cursor | `dev views > the diff section is the stat and the diff, and pages by file when long` |
 | T-0119-M3 | packages/dev/src/rework.ts | `firstArgs` applied only to a round of kind first, so the first review of a later attempt got `args` | `review settings by round > firstArgs still belongs to the first review of every attempt, rework round included` |
 | T-0124-M8 | packages/dev/src/views.ts | the metrics total row dropped the quality symbol of the summed attempts | `dev views > the total row marks its weakest quality with a symbol, never a word` |
+| T-0123-M1 | packages/dev/src/views.ts | a task row dropped its `after` | `dev views > a task row carries the tasks it waits for, and none when it waits for none` |

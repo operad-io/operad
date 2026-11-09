@@ -341,3 +341,5 @@ the row fields.
 | T-0107-M3 | packages/engine/src/platform/process-group.ts | a passed line no longer got the SIGKILL to its group, so a backgrounded child lived on | `shell/command > a child that outlives the line is in the group and is stopped` (child now `sleep 30`, longer than `waitForGone` waits) |
 | T-0107-M4 | packages/engine/src/platform/process-group.ts | a cancelled command was sent no signal at all | `a flow through the runner > a run cancel stops the command's process group in a worker` (line now `sleep 30`) |
 | T-0090-M1 | packages/engine/src/views/presentation.ts | a section result dropped the plugin's `pages` | `presentation views > reads sections, pages with next and grows a live section` |
+| T-0123-M1 | packages/engine/src/views/presentation.ts | the row no longer carried the plugin's `after` | `hierarchy over HTTP > /v1/types names the plugin and /v1/objects takes root and parent` |
+| T-0123-M2 | packages/engine/src/views/presentation.ts | `after` entries were not checked, so a non-string or empty id passed | `hierarchy over HTTP > /v1/types names the plugin and /v1/objects takes root and parent` |

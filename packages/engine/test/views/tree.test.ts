@@ -134,7 +134,7 @@ describe("hierarchy over HTTP", () => {
       JSON.stringify({ store: { backend: "jsonl", path: join(root, "store") } }),
     );
     const log = openConfigLog(await readConfig(home));
-    const { registry, views } = setup();
+    const { store, registry, views } = setup();
     server = await startHttpServer({
       home,
       config: { enabled: true, port: 0, listen: ["127.0.0.1"] },
@@ -169,5 +169,22 @@ describe("hierarchy over HTTP", () => {
     const none = await get("/v1/objects?parent=group:nothing");
     expect(none.body.rows).toEqual([]);
     expect((await get("/v1/objects")).status).toBe(400);
+
+    store.put("group", "g3", { title: "G3" }, "seed");
+    store.put("leaf", "x", { state: "open", parent: "group:g3" }, "seed");
+    store.put("leaf", "y", { state: "open", parent: "group:g3", after: ["x"] }, "seed");
+    store.put("leaf", "z", { state: "open", parent: "group:g3", after: ["x", 7] }, "seed");
+    store.put("leaf", "w", { state: "open", parent: "group:g3", after: [""] }, "seed");
+    store.put("leaf", "v", { state: "open", parent: "group:g3", after: "x" }, "seed");
+    const level = (await get("/v1/objects?type=leaf&filter=all")).body.rows as { id: string; state: string; after?: string[] }[];
+    const byId = (id: string) => level.find((row) => row.id === id);
+    expect(byId("y")?.after).toEqual(["x"]);
+    expect(byId("x") !== undefined && "after" in (byId("x") ?? {})).toBe(false);
+    for (const bad of ["z", "w", "v"]) {
+      expect(byId(bad)?.state).toBe("error");
+      expect(byId(bad)?.after).toBeUndefined();
+    }
+    const one = await get("/v1/objects/leaf:y");
+    expect((one.body.row as { after?: string[] }).after).toEqual(["x"]);
   });
 });

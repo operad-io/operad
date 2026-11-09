@@ -77,6 +77,9 @@ export default definePlugin({
           ...(object.data.mark === undefined
             ? {}
             : { mark: object.data.mark as ObjectRow["mark"] }),
+          ...(object.data.after === undefined
+            ? {}
+            : { after: object.data.after as readonly string[] }),
           ...(object.data.badge === undefined
             ? {}
             : { badge: object.data.badge as string }),
