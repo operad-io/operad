@@ -663,6 +663,7 @@ function rowFromRunning(item: RunningItem): TuiRow {
     ]),
     waiting: false,
     running: true,
+    ...(item.mark === undefined ? {} : { mark: item.mark }),
     openable: false,
     ...(named ? {} : { unnamed: true }),
   };

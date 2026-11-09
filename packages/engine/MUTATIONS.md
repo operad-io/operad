@@ -372,3 +372,4 @@ the row fields.
 | T-0114-M3 | packages/engine/src/views/running.ts | a wait for a person was not a stretch of its own (the `person` flag always false) | `the running view names the object and times the step > a run's times: steps, a person wait of its own, and the run's end` |
 | T-0150-M2 | packages/engine/src/platform/step-reap.ts | `lastValue` returned the first match instead of the last | `the ps -E command column > an argument that spells the variables does not override the environment` |
 | T-0085-M4 | packages/engine/src/views/settings.ts | a listed setting left out its allowed values | `settings > lists every setting with value, default, description and marks` |
+| T-0161-M1 | packages/engine/src/views/running.ts | a running item dropped its object's row mark | `the running view names the object and times the step > an item carries its object's row mark, and none when the row has none` |

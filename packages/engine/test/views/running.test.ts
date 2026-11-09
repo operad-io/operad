@@ -36,6 +36,7 @@ const plugin = definePlugin({
           id: object.id,
           title: String(object.data.title ?? ""),
           state: "open",
+          ...(object.data.mark === "integrating" ? { mark: "integrating" as const } : {}),
         };
       },
       sections() {
@@ -234,5 +235,22 @@ describe("the running view names the object and times the step", () => {
       Array.from({ length: 10 }, (_, at) => `T${at}`).sort(),
     );
     expect(counts.rows).toBe(10);
+  });
+
+  test("an item carries its object's row mark, and none when the row has none", async () => {
+    seq = new Map();
+    const e = await env();
+    e.store.put("item", "m", { title: "M", mark: "integrating" }, "seed");
+    e.store.put("item", "p", { title: "P" }, "seed");
+    for (const id of ["m", "p"]) {
+      const run = await e.log.startRun("flow", `item:${id}`);
+      await add(e.log, run.runId, [enter("work")]);
+    }
+    const items = await listRunning(e.log, () => now, e.views);
+    const marked = items.find((item) => item.title === "M");
+    const plain = items.find((item) => item.title === "P");
+    expect(marked?.mark).toBe("integrating");
+    expect(plain).toBeDefined();
+    expect(plain !== undefined && "mark" in plain).toBe(false);
   });
 });

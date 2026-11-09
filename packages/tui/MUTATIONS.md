@@ -228,3 +228,4 @@ the row fields.
 | T-0085-M2 | packages/tui/src/actions.ts | a confirm setting was sent without asking | `settings in the palette > a confirm setting asks first; any key but y cancels, y sends it confirmed` |
 | T-0085-M3 | packages/tui/src/actions.ts | a setting that cannot change was given a value prompt | `settings in the palette > a setting that cannot change opens read-only and sends nothing` |
 | T-0085-M5 | packages/tui/src/actions.ts | a repository's own page listed global settings only | `the scopes the palette lists > no object lists global only; a task names its repository; a repository's own page names itself` |
+| T-0161-M2 | packages/tui/src/state.ts | a running row ignored the item's mark and always drew running | `two-line rows > a running row draws its mark's character, and running without one` |

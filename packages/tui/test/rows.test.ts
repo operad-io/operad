@@ -161,6 +161,12 @@ describe("two-line rows", () => {
     expect(textOf(narrow[3]).trimEnd()).toBe("    running #2");
   });
 
+  test("a running row draws its mark's character, and running without one", () => {
+    const lines = drawnLines(running(120, [run(1, { mark: "integrating" }), run(2)]));
+    expect(textOf(lines[2])).toStartWith("❯ ⑂ ");
+    expect(textOf(lines[5])).toContain("◐ T-0092");
+  });
+
   test("a long dim line is cut with … at the pane edge", () => {
     const lines = drawnLines(
       running(60, [run(1, { stepLabel: `queued (${"key-".repeat(30)}, 3 ahead)` })]),
