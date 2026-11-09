@@ -451,3 +451,10 @@ the row fields.
 | T-0151-M1 | packages/dev/src/followups.ts | a repeated finding kept its oldest copy instead of the newest | `review follow-ups > collects the findings of every round and task, deduplicated, grouped by task, duplicates kept once within a task` |
 | T-0151-M2 | packages/dev/src/rework.ts | an argument list from `firstArgs` was recorded as coming from `first` | `review settings by round > firstArgs still belongs to the first review of every attempt, rework round included` |
 | T-0114-M4 | packages/dev/src/views.ts | a group of the run with no recorded attempt was dropped (the pending attempt was never made) | `metrics times come from the run's own facts > a rework whose worktree is still being prepared: the next attempt is already running it` |
+
+## T-0151 — rework 1
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0151-M3 | packages/dev/src/gate.ts | a review whose followed commit is missing was given the settings of a first review (the `rework` mapping removed) | `dev/review rework rounds > settings by round > a review whose followed commit is missing from the checkout is a later review for its settings` |
+| T-0151-M4 | packages/dev/src/gate.ts | a report from the fallback was recorded with the primary's harness and arguments (the fallback block switched off) | `dev/review fallback and retry > a 429 falls back once, and the round passes without a rework` |
