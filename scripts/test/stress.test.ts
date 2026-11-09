@@ -1,3 +1,4 @@
+import { killProcessGroup } from "@operad-io/engine/platform";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -115,25 +116,30 @@ test("helpers are running", () => {
     }
   });
 
-  test("killing the test runner mid-test leaves no stress.sh or helper", async () => {
-    const pidfile = join(scratch(), "pids");
-    const runner = Bun.spawn(["bun", "test", leak], {
-      cwd: root,
-      env: { ...process.env, LEAK_PIDFILE: pidfile },
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "ignore",
-    });
-    try {
-      const pids = await readReady(runner.stdout);
-      expect(pids.length).toBe(3);
-      runner.kill("SIGTERM");
-      await runner.exited;
-      await expectGone(pids);
-    } finally {
-      runner.kill("SIGKILL");
-    }
-  }, 60000);
+  for (const signal of ["SIGTERM", "SIGKILL"] as const) {
+    test(`${signal} to the test runner mid-test leaves no stress.sh or helper`, async () => {
+      const pidfile = join(scratch(), "pids");
+      const runner = Bun.spawn(["bun", "test", leak], {
+        cwd: root,
+        env: { ...process.env, LEAK_PIDFILE: pidfile },
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "ignore",
+      });
+      let pids: number[] = [];
+      try {
+        pids = await readReady(runner.stdout);
+        expect(pids.length).toBe(3);
+        runner.kill(signal);
+        await runner.exited;
+        await expectGone(pids);
+      } finally {
+        runner.kill("SIGKILL");
+        // The stress group is not ours to the outer test; pids[0] is its group.
+        if (pids[0] !== undefined) killProcessGroup(pids[0], "SIGKILL");
+      }
+    }, 60000);
+  }
 });
 
 function readPids(pidfile: string): number[] {

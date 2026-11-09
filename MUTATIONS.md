@@ -821,6 +821,7 @@ The script lives in `scripts/`, which has no package of its own, so its rows are
 | T-0115-M1 | scripts/stress.sh | the helper loops no longer checked that the script is alive | `scripts/stress.sh > SIGKILL of the script leaves no helper alive` |
 | T-0115-M2 | scripts/test/stress-group.ts | the runner's SIGINT/SIGTERM handlers no longer killed the stress group | `scripts/stress.sh > killing the test runner mid-test leaves no stress.sh or helper` |
 | T-0115-M3 | scripts/stress.sh | `STRESS_CPUS` was ignored | `scripts/stress.sh > --load never starts more helpers than there are CPUs` |
+| T-0115-M4 | scripts/stress.sh | the script no longer stopped when its starting process was gone | `scripts/stress.sh > SIGKILL to the test runner mid-test leaves no stress.sh or helper` |
 
 ## T-0109 — stale install check
 

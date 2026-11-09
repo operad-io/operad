@@ -1,8 +1,9 @@
 // Runs scripts/stress.sh in a process group of its own and kills the group
 // when the test ends, however it ends: normally, by a failure, by a timeout
 // that reaches the finally block, or by SIGINT / SIGTERM to the runner.
-// SIGKILL of the runner cannot be caught; stress.sh's helpers still stop on
-// their own because each checks that the script is alive.
+// SIGKILL of the runner cannot be caught, and the group is not the runner's, so
+// the signal does not reach it; stress.sh stops on its own when its parent is
+// gone, and its helpers stop when stress.sh is gone.
 import { killProcessGroup } from "@operad-io/engine/platform";
 import { join } from "node:path";
 
