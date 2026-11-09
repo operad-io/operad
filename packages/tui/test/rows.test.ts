@@ -111,7 +111,8 @@ describe("two-line rows", () => {
   });
 
   test("a Pending row: the waiting reason, then the repository", () => {
-    let state = initialState({ width: 120, height: 24, theme: "dark" });
+    const pending = (width: number, prompt: string, title: string): TuiState => {
+    let state = initialState({ width, height: 24, theme: "dark" });
     state = reduce(state, {
       type: "pending",
       items: [
@@ -119,17 +120,28 @@ describe("two-line rows", () => {
           runId: "r1",
           flow: "dev",
           step: "merge",
-          prompt: "Ready to merge",
+          prompt,
           choices: [],
           actions: [],
           object: "task:operad/T-0093-flaky-survey",
-          row: { id: "T-0093-flaky-survey", title: "Survey the flaky tests", state: "waiting", waiting: true, running: false },
+          row: { id: "T-0093-flaky-survey", title, state: "waiting", waiting: true, running: false },
         },
       ],
     });
-    const lines = drawnLines(state);
+    return state;
+    };
+    const lines = drawnLines(pending(120, "Ready to merge", "Survey the flaky tests"));
     expect(textOf(lines[2]).trimEnd()).toBe("❯ ● T-0093 flaky-survey  Survey the flaky tests");
     expect(textOf(lines[3]).trimEnd()).toBe("    Ready to merge · operad");
+    // One pane: both lines cut with … at the pane edge, nothing wraps.
+    const narrow = drawnLines(pending(60, "Ready to merge ".repeat(8), "A very long title ".repeat(9)));
+    expect(textOf(narrow[2]).length).toBeLessThanOrEqual(58);
+    expect(textOf(narrow[2])).toContain("…");
+    expect(textOf(narrow[3]).length).toBeLessThanOrEqual(58);
+    expect(textOf(narrow[3])).toEndWith("…");
+    expect(narrow.filter((line) => textOf(line).trim() !== "")).toHaveLength(3);
+    const fits = drawnLines(pending(60, "Ready to merge", "Survey"));
+    expect(textOf(fits[3]).trimEnd()).toBe("    Ready to merge · operad");
   });
 
   test("at the one-pane width nothing is wider than the pane, and a long id and title cut with …", () => {
