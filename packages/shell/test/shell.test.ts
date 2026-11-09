@@ -210,13 +210,18 @@ describe("shell/command", () => {
     const pidFile = join(root, "child.pid");
     const result = await registry.runStep(
       "shell/command",
-      { line: `sleep 3 >/dev/null 2>&1 & echo $! > '${pidFile}'` },
+      { line: `sleep 30 >/dev/null 2>&1 & echo $! > '${pidFile}'` },
       { runId: "run-fork" },
     );
 
     expect(result.result).toBe("pass");
     const pid = await waitForPid(pidFile);
-    await waitForGone(pid);
+    try {
+      // The child sleeps far longer than waitForGone waits: only the stop path ends it.
+      await waitForGone(pid);
+    } finally {
+      if (signalable(pid) && alive(pid)) process.kill(pid, "SIGKILL");
+    }
   });
 
   test("a child that leaves the group cannot hold the command open", async () => {
@@ -616,7 +621,7 @@ describe("a flow through the runner", () => {
             kind: "plugin",
             params: {
               use: "shell/command",
-              params: { line: `trap '' TERM; echo $$ > '${marker}'; sleep 5` },
+              params: { line: `trap '' TERM; echo $$ > '${marker}'; sleep 30` },
             },
             replay: "safe",
             next: { pass: "done", fail: "failed", interrupted: "failed" },
