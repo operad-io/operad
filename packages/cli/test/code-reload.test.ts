@@ -11,6 +11,11 @@ describe("what counts as loading", () => {
     );
   });
 
+  test("a message that spans lines is the same problem as its one-line form", () => {
+    expect(problemKey("plugin a: failed\n  at x")).toBe(problemKey("plugin a: failed at x"));
+    expect(loadsAsWellAs(["plugin a: failed at x"], ["plugin a: failed\n  at x"])).toBe(true);
+  });
+
   test("no problems loads; a new problem does not; a known one does", () => {
     expect(loadsAsWellAs([], [])).toBe(true);
     expect(loadsAsWellAs(['plugin "a": import failed'], [])).toBe(false);

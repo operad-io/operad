@@ -64,7 +64,10 @@ export function takeCodeSnapshot(
  * is a new problem.
  */
 export function problemKey(line: string): string {
-  return line.replace(/[?&]operad-plugin-load=\d+/g, "");
+  return line
+    .replace(/[?&]operad-plugin-load=\d+/g, "")
+    .replace(/\s*\n\s*/g, " ")
+    .trim();
 }
 
 /**
@@ -196,7 +199,9 @@ export async function superviseServe(): Promise<number> {
       });
       if (stopping !== undefined) child.kill(stopping);
       const code = await child.exited;
-      if (code !== RELOAD_EXIT || stopping !== undefined) return code;
+      // A stop that reached the supervisor while the child left for new code is still a stop.
+      if (stopping !== undefined) return code === RELOAD_EXIT ? 0 : code;
+      if (code !== RELOAD_EXIT) return code;
     }
   } finally {
     process.removeListener("SIGINT", interrupt);
