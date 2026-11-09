@@ -349,3 +349,5 @@ the row fields.
 | T-0080-M6 | packages/engine/src/views/settings.ts | a project setting was written to `config.json` instead of the repository's `.operad/` file | `settings > project scope names the repository and writes its own file` |
 | T-0080-M7 | packages/engine/src/http/server.ts | `POST /v1/settings` treated every request as confirmed | `http server > GET and POST /v1/settings list, change and refuse settings` |
 | T-0080-M8 | packages/engine/src/plugin/action-schema.ts | the `editable` and `confirm` marks were not checked to be booleans | `settings declarations > editable and confirm must be booleans` |
+| T-0123-M1 | packages/engine/src/views/presentation.ts | the row no longer carried the plugin's `after` | `hierarchy over HTTP > /v1/types names the plugin and /v1/objects takes root and parent` |
+| T-0123-M2 | packages/engine/src/views/presentation.ts | `after` entries were not checked, so a non-string or empty id passed | `hierarchy over HTTP > /v1/types names the plugin and /v1/objects takes root and parent` |

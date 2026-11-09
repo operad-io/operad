@@ -226,6 +226,7 @@ export const taskViews: ObjectViews = {
       mark: taskMark(task),
       badge: taskBadge(task),
       parent: `plan:${storeKey(task.repository, task.plan)}`,
+      ...(task.after.length === 0 ? {} : { after: [...task.after] }),
     };
   },
 

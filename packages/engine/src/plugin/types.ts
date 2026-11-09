@@ -94,6 +94,11 @@ export interface ObjectRow {
    * and never invents one.
    */
   readonly parent?: string | undefined;
+  /**
+   * The siblings (same `parent`) this object waits for, as row ids. The kernel
+   * passes it through untouched; clients draw it.
+   */
+  readonly after?: readonly string[] | undefined;
 }
 
 /** One section a detail page offers. `live` means its content still grows. */
