@@ -150,6 +150,30 @@ records its exit code as if nothing had happened. Only the death of the run's
 own process stops its command (and the next `serve` then starts the step
 again).
 
+### Changed code
+
+`serve` and each run's process keep running the code they loaded only until the
+files change. `serve` watches the kernel's code (`engine`, `cli`), each loaded
+plugin's package (source, flows, schemas) and the workspace packages that
+package depends on. After the files have been quiet for a second it starts a
+fresh process to check that the new code loads. If it does, `serve` stops the
+way `operad serve stop` does, prints `reloading: <what changed>` and starts again
+from the same command line and environment, under the process you started (it stays
+in your terminal, passes Ctrl-C on, and ends with the serve's exit code). A step that is running keeps the
+code it started with and finishes; a run's process looks at the files between
+steps, and when they changed it stops so that a new process takes the next step.
+`operad history` shows one line, `continuing on updated code`, for that.
+
+New code that does not load (a syntax error, an invalid schema) takes nothing
+down. `serve` keeps running the old code and prints `code changed (...) but
+does not load; the old code keeps running: <problems>` on its error output; it
+reloads when the files load again, also when it was a settings file
+(`config.json`, `triggers.json`, `keys.json`) that did not read and was fixed. A
+run's process does not take its next step on code that does not load: it prints
+the same line into the run's log (`<store>/logs/runs/<run id>.out`) and waits for
+the files to load. Settings files are read again at their next use; a change to
+them alone does not restart `serve`.
+
 ### Pairing the app
 
 `operad pair` shows what the app needs to reach this `serve`:
@@ -973,7 +997,8 @@ not know yet, such as after a merge changed what `dev.json` may hold):
 ### When a merge changes the code `serve` runs
 
 The main clone follows a merge when it can (a fast-forward on a clean clone), but
-a `serve` that is already running keeps the code it loaded when it started.
+a `serve` that is already running keeps the code it loaded until it reloads
+(see Changed code).
 When a followed merge changes that code, which means any file under the directory of the kernel (`engine`, `cli`) or
 of a package the home loads (source, flows, `bin/`, schemas at any depth,
 manifests), `operad pending` shows
@@ -981,9 +1006,9 @@ manifests), `operad pending` shows
 in <repository>)`, once however many merges followed. Markdown files (docs and the
 mutation records), `test/` and `fixtures/` do not count. The item is advice: it
 may appear for a change that did not need a restart, but a change to a loaded
-package's code or schema always raises it. `serve` does not restart itself: stop it with
-`operad serve stop` when no check runs, and start it again; the item goes away
-with the restart.
+package's code or schema always raises it. `serve` restarts itself when the new
+code loads and the item goes away with the restart; when the new code does not
+load, `serve` keeps the old code and the item stays until the files are fixed.
 
 `dev` also needs the plugins its steps run through. When the home does not load
 `pool`, `operad pending` shows `plugin pool is not loaded and dev runs its

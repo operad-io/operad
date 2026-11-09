@@ -150,7 +150,8 @@ describe("a serve restart while a check runs", () => {
         await Bun.sleep(200);
       }
       expect(history).toContain("run done");
-      expect(history).not.toMatch(/fail|interrupt/i);
+      // The log path is not the run's words: a checkout path may contain "fail".
+      expect(history.replace(/log at \S+/g, "")).not.toMatch(/fail|interrupt/i);
       // One start, and the process that started is the one that finished: the
       // run was neither stopped and started again nor run twice.
       const starts = readFileSync(started, "utf8").trim().split("\n");

@@ -366,6 +366,32 @@ export interface TaskClaim {
 }
 
 /** The data of a task object. */
+/** Why a step just stopped, in dev's own words; the retry step reads it once. */
+export interface StopRecord {
+  readonly [key: string]: unknown;
+  readonly step: string;
+  readonly result: string;
+  readonly reason: string;
+  /** The step that was not loaded, when the reason says so. */
+  readonly use?: string | undefined;
+}
+
+/** The one automatic retry a task's attempt used for a failure outside its work. */
+export interface RetryRecord {
+  readonly [key: string]: unknown;
+  readonly attempt: number;
+  readonly step: string;
+  /** What was wrong, as the waiting line says it. */
+  readonly cause: string;
+  /** When the retry began, in epoch milliseconds. */
+  readonly at: number;
+  /** What the retry waits for before it runs; absent when it runs at once. */
+  readonly waitFor?: "step" | "settings" | undefined;
+  readonly use?: string | undefined;
+  /** `ready`: the wait is over; `expired`: it ran out; `asked`: a person decides. */
+  readonly state: "retrying" | "waiting" | "ready" | "expired" | "asked";
+}
+
 export type TaskData = {
   readonly [key: string]: unknown;
   readonly repository: string;
@@ -390,6 +416,10 @@ export type TaskData = {
   readonly costQuality?: "exact" | "estimated" | "incomplete" | null | undefined;
   /** How many automatic reworks ran in a row; a passing gate resets it. */
   readonly reworkStreak?: number | undefined;
+  /** Why the last step that records one stopped; the retry step consumes it. */
+  readonly stop?: StopRecord | null | undefined;
+  /** The automatic retry this task's attempt used. */
+  readonly retry?: RetryRecord | null | undefined;
   /** The owner asked the scheduler to start this ready task. */
   readonly startRequested?: boolean | undefined;
   /** When an unavailable review may run again, in epoch milliseconds. */
@@ -400,7 +430,35 @@ export type TaskData = {
   readonly autoMergeAttempt?: number | undefined;
   /** The attempt whose integration result the scheduler already reported. */
   readonly mergeReportedAttempt?: number | undefined;
+  /** The findings that did not fail each review round, oldest first. */
+  readonly reviewNotes?: readonly ReviewNotes[] | undefined;
+  /** Set when the task merged with notes to collect; absent on older merges. */
+  readonly followups?: FollowupMark | undefined;
+  /** The tasks a follow-up task collects; set only on a follow-up. */
+  readonly followupOf?: readonly string[] | undefined;
 };
+
+/** A finding that did not fail its review round. */
+export interface ReviewNote {
+  readonly severity: string;
+  readonly file: string;
+  readonly line: number | null;
+  readonly summary: string;
+}
+
+/** The notes of one review round. */
+export interface ReviewNotes {
+  readonly attempt: number;
+  readonly round: number;
+  readonly findings: readonly ReviewNote[];
+}
+
+/** A merged task whose notes the plan's follow-up has not collected yet. */
+export interface FollowupMark {
+  /** When the task merged, in epoch milliseconds; orders the follow-up's `after`. */
+  readonly mergedAt: number;
+  readonly state: "collect" | "collected";
+}
 
 /** A repository registered with the dev plugin. */
 export type RepositoryData = {

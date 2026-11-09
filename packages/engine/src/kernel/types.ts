@@ -11,6 +11,7 @@ export type FactKind =
   | "step_queued"
   | "step_slot"
   | "step_released"
+  | "process_replaced"
   | "step_result"
   | "edge_taken"
   | "waiting_for_person"

@@ -141,6 +141,8 @@ what happened and changes nothing.
 | `dev/verify` | `pass`, `fail` | recreates `<worktreeRoot>/<task id>-gate` detached at the branch head, runs `gate.commands` through `shell/check`, and records the verified commit |
 | `dev/review` | `pass`, `fail`, `failed`, `unavailable`, `timed_out` | runs the reviewer harness step in the gate worktree on the diff from the merge base to the verified commit; the previous review is the newest report for another commit (see Rework rounds); in every review a finding far from the task's own change and from the previous review's findings is moved out of the failing set as pre-existing, while a critical one or one without a place still fails |
 | `dev/review_due` | `ready`, `interrupted` | the wait a review enters after a model was unavailable; it lets the flow run the same review round again at the recorded time |
+| `dev/retry` | `again`, `hold`, `ask`, `give_up`, `cancelled` | runs in front of the announcement of a work, worktree or reverify step that stopped. A stop that is not the task's own work (the run stopped, a process killed by a signal nobody sent, a step that is not loaded, settings that cannot be read) runs the step once more in the same attempt, without a person and without counting toward `maxAutoRework`; a second one, or a wait that ran out, goes to a person and the waiting line names the cause (for example `pool/agent is not loaded`) |
+| `dev/retry_due` | `ready`, `waiting`, `interrupted` | the wait a retry enters while a step is not loaded or the settings cannot be read; it ends when they are there, or after `retry.environmentWaitMinutes` (default 60) |
 | `dev/rework` | `again`, `ask` | appends `## Rework <n> (verify|review)` with the failed command or the counted findings and sends the task back to the worker; after `maxAutoRework` in a row it asks a person instead |
 | `dev/integrate` | `merged`, `conflict`, `fail`, `failed` | fetches, builds the candidate in the gate worktree by merging the verified commit onto `<remote>/<mainBranch>`, runs `integration.keyCommands` through `shell/check`, and pushes plainly; a moved main starts again from the fetch, at most three times |
 | `dev/cleanup` | `done` | runs `hooks.afterMerge` with `OPERAD_TASK`, `OPERAD_WORKTREE` and `OPERAD_REMOTE` set; a failing hook is recorded, not a task failure |
@@ -303,6 +305,21 @@ timeout waits for a person with the note `review timed out twice`. Neither an
 unavailable reviewer nor a timeout counts toward `maxAutoRework`: only a review
 that returns findings at or above `reviewer.fixLevel` does.
 
+### Follow-ups
+
+Findings that did not fail a review are not lost. When a task merges and any
+review round of it had such a finding, dev marks the task. When a plan has no
+ready, running, review or waiting task, dev collects every such finding of
+every round of the plan's marked tasks (oldest first, one line per
+`file:line` and summary) and proposes one task, `<plan slug>-followups` (then
+`-2`, `-3` when the slug is taken), titled `Follow-ups from <plan id>'s
+reviews`, that follows the collected tasks. Its brief lists each finding as
+`[level] path:line summary (from T-xxxx round n)`, grouped by level, and tells
+the worker to fix what still applies and say which findings no longer apply.
+A task is collected once, even when its follow-up is cancelled; a follow-up's
+own findings are never collected; tasks merged before this existed carry no
+mark. `reviewer.followups: false` turns it off.
+
 ### Grading: `.operad/review.json`
 
 What critical, major and minor mean is a project setting, not text in the
@@ -434,6 +451,7 @@ The file holds the repository's work settings:
 | `reviewer.timeoutSecs` | `600` | the longest a review may run |
 | `reviewer.stallSecs` | harness default | how long a review may print no new line before it is stopped |
 | `reviewer.fixLevel` | `major` | the lowest finding severity that fails the gate: `critical`, `major` or `minor` |
+| `reviewer.followups` | `true` | whether findings that did not fail a review (below `fixLevel`, or moved as pre-existing) are collected into a follow-up task |
 | `reviewer.retrySecs` | `120` | how long an unavailable review waits before the same round runs again |
 | `reviewer.maxFileDiffBytes` | `200000` | the largest diff one file may put in the review prompt |
 | `reviewer.maxDiffBytes` | `1000000` | the largest diff the review prompt may carry; counts the prompt's text, where a rename or a deleted file is one line |
