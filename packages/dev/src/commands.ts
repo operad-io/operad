@@ -261,14 +261,17 @@ async function runTask(
   }
 
   const title = one(parsed, "--title");
-  const after = many(parsed, "--after");
+  // `--after ""` clears the dependencies, as `--area ""` clears the area.
+  const afterGiven = many(parsed, "--after");
+  const after = afterGiven.filter((id) => id !== "");
   const area = one(parsed, "--area");
   return bareId(
     (
       await updateTask(ctx.store, key, {
         ...(title === undefined ? {} : { title }),
-        ...(after.length === 0 ? {} : { after }),
+        ...(afterGiven.length === 0 ? {} : { after }),
         ...(area === undefined ? {} : { area }),
+        runs: ctx.runs,
       })
     ).id,
   );
