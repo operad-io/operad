@@ -5,7 +5,7 @@
  * `default-bg` (the terminal's default foreground / background).
  */
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { RGBA } from "@opentui/core";
 import { watchDirectory } from "@operad-io/engine/platform";
@@ -197,6 +197,11 @@ function fileThemeNames(home: string): string[] {
   }
 }
 
+/** The themes a person can choose: the built-in and shipped ones, then the files in `<home>/themes`. */
+export function installedThemes(home: string): readonly string[] {
+  return [...THEME_NAMES, ...fileThemeNames(home)];
+}
+
 function unknownThemeIn(home: string, name: string): string {
   const names = [...THEME_NAMES, ...fileThemeNames(home)];
   return `unknown theme "${name}"; the themes are ${names.join(", ")}`;
@@ -347,6 +352,27 @@ export function chooseTheme(options: {
 /** The theme in force, kept up to date by `watchThemes`. */
 export interface ThemeHolder {
   current: ThemeSelection;
+  /** A theme shown only while a person looks at it; it wins over `current` until cleared. */
+  preview?: ThemeSelection | undefined;
+}
+
+/**
+ * Writes the theme choice to `tui.json`, keeping every other key in the file.
+ * It throws, and writes nothing, when the name is not a theme or the file
+ * cannot be read as it is.
+ */
+export function saveThemeChoice(home: string, name: string): void {
+  resolveSelection(home, name);
+  const file = tuiConfigPath(home);
+  // Reading checks the file first, so a broken one is never overwritten.
+  readThemeFile(file);
+  const existing: Record<string, unknown> = existsSync(file)
+    ? (JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>)
+    : {};
+  mkdirSync(home, { recursive: true });
+  const temporary = `${file}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify({ ...existing, theme: name }, null, 2)}\n`);
+  renameSync(temporary, file);
 }
 
 /**
@@ -357,7 +383,7 @@ export interface ThemeHolder {
  */
 export function watchThemes(options: {
   readonly home: string;
-  readonly flag?: string | undefined;
+  readonly flag?: string | undefined | (() => string | undefined);
   readonly holder: ThemeHolder;
   readonly onChange: (problem?: string) => void;
   readonly watch?: typeof watchDirectory | undefined;
@@ -379,7 +405,8 @@ export function watchThemes(options: {
     if (stopThemes === undefined && existsSync(themes)) stopThemes = watch(themes, reload);
     let next: ThemeSelection;
     try {
-      next = chooseSelection({ home: options.home, flag: options.flag });
+      const flag = typeof options.flag === "function" ? options.flag() : options.flag;
+      next = chooseSelection({ home: options.home, flag });
     } catch (error) {
       const problem = error instanceof Error ? error.message : String(error);
       const changed = problem !== lastProblem;

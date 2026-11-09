@@ -107,7 +107,7 @@ describe("actions in the reducer", () => {
     const entries = paletteEntries(state);
     expect(entries.map((entry) => entry.group)).toEqual(entries.map(() => "tui"));
     expect(entries.map((entry) => entry.name)).toEqual([
-      "help", "refresh", "go to pending", "go to running", "go back", "quit",
+      "help", "refresh", "go to pending", "go to running", "theme", "go back", "quit",
     ]);
     for (const entry of entries) expect(entry.title.length).toBeGreaterThan(0);
   });
