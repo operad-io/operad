@@ -285,9 +285,6 @@ export interface TuiState {
 /** What the last request said about the server. */
 export type TuiConnection = "ok" | "unreachable" | "unauthorized";
 
-/** The width at which the right pane appears. */
-export const TWO_PANE_WIDTH = 100;
-
 /** The number of rows from the end that make the reducer ask for a page. */
 export const PAGE_AHEAD = 2;
 
@@ -667,9 +664,33 @@ export function sectionLayout(
 
 /** The layout's fixed columns (0-based): the list, its divider, the object pane. */
 export const LIST_X = 1;
-export const LIST_WIDTH = 35;
-export const DIVIDER_X = LIST_X + LIST_WIDTH;
-export const RIGHT_X = DIVIDER_X + 3;
+/** The list takes about 40% of the terminal, between these two widths. */
+export const LIST_MIN_WIDTH = 40;
+export const LIST_MAX_WIDTH = 60;
+/** The object pane needs at least this many columns for the two panes to show. */
+export const MIN_OBJECT_WIDTH = 55;
+/** The lines above the first row of a list: a blank line and the dim title. */
+export const LIST_HEAD = 2;
+
+/** The columns of the list's text for a terminal `width` wide. */
+export function listWidthFor(width: number): number {
+  return Math.min(LIST_MAX_WIDTH, Math.max(LIST_MIN_WIDTH, Math.round(width * 0.4)));
+}
+
+/** The columns of the list's text. */
+export function listWidth(state: TuiState): number {
+  return listWidthFor(state.width);
+}
+
+/** The divider's column: the list, then one column of padding. */
+export function dividerX(state: TuiState): number {
+  return LIST_X + listWidth(state) + 1;
+}
+
+/** The object pane's first column: one column of padding after the divider. */
+export function rightX(state: TuiState): number {
+  return dividerX(state) + 2;
+}
 
 /** The lines the body has: the header, its rule, the footer rule and the footer take four. */
 export function bodyHeight(state: TuiState): number {
@@ -678,13 +699,13 @@ export function bodyHeight(state: TuiState): number {
 
 /** How many Markdown lines fit under the object's title, state, tabs and rule. */
 export function sectionViewport(state: TuiState): number {
-  // title, state, a blank line, the section tabs, their rule and the hint line.
-  return Math.max(1, bodyHeight(state) - 6);
+  // a blank line, title, state, a blank line, the section tabs, their rule and the hint line.
+  return Math.max(1, bodyHeight(state) - 7);
 }
 
 /** The columns a section's Markdown has in the object pane. */
 export function sectionWidth(state: TuiState): number {
-  const start = twoPane(state) ? RIGHT_X : LIST_X;
+  const start = twoPane(state) ? rightX(state) : LIST_X;
   return Math.max(1, state.width - start - 1);
 }
 
@@ -1795,7 +1816,7 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
 
 /** True when the terminal is wide enough for the list and the object pane. */
 export function twoPane(state: TuiState): boolean {
-  return state.width >= TWO_PANE_WIDTH;
+  return state.width - rightX(state) - 1 >= MIN_OBJECT_WIDTH;
 }
 
 /** The active tab, if any. */

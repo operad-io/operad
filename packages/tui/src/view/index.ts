@@ -28,9 +28,11 @@ import {
   KEY_LIST,
   activeSection,
   activeTab,
-  LIST_WIDTH,
+  LIST_HEAD,
+  dividerX,
+  listWidth,
+  rightX,
   LIST_X,
-  RIGHT_X,
   bodyHeight,
   filterHeader,
   footerText,
@@ -138,7 +140,7 @@ function headerContent(state: TuiState, palette: TuiPalette): StyledText {
     chunk("   "),
   ];
   state.tabs.forEach((tab, index) => {
-    if (index > 0) chunks.push(chunk("   "));
+    if (index > 0) chunks.push(chunk(" · ", palette.weak));
     const active = index === state.active;
     const count = tabCount(tab);
     chunks.push(
@@ -164,9 +166,21 @@ function ruleContent(state: TuiState, palette: TuiPalette): StyledText {
   ]);
 }
 
+/** The divider's colour: the weak text colour, far clearer against the background than the rule. */
+export function dividerColour(palette: TuiPalette): string {
+  return palette.weak;
+}
+
+/** The dim title over the list: the page name, and a type list's filter. */
+function listTitle(tab: TuiTab | undefined, palette: TuiPalette): TextChunk[] {
+  if (tab === undefined) return [];
+  const extra = filterHeader(tab);
+  return [chunk(`${tab.title.toUpperCase()}${extra?.filter ?? ""}`, palette.weak), chunk("\n")];
+}
+
 function dividerContent(state: TuiState, palette: TuiPalette): StyledText {
   return styled([
-    chunk(Array.from({ length: bodyHeight(state) }, () => "│").join("\n"), palette.rule),
+    chunk(Array.from({ length: bodyHeight(state) }, () => "│").join("\n"), dividerColour(palette)),
   ]);
 }
 
@@ -252,7 +266,7 @@ function rowLine(
 
 /** The columns a list row has, marker and glyph included. */
 function listCells(state: TuiState): number {
-  return twoPane(state) ? LIST_WIDTH : Math.max(1, state.width - LIST_X - 1);
+  return twoPane(state) ? listWidth(state) : Math.max(1, state.width - LIST_X - 1);
 }
 
 function listContent(
@@ -271,11 +285,11 @@ function listContent(
             ? `no ${tab.filter} ${tab.title.toLowerCase()}s`
             : `no ${tab.title.toLowerCase()} yet`
           : `nothing in ${tab.title.toLowerCase()}`;
-    return styled([chunk(message, palette.weak)]);
+    return styled([chunk("\n"), ...listTitle(tab, palette), chunk(message, palette.weak)]);
   }
   const width = listCells(state);
-  const chunks: TextChunk[] = [];
-  const window = listWindow(tab.list, bodyHeight(state));
+  const chunks: TextChunk[] = [chunk("\n"), ...listTitle(tab, palette)];
+  const window = listWindow(tab.list, Math.max(1, bodyHeight(state) - LIST_HEAD));
   tab.list.rows.slice(window.start, window.end).forEach((row, offset) => {
     chunks.push(
       ...rowLine(row, tab.kind, window.start + offset === tab.list.cursor, palette, width),
@@ -387,10 +401,13 @@ function sectionContent(
 
 function objectContent(state: TuiState, palette: TuiPalette): StyledText {
   const object = state.object;
-  if (object === undefined) return styled([chunk("select an object", palette.weak)]);
+  if (object === undefined) {
+    return styled([chunk("\n"), chunk("select an object", palette.weak)]);
+  }
   const section = activeSection(state);
   const width = sectionWidth(state);
   return styled([
+    chunk("\n"),
     ...objectHeader(object, palette, width, pagePosition(section)),
     ...sectionTabs(object, palette, width),
     ...(section === undefined
@@ -591,9 +608,10 @@ export function createTuiView(
   const listPane = new BoxRenderable(ctx, {
     id: "operad-list-pane",
     height: "100%",
-    width: LIST_X + LIST_WIDTH,
+    width: "100%",
     flexShrink: 0,
     paddingLeft: LIST_X,
+    paddingRight: 1,
   });
   const list = new TextRenderable(ctx, {
     id: "operad-list",
@@ -613,7 +631,7 @@ export function createTuiView(
     id: "operad-right-pane",
     height: "100%",
     flexGrow: 1,
-    paddingLeft: RIGHT_X - LIST_X - LIST_WIDTH - 1,
+    paddingLeft: 1,
   });
   const right = new TextRenderable(ctx, {
     id: "operad-right",
@@ -673,13 +691,13 @@ export function createTuiView(
       footerRule.content = drawing.rule;
       footer.content = drawing.footer;
 
-      listPane.width = wide ? LIST_X + LIST_WIDTH : "100%";
+      listPane.width = wide ? dividerX(state) : "100%";
       // On a narrow screen the open object takes the place of the list.
       const showObject = state.object !== undefined;
       listPane.visible = wide || !showObject;
       divider.visible = wide;
       rightPane.visible = wide || showObject;
-      rightPane.paddingLeft = wide ? RIGHT_X - LIST_X - LIST_WIDTH - 1 : LIST_X;
+      rightPane.paddingLeft = wide ? rightX(state) - dividerX(state) - 1 : LIST_X;
 
       list.content = drawing.list;
       divider.content = drawing.divider;

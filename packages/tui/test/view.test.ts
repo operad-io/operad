@@ -63,7 +63,7 @@ describe("the TUI view", () => {
       await setup.renderOnce();
 
       const frame = setup.captureCharFrame();
-      expect(frame).toContain("operad   Pending 1   Running 0   Item 2");
+      expect(frame).toContain("operad   Pending 1 · Running 0 · Item 2");
       expect(frame).toContain("item:one");
       expect(frame).toContain("select an object");
       expect(frame).toContain("q quit");
@@ -92,7 +92,7 @@ describe("the TUI view", () => {
       view.render({ ...frameState(), width: 80 });
       await setup.renderOnce();
       const frame = setup.captureCharFrame();
-      expect(frame).toContain("operad   Pending 1   Running 0   Item 2");
+      expect(frame).toContain("operad   Pending 1 · Running 0 · Item 2");
       expect(frame).not.toContain("select an object");
       view.destroy();
     } finally {
@@ -116,8 +116,8 @@ describe("the TUI view", () => {
         expect(lines[1]?.startsWith(" ─")).toBe(true);
         expect(lines[22]?.trim()).toMatch(/^─+$/);
         expect(lines[23]?.startsWith(" j/k move")).toBe(true);
-        expect(lines[2]?.startsWith(" ❯ ● one")).toBe(true);
-        expect(lines[3]?.startsWith("   ◐ two")).toBe(true);
+        expect(lines[4]?.startsWith(" ❯ ● one")).toBe(true);
+        expect(lines[5]?.startsWith("   ◐ two")).toBe(true);
         expect(lines.join("\n")).not.toMatch(/[╭╮╰╯]/);
         const at = lines.slice(2, 22).map((line) => line.indexOf("│"));
         view.destroy();
@@ -126,15 +126,16 @@ describe("the TUI view", () => {
         await setup.dispose();
       }
     };
-    const at100 = await dividerAt(100);
-    const at200 = await dividerAt(200);
-    expect(new Set(at100)).toEqual(new Set([36]));
-    expect(new Set(at200)).toEqual(new Set([36]));
+    // The list is 40 columns at 100, 48 at 120 and 60 at 200; the divider
+    // follows after one column of padding on each side of the text.
+    expect(new Set(await dividerAt(100))).toEqual(new Set([42]));
+    expect(new Set(await dividerAt(120))).toEqual(new Set([50]));
+    expect(new Set(await dividerAt(200))).toEqual(new Set([62]));
     // 99 columns: the list only, no divider.
     expect((await dividerAt(99)).every((x) => x === -1)).toBe(true);
   });
 
-  test("the object pane text starts two cells after the divider and a long title never pushes the rule", async () => {
+  test("the object pane text starts one padding column and one cell after the divider and a long title never pushes the rule", async () => {
     const setup = await createTestRenderer({ width: 100, height: 24 });
     try {
       const view = createTuiView(setup.renderer);
@@ -166,10 +167,10 @@ describe("the TUI view", () => {
       view.render(state);
       await setup.renderOnce();
       const lines = setup.captureCharFrame().split("\n");
-      expect(lines[2]?.indexOf("T-0031-tui-object")).toBe(39);
-      expect(lines[2]).toContain("…");
-      for (const line of lines.slice(2, 22)) expect(line.indexOf("│")).toBe(36);
-      expect(lines[3]?.slice(39).startsWith("running · work 16m")).toBe(true);
+      expect(lines[3]?.indexOf("T-0031-tui-object")).toBe(44);
+      expect(lines[3]).toContain("…");
+      for (const line of lines.slice(2, 22)) expect(line.indexOf("│")).toBe(42);
+      expect(lines[4]?.slice(44).startsWith("running · work 16m")).toBe(true);
       view.destroy();
     } finally {
       await setup.dispose();

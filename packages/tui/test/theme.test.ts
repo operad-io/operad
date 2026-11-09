@@ -118,9 +118,7 @@ describe("rules, text and the selected row", () => {
 
   test("rules and the divider use the rule token", () => {
     const drawing = drawState(stateOf("light"), "light");
-    for (const text of [drawing.rule, drawing.divider]) {
-      expect(text.chunks[0]?.fg?.toInts().join(",")).toBe(ints(BUILTIN_THEMES.light.rule));
-    }
+    expect(drawing.rule.chunks[0]?.fg?.toInts().join(",")).toBe(ints(BUILTIN_THEMES.light.rule));
   });
 
   test("plain markdown text and code use the text token", () => {
@@ -179,7 +177,9 @@ describe("rules, text and the selected row", () => {
 
   test("the tint covers the whole selected row, padding included", () => {
     const state = stateOf("dark");
-    const row = drawState(state, "dark").list.chunks.filter((c) => c.text !== "\n");
+    const chunks = drawState(state, "dark").list.chunks;
+    // Past the blank line and the title, the first row is the selected one.
+    const row = chunks.slice(chunks.findIndex((c) => c.text === "❯")).filter((c) => c.text !== "\n");
     const tint = ints(BUILTIN_THEMES.dark.tint);
     expect(row.length).toBeGreaterThan(4);
     for (const piece of row) expect(piece.bg?.toInts().join(",")).toBe(tint);
