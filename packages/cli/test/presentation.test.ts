@@ -578,8 +578,27 @@ describe("operad presentation commands", () => {
       return output.text();
     };
     // Position 1 is labelled "2" and position 2 is labelled "1".
-    expect(await page("1")).toBe("first\n");
+    expect(await page("1")).toMatch(/^first \d+\n$/);
     expect(await page("2")).toBe("second\n");
+  });
+
+  test("show --page of the first page reads it once; another page costs one more read", async () => {
+    const { home } = await makeHome();
+    seed(home, { title: "One", state: "new" }, "one");
+    const read = async (value: string): Promise<number> => {
+      const output = capture();
+      await main(["show", "item:one", "--section", "digits", "--page", value, "--raw"], {
+        home,
+        io: output.io,
+      });
+      const count = /^first (\d+)\n$/.exec(output.text())?.[1];
+      return count === undefined ? -1 : Number(count);
+    };
+    const a = await read("1");
+    const b = await read("1");
+    // The page counted is the one shown: one read per run, not two.
+    expect(a).toBeGreaterThan(0);
+    expect(b - a).toBe(1);
   });
 
   test("show --page prints one page by number or by label", async () => {

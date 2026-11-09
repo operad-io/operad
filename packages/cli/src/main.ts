@@ -685,9 +685,13 @@ async function commandShow(
   const requested = sectionFlag.value ?? firstSection(object);
 
   let cursor = cursorFlag.value;
+  let preloaded: Awaited<ReturnType<typeof context.views.section>> | undefined;
   if (pageFlag.value !== undefined) {
     if (cursor !== undefined) throw new UsageError("--page and --cursor cannot be used together");
     if (requested === undefined) throw new Error(`object "${id}" has no section to page`);
+    // The table of contents is only sent with a section read (the section API
+    // has no read of the contents alone), so one read of the first page comes
+    // first. The page asked for is read again, unless it is that first page.
     const first = await context.views.section(id, requested, undefined, { full: false });
     const pages = first.pages;
     if (pages === undefined || pages.length === 0) {
@@ -706,19 +710,19 @@ async function commandShow(
       );
     }
     cursor = chosen.cursor;
+    if (cursor === undefined && !full.present) preloaded = first;
   }
+  const readSection = (section: string) =>
+    preloaded !== undefined && cursor === undefined && !full.present
+      ? Promise.resolve(preloaded)
+      : context.views.section(id, section, cursor, { full: full.present });
 
   if (json.present) {
     if (requested === undefined) {
       io.write(`${JSON.stringify(object, null, 2)}\n`);
       return;
     }
-    const content = await context.views.section(
-      id,
-      requested,
-      cursor,
-      { full: full.present },
-    );
+    const content = await readSection(requested);
     io.write(`${JSON.stringify({ ...object, section: content }, null, 2)}\n`);
     return;
   }
@@ -735,12 +739,7 @@ async function commandShow(
       io.write("");
       return;
     }
-    const content = await context.views.section(
-      id,
-      requested,
-      cursor,
-      { full: full.present },
-    );
+    const content = await readSection(requested);
     io.write(`${content.markdown.replace(/\n?$/, "\n")}`);
     return;
   }
@@ -760,12 +759,7 @@ async function commandShow(
   );
   if (requested === undefined) return;
 
-  const content = await context.views.section(
-    id,
-    requested,
-    cursor,
-    { full: full.present },
-  );
+  const content = await readSection(requested);
   io.write(`\n${renderMarkdown(content.markdown, {
     colour: tty,
     width: tty ? columns : undefined,
