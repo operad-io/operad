@@ -141,6 +141,7 @@ export interface TuiBinding {
 export type TuiInput =
   | { readonly kind: "palette"; readonly query: string; readonly cursor: number }
   | { readonly kind: "pages"; readonly query: string; readonly cursor: number }
+  | { readonly kind: "themes"; readonly cursor: number }
   | {
       readonly kind: "note";
       readonly action: string;
@@ -301,6 +302,14 @@ export interface TuiState {
   readonly bindings: readonly TuiBinding[];
   /** The palette entries used last, the latest first; the shell keeps them between runs. */
   readonly recent: readonly string[];
+  /** The installed theme names the theme list shows. */
+  readonly themeNames: readonly string[];
+  /** The theme in force. */
+  readonly themeCurrent: string;
+  /** The theme the list cursor is on; the shell shows it until the list closes. */
+  readonly themePreview?: string | undefined;
+  /** Set when the chosen theme must be kept; the caller clears it as it saves. */
+  readonly themeRequest?: string | undefined;
   /** The palette, note or confirmation the keys are typing into. */
   readonly input?: TuiInput | undefined;
   /** One footer line (a refusal, or "not available") until the next key. */
@@ -331,6 +340,8 @@ export interface TuiStateOptions {
   readonly theme?: TuiTheme | undefined;
   readonly url?: string | undefined;
   readonly recent?: readonly string[] | undefined;
+  readonly themeNames?: readonly string[] | undefined;
+  readonly themeCurrent?: string | undefined;
 }
 
 function makeList(): TuiList {
@@ -390,6 +401,8 @@ export function initialState(options: TuiStateOptions = {}): TuiState {
     generation: 0,
     bindings: [],
     recent: options.recent ?? [],
+    themeNames: options.themeNames ?? [],
+    themeCurrent: options.themeCurrent ?? "auto",
     acting: false,
     connection: "ok",
     ...(options.url === undefined ? {} : { url: options.url }),
@@ -521,6 +534,10 @@ export type TuiStateEvent =
     }
   /** The caller sent the action request; it is sent once. */
   | { readonly type: "action-launched" }
+  /** The installed themes or the theme in force changed. */
+  | { readonly type: "theme-names"; readonly names: readonly string[]; readonly current: string }
+  /** The caller saved the chosen theme; it is saved once. */
+  | { readonly type: "theme-launched" }
   /** The action ran. */
   | { readonly type: "action-done" }
   /** The server refused the action; the message shows as the line, the status does not. */
@@ -1219,6 +1236,37 @@ export function pageEntries(state: TuiState): readonly TuiPageEntry[] {
 }
 
 /** A key arrives while the page picker is open. */
+/** The theme list: moving shows the theme under the cursor, Enter keeps it, Esc puts the old one back. */
+function themesKey(
+  state: TuiState,
+  input: Extract<TuiInput, { readonly kind: "themes" }>,
+  event: { key: string; ctrl?: boolean | undefined },
+): TuiState {
+  const key = event.key.toLowerCase();
+  if (key === "escape" || key === "esc") {
+    return { ...state, input: undefined, themePreview: undefined };
+  }
+  const names = state.themeNames;
+  const down = key === "down" || key === "arrowdown" || (event.ctrl === true && (key === "n" || key === "j"));
+  const up = key === "up" || key === "arrowup" || (event.ctrl === true && (key === "p" || key === "k"));
+  if (down || up) {
+    const cursor = Math.min(Math.max(0, input.cursor + (down ? 1 : -1)), Math.max(0, names.length - 1));
+    return { ...state, input: { ...input, cursor }, themePreview: names[cursor] };
+  }
+  if (key === "enter" || key === "return") {
+    const chosen = names[input.cursor];
+    if (chosen === undefined) return state;
+    return {
+      ...state,
+      input: undefined,
+      themePreview: undefined,
+      themeRequest: chosen,
+      themeCurrent: chosen,
+    };
+  }
+  return state;
+}
+
 function pagesKey(
   state: TuiState,
   input: Extract<TuiInput, { readonly kind: "pages" }>,
@@ -1376,6 +1424,15 @@ function runCommand(state: TuiState, command: TuiCommand): TuiState {
       return handleKey(state, { key: "escape" });
     case "quit":
       return handleKey(state, { key: "q", text: "q" });
+    case "themes": {
+      const at = state.themeNames.indexOf(state.themeCurrent);
+      const cursor = Math.max(0, at);
+      return {
+        ...state,
+        input: { kind: "themes", cursor },
+        themePreview: state.themeNames[cursor],
+      };
+    }
     case "go":
       return activate(state, state.tabs.findIndex((tab) => tab.id === command.tabId));
   }
@@ -1394,6 +1451,7 @@ function handleKey(
   const typing = state.input;
   const calm = state.notice === undefined ? state : { ...state, notice: undefined };
   if (typing?.kind === "pages") return pagesKey(calm, typing, event);
+  if (typing?.kind === "themes") return themesKey(calm, typing, event);
   if (typing?.kind === "palette" && isKey(event.key, "enter", "return")) {
     const chosen = chosenEntry(calm);
     if (chosen?.command !== undefined) {
@@ -1878,6 +1936,10 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
         ...(resolved.notice === undefined ? {} : { notice: resolved.notice }),
       };
     }
+    case "theme-names":
+      return { ...state, themeNames: event.names, themeCurrent: event.current };
+    case "theme-launched":
+      return { ...state, themeRequest: undefined };
     case "action-launched":
       return state.actionRequest === undefined
         ? state
