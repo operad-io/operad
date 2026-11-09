@@ -1184,7 +1184,10 @@ export async function setTaskPhase(
 export async function claimTaskStart(
   store: ObjectStore,
   id: string,
-  options: { readonly checkArea?: boolean | undefined } = {},
+  options: {
+    readonly checkArea?: boolean | undefined;
+    readonly fairSlot?: boolean | undefined;
+  } = {},
 ): Promise<TaskData | undefined> {
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
@@ -1203,10 +1206,12 @@ export async function claimTaskStart(
       areaHeldBy: _held,
       areaAhead: _ahead,
       dependencyHeld: _waits,
+      fairSlot: _fair,
       ...rest
     } = latest;
     const next: TaskData = {
       ...rest,
+      ...(options.fairSlot === true ? { fairSlot: true } : {}),
       phase: "running",
       run: null,
       brief: appendChange(latest.brief, "running"),

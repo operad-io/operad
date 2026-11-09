@@ -226,9 +226,10 @@ have merged. A task starts only while its plan is at auto `run` or `merge`, the
 plan's running count is under its `concurrency`, and the repository's running
 count is under its `concurrency` setting. Plans are considered most urgent
 first; within one priority they take turns (the plan that started a task least
-recently goes first). When the repository has more than one slot, the last
-free slot goes to the plan that has not started a task for the longest time,
-whatever its priority, so a plan with a startable task never waits forever
+recently goes first). When the repository has more than one slot, one slot
+is reserved for the fair turn: while no running task holds it, the last free
+slot goes to the plan that has not started a task for the longest time,
+whatever its priority. Every other freed slot goes by priority. So a plan with a startable task never waits forever
 behind more urgent plans. With one slot, priority alone orders the queue. Each
 registered repository is scheduled on its own. A task the
 scheduler claimed but whose run never recorded itself (a crash between the two)

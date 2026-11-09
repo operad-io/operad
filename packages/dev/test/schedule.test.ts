@@ -1104,6 +1104,50 @@ describe("dev scheduling", () => {
     }
   });
 
+  test("once the repository is full, a freed slot goes by priority; only the reserved slot goes by turn", async () => {
+    let now = 1_000;
+    changeClock.now = () => (now += 1_000);
+    try {
+      const fixture = await setup({ concurrency: 3 });
+      const urgent = await makePlan(fixture, { slug: "urgent", auto: "run", priority: "P1", concurrency: 3 });
+      const urgentTasks: string[] = [];
+      for (const slug of ["u1", "u2", "u3", "u4", "u5"]) {
+        urgentTasks.push((await makeTask(fixture, urgent.key, slug)).key);
+      }
+      const lowPlans: string[] = [];
+      for (const slug of ["l1", "l2", "l3", "l4"]) {
+        const plan = await makePlan(fixture, { slug, auto: "run", priority: "P3", concurrency: 3 });
+        await makeTask(fixture, plan.key, `${slug}-a`);
+        await makeTask(fixture, plan.key, `${slug}-b`);
+        await confirm(fixture, plan.key);
+        lowPlans.push(plan.key);
+      }
+      await confirm(fixture, urgent.key);
+
+      const first = (await tick(fixture)).map((request) => startedId(request));
+      expect(first.length).toBe(3);
+      expect(first.filter((id) => urgentTasks.includes(id)).length).toBe(2);
+      for (const id of first) await putTask(fixture, id, { run: `run-${id}` });
+      const reserved = first.find((id) => !urgentTasks.includes(id)) ?? "";
+
+      // An urgent task ends: the freed slot is an ordinary one.
+      const ended = first.find((id) => urgentTasks.includes(id)) ?? "";
+      await phase(fixture, ended, "merged");
+      const second = (await tick(fixture)).map((request) => startedId(request));
+      expect(second.length).toBe(1);
+      expect(urgentTasks).toContain(second[0] ?? "");
+      await putTask(fixture, second[0] ?? "", { run: "run-second" });
+
+      // The reserved slot ends: it goes to the plan that waited longest.
+      await phase(fixture, reserved, "merged");
+      const third = (await tick(fixture)).map((request) => startedId(request));
+      expect(third.length).toBe(1);
+      expect(urgentTasks).not.toContain(third[0] ?? "");
+    } finally {
+      changeClock.now = () => Date.now();
+    }
+  });
+
   test("plans of one priority take turns", async () => {
     let now = 1_000;
     changeClock.now = () => (now += 1_000);

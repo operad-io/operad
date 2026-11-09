@@ -440,6 +440,8 @@ export type TaskData = {
   readonly areaHeldBy?: string | undefined;
   /** How many ready tasks of the same area are ahead in the queue; the scheduler sets it. */
   readonly areaAhead?: number | undefined;
+  /** True while this task holds the repository's one slot reserved for the fair turn. */
+  readonly fairSlot?: boolean | undefined;
   /** True while a task this ready task follows is not merged; the scheduler sets it. */
   readonly dependencyHeld?: boolean | undefined;
   readonly phase: TaskPhase;

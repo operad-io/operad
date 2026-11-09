@@ -493,3 +493,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0157-M1 | packages/dev/src/gate.ts | a verify failure kept the previous review failure (`reviewFailed` set for every source) | `dev/rework after two review failures in a row > review fail, verify fail, review fail reworks again` |
+
+## T-0159 — rework 1
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0159-M4 | packages/dev/src/schedule.ts | every refill of the last free slot went by turn (the check for a running fair-slot task removed) | `dev scheduling > once the repository is full, a freed slot goes by priority; only the reserved slot goes by turn` |
