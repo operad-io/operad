@@ -174,3 +174,31 @@ instead reads every `package.json` (root and `packages/*`) and requires the
 dependency. `scripts/stress.sh` runs it first, and the `bunfig.toml` test preload
 runs it for every `bun test`; a stale install ends with one line, `stale install:
 <links> missing; run bun install`.
+
+## Completion (T-0111, 2026-11-09)
+
+Method: `bash scripts/stress.sh --runs 10 --load 2 <file>`, one file at a time, for
+the packages the first pass skipped; then 20 runs for every package; then
+`packages/dev/test/gate.test.ts` alone. Machine: macOS, 10 CPUs, started 00:04 EST.
+"Runs" is the number of test executions the script counted (tests in the file times
+10). No code or test is changed. Logs are in the stress script's temp directory and
+are not kept in the repository.
+
+### Skipped packages at 10 reruns
+
+| Package | File | Runs | Failures |
+|---|---|---|---|
+| access-match | match.test.ts | 470 | 0 |
+| access-match | summary.test.ts | 300 | 0 |
+| harness-pi | pi-install.test.ts | 140 | 0 |
+| harness-pi | plugin.test.ts | 540 | 0 |
+| harness-pi | spike.test.ts | 60 | 0 |
+| harness-pi | worker.test.ts | 440 | 0 |
+| harness-process | ask-note.test.ts | 50 | 0 |
+| harness-process | descriptor-owner.test.ts | 10 | 0 |
+| harness-process | grants.test.ts | 60 | 0 |
+| harness-process | jsonl-log.test.ts | 30 | 0 |
+| harness-process | limit.test.ts | 50 | 0 |
+| harness-process | process.test.ts | 60 | 0 |
+| harness-process | stdio-guard.test.ts | 20 | 0 |
+| harness-process | tool-events.test.ts | 10 | 0 |
