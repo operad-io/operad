@@ -2472,7 +2472,7 @@ export async function runReview(
 }
 
 /** Waits for a timer, or returns false when the run is cancelled. */
-function waitFor(ms: number, signal: AbortSignal | undefined): Promise<boolean> {
+export function waitFor(ms: number, signal: AbortSignal | undefined): Promise<boolean> {
   return new Promise((resolve) => {
     if (signal?.aborted === true) {
       resolve(false);

@@ -294,7 +294,11 @@ describe("runAgent with an inbox", () => {
     const lines: string[] = [];
     let stopped = 0;
     let send: (text: string) => void = () => undefined;
+    const began: number[] = [];
     const inbox = {
+      begin(limitMs: number): void {
+        began.push(limitMs);
+      },
       listen(handler: (text: string) => void): () => void {
         send = handler;
         return () => {
@@ -323,6 +327,8 @@ describe("runAgent with an inbox", () => {
       { got: JSON.stringify({ type: "message", text: "wrap up" }) },
     ]);
     expect(stopped).toBe(1);
+    // The run reports its wall time when it begins.
+    expect(began).toEqual([30_000]);
   });
 
   test("inboxOf reads only an object with a listen method; messageText only a message line", () => {

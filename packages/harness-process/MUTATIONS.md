@@ -36,3 +36,9 @@ the row fields.
 |---|---|---|---|
 | T-0099-M1 | packages/harness-process/src/process.ts | a message was written to stdin as bare text, not a `message` line | `runAgent with an inbox > a message sent while the command runs is written to its stdin as a message line, and the listener is dropped at the end` |
 | T-0099-M2 | packages/harness-process/src/process.ts | the inbox listener was not dropped when the run ended | `runAgent with an inbox > a message sent while the command runs is written to its stdin as a message line, and the listener is dropped at the end` |
+
+## T-0099 — rework 1: the run reports its wall time
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0099-M3 | packages/harness-process/src/process.ts | the run did not tell the inbox its wall time when it began | `runAgent with an inbox > a message sent while the command runs is written to its stdin as a message line, and the listener is dropped at the end` |

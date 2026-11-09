@@ -15,9 +15,9 @@ import {
   taskData,
 } from "../src/index.ts";
 import { PROGRESS_FILE, WIP_MESSAGE } from "../src/progress.ts";
-import { stepTestHooks, workLimitMs } from "../src/steps.ts";
+import { stepTestHooks } from "../src/steps.ts";
 import { STEP_TIMEOUT_SECS } from "../src/timeouts.ts";
-import { DEFAULT_DEV_SETTINGS, validateDevSettings } from "../src/settings.ts";
+import { validateDevSettings } from "../src/settings.ts";
 import { waitingReason } from "../src/announce.ts";
 import { gitOrThrow, makeRemote } from "./git-support.ts";
 import { cleanupTempRoots, guardLockHandles, storeAt, tempRoot } from "./support.ts";
@@ -78,7 +78,7 @@ function commitFile(cwd: string, name: string, message: string, content = "x\n")
   gitOrThrow(cwd, ["-c", "user.name=w", "-c", "user.email=w@example.com", "commit", "-qm", message]);
 }
 
-function fakeHarness(modes: Mode[], seen: Seen[]) {
+function fakeHarness(modes: Mode[], seen: Seen[], runMs?: number) {
   return definePlugin({
     name: "fake-harness",
     kind: "harness",
@@ -91,7 +91,10 @@ function fakeHarness(modes: Mode[], seen: Seen[]) {
           const input = params as {
             readonly prompt: string;
             readonly cwd: string;
-            readonly inbox?: { listen(handler: (text: string) => void): () => void };
+            readonly inbox?: {
+              listen(handler: (text: string) => void): () => void;
+              begin(limitMs: number): void;
+            };
           };
           const mode = modes.shift() ?? "plain";
           const record = newSeen();
@@ -115,6 +118,7 @@ function fakeHarness(modes: Mode[], seen: Seen[]) {
             return { result: "failed", data: { reason: "wall", message: "the harness ran longer than 1s" } };
           }
           if (mode === "wrap-up") {
+            input.inbox?.begin(runMs ?? LIMIT_MS);
             const message = new Promise<string>((resolve) => {
               input.inbox?.listen((text) => {
                 record.messages.push(text);
@@ -129,6 +133,7 @@ function fakeHarness(modes: Mode[], seen: Seen[]) {
           }
           if (mode === "ignore") {
             input.inbox?.listen((text) => record.messages.push(text));
+            input.inbox?.begin(LIMIT_MS);
           }
           writeFileSync(join(input.cwd, "unfinished.txt"), "half\n");
           writeFileSync(join(input.cwd, PROGRESS_FILE), "done: half of it\n");
@@ -141,7 +146,7 @@ function fakeHarness(modes: Mode[], seen: Seen[]) {
   });
 }
 
-async function fixture(modes: Mode[], extra: Record<string, unknown> = {}) {
+async function fixture(modes: Mode[], extra: Record<string, unknown> = {}, runMs?: number) {
   const root = await tempRoot();
   const remote = await makeRemote(root);
   const store = storeAt(root);
@@ -163,7 +168,7 @@ async function fixture(modes: Mode[], extra: Record<string, unknown> = {}) {
   const task = await addTask(store, { plan: plan.id, slug: "task", title: "Task", brief: "Write the files." });
   const seen: Seen[] = [];
   const registry = new PluginRegistry(
-    [createDevPlugin(), createPoolPlugin(), fakeHarness(modes, seen)],
+    [createDevPlugin(), createPoolPlugin(), fakeHarness(modes, seen, runMs)],
     { home: root, cwd: remote.repository, store },
   );
   const object = { type: "task", id: task.id, data: {} };
@@ -185,18 +190,6 @@ async function fixture(modes: Mode[], extra: Record<string, unknown> = {}) {
 }
 
 describe("a work step that runs out of time", () => {
-  test("the limit is the step's, or the workers' wall time when they all set one", () => {
-    expect(workLimitMs(DEFAULT_DEV_SETTINGS, undefined)).toBe(LIMIT_MS);
-    const walled = {
-      ...DEFAULT_DEV_SETTINGS,
-      workers: {
-        ...DEFAULT_DEV_SETTINGS.workers,
-        workers: DEFAULT_DEV_SETTINGS.workers.workers.map((worker) => ({ ...worker, wallTimeSecs: 7200 })),
-      },
-    };
-    expect(workLimitMs(walled, undefined)).toBe(7_200_000);
-  });
-
   test("the wrap-up message arrives at the share of the limit, not before", async () => {
     const clock = new ManualClock();
     stepTestHooks.workClock = clock;
@@ -334,6 +327,48 @@ async function waitFor(seen: Seen[], count: number): Promise<Seen> {
   throw new Error("the harness did not start");
 }
 
+describe("the limit a harness reports", () => {
+  test("nothing is timed from the step's start but the backstop; the wrap-up is timed from the harness's own begin", async () => {
+    const clock = new ManualClock();
+    stepTestHooks.workClock = clock;
+    const state = await fixture(["wrap-up"]);
+    const running = state.work();
+    const seen = await waitFor(state.seen, 0);
+    await seen.started;
+    // The harness began with the step's own limit: the backstop plus the wrap-up and stop.
+    expect(clock.timers.map((timer) => timer.ms).sort((a, b) => a - b)).toEqual([WRAP_MS, HARD_MS, HARD_MS]);
+    clock.advanceTo(WRAP_MS);
+    await running;
+  });
+
+  test("a harness that reports a shorter wall time is wrapped up and stopped by that wall, not the step's limit", async () => {
+    const clock = new ManualClock();
+    stepTestHooks.workClock = clock;
+    const state = await fixture(["wrap-up"], {}, 7_200_000);
+    const running = state.work();
+    const seen = await waitFor(state.seen, 0);
+    await seen.started;
+    const live = clock.timers.filter((timer) => timer.live).map((timer) => timer.ms);
+    expect(live).toContain(Math.floor(7_200_000 * 0.85));
+    expect(live).toContain(7_200_000 - 30_000);
+    clock.advanceTo(Math.floor(7_200_000 * 0.85));
+    expect((await running).result).toBe("done");
+    expect(seen.messages).toHaveLength(1);
+  });
+
+  test("a harness that never reports a run leaves only the backstop", async () => {
+    const clock = new ManualClock();
+    stepTestHooks.workClock = clock;
+    const state = await fixture(["deaf"]);
+    const running = state.work();
+    const seen = await waitFor(state.seen, 0);
+    await seen.started;
+    expect(clock.timers.map((timer) => timer.ms)).toEqual([HARD_MS]);
+    clock.advanceTo(HARD_MS);
+    expect((await running).data?.reason).toBe("timeout");
+  });
+});
+
 describe("work.wrapUpAt", () => {
   test("defaults to 0.85, takes a share between 0 and 1, and refuses anything else", () => {
     expect(validateDevSettings({}).work.wrapUpAt).toBe(0.85);
@@ -352,9 +387,13 @@ describe("work.wrapUpAt", () => {
   test("the share moves the wrap-up message", async () => {
     const clock = new ManualClock();
     stepTestHooks.workClock = clock;
-    const state = await fixture(["plain"], { work: { wrapUpAt: 0.5 } });
-    await state.work();
-    expect(clock.timers.map((timer) => timer.ms).sort((a, b) => a - b)).toEqual([LIMIT_MS / 2, HARD_MS]);
+    const state = await fixture(["wrap-up"], { work: { wrapUpAt: 0.5 } });
+    const running = state.work();
+    const seen = await waitFor(state.seen, 0);
+    await seen.started;
+    expect(clock.timers.map((timer) => timer.ms).sort((a, b) => a - b)).toEqual([LIMIT_MS / 2, HARD_MS, HARD_MS]);
+    clock.advanceTo(LIMIT_MS / 2);
+    await running;
   });
 });
 

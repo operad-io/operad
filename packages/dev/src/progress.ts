@@ -19,6 +19,11 @@ export const NOTE_REMOVED_MESSAGE = "remove the progress note from the branch";
  */
 export interface Inbox {
   listen(handler: (text: string) => void): () => void;
+  /**
+   * A harness calls it when its run begins, with how long the run may last in
+   * milliseconds. The wrap-up is timed from then, not from the step's start.
+   */
+  begin(limitMs: number): void;
 }
 
 export interface Outbox {
@@ -26,11 +31,12 @@ export interface Outbox {
   send(text: string): void;
 }
 
-export function createOutbox(): Outbox {
+export function createOutbox(onBegin: (limitMs: number) => void): Outbox {
   let handler: ((text: string) => void) | undefined;
   const kept: string[] = [];
   return {
     inbox: {
+      begin: onBegin,
       listen(next) {
         handler = next;
         for (const text of kept.splice(0)) next(text);

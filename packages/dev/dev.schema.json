@@ -256,7 +256,7 @@
       "type": "object",
       "properties": {
         "wrapUpAt": {
-          "description": "The share of the work step's time limit at which the worker is asked to stop starting new things, commit what it has and write a progress note. The limit is the worker's wallTimeSecs when the pool sets one, else the step's own limit. When the step runs out of time anyway, what is in the worktree is committed as a work-in-progress commit and the next attempt starts from it and the note.",
+          "description": "The share of the work step's time limit at which the worker is asked to stop starting new things, commit what it has and write a progress note. The limit is the wall time of the run the harness reports when it starts (the worker's wallTimeSecs, or the harness's own default), counted from when the pool gave the worker its place. When the step runs out of time anyway, what is in the worktree is committed as a work-in-progress commit and the next attempt starts from it and the note.",
           "type": "number",
           "exclusiveMinimum": 0,
           "exclusiveMaximum": 1,
@@ -435,6 +435,22 @@
       "type": "integer",
       "minimum": 0,
       "default": 2
+    },
+    "retry": {
+      "description": "What a task does when its step failed for a reason outside its own work: dev runs the step once more by itself, and only a second failure waits for a person.",
+      "type": "object",
+      "properties": {
+        "environmentWaitMinutes": {
+          "description": "How many minutes the retry waits for what was missing (a step that is not loaded, settings that cannot be read) before the task waits for a person.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 60
+        }
+      },
+      "additionalProperties": false,
+      "default": {
+        "environmentWaitMinutes": 60
+      }
     }
   },
   "additionalProperties": false

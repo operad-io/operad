@@ -334,6 +334,14 @@ the row fields.
 | T-0075-M22 | packages/dev/src/views.ts | the step in flight at a cancel added nothing to its line | `metrics follow the run's own step > a task cancelled while its worker runs keeps the time up to the cancel, step included` |
 | T-0075-M23 | packages/dev/src/views.ts | a task's time ignored the run's own end (the line and the row disagreed after a cancel) | `metrics follow the run's own step > a task cancelled while its review is in flight counts the review up to the cancel` |
 | T-0075-M26 | packages/dev/src/views.ts | a cancelled task's run was read from `task.run` only, which the real cancel clears | `metrics follow the run's own step > a task cancelled while its worker runs keeps the time up to the cancel, step included` |
+| T-0097-M1 | packages/dev/src/retry.ts | the retry was never spent: a second stop in the same attempt retried again | `an environment failure of the work step > a second stop in the same attempt waits for a person and says why` |
+| T-0097-M2 | packages/dev/src/stops.ts | a recovered run (the interrupted edge) was classed as the task's | `classifyStop > a recovered run is environment` |
+| T-0097-M3 | packages/dev/src/retry.ts | the wait ignored its bound and never expired | `an environment failure of the work step > the wait runs out: the task waits for a person, and the line names what is not loaded` |
+| T-0097-M4 | packages/dev/src/steps.ts | a harness killed by a signal was recorded as the harness's own failure | `a real process killed by a signal > the work retries once by itself` |
+| T-0097-M5 | packages/dev/src/retry.ts | the wait treated every step as loaded | `the night of 2026-11-08 at 08:01 > nine tasks start while pool is disabled; when it is enabled every task continues by itself` |
+| T-0097-M6 | packages/dev/src/steps.ts | the host's not-loaded error kind was not read, so the failure looked like the task's | `an environment failure of the work step > a step that is not loaded: the retry waits until it is, then the work runs` |
+| T-0097-M7 | packages/dev/src/steps.ts | a repair run that only asks a person was not marked, so the retry step ran the stopped step again | `dev scheduling > serve repairs a task whose run ended without an edge, and reject runs again` |
+| T-0097-M8 | packages/dev/src/retry.ts | a stopped run was retried at once although the settings still could not be read | `settings that cannot be read > a stopped run whose settings still cannot be read waits for them instead of spending its retry` |
 | T-0096-M7 | packages/dev/src/index.ts | `work` did not declare `pool/agent` in `calls` | `dev/work > done: new commits and a clean tree are pushed (cost from the old fields of an old fact)` (the undeclared call fails in tests) |
 | T-0088-M1 | packages/dev/src/followups.ts | a finding seen in an earlier round was listed again | `review follow-ups > collects the findings of every round and task, deduplicated, grouped by level` |
 | T-0088-M2 | packages/dev/src/followups.ts | a crash between the proposal and the marks left the tasks collectable again | `review follow-ups > a crash between the proposal and the marks proposes exactly one` |
@@ -361,3 +369,11 @@ the row fields.
 | T-0099-M11 | packages/dev/src/steps.ts | the wrap-up share ignored `work.wrapUpAt` | `work.wrapUpAt > the share moves the wrap-up message` |
 | T-0099-M12 | packages/dev/src/steps.ts | the harness got the kernel's signal, not the step's own, so the step could not stop it at its limit | `a work step that runs out of time > a step that ignores the message and times out gets a work-in-progress commit and its note kept` |
 | T-0099-M13 | packages/dev/src/settings.ts | `work.wrapUpAt` accepted 0 and 1 | `work.wrapUpAt > defaults to 0.85, takes a share between 0 and 1, and refuses anything else` |
+| T-0097-M9 | packages/dev/flows/dev.flow.ts | the worktree retry held onto itself instead of a wait for the settings | `settings that cannot be read, in the worktree step > a recovered worktree step waits for the settings, then runs again` |
+
+## T-0099 — rework 1: the limit is the run's own
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0099-M14 | packages/dev/src/steps.ts | the wrap-up and stop ignored the wall time the harness reported and used the step's limit | `the limit a harness reports > a harness that reports a shorter wall time is wrapped up and stopped by that wall, not the step's limit` |
+| T-0099-M15 | packages/dev/src/steps.ts | no timer was kept from the step's start as a backstop | `the limit a harness reports > a harness that never reports a run leaves only the backstop` |

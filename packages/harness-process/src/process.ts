@@ -516,6 +516,7 @@ export async function runAgent(
       : options.inbox.listen((text) => {
           if (!finished) reply(messageLine(text));
         });
+  if (options.wallMs > 0) options.inbox?.begin?.(options.wallMs);
 
   const ended = await Promise.race<Ended>([
     nextControl().then((line): Ended => {

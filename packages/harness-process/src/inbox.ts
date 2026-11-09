@@ -9,6 +9,11 @@
  */
 export interface MessageInbox {
   listen(handler: (text: string) => void): () => void;
+  /**
+   * Tells the host the run has begun and how long it may last, in
+   * milliseconds, so it can time what it says from the run's own start.
+   */
+  begin?(limitMs: number): void;
 }
 
 /** The inbox in a step's params, or undefined when the host gave none. */

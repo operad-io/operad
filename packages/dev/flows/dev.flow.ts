@@ -15,6 +15,29 @@ function announce(id: string, from: string, result: string) {
 }
 
 /**
+ * A step in front of an announcement for a step that can stop because of
+ * operad or the machine: it runs the step again once, and only a second stop of
+ * that kind (or a wait that ran out) reaches a person.
+ */
+function retry(
+  id: string,
+  from: string,
+  result: string,
+  again: string,
+  ask: string,
+  giveUp: string,
+  hold: string = id,
+) {
+  return {
+    id,
+    kind: "plugin" as const,
+    params: { use: "dev/retry", params: { from, result } },
+    replay: "safe" as const,
+    next: { again, hold, ask, give_up: giveUp, cancelled: "end_cancelled" },
+  };
+}
+
+/**
  * The dev flow: give a task a worktree, let a worker change it, gate the
  * commit, and send a failed gate back for another pass. A person decides the
  * merge; the merge lands on main and cleanup removes the worktrees and branches.
@@ -38,7 +61,7 @@ export default defineFlow({
         blocked: "announce_blocked",
         failed: "end_failed",
         cancelled: "end_cancelled",
-        interrupted: "announce_worktree_stopped",
+        interrupted: "retry_worktree",
       },
     },
     {
@@ -53,7 +76,7 @@ export default defineFlow({
         conflict: "work",
         failed: "end_failed",
         cancelled: "end_cancelled",
-        interrupted: "announce_reverify_stopped",
+        interrupted: "retry_reverify",
       },
     },
     {
@@ -64,10 +87,10 @@ export default defineFlow({
       next: {
         done: "verify",
         nothing: "announce_nothing",
-        failed: "announce_work_failed",
+        failed: "retry_work_failed",
         unavailable: "work_retry",
         cancelled: "end_cancelled",
-        interrupted: "announce_work_stopped",
+        interrupted: "retry_work_stopped",
       },
     },
     {
@@ -173,6 +196,95 @@ export default defineFlow({
         cancelled: "end_cancelled",
       },
     },
+    retry(
+      "retry_worktree",
+      "worktree",
+      "interrupted",
+      "worktree",
+      "announce_worktree_stopped",
+      "announce_worktree_environment",
+      "retry_worktree_wait",
+    ),
+    {
+      id: "retry_worktree_wait",
+      kind: "wait",
+      params: { check: "dev/retry_due" },
+      replay: "safe",
+      next: { ready: "retry_worktree_after", interrupted: "end_cancelled" },
+    },
+    retry(
+      "retry_worktree_after",
+      "worktree",
+      "waited",
+      "worktree",
+      "announce_worktree_stopped",
+      "announce_worktree_environment",
+      "retry_worktree_wait",
+    ),
+    retry(
+      "retry_reverify",
+      "reverify",
+      "interrupted",
+      "reverify",
+      "announce_reverify_stopped",
+      "announce_reverify_environment",
+      "retry_reverify_wait",
+    ),
+    {
+      id: "retry_reverify_wait",
+      kind: "wait",
+      params: { check: "dev/retry_due" },
+      replay: "safe",
+      next: { ready: "retry_reverify_after", interrupted: "end_cancelled" },
+    },
+    retry(
+      "retry_reverify_after",
+      "reverify",
+      "waited",
+      "reverify",
+      "announce_reverify_stopped",
+      "announce_reverify_environment",
+      "retry_reverify_wait",
+    ),
+    retry(
+      "retry_work_failed",
+      "work",
+      "failed",
+      "work",
+      "announce_work_failed",
+      "announce_work_environment",
+      "retry_work_wait",
+    ),
+    retry(
+      "retry_work_stopped",
+      "work",
+      "interrupted",
+      "work",
+      "announce_work_stopped",
+      "announce_work_environment",
+      "retry_work_wait",
+    ),
+    {
+      // Waits for the step or the settings a retry needs, then asks the retry
+      // step to carry on or to give up when the bound ran out.
+      id: "retry_work_wait",
+      kind: "wait",
+      params: { check: "dev/retry_due" },
+      replay: "safe",
+      next: { ready: "retry_work_after", interrupted: "end_cancelled" },
+    },
+    retry(
+      "retry_work_after",
+      "work",
+      "waited",
+      "work",
+      "announce_work_stopped",
+      "announce_work_environment",
+      "retry_work_wait",
+    ),
+    announce("announce_worktree_environment", "worktree", "environment"),
+    announce("announce_reverify_environment", "reverify", "environment"),
+    announce("announce_work_environment", "work", "environment"),
     announce("announce_blocked", "worktree", "blocked"),
     announce("announce_worktree_stopped", "worktree", "interrupted"),
     announce("announce_reverify_stopped", "reverify", "interrupted"),

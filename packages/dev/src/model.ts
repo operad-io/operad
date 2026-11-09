@@ -366,6 +366,32 @@ export interface TaskClaim {
 }
 
 /** The data of a task object. */
+/** Why a step just stopped, in dev's own words; the retry step reads it once. */
+export interface StopRecord {
+  readonly [key: string]: unknown;
+  readonly step: string;
+  readonly result: string;
+  readonly reason: string;
+  /** The step that was not loaded, when the reason says so. */
+  readonly use?: string | undefined;
+}
+
+/** The one automatic retry a task's attempt used for a failure outside its work. */
+export interface RetryRecord {
+  readonly [key: string]: unknown;
+  readonly attempt: number;
+  readonly step: string;
+  /** What was wrong, as the waiting line says it. */
+  readonly cause: string;
+  /** When the retry began, in epoch milliseconds. */
+  readonly at: number;
+  /** What the retry waits for before it runs; absent when it runs at once. */
+  readonly waitFor?: "step" | "settings" | undefined;
+  readonly use?: string | undefined;
+  /** `ready`: the wait is over; `expired`: it ran out; `asked`: a person decides. */
+  readonly state: "retrying" | "waiting" | "ready" | "expired" | "asked";
+}
+
 export type TaskData = {
   readonly [key: string]: unknown;
   readonly repository: string;
@@ -390,6 +416,10 @@ export type TaskData = {
   readonly costQuality?: "exact" | "estimated" | "incomplete" | null | undefined;
   /** How many automatic reworks ran in a row; a passing gate resets it. */
   readonly reworkStreak?: number | undefined;
+  /** Why the last step that records one stopped; the retry step consumes it. */
+  readonly stop?: StopRecord | null | undefined;
+  /** The automatic retry this task's attempt used. */
+  readonly retry?: RetryRecord | null | undefined;
   /** The owner asked the scheduler to start this ready task. */
   readonly startRequested?: boolean | undefined;
   /** When an unavailable review may run again, in epoch milliseconds. */
