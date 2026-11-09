@@ -9,6 +9,7 @@ import {
   type TuiState,
 } from "../src/state.ts";
 import { KEY_LIST } from "../src/state.ts";
+import { drawState } from "../src/view/index.ts";
 
 const TOC = [
   { label: "overview" },
@@ -168,5 +169,28 @@ describe("a section with pages", () => {
     const keys = KEY_LIST.map(([name]) => name);
     expect(keys).toContain("p");
     expect(keys).toContain("n / N");
+  });
+
+  test("the picker scrolls so the marked page stays in the box", () => {
+    const many = Array.from({ length: 27 }, (_, at) => ({
+      label: `file-${at}.ts`,
+      ...(at === 0 ? {} : { cursor: String(at) }),
+    }));
+    let state = opened();
+    const request = state.sectionRequest;
+    state = reduce(state, {
+      type: "section",
+      objectId: "one",
+      sectionId: "diff",
+      content: { markdown: "first", pages: many },
+      version: request?.version,
+      objectVersion: request?.objectVersion,
+    });
+    state = key(state, "p");
+    for (let at = 0; at < 20; at += 1) {
+      state = key(state, "down");
+      const text = drawState(state).overlay?.chunks.map((c) => c.text).join("") ?? "";
+      expect(text).toContain(`❯ file-${at + 1}.ts\n`);
+    }
   });
 });

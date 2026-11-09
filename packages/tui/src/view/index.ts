@@ -428,7 +428,14 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
     const chunks: TextChunk[] = [chunk(`page: ${input.query}${bar}\n`, palette.accent)];
     const pages = pageEntries(state);
     if (pages.length === 0) chunks.push(chunk("no page matches", palette.weak));
-    pages.forEach((entry, at) => {
+    // The box holds fewer lines than a long table of contents: keep the cursor in view.
+    const rows = Math.max(1, (overlayBox(state)?.height ?? 5) - 4 - 1);
+    const start = Math.max(
+      0,
+      Math.min(input.cursor - Math.floor(rows / 2), pages.length - rows),
+    );
+    pages.slice(start, start + rows).forEach((entry, offset) => {
+      const at = start + offset;
       chunks.push(chunk(at === input.cursor ? "❯ " : "  ", palette.accent));
       chunks.push(chunk(`${entry.label}\n`, at === input.cursor ? palette.accent : palette.text));
     });

@@ -180,3 +180,4 @@ the row fields.
 | T-0090-M3 | packages/tui/src/state.ts | `n` on the last page asked for a page that does not exist | `a section with pages > n and N step through the pages and stop at both ends` |
 | T-0090-M4 | packages/tui/src/state.ts | the position ignored where the loaded text starts in the table of contents | `a section with pages > the position line names the page and its label` |
 | T-0090-M5 | packages/tui/src/actions.ts | `p` and `n` were no longer reserved, so a binding could take them | `actions in the reducer > the page keys p, n and N are reserved` |
+| T-0090-M7 | packages/tui/src/view/index.ts | the page picker always listed from the first entry, so the marked page left the box | `a section with pages > the picker scrolls so the marked page stays in the box` |
