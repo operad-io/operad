@@ -1343,13 +1343,19 @@ export async function claimWaitingTask(
   seen: number,
   action: TaskActionName,
   change: (latest: TaskData) => TaskData,
-): Promise<{ readonly claimed: StoredObject; readonly before: TaskData }> {
+): Promise<
+  | { readonly claimed: StoredObject; readonly before: TaskData; readonly settled?: undefined }
+  | { readonly settled: string }
+> {
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
   return withRepoLock(store, data.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
-    // Where the task is now: the table's line for this action.
+    // Where the task is now: the table's line for this action. A result that
+    // is already true (another merge won) succeeds with its line.
+    const said = taskLine(action, latest, { id: bareId(id) });
+    if (said?.kind === "done") return { settled: said.text };
     refuseTask(action, latest, id);
     if (current.version !== seen) {
       throw new DevRefusal(

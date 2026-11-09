@@ -301,8 +301,32 @@ describe("dev:rework and dev:reverify", () => {
     const fixture = await setup();
     await setTaskPhase(fixture.store, fixture.task.id, "merged");
     await expect(
-      claimWaitingTask(fixture.store, fixture.task.id, 1, "merge", (latest) => latest),
-    ).rejects.toMatchObject({ message: "T-0001-one is already merged; nothing to do" });
+      claimWaitingTask(fixture.store, fixture.task.id, 1, "rework", (latest) => latest),
+    ).rejects.toMatchObject({ message: "T-0001-one was merged; nothing can be reworked" });
+  });
+
+  test("a merge that loses the race to another merge succeeds with the already-merged line", async () => {
+    const fixture = await setup();
+    await setTaskPhase(fixture.store, fixture.task.id, "waiting");
+    await patch(fixture, { attempt: GATED });
+    const stale = await getTask(fixture.store, fixture.task.id);
+    // The other merge won: the task is merged by the time this claim runs.
+    await setTaskPhase(fixture.store, fixture.task.id, "merged");
+    const claim = await claimWaitingTask(
+      fixture.store,
+      fixture.task.id,
+      stale.version,
+      "merge",
+      (latest) => latest,
+    );
+    expect(claim).toEqual({ settled: "T-0001-one is already merged; nothing to do" });
+    const run = await fixture.registry.runAction(
+      "dev/merge",
+      {},
+      { object: stale, runId: "run-1", actor: ACTOR },
+    );
+    expect(run.value).toBe("T-0001-one is already merged; nothing to do");
+    expect(fixture.answers).toEqual([]);
   });
 
   test("an action offered a stale object loses even while the task still waits", async () => {

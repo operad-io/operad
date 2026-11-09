@@ -195,7 +195,7 @@ async function claimAndAnswer(
   choice: string,
   change: (latest: TaskData) => TaskData,
   note?: string,
-): Promise<void> {
+): Promise<string | undefined> {
   const object = await waitingTask(ctx.store, ctx.object.id, action);
   // Claim at the version the action was offered on, not one read here: an
   // action that starts after a competing one wrote must still lose.
@@ -203,19 +203,23 @@ async function claimAndAnswer(
   if (ctx.answer === undefined) {
     throw new DevRefusal(`${bareId(ctx.object.id)} is not waiting for an answer now`);
   }
-  const { claimed, before } = await claimWaitingTask(
+  const claim = await claimWaitingTask(
     ctx.store,
     ctx.object.id,
     seen,
     action,
     change,
   );
+  // Another action already made the result true: succeed with its line.
+  if (claim.settled !== undefined) return claim.settled;
+  const { claimed, before } = claim;
   try {
     await ctx.answer(choice, note);
   } catch (error) {
     await releaseWaitingClaim(ctx.store, ctx.object.id, claimed, before);
     throw error;
   }
+  return undefined;
 }
 
 const mergeTask: ActionTypeDefinition = {
@@ -228,7 +232,7 @@ const mergeTask: ActionTypeDefinition = {
   why: taskWhy("merge"),
   settled: taskSettled("merge"),
   async run(ctx) {
-    await claimAndAnswer(ctx, "merge", "merge", (latest) => {
+    return claimAndAnswer(ctx, "merge", "merge", (latest) => {
       const verified = latest.attempt?.verified;
       if (typeof verified !== "string" || verified.length === 0) {
         // The merge step would refuse later, in the background; say so now.
@@ -261,7 +265,7 @@ const rejectTaskAction: ActionTypeDefinition = {
   settled: taskSettled("reject"),
   async run(ctx, args) {
     const note = noteArgument(args);
-    await claimAndAnswer(
+    return claimAndAnswer(
       ctx,
       "reject",
       "reject",
@@ -286,7 +290,7 @@ const reworkTaskAction: ActionTypeDefinition = {
   settled: taskSettled("rework"),
   async run(ctx, args) {
     const note = noteArgument(args);
-    await claimAndAnswer(
+    return claimAndAnswer(
       ctx,
       "rework",
       "rework",
@@ -310,7 +314,7 @@ const reverifyTaskAction: ActionTypeDefinition = {
   why: taskWhy("reverify"),
   settled: taskSettled("reverify"),
   async run(ctx) {
-    await claimAndAnswer(ctx, "reverify", "reverify", (latest) => {
+    return claimAndAnswer(ctx, "reverify", "reverify", (latest) => {
       if (latest.attempt === undefined) {
         throw new DevError(
           "reverify",
