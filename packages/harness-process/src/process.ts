@@ -20,6 +20,8 @@ import {
   exitFromStatus,
   killProcessGroup,
   lastLines,
+  markerEnv,
+  trackRoot,
   systemClock,
   type Clock,
   type Ended,
@@ -343,6 +345,7 @@ export async function runAgent(
       ],
       {
         cwd: options.cwd,
+        env: { ...process.env, ...markerEnv() },
         detached: true,
         stdio: ["pipe", "pipe", "pipe"],
       },
@@ -352,6 +355,7 @@ export async function runAgent(
     return empty({ spawnError: messageOf(error) });
   }
 
+  trackRoot(child.pid);
   let sentinelExited = false;
   const failed = new Promise<string>((resolve) => {
     child.once("error", (error) => resolve(messageOf(error)));
