@@ -251,6 +251,23 @@
         "flakyTask": 2
       }
     },
+    "work": {
+      "description": "How a work step that is running out of time is told to wrap up.",
+      "type": "object",
+      "properties": {
+        "wrapUpAt": {
+          "description": "The share of the work step's time limit at which the worker is asked to stop starting new things, commit what it has and write a progress note. The limit is the worker's wallTimeSecs when the pool sets one, else the step's own limit. When the step runs out of time anyway, what is in the worktree is committed as a work-in-progress commit and the next attempt starts from it and the note.",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1,
+          "default": 0.85
+        }
+      },
+      "additionalProperties": false,
+      "default": {
+        "wrapUpAt": 0.85
+      }
+    },
     "reviewer": {
       "description": "The harness step that reviews a task's diff and the limits it runs under.",
       "type": "object",

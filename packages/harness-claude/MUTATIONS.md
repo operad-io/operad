@@ -92,3 +92,10 @@ setup it depends on, in the order they were recorded. The root
 | T-0063-M32 | packages/harness-claude/src/worker.ts | the start summary judged the original tool name, not the access-match translation | `a denied NotebookEdit or MultiEdit start line shows no path` |
 | T-0063-M33 | packages/harness-claude/src/worker.ts | the denial check skipped the translation for one mapped tool (Grep/Glob) | `every tool the translation maps shows only its denial when the profile denies it` |
 | T-0063-M34 | packages/harness-claude/src/worker.ts | the denied-call summary dropped the matching rule's name | `a Bash command that denyCommands refuses is denied with the reason, logged, and the run goes on` |
+
+## T-0099 — a message to a running agent
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0099-M1 | packages/harness-claude/src/worker.ts | a `message` line was not given to the SDK as a user turn | `a message line from the host reaches claude as a user turn while the run hangs` |
+| T-0099-M2 | packages/harness-claude/src/index.ts | the step did not pass the inbox to the process | `harness-claude/agent > a message the host sends through the inbox reaches the program as a message line` |
