@@ -417,9 +417,17 @@ describe("dev/work", () => {
 
   test("unavailable: after the allowed waits the failure goes to a person", async () => {
     const state = await fixture("unavailable");
-    for (let wait = 0; wait < MAX_WORK_WAITS; wait += 1) {
-      expect((await runWork(state)).result).toBe("unavailable");
-    }
+    expect((await runWork(state)).result).toBe("unavailable");
+    // Every wait runs the worker for real; the rest of them are recorded
+    // directly, so the test does not take MAX_WORK_WAITS runs of time.
+    const task = await taskDataOf(state);
+    expect(task.attempt?.workWaits).toBe(1);
+    await state.store.put(
+      "task",
+      state.taskKey,
+      { ...task, attempt: { ...task.attempt, workWaits: MAX_WORK_WAITS } },
+      "test:waits",
+    );
     const last = await runWork(state);
     expect(last.result).toBe("failed");
     expect((await taskDataOf(state)).phase).toBe("waiting");
