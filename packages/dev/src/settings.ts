@@ -146,6 +146,8 @@ export interface IntegrationSettings {
   readonly style: IntegrationStyle;
   /** Commands that must pass on the candidate before it is pushed. */
   readonly keyCommands: readonly CheckCommand[];
+  /** The most tasks one integration may merge together; 1 means one at a time. */
+  readonly batch: number;
 }
 
 /** Commands the cleanup step runs after a merge. */
@@ -277,6 +279,7 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
   integration: {
     style: "merge",
     keyCommands: [],
+    batch: 1,
   },
   hooks: {
     afterMerge: DEFAULT_AFTER_MERGE,
@@ -721,7 +724,7 @@ function integrationSettings(value: unknown, field: string): IntegrationSettings
     throw new DevError(field, "must be an object");
   }
   for (const key of Object.keys(value)) {
-    if (key !== "style" && key !== "keyCommands") {
+    if (key !== "style" && key !== "keyCommands" && key !== "batch") {
       throw new DevError(`${field}.${key}`, "is not an integration setting");
     }
   }
@@ -731,6 +734,10 @@ function integrationSettings(value: unknown, field: string): IntegrationSettings
       value.keyCommands === undefined
         ? DEFAULT_DEV_SETTINGS.integration.keyCommands
         : commandList(value.keyCommands, `${field}.keyCommands`),
+    batch:
+      value.batch === undefined
+        ? DEFAULT_DEV_SETTINGS.integration.batch
+        : positiveInteger(value.batch, `${field}.batch`),
   };
 }
 

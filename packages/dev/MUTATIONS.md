@@ -377,5 +377,23 @@ the row fields.
 |---|---|---|---|
 | T-0099-M14 | packages/dev/src/steps.ts | the wrap-up and stop ignored the wall time the harness reported and used the step's limit | `the limit a harness reports > a harness that reports a shorter wall time is wrapped up and stopped by that wall, not the step's limit` |
 | T-0099-M15 | packages/dev/src/steps.ts | no timer was kept from the step's start as a backstop | `the limit a harness reports > a harness that never reports a run leaves only the backstop` |
+
+## T-0144 — one integration of a repository at a time, and batching
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0144-M1 | packages/dev/src/integrate.ts | the step took the turn without waiting in the queue | `integration queue > two tasks of one repository integrate one after the other, the second on the first's main, with no restart` |
+| T-0144-M2 | packages/dev/src/integration-queue.ts | a ticket of a dead process was never dropped | `integration queue > a turn is given back when its process dies` |
+| T-0144-M3 | packages/dev/src/integration-queue.ts | a turn claimed no queued task for a batch | `integration queue > with integration.batch 3 and three queued tasks, the key commands run once and three merge commits land in order` |
+| T-0144-M4 | packages/dev/src/integrate.ts | the batch's merges were built in reverse queue order | `integration queue > with integration.batch 3 and three queued tasks, the key commands run once and three merge commits land in order` |
+| T-0144-M5 | packages/dev/src/integrate.ts | a failing key command in a batch did not fall back | `integration queue > a failing key command in a batch falls back, and only that task goes back to its worker` |
+| T-0144-M6 | packages/dev/src/settings.ts | `integration.batch` accepted anything | `integration.batch setting > is an integer of 1 or more, and 1 when unset` |
 | T-0110-M1 | packages/dev/src/service.ts | `gitPrinting` stopped rerunning a git query that exited 0 with no output | `git that succeeds without printing > repo add runs a query again when git exits 0 and prints nothing` |
 | T-0110-M2 | packages/dev/src/service.ts | `addRepository` dropped git's stderr from the "not a git work tree" refusal | `repo add reports git's stderr > a failing rev-parse puts its stderr in the refusal` |
+
+## T-0144 — rework 1: a claimed task that leaves
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0144-M7 | packages/dev/src/integrate.ts | a batch did not check that its claimed tasks were still queued before it pushed | `a task that leaves a batch > a claimed task that is cancelled is not merged, and the others land one by one` |
+| T-0144-M8 | packages/dev/src/integration-queue.ts | a fallback wrote the claimed task's ticket back with the leader's pid | `a claimed task that leaves the queue > a batch that falls back does not write its ticket back` |

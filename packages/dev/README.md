@@ -144,7 +144,7 @@ what happened and changes nothing.
 | `dev/retry` | `again`, `hold`, `ask`, `give_up`, `cancelled` | runs in front of the announcement of a work, worktree or reverify step that stopped. A stop that is not the task's own work (the run stopped, a process killed by a signal nobody sent, a step that is not loaded, settings that cannot be read) runs the step once more in the same attempt, without a person and without counting toward `maxAutoRework`; a second one, or a wait that ran out, goes to a person and the waiting line names the cause (for example `pool/agent is not loaded`) |
 | `dev/retry_due` | `ready`, `waiting`, `interrupted` | the wait a retry enters while a step is not loaded or the settings cannot be read; it ends when they are there, or after `retry.environmentWaitMinutes` (default 60) |
 | `dev/rework` | `again`, `ask` | appends `## Rework <n> (verify|review)` with the failed command or the counted findings and sends the task back to the worker; after `maxAutoRework` in a row it asks a person instead |
-| `dev/integrate` | `merged`, `conflict`, `fail`, `failed` | fetches, builds the candidate in the gate worktree by merging the verified commit onto `<remote>/<mainBranch>`, runs `integration.keyCommands` through `shell/check`, and pushes plainly; a moved main starts again from the fetch, at most three times |
+| `dev/integrate` | `merged`, `conflict`, `fail`, `failed` | fetches, builds the candidate in the gate worktree by merging the verified commit onto `<remote>/<mainBranch>`, runs `integration.keyCommands` through `shell/check`, and pushes plainly; a moved main starts again from the fetch, at most three times. Tasks of one repository integrate one at a time: a task whose merge was chosen waits for its turn first (see below) |
 | `dev/cleanup` | `done` | runs `hooks.afterMerge` with `OPERAD_TASK`, `OPERAD_WORKTREE` and `OPERAD_REMOTE` set; a failing hook is recorded, not a task failure |
 
 A conflict appends `## Rework <n> (conflict with main)` and sends the task back
@@ -458,6 +458,7 @@ The file holds the repository's work settings:
 | `reviewer.maxDiffBytes` | `1000000` | the largest diff the review prompt may carry; counts the prompt's text, where a rename or a deleted file is one line |
 | `maxAutoRework` | `2` | how many automatic reworks in a row are allowed before waiting for a person |
 | `integration.style` | `merge` | `merge` lands a merge commit with `Merge work/<task id> (<short sha>)`; `squash` lands one squashed commit |
+| `integration.batch` | `1` | the most tasks one integration merges together; `1` or unset means one at a time. Above 1, when more than one task is queued as a turn starts, integrate merges the queued verified commits onto main in queue order into one candidate, runs `integration.keyCommands` once and pushes once; each task keeps its own merge commit (`Merge work/<id> (<sha>)`), so history and revert stay per task. A merge conflict between them, or failing key commands, falls back to integrating them one by one in queue order, so a bad task is sent back to its worker alone and the others land. Each task's history says `integrated in a batch with <tasks>` |
 | `integration.keyCommands` | `[]` | commands (strings or `{ run, failed }` as in `gate.commands`) the integrate step runs on the candidate before the push; a failure sends the task back to the worker |
 | `hooks.afterMerge` | removes both worktrees and both branches | commands cleanup runs after a merge, in the repository root, with `OPERAD_TASK`, `OPERAD_WORKTREE` and `OPERAD_REMOTE` set |
 
@@ -483,6 +484,18 @@ waits without a time limit until both are free, and says which it waits for:
 (home, then repository) and gives the home place back while it waits for the
 repository's, so two checks cannot wait for each other. The repository's places
 are lock files in the same directory, so a dead check gives both back.
+
+One integration of a repository runs at a time. A task whose wait was answered
+with `merge` joins the repository's integration queue, in the order the merges
+were chosen, and the integrate step waits for its turn without a time limit. It
+says so in the step log and in `operad running`:
+`waiting to integrate: T-0025 is integrating`. Waiting is not a check and holds
+no check place. The queue is a set of ticket files under
+`<home>/dev/integration-queue/`; a task whose process dies loses its ticket, so
+its turn goes to the next however it ended (merged, conflict, fail, cancelled).
+The task that has the turn builds its candidate on the main the previous one
+pushed, so a full key-command run is not thrown away because another task
+pushed first.
 
 The built-in brief says to work only in the worktree, commit whole pieces, run
 the repository's verify command and end with a summary.
