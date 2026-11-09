@@ -2,6 +2,7 @@
 
 import type { FlowDefinition } from "../flow/types.ts";
 import type { Input, KernelState, StartInput } from "../kernel/types.ts";
+import { SeqConflictError } from "../log/errors.ts";
 import type { JsonValue, LogBackend } from "../log/types.ts";
 import type {
   AskRequest,
@@ -181,7 +182,13 @@ function isStepWorkerEmit(value: unknown): value is StepWorkerEmit {
   );
 }
 
-export type RunnerOutcome = "progress" | "waiting" | "blocked" | "ended";
+export type RunnerOutcome =
+  | "progress"
+  | "waiting"
+  | "blocked"
+  | "ended"
+  /** The process stopped between steps so a fresh one continues the run. */
+  | "handover";
 
 export interface RunnerOptions {
   readonly log: LogBackend;
@@ -213,6 +220,12 @@ export interface RunnerOptions {
   readonly access?: JsonValue | undefined;
   /** Treat an outstanding step as a crash and recover it first. */
   readonly recover?: boolean | undefined;
+  /**
+   * Asked between steps, never during one. A reason means this process should
+   * stop and let a fresh one continue the run from the next step; the runner
+   * records the reason in the run's history and returns "handover".
+   */
+  readonly handover?: (() => Promise<string | undefined>) | undefined;
   /** The event that started the run, read-only for its steps. */
   readonly trigger?: TriggerView | undefined;
   /** The start fact to use for an idle run, written by the start entry. */
@@ -289,6 +302,7 @@ export class Runner {
     | ((runId: string, state: KernelState) => Promise<void>)
     | undefined;
   private readonly recover: boolean;
+  private readonly handover: (() => Promise<string | undefined>) | undefined;
   readonly runId: string;
 
   constructor(options: RunnerOptions) {
@@ -317,6 +331,7 @@ export class Runner {
     this.params = options.params;
     this.access = options.access;
     this.recover = options.recover === true;
+    this.handover = options.handover;
   }
 
   /**
@@ -374,12 +389,34 @@ export class Runner {
         outcome = await this.step(state);
         if (outcome === "progress") {
           state = await readState(this.log, this.runId);
+          if (state.status === "running" && (await this.handedOver(state))) {
+            return "handover";
+          }
         }
       }
       return outcome;
     } finally {
       lock?.release();
     }
+  }
+
+  /**
+   * True when the process should give the run to a fresh one: the caller named
+   * a reason, and the line saying so is in the run's history.
+   */
+  private async handedOver(state: KernelState): Promise<boolean> {
+    const reason = await this.handover?.();
+    if (reason === undefined) return false;
+    try {
+      await this.log.append(this.runId, state.lastSeq, [
+        { kind: "process_replaced", payload: { reason }, cause: state.lastSeq },
+      ]);
+    } catch (error) {
+      // Another writer moved the run on; the next step asks again.
+      if (error instanceof SeqConflictError) return false;
+      throw error;
+    }
+    return true;
   }
 
   /** Performs one unit of work for the run, or reports why it cannot. */
