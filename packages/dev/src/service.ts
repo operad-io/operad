@@ -727,6 +727,8 @@ export interface AddPlanOptions {
   readonly title: string;
   readonly request?: string | undefined;
   readonly concurrency?: number | undefined;
+  /** The auto level the plan starts at; `off` when unset. */
+  readonly auto?: AutoMode | undefined;
 }
 
 /** The fixed range of a plan's concurrency. */
@@ -765,7 +767,7 @@ export async function addPlan(
       title,
       request: options.request ?? "",
       status: "draft",
-      auto: "off",
+      auto: options.auto ?? "off",
       priority: "P3",
       concurrency,
       taskCount: 0,

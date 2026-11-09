@@ -31,7 +31,7 @@ import {
   type WorkerDefinition,
 } from "@operad-io/pool";
 import { defaultOperadHome } from "@operad-io/engine";
-import { DevError, isRecord } from "./model.ts";
+import { DevError, isRecord, type AutoMode } from "./model.ts";
 
 /** Where a repository keeps its dev settings. */
 export const DEV_SETTINGS_FILE = ".operad/dev.json";
@@ -233,6 +233,8 @@ export interface DevSettings {
   readonly integration: IntegrationSettings;
   readonly hooks: HookSettings;
   readonly maxAutoRework: number;
+  /** The auto level a new plan starts at. */
+  readonly autoDefault: AutoMode;
   readonly retry: RetrySettings;
 }
 
@@ -298,6 +300,7 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
     afterMerge: DEFAULT_AFTER_MERGE,
   },
   maxAutoRework: 2,
+  autoDefault: "off",
   retry: { environmentWaitMinutes: 60 },
 };
 
@@ -324,6 +327,7 @@ const KNOWN_FIELDS = new Set([
   "integration",
   "hooks",
   "maxAutoRework",
+  "autoDefault",
   "retry",
 ]);
 
@@ -386,6 +390,13 @@ export function assertInsideRepository(
   if (target !== repository && !target.startsWith(`${repository}${sep}`)) {
     throw new DevError(field, "must stay inside the repository");
   }
+}
+
+function autoMode(value: unknown, field: string): AutoMode {
+  if (value !== "off" && value !== "run" && value !== "merge") {
+    throw new DevError(field, 'must be "off", "run" or "merge"');
+  }
+  return value;
 }
 
 function positiveSeconds(value: unknown, field: string): number {
@@ -974,6 +985,10 @@ export function validateDevSettings(value: unknown): DevSettings {
       value.maxAutoRework === undefined
         ? DEFAULT_DEV_SETTINGS.maxAutoRework
         : nonNegativeInteger(value.maxAutoRework, "maxAutoRework"),
+    autoDefault:
+      value.autoDefault === undefined
+        ? DEFAULT_DEV_SETTINGS.autoDefault
+        : autoMode(value.autoDefault, "autoDefault"),
     retry:
       value.retry === undefined
         ? DEFAULT_DEV_SETTINGS.retry
