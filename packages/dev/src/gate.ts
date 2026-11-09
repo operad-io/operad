@@ -347,6 +347,7 @@ export async function runVerify(
     repository: context.repository,
     taskId: context.taskId,
     threshold: context.settings.check.flakyTask,
+    flakyPlan: context.settings.check.flakyPlan,
     check: checked,
   });
   const { outcome, hostError } = checked;
