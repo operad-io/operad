@@ -360,6 +360,38 @@ const TIMES: readonly Lines[] = [
     ],
   },
   {
+    name: "a rework whose worktree is still being prepared: the next attempt is already running it",
+    run: async (w) => {
+      await toWait(w);
+      w.at(110);
+      await w.answer("rework");
+      return (await w.show(114)).text;
+    },
+    lines: [
+      "| 1 | 2m | – | review passed |",
+      "| 2 | 4s … | – | running worktree |",
+      "| total | 2m | – | |",
+      "**#2** worktree 4s (running)",
+      "**Waiting for a person** 18s",
+    ],
+  },
+  {
+    name: "cancelled while the worktree of a rework is being prepared: its time is the next attempt's",
+    run: async (w) => {
+      await toWait(w);
+      w.at(110);
+      await w.answer("rework");
+      w.at(130);
+      await w.cancelTask();
+      return (await w.show(200)).text;
+    },
+    lines: [
+      "| 2 | 20s | – | cancelled |",
+      "**#2** worktree 20s",
+    ],
+    absent: ["(running)"],
+  },
+  {
     name: "a retried review: the first visit, the retry wait and the second visit all count",
     run: async (w) => {
       await toVerify(w);

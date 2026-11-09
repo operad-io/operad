@@ -841,7 +841,6 @@ export async function metrics(
   );
   const task = taskData(object.data);
   const phase = task.phase;
-  const newest = entries[entries.length - 1]?.number;
 
   // The attempts of each run, in order, take that run's groups of stretches in order.
   const runIds = [...new Set(entries.flatMap((entry) => entry.runs))];
@@ -852,6 +851,23 @@ export async function metrics(
     if (times === undefined) continue;
     const cycles = attemptCycles(times.segments);
     const owners = entries.filter((entry) => entry.runs.includes(runId));
+    // A group the run has begun whose attempt the task has not recorded yet
+    // (the worktree of a rework is being prepared): the next attempt, already
+    // running or cancelled in it.
+    while (owners.length < cycles.length) {
+      const pending: AttemptMetrics = {
+        number: (entries[entries.length - 1]?.number ?? 0) + 1,
+        runs: [runId],
+        last: undefined,
+        lastStep: "worktree",
+        timed: false,
+        ms: 0,
+        steps: new Map(),
+        running: undefined,
+      };
+      entries.push(pending);
+      owners.push(pending);
+    }
     for (const segment of times.segments) {
       if (segment.person) {
         waitedMs += Math.max(0, (segment.to ?? now) - segment.from);
@@ -883,6 +899,7 @@ export async function metrics(
     });
   }
 
+  const newest = entries[entries.length - 1]?.number;
   const lines = ["| # | time | cost | result |", "| --- | --- | --- | --- |"];
   let totalMs = 0;
   let totalCost = 0;
