@@ -472,6 +472,11 @@
       "minimum": 0,
       "default": 2
     },
+    "autoDefault": {
+      "description": "The auto level a new plan starts at: off waits for you to start tasks, run starts them by itself, merge also merges a task whose review passed.",
+      "enum": ["off", "run", "merge"],
+      "default": "off"
+    },
     "retry": {
       "description": "What a task does when its step failed for a reason outside its own work: dev runs the step once more by itself, and only a second failure waits for a person.",
       "type": "object",

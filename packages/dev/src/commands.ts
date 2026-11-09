@@ -8,6 +8,7 @@ import type {
 import { DevError, bareId, briefBody, storeKey, taskData, type RepositoryData } from "./model.ts";
 import { flakyTasksByName } from "./flaky.ts";
 import { listRerunCounts } from "./reruns.ts";
+import { readDevSettings } from "./settings.ts";
 import { readStdinText } from "./stdin.ts";
 import { editText } from "./editor.ts";
 import {
@@ -181,6 +182,7 @@ async function runPlan(
     title: required(parsed, "--title", "plan add"),
     request: await readStdinText(ctx.input),
     concurrency: concurrencyFlag(one(parsed, "--concurrency")),
+    auto: (await readDevSettings(repository.path)).autoDefault,
   });
   return bareId(plan.id);
 }

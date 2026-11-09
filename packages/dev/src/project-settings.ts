@@ -23,20 +23,29 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
           concurrency: {
             type: "integer",
             minimum: 1,
-            default: 1,
             editable: true,
             description:
-              "How many of this repository's tasks may run at the same time.",
+              "The most of this repository's tasks that run at the same time, on top of the worker counts. Unset means the workers' own counts decide.",
+          },
+          autoDefault: {
+            type: "string",
+            enum: ["off", "run", "merge"],
+            default: "off",
+            editable: true,
+            confirm: true,
+            description:
+              "The auto level a new plan starts at: off waits for you to start tasks, run starts them by itself, merge also merges a task whose review passed. Plans already made keep their level.",
           },
           gate: {
             type: "object",
             properties: {
               commands: {
                 type: "array",
+                items: { type: "string", minLength: 1 },
                 default: [],
                 editable: true,
                 description:
-                  "The checks a task must pass before it is reviewed, run in order. Each is a shell line.",
+                  "The checks a task must pass before it is reviewed, run in order. Each is a shell line; a check with a rerun of its failed tests is edited in the file.",
               },
               commandTimeoutSecs: {
                 type: "number",

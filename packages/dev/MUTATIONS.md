@@ -428,3 +428,5 @@ the row fields.
 | T-0081-M1 | packages/dev/src/places.ts | verify ignored the home's `checks` setting and used the default | `dev/verify > a checks setting changed with operad settings set is used by the next verify` |
 | T-0081-M2 | packages/dev/src/project-settings.ts | review.json's `fixLevel` lost its list of levels, so any text was accepted | `dev settings through operad settings > an invalid review.json level is refused and nothing is written; a valid one needs --yes` |
 | T-0123-M1 | packages/dev/src/views.ts | a task row dropped its `after` | `dev views > a task row carries the tasks it waits for, and none when it waits for none` |
+| T-0081-M3 | packages/dev/src/project-settings.ts | `gate.commands` lost its items schema, so a list dev would refuse was written | `dev settings through operad settings > a command list dev would refuse is refused and nothing is written` |
+| T-0081-M4 | packages/dev/src/commands.ts | `plan add` ignored `autoDefault` and started every plan at off | `dev settings through operad settings > a new plan starts at the auto level the repository sets` |

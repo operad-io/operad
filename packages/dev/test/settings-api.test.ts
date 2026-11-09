@@ -60,6 +60,7 @@ describe("dev settings through operad settings", () => {
       editable: boolean;
       confirm: boolean;
       description?: string;
+      default?: unknown;
     }[];
     const byName = new Map(items.map((item) => [item.name, item]));
     expect(byName.get("dev.dev.concurrency")).toMatchObject({ editable: true, confirm: false });
@@ -69,6 +70,8 @@ describe("dev settings through operad settings", () => {
     expect(byName.get("dev.dev.gate.commands")?.editable).toBe(true);
     expect(byName.get("dev.dev.reviewer.fixLevel")).toMatchObject({ editable: true, confirm: true });
     expect(byName.get("dev.review.default.fixLevel")).toMatchObject({ editable: true, confirm: true });
+    expect(byName.get("dev.dev.autoDefault")).toMatchObject({ editable: true, confirm: true, default: "off" });
+    expect(byName.get("dev.dev.concurrency")?.default).toBeUndefined();
     for (const item of items) {
       expect(item.description).toBeTruthy();
       expect(item.editable).toBe(true);
@@ -96,5 +99,38 @@ describe("dev settings through operad settings", () => {
     ]);
     expect(good.code).toBe(0);
     expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ default: { fixLevel: "minor" } });
+  });
+
+  test("a command list dev would refuse is refused and nothing is written", async () => {
+    const { home, repository, name } = await setup();
+    const file = join(repository, ".operad", "dev.json");
+    const before = readFileSync(file, "utf8");
+    for (const bad of ["[1]", '[""]']) {
+      const result = await run(home, repository, [
+        "settings", "set", "dev.dev.gate.commands", bad, "--repo", name,
+      ]);
+      expect(result.code).toBe(2);
+    }
+    expect(readFileSync(file, "utf8")).toBe(before);
+    const good = await run(home, repository, [
+      "settings", "set", "dev.dev.gate.commands", '["bun test"]', "--repo", name,
+    ]);
+    expect(good.code).toBe(0);
+  });
+
+  test("a new plan starts at the auto level the repository sets", async () => {
+    const { home, repository, name } = await setup();
+    const set = await run(home, repository, [
+      "settings", "set", "dev.dev.autoDefault", "run", "--repo", name, "--yes",
+    ]);
+    expect(set.code).toBe(0);
+    const bad = await run(home, repository, [
+      "settings", "set", "dev.dev.autoDefault", "always", "--repo", name, "--yes",
+    ]);
+    expect(bad.code).toBe(2);
+    const plan = await run(home, repository, ["plan", "add", "--slug", "alpha", "--title", "Alpha"]);
+    expect(plan.code).toBe(0);
+    const listed = await run(home, repository, ["list", "plan"]);
+    expect(listed.out).toContain(" · run · ");
   });
 });

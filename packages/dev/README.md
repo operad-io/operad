@@ -461,6 +461,7 @@ The file holds the repository's work settings:
 | `reviewer.retrySecs` | `120` | how long an unavailable review waits before the same round runs again |
 | `reviewer.maxFileDiffBytes` | `200000` | the largest diff one file may put in the review prompt |
 | `reviewer.maxDiffBytes` | `1000000` | the largest diff the review prompt may carry; counts the prompt's text, where a rename or a deleted file is one line |
+| `autoDefault` | `"off"` | the auto level a new plan starts at: `off`, `run` or `merge` |
 | `maxAutoRework` | `2` | how many automatic reworks in a row are allowed before waiting for a person |
 | `integration.style` | `merge` | `merge` lands a merge commit with `Merge work/<task id> (<short sha>)`; `squash` lands one squashed commit |
 | `integration.batch` | `1` | the most tasks one integration merges together; `1` or unset means one at a time. Above 1, when more than one task is queued as a turn starts, integrate merges the queued verified commits onto main in queue order into one candidate, runs `integration.keyCommands` once and pushes once; each task keeps its own merge commit (`Merge work/<id> (<sha>)`), so history and revert stay per task. A merge conflict between them, or failing key commands, falls back to integrating them one by one in queue order, so a bad task is sent back to its worker alone and the others land. Each task's history says `integrated in a batch with <tasks>` |
@@ -515,10 +516,10 @@ refused when the file is read and again before a worktree is created.
 `operad settings` lists what a person may tune and `operad settings set <name>
 <value>` changes it (add `--repo <name>` for a repository's files). The home's
 `checks` is `dev.checks`. A repository's `.operad/dev.json` is `dev.dev.*`
-(`concurrency`, `gate.commands`, `gate.commandTimeoutSecs`, `reviewer.use`,
+(`autoDefault`, `concurrency`, `gate.commands`, `gate.commandTimeoutSecs`, `reviewer.use`,
 `reviewer.args`, `reviewer.timeoutSecs`, `reviewer.fixLevel`) and its
 `.operad/review.json` is `dev.review.default.*` (`levels`, `rules`,
-`fixLevel`). Changing what fails a review (`fixLevel`, the levels and rules)
+`fixLevel`). Changing what merges (`autoDefault`, `fixLevel`, the levels and rules)
 asks for `--yes`, because it changes what merges. Other settings can be read
 there but are changed in the file.
 
