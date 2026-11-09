@@ -320,32 +320,56 @@ export function watchThemes(options: {
   readonly holder: ThemeHolder;
   readonly onChange: (problem?: string) => void;
   readonly watch?: typeof watchDirectory | undefined;
+  /** The fallback timer; a test injects it. Defaults to a real interval. */
+  readonly repeat?: ((ms: number, callback: () => void) => () => void) | undefined;
+  readonly pollMs?: number | undefined;
 }): () => void {
   const watch = options.watch ?? watchDirectory;
   const themes = themesDirectory(options.home);
   let stopThemes: (() => void) | undefined;
   let stopped = false;
-  const reload = (): void => {
+  let lastProblem: string | undefined;
+  // A directory watch is the fast path, not a promise: an edit made as the
+  // watch starts can produce no event. The timer re-reads and reports only a
+  // change in the theme or in the problem.
+  const refresh = (always: boolean): void => {
     if (stopped) return;
     // The themes directory may appear after the TUI started.
     if (stopThemes === undefined && existsSync(themes)) stopThemes = watch(themes, reload);
+    let next: ThemeSelection;
     try {
-      options.holder.current = chooseSelection({ home: options.home, flag: options.flag });
+      next = chooseSelection({ home: options.home, flag: options.flag });
     } catch (error) {
-      options.onChange(error instanceof Error ? error.message : String(error));
+      const problem = error instanceof Error ? error.message : String(error);
+      const changed = problem !== lastProblem;
+      lastProblem = problem;
+      if (always || changed) options.onChange(problem);
       return;
     }
-    options.onChange();
+    const changed = lastProblem !== undefined || JSON.stringify(next) !== JSON.stringify(options.holder.current);
+    lastProblem = undefined;
+    options.holder.current = next;
+    if (always || changed) options.onChange();
   };
+  const reload = (): void => refresh(true);
+  const stopPoll = (options.repeat ?? repeatEvery)(options.pollMs ?? 500, () => refresh(false));
   const stopHome = watch(options.home, (filename) => {
     if (filename === null || filename === "tui.json" || filename === "themes") reload();
   });
   if (existsSync(themes)) stopThemes = watch(themes, reload);
   return () => {
     stopped = true;
+    stopPoll();
     stopHome();
     stopThemes?.();
   };
+}
+
+function repeatEvery(ms: number, callback: () => void): () => void {
+  const timer = setInterval(callback, ms);
+  // The fallback must not keep the process alive by itself.
+  (timer as { unref?: () => void }).unref?.();
+  return () => clearInterval(timer);
 }
 
 function readThemeFile(file: string): string | undefined {
