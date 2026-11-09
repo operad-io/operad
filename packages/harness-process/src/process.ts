@@ -20,6 +20,7 @@ import {
   exitFromStatus,
   killProcessGroup,
   lastLines,
+  markerEnv,
   systemClock,
   type Clock,
   type Ended,
@@ -343,6 +344,7 @@ export async function runAgent(
       ],
       {
         cwd: options.cwd,
+        env: { ...process.env, ...markerEnv() },
         detached: true,
         stdio: ["pipe", "pipe", "pipe"],
       },

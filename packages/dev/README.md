@@ -172,6 +172,31 @@ asking the worker to resolve it. A failed attempt names the uncommitted files.
 The task records its attempt count, phase, session id and cost while these steps
 run.
 
+### What a step cleans up
+
+Every process a step starts (the worker's harness, the reviewer's harness, a
+check) carries `OPERAD_RUN=<run id>:<step>` in its environment, with
+`OPERAD_RUN_HOME` naming the home so two homes never meet. Children inherit it
+whatever process group or session they move to, which a command a worker runs
+can do: the Bash tool of a coding agent starts each command in a process group
+of its own, so a loop it leaves in the background is outside the group the
+harness stops.
+
+When a step ends, however it ends (done, nothing, failed, timeout, cancelled),
+the platform finds every live process of the same user that still carries the
+step's marker and stops it: TERM, a short wait, KILL. The step log says how many
+and which commands, one line each, cut to 120 characters. `operad serve` does the
+same at start for the markers of runs that are no longer active, which a serve
+that died left behind, and says so once in the serve log.
+
+Limits. A process that removes `OPERAD_RUN` from its own environment is not found,
+and the sweep does not chase it. On Linux the environment is read from
+`/proc/<pid>/environ`. On macOS it is read with `ps -E`, and macOS withholds the
+environment of Apple's own binaries (`/bin/sh`, `/bin/bash`, `/bin/zsh`,
+`/bin/sleep`, and the like): a leftover that is one of those, such as a shell
+spin loop, is not found there, while a leftover that is any other program (`bun`,
+`node`, `git`, a Homebrew shell) is.
+
 ## Scheduling
 
 On every tick of the kernel loop, `dev` starts ready tasks whose dependencies
