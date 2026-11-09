@@ -555,7 +555,7 @@ export type TuiStateEvent =
   | { readonly type: "settings"; readonly settings: readonly TuiSetting[] }
   /** The action ran. */
   | { readonly type: "action-done" }
-  /** The server refused the action; its status and message show as they came. */
+  /** The server refused the action; the message shows as the line, the status does not. */
   | {
       readonly type: "action-error";
       readonly message: string;
@@ -1921,7 +1921,7 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
     case "action-done":
       return { ...state, acting: false, actionRequest: undefined };
     case "action-error":
-      return actionFailed(state, event.status, event.message);
+      return actionFailed(state, event.message);
     case "connection":
       return state.connection === event.connection
         ? state

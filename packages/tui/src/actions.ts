@@ -752,13 +752,24 @@ export function inputKey(
   return text === undefined ? state : { ...state, input: { ...input, text: input.text + text } };
 }
 
-/** The server refused (or the network failed): show its line, without the HTTP status. */
-export function actionFailed(
-  state: TuiState,
-  _status: number | undefined,
-  message: string,
-): TuiState {
-  return { ...withNotice(state, message), acting: false, actionRequest: undefined };
+/**
+ * The server refused (or the network failed): show the line itself. The status
+ * is for logs, never for the person; a plugin's own field prefix ("confirm: ")
+ * is dropped too.
+ */
+export function actionFailed(state: TuiState, message: string): TuiState {
+  return {
+    ...withNotice(state, refusalLine(message)),
+    acting: false,
+    actionRequest: undefined,
+  };
+}
+
+/** The line a person reads: no status number, no leading `field: `. */
+export function refusalLine(message: string): string {
+  return message
+    .replace(/^\d{3}\s+/, "")
+    .replace(/^[a-z][a-z0-9-]*: (?=\S)/, "");
 }
 
 /** A key arrives while an argument is asked. */
