@@ -479,3 +479,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0162-M1 | packages/dev/src/service.ts | the repository refresh ignored a change in the running-task count (the `activeTasks` comparison replaced by `true`) | `the repo type > the row mark follows the repository's work > a task starting and ending its run changes the mark` |
+
+## T-0157 — review failed twice in a row
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0157-M1 | packages/dev/src/gate.ts | a verify failure kept the previous review failure (`reviewFailed` set for every source) | `dev/rework after two review failures in a row > review fail, verify fail, review fail reworks again` |

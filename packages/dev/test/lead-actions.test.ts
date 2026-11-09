@@ -182,6 +182,23 @@ describe("dev:rework and dev:reverify", () => {
     expect(after.reworkStreak).toBe(0);
   });
 
+  test("a lead rework answers the review-twice wait: note in the brief, count cleared", async () => {
+    const fixture = await setup();
+    await setTaskPhase(fixture.store, fixture.task.id, "waiting");
+    await patch(fixture, {
+      attempt: { ...GATED, rework: { run: "run-1", source: "review", streak: 2, result: "ask", twice: true } },
+      reworkStreak: 2,
+      reviewFailed: "- `a.ts:1` major: x",
+    });
+    await run(fixture, "rework", "try the other approach");
+    expect(fixture.answers).toEqual([["rework", "try the other approach"]]);
+    const after = taskData((await getTask(fixture.store, fixture.task.id)).data);
+    expect(after.brief).toContain("## Rework 1 (lead)");
+    expect(after.brief).toContain("try the other approach");
+    expect(after.phase).toBe("running");
+    expect(after.reviewFailed).toBeUndefined();
+  });
+
   test("rework needs a note; reverify takes none", async () => {
     const fixture = await setup();
     await setTaskPhase(fixture.store, fixture.task.id, "waiting");

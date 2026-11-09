@@ -146,7 +146,7 @@ what happened and changes nothing.
 | `dev/review_due` | `ready`, `interrupted` | the wait a review enters after a model was unavailable; it lets the flow run the same review round again at the recorded time |
 | `dev/retry` | `again`, `hold`, `ask`, `give_up`, `cancelled` | runs in front of the announcement of a work, worktree or reverify step that stopped. A stop that is not the task's own work (the run stopped, a process killed by a signal nobody sent, a step that is not loaded, settings that cannot be read) runs the step once more in the same attempt, without a person and without counting toward `maxAutoRework`; a second one, or a wait that ran out, goes to a person and the waiting line names the cause (for example `pool/agent is not loaded`) |
 | `dev/retry_due` | `ready`, `waiting`, `interrupted` | the wait a retry enters while a step is not loaded or the settings cannot be read; it ends when they are there, or after `retry.environmentWaitMinutes` (default 60) |
-| `dev/rework` | `again`, `ask` | appends `## Rework <n> (verify|review)` with the failed command or the counted findings and sends the task back to the worker; after `maxAutoRework` in a row it asks a person instead |
+| `dev/rework` | `again`, `ask` | appends `## Rework <n> (verify|review)` with the failed command or the counted findings and sends the task back to the worker; after `maxAutoRework` in a row, or when a review failure follows a review failure (whatever the findings; a verify failure or a conflict between them resets this), it asks a person instead, with the reason `review failed twice in a row` and both rounds' findings in the section |
 | `dev/integrate` | `merged`, `conflict`, `fail`, `failed` | fetches, builds the candidate in the gate worktree by merging the verified commit onto `<remote>/<mainBranch>`, runs `integration.keyCommands` through `shell/check`, and pushes plainly; a moved main starts again from the fetch, at most three times. Tasks of one repository integrate one at a time: a task whose merge was chosen waits for its turn first (see below) |
 | `dev/cleanup` | `done` | runs `hooks.afterMerge` with `OPERAD_TASK`, `OPERAD_WORKTREE` and `OPERAD_REMOTE` set; a failing hook is recorded, not a task failure |
 
@@ -230,7 +230,7 @@ scheduler claimed but whose run never recorded itself (a crash between the two)
 returns to `ready` on the next tick, so the scheduler can start it again.
 
 At auto `merge`, a waiting task whose review passed in this attempt is answered
-with `merge`. A wait that follows `nothing`, `failed` or the rework limit is
+with `merge`. A wait that follows `nothing`, `failed`, the rework limit or `review failed twice in a row` is
 never answered. A task whose dependency was cancelled waits for a person
 instead of starting, and a plan whose tasks have all merged or been cancelled
 is reported finished once. Every change prints one line:
@@ -280,7 +280,7 @@ repository lock and reads the stored tasks inside that lock, so two ticks or two
 review again on it with no worker). A task whose dependency was cancelled enters the same
 person wait directly from the worktree step. A failing verify or review goes to
 `rework`, which sends the task back to the worktree until `maxAutoRework`
-automatic reworks have run in a row; then it waits for a person. `nothing` and
+automatic reworks have run in a row, or a second review failure in a row; then it waits for a person (`review failed twice in a row`), and the lead's `rework --note` or `reject` steers the next pass. `nothing` and
 `failed` from `work` also wait for a person. An unavailable reviewer waits for
 `reviewer.retrySecs` and runs the same review again; a review that times out
 twice waits for a person. `merge` builds the candidate on main and pushes it,
