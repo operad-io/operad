@@ -77,6 +77,12 @@ alone, then choose `--runs` so the stress run takes about ten minutes, at least
 passes; its final answer states the command, the number of runs and the result
 before and after the fix.
 
+A stress run takes a lock shared by every stress run on the machine (all
+worktrees), so it may wait for another run to end; it prints which run holds
+the lock while it waits. The wait is not part of its result: size and judge the
+run by its own time and counts. `--no-lock` skips the lock only for a run that
+knows it is alone.
+
 Run one stress run at a time, in the foreground: never two at once, never in
 the background, never left running when the task ends.
 

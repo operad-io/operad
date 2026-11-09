@@ -270,7 +270,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   let retryCancel: (() => void) | undefined;
   let retryAttempt = 0;
   const batcher = new LiveBatcher(clock, (targets) => guard(refetch(targets)));
-  let followTimer: ReturnType<typeof setTimeout> | undefined;
+  let followTimer: (() => void) | undefined;
   let events: TuiEventSource | undefined;
   let announce: (code: number) => void = () => undefined;
   const done = new Promise<number>((resolve) => {
@@ -298,7 +298,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     retryCancel?.();
     retryCancel = undefined;
     if (followTimer !== undefined) {
-      clearTimeout(followTimer);
+      followTimer();
       followTimer = undefined;
     }
     refreshAbort?.abort();
@@ -962,9 +962,9 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     }
     if (state.moveSeq !== seenMove) {
       seenMove = state.moveSeq;
-      if (followTimer !== undefined) clearTimeout(followTimer);
+      followTimer?.();
       followTimer = state.followPending
-        ? setTimeout(() => {
+        ? clock.after(() => {
             followTimer = undefined;
             dispatch({ type: "follow" });
           }, deps.followDelayMs ?? 150)

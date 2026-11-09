@@ -65,7 +65,8 @@ describe("the TUI view", () => {
       const frame = setup.captureCharFrame();
       expect(frame).toContain("operad   Pending 1 · Running 0 · Item 2");
       expect(frame).toContain("one  Approve?");
-      expect(frame).toContain("select an object");
+      expect(frame).toContain("loading…");
+      expect(frame).not.toContain("select an object");
       expect(frame).toContain("q quit");
 
       const spans = setup

@@ -90,6 +90,8 @@ describe("review follow-ups", () => {
     expect(brief).toContain(`[minor] d.ts:4 spacing (round 1)`);
     // once within a task, again for the other task
     expect(brief.match(/a\.ts:3 naming/g)).toHaveLength(2);
+    // the newest copy of a repeated finding, with its own round
+    expect(brief).toContain("[minor] a.ts:3 naming (round 2)");
     expect(brief.indexOf(`## From ${a}`)).toBeLessThan(brief.indexOf(`## From ${b}`));
     expect(brief.indexOf("d.ts:4")).toBeGreaterThan(brief.indexOf(`## From ${b}`));
     expect(brief.indexOf("c.ts:1")).toBeLessThan(brief.indexOf(`## From ${b}`));
@@ -109,7 +111,7 @@ describe("review follow-ups", () => {
     );
     await s.collect();
     const brief = (await s.followupTasks())[0]?.data.brief ?? "";
-    expect(brief.match(/\[minor\] a\.ts:3 naming \(round 1\)/g)).toHaveLength(1);
+    expect(brief.match(/\[minor\] a\.ts:3 naming \(round 2\)/g)).toHaveLength(1);
     expect(brief).not.toMatch(/\[minor\] a\.ts:3 \[minor\]/i);
     expect(brief).toContain("[minor] a.ts:3 [major] naming (round 2)");
     expect(brief).toContain(`## From ${a}`);

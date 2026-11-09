@@ -297,7 +297,11 @@ export function previousLine(finding: PreviousFinding): string {
 }
 
 /** Which block of reviewer settings a value came from. */
-export type ReviewSettingSource = "first" | "default";
+export type ReviewSettingSource =
+  | "first"
+  | "firstArgs"
+  | "fallback"
+  | "default";
 
 /** The settings one review round ran with, and where each came from. */
 export interface ReviewSettingsUsed {
@@ -357,7 +361,12 @@ export function reviewSettingsOf(
     ...(stall === undefined ? {} : { stallSecs: stall }),
     sources: {
       use: first?.use === undefined ? "default" : "first",
-      args: args === undefined ? "default" : "first",
+      args:
+        first?.args !== undefined
+          ? "first"
+          : legacy !== undefined
+            ? "firstArgs"
+            : "default",
       timeoutSecs: first?.timeoutSecs === undefined ? "default" : "first",
       stallSecs: first?.stallSecs === undefined ? "default" : "first",
     },

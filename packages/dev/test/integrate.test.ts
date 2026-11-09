@@ -920,6 +920,9 @@ describe("integration queue", () => {
     expect(taskViews.row(object).note).toBe(
       `$0.00 · waiting to integrate: ${state.taskId} is integrating`,
     );
+    // A task cancelled while it waited no longer says it is waiting.
+    const cancelled = { ...object, data: { ...object.data, phase: "cancelled" } };
+    expect(taskViews.row(cancelled).note ?? "").not.toContain("waiting to integrate");
 
     expect((await first).result).toBe("merged");
     rings.ring();
@@ -1196,6 +1199,36 @@ describe("a claimed task that leaves the queue", () => {
     expect((await c.turn()).kind).toBe("turn");
     c.leave();
     expect(a.tickets()).toEqual([]);
+  });
+});
+
+describe("a claimed task aborted after the leader's push", () => {
+  test("reports the merge that is on main, not a cancel", async () => {
+    const root = await tempRoot();
+    const repository = { name: "repository", path: "/r/repository" };
+    const cancelled = new AbortController();
+    const make = (task: string, abort?: AbortSignal) =>
+      new IntegrationQueue({
+        home: root,
+        repository,
+        task,
+        run: "run",
+        verified: "0".repeat(40),
+        message: `Merge work/${task}`,
+        say: () => {},
+        ...(abort === undefined ? {} : { signal: abort }),
+      });
+    const [a, b] = [make("T-a"), make("T-b", cancelled.signal)];
+    await a.join();
+    await b.join();
+    a.claim(2);
+    a.publish({
+      base: "1".repeat(40),
+      head: "2".repeat(40),
+      members: [{ task: "T-b", sha: "2".repeat(40) }],
+    });
+    cancelled.abort();
+    expect((await b.turn()).kind).toBe("batched");
   });
 });
 

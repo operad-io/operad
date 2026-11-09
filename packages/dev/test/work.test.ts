@@ -418,16 +418,20 @@ describe("dev/work", () => {
   test("unavailable: after the allowed waits the failure goes to a person", async () => {
     const state = await fixture("unavailable");
     expect((await runWork(state)).result).toBe("unavailable");
-    // Every wait runs the worker for real; the rest of them are recorded
-    // directly, so the test does not take MAX_WORK_WAITS runs of time.
-    const task = await taskDataOf(state);
-    expect(task.attempt?.workWaits).toBe(1);
+    // Every wait is a real harness run, so the count is set to one short of the
+    // bound instead of running the harness MAX_WORK_WAITS times.
+    const waited = await state.store.get("task", state.taskKey);
+    if (waited === undefined) throw new Error("task disappeared");
+    const data = taskData(waited.data);
+    if (data.attempt === undefined) throw new Error("no attempt");
     await state.store.put(
       "task",
       state.taskKey,
-      { ...task, attempt: { ...task.attempt, workWaits: MAX_WORK_WAITS } },
-      "test:waits",
+      { ...waited.data, attempt: { ...data.attempt, workWaits: MAX_WORK_WAITS - 1 } },
+      "test",
     );
+    expect((await runWork(state)).result).toBe("unavailable");
+    expect((await taskDataOf(state)).attempt?.workWaits).toBe(MAX_WORK_WAITS);
     const last = await runWork(state);
     expect(last.result).toBe("failed");
     expect((await taskDataOf(state)).phase).toBe("waiting");

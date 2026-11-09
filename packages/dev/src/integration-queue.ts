@@ -290,19 +290,21 @@ export class IntegrationQueue {
       this.options.wait ??
       ((ms: number) => waitForChange(this.directory, "", ms));
     for (;;) {
-      if (this.options.signal?.aborted === true) throw new IntegrationQueueCancelled();
       const tickets = this.tickets();
       const mine = tickets.find((ticket) => ticket.task === me);
-      if (mine === undefined) throw new Error("the integration ticket is gone");
       let holder: string | undefined;
-      const claimed = mine.claimedBy;
+      const claimed = mine?.claimedBy;
       if (claimed !== undefined) {
+        // A merge already on main is reported even when the step was aborted
+        // after the push: the result is read before the abort is.
         const result = this.readResult(claimed);
         if (result !== undefined) {
           return { kind: "batched", leader: claimed, result };
         }
         holder = claimed;
       }
+      if (this.options.signal?.aborted === true) throw new IntegrationQueueCancelled();
+      if (mine === undefined) throw new Error("the integration ticket is gone");
       if (holder === undefined) {
         const head = tickets.find((ticket) => ticket.claimedBy === undefined);
         if (head !== undefined && head.task === me) return { kind: "turn" };
