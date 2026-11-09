@@ -914,7 +914,7 @@ describe("integration queue", () => {
     const object = await second.store.get("task", second.taskKey);
     if (object === undefined) throw new Error("task disappeared");
     expect(taskViews.row(object).note).toBe(
-      `waiting to integrate: ${state.taskId} is integrating`,
+      `$0.00 · waiting to integrate: ${state.taskId} is integrating`,
     );
 
     expect((await first).result).toBe("merged");

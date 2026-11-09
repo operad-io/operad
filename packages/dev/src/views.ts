@@ -853,15 +853,15 @@ export async function metrics(
     if (typeof last?.cost === "number" && Number.isFinite(last.cost)) {
       totalCost += last.cost;
       costed = true;
-      if (last.costQuality === "incomplete") quality = " (incomplete)";
-      else if (last.costQuality === "estimated" && quality === "") quality = " (estimated)";
+      if (last.costQuality === "incomplete") quality = "incomplete";
+      else if (last.costQuality === "estimated" && quality === "") quality = "estimated";
     }
     lines.push(
       `| ${entry.number} | ${wallTime(ms)}${step === undefined ? "" : " …"} | ${costNote(last?.cost, last?.costQuality) ?? "–"} | ${attemptResult(entry, entry.number === newest, phase, step)} |`,
     );
   }
   lines.push(
-    `| total | ${wallTime(totalMs)} | ${costed ? `$${totalCost.toFixed(2)}${quality}` : "–"} | |`,
+    `| total | ${wallTime(totalMs)} | ${costed ? costNote(totalCost, quality) : "–"} | |`,
   );
   const perAttempt = [...entries].reverse().map((entry) => {
     const own = liveOf(entry);

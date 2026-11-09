@@ -477,6 +477,27 @@ describe("dev views", () => {
     expect(rows[4]).toBe("| total | 2m | $1.25 | |");
   });
 
+  test("the total row marks its weakest quality with a symbol, never a word", async () => {
+    const root = await tempRoot();
+    const repositoryPath = await makeGitRepository(root);
+    let clock = 0;
+    const store = new FilePluginStore({ root: join(root, "store"), clock: () => clock });
+    const repository = await addRepository(store, { path: repositoryPath });
+    const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
+    const stored = taskData((await getTask(store, task.id)).data);
+    const put = async (at: number, cause: string, attempt: Record<string, unknown>) => {
+      clock = at;
+      await store.put("task", task.id, { ...stored, phase: "running", attempt }, cause);
+    };
+    const total = async () =>
+      (await metrics({ store } as never, await getTask(store, task.id), 2_000_000)).split("\n").find((l) => l.startsWith("| total"));
+    await put(1_000_000, "dev:worktree", { number: 1, cost: 0.5, costQuality: "estimated" });
+    expect(await total()).toMatch(/\| ~\$0\.50 \| \|$/);
+    await put(1_000_001, "dev:worktree", { number: 1, cost: 0.5, costQuality: "incomplete" });
+    expect(await total()).toMatch(/\| ≥\$0\.50 \| \|$/);
+  });
+
   test("how an attempt ended: merged, verify failed, conflict, cancelled", async () => {
     const { store, task } = await setup();
     const stored = taskData((await getTask(store, task.id)).data);
