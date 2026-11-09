@@ -104,6 +104,19 @@ describe("dev views", () => {
     expect(planViews.row(await getPlan(store, plan.id)).final).toBe(true);
   });
 
+  test("a task row carries the tasks it waits for, and none when it waits for none", async () => {
+    const { store, plan, task } = await setup();
+    expect("after" in taskViews.row(await getTask(store, task.id))).toBe(false);
+    const second = await addTask(store, {
+      plan: plan.id,
+      slug: "second",
+      title: "Second",
+      brief: "# Brief\n\nx",
+      after: [bareId(task.id)],
+    });
+    expect(taskViews.row(await getTask(store, second.id)).after).toEqual([bareId(task.id)]);
+  });
+
   test("a task row reads the phase and the cost", async () => {
     const { store, task } = await setup();
     const stored = await getTask(store, task.id);

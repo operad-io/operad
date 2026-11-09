@@ -450,6 +450,12 @@ with none of these is plain. The TUI colours the marks by role: `proposed`,
 `done` the success colour, `failed` and `broken` the error colour, and the
 rest the weak colour.
 
+`after` lists the ids of siblings (rows with the same `parent`) the object waits
+for, in the form row ids have; it is an array of non-empty strings, or the row is
+an error row. It is passed through list, get and pending rows unchanged, and
+`operad list` and `operad show` do not print it. The `dev` plugin fills a task's
+`after` with the task ids it waits for in its plan.
+
 `badge` is a short text the client shows as it is, after the state: one line of
 at most 16 characters, or the row is an error row. The `dev` plugin sets a
 task's badge to `#<attempt>` (`#0` before the first attempt) and marks its tasks

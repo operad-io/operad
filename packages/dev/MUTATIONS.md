@@ -427,3 +427,4 @@ the row fields.
 | T-0120-M3 | packages/dev/src/followups.ts | a leading tag that repeats the level was kept, so the finding was listed twice | `review follow-ups > a leading tag that repeats the level does not make a finding different, and prints once` |
 | T-0081-M1 | packages/dev/src/places.ts | verify ignored the home's `checks` setting and used the default | `dev/verify > a checks setting changed with operad settings set is used by the next verify` |
 | T-0081-M2 | packages/dev/src/project-settings.ts | review.json's `fixLevel` lost its list of levels, so any text was accepted | `dev settings through operad settings > an invalid review.json level is refused and nothing is written; a valid one needs --yes` |
+| T-0123-M1 | packages/dev/src/views.ts | a task row dropped its `after` | `dev views > a task row carries the tasks it waits for, and none when it waits for none` |
