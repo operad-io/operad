@@ -273,9 +273,9 @@ describe("wrapping is by display width", () => {
     const section = state.object?.sections[0];
     if (section === undefined) throw new Error("no section");
     const layout = sectionLayout(state, section);
-    expect(layout.length).toBe(markdownLineCount(text, 120 - 39 - 1));
+    expect(layout.length).toBe(markdownLineCount(text, 120 - 52 - 1));
     for (const line of layout) {
-      expect(textWidth(line.text)).toBeLessThanOrEqual(120 - 39 - 1);
+      expect(textWidth(line.text)).toBeLessThanOrEqual(120 - 52 - 1);
     }
     expect(layout.length).toBeGreaterThan(1);
   });

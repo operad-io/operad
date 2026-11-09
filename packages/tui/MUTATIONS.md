@@ -184,6 +184,8 @@ the row fields.
 | T-0141-M1 | packages/tui/src/app.ts | `runTui` did not wait for `renderer.closed`, so the message was written before the terminal was restored | `a fault that ends the app > a view that throws while a request is answered: the terminal is restored before the message is written` |
 | T-0141-M2 | packages/tui/src/app.ts | a rejected request callback was swallowed instead of ending the app | `a fault that ends the app > a view that throws while a request is answered: the terminal is restored before the message is written` |
 | T-0141-M3 | packages/tui/src/app.ts | no `unhandledRejection` handler, so the renderer's print-only handler kept the app up | `a fault that ends the app > an uncaught rejection: the terminal is restored before the message is written` |
+| T-0100-M1 | packages/tui/src/state.ts | the list width had no upper limit of 60 columns | `the frame follows the terminal > the list is 40% of the width between 40 and 60 columns, and the divider follows` |
+| T-0100-M2 | packages/tui/src/view/index.ts | the divider was drawn in the rule colour again, too close to the background | `the frame follows the terminal > the divider contrasts with the background in both themes` |
 | T-0072-M1 | packages/tui/src/theme.ts | a family showed its dark member in a light terminal and the reverse | `families > a family follows the theme mode like auto, also when it switches` |
 | T-0072-M2 | packages/tui/src/themes.ts | the kanagawa family named wave as light and lotus as dark | `families > every family names an existing light and dark theme, and is not a theme itself` |
 | T-0072-M3 | packages/tui/themes/nord.json | nord's weak colour went back to the unadjusted upstream #4c566a (1.69:1) | `contrast > text reaches 4.5:1 and weak, accent, run, ok, error, add and remove 3:1 on the base colour` |
@@ -192,3 +194,8 @@ the row fields.
 | T-0072-M6 | packages/tui/themes/dracula.json | the file left out the `code` token and inherited it from dark | `shipped themes: the files > every file matches the theme schema and sets every token itself` |
 | T-0072-M7 | packages/tui/themes/LICENSE-nord | the bundled licence text was missing | `shipped themes: the files > themes/ holds exactly the listed themes, each with its licence text` |
 | T-0072-M8 | packages/tui/themes/nord.json | the adjusted colour differed from the one its comment names | `contrast > a colour below its need is adjusted in the file, and the file's comment says so` |
+| T-0100-M3 | packages/tui/src/view/index.ts | the list title left out the type list's filter | `filters: view > the list title names the page and a type list's filter, in the weak colour` |
+| T-0100-M4 | packages/tui/src/view/index.ts | the list title was drawn in the text colour instead of the weak colour | `filters: view > the list title names the page and a type list's filter, in the weak colour` |
+| T-0100-M5 | packages/tui/src/view/index.ts | the header showed the filter on every tab, not only the active one | `filters: view > the filter shows only on the current tab; a type without filters has no suffix` |
+| T-0082-M1 | packages/tui/src/actions.ts | the palette listed the TUI commands before the open object's actions | `actions in the reducer > groups are shown in the order actions, tui; search reads the title` |
+| T-0082-M2 | packages/tui/src/state.ts | the go back command did nothing instead of doing what escape does | `actions in the reducer > each TUI command does what its key does > go back closes the open object, as escape does` |

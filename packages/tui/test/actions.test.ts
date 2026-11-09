@@ -79,23 +79,102 @@ describe("actions in the reducer", () => {
     const state = opened(ACTIONS, [{ key: "d", action: "tuitest:drop", source: "plugin" }]);
     const open = press(state, ":");
     expect(open.input?.kind).toBe("palette");
-    expect(paletteEntries(open).map((entry) => entry.name)).toEqual(ACTIONS.map((a) => a.name));
+    const own = (state: TuiState) =>
+      paletteEntries(state).filter((entry) => entry.group === "actions");
+    expect(own(open).map((entry) => entry.name)).toEqual(ACTIONS.map((a) => a.name));
     const filtered = press(open, ...typeText("tdrp"));
-    expect(paletteEntries(filtered)).toEqual([
-      { name: "tuitest:drop", key: "d", needsNote: false, confirm: true },
+    expect(own(filtered)).toEqual([
+      {
+        group: "actions",
+        name: "tuitest:drop",
+        title: "tuitest:drop on one",
+        key: "d",
+        needsNote: false,
+        confirm: true,
+      },
     ]);
-    const approve = paletteEntries(press(open, ...typeText("appr")))[0];
+    const approve = own(press(open, ...typeText("appr")))[0];
     expect(approve).toMatchObject({ needsNote: true, confirm: false });
     expect(paletteEntries(press(open, ...typeText("zzz")))).toEqual([]);
     const back = press(filtered, "backspace", "backspace", "backspace");
-    expect(paletteEntries(back).length).toBeGreaterThan(1);
+    expect(own(back).length).toBeGreaterThan(1);
     expect(press(open, "escape").input).toBeUndefined();
   });
 
-  test("with no object the palette lists nothing", () => {
+  test("with no object the palette lists the TUI commands", () => {
     const state = press(initialState({ width: 120 }), ":");
     expect(state.input?.kind).toBe("palette");
-    expect(paletteEntries(state)).toEqual([]);
+    const entries = paletteEntries(state);
+    expect(entries.map((entry) => entry.group)).toEqual(entries.map(() => "tui"));
+    expect(entries.map((entry) => entry.name)).toEqual([
+      "help", "refresh", "go to pending", "go to running", "go back", "quit",
+    ]);
+    for (const entry of entries) expect(entry.title.length).toBeGreaterThan(0);
+  });
+
+  test("groups are shown in the order actions, tui; search reads the title", () => {
+    const open = press(opened(), ":");
+    const groups = paletteEntries(open).map((entry) => entry.group);
+    expect(groups).toEqual([...groups].sort((a, b) => (a === b ? 0 : a === "actions" ? -1 : 1)));
+    expect(groups[0]).toBe("actions");
+    expect(groups.at(-1)).toBe("tui");
+    // "leave" is only in the title of quit.
+    expect(paletteEntries(press(open, ...typeText("leave"))).map((e) => e.name)).toEqual(["quit"]);
+    // A query that matches in both groups lists actions first.
+    const both = paletteEntries(press(open, ...typeText("e"))).map((entry) => entry.group);
+    expect(both[0]).toBe("actions");
+    expect(both.at(-1)).toBe("tui");
+  });
+
+  test("a go-to entry exists for every type the server lists", () => {
+    const state = press(opened(), ":");
+    expect(paletteEntries(state).map((e) => e.name)).toContain("go to Item");
+  });
+
+  describe("each TUI command does what its key does", () => {
+    const run = (state: TuiState, name: string): TuiState => {
+      let open = press(state, ":", ...typeText(name));
+      const at = paletteEntries(open).findIndex((entry) => entry.name === name);
+      expect(at).toBeGreaterThanOrEqual(0);
+      open = press(open, ...Array.from({ length: at }, () => "down"), "enter");
+      return open;
+    };
+    const idle = (): TuiState =>
+      reduce(initialState({ width: 120 }), { type: "types", types: [{ type: "item", title: "Item" }] });
+
+    test("help shows the key list", () => {
+      const state = run(idle(), "help");
+      expect(state.input).toBeUndefined();
+      expect(state.keys).toBe(press(idle(), "?").keys);
+      expect(state.keys).toBe(true);
+    });
+
+    test("refresh asks for the lists again", () => {
+      const state = run(idle(), "refresh");
+      expect(state.refreshRequested).toBe(true);
+      expect(state.input).toBeUndefined();
+    });
+
+    test("go to pending, running and a type's list switch the tab, as 1, 2 and 3 do", () => {
+      const start = press(idle(), "3");
+      expect(start.active).toBe(2);
+      expect(run(start, "go to running").active).toBe(press(start, "2").active);
+      expect(run(start, "go to pending").active).toBe(0);
+      expect(run(press(idle(), "1"), "go to Item").active).toBe(press(idle(), "3").active);
+      expect(run(press(idle(), "1"), "go to Item").active).toBe(2);
+    });
+
+    test("go back closes the open object, as escape does", () => {
+      const state = opened();
+      expect(state.object).toBeDefined();
+      const back = run(state, "go back");
+      expect(back.object).toBeUndefined();
+      expect(back.object).toEqual(press(state, "escape").object);
+    });
+
+    test("quit leaves, as q does", () => {
+      expect(run(idle(), "quit").quit).toBe(true);
+    });
   });
 
   test("Enter in the palette runs the highlighted entry; arrows move", () => {

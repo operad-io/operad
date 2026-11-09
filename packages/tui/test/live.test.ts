@@ -477,10 +477,10 @@ describe("the states a session meets", () => {
     let state = initialState({ width: 100, height: 20, url: "http://x:1" });
     state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
     state = reduce(state, { type: "pending", items: [] });
-    expect(text(drawState(state).list)).toBe("nothing waits for you");
+    expect(text(drawState(state).list)).toContain("nothing waits for you");
     state = reduce(state, { type: "page", tabId: "type:item", page: { rows: [] } });
     state = reduce(state, { type: "key", key: "3", text: "3" });
-    expect(text(drawState(state).list)).toBe("no item yet");
+    expect(text(drawState(state).list)).toContain("no item yet");
     state = reduce(state, { type: "connection", connection: "unreachable" });
     expect(text(drawState(state).footer)).toContain("http://x:1");
   });
