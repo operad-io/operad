@@ -1497,8 +1497,12 @@ async function commandServe(
   const stop = (): void => {
     controller.abort();
   };
-  process.once("SIGINT", stop);
-  process.once("SIGTERM", stop);
+  // Under a supervisor a stop signal can arrive twice (the terminal sends it
+  // to the whole group and the supervisor passes it on); the second must not
+  // reach the default action and end the stop half way.
+  const listen = process.env[SUPERVISED_ENV] === "1" ? process.on.bind(process) : process.once.bind(process);
+  listen("SIGINT", stop);
+  listen("SIGTERM", stop);
 
   let rules: readonly TriggerRule[] = [];
   let sourcesAllowed = true;
@@ -1513,9 +1517,9 @@ async function commandServe(
     });
   } catch (error) {
     sourcesAllowed = false;
-    io.error(
-      `operad: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
+    const message = error instanceof Error ? error.message : String(error);
+    context.problems.push(message);
+    io.error(`operad: ${message}\n`);
   }
   // What did not load at start; later log lines are failures of a running
   // plugin, not a measure of what the process loaded.
@@ -1636,11 +1640,16 @@ async function commandRunInternal(
     rules = await loadTriggerRules({
       home: context.home,
       registry: context.registry,
-      onLog: (message) => io.error(`${message}\n`),
+      onLog: (message) => {
+        context.problems.push(message);
+        io.error(`${message}\n`);
+      },
     });
   } catch (error) {
     // The run still has to finish; a broken rule file is not a run error.
-    io.error(`${error instanceof Error ? error.message : String(error)}\n`);
+    const message = error instanceof Error ? error.message : String(error);
+    context.problems.push(message);
+    io.error(`${message}\n`);
   }
   const startProblems = [...context.problems];
   const kernel = kernelFor(context, io, rules);

@@ -40,8 +40,12 @@ export default definePlugin({
   version: "0.0.1",
   objects: [{ name: "job" }],
   flows: [flow],
-  onTick() {
+  async onTick() {
     if (existsSync(WORK + "/tick-fails")) throw new Error("tick broke");
+    if (existsSync(WORK + "/tick-block")) {
+      writeFileSync(WORK + "/tick-entered", "");
+      while (!existsSync(WORK + "/tick-release")) await waitForChange(WORK, "tick-release", 200);
+    }
   },
   steps: [
     {
@@ -314,5 +318,49 @@ describe("a serve picks up changed code", () => {
       await stopServe(s);
       await serve.exited;
     }
+  }, 60_000);
+
+  test("a triggers.json that did not read at start does not make code that loads look broken", async () => {
+    const s = await setup();
+    writeFileSync(
+      join(s.home, "triggers.json"),
+      JSON.stringify([
+        { source: "cron", type: "tick", start: { flow: "nope" }, object: "job:1", mode: "auto" },
+      ]),
+    );
+    const serve = spawnOperad(s, ["serve"]);
+    const output = new Output(serve.stdout, serve.stderr);
+    try {
+      await output.until(/unknown flow "nope"/);
+      await output.until(/serving /);
+      writeFileSync(s.plugin, pluginSource("v2", s.work));
+      await output.until(/reloading: /);
+      await output.until(/serving /, 2);
+      expect(output.text).not.toContain("does not load");
+    } finally {
+      await stopServe(s);
+      await serve.exited;
+    }
+  }, 60_000);
+
+  test("a stop signal that arrives twice after a reload still stops the serve gracefully", async () => {
+    const s = await setup();
+    const serve = spawnOperad(s, ["serve"]);
+    const output = new Output(serve.stdout, serve.stderr);
+    await output.until(/serving /);
+    writeFileSync(s.plugin, pluginSource("v2", s.work));
+    await output.until(/serving /, 2);
+    // The terminal sends Ctrl-C to the group and the supervisor passes it on,
+    // so the serve gets it more than once while it is still stopping: its
+    // step is held in a tick until the test has sent them all.
+    writeFileSync(join(s.work, "tick-block"), "");
+    await waitForFile(join(s.work, "tick-entered"));
+    for (let count = 0; count < 20; count += 1) {
+      serve.kill("SIGINT");
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    writeFileSync(join(s.work, "tick-release"), "");
+    expect(await serve.exited).toBe(0);
+    expect(existsSync(join(s.home, "serve.lock"))).toBe(false);
   }, 60_000);
 });
