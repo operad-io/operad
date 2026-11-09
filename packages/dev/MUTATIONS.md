@@ -391,6 +391,13 @@ the row fields.
 | T-0110-M1 | packages/dev/src/service.ts | `gitPrinting` stopped rerunning a git query that exited 0 with no output | `git that succeeds without printing > repo add runs a query again when git exits 0 and prints nothing` |
 | T-0110-M2 | packages/dev/src/service.ts | `addRepository` dropped git's stderr from the "not a git work tree" refusal | `repo add reports git's stderr > a failing rev-parse puts its stderr in the refusal` |
 | T-0145-M1 | packages/dev/src/gate.ts | left the gate commands out of the review prompt's checks section | `prepare > the review prompt names the gate commands and says not to run them again` |
+| T-0124-M1 | packages/dev/src/views.ts | `costNote` swapped the `~` and `≥` symbols | `dev views > a task row reads the phase and the cost` |
+| T-0124-M2 | packages/dev/src/model.ts | a task's cost change added its full new amount to the plan total instead of the difference | `dev views > a plan note shows the cost of its tasks at the weakest quality` |
+| T-0124-M3 | packages/dev/src/model.ts | the plan cost took the strongest quality of its tasks, not the weakest | `dev views > a plan note shows the cost of its tasks at the weakest quality` |
+| T-0124-M4 | packages/dev/src/model.ts | the plan note's total counted cancelled tasks | `dev views > the plan note by auto level, and the total leaves cancelled tasks out` |
+| T-0124-M5 | packages/dev/src/views.ts | a task with no cost had no `$0.00` first part | `dev views > a task note is cost, worker, area, then a refused push` |
+| T-0124-M6 | packages/dev/src/views.ts | a refused push's message came before the area instead of last | `dev views > a task note is cost, worker, area, then a refused push` |
+| T-0124-M7 | packages/dev/src/service.ts | a plan stored without a cost total was never given one on refresh | `dev views > a plan stored without a total gets one when its tasks are refreshed` |
 
 ## T-0144 — rework 1: a claimed task that leaves
 
@@ -405,4 +412,13 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0118-M1 | packages/dev/src/rework.ts | a same-commit reverify applied the line rules (the kind check for `reverify` removed) | `pre-existing by kind of review > reverify: far, in a touched file` and `dev/review rework rounds > what moves as pre-existing, by kind of review > same-commit reverify` |
+
+## T-0119 — review settings by round
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0119-M1 | packages/dev/src/rework.ts | a rework round or reverify also read the `first` block (the `kind === "first"` guard removed) | `review settings by round > only a first review reads the first block, value by value` and `dev/review rework rounds > settings by round > the first review reads the first block; a rework round and a same-commit reverify read the default block` |
+| T-0119-M2 | packages/dev/src/gate.ts | the harness call kept the reviewer's `timeoutSecs` instead of the round's | `dev/review rework rounds > settings by round > the first review reads the first block; a rework round and a same-commit reverify read the default block` |
 | T-0090-M2 | packages/dev/src/views.ts | a file's page entry pointed at the previous file's cursor | `dev views > the diff section is the stat and the diff, and pages by file when long` |
+| T-0119-M3 | packages/dev/src/rework.ts | `firstArgs` applied only to a round of kind first, so the first review of a later attempt got `args` | `review settings by round > firstArgs still belongs to the first review of every attempt, rework round included` |
+| T-0124-M8 | packages/dev/src/views.ts | the metrics total row dropped the quality symbol of the summed attempts | `dev views > the total row marks its weakest quality with a symbol, never a word` |

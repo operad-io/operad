@@ -1,7 +1,7 @@
 /** The objects the dev plugin owns, and the pure rules that change them. */
 
 import type { ObjectStore, StoredObject } from "@operad-io/engine";
-import type { ReviewHistoryEntry } from "./rework.ts";
+import type { ReviewHistoryEntry, ReviewSettingsUsed } from "./rework.ts";
 
 /**
  * Every object of a type, following the store's pages. The store returns one
@@ -85,6 +85,17 @@ export const REPO_FILTERS = [
   { name: "removed", states: ["removed"] },
 ] as const;
 
+/** Micros and task counts of the costed tasks of a plan, per cost quality. */
+export interface PlanCostTotals {
+  readonly [key: string]: unknown;
+  readonly exactMicros: number;
+  readonly estimatedMicros: number;
+  readonly incompleteMicros: number;
+  readonly exactTasks: number;
+  readonly estimatedTasks: number;
+  readonly incompleteTasks: number;
+}
+
 /** The data of a plan object. Counts are a cache over its tasks. */
 export type PlanData = {
   readonly [key: string]: unknown;
@@ -98,6 +109,11 @@ export type PlanData = {
   readonly taskCount: number;
   readonly mergedCount: number;
   readonly cancelledCount: number;
+  /**
+   * The cost of the plan's tasks, kept per quality so the weakest is known
+   * after a task's cost changes. Absent on a plan stored before it existed.
+   */
+  readonly costTotals?: PlanCostTotals | undefined;
   /** Tasks being worked or reviewed now; the scheduler keeps it current. */
   readonly activeCount?: number | undefined;
   /** True once the scheduler has reported that every task ended. */
@@ -226,6 +242,8 @@ export interface ReviewRecord {
   readonly round?: number | null;
   /** The model that produced the decision. */
   readonly model?: string | null;
+  /** Which round (first or rework) ran and which block each setting came from. */
+  readonly reviewSettings?: ReviewSettingsUsed | null;
   /** When an unavailable round may run again, in epoch milliseconds. */
   readonly retryAt?: number | null;
   /** Every run of this round, in order. */
@@ -939,8 +957,69 @@ export function planState(plan: PlanData): PlanState {
   return plan.status;
 }
 
+/** What a task adds to a plan's cost: micros and quality, or none. */
+export function taskCostShare(
+  task: TaskData,
+): { readonly micros: number; readonly quality: "exact" | "estimated" | "incomplete" } | undefined {
+  if (typeof task.cost !== "number" || !Number.isFinite(task.cost)) return undefined;
+  // A cost written before its quality was recorded counts as estimated.
+  const quality =
+    task.costQuality === "exact" || task.costQuality === "incomplete"
+      ? task.costQuality
+      : "estimated";
+  return { micros: Math.round(task.cost * 1_000_000), quality };
+}
+
+/** The totals after a task's share changes from `before` to `after`. */
+export function shiftCostTotals(
+  totals: PlanCostTotals | undefined,
+  before: TaskData | undefined,
+  after: TaskData | undefined,
+): PlanCostTotals {
+  const next: Record<string, number> = {
+    exactMicros: totals?.exactMicros ?? 0,
+    estimatedMicros: totals?.estimatedMicros ?? 0,
+    incompleteMicros: totals?.incompleteMicros ?? 0,
+    exactTasks: totals?.exactTasks ?? 0,
+    estimatedTasks: totals?.estimatedTasks ?? 0,
+    incompleteTasks: totals?.incompleteTasks ?? 0,
+  };
+  const apply = (task: TaskData | undefined, sign: 1 | -1): void => {
+    const share = task === undefined ? undefined : taskCostShare(task);
+    if (share === undefined) return;
+    next[`${share.quality}Micros`] = (next[`${share.quality}Micros`] ?? 0) + sign * share.micros;
+    next[`${share.quality}Tasks`] = (next[`${share.quality}Tasks`] ?? 0) + sign;
+  };
+  apply(before, -1);
+  apply(after, 1);
+  return {
+    exactMicros: next.exactMicros ?? 0,
+    estimatedMicros: next.estimatedMicros ?? 0,
+    incompleteMicros: next.incompleteMicros ?? 0,
+    exactTasks: next.exactTasks ?? 0,
+    estimatedTasks: next.estimatedTasks ?? 0,
+    incompleteTasks: next.incompleteTasks ?? 0,
+  };
+}
+
+/** The plan's total cost in `costNote` form, or undefined with no costed task. */
+function planCost(plan: PlanData): string | undefined {
+  const t = plan.costTotals;
+  if (t === undefined) return undefined;
+  const tasks = t.exactTasks + t.estimatedTasks + t.incompleteTasks;
+  if (tasks <= 0) return undefined;
+  const micros = t.exactMicros + t.estimatedMicros + t.incompleteMicros;
+  const symbol = t.incompleteTasks > 0 ? "≥" : t.estimatedTasks > 0 ? "~" : "";
+  return `${symbol}$${(micros / 1_000_000).toFixed(2)}`;
+}
+
+/** `<merged>/<total> · <cost> · <auto> · <priority> // <concurrency>`. */
 export function planNote(plan: PlanData): string {
-  return `${plan.mergedCount}/${plan.taskCount}`;
+  // Cancelled tasks are not part of the total the owner is working through.
+  const progress = `${plan.mergedCount}/${plan.taskCount - plan.cancelledCount}`;
+  const cost = planCost(plan);
+  const parts = [progress, ...(cost === undefined ? [] : [cost]), plan.auto, plan.priority];
+  return `${parts.join(" · ")} // ${plan.concurrency}`;
 }
 
 export function planDataOf(data: Record<string, unknown>): PlanData {
