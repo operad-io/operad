@@ -199,3 +199,5 @@ the row fields.
 | T-0100-M5 | packages/tui/src/view/index.ts | the header showed the filter on every tab, not only the active one | `filters: view > the filter shows only on the current tab; a type without filters has no suffix` |
 | T-0082-M1 | packages/tui/src/actions.ts | the palette listed the TUI commands before the open object's actions | `actions in the reducer > groups are shown in the order actions, tui; search reads the title` |
 | T-0082-M2 | packages/tui/src/state.ts | the go back command did nothing instead of doing what escape does | `actions in the reducer > each TUI command does what its key does > go back closes the open object, as escape does` |
+| T-0127-M1 | packages/tui/src/autostart.ts | a start that failed on a taken port was reported as "exited at once" | `ensureServer > a child that cannot listen because the port is taken says the port is in use` |
+| T-0127-M2 | packages/tui/src/autostart.ts | a serve of the home that never answers was reported as a start that did not answer | `ensureServer > a child that lost the home lock to a serve that never answers says that serve runs and does not answer` |
