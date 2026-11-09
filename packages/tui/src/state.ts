@@ -16,7 +16,7 @@ import type {
   ViewSectionInfo,
   ViewSectionPage,
 } from "@operad-io/engine";
-import type { TuiTypeInfo } from "./client.ts";
+import type { TuiSetting, TuiTypeInfo } from "./client.ts";
 import { cachedLayout, layoutMarkdown, type LayoutLine } from "./layout.ts";
 import type { ArgField } from "./args.ts";
 import { sanitize } from "./sanitize.ts";
@@ -173,6 +173,20 @@ export type TuiInput =
       readonly confirm: boolean;
     }
   | {
+      /** A setting is open: its details, and a value prompt when it can change. */
+      readonly kind: "setting";
+      readonly setting: TuiSetting;
+      /** The prompt; absent for a setting that cannot change. */
+      readonly field?: ArgField | undefined;
+      readonly cursor: number;
+      readonly text: string;
+    }
+  | {
+      readonly kind: "setting-confirm";
+      readonly setting: TuiSetting;
+      readonly value: unknown;
+    }
+  | {
       readonly kind: "confirm";
       readonly action: string;
       readonly id: string;
@@ -186,6 +200,14 @@ export interface TuiActionRequest {
   readonly id: string;
   readonly note?: string | undefined;
   readonly args?: Readonly<Record<string, unknown>> | undefined;
+  readonly confirmed?: boolean | undefined;
+}
+
+/** A setting change the reducer wants the caller to send with `POST /v1/settings`. */
+export interface TuiSettingRequest {
+  readonly name: string;
+  readonly scope: string;
+  readonly value: unknown;
   readonly confirmed?: boolean | undefined;
 }
 
@@ -316,6 +338,12 @@ export interface TuiState {
   readonly notice?: string | undefined;
   /** Set when an action must be sent; the caller clears it as it sends. */
   readonly actionRequest?: TuiActionRequest | undefined;
+  /** The settings the palette lists, global and the open object's repository. */
+  readonly settings: readonly TuiSetting[];
+  /** Set when the palette opened and the settings must be fetched again. */
+  readonly settingsRequest: boolean;
+  /** Set when a setting change must be sent; the caller clears it as it sends. */
+  readonly settingRequest?: TuiSettingRequest | undefined;
   /** An action is on its way; a second one waits for the answer. */
   readonly acting: boolean;
   /** The server this screen talks to, named in the unreachable line. */
@@ -401,6 +429,8 @@ export function initialState(options: TuiStateOptions = {}): TuiState {
     generation: 0,
     bindings: [],
     recent: options.recent ?? [],
+    settings: [],
+    settingsRequest: false,
     themeNames: options.themeNames ?? [],
     themeCurrent: options.themeCurrent ?? "auto",
     acting: false,
@@ -534,6 +564,8 @@ export type TuiStateEvent =
     }
   /** The caller sent the action request; it is sent once. */
   | { readonly type: "action-launched" }
+  | { readonly type: "setting-launched" }
+  | { readonly type: "settings"; readonly settings: readonly TuiSetting[] }
   /** The installed themes or the theme in force changed. */
   | { readonly type: "theme-names"; readonly names: readonly string[]; readonly current: string }
   /** The caller saved the chosen theme; it is saved once. */
@@ -1473,7 +1505,7 @@ function handleKey(
   // The key list closes first, so the action acts on what the person sees.
   if (own !== undefined) return startAction({ ...state, keys: false }, own.action);
   if (key === ":" && !state.keys) {
-    return { ...state, input: { kind: "palette", query: "", cursor: 0 } };
+    return { ...state, input: { kind: "palette", query: "", cursor: 0 }, settingsRequest: true };
   }
   if (key === "?" || (key === "/" && shift)) {
     return { ...state, keys: !state.keys };
@@ -1944,6 +1976,10 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       return state.actionRequest === undefined
         ? state
         : { ...state, actionRequest: undefined };
+    case "setting-launched":
+      return { ...state, settingRequest: undefined, settingsRequest: false };
+    case "settings":
+      return { ...state, settings: event.settings };
     case "action-done":
       return { ...state, acting: false, actionRequest: undefined };
     case "action-error":

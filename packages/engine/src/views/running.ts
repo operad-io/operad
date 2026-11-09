@@ -53,70 +53,66 @@ function isRunning(state: KernelState): boolean {
   return state.status !== "waiting_person" && state.status !== "ended";
 }
 
-/** The step a run is in now and when that step's current attempt started. */
-export interface RunStep {
+/** One stretch of a run: a step, or a wait for a person, with when it began and ended. */
+export interface RunSegment {
   readonly step: string;
+  /** True while the run waited for a person in this step. */
+  readonly person: boolean;
+  readonly from: number;
+  /** Null while the stretch is still open (the run is active). */
+  readonly to: number | null;
+}
+
+/** A run's own times, read from its facts and nothing else. */
+export interface RunTimes {
   readonly startedAt: number;
+  /** When the run ended (its end fact, else the log's end); null while it is active. */
+  readonly endedAt: number | null;
+  /** The stretches in order: each is a step, or a wait for a person in a step. */
+  readonly segments: readonly RunSegment[];
 }
 
 /**
- * What `operad running` reports for one run: its current step and the start
- * of that step's current attempt. Undefined when the run is not active (it
- * has ended, waits for a person, is unknown, or has not entered a step), so a
- * reader never shows a step as running that the run is not in.
+ * A run's start, its end and the stretches between: a step runs from its
+ * `step_entered` until it hands over or the run ends; a wait for a person is
+ * a stretch of its own. A stretch of no time is left out. Undefined for a run the log does not know.
  */
-export async function currentRunStep(
+export async function runTimes(
   log: LogBackend,
   runId: string,
-): Promise<RunStep | undefined> {
-  const active = await log.runs({ active: true });
-  if (!active.some((run) => run.runId === runId)) return undefined;
-  const { state, stepStartedAt } = await readRun(log, runId);
-  if (!isRunning(state) || state.step === null || stepStartedAt === null) return undefined;
-  return { step: state.step, startedAt: stepStartedAt };
-}
-
-/** How an ended run stopped: the step it was in, if a step was in flight. */
-export interface RunEnd {
-  /** The step in flight when the run ended; null when it ended from a person wait or before any step. */
-  readonly step: string | null;
-  /** When that step's current attempt started; null with no step. */
-  readonly startedAt: number | null;
-  readonly endedAt: number;
-}
-
-/**
- * Where an ended run stopped, from its own facts: the step it was in and when
- * that attempt started, unless it was waiting for a person, which is not a
- * step in flight. Undefined for a run that is unknown or still active.
- */
-export async function endedRunStep(
-  log: LogBackend,
-  runId: string,
-): Promise<RunEnd | undefined> {
+): Promise<RunTimes | undefined> {
   const info = (await log.runs()).find((run) => run.runId === runId);
-  if (info === undefined || info.active) return undefined;
+  if (info === undefined) return undefined;
   let state = initialState();
-  let before: KernelState | undefined;
-  let stepStartedAt: number | null = null;
-  let endedAt = info.endedAt ?? info.startedAt;
+  let startedAt = info.startedAt;
+  let endedAt: number | null = null;
+  const segments: { step: string; person: boolean; from: number; to: number | null }[] = [];
   for await (const fact of log.read(runId)) {
-    if (fact.kind === "run_ended") {
-      before = state;
-      endedAt = fact.time;
-    }
+    if (fact.kind === "run_started") startedAt = fact.time;
     state = evolve(state, fact);
-    if (fact.kind === "step_entered" || fact.kind === "effect_requested") {
-      stepStartedAt = fact.time;
+    const wanted =
+      state.status === "ended" || state.step === null
+        ? undefined
+        : { step: state.step, person: state.status === "waiting_person" };
+    const open = segments[segments.length - 1];
+    const same =
+      wanted !== undefined &&
+      open?.to === null &&
+      open.step === wanted.step &&
+      open.person === wanted.person;
+    if (open?.to === null && !same) {
+      // A stretch that began and ended in the same instant carries no time.
+      if (open.from === fact.time) segments.pop();
+      else open.to = fact.time;
     }
+    if (wanted !== undefined && !same) segments.push({ ...wanted, from: fact.time, to: null });
+    if (fact.kind === "run_ended") endedAt = fact.time;
   }
-  const last = before ?? state;
-  const inFlight = isRunning(last) && last.step !== null && stepStartedAt !== null;
-  return {
-    step: inFlight ? last.step : null,
-    startedAt: inFlight ? stepStartedAt : null,
-    endedAt,
-  };
+  if (endedAt === null && !info.active) endedAt = info.endedAt ?? startedAt;
+  if (endedAt !== null) {
+    for (const segment of segments) if (segment.to === null) segment.to = endedAt;
+  }
+  return { startedAt, endedAt, segments };
 }
 
 export async function listRunning(

@@ -429,6 +429,8 @@ the row fields.
 | T-0123-M1 | packages/dev/src/views.ts | a task row dropped its `after` | `dev views > a task row carries the tasks it waits for, and none when it waits for none` |
 | T-0081-M3 | packages/dev/src/project-settings.ts | `gate.commands` lost its items schema, so a list dev would refuse was written | `dev settings through operad settings > a command list dev would refuse is refused and nothing is written` |
 | T-0081-M4 | packages/dev/src/commands.ts | `plan add` ignored `autoDefault` and started every plan at off | `dev settings through operad settings > a new plan starts at the auto level the repository sets` |
+| T-0114-M1 | packages/dev/src/views.ts | an attempt's time kept the time it waited for a person (`to - from - waited` became `to - from`) | `metrics times come from the run's own facts > cancelled while the task waits for a person: the wait is its own line, up to the cancel` |
+| T-0114-M2 | packages/dev/src/views.ts | an attempt's end ignored its run's end fact and ran to now | `metrics times come from the run's own facts > cancelled while a step is in flight: the attempt and the step end at the run's end` |
 | T-0112-M1 | packages/dev/src/actions.ts | dev:confirm on a task ignored its plan and was offered while the plan is a draft | `the table agrees with what each action does > a task action is offered, settled or refused exactly as its line says` |
 | T-0112-M2 | packages/dev/src/refusals.ts | merge on a merged task became a refusal instead of "already merged; nothing to do" | `the table agrees with what each action does > the results that are already true, each in its own words` |
 | T-0112-M3 | packages/dev/src/actions.ts | dev:concurrency set to the value already set was not recognised | `the table agrees with what each action does > a value a plan already has is settled, and another value is not` |
@@ -448,3 +450,4 @@ the row fields.
 |---|---|---|---|
 | T-0151-M1 | packages/dev/src/followups.ts | a repeated finding kept its oldest copy instead of the newest | `review follow-ups > collects the findings of every round and task, deduplicated, grouped by task, duplicates kept once within a task` |
 | T-0151-M2 | packages/dev/src/rework.ts | an argument list from `firstArgs` was recorded as coming from `first` | `review settings by round > firstArgs still belongs to the first review of every attempt, rework round included` |
+| T-0114-M4 | packages/dev/src/views.ts | a group of the run with no recorded attempt was dropped (the pending attempt was never made) | `metrics times come from the run's own facts > a rework whose worktree is still being prepared: the next attempt is already running it` |

@@ -14,7 +14,7 @@ import {
 } from "@opentui/core";
 import type { RowMark } from "@operad-io/engine";
 import { allowedText } from "../args.ts";
-import { confirmText, entryHint, matchPositions, paletteEntries } from "../actions.ts";
+import { confirmText, entryHint, matchPositions, paletteEntries, settingText } from "../actions.ts";
 import { chunksOfLine } from "../markdown.ts";
 import {
   TUI_PALETTE,
@@ -472,8 +472,31 @@ function nameRuns(
 /** The palette or the note input, drawn in the box; undefined when neither is open. */
 function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefined {
   const input = state.input;
-  if (input === undefined || input.kind === "confirm") return undefined;
+  if (input === undefined || input.kind === "confirm" || input.kind === "setting-confirm") return undefined;
   const bar = "▏";
+  if (input.kind === "setting") {
+    const { setting, field } = input;
+    const chunks: TextChunk[] = [
+      chunk(`${sanitize(setting.name)}${setting.scope === "global" ? "" : ` (${sanitize(setting.scope)})`}\n`, palette.accent, TextAttributes.BOLD),
+    ];
+    if (setting.description !== undefined) chunks.push(chunk(`${sanitize(setting.description)}\n`, palette.weak));
+    chunks.push(chunk(`value: ${settingText(setting.value)}\n`, palette.text));
+    chunks.push(chunk(`default: ${settingText(setting.default)}\n`, palette.text));
+    if (field === undefined) {
+      chunks.push(chunk("read-only · esc closes", palette.weak));
+    } else if (field.kind === "pick") {
+      field.options.forEach((option, at) => {
+        chunks.push(chunk(at === input.cursor ? "❯ " : "  ", palette.accent));
+        chunks.push(chunk(option.label, at === input.cursor ? palette.accent : palette.text));
+        chunks.push(chunk(at === field.current ? "  current\n" : "\n", palette.weak));
+      });
+      chunks.push(chunk("j/k or arrows move · enter picks · esc cancels", palette.weak));
+    } else {
+      chunks.push(chunk(`${input.text}${bar}\n`, palette.text));
+      chunks.push(chunk("enter sets · esc cancels", palette.weak));
+    }
+    return styled(chunks);
+  }
   if (input.kind === "note") {
     const chunks: TextChunk[] = [
       chunk(`${input.action} · note${input.required ? " (required)" : ""}\n`, palette.accent, TextAttributes.BOLD),
@@ -587,7 +610,7 @@ export function overlayBox(state: TuiState): OverlayBox | undefined {
   const kind = state.keys ? "keys" : state.input?.kind;
   if (kind === undefined) return undefined;
   const width = Math.max(10, Math.min(OVERLAY_WIDTH, state.width - 4));
-  const lines = kind === "keys" ? KEY_LIST.length + 1 : kind === "confirm" ? 2 : inputLines(state);
+  const lines = kind === "keys" ? KEY_LIST.length + 1 : kind === "confirm" || kind === "setting-confirm" ? 2 : inputLines(state);
   // Border (2) and a one-cell margin of background (2) around the text.
   const wanted = lines + 4;
   const left = Math.max(0, Math.floor((state.width - width) / 2));
@@ -606,6 +629,11 @@ function inputLines(state: TuiState): number {
     const field = input.fields[input.at];
     const body = field?.kind === "pick" ? field.options.length + 1 : 3;
     return body + 1 + (field?.description === undefined ? 0 : 1);
+  }
+  if (input?.kind === "setting") {
+    const { setting, field } = input;
+    const body = field?.kind === "pick" ? field.options.length + 1 : 1;
+    return 3 + (setting.description === undefined ? 0 : 1) + body;
   }
   if (input?.kind === "note") return input.text.split("\n").length + 2;
   if (input?.kind === "palette") return Math.max(1, paletteEntries(state).length) + 1;
