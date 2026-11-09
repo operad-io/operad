@@ -467,3 +467,11 @@ the row fields.
 |---|---|---|---|
 | T-0151-M3 | packages/dev/src/gate.ts | a review whose followed commit is missing was given the settings of a first review (the `rework` mapping removed) | `dev/review rework rounds > settings by round > a review whose followed commit is missing from the checkout is a later review for its settings` |
 | T-0151-M4 | packages/dev/src/gate.ts | a report from the fallback was recorded with the primary's harness and arguments (the fallback block switched off) | `dev/review fallback and retry > a 429 falls back once, and the round passes without a rework` |
+
+## T-0159 — fair scheduling
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0159-M1 | packages/dev/src/schedule.ts | the last free slot followed priority like the others (the fair order switched off) | `dev scheduling > the last free slot goes to the plan that waited longest, whatever its priority` |
+| T-0159-M2 | packages/dev/src/schedule.ts | plans of one priority ignored who started last (the turn tie-break removed) | `dev scheduling > plans of one priority take turns` |
+| T-0159-M3 | packages/dev/src/schedule.ts | the area queue counted no task ahead (`aheadOf` returned 0) | `dev scheduling > a waiting task counts the tasks ahead of it in its area` |

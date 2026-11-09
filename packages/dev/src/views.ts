@@ -208,7 +208,9 @@ export const taskViews: ObjectViews = {
     const task = taskData(object.data);
     const areaNote =
       task.phase === "ready" && task.areaHeldBy !== undefined
-        ? `waiting for area ${task.area ?? ""} (${task.areaHeldBy})`
+        ? `waiting for area ${task.area ?? ""} (${task.areaHeldBy})${
+            (task.areaAhead ?? 0) > 0 ? `, ${task.areaAhead} ahead` : ""
+          }`
         : task.area === undefined
           ? undefined
           : `area: ${task.area}`;

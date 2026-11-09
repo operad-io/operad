@@ -1077,6 +1077,7 @@ export async function updateTask(
     const {
       area: _area,
       areaHeldBy: _held,
+      areaAhead: _ahead,
       dependencyHeld: _waits,
       ...kept
     } = data;
@@ -1089,6 +1090,9 @@ export async function updateTask(
       brief,
       ...(nextArea === undefined ? {} : { area: nextArea }),
       ...(nextHeld === undefined ? {} : { areaHeldBy: nextHeld }),
+      ...(nextHeld === undefined || data.areaAhead === undefined
+        ? {}
+        : { areaAhead: data.areaAhead }),
     };
     return writeTask(store, id, next, "dev:task-update");
   });
@@ -1153,7 +1157,12 @@ export async function claimTaskStart(
       const holder = await areaHolder(store, latest.repository, latest.area, id);
       if (holder !== undefined) return undefined;
     }
-    const { areaHeldBy: _held, dependencyHeld: _waits, ...rest } = latest;
+    const {
+      areaHeldBy: _held,
+      areaAhead: _ahead,
+      dependencyHeld: _waits,
+      ...rest
+    } = latest;
     const next: TaskData = {
       ...rest,
       phase: "running",
@@ -1192,19 +1201,27 @@ export async function setAreaHold(
   store: ObjectStore,
   id: string,
   holder: string | undefined,
+  ahead = 0,
 ): Promise<void> {
+  const same = (task: TaskData): boolean =>
+    task.areaHeldBy === holder &&
+    (holder === undefined || (task.areaAhead ?? 0) === ahead);
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
-  if (data.areaHeldBy === holder) return;
+  if (same(data)) return;
   await withRepoLock(store, data.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
-    if (latest.phase !== "ready" || latest.areaHeldBy === holder) return;
-    const { areaHeldBy: _held, ...rest } = latest;
+    if (latest.phase !== "ready" || same(latest)) return;
+    const { areaHeldBy: _held, areaAhead: _ahead, ...rest } = latest;
     await writeTask(
       store,
       id,
-      { ...rest, ...(holder === undefined ? {} : { areaHeldBy: holder }) },
+      {
+        ...rest,
+        ...(holder === undefined ? {} : { areaHeldBy: holder }),
+        ...(holder === undefined || ahead === 0 ? {} : { areaAhead: ahead }),
+      },
       "dev:task-area-hold",
     );
   });
