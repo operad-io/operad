@@ -430,3 +430,5 @@ the row fields.
 | T-0123-M1 | packages/dev/src/views.ts | a task row dropped its `after` | `dev views > a task row carries the tasks it waits for, and none when it waits for none` |
 | T-0081-M3 | packages/dev/src/project-settings.ts | `gate.commands` lost its items schema, so a list dev would refuse was written | `dev settings through operad settings > a command list dev would refuse is refused and nothing is written` |
 | T-0081-M4 | packages/dev/src/commands.ts | `plan add` ignored `autoDefault` and started every plan at off | `dev settings through operad settings > a new plan starts at the auto level the repository sets` |
+| T-0114-M1 | packages/dev/src/views.ts | an attempt's time kept the time it waited for a person (`to - from - waited` became `to - from`) | `metrics times come from the run's own facts > cancelled while the task waits for a person: the wait is its own line, up to the cancel` |
+| T-0114-M2 | packages/dev/src/views.ts | an attempt's end ignored its run's end fact and ran to now | `metrics times come from the run's own facts > cancelled while a step is in flight: the attempt and the step end at the run's end` |

@@ -6,7 +6,7 @@
 
 import { objectLink } from "../http/link.ts";
 import type { LogBackend } from "../log/types.ts";
-import { currentRunStep, endedRunStep } from "./running.ts";
+import { runTimes } from "./running.ts";
 import type { PluginRegistry, ActionInfo } from "../plugin/registry.ts";
 import { splitActionName } from "../plugin/registry.ts";
 import { messageOf } from "../plugin/errors.ts";
@@ -1763,8 +1763,7 @@ export class Views {
       ...(log === undefined
         ? {}
         : {
-            runStep: (runId: string) => currentRunStep(log, runId),
-            runEnd: (runId: string) => endedRunStep(log, runId),
+            runTimes: (runId: string) => runTimes(log, runId),
           }),
     };
   }

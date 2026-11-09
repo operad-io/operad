@@ -432,7 +432,7 @@ describe("dev views", () => {
     const MIN = 60_000;
     const put = async (at: number, cause: string, attempt: Record<string, unknown>, phase = "running") => {
       clock = at;
-      await store.put("task", task.id, { ...stored, phase, run: "run-1", attempt }, cause);
+      await store.put("task", task.id, { ...stored, phase, run: "run-1", attempt: { run: "run-1", ...attempt } }, cause);
     };
     const start = 1_000_000;
     // Attempt 1: worktree 2s, work 22m10s, verify 4m35s, review 18m, two findings.
@@ -452,10 +452,23 @@ describe("dev views", () => {
     // Attempt 2 is running its work step.
     await put(end1 + 1_000, "test:rework", { number: 2 });
     await put(end1 + 3_000, "dev:worktree", { number: 2 });
-    const now = end1 + 3_000 + 3 * MIN;
-    // The run is in its work step, which began when the worktree step ended.
-    const runStep = async () => ({ step: "work", startedAt: end1 + 3_000 });
-    const text = await metrics({ store, runStep } as never, await getTask(store, task.id), now);
+    // The run's own facts: attempt 1's steps, a wait for a person, then attempt 2
+    // enters its worktree step and is in its work step now.
+    const work1 = start + 2_000 + 1_330_000;
+    const runTimes = async () => ({
+      startedAt: start,
+      endedAt: null,
+      segments: [
+        { step: "worktree", person: false, from: start, to: start + 2_000 },
+        { step: "work", person: false, from: start + 2_000, to: work1 },
+        { step: "verify", person: false, from: work1, to: work1 + 275_000 },
+        { step: "review", person: false, from: work1 + 275_000, to: end1 },
+        { step: "confirm", person: true, from: end1, to: end1 + 3_000 },
+        { step: "worktree", person: false, from: end1 + 3_000, to: end1 + 5_000 },
+        { step: "work", person: false, from: end1 + 5_000, to: null },
+      ],
+    });
+    const text = await metrics({ store, runTimes } as never, await getTask(store, task.id), end1 + 5_000 + 3 * MIN);
     const rows = text.split("\n");
     for (const row of rows.filter((line) => line.startsWith("|"))) {
       expect(row.split("|").length - 2).toBeLessThanOrEqual(4);
@@ -468,6 +481,7 @@ describe("dev views", () => {
       "| total | 48m | $1.24 | |",
     ]);
     expect(rows[6]).toBe("**#2** worktree 2s · work 3m00s (running)");
+    expect(rows[10]).toBe("**Waiting for a person** 3s");
     expect(rows[8]).toBe(
       "**#1** worktree 2s · work 22m10s · verify 4m35s · review 18m00s · 100 in / 35.9k out tokens",
     );
@@ -484,15 +498,24 @@ describe("dev views", () => {
     const stored = taskData((await getTask(store, task.id)).data);
     const put = async (at: number, cause: string, attempt: Record<string, unknown>, phase: string) => {
       clock = at;
-      await store.put("task", task.id, { ...stored, phase, attempt }, cause);
+      await store.put("task", task.id, { ...stored, phase, attempt: { run: "run-1", ...attempt } }, cause);
     };
     const start = 1_000_000;
+    const runTimes = async () => ({
+      startedAt: start,
+      endedAt: start + 94_000,
+      segments: [
+        { step: "worktree", person: false, from: start, to: start + 5_000 },
+        { step: "work", person: false, from: start + 5_000, to: start + 61_000 },
+        { step: "worktree", person: false, from: start + 61_000, to: start + 94_000 },
+      ],
+    });
     await put(start - 1_000, "test:start", { number: 1 }, "running");
     await put(start, "dev:worktree", { number: 1, cost: 0.5 }, "running");
     await put(start + 60_000, "dev:verify", { number: 1, cost: 0.5, verify: { result: "fail" } }, "waiting");
     await put(start + 61_000, "dev:worktree", { number: 2, cost: 0.75 }, "running");
     await put(start + 93_000, "dev:review", { number: 2, cost: 0.75, review: { result: "passed" } }, "waiting");
-    const rows = (await metrics({ store } as never, await getTask(store, task.id), start + 100_000)).split("\n");
+    const rows = (await metrics({ store, runTimes } as never, await getTask(store, task.id), start + 100_000)).split("\n");
     expect(rows[2]).toBe("| 1 | 1m | $0.50 | verify failed |");
     expect(rows[3]).toBe("| 2 | 33s | $0.75 | review passed |");
     expect(rows[4]).toBe("| total | 2m | $1.25 | |");
@@ -536,8 +559,14 @@ describe("dev views", () => {
   test("per-attempt lines leave out steps that did not run, and tokens show in k from 10k", async () => {
     const { store, task } = await setup();
     const stored = taskData((await getTask(store, task.id)).data);
-    await store.put("task", task.id, { ...stored, phase: "waiting", attempt: { number: 1, tokens: { input: 9999, output: 10_000 } } }, "dev:work");
-    const text = await metrics({ store } as never, await getTask(store, task.id), Date.now());
+    await store.put("task", task.id, { ...stored, phase: "waiting", attempt: { number: 1, run: "run-1", tokens: { input: 9999, output: 10_000 } } }, "dev:work");
+    // The run was in its work step for half a second and in no other step.
+    const runTimes = async () => ({
+      startedAt: 1_000_000,
+      endedAt: 1_000_500,
+      segments: [{ step: "work", person: false, from: 1_000_000, to: 1_000_500 }],
+    });
+    const text = await metrics({ store, runTimes } as never, await getTask(store, task.id), Date.now());
     const line = text.split("\n").find((row) => row.startsWith("**#1**"));
     expect(line).toBe("**#1** work <1s · 9999 in / 10.0k out tokens");
     expect(tokenCount(9_999)).toBe("9999");
