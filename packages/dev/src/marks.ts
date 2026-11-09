@@ -9,6 +9,7 @@ import {
   planState,
   type PlanData,
   type PlanState,
+  type RepositoryData,
   type TaskData,
   type TaskPhase,
 } from "./model.ts";
@@ -98,4 +99,15 @@ const PLAN_MARKS: Readonly<Record<PlanState, (plan: PlanData) => RowMark>> = {
 /** The mark of a plan row. */
 export function planMark(plan: PlanData): RowMark {
   return PLAN_MARKS[planState(plan)](plan);
+}
+
+/**
+ * The mark of a repository row: it follows the repository's work. A removed
+ * repository reads as `cancelled`.
+ */
+export function repositoryMark(repository: RepositoryData): RowMark {
+  if (repository.removed) return "cancelled";
+  if ((repository.activeTasks ?? 0) > 0) return "running";
+  if ((repository.openPlans ?? 0) + (repository.openTasks ?? 0) > 0) return "todo";
+  return "done";
 }

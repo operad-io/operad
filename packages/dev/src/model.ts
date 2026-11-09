@@ -491,6 +491,8 @@ export type RepositoryData = {
   /** Plans and tasks not yet ended; a cache the repository's row reads. */
   readonly openPlans?: number | undefined;
   readonly openTasks?: number | undefined;
+  /** Tasks with a run in progress (working or in review); a cache for the row's mark. */
+  readonly activeTasks?: number | undefined;
 };
 
 /** The two kinds of object the dev plugin numbers. */
