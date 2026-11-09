@@ -373,7 +373,8 @@ describe("the night of 2026-11-08 at 08:01", () => {
     // Every task now waits for a reason of its own (the fake worker changed
     // nothing); none waits because of the incident.
     expect(waitingReasons(w)).toEqual(Array(9).fill("work did nothing"));
-  });
+    // Nine tasks in real git worktrees: more than bun's default 5 s on a busy machine.
+  }, 60_000);
 });
 
 describe("settings that cannot be read", () => {
