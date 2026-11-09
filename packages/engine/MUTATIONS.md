@@ -373,3 +373,9 @@ the row fields.
 | T-0150-M2 | packages/engine/src/platform/step-reap.ts | `lastValue` returned the first match instead of the last | `the ps -E command column > an argument that spells the variables does not override the environment` |
 | T-0085-M4 | packages/engine/src/views/settings.ts | a listed setting left out its allowed values | `settings > lists every setting with value, default, description and marks` |
 | T-0161-M1 | packages/engine/src/views/running.ts | a running item dropped its object's row mark | `the running view names the object and times the step > an item carries its object's row mark, and none when the row has none` |
+
+## T-0158 — the pending view leaves out a wait its plugin answers itself
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0158-M3 | packages/engine/src/views/pending.ts | a marked wait stayed in the pending view when `withAuto` was not given | `the pending view and the plugin's automatic answer > a marked wait is left out of the pending view unless asked for` (packages/mcp/test/channel.test.ts) |

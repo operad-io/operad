@@ -475,6 +475,12 @@ the row fields.
 | T-0159-M1 | packages/dev/src/schedule.ts | the last free slot followed priority like the others (the fair order switched off) | `dev scheduling > the last free slot goes to the plan that waited longest, whatever its priority` |
 | T-0159-M2 | packages/dev/src/schedule.ts | plans of one priority ignored who started last (the turn tie-break removed) | `dev scheduling > plans of one priority take turns` |
 | T-0159-M3 | packages/dev/src/schedule.ts | the area queue counted no task ahead (`aheadOf` returned 0) | `dev scheduling > a waiting task counts the tasks ahead of it in its area` |
+## T-0158 — a merge wait at auto merge is marked as answered automatically
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0158-M4 | packages/dev/src/schedule.ts | the mark did not require the plan to be at auto merge | `dev scheduling > a merge wait is marked as answered automatically only at auto merge` |
+| T-0158-M5 | packages/dev/src/schedule.ts | a refused integrate still counted as a wait the scheduler answers | `dev scheduling > auto merge answers a passed review once and never answers other waits`, `dev scheduling > a merge wait is marked as answered automatically only at auto merge` |
 | T-0156-M1 | packages/dev/src/steps.ts | a held task still let the step that was running write the task (the claim check ignored `held`) | `dev:hold and dev:release > hold stops the running step, keeps the branch and commits, and frees the slot` |
 | T-0156-M2 | packages/dev/src/schedule.ts | a held dependency was treated as cancelled, so its dependent went into a person wait | `dev:hold and dev:release > a held ready task is not started, and its dependent stays queued` |
 | T-0156-M3 | packages/dev/src/service.ts | release left the task held instead of making it ready | `dev:hold and dev:release > release makes the task ready and the next run continues on its branch` |

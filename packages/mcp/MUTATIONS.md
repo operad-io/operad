@@ -59,3 +59,10 @@ the row fields.
 | T-0064-M6 | packages/mcp/src/channel.ts | the looped flag was not saved with the sent row, so a restart sent the loop block again | `a restarted channel does not send a loop block again for the same stretch` |
 | T-0064-M7 | packages/mcp/src/channel.ts | the pending item's prompt was never used as the wait's reason | `a wait carries the reason of its pending item when the row has no note` |
 | T-0052-M12 | packages/mcp/src/tools.ts | the `list` tool did not pass `parent` on | `operad mcp hierarchy > list takes root and parent, with or without a type` |
+
+## T-0158 — a wait the plugin answers itself is not announced
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0158-M1 | packages/mcp/src/channel.ts | a pending item marked `auto` was announced as a wait like any other | `a wait the plugin answers itself > is not announced, and its end is`, `the pending view and the plugin's automatic answer > an auto wait sends no block and its merge sends ended; a refused answer is announced` |
+| T-0158-M2 | packages/mcp/src/channel.ts | a skipped wait was not looked at again on a later change, so a withdrawn answer was never announced | `a wait the plugin answers itself > is announced when the automatic answer is withdrawn` |
