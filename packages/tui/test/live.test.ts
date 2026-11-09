@@ -84,8 +84,9 @@ class CountingClient implements TuiShellClient {
   async object(id: string): Promise<ViewObject> {
     this.objectCalls.push(id);
     this.check();
-    if (!this.titles.has(id)) throw new TuiError("gone", { status: 404 });
-    return objectOf(id, this.titles.get(id) ?? id);
+    const bare = id.replace(/^item:/, "");
+    if (!this.titles.has(bare)) throw new TuiError("gone", { status: 404 });
+    return objectOf(bare, this.titles.get(bare) ?? bare);
   }
   async section(id: string, section: string): Promise<{ readonly markdown: string }> {
     this.sectionCalls.push(`${id}/${section}`);

@@ -873,10 +873,20 @@ function openObject(state: TuiState): TuiState {
   if (row === undefined || row.openable === false) return state;
   const previous = state.object?.source === row.id ? state.object : undefined;
   const version = state.objectVersion + 1;
+  // A type tab knows the type of its rows, so the request names it: a bare id
+  // can be ambiguous across types.
+  const typeName = tab?.kind === "type" ? tab.type : undefined;
+  const requestId =
+    typeName !== undefined && !row.id.startsWith(`${typeName}:`)
+      ? `${typeName}:${row.id}`
+      : row.id;
   const object: TuiObject = {
-    id: row.id,
+    id: requestId,
     source: row.id,
-    type: previous?.type ?? (row.id.includes(":") ? row.id.slice(0, row.id.indexOf(":")) : row.id),
+    type:
+      previous?.type ??
+      typeName ??
+      (row.id.includes(":") ? row.id.slice(0, row.id.indexOf(":")) : row.id),
     link: previous?.link ?? "",
     row,
     // A request for the sections died with the old open, so none is loading.
@@ -893,7 +903,7 @@ function openObject(state: TuiState): TuiState {
     ...state,
     object,
     objectVersion: version,
-    objectRequest: { id: row.id, version },
+    objectRequest: { id: requestId, version },
     sectionRequest: undefined,
   };
 }

@@ -207,3 +207,4 @@ the row fields.
 | T-0083-M3 | packages/tui/src/actions.ts | the recent list put the newest entry last | `palette search: recent entries > an empty query lists the last five used first, the latest first, then the group order` |
 | T-0083-M4 | packages/tui/src/actions.ts | equal scores were listed in reverse order | `palette search: query to first entry > equal scores keep the order the entries were listed in` |
 | T-0083-M5 | packages/tui/src/view/index.ts | the matched characters of the name were not drawn in the accent | `palette search: highlight positions > the matched characters are drawn in the accent colour` |
+| T-0129-M2 | packages/tui/src/state.ts | opening a type-tab row asked for the bare id instead of `<type>:<id>` | `the TUI object app > a row opens by its typed id; a server that refuses bare ids is never asked for one` |

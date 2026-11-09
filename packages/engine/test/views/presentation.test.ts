@@ -534,6 +534,32 @@ describe("presentation views", () => {
     await log.close();
   });
 
+  test("a bare id found in a declared type wins over a type only the facts remember", async () => {
+    const { store, log } = await fixture();
+    const only = definePlugin({
+      name: "other",
+      kind: "domain",
+      version: "0.0.1",
+      objects: [{ name: "note" }],
+      views: {
+        note: {
+          row: (object) => ({ id: object.id, title: "", state: "new" }),
+          sections: () => [],
+          load: () => ({ markdown: "" }),
+        },
+      },
+    });
+    const registry = new PluginRegistry([only], { store });
+    store.put("note", "one", {}, "seed");
+    store.put("legacy", "one", {}, "seed");
+    store.put("legacy", "only-legacy", {}, "seed");
+    const views = trackedViews({ registry, store, log });
+    expect((await views.get("one")).type).toBe("note");
+    // An id only the undeclared type holds still resolves, as before.
+    expect((await views.get("only-legacy")).type).toBe("legacy");
+    await log.close();
+  });
+
   test("a plugin's resolve hook scopes a bare id before the suffix lookup", async () => {
     const root = await tempRoot();
     const store = new MemoryPluginStore({ root: join(root, "plugins") });

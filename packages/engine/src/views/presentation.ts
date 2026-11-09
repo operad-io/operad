@@ -1439,8 +1439,11 @@ export class Views {
         matches.push({ type: entry.type, id, object });
       }
     }
+    // A match in a declared type wins: types seen only in the facts (a type no
+    // loaded plugin declares any more) are looked at when no declared type holds
+    // the id.
     const seen = new Set(matches.map((match) => match.type));
-    for (const fact of this.store.facts?.() ?? []) {
+    for (const fact of matches.length > 0 ? [] : (this.store.facts?.() ?? [])) {
       const object = fact.object;
       if (object === undefined || object.id !== id) continue;
       if (seen.has(object.type)) continue;

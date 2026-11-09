@@ -128,7 +128,7 @@ describe("the TUI object app", () => {
       shell.key({ name: "3" });
       shell.key({ name: "enter" });
       await view.until((state) => state.object?.row.title === "One");
-      expect(client.objectCalls).toEqual(["one"]);
+      expect(client.objectCalls).toEqual(["item:one"]);
       await view.until(
         (state) => state.object?.sections[0]?.markdown === "info one",
       );
@@ -148,6 +148,40 @@ describe("the TUI object app", () => {
       );
       expect(client.objectCalls.length).toBeGreaterThanOrEqual(2);
       expect(client.sectionCalls.filter((call) => call.section === "pages").length).toBeGreaterThanOrEqual(2);
+    } finally {
+      shell.stop();
+      await shell.done;
+    }
+  });
+  test("a row opens by its typed id; a server that refuses bare ids is never asked for one", async () => {
+    class Strict extends Client {
+      override object(id: string): Promise<ViewObject> {
+        if (!id.includes(":")) {
+          return Promise.reject(new Error(`"${id}" is ambiguous: use item:${id}, legacy:${id}`));
+        }
+        return super.object(id);
+      }
+    }
+    const client = new Strict();
+    const view = new View();
+    const shell = startShell({
+      client,
+      events: () => new Events(),
+      view,
+      width: 80,
+      height: 20,
+      theme: "dark",
+      clock: immediateClock,
+    });
+    try {
+      await view.until((state) =>
+        state.tabs.find((tab) => tab.id === "type:item")?.list.loaded === true,
+      );
+      shell.key({ name: "3" });
+      shell.key({ name: "enter" });
+      await view.until((state) => state.object?.row.title === "One");
+      expect(client.objectCalls).toEqual(["item:one"]);
+      expect(view.last?.object?.error).toBeUndefined();
     } finally {
       shell.stop();
       await shell.done;
