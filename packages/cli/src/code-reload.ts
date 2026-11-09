@@ -166,6 +166,16 @@ export function codeChecker(
 /** Set in the environment of a serve that a supervisor started. */
 export const SUPERVISED_ENV = "OPERAD_SERVE_SUPERVISED";
 
+/**
+ * True when a supervisor started this serve. Removes the flag from `env`, so
+ * no process the serve starts (run processes, steps, their commands) sees it.
+ */
+export function takeSupervisedFlag(env: NodeJS.ProcessEnv = process.env): boolean {
+  const supervised = env[SUPERVISED_ENV] === "1";
+  delete env[SUPERVISED_ENV];
+  return supervised;
+}
+
 /** The exit code of a serve that stopped only to load new code. */
 export const RELOAD_EXIT = 75;
 

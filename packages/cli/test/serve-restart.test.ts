@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
+import { SUPERVISED_ENV } from "../src/code-reload.ts";
 import { waitForFile } from "../../shell/test/support.ts";
 
 afterAll(cleanupTempRoots);
@@ -68,11 +69,14 @@ async function trigger(home: string, env: Record<string, string>): Promise<strin
 }
 
 function startServe(home: string, env: Record<string, string>): Bun.Subprocess {
+  const inherited = { ...(process.env as Record<string, string>) };
+  // A run from inside a supervised serve must not make this serve supervised.
+  delete inherited[SUPERVISED_ENV];
   return Bun.spawn({
     cmd: [process.execPath, CLI_ENTRY, "serve"],
     cwd: home,
     env: {
-      ...(process.env as Record<string, string>),
+      ...inherited,
       OPERAD_HOME: home,
       OPERAD_SERVE_INTERVAL_MS: "200",
       ...env,
@@ -84,6 +88,41 @@ function startServe(home: string, env: Record<string, string>): Bun.Subprocess {
 }
 
 describe("a serve restart while a check runs", () => {
+  test("a supervised serve keeps the supervisor's flag from its run process and the commands it runs", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    const work = join(root, "work");
+    mkdirSync(home, { recursive: true });
+    mkdirSync(work, { recursive: true });
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({
+        plugins: [SHELL, FLOW],
+        store: { backend: "jsonl", path: join(root, "store") },
+        http: { enabled: false },
+      }),
+    );
+    writeFileSync(
+      join(home, "triggers.json"),
+      JSON.stringify([
+        { source: "cron", type: "tick", start: { flow: "check" }, object: "job:1", mode: "auto" },
+      ]),
+    );
+    const seen = join(work, "seen");
+    const expansion = "$" + "{" + SUPERVISED_ENV + "-unset}";
+    const env = { CHECK_LINE: `sh -c 'echo "flag:${expansion}" > ${seen}.tmp && mv ${seen}.tmp ${seen}'` };
+    const serve = startServe(home, { ...env, [SUPERVISED_ENV]: "1" });
+    try {
+      await trigger(home, env);
+      await waitForFile(seen);
+      // The command is a descendant of the run process: neither passed the flag on.
+      expect(readFileSync(seen, "utf8").trim()).toBe("flag:unset");
+    } finally {
+      serve.kill("SIGTERM");
+      await serve.exited;
+    }
+  }, 60_000);
+
   test("the check's command is not signalled and finishes with its exit code", async () => {
     const root = await tempRoot();
     const home = join(root, "home");
