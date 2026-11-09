@@ -1669,17 +1669,17 @@ export async function cancelTask(
  * the task keeps its branch, worktree, commits, attempt count and place. It
  * holds no concurrency slot and the scheduler does not start it.
  */
-export async function holdTask(
+export async function pauseTask(
   store: ObjectStore,
   id: string,
   options: CancelOptions = {},
 ): Promise<{ readonly task: StoredObject; readonly runs: readonly string[] }> {
   const initial = await getTask(store, id);
   const initialData = taskData(initial.data);
-  const held = await withRepoLock(store, initialData.repository, async () => {
+  const paused = await withRepoLock(store, initialData.repository, async () => {
     const task = await getTask(store, id);
     const data = taskData(task.data);
-    refuseTask("hold", data, id);
+    refuseTask("pause", data, id);
     const runs = data.run === null ? [] : [data.run];
     const { areaHeldBy: _area, dependencyHeld: _waits, ...rest } = data;
     const written = await writeTask(
@@ -1687,26 +1687,26 @@ export async function holdTask(
       id,
       {
         ...rest,
-        phase: "held",
+        phase: "paused",
         run: null,
         claim: null,
         startRequested: false,
-        brief: appendChange(data.brief, "held"),
+        brief: appendChange(data.brief, "paused"),
       },
-      "dev:task-hold",
+      "dev:task-pause",
     );
     const plan = await getPlan(store, storeKey(data.repository, data.plan));
     await refreshPlanCounts(store, plan);
     return { task: written, runs };
   });
-  for (const run of held.runs) {
+  for (const run of paused.runs) {
     await options.runs?.cancel(run);
   }
-  return held;
+  return paused;
 }
 
-/** Returns a held task to ready; its next start continues from its branch. */
-export async function releaseTask(
+/** Returns a paused task to ready; its next start continues from its branch. */
+export async function resumeTask(
   store: ObjectStore,
   id: string,
 ): Promise<StoredObject> {
@@ -1715,12 +1715,12 @@ export async function releaseTask(
   return withRepoLock(store, initialData.repository, async () => {
     const task = await getTask(store, id);
     const data = taskData(task.data);
-    refuseTask("release", data, id);
+    refuseTask("resume", data, id);
     return writeTask(
       store,
       id,
       { ...data, phase: "ready", brief: appendChange(data.brief, "ready") },
-      "dev:task-release",
+      "dev:task-resume",
     );
   });
 }

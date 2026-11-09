@@ -45,8 +45,8 @@ export type TaskState = (typeof TASK_STATES)[number];
 export const TASK_ACTIONS = [
   "confirm",
   "cancel",
-  "hold",
-  "release",
+  "pause",
+  "resume",
   "merge",
   "reject",
   "rework",
@@ -90,7 +90,7 @@ function personWait(
       ({ id }) =>
         `${id} is waiting for the review model to come back; dev:${action} works once it needs you`,
     ),
-    held: once("held"),
+    paused: once("paused"),
     merged: settled
       ? done(({ id }) => `${id} is already merged; nothing to do`)
       : refuse(({ id }) => `${id} was merged; nothing can be ${participle}`),
@@ -101,10 +101,10 @@ function personWait(
 const started = (where: string) =>
   refuse(({ id }) => `${id} is ${where}; nothing to confirm`);
 
-/** `release` works on a held task only; anywhere else it says where the task is. */
-function releaseLines(): Record<TaskState, Line> {
+/** `resume` works on a paused task only; anywhere else it says where the task is. */
+function resumeLines(): Record<TaskState, Line> {
   const not = (where: string) =>
-    refuse(({ id }) => `${id} is ${where}; dev:release works on a held task`);
+    refuse(({ id }) => `${id} is ${where}; dev:resume works on a paused task`);
   return {
     proposed: not("proposed"),
     ready: done(({ id }) => `${id} is already ready; nothing to do`),
@@ -112,9 +112,9 @@ function releaseLines(): Record<TaskState, Line> {
     review: not("running (review)"),
     waiting: not("waiting"),
     "waiting-review": not("waiting"),
-    held: ok,
-    merged: refuse(({ id }) => `${id} was merged; nothing can be released`),
-    cancelled: refuse(({ id }) => `${id} was cancelled; nothing can be released`),
+    paused: ok,
+    merged: refuse(({ id }) => `${id} was merged; nothing can be resumed`),
+    cancelled: refuse(({ id }) => `${id} was cancelled; nothing can be resumed`),
   };
 }
 
@@ -137,7 +137,7 @@ export const TASK_LINES: Record<TaskActionName, Record<TaskState, Line>> = {
     review: started("running (review)"),
     waiting: started("waiting"),
     "waiting-review": started("waiting"),
-    held: started("held"),
+    paused: started("paused"),
     merged: refuse(({ id }) => `${id} was merged; nothing to confirm`),
     cancelled: refuse(({ id }) => `${id} was cancelled; nothing can be confirmed`),
   },
@@ -148,12 +148,12 @@ export const TASK_LINES: Record<TaskActionName, Record<TaskState, Line>> = {
     review: ok,
     waiting: ok,
     "waiting-review": ok,
-    held: ok,
+    paused: ok,
     merged: refuse(({ id }) => `${id} was merged; nothing can be cancelled`),
     cancelled: done(({ id }) => `${id} is already cancelled; nothing to do`),
   },
-  hold: {
-    proposed: refuse(({ id }) => `${id} is proposed; dev:hold works once it is ready or running`),
+  pause: {
+    proposed: refuse(({ id }) => `${id} is proposed; dev:pause works once it is ready or running`),
     ready: ok,
     running: ok,
     review: ok,
@@ -161,13 +161,13 @@ export const TASK_LINES: Record<TaskActionName, Record<TaskState, Line>> = {
       ({ id }) => `${id} is waiting for you; answer it, or dev:cancel it`,
     ),
     "waiting-review": refuse(
-      ({ id }) => `${id} is waiting for the review model to come back; dev:hold works once it is ready or running`,
+      ({ id }) => `${id} is waiting for the review model to come back; dev:pause works once it is ready or running`,
     ),
-    held: done(({ id }) => `${id} is already held; nothing to do`),
-    merged: refuse(({ id }) => `${id} was merged; nothing can be held`),
-    cancelled: refuse(({ id }) => `${id} was cancelled; nothing can be held`),
+    paused: done(({ id }) => `${id} is already paused; nothing to do`),
+    merged: refuse(({ id }) => `${id} was merged; nothing can be paused`),
+    cancelled: refuse(({ id }) => `${id} was cancelled; nothing can be paused`),
   },
-  release: releaseLines(),
+  resume: resumeLines(),
   merge: personWait("merge", "merged", true),
   reject: personWait("reject", "rejected", false),
   rework: personWait("rework", "reworked", false),

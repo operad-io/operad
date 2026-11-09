@@ -479,12 +479,12 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0163-M1 | packages/dev/src/gate.ts | the review wait bound allowed one wait too many (`> MAX_REVIEW_WAITS + 1`), which the seeded waits must still count | `dev/review hardening > an unavailable model waits at most MAX_REVIEW_WAITS times, across a restart` |
-| T-0156-M1 | packages/dev/src/steps.ts | a held task still let the step that was running write the task (the claim check ignored `held`) | `dev:hold and dev:release > hold stops the running step, keeps the branch and commits, and frees the slot` |
-| T-0156-M2 | packages/dev/src/schedule.ts | a held dependency was treated as cancelled, so its dependent went into a person wait | `dev:hold and dev:release > a held ready task is not started, and its dependent stays queued` |
-| T-0156-M3 | packages/dev/src/service.ts | release left the task held instead of making it ready | `dev:hold and dev:release > release makes the task ready and the next run continues on its branch` |
-| T-0156-M4 | packages/dev/src/service.ts | task update never released a task waiting on a cancelled dependency | `dev:hold and dev:release > task update --after releases a task waiting on a cancelled dependency` |
-| T-0156-M5 | packages/dev/src/service.ts | hold did not ask the kernel to cancel the task's run | `dev:hold and dev:release > hold stops the running step, keeps the branch and commits, and frees the slot` |
-| T-0156-M6 | packages/dev/src/service.ts | hold dropped the task's attempt record | `dev:hold and dev:release > hold stops the running step, keeps the branch and commits, and frees the slot` |
+| T-0156-M1 | packages/dev/src/steps.ts | a held task still let the step that was running write the task (the claim check ignored `held`) | `dev:pause and dev:resume > pause stops the running step, keeps the branch and commits, and frees the slot` |
+| T-0156-M2 | packages/dev/src/schedule.ts | a held dependency was treated as cancelled, so its dependent went into a person wait | `dev:pause and dev:resume > a paused ready task is not started, and its dependent stays queued` |
+| T-0156-M3 | packages/dev/src/service.ts | release left the task held instead of making it ready | `dev:pause and dev:resume > resume makes the task ready and the next run continues on its branch` |
+| T-0156-M4 | packages/dev/src/service.ts | task update never released a task waiting on a cancelled dependency | `dev:pause and dev:resume > task update --after releases a task waiting on a cancelled dependency` |
+| T-0156-M5 | packages/dev/src/service.ts | hold did not ask the kernel to cancel the task's run | `dev:pause and dev:resume > pause stops the running step, keeps the branch and commits, and frees the slot` |
+| T-0156-M6 | packages/dev/src/service.ts | hold dropped the task's attempt record | `dev:pause and dev:resume > pause stops the running step, keeps the branch and commits, and frees the slot` |
 
 ## T-0162 — repository row mark
 
@@ -504,3 +504,4 @@ the row fields.
 |---|---|---|---|
 | T-0163-M2 | packages/dev/test/gate.test.ts | the hook remover deleted a hook it had not installed (identity check replaced by `true`) | `review test hooks > a test that ends late removes only the hooks it installed` |
 | T-0163-M3 | packages/dev/test/gate.test.ts | the out-of-time test's clock moved on a call its own reviewer did not make (own-call check removed) | `dev/review hardening > runs that cannot fit in the step deadline are skipped and a person decides` |
+| T-0170-M1 | packages/dev/src/actions.ts | the old action name `hold` was still declared next to `pause` | `dev:pause and dev:resume > dev:hold and dev:release are no longer actions` |
