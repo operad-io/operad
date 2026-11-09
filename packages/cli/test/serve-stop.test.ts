@@ -142,6 +142,52 @@ describe("operad serve stop", () => {
     }
   }, 30_000);
 
+  test("a ps that answers nothing for a live serve is asked again, then the serve is stopped", async () => {
+    const { home, lock } = await makeHome();
+    writeLock(lock, 4242);
+    let alive = true;
+    let asks = 0;
+    const signalled: number[] = [];
+    const written: string[] = [];
+    await serveStop({
+      home,
+      timeoutSecs: 5,
+      write: (text) => written.push(text),
+      isAlive: () => alive,
+      commandOf: () => (++asks <= 3 ? undefined : "bun operad.ts serve"),
+      signal: (pid) => {
+        signalled.push(pid);
+        alive = false;
+      },
+      sleep: async () => {},
+    });
+    expect(asks).toBe(4);
+    expect(signalled).toEqual([4242]);
+    expect(written.join("")).toContain("stopped");
+  });
+
+  test("a ps that never answers for a live process refuses without signalling", async () => {
+    const { home, lock } = await makeHome();
+    writeLock(lock, 4242);
+    const signalled: number[] = [];
+    let thrown = "";
+    try {
+      await serveStop({
+        home,
+        timeoutSecs: 5,
+        write: () => {},
+        isAlive: () => true,
+        commandOf: () => undefined,
+        signal: (pid) => signalled.push(pid),
+        sleep: async () => {},
+      });
+    } catch (error) {
+      thrown = error instanceof Error ? error.message : String(error);
+    }
+    expect(thrown).toContain("not an operad serve");
+    expect(signalled).toEqual([]);
+  });
+
   test("refuses a live process that is not a serve, and never signals it", async () => {
     const { home, lock } = await makeHome();
     const other = Bun.spawn({ cmd: ["sleep", "300"], stdout: "ignore", stderr: "ignore" });

@@ -89,6 +89,9 @@ export function waitingReason(
       }
       if (conflicted) return { reason: "conflict" };
       if (edge.result === "nothing") return { reason: "work did nothing" };
+      if (attempt?.workTimedOut === true) {
+        return { reason: "work timed out", detail: nonEmpty(attempt.workNote) };
+      }
       return {
         reason: "work failed",
         detail: nonEmpty(attempt?.workNote),

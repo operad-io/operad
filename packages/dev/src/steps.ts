@@ -4,7 +4,7 @@
  * The kernel never runs git or a harness itself; both live here in `dev`.
  */
 
-import { existsSync, mkdirSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
   messageOf,
@@ -32,7 +32,17 @@ import { DEFAULT_POOL, resolvePool } from "@operad-io/pool";
 import { runPrepare } from "./prepare.ts";
 import { classifyStop, STOP_REASONS } from "./stops.ts";
 import { findRepository, withRepoLock } from "./service.ts";
-import { MAX_WORK_WAITS } from "./timeouts.ts";
+import {
+  createOutbox,
+  NOTE_REMOVED_MESSAGE,
+  previousAttemptText,
+  progressOf,
+  PROGRESS_FILE,
+  WIP_MESSAGE,
+  wrapUpMessage,
+  type Progress,
+} from "./progress.ts";
+import { MAX_WORK_WAITS, STEP_TIMEOUT_SECS } from "./timeouts.ts";
 import {
   assertInsideRepository,
   readDevSettings,
@@ -192,10 +202,14 @@ function attemptFor(ctx: StepContext, task: TaskData): AttemptState {
     typeof previous?.worker === "string" ? previous.worker : previous?.previousWorker;
   const ran = typeof previous?.worker === "string";
   const previousSession = ran ? previous?.sessionId : previous?.previousSession;
+  // What the attempt before left to continue from; only an attempt that left
+  // a note or ran out of time has any.
+  const left = progressOf(previous?.progress);
   return {
     attempt: {
       number,
       run: ctx.runId,
+      ...(left === undefined ? {} : { previousProgress: left }),
       ...(typeof previousWorker === "string" ? { previousWorker } : {}),
       ...(typeof previousSession === "string" ? { previousSession } : {}),
     },
@@ -313,7 +327,7 @@ export function changedFiles(worktree: string): readonly string[] {
     const code = entry.slice(0, 2);
     if (code.includes("R") || code.includes("C")) index += 1;
   }
-  return [...new Set(files)].sort();
+  return [...new Set(files)].filter((file) => file !== PROGRESS_FILE).sort();
 }
 
 interface Prepared {
@@ -527,7 +541,66 @@ export const stepTestHooks: {
   beforeGuardedWrite?:
     | ((ctx: StepContext, key: string) => Promise<void> | void)
     | undefined;
+  /** Replaces the timers of a work step's wrap-up and time limit. */
+  workClock?: WorkClock | undefined;
 } = {};
+
+/** The timers a work step uses for its wrap-up message and its time limit. */
+export interface WorkClock {
+  setTimeout(handler: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+}
+
+const realWorkClock: WorkClock = {
+  setTimeout: (handler, ms) => setTimeout(handler, ms),
+  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
+/** How long before the limit the step stops the worker itself, so it can still commit. */
+function limitMarginMs(limitMs: number): number {
+  return Math.min(30_000, Math.floor(limitMs / 100));
+}
+
+/** The commits the branch has beyond `base`, newest first. */
+function commitsSince(
+  worktree: string,
+  base: string | null,
+): Progress["commits"] {
+  if (base === null) return [];
+  const result = git(worktree, ["log", "--format=%h %s", "-n", "50", `${base}..HEAD`]);
+  if (!result.ok || result.out.length === 0) return [];
+  return result.out.split("\n").map((line) => {
+    const space = line.indexOf(" ");
+    return space === -1
+      ? { sha: line, subject: "" }
+      : { sha: line.slice(0, space), subject: line.slice(space + 1) };
+  });
+}
+
+function readNote(worktree: string): string | null {
+  try {
+    const text = readFileSync(join(worktree, PROGRESS_FILE), "utf8");
+    return text.trim().length === 0 ? null : text;
+  } catch {
+    return null;
+  }
+}
+
+/** Takes the note out of the branch when the worker committed it anyway. */
+function untrackNote(worktree: string): void {
+  if (!git(worktree, ["ls-files", "--error-unmatch", PROGRESS_FILE]).ok) return;
+  const removed = git(worktree, ["rm", "--cached", "-q", PROGRESS_FILE]);
+  if (removed.ok) git(worktree, ["commit", "-q", "-m", NOTE_REMOVED_MESSAGE]);
+}
+
+/** Commits what a timed-out step left, except the note. False when nothing was committed. */
+function commitWip(worktree: string): boolean {
+  if (conflictedFiles(worktree).length > 0) return false;
+  if (changedFiles(worktree).length === 0) return false;
+  const added = git(worktree, ["add", "-A", "--", ".", `:(exclude)${PROGRESS_FILE}`]);
+  if (!added.ok) return false;
+  return git(worktree, ["commit", "-q", "-m", WIP_MESSAGE]).ok;
+}
 
 /**
  * Writes the task only while the step still owns its claim. The check reads the
@@ -819,8 +892,10 @@ export function buildWorkerPrompt(
   worktree: string,
   workerBrief: string,
   task: TaskData,
+  previous?: Progress,
 ): string {
   const pieces: string[] = [];
+  if (previous !== undefined) pieces.push(previousAttemptText(previous));
   if (mergeInProgress(worktree)) {
     pieces.push(conflictPrompt(conflictedFiles(worktree)));
   }
@@ -894,6 +969,7 @@ function poolParams(
   settings: DevSettings,
   worker: string | undefined,
   resumeSession: string | undefined,
+  inbox: unknown,
 ): Record<string, unknown> {
   const resolved = resolvePool(settings.workers, DEFAULT_POOL);
   // A fallback worker that ran is not a member of the pool; hand it over as
@@ -905,6 +981,7 @@ function poolParams(
   return {
     prompt,
     cwd: worktree,
+    inbox,
     prefix: `${repository.name}/${DEFAULT_POOL}`,
     workers: fallback === undefined ? resolved.workers : [...resolved.workers, fallback],
     fallbacks: resolved.fallbacks,
@@ -1007,7 +1084,15 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     context.repository.path,
     context.settings,
   );
-  const prompt = buildWorkerPrompt(path, workerBrief, task);
+  const prompt = buildWorkerPrompt(
+    path,
+    workerBrief,
+    task,
+    progressOf(attempt.previousProgress),
+  );
+  // A note from an earlier visit is in the task's data by now; the worker
+  // writes a fresh one.
+  rmSync(join(path, PROGRESS_FILE), { force: true });
   const runStep = ctx.runStep;
   if (runStep === undefined) {
     const nextAttempt: TaskAttempt = {
@@ -1041,6 +1126,12 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     };
   }
 
+  // The step stops the worker itself a little before its time limit, so it
+  // can still commit what is left; the kernel's own timeout stays behind it.
+  const stopper = new AbortController();
+  const forwardAbort = (): void => stopper.abort();
+  if (ctx.signal.aborted) stopper.abort();
+  else ctx.signal.addEventListener("abort", forwardAbort, { once: true });
   const options: StepRunOptions = {
     runId: ctx.runId,
     cwd: path,
@@ -1048,7 +1139,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     params: ctx.params,
     access: ctx.access,
     ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
-    signal: ctx.signal,
+    signal: stopper.signal,
   };
   // A rework or reject goes back to the worker that ran the attempt before,
   // and resumes its session when the harness can. When that worker is no
@@ -1067,6 +1158,34 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     })();
   const asked = stillThere ? before : undefined;
   const workerChangedFrom = before !== undefined && !stillThere ? before : undefined;
+  const clock = stepTestHooks.workClock ?? realWorkClock;
+  let timedOut = false;
+  const timeOut = (): void => {
+    timedOut = true;
+    stopper.abort();
+  };
+  // The step's own limit is the backstop, counted from the step's start. A
+  // harness that can take a message says when its run begins and how long it
+  // may run (its wall time, which starts after the pool gave it a place), and
+  // the wrap-up and the stop are timed from then.
+  let limitMs = STEP_TIMEOUT_SECS * 1000;
+  const timers: unknown[] = [
+    clock.setTimeout(timeOut, limitMs - limitMarginMs(limitMs)),
+  ];
+  let runTimers: unknown[] = [];
+  const outbox = createOutbox((runMs) => {
+    for (const timer of runTimers) clock.clearTimeout(timer);
+    limitMs = runMs;
+    const hardMs = runMs - limitMarginMs(runMs);
+    const wrapMs = Math.min(
+      Math.floor(runMs * context.settings.work.wrapUpAt),
+      hardMs,
+    );
+    runTimers = [
+      clock.setTimeout(() => outbox.send(wrapUpMessage()), wrapMs),
+      clock.setTimeout(timeOut, hardMs),
+    ];
+  });
   let outcome: PluginStepResult | undefined;
   let hostError: string | undefined;
   let notLoaded: string | undefined;
@@ -1080,12 +1199,16 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
         context.settings,
         asked,
         typeof attempt.previousSession === "string" ? attempt.previousSession : undefined,
+        outbox.inbox,
       ),
       options,
     );
   } catch (error) {
     hostError = messageOf(error);
     notLoaded = notLoadedStep(error);
+  } finally {
+    for (const timer of [...timers, ...runTimers]) clock.clearTimeout(timer);
+    ctx.signal.removeEventListener("abort", forwardAbort);
   }
   const outcomeData =
     outcome !== undefined &&
@@ -1121,16 +1244,30 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     workerChanged: workerChangedFrom ?? null,
   };
 
+  // The worker ran past its limit: the step stopped it, or the harness's own
+  // wall time did.
+  const timedOutRun =
+    outcome?.result !== "done" &&
+    (timedOut ||
+      (outcomeData.reason === "wall" && hostError === undefined));
+
   const finish = async (
     result: string,
     extra: Readonly<Record<string, unknown>>,
     waitsForModel = false,
   ): Promise<PluginStepResult> => {
+    const note = readNote(path);
+    const progress: Progress | undefined =
+      note === null && !timedOutRun
+        ? undefined
+        : { note, commits: commitsSince(path, base), timedOut: timedOutRun };
     nextAttempt = {
       ...nextAttempt,
       result,
       workNote: typeof extra.message === "string" ? extra.message : null,
       ...(waitsForModel ? {} : { workRetryAt: null }),
+      progress: progress ?? null,
+      workTimedOut: timedOutRun,
     };
     const reason = typeof extra.reason === "string" ? extra.reason : "";
     const stop: StopRecord | null =
@@ -1176,6 +1313,9 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
         branch,
         base,
         prompt,
+        ...(progress === undefined
+          ? {}
+          : { progress: progress.note, commits: progress.commits }),
         ...(nextAttempt.worker === null || nextAttempt.worker === undefined
           ? {}
           : {
@@ -1189,6 +1329,24 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       }),
     };
   };
+
+  untrackNote(path);
+  if (timedOutRun) {
+    const committed = commitWip(path);
+    const left = changedFiles(path);
+    const seconds = Math.round(limitMs / 1000);
+    return finish("failed", {
+      reason: "timeout",
+      message: `the work ran out of time (${seconds}s); ${
+        committed
+          ? "what it left was committed as work in progress"
+          : left.length === 0
+            ? "nothing was left uncommitted"
+            : `uncommitted changes: ${left.join(", ")}`
+      }`,
+      ...(left.length === 0 ? {} : { files: left }),
+    });
+  }
 
   // Inspect the tree before deciding: a harness failure must still name what
   // it left uncommitted, and a success must still fail on a dirty tree.

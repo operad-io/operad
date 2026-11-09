@@ -29,3 +29,16 @@ the row fields.
 | T-0040-M14 | packages/harness-process/src/grants.ts | a host that throws counted as a grant used | `answerGrant > replies used false when the host throws` |
 | T-0040-M15 | packages/harness-process/src/grants.ts | `hasGrants` was true for an empty grants list | `hasGrants > is true only for a profile with at least one grant` |
 | T-0040-M16 | packages/harness-process/src/grants.ts | a `grant_use` line without a `waitId` was accepted | `grantUse > reads a grant_use line and nothing else` |
+
+## T-0099 — a message to a running agent
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0099-M1 | packages/harness-process/src/process.ts | a message was written to stdin as bare text, not a `message` line | `runAgent with an inbox > a message sent while the command runs is written to its stdin as a message line, and the listener is dropped at the end` |
+| T-0099-M2 | packages/harness-process/src/process.ts | the inbox listener was not dropped when the run ended | `runAgent with an inbox > a message sent while the command runs is written to its stdin as a message line, and the listener is dropped at the end` |
+
+## T-0099 — rework 1: the run reports its wall time
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0099-M3 | packages/harness-process/src/process.ts | the run did not tell the inbox its wall time when it began | `runAgent with an inbox > a message sent while the command runs is written to its stdin as a message line, and the listener is dropped at the end` |

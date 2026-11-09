@@ -128,7 +128,11 @@ describe("a serve restart while a check runs", () => {
       await waitForFile(started);
 
       const stopped = await operad(home, env, ["serve", "stop"]);
-      expect(stopped.code).toBe(0);
+      expect({ code: stopped.code, out: stopped.out, err: stopped.err }).toEqual({
+        code: 0,
+        out: stopped.out,
+        err: "",
+      });
       await serve.exited;
 
       serve = startServe(home, env);

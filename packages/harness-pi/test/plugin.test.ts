@@ -340,6 +340,30 @@ describe("harness-pi/agent", () => {
     expect(type?.resumable).toBe(true);
   });
 
+  test("a message the host sends through the inbox reaches the program as a message line", async () => {
+    const env = await setup("message");
+    const handlers: Array<(text: string) => void> = [];
+    const inbox = {
+      listen(handler: (text: string) => void): () => void {
+        handlers.push(handler);
+        return () => undefined;
+      },
+    };
+    const running = env.registry.runStep(
+      "harness-pi/agent",
+      { prompt: "hello", cwd: env.root, inbox },
+      { runId: "run-message" },
+    );
+    await waitForFile(env.marker);
+    expect(handlers).toHaveLength(1);
+    handlers[0]?.("wrap up now");
+    expect((await running).result).toBe("done");
+    expect(JSON.parse(readFileSync(`${env.record}.message`, "utf8"))).toEqual({
+      type: "message",
+      text: "wrap up now",
+    });
+  });
+
   test("a grant in the profile is used through the host before the program goes on", async () => {
     const env = await setup("grant");
     const used: string[] = [];

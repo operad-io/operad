@@ -11,6 +11,7 @@ import { constants as fsConstants } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { Readable } from "node:stream";
+import { messageLine, type MessageInbox } from "./inbox.ts";
 import {
   ControlReader,
   DRAIN_GRACE_MS,
@@ -118,6 +119,11 @@ export interface AgentRunOptions {
    * it exits.
    */
   readonly interactive?: boolean | undefined;
+  /**
+   * Messages from the host, written to stdin as `message` lines while the
+   * command runs. Needs `interactive`; without it nothing is written.
+   */
+  readonly inbox?: MessageInbox | undefined;
   readonly wallMs: number;
   readonly stallMs: number;
   readonly signal: AbortSignal;
@@ -504,6 +510,13 @@ export async function runAgent(
 
   readySeen = true;
   openGate();
+  const stopListening =
+    options.inbox === undefined
+      ? undefined
+      : options.inbox.listen((text) => {
+          if (!finished) reply(messageLine(text));
+        });
+  if (options.wallMs > 0) options.inbox?.begin?.(options.wallMs);
 
   const ended = await Promise.race<Ended>([
     nextControl().then((line): Ended => {
@@ -516,6 +529,7 @@ export async function runAgent(
   ]);
 
   finished = true;
+  stopListening?.();
   clearTimers();
   options.signal.removeEventListener("abort", onAbort);
 

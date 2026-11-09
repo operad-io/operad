@@ -24,6 +24,7 @@ import {
   type AccessProfile,
 } from "@operad-io/access-match";
 import { decideAccess, hasRules, translate } from "./access.ts";
+import { messageText } from "@operad-io/harness-process";
 import { findClaude } from "./claude-install.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
@@ -80,6 +81,11 @@ export interface WorkerIo {
    * call may run. Absent when the host cannot answer; no grant then applies.
    */
   useGrant?(waitId: string): Promise<boolean>;
+  /**
+   * Hands each message the host sends mid-run to `handler`, those that came
+   * before the call first. Absent when the host cannot send any.
+   */
+  onMessage?(handler: (text: string) => void): void;
 }
 
 export interface WorkerHooks {
@@ -270,6 +276,21 @@ export async function runWorker(
   let continued = false;
 
   const session = query({ prompt: input.prompt, options });
+  // A message the host sends mid-run goes to claude as one more user turn,
+  // queued behind the tool call that is running.
+  io.onMessage?.((text) => {
+    const turn = (async function* () {
+      yield {
+        type: "user" as const,
+        message: { role: "user" as const, content: text },
+        parent_tool_use_id: null,
+        priority: "next" as const,
+      };
+    })();
+    session.streamInput(turn).catch((error: unknown) => {
+      io.log(`a message to claude was not delivered: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  });
   const account = session.initializationResult().then(
     (init) => init.account,
     () => undefined,
@@ -476,10 +497,16 @@ export async function main(hooks: WorkerHooks = {}): Promise<never> {
     });
   const stdin = new StdinLines();
   const waiting = new Map<number, (used: boolean) => void>();
+  const early: string[] = [];
+  let onMessage: ((text: string) => void) | undefined;
   let nextGrant = 1;
   let hostGone = false;
   const io: WorkerIo = {
     line: (line) => write(`${JSON.stringify(line)}\n`),
+    onMessage: (handler) => {
+      onMessage = handler;
+      for (const text of early.splice(0)) handler(text);
+    },
     log: (text) => process.stderr.write(`${text}\n`),
     useGrant: (waitId) =>
       new Promise<boolean>((resolve) => {
@@ -521,6 +548,12 @@ export async function main(hooks: WorkerHooks = {}): Promise<never> {
         for (;;) {
           const line = await stdin.next();
           if (line === undefined) break;
+          const said = messageText(line);
+          if (said !== undefined) {
+            if (onMessage === undefined) early.push(said);
+            else onMessage(said);
+            continue;
+          }
           try {
             const ack: unknown = JSON.parse(line);
             if (typeof ack === "object" && ack !== null && Reflect.get(ack, "type") === "grant_ack") {

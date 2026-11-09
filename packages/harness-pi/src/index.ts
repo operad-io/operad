@@ -27,6 +27,7 @@ import {
   askNote,
   flagValue,
   hasGrants,
+  inboxOf,
   JsonlLog,
   modelLimit,
   standardUsage,
@@ -572,6 +573,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };
 
+          const inbox = inboxOf(params);
           const started = Date.now();
           const jsonl = new JsonlLog(ctx.logger);
           let result: WorkerResult | undefined;
@@ -582,7 +584,8 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             cwd,
             stdin: JSON.stringify(stdin),
             // The program may ask to use a one-time permission; it needs a reply.
-            interactive: hasGrants(ctx.access),
+            interactive: hasGrants(ctx.access) || inbox !== undefined,
+            inbox,
             wallMs: wallTimeSecs * 1000,
             stallMs: stallSecs * 1000,
             signal: ctx.signal,

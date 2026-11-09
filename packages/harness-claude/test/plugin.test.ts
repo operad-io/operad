@@ -288,6 +288,34 @@ describe("harness-claude/agent", () => {
     });
   });
 
+  test("a message the host sends through the inbox reaches the program as a message line", async () => {
+    const env = await setup("message");
+    const handlers: Array<(text: string) => void> = [];
+    let stopped = 0;
+    const inbox = {
+      listen(handler: (text: string) => void): () => void {
+        handlers.push(handler);
+        return () => {
+          stopped += 1;
+        };
+      },
+    };
+    const running = env.registry.runStep(
+      "harness-claude/agent",
+      { prompt: "hello", cwd: env.root, inbox },
+      { runId: "run-message" },
+    );
+    await waitForFile(env.marker);
+    expect(handlers).toHaveLength(1);
+    handlers[0]?.("wrap up now");
+    expect((await running).result).toBe("done");
+    expect(JSON.parse(readFileSync(`${env.record}.message`, "utf8"))).toEqual({
+      type: "message",
+      text: "wrap up now",
+    });
+    expect(stopped).toBe(1);
+  });
+
   test("the run's access profile is passed to the worker", async () => {
     const env = await setup("done");
     await env.registry.runStep(

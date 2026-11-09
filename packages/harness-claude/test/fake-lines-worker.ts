@@ -108,6 +108,15 @@ switch (mode) {
     process.exit(0);
     break;
   }
+  case "message": {
+    // Waits for a message from the host and records it.
+    mark();
+    const said = await stdinLine();
+    if (recordPath !== undefined) writeFileSync(`${recordPath}.message`, said);
+    line(result());
+    process.exit(0);
+    break;
+  }
   case "no-cost":
     line(result({ cost: null }));
     process.exit(0);
