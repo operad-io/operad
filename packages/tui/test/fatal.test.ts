@@ -131,6 +131,13 @@ describe("a fault that ends the app", () => {
         }),
     ],
     [
+      "an uncaught exception",
+      (arm) =>
+        arm(() => {
+          queueMicrotask(() => process.emit("uncaughtException", new Error("view broke")));
+        }),
+    ],
+    [
       "an uncaught rejection",
       (arm) =>
         arm(() => {
@@ -173,7 +180,8 @@ describe("a fault that ends the app", () => {
         },
       });
       expect(code).toBe(1);
-      expect(reported).toEqual(["view broke"]);
+      // The fault is the last message; earlier ones are request failures echoed at exit.
+      expect(reported.at(-1)).toBe("view broke");
       const written = atMessage[0] ?? "";
       for (const sequence of RESTORE) expect(written).toContain(sequence);
       expect(written.endsWith("\u001b[?25h")).toBe(true);
@@ -181,4 +189,108 @@ describe("a fault that ends the app", () => {
       expect(renderer.isDestroyed).toBe(true);
     });
   }
+});
+
+describe("a fault in the app's own loops", () => {
+  test("a view that throws while a request is answered ends the app through the request guard", async () => {
+    // Nothing but the list request can render a loaded list here: the event stream is quiet.
+    const fatals: string[] = [];
+    let armed = false;
+    const view: TuiView = {
+      render(state) {
+        if (state.tabs.find((tab) => tab.id === "type:item")?.list.loaded === true) {
+          if (!armed) {
+            armed = true;
+            throw new Error("view broke");
+          }
+        }
+      },
+      destroy() {},
+    };
+    const shell = startShell({
+      client: new Failing(),
+      events: () => new Quiet(),
+      view,
+      width: 80,
+      height: 20,
+      theme: "dark",
+      clock: immediateClock,
+      onFatal: (message) => fatals.push(message),
+    });
+    expect(await shell.done).toBe(1);
+    expect(fatals).toEqual(["view broke"]);
+  });
+
+  test("an event stream that throws ends the app with the message", async () => {
+    const fatals: string[] = [];
+    let finished = 0;
+    const shell = startShell({
+      client: new Failing(),
+      events: () => ({
+        stop() {},
+        [Symbol.asyncIterator]: () => ({ next: () => Promise.reject(new Error("stream broke")) }),
+      }),
+      view: new Watch(),
+      width: 80,
+      height: 20,
+      theme: "dark",
+      clock: immediateClock,
+      onFatal: (message) => fatals.push(message),
+      onFinish: () => {
+        finished += 1;
+      },
+    });
+    expect(await shell.done).toBe(1);
+    expect(fatals).toEqual(["stream broke"]);
+    expect(finished).toBe(1);
+  });
+});
+
+describe("runTui", () => {
+  test("a fault before the shell exists still ends the app, with the message", async () => {
+    const { renderer } = await recorded();
+    const reported: string[] = [];
+    const code = await runTui({
+      url: "http://127.0.0.1:1",
+      token: "t",
+      onError: (message) => reported.push(message),
+      hooks: {
+        renderer: async () => {
+          process.emit("unhandledRejection", new Error("early fault"), Promise.resolve());
+          return renderer;
+        },
+      },
+    });
+    expect(code).toBe(1);
+    expect(reported).toContain("early fault");
+    expect(renderer.isDestroyed).toBe(true);
+  });
+
+  test("a server that cannot be reached is echoed after the screen closes", async () => {
+    const { renderer } = await recorded();
+    const reported: string[] = [];
+    const controller = new AbortController();
+    const code = await runTui({
+      url: "http://127.0.0.1:1",
+      token: "t",
+      signal: controller.signal,
+      onError: (message) => reported.push(message),
+      hooks: {
+        renderer: async () => renderer,
+        view: (ctx) => {
+          const real = createTuiView(ctx);
+          return {
+            render(state) {
+              real.render(state);
+              if (state.connection === "unreachable") controller.abort();
+            },
+            destroy: () => real.destroy(),
+          };
+        },
+      },
+    });
+    expect(code).toBe(0);
+    expect(reported.length).toBeGreaterThan(0);
+    expect(reported.join("\n")).toContain("127.0.0.1:1");
+  });
 });

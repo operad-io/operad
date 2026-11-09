@@ -451,6 +451,7 @@ the row fields.
 | T-0151-M1 | packages/dev/src/followups.ts | a repeated finding kept its oldest copy instead of the newest | `review follow-ups > collects the findings of every round and task, deduplicated, grouped by task, duplicates kept once within a task` |
 | T-0151-M2 | packages/dev/src/rework.ts | an argument list from `firstArgs` was recorded as coming from `first` | `review settings by round > firstArgs still belongs to the first review of every attempt, rework round included` |
 | T-0114-M4 | packages/dev/src/views.ts | a group of the run with no recorded attempt was dropped (the pending attempt was never made) | `metrics times come from the run's own facts > a rework whose worktree is still being prepared: the next attempt is already running it` |
+| T-0148-M9 | packages/dev/src/steps.ts | the work wait bound was `<=`, so one wait too many before the failure went to a person | `dev/work > unavailable: after the allowed waits the failure goes to a person` |
 | T-0150-M1 | packages/dev/src/integration-queue.ts | `turn()` checked the abort signal before it read a leader's result | `a claimed task aborted after the leader's push > reports the merge that is on main, not a cancel` |
 | T-0102-M5 | packages/dev/src/steps.ts | the work wait bound allowed one wait too many (`<=` for `<`) | `dev/work > unavailable: after the allowed waits the failure goes to a person` |
 

@@ -2,6 +2,8 @@ import { definePlugin } from "../../../src/index.ts";
 import type { ObjectRow } from "../../../src/index.ts";
 
 let logReads = 0;
+/** How many times the first page of the `digits` section was read. */
+let digitReads = 0;
 
 /** The live `log` section grows per read; a test starts it from zero. */
 export function resetLogReads(): void {
@@ -90,6 +92,7 @@ export default definePlugin({
           { id: "info", title: "Info" },
           { id: "log", title: "Log", live: true },
           { id: "pages", title: "Pages" },
+          { id: "digits", title: "Digits" },
           { id: "hang", title: "Hang" },
           { id: "big", title: "Big" },
         ];
@@ -116,6 +119,18 @@ export default definePlugin({
             };
           }
           return { markdown: `page ${cursor}` };
+        }
+        if (sectionId === "digits") {
+          // Labels that are numbers, in the opposite order of their positions.
+          if (cursor === undefined) {
+            digitReads += 1;
+            return {
+              markdown: `first ${digitReads}`,
+              next: "b",
+              pages: [{ label: "2" }, { label: "1", cursor: "b" }],
+            };
+          }
+          return { markdown: "second" };
         }
         if (sectionId === "hang") {
           await waiting;

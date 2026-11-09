@@ -74,3 +74,5 @@ the row fields.
 | T-0127-M3 | packages/cli/src/http-bind.ts | a wrong configuration was retried like a busy port | `startWithRetry > does not try again a configuration that is wrong` |
 | T-0127-M4 | packages/cli/src/http-bind.ts | a reload that could not release its address ended the process without starting a replacement serve | `leaveStuck > a reload that cannot release ends the process, and a new serve starts first` |
 | T-0127-M5 | packages/cli/src/http-bind.ts | a supervised serve that could not release ended with code 1, so the supervisor did not start the next one | `leaveStuck > under a supervisor the process ends with the reload code and starts nothing itself` |
+| T-0148-M8 | packages/cli/src/main.ts | --page tried a label before a number again | `operad presentation commands > show --page takes a number as a position before a label` |
+| T-0148-M10 | packages/cli/src/main.ts | `--page` of the first page read it again instead of reusing the read that gave the pages list | `operad presentation commands > show --page of the first page reads it once; another page costs one more read` |

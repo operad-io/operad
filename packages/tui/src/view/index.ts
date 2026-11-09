@@ -441,7 +441,7 @@ function objectContent(state: TuiState, palette: TuiPalette): StyledText {
   const width = sectionWidth(state);
   return styled([
     chunk("\n"),
-    ...objectHeader(object, palette, width, pagePosition(section)),
+    ...objectHeader(object, palette, width, pagePosition(section, state)),
     ...sectionTabs(object, palette, width),
     ...(section === undefined
       ? sectionContent(state, section, palette)
