@@ -68,8 +68,10 @@ export default definePlugin({
       async run(ctx) {
         const info = infoOf(ctx.params);
         const first = join(info.dir, `started-${info.name}`);
-        writeFileSync(existsSync(first) ? `${first}-again` : first, String(process.pid));
+        // The order line comes first: a test that sees the started file may kill
+        // this process at once, and must find the line already written.
         appendFileSync(join(info.dir, "order"), `${info.name}\n`);
+        writeFileSync(existsSync(first) ? `${first}-again` : first, String(process.pid));
         await waitForFile(join(info.dir, `gate-${info.name}`));
         return { result: "ok" };
       },
