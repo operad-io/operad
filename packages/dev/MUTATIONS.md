@@ -461,3 +461,9 @@ the row fields.
 |---|---|---|---|
 | T-0151-M3 | packages/dev/src/gate.ts | a review whose followed commit is missing was given the settings of a first review (the `rework` mapping removed) | `dev/review rework rounds > settings by round > a review whose followed commit is missing from the checkout is a later review for its settings` |
 | T-0151-M4 | packages/dev/src/gate.ts | a report from the fallback was recorded with the primary's harness and arguments (the fallback block switched off) | `dev/review fallback and retry > a 429 falls back once, and the round passes without a rework` |
+
+## T-0163 — flaky review hardening tests
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0163-M1 | packages/dev/src/gate.ts | the review wait bound allowed one wait too many (`> MAX_REVIEW_WAITS + 1`), which the seeded waits must still count | `dev/review hardening > an unavailable model waits at most MAX_REVIEW_WAITS times, across a restart` |

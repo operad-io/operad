@@ -1662,8 +1662,36 @@ describe("dev/review hardening", () => {
     reviewTestHooks.now = () => clock;
     try {
       let registry = state.registry;
+      // Real model calls are slow under load, and a test that outlives its
+      // timeout keeps running beside the next one. So the first waits are
+      // real and the middle ones are written into the task as the facts
+      // they would have left; the last waits and the end are real again.
+      const REAL_WAITS = 3;
+      const SEEDED_WAITS = MAX_REVIEW_WAITS - 2 * REAL_WAITS;
+      let seeded = 0;
       for (let wait = 1; wait <= MAX_REVIEW_WAITS; wait += 1) {
-        if (wait === 20) {
+        if (wait === REAL_WAITS + 1) {
+          const task = await taskOf(state);
+          const attempt = task.attempt;
+          const review = attempt?.review;
+          const unavailable = attempt?.reviewRuns?.[0];
+          if (attempt === undefined || review === undefined || review === null || unavailable === undefined) {
+            throw new Error("the waiting round left no run to copy");
+          }
+          const more = Array.from({ length: SEEDED_WAITS }, () => unavailable);
+          await state.store.put("task", state.taskKey, {
+            ...task,
+            attempt: {
+              ...attempt,
+              reviewRuns: [...(attempt.reviewRuns ?? []), ...more],
+              review: { ...review, runs: [...(review.runs ?? []), ...more] },
+            },
+          }, "test:seed-waits");
+          seeded = SEEDED_WAITS;
+          wait += SEEDED_WAITS;
+          clock += 120_000 * SEEDED_WAITS;
+        }
+        if (wait === MAX_REVIEW_WAITS - 1) {
           // A restart: a new registry reads the count from the task's facts.
           registry = new PluginRegistry(
             [createDevPlugin(), createShellPlugin(), state.reviewer.plugin],
@@ -1677,7 +1705,7 @@ describe("dev/review hardening", () => {
         expect(result.result).toBe("unavailable");
         clock += 120_000;
       }
-      expect(state.reviewer.calls).toHaveLength(MAX_REVIEW_WAITS);
+      expect(state.reviewer.calls).toHaveLength(MAX_REVIEW_WAITS - seeded);
       const last = await registry.runStep("dev/review", {}, {
         runId: "review-exhaust",
         object: { type: "task", id: state.taskKey, data: {} },
@@ -1686,7 +1714,7 @@ describe("dev/review hardening", () => {
       expect(String(last.data?.message)).toContain(
         "review did not finish (model unavailable)",
       );
-      expect(state.reviewer.calls).toHaveLength(MAX_REVIEW_WAITS + 1);
+      expect(state.reviewer.calls).toHaveLength(MAX_REVIEW_WAITS - seeded + 1);
       const task = await taskOf(state);
       expect(task.phase).toBe("waiting");
       expect(task.retryAt ?? null).toBeNull();
@@ -1698,7 +1726,7 @@ describe("dev/review hardening", () => {
         object: { type: "task", id: state.taskKey, data: {} },
       });
       expect(replay.result).toBe("exhausted");
-      expect(state.reviewer.calls).toHaveLength(MAX_REVIEW_WAITS + 1);
+      expect(state.reviewer.calls).toHaveLength(MAX_REVIEW_WAITS - seeded + 1);
     } finally {
       delete reviewTestHooks.now;
     }
