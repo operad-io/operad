@@ -9,6 +9,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { RGBA } from "@opentui/core";
 import { watchDirectory } from "@operad-io/engine/platform";
+import { SHIPPED_THEMES, THEME_FAMILIES, shippedThemeFile } from "./themes.ts";
 
 /** The theme mode a terminal reports. */
 export type TuiMode = "light" | "dark";
@@ -117,8 +118,18 @@ export const BUILTIN_THEMES: Readonly<Record<"light" | "dark" | "terminal", TuiP
   terminal: TERMINAL,
 };
 
-/** The theme names a person can choose. `auto` follows the terminal. */
-export const THEME_NAMES: readonly string[] = ["auto", "light", "dark", "terminal"];
+/**
+ * The theme names a person can choose. `auto` follows the terminal, and so does
+ * a family; the shipped themes are fixed.
+ */
+export const THEME_NAMES: readonly string[] = [
+  "auto",
+  "light",
+  "dark",
+  "terminal",
+  ...Object.keys(THEME_FAMILIES),
+  ...SHIPPED_THEMES,
+];
 
 export const DEFAULT_THEME = "auto";
 
@@ -126,6 +137,10 @@ export const DEFAULT_THEME = "auto";
 export function resolvePalette(name: string, mode: TuiMode): TuiPalette {
   if (name === "auto") return TUI_PALETTE[mode];
   if (name === "light" || name === "dark" || name === "terminal") return BUILTIN_THEMES[name];
+  const shipped = SHIPPED_PALETTES.get(name);
+  if (shipped !== undefined) return shipped;
+  const family = THEME_FAMILIES[name];
+  if (family !== undefined) return resolvePalette(family[mode], mode);
   throw new Error(unknownTheme(name));
 }
 
@@ -197,15 +212,21 @@ function colourValue(file: string, token: string, value: unknown): string {
   );
 }
 
-/** Reads one theme file and the themes it extends into a full palette. */
-function loadFileTheme(home: string, name: string, chain: readonly string[]): TuiPalette {
-  const file = themeFile(home, name);
-  if (!existsSync(file)) {
-    const by = themeFile(home, chain[chain.length - 1] ?? name);
-    throw new Error(
-      `${by}: "extends" names "${name}", which is not a theme; the themes are ${[...THEME_NAMES, ...fileThemeNames(home)].join(", ")}`,
-    );
-  }
+/** The shipped themes' palettes, read once from `themes/` and checked like any theme file. */
+const SHIPPED_PALETTES: ReadonlyMap<string, TuiPalette> = new Map(
+  SHIPPED_THEMES.map((name): [string, TuiPalette] => {
+    const file = shippedThemeFile(name);
+    const { parent, changes } = parseThemeFile(file);
+    if (parent !== "dark") throw new Error(`${file}: a shipped theme extends dark, not "${parent}"`);
+    return [name, { ...DARK, ...changes }];
+  }),
+);
+
+/** What a theme file says: the theme it extends and the tokens it changes. */
+function parseThemeFile(file: string): {
+  readonly parent: string;
+  readonly changes: Partial<Record<TuiToken, string>>;
+} {
   let value: unknown;
   try {
     value = JSON.parse(readFileSync(file, "utf8"));
@@ -218,9 +239,12 @@ function loadFileTheme(home: string, name: string, chain: readonly string[]): Tu
   }
   const record = value as Record<string, unknown>;
   for (const key of Object.keys(record)) {
-    if (key !== "extends" && key !== "colors" && key !== "$schema") {
-      throw new Error(`${file}: unknown key "${key}"; only "extends" and "colors" are allowed`);
+    if (key !== "extends" && key !== "colors" && key !== "$schema" && key !== "comment") {
+      throw new Error(`${file}: unknown key "${key}"; only "extends", "colors" and "comment" are allowed`);
     }
+  }
+  if (record["comment"] !== undefined && typeof record["comment"] !== "string") {
+    throw new Error(`${file}: "comment" must be a string`);
   }
   const parent = record["extends"] ?? "dark";
   if (typeof parent !== "string") throw new Error(`${file}: "extends" must be a string`);
@@ -237,13 +261,30 @@ function loadFileTheme(home: string, name: string, chain: readonly string[]): Tu
     }
     changes[token as TuiToken] = colourValue(file, token, colour);
   }
+  return { parent, changes };
+}
+
+/** Reads one theme file and the themes it extends into a full palette. */
+function loadFileTheme(home: string, name: string, chain: readonly string[]): TuiPalette {
+  const file = themeFile(home, name);
+  if (!existsSync(file)) {
+    const by = themeFile(home, chain[chain.length - 1] ?? name);
+    throw new Error(
+      `${by}: "extends" names "${name}", which is not a theme; the themes are ${[...THEME_NAMES, ...fileThemeNames(home)].join(", ")}`,
+    );
+  }
+  const { parent, changes } = parseThemeFile(file);
   let base: TuiPalette;
+  const shipped = SHIPPED_PALETTES.get(parent);
   if (parent === "light" || parent === "dark" || parent === "terminal") {
     if (existsSync(themeFile(home, parent))) throw new Error(clash(home, parent));
     base = BUILTIN_THEMES[parent];
-  } else if (!FILE_THEME_NAME.test(parent) || parent === "auto") {
+  } else if (shipped !== undefined) {
+    if (existsSync(themeFile(home, parent))) throw new Error(clash(home, parent));
+    base = shipped;
+  } else if (!FILE_THEME_NAME.test(parent) || isBuiltin(parent)) {
     throw new Error(
-      `${file}: "extends" names "${parent}"; use light, dark, terminal or another theme file`,
+      `${file}: "extends" names "${parent}"; use light, dark, terminal, a shipped theme or another theme file`,
     );
   } else {
     const chained = [...chain, name];

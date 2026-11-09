@@ -12,6 +12,11 @@ colour value): `text`, `weak`, `rule`, `accent`, `run`, `ok`, `error`, `add`,
 `dark` by the terminal's theme mode, live), `light`, `dark` (the operad app's
 tokens) and `terminal` (the terminal's own 16 ANSI colours).
 
+Popular palettes (Catppuccin, Dracula, Nord, Solarized, Tokyo Night, One,
+Rosé Pine, GitHub, Kanagawa) ship as theme files in `themes/`; `themes/README.md`
+has their sources, licences and contrast adjustments, and `src/themes.ts` declares
+the families (`catppuccin`, `kanagawa`, ...) that follow the terminal's mode.
+
 Choose one in `~/.operad/tui.json` (schema: `tui.schema.json`):
 
 ```json

@@ -1,15 +1,19 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "operad theme file",
-  "description": "A theme in themes/<name>.json of the operad home. It names only the tokens it changes; extends fills the rest.",
+  "description": "A theme in themes/<name>.json of the operad home, or a theme shipped in packages/tui/themes. It names only the tokens it changes; extends fills the rest.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "$schema": {
       "type": "string"
     },
+    "comment": {
+      "description": "A note for people: where the colours come from, their licence, what was adjusted. It does nothing.",
+      "type": "string"
+    },
     "extends": {
-      "description": "light, dark, terminal or the name of another theme file.",
+      "description": "light, dark, terminal, the name of a shipped theme or the name of another theme file.",
       "type": "string",
       "minLength": 1,
       "default": "dark"

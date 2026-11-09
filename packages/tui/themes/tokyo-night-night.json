@@ -1,0 +1,18 @@
+{
+  "$schema": "../theme.schema.json",
+  "comment": "Tokyo Night. Source: https://github.com/tokyo-night/tokyo-night-vscode-theme (themes/tokyo-night-color-theme.json). Licence: MIT, Copyright (c) 2018-present Enkia; the text is in LICENSE-tokyo-night. Roles: text = editor.foreground, weak = foreground, rule = editorLineNumber.foreground, accent = terminal.ansiMagenta, run = terminal.ansiBlue, ok = terminal.ansiGreen, error = terminal.ansiRed, add = gitDecoration.addedResourceForeground, remove = gitDecoration.deletedResourceForeground, tint = list.activeSelectionBackground, code = textCodeBlock.background, background = editor.background. Adjusted for contrast, nothing else changed: remove #914c54 (gitDecoration.deletedResourceForeground) -> #9a5159: lightness 43% -> 46% for 3:1 on #1a1b26 (was 2.74:1).",
+  "colors": {
+    "text": "#a9b1d6",
+    "weak": "#787c99",
+    "rule": "#363b54",
+    "accent": "#bb9af7",
+    "run": "#7aa2f7",
+    "ok": "#73daca",
+    "error": "#f7768e",
+    "add": "#449dab",
+    "remove": "#9a5159",
+    "tint": "#202330",
+    "code": "#16161e",
+    "background": "#1a1b26"
+  }
+}
