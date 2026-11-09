@@ -17,11 +17,13 @@ import {
 } from "@operad-io/engine";
 import shell, { createShellPlugin } from "../src/index.ts";
 import {
+  alive,
   cleanupTempRoots,
   manualClock,
   tempRoot,
   signalable,
   waitForFile,
+  waitForGone,
   waitForPid,
 } from "./support.ts";
 
@@ -52,34 +54,6 @@ async function fixture(plugin: PluginDefinition = shell): Promise<Fixture> {
 
 function dataOf(result: PluginStepResult): Record<string, unknown> {
   return (result.data ?? {}) as Record<string, unknown>;
-}
-
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Waits for an observable condition with a bounded poll. Only the tests that
- * exercise a real signal use it: the sentinel's `ready` arrival, the death of
- * a line the stop killed, and a delayed sentinel are events, not fixed sleeps.
- */
-async function waitUntil(
-  predicate: () => boolean,
-  timeoutMs = 2000,
-  stepMs = 20,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() >= deadline) {
-      throw new Error("timed out waiting for a condition");
-    }
-    await new Promise((resolve) => globalThis.setTimeout(resolve, stepMs));
-  }
 }
 
 describe("shell/command", () => {
@@ -197,8 +171,7 @@ describe("shell/command", () => {
     expect(dataOf(result).reason).toBe("cancelled");
     // The SIGKILL reaches the whole group but the kernel takes the processes
     // down asynchronously: wait for the pid to go instead of sampling it once.
-    await waitUntil(() => !alive(pid));
-    expect(alive(pid)).toBe(false);
+    await waitForGone(pid);
   });
 
   test("more than 8 MiB of output lands in the log and only the tail is in the fact", async () => {
@@ -243,7 +216,7 @@ describe("shell/command", () => {
 
     expect(result.result).toBe("pass");
     const pid = await waitForPid(pidFile);
-    expect(alive(pid)).toBe(false);
+    await waitForGone(pid);
   });
 
   test("a child that leaves the group cannot hold the command open", async () => {
@@ -677,7 +650,7 @@ describe("a flow through the runner", () => {
 
       expect(await running).toBe("ended");
       expect((await readState(log, info.runId)).endedStatus).toBe("failed");
-      expect(alive(pid)).toBe(false);
+      await waitForGone(pid);
     } finally {
       await log.close();
     }
