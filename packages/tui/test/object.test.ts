@@ -70,9 +70,9 @@ describe("the object pane reducer", () => {
     state = reduce(state, { type: "key", key: "down" });
     state = reduce(state, { type: "key", key: "return" });
 
-    expect(state.object?.id).toBe("two");
+    expect(state.object?.id).toBe("item:two");
     expect(state.object?.row.title).toBe("Title two");
-    expect(state.objectRequest).toEqual({ id: "two", version: 1 });
+    expect(state.objectRequest).toEqual({ id: "item:two", version: 1 });
 
     state = reduce(state, {
       type: "object",
@@ -280,14 +280,14 @@ describe("the object pane reducer", () => {
     state = reduce(state, { type: "key", key: "escape" });
     state = reduce(state, { type: "key", key: "down" });
     state = reduce(state, { type: "key", key: "enter" });
-    expect(state.objectRequest?.id).toBe("two");
+    expect(state.objectRequest?.id).toBe("item:two");
 
     state = reduce(state, {
       type: "object",
       object: viewObject("one"),
       version: staleVersion,
     });
-    expect(state.object?.id).toBe("two");
+    expect(state.object?.id).toBe("item:two");
     expect(state.object?.loading).toBe(true);
   });
 

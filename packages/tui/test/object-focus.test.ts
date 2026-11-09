@@ -96,8 +96,9 @@ class Client implements TuiShellClient {
   objects(): Promise<ViewListPage> {
     return Promise.resolve({ rows: [row("one"), row("two")] });
   }
-  object(id: string): Promise<ViewObject> {
-    this.objectCalls.push(id);
+  object(requested: string): Promise<ViewObject> {
+    this.objectCalls.push(requested);
+    const id = requested.replace(/^item:/, "");
     return Promise.resolve({
       id,
       type: "item",
@@ -269,10 +270,10 @@ describe("focus", () => {
       shell.key({ name: "enter" });
       await view.until((state) => state.object?.id === "one");
       shell.key({ name: "enter" });
-      expect(client.objectCalls).toEqual(["one"]);
+      expect(client.objectCalls).toEqual(["item:one"]);
       shell.key({ name: "j" });
       await view.until((state) => state.object?.id === "two");
-      expect(client.objectCalls).toEqual(["one", "two"]);
+      expect(client.objectCalls).toEqual(["item:one", "item:two"]);
       shell.key({ name: "k" });
       await view.until((state) => state.object?.id === "one");
       shell.key({ name: "1" });
