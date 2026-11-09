@@ -223,3 +223,29 @@ describe("the object pane follows the cursor", () => {
     }
   });
 });
+
+describe("a row that names no object", () => {
+  test("the pane asks to select an object instead of loading forever", async () => {
+    const { createTestRenderer } = await import("@opentui/core/testing");
+    const { createTuiView } = await import("../src/view/index.ts");
+    const { initialState, reduce } = await import("../src/state.ts");
+    let state = initialState({ width: 120, height: 24, theme: "dark" });
+    state = reduce(state, {
+      type: "running",
+      items: [{ runId: "r1", flow: "f", step: "s", object: null }] as never,
+    });
+    state = reduce(state, { type: "key", key: "2" } as never);
+    const setup = await createTestRenderer({ width: 120, height: 24 });
+    try {
+      const view = createTuiView(setup.renderer);
+      view.render(state);
+      await setup.renderOnce();
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("select an object");
+      expect(frame).not.toContain("loading…");
+      view.destroy();
+    } finally {
+      await setup.dispose();
+    }
+  });
+});

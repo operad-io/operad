@@ -223,3 +223,4 @@ the row fields.
 | T-0102-M1 | packages/tui/src/state.ts | a list that loaded did not ask the object pane to show the cursor row | `the object pane follows the cursor > a list that loads under the open tab shows its first row` |
 | T-0102-M2 | packages/tui/src/app.ts | a new cursor move did not cancel the pending follow, so every row in a fast run was fetched | `the object pane follows the cursor > three fast moves fetch only the last row` |
 | T-0102-M3 | packages/tui/src/state.ts | the follow opened the row also in one-pane layout | `the object pane follows the cursor > one pane opens nothing until enter` |
+| T-0102-M4 | packages/tui/src/view/index.ts | a cursor row that names no object showed "loading…" instead of "select an object" | `a row that names no object > the pane asks to select an object instead of loading forever` |

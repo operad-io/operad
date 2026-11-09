@@ -428,9 +428,10 @@ function sectionContent(
 function objectContent(state: TuiState, palette: TuiPalette): StyledText {
   const object = state.object;
   if (object === undefined) {
-    // A list with rows has its cursor row on the way; only an empty one asks.
+    // An openable cursor row is on the way; a row that names no object, or an empty list, asks.
     const tab = state.tabs[state.active];
-    const waiting = tab !== undefined && tab.list.rows.length > 0;
+    const under = tab?.list.rows[tab.list.cursor];
+    const waiting = under !== undefined && under.openable !== false;
     return styled([
       chunk("\n"),
       chunk(waiting ? "loading…" : "select an object", palette.weak),
