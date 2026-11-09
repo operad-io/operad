@@ -74,7 +74,7 @@ import { ChannelTypeError, runMcpServer } from "@operad-io/mcp";
 import {
   codeChecker,
   RELOAD_EXIT,
-  SUPERVISED_ENV,
+  takeSupervisedFlag,
   superviseServe,
   settingsRoots,
   takeCodeSnapshot,
@@ -1490,6 +1490,7 @@ async function commandServe(
   io: CliIo,
   argv: readonly string[],
   lock: LockHandle,
+  supervised: boolean,
 ): Promise<"stopped" | "reload"> {
   const interval = process.env.OPERAD_SERVE_INTERVAL_MS;
   const parsed = interval === undefined ? Number.NaN : Number(interval);
@@ -1500,7 +1501,7 @@ async function commandServe(
   // Under a supervisor a stop signal can arrive twice (the terminal sends it
   // to the whole group and the supervisor passes it on); the second must not
   // reach the default action and end the stop half way.
-  const listen = process.env[SUPERVISED_ENV] === "1" ? process.on.bind(process) : process.once.bind(process);
+  const listen = supervised ? process.on.bind(process) : process.once.bind(process);
   listen("SIGINT", stop);
   listen("SIGTERM", stop);
 
@@ -2246,6 +2247,7 @@ export async function main(
       // The home lock comes first, before the store, the plugins or the port:
       // a second serve fails here, with exit 4, and touches nothing. The lock
       // is handed to `serve`, so there is no check and then act.
+      const supervised = takeSupervisedFlag();
       const lock = acquireLock(serveLockPath(home));
       let reload = false;
       try {
@@ -2254,7 +2256,7 @@ export async function main(
         // views resolve ids from the home, outside every repository.
         const context = await openContext(home, io, undefined, home, true);
         try {
-          reload = (await commandServe(context, io, args.slice(1), lock)) === "reload";
+          reload = (await commandServe(context, io, args.slice(1), lock, supervised)) === "reload";
         } finally {
           context.views.close();
           await context.log.close();
@@ -2266,7 +2268,7 @@ export async function main(
       // again under the process that was started: a supervised serve hands
       // the restart back with a code, the first one becomes the supervisor.
       if (reload) {
-        return process.env[SUPERVISED_ENV] === "1" ? RELOAD_EXIT : await superviseServe();
+        return supervised ? RELOAD_EXIT : await superviseServe();
       }
       return 0;
     }

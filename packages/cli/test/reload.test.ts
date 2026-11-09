@@ -6,7 +6,6 @@ import { SUPERVISED_ENV } from "../src/code-reload.ts";
 import { readLockPid } from "../../engine/src/index.ts";
 import { waitForChange } from "../../engine/src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
-import { waitForFile } from "../../shell/test/support.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -93,15 +92,36 @@ class Output {
   /** Resolves with the count of matches once `pattern` matches at least `count` times. */
   async until(pattern: RegExp, count = 1): Promise<void> {
     const global = new RegExp(pattern.source, "g");
+    const deadline = Date.now() + WAIT_LIMIT_MS;
     while ((this.text.match(global)?.length ?? 0) < count) {
-      await new Promise<void>((resolve) => this.waiters.push(resolve));
+      if (Date.now() > deadline) {
+        throw new Error(`timed out waiting for output matching ${pattern} (${count}x); got:\n${this.text}`);
+      }
+      await new Promise<void>((resolve) => {
+        this.waiters.push(resolve);
+        setTimeout(resolve, 200);
+      });
     }
+  }
+}
+
+/** A wait ends with a message that names what it waited for, before the test's own timeout. */
+const WAIT_LIMIT_MS = 45_000;
+
+/** Resolves once the file exists. */
+async function waitForFileNamed(path: string): Promise<void> {
+  const deadline = Date.now() + WAIT_LIMIT_MS;
+  while (!existsSync(path)) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for file ${path}`);
+    await waitForChange(dirname(path), basename(path), 200);
   }
 }
 
 /** Resolves once the file holds text that matches. */
 async function waitForText(path: string, pattern: RegExp): Promise<void> {
+  const deadline = Date.now() + WAIT_LIMIT_MS;
   for (;;) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for text ${pattern} in ${path}`);
     try {
       if (pattern.test(readFileSync(path, "utf8"))) return;
     } catch {
@@ -153,12 +173,18 @@ async function setup(): Promise<Setup> {
   };
 }
 
+/** The environment of a serve under test: a test run from inside a supervised serve must not make it think it is supervised. */
+function childEnv(extra: Record<string, string>): Record<string, string> {
+  const env = { ...(process.env as Record<string, string>), ...extra };
+  delete env[SUPERVISED_ENV];
+  return env;
+}
+
 function spawnOperad(setupValue: Setup, args: readonly string[]): Bun.Subprocess<"ignore", "pipe", "pipe"> {
   return Bun.spawn({
     cmd: [process.execPath, CLI_ENTRY, ...args],
     cwd: setupValue.home,
-    // A test run from inside a supervised serve must not make its own serve think it is supervised.
-    env: { ...(process.env as Record<string, string>), [SUPERVISED_ENV]: "", ...setupValue.env },
+    env: childEnv(setupValue.env),
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -185,45 +211,60 @@ async function stopServe(setupValue: Setup): Promise<void> {
   await operad(setupValue, ["serve", "stop"]);
 }
 
+async function runFirstCase(): Promise<void> {
+  const s = await setup();
+  const serve = spawnOperad(s, ["serve"]);
+  const output = new Output(serve.stdout, serve.stderr);
+  try {
+    await output.until(/serving /);
+    const firstPid = readLockPid(join(s.home, "serve.lock"));
+    const runId = await trigger(s);
+    await waitForFileNamed(join(s.work, "hold-started"));
+    expect(readFileSync(join(s.work, "hold-started"), "utf8")).toBe("v1");
+
+    writeFileSync(s.plugin, pluginSource("v2", s.work));
+    await output.until(/reloading: /);
+    await output.until(/serving /, 2);
+    const secondPid = readLockPid(join(s.home, "serve.lock"));
+    expect(secondPid).not.toBe(firstPid);
+    // The process that was started is still the one running: the restart
+    // happened under it, so a terminal or supervisor still holds it.
+    expect(serve.exitCode).toBeNull();
+
+    // The step that was running when the file changed goes on and ends on v1.
+    expect(existsSync(join(s.work, "hold-finished"))).toBe(false);
+    writeFileSync(join(s.work, "release"), "go\n");
+    await waitForFileNamed(join(s.work, "stamp"));
+    expect(readFileSync(join(s.work, "hold-finished"), "utf8")).toBe("v1");
+    expect(readFileSync(join(s.work, "stamp"), "utf8")).toBe("v2");
+
+    const history = await operad(s, ["history", runId]);
+    expect(history.split("\n").filter((line) => line.includes("continuing on updated code"))).toHaveLength(1);
+
+    // A serve that came from a reload reloads again, under the same process.
+    writeFileSync(s.plugin, pluginSource("v4", s.work));
+    await output.until(/serving /, 3);
+    expect(readLockPid(join(s.home, "serve.lock"))).not.toBe(secondPid);
+    expect(serve.exitCode).toBeNull();
+  } finally {
+    await stopServe(s);
+    expect(await serve.exited).toBe(0);
+  }
+}
+
 describe("a serve picks up changed code", () => {
   test("a running step finishes on the old code; the next step runs the new code", async () => {
-    const s = await setup();
-    const serve = spawnOperad(s, ["serve"]);
-    const output = new Output(serve.stdout, serve.stderr);
+    await runFirstCase();
+  }, 60_000);
+
+  test("the same case passes when the test itself runs inside a supervised serve", async () => {
+    const before = process.env[SUPERVISED_ENV];
+    process.env[SUPERVISED_ENV] = "1";
     try {
-      await output.until(/serving /);
-      const firstPid = readLockPid(join(s.home, "serve.lock"));
-      const runId = await trigger(s);
-      await waitForFile(join(s.work, "hold-started"));
-      expect(readFileSync(join(s.work, "hold-started"), "utf8")).toBe("v1");
-
-      writeFileSync(s.plugin, pluginSource("v2", s.work));
-      await output.until(/reloading: /);
-      await output.until(/serving /, 2);
-      const secondPid = readLockPid(join(s.home, "serve.lock"));
-      expect(secondPid).not.toBe(firstPid);
-      // The process that was started is still the one running: the restart
-      // happened under it, so a terminal or supervisor still holds it.
-      expect(serve.exitCode).toBeNull();
-
-      // The step that was running when the file changed goes on and ends on v1.
-      expect(existsSync(join(s.work, "hold-finished"))).toBe(false);
-      writeFileSync(join(s.work, "release"), "go\n");
-      await waitForFile(join(s.work, "stamp"));
-      expect(readFileSync(join(s.work, "hold-finished"), "utf8")).toBe("v1");
-      expect(readFileSync(join(s.work, "stamp"), "utf8")).toBe("v2");
-
-      const history = await operad(s, ["history", runId]);
-      expect(history.split("\n").filter((line) => line.includes("continuing on updated code"))).toHaveLength(1);
-
-      // A serve that came from a reload reloads again, under the same process.
-      writeFileSync(s.plugin, pluginSource("v4", s.work));
-      await output.until(/serving /, 3);
-      expect(readLockPid(join(s.home, "serve.lock"))).not.toBe(secondPid);
-      expect(serve.exitCode).toBeNull();
+      await runFirstCase();
     } finally {
-      await stopServe(s);
-      expect(await serve.exited).toBe(0);
+      if (before === undefined) delete process.env[SUPERVISED_ENV];
+      else process.env[SUPERVISED_ENV] = before;
     }
   }, 60_000);
 
@@ -235,7 +276,7 @@ describe("a serve picks up changed code", () => {
       await output.until(/serving /);
       const pid = readLockPid(join(s.home, "serve.lock"));
       const runId = await trigger(s);
-      await waitForFile(join(s.work, "hold-started"));
+      await waitForFileNamed(join(s.work, "hold-started"));
 
       writeFileSync(s.plugin, "export default {{ not typescript\n");
       await output.until(/does not load; the old code keeps running/);
@@ -256,7 +297,7 @@ describe("a serve picks up changed code", () => {
       expect(readLockPid(join(s.home, "serve.lock"))).not.toBe(pid);
 
       // The run goes on from the next step with the fixed code.
-      await waitForFile(join(s.work, "stamp"));
+      await waitForFileNamed(join(s.work, "stamp"));
       expect(readFileSync(join(s.work, "hold-finished"), "utf8")).toBe("v1");
       expect(readFileSync(join(s.work, "stamp"), "utf8")).toBe("v3");
 
@@ -276,7 +317,7 @@ describe("a serve picks up changed code", () => {
       await output.until(/serving /);
       const pid = readLockPid(join(s.home, "serve.lock"));
       const runId = await trigger(s);
-      await waitForFile(join(s.work, "hold-started"));
+      await waitForFileNamed(join(s.work, "hold-started"));
 
       // New code and a config.json that does not parse: nothing can load.
       writeFileSync(configPath, "{ not json");
@@ -293,7 +334,7 @@ describe("a serve picks up changed code", () => {
       writeFileSync(configPath, config);
       await output.until(/reloading: /);
       await output.until(/serving /, 2);
-      await waitForFile(join(s.work, "stamp"));
+      await waitForFileNamed(join(s.work, "stamp"));
       expect(readFileSync(join(s.work, "stamp"), "utf8")).toBe("v2");
       expect(readLockPid(join(s.home, "serve.lock"))).not.toBe(pid);
     } finally {
@@ -356,7 +397,7 @@ describe("a serve picks up changed code", () => {
     // so the serve gets it more than once while it is still stopping: its
     // step is held in a tick until the test has sent them all.
     writeFileSync(join(s.work, "tick-block"), "");
-    await waitForFile(join(s.work, "tick-entered"));
+    await waitForFileNamed(join(s.work, "tick-entered"));
     for (let count = 0; count < 20; count += 1) {
       serve.kill("SIGINT");
       await new Promise<void>((resolve) => setImmediate(resolve));
