@@ -181,3 +181,6 @@ the row fields.
 | T-0090-M4 | packages/tui/src/state.ts | the position ignored where the loaded text starts in the table of contents | `a section with pages > the position line names the page and its label` |
 | T-0090-M5 | packages/tui/src/actions.ts | `p` and `n` were no longer reserved, so a binding could take them | `actions in the reducer > the page keys p, n and N are reserved` |
 | T-0090-M7 | packages/tui/src/view/index.ts | the page picker always listed from the first entry, so the marked page left the box | `a section with pages > the picker scrolls so the marked page stays in the box` |
+| T-0141-M1 | packages/tui/src/app.ts | `runTui` did not wait for `renderer.closed`, so the message was written before the terminal was restored | `a fault that ends the app > a view that throws while a request is answered: the terminal is restored before the message is written` |
+| T-0141-M2 | packages/tui/src/app.ts | a rejected request callback was swallowed instead of ending the app | `a fault that ends the app > a view that throws while a request is answered: the terminal is restored before the message is written` |
+| T-0141-M3 | packages/tui/src/app.ts | no `unhandledRejection` handler, so the renderer's print-only handler kept the app up | `a fault that ends the app > an uncaught rejection: the terminal is restored before the message is written` |

@@ -368,46 +368,6 @@ describe("runTui", () => {
     }
   });
 
-  test("failures are printed after the screen is closed, never while it is up", async () => {
-    const test = await createTestRenderer({ width: 60, height: 10 });
-    const written: string[] = [];
-    const original = process.stderr.write.bind(process.stderr);
-    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
-      written.push(String(chunk));
-      return true;
-    }) as typeof process.stderr.write;
-    const stop = new AbortController();
-    const seen: boolean[] = [];
-    try {
-      const code = await runTui({
-        url: "http://127.0.0.1:1",
-        token: "t",
-        signal: stop.signal,
-        onError: () => seen.push(test.renderer.isDestroyed),
-        hooks: {
-          renderer: async () => test.renderer,
-          view: (renderer) => {
-            const real = createTuiView(renderer);
-            return {
-              render(state) {
-                real.render(state);
-                if (state.status !== undefined) stop.abort();
-              },
-              destroy: () => real.destroy(),
-            };
-          },
-        },
-      });
-      expect(code).toBe(0);
-      expect(seen.length).toBeGreaterThan(0);
-      expect(seen.every(Boolean)).toBe(true);
-      expect(written).toEqual([]);
-    } finally {
-      process.stderr.write = original;
-      await test.dispose();
-    }
-  });
-
   for (const name of ["SIGINT", "SIGTERM"] as const) {
     test(`${name} restores the terminal, stops the event stream and exits 0`, async () => {
       const before = process.listenerCount(name);
