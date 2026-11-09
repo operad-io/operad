@@ -26,6 +26,7 @@ import {
   type TuiKeyBinding,
 } from "./client.ts";
 import { defaultOperadHome } from "@operad-io/engine";
+import { loadRecent, saveRecent } from "./recent.ts";
 import { discoverServer } from "./discover.ts";
 import { TuiEvents, retryDelay, type TuiEvent } from "./events.ts";
 import {
@@ -160,6 +161,10 @@ export interface TuiShellDeps {
    * scrolling fast does not fetch every row; 150 by default.
    */
   readonly followDelayMs?: number | undefined;
+  /** The palette entries used in earlier runs, the latest first. */
+  readonly recent?: readonly string[] | undefined;
+  /** Called with the list of recent entries each time it changes. */
+  readonly onRecent?: ((recent: readonly string[]) => void) | undefined;
 }
 
 /** A running shell: feed it keys and sizes, and wait for `done`. */
@@ -217,6 +222,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     height: deps.height,
     theme: deps.theme,
     url: deps.url,
+    recent: deps.recent,
   });
   let finished = false;
   let refreshAbort: AbortController | undefined;
@@ -786,7 +792,9 @@ export function startShell(deps: TuiShellDeps): TuiShell {
 
   function dispatch(event: TuiStateEvent): void {
     if (finished) return;
+    const before = state.recent;
     state = reduce(state, event);
+    if (state.recent !== before) deps.onRecent?.(state.recent);
     // A request is asked for once: it leaves the state as it is launched.
     const request = state.pageRequest;
     if (request !== undefined) state = reduce(state, { type: "page-launched" });
@@ -973,6 +981,8 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
     const started = startShell({
       client,
       url: location.url,
+      recent: loadRecent(themeHome),
+      onRecent: (recent) => saveRecent(themeHome, recent),
       events: (signal) =>
         new TuiEvents({ url: location.url, token: location.token, signal }),
       view: createdView,

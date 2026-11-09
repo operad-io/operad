@@ -13,6 +13,7 @@ import { acquireLock, lockHeld, runLockPath, serveLockPath } from "../runner/loc
 import type { LockHandle } from "../runner/lock.ts";
 import { StepLimits } from "../runner/limits.ts";
 import { applyInput, objectKey, parseObjectKey, readState } from "../runner/service.ts";
+import { reapStale } from "../platform/step-reap.ts";
 
 export interface SpawnRunOptions {
   /** The previous process died mid-step; recover before doing anything else. */
@@ -402,6 +403,18 @@ export async function serve(options: ServeOptions): Promise<void> {
   });
 
   try {
+    // A serve that died left the processes of its steps running: the runs that
+    // are no longer active have none to keep.
+    try {
+      const active = await options.log.runs({ active: true });
+      await reapStale({
+        home: options.home,
+        activeRunIds: active.map((run) => run.runId),
+        log: (message) => options.onLog?.(message),
+      });
+    } catch (error) {
+      options.onLog?.(`serve start: could not look for left-over processes: ${error instanceof Error ? error.message : String(error)}`);
+    }
     while (!stopped) {
       inPass = true;
       const result = await serveOnce({

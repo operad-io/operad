@@ -14,7 +14,7 @@ import {
 } from "@opentui/core";
 import type { RowMark } from "@operad-io/engine";
 import { allowedText } from "../args.ts";
-import { confirmText, entryHint, paletteEntries } from "../actions.ts";
+import { confirmText, entryHint, matchPositions, paletteEntries } from "../actions.ts";
 import { chunksOfLine } from "../markdown.ts";
 import {
   TUI_PALETTE,
@@ -454,6 +454,21 @@ function keyContent(palette: TuiPalette): StyledText {
   return styled(chunks);
 }
 
+/** An entry's name cut into runs, each wholly matched or wholly not. */
+function nameRuns(
+  name: string,
+  marked: ReadonlySet<number>,
+): { readonly text: string; readonly marked: boolean }[] {
+  const runs: { text: string; marked: boolean }[] = [];
+  graphemes(name).forEach((unit, place) => {
+    const on = marked.has(place);
+    const last = runs[runs.length - 1];
+    if (last !== undefined && last.marked === on) last.text += unit;
+    else runs.push({ text: unit, marked: on });
+  });
+  return runs;
+}
+
 /** The palette or the note input, drawn in the box; undefined when neither is open. */
 function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefined {
   const input = state.input;
@@ -515,7 +530,15 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
     const hint = entryHint(entry);
     chunks.push(chunk(at === input.cursor ? "❯ " : "  ", palette.accent));
     chunks.push(chunk(`${entry.group.padEnd(7)} `, palette.weak));
-    chunks.push(chunk(entry.name, at === input.cursor ? palette.accent : palette.text));
+    const marked = new Set(matchPositions(input.query, entry));
+    const colour = at === input.cursor ? palette.accent : palette.text;
+    for (const run of nameRuns(entry.name, marked)) {
+      chunks.push(
+        run.marked
+          ? chunk(run.text, palette.accent, TextAttributes.BOLD | TextAttributes.UNDERLINE)
+          : chunk(run.text, colour),
+      );
+    }
     chunks.push(chunk(hint === "" ? "\n" : `  ${hint}\n`, palette.weak));
   });
   return styled(chunks);

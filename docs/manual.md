@@ -142,6 +142,12 @@ process when `serve` stops keeps running, and the next `serve` for the home
 picks the run up again. Nothing starts new work or advances waits and timers
 while no `serve` runs; `operad serve` or `operad tui` resumes it.
 
+A step cleans up after itself: when it ends, every process it started that is
+still running (a loop a worker left in the background, for example) is stopped,
+and the step's log lists them. At start, `serve` does the same for the steps of
+runs that are no longer active. See "What a step cleans up" in the `dev` README
+for how processes are found and what it cannot find.
+
 A restart does not disturb a check or command that is running. Each run is a
 process of its own, and the command a step starts is held by that run, not by
 `serve`: stopping and starting `serve` sends no signal to it, does not stop its

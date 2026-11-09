@@ -224,16 +224,18 @@ describe("shell/command", () => {
     }
   });
 
-  test("a child that leaves the group cannot hold the command open", async () => {
+  test("a child that leaves the group cannot hold the command open, and the step stops it when it ends", async () => {
     const clock = manualClock();
     const { root, registry } = await fixture(createShellPlugin({ clock }));
     const pidFile = join(root, "escaped.pid");
     // Job control puts the background job in a process group of its own. It
     // keeps the inherited output descriptors and can no longer be signaled
-    // through the command's group.
+    // through the command's group; the step's own sweep stops it at the end.
     const running = registry.runStep(
       "shell/command",
-      { line: `set -m; sleep 60 & echo $! > '${pidFile}'` },
+      // The shell lives a few tens of milliseconds more, as a shell does that
+      // reads its profile and ends a command: the sweep sees the job below it.
+      { line: `set -m; sleep 60 & echo $! > '${pidFile}'; sleep 0.05` },
       { runId: "run-escape" },
     );
 
@@ -247,7 +249,8 @@ describe("shell/command", () => {
 
     try {
       expect(result.result).toBe("pass");
-      expect(alive(pid)).toBe(true);
+      // The group stop cannot reach it; the sweep at the end of the step does.
+      await waitForGone(pid);
       expect(clock.sleeps).toBe(0);
     } finally {
       if (signalable(pid) && alive(pid)) process.kill(pid, "SIGKILL");

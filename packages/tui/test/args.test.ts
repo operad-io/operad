@@ -19,6 +19,9 @@ const ACTIONS: readonly ViewAction[] = [
   action("devtest:concurrency", {
     args: { type: "object", properties: { count: COUNT }, required: ["count"] },
   }),
+  action("devtest:pause", {
+    args: { type: "object", properties: { hold: { type: "boolean", default: false } }, required: ["hold"] },
+  }),
   action("devtest:both", {
     args: { type: "object", properties: { level: LEVEL, count: COUNT, why: NOTE }, required: ["level", "count", "why"] },
     note: "why",
@@ -126,5 +129,22 @@ describe("arguments of an action", () => {
     expect(state.input).toBeUndefined();
     expect(state.actionRequest).toBeUndefined();
     expect(state.acting).toBe(false);
+  });
+
+  test("a boolean is a yes/no list that starts on its default", () => {
+    let state = press(opened(), ":", ...typeText("pause"), "enter");
+    expect(state.input?.kind === "args" && state.input.fields[0]?.options.map((o) => o.label)).toEqual(["yes", "no"]);
+    expect(state.input?.kind === "args" && state.input.cursor).toBe(1);
+    state = press(state, "k", "enter");
+    expect(state.actionRequest).toEqual({ action: "devtest:pause", id: "item:one", args: { hold: true } });
+  });
+
+  test("a yes or no typed in the palette fills a boolean; anything else is refused", () => {
+    const yes = press(opened(), ":", ...typeText("devtest:pause yes"), "enter");
+    expect(yes.actionRequest?.args).toEqual({ hold: true });
+    const no = press(opened(), ":", ...typeText("devtest:pause n"), "enter");
+    expect(no.actionRequest?.args).toEqual({ hold: false });
+    const bad = press(opened(), ":", ...typeText("devtest:pause maybe"));
+    expect(paletteEntries(bad)[0]?.refusal).toBe("hold: yes, no");
   });
 });
