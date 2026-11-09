@@ -973,6 +973,21 @@ another worker does not take it. If the worker is no longer in the `default`
 pool the pool picks any worker with room and the result says
 `work: pi; claude is no longer in the pool`.
 
+### One integration at a time
+
+Tasks of one repository integrate one at a time, in the order their merges were
+chosen. A task that waits for its turn shows `waiting to integrate: T-0025 is
+integrating` in `operad running` and in its step log; it holds no check place and
+waits without a time limit. A turn is given back when the integration ends in
+any way, including when its process dies.
+
+`integration.batch` in `dev.json` (default `1`, one at a time) lets a turn merge
+the tasks queued behind it: up to that many verified commits go onto main in
+queue order as one candidate, the key commands run once, and one push lands
+them. Each task keeps its own merge commit and its history says `integrated in a
+batch with <tasks>`. A conflict between them or a failing key command falls back
+to one by one, so only the task at fault goes back to its worker.
+
 ### When `dev.json` is not valid
 
 A repository's `dev.json` is read again by every step and every scheduler pass.

@@ -1404,6 +1404,7 @@ export function runningLine(item: RunningItem): string {
   ];
   if (item.title !== null) parts.push(item.title);
   parts.push(`run ${age(item.elapsedMs)}`);
+  if (item.note !== undefined && item.note !== null) parts.push(item.note);
   return parts.join("  ");
 }
 

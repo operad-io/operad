@@ -48,6 +48,10 @@ function costNote(cost: unknown, quality?: unknown): string | undefined {
  * sees it next to the task before deciding what to do.
  */
 function waitNote(task: TaskData): string | undefined {
+  const turn = task.attempt?.integrationWait;
+  if (typeof turn === "string" && turn.length > 0) {
+    return `waiting to integrate: ${turn}`;
+  }
   if (task.phase !== "waiting") return undefined;
   const integration = task.attempt?.integration;
   if (integration === undefined || integration === null) return undefined;
