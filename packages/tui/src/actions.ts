@@ -56,10 +56,19 @@ export function resolveBindings(bindings: readonly TuiBinding[]): {
   };
 }
 
+/** The palette's groups, in the order they are shown. */
+export const PALETTE_GROUPS = ["actions", "tui"] as const;
+export type TuiPaletteGroup = (typeof PALETTE_GROUPS)[number];
+
 /** One line of the palette. */
 export interface TuiPaletteEntry {
-  /** `<plugin>:<action>`. */
+  readonly group: TuiPaletteGroup;
+  /** `<plugin>:<action>` for an action; the command's words for the TUI. */
   readonly name: string;
+  /** One line that says what the entry does; search reads it too. */
+  readonly title: string;
+  /** Set on a TUI command: what the reducer runs. */
+  readonly command?: TuiCommand | undefined;
   readonly key: string | undefined;
   readonly needsNote: boolean;
   readonly confirm: boolean;
@@ -134,21 +143,87 @@ export function fuzzyScore(query: string, name: string): number {
   return (last - first) * 100 + first;
 }
 
-/** The palette's lines for the typed query, best match first. */
+/** What a TUI command does; each is what a key does. */
+export type TuiCommand =
+  | { readonly kind: "help" | "refresh" | "back" | "quit" }
+  | { readonly kind: "go"; readonly tabId: string };
+
+function commandEntries(state: TuiState): readonly TuiPaletteEntry[] {
+  const make = (
+    name: string,
+    title: string,
+    key: string | undefined,
+    command: TuiCommand,
+  ): TuiPaletteEntry => ({
+    group: "tui",
+    name,
+    title,
+    key,
+    needsNote: false,
+    confirm: false,
+    command,
+  });
+  const tabs = state.tabs.map((tab, at) => ({ tab, key: at < 9 ? String(at + 1) : undefined }));
+  const go = (kind: "pending" | "running"): TuiPaletteEntry | undefined => {
+    const found = tabs.find((item) => item.tab.kind === kind);
+    return found === undefined
+      ? undefined
+      : make(`go to ${kind}`, `show the ${kind} list`, found.key, { kind: "go", tabId: found.tab.id });
+  };
+  const types = tabs
+    .filter((item) => item.tab.kind === "type")
+    .map((item) =>
+      make(`go to ${item.tab.title}`, `show the list of ${item.tab.title}`, item.key, {
+        kind: "go",
+        tabId: item.tab.id,
+      }),
+    );
+  return [
+    make("help", "show or hide the key list", "?", { kind: "help" }),
+    make("refresh", "load the lists again", "r", { kind: "refresh" }),
+    ...[go("pending"), go("running")].filter((entry): entry is TuiPaletteEntry => entry !== undefined),
+    ...types,
+    make("go back", "close the open object", "escape", { kind: "back" }),
+    make("quit", "leave the TUI", "q", { kind: "quit" }),
+  ];
+}
+
+/** The palette's lines for the typed query: groups in order, best match first inside one. */
 export function paletteEntries(state: TuiState): readonly TuiPaletteEntry[] {
   const object = state.object;
-  if (object === undefined) return [];
   const query = state.input?.kind === "palette" ? state.input.query : "";
-  return object.actions
-    .map((action, order) => ({ action, order, score: fuzzyScore(query, action.name) }))
-    .filter((item) => item.score >= 0)
-    .sort((a, b) => a.score - b.score || a.order - b.order)
-    .map(({ action }) => ({
-      name: action.name,
-      key: keyOf(state.bindings, action),
-      needsNote: action.note !== undefined,
-      confirm: action.confirm,
-    }));
+  const actions: readonly TuiPaletteEntry[] =
+    object === undefined
+      ? []
+      : object.actions.map((action) => ({
+          group: "actions",
+          name: action.name,
+          title: `${action.name} on ${bareId(object.id)}`,
+          key: keyOf(state.bindings, action),
+          needsNote: action.note !== undefined,
+          confirm: action.confirm,
+        }));
+  const rank = (entries: readonly TuiPaletteEntry[]): readonly TuiPaletteEntry[] =>
+    entries
+      .map((entry, order) => {
+        const byName = fuzzyScore(query, entry.name);
+        const byTitle = fuzzyScore(query, entry.title);
+        // A name match outranks a match that only the title has.
+        const score = byName >= 0 ? byName : byTitle >= 0 ? byTitle + 100000 : -1;
+        return { entry, order, score };
+      })
+      .filter((item) => item.score >= 0)
+      .sort((a, b) => a.score - b.score || a.order - b.order)
+      .map((item) => item.entry);
+  return [...rank(actions), ...rank(commandEntries(state))];
+}
+
+/** The entry the palette cursor is on. */
+export function chosenEntry(state: TuiState): TuiPaletteEntry | undefined {
+  const input = state.input;
+  if (input?.kind !== "palette") return undefined;
+  const entries = paletteEntries(state);
+  return entries[Math.min(input.cursor, entries.length - 1)];
 }
 
 /** The words after an entry: its key and what it asks. */
@@ -267,8 +342,11 @@ export function inputKey(
       return { ...state, input: { ...input, cursor } };
     }
     if (enter) {
-      const chosen = entries[Math.min(input.cursor, entries.length - 1)];
-      return chosen === undefined ? state : startAction({ ...state, input: undefined }, chosen.name);
+      const chosen = chosenEntry(state);
+      // A command is run by the reducer that owns the state it changes.
+      return chosen === undefined || chosen.command !== undefined
+        ? state
+        : startAction({ ...state, input: undefined }, chosen.name);
     }
     if (key === "backspace") {
       return { ...state, input: { ...input, query: dropLast(input.query), cursor: 0 } };
