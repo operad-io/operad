@@ -12,6 +12,8 @@ import { StateError, pidAlive, readLockPid, serveLockPath } from "@operad-io/eng
 import { existsSync } from "node:fs";
 
 export const DEFAULT_STOP_TIMEOUT_SECS = 30;
+const COMMAND_ASKS = 20;
+const COMMAND_ASK_WAIT_MS = 50;
 
 export interface ServeStopOptions {
   readonly home: string;
@@ -61,7 +63,21 @@ export async function serveStop(options: ServeStopOptions): Promise<void> {
     return;
   }
 
-  const command = (options.commandOf ?? processCommand)(pid);
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const commandOf = options.commandOf ?? processCommand;
+  // `ps` under load can answer nothing for a live process (exit 0 with empty
+  // output, seen in T-0108), so "cannot say" is asked again a few times while
+  // the process lives. A command line that is not a serve is final.
+  let command = commandOf(pid);
+  for (let ask = 1; command === undefined && ask < COMMAND_ASKS && isAlive(pid); ask += 1) {
+    await sleep(COMMAND_ASK_WAIT_MS);
+    command = commandOf(pid);
+  }
+  if (command === undefined && !isAlive(pid)) {
+    options.write(`no operad serve runs for ${options.home}\n`);
+    return;
+  }
   if (command === undefined || !isServeCommand(command)) {
     throw new StateError(
       `process ${pid} holds ${path} but is not an operad serve; nothing was signalled`,
@@ -71,8 +87,6 @@ export async function serveStop(options: ServeStopOptions): Promise<void> {
   (options.signal ?? ((target) => process.kill(target, "SIGTERM")))(pid);
   options.write(`stopping operad serve (pid ${pid})\n`);
 
-  const sleep =
-    options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const clock = options.clock ?? (() => Date.now());
   const deadline = clock() + options.timeoutSecs * 1_000;
   for (;;) {
