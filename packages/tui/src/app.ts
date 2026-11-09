@@ -142,8 +142,13 @@ export interface TuiShellDeps {
   readonly width: number;
   readonly height: number;
   readonly theme: TuiTheme;
-  /** A failure to report once the screen is gone. */
+  /** A failed request; the page shows it too, and the app goes on. */
   readonly onMessage?: ((message: string) => void) | undefined;
+  /**
+   * An error the app cannot go on from: the shell stops (`done` resolves 1)
+   * after this is called, and the caller reports it once the screen is gone.
+   */
+  readonly onFatal?: ((message: string) => void) | undefined;
   /** Called once when the shell finishes, before `done` resolves. */
   readonly onFinish?: (() => void) | undefined;
   /** Spaces the live refetches and the retries; the real clock by default. */
@@ -224,7 +229,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   const clock = deps.clock ?? systemClock;
   let retryCancel: (() => void) | undefined;
   let retryAttempt = 0;
-  const batcher = new LiveBatcher(clock, (targets) => void refetch(targets));
+  const batcher = new LiveBatcher(clock, (targets) => guard(refetch(targets)));
   let followTimer: ReturnType<typeof setTimeout> | undefined;
   let events: TuiEventSource | undefined;
   let announce: (code: number) => void = () => undefined;
@@ -232,7 +237,21 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     announce = resolve;
   });
 
-  function finish(): void {
+  /** An unexpected rejection ends the app, through the same exit as `q`. */
+  function guard(work: Promise<void>): void {
+    work.catch(fatal);
+  }
+
+  function fatal(error: unknown): void {
+    if (finished) return;
+    try {
+      deps.onFatal?.(messageOf(error));
+    } finally {
+      finish(1);
+    }
+  }
+
+  function finish(code = 0): void {
     if (finished) return;
     finished = true;
     batcher.stop();
@@ -247,8 +266,11 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     objectRequests.clear();
     events?.stop();
     abort.abort();
-    deps.onFinish?.();
-    announce(0);
+    try {
+      deps.onFinish?.();
+    } finally {
+      announce(code);
+    }
   }
 
   /** A request that failed to reach the server, or was refused its token. */
@@ -758,7 +780,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
 
   function requestRefresh(): void {
     if (finished) return;
-    void refresh();
+    guard(refresh());
   }
 
   function dispatch(event: TuiStateEvent): void {
@@ -803,11 +825,11 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       finish();
       return;
     }
-    if (request !== undefined) void loadPage(request);
-    if (filterRequest !== undefined) void loadFilter(filterRequest);
-    if (objectRequest !== undefined) void loadObject(objectRequest);
-    if (sectionRequest !== undefined) void loadSection(sectionRequest);
-    if (actionRequest !== undefined) void sendAction(actionRequest);
+    if (request !== undefined) guard(loadPage(request));
+    if (filterRequest !== undefined) guard(loadFilter(filterRequest));
+    if (objectRequest !== undefined) guard(loadObject(objectRequest));
+    if (sectionRequest !== undefined) guard(loadSection(sectionRequest));
+    if (actionRequest !== undefined) guard(sendAction(actionRequest));
     if (refreshing) requestRefresh();
   }
 
@@ -829,7 +851,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         }
       }
     } catch (error) {
-      if (!finished) report(error);
+      // A stream that throws cannot be read again.
+      fatal(error);
     }
   })();
 
@@ -872,7 +895,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         dispatch({ type: "theme", theme: state.theme });
       }
     },
-    stop: finish,
+    stop: () => finish(),
     done,
   };
 }
@@ -927,6 +950,16 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
     }
   };
 
+  // The renderer keeps its own handlers that only print; an error nobody
+  // caught ends the app the way every other fault does.
+  const onUncaught = (error: unknown): void => {
+    messages.push(messageOf(error));
+    code = 1;
+    shell?.stop();
+  };
+  process.on("uncaughtException", onUncaught);
+  process.on("unhandledRejection", onUncaught);
+
   try {
     const created = await (options.hooks?.renderer?.() ??
       createCliRenderer({
@@ -945,12 +978,18 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
       width: created.width,
       height: created.height,
       theme: themeOf(created, "dark"),
-      onMessage: (message) => messages.push(message),
+      onFatal: (message) => {
+        messages.push(message);
+        code = 1;
+      },
       onFinish: () => {
         // Close the screen first: nothing may be written under it.
-        createdView.destroy();
-        view = undefined;
-        if (!created.isDestroyed) created.destroy();
+        try {
+          createdView.destroy();
+        } finally {
+          view = undefined;
+          if (!created.isDestroyed) created.destroy();
+        }
       },
     });
     shell = started;
@@ -988,9 +1027,29 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
     options.signal?.removeEventListener("abort", onAbort);
     for (const name of STOP_SIGNALS) process.off(name, onSignal);
     stopThemeWatch?.();
-    shell?.stop();
-    view?.destroy();
-    if (renderer !== undefined && !renderer.isDestroyed) renderer.destroy();
+    try {
+      shell?.stop();
+      view?.destroy();
+    } catch (error) {
+      messages.push(messageOf(error));
+      code = 1;
+    }
+    if (renderer !== undefined) {
+      if (!renderer.isDestroyed) renderer.destroy();
+      // destroy() only starts the restore (mouse tracking off, keyboard
+      // protocol popped, main screen, cursor); `closed` settles when the
+      // terminal has the bytes. Nothing is written before that.
+      try {
+        await renderer.closed;
+      } catch (error) {
+        messages.push(messageOf(error));
+        code = 1;
+      }
+    }
+    // Keep the handlers until the screen is closed: a fault during the restore
+    // must not take the process down half way.
+    process.off("uncaughtException", onUncaught);
+    process.off("unhandledRejection", onUncaught);
   }
   const onError = options.onError ?? (() => undefined);
   for (const message of messages) onError(message);
