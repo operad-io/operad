@@ -855,6 +855,7 @@ function reviewPrompt(
   grading: Grading,
   prepare: readonly string[] = [],
   rework?: ReworkPrompt,
+  checks: readonly string[] = [],
 ): string {
   const pieces: string[] = [
     `Review the changes of task ${task.title}.`,
@@ -911,6 +912,13 @@ function reviewPrompt(
     );
   }
   pieces.push(
+    "## Checks already run",
+    [
+      checks.length === 0
+        ? "The repository's checks already passed on this commit."
+        : `These checks already passed on this commit:\n${checks.map((line) => `- \`${line}\``).join("\n")}`,
+      "Do not run them again, nor the repository's full test suite, nor anything that starts a simulator, a browser or a server. You may run one focused test file to confirm a suspicion, inside this checkout only. Do not copy the checkout elsewhere.",
+    ].join("\n"),
     "## What to write",
     [
       `Write a JSON object to ${resultPath} (inside the worktree you are in). The file must contain exactly:`,
@@ -2147,6 +2155,9 @@ export async function runReview(
       grading,
       context.settings.prepare,
       reworkPrompt,
+      context.settings.gate.commands.map((command) =>
+        typeof command === "string" ? command : command.run,
+      ),
     );
     // A resumed call asks with the prompt it recorded, not one built again.
     const recorded =

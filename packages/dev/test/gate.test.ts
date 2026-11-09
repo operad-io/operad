@@ -2847,6 +2847,7 @@ describe("dev/review rework rounds", () => {
       "## Commits since the previous review",
       "## Increment",
       "## Removed since the previous review",
+      "## Checks already run",
       "## What to write",
     ]);
     expect(prompt).not.toContain("## Diff");
@@ -3216,6 +3217,26 @@ describe("prepare", () => {
     await verify(state);
     await review(state);
     expect(state.reviewer.calls[0]?.prompt).not.toContain("is prepared");
+  });
+
+  test("the review prompt names the gate commands and says not to run them again", async () => {
+    const state = await fixture({ commands: ["echo check-one", "echo check-two"] });
+    await verify(state);
+    await review(state);
+    const prompt = state.reviewer.calls[0]?.prompt ?? "";
+    expect(prompt).toContain("- `echo check-one`");
+    expect(prompt).toContain("- `echo check-two`");
+    expect(prompt).toContain("Do not run them again");
+    expect(prompt).toContain("Do not copy the checkout elsewhere");
+  });
+
+  test("a repository without gate commands gets the rule without names", async () => {
+    const state = await fixture({ commands: [] });
+    await verify(state);
+    await review(state);
+    const prompt = state.reviewer.calls[0]?.prompt ?? "";
+    expect(prompt).toContain("Do not run them again");
+    expect(prompt).not.toContain("These checks already passed");
   });
 
   test("a failing prepare fails verify with its reason and log, and no gate command runs", async () => {
