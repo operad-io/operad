@@ -162,6 +162,22 @@ describe("the repo type", () => {
     });
   });
 
+  test("a repository stored without a running-task count shows running for a task already running", async () => {
+    const { root, store, alpha } = await setup();
+    const plan = await addPlan(store, { repository: alpha, slug: "work", title: "Work" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
+    await setTaskPhase(store, task.id, "running", { run: "r1" });
+    const stored = await store.get("repo", "alpha");
+    if (stored === undefined) throw new Error("alpha is missing");
+    const { activeTasks: _dropped, ...old } = stored.data;
+    await store.put("repo", "alpha", old, "test:old-repo");
+    const again = storeAt(root);
+    const registry = new PluginRegistry([createDevPlugin()], { store: again, storeRoot: again.root });
+    const fresh = createViews({ registry, store: again, onLog: () => undefined });
+    opened.push(fresh);
+    expect((await fresh.get("repo:alpha")).row.mark).toBe("running");
+  });
+
   test("the Overview names the path, the default branch, dev.json, worker and reviewer", async () => {
     const { views, alphaPath } = await setup();
     const object = await views.get("repo:alpha");
