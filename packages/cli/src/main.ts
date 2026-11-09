@@ -60,6 +60,7 @@ import {
   type Actor,
   type LogBackend,
   type GlobalFact,
+  HttpStopError,
   type HttpServerHandle,
   type OperadConfig,
   type RunInfo,
@@ -72,6 +73,7 @@ import {
 } from "@operad-io/engine";
 import { ChannelTypeError, runMcpServer } from "@operad-io/mcp";
 import {
+  BIND_FAILED_EXIT,
   codeChecker,
   RELOAD_EXIT,
   takeSupervisedFlag,
@@ -80,6 +82,14 @@ import {
   takeCodeSnapshot,
 } from "./code-reload.ts";
 import type { CodeSnapshot } from "./code-reload.ts";
+import {
+  BindFailed,
+  HandOverStuck,
+  REPLACES_ENV,
+  leaveStuck,
+  startWithRetry,
+  takeReplacesFlag,
+} from "./http-bind.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { QrTooLongError, encodeQr, renderQr } from "./qr.ts";
 import {
@@ -1521,6 +1531,7 @@ async function commandServe(
   argv: readonly string[],
   lock: LockHandle,
   supervised: boolean,
+  retryBind: boolean,
 ): Promise<"stopped" | "reload"> {
   const interval = process.env.OPERAD_SERVE_INTERVAL_MS;
   const parsed = interval === undefined ? Number.NaN : Number(interval);
@@ -1564,20 +1575,33 @@ async function commandServe(
     onLog: (message) => io.error(`${message}\n`),
   });
   let http: HttpServerHandle | undefined;
-  let outcome: "stopped" | "reload" = "stopped";
+  let outcome = "stopped" as "stopped" | "reload";
+  let unreleased: HttpStopError | undefined;
   let watch: CodeWatch | undefined;
   try {
     if (context.config.http.enabled) {
-      http = await startHttpServer({
-        home: context.home,
-        config: context.config.http,
-        views: context.views,
-        log: context.log,
-        registry: context.registry,
-        kernel,
-        onListen: (url) => io.write(`http ${url}\n`),
-        onLog: (message) => io.error(`${message}\n`),
-      });
+      const startHttp = (): Promise<HttpServerHandle> =>
+        startHttpServer({
+          home: context.home,
+          config: context.config.http,
+          views: context.views,
+          log: context.log,
+          registry: context.registry,
+          kernel,
+          onListen: (url) => io.write(`http ${url}\n`),
+          onLog: (message) => io.error(`${message}\n`),
+        });
+      // A serve that took over from another one tries again for a while: the
+      // old code released its addresses, the system may be slow to hand them
+      // back. A first start fails at once, as before.
+      http = retryBind
+        ? await startWithRetry(startHttp, {
+            retryMs: envNumber("OPERAD_BIND_RETRY_MS", 10_000),
+            stepMs: envNumber("OPERAD_BIND_RETRY_STEP_MS", 250),
+            now: () => Date.now(),
+            wait: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+          })
+        : await startHttp();
     }
     if (sourcesAllowed) {
       await kernel.startSources();
@@ -1634,11 +1658,21 @@ async function commandServe(
   } finally {
     watch?.stop();
     await notifier.stop();
-    if (http !== undefined) await http.stop();
+    if (http !== undefined) {
+      try {
+        await http.stop();
+      } catch (error) {
+        // An address that did not release cannot be handed over, and this
+        // process may not go on serving only some of its addresses.
+        if (!(error instanceof HttpStopError)) throw error;
+        unreleased = error;
+      }
+    }
     await kernel.stopSources();
     process.removeListener("SIGINT", stop);
     process.removeListener("SIGTERM", stop);
   }
+  if (unreleased !== undefined) throw new HandOverStuck(unreleased, outcome === "reload");
   return outcome;
 }
 
@@ -2364,27 +2398,68 @@ export async function main(
       // a second serve fails here, with exit 4, and touches nothing. The lock
       // is handed to `serve`, so there is no check and then act.
       const supervised = takeSupervisedFlag();
-      const lock = acquireLock(serveLockPath(home));
-      let reload = false;
-      try {
-        // serve answers clients that are in no directory: a bare id must not
-        // be scoped to the repository serve happened to start in, so its
-        // views resolve ids from the home, outside every repository.
-        const context = await openContext(home, io, undefined, home, true);
+      const replaces = takeReplacesFlag();
+      const runChecked = async (isSupervised: boolean, retryBind: boolean): Promise<"stopped" | "reload"> => {
+        const lock = acquireLock(serveLockPath(home));
         try {
-          reload = (await commandServe(context, io, args.slice(1), lock, supervised)) === "reload";
+          // serve answers clients that are in no directory: a bare id must not
+          // be scoped to the repository serve happened to start in, so its
+          // views resolve ids from the home, outside every repository.
+          const context = await openContext(home, io, undefined, home, true);
+          try {
+            return await commandServe(context, io, args.slice(1), lock, isSupervised, retryBind);
+          } finally {
+            context.views.close();
+            await context.log.close();
+          }
         } finally {
-          context.views.close();
-          await context.log.close();
+          lock.release();
         }
-      } finally {
-        lock.release();
+      };
+      const runOnce = async (
+        isSupervised: boolean,
+        retryBind: boolean,
+      ): Promise<"stopped" | "reload"> => {
+        try {
+          return await runChecked(isSupervised, retryBind);
+        } catch (error) {
+          // The lock is released by now; see leaveStuck.
+          if (!(error instanceof HandOverStuck)) throw error;
+          return leaveStuck(error, {
+            supervised: isSupervised,
+            log: (message) => io.error(message),
+            exit: (code) => process.exit(code),
+            startReplacement: () => {
+              Bun.spawn({
+                cmd: [process.execPath, ...process.argv.slice(1)],
+                cwd: process.cwd(),
+                env: { ...process.env, [REPLACES_ENV]: "1" },
+                stdin: "ignore",
+                stdout: "inherit",
+                stderr: "inherit",
+              }).unref();
+            },
+          });
+        }
+      };
+      let result: "stopped" | "reload";
+      try {
+        result = await runOnce(supervised, supervised || replaces);
+      } catch (error) {
+        if (supervised && error instanceof BindFailed) {
+          // One line, then the process that started the serve serves again.
+          io.error(
+            `reload: the new code could not listen (${error.message}); the old code serves every address again\n`,
+          );
+          return BIND_FAILED_EXIT;
+        }
+        throw error;
       }
       // The home lock and the port are free; the same command line starts
       // again under the process that was started: a supervised serve hands
       // the restart back with a code, the first one becomes the supervisor.
-      if (reload) {
-        return supervised ? RELOAD_EXIT : await superviseServe();
+      if (result === "reload") {
+        return supervised ? RELOAD_EXIT : await superviseServe(() => runOnce(false, true));
       }
       return 0;
     }

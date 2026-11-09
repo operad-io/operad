@@ -162,6 +162,58 @@ describe("ensureServer", () => {
     }
   });
 
+  test("a child that cannot listen because the port is taken says the port is in use", async () => {
+    const { home, cleanup } = await makeHome();
+    try {
+      const error = await ensureServer({
+        home,
+        fetch: async () => { throw new Error("refused"); },
+        spawn: (log) => {
+          writeFileSync(log, "operad: Failed to start server. Is port 7480 in use?\n");
+          return { exited: Promise.resolve(1) };
+        },
+        wait: noWait,
+        lockHeld: () => false,
+      }).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(TuiStartError);
+      const message = (error as Error).message;
+      expect(message).toContain("is in use");
+      expect(message).toContain("does not answer on http:");
+      expect(message).not.toContain("exited at once");
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("a child that lost the home lock to a serve that never answers says that serve runs and does not answer", async () => {
+    const { home, cleanup } = await makeHome();
+    try {
+      let checks = 0;
+      let time = 0;
+      const error = await ensureServer({
+        home,
+        fetch: async () => { throw new Error("refused"); },
+        spawn: (log) => {
+          writeFileSync(log, "operad: another serve holds this home\n");
+          return { exited: Promise.resolve(4) };
+        },
+        wait: async (ms) => { time += ms; },
+        now: () => time,
+        // Free before the start, held once the child has lost the lock.
+        lockHeld: () => {
+          checks += 1;
+          return checks > 1;
+        },
+      }).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(TuiStartError);
+      const message = (error as Error).message;
+      expect(message).toContain("already runs for this home but does not answer at");
+      expect(message).not.toContain("did not answer at");
+    } finally {
+      await cleanup();
+    }
+  });
+
   test("a child that never answers times out with the log and its tail", async () => {
     const { home, cleanup } = await makeHome();
     try {

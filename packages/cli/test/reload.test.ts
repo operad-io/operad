@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SUPERVISED_ENV } from "../src/code-reload.ts";
-import { readLockPid } from "../../engine/src/index.ts";
+import { networkInterfaces } from "node:os";
+import { readHttpToken, readLockPid } from "../../engine/src/index.ts";
 import { waitForChange } from "../../engine/src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 
@@ -138,7 +139,12 @@ interface Setup {
   readonly env: Record<string, string>;
 }
 
-async function setup(): Promise<Setup> {
+interface HttpSetup {
+  readonly port: number;
+  readonly listen: readonly string[];
+}
+
+async function setup(http?: HttpSetup): Promise<Setup> {
   const root = await tempRoot();
   const home = join(root, "home");
   const work = join(root, "work");
@@ -151,7 +157,7 @@ async function setup(): Promise<Setup> {
     JSON.stringify({
       plugins: [plugin],
       store: { backend: "jsonl", path: join(root, "store") },
-      http: { enabled: false },
+      http: http === undefined ? { enabled: false } : { enabled: true, port: http.port, listen: http.listen },
     }),
   );
   writeFileSync(
@@ -405,5 +411,121 @@ describe("a serve picks up changed code", () => {
     writeFileSync(join(s.work, "tick-release"), "");
     expect(await serve.exited).toBe(0);
     expect(existsSync(join(s.home, "serve.lock"))).toBe(false);
+  }, 60_000);
+});
+
+
+/** The second address: the machine's private one when it has one (a phone's), else ::1 (127.0.0.2 is not bound on macOS). */
+function secondAddress(): string {
+  for (const list of Object.values(networkInterfaces())) {
+    for (const entry of list ?? []) {
+      if (entry.family === "IPv4" && !entry.internal && /^(10\.|192\.168\.)/.test(entry.address)) {
+        return entry.address;
+      }
+    }
+  }
+  return "::1";
+}
+
+async function freePort(): Promise<number> {
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("") });
+  const port = server.port;
+  await server.stop(true);
+  if (port === undefined) throw new Error("no free port");
+  return port;
+}
+
+function urlOf(address: string, port: number): string {
+  return address.includes(":") ? `http://[${address}]:${port}` : `http://${address}:${port}`;
+}
+
+/** True when an operad server answers at the url (it asks for a token). */
+async function answers(url: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${url}/v1/types`);
+    return response.status === 401;
+  } catch {
+    return false;
+  }
+}
+
+/** Opens an event stream with the home's token and waits for its first bytes. */
+async function openEvents(home: string, url: string): Promise<() => void> {
+  const token = await readHttpToken(home);
+  if (token === undefined) throw new Error("no token");
+  const controller = new AbortController();
+  const response = await fetch(`${url}/v1/events`, {
+    headers: { authorization: `Bearer ${token.token}` },
+    signal: controller.signal,
+  });
+  const reader = response.body?.getReader();
+  if (reader === undefined) throw new Error("no stream");
+  await reader.read();
+  return () => controller.abort();
+}
+
+describe("a reload with two listen addresses", () => {
+  test("ends with the new code serving both, while an event stream is open on the second", async () => {
+    const port = await freePort();
+    const second = secondAddress();
+    const s = await setup({ port, listen: ["127.0.0.1", second] });
+    const serve = spawnOperad(s, ["serve"]);
+    const output = new Output(serve.stdout, serve.stderr);
+    let closeStream: (() => void) | undefined;
+    try {
+      await output.until(/serving /);
+      const firstPid = readLockPid(join(s.home, "serve.lock"));
+      closeStream = await openEvents(s.home, urlOf(second, port));
+      writeFileSync(s.plugin, pluginSource("v2", s.work));
+      await output.until(/reloading: /);
+      await output.until(/serving /, 2);
+      expect(readLockPid(join(s.home, "serve.lock"))).not.toBe(firstPid);
+      expect(await answers(urlOf("127.0.0.1", port))).toBe(true);
+      expect(await answers(urlOf(second, port))).toBe(true);
+      expect(output.text).not.toContain("Failed to start server");
+    } finally {
+      closeStream?.();
+      await stopServe(s);
+      await serve.exited;
+    }
+  }, 60_000);
+
+  test("a bind that keeps failing leaves the old code serving both addresses, with one line in the log", async () => {
+    const port = await freePort();
+    const second = secondAddress();
+    const s = await setup({ port, listen: ["127.0.0.1", second] });
+    s.env.OPERAD_BIND_RETRY_MS = "1500";
+    s.env.OPERAD_BIND_RETRY_STEP_MS = "50";
+    const serve = spawnOperad(s, ["serve"]);
+    const output = new Output(serve.stdout, serve.stderr);
+    let blocker: ReturnType<typeof Bun.serve> | undefined;
+    try {
+      await output.until(/serving /);
+      const supervisorPid = serve.pid;
+      writeFileSync(s.plugin, pluginSource("v2", s.work));
+      await output.until(/reloading: /);
+      // Take the second address the moment the old code lets it go, and keep it.
+      while (blocker === undefined) {
+        try {
+          blocker = Bun.serve({ hostname: second, port, fetch: () => new Response("") });
+        } catch {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+      }
+      await output.until(/the old code serves every address again/);
+      // The new code is gone; free the address for the old code to take back.
+      await blocker.stop(true);
+      blocker = undefined;
+      await output.until(/serving /, 2);
+      expect(await answers(urlOf("127.0.0.1", port))).toBe(true);
+      expect(await answers(urlOf(second, port))).toBe(true);
+      expect(output.text.match(/the old code serves every address again/g)).toHaveLength(1);
+      expect(serve.pid).toBe(supervisorPid);
+      expect(serve.exitCode).toBeNull();
+    } finally {
+      await blocker?.stop(true);
+      await stopServe(s);
+      expect(await serve.exited).toBe(0);
+    }
   }, 60_000);
 });

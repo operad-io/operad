@@ -184,13 +184,21 @@ export function takeSupervisedFlag(env: NodeJS.ProcessEnv = process.env): boolea
 export const RELOAD_EXIT = 75;
 
 /**
+ * The exit code of a supervised serve that could not listen on every address
+ * in time: the supervisor then serves with the code it already has.
+ */
+export const BIND_FAILED_EXIT = 76;
+
+/**
  * Starts the same command line again, in place: the process the user (or a
  * supervisor) started stays, with its terminal and its process group, and runs
  * the serve as a child with the same arguments and environment. It starts the
  * child again each time the child stops for new code, passes a stop signal on,
  * and ends with the child's exit code.
  */
-export async function superviseServe(): Promise<number> {
+export async function superviseServe(
+  restore?: () => Promise<"stopped" | "reload">,
+): Promise<number> {
   let stopping: NodeJS.Signals | undefined;
   let child: Bun.Subprocess | undefined;
   const pass = (signal: NodeJS.Signals) => (): void => {
@@ -199,8 +207,15 @@ export async function superviseServe(): Promise<number> {
   };
   const interrupt = pass("SIGINT");
   const terminate = pass("SIGTERM");
-  process.on("SIGINT", interrupt);
-  process.on("SIGTERM", terminate);
+  const attach = (): void => {
+    process.on("SIGINT", interrupt);
+    process.on("SIGTERM", terminate);
+  };
+  const detach = (): void => {
+    process.removeListener("SIGINT", interrupt);
+    process.removeListener("SIGTERM", terminate);
+  };
+  attach();
   try {
     for (;;) {
       child = Bun.spawn({
@@ -215,10 +230,23 @@ export async function superviseServe(): Promise<number> {
       const code = await child.exited;
       // A stop that reached the supervisor while the child left for new code is still a stop.
       if (stopping !== undefined) return code === RELOAD_EXIT ? 0 : code;
+      if (code === BIND_FAILED_EXIT && restore !== undefined) {
+        // The new code could not take the addresses. The code this process
+        // runs served them before: it serves again, and takes its own signals.
+        child = undefined;
+        detach();
+        let outcome: "stopped" | "reload";
+        try {
+          outcome = await restore();
+        } finally {
+          attach();
+        }
+        if (outcome === "stopped") return 0;
+        continue;
+      }
       if (code !== RELOAD_EXIT) return code;
     }
   } finally {
-    process.removeListener("SIGINT", interrupt);
-    process.removeListener("SIGTERM", terminate);
+    detach();
   }
 }
