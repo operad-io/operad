@@ -24,6 +24,8 @@ done
 case "$runs" in ''|*[!0-9]*|0) echo "--runs wants a positive number" >&2; exit 2 ;; esac
 case "$load" in ''|*[!0-9]*) echo "--load wants a number" >&2; exit 2 ;; esac
 
+bun scripts/check-install.ts || exit 2
+
 cpus=$( (getconf _NPROCESSORS_ONLN || nproc || sysctl -n hw.ncpu) 2>/dev/null | head -n 1)
 case "$cpus" in ''|*[!0-9]*) cpus=1 ;; esac
 [ "$load" -le "$cpus" ] || load="$cpus"
