@@ -376,8 +376,10 @@ export function saveThemeChoice(home: string, name: string): void {
 }
 
 /**
- * Watches `tui.json` and the themes directory. After every change it chooses the
- * theme again: a good result replaces `holder.current` and calls `onChange()`; a
+ * Watches `tui.json` and the themes directory. After every change the watch
+ * reports, and on a fallback timer (an edit can slip past the watch), it chooses
+ * the theme again. A watch event always calls `onChange`; a timer tick calls it
+ * only when the theme or the problem changed. A result: a good result replaces `holder.current` and calls `onChange()`; a
  * bad one keeps the last good theme and calls `onChange` with the reason.
  * Returns the stop function.
  */

@@ -390,6 +390,7 @@ the row fields.
 | T-0144-M6 | packages/dev/src/settings.ts | `integration.batch` accepted anything | `integration.batch setting > is an integer of 1 or more, and 1 when unset` |
 | T-0110-M1 | packages/dev/src/service.ts | `gitPrinting` stopped rerunning a git query that exited 0 with no output | `git that succeeds without printing > repo add runs a query again when git exits 0 and prints nothing` |
 | T-0110-M2 | packages/dev/src/service.ts | `addRepository` dropped git's stderr from the "not a git work tree" refusal | `repo add reports git's stderr > a failing rev-parse puts its stderr in the refusal` |
+| T-0090-M2 | packages/dev/src/views.ts | a file's page entry pointed at the previous file's cursor | `dev views > the diff section is the stat and the diff, and pages by file when long` |
 | T-0145-M1 | packages/dev/src/gate.ts | left the gate commands out of the review prompt's checks section | `prepare > the review prompt names the gate commands and says not to run them again` |
 | T-0124-M1 | packages/dev/src/views.ts | `costNote` swapped the `~` and `≥` symbols | `dev views > a task row reads the phase and the cost` |
 | T-0124-M2 | packages/dev/src/model.ts | a task's cost change added its full new amount to the plan total instead of the difference | `dev views > a plan note shows the cost of its tasks at the weakest quality` |
@@ -405,7 +406,6 @@ the row fields.
 |---|---|---|---|
 | T-0144-M7 | packages/dev/src/integrate.ts | a batch did not check that its claimed tasks were still queued before it pushed | `a task that leaves a batch > a claimed task that is cancelled is not merged, and the others land one by one` |
 | T-0144-M8 | packages/dev/src/integration-queue.ts | a fallback wrote the claimed task's ticket back with the leader's pid | `a claimed task that leaves the queue > a batch that falls back does not write its ticket back` |
-| T-0097-M9 | packages/dev/flows/dev.flow.ts | the worktree retry held onto itself instead of a wait for the settings | `settings that cannot be read, in the worktree step > a recovered worktree step waits for the settings, then runs again` |
 
 ## T-0118 — pre-existing by kind of review
 
@@ -419,7 +419,6 @@ the row fields.
 |---|---|---|---|
 | T-0119-M1 | packages/dev/src/rework.ts | a rework round or reverify also read the `first` block (the `kind === "first"` guard removed) | `review settings by round > only a first review reads the first block, value by value` and `dev/review rework rounds > settings by round > the first review reads the first block; a rework round and a same-commit reverify read the default block` |
 | T-0119-M2 | packages/dev/src/gate.ts | the harness call kept the reviewer's `timeoutSecs` instead of the round's | `dev/review rework rounds > settings by round > the first review reads the first block; a rework round and a same-commit reverify read the default block` |
-| T-0090-M2 | packages/dev/src/views.ts | a file's page entry pointed at the previous file's cursor | `dev views > the diff section is the stat and the diff, and pages by file when long` |
 | T-0119-M3 | packages/dev/src/rework.ts | `firstArgs` applied only to a round of kind first, so the first review of a later attempt got `args` | `review settings by round > firstArgs still belongs to the first review of every attempt, rework round included` |
 | T-0120-M1 | packages/dev/src/followups.ts | a finding was dropped when another task had listed it | `review follow-ups > collects the findings of every round and task, deduplicated, grouped by task, duplicates kept once within a task` |
 | T-0120-M2 | packages/dev/src/followups.ts | two findings that differ only in whitespace were both kept | `review follow-ups > collects the findings of every round and task, deduplicated, grouped by task, duplicates kept once within a task` |
@@ -442,3 +441,10 @@ the row fields.
 | T-0142-M1 | packages/dev/src/flaky.ts | the file came from the last `(fail)` line and the summary was not skipped, so bun's repeat after a third file's header named that file | `a flaky test proposes a task > two files' failures repeated in bun's summary after a third file's header each get their own file, area and command` |
 | T-0142-M2 | packages/dev/src/flaky.ts | a finished `check.flakyPlan` was still used instead of the flaky-tests plan | `a flaky test proposes a task > a finished or cancelled flakyPlan, or one that does not exist, falls back to flaky-tests, made once` |
 | T-0142-M3 | packages/dev/src/flaky.ts | the search of the test files by name was dropped, so a file the log did not give stayed unknown | `a flaky test proposes a task > a test whose file the log does not give is found by name in the test files, else the file is unknown` |
+
+## T-0151 — review-after-arc follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0151-M1 | packages/dev/src/followups.ts | a repeated finding kept its oldest copy instead of the newest | `review follow-ups > collects the findings of every round and task, deduplicated, grouped by task, duplicates kept once within a task` |
+| T-0151-M2 | packages/dev/src/rework.ts | an argument list from `firstArgs` was recorded as coming from `first` | `review settings by round > firstArgs still belongs to the first review of every attempt, rework round included` |

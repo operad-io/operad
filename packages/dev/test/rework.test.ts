@@ -197,6 +197,7 @@ describe("review settings by round", () => {
   test("firstArgs still belongs to the first review of every attempt, rework round included", () => {
     const old = { use: "h/agent", args: ["big"], firstArgs: ["old"], timeoutSecs: 600 };
     expect(reviewSettingsOf("rework", old, true).args).toEqual(["old"]);
+    expect(reviewSettingsOf("rework", old, true).sources.args).toBe("firstArgs");
     expect(reviewSettingsOf("reverify", old, true).args).toEqual(["old"]);
     expect(reviewSettingsOf("rework", old, false).args).toEqual(["big"]);
   });

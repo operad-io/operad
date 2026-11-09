@@ -339,6 +339,7 @@ describe("file themes", () => {
       home: dir,
       holder,
       watch: fake.watch,
+      repeat: () => () => undefined,
       onChange: (problem) => changes.push(problem),
     });
     const file = join(dir, "themes", "mine.json");
@@ -403,7 +404,7 @@ describe("file themes", () => {
     const dir = home('{ "theme": "mine" }');
     const holder: ThemeHolder = { current: { name: "dark" } };
     const fake = fakeWatch();
-    const stop = watchThemes({ home: dir, holder, watch: fake.watch, onChange: () => undefined });
+    const stop = watchThemes({ home: dir, holder, watch: fake.watch, repeat: () => () => undefined, onChange: () => undefined });
     expect(fake.open()).toBe(1);
     mkdirSync(join(dir, "themes"));
     writeFileSync(join(dir, "themes", "mine.json"), '{ "colors": { "accent": "#333333" } }');
@@ -420,6 +421,8 @@ describe("file themes", () => {
     const stop = watchThemes({
       home: dir,
       holder,
+      // No fallback timer: only the directory watch can report the edit.
+      repeat: () => () => undefined,
       onChange: () => {
         if (holder.current.palette?.accent === "#222222") seen();
       },
