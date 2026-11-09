@@ -31,6 +31,8 @@ import {
 import {
   cancelPlan,
   cancelTask,
+  holdTask,
+  releaseTask,
   claimWaitingTask,
   confirmPlan,
   confirmTask,
@@ -400,6 +402,33 @@ export const actions: readonly ActionTypeDefinition[] = [
     settled: taskSettled("cancel"),
     async run(ctx) {
       await cancelTask(ctx.store, ctx.object.id, { runs: ctx.runs });
+    },
+  },
+  {
+    name: "hold",
+    on: "task",
+    confirm: true,
+    when(state) {
+      const phase = taskData(state).phase;
+      return phase === "ready" || phase === "running" || phase === "review";
+    },
+    why: taskWhy("hold"),
+    settled: taskSettled("hold"),
+    async run(ctx) {
+      await holdTask(ctx.store, ctx.object.id, { runs: ctx.runs });
+    },
+  },
+  {
+    name: "release",
+    on: "task",
+    confirm: true,
+    when(state) {
+      return taskData(state).phase === "held";
+    },
+    why: taskWhy("release"),
+    settled: taskSettled("release"),
+    async run(ctx) {
+      await releaseTask(ctx.store, ctx.object.id);
     },
   },
   {
