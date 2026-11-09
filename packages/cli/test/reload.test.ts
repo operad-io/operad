@@ -2,11 +2,11 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SUPERVISED_ENV } from "../src/code-reload.ts";
 import { readLockPid } from "../../engine/src/index.ts";
 import { waitForChange } from "../../engine/src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 import { waitForFile } from "../../shell/test/support.ts";
-import { SUPERVISED_ENV } from "../src/code-reload.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -154,14 +154,11 @@ async function setup(): Promise<Setup> {
 }
 
 function spawnOperad(setupValue: Setup, args: readonly string[]): Bun.Subprocess<"ignore", "pipe", "pipe"> {
-  // A test run started under a supervised serve inherits its marker; with it
-  // the serve under test would exit with the reload code instead of restarting.
-  const env: Record<string, string> = { ...(process.env as Record<string, string>), ...setupValue.env };
-  delete env[SUPERVISED_ENV];
   return Bun.spawn({
     cmd: [process.execPath, CLI_ENTRY, ...args],
     cwd: setupValue.home,
-    env,
+    // A test run from inside a supervised serve must not make its own serve think it is supervised.
+    env: { ...(process.env as Record<string, string>), [SUPERVISED_ENV]: "", ...setupValue.env },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",

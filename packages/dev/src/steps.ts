@@ -599,7 +599,7 @@ function commitWip(worktree: string): boolean {
   if (changedFiles(worktree).length === 0) return false;
   const added = git(worktree, ["add", "-A", "--", ".", `:(exclude)${PROGRESS_FILE}`]);
   if (!added.ok) return false;
-  return git(worktree, ["commit", "-q", "-m", WIP_MESSAGE]).ok;
+  return git(worktree, ["commit", "-q", "--no-verify", "-m", WIP_MESSAGE]).ok;
 }
 
 /**
@@ -1266,7 +1266,8 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       result,
       workNote: typeof extra.message === "string" ? extra.message : null,
       ...(waitsForModel ? {} : { workRetryAt: null }),
-      progress: progress ?? null,
+      // An attempt that left no note keeps the one before it for later attempts.
+      progress: progress ?? progressOf(attempt.previousProgress) ?? null,
       workTimedOut: timedOutRun,
     };
     const reason = typeof extra.reason === "string" ? extra.reason : "";
