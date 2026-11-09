@@ -1860,6 +1860,7 @@ export async function runReview(
               : round,
         },
         ...(record.decision === "passed" ? { reworkStreak: 0 } : {}),
+        ...(record.decision === "passed" ? { reviewFailed: undefined } : {}),
         ...(typeof record.reworkLine === "string" && record.reworkLine.length > 0
           ? { brief: appendChange(task.brief, record.reworkLine) }
           : {}),
@@ -2761,6 +2762,18 @@ export async function runRework(
       );
     }
   }
+  const failedText = pieces.slice(0, 2).join("\n\n");
+  const streak = (task.reworkStreak ?? 0) + 1;
+  const twice =
+    source === "review" &&
+    task.reviewFailed !== undefined &&
+    streak <= context.settings.maxAutoRework;
+  if (twice) {
+    pieces.push(
+      "The review failed twice in a row. The previous round's findings:",
+      task.reviewFailed ?? "",
+    );
+  }
   pieces.push(REWORK_INSTRUCTION);
 
   const withRework = appendRework(
@@ -2769,17 +2782,18 @@ export async function runRework(
     pieces.join("\n\n"),
     reason,
   );
-  const streak = (task.reworkStreak ?? 0) + 1;
-  const again = streak <= context.settings.maxAutoRework;
+  const again = !twice && streak <= context.settings.maxAutoRework;
   const record: ReworkRecord = {
     run: ctx.runId,
     source,
     streak,
     limit: context.settings.maxAutoRework,
     result: again ? "again" : "ask",
+    ...(twice ? { twice: true } : {}),
   };
   const next: TaskData = {
     ...withRework,
+    reviewFailed: source === "review" ? failedText : undefined,
     phase: again ? "review" : "waiting",
     run: ctx.runId,
     attempts: Math.max(task.attempts, attempt.number),

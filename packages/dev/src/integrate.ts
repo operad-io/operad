@@ -708,6 +708,7 @@ export async function runIntegrate(
           context.taskKey,
           {
             ...withRework,
+            reviewFailed: undefined,
             phase: "running",
             run: ctx.runId,
             attempts: Math.max(task.attempts, attempt.number),

@@ -475,3 +475,21 @@ the row fields.
 | T-0159-M1 | packages/dev/src/schedule.ts | the last free slot followed priority like the others (the fair order switched off) | `dev scheduling > the last free slot goes to the plan that waited longest, whatever its priority` |
 | T-0159-M2 | packages/dev/src/schedule.ts | plans of one priority ignored who started last (the turn tie-break removed) | `dev scheduling > plans of one priority take turns` |
 | T-0159-M3 | packages/dev/src/schedule.ts | the area queue counted no task ahead (`aheadOf` returned 0) | `dev scheduling > a waiting task counts the tasks ahead of it in its area` |
+| T-0156-M1 | packages/dev/src/steps.ts | a held task still let the step that was running write the task (the claim check ignored `held`) | `dev:hold and dev:release > hold stops the running step, keeps the branch and commits, and frees the slot` |
+| T-0156-M2 | packages/dev/src/schedule.ts | a held dependency was treated as cancelled, so its dependent went into a person wait | `dev:hold and dev:release > a held ready task is not started, and its dependent stays queued` |
+| T-0156-M3 | packages/dev/src/service.ts | release left the task held instead of making it ready | `dev:hold and dev:release > release makes the task ready and the next run continues on its branch` |
+| T-0156-M4 | packages/dev/src/service.ts | task update never released a task waiting on a cancelled dependency | `dev:hold and dev:release > task update --after releases a task waiting on a cancelled dependency` |
+| T-0156-M5 | packages/dev/src/service.ts | hold did not ask the kernel to cancel the task's run | `dev:hold and dev:release > hold stops the running step, keeps the branch and commits, and frees the slot` |
+| T-0156-M6 | packages/dev/src/service.ts | hold dropped the task's attempt record | `dev:hold and dev:release > hold stops the running step, keeps the branch and commits, and frees the slot` |
+
+## T-0162 — repository row mark
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0162-M1 | packages/dev/src/service.ts | the repository refresh ignored a change in the running-task count (the `activeTasks` comparison replaced by `true`) | `the repo type > the row mark follows the repository's work > a task starting and ending its run changes the mark` |
+
+## T-0157 — review failed twice in a row
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0157-M1 | packages/dev/src/gate.ts | a verify failure kept the previous review failure (`reviewFailed` set for every source) | `dev/rework after two review failures in a row > review fail, verify fail, review fail reworks again` |

@@ -14,6 +14,7 @@ merge. It is a plugin: the kernel knows none of these words.
 | **rework** | another pass over a task, added as `## Rework <n> (<source>)` |
 | **confirm** | accept a plan (its tasks then become ready) or a single proposed task |
 | **cancel** | stop a plan and its open tasks, or one task |
+| **hold** | stop a task for a while; **release** undoes it |
 | **auto** | how far a plan may run without you: off, run, merge |
 | **priority** | P0 (most urgent) to P5 (least urgent), default P3 |
 
@@ -56,7 +57,7 @@ operad repo remove <name>
 operad plan add --slug <slug> --title <title> [--concurrency <n>] [--repo <name>]   # request on stdin
 operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--repo <name>]   # brief on stdin
 operad task edit <id>      # $EDITOR on the brief body; proposed or ready only
-operad task update <id> [--title <title>] [--after <task>]... [--area <area>]   # --area "" clears it
+operad task update <id> [--title <title>] [--after <task>]... [--area <area>]   # --area "" clears it, --after "" clears the dependencies
 operad start <task>        # start one ready task now, whatever its plan's auto level
 operad reruns              # how often each test passed only on its own rerun, most frequent first
 ```
@@ -102,6 +103,8 @@ Every action is also a command: `operad dev:<action> <id>`.
 | `dev:rework` | task | | add the lead's own rework: `--note <text>` becomes `## Rework <n> (lead)`, and the worker runs again; history reads "you chose rework" with the note |
 | `dev:reverify` | task | | run verify and review again on the task's current commit, with no worker |
 | `dev:cancel` | plan, task | `x` | cancel a plan and its open tasks, or one task; asks first |
+| `dev:hold` | task | | stop a ready, running or reviewing task for a while: the step stops as `cancel` stops it (its processes too), but the task keeps its branch, worktree, commits, attempt count and place. It shows as held (mark `paused`), holds no concurrency slot, and is not started; a task that follows it stays queued as for any unmerged task. Owner action, not offered through MCP; asks first |
+| `dev:release` | task | | undo hold: the task is ready again, and its next start is a new attempt that begins with the worktree step on the existing branch, as a rework does. Owner action, not offered through MCP; asks first |
 | `dev:auto` | plan | | set auto: `--level off`, `--level run` or `--level merge` |
 | `dev:priority` | plan | | set the priority: `--level P0` (most urgent) to `--level P5` |
 | `dev:concurrency` | plan | | set how many of the plan's tasks may run at once: `--count 1` to `--count 16`; takes effect at the next tick, running tasks are not stopped |
@@ -143,7 +146,7 @@ what happened and changes nothing.
 | `dev/review_due` | `ready`, `interrupted` | the wait a review enters after a model was unavailable; it lets the flow run the same review round again at the recorded time |
 | `dev/retry` | `again`, `hold`, `ask`, `give_up`, `cancelled` | runs in front of the announcement of a work, worktree or reverify step that stopped. A stop that is not the task's own work (the run stopped, a process killed by a signal nobody sent, a step that is not loaded, settings that cannot be read) runs the step once more in the same attempt, without a person and without counting toward `maxAutoRework`; a second one, or a wait that ran out, goes to a person and the waiting line names the cause (for example `pool/agent is not loaded`) |
 | `dev/retry_due` | `ready`, `waiting`, `interrupted` | the wait a retry enters while a step is not loaded or the settings cannot be read; it ends when they are there, or after `retry.environmentWaitMinutes` (default 60) |
-| `dev/rework` | `again`, `ask` | appends `## Rework <n> (verify|review)` with the failed command or the counted findings and sends the task back to the worker; after `maxAutoRework` in a row it asks a person instead |
+| `dev/rework` | `again`, `ask` | appends `## Rework <n> (verify|review)` with the failed command or the counted findings and sends the task back to the worker; after `maxAutoRework` in a row, or when a review failure follows a review failure (whatever the findings; a verify failure or a conflict between them resets this), it asks a person instead, with the reason `review failed twice in a row` and both rounds' findings in the section |
 | `dev/integrate` | `merged`, `conflict`, `fail`, `failed` | fetches, builds the candidate in the gate worktree by merging the verified commit onto `<remote>/<mainBranch>`, runs `integration.keyCommands` through `shell/check`, and pushes plainly; a moved main starts again from the fetch, at most three times. Tasks of one repository integrate one at a time: a task whose merge was chosen waits for its turn first (see below) |
 | `dev/cleanup` | `done` | runs `hooks.afterMerge` with `OPERAD_TASK`, `OPERAD_WORKTREE` and `OPERAD_REMOTE` set; a failing hook is recorded, not a task failure |
 
@@ -232,7 +235,7 @@ scheduler claimed but whose run never recorded itself (a crash between the two)
 returns to `ready` on the next tick, so the scheduler can start it again.
 
 At auto `merge`, a waiting task whose review passed in this attempt is answered
-with `merge`. A wait that follows `nothing`, `failed` or the rework limit is
+with `merge`. A wait that follows `nothing`, `failed`, the rework limit or `review failed twice in a row` is
 never answered. A task whose dependency was cancelled waits for a person
 instead of starting, and a plan whose tasks have all merged or been cancelled
 is reported finished once. Every change prints one line:
@@ -241,6 +244,11 @@ is reported finished once. Every change prints one line:
 `operad start <task>` asks the scheduler to start one ready task on its next
 tick, whatever its plan's auto level is. The task's dependencies and both
 concurrency limits still hold, so an ineligible task waits for a later tick.
+
+`operad task update <id> --after ...` also works on a task that waits because a
+dependency was cancelled: changing its dependencies, or clearing them with
+`--after ""`, ends that wait (its run is stopped), and the task starts on a later
+tick like any ready task.
 
 A task whose dependency was cancelled starts no work. The scheduler starts its
 flow into the person wait instead, so the task is a real pending item: `merge`
@@ -278,7 +286,7 @@ repository lock and reads the stored tasks inside that lock, so two ticks or two
 review again on it with no worker). A task whose dependency was cancelled enters the same
 person wait directly from the worktree step. A failing verify or review goes to
 `rework`, which sends the task back to the worktree until `maxAutoRework`
-automatic reworks have run in a row; then it waits for a person. `nothing` and
+automatic reworks have run in a row, or a second review failure in a row; then it waits for a person (`review failed twice in a row`), and the lead's `rework --note` or `reject` steers the next pass. `nothing` and
 `failed` from `work` also wait for a person. An unavailable reviewer waits for
 `reviewer.retrySecs` and runs the same review again; a review that times out
 twice waits for a person. `merge` builds the candidate on main and pushes it,

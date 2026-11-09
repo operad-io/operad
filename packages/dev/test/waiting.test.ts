@@ -359,6 +359,17 @@ describe("waitingReason", () => {
     ).toBe("gate failed");
   });
 
+  test("a second review failure in a row has its own reason", () => {
+    expect(
+      waitingReason(
+        { from: "rework", result: "ask" },
+        task({ number: 1, rework: { run: "r", source: "review", streak: 2, result: "ask", twice: true } }),
+        4,
+        false,
+      ).reason,
+    ).toBe("review failed twice in a row");
+  });
+
   test("an unresolved merge after the worker is a conflict", () => {
     expect(
       waitingReason({ from: "work", result: "nothing" }, task({ number: 1 }), 2, true)

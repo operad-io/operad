@@ -31,6 +31,8 @@ import {
 import {
   cancelPlan,
   cancelTask,
+  holdTask,
+  releaseTask,
   claimWaitingTask,
   confirmPlan,
   confirmTask,
@@ -269,7 +271,11 @@ const rejectTaskAction: ActionTypeDefinition = {
       ctx,
       "reject",
       "reject",
-      (latest) => ({ ...latest, brief: appendRework(latest.brief, "owner", note) }),
+      (latest) => ({
+        ...latest,
+        brief: appendRework(latest.brief, "owner", note),
+        reviewFailed: undefined,
+      }),
       note,
     );
   },
@@ -298,6 +304,7 @@ const reworkTaskAction: ActionTypeDefinition = {
         ...appendRework(latest, "lead", note),
         phase: "running",
         reworkStreak: 0,
+        reviewFailed: undefined,
       }),
       note,
     );
@@ -400,6 +407,33 @@ export const actions: readonly ActionTypeDefinition[] = [
     settled: taskSettled("cancel"),
     async run(ctx) {
       await cancelTask(ctx.store, ctx.object.id, { runs: ctx.runs });
+    },
+  },
+  {
+    name: "hold",
+    on: "task",
+    confirm: true,
+    when(state) {
+      const phase = taskData(state).phase;
+      return phase === "ready" || phase === "running" || phase === "review";
+    },
+    why: taskWhy("hold"),
+    settled: taskSettled("hold"),
+    async run(ctx) {
+      await holdTask(ctx.store, ctx.object.id, { runs: ctx.runs });
+    },
+  },
+  {
+    name: "release",
+    on: "task",
+    confirm: true,
+    when(state) {
+      return taskData(state).phase === "held";
+    },
+    why: taskWhy("release"),
+    settled: taskSettled("release"),
+    async run(ctx) {
+      await releaseTask(ctx.store, ctx.object.id);
     },
   },
   {
