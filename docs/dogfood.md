@@ -100,7 +100,11 @@ For a task that passed verify and review, the actions are `dev:merge`,
   with a note that names the remote, the branch and git's message.
 - `operad dev:reject T-0001-switch --note "explain what to change"` sends the
   task back to its worker with that note.
-- `operad dev:cancel T-0001-switch --yes` stops the task.
+- `operad dev:cancel T-0001-switch --yes` stops the task for good.
+- `operad dev:hold T-0001-switch --yes` stops the task for a while: it keeps its
+  branch, commits and attempts, holds no slot, and is not started. `operad
+  dev:release T-0001-switch --yes` makes it ready; the next start continues on
+  its branch.
 
 The action needs `--yes` because it is the person's decision; in a terminal
 without `--yes` it asks first.
