@@ -460,3 +460,9 @@ the row fields.
 |---|---|---|---|
 | T-0151-M3 | packages/dev/src/gate.ts | a review whose followed commit is missing was given the settings of a first review (the `rework` mapping removed) | `dev/review rework rounds > settings by round > a review whose followed commit is missing from the checkout is a later review for its settings` |
 | T-0151-M4 | packages/dev/src/gate.ts | a report from the fallback was recorded with the primary's harness and arguments (the fallback block switched off) | `dev/review fallback and retry > a 429 falls back once, and the round passes without a rework` |
+
+## T-0157 — review failed twice in a row
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0157-M1 | packages/dev/src/gate.ts | a verify failure kept the previous review failure (`reviewFailed` set for every source) | `dev/rework after two review failures in a row > review fail, verify fail, review fail reworks again` |

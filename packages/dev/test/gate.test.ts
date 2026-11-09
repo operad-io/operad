@@ -2402,6 +2402,63 @@ describe("dev/rework", () => {
   });
 });
 
+describe("dev/rework after two review failures in a row", () => {
+  async function again(state: Fixture, n: number) {
+    const prepared = await state.registry.runStep("dev/worktree", {}, {
+      runId: `worktree-${n}`,
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+    expect(prepared.result).toBe("ready");
+    await commitIn(state.worktree, `more-${n}.txt`, "x\n", `more ${n}`);
+  }
+
+  test("review fail, rework, review fail waits for a person with both rounds' findings", async () => {
+    const state = await fixture({ reviewerArgs: ["major"], maxAutoRework: 4 });
+    await verify(state, "verify-1");
+    expect((await review(state, "review-1")).result).toBe("fail");
+    expect((await rework(state, "rework-1")).result).toBe("again");
+    await again(state, 2);
+    await verify(state, "verify-2");
+    expect((await review(state, "review-2")).result).toBe("fail");
+    const second = await rework(state, "rework-2");
+    expect(second.result).toBe("ask");
+    const task = await taskOf(state);
+    expect(task.phase).toBe("waiting");
+    expect(task.attempt?.rework?.twice).toBe(true);
+    expect(task.reworkStreak).toBe(2);
+    expect(task.brief).toContain("review failed twice in a row");
+    const section = task.brief.slice(task.brief.indexOf("## Rework 2 (review)"));
+    expect(section.match(/code\.txt:2` major: a real problem/g)?.length).toBe(2);
+  });
+
+  test("review fail, verify fail, review fail reworks again", async () => {
+    const state = await fixture({
+      reviewerArgs: ["major"],
+      commands: ["test ! -f more-2.txt"],
+      maxAutoRework: 4,
+    });
+    await verify(state, "verify-1");
+    expect((await review(state, "review-1")).result).toBe("fail");
+    expect((await rework(state, "rework-1")).result).toBe("again");
+    await again(state, 2);
+    expect((await verify(state, "verify-2")).result).toBe("fail");
+    expect((await rework(state, "rework-2")).result).toBe("again");
+    const between = await taskOf(state);
+    expect(between.reviewFailed).toBeUndefined();
+    await state.registry.runStep("dev/worktree", {}, {
+      runId: "worktree-3",
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+    await gitOrThrow(state.worktree, ["rm", "-q", "more-2.txt"]);
+    await commitIn(state.worktree, "more-3.txt", "x\n", "more 3");
+    expect((await verify(state, "verify-3")).result).toBe("pass");
+    expect((await review(state, "review-3")).result).toBe("fail");
+    const third = await rework(state, "rework-3");
+    expect(third.result).toBe("again");
+    expect((await taskOf(state)).attempt?.rework?.twice).toBeUndefined();
+  });
+});
+
 describe("gate settings", () => {
   test("the defaults are the documented ones", () => {
     const settings = validateDevSettings({});

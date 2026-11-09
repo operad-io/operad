@@ -108,6 +108,9 @@ export function waitingReason(
       }
     case "rework": {
       const rework = attempt?.rework;
+      if (rework?.twice === true) {
+        return { reason: "review failed twice in a row" };
+      }
       if (maxAutoRework > 0) return { reason: "rework limit" };
       return {
         reason: rework?.source === "review" ? "review findings" : "gate failed",

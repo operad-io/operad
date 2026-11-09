@@ -269,7 +269,11 @@ const rejectTaskAction: ActionTypeDefinition = {
       ctx,
       "reject",
       "reject",
-      (latest) => ({ ...latest, brief: appendRework(latest.brief, "owner", note) }),
+      (latest) => ({
+        ...latest,
+        brief: appendRework(latest.brief, "owner", note),
+        reviewFailed: undefined,
+      }),
       note,
     );
   },
@@ -298,6 +302,7 @@ const reworkTaskAction: ActionTypeDefinition = {
         ...appendRework(latest, "lead", note),
         phase: "running",
         reworkStreak: 0,
+        reviewFailed: undefined,
       }),
       note,
     );

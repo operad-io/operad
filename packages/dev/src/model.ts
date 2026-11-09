@@ -313,6 +313,8 @@ export interface ReworkRecord {
   /** The automatic rework limit in force when the record was written. */
   readonly limit?: number;
   readonly result: "again" | "ask";
+  /** True when the wait is because review failed twice in a row. */
+  readonly twice?: boolean;
 }
 
 /** One run of a task's worker, with what the worktree step learned. */
@@ -438,6 +440,11 @@ export type TaskData = {
   readonly costQuality?: "exact" | "estimated" | "incomplete" | null | undefined;
   /** How many automatic reworks ran in a row; a passing gate resets it. */
   readonly reworkStreak?: number | undefined;
+  /**
+   * The findings text of the last review failure when the attempt before the
+   * current rework also ended in one; absent after anything else.
+   */
+  readonly reviewFailed?: string | undefined;
   /** Why the last step that records one stopped; the retry step consumes it. */
   readonly stop?: StopRecord | null | undefined;
   /** The automatic retry this task's attempt used. */
