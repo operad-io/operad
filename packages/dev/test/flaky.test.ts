@@ -6,13 +6,16 @@ import type { CommandContext } from "@operad-io/engine";
 import { commands } from "../src/commands.ts";
 import { recordRerunPasses } from "../src/reruns.ts";
 import { failureExcerpt, flakyTasksByName, flakyTestHooks, namesTest, trackFlakyTests } from "../src/flaky.ts";
-import { appendChange, bareId, changeClock, listAll, repositoryData, taskData, type RepositoryData } from "../src/model.ts";
+import { appendChange, bareId, changeClock, listAll, planData, repositoryData, taskData, type RepositoryData } from "../src/model.ts";
 import {
   addPlan,
   addRepository,
   addTask,
+  cancelPlan,
   cancelTask,
   confirmPlan,
+  setAuto,
+  setPriority,
   setTaskPhase,
 } from "../src/service.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "./support.ts";
@@ -55,6 +58,7 @@ async function setup(withPlan: boolean) {
     planId = plan.id;
   }
   const notices: string[] = [];
+  const options: { plan?: string | undefined } = {};
   const track = async (
     taskId: string,
     log: string,
@@ -64,12 +68,12 @@ async function setup(withPlan: boolean) {
   ) => {
     const logPath = join(root, `${taskId}.log`);
     writeFileSync(logPath, log);
-    const notice = await trackFlakyTests({ store, repository, taskId, names, log: logPath, threshold, secrets });
+    const notice = await trackFlakyTests({ store, repository, taskId, names, log: logPath, threshold, secrets, flakyPlan: options.plan });
     if (notice !== undefined) notices.push(notice);
   };
   const flaky = async () =>
     (await listAll(store, "task")).filter((object) => taskData(object.data).title.startsWith("Fix the flaky test"));
-  return { root, store, path, repository, planId, notices, track, flaky };
+  return { root, store, path, repository, planId, notices, options, track, flaky };
 }
 
 describe("a flaky test proposes a task", () => {
@@ -87,14 +91,17 @@ describe("a flaky test proposes a task", () => {
     expect(task.title).toBe(`Fix the flaky test: ${TEST}`);
     expect(task.area).toBe("widget");
     expect(task.phase).toBe("proposed");
-    expect(task.plan).toBe(bareId(s.planId ?? ""));
+    const own = (await listAll(s.store, "plan")).find((object) => bareId(object.id).endsWith("-flaky-tests"));
+    expect(task.plan).toBe(bareId(own?.id ?? ""));
     expect(task.brief).toContain(`\`${TEST}\` in \`${FILE}\``);
     expect(task.brief).toContain("2 times");
     expect(task.brief).toContain("- T-0001-a at 2026-11-08T10:01:00.000Z");
     expect(task.brief).toContain("- T-0002-b at 2026-11-08T10:02:00.000Z");
     expect(task.brief).toContain(`old line\n(fail) ${TEST} [3.20ms]`);
     expect(task.brief).toContain(`x1\nx2\n(fail) ${TEST} [3.20ms]`);
-    expect(task.brief).toContain(`bash scripts/stress.sh --runs 200 --load 2 -t 'widget keeps its shape' '${FILE}'`);
+    expect(task.brief).toContain(`bash scripts/stress.sh --runs <N> --load 2 -t 'widget keeps its shape' '${FILE}'`);
+    expect(task.brief).toContain("Write the number of runs in place of `<N>`: it follows the rule quoted below.");
+    expect(task.brief).not.toContain("--runs 200");
     expect(task.brief).toContain("Never raise a timeout or add a retry inside a test");
   });
 
@@ -104,8 +111,8 @@ describe("a flaky test proposes a task", () => {
     rmSync(join(s.path, "scripts"), { recursive: true });
     await s.track("T-0001-a", logWith(TEST), 1);
     const brief = taskData((await s.flaky())[0]?.data ?? {}).brief;
-    expect(brief).toContain("bun test --rerun-each 200 -t");
-    expect(brief).not.toContain("stress.sh --runs 200 --load 2 -t");
+    expect(brief).toContain("bun test --rerun-each <N> -t");
+    expect(brief).not.toContain("stress.sh --runs <N> --load 2 -t");
   });
 
   test("the failure excerpt holds the (fail) line and up to 30 lines before it", () => {
@@ -268,27 +275,116 @@ describe("a flaky test proposes a task", () => {
     expect(await s.flaky()).toHaveLength(0);
   });
 
-  test("a repository without a confirmed plan records a notice and proposes nothing", async () => {
+  test("a repository without any plan gets the flaky-tests plan, once, at the default level", async () => {
     const s = await setup(false);
-    await addPlan(s.store, { repository: s.repository, slug: "draft", title: "Draft" });
-    await s.track("T-0001-a", logWith(TEST));
-    await s.track("T-0002-b", logWith(TEST));
-    await s.track("T-0003-c", logWith("other"), 2, ["other"]);
-    expect(await s.flaky()).toHaveLength(0);
-    expect(s.notices).toHaveLength(1);
-    expect(s.notices[0]).toContain(`"${TEST}" passed on rerun 2 times`);
-    expect(s.notices[0]).toContain("no confirmed plan");
+    await s.track("T-0001-a", logWith(TEST), 1);
+    await s.track("T-0002-b", logWith("other"), 1, ["other"]);
+    const plans = await listAll(s.store, "plan");
+    expect(plans).toHaveLength(1);
+    const plan = planData(plans[0]?.data ?? {});
+    expect(bareId(plans[0]?.id ?? "")).toMatch(/^P-\d{4}-flaky-tests$/);
+    expect([plan.title, plan.status, plan.auto, plan.priority]).toEqual(["Flaky tests", "confirmed", "off", "P3"]);
+    expect(await s.flaky()).toHaveLength(2);
+    expect(s.notices).toEqual([]);
   });
 
-  test("a finished plan is passed over for an older unfinished one", async () => {
+  test("the flaky-tests plan takes the auto level and priority of the newest confirmed plan", async () => {
     const s = await setup(true);
-    const newer = await addPlan(s.store, { repository: s.repository, slug: "newer", title: "Newer" });
-    const only = await addTask(s.store, { plan: newer.id, slug: "only", title: "Only" });
-    await confirmPlan(s.store, newer.id);
-    await setTaskPhase(s.store, only.id, "merged");
+    await setAuto(s.store, s.planId ?? "", "merge");
+    await setPriority(s.store, s.planId ?? "", "P1");
     await s.track("T-0001-a", logWith(TEST), 1);
-    const task = taskData((await s.flaky())[0]?.data ?? {});
-    expect(task.plan).toBe(bareId(s.planId ?? ""));
+    const own = (await listAll(s.store, "plan")).find((object) => bareId(object.id).endsWith("-flaky-tests"));
+    const plan = planData(own?.data ?? {});
+    expect([plan.auto, plan.priority]).toEqual(["merge", "P1"]);
+    expect(taskData((await s.flaky())[0]?.data ?? {}).plan).toBe(bareId(own?.id ?? ""));
+  });
+
+  test("check.flakyPlan names the plan the tasks go into", async () => {
+    const s = await setup(true);
+    s.options.plan = bareId(s.planId ?? "");
+    await s.track("T-0001-a", logWith(TEST), 1);
+    expect(taskData((await s.flaky())[0]?.data ?? {}).plan).toBe(bareId(s.planId ?? ""));
+    expect(await listAll(s.store, "plan")).toHaveLength(1);
+  });
+
+  test("a finished or cancelled flakyPlan, or one that does not exist, falls back to flaky-tests, made once", async () => {
+    const s = await setup(true);
+    const done = await addPlan(s.store, { repository: s.repository, slug: "done", title: "Done" });
+    const only = await addTask(s.store, { plan: done.id, slug: "only", title: "Only" });
+    await confirmPlan(s.store, done.id);
+    await setTaskPhase(s.store, only.id, "merged");
+    s.options.plan = bareId(done.id);
+    await s.track("T-0001-a", logWith(TEST), 1);
+    s.options.plan = "P-9999-missing";
+    await s.track("T-0002-b", logWith("other"), 1, ["other"]);
+    const flakyPlans = (await listAll(s.store, "plan")).filter((object) => bareId(object.id).endsWith("-flaky-tests"));
+    expect(flakyPlans).toHaveLength(1);
+    const tasks = await s.flaky();
+    expect(tasks.map((object) => taskData(object.data).plan)).toEqual([bareId(flakyPlans[0]?.id ?? ""), bareId(flakyPlans[0]?.id ?? "")]);
+    await cancelPlan(s.store, flakyPlans[0]?.id ?? "", {});
+    s.options.plan = undefined;
+    await s.track("T-0003-c", logWith("third"), 1, ["third"]);
+    expect((await listAll(s.store, "plan")).filter((object) => bareId(object.id).endsWith("-flaky-tests"))).toHaveLength(2);
+  });
+
+  test("a proposal that cannot be made records a notice once and the count stays", async () => {
+    const s = await setup(true);
+    const longFile = `packages/${"p".repeat(70)}/test/x.test.ts`;
+    const log = [`${longFile}:`, `(fail) ${TEST} [1ms]`, ""].join("\n");
+    await s.track("T-0001-a", log, 1);
+    expect(await s.flaky()).toHaveLength(0);
+    expect(s.notices).toHaveLength(1);
+    expect(s.notices[0]).toContain(`flaky test "${TEST}" passed on rerun 1 times; no task was proposed: `);
+  });
+
+  test("two files' failures repeated in bun's summary after a third file's header each get their own file, area and command", async () => {
+    const s = await setup(true);
+    const log = [
+      "packages/alpha/test/a.test.ts:",
+      "(pass) alpha > fine [1ms]",
+      "(fail) alpha > breaks [3ms]",
+      "packages/beta/test/b.test.ts:",
+      "(fail) beta > breaks too [4ms]",
+      "packages/gamma/test/c.test.ts:",
+      "(pass) gamma > fine [1ms]",
+      "",
+      " 2 tests failed:",
+      "(fail) alpha > breaks [3ms]",
+      "(fail) beta > breaks too [4ms]",
+      "",
+    ].join("\n");
+    await s.track("T-0001-a", log, 1, ["alpha > breaks", "beta > breaks too"]);
+    const byTitle = new Map((await s.flaky()).map((object) => [taskData(object.data).title, taskData(object.data)]));
+    const alpha = byTitle.get("Fix the flaky test: alpha > breaks");
+    const beta = byTitle.get("Fix the flaky test: beta > breaks too");
+    expect(alpha?.area).toBe("alpha");
+    expect(beta?.area).toBe("beta");
+    expect(alpha?.brief).toContain("in `packages/alpha/test/a.test.ts`");
+    expect(alpha?.brief).toContain("bash scripts/stress.sh --runs <N> --load 2 -t 'alpha breaks' 'packages/alpha/test/a.test.ts'");
+    expect(beta?.brief).toContain("in `packages/beta/test/b.test.ts`");
+    expect(beta?.brief).toContain("bash scripts/stress.sh --runs <N> --load 2 -t 'beta breaks too' 'packages/beta/test/b.test.ts'");
+    expect(alpha?.brief).not.toContain("gamma/test/c.test.ts");
+  });
+
+  test("a test whose file the log does not give is found by name in the test files, else the file is unknown", async () => {
+    const s = await setup(true);
+    mkdirSync(join(s.path, "packages", "gizmo", "test"), { recursive: true });
+    mkdirSync(join(s.path, "packages", "one", "test"), { recursive: true });
+    mkdirSync(join(s.path, "packages", "two", "test"), { recursive: true });
+    writeFileSync(join(s.path, "packages", "gizmo", "test", "g.test.ts"), 'describe("gizmo", () => { test("turns", () => {}); });\n');
+    writeFileSync(join(s.path, "packages", "one", "test", "x.test.ts"), 'test("twin case", () => {});\n');
+    writeFileSync(join(s.path, "packages", "two", "test", "y.test.ts"), 'test("twin case", () => {});\n');
+    const log = ["some output", " 2 tests failed:", "(fail) gizmo > turns [1ms]", "(fail) twin case [1ms]", ""].join("\n");
+    await s.track("T-0001-a", log, 1, ["gizmo > turns", "twin case"]);
+    const byTitle = new Map((await s.flaky()).map((object) => [taskData(object.data).title, taskData(object.data)]));
+    const gizmo = byTitle.get("Fix the flaky test: gizmo > turns");
+    expect(gizmo?.area).toBe("gizmo");
+    expect(gizmo?.brief).toContain("in `packages/gizmo/test/g.test.ts`");
+    const twin = byTitle.get("Fix the flaky test: twin case");
+    expect(twin?.brief).toContain("a file that is not known");
+    expect(twin?.brief).not.toContain("x.test.ts");
+    expect(twin?.brief).not.toContain("y.test.ts");
+    expect(twin?.brief).toContain("bash scripts/stress.sh --runs <N> --load 2 -t 'twin case'\n");
   });
 
   test("operad reruns shows the task beside its test while it is open", async () => {

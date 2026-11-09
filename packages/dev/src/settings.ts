@@ -127,6 +127,11 @@ export interface CheckSettings {
    * it; 0 turns the proposal off.
    */
   readonly flakyTask: number;
+  /**
+   * The plan the proposed flaky-test tasks go into, by id. Unset, or when that
+   * plan is finished or cancelled, dev uses its own plan `flaky-tests`.
+   */
+  readonly flakyPlan?: string | undefined;
 }
 
 /** What a task does when its step failed for a reason outside its own work. */
@@ -578,12 +583,19 @@ function gateSettings(value: unknown, field: string): GateSettings {
   };
 }
 
+function flakyPlanId(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new DevError(field, "must be a plan id");
+  }
+  return value.trim();
+}
+
 function checkSettings(value: unknown, field: string): CheckSettings {
   if (!isRecord(value)) {
     throw new DevError(field, "must be an object");
   }
   for (const key of Object.keys(value)) {
-    if (key !== "rerun" && key !== "flakyTask") {
+    if (key !== "rerun" && key !== "flakyTask" && key !== "flakyPlan") {
       throw new DevError(`${field}.${key}`, "is not a check setting");
     }
   }
@@ -596,6 +608,9 @@ function checkSettings(value: unknown, field: string): CheckSettings {
       value.flakyTask === undefined
         ? DEFAULT_DEV_SETTINGS.check.flakyTask
         : nonNegativeInteger(value.flakyTask, `${field}.flakyTask`),
+    ...(value.flakyPlan === undefined
+      ? {}
+      : { flakyPlan: flakyPlanId(value.flakyPlan, `${field}.flakyPlan`) }),
   };
 }
 

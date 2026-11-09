@@ -505,6 +505,19 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
     ];
     return styled(chunks);
   }
+  if (input.kind === "themes") {
+    const chunks: TextChunk[] = [chunk("theme\n", palette.accent)];
+    const names = state.themeNames;
+    const rows = Math.max(1, (overlayBox(state)?.height ?? 5) - 4 - 1);
+    const start = Math.max(0, Math.min(input.cursor - Math.floor(rows / 2), names.length - rows));
+    names.slice(start, start + rows).forEach((name, offset) => {
+      const at = start + offset;
+      chunks.push(chunk(at === input.cursor ? "❯ " : "  ", palette.accent));
+      chunks.push(chunk(name, at === input.cursor ? palette.accent : palette.text));
+      chunks.push(chunk(name === state.themeCurrent ? "  in use\n" : "\n", palette.weak));
+    });
+    return styled(chunks);
+  }
   if (input.kind === "args") {
     const field = input.fields[input.at];
     const chunks: TextChunk[] = [
@@ -601,7 +614,7 @@ export function overlayBox(state: TuiState): OverlayBox | undefined {
   // Border (2) and a one-cell margin of background (2) around the text.
   const wanted = lines + 4;
   const left = Math.max(0, Math.floor((state.width - width) / 2));
-  if (kind === "palette" || kind === "pages") {
+  if (kind === "palette" || kind === "pages" || kind === "themes") {
     const top = Math.floor(state.height / 3);
     return { left, top, width, height: Math.max(5, Math.min(wanted, state.height - top)) };
   }
@@ -624,6 +637,7 @@ function inputLines(state: TuiState): number {
   }
   if (input?.kind === "note") return input.text.split("\n").length + 2;
   if (input?.kind === "palette") return Math.max(1, paletteEntries(state).length) + 1;
+  if (input?.kind === "themes") return Math.max(1, state.themeNames.length) + 1;
   if (input?.kind === "pages") return Math.max(1, pageEntries(state).length) + 1;
   return 0;
 }
