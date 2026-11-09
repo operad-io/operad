@@ -199,3 +199,8 @@ the row fields.
 | T-0100-M5 | packages/tui/src/view/index.ts | the header showed the filter on every tab, not only the active one | `filters: view > the filter shows only on the current tab; a type without filters has no suffix` |
 | T-0082-M1 | packages/tui/src/actions.ts | the palette listed the TUI commands before the open object's actions | `actions in the reducer > groups are shown in the order actions, tui; search reads the title` |
 | T-0082-M2 | packages/tui/src/state.ts | the go back command did nothing instead of doing what escape does | `actions in the reducer > each TUI command does what its key does > go back closes the open object, as escape does` |
+| T-0083-M1 | packages/tui/src/actions.ts | a match at the start of a word got no bonus over a match in the middle | `palette search: query to first entry > "rec" finds ops:reconcile first` |
+| T-0083-M2 | packages/tui/src/actions.ts | the group was not searched | `palette search: query to first entry > a group word keeps only the entries of that group` |
+| T-0083-M3 | packages/tui/src/actions.ts | the recent list put the newest entry last | `palette search: recent entries > an empty query lists the last five used first, the latest first, then the group order` |
+| T-0083-M4 | packages/tui/src/actions.ts | equal scores were listed in reverse order | `palette search: query to first entry > equal scores keep the order the entries were listed in` |
+| T-0083-M5 | packages/tui/src/view/index.ts | the matched characters of the name were not drawn in the accent | `palette search: highlight positions > the matched characters are drawn in the accent colour` |

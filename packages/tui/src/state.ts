@@ -35,6 +35,7 @@ import {
   typed,
   isReserved,
   resolveBindings,
+  remember,
   type TuiCommand,
 } from "./actions.ts";
 
@@ -270,6 +271,8 @@ export interface TuiState {
   readonly status?: string | undefined;
   /** The key bindings in force; a user binding beats a plugin default. */
   readonly bindings: readonly TuiBinding[];
+  /** The palette entries used last, the latest first; the shell keeps them between runs. */
+  readonly recent: readonly string[];
   /** The palette, note or confirmation the keys are typing into. */
   readonly input?: TuiInput | undefined;
   /** One footer line (a refusal, or "not available") until the next key. */
@@ -299,6 +302,7 @@ export interface TuiStateOptions {
   readonly height?: number | undefined;
   readonly theme?: TuiTheme | undefined;
   readonly url?: string | undefined;
+  readonly recent?: readonly string[] | undefined;
 }
 
 function makeList(): TuiList {
@@ -357,6 +361,7 @@ export function initialState(options: TuiStateOptions = {}): TuiState {
     followPending: false,
     generation: 0,
     bindings: [],
+    recent: options.recent ?? [],
     acting: false,
     connection: "ok",
     ...(options.url === undefined ? {} : { url: options.url }),
@@ -1332,8 +1337,10 @@ function handleKey(
   const calm = state.notice === undefined ? state : { ...state, notice: undefined };
   if (typing?.kind === "pages") return pagesKey(calm, typing, event);
   if (typing?.kind === "palette" && isKey(event.key, "enter", "return")) {
-    const command = chosenEntry(calm)?.command;
-    if (command !== undefined) return runCommand({ ...calm, input: undefined }, command);
+    const chosen = chosenEntry(calm);
+    if (chosen?.command !== undefined) {
+      return runCommand(remember({ ...calm, input: undefined }, chosen), chosen.command);
+    }
   }
   if (typing !== undefined) return inputKey(calm, typing, event);
   // Ctrl-C is the renderer's exit; no other chord is ours.
