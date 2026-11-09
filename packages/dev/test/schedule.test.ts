@@ -376,6 +376,26 @@ describe("dev scheduling", () => {
     expect((await tick(run)).length).toBe(1);
   });
 
+  test("auto merge does not answer a passed review that names new words", async () => {
+    const words = await setup();
+    const plan = await makePlan(words, { slug: "plan", auto: "merge" });
+    const task = await makeTask(words, plan.key, "task");
+    await confirm(words, plan.key);
+    await phase(words, task.key, "waiting", "run-1");
+    await putTask(words, task.key, {
+      attempt: {
+        number: 1,
+        run: "run-1",
+        review: { result: "pass", newWords: ["alpha"] },
+      },
+    });
+    await tick(words);
+    expect(words.answers).toEqual([]);
+    expect(
+      taskData((await getTask(words.store, task.key)).data).autoMergeAttempt,
+    ).toBeUndefined();
+  });
+
   test("auto merge answers a passed review once and never answers other waits", async () => {
     const passed = await setup();
     const plan = await makePlan(passed, { slug: "plan", auto: "merge" });
