@@ -1,3 +1,4 @@
+import type { ReviewSettingsUsed } from "../src/rework.ts";
 import { chmodSync } from "node:fs";
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import {
@@ -131,6 +132,7 @@ interface ReviewCall {
   readonly args: readonly string[];
   readonly resultPath: string;
   readonly stallSecs: number | undefined;
+  readonly wallTimeSecs: number | undefined;
 }
 
 interface FakeReviewer {
@@ -165,12 +167,14 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             readonly args?: readonly string[];
             readonly resultPath: string;
             readonly stallSecs?: number;
+            readonly wallTimeSecs?: number;
           };
           calls.push({
             prompt: input.prompt,
             cwd: input.cwd,
             args: input.args ?? [],
             stallSecs: input.stallSecs,
+            wallTimeSecs: input.wallTimeSecs,
             resultPath: input.resultPath,
           });
           if (options.callLog !== undefined) {
@@ -432,6 +436,8 @@ interface FixtureOptions {
   readonly rerun?: number;
   readonly reviewerArgs?: readonly string[];
   readonly firstArgs?: readonly string[];
+  /** The reviewer's `first` block. */
+  readonly first?: Readonly<Record<string, unknown>>;
   readonly reviewerStallSecs?: number;
   readonly reviewerTimeoutSecs?: number;
   readonly fixLevel?: FixLevel;
@@ -496,6 +502,7 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
           ...(options.firstArgs === undefined
             ? {}
             : { firstArgs: options.firstArgs }),
+          ...(options.first === undefined ? {} : { first: options.first }),
           ...(options.fallback === undefined
             ? {}
             : { fallback: options.fallback }),
@@ -2847,6 +2854,7 @@ describe("dev/review rework rounds", () => {
       "## Commits since the previous review",
       "## Increment",
       "## Removed since the previous review",
+      "## Checks already run",
       "## What to write",
     ]);
     expect(prompt).not.toContain("## Diff");
@@ -2864,6 +2872,98 @@ describe("dev/review rework rounds", () => {
       "rework round: 1 previous findings, 1 fixed, 0 moved as pre-existing",
     );
     expect(changes.split("rework round:").length).toBe(2);
+  });
+
+  describe("settings by round", () => {
+    const fix = async (round: Round): Promise<void> => {
+      writeFindings(round.findingsFile, []);
+      await nextAttempt(round.state);
+      await commitIn(
+        round.state.worktree,
+        "code.txt",
+        lines(40).replace("line 5\n", "changed 5\n").replace("line 30\n", "again 30\n"),
+        "fix",
+      );
+      await verify(round.state, "verify-2");
+    };
+    const withFirst = async (first: Readonly<Record<string, unknown>>): Promise<Round> => {
+      const dir = await tempRoot();
+      const findingsFile = join(dir, "findings.json");
+      writeFindings(findingsFile, [finding("code.txt", 5)]);
+      const state = await fixture({
+        reviewerArgs: [`file:${findingsFile}`],
+        reviewerTimeoutSecs: 600,
+        reviewerStallSecs: 300,
+        first,
+        commit: false,
+        baseFiles: { "code.txt": lines(40) },
+      });
+      await commitIn(
+        state.worktree,
+        "code.txt",
+        lines(40).replace("line 5\n", "changed 5\n").replace("line 30\n", "changed 30\n"),
+        "first change",
+      );
+      const verified = await verify(state, "verify-1");
+      const firstResult = await review(state, "review-1");
+      return { state, findingsFile, first: firstResult, firstSha: verified.data?.verified as string };
+    };
+
+    test("the first review reads the first block; a rework round and a same-commit reverify read the default block", async () => {
+      const round = await withFirst({
+        args: ["cheap-first"],
+        timeoutSecs: 900,
+        stallSecs: 100,
+      });
+      const calls = round.state.reviewer.calls;
+      expect(calls[0]?.args).toEqual(["cheap-first"]);
+      expect(calls[0]?.wallTimeSecs).toBe(900);
+      expect(calls[0]?.stallSecs).toBe(100);
+      expect(round.first.data?.reviewSettings).toEqual({
+        round: "first",
+        use: "fake-reviewer/agent",
+        args: ["cheap-first"],
+        timeoutSecs: 900,
+        stallSecs: 100,
+        sources: { use: "default", args: "first", timeoutSecs: "first", stallSecs: "first" },
+      });
+      const again = await review(round.state, "review-again");
+      expect(calls[1]?.args[0]).toMatch(/^file:/);
+      expect(calls[1]?.wallTimeSecs).toBe(600);
+      expect(calls[1]?.stallSecs).toBe(300);
+      expect((again.data?.reviewSettings as { round: string }).round).toBe("rework");
+
+      await fix(round);
+      const rework = await review(round.state, "review-2");
+      expect(calls[2]?.args[0]).toMatch(/^file:/);
+      expect(calls[2]?.wallTimeSecs).toBe(600);
+      expect(rework.data?.reworkRound).toBe(true);
+      expect(rework.data?.reviewSettings).toEqual({
+        round: "rework",
+        use: "fake-reviewer/agent",
+        args: calls[2]?.args,
+        timeoutSecs: 600,
+        stallSecs: 300,
+        sources: { use: "default", args: "default", timeoutSecs: "default", stallSecs: "default" },
+      });
+    });
+
+    test("a missing first block falls back to the default block, and the report records it", async () => {
+      const state = await fixture({ reviewerArgs: ["none"], reviewerTimeoutSecs: 450 });
+      await verify(state);
+      const result = await review(state);
+      expect(state.reviewer.calls[0]?.wallTimeSecs).toBe(450);
+      const used = result.data?.reviewSettings as ReviewSettingsUsed;
+      expect(used.round).toBe("first");
+      expect(used.sources).toEqual({
+        use: "default",
+        args: "default",
+        timeoutSecs: "default",
+        stallSecs: "default",
+      });
+      const recorded = (await taskOf(state)).attempt?.review;
+      expect(recorded?.reviewSettings).toEqual(used);
+    });
   });
 
   test("a review of the same commit as the previous review gets the first prompt", async () => {
@@ -3270,6 +3370,26 @@ describe("prepare", () => {
     await verify(state);
     await review(state);
     expect(state.reviewer.calls[0]?.prompt).not.toContain("is prepared");
+  });
+
+  test("the review prompt names the gate commands and says not to run them again", async () => {
+    const state = await fixture({ commands: ["echo check-one", "echo check-two"] });
+    await verify(state);
+    await review(state);
+    const prompt = state.reviewer.calls[0]?.prompt ?? "";
+    expect(prompt).toContain("- `echo check-one`");
+    expect(prompt).toContain("- `echo check-two`");
+    expect(prompt).toContain("Do not run them again");
+    expect(prompt).toContain("Do not copy the checkout elsewhere");
+  });
+
+  test("a repository without gate commands gets the rule without names", async () => {
+    const state = await fixture({ commands: [] });
+    await verify(state);
+    await review(state);
+    const prompt = state.reviewer.calls[0]?.prompt ?? "";
+    expect(prompt).toContain("Do not run them again");
+    expect(prompt).not.toContain("These checks already passed");
   });
 
   test("a failing prepare fails verify with its reason and log, and no gate command runs", async () => {

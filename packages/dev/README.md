@@ -476,6 +476,7 @@ The file holds the repository's work settings:
 | `reviewer.use` | `harness-radian/agent` | the harness step that reviews the diff |
 | `reviewer.args` | `[]` | the arguments every review gets |
 | `reviewer.firstArgs` | none | the arguments the first review of an attempt gets instead, including its one retry after an invalid report |
+| `reviewer.first.use`, `reviewer.first.args`, `reviewer.first.timeoutSecs`, `reviewer.first.stallSecs` | none | the settings of a task's first review (no earlier review of the task). Each value set there replaces the reviewer's own for that review only; every later review (a rework round, or a review of the same commit as an earlier one) uses the reviewer's own values, so a rework round, which reads only the increment and the previous findings, can run a cheaper model under a shorter limit. With no `first` block every review uses the reviewer's values, as before. Each review report and its history entry records `reviewSettings`: the round (`first` or `rework`) and the values that ran, with the block each came from (`first` or `default`) |
 | `reviewer.fallback.use` | none | the harness step that reviews when the primary reviewer is unavailable |
 | `reviewer.fallback.args` | `[]` | the arguments every fallback review gets |
 | `reviewer.timeoutSecs` | `600` | the longest a review may run |

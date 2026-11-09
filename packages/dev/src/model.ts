@@ -1,7 +1,7 @@
 /** The objects the dev plugin owns, and the pure rules that change them. */
 
 import type { ObjectStore, StoredObject } from "@operad-io/engine";
-import type { ReviewHistoryEntry } from "./rework.ts";
+import type { ReviewHistoryEntry, ReviewSettingsUsed } from "./rework.ts";
 
 /**
  * Every object of a type, following the store's pages. The store returns one
@@ -226,6 +226,8 @@ export interface ReviewRecord {
   readonly round?: number | null;
   /** The model that produced the decision. */
   readonly model?: string | null;
+  /** Which round (first or rework) ran and which block each setting came from. */
+  readonly reviewSettings?: ReviewSettingsUsed | null;
   /** When an unavailable round may run again, in epoch milliseconds. */
   readonly retryAt?: number | null;
   /** Every run of this round, in order. */

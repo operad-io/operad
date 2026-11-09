@@ -81,6 +81,8 @@ import {
   fixedCount,
   movesIn,
   type ReviewKind,
+  type ReviewSettingsUsed,
+  reviewSettingsOf,
   previousLine,
   previousReview,
   type LineMap,
@@ -856,6 +858,7 @@ function reviewPrompt(
   grading: Grading,
   prepare: readonly string[] = [],
   rework?: ReworkPrompt,
+  checks: readonly string[] = [],
 ): string {
   const pieces: string[] = [
     `Review the changes of task ${task.title}.`,
@@ -912,6 +915,13 @@ function reviewPrompt(
     );
   }
   pieces.push(
+    "## Checks already run",
+    [
+      checks.length === 0
+        ? "The repository's checks already passed on this commit."
+        : `These checks already passed on this commit:\n${checks.map((line) => `- \`${line}\``).join("\n")}`,
+      "Do not run them again, nor the repository's full test suite, nor anything that starts a simulator, a browser or a server. You may run one focused test file to confirm a suspicion, inside this checkout only. Do not copy the checkout elsewhere.",
+    ].join("\n"),
     "## What to write",
     [
       `Write a JSON object to ${resultPath} (inside the worktree you are in). The file must contain exactly:`,
@@ -1260,6 +1270,7 @@ async function callReviewer(
   reportPath: string,
   storePath: string,
   reviewer: { readonly use: string; readonly args: readonly string[] },
+  limits: ReviewSettingsUsed,
   resuming: boolean,
 ): Promise<ReviewerCall> {
   const call = await callReviewerOnce(
@@ -1270,6 +1281,7 @@ async function callReviewer(
     reportPath,
     storePath,
     reviewer,
+    limits,
     resuming,
   );
   writeReviewOutcome(reviewOutcomePath(storePath), call);
@@ -1292,6 +1304,7 @@ async function callReviewerOnce(
   reportPath: string,
   storePath: string,
   reviewer: { readonly use: string; readonly args: readonly string[] },
+  limits: ReviewSettingsUsed,
   resuming: boolean,
 ): Promise<ReviewerCall> {
   const runStep = ctx.runStep;
@@ -1348,10 +1361,10 @@ async function callReviewerOnce(
         prompt,
         cwd: gatePath,
         args: reviewer.args,
-        wallTimeSecs: settings.timeoutSecs,
-        ...(settings.stallSecs === undefined
+        wallTimeSecs: limits.timeoutSecs,
+        ...(limits.stallSecs === undefined
           ? {}
-          : { stallSecs: settings.stallSecs }),
+          : { stallSecs: limits.stallSecs }),
         resultPath: reportPath,
       },
       stepOptions(ctx, gatePath),
@@ -1468,6 +1481,9 @@ function replayReview(
       ...(record.message === undefined || record.message === null
         ? {}
         : { message: record.message }),
+      ...(record.reviewSettings === undefined || record.reviewSettings === null
+        ? {}
+        : { reviewSettings: record.reviewSettings }),
       replayed: true,
     }),
   };
@@ -1749,11 +1765,15 @@ export async function runReview(
 
   const sha = attempt.verified;
   let current: TaskAttempt = attempt;
+  // The settings the round ran with; set once the round's kind is known.
+  let used: ReviewSettingsUsed | undefined;
   const finish = async (
-    record: ReviewRecord,
+    recorded: ReviewRecord,
     stepResult: string,
     extra: Readonly<Record<string, unknown>> = {},
   ): Promise<PluginStepResult> => {
+    const record: ReviewRecord =
+      used === undefined ? recorded : { ...recorded, reviewSettings: used };
     const written = await saveTaskGuarded(
       ctx,
       context.taskKey,
@@ -1813,6 +1833,7 @@ export async function runReview(
         ...(record.message === undefined || record.message === null
           ? {}
           : { message: record.message }),
+        ...(used === undefined ? {} : { reviewSettings: used }),
         ...extra,
       }),
     };
@@ -1969,6 +1990,7 @@ export async function runReview(
       : followed === undefined && history.length > 0
         ? "reverify"
         : "first";
+  used = reviewSettingsOf(kind, context.settings.reviewer, reviews === 0);
   // The lines the task's own change added, for the pre-existing rules.
   const own: LineMap = addedLinesOf(
     gitZ(context.repository.path, [
@@ -2068,10 +2090,10 @@ export async function runReview(
   );
 
   const settings = context.settings.reviewer;
-  // The retry is the same review round, so it keeps the round's arguments:
-  // the first review of an attempt still gets `firstArgs` on its retry.
-  const useFirst = reviews === 0 && settings.firstArgs !== undefined;
-  const roundArgs = useFirst ? settings.firstArgs ?? [] : settings.args;
+  // The retry is the same review round, so it keeps the round's settings:
+  // the first review still gets the first block on its retry.
+  const roundSettings = used;
+  const roundArgs = roundSettings.args;
   // The runs of this round survive a crash; a fresh round starts with none.
   const runs: ReviewRunRecord[] = (attempt.reviewRuns ?? []).filter(
     (run) =>
@@ -2132,8 +2154,8 @@ export async function runReview(
     const use =
       resume?.use ??
       (action.role === "fallback"
-        ? settings.fallback?.use ?? settings.use
-        : settings.use);
+        ? settings.fallback?.use ?? roundSettings.use
+        : roundSettings.use);
     const args =
       resume?.args ??
       (action.role === "fallback" ? settings.fallback?.args ?? [] : roundArgs);
@@ -2156,6 +2178,9 @@ export async function runReview(
       grading,
       context.settings.prepare,
       reworkPrompt,
+      context.settings.gate.commands.map((command) =>
+        typeof command === "string" ? command : command.run,
+      ),
     );
     // A resumed call asks with the prompt it recorded, not one built again.
     const recorded =
@@ -2168,7 +2193,7 @@ export async function runReview(
     if (
       call === undefined &&
       ranHere > 0 &&
-      clock() + settings.timeoutSecs * 1000 > deadline
+      clock() + roundSettings.timeoutSecs * 1000 > deadline
     ) {
       next = "out-of-time";
       break;
@@ -2219,6 +2244,7 @@ export async function runReview(
         reportPath,
         resultPath,
         { use, args },
+        roundSettings,
         resume !== undefined,
       );
     }
