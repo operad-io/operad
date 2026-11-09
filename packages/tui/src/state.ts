@@ -20,6 +20,7 @@ import type { TuiSetting, TuiTypeInfo } from "./client.ts";
 import { cachedLayout, layoutMarkdown, type LayoutLine } from "./layout.ts";
 import type { ArgField } from "./args.ts";
 import { sanitize } from "./sanitize.ts";
+import { displayWidth, graphemes } from "./wrap.ts";
 import {
   actionFailed,
   bindingFor,
@@ -44,7 +45,7 @@ import {
 export type TuiTheme = "light" | "dark";
 
 /** What a tab lists. */
-export type TuiTabKind = "pending" | "running" | "type";
+export type TuiTabKind = "pending" | "running" | "plugin";
 
 /** The marker a row shows: one of the plugin's marks, or nothing. */
 export type TuiMark = RowMark | "none";
@@ -79,6 +80,20 @@ export interface TuiRow {
   readonly detail?: readonly string[] | undefined;
   /** The row names no object: its first line is the title alone. */
   readonly unnamed?: boolean | undefined;
+  /** The object type, for a row of a plugin tab or of a page's next level. */
+  readonly type?: string | undefined;
+  /** The id of the top-level object whose group the row is in. */
+  readonly parent?: string | undefined;
+  /** On the first row of a group: the top-level object the group is named for. */
+  readonly group?: TuiRow | undefined;
+}
+
+/** The next level under the open object: its rows and where the cursor is in them. */
+export interface TuiChildren {
+  readonly rows: readonly TuiRow[];
+  readonly cursor: number;
+  /** The keys move in this list instead of the left one. */
+  readonly focused: boolean;
 }
 
 /** One section of the open object, with the content fetched so far. */
@@ -121,6 +136,10 @@ export interface TuiObject {
   readonly row: TuiRow;
   readonly sections: readonly TuiSection[];
   readonly active: number;
+  /** The next level under the object, once it has arrived. */
+  readonly children?: TuiChildren | undefined;
+  /** The page this one was opened from (a child opened from its parent). */
+  readonly back?: TuiObject | undefined;
   /** The object response has not arrived yet; its row comes from the list. */
   readonly loading: boolean;
   /** The actions the object offers now, in the server's order. */
@@ -258,12 +277,16 @@ export interface TuiList {
   readonly switching?: boolean | undefined;
 }
 
-/** One tab: Pending, Running or one object type. */
+/** One tab: Pending, Running or one plugin. */
 export interface TuiTab {
   readonly id: string;
   readonly kind: TuiTabKind;
-  /** The `/v1/types` name; set only for a type tab. */
-  readonly type?: string | undefined;
+  /** The plugin a plugin tab is for. */
+  readonly plugin?: string | undefined;
+  /** The plugin's object types, in the server's order; set only for a plugin tab. */
+  readonly types?: readonly TuiTypeInfo[] | undefined;
+  /** What a plugin tab lists: its top-level objects, or their next level in groups. */
+  readonly level?: "roots" | "children" | undefined;
   readonly title: string;
   readonly list: TuiList;
   /** The filters the type declares, in the server's order; unset without any. */
@@ -388,29 +411,46 @@ function makeTab(
   id: string,
   kind: TuiTabKind,
   title: string,
-  type?: string,
-  info?: TuiTypeInfo,
+  types?: readonly TuiTypeInfo[],
 ): TuiTab {
-  const filters = filtersOf(info);
+  const filters = filtersOf(types);
+  const defaulted = types?.find((info) => info.defaultFilter !== undefined)?.defaultFilter;
   const filter =
     filters === undefined
       ? undefined
-      : (filters.find((f) => f.name === info?.defaultFilter) ?? filters[0])?.name;
+      : (filters.find((f) => f.name === defaulted) ?? filters[0])?.name;
   return {
     id,
     kind,
-    ...(type === undefined ? {} : { type }),
+    ...(types === undefined ? {} : { types }),
     title,
     list: makeList(),
     ...(filters === undefined ? {} : { filters, filter }),
   };
 }
 
-function filtersOf(info: TuiTypeInfo | undefined): readonly TuiFilterInfo[] | undefined {
-  const filters = info?.filters;
-  return filters === undefined || filters.length === 0 ? undefined : filters;
+/** The filters of a plugin's types: each name once, in the order they first appear. */
+function filtersOf(types: readonly TuiTypeInfo[] | undefined): readonly TuiFilterInfo[] | undefined {
+  const out: TuiFilterInfo[] = [];
+  for (const info of types ?? []) {
+    for (const filter of info.filters ?? []) {
+      if (!out.some((seen) => seen.name === filter.name)) out.push(filter);
+    }
+  }
+  return out.length === 0 ? undefined : out;
 }
 
+/** The filter to ask a type for: the tab's, when the type declares it. */
+export function filterFor(tab: TuiTab, info: TuiTypeInfo): string | undefined {
+  const name = tab.filter;
+  if (name === undefined) return undefined;
+  return info.filters?.some((f) => f.name === name) === true ? name : undefined;
+}
+
+/** The plugin tab that holds `type`, if any. */
+export function pluginTabOf(state: TuiState, type: string): TuiTab | undefined {
+  return state.tabs.find((tab) => tab.types?.some((info) => info.type === type) === true);
+}
 /** The two fixed tabs; `/v1/types` adds the rest. */
 export function initialState(options: TuiStateOptions = {}): TuiState {
   return {
@@ -444,6 +484,16 @@ export function initialState(options: TuiStateOptions = {}): TuiState {
 /** A short alias for callers that build the first state. */
 export const createInitialState = initialState;
 
+/** One row of a plugin tab's list, with its type and, first in a group, the group's heading. */
+export interface TuiTreeEntry {
+  readonly row: ViewRow;
+  readonly type: string;
+  /** The top-level object this row is under, when the list is grouped. */
+  readonly parent?: string | undefined;
+  /** Set on the first row of a group: the top-level object's own row and type. */
+  readonly heading?: { readonly row: ViewRow; readonly type: string } | undefined;
+}
+
 /** What the reducer accepts. */
 export type TuiStateEvent =
   | {
@@ -452,6 +502,25 @@ export type TuiStateEvent =
       readonly generation?: number | undefined;
     }
   | { readonly type: "filter-launched" }
+  /** A plugin tab's whole list: its top-level objects, or their next level in groups. */
+  | {
+      readonly type: "tree";
+      readonly tabId: string;
+      readonly level: "roots" | "children";
+      readonly entries: readonly TuiTreeEntry[];
+      /** How many rows the filter left out. */
+      readonly hidden?: number | undefined;
+      readonly generation?: number | undefined;
+      readonly filter?: string | undefined;
+      readonly filterSeq?: number | undefined;
+    }
+  /** The next level of the open object arrived. */
+  | {
+      readonly type: "children";
+      readonly objectId: string;
+      readonly version?: number | undefined;
+      readonly entries: readonly TuiTreeEntry[];
+    }
   | {
       readonly type: "pending";
       readonly items: readonly PendingItem[];
@@ -605,9 +674,10 @@ function rowId(row: ViewRow): string {
 }
 
 /** A `/v1/objects` row, unchanged except for the scope in its id. */
-export function rowFromView(row: ViewRow): TuiRow {
+export function rowFromView(row: ViewRow, type?: string): TuiRow {
   return {
     id: sanitize(rowId(row)),
+    ...(type === undefined ? {} : { type }),
     title: sanitize(row.title),
     state: sanitize(row.state),
     ...(row.note === undefined ? {} : { note: sanitize(row.note) }),
@@ -788,9 +858,64 @@ export function listWidthFor(width: number): number {
   return Math.min(LIST_MAX_WIDTH, Math.max(LIST_MIN_WIDTH, Math.round(width * 0.4)));
 }
 
-/** The columns of the list's text. */
+/** The narrowest a plugin tab's list gets, however short its rows are. */
+export const PLUGIN_LIST_MIN = 24;
+
+/** The columns before a row's text: marker, glyph and their spaces. */
+export const ROW_INDENT = 4;
+
+/** The columns a text takes. */
+function cells(text: string): number {
+  let total = 0;
+  for (const char of graphemes(sanitize(text).replace(/\n/g, " "))) total += displayWidth(char);
+  return total;
+}
+
+/** The row id without its type: `item:T-1-x` is `T-1-x`. */
+export function bareId(id: string): string {
+  const at = id.indexOf(":");
+  return at < 0 ? id : id.slice(at + 1);
+}
+
+/** The short id and the slug of an id like `T-0031-tui-object`. */
+function splitId(id: string): { readonly short: string; readonly slug: string } {
+  const match = /^([A-Za-z]+-\d+)-(.+)$/.exec(id);
+  if (match === null) return { short: id, slug: "" };
+  return { short: match[1] ?? id, slug: match[2] ?? "" };
+}
+
+/** The short id and slug of a row, without its type or repository. */
+export function rowName(row: TuiRow): string {
+  const bare = bareId(row.id);
+  const { short, slug } = splitId(bare.slice(bare.lastIndexOf("/") + 1));
+  if (row.error !== undefined || slug === "") return short;
+  return `${short} ${slug}`;
+}
+
+/** The parts of a row's dim line: state and badge, then the note, unless the row says. */
+export function rowDetail(row: TuiRow): string {
+  const parts =
+    row.detail ?? [`${row.state}${row.badge === undefined ? "" : ` ${row.badge}`}`, row.note ?? ""];
+  return parts
+    .map((part) => sanitize(part).replace(/\n/g, " ").trim())
+    .filter((part) => part !== "")
+    .join(" · ");
+}
+
+/**
+ * The columns of the list's text. A plugin tab's rows are a name and a note, so
+ * its column is as wide as the longest of them, never past the terminal's share.
+ */
 export function listWidth(state: TuiState): number {
-  return listWidthFor(state.width);
+  const cap = listWidthFor(state.width);
+  const tab = activeTabOf(state);
+  if (tab?.kind !== "plugin" || tab.list.rows.length === 0) return cap;
+  let need = PLUGIN_LIST_MIN;
+  for (const row of tab.list.rows) {
+    need = Math.max(need, ROW_INDENT + cells(rowName(row)), ROW_INDENT + cells(rowDetail(row)));
+    if (row.group !== undefined) need = Math.max(need, ROW_INDENT + cells(rowName(row.group)));
+  }
+  return Math.min(cap, need);
 }
 
 /** The divider's column: the list, then one column of padding. */
@@ -811,7 +936,7 @@ export function bodyHeight(state: TuiState): number {
 /** How many Markdown lines fit under the object's title, state, tabs and rule. */
 export function sectionViewport(state: TuiState): number {
   // a blank line, title, state, a blank line, the section tabs, their rule and the hint line.
-  return Math.max(1, bodyHeight(state) - 7);
+  return Math.max(1, bodyHeight(state) - 7 - childLines(state.object));
 }
 
 /** The columns a section's Markdown has in the object pane. */
@@ -954,9 +1079,9 @@ function openObject(state: TuiState): TuiState {
   if (row === undefined || row.openable === false) return state;
   const previous = state.object?.source === row.id ? state.object : undefined;
   const version = state.objectVersion + 1;
-  // A type tab knows the type of its rows, so the request names it: a bare id
+  // A row of a plugin tab knows its type, so the request names it: a bare id
   // can be ambiguous across types.
-  const typeName = tab?.kind === "type" ? tab.type : undefined;
+  const typeName = row.type;
   const requestId =
     typeName !== undefined && !row.id.startsWith(`${typeName}:`)
       ? `${typeName}:${row.id}`
@@ -1039,6 +1164,8 @@ function applyObject(
     sections,
     active,
     actions: view.actions,
+    ...(previous.children === undefined ? {} : { children: previous.children }),
+    ...(previous.back === undefined ? {} : { back: previous.back }),
     loading: false,
     ...(view.unavailable === undefined
       ? {}
@@ -1445,13 +1572,96 @@ function selectedRow(state: TuiState): TuiRow | undefined {
   return row === undefined || row.openable === false ? undefined : row;
 }
 
-/** Enter: opens the selected row; on the row that is already open, nothing. */
+/** How many rows of the next level the page shows at most. */
+export const CHILD_ROWS = 8;
+
+/** The lines the next level takes in the page: a heading, its rows and a blank line. */
+export function childLines(object: TuiObject | undefined): number {
+  const count = object?.children?.rows.length ?? 0;
+  return count === 0 ? 0 : Math.min(count, CHILD_ROWS) + 2;
+}
+
+function withChildren(state: TuiState, patch: (children: TuiChildren) => TuiChildren): TuiState {
+  return withObject(state, (object) =>
+    object.children === undefined ? object : { ...object, children: patch(object.children) },
+  );
+}
+
+/** Opens the page of the child under the page's cursor; the plan's page waits behind it. */
+function openChild(state: TuiState): TuiState {
+  const parent = state.object;
+  const children = parent?.children;
+  const row = children?.rows[children.cursor];
+  if (parent === undefined || row === undefined) return state;
+  const type = row.type ?? (row.id.includes(":") ? row.id.slice(0, row.id.indexOf(":")) : "");
+  const requestId = type === "" || row.id.startsWith(`${type}:`) ? row.id : `${type}:${row.id}`;
+  const version = state.objectVersion + 1;
+  const object: TuiObject = {
+    id: requestId,
+    // The left row still owns the pane: a refresh of the list does not replace it.
+    source: parent.source,
+    type,
+    link: "",
+    row,
+    sections: [],
+    active: 0,
+    actions: [],
+    loading: true,
+    version,
+    back: parent,
+  };
+  return {
+    ...state,
+    object,
+    objectVersion: version,
+    objectRequest: { id: requestId, version },
+    sectionRequest: undefined,
+  };
+}
+
+/** Back from a child's page to the page it was opened from; false when it has none. */
+function goBack(state: TuiState): TuiState | undefined {
+  const back = state.object?.back;
+  if (back === undefined) return undefined;
+  const version = state.objectVersion + 1;
+  return {
+    ...state,
+    object: { ...back, version },
+    objectVersion: version,
+    objectRequest: { id: back.id, version },
+    sectionRequest: undefined,
+  };
+}
+
+/** The keys of a focused next-level list; undefined when the key is not one of them. */
+function childKey(state: TuiState, key: string): TuiState | undefined {
+  const children = state.object?.children;
+  if (children === undefined || !children.focused) return undefined;
+  if (isKey(key, "up", "arrowup", "k")) {
+    return withChildren(state, (c) => ({ ...c, cursor: Math.max(0, c.cursor - 1) }));
+  }
+  if (isKey(key, "down", "arrowdown", "j")) {
+    return withChildren(state, (c) => ({
+      ...c,
+      cursor: Math.min(c.rows.length - 1, c.cursor + 1),
+    }));
+  }
+  if (isKey(key, "g")) return withChildren(state, (c) => ({ ...c, cursor: 0 }));
+  if (key === "G") return withChildren(state, (c) => ({ ...c, cursor: c.rows.length - 1 }));
+  if (isKey(key, "enter", "return")) return openChild({ ...state, followPending: false });
+  if (isKey(key, "escape", "esc")) return withChildren(state, (c) => ({ ...c, focused: false }));
+  return undefined;
+}
+
+/** Enter: opens the selected row; on the row that is already open, its next level. */
 function enter(state: TuiState): TuiState {
   const row = selectedRow(state);
   if (row === undefined) return state;
   const open = state.object;
   if (open !== undefined && open.source === row.id && open.error === undefined) {
-    return { ...state, followPending: false };
+    // A child's page is open: the list is not where Enter acts.
+    if (open.back !== undefined) return { ...state, followPending: false };
+    return withChildren({ ...state, followPending: false }, (c) => ({ ...c, focused: true }));
   }
   return openObject({ ...state, followPending: false });
 }
@@ -1560,8 +1770,13 @@ function handleKey(
     // The list behind the key list is hidden, so no other key acts on it.
     return isKey(key, "escape", "esc") ? { ...state, keys: false } : state;
   }
+  const inChildren = childKey(state, key);
+  if (inChildren !== undefined) return inChildren;
   if (isKey(key, "enter", "return")) return enter(state);
-  if (isKey(key, "escape", "esc")) {
+  if (isKey(key, "escape", "esc", "backspace")) {
+    const back = goBack(state);
+    if (back !== undefined) return back;
+    if (isKey(key, "backspace")) return state;
     return closeObject({ ...state, followPending: false });
   }
   if (isKey(key, "[", "left", "arrowleft")) return moveSection(state, -1);
@@ -1660,11 +1875,11 @@ function cycleFilter(state: TuiState): TuiState {
   };
 }
 
-/** What the header adds after the current type tab: the filter and what it hides. */
+/** What the header adds after the current plugin tab: the filter and what it hides. */
 export function filterHeader(
   tab: TuiTab | undefined,
 ): { readonly filter: string; readonly hidden: string } | undefined {
-  if (tab?.kind !== "type" || tab.filters === undefined || tab.filter === undefined) {
+  if (tab?.kind !== "plugin" || tab.filters === undefined || tab.filter === undefined) {
     return undefined;
   }
   const hidden =
@@ -1672,34 +1887,48 @@ export function filterHeader(
   return { filter: ` · ${tab.filter}`, hidden };
 }
 
-function typeTitle(type: TuiTypeInfo): string {
+function typeTitle(type: TuiTypeInfo | undefined): string {
+  if (type === undefined) return "";
   return type.title.length === 0 ? type.type : type.title;
 }
 
+/** The plugin a type belongs to; a server that does not say gives each type its own tab. */
+function pluginOf(type: TuiTypeInfo): string {
+  return type.plugin === undefined || type.plugin === "" ? type.type : type.plugin;
+}
+
 function applyTypes(state: TuiState, types: readonly TuiTypeInfo[]): TuiState {
-  const fixed = state.tabs.filter((tab) => tab.kind !== "type");
+  const fixed = state.tabs.filter((tab) => tab.kind !== "plugin");
   const existing = new Map(state.tabs.map((tab) => [tab.id, tab]));
-  const seen = new Set<string>();
-  const typeTabs: TuiTab[] = [];
+  const byPlugin = new Map<string, TuiTypeInfo[]>();
   for (const info of types) {
-    if (seen.has(info.type)) continue;
-    seen.add(info.type);
-    const id = `type:${info.type}`;
+    const name = pluginOf(info);
+    const group = byPlugin.get(name) ?? [];
+    if (!group.some((seen) => seen.type === info.type)) group.push(info);
+    byPlugin.set(name, group);
+  }
+  const pluginTabs: TuiTab[] = [];
+  for (const [name, group] of byPlugin) {
+    const id = `plugin:${name}`;
+    // A server that names no plugin gives each type its own tab, titled as the type.
+    const first = group[0];
+    const title = first?.plugin === undefined || first.plugin === "" ? typeTitle(first) : name;
+    const fresh = { ...makeTab(id, "plugin", title, group), plugin: name };
     const old = existing.get(id);
     if (old === undefined) {
-      typeTabs.push(makeTab(id, "type", typeTitle(info), info.type, info));
+      pluginTabs.push(fresh);
       continue;
     }
-    // A known tab keeps its chosen filter while the type still declares it.
-    const fresh = makeTab(id, "type", old.title, info.type, info);
+    // A known tab keeps its chosen filter while the plugin still declares it.
     const kept = fresh.filters?.some((f) => f.name === old.filter) === true;
-    typeTabs.push({
+    pluginTabs.push({
       ...old,
+      types: group,
       filters: fresh.filters,
       filter: kept ? old.filter : fresh.filter,
     });
   }
-  const tabs = [...fixed, ...typeTabs];
+  const tabs = [...fixed, ...pluginTabs];
   const activeId = state.tabs[state.active]?.id;
   const found = tabs.findIndex((tab) => tab.id === activeId);
   return {
@@ -1729,14 +1958,32 @@ export function sameObject(a: string, b: string): boolean {
   return tail(a) !== "" && tail(a) === tail(b);
 }
 
+/** The rows without the one at `at`; its group's heading moves to the next row of the group. */
+function dropRow(rows: readonly TuiRow[], at: number): TuiRow[] {
+  const gone = rows[at];
+  const out = rows.filter((_, i) => i !== at);
+  const after = out[at];
+  if (
+    gone?.group !== undefined &&
+    after !== undefined &&
+    after.group === undefined &&
+    after.parent === gone.parent
+  ) {
+    out[at] = { ...after, group: gone.group };
+  }
+  return out;
+}
+
 /** Puts a fresh row in place of the rows of the same object; the cursor stays. */
 function replaceRow(state: TuiState, row: TuiRow): TuiState {
   let changed = false;
   let selectedLeft = false;
   const tabs = state.tabs.map((tab, index) => {
-    if (tab.kind !== "type") return tab;
-    const states = tab.filters?.find((f) => f.name === tab.filter)?.states;
+    if (tab.kind !== "plugin") return tab;
     const at = tab.list.rows.findIndex((old) => sameObject(old.id, row.id));
+    const shown = at < 0 ? undefined : tab.list.rows[at];
+    const info = tab.types?.find((candidate) => candidate.type === shown?.type);
+    const states = info?.filters?.find((f) => f.name === tab.filter)?.states;
     if (
       at >= 0 &&
       states !== undefined &&
@@ -1747,7 +1994,7 @@ function replaceRow(state: TuiState, row: TuiRow): TuiState {
       // cursor keeps its place, which is now the next row.
       changed = true;
       if (index === state.active && at === tab.list.cursor) selectedLeft = true;
-      const rows = tab.list.rows.filter((_, i) => i !== at);
+      const rows = dropRow(tab.list.rows, at);
       const cursor = Math.min(tab.list.cursor, Math.max(0, rows.length - 1));
       return {
         ...tab,
@@ -1758,7 +2005,12 @@ function replaceRow(state: TuiState, row: TuiRow): TuiState {
     const rows = tab.list.rows.map((old) => {
       if (!sameObject(old.id, row.id)) return old;
       changed = true;
-      return row;
+      return {
+        ...row,
+        ...(old.type === undefined ? {} : { type: old.type }),
+        ...(old.parent === undefined ? {} : { parent: old.parent }),
+        ...(old.group === undefined ? {} : { group: old.group }),
+      };
     });
     return changed && rows.some((r, i) => r !== tab.list.rows[i])
       ? { ...tab, list: { ...tab.list, rows } }
@@ -1775,11 +2027,11 @@ function replaceRow(state: TuiState, row: TuiRow): TuiState {
 function removeRow(state: TuiState, id: string): TuiState {
   let changed = false;
   const tabs = state.tabs.map((tab) => {
-    if (tab.kind !== "type") return tab;
+    if (tab.kind !== "plugin") return tab;
     const at = tab.list.rows.findIndex((row) => sameObject(row.id, id));
     if (at < 0) return tab;
     changed = true;
-    const rows = tab.list.rows.filter((_, i) => i !== at);
+    const rows = dropRow(tab.list.rows, at);
     const cursor = Math.min(tab.list.cursor, Math.max(0, rows.length - 1));
     return { ...tab, list: { ...tab.list, rows, cursor } };
   });
@@ -1895,6 +2147,43 @@ function appendPage(
   return { ...cleared, moveSeq: cleared.moveSeq + 1, followPending: true };
 }
 
+/** The type a page of a tab's rows is of: the tab's first. */
+function firstType(state: TuiState, tabId: string): string | undefined {
+  return state.tabs.find((tab) => tab.id === tabId)?.types?.[0]?.type;
+}
+
+function rowOfEntry(entry: TuiTreeEntry): TuiRow {
+  return {
+    ...rowFromView(entry.row, entry.type),
+    ...(entry.parent === undefined ? {} : { parent: sanitize(entry.parent) }),
+    ...(entry.heading === undefined
+      ? {}
+      : { group: rowFromView(entry.heading.row, entry.heading.type) }),
+  };
+}
+
+function applyChildren(
+  state: TuiState,
+  objectId: string,
+  version: number | undefined,
+  entries: readonly TuiTreeEntry[],
+): TuiState {
+  const object = state.object;
+  if (object === undefined || object.id !== objectId) return state;
+  if (version !== undefined && version !== object.version) return state;
+  const rows = entries.map(rowOfEntry);
+  const old = object.children;
+  const selected = old?.rows[old.cursor]?.id;
+  const found = selected === undefined ? -1 : rows.findIndex((row) => row.id === selected);
+  const cursor = found >= 0 ? found : Math.min(old?.cursor ?? 0, Math.max(0, rows.length - 1));
+  const children: TuiChildren = {
+    rows,
+    cursor,
+    focused: rows.length > 0 && old?.focused === true,
+  };
+  return withObject(state, (value) => ({ ...value, children: rows.length === 0 ? undefined : children }));
+}
+
 function applyPageError(
   state: TuiState,
   tabId: string,
@@ -1940,7 +2229,7 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       return appendPage(
         state,
         event.tabId,
-        event.page.rows.map(rowFromView),
+        event.page.rows.map((row) => rowFromView(row, firstType(state, event.tabId))),
         event.page.next,
         event.replace === true,
         event.version,
@@ -1948,6 +2237,25 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
         event.page.hidden,
         event.filterSeq,
       );
+    case "tree": {
+      if (stale(state, event.generation)) return state;
+      const rows = event.entries.map(rowOfEntry);
+      const next = appendPage(
+        state,
+        event.tabId,
+        rows,
+        undefined,
+        true,
+        undefined,
+        event.filter,
+        event.hidden,
+        event.filterSeq,
+      );
+      if (next === state) return state;
+      return withTab(next, event.tabId, (tab) => ({ ...tab, level: event.level }));
+    }
+    case "children":
+      return applyChildren(state, event.objectId, event.version, event.entries);
     case "filter-launched":
       return state.filterRequest === undefined
         ? state
@@ -1956,7 +2264,7 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       return appendPage(
         state,
         event.tabId,
-        event.rows.map(rowFromView),
+        event.rows.map((row) => rowFromView(row, firstType(state, event.tabId))),
         event.next,
         event.replace === true,
         undefined,
@@ -2067,7 +2375,10 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
 
 /** True when the terminal is wide enough for the list and the object pane. */
 export function twoPane(state: TuiState): boolean {
-  return state.width - rightX(state) - 1 >= MIN_OBJECT_WIDTH;
+  // The terminal's share of the list decides, not the narrower column a plugin
+  // tab may use: below 100 columns there is one pane, whatever the rows are.
+  const right = LIST_X + listWidthFor(state.width) + 3;
+  return state.width - right - 1 >= MIN_OBJECT_WIDTH;
 }
 
 /** The active tab, if any. */
@@ -2093,7 +2404,7 @@ export function headerText(state: TuiState): string {
   const pending = state.tabs.find((tab) => tab.kind === "pending");
   const running = state.tabs.find((tab) => tab.kind === "running");
   const types = state.tabs
-    .filter((tab) => tab.kind === "type")
+    .filter((tab) => tab.kind === "plugin")
     .map((tab) => tab.title);
   return `operad ─ ${[
     `Pending ${pending?.list.rows.length ?? 0}`,
@@ -2131,7 +2442,7 @@ export const KEY_LIST: readonly (readonly [string, string])[] = [
   ["tab / shift-tab", "next or previous tab"],
   ["↑↓ / j k", "move the row; on a narrow screen with an object open, scroll it"],
   ["g / G", "first or last row; on a narrow screen with an object open, its top or bottom"],
-  ["enter", "open the selected row (on a narrow screen); does nothing on the open row"],
+  ["enter", "open the selected row (on a narrow screen); on the open row, move into its list; there, open the row"],
   ["PgUp PgDn / b space", "scroll the open section a page"],
   ["Home / End", "top of the open section, or its end (follows a live one)"],
   ["[ ] / ← →", "the previous or next section"],
@@ -2139,7 +2450,7 @@ export const KEY_LIST: readonly (readonly [string, string])[] = [
   ["n / N", "the next or previous page of the open section"],
   ["f", "load the whole open section when it is capped; otherwise, on a tab with filters, the next filter"],
   ["r", "fetch the lists again"],
-  ["escape", "close the key list, or the open object"],
+  ["escape / backspace", "close the key list, leave a list inside the open object, return from a row opened there, or close the object"],
   ["?", "show or hide this key list"],
   ["q", "quit"],
 ];
@@ -2148,8 +2459,8 @@ export const KEY_LIST: readonly (readonly [string, string])[] = [
 export const ROW_LINES = 3;
 
 /** The lines one row takes; an error row shows its text elsewhere. */
-export function rowLines(_row: TuiRow): number {
-  return ROW_LINES;
+export function rowLines(row: TuiRow): number {
+  return ROW_LINES + (row.group === undefined ? 0 : 1);
 }
 
 /**

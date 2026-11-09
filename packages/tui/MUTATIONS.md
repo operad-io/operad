@@ -236,3 +236,8 @@ the row fields.
 | T-0148-M5 | packages/tui/src/app.ts | a fault before the shell existed did not stop it when it started | `runTui > a fault before the shell exists still ends the app, with the message` |
 | T-0148-M6 | packages/tui/src/app.ts | runTui did not pass onMessage, so request failures were not echoed at exit | `runTui > a server that cannot be reached is echoed after the screen closes` |
 | T-0148-M7 | packages/tui/src/app.ts | the request guard swallowed a rejection | `a fault in the app's own loops > a view that throws while a request is answered ends the app through the request guard` |
+| T-0121-M1 | packages/tui/src/app.ts | a plugin whose roots only partly have children listed the children (`some` instead of `every`) | `one tab per plugin > roots without children are listed themselves` |
+| T-0121-M2 | packages/tui/src/state.ts | a plugin tab's column took the terminal's share instead of the width its rows need | `one tab per plugin > a plugin column is as wide as its rows, never wider than the terminal's share` |
+| T-0121-M3 | packages/tui/src/state.ts | escape on a child's page closed the pane instead of returning to the plan | `one tab per plugin > enter on a child in the page opens its own page, and back returns to the plan` |
+| T-0121-M4 | packages/tui/src/view/index.ts | a plugin tab's rows drew their title after the id and slug | `two-line rows > at the one-pane width nothing is wider than the pane, and a long id and title cut with …` |
+| T-0121-M5 | packages/tui/src/state.ts | a child's page took the child's id as its source, so a refresh of the left list reopened the plan | `one tab per plugin > a refresh of the left list leaves a child's page open` |

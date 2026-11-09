@@ -63,7 +63,8 @@ class FakeClient implements TuiShellClient {
   running(): Promise<readonly RunningItem[]> {
     return this.runningAnswer();
   }
-  objects(type: string, cursor?: string, signal?: AbortSignal): Promise<ViewListPage> {
+  objects(type: string, cursor?: string, signal?: AbortSignal, _f?: string, level?: { readonly parent?: string | undefined }): Promise<ViewListPage> {
+    if (level?.parent !== undefined) return Promise.resolve({ rows: [] });
     const call = { type, cursor, signal };
     this.objectsCalls.push(call);
     return this.objectsAnswer(call);
@@ -157,10 +158,10 @@ function setup(configure: (client: FakeClient) => void = () => undefined): Setup
   return { client, events, view, messages, shell };
 }
 
-const ids = (state: TuiState, tab = "type:item"): string[] =>
+const ids = (state: TuiState, tab = "plugin:item"): string[] =>
   state.tabs.find((candidate) => candidate.id === tab)?.list.rows.map((r) => r.id) ?? [];
 const typeList = (state: TuiState) =>
-  state.tabs.find((candidate) => candidate.id === "type:item")?.list;
+  state.tabs.find((candidate) => candidate.id === "plugin:item")?.list;
 
 /** Opens the item tab with its first page loaded. */
 async function openItems(s: Setup): Promise<void> {
@@ -169,53 +170,21 @@ async function openItems(s: Setup): Promise<void> {
 }
 
 describe("the TUI app", () => {
-  test("keys, resizes and refreshes while a page is in flight fetch it once", async () => {
-    const more = new Deferred<ViewListPage>();
+  test("a plugin tab's list is every page of its top level, fetched once", async () => {
     const s = setup((client) => {
       client.objectsAnswer = (call) =>
-        call.cursor === "p2" ? more.promise : Promise.resolve(page(["a", "b"], "p2"));
+        call.cursor === "p2" ? Promise.resolve(page(["c", "d"])) : Promise.resolve(page(["a", "b"], "p2"));
     });
     await openItems(s);
-
-    s.shell.key({ name: "down" });
+    await s.view.until((state) => ids(state).length === 4);
+    expect(ids(s.shell.state)).toEqual(["a", "b", "c", "d"]);
     expect(s.client.callsWith("p2")).toHaveLength(1);
-    s.shell.key({ name: "up" });
+    // Moving, resizing and the key list fetch nothing more.
     s.shell.key({ name: "down" });
     s.shell.resize(90, 24);
     s.shell.key({ name: "?", sequence: "?" });
     s.shell.key({ name: "?", sequence: "?" });
     expect(s.client.callsWith("p2")).toHaveLength(1);
-
-    more.resolve(page(["c", "d"]));
-    await s.view.until((state) => ids(state).length === 4);
-    expect(ids(s.shell.state)).toEqual(["a", "b", "c", "d"]);
-    expect(s.client.callsWith("p2")).toHaveLength(1);
-    s.shell.stop();
-  });
-
-  test("a page that lands after a refresh's replace is dropped", async () => {
-    const more = new Deferred<ViewListPage>();
-    let first = true;
-    const s = setup((client) => {
-      client.objectsAnswer = (call) => {
-        if (call.cursor === "p2") return more.promise;
-        if (first) {
-          first = false;
-          return Promise.resolve(page(["a", "b"], "p2"));
-        }
-        return Promise.resolve(page(["a", "b", "x"], "p2"));
-      };
-    });
-    await openItems(s);
-    s.shell.key({ name: "down" });
-    expect(typeList(s.shell.state)?.loading).toBe(true);
-
-    s.shell.key({ name: "r" });
-    await s.view.until((state) => ids(state).length === 3);
-    const drawn = s.view.nextRender();
-    more.resolve(page(["late"]));
-    await drawn; // the late page was dispatched, and must have been dropped
-    expect(ids(s.shell.state)).toEqual(["a", "b", "x"]);
     expect(typeList(s.shell.state)?.loading).toBe(false);
     s.shell.stop();
   });

@@ -39,7 +39,11 @@ import {
 } from "./live.ts";
 import {
   initialState,
+  pluginTabOf,
+  rowFromView,
   sameObject,
+  type TuiTab,
+  type TuiTreeEntry,
   type TuiObject,
   joinMarkdown,
   markPage,
@@ -49,7 +53,6 @@ import {
   type TuiSettingRequest,
   type TuiObjectRequest,
   type TuiFilterRequest,
-  type TuiPageRequest,
   type TuiSectionRequest,
   type TuiState,
   type TuiStateEvent,
@@ -64,7 +67,7 @@ import {
   type ThemeHolder,
 } from "./theme.ts";
 import { createTuiView, type TuiView } from "./view/index.ts";
-import type { TuiSetInput, TuiSetting, TuiTypeInfo } from "./client.ts";
+import type { TuiLevel, TuiSetInput, TuiSetting, TuiTypeInfo } from "./client.ts";
 import { settingScopes } from "./actions.ts";
 
 /** How `operad tui` finds its server and reports a problem. */
@@ -121,6 +124,7 @@ export interface TuiShellClient {
     cursor?: string,
     signal?: AbortSignal,
     filter?: string,
+    level?: TuiLevel,
   ): Promise<ViewListPage>;
   /** Optional: a server without `/v1/keys` leaves the bindings empty. */
   keys?(signal?: AbortSignal): Promise<readonly TuiKeyBinding[]>;
@@ -330,31 +334,6 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     return true;
   }
 
-  async function loadPage(request: TuiPageRequest): Promise<void> {
-    const tab = state.tabs.find((candidate) => candidate.id === request.tabId);
-    if (tab?.type === undefined) return;
-    try {
-      const page = await client.objects(tab.type, request.cursor, abort.signal, tab.filter);
-      dispatch({
-        type: "page",
-        tabId: request.tabId,
-        page,
-        version: request.version,
-        filter: tab.filter,
-      });
-    } catch (error) {
-      if (abort.signal.aborted) return;
-      noteConnection(error);
-      dispatch({
-        type: "page-error",
-        tabId: request.tabId,
-        message: messageOf(error),
-        version: request.version,
-      });
-      report(error);
-    }
-  }
-
   async function loadObject(request: TuiObjectRequest): Promise<void> {
     const open = client.object;
     if (open === undefined) return;
@@ -363,6 +342,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     try {
       const object = await open.call(client, request.id, mine.signal);
       dispatch({ type: "object", object, version: request.version });
+      await loadChildren(object, request.version, mine.signal);
     } catch (error) {
       if (mine.signal.aborted) return;
       noteConnection(error);
@@ -480,42 +460,130 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     };
   }
 
-  /** Reads a type's first page, and more until it is as deep as it was. */
-  async function fetchTypeRows(
+  /** Every row of one level of one type, all pages, and how many the filter left out. */
+  async function fetchLevel(
     type: string,
-    depth: number,
+    level: TuiLevel,
     signal: AbortSignal,
     filter?: string,
-  ): Promise<ViewListPage> {
+  ): Promise<{ readonly rows: readonly ViewRow[]; readonly hidden: number }> {
     const rows: ViewRow[] = [];
     let cursor: string | undefined;
-    let next: string | undefined;
-    let hidden: number | undefined;
+    let hidden = 0;
+    let first = true;
     do {
-      const page = await client.objects(type, cursor, signal, filter);
+      const page = await client.objects(type, cursor, signal, filter, level);
       rows.push(...page.rows);
-      hidden ??= page.hidden;
-      next = page.next;
-      cursor = next;
-    } while (next !== undefined && rows.length < depth);
+      if (first) hidden = page.hidden ?? 0;
+      first = false;
+      cursor = page.next;
+    } while (cursor !== undefined);
+    return { rows, hidden };
+  }
+
+  /** The rows of one level across the types of a plugin, each tagged with its type. */
+  async function fetchTypes(
+    tab: TuiTab,
+    level: TuiLevel,
+    signal: AbortSignal,
+    filter: string | undefined,
+  ): Promise<{ readonly entries: readonly TuiTreeEntry[]; readonly hidden: number }> {
+    const per = await Promise.all(
+      (tab.types ?? []).map(async (info) => {
+        const named = tab.filters?.some((f) => f.name === filter) === true;
+        const asked = named && info.filters?.some((f) => f.name === filter) === true ? filter : undefined;
+        const found = await fetchLevel(info.type, level, signal, asked);
+        return {
+          hidden: found.hidden,
+          entries: found.rows.map((row): TuiTreeEntry => ({ row, type: info.type })),
+        };
+      }),
+    );
     return {
-      rows,
-      ...(next === undefined ? {} : { next }),
-      ...(hidden === undefined ? {} : { hidden }),
+      entries: per.flatMap((one) => one.entries),
+      hidden: per.reduce((total, one) => total + one.hidden, 0),
     };
+  }
+
+  /**
+   * A plugin tab's list: its top-level objects, or, when every one of them has
+   * a next level, that level, grouped under the top-level objects.
+   */
+  async function fetchPluginRows(
+    tab: TuiTab,
+    signal: AbortSignal,
+    filter: string | undefined,
+  ): Promise<{
+    readonly level: "roots" | "children";
+    readonly entries: readonly TuiTreeEntry[];
+    readonly hidden: number;
+  }> {
+    const roots = await fetchTypes(tab, { root: true }, signal, filter);
+    const under = await Promise.all(
+      roots.entries.map((root) =>
+        fetchTypes(tab, { parent: `${root.type}:${rowFromView(root.row).id}` }, signal, filter),
+      ),
+    );
+    const every =
+      roots.entries.length > 0 &&
+      under.every((one) => one.entries.length + one.hidden > 0);
+    if (!every) return { level: "roots", entries: roots.entries, hidden: roots.hidden };
+    const entries: TuiTreeEntry[] = [];
+    roots.entries.forEach((root, index) => {
+      const rows = under[index]?.entries ?? [];
+      const parent = rowFromView(root.row).id;
+      rows.forEach((entry, at) => {
+        entries.push({
+          ...entry,
+          parent,
+          ...(at === 0 ? { heading: { row: root.row, type: root.type } } : {}),
+        });
+      });
+    });
+    return {
+      level: "children",
+      entries,
+      hidden: under.reduce((total, one) => total + one.hidden, 0),
+    };
+  }
+
+  /** The next level of an open object, from the plugin's other types. */
+  async function loadChildren(
+    object: ViewObject,
+    version: number,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const tab = pluginTabOf(state, object.type);
+    if (tab === undefined) return;
+    try {
+      const found = await fetchTypes(
+        tab,
+        { parent: `${object.type}:${object.id}` },
+        signal,
+        tab.filter,
+      );
+      if (signal.aborted || finished) return;
+      dispatch({ type: "children", objectId: object.id, version, entries: found.entries });
+    } catch (error) {
+      if (signal.aborted || finished) return;
+      noteConnection(error);
+      report(error);
+    }
   }
 
   /** The first page of a tab under the filter `f` chose. */
   async function loadFilter(request: TuiFilterRequest): Promise<void> {
     const tab = state.tabs.find((candidate) => candidate.id === request.tabId);
-    if (tab?.type === undefined) return;
+    if (tab?.types === undefined) return;
     try {
-      const page = await client.objects(tab.type, undefined, abort.signal, request.filter);
+      const found = await fetchPluginRows(tab, abort.signal, request.filter);
+      if (abort.signal.aborted) return;
       dispatch({
-        type: "page",
+        type: "tree",
         tabId: request.tabId,
-        page,
-        replace: true,
+        level: found.level,
+        entries: found.entries,
+        hidden: found.hidden,
         filter: request.filter,
         filterSeq: request.seq,
       });
@@ -538,9 +606,6 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     const objectAtStart = state.object;
     const filtersAtStart = new Map(
       state.tabs.map((tab) => [tab.id, { filter: tab.filter, seq: tab.filterSeq ?? 0 }] as const),
-    );
-    const depths = new Map(
-      state.tabs.map((tab) => [tab.id, tab.list.rows.length] as const),
     );
     let failed = false;
     let lost = false;
@@ -577,39 +642,36 @@ export function startShell(deps: TuiShellDeps): TuiShell {
 
     if (typesResult.ok) {
       await Promise.all(
-        typesResult.value.types.map(async (info) => {
-          const tabId = `type:${info.type}`;
-          const current = state.tabs.find((tab) => tab.id === tabId);
-          const asked =
-            filtersAtStart.get(tabId) ??
-            (current === undefined
-              ? undefined
-              : { filter: current.filter, seq: current.filterSeq ?? 0 });
-          const filter = asked?.filter;
-          const filterSeq = asked?.seq ?? 0;
-          const result = await settle(
-            fetchTypeRows(info.type, depths.get(tabId) ?? 0, signal, filter),
-          );
-          if (signal.aborted || finished) return;
-          if (result.ok) {
-            dispatch({
-              type: "page",
-              tabId,
-              page: result.value,
-              replace: true,
-              generation,
-              filter,
-              filterSeq,
-            });
-          } else {
-            dispatch({
-              type: "page-error",
-              tabId,
-              message: messageOf(result.error),
-            });
-            fail(result.error);
-          }
-        }),
+        state.tabs
+          .filter((tab) => tab.kind === "plugin")
+          .map(async (tab) => {
+            const asked = filtersAtStart.get(tab.id) ?? {
+              filter: tab.filter,
+              seq: tab.filterSeq ?? 0,
+            };
+            const filter = asked.filter;
+            const result = await settle(fetchPluginRows(tab, signal, filter));
+            if (signal.aborted || finished) return;
+            if (result.ok) {
+              dispatch({
+                type: "tree",
+                tabId: tab.id,
+                level: result.value.level,
+                entries: result.value.entries,
+                hidden: result.value.hidden,
+                generation,
+                filter,
+                filterSeq: asked.seq,
+              });
+            } else {
+              dispatch({
+                type: "page-error",
+                tabId: tab.id,
+                message: messageOf(result.error),
+              });
+              fail(result.error);
+            }
+          }),
       );
     }
     await refreshObjectPane(signal, objectAtStart, fail);
@@ -703,22 +765,29 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       return;
     }
     const known = state.tabs.some(
-      (tab) => tab.kind === "type" && tab.list.rows.some((row) => sameObject(row.id, id)),
+      (tab) => tab.kind === "plugin" && tab.list.rows.some((row) => sameObject(row.id, id)),
     );
     if (known) {
       dispatch({ type: "row", row: result.value.row });
       return;
     }
-    const tab = state.tabs.find((candidate) => candidate.type === result.value.type);
-    if (tab?.type === undefined) return;
+    const tab = pluginTabOf(state, result.value.type);
+    if (tab === undefined) return;
     const filter = tab.filter;
     const filterSeq = tab.filterSeq ?? 0;
-    const page = await settle(fetchTypeRows(tab.type, tab.list.rows.length, signal, filter));
+    const found = await settle(fetchPluginRows(tab, signal, filter));
     if (signal.aborted || finished) return;
-    if (page.ok) {
-      dispatch({ type: "page", tabId: tab.id, page: page.value, replace: true, filter, filterSeq });
-    }
-    else fail(page.error);
+    if (found.ok) {
+      dispatch({
+        type: "tree",
+        tabId: tab.id,
+        level: found.value.level,
+        entries: found.value.entries,
+        hidden: found.value.hidden,
+        filter,
+        filterSeq,
+      });
+    } else fail(found.error);
   }
 
   /** Fetches the open object again, and the live sections it shows. */
@@ -752,6 +821,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         if (result.ok) {
           dispatch({ type: "object", object: result.value, version });
           dispatch({ type: "row", row: result.value.row });
+          await loadChildren(result.value, version, scoped.signal);
           const current = state.object;
           const live =
             current?.sections.filter(
@@ -975,7 +1045,6 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       finish();
       return;
     }
-    if (request !== undefined) guard(loadPage(request));
     if (filterRequest !== undefined) guard(loadFilter(filterRequest));
     if (objectRequest !== undefined) guard(loadObject(objectRequest));
     if (sectionRequest !== undefined) guard(loadSection(sectionRequest));

@@ -80,7 +80,8 @@ class Client implements TuiShellClient {
   running(): Promise<readonly RunningItem[]> {
     return Promise.resolve([]);
   }
-  objects(): Promise<ViewListPage> {
+  objects(_t?: string, _c?: string, _s?: AbortSignal, _f?: string, level?: { readonly parent?: string | undefined }): Promise<ViewListPage> {
+    if (level?.parent !== undefined) return Promise.resolve({ rows: [] });
     return Promise.resolve({ rows: [row] });
   }
   object(id: string): Promise<ViewObject> {
@@ -124,7 +125,7 @@ describe("a live section that was jumped to a later page", () => {
       clock: immediateClock,
     });
     try {
-      await view.until((s) => s.tabs.find((t) => t.id === "type:item")?.list.loaded === true);
+      await view.until((s) => s.tabs.find((t) => t.id === "plugin:item")?.list.loaded === true);
       shell.key({ name: "3" });
       shell.key({ name: "enter" });
       await view.until((s) => s.object?.sections[0]?.markdown === "page 0 edition 1");

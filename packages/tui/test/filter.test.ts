@@ -39,7 +39,7 @@ function start(width = 120, types: readonly (typeof TASK | typeof PLAIN)[] = [TA
 function load(state: TuiState, rows: ViewRow[], hidden?: number, filter?: string): TuiState {
   return reduce(state, {
     type: "page",
-    tabId: "type:task",
+    tabId: "plugin:task",
     replace: true,
     page: { rows, ...(hidden === undefined ? {} : { hidden }) },
     ...(filter === undefined ? {} : { filter }),
@@ -48,7 +48,7 @@ function load(state: TuiState, rows: ViewRow[], hidden?: number, filter?: string
 
 const key = (state: TuiState, name: string, shift = false): TuiState =>
   reduce(state, { type: "key", key: name, ...(shift ? { shift } : {}) });
-const task = (state: TuiState) => state.tabs.find((t) => t.id === "type:task");
+const task = (state: TuiState) => state.tabs.find((t) => t.id === "plugin:task");
 const ids = (state: TuiState) => task(state)?.list.rows.map((r) => r.id) ?? [];
 
 /** The task tab active, three rows loaded under `active`, 4 hidden. */
@@ -67,7 +67,7 @@ describe("filters: state", () => {
   test("a tab opens on the default filter, a type without filters has none", () => {
     const state = start();
     expect(task(state)?.filter).toBe("active");
-    expect(state.tabs.find((t) => t.id === "type:note")?.filter).toBeUndefined();
+    expect(state.tabs.find((t) => t.id === "plugin:note")?.filter).toBeUndefined();
   });
 
   test("with no default marked the first filter is used", () => {
@@ -82,7 +82,7 @@ describe("filters: state", () => {
       state = key(state, "f");
       seen.push(task(state)?.filter ?? "");
       expect(state.filterRequest).toEqual({
-        tabId: "type:task",
+        tabId: "plugin:task",
         filter: task(state)?.filter ?? "",
         seq: i + 1,
       });
@@ -145,7 +145,7 @@ describe("filters: state", () => {
     // an appended page of the old filter is dropped too
     state = reduce(state, {
       type: "page",
-      tabId: "type:task",
+      tabId: "plugin:task",
       page: { rows: [row("old")] },
       filter: "all",
     });
@@ -158,7 +158,7 @@ describe("filters: state", () => {
     state = key(state, "f");
     state = reduce(state, {
       type: "page",
-      tabId: "type:task",
+      tabId: "plugin:task",
       page: { rows: [row("late")] },
       version,
     });
@@ -278,16 +278,16 @@ describe("filters: view", () => {
     state = key(state, "f");
     state = key(state, "f");
     state = load(state, [], 6, "cancelled");
-    expect(listOf(state)).toContain("no cancelled tasks");
+    expect(listOf(state)).toContain("nothing cancelled in task");
     state = key(state, "f");
     state = load(state, [], undefined, "active");
-    expect(listOf(state)).toContain("no active tasks");
+    expect(listOf(state)).toContain("nothing active in task");
   });
 
-  test("an empty all filter reads no all tasks", () => {
+  test("an empty all filter reads nothing all in task", () => {
     let state = key(onTasks(), "f");
     state = load(state, [], undefined, "all");
-    expect(listOf(state)).toContain("no all tasks");
+    expect(listOf(state)).toContain("nothing all in task");
   });
 
   test("an old answer for a filter cycled back to is dropped", () => {
@@ -301,7 +301,7 @@ describe("filters: view", () => {
     expect(task(state)?.filter).toBe("active");
     const page = (id: string, filterSeq: number | undefined): TuiStateEvent => ({
       type: "page",
-      tabId: "type:task",
+      tabId: "plugin:task",
       replace: true,
       page: { rows: [row(id)] },
       filter: "active",
@@ -346,7 +346,8 @@ class Client implements TuiShellClient {
     if (this.answers.has(filter)) return Promise.resolve();
     return new Promise((resolve) => this.waiters.push(resolve));
   }
-  objects(_t: string, _c?: string, _s?: AbortSignal, filter?: string): Promise<ViewListPage> {
+  objects(_t: string, _c?: string, _s?: AbortSignal, filter?: string, level?: { readonly parent?: string | undefined }): Promise<ViewListPage> {
+    if (level?.parent !== undefined) return Promise.resolve({ rows: [] });
     this.filters.push(filter);
     queueMicrotask(() => {
       for (const w of this.waiters.splice(0)) w();
@@ -439,8 +440,14 @@ describe("filters: shell", () => {
     const held: { filter: string | undefined; resolve: (page: ViewListPage) => void }[] = [];
     class Holding extends Client {
       holding = false;
-      override objects(t: string, c?: string, s?: AbortSignal, filter?: string): Promise<ViewListPage> {
-        if (!this.holding) return super.objects(t, c, s, filter);
+      override objects(
+        t: string,
+        c?: string,
+        s?: AbortSignal,
+        filter?: string,
+        level?: { readonly parent?: string | undefined },
+      ): Promise<ViewListPage> {
+        if (!this.holding || level?.parent !== undefined) return super.objects(t, c, s, filter, level);
         return new Promise((resolve) => held.push({ filter, resolve }));
       }
     }
@@ -468,8 +475,14 @@ describe("filters: shell", () => {
     const held: { filter: string | undefined; resolve: (page: ViewListPage) => void }[] = [];
     class Holding extends Client {
       holding = false;
-      override objects(t: string, c?: string, s?: AbortSignal, filter?: string): Promise<ViewListPage> {
-        if (!this.holding) return super.objects(t, c, s, filter);
+      override objects(
+        t: string,
+        c?: string,
+        s?: AbortSignal,
+        filter?: string,
+        level?: { readonly parent?: string | undefined },
+      ): Promise<ViewListPage> {
+        if (!this.holding || level?.parent !== undefined) return super.objects(t, c, s, filter, level);
         return new Promise((resolve) => held.push({ filter, resolve }));
       }
       object(id: string): Promise<ViewObject> {
