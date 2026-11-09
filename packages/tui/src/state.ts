@@ -14,6 +14,7 @@ import type {
   ViewRow,
   ViewSectionContent,
   ViewSectionInfo,
+  ViewSectionPage,
 } from "@operad-io/engine";
 import type { TuiTypeInfo } from "./client.ts";
 import { cachedLayout, layoutMarkdown, type LayoutLine } from "./layout.ts";
@@ -22,12 +23,15 @@ import {
   actionFailed,
   bindingFor,
   confirmText,
+  dropLast,
+  fuzzyScore,
   inputKey,
   keyLabel,
   mainAction,
   mainKey,
   runKey,
   startAction,
+  typed,
   isReserved,
   resolveBindings,
 } from "./actions.ts";
@@ -83,6 +87,10 @@ export interface TuiSection {
   /** How many pages of content are in `markdown`; a refresh fetches as many. */
   readonly pages: number;
   readonly error?: string | undefined;
+  /** The section's table of contents, when the plugin sent one. */
+  readonly toc?: readonly ViewSectionPage[] | undefined;
+  /** The index in `toc` of the first page `markdown` holds. */
+  readonly pageStart: number;
   /** The first content line the pane shows. */
   readonly scroll: number;
   /** A live section keeps its end in view. */
@@ -122,6 +130,7 @@ export interface TuiBinding {
 /** What the keys type into: the `:` palette, a note, or a confirmation. */
 export type TuiInput =
   | { readonly kind: "palette"; readonly query: string; readonly cursor: number }
+  | { readonly kind: "pages"; readonly query: string; readonly cursor: number }
   | {
       readonly kind: "note";
       readonly action: string;
@@ -157,6 +166,8 @@ export interface TuiSectionRequest {
   readonly objectId: string;
   readonly sectionId: string;
   readonly cursor?: string | undefined;
+  /** The index in the table of contents of the page asked for; it replaces the text. */
+  readonly jump?: number | undefined;
   readonly full: boolean;
   /** The section version the page was asked for. */
   readonly version: number;
@@ -419,6 +430,8 @@ export type TuiStateEvent =
       readonly sectionId: string;
       readonly content: ViewSectionContent;
       readonly cursor?: string | undefined;
+      /** The table-of-contents index of a page that replaces the text. */
+      readonly jump?: number | undefined;
       readonly full?: boolean | undefined;
       readonly version?: number | undefined;
       /** The open it was asked for; an older open drops it. */
@@ -693,6 +706,7 @@ function makeSection(info: ViewSectionInfo, previous?: TuiSection): TuiSection {
     full: false,
     capped: false,
     pages: 0,
+    pageStart: 0,
     scroll: 0,
     following: live,
     version: 0,
@@ -725,7 +739,12 @@ function bottomScroll(state: TuiState, section: TuiSection): number {
 function requestSection(
   state: TuiState,
   index: number,
-  options: { cursor?: string | undefined; full?: boolean | undefined; force?: boolean | undefined } = {},
+  options: {
+    cursor?: string | undefined;
+    jump?: number | undefined;
+    full?: boolean | undefined;
+    force?: boolean | undefined;
+  } = {},
 ): TuiState {
   const object = state.object;
   const section = object?.sections[index];
@@ -746,6 +765,7 @@ function requestSection(
     current.objectId === object.id &&
     current.sectionId === section.id &&
     current.cursor === cursor &&
+    current.jump === options.jump &&
     current.full === full &&
     current.version === section.version &&
     current.objectVersion === object.version
@@ -763,6 +783,7 @@ function requestSection(
       objectId: object.id,
       sectionId: section.id,
       ...(cursor === undefined ? {} : { cursor }),
+      ...(options.jump === undefined ? {} : { jump: options.jump }),
       full,
       version: section.version,
       objectVersion: object.version,
@@ -946,6 +967,7 @@ function applySection(
   version: number | undefined,
   objectVersion: number | undefined,
   pages: number | undefined,
+  jump: number | undefined,
 ): TuiState {
   const object = state.object;
   if (object === undefined || object.id !== objectId) return state;
@@ -954,8 +976,9 @@ function applySection(
   if (version !== undefined && version !== section.version) return state;
   // A page asked for before the object was closed and opened again.
   if (objectVersion !== undefined && objectVersion !== object.version) return state;
+  const appended = cursor !== undefined && jump === undefined;
   const markdown =
-    cursor === undefined
+    !appended
       ? content.markdown
       : joinMarkdown(section.markdown, content.markdown);
   const capped = !full && isTruncated(markdown);
@@ -968,11 +991,14 @@ function applySection(
       loading: false,
       full: full || value.full,
       capped,
-      pages: cursor === undefined ? (pages ?? 1) : value.pages + 1,
+      pages: appended ? value.pages + 1 : (pages ?? 1),
+      pageStart: jump ?? (appended ? value.pageStart : 0),
+      ...(content.pages === undefined ? {} : { toc: content.pages }),
       error: undefined,
       version: value.version + 1,
     };
     const bottom = bottomScroll(state, next);
+    if (jump !== undefined) return { ...next, scroll: 0, following: false };
     return {
       ...next,
       scroll: next.following ? bottom : Math.min(value.scroll, bottom),
@@ -1035,6 +1061,104 @@ function scrollSection(state: TuiState, delta: number): TuiState {
     return requestSection(moved, object.active, { cursor: section.next });
   }
   return moved;
+}
+
+/** The page of the open section's table of contents the text ends in. */
+export function currentPage(section: TuiSection): number {
+  return section.pageStart + Math.max(1, section.pages) - 1;
+}
+
+/** "page 3/27 · docs/manual.md" for a section with a table of contents. */
+export function pagePosition(section: TuiSection | undefined): string | undefined {
+  const toc = section?.toc;
+  if (section === undefined || toc === undefined || toc.length === 0 || !section.loaded) {
+    return undefined;
+  }
+  const at = Math.min(currentPage(section), toc.length - 1);
+  return `page ${at + 1}/${toc.length} · ${toc[at]?.label ?? ""}`;
+}
+
+/** Loads page `index` of the open section's table of contents and shows it at the top. */
+function loadPage(state: TuiState, index: number): TuiState {
+  const object = state.object;
+  const section = activeSection(state);
+  const page = section?.toc?.[index];
+  if (object === undefined || page === undefined) return state;
+  return requestSection(state, object.active, {
+    jump: index,
+    force: true,
+    ...(page.cursor === undefined ? {} : { cursor: page.cursor }),
+  });
+}
+
+/** `n` and `N`: the next or previous page; the ends stay where they are. */
+function stepPage(state: TuiState, delta: number): TuiState {
+  const section = activeSection(state);
+  const toc = section?.toc;
+  if (section === undefined || toc === undefined || toc.length === 0 || section.loading) {
+    return state;
+  }
+  const target = currentPage(section) + delta;
+  if (target < 0) return { ...state, notice: "first page" };
+  if (target >= toc.length) return { ...state, notice: "last page" };
+  return loadPage(state, target);
+}
+
+/** `p`: the page picker, when the open section has pages; otherwise nothing. */
+function openPagePicker(state: TuiState): TuiState {
+  const toc = activeSection(state)?.toc;
+  if (toc === undefined || toc.length === 0 || state.keys) return state;
+  return { ...state, input: { kind: "pages", query: "", cursor: 0 } };
+}
+
+/** One line of the page picker: a page of the table of contents. */
+export interface TuiPageEntry {
+  readonly label: string;
+  /** Its index in the table of contents. */
+  readonly index: number;
+}
+
+/** The picker's lines for the typed query, best match first. */
+export function pageEntries(state: TuiState): readonly TuiPageEntry[] {
+  const toc = activeSection(state)?.toc ?? [];
+  const query = state.input?.kind === "pages" ? state.input.query : "";
+  return toc
+    .map((page, index) => ({ label: page.label, index, score: fuzzyScore(query, page.label) }))
+    .filter((item) => item.score >= 0)
+    .sort((a, b) => a.score - b.score || a.index - b.index)
+    .map(({ label, index }) => ({ label, index }));
+}
+
+/** A key arrives while the page picker is open. */
+function pagesKey(
+  state: TuiState,
+  input: Extract<TuiInput, { readonly kind: "pages" }>,
+  event: { key: string; text?: string | undefined; ctrl?: boolean | undefined; meta?: boolean | undefined },
+): TuiState {
+  const key = event.key.toLowerCase();
+  if (key === "escape" || key === "esc") return { ...state, input: undefined };
+  const entries = pageEntries(state);
+  const down = key === "down" || key === "arrowdown" || (event.ctrl === true && (key === "n" || key === "j"));
+  const up = key === "up" || key === "arrowup" || (event.ctrl === true && (key === "p" || key === "k"));
+  if (down || up) {
+    const cursor = Math.min(
+      Math.max(0, input.cursor + (down ? 1 : -1)),
+      Math.max(0, entries.length - 1),
+    );
+    return { ...state, input: { ...input, cursor } };
+  }
+  if (key === "enter" || key === "return") {
+    const chosen = entries[Math.min(input.cursor, entries.length - 1)];
+    if (chosen === undefined) return state;
+    return loadPage({ ...state, input: undefined }, chosen.index);
+  }
+  if (key === "backspace") {
+    return { ...state, input: { ...input, query: dropLast(input.query), cursor: 0 } };
+  }
+  const text = event.ctrl === true || event.meta === true ? undefined : typed(event);
+  return text === undefined
+    ? state
+    : { ...state, input: { ...input, query: input.query + text, cursor: 0 } };
 }
 
 function jumpSection(state: TuiState, to: "top" | "bottom"): TuiState {
@@ -1164,6 +1288,7 @@ function handleKey(
 ): TuiState {
   const typing = state.input;
   const calm = state.notice === undefined ? state : { ...state, notice: undefined };
+  if (typing?.kind === "pages") return pagesKey(calm, typing, event);
   if (typing !== undefined) return inputKey(calm, typing, event);
   // Ctrl-C is the renderer's exit; no other chord is ours.
   if (event.ctrl === true || event.meta === true) return calm;
@@ -1206,10 +1331,20 @@ function handleKey(
     }
     if (isKey(key, "home")) return jumpSection(state, "top");
     if (isKey(key, "end")) return jumpSection(state, "bottom");
+    if (isKey(key, "p")) return openPagePicker(state);
+    if (isKey(key, "n")) return stepPage(state, shift ? -1 : 1);
     if (isKey(key, "f")) {
       const section = activeSection(state);
       if (section !== undefined && section.capped && !section.full) {
-        return requestSection(state, object.active, { full: true });
+        const at = section.pageStart;
+        const cursor = section.toc?.[at]?.cursor;
+        return requestSection(
+          state,
+          object.active,
+          section.toc === undefined || at === 0
+            ? { full: true }
+            : { full: true, jump: at, force: true, ...(cursor === undefined ? {} : { cursor }) },
+        );
       }
       return filterKeyApplies(state) ? cycleFilter(state) : state;
     }
@@ -1578,6 +1713,7 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
         event.version,
         event.objectVersion,
         event.pages,
+        event.jump,
       );
     case "section-error":
       return applySectionError(
@@ -1700,10 +1836,11 @@ export function footerText(state: TuiState): string {
   } else if (twoPane(state)) {
     const section = activeSection(state);
     const capped = section !== undefined && section.capped && !section.full;
-    common = `j/k row  space/b scroll  [ ] section  ${filtering && !capped ? "f filter" : "f full"}  esc close  ? keys  q quit`;
+    const pages = pagePosition(section) === undefined ? "" : "p pages  n/N page  ";
+    common = `j/k row  space/b scroll  [ ] section  ${pages}${filtering && !capped ? "f filter" : "f full"}  esc close  ? keys  q quit`;
   } else {
-    common =
-      "j/k scroll  space/b page  g/G ends  [ ] section  f full  esc back  ? keys  q quit";
+    const pages = pagePosition(activeSection(state)) === undefined ? "" : "p pages  n/N page  ";
+    common = `j/k scroll  space/b page  g/G ends  [ ] section  ${pages}f full  esc back  ? keys  q quit`;
   }
   const main = mainAction(state);
   const actions =
@@ -1723,6 +1860,8 @@ export const KEY_LIST: readonly (readonly [string, string])[] = [
   ["PgUp PgDn / b space", "scroll the open section a page"],
   ["Home / End", "top of the open section, or its end (follows a live one)"],
   ["[ ] / ← →", "the previous or next section"],
+  ["p", "pick a page of the open section (when it has pages)"],
+  ["n / N", "the next or previous page of the open section"],
   ["f", "load the whole open section when it is capped; otherwise, on a tab with filters, the next filter"],
   ["r", "fetch the lists again"],
   ["escape", "close the key list, or the open object"],

@@ -333,6 +333,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         sectionId: request.sectionId,
         content,
         ...(request.cursor === undefined ? {} : { cursor: request.cursor }),
+        ...(request.jump === undefined ? {} : { jump: request.jump }),
         full: request.full,
         version: request.version,
         objectVersion: request.objectVersion,

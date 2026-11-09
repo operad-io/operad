@@ -379,3 +379,4 @@ the row fields.
 | T-0099-M15 | packages/dev/src/steps.ts | no timer was kept from the step's start as a backstop | `the limit a harness reports > a harness that never reports a run leaves only the backstop` |
 | T-0110-M1 | packages/dev/src/service.ts | `gitPrinting` stopped rerunning a git query that exited 0 with no output | `git that succeeds without printing > repo add runs a query again when git exits 0 and prints nothing` |
 | T-0110-M2 | packages/dev/src/service.ts | `addRepository` dropped git's stderr from the "not a git work tree" refusal | `repo add reports git's stderr > a failing rev-parse puts its stderr in the refusal` |
+| T-0090-M2 | packages/dev/src/views.ts | a file's page entry pointed at the previous file's cursor | `dev views > the diff section is the stat and the diff, and pages by file when long` |

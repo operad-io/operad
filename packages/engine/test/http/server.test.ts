@@ -474,7 +474,11 @@ describe("http server", () => {
 
       const first = await api(h, "/v1/objects/one/sections/pages");
       expect(first.status).toBe(200);
-      expect(await json(first)).toEqual({ markdown: "page one", next: "two" });
+      expect(await json(first)).toEqual({
+        markdown: "page one",
+        next: "two",
+        pages: [{ label: "one" }, { label: "two", cursor: "two" }],
+      });
 
       const second = await api(
         h,

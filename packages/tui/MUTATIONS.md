@@ -177,3 +177,6 @@ the row fields.
 | T-0071-M7 | packages/tui/src/theme.ts | a change to tui.json was ignored by the watch | `file themes > a change to the theme file or tui.json is applied; an invalid edit keeps the last good theme` |
 | T-0126-M1 | packages/tui/src/theme.ts | the fallback timer never re-read the files, so an edit the directory watch missed was not applied | `file themes > the fallback timer picks up an edit the watch missed, and reports a problem once` |
 | T-0126-M2 | packages/tui/src/theme.ts | the fallback timer reported every tick, so an unchanged invalid file repeated its problem | `file themes > the fallback timer picks up an edit the watch missed, and reports a problem once` |
+| T-0090-M3 | packages/tui/src/state.ts | `n` on the last page asked for a page that does not exist | `a section with pages > n and N step through the pages and stop at both ends` |
+| T-0090-M4 | packages/tui/src/state.ts | the position ignored where the loaded text starts in the table of contents | `a section with pages > the position line names the page and its label` |
+| T-0090-M5 | packages/tui/src/actions.ts | `p` and `n` were no longer reserved, so a binding could take them | `actions in the reducer > the page keys p, n and N are reserved` |

@@ -174,7 +174,7 @@ const HELP = [
   "                       stop this home's serve (SIGTERM; default timeout 30)",
   "  pending [--json]     things waiting for a person",
   "  list <type>          objects of one type (--filter <name>, --repo <name>, --parent <id>, --root)",
-  "  show <id>            one object, its sections and its actions",
+  "  show <id>            one object, its sections and its actions (--section <id> --page <label or number>)",
   "  history <id> [--json] steps of a run, or of a plugin object's runs",
   "  running              runs in progress",
   "  flows                loaded flows and where they come from",
@@ -634,6 +634,8 @@ async function commandShow(
   rest = sectionFlag.args;
   const cursorFlag = takeValueFlag(rest, "--cursor");
   rest = cursorFlag.args;
+  const pageFlag = takeValueFlag(rest, "--page");
+  rest = pageFlag.args;
   const full = splitFlag(rest, "--full");
   rest = full.args;
   const raw = splitFlag(rest, "--raw");
@@ -667,6 +669,28 @@ async function commandShow(
   }
   const requested = sectionFlag.value ?? firstSection(object);
 
+  let cursor = cursorFlag.value;
+  if (pageFlag.value !== undefined) {
+    if (cursor !== undefined) throw new UsageError("--page and --cursor cannot be used together");
+    if (requested === undefined) throw new Error(`object "${id}" has no section to page`);
+    const first = await context.views.section(id, requested, undefined, { full: false });
+    const pages = first.pages;
+    if (pages === undefined || pages.length === 0) {
+      throw new Error(`section "${requested}" of "${id}" has no pages`);
+    }
+    const byLabel = pages.find((entry) => entry.label === pageFlag.value);
+    const number = /^[0-9]+$/.test(pageFlag.value) ? Number(pageFlag.value) : undefined;
+    const chosen = byLabel ?? (number === undefined ? undefined : pages[number - 1]);
+    if (chosen === undefined) {
+      throw new Error(
+        `section "${requested}" of "${id}" has no page "${pageFlag.value}"; it has ${pages.length}: ${pages
+          .map((entry, at) => `${at + 1} ${entry.label}`)
+          .join(", ")}`,
+      );
+    }
+    cursor = chosen.cursor;
+  }
+
   if (json.present) {
     if (requested === undefined) {
       io.write(`${JSON.stringify(object, null, 2)}\n`);
@@ -675,7 +699,7 @@ async function commandShow(
     const content = await context.views.section(
       id,
       requested,
-      cursorFlag.value,
+      cursor,
       { full: full.present },
     );
     io.write(`${JSON.stringify({ ...object, section: content }, null, 2)}\n`);
@@ -697,7 +721,7 @@ async function commandShow(
     const content = await context.views.section(
       id,
       requested,
-      cursorFlag.value,
+      cursor,
       { full: full.present },
     );
     io.write(`${content.markdown.replace(/\n?$/, "\n")}`);
@@ -722,7 +746,7 @@ async function commandShow(
   const content = await context.views.section(
     id,
     requested,
-    cursorFlag.value,
+    cursor,
     { full: full.present },
   );
   io.write(`\n${renderMarkdown(content.markdown, {

@@ -208,9 +208,14 @@ describe("presentation views", () => {
     const first = await views.section("item:one", "pages");
     expect(first.markdown).toBe("page one");
     expect(first.next).toBe("two");
+    expect(first.pages).toEqual([
+      { label: "one" },
+      { label: "two", cursor: "two" },
+    ]);
     const second = await views.section("item:one", "pages", first.next);
     expect(second.markdown).toBe("page two");
     expect(second.next).toBeUndefined();
+    expect(second.pages).toBeUndefined();
 
     const logOne = await views.section("item:one", "log");
     const logTwo = await views.section("item:one", "log");

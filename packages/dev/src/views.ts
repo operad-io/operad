@@ -602,7 +602,11 @@ async function diffSection(
   ctx: ViewContext,
   object: StoredObject,
   cursor: string | undefined,
-): Promise<{ readonly markdown: string; readonly next?: string }> {
+): Promise<{
+  readonly markdown: string;
+  readonly next?: string;
+  readonly pages?: readonly { readonly label: string; readonly cursor?: string }[];
+}> {
   const task = taskData(object.data);
   const found = await findRepository(ctx.store, task.repository);
   if (found === undefined) return { markdown: "_The repository is not registered._" };
@@ -625,6 +629,10 @@ async function diffSection(
   const names = git(repository.path, ["diff", "--name-only", range]).out
     .split("\n")
     .filter((name) => name.length > 0);
+  const pages = [
+    { label: "overview" },
+    ...names.map((name, at) => ({ label: name, cursor: String(at + 1) })),
+  ];
   const index = cursor === undefined ? 0 : Number(cursor);
   if (!Number.isInteger(index) || index < 0 || index > names.length) {
     return { markdown: "_That page of the diff does not exist._" };
@@ -635,6 +643,7 @@ async function diffSection(
         .map((name, at) => `${at + 1}. \`${name}\``)
         .join("\n")}`,
       next: "1",
+      pages,
     };
   }
   const name = names[index - 1];
@@ -642,6 +651,7 @@ async function diffSection(
   const file = git(repository.path, ["diff", range, "--", name]);
   return {
     markdown: `### ${name}\n\n${fence(file.out)}`,
+    pages,
     ...(index < names.length ? { next: String(index + 1) } : {}),
   };
 }

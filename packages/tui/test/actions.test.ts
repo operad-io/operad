@@ -141,6 +141,13 @@ describe("actions in the reducer", () => {
     }
   });
 
+  test("the page keys p, n and N are reserved", () => {
+    for (const key of ["p", "n", "N", "P"]) {
+      const state = opened(ACTIONS, [{ key, action: "other:ship", source: "user" }]);
+      expect(state.bindings).toEqual([]);
+    }
+  });
+
   test("every key keyOf advertises runs its action through handleKey", () => {
     const bindings: TuiBinding[] = [
       { key: "m", action: "tuitest:approve", source: "plugin" },
