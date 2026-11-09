@@ -440,7 +440,7 @@ export async function runTool(
       const action = String(args.action);
       const info = actionInfoNamed(context.registry.actions(), action);
       if (info === undefined) {
-        return toolError(`no loaded plugin declares action "${action}"`);
+        return toolError(`there is no action "${action}"`);
       }
       if (!actionMayRun(policy, info)) {
         return toolError(ownerRefusal(info.name));

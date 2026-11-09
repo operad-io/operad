@@ -1,3 +1,4 @@
+import { listAll } from "../src/model.ts";
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import {
   chmodSync,
@@ -425,7 +426,7 @@ describe("dev/integrate", () => {
     expect(task.brief).toContain("] check line 1 failed, passed on rerun");
   });
 
-  test("a failing integration check still says why no flaky task was proposed", async () => {
+  test("a failing integration check still proposes the flaky task, in the flaky-tests plan", async () => {
     const state = await fixture({ style: "merge" });
     const plan = await state.store.get("plan", state.planKey);
     await state.store.put("plan", state.planKey, { ...(plan?.data ?? {}), status: "draft" }, "test");
@@ -441,9 +442,12 @@ describe("dev/integrate", () => {
     });
     const result = await integrate(state);
     expect(result.result).toBe("fail");
-    const notice = 'flaky test "a > flaky" passed on rerun 1 times; no task was proposed: no confirmed plan that is not finished';
-    expect(String(result.data?.message)).toContain(notice);
-    expect((await taskOf(state)).brief).toContain(notice);
+    expect(String(result.data?.message)).not.toContain("no task was proposed");
+    const proposed = (await listAll(state.store, "task")).filter(
+      (object) => String((object.data as { title?: unknown }).title) === "Fix the flaky test: a > flaky",
+    );
+    expect(proposed).toHaveLength(1);
+    expect(String((proposed[0]?.data as { plan?: unknown } | undefined)?.plan)).toMatch(/-flaky-tests$/);
   });
 
   test("a failing key command sends the task back to work", async () => {

@@ -40,6 +40,8 @@ const pluginPath = fileURLToPath(
 );
 
 interface Harness {
+  /** What the server logged. */
+  readonly logs: string[];
   readonly root: string;
   readonly home: string;
   readonly storeRoot: string;
@@ -119,6 +121,7 @@ async function makeHarness(options: HarnessOptions = {}): Promise<Harness> {
     loadTimeoutMs: options.loadTimeoutMs ?? 200,
     onLog: () => undefined,
   });
+  const logs: string[] = [];
   const port = await freePort();
   const server = await startHttpServer({
     home,
@@ -135,12 +138,13 @@ async function makeHarness(options: HarnessOptions = {}): Promise<Harness> {
     ...(options.tokenCheckMs === undefined
       ? {}
       : { tokenCheckMs: options.tokenCheckMs }),
-    onLog: () => undefined,
+    onLog: (message) => logs.push(message),
   });
   const token = await readHttpToken(home);
   if (token === undefined) throw new Error("the server created no token");
 
   return {
+    logs,
     root,
     home,
     storeRoot,
@@ -603,6 +607,8 @@ describe("http server", () => {
         kind: "refused",
         message: "the plugin refused",
       });
+      // The status is for the log; the body's message is the line itself.
+      expect(h.logs.some((line) => line.includes("(422)") && line.includes("the plugin refused"))).toBe(true);
 
       const unknown = await api(h, "/v1/act", {
         method: "POST",

@@ -1,3 +1,4 @@
+import { listAll } from "../src/model.ts";
 import type { ReviewSettingsUsed } from "../src/rework.ts";
 import { chmodSync } from "node:fs";
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
@@ -2670,7 +2671,7 @@ describe("dev/verify reruns only the failed tests", () => {
     ]);
   });
 
-  test("a test that reaches check.flakyTask with no confirmed plan puts a notice in the step's history", async () => {
+  test("a test that reaches check.flakyTask is proposed in the flaky-tests plan, with no notice", async () => {
     const root = await tempRoot();
     const state = await fixture({
       commands: [object(failing("a > flaky"), `echo {name} >> '${join(root, "ran")}'`)],
@@ -2678,10 +2679,13 @@ describe("dev/verify reruns only the failed tests", () => {
     const first = await verify(state);
     expect(String(first.data?.note)).not.toContain("no task was proposed");
     const second = await verify(state, "verify-run-2");
-    const notice = `flaky test "a > flaky" passed on rerun 2 times; no task was proposed: no confirmed plan that is not finished`;
-    expect(second.data?.reason).toBe(notice);
-    expect(String(second.data?.note)).toContain(notice);
-    expect((await taskOf(state)).brief).toContain(notice);
+    expect(second.data?.reason).toBeUndefined();
+    expect(String(second.data?.note)).not.toContain("no task was proposed");
+    const proposed = (await listAll(state.store, "task")).filter(
+      (object) => String((object.data as { title?: unknown }).title) === "Fix the flaky test: a > flaky",
+    );
+    expect(proposed).toHaveLength(1);
+    expect(String((proposed[0]?.data as { plan?: unknown } | undefined)?.plan)).toMatch(/-flaky-tests$/);
   });
 
   test("a rerun that fails fails the check", async () => {

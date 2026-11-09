@@ -690,6 +690,9 @@ function normalizeActions(
       ...(args === undefined ? {} : { args }),
       ...(confirm === undefined ? {} : { confirm }),
       when: entry.when as ActionTypeDefinition["when"],
+      ...(typeof entry.settled === "function"
+        ? { settled: entry.settled as NonNullable<ActionTypeDefinition["settled"]> }
+        : {}),
       ...(typeof entry.why === "function"
         ? { why: entry.why as NonNullable<ActionTypeDefinition["why"]> }
         : {}),
@@ -2051,7 +2054,7 @@ export class PluginRegistry {
       for (const { plugin, action } of this.actionsFor(object.type)) {
         let holds: unknown;
         try {
-          holds = await action.when(object.data);
+          holds = await action.when(object.data, { store: this.store });
         } catch (error) {
           this.log(
             `plugin "${plugin.name}": action "${action.name}": when failed: ${messageOf(error)}`,

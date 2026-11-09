@@ -607,6 +607,8 @@ function createHandler(
         return json(result);
       } catch (error) {
         if (error instanceof ViewError) throw error;
+        // The status stays in the log; a client shows the line itself.
+        onLog(`http: action "${action}" refused (422): ${messageOf(error)}`);
         return errorResponse(422, "refused", messageOf(error));
       }
     }

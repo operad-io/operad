@@ -669,6 +669,11 @@ export interface ActionArgsSchema extends ActionArgSchema {
   readonly type: "object";
 }
 
+/** What an action's checks may read: the object store, never write. */
+export interface ActionEnv {
+  readonly store: ObjectStore;
+}
+
 /** An action a plugin offers on an object type. */
 export interface ActionTypeDefinition {
   readonly name: string;
@@ -677,13 +682,26 @@ export interface ActionTypeDefinition {
   readonly args?: ActionArgsSchema | undefined;
   /** The action asks for confirmation before it runs. */
   readonly confirm?: boolean | undefined;
-  readonly when: (state: ObjectData) => MaybePromise<boolean>;
+  readonly when: (state: ObjectData, env: ActionEnv) => MaybePromise<boolean>;
   /**
    * Why `when` refuses this object, in one line that starts with the object's
-   * own name. A client prints it when the action is not available.
+   * own name and says when the action becomes possible. A client prints it
+   * when the action is not available.
    */
   readonly why?:
-    | ((object: StoredObject) => string | undefined)
+    | ((object: StoredObject, env: ActionEnv) => MaybePromise<string | undefined>)
+    | undefined;
+  /**
+   * The line to print when the action's result is already true (nothing to
+   * do), or undefined. The action then succeeds with that line and does not
+   * run; it is checked before `when`, with the arguments as the person sent them.
+   */
+  readonly settled?:
+    | ((
+        object: StoredObject,
+        args: unknown,
+        env: ActionEnv,
+      ) => MaybePromise<string | undefined>)
     | undefined;
   readonly run: (ctx: ActionContext, args: unknown) => MaybePromise<unknown>;
 }
