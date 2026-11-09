@@ -377,3 +377,14 @@ the row fields.
 |---|---|---|---|
 | T-0099-M14 | packages/dev/src/steps.ts | the wrap-up and stop ignored the wall time the harness reported and used the step's limit | `the limit a harness reports > a harness that reports a shorter wall time is wrapped up and stopped by that wall, not the step's limit` |
 | T-0099-M15 | packages/dev/src/steps.ts | no timer was kept from the step's start as a backstop | `the limit a harness reports > a harness that never reports a run leaves only the backstop` |
+
+## T-0144 — one integration of a repository at a time, and batching
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0144-M1 | packages/dev/src/integrate.ts | the step took the turn without waiting in the queue | `integration queue > two tasks of one repository integrate one after the other, the second on the first's main, with no restart` |
+| T-0144-M2 | packages/dev/src/integration-queue.ts | a ticket of a dead process was never dropped | `integration queue > a turn is given back when its process dies` |
+| T-0144-M3 | packages/dev/src/integration-queue.ts | a turn claimed no queued task for a batch | `integration queue > with integration.batch 3 and three queued tasks, the key commands run once and three merge commits land in order` |
+| T-0144-M4 | packages/dev/src/integrate.ts | the batch's merges were built in reverse queue order | `integration queue > with integration.batch 3 and three queued tasks, the key commands run once and three merge commits land in order` |
+| T-0144-M5 | packages/dev/src/integrate.ts | a failing key command in a batch did not fall back | `integration queue > a failing key command in a batch falls back, and only that task goes back to its worker` |
+| T-0144-M6 | packages/dev/src/settings.ts | `integration.batch` accepted anything | `integration.batch setting > is an integer of 1 or more, and 1 when unset` |

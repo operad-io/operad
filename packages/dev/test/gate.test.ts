@@ -2345,7 +2345,7 @@ describe("gate settings", () => {
       maxDiffBytes: 1_000_000,
     });
     expect(settings.maxAutoRework).toBe(2);
-    expect(settings.integration).toEqual({ style: "merge", keyCommands: [] });
+    expect(settings.integration).toEqual({ style: "merge", keyCommands: [], batch: 1 });
     expect(settings.hooks.afterMerge).toContain(
       'git push "$OPERAD_REMOTE" --delete "work/$OPERAD_TASK"',
     );

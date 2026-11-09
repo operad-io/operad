@@ -9,6 +9,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { IntegrationQueue } from "../src/integration-queue.ts";
+import { validateDevSettings } from "../src/settings.ts";
 import { fileURLToPath } from "node:url";
 import { FilePluginStore, PluginRegistry } from "@operad-io/engine";
 import { createShellPlugin } from "@operad-io/shell";
@@ -59,6 +61,9 @@ interface FixtureOptions {
   readonly style?: IntegrationStyle;
   readonly keyCommands?: readonly unknown[];
   readonly hooks?: readonly string[];
+  /** Tasks of the same repository, verified like the first, that integrate with it. */
+  readonly more?: number;
+  readonly batch?: number;
 }
 
 interface Fixture {
@@ -72,6 +77,8 @@ interface Fixture {
   readonly worktree: string;
   readonly gate: string;
   readonly devJson: string;
+  /** The tasks `more` asked for, each with its own worktree and verified commit. */
+  readonly others: readonly Fixture[];
 }
 
 function writeDevJson(
@@ -82,6 +89,7 @@ function writeDevJson(
     readonly prepare?: readonly string[];
     readonly check?: Readonly<Record<string, number>>;
     readonly hooks?: readonly string[];
+    readonly batch?: number;
   },
 ): void {
   mkdirSync(join(repository, ".operad"), { recursive: true });
@@ -95,6 +103,7 @@ function writeDevJson(
         integration: {
           style: value.style ?? "merge",
           keyCommands: value.keyCommands ?? [],
+          ...(value.batch === undefined ? {} : { batch: value.batch }),
         },
         ...(value.check === undefined ? {} : { check: value.check }),
         ...(value.hooks === undefined ? {} : { hooks: { afterMerge: value.hooks } }),
@@ -130,47 +139,66 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
     title: "Task",
     brief: "Make the code do the thing.",
   });
+  const moreTasks = [];
+  for (let index = 1; index <= (options.more ?? 0); index += 1) {
+    moreTasks.push(
+      await addTask(store, {
+        plan: plan.id,
+        slug: `task${index}`,
+        title: `Task ${index}`,
+        brief: "Make the code do another thing.",
+      }),
+    );
+  }
   await confirmPlan(store, plan.id);
   const registry = new PluginRegistry(
     [createDevPlugin(), createShellPlugin()],
     { home: root, cwd: remote.repository, store },
   );
-  const taskKey = task.id;
-  const taskId = taskKey.slice(taskKey.indexOf("/") + 1);
-  const prepared = await registry.runStep("dev/worktree", {}, {
-    runId: "worktree-run",
-    object: { type: "task", id: taskKey, data: {} },
-  });
-  if (prepared.result !== "ready") {
-    throw new Error(`worktree setup failed: ${JSON.stringify(prepared)}`);
-  }
-  const worktree = join(remote.repository, ".operad-worktrees", taskId);
-  await commitIn(worktree, "code.txt", "line\n", "add code");
-  // The work step pushes the branch in the real flow; cleanup deletes it.
-  gitOrThrow(worktree, [
-    "push",
-    "origin",
-    `HEAD:refs/heads/work/${taskId}`,
-  ]);
-  const verified = await registry.runStep("dev/verify", {}, {
-    runId: "verify-run",
-    object: { type: "task", id: taskKey, data: {} },
-  });
-  if (verified.result !== "pass") {
-    throw new Error(`verify setup failed: ${JSON.stringify(verified)}`);
-  }
-  return {
-    root,
-    remote,
-    store,
-    registry,
-    planKey,
-    taskKey,
-    taskId,
-    worktree,
-    gate: join(remote.repository, ".operad-worktrees", `${taskId}-gate`),
-    devJson,
+  const prepareTask = async (
+    taskKey: string,
+    file: string,
+    suffix = "",
+  ): Promise<Fixture> => {
+    const taskId = taskKey.slice(taskKey.indexOf("/") + 1);
+    const prepared = await registry.runStep("dev/worktree", {}, {
+      runId: `worktree-run${suffix}`,
+      object: { type: "task", id: taskKey, data: {} },
+    });
+    if (prepared.result !== "ready") {
+      throw new Error(`worktree setup failed: ${JSON.stringify(prepared)}`);
+    }
+    const worktree = join(remote.repository, ".operad-worktrees", taskId);
+    await commitIn(worktree, file, "line\n", "add code");
+    // The work step pushes the branch in the real flow; cleanup deletes it.
+    gitOrThrow(worktree, ["push", "origin", `HEAD:refs/heads/work/${taskId}`]);
+    const verified = await registry.runStep("dev/verify", {}, {
+      runId: `verify-run${suffix}`,
+      object: { type: "task", id: taskKey, data: {} },
+    });
+    if (verified.result !== "pass") {
+      throw new Error(`verify setup failed: ${JSON.stringify(verified)}`);
+    }
+    return {
+      root,
+      remote,
+      store,
+      registry,
+      planKey,
+      taskKey,
+      taskId,
+      worktree,
+      gate: join(remote.repository, ".operad-worktrees", `${taskId}-gate`),
+      devJson,
+      others: [],
+    };
   };
+  const first = await prepareTask(task.id, "code.txt");
+  const others: Fixture[] = [];
+  for (const [index, other] of moreTasks.entries()) {
+    others.push(await prepareTask(other.id, `code${index + 1}.txt`, `-${index + 1}`));
+  }
+  return { ...first, others };
 }
 
 function integrate(state: Fixture, runId = "integrate-run") {
@@ -798,6 +826,283 @@ describe("dev/integrate main clone", () => {
       expect(ran).toBe(0);
     } finally {
       integrateTestHooks.runCommand = undefined;
+    }
+  });
+});
+
+const QUEUE_CHILD = fileURLToPath(
+  new URL("./fixtures/queue-child.ts", import.meta.url),
+);
+
+/** A wait a test rings: the waiters park until `ring`, so nothing sleeps. */
+function bell() {
+  const parked: (() => void)[] = [];
+  const listeners: { readonly count: number; readonly resolve: () => void }[] = [];
+  return {
+    wait: (): Promise<void> =>
+      new Promise<void>((resolve) => {
+        parked.push(resolve);
+        for (const listener of [...listeners]) {
+          if (parked.length >= listener.count) {
+            listeners.splice(listeners.indexOf(listener), 1);
+            listener.resolve();
+          }
+        }
+      }),
+    /** Resolves once `count` waiters are parked. */
+    parked: (count: number): Promise<void> =>
+      parked.length >= count
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => listeners.push({ count, resolve })),
+    ring: (): void => {
+      for (const resolve of parked.splice(0)) resolve();
+    },
+  };
+}
+
+function signal() {
+  let resolve: () => void = () => {};
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+afterEach(() => {
+  integrateTestHooks.queued = undefined;
+  integrateTestHooks.turnTaken = undefined;
+  integrateTestHooks.wait = undefined;
+});
+
+function firstParentSubjects(state: Fixture): string[] {
+  return gitOrThrow(state.remote.origin, [
+    "log",
+    "--first-parent",
+    "--format=%s",
+    "main",
+  ]).split("\n");
+}
+
+describe("integration queue", () => {
+  test("two tasks of one repository integrate one after the other, the second on the first's main, with no restart", async () => {
+    const runs = (await tempRoot()) + "/key-runs";
+    const state = await fixture({
+      more: 1,
+      keyCommands: [`echo run >> '${runs}'`],
+    });
+    const second = state.others[0];
+    if (second === undefined) throw new Error("no second task");
+    const rings = bell();
+    integrateTestHooks.wait = rings.wait;
+    const queued = new Map([
+      [state.taskId, signal()],
+      [second.taskId, signal()],
+    ]);
+    integrateTestHooks.queued = (task) => queued.get(task)?.resolve();
+    // The first holds the turn until the second is in the queue behind it.
+    integrateTestHooks.turnTaken = async (task) => {
+      if (task === state.taskId) await queued.get(second.taskId)?.promise;
+    };
+
+    const first = integrate(state, "integrate-run");
+    await queued.get(state.taskId)?.promise;
+    const later = integrate(second, "integrate-run-2");
+    await rings.parked(1);
+    const waiting = await taskOf(second);
+    expect(waiting.attempt?.integrationWait).toBe(`${state.taskId} is integrating`);
+    const object = await second.store.get("task", second.taskKey);
+    if (object === undefined) throw new Error("task disappeared");
+    expect(taskViews.row(object).note).toBe(
+      `waiting to integrate: ${state.taskId} is integrating`,
+    );
+
+    expect((await first).result).toBe("merged");
+    rings.ring();
+    expect((await later).result).toBe("merged");
+
+    // One key-command run each: the second never started over.
+    expect(readFileSync(runs, "utf8").trim().split("\n")).toHaveLength(2);
+    const subjects = firstParentSubjects(state);
+    expect(subjects).toHaveLength(3);
+    expect(subjects[0]).toStartWith(`Merge work/${second.taskId} (`);
+    expect(subjects[1]).toStartWith(`Merge work/${state.taskId} (`);
+    const merges = gitOrThrow(state.remote.origin, [
+      "log",
+      "--first-parent",
+      "--format=%H",
+      "-2",
+      "main",
+    ]).split("\n");
+    const parent = gitOrThrow(state.remote.origin, ["rev-parse", `${merges[0]}^1`]);
+    expect(parent).toBe(merges[1] ?? "");
+    expect((await taskOf(second)).attempt?.integrationWait).toBeNull();
+  });
+
+  test("a turn is given back when its process dies", async () => {
+    const root = await tempRoot();
+    const repository = { name: "repository", path: "/r/repository" };
+    const child = Bun.spawn({
+      cmd: [process.execPath, QUEUE_CHILD, root, repository.name, repository.path, "T-dead"],
+      stdout: "pipe",
+      stderr: "inherit",
+    });
+    try {
+      const reader = child.stdout.getReader();
+      const chunk = await reader.read();
+      expect(new TextDecoder().decode(chunk.value)).toBe("held\n");
+      reader.releaseLock();
+
+      const rings = bell();
+      const said: string[] = [];
+      const queue = new IntegrationQueue({
+        home: root,
+        repository,
+        task: "T-live",
+        run: "run",
+        verified: "0".repeat(40),
+        message: "Merge work/T-live",
+        say: (line) => {
+          said.push(line);
+        },
+        wait: rings.wait,
+      });
+      await queue.join();
+      let turn: string | undefined;
+      const waiting = queue.turn().then((result) => {
+        turn = result.kind;
+      });
+      await rings.parked(1);
+      expect(said).toEqual(["waiting to integrate: T-dead is integrating"]);
+      expect(turn).toBeUndefined();
+
+      child.kill("SIGKILL");
+      await child.exited;
+      rings.ring();
+      await waiting;
+      expect(turn).toBe("turn");
+      queue.leave();
+    } finally {
+      child.kill("SIGKILL");
+      await child.exited;
+    }
+  });
+
+  test("with integration.batch 3 and three queued tasks, the key commands run once and three merge commits land in order", async () => {
+    const runs = (await tempRoot()) + "/key-runs";
+    const state = await fixture({
+      more: 2,
+      batch: 3,
+      keyCommands: [`echo run >> '${runs}'`],
+    });
+    const [second, third] = state.others;
+    if (second === undefined || third === undefined) throw new Error("tasks missing");
+    const rings = bell();
+    integrateTestHooks.wait = rings.wait;
+    const queued = new Map([
+      [state.taskId, signal()],
+      [second.taskId, signal()],
+      [third.taskId, signal()],
+    ]);
+    integrateTestHooks.queued = (task) => queued.get(task)?.resolve();
+    integrateTestHooks.turnTaken = async (task) => {
+      if (task !== state.taskId) return;
+      await queued.get(second.taskId)?.promise;
+      await queued.get(third.taskId)?.promise;
+    };
+
+    const first = integrate(state, "integrate-run");
+    await queued.get(state.taskId)?.promise;
+    const b = integrate(second, "integrate-run-2");
+    await queued.get(second.taskId)?.promise;
+    const c = integrate(third, "integrate-run-3");
+    await rings.parked(2);
+
+    expect((await first).result).toBe("merged");
+    rings.ring();
+    expect((await b).result).toBe("merged");
+    expect((await c).result).toBe("merged");
+
+    expect(readFileSync(runs, "utf8").trim().split("\n")).toHaveLength(1);
+    const subjects = firstParentSubjects(state);
+    expect(subjects).toHaveLength(4);
+    expect(subjects[2]).toStartWith(`Merge work/${state.taskId} (`);
+    expect(subjects[1]).toStartWith(`Merge work/${second.taskId} (`);
+    expect(subjects[0]).toStartWith(`Merge work/${third.taskId} (`);
+    for (const file of ["code.txt", "code1.txt", "code2.txt"]) {
+      expect(gitOrThrow(state.remote.origin, ["show", `main:${file}`])).toBe("line");
+    }
+    const others = (task: Fixture): string => {
+      const names = [state, second, third].filter((one) => one !== task).map((one) => one.taskId);
+      return `integrated in a batch with ${names.join(", ")}`;
+    };
+    for (const task of [state, second, third]) {
+      const data = await taskOf(task);
+      expect(data.phase).toBe("merged");
+      expect(data.brief).toContain(others(task));
+    }
+  });
+
+  test("a failing key command in a batch falls back, and only that task goes back to its worker", async () => {
+    const state = await fixture({
+      more: 2,
+      batch: 3,
+      keyCommands: ["test ! -f code1.txt"],
+    });
+    const [second, third] = state.others;
+    if (second === undefined || third === undefined) throw new Error("tasks missing");
+    const rings = bell();
+    integrateTestHooks.wait = rings.wait;
+    const queued = new Map([
+      [state.taskId, signal()],
+      [second.taskId, signal()],
+      [third.taskId, signal()],
+    ]);
+    integrateTestHooks.queued = (task) => queued.get(task)?.resolve();
+    integrateTestHooks.turnTaken = async (task) => {
+      if (task !== state.taskId) return;
+      await queued.get(second.taskId)?.promise;
+      await queued.get(third.taskId)?.promise;
+    };
+
+    const first = integrate(state, "integrate-run");
+    await queued.get(state.taskId)?.promise;
+    const b = integrate(second, "integrate-run-2");
+    await queued.get(second.taskId)?.promise;
+    const c = integrate(third, "integrate-run-3");
+    await rings.parked(2);
+
+    expect((await first).result).toBe("merged");
+    await rings.parked(2);
+    rings.ring();
+    expect((await b).result).toBe("fail");
+    await rings.parked(1);
+    rings.ring();
+    expect((await c).result).toBe("merged");
+
+    expect(gitOrThrow(state.remote.origin, ["show", "main:code.txt"])).toBe("line");
+    expect(gitOrThrow(state.remote.origin, ["show", "main:code2.txt"])).toBe("line");
+    expect(git(state.remote.origin, ["cat-file", "-e", "main:code1.txt"]).ok).toBe(false);
+    const sent = await taskOf(second);
+    expect(sent.phase).toBe("running");
+    expect(sent.brief).toContain("## Rework 1 (integration)");
+    for (const task of [state, third]) {
+      const data = await taskOf(task);
+      expect(data.phase).toBe("merged");
+      expect(data.brief).not.toContain("integrated in a batch");
+    }
+  });
+});
+
+describe("integration.batch setting", () => {
+  test("is an integer of 1 or more, and 1 when unset", () => {
+    expect(validateDevSettings({ name: "r" }).integration.batch).toBe(1);
+    expect(
+      validateDevSettings({ name: "r", integration: { batch: 3 } }).integration.batch,
+    ).toBe(3);
+    for (const bad of [0, 1.5, "3"]) {
+      expect(() =>
+        validateDevSettings({ name: "r", integration: { batch: bad } }),
+      ).toThrow("integration.batch");
     }
   });
 });
