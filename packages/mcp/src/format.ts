@@ -8,6 +8,7 @@ import type {
   ViewRow,
   ViewSectionContent,
 } from "@operad-io/engine";
+import type { MachineLoad } from "@operad-io/engine/platform";
 import type { McpViewObject } from "./policy.ts";
 
 function cell(value: string): string {
@@ -76,6 +77,9 @@ export function showMarkdown(object: ViewObject | McpViewObject): string {
   if (row.mark !== undefined) lines.push(`- mark: ${row.mark}`);
   if (row.badge !== undefined) lines.push(`- badge: ${row.badge}`);
   if (row.parent !== undefined) lines.push(`- parent: ${row.parent}`);
+  if (object.dependents !== undefined) {
+    lines.push(`- after this one: ${object.dependents.join(", ")}`);
+  }
   lines.push(`- flags: ${flags(row)}`);
   if (row.note !== undefined) lines.push(`- note: ${row.note}`);
   if (row.error !== undefined) lines.push(`- error: ${row.error}`);
@@ -169,8 +173,12 @@ function elapsed(ms: number): string {
 }
 
 /** Every active run as a Markdown table. */
-export function runningMarkdown(running: readonly RunningItem[]): string {
-  if (running.length === 0) return "Nothing is running.\n";
+export function runningMarkdown(
+  running: readonly RunningItem[],
+  load: MachineLoad,
+): string {
+  const loadLine = `Load: ${load.load1} (1 minute), ${load.cores} cores\n`;
+  if (running.length === 0) return `Nothing is running.\n\n${loadLine}`;
   const lines = [
     "| object | title | flow | step | step time | run |",
     "| --- | --- | --- | --- | --- | --- |",
@@ -180,5 +188,5 @@ export function runningMarkdown(running: readonly RunningItem[]): string {
       `| ${cell(item.object ?? item.runId)} | ${cell(item.title ?? "")} | ${cell(item.flow)} | ${cell(item.stepLabel ?? "-")} | ${item.stepElapsedMs === null ? "-" : elapsed(item.stepElapsedMs)} | ${elapsed(item.elapsedMs)} |`,
     );
   }
-  return `${lines.join("\n")}\n`;
+  return `${lines.join("\n")}\n\n${loadLine}`;
 }

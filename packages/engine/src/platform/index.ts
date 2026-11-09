@@ -9,3 +9,4 @@ export * from "./process-group.ts";
 export * from "./sqlite-open.ts";
 export * from "./watch.ts";
 export * from "./step-reap.ts";
+export * from "./load.ts";

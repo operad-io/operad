@@ -516,3 +516,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0159-M4 | packages/dev/src/schedule.ts | every refill of the last free slot went by turn (the check for a running oldest-plan-slot task removed) | `dev scheduling > once the repository is full, a freed slot goes by priority; only the reserved slot goes by turn` |
+| T-0175-M2 | packages/dev/src/commands.ts | a task edit with an empty command input opened the editor instead of refusing | `operad mcp > task edit takes the new brief as command input and refuses an empty one` (packages/mcp/test/server.test.ts; the run hangs on the editor and times out) |

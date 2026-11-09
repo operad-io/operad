@@ -197,6 +197,24 @@ function editable(task: StoredObject): void {
   }
 }
 
+/**
+ * The new brief for `task edit`: the text on stdin when stdin is not a
+ * terminal and carries some, else what the person saves in `$EDITOR`. A caller
+ * that passes its input (the MCP `command` tool) never gets an editor: its
+ * stdio is not a terminal.
+ */
+async function newBrief(ctx: CommandContext, body: string): Promise<string> {
+  const piped =
+    ctx.input !== undefined || process.stdin.isTTY !== true
+      ? await readStdinText(ctx.input)
+      : "";
+  if (piped.trim().length > 0) return piped;
+  if (ctx.input !== undefined) {
+    throw new DevError("brief", "task edit needs the new brief as input");
+  }
+  return editText(body, { root: ctx.store.root });
+}
+
 async function runTask(
   ctx: CommandContext,
   argv: readonly string[],
@@ -255,7 +273,7 @@ async function runTask(
   if (call.name === "edit") {
     editable(task);
     const body = briefBody(taskData(task.data).brief);
-    const edited = await editText(body, { root: ctx.store.root });
+    const edited = await newBrief(ctx, body);
     await editTaskBrief(ctx.store, key, edited);
     return target.id;
   }
@@ -322,7 +340,7 @@ export const commands: readonly CommandDefinition[] = [
   {
     name: "task",
     args:
-      "add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--repo <name>] | edit <id> [--repo <name>] | update <id> [--title <title>] [--after <task>]... [--area <area>] [--repo <name>]",
+      "add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--repo <name>] | edit <id> [--repo <name>] (the new brief on stdin, or $EDITOR) | update <id> [--title <title>] [--after <task>]... [--area <area>] [--repo <name>]",
     run: runTask,
   },
   {
