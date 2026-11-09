@@ -377,3 +377,4 @@ the row fields.
 |---|---|---|---|
 | T-0099-M14 | packages/dev/src/steps.ts | the wrap-up and stop ignored the wall time the harness reported and used the step's limit | `the limit a harness reports > a harness that reports a shorter wall time is wrapped up and stopped by that wall, not the step's limit` |
 | T-0099-M15 | packages/dev/src/steps.ts | no timer was kept from the step's start as a backstop | `the limit a harness reports > a harness that never reports a run leaves only the backstop` |
+| T-0110-M1 | packages/dev/src/service.ts | `gitPrinting` stopped rerunning a git query that exited 0 with no output | `git that succeeds without printing > repo add runs a query again when git exits 0 and prints nothing` |
