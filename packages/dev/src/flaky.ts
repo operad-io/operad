@@ -170,7 +170,7 @@ function packageOf(file: string | undefined): string {
 }
 
 const FLAKY_RULE =
-  "A test that failed and then passed on rerun is a bug until shown otherwise. A task that fixes one states the stress command and its result before and after the fix in its final answer, and is done when `bash scripts/stress.sh --runs 200 --load 2 <file>` passes. Never raise a timeout or add a retry inside a test to make it pass.";
+  "A test that failed and then passed on rerun is a bug until shown otherwise. A task that fixes one states the stress command and its result before and after the fix in its final answer, and is done when `bash scripts/stress.sh --runs 200 --load 2 <file>` passes. A stress run takes a lock shared by every stress run on the machine and may wait for another to end; the wait is not part of its result. Never raise a timeout or add a retry inside a test to make it pass.";
 
 /** The "Flaky tests" section of the repository's CLAUDE.md, else the rule as written here. */
 function flakyRule(repositoryPath: string): string {

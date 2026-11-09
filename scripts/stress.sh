@@ -3,22 +3,35 @@
 #   bash scripts/stress.sh [--runs N] [--load K] [-t <name pattern>] <test files...>
 # Set STRESS_PIDFILE to a path to have the load helpers' pids written there.
 # Set STRESS_CPUS to override the detected CPU count that caps --load.
+# One stress run per machine: the script takes a lock before it starts its load
+# helpers and test runs, and holds it until it ends (normally, by a failure or
+# by a signal). A second run waits for it, printing once to stderr which run
+# holds it (pid, command line, working directory, how long), and starts no
+# helper while it waits. A lock whose holder is no longer alive is taken over,
+# saying so once. A stress run may therefore wait for another; the wait is not
+# part of its result. The lock is the directory ${TMPDIR:-/tmp}/operad-stress.lock,
+# outside any worktree, so runs from every worktree share it.
+#   --no-lock    skip the lock, for a run that knows it is alone
+#   STRESS_LOCK  names another lock path (for the tests)
 # Each helper also stops when this script is gone, so a SIGKILL of the script
 # (which runs no trap) leaves no helper behind. The script itself stops when
 # its own parent is gone, so a SIGKILL of the runner that started it ends all.
 set -uo pipefail
 starter=$PPID
+cmdline="$0 $*"
 cd "$(dirname "$0")/.."
 
 runs=50
 load=0
 pattern=""
+use_lock=1
 files=()
-usage() { echo "usage: bash scripts/stress.sh [--runs N] [--load K] [-t <name pattern>] <test files...>" >&2; exit 2; }
+usage() { echo "usage: bash scripts/stress.sh [--runs N] [--load K] [--no-lock] [-t <name pattern>] <test files...>" >&2; exit 2; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --runs) [ $# -ge 2 ] || usage; runs="$2"; shift 2 ;;
     --load) [ $# -ge 2 ] || usage; load="$2"; shift 2 ;;
+    --no-lock) use_lock=0; shift ;;
     -t) [ $# -ge 2 ] || usage; pattern="$2"; shift 2 ;;
     -h|--help) usage ;;
     -*) echo "unknown option: $1" >&2; usage ;;
@@ -36,19 +49,103 @@ case "$cpus" in ''|*[!0-9]*) cpus=1 ;; esac
 [ "$load" -le "$cpus" ] || load="$cpus"
 
 helpers=()
+watcher=""
 stop_helpers() {
-  if [ ${#helpers[@]} -gt 0 ]; then
-    kill "${helpers[@]}" 2>/dev/null
-    wait "${helpers[@]}" 2>/dev/null
+  local all=(${helpers[@]+"${helpers[@]}"})
+  [ -z "$watcher" ] || all+=("$watcher")
+  if [ ${#all[@]} -gt 0 ]; then
+    kill "${all[@]}" 2>/dev/null
+    wait "${all[@]}" 2>/dev/null
     helpers=()
+    watcher=""
   fi
 }
-trap stop_helpers EXIT
+
+lock=${STRESS_LOCK:-${TMPDIR:-/tmp}/operad-stress.lock}
+lock_held=0
+release_lock() {
+  [ "$lock_held" -eq 1 ] || return 0
+  lock_held=0
+  # No pid file yet means this run was stopped between mkdir and writing it.
+  local pid
+  pid=$(cat "$lock/pid" 2>/dev/null)
+  if [ -z "$pid" ] || [ "$pid" = "$$" ]; then rm -rf "$lock"; fi
+}
+finish() { stop_helpers; release_lock; }
+trap finish EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# A helper runs while this script's pid exists; kill -0 is a builtin.
+# Sleeps in the background so that a trap runs at once.
+nap() { sleep "$1" & wait $! 2>/dev/null; }
+
+lock_holder() {
+  local since now secs
+  since=$(cat "$lock/since" 2>/dev/null)
+  now=$(date +%s)
+  case "$since" in ''|*[!0-9]*) secs=0 ;; *) secs=$((now - since)) ;; esac
+  echo "stress: waiting for the stress run holding $lock: pid $1, command '$(cat "$lock/cmd" 2>/dev/null)', in $(cat "$lock/cwd" 2>/dev/null), held for $((secs / 60))m $((secs % 60))s" >&2
+}
+
+acquire_lock() {
+  local told=0 noinfo=0 nodir=0 pid moved stale
+  mkdir -p "$(dirname "$lock")" 2>/dev/null
+  while :; do
+    if mkdir "$lock" 2>/dev/null; then
+      lock_held=1
+      printf '%s\n' "$cmdline" > "$lock/cmd"
+      pwd > "$lock/cwd"
+      date +%s > "$lock/since"
+      echo "$$" > "$lock/pid" # last: a pid file means the rest is there
+      return 0
+    fi
+    if [ ! -d "$lock" ]; then
+      nodir=$((nodir + 1))
+      [ "$nodir" -le 20 ] || { echo "stress: cannot create the lock $lock" >&2; exit 2; }
+      nap 0.1
+      continue
+    fi
+    pid=$(cat "$lock/pid" 2>/dev/null)
+    if [ -z "$pid" ]; then
+      # Another run is between mkdir and its pid file; if it never finishes, it died.
+      noinfo=$((noinfo + 1))
+      if [ "$noinfo" -gt 20 ]; then
+        stale="$lock.stale.$$"; rm -rf "$stale"
+        mv "$lock" "$stale" 2>/dev/null && rm -rf "$stale"
+      fi
+      nap 0.25
+      continue
+    fi
+    noinfo=0
+    if ps -p "$pid" >/dev/null 2>&1; then
+      if [ "$told" -eq 0 ]; then told=1; lock_holder "$pid"; fi
+      nap 0.5
+      continue
+    fi
+    # The holder is gone. Move the lock aside (one waiter wins), and put it back
+    # if it turns out to be a newer holder's.
+    stale="$lock.stale.$$"; rm -rf "$stale"
+    if mv "$lock" "$stale" 2>/dev/null; then
+      moved=$(cat "$stale/pid" 2>/dev/null)
+      if [ "$moved" = "$pid" ]; then
+        rm -rf "$stale"
+        echo "stress: the run holding $lock (pid $pid) is gone; taking over its lock" >&2
+      else
+        mv "$stale" "$lock" 2>/dev/null || rm -rf "$stale"
+      fi
+    fi
+  done
+}
+
 parent=$$
+# Stop with the process that started this script (the TERM trap then runs).
+( while kill -0 "$parent" 2>/dev/null && kill -0 "$starter" 2>/dev/null; do sleep 0.5; done
+  kill -TERM "$parent" 2>/dev/null ) </dev/null >/dev/null 2>&1 &
+watcher=$!
+
+[ "$use_lock" -eq 0 ] || acquire_lock
+
+# A helper runs while this script's pid exists; kill -0 is a builtin.
 # Helper 1 forks a short process in a loop; the others spin.
 i=0
 while [ "$i" -lt "$load" ]; do
@@ -64,11 +161,6 @@ if [ -n "${STRESS_PIDFILE:-}" ]; then
   : > "$STRESS_PIDFILE"
   [ ${#helpers[@]} -eq 0 ] || printf '%s\n' "${helpers[@]}" > "$STRESS_PIDFILE"
 fi
-
-# Stop with the process that started this script (the TERM trap then runs).
-( while kill -0 "$parent" 2>/dev/null && kill -0 "$starter" 2>/dev/null; do sleep 0.5; done
-  kill -TERM "$parent" 2>/dev/null ) </dev/null >/dev/null 2>&1 &
-helpers+=("$!")
 
 log=$(mktemp "${TMPDIR:-/tmp}/stress.XXXXXX") || exit 2
 args=(test "${files[@]}" --rerun-each "$runs" --timeout 30000)

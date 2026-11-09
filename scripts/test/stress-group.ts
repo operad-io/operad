@@ -5,6 +5,8 @@
 // the signal does not reach it; stress.sh stops on its own when its parent is
 // gone, and its helpers stop when stress.sh is gone.
 import { killProcessGroup } from "@operad-io/engine/platform";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 export const root = join(import.meta.dir, "..", "..");
@@ -51,7 +53,8 @@ export interface Stress {
 export function spawnStress(args: string[], env: Record<string, string> = {}): Stress {
   const child = Bun.spawn(["bash", script, ...args], {
     cwd: root,
-    env: { ...process.env, ...env },
+    // Each run gets a lock of its own unless the test names one: a developer's stress run must not stall the tests.
+    env: { ...process.env, STRESS_LOCK: join(mkdtempSync(join(tmpdir(), "stress-lock-")), "lock"), ...env },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -74,8 +77,12 @@ export function spawnStress(args: string[], env: Record<string, string> = {}): S
 export async function runStress(args: string[], env: Record<string, string> = {}) {
   const run = spawnStress(args, env);
   try {
-    const [out, code] = await Promise.all([new Response(run.child.stdout).text(), run.child.exited]);
-    return { out, code };
+    const [out, err, code] = await Promise.all([
+      new Response(run.child.stdout).text(),
+      new Response(run.child.stderr).text(),
+      run.child.exited,
+    ]);
+    return { out, err, code };
   } finally {
     run.kill();
   }
