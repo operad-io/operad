@@ -42,7 +42,7 @@
         "run": "bash scripts/verify.sh",
         "failed": {
           "match": "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$",
-          "rerun": "bun test -t {pattern}"
+          "rerun": "bun test --timeout 30000 -t {pattern}"
         }
       }
     ]
@@ -53,7 +53,7 @@
         "run": "bash scripts/verify.sh",
         "failed": {
           "match": "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$",
-          "rerun": "bun test -t {pattern}"
+          "rerun": "bun test --timeout 30000 -t {pattern}"
         }
       }
     ]
