@@ -197,3 +197,6 @@ the row fields.
 | T-0100-M3 | packages/tui/src/view/index.ts | the list title left out the type list's filter | `filters: view > the list title names the page and a type list's filter, in the weak colour` |
 | T-0100-M4 | packages/tui/src/view/index.ts | the list title was drawn in the text colour instead of the weak colour | `filters: view > the list title names the page and a type list's filter, in the weak colour` |
 | T-0100-M5 | packages/tui/src/view/index.ts | the header showed the filter on every tab, not only the active one | `filters: view > the filter shows only on the current tab; a type without filters has no suffix` |
+| T-0101-M1 | packages/tui/src/state.ts | an object counted two lines in the window, not three, so the window held a partly visible object | `two-line rows > scrolling keeps the cursor object fully visible and never draws half an object` |
+| T-0101-M2 | packages/tui/src/view/index.ts | the dim line's indent lost the selection tint | `two-line rows > the selection tint covers both lines to the pane edge and not the blank line` |
+| T-0101-M3 | packages/tui/src/state.ts | the window gave every list two lines more than it has | `the TUI reducer > the window around the cursor counts objects of three lines, the last one's blank line not needed` |

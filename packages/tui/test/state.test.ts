@@ -255,8 +255,9 @@ describe("the TUI reducer", () => {
     });
     expect(state.tabs.find((tab) => tab.id === "running")?.list.rows[0]).toMatchObject({
       id: "dev/T-1",
-      title: "dev/T-1  A title",
+      title: "A title",
       note: "2.5s",
+      detail: ["work", "2.5s", "1.5s", "dev"],
     });
     expect(runningRow === undefined ? undefined : rowMark(runningRow)).toBe("running");
 
@@ -329,7 +330,7 @@ describe("the TUI reducer", () => {
     expect(formatElapsed(61_000)).toBe("1m 1s");
   });
 
-  test("the window around the cursor counts one line per row, an error row too", () => {
+  test("the window around the cursor counts objects of three lines, the last one's blank line not needed", () => {
     const rows = Array.from({ length: 30 }, (_, at) => ({
       id: `r${at}`,
       title: "t",
@@ -339,20 +340,26 @@ describe("the TUI reducer", () => {
       ...(at === 11 ? { error: "boom" } : {}),
     }));
     const list = { rows, cursor: 12, loaded: true, loading: false, version: 1 };
-    const window = listWindow(list, 6);
-    expect(window.end - window.start).toBe(6);
+    const count = (w: { start: number; end: number }): number => w.end - w.start;
+    // n objects take 3n - 1 lines: eleven hold four, eight hold three.
+    expect(count(listWindow(list, 11))).toBe(4);
+    expect(count(listWindow(list, 10))).toBe(3);
+    expect(count(listWindow(list, 8))).toBe(3);
+    // A partly visible object is never counted.
+    expect(count(listWindow(list, 7))).toBe(2);
+    const window = listWindow(list, 8);
     expect(window.start).toBeLessThanOrEqual(12);
     expect(window.end).toBeGreaterThan(12);
     // The line after the rows is kept free.
-    const loading = listWindow({ ...list, loading: true }, 6);
-    expect(loading.end - loading.start).toBe(5);
-    expect(listWindow({ ...list, cursor: 0 }, 6).start).toBe(0);
-    // The last row at the bottom of the window stays visible.
-    const last = listWindow({ ...list, cursor: 29 }, 6);
-    expect(last).toEqual({ start: 24, end: 30 });
-    const middle = listWindow({ ...list, cursor: 20 }, 6);
+    expect(count(listWindow({ ...list, loading: true }, 8))).toBe(2);
+    expect(listWindow({ ...list, cursor: 0 }, 8).start).toBe(0);
+    // The last object at the bottom of the window stays visible.
+    expect(listWindow({ ...list, cursor: 29 }, 8)).toEqual({ start: 27, end: 30 });
+    const middle = listWindow({ ...list, cursor: 20 }, 8);
     expect(middle.start).toBeLessThanOrEqual(20);
     expect(middle.end).toBeGreaterThan(20);
+    // A viewport too small for one object still holds the cursor's.
+    expect(listWindow(list, 1)).toEqual({ start: 12, end: 13 });
   });
 
   test("ctrl and meta chords are ignored, and only ?, escape and q act while the keys are open", () => {
