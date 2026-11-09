@@ -316,7 +316,7 @@ describe("operad presentation commands", () => {
     const output = capture();
     expect(await main(["show", "item:one"], { home, io: output.io })).toBe(0);
     expect(output.text()).toContain("one  new  First");
-    expect(output.text()).toContain("sections: Info, Log (live), Pages, Hang, Big, History");
+    expect(output.text()).toContain("sections: Info, Log (live), Pages, Digits, Hang, Big, History");
     expect(output.text()).toContain("demo:approve (m)  needs a note");
     expect(output.text()).toContain("demo:drop  asks to confirm");
     expect(output.text()).toContain("DEMO ITEM");
@@ -564,6 +564,41 @@ describe("operad presentation commands", () => {
     expect(parsed.row.id).toBe("one");
     expect(parsed.section.markdown).toBe("page one");
     expect(parsed.section.next).toBe("two");
+  });
+
+  test("show --page takes a number as a position before a label", async () => {
+    const { home } = await makeHome();
+    seed(home, { title: "One", state: "new" }, "one");
+    const page = async (value: string): Promise<string> => {
+      const output = capture();
+      await main(["show", "item:one", "--section", "digits", "--page", value, "--raw"], {
+        home,
+        io: output.io,
+      });
+      return output.text();
+    };
+    // Position 1 is labelled "2" and position 2 is labelled "1".
+    expect(await page("1")).toMatch(/^first \d+\n$/);
+    expect(await page("2")).toBe("second\n");
+  });
+
+  test("show --page of the first page reads it once; another page costs one more read", async () => {
+    const { home } = await makeHome();
+    seed(home, { title: "One", state: "new" }, "one");
+    const read = async (value: string): Promise<number> => {
+      const output = capture();
+      await main(["show", "item:one", "--section", "digits", "--page", value, "--raw"], {
+        home,
+        io: output.io,
+      });
+      const count = /^first (\d+)\n$/.exec(output.text())?.[1];
+      return count === undefined ? -1 : Number(count);
+    };
+    const a = await read("1");
+    const b = await read("1");
+    // The page counted is the one shown: one read per run, not two.
+    expect(a).toBeGreaterThan(0);
+    expect(b - a).toBe(1);
   });
 
   test("show --page prints one page by number or by label", async () => {

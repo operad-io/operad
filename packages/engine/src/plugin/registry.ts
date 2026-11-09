@@ -2015,6 +2015,7 @@ export class PluginRegistry {
       settings: this.settingsFor(plugin.name),
       secrets: this.secretsFor(plugin.name),
       ...(options.input === undefined ? {} : { input: options.input }),
+      ...(this.onCancelRun === undefined ? {} : { runs: this.runControl() }),
     };
     const value = await command.run(ctx, resolved.argv);
     return { ...resolved, value };

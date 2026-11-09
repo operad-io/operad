@@ -14,6 +14,7 @@ merge. It is a plugin: the kernel knows none of these words.
 | **rework** | another pass over a task, added as `## Rework <n> (<source>)` |
 | **confirm** | accept a plan (its tasks then become ready) or a single proposed task |
 | **cancel** | stop a plan and its open tasks, or one task |
+| **hold** | stop a task for a while; **release** undoes it |
 | **auto** | how far a plan may run without you: off, run, merge |
 | **priority** | P0 (most urgent) to P5 (least urgent), default P3 |
 
@@ -56,7 +57,7 @@ operad repo remove <name>
 operad plan add --slug <slug> --title <title> [--concurrency <n>] [--repo <name>]   # request on stdin
 operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--repo <name>]   # brief on stdin
 operad task edit <id>      # $EDITOR on the brief body; proposed or ready only
-operad task update <id> [--title <title>] [--after <task>]... [--area <area>]   # --area "" clears it
+operad task update <id> [--title <title>] [--after <task>]... [--area <area>]   # --area "" clears it, --after "" clears the dependencies
 operad start <task>        # start one ready task now, whatever its plan's auto level
 operad reruns              # how often each test passed only on its own rerun, most frequent first
 ```
@@ -102,6 +103,8 @@ Every action is also a command: `operad dev:<action> <id>`.
 | `dev:rework` | task | | add the lead's own rework: `--note <text>` becomes `## Rework <n> (lead)`, and the worker runs again; history reads "you chose rework" with the note |
 | `dev:reverify` | task | | run verify and review again on the task's current commit, with no worker |
 | `dev:cancel` | plan, task | `x` | cancel a plan and its open tasks, or one task; asks first |
+| `dev:hold` | task | | stop a ready, running or reviewing task for a while: the step stops as `cancel` stops it (its processes too), but the task keeps its branch, worktree, commits, attempt count and place. It shows as held (mark `paused`), holds no concurrency slot, and is not started; a task that follows it stays queued as for any unmerged task. Owner action, not offered through MCP; asks first |
+| `dev:release` | task | | undo hold: the task is ready again, and its next start is a new attempt that begins with the worktree step on the existing branch, as a rework does. Owner action, not offered through MCP; asks first |
 | `dev:auto` | plan | | set auto: `--level off`, `--level run` or `--level merge` |
 | `dev:priority` | plan | | set the priority: `--level P0` (most urgent) to `--level P5` |
 | `dev:concurrency` | plan | | set how many of the plan's tasks may run at once: `--count 1` to `--count 16`; takes effect at the next tick, running tasks are not stopped |
@@ -237,6 +240,11 @@ is reported finished once. Every change prints one line:
 tick, whatever its plan's auto level is. The task's dependencies and both
 concurrency limits still hold, so an ineligible task waits for a later tick.
 
+`operad task update <id> --after ...` also works on a task that waits because a
+dependency was cancelled: changing its dependencies, or clearing them with
+`--after ""`, ends that wait (its run is stopped), and the task starts on a later
+tick like any ready task.
+
 A task whose dependency was cancelled starts no work. The scheduler starts its
 flow into the person wait instead, so the task is a real pending item: `merge`
 and `reject` answer it like any other wait, and `cancel` stops the run. The task
@@ -278,6 +286,28 @@ automatic reworks have run in a row; then it waits for a person. `nothing` and
 twice waits for a person. `merge` builds the candidate on main and pushes it,
 then cleanup removes the worktrees and branches. A plan is finished when every
 task is merged or cancelled.
+
+## New words
+
+A new user-visible word needs the owner's approval: a command or action name, a
+setting key, a word in command output, an error meant for users, a word in user
+docs. Internal names are not user-visible words. Two readers look for them:
+
+- The built-in worker brief asks the worker to end its final answer with a line
+  `New words: none` or `New words: <word>, <word>`. `dev/work` reads that line
+  from the harness's final message and keeps the words on the attempt.
+- The review prompt asks the reviewer to check the diff for new user-visible
+  words, whatever the worker said. The report is
+  `{ "findings": [...], "verified": [...], "words": ["<word>"] }`; `words` is
+  optional, and a report without it names no word.
+
+A word is approved when a brief has a line `Approved words: <word>, <word>`, or
+when it is already in main's user docs (any README file and `docs/manual.md`, at
+the commit the task branched from; the match ignores case). When a passed review
+has a word from either reader that is not approved, the task does not auto merge.
+It waits for a person with the reason `new words need approval: <words>`, and the
+plan's auto level does not answer that wait. `merge` answers it as it answers any
+other wait: the owner's merge is the approval.
 
 ## Review fallback and retry
 

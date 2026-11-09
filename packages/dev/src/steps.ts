@@ -42,6 +42,7 @@ import {
   wrapUpMessage,
   type Progress,
 } from "./progress.ts";
+import { newWordsOf } from "./words.ts";
 import { MAX_WORK_WAITS, STEP_TIMEOUT_SECS } from "./timeouts.ts";
 import {
   assertInsideRepository,
@@ -513,7 +514,7 @@ export function runToken(ctx: StepContext): string | undefined {
  * started by the scheduler (a step test or a direct call), so it is allowed.
  */
 export function claimAllows(ctx: StepContext, task: TaskData): boolean {
-  if (task.phase === "cancelled") return false;
+  if (task.phase === "cancelled" || task.phase === "held") return false;
   const claim = task.claim;
   if (claim === undefined || claim === null) return true;
   if (runToken(ctx) !== claim.token) return false;
@@ -1265,6 +1266,9 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       ...nextAttempt,
       result,
       workNote: typeof extra.message === "string" ? extra.message : null,
+      workWords: newWordsOf(
+        typeof outcomeData.finalMessage === "string" ? outcomeData.finalMessage : "",
+      ),
       ...(waitsForModel ? {} : { workRetryAt: null }),
       // An attempt that left no note keeps the one before it for later attempts.
       progress: progress ?? progressOf(attempt.previousProgress) ?? null,

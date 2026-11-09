@@ -451,6 +451,13 @@ the row fields.
 | T-0151-M1 | packages/dev/src/followups.ts | a repeated finding kept its oldest copy instead of the newest | `review follow-ups > collects the findings of every round and task, deduplicated, grouped by task, duplicates kept once within a task` |
 | T-0151-M2 | packages/dev/src/rework.ts | an argument list from `firstArgs` was recorded as coming from `first` | `review settings by round > firstArgs still belongs to the first review of every attempt, rework round included` |
 | T-0114-M4 | packages/dev/src/views.ts | a group of the run with no recorded attempt was dropped (the pending attempt was never made) | `metrics times come from the run's own facts > a rework whose worktree is still being prepared: the next attempt is already running it` |
+| T-0148-M9 | packages/dev/src/steps.ts | the work wait bound was `<=`, so one wait too many before the failure went to a person | `dev/work > unavailable: after the allowed waits the failure goes to a person` |
+| T-0155-M1 | packages/dev/src/schedule.ts | auto merge answered a passed review that names new words (the `newWords` check removed) | `auto merge does not answer a passed review that names new words` |
+| T-0155-M2 | packages/dev/src/gate.ts | the worker's words were left out of the words a passed review checks (only the reviewer's counted) | `dev/review > new words > a word the worker named and nobody approved is recorded on the passed review` |
+| T-0155-M3 | packages/dev/src/gate.ts | the reviewer's words were left out (only the worker's counted) | `dev/review > new words > a word the reviewer reports and the worker omitted is recorded` |
+| T-0155-M4 | packages/dev/src/words.ts | a word in main's README counted as unapproved (the docs check removed) | `dev/review > new words > a word already in main's README is not recorded` |
+| T-0155-M5 | packages/dev/src/words.ts | the `Approved words:` line was ignored | `dev/review > new words > a word marked approved in the brief is not recorded` |
+| T-0155-M6 | packages/dev/src/announce.ts | a passed review with new words still said `ready to merge` | `dev.waiting > a passed review with new words waits for approval: one event, once, also when the step runs again` |
 | T-0150-M1 | packages/dev/src/integration-queue.ts | `turn()` checked the abort signal before it read a leader's result | `a claimed task aborted after the leader's push > reports the merge that is on main, not a cancel` |
 | T-0102-M5 | packages/dev/src/steps.ts | the work wait bound allowed one wait too many (`<=` for `<`) | `dev/work > unavailable: after the allowed waits the failure goes to a person` |
 
@@ -467,3 +474,15 @@ the row fields.
 |---|---|---|---|
 | T-0158-M4 | packages/dev/src/schedule.ts | the mark did not require the plan to be at auto merge | `dev scheduling > a merge wait is marked as answered automatically only at auto merge` |
 | T-0158-M5 | packages/dev/src/schedule.ts | a refused integrate still counted as a wait the scheduler answers | `dev scheduling > auto merge answers a passed review once and never answers other waits`, `dev scheduling > a merge wait is marked as answered automatically only at auto merge` |
+| T-0156-M1 | packages/dev/src/steps.ts | a held task still let the step that was running write the task (the claim check ignored `held`) | `dev:hold and dev:release > hold stops the running step, keeps the branch and commits, and frees the slot` |
+| T-0156-M2 | packages/dev/src/schedule.ts | a held dependency was treated as cancelled, so its dependent went into a person wait | `dev:hold and dev:release > a held ready task is not started, and its dependent stays queued` |
+| T-0156-M3 | packages/dev/src/service.ts | release left the task held instead of making it ready | `dev:hold and dev:release > release makes the task ready and the next run continues on its branch` |
+| T-0156-M4 | packages/dev/src/service.ts | task update never released a task waiting on a cancelled dependency | `dev:hold and dev:release > task update --after releases a task waiting on a cancelled dependency` |
+| T-0156-M5 | packages/dev/src/service.ts | hold did not ask the kernel to cancel the task's run | `dev:hold and dev:release > hold stops the running step, keeps the branch and commits, and frees the slot` |
+| T-0156-M6 | packages/dev/src/service.ts | hold dropped the task's attempt record | `dev:hold and dev:release > hold stops the running step, keeps the branch and commits, and frees the slot` |
+
+## T-0162 — repository row mark
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0162-M1 | packages/dev/src/service.ts | the repository refresh ignored a change in the running-task count (the `activeTasks` comparison replaced by `true`) | `the repo type > the row mark follows the repository's work > a task starting and ending its run changes the mark` |

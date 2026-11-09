@@ -102,6 +102,8 @@ function autoMergeWaits(task: TaskData): boolean {
   if (attempt.integration !== undefined && attempt.integration !== null) {
     return false;
   }
+  // New words wait for the owner; the plan's auto level does not answer them.
+  if ((review?.newWords ?? []).length > 0) return false;
   return task.autoMergeAttempt !== attempt.number;
 }
 

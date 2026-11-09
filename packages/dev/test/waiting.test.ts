@@ -164,6 +164,19 @@ const CASES: readonly Case[] = [
     summary: "T-0001-one waiting: ready to merge",
   },
   {
+    name: "a passed review with new words waits for approval",
+    params: { from: "review", result: "pass" },
+    change: {
+      attempts: 1,
+      attempt: {
+        ...GOOD,
+        review: { result: "pass", sha: "abc123", newWords: ["alpha", "beta"] },
+      },
+    },
+    reason: "new words need approval: alpha, beta",
+    summary: "T-0001-one waiting: new words need approval: alpha, beta",
+  },
+  {
     name: "a review that timed out",
     params: { from: "review", result: "failed" },
     change: {
