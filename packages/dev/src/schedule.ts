@@ -179,13 +179,13 @@ async function startOne(
   ctx: TickContext,
   object: StoredObject,
   params?: Readonly<Record<string, string>>,
-  fairSlot = false,
+  oldestPlanSlot = false,
 ): Promise<boolean> {
   // A start that only parks the task for a person (a cancelled dependency)
   // runs no work, so it is not held by an area.
   const claimed = await claimTaskStart(ctx.store, object.id, {
     checkArea: params?.blockedBy === undefined,
-    fairSlot,
+    oldestPlanSlot,
   });
   if (claimed === undefined) return false;
   const token = claimed.claim?.token;
@@ -415,8 +415,8 @@ async function scheduleRepository(
     }
   }
 
-  /** Tasks started in this tick into the fair slot. */
-  const fairHeld = new Set<string>();
+  /** Tasks started in this tick into the slot kept for the oldest plan. */
+  const oldestPlanHeld = new Set<string>();
   const lastStarted = new Map<string, number>(
     plans.map((object) => [
       bareId(object.id),
@@ -437,7 +437,7 @@ async function scheduleRepository(
         byUrgency(left, right) || turnOf(left) - turnOf(right) || byId(left, right),
     );
   /** The last free slot: longest without a start first, then most urgent. */
-  const fairOrder = (): readonly StoredObject[] =>
+  const oldestPlanOrder = (): readonly StoredObject[] =>
     [...plans].sort(
       (left, right) =>
         turnOf(left) - turnOf(right) || byUrgency(left, right) || byId(left, right),
@@ -496,17 +496,17 @@ async function scheduleRepository(
     const failed = new Set<string>();
     for (;;) {
       const cap = repositoryConcurrency(settings);
-      // One slot is reserved for the fair turn: the last free slot goes by
+      // One slot is kept for the plan that has gone longest without starting a task: the last free slot goes by
       // turn only while no running task already holds that slot.
-      const fair =
+      const useOldestPlan =
         cap > 1 &&
         cap - repositoryActive === 1 &&
         !current.some((object) => {
           const task = taskData(object.data);
-          return task.fairSlot === true && isActive(task);
+          return task.oldestPlanSlot === true && isActive(task);
         }) &&
-        !fairHeld.size;
-      const order = fair ? fairOrder() : turnOrder();
+        !oldestPlanHeld.size;
+      const order = useOldestPlan ? oldestPlanOrder() : turnOrder();
       let progress = false;
       for (const planObject of order) {
         const plan = planData(planObject.data);
@@ -517,7 +517,7 @@ async function scheduleRepository(
         );
         if (pick === undefined) continue;
         progress = true;
-        if (!(await startOne(ctx, pick, undefined, fair))) {
+        if (!(await startOne(ctx, pick, undefined, useOldestPlan))) {
           failed.add(pick.id);
           break;
         }
@@ -527,7 +527,7 @@ async function scheduleRepository(
         repositoryActive += 1;
         if (task.area !== undefined) areaActive.set(task.area, bareId(pick.id));
         started.add(pick.id);
-        if (fair) fairHeld.add(pick.id);
+        if (useOldestPlan) oldestPlanHeld.add(pick.id);
         const at = changeClock.now();
         lastStarted.set(planId, at);
         const latest = await getPlan(ctx.store, planObject.id);

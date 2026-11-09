@@ -1186,7 +1186,7 @@ export async function claimTaskStart(
   id: string,
   options: {
     readonly checkArea?: boolean | undefined;
-    readonly fairSlot?: boolean | undefined;
+    readonly oldestPlanSlot?: boolean | undefined;
   } = {},
 ): Promise<TaskData | undefined> {
   const initial = await getTask(store, id);
@@ -1206,12 +1206,12 @@ export async function claimTaskStart(
       areaHeldBy: _held,
       areaAhead: _ahead,
       dependencyHeld: _waits,
-      fairSlot: _fair,
+      oldestPlanSlot: _oldest,
       ...rest
     } = latest;
     const next: TaskData = {
       ...rest,
-      ...(options.fairSlot === true ? { fairSlot: true } : {}),
+      ...(options.oldestPlanSlot === true ? { oldestPlanSlot: true } : {}),
       phase: "running",
       run: null,
       brief: appendChange(latest.brief, "running"),
