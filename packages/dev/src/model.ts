@@ -134,6 +134,8 @@ export interface VerifyRecord {
   readonly log?: string | null;
   readonly message?: string | null;
   readonly lineNumber?: number | null;
+  /** The gate commands this verify ran, as they were when it ran. */
+  readonly commands?: readonly string[];
 }
 
 /** A finding the reviewer reported. */

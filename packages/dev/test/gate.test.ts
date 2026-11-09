@@ -3442,13 +3442,15 @@ describe("prepare", () => {
     expect(prompt).toContain("Do not copy the checkout elsewhere");
   });
 
-  test("a repository without gate commands gets the rule without names", async () => {
+  test("a repository without gate commands is told that no check ran", async () => {
     const state = await fixture({ commands: [] });
     await verify(state);
     await review(state);
     const prompt = state.reviewer.calls[0]?.prompt ?? "";
-    expect(prompt).toContain("Do not run them again");
-    expect(prompt).not.toContain("These checks already passed");
+    expect(prompt).toContain("No checks ran on this commit");
+    expect(prompt).not.toContain("already passed");
+    expect(prompt).not.toContain("Do not run them again");
+    expect(prompt).toContain("Do not copy the checkout elsewhere");
   });
 
   test("a failing prepare fails verify with its reason and log, and no gate command runs", async () => {

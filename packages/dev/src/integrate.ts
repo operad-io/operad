@@ -549,9 +549,6 @@ export async function runIntegrate(
         flakyReason = flakyNotice;
       }
 
-      // A claimed task that left (cancelled) is not merged: one by one instead.
-      if (queue.stillQueued(followers).length !== followers.length) return undefined;
-
       const pending: IntegrationRecord = {
         result: "pending",
         run: ctx.runId,
@@ -580,6 +577,9 @@ export async function runIntegrate(
         batchWith = members.filter((member) => member.task !== context.taskId).map((member) => member.task);
         return recordMerged({ ...pending, result: "merged", pushed: true }, own.sha, extra, batchHead);
       };
+      // A claimed task that left (cancelled) is not merged: one by one instead.
+      // Checked last, so the window between this and the push is as short as it can be.
+      if (queue.stillQueued(followers).length !== followers.length) return undefined;
       const push = git(gate, ["push", settings.remote, `HEAD:refs/heads/${settings.mainBranch}`]);
       if (push.ok) {
         integrateTestHooks.afterPush?.(batchHead);
