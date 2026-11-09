@@ -339,6 +339,7 @@ describe("file themes", () => {
       home: dir,
       holder,
       watch: fake.watch,
+      repeat: () => () => undefined,
       onChange: (problem) => changes.push(problem),
     });
     const file = join(dir, "themes", "mine.json");
@@ -403,7 +404,7 @@ describe("file themes", () => {
     const dir = home('{ "theme": "mine" }');
     const holder: ThemeHolder = { current: { name: "dark" } };
     const fake = fakeWatch();
-    const stop = watchThemes({ home: dir, holder, watch: fake.watch, onChange: () => undefined });
+    const stop = watchThemes({ home: dir, holder, watch: fake.watch, repeat: () => () => undefined, onChange: () => undefined });
     expect(fake.open()).toBe(1);
     mkdirSync(join(dir, "themes"));
     writeFileSync(join(dir, "themes", "mine.json"), '{ "colors": { "accent": "#333333" } }');
@@ -416,10 +417,20 @@ describe("file themes", () => {
   test("the real directory watch reports an edit", async () => {
     const dir = withThemes({ mine: '{ "colors": { "accent": "#111111" } }' }, '{ "theme": "mine" }');
     const holder: ThemeHolder = { current: chooseSelection({ home: dir }) };
+    const file = join(dir, "themes", "mine.json");
+    const edit = (): void => writeFileSync(file, '{ "colors": { "accent": "#222222" } }');
     let seen: () => void = () => undefined;
+    let editing: ReturnType<typeof setInterval> | undefined;
     const stop = watchThemes({
       home: dir,
       holder,
+      // The fallback timer never reads. It only repeats the edit, because a
+      // watch can miss an edit made as it starts; a later edit must still
+      // arrive through the watch itself.
+      repeat: () => {
+        editing = setInterval(edit, 50);
+        return () => clearInterval(editing);
+      },
       onChange: () => {
         if (holder.current.palette?.accent === "#222222") seen();
       },
@@ -427,7 +438,7 @@ describe("file themes", () => {
     try {
       await new Promise<void>((resolve) => {
         seen = resolve;
-        writeFileSync(join(dir, "themes", "mine.json"), '{ "colors": { "accent": "#222222" } }');
+        edit();
       });
     } finally {
       stop();

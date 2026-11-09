@@ -64,19 +64,25 @@ function textOf(note: ReviewNote): string {
 
 /**
  * The findings of the tasks, oldest first. Within one task a finding with the
- * same file, line and text (whitespace collapsed) is kept once; findings of
+ * same file, line and text (whitespace collapsed) is kept once, as its newest
+ * copy with its own round (the rule of arc's follow-up); findings of
  * different tasks are never merged.
  */
 function linesOf(tasks: readonly StoredObject[]): Line[] {
   const lines: Line[] = [];
   for (const object of tasks) {
-    const seen = new Set<string>();
+    const seen = new Map<string, number>();
     for (const round of taskData(object.data).reviewNotes ?? []) {
       for (const note of round.findings) {
         const key = JSON.stringify([note.file, note.line, textOf(note)]);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        lines.push({ note, task: bareId(object.id), round: round.round });
+        const line = { note, task: bareId(object.id), round: round.round };
+        const at = seen.get(key);
+        if (at !== undefined) {
+          lines[at] = line;
+          continue;
+        }
+        seen.set(key, lines.length);
+        lines.push(line);
       }
     }
   }

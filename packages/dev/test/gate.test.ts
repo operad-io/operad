@@ -1264,6 +1264,15 @@ describe("dev/review fallback and retry", () => {
     expect(task.attempt?.review?.runs?.[1]?.outcome).toBe("report");
     expect(task.reworkStreak).toBe(0);
     expect(task.phase).toBe("waiting");
+    // The report came from the fallback, so the record names its harness and
+    // arguments; the limits are the round's own.
+    const used = result.data?.reviewSettings as ReviewSettingsUsed;
+    expect(used.use).toBe("fake-reviewer/agent");
+    expect(used.args).toEqual(["none", "--model", "fallback"]);
+    expect(used.sources.use).toBe("fallback");
+    expect(used.sources.args).toBe("fallback");
+    expect(used.sources.timeoutSecs).toBe("default");
+    expect(task.attempt?.review?.reviewSettings).toEqual(used);
   });
 
   test("no fallback and a 429 wait for retrySecs, then run the review only", async () => {
@@ -3005,6 +3014,35 @@ describe("dev/review rework rounds", () => {
         stallSecs: 300,
         sources: { use: "default", args: "default", timeoutSecs: "default", stallSecs: "default" },
       });
+    });
+
+    test("a review whose followed commit is missing from the checkout is a later review for its settings", async () => {
+      const round = await withFirst({ args: ["cheap-first"], timeoutSecs: 900, stallSecs: 100 });
+      const object = await round.state.store.get("task", round.state.taskKey);
+      if (object === undefined) throw new Error("task disappeared");
+      const task = taskData(object.data);
+      await round.state.store.put(
+        "task",
+        round.state.taskKey,
+        {
+          ...task,
+          reviewHistory: (task.reviewHistory ?? []).map((entry) => ({
+            ...entry,
+            sha: "0123456789abcdef0123456789abcdef01234567",
+          })),
+        },
+        "test:history",
+      );
+      await nextAttempt(round.state);
+      await commitIn(round.state.worktree, "extra.txt", "x\n", "more");
+      await verify(round.state, "verify-2");
+      const result = await review(round.state, "review-2");
+      const calls = round.state.reviewer.calls;
+      expect(calls[1]?.args[0]).toMatch(/^file:/);
+      expect(calls[1]?.wallTimeSecs).toBe(600);
+      const used = result.data?.reviewSettings as ReviewSettingsUsed;
+      expect(used.round).toBe("rework");
+      expect(used.sources.args).toBe("default");
     });
 
     test("a missing first block falls back to the default block, and the report records it", async () => {

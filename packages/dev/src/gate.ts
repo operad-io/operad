@@ -1784,6 +1784,18 @@ export async function runReview(
     stepResult: string,
     extra: Readonly<Record<string, unknown>> = {},
   ): Promise<PluginStepResult> => {
+    // A report from the fallback harness ran with the fallback's harness and
+    // arguments; only the limits carried over from the round.
+    const lastRun = recorded.runs?.[recorded.runs.length - 1];
+    const fallback = context.settings.reviewer.fallback;
+    if (used !== undefined && lastRun?.role === "fallback" && fallback !== undefined) {
+      used = {
+        ...used,
+        use: fallback.use,
+        args: fallback.args ?? [],
+        sources: { ...used.sources, use: "fallback", args: "fallback" },
+      };
+    }
     const record: ReviewRecord =
       used === undefined ? recorded : { ...recorded, reviewSettings: used };
     const written = await saveTaskGuarded(
@@ -2002,7 +2014,13 @@ export async function runReview(
       : followed === undefined && history.length > 0
         ? "reverify"
         : "first";
-  used = reviewSettingsOf(kind, context.settings.reviewer, reviews === 0);
+  // A review of a task that already had one is a later review for its
+  // settings, even when the followed commit is missing and it reads like a first.
+  used = reviewSettingsOf(
+    kind === "first" && history.length > 0 ? "rework" : kind,
+    context.settings.reviewer,
+    reviews === 0,
+  );
   // The lines the task's own change added, for the pre-existing rules.
   const own: LineMap = addedLinesOf(
     gitZ(context.repository.path, [
