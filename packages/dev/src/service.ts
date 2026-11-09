@@ -151,7 +151,11 @@ export async function withRepoLock<T>(
 async function openCounts(
   store: ObjectStore,
   name: string,
-): Promise<{ readonly openPlans: number; readonly openTasks: number }> {
+): Promise<{
+  readonly openPlans: number;
+  readonly openTasks: number;
+  readonly activeTasks: number;
+}> {
   const plans = (await listAll(store, PLAN_TYPE)).filter(
     (object) => planData(object.data).repository === name,
   );
@@ -165,6 +169,10 @@ async function openCounts(
     openTasks: tasks.filter(
       (object) => !TASK_FINAL_STATES.includes(taskData(object.data).phase),
     ).length,
+    activeTasks: tasks.filter((object) => {
+      const phase = taskData(object.data).phase;
+      return phase === "running" || phase === "review";
+    }).length,
   };
 }
 
@@ -180,7 +188,11 @@ export async function refreshRepositoryCounts(
   if (found === undefined) return;
   const data = repositoryData(found.data);
   const counts = await openCounts(store, name);
-  if (data.openPlans === counts.openPlans && data.openTasks === counts.openTasks) {
+  if (
+    data.openPlans === counts.openPlans &&
+    data.openTasks === counts.openTasks &&
+    data.activeTasks === counts.activeTasks
+  ) {
     return;
   }
   await store.put(
@@ -526,6 +538,7 @@ export async function addRepository(
     removed: false,
     openPlans: 0,
     openTasks: 0,
+    activeTasks: 0,
   };
   await store.put(REPOSITORY_TYPE, name, data, "dev:repo-add");
   writeSettings(path, name);

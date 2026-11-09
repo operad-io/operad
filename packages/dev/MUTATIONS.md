@@ -473,3 +473,9 @@ the row fields.
 | T-0156-M4 | packages/dev/src/service.ts | task update never released a task waiting on a cancelled dependency | `dev:hold and dev:release > task update --after releases a task waiting on a cancelled dependency` |
 | T-0156-M5 | packages/dev/src/service.ts | hold did not ask the kernel to cancel the task's run | `dev:hold and dev:release > hold stops the running step, keeps the branch and commits, and frees the slot` |
 | T-0156-M6 | packages/dev/src/service.ts | hold dropped the task's attempt record | `dev:hold and dev:release > hold stops the running step, keeps the branch and commits, and frees the slot` |
+
+## T-0162 — repository row mark
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0162-M1 | packages/dev/src/service.ts | the repository refresh ignored a change in the running-task count (the `activeTasks` comparison replaced by `true`) | `the repo type > the row mark follows the repository's work > a task starting and ending its run changes the mark` |
