@@ -119,6 +119,8 @@ export type PlanData = {
   readonly activeCount?: number | undefined;
   /** True once the scheduler has reported that every task ended. */
   readonly finishedReported?: boolean | undefined;
+  /** When the scheduler last started one of the plan's tasks (ms); the order within a priority reads it. */
+  readonly lastStartedAt?: number | undefined;
 };
 
 /** What the verify step found when it ran the gate commands. */
@@ -436,6 +438,10 @@ export type TaskData = {
   readonly area?: string | undefined;
   /** The running task that holds this ready task's area; the scheduler sets it. */
   readonly areaHeldBy?: string | undefined;
+  /** How many ready tasks of the same area are ahead in the queue; the scheduler sets it. */
+  readonly areaAhead?: number | undefined;
+  /** True while this task holds the repository's one slot kept for the plan that has gone longest without starting a task. */
+  readonly oldestPlanSlot?: boolean | undefined;
   /** True while a task this ready task follows is not merged; the scheduler sets it. */
   readonly dependencyHeld?: boolean | undefined;
   readonly phase: TaskPhase;

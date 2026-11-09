@@ -225,7 +225,13 @@ On every tick of the kernel loop, `dev` starts ready tasks whose dependencies
 have merged. A task starts only while its plan is at auto `run` or `merge`, the
 plan's running count is under its `concurrency`, and the repository's running
 count is under its `concurrency` setting. Plans are considered most urgent
-first, and each registered repository is scheduled on its own. A task the
+first; within one priority they take turns (the plan that started a task least
+recently goes first). When the repository has more than one slot, one slot
+is kept for the plan that has gone longest without starting a task: while no
+running task holds it, the last free slot goes to that plan, whatever its
+priority. Every other freed slot goes by priority. So a plan with a startable
+task never waits forever behind more urgent plans. With one slot, priority alone orders the queue. Each
+registered repository is scheduled on its own. A task the
 scheduler claimed but whose run never recorded itself (a crash between the two)
 returns to `ready` on the next tick, so the scheduler can start it again.
 
@@ -266,7 +272,8 @@ not limited, and the same area name in two repositories does not block.
 
 `operad show <task>` prints the area, and `operad list task` shows `area: <a>`.
 A ready task held back by its area shows `waiting for area <a> (<task>)`, naming
-the task that holds it. A task waiting for a person does not hold its area, the
+the task that holds it; when ready tasks of the area are queued before it, the
+note ends `, <n> ahead`. A task waiting for a person does not hold its area, the
 same way it holds no concurrency slot.
 
 The check and the start are one decision: the scheduler claims a task under the

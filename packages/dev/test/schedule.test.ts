@@ -35,6 +35,7 @@ import {
 import { taskViews } from "../src/views.ts";
 import {
   bareId,
+  changeClock,
   planData,
   taskData,
   type AutoMode,
@@ -1112,6 +1113,120 @@ describe("dev scheduling", () => {
     const running = await getTask(fixture.store, second.id);
     expect(taskData(running.data).areaHeldBy).toBeUndefined();
     expect(taskViews.row(running).note).toBe("$0.00 · area: core");
+  });
+
+  test("the last free slot goes to the plan that waited longest, whatever its priority", async () => {
+    let now = 1_000;
+    changeClock.now = () => (now += 1_000);
+    try {
+      const fixture = await setup({ concurrency: 3 });
+      const high = await makePlan(fixture, { slug: "high", auto: "run", priority: "P2", concurrency: 3 });
+      const other = await makePlan(fixture, { slug: "other", auto: "run", priority: "P2", concurrency: 3 });
+      const low = await makePlan(fixture, { slug: "low", auto: "run", priority: "P3", concurrency: 3 });
+      for (const slug of ["h1", "h2", "h3", "h4"]) await makeTask(fixture, high.key, slug);
+      for (const slug of ["o1", "o2", "o3", "o4"]) await makeTask(fixture, other.key, slug);
+      const lowTask = await makeTask(fixture, low.key, "l1");
+      await confirm(fixture, high.key);
+      await confirm(fixture, other.key);
+      await confirm(fixture, low.key);
+
+      const started = (await tick(fixture)).map((request) => startedId(request));
+      expect(started.length).toBe(3);
+      expect(started).toContain(lowTask.key);
+    } finally {
+      changeClock.now = () => Date.now();
+    }
+  });
+
+  test("once the repository is full, a freed slot goes by priority; only the reserved slot goes by turn", async () => {
+    let now = 1_000;
+    changeClock.now = () => (now += 1_000);
+    try {
+      const fixture = await setup({ concurrency: 3 });
+      const urgent = await makePlan(fixture, { slug: "urgent", auto: "run", priority: "P1", concurrency: 3 });
+      const urgentTasks: string[] = [];
+      for (const slug of ["u1", "u2", "u3", "u4", "u5"]) {
+        urgentTasks.push((await makeTask(fixture, urgent.key, slug)).key);
+      }
+      const lowPlans: string[] = [];
+      for (const slug of ["l1", "l2", "l3", "l4"]) {
+        const plan = await makePlan(fixture, { slug, auto: "run", priority: "P3", concurrency: 3 });
+        await makeTask(fixture, plan.key, `${slug}-a`);
+        await makeTask(fixture, plan.key, `${slug}-b`);
+        await confirm(fixture, plan.key);
+        lowPlans.push(plan.key);
+      }
+      await confirm(fixture, urgent.key);
+
+      const first = (await tick(fixture)).map((request) => startedId(request));
+      expect(first.length).toBe(3);
+      expect(first.filter((id) => urgentTasks.includes(id)).length).toBe(2);
+      for (const id of first) await putTask(fixture, id, { run: `run-${id}` });
+      const reserved = first.find((id) => !urgentTasks.includes(id)) ?? "";
+
+      // An urgent task ends: the freed slot is an ordinary one.
+      const ended = first.find((id) => urgentTasks.includes(id)) ?? "";
+      await phase(fixture, ended, "merged");
+      const second = (await tick(fixture)).map((request) => startedId(request));
+      expect(second.length).toBe(1);
+      expect(urgentTasks).toContain(second[0] ?? "");
+      await putTask(fixture, second[0] ?? "", { run: "run-second" });
+
+      // The reserved slot ends: it goes to the plan that waited longest.
+      await phase(fixture, reserved, "merged");
+      const third = (await tick(fixture)).map((request) => startedId(request));
+      expect(third.length).toBe(1);
+      expect(urgentTasks).not.toContain(third[0] ?? "");
+    } finally {
+      changeClock.now = () => Date.now();
+    }
+  });
+
+  test("plans of one priority take turns", async () => {
+    let now = 1_000;
+    changeClock.now = () => (now += 1_000);
+    try {
+      const fixture = await setup({ concurrency: 4 });
+      const first = await makePlan(fixture, { slug: "aaa", auto: "run", priority: "P2", concurrency: 4 });
+      const second = await makePlan(fixture, { slug: "bbb", auto: "run", priority: "P2", concurrency: 4 });
+      for (const slug of ["a1", "a2", "a3", "a4"]) await makeTask(fixture, first.key, slug);
+      for (const slug of ["b1", "b2", "b3", "b4"]) await makeTask(fixture, second.key, slug);
+      await confirm(fixture, first.key);
+      await confirm(fixture, second.key);
+
+      const started = (await tick(fixture)).map((request) => startedId(request).split("-").slice(-1)[0]);
+      expect(started).toEqual(["a1", "b1", "a2", "b2"]);
+    } finally {
+      changeClock.now = () => Date.now();
+    }
+  });
+
+  test("with one slot priority alone orders the queue", async () => {
+    const fixture = await setup({ concurrency: 1 });
+    const high = await makePlan(fixture, { slug: "high", auto: "run", priority: "P2" });
+    const low = await makePlan(fixture, { slug: "low", auto: "run", priority: "P3" });
+    const highTask = await makeTask(fixture, high.key, "h1");
+    await makeTask(fixture, low.key, "l1");
+    await confirm(fixture, high.key);
+    await confirm(fixture, low.key);
+    expect((await tick(fixture)).map((request) => startedId(request))).toEqual([highTask.key]);
+  });
+
+  test("a waiting task counts the tasks ahead of it in its area", async () => {
+    const fixture = await setup({ concurrency: 4 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run", concurrency: 4 });
+    const first = await addTask(fixture.store, { plan: plan.key, slug: "a-one", title: "a-one", area: "core" });
+    const second = await addTask(fixture.store, { plan: plan.key, slug: "a-two", title: "a-two", area: "core" });
+    const third = await addTask(fixture.store, { plan: plan.key, slug: "a-three", title: "a-three", area: "core" });
+    const fourth = await addTask(fixture.store, { plan: plan.key, slug: "a-four", title: "a-four", area: "core" });
+    await confirm(fixture, plan.key);
+
+    await tick(fixture);
+    const note = async (id: string) => taskViews.row(await getTask(fixture.store, id)).note;
+    const holder = bareId(first.id);
+    expect(await note(fourth.id)).toBe(`$0.00 · waiting for area core (${holder}), 2 ahead`);
+    expect(await note(second.id)).toBe(`$0.00 · waiting for area core (${holder})`);
+    expect(await note(third.id)).toBe(`$0.00 · waiting for area core (${holder}), 1 ahead`);
   });
 
   test("a task in the review phase still holds its area", async () => {
