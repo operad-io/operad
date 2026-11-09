@@ -73,6 +73,13 @@ export const MAX_INTEGRATION_ROUNDS = 3;
  */
 export const integrateTestHooks: {
   afterPush?: ((candidate: string) => void) | undefined;
+  /**
+   * Called at each point where a kill leaves outside state changed: a test child
+   * kills itself at a named point. The points are `candidate-built`,
+   * `pending-saved`, `clone-followed` and `merged-saved`; the push has its own
+   * hook above, and cleanup calls `hook-ran` after each after-merge hook.
+   */
+  at?: ((point: string) => void) | undefined;
   /** Replaces the command runner the main clone's install uses. */
   runCommand?: CommandRunner | undefined;
   /** The repository serve's code comes from; tests name a scratch one. */
@@ -357,6 +364,7 @@ export async function runIntegrate(
   ): Promise<PluginStepResult> => {
     const note = record.checkNote;
     const clone = followMain(context.repository, ctx.home, settings.mainBranch, cloneSha);
+    integrateTestHooks.at?.("clone-followed");
     const cloneChange = mainCloneChange(clone);
     const withClone: IntegrationRecord = { ...record, mainClone: { ...clone } };
     if (
@@ -374,6 +382,7 @@ export async function runIntegrate(
     ) {
       return cancelledStep();
     }
+    integrateTestHooks.at?.("merged-saved");
     await refreshPlan(ctx, context);
     return {
       result: "merged",
@@ -433,13 +442,18 @@ export async function runIntegrate(
       if (
         (await writeIntegration(ctx, context, task, attempt, withClone, {
           phase: "merged",
-          change: [
-            ...(typeof previous.checkNote === "string"
-              ? [previous.checkNote]
-              : []),
-            `merged as ${shortSha(previous.candidate)}`,
-            ...(cloneChange === undefined ? [] : [cloneChange]),
-          ],
+          // A kill after the merge was recorded leaves its lines in the brief;
+          // say them once.
+          change:
+            previous.result === "merged"
+              ? []
+              : [
+                  ...(typeof previous.checkNote === "string"
+                    ? [previous.checkNote]
+                    : []),
+                  `merged as ${shortSha(previous.candidate)}`,
+                  ...(cloneChange === undefined ? [] : [cloneChange]),
+                ],
         })) === undefined
       ) {
         return cancelledStep();
@@ -726,6 +740,7 @@ export async function runIntegrate(
         return fail(candidate.message ?? "cannot build the candidate");
       }
       const sha = candidate.sha;
+      integrateTestHooks.at?.("candidate-built");
 
       let checkNote: string | undefined;
       if (keyCommands.length > 0) {
@@ -845,6 +860,7 @@ export async function runIntegrate(
         })) === undefined) {
         return cancelledStep();
       }
+      integrateTestHooks.at?.("pending-saved");
 
       const push = git(gate, [
         "push",
@@ -935,6 +951,7 @@ export async function runCleanup(
       } catch (error) {
         hostError = messageOf(error);
       }
+      integrateTestHooks.at?.("hook-ran");
       if (hostError !== undefined || outcome?.result !== "pass") {
         const data =
           outcome !== undefined && isRecord(outcome.data) ? outcome.data : {};

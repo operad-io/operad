@@ -611,6 +611,119 @@ describe("dev/integrate", () => {
   });
 });
 
+async function killedAt(
+  state: Fixture,
+  point: string,
+  step: "dev/integrate" | "dev/cleanup",
+  runId: string,
+  nth = 1,
+): Promise<void> {
+  const child = Bun.spawn({
+    cmd: [
+      process.execPath,
+      CHILD,
+      state.store.root,
+      state.remote.repository,
+      state.taskKey,
+      runId,
+      point,
+      step,
+      String(nth),
+    ],
+    cwd: state.remote.repository,
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  await child.exited;
+  expect(child.signalCode).toBe("SIGKILL");
+}
+
+/** A registry that has never seen the run, like a restarted process. */
+function freshRegistry(state: Fixture): PluginRegistry {
+  return new PluginRegistry([createDevPlugin(), createShellPlugin()], {
+    home: state.root,
+    cwd: state.remote.repository,
+    store: new FilePluginStore({ root: state.store.root }),
+  });
+}
+
+describe("dev/integrate rerun after a kill", () => {
+  const points = [
+    "candidate-built",
+    "pending-saved",
+    "push",
+    "clone-followed",
+    "merged-saved",
+  ] as const;
+  for (const style of ["merge", "squash"] as const) {
+    for (const point of points) {
+      test(`${style}: a kill at ${point}, then a rerun, merges once`, async () => {
+        const state = await fixture({ style });
+        const before = gitOrThrow(state.remote.origin, ["rev-list", "--count", "main"]);
+        await killedAt(state, point, "dev/integrate", "integrate-run");
+
+        const result = await freshRegistry(state).runStep("dev/integrate", {}, {
+          runId: "integrate-run",
+          object: { type: "task", id: state.taskKey, data: {} },
+        });
+        expect(result.result).toBe("merged");
+
+        const task = await taskOf(state);
+        expect(task.phase).toBe("merged");
+        expect(task.attempt?.integration?.result).toBe("merged");
+        // One commit on main for the task: a merge commit, or the squashed one.
+        const added = Number(gitOrThrow(state.remote.origin, ["rev-list", "--count", "main"])) -
+          Number(before);
+        expect(added).toBe(style === "merge" ? 2 : 1);
+        expect(
+          gitOrThrow(state.remote.origin, [
+            "log",
+            "main",
+            "--format=%s",
+            `--grep=Merge work/${state.taskId}`,
+          ]).split("\n").filter((line) => line.length > 0),
+        ).toHaveLength(1);
+        expect(gitOrThrow(state.remote.origin, ["show", "main:code.txt"])).toBe("line");
+        // The brief says "merged as" once.
+        expect(task.brief.split("merged as ").length - 1).toBe(1);
+        // The main clone is fast-forwarded and clean.
+        expect(gitOrThrow(state.remote.repository, ["rev-parse", "HEAD"])).toBe(
+          remoteMain(state),
+        );
+        expect(gitOrThrow(state.remote.repository, ["status", "--porcelain"])).toBe("");
+      }, 60_000);
+    }
+  }
+});
+
+describe("dev/cleanup rerun after a kill", () => {
+  for (const nth of [1, 2, 3, 4, 5]) {
+    test(`a kill after hook ${nth}, then a rerun, leaves nothing behind`, async () => {
+      const state = await fixture({ style: "merge" });
+      expect((await integrate(state)).result).toBe("merged");
+      await killedAt(state, "hook-ran", "dev/cleanup", "cleanup-run", nth);
+
+      const result = await freshRegistry(state).runStep("dev/cleanup", {}, {
+        runId: "cleanup-run",
+        object: { type: "task", id: state.taskKey, data: {} },
+      });
+      expect(result.result).toBe("done");
+      expect(result.data?.failures).toBe(0);
+      expect(existsSync(state.worktree)).toBe(false);
+      expect(existsSync(state.gate)).toBe(false);
+      expect(
+        git(state.remote.repository, ["show-ref", "--verify", `refs/heads/work/${state.taskId}`]).ok,
+      ).toBe(false);
+      expect(
+        git(state.remote.origin, ["show-ref", "--verify", `refs/heads/work/${state.taskId}`]).ok,
+      ).toBe(false);
+      const task = await taskOf(state);
+      expect(task.phase).toBe("merged");
+      expect(task.brief.split("merged as ").length - 1).toBe(1);
+    }, 60_000);
+  }
+});
+
 describe("dev/cleanup", () => {
   test("the default hooks remove both worktrees and both branches", async () => {
     const state = await fixture({ style: "merge" });

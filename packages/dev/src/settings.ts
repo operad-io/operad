@@ -247,13 +247,15 @@ export interface DevSettings {
  * The commands cleanup runs when a repository sets none. They remove the task
  * and gate worktrees, prune a worktree that was removed by hand, and delete the
  * task's local and remote branch. The step records a failure and keeps going.
+ * Each default hook does nothing when its work is already done, so cleanup run
+ * again after a kill ends as clean as the first run.
  */
 export const DEFAULT_AFTER_MERGE: readonly string[] = [
-  'git worktree remove --force "$OPERAD_WORKTREE"',
-  'git worktree remove --force "$OPERAD_WORKTREE-gate"',
+  "if [ -e \"$OPERAD_WORKTREE\" ]; then git worktree remove --force \"$OPERAD_WORKTREE\"; fi",
+  "if [ -e \"$OPERAD_WORKTREE-gate\" ]; then git worktree remove --force \"$OPERAD_WORKTREE-gate\"; fi",
   "git worktree prune",
-  'git branch -D "work/$OPERAD_TASK"',
-  'git push "$OPERAD_REMOTE" --delete "work/$OPERAD_TASK"',
+  "if git show-ref --verify --quiet \"refs/heads/work/$OPERAD_TASK\"; then git branch -D \"work/$OPERAD_TASK\"; fi",
+  "if git ls-remote --exit-code --heads \"$OPERAD_REMOTE\" \"work/$OPERAD_TASK\" >/dev/null; then git push \"$OPERAD_REMOTE\" --delete \"work/$OPERAD_TASK\"; else [ $? -eq 2 ]; fi",
 ];
 
 /**
