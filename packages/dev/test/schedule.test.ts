@@ -1044,7 +1044,7 @@ describe("dev scheduling", () => {
     const held = taskData((await getTask(fixture.store, second.id)).data);
     expect(held.phase).toBe("ready");
     expect(taskViews.row(await getTask(fixture.store, second.id)).note).toBe(
-      `waiting for area core (${bareId(first.id)})`,
+      `$0.00 · waiting for area core (${bareId(first.id)})`,
     );
 
     // The holder is still running: later ticks keep holding the second task.
@@ -1057,7 +1057,7 @@ describe("dev scheduling", () => {
     expect(next.map((request) => startedId(request))).toEqual([second.id]);
     const running = await getTask(fixture.store, second.id);
     expect(taskData(running.data).areaHeldBy).toBeUndefined();
-    expect(taskViews.row(running).note).toBe("area: core");
+    expect(taskViews.row(running).note).toBe("$0.00 · area: core");
   });
 
   test("a task in the review phase still holds its area", async () => {

@@ -1082,8 +1082,18 @@ still read, and nothing writes them any more. A `usage` that is not in the
 standard shape is ignored and the run's log gets one line naming the run and the
 field.
 
-`dev` shows a cost that is not `exact` with its quality, such as
-`$0.31 (incomplete)`, in a task's row and in its metrics.
+`dev` shows a cost's quality as a symbol in a task's row and in its metrics:
+`$0.31` is exact, `~$0.31` is estimated and `≥$0.31` is incomplete (at least
+that much).
+
+A plan's row note reads `1/8 · ~$4.20 · merge · P2 // 2`: merged tasks over
+tasks (cancelled ones are not counted), the total cost of the plan's tasks at
+the weakest quality among them (left out while no task has a cost), the auto
+level, the priority, and after `//` how many of the plan's tasks may run at
+once. A task's note reads `$0.31 · harness-claude · area: app-core`: the cost
+(`$0.00` before there is one), the worker, the area (or `waiting for area
+app-core (T-0023-action-numbers)`), and last a refused push's message. A
+repository's note reads `plans: 1 · tasks: 4`, counting open ones.
 
 A step ends with one of these results:
 

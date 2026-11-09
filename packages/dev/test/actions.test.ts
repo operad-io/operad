@@ -395,7 +395,7 @@ describe("dev actions", () => {
       );
       expect(planData((await getPlan(store, plan.id)).data).concurrency).toBe(count);
     }
-    expect(planViews.row(await getPlan(store, plan.id)).note).toContain("concurrency: 16");
+    expect(planViews.row(await getPlan(store, plan.id)).note).toContain("// 16");
   });
 
   test("concurrency refuses 0, 17, a fraction and a string and leaves the plan alone", async () => {

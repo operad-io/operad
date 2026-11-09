@@ -509,7 +509,7 @@ describe("operad with the dev plugin", () => {
     );
     expect(wide.code).toBe(0);
     const planId = wide.out.trim();
-    expect((await run(home, repository, ["show", planId])).out).toContain("concurrency: 3");
+    expect((await run(home, repository, ["show", planId])).out).toContain("// 3");
 
     for (const bad of ["0", "17", "1.5", "many"]) {
       const refused = await run(
@@ -523,10 +523,10 @@ describe("operad with the dev plugin", () => {
     }
 
     expect((await run(home, repository, ["dev:concurrency", planId, "--count", "5"])).code).toBe(0);
-    expect((await run(home, repository, ["show", planId])).out).toContain("concurrency: 5");
+    expect((await run(home, repository, ["show", planId])).out).toContain("// 5");
     const refused = await run(home, repository, ["dev:concurrency", planId, "--count", "17"]);
     expect(refused.code).not.toBe(0);
-    expect((await run(home, repository, ["show", planId])).out).toContain("concurrency: 5");
+    expect((await run(home, repository, ["show", planId])).out).toContain("// 5");
 
     const plain = await run(
       home,
@@ -534,7 +534,7 @@ describe("operad with the dev plugin", () => {
       ["plan", "add", "--slug", "plain", "--title", "Plain"],
       "request\n",
     );
-    expect((await run(home, repository, ["show", plain.out.trim()])).out).toContain("concurrency: 1");
+    expect((await run(home, repository, ["show", plain.out.trim()])).out).toContain("// 1");
   });
 
   test("a command outside the repository takes --repo and edit opens $EDITOR", async () => {
@@ -1003,17 +1003,17 @@ describe("operad with the dev plugin", () => {
     ).toBe(0);
 
     const listed = await run(home, repository, ["list", "plan"]);
-    expect(listed.out).toContain("auto: merge  P1");
+    expect(listed.out).toContain("merge · P1");
     const shown = await run(home, repository, ["show", planId]);
-    expect(shown.out).toContain("auto: merge  P1");
+    expect(shown.out).toContain("merge · P1");
     const json = JSON.parse(
       (await run(home, repository, ["show", planId, "--json"])).out,
     ) as { row: { note: string } };
-    expect(json.row.note).toContain("auto: merge  P1");
+    expect(json.row.note).toContain("merge · P1");
     const listJson = JSON.parse(
       (await run(home, repository, ["list", "plan", "--json"])).out,
     ) as { rows: { note: string }[] };
-    expect(listJson.rows[0]?.note).toContain("auto: merge  P1");
+    expect(listJson.rows[0]?.note).toContain("merge · P1");
 
     const history = await run(home, repository, [
       "show",
