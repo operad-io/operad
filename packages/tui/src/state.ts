@@ -1358,7 +1358,10 @@ function jump(state: TuiState, to: "top" | "bottom"): TuiState {
 function activate(state: TuiState, index: number): TuiState {
   if (index < 0 || index >= state.tabs.length || index === state.active) return state;
   // Another tab is another list: the object of the old one closes.
-  return closeObject({ ...state, active: index, followPending: false });
+  return followLoaded(
+    closeObject({ ...state, active: index, followPending: false }),
+    state.tabs[index]?.id ?? "",
+  );
 }
 
 /** The row the active list's cursor is on, if it can be opened. */
@@ -1738,14 +1741,33 @@ function clearRequest(before: TuiState, after: TuiState, tabId: string): TuiStat
     : after;
 }
 
+/**
+ * After a list loads or another tab is shown, the pane beside it shows the row
+ * the cursor rests on, unless it already does.
+ */
+function followLoaded(state: TuiState, tabId: string): TuiState {
+  const tab = activeTabOf(state);
+  if (tab === undefined || tab.id !== tabId) return state;
+  const row = tab.list.rows[tab.list.cursor];
+  if (row === undefined) return state.followPending ? state : closeObject(state);
+  if (row.openable === false || state.object?.source === row.id) return state;
+  return { ...state, moveSeq: state.moveSeq + 1, followPending: true };
+}
+
 function applyPending(state: TuiState, items: readonly PendingItem[]): TuiState {
   const rows = items.map(rowFromPending);
-  return withTab(state, "pending", (tab) => replaceRows(tab, rows, undefined));
+  return followLoaded(
+    withTab(state, "pending", (tab) => replaceRows(tab, rows, undefined)),
+    "pending",
+  );
 }
 
 function applyRunning(state: TuiState, items: readonly RunningItem[]): TuiState {
   const rows = items.map(rowFromRunning);
-  return withTab(state, "running", (tab) => replaceRows(tab, rows, undefined));
+  return followLoaded(
+    withTab(state, "running", (tab) => replaceRows(tab, rows, undefined)),
+    "running",
+  );
 }
 
 function appendPage(
@@ -1788,7 +1810,7 @@ function appendPage(
     };
   });
   const cleared = clearRequest(state, updated, tabId);
-  if (!wasSwitching) return cleared;
+  if (!wasSwitching) return replace ? followLoaded(cleared, tabId) : cleared;
   // The new filter moved the selection: the object pane follows it.
   const after = cleared.tabs.find((candidate) => candidate.id === tabId);
   if (after === undefined || after.list.rows[after.list.cursor]?.id === selected) {
