@@ -806,6 +806,38 @@ export async function addPlan(
   });
 }
 
+/**
+ * Makes a confirmed plan with no tasks yet; the caller holds the repository
+ * lock. Used for the plan dev keeps flaky-test tasks in.
+ */
+export async function addConfirmedPlanLocked(
+  store: ObjectStore,
+  repository: RepositoryData,
+  options: {
+    readonly slug: string;
+    readonly title: string;
+    readonly auto: AutoMode;
+    readonly priority: Priority;
+  },
+): Promise<StoredObject> {
+  const slug = validateSlug(options.slug);
+  const title = validateTitle(options.title);
+  const id = await nextId(store, "plan", repository.name, slug);
+  const data: PlanData = {
+    repository: repository.name,
+    title,
+    request: "",
+    status: "confirmed",
+    auto: options.auto,
+    priority: options.priority,
+    concurrency: 1,
+    taskCount: 0,
+    mergedCount: 0,
+    cancelledCount: 0,
+  };
+  return writePlan(store, storeKey(repository.name, id), data, "dev:plan-add");
+}
+
 function validateAfter(
   tasks: readonly StoredObject[],
   repository: string,

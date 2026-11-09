@@ -539,6 +539,7 @@ export async function runIntegrate(
           repository: context.repository,
           taskId: context.taskId,
           threshold: context.settings.check.flakyTask,
+          flakyPlan: context.settings.check.flakyPlan,
           check: checked,
         });
         checkNote =
@@ -753,6 +754,7 @@ export async function runIntegrate(
           repository: context.repository,
           taskId: context.taskId,
           threshold: context.settings.check.flakyTask,
+          flakyPlan: context.settings.check.flakyPlan,
           check: checked,
         });
         const { outcome, hostError } = checked;

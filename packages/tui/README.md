@@ -26,6 +26,12 @@ Choose one in `~/.operad/tui.json` (schema: `tui.schema.json`):
 `operad tui --theme <name>` overrides the file for one session. An unknown name,
 or a `tui.json` that cannot be read, is an error and the TUI does not start.
 
+The `:` palette has a `theme` command. It lists the installed themes (the built-in and
+shipped ones, then the files in `~/.operad/themes`); moving the selection shows each
+one live, Enter keeps the one under the cursor and writes it to `tui.json` (other keys
+in the file stay), and Esc puts back the theme that was in use. A choice made there
+beats `--theme` for the rest of the session.
+
 ## Hand tests (the lead runs these after a merge)
 
 Use a scratch `OPERAD_HOME` with the `dev` plugin and some objects in it.

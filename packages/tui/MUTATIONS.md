@@ -210,6 +210,11 @@ the row fields.
 | T-0083-M3 | packages/tui/src/actions.ts | the recent list put the newest entry last | `palette search: recent entries > an empty query lists the last five used first, the latest first, then the group order` |
 | T-0083-M4 | packages/tui/src/actions.ts | equal scores were listed in reverse order | `palette search: query to first entry > equal scores keep the order the entries were listed in` |
 | T-0083-M5 | packages/tui/src/view/index.ts | the matched characters of the name were not drawn in the accent | `palette search: highlight positions > the matched characters are drawn in the accent colour` |
+| T-0084-M1 | packages/tui/src/state.ts | moving the theme list's cursor did not change the previewed theme | `the theme command: list and keys > moving previews the theme under the cursor, and stops at the ends` |
+| T-0084-M2 | packages/tui/src/state.ts | escape closed the theme list but left the preview on | `the theme command: list and keys > escape closes the list and ends the preview, asking for nothing` |
+| T-0084-M3 | packages/tui/src/theme.ts | saving the theme replaced tui.json with only the theme key | `saving the choice > it writes tui.json, keeps the other keys and the next start reads it` |
+| T-0084-M4 | packages/tui/src/app.ts | Enter kept the theme for the session but did not write tui.json | `the theme command in the running app > enter keeps the theme, writes tui.json, and a new start uses it` |
+| T-0084-M5 | packages/tui/src/app.ts | the view ignored the preview and always drew the theme in force | `the theme command in the running app > moving the selection changes the drawn colours; escape puts them back` |
 | T-0129-M2 | packages/tui/src/state.ts | opening a type-tab row asked for the bare id instead of `<type>:<id>` | `the TUI object app > a row opens by its typed id; a server that refuses bare ids is never asked for one` |
 | T-0112-M10 | packages/tui/src/actions.ts | a status number in front of a refusal was kept | `a refusal line > drops a status number and a field prefix, and keeps the sentence` |
 | T-0112-M11 | packages/tui/src/actions.ts | a `field: ` prefix in front of a refusal was kept | `a refusal line > drops a status number and a field prefix, and keeps the sentence` |

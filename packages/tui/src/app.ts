@@ -52,7 +52,14 @@ import {
   type TuiStateEvent,
   type TuiTheme,
 } from "./state.ts";
-import { chooseSelection, watchThemes, type ThemeHolder } from "./theme.ts";
+import {
+  chooseSelection,
+  installedThemes,
+  resolveSelection,
+  saveThemeChoice,
+  watchThemes,
+  type ThemeHolder,
+} from "./theme.ts";
 import { createTuiView, type TuiView } from "./view/index.ts";
 import type { TuiTypeInfo } from "./client.ts";
 
@@ -165,8 +172,22 @@ export interface TuiShellDeps {
   readonly followDelayMs?: number | undefined;
   /** The palette entries used in earlier runs, the latest first. */
   readonly recent?: readonly string[] | undefined;
+  /** The theme list of the `theme` command; without it the list is empty. */
+  readonly themes?: TuiThemes | undefined;
   /** Called with the list of recent entries each time it changes. */
   readonly onRecent?: ((recent: readonly string[]) => void) | undefined;
+}
+
+/** What the `theme` command needs from outside the reducer. */
+export interface TuiThemes {
+  /** The installed theme names. */
+  list(): readonly string[];
+  /** The name of the theme in force. */
+  current(): string;
+  /** Shows a theme without keeping it; none shows the one in force. Throws when the theme cannot be read. */
+  preview(name: string | undefined): void;
+  /** Keeps a theme: it is in force from now on and the next start uses it. Throws when it cannot. */
+  save(name: string): void;
 }
 
 /** A running shell: feed it keys and sizes, and wait for `done`. */
@@ -225,7 +246,10 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     theme: deps.theme,
     url: deps.url,
     recent: deps.recent,
+    themeNames: deps.themes?.list(),
+    themeCurrent: deps.themes?.current(),
   });
+  let shownPreview: string | undefined;
   let finished = false;
   let refreshAbort: AbortController | undefined;
   // The requests of the open object: its read and its section pages. They end
@@ -825,6 +849,30 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     if (filterRequest !== undefined) state = reduce(state, { type: "filter-launched" });
     const actionRequest = state.actionRequest;
     if (actionRequest !== undefined) state = reduce(state, { type: "action-launched" });
+    const themes = deps.themes;
+    if (themes !== undefined) {
+      const problem = (error: unknown): void => {
+        state = reduce(state, { type: "status", message: `${THEME_PROBLEM} ${messageOf(error)}` });
+      };
+      if (state.themePreview !== shownPreview) {
+        shownPreview = state.themePreview;
+        try {
+          themes.preview(shownPreview);
+        } catch (error) {
+          problem(error);
+        }
+      }
+      const asked = state.themeRequest;
+      if (asked !== undefined) {
+        state = reduce(state, { type: "theme-launched" });
+        try {
+          themes.save(asked);
+        } catch (error) {
+          problem(error);
+        }
+        state = reduce(state, { type: "theme-names", names: themes.list(), current: themes.current() });
+      }
+    }
     const refreshing = state.refreshRequested;
     if (refreshing) state = reduce(state, { type: "refreshed" });
     // Requests belong to the object version that asked: another open, or a
@@ -910,6 +958,10 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       dispatch({ type: "theme", theme });
     },
     repaintTheme(problem?: string): void {
+      const themes = deps.themes;
+      if (themes !== undefined) {
+        state = reduce(state, { type: "theme-names", names: themes.list(), current: themes.current() });
+      }
       if (problem !== undefined) {
         dispatch({ type: "status", message: `${THEME_PROBLEM} ${problem}` });
       } else if (state.status?.startsWith(THEME_PROBLEM) === true) {
@@ -935,6 +987,21 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
   const themeHome = options.home ?? defaultOperadHome();
   const holder: ThemeHolder = {
     current: chooseSelection({ home: themeHome, flag: options.theme }),
+  };
+  // A theme chosen in the `:` palette beats `--theme` for the rest of the session.
+  let flag = options.theme;
+  const themes: TuiThemes = {
+    list: () => installedThemes(themeHome),
+    current: () => holder.current.name,
+    preview: (name) => {
+      holder.preview = name === undefined ? undefined : resolveSelection(themeHome, name);
+    },
+    save: (name) => {
+      const chosen = resolveSelection(themeHome, name);
+      saveThemeChoice(themeHome, name);
+      flag = undefined;
+      holder.current = chosen;
+    },
   };
   // With no --url, make sure a serve answers (starting one) before the screen.
   if (options.url === undefined && options.noStart !== true) {
@@ -991,11 +1058,12 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
         screenMode: "alternate-screen",
       }));
     renderer = created;
-    const createdView = (options.hooks?.view ?? ((ctx) => createTuiView(ctx, () => holder.current)))(created);
+    const createdView = (options.hooks?.view ?? ((ctx) => createTuiView(ctx, () => holder.preview ?? holder.current)))(created);
     view = createdView;
     const started = startShell({
       client,
       url: location.url,
+      themes,
       recent: loadRecent(themeHome),
       onRecent: (recent) => saveRecent(themeHome, recent),
       events: (signal) =>
@@ -1021,7 +1089,7 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
     shell = started;
     stopThemeWatch = watchThemes({
       home: themeHome,
-      flag: options.theme,
+      flag: () => flag,
       holder,
       onChange: (problem) => guarded(() => started.repaintTheme(problem)),
     });

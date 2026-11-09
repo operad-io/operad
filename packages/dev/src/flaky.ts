@@ -2,7 +2,7 @@
  * Proposes a task when a test keeps passing only on its rerun. Each pass on a
  * rerun is remembered per repository and test; when the count reaches
  * `check.flakyTask` and no open task names the test, one task is proposed in
- * the repository's newest confirmed plan that is not finished.
+ * the plan `check.flakyPlan` names, else the repository's own plan `flaky-tests`.
  *
  * The proposal runs under the repository lock and finds an earlier proposal by
  * the test name in the open tasks, so a crash between the decision and the
@@ -26,10 +26,11 @@ import {
   planState,
   splitBrief,
   taskData,
+  type PlanData,
   type RepositoryData,
 } from "./model.ts";
 import { anchoredPattern, shellQuote } from "./rerun.ts";
-import { addTaskLocked, withRepoLock } from "./service.ts";
+import { addConfirmedPlanLocked, addTaskLocked, withRepoLock } from "./service.ts";
 
 const MASK = "***";
 const SECRET_NAME = /(KEY|TOKEN|SECRET|PASS|PASSWORD|AUTH|CREDENTIAL)/i;
@@ -131,7 +132,16 @@ function writableOf(record: FlakyRecord): Record<string, unknown> {
   };
 }
 
-/** The "(fail)" line of a test with up to 30 lines before it, and the file named above it. */
+const SUMMARY_START = /^\s*\d+ tests? failed:\s*$/;
+const FILE_HEADER = /^(\S+\.(?:test|spec)\.[cm]?[jt]sx?):$/;
+
+/**
+ * The "(fail)" line of a test with up to 30 lines before it, and the file whose
+ * section holds it. bun repeats every failure in a summary after the last
+ * file's section; that repeat names no file, so the first "(fail)" line of the
+ * test before the summary is the test's own. A test seen only in the summary
+ * has an excerpt and no file.
+ */
 export function failureExcerpt(
   log: string,
   name: string,
@@ -139,20 +149,54 @@ export function failureExcerpt(
   const lines = log.replace(/\r\n/g, "\n").split("\n");
   const wanted = `(fail) ${name} [`;
   let found = -1;
-  for (let index = 0; index < lines.length; index += 1) {
-    if ((lines[index] ?? "").startsWith(wanted)) found = index;
-  }
-  if (found < 0) return { excerpt: "", file: undefined };
+  let inSummary = false;
   let file: string | undefined;
-  for (let index = found; index >= 0; index -= 1) {
-    const header = /^(\S+\.(?:test|spec)\.[cm]?[jt]sx?):$/.exec(lines[index] ?? "");
-    if (header !== null) {
-      file = header[1];
+  let current: string | undefined;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (SUMMARY_START.test(line)) inSummary = true;
+    const header = FILE_HEADER.exec(line);
+    if (header !== null && !inSummary) current = header[1];
+    if (!line.startsWith(wanted)) continue;
+    if (!inSummary) {
+      found = index;
+      file = current;
       break;
     }
+    if (found < 0) found = index;
   }
+  if (found < 0) return { excerpt: "", file: undefined };
   const excerpt = lines.slice(Math.max(0, found - EXCERPT_LINES), found + 1).join("\n");
   return { excerpt, file };
+}
+
+const SEARCH_SKIP = /(?:^|\/)(?:node_modules|\.git|\.operad-worktrees)\//;
+
+/**
+ * The one test file of the repository that holds every part of the test's name
+ * (its describe names and its own), or undefined when none or several do.
+ */
+export function searchTestFile(repositoryPath: string, name: string): string | undefined {
+  const parts = name.split(" > ").filter((part) => part !== "");
+  if (parts.length === 0) return undefined;
+  const hits: string[] = [];
+  try {
+    for (const path of new Bun.Glob("**/*.{test,spec}.{ts,tsx,js,jsx,mts,cts,mjs,cjs}").scanSync({
+      cwd: repositoryPath,
+    })) {
+      if (SEARCH_SKIP.test(path)) continue;
+      let text: string;
+      try {
+        text = readFileSync(join(repositoryPath, path), "utf8");
+      } catch {
+        continue;
+      }
+      if (parts.every((part) => text.includes(part))) hits.push(path);
+    }
+  } catch {
+    return undefined;
+  }
+  return hits.length === 1 ? hits[0] : undefined;
 }
 
 function slugOf(name: string): string {
@@ -170,7 +214,7 @@ function packageOf(file: string | undefined): string {
 }
 
 const FLAKY_RULE =
-  "A test that failed and then passed on rerun is a bug until shown otherwise. A task that fixes one states the stress command and its result before and after the fix in its final answer, and is done when `bash scripts/stress.sh --runs 200 --load 2 <file>` passes. A stress run takes a lock shared by every stress run on the machine and may wait for another to end; the wait is not part of its result. Never raise a timeout or add a retry inside a test to make it pass.";
+  "A test that failed and then passed on rerun is a bug until shown otherwise. A task that fixes one states the stress command and its result before and after the fix in its final answer, and is done when `bash scripts/stress.sh --runs <N> --load 2 <file>` passes, N sized so the run takes about ten minutes (at least 20, at most 200). A stress run takes a lock shared by every stress run on the machine and may wait for another to end; the wait is not part of its result. Never raise a timeout or add a retry inside a test to make it pass.";
 
 /** The "Flaky tests" section of the repository's CLAUDE.md, else the rule as written here. */
 function flakyRule(repositoryPath: string): string {
@@ -205,7 +249,7 @@ export function flakyBrief(
   record: FlakyRecord,
 ): string {
   const file = [...record.occurrences].reverse().find((entry) => entry.file !== undefined)?.file;
-  const where = file === undefined ? "a file not found in the logs" : `\`${file}\``;
+  const where = file === undefined ? "a file that is not known (the logs do not name it and no single test file holds the name)" : `\`${file}\``;
   const lines: string[] = [
     `The test \`${record.name}\` in ${where} failed and then passed on its own rerun ${record.occurrences.length} times.`,
     "",
@@ -226,13 +270,13 @@ export function flakyBrief(
   }
   const pattern = record.name.replace(/ > /g, " ");
   const command = existsSync(join(repositoryPath, "scripts", "stress.sh"))
-    ? `bash scripts/stress.sh --runs 200 --load 2 -t ${shellQuote(pattern)}${file === undefined ? "" : ` ${shellQuote(file)}`}`
-    : `bun test --rerun-each 200 -t ${shellQuote(anchoredPattern(record.name))}${file === undefined ? "" : ` ${shellQuote(file)}`}`;
-  lines.push("", "Reproduce it:", "```sh", command, "```", "", "The rule for flaky tests:", "", flakyRule(repositoryPath));
+    ? `bash scripts/stress.sh --runs <N> --load 2 -t ${shellQuote(pattern)}${file === undefined ? "" : ` ${shellQuote(file)}`}`
+    : `bun test --rerun-each <N> -t ${shellQuote(anchoredPattern(record.name))}${file === undefined ? "" : ` ${shellQuote(file)}`}`;
+  lines.push("", "Reproduce it:", "```sh", command, "```", "", "Write the number of runs in place of `<N>`: it follows the rule quoted below.", "", "The rule for flaky tests:", "", flakyRule(repositoryPath));
   return lines.join("\n");
 }
 
-async function newestOpenPlan(
+async function newestConfirmedPlan(
   store: ObjectStore,
   repository: string,
 ): Promise<StoredObject | undefined> {
@@ -240,11 +284,60 @@ async function newestOpenPlan(
   for (const object of await listAll(store, "plan")) {
     const plan = planData(object.data);
     if (plan.repository !== repository || plan.status !== "confirmed") continue;
-    if (planState(plan) === "finished") continue;
     const number = parseId(bareId(object.id), "plan")?.number ?? -1;
     if (best === undefined || number > best.number) best = { object, number };
   }
   return best?.object;
+}
+
+const FLAKY_PLAN_SLUG = "flaky-tests";
+const FLAKY_PLAN_TITLE = "Flaky tests";
+
+function isEnded(plan: PlanData): boolean {
+  const state = planState(plan);
+  return state === "finished" || state === "cancelled";
+}
+
+/**
+ * The plan flaky-test tasks go into: `check.flakyPlan` when it names a plan of
+ * the repository that is not finished or cancelled, else dev's own plan
+ * `flaky-tests`, made once (confirmed, with the auto level and priority of the
+ * repository's newest confirmed plan). Runs under the repository lock.
+ */
+async function flakyPlanFor(
+  store: ObjectStore,
+  repository: RepositoryData,
+  configured: string | undefined,
+): Promise<StoredObject> {
+  if (configured !== undefined) {
+    const named = await store.get("plan", `${repository.name}/${bareId(configured)}`);
+    if (named !== undefined) {
+      const data = planData(named.data);
+      if (data.repository === repository.name && !isEnded(data)) return named;
+    }
+  }
+  const own = (await listAll(store, "plan"))
+    .filter((object) => {
+      const data = planData(object.data);
+      return (
+        data.repository === repository.name &&
+        parseId(bareId(object.id), "plan")?.slug === FLAKY_PLAN_SLUG &&
+        !isEnded(data)
+      );
+    })
+    .sort(
+      (x, y) =>
+        (parseId(bareId(y.id), "plan")?.number ?? -1) - (parseId(bareId(x.id), "plan")?.number ?? -1),
+    )[0];
+  if (own !== undefined) return own;
+  const model = await newestConfirmedPlan(store, repository.name);
+  const data = model === undefined ? undefined : planData(model.data);
+  return addConfirmedPlanLocked(store, repository, {
+    slug: FLAKY_PLAN_SLUG,
+    title: FLAKY_PLAN_TITLE,
+    auto: data?.auto ?? "off",
+    priority: data?.priority ?? "P3",
+  });
 }
 
 /** The title of the task dev proposes for a test. */
@@ -301,6 +394,8 @@ export interface FlakyInput {
   readonly log: string | undefined;
   /** `check.flakyTask`; 0 turns the proposal off. */
   readonly threshold: number;
+  /** `check.flakyPlan`: the plan to propose in, by id. */
+  readonly flakyPlan?: string | undefined;
 }
 
 function readLog(path: string | undefined): string {
@@ -351,12 +446,13 @@ export async function trackFlakyTests(input: FlakyInput): Promise<string | undef
       // While its task is open the count does not grow: the fix is on its way.
       if (record.task !== undefined) continue;
       const found = failureExcerpt(log, name);
+      const file = found.file ?? searchTestFile(fresh.path, name);
       const excerpt = maskSecrets(found.excerpt, input.secrets ?? [], input.env);
       record = {
         ...record,
         occurrences: [
           ...record.occurrences,
-          { task: input.taskId, at, file: found.file, excerpt },
+          { task: input.taskId, at, file, excerpt },
         ],
       };
       await store.put(FLAKY_TYPE, key, writableOf(record), "dev:flaky-count");
@@ -393,14 +489,7 @@ async function propose(
     );
     return undefined;
   }
-  const plan = await newestOpenPlan(store, repository.name);
-  if (plan === undefined) {
-    // One notice per count is enough; the count stays and decides again later.
-    const count = record.occurrences.length;
-    if (record.noticed !== undefined && record.noticed >= count) return undefined;
-    await store.put(FLAKY_TYPE, key, writableOf({ ...record, noticed: count }), "dev:flaky-task");
-    return noticeFor(record, "no confirmed plan that is not finished");
-  }
+  const plan = await flakyPlanFor(store, repository, input.flakyPlan);
   await flakyTestHooks.beforePropose?.(record.name);
   const file = [...record.occurrences].reverse().find((entry) => entry.file !== undefined)?.file;
   try {
@@ -455,6 +544,7 @@ export interface FlakyReport {
   readonly repository: RepositoryData;
   readonly taskId: string;
   readonly threshold: number;
+  readonly flakyPlan?: string | undefined;
   readonly check: {
     readonly passedOnRerun: readonly string[];
     readonly outcome: { readonly data?: Record<string, unknown> | undefined } | undefined;
@@ -491,6 +581,7 @@ export async function reportFlakyTests(report: FlakyReport): Promise<string | un
       names: report.check.passedOnRerun,
       log: typeof log === "string" ? log : undefined,
       threshold: report.threshold,
+      flakyPlan: report.flakyPlan,
     });
   } catch (error) {
     await report.ctx.logger.write(`could not propose a task for a flaky test: ${messageOf(error)}`);

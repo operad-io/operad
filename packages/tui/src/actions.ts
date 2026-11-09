@@ -265,7 +265,7 @@ export function matchPositions(query: string, entry: TuiPaletteEntry): readonly 
 
 /** What a TUI command does; each is what a key does. */
 export type TuiCommand =
-  | { readonly kind: "help" | "refresh" | "back" | "quit" }
+  | { readonly kind: "help" | "refresh" | "back" | "quit" | "themes" }
   | { readonly kind: "go"; readonly tabId: string };
 
 function commandEntries(state: TuiState): readonly TuiPaletteEntry[] {
@@ -303,6 +303,7 @@ function commandEntries(state: TuiState): readonly TuiPaletteEntry[] {
     make("refresh", "load the lists again", "r", { kind: "refresh" }),
     ...[go("pending"), go("running")].filter((entry): entry is TuiPaletteEntry => entry !== undefined),
     ...types,
+    make("theme", "choose the colour theme", undefined, { kind: "themes" }),
     make("go back", "close the open object", "escape", { kind: "back" }),
     make("quit", "leave the TUI", "q", { kind: "quit" }),
   ];
@@ -519,7 +520,7 @@ export function dropLast(text: string): string {
 /** A key arrives while the palette, a note or a confirmation is open. */
 export function inputKey(
   state: TuiState,
-  input: Exclude<TuiInput, { readonly kind: "pages" }>,
+  input: Exclude<TuiInput, { readonly kind: "pages" | "themes" }>,
   event: {
     readonly key: string;
     readonly text?: string | undefined;
