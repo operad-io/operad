@@ -872,6 +872,7 @@ afterEach(() => {
   integrateTestHooks.queued = undefined;
   integrateTestHooks.turnTaken = undefined;
   integrateTestHooks.wait = undefined;
+  integrateTestHooks.claimed = undefined;
 });
 
 function firstParentSubjects(state: Fixture): string[] {
@@ -1090,6 +1091,107 @@ describe("integration queue", () => {
       expect(data.phase).toBe("merged");
       expect(data.brief).not.toContain("integrated in a batch");
     }
+  });
+});
+
+describe("a task that leaves a batch", () => {
+  test("a claimed task that is cancelled is not merged, and the others land one by one", async () => {
+    const state = await fixture({
+      more: 2,
+      batch: 3,
+      keyCommands: ["true"],
+    });
+    const [second, third] = state.others;
+    if (second === undefined || third === undefined) throw new Error("tasks missing");
+    const rings = bell();
+    integrateTestHooks.wait = rings.wait;
+    const queued = new Map([
+      [state.taskId, signal()],
+      [second.taskId, signal()],
+      [third.taskId, signal()],
+    ]);
+    integrateTestHooks.queued = (task) => queued.get(task)?.resolve();
+    const cancelled = new AbortController();
+    const claimed = signal();
+    const release = signal();
+    // The leader's checks end only after the second task has been cancelled.
+    integrateTestHooks.turnTaken = async (task) => {
+      if (task !== state.taskId) return;
+      await queued.get(second.taskId)?.promise;
+      await queued.get(third.taskId)?.promise;
+    };
+    integrateTestHooks.claimed = async () => {
+      claimed.resolve();
+      await release.promise;
+    };
+
+    const first = integrate(state, "integrate-run");
+    await queued.get(state.taskId)?.promise;
+    const b = second.registry.runStep("dev/integrate", {}, {
+      runId: "integrate-run-2",
+      object: { type: "task", id: second.taskKey, data: {} },
+      signal: cancelled.signal,
+    });
+    await queued.get(second.taskId)?.promise;
+    const c = integrate(third, "integrate-run-3");
+    await rings.parked(2);
+    await claimed.promise;
+    cancelled.abort();
+    rings.ring();
+    expect((await b).result).toBe("cancelled");
+    release.resolve();
+
+    expect((await first).result).toBe("merged");
+    await rings.parked(1);
+    rings.ring();
+    expect((await c).result).toBe("merged");
+
+    expect(git(state.remote.origin, ["cat-file", "-e", "main:code1.txt"]).ok).toBe(false);
+    expect(gitOrThrow(state.remote.origin, ["show", "main:code2.txt"])).toBe("line");
+    expect(firstParentSubjects(state)).toHaveLength(3);
+    // No ticket is left behind for the task that went.
+    const queue = new IntegrationQueue({
+      home: state.root,
+      repository: { name: "repository", path: state.remote.repository },
+      task: "T-probe",
+      run: "run",
+      verified: "0".repeat(40),
+      message: "m",
+      say: () => {},
+    });
+    expect(queue.tickets()).toEqual([]);
+  });
+});
+
+describe("a claimed task that leaves the queue", () => {
+  test("a batch that falls back does not write its ticket back", async () => {
+    const root = await tempRoot();
+    const repository = { name: "repository", path: "/r/repository" };
+    const make = (task: string) =>
+      new IntegrationQueue({
+        home: root,
+        repository,
+        task,
+        run: "run",
+        verified: "0".repeat(40),
+        message: `Merge work/${task}`,
+        say: () => {},
+      });
+    const [a, b, c] = [make("T-a"), make("T-b"), make("T-c")];
+    await a.join();
+    await b.join();
+    await c.join();
+    const followers = a.claim(3);
+    expect(followers.map((ticket) => ticket.task)).toEqual(["T-b", "T-c"]);
+    b.leave();
+    expect(a.stillQueued(followers).map((ticket) => ticket.task)).toEqual(["T-c"]);
+    a.fallBack(followers);
+    expect(a.tickets().map((ticket) => ticket.task)).toEqual(["T-a", "T-c"]);
+    expect(a.tickets()[1]?.solo).toBe(true);
+    a.leave();
+    expect((await c.turn()).kind).toBe("turn");
+    c.leave();
+    expect(a.tickets()).toEqual([]);
   });
 });
 

@@ -9,9 +9,13 @@
  *
  * A turn that merges a batch claims the tickets queued behind it. A claimed
  * task does not take a turn of its own: it waits for the leader's result file.
+ * A ticket is written only by its own task. Claims and "integrate alone" marks
+ * are separate files the leader owns (`c-<leader>.json`, `s-<task>.json`), so a
+ * task that leaves while it is claimed is never written back.
  */
 
 import {
+  existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -127,8 +131,6 @@ function parseTicket(text: string): Ticket | undefined {
       pid: record.pid,
       verified: record.verified,
       message: record.message,
-      ...(record.solo === true ? { solo: true as const } : {}),
-      ...(typeof record.claimedBy === "string" ? { claimedBy: record.claimedBy } : {}),
     };
   } catch {
     return undefined;
@@ -147,6 +149,14 @@ export class IntegrationQueue {
 
   private ticketPath(task: string): string {
     return join(this.directory, `t-${safeName(task)}.json`);
+  }
+
+  private claimPath(leader: string): string {
+    return join(this.directory, `c-${safeName(leader)}.json`);
+  }
+
+  private soloPath(task: string): string {
+    return join(this.directory, `s-${safeName(task)}.json`);
   }
 
   private resultPath(leader: string): string {
@@ -180,21 +190,55 @@ export class IntegrationQueue {
       live.push(ticket);
     }
     live.sort((left, right) => left.seq - right.seq);
-    // A result with no ticket of its leader and none claimed by it is garbage.
+    // A claim holds while its leader is queued or has left a result; it
+    // names only tasks that still have a ticket.
+    const claims = new Map<string, string>();
+    for (const name of names) {
+      if (!name.startsWith("c-") || !name.endsWith(".json")) continue;
+      const file = name.slice(2, -5);
+      let claim: { leader?: unknown; members?: unknown } = {};
+      try {
+        claim = JSON.parse(readFileSync(join(this.directory, name), "utf8"));
+      } catch {
+        continue;
+      }
+      const leader = claim.leader;
+      const members = claim.members;
+      const claimed =
+        Array.isArray(members) ? live.filter((ticket) => members.includes(ticket.task)) : [];
+      const resulted = names.includes(`r-${file}.json`);
+      if (
+        typeof leader !== "string" ||
+        claimed.length === 0 ||
+        (!live.some((ticket) => ticket.task === leader) && !resulted)
+      ) {
+        rmSync(join(this.directory, name), { force: true });
+        rmSync(join(this.directory, `r-${file}.json`), { force: true });
+        continue;
+      }
+      for (const ticket of claimed) claims.set(ticket.task, leader);
+    }
     for (const name of names) {
       if (!name.startsWith("r-") || !name.endsWith(".json")) continue;
-      const leader = name.slice(2, -5);
-      if (
-        !live.some(
-          (ticket) =>
-            safeName(ticket.task) === leader ||
-            (ticket.claimedBy !== undefined && safeName(ticket.claimedBy) === leader),
-        )
-      ) {
+      if (!existsSync(join(this.directory, `c-${name.slice(2)}`))) {
         rmSync(join(this.directory, name), { force: true });
       }
     }
-    return live;
+    const solo = new Set<string>();
+    for (const name of names) {
+      if (!name.startsWith("s-") || !name.endsWith(".json")) continue;
+      const owner = live.find((ticket) => safeName(ticket.task) === name.slice(2, -5));
+      if (owner === undefined) rmSync(join(this.directory, name), { force: true });
+      else solo.add(owner.task);
+    }
+    return live.map((ticket) => {
+      const claimedBy = claims.get(ticket.task);
+      return {
+        ...ticket,
+        ...(claimedBy === undefined ? {} : { claimedBy }),
+        ...(solo.has(ticket.task) ? { solo: true as const } : {}),
+      };
+    });
   }
 
   /** Takes a ticket at the end of the queue. */
@@ -224,11 +268,10 @@ export class IntegrationQueue {
     if (!this.joined) return;
     this.joined = false;
     rmSync(this.ticketPath(this.options.task), { force: true });
-    const claimed = this.tickets().some(
-      (ticket) => ticket.claimedBy === this.options.task,
-    );
-    // A leader's result stays for the tasks it claimed; the last one removes it.
-    if (!claimed) rmSync(this.resultPath(this.options.task), { force: true });
+    rmSync(this.soloPath(this.options.task), { force: true });
+    // Looking prunes what no one needs now: a leader's claim and result stay
+    // while a task it claimed is still queued.
+    this.tickets();
   }
 
   private readResult(leader: string): BatchResult | undefined {
@@ -252,26 +295,16 @@ export class IntegrationQueue {
       const mine = tickets.find((ticket) => ticket.task === me);
       if (mine === undefined) throw new Error("the integration ticket is gone");
       let holder: string | undefined;
-      let claimed = mine.claimedBy;
+      const claimed = mine.claimedBy;
       if (claimed !== undefined) {
         const result = this.readResult(claimed);
         if (result !== undefined) {
           return { kind: "batched", leader: claimed, result };
         }
-        if (tickets.some((ticket) => ticket.task === claimed)) holder = claimed;
-        else {
-          // The leader died before it left a result: the claim is void.
-          const { claimedBy: _gone, ...rest } = mine;
-          writeAtomic(this.ticketPath(me), rest);
-          claimed = undefined;
-        }
+        holder = claimed;
       }
       if (holder === undefined) {
-        const claimedAndLive = (ticket: Ticket): boolean =>
-          ticket.claimedBy !== undefined &&
-          (tickets.some((other) => other.task === ticket.claimedBy) ||
-            this.readResult(ticket.claimedBy) !== undefined);
-        const head = tickets.find((ticket) => !claimedAndLive(ticket));
+        const head = tickets.find((ticket) => ticket.claimedBy === undefined);
         if (head !== undefined && head.task === me) return { kind: "turn" };
         holder = head?.task;
       }
@@ -297,18 +330,28 @@ export class IntegrationQueue {
           ticket.seq > mine.seq && ticket.solo !== true && ticket.claimedBy === undefined,
       )
       .slice(0, limit - 1);
-    for (const ticket of followers) {
-      writeAtomic(this.ticketPath(ticket.task), { ...ticket, claimedBy: me });
+    if (followers.length > 0) {
+      writeAtomic(this.claimPath(me), {
+        leader: me,
+        members: followers.map((ticket) => ticket.task),
+      });
     }
     return followers;
+  }
+
+  /** The claimed tasks that are still queued: a task that left is not merged. */
+  stillQueued(followers: readonly Ticket[]): readonly Ticket[] {
+    const queued = new Set(this.tickets().map((ticket) => ticket.task));
+    return followers.filter((ticket) => queued.has(ticket.task));
   }
 
   /** A batch that could not land: its tasks integrate one by one, never batched again. */
   fallBack(followers: readonly Ticket[]): void {
     for (const ticket of followers) {
-      const { claimedBy: _gone, ...rest } = ticket;
-      writeAtomic(this.ticketPath(ticket.task), { ...rest, solo: true });
+      writeAtomic(this.soloPath(ticket.task), { task: ticket.task });
     }
+    rmSync(this.claimPath(this.options.task), { force: true });
+    rmSync(this.resultPath(this.options.task), { force: true });
   }
 
   /** Leaves what the claimed tasks need to record their merges. */

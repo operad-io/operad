@@ -81,6 +81,8 @@ export const integrateTestHooks: {
   queued?: ((task: string) => void) | undefined;
   /** Awaited once a task has the turn, before it builds anything. */
   turnTaken?: ((task: string) => Promise<void> | void) | undefined;
+  /** Awaited by a batch's leader once it has claimed the tasks queued behind it. */
+  claimed?: ((followers: readonly string[]) => Promise<void> | void) | undefined;
   /** How a task waits for its turn before it looks again. */
   wait?: ((ms: number) => Promise<void>) | undefined;
 } = {};
@@ -546,6 +548,9 @@ export async function runIntegrate(
         flakyReason = flakyNotice;
       }
 
+      // A claimed task that left (cancelled) is not merged: one by one instead.
+      if (queue.stillQueued(followers).length !== followers.length) return undefined;
+
       const pending: IntegrationRecord = {
         result: "pending",
         run: ctx.runId,
@@ -639,6 +644,7 @@ export async function runIntegrate(
 
     const followers = queue.claim(settings.integration.batch);
     if (followers.length > 0) {
+      await integrateTestHooks.claimed?.(followers.map((ticket) => ticket.task));
       const landed = await landBatch(followers);
       if (landed !== undefined) return landed;
       queue.fallBack(followers);
