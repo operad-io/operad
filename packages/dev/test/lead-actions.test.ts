@@ -191,17 +191,24 @@ describe("dev:rework and dev:reverify", () => {
     expect(fixture.answers).toEqual([]);
   });
 
+  const LINES = {
+    running: "T-0001-one is running; dev:%s works once it waits for you",
+    merged: "T-0001-one was merged; nothing can be %s",
+    ready: "T-0001-one is ready; dev:%s works once it has run and waits for you",
+  } as const;
   for (const phase of ["running", "merged", "ready"] as const) {
     test(`both refuse a ${phase} task and change nothing`, async () => {
       const fixture = await setup();
       await patch(fixture, { phase, attempt: GATED });
       const before = await getTask(fixture.store, fixture.task.id);
 
+      const line = (action: string, participle: string) =>
+        LINES[phase].replace("%s", phase === "merged" ? participle : action);
       await expect(run(fixture, "rework", "x")).rejects.toThrow(
-        new RegExp(`is ${phase}, not waiting`),
+        line("rework", "reworked"),
       );
       await expect(run(fixture, "reverify")).rejects.toThrow(
-        new RegExp(`is ${phase}, not waiting`),
+        line("reverify", "reverified"),
       );
       expect(fixture.answers).toEqual([]);
       expect((await getTask(fixture.store, fixture.task.id)).version).toBe(
@@ -270,7 +277,7 @@ describe("dev:rework and dev:reverify", () => {
     await patch(fixture, { attempt: GATED, reworkStreak: 2 });
     const before = taskData((await getTask(fixture.store, fixture.task.id)).data);
 
-    await expect(run(fixture, "rework", "x")).rejects.toThrow(/not waiting/);
+    await expect(run(fixture, "rework", "x")).rejects.toThrow(/T-0001-one is not waiting for an answer now|waiting/);
     const after = taskData((await getTask(fixture.store, fixture.task.id)).data);
     expect(after.brief).toBe(before.brief);
     expect(after.phase).toBe("waiting");

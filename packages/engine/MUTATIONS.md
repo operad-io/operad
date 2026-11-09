@@ -351,3 +351,6 @@ the row fields.
 | T-0080-M8 | packages/engine/src/plugin/action-schema.ts | the `editable` and `confirm` marks were not checked to be booleans | `settings declarations > editable and confirm must be booleans` |
 | T-0123-M1 | packages/engine/src/views/presentation.ts | the row no longer carried the plugin's `after` | `hierarchy over HTTP > /v1/types names the plugin and /v1/objects takes root and parent` |
 | T-0123-M2 | packages/engine/src/views/presentation.ts | `after` entries were not checked, so a non-string or empty id passed | `hierarchy over HTTP > /v1/types names the plugin and /v1/objects takes root and parent` |
+| T-0112-M7 | packages/engine/src/views/presentation.ts | an action whose result is already true still ran its refusal path instead of succeeding with the line | `an action that cannot run > a result that is already true succeeds with the plugin's line and runs nothing` |
+| T-0112-M8 | packages/engine/src/views/presentation.ts | an unknown action said "no loaded plugin declares action" instead of naming the object first | `an action that cannot run > the kernel's own refusals have the same shape: the object first, then what to do` |
+| T-0112-M9 | packages/engine/src/http/server.ts | a refused action left no status in the server log | `http server > acts with a note, refuses without one, and needs confirmed for a confirm action` |

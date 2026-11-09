@@ -1,17 +1,33 @@
 /** The actions the owner runs on a plan or a task. */
 
-import type { ActionTypeDefinition, StoredObject } from "@operad-io/engine";
+import type {
+  ActionEnv,
+  ActionTypeDefinition,
+  ObjectStore,
+  StoredObject,
+} from "@operad-io/engine";
 import {
   appendChange,
   appendRework,
   bareId,
   DevError,
+  DevRefusal,
   planData,
   planState,
   PRIORITIES,
+  storeKey,
   taskData,
+  type PlanData,
   type TaskData,
 } from "./model.ts";
+import {
+  inReviewWait,
+  planLine,
+  taskLine,
+  type Facts,
+  type PlanActionName,
+  type TaskActionName,
+} from "./refusals.ts";
 import {
   cancelPlan,
   cancelTask,
@@ -31,44 +47,83 @@ import {
 
 const AUTO_LEVELS = ["off", "run", "merge"] as const;
 
-/** The line a refused action prints: where the object is and where it must be. */
-function needs(
-  object: StoredObject,
-  current: string,
-  action: string,
-  wanted: string,
-): string {
-  return `${bareId(object.id)} is ${current}; dev:${action} needs ${wanted}`;
+/** The plan of a task, as the lines name it; undefined when it is gone. */
+async function planOfTask(
+  store: ObjectStore,
+  task: TaskData,
+): Promise<Facts["plan"]> {
+  const object = await store.get("plan", storeKey(task.repository, task.plan));
+  if (object === undefined) return undefined;
+  return { id: task.plan, state: planState(planData(object.data)) };
 }
 
-const planStateWhy = (action: string, wanted: string) =>
-  (object: StoredObject): string =>
-    needs(object, planState(planData(object.data)), action, wanted);
-
-const taskPhaseWhy = (action: string, wanted: string) =>
-  (object: StoredObject): string => {
-    const task = taskData(object.data);
-    if (wanted === "waiting" && task.phase === "waiting" && inReviewWait(task)) {
-      return `${bareId(object.id)} is waiting for the review model to come back; dev:${action} works once it needs you`;
-    }
-    return needs(object, task.phase, action, wanted);
-  };
+/** What a task action's line needs to know about the task. */
+async function taskFacts(store: ObjectStore, object: StoredObject): Promise<Facts> {
+  const task = taskData(object.data);
+  const id = bareId(object.id);
+  return task.phase === "proposed"
+    ? { id, plan: await planOfTask(store, task) }
+    : { id };
+}
 
 /**
- * True while a review waits for its model to come back. The flow is not asking
- * a person anything then, so merge, reject, rework and reverify are not offered.
+ * The line a task action refuses with now, or undefined when it can run. A
+ * proposed task is confirmed only inside a confirmed plan.
  */
-function inReviewWait(task: TaskData): boolean {
-  const review = task.attempt?.review;
-  return (
-    typeof task.retryAt === "number" &&
-    review !== undefined &&
-    review !== null &&
-    review.decision === "unavailable" &&
-    review.reason !== "exhausted" &&
-    review.reason !== "out_of_time"
-  );
+export async function taskRefusal(
+  action: TaskActionName,
+  store: ObjectStore,
+  object: StoredObject,
+): Promise<string | undefined> {
+  const task = taskData(object.data);
+  const facts = await taskFacts(store, object);
+  if (action === "confirm" && task.phase === "proposed" && facts.plan?.state === "confirmed") {
+    return undefined;
+  }
+  const said = taskLine(action, task, facts);
+  return said?.kind === "refuse" ? said.text : undefined;
 }
+
+/** The line a plan action refuses with now, or undefined when it can run. */
+export function planRefusal(
+  action: PlanActionName,
+  object: StoredObject,
+): string | undefined {
+  const said = planLine(action, planData(object.data), { id: bareId(object.id) });
+  return said?.kind === "refuse" ? said.text : undefined;
+}
+
+/** Whether a set-a-value action gets the value the plan already has. */
+function sameValue(action: PlanActionName, plan: PlanData, args: unknown): string | number | undefined {
+  const given =
+    typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
+  if (action === "auto" && given.level === plan.auto) return plan.auto;
+  if (action === "priority" && given.level === plan.priority) return plan.priority;
+  if (action === "concurrency" && given.count === plan.concurrency) return plan.concurrency;
+  return undefined;
+}
+
+const taskWhy = (action: TaskActionName) =>
+  (object: StoredObject, env: ActionEnv) => taskRefusal(action, env.store, object);
+
+const planWhy = (action: PlanActionName) =>
+  (object: StoredObject): string | undefined => planRefusal(action, object);
+
+/** The line for a task action whose result is already true. */
+const taskSettled = (action: TaskActionName) =>
+  (object: StoredObject): string | undefined => {
+    const said = taskLine(action, taskData(object.data), { id: bareId(object.id) });
+    return said?.kind === "done" ? said.text : undefined;
+  };
+
+/** The line for a plan action whose result is already true or already set. */
+const planSettled = (action: PlanActionName) =>
+  (object: StoredObject, args: unknown): string | undefined => {
+    const plan = planData(object.data);
+    const value = sameValue(action, plan, args);
+    const said = planLine(action, plan, { id: bareId(object.id), value }, value !== undefined);
+    return said?.kind === "done" ? said.text : undefined;
+  };
 
 /** A task that waits for a person, as opposed to for a review model. */
 function waitsForPerson(state: Parameters<typeof taskData>[0]): boolean {
@@ -93,18 +148,17 @@ function enumArgument<T extends string>(
 }
 
 /**
- * The merge and reject actions answer the task's wait, so they refuse unless the
- * task is in the waiting phase that sends the flow to its person wait.
+ * The merge, reject, rework and reverify actions answer the task's wait, so they
+ * refuse unless the task waits for a person; the line is the table's.
  */
-async function waitingTask(store: Parameters<typeof getTask>[0], id: string) {
+async function waitingTask(
+  store: Parameters<typeof getTask>[0],
+  id: string,
+  action: TaskActionName,
+) {
   const object = await getTask(store, id);
-  const phase = taskData(object.data).phase;
-  if (phase !== "waiting") {
-    throw new DevError(
-      "wait",
-      `task "${bareId(id)}" is ${phase}, not waiting; only a waiting task takes merge or reject`,
-    );
-  }
+  const line = await taskRefusal(action, store, object);
+  if (line !== undefined) throw new DevRefusal(line);
   return object;
 }
 
@@ -137,20 +191,17 @@ async function claimAndAnswer(
     readonly object: { readonly id: string; readonly version?: number | undefined };
     readonly answer?: Answer | undefined;
   },
-  action: string,
+  action: TaskActionName,
   choice: string,
   change: (latest: TaskData) => TaskData,
   note?: string,
 ): Promise<void> {
-  const object = await waitingTask(ctx.store, ctx.object.id);
+  const object = await waitingTask(ctx.store, ctx.object.id, action);
   // Claim at the version the action was offered on, not one read here: an
   // action that starts after a competing one wrote must still lose.
   const seen = ctx.object.version ?? object.version;
   if (ctx.answer === undefined) {
-    throw new DevError(
-      "wait",
-      `task "${bareId(ctx.object.id)}" is not waiting for a run`,
-    );
+    throw new DevRefusal(`${bareId(ctx.object.id)} is not waiting for an answer now`);
   }
   const { claimed, before } = await claimWaitingTask(
     ctx.store,
@@ -174,7 +225,8 @@ const mergeTask: ActionTypeDefinition = {
   when(state) {
     return waitsForPerson(state);
   },
-  why: taskPhaseWhy("merge", "waiting"),
+  why: taskWhy("merge"),
+  settled: taskSettled("merge"),
   async run(ctx) {
     await claimAndAnswer(ctx, "merge", "merge", (latest) => {
       const verified = latest.attempt?.verified;
@@ -205,7 +257,8 @@ const rejectTaskAction: ActionTypeDefinition = {
   when(state) {
     return waitsForPerson(state);
   },
-  why: taskPhaseWhy("reject", "waiting"),
+  why: taskWhy("reject"),
+  settled: taskSettled("reject"),
   async run(ctx, args) {
     const note = noteArgument(args);
     await claimAndAnswer(
@@ -229,7 +282,8 @@ const reworkTaskAction: ActionTypeDefinition = {
   when(state) {
     return waitsForPerson(state);
   },
-  why: taskPhaseWhy("rework", "waiting"),
+  why: taskWhy("rework"),
+  settled: taskSettled("rework"),
   async run(ctx, args) {
     const note = noteArgument(args);
     await claimAndAnswer(
@@ -253,7 +307,8 @@ const reverifyTaskAction: ActionTypeDefinition = {
   when(state) {
     return waitsForPerson(state);
   },
-  why: taskPhaseWhy("reverify", "waiting"),
+  why: taskWhy("reverify"),
+  settled: taskSettled("reverify"),
   async run(ctx) {
     await claimAndAnswer(ctx, "reverify", "reverify", (latest) => {
       if (latest.attempt === undefined) {
@@ -293,7 +348,8 @@ export const actions: readonly ActionTypeDefinition[] = [
     when(state) {
       return planData(state).status === "draft";
     },
-    why: planStateWhy("confirm", "draft"),
+    why: planWhy("confirm"),
+    settled: planSettled("confirm"),
     async run(ctx) {
       await confirmPlan(ctx.store, ctx.object.id);
     },
@@ -301,10 +357,15 @@ export const actions: readonly ActionTypeDefinition[] = [
   {
     name: "confirm",
     on: "task",
-    when(state) {
-      return taskData(state).phase === "proposed";
+    async when(state, env) {
+      const task = taskData(state);
+      if (task.phase !== "proposed") return false;
+      // Only a confirmed plan takes a proposed task into work; a draft plan is
+      // confirmed as a whole.
+      return (await planOfTask(env.store, task))?.state === "confirmed";
     },
-    why: taskPhaseWhy("confirm", "proposed"),
+    why: taskWhy("confirm"),
+    settled: taskSettled("confirm"),
     async run(ctx) {
       await confirmTask(ctx.store, ctx.object.id);
     },
@@ -316,7 +377,8 @@ export const actions: readonly ActionTypeDefinition[] = [
     when(state) {
       return planData(state).status !== "cancelled";
     },
-    why: planStateWhy("cancel", "a plan that is not cancelled"),
+    why: planWhy("cancel"),
+    settled: planSettled("cancel"),
     async run(ctx) {
       await cancelPlan(ctx.store, ctx.object.id, { runs: ctx.runs });
     },
@@ -329,7 +391,8 @@ export const actions: readonly ActionTypeDefinition[] = [
       const phase = taskData(state).phase;
       return phase !== "merged" && phase !== "cancelled";
     },
-    why: taskPhaseWhy("cancel", "a task that is not merged or cancelled"),
+    why: taskWhy("cancel"),
+    settled: taskSettled("cancel"),
     async run(ctx) {
       await cancelTask(ctx.store, ctx.object.id, { runs: ctx.runs });
     },
@@ -352,7 +415,8 @@ export const actions: readonly ActionTypeDefinition[] = [
     when(state) {
       return planData(state).status !== "cancelled";
     },
-    why: planStateWhy("auto", "a plan that is not cancelled"),
+    why: planWhy("auto"),
+    settled: planSettled("auto"),
     async run(ctx, args) {
       const level = enumArgument(args, "level", AUTO_LEVELS);
       await setAuto(ctx.store, ctx.object.id, level);
@@ -380,7 +444,8 @@ export const actions: readonly ActionTypeDefinition[] = [
     when(state) {
       return planData(state).status !== "cancelled";
     },
-    why: planStateWhy("priority", "a plan that is not cancelled"),
+    why: planWhy("priority"),
+    settled: planSettled("priority"),
     async run(ctx, args) {
       const level = enumArgument(args, "level", PRIORITIES);
       await setPriority(ctx.store, ctx.object.id, level);
@@ -411,7 +476,8 @@ export const actions: readonly ActionTypeDefinition[] = [
       const plan = planData(state);
       return plan.status !== "cancelled" && planState(plan) !== "finished";
     },
-    why: planStateWhy("concurrency", "a plan that is neither cancelled nor finished"),
+    why: planWhy("concurrency"),
+    settled: planSettled("concurrency"),
     async run(ctx, args) {
       const count =
         typeof args === "object" && args !== null

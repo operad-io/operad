@@ -207,3 +207,5 @@ the row fields.
 | T-0083-M3 | packages/tui/src/actions.ts | the recent list put the newest entry last | `palette search: recent entries > an empty query lists the last five used first, the latest first, then the group order` |
 | T-0083-M4 | packages/tui/src/actions.ts | equal scores were listed in reverse order | `palette search: query to first entry > equal scores keep the order the entries were listed in` |
 | T-0083-M5 | packages/tui/src/view/index.ts | the matched characters of the name were not drawn in the accent | `palette search: highlight positions > the matched characters are drawn in the accent colour` |
+| T-0112-M10 | packages/tui/src/actions.ts | a status number in front of a refusal was kept | `a refusal line > drops a status number and a field prefix, and keeps the sentence` |
+| T-0112-M11 | packages/tui/src/actions.ts | a `field: ` prefix in front of a refusal was kept | `a refusal line > drops a status number and a field prefix, and keeps the sentence` |

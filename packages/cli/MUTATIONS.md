@@ -68,3 +68,4 @@ the row fields.
 | T-0080-M9 | packages/cli/src/main.ts | `settings set` took the value as a string and never parsed JSON | `operad settings > set parses JSON, falls back to a string, and keeps the rest of the file` |
 | T-0080-M10 | packages/cli/src/main.ts | `settings set` ignored `--yes` | `operad settings > set refuses an invalid value, a read-only setting and a missing confirmation` |
 | T-0080-M11 | packages/cli/src/code-reload.ts | `config.json` was not among the files a serve reloads on, so a changed setting never reached the plugin | `operad settings > a running serve answers GET and POST /v1/settings and sees what the CLI wrote` |
+| T-0112-M12 | packages/cli/src/main.ts | an action not offered because its result is already true printed nothing | `operad with the dev plugin > the real binary registers, plans, lists, shows and confirms` |

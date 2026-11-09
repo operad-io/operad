@@ -143,6 +143,8 @@ export interface TuiShellDeps {
   readonly width: number;
   readonly height: number;
   readonly theme: TuiTheme;
+  /** Where a refusal's status goes: a log, never the screen. */
+  readonly onLog?: ((message: string) => void) | undefined;
   /** A failed request; the page shows it too, and the app goes on. */
   readonly onMessage?: ((message: string) => void) | undefined;
   /**
@@ -776,6 +778,9 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       requestRefresh();
     } catch (error) {
       if (abort.signal.aborted) return;
+      if (error instanceof TuiError && error.status !== undefined) {
+        deps.onLog?.(`action ${request.action} ${request.id}: ${error.status} ${messageOf(error)}`);
+      }
       dispatch({
         type: "action-error",
         message: messageOf(error),

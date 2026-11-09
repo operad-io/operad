@@ -79,12 +79,16 @@ describe("dev actions", () => {
     const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
     await expect(
       registry.runAction("dev/confirm", {}, { object: await getTask(store, task.id), actor: ACTOR }),
-    ).rejects.toThrow(/plan .* is not confirmed/);
+    ).rejects.toMatchObject({
+      // The line itself: no field name in front of it.
+      message:
+        "T-0001-one is in draft plan P-0001-work; confirm the plan first (dev:confirm P-0001-work)",
+    });
     await registry.runAction("dev/confirm", {}, { object: await getPlan(store, plan.id), actor: ACTOR });
     await setTaskPhase(store, task.id, "ready");
     await expect(
       registry.runAction("dev/confirm", {}, { object: await getTask(store, task.id), actor: ACTOR }),
-    ).rejects.toThrow(/already ready/);
+    ).rejects.toThrow("T-0001-one is already ready; nothing to do");
   });
 
   test("pending offers the plan's available actions with the default keys", async () => {
@@ -236,7 +240,7 @@ describe("dev actions", () => {
     expect((await getTask(store, task.id)).version).toBe(before.version);
   });
 
-  test("a refused action names the state and the state it needs", async () => {
+  test("a refused action says where the task is and when it works", async () => {
     const { store, registry, repository } = await setup();
     const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
     const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
@@ -244,12 +248,9 @@ describe("dev actions", () => {
     const why = (name: string, object: Awaited<ReturnType<typeof getTask>>) =>
       registry
         .actionDefinition("dev", name, object.type)
-        ?.why?.(object);
-    expect(why("confirm", await getTask(store, task.id))).toBe(
-      "T-0001-one is ready; dev:confirm needs proposed",
-    );
-    expect(why("merge", await getTask(store, task.id))).toBe(
-      "T-0001-one is ready; dev:merge needs waiting",
+        ?.why?.(object, { store });
+    expect(await why("merge", await getTask(store, task.id))).toBe(
+      "T-0001-one is ready; dev:merge works once it has run and waits for you",
     );
   });
 
@@ -347,14 +348,14 @@ describe("dev actions", () => {
 
     await expect(
       registry.runAction("dev/merge", {}, { object, runId: "run-1", actor: ACTOR }),
-    ).rejects.toThrow(/is running, not waiting/);
+    ).rejects.toThrow("T-0001-one is running; dev:merge works once it waits for you");
     await expect(
       registry.runAction(
         "dev/reject",
         { note: "no" },
         { object, runId: "run-1", actor: ACTOR },
       ),
-    ).rejects.toThrow(/is running, not waiting/);
+    ).rejects.toThrow("T-0001-one is running; dev:reject works once it waits for you");
     expect(answers).toEqual([]);
   });
 
@@ -367,14 +368,14 @@ describe("dev actions", () => {
 
     await expect(
       registry.runAction("dev/merge", {}, { object, actor: ACTOR }),
-    ).rejects.toThrow(/not waiting for a run/);
+    ).rejects.toThrow(/T-0001-one is not waiting for an answer now/);
     await expect(
       registry.runAction(
         "dev/reject",
         { note: "no" },
         { object, actor: ACTOR },
       ),
-    ).rejects.toThrow(/not waiting for a run/);
+    ).rejects.toThrow(/T-0001-one is not waiting for an answer now/);
     await expect(
       registry.runAction("dev/merge", {}, {
         object: { type: "task", id: "T-9999-nope", data: {} },
