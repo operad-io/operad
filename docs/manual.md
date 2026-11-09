@@ -245,7 +245,7 @@ or starts the server like this:
 |---|---|---|---|
 | `--url` | string | `http://<first http.listen address>:<http.port>`, which is `http://127.0.0.1:7480` with no `http` section | An `http` or `https` URL without credentials, a query or a fragment. |
 | `--no-start` | flag | off | Never start `operad serve`, even when none answers. |
-| `--theme` | string | `theme` in `$OPERAD_HOME/tui.json`, else `auto` | `auto`, `light`, `dark` or `terminal`. Beats `tui.json` for this session. |
+| `--theme` | string | `theme` in `$OPERAD_HOME/tui.json`, else `auto` | `auto`, `light`, `dark`, `terminal`, a family or a shipped theme (see Themes), or the name of a theme file of your own. Beats `tui.json` for this session. |
 | `--token` | string | The token in `$OPERAD_HOME/secrets/http.json` | The bearer token of the running `serve`. |
 | `OPERAD_HOME` | environment variable | `~/.operad` | The directory holding `config.json`, `secrets/http.json`, `serve.lock` and the `serve.log` a started `serve` writes. |
 | `http.listen` | array of strings in `config.json` | `["127.0.0.1"]` | IP literals `serve` may listen on; the first one is the default TUI address. |
@@ -270,11 +270,34 @@ An unknown name is an error that lists the names. A `tui.json` that is not a
 JSON object, is not valid JSON, has a key other than `theme`, or names no known
 theme is an error that names the file and the problem; the TUI does not start.
 
+##### Popular themes
+
+operad ships these palettes, each from its project's own repository (the source,
+the licence and every contrast adjustment are in the `comment` of its file in
+`packages/tui/themes/`, and the licence texts are next to the files). To pick
+one, name it in `tui.json` (`{ "theme": "nord" }`) or pass `--theme nord`.
+
+| Family (follows the terminal like `auto`) | Light | Dark |
+|---|---|---|
+| `catppuccin` | `catppuccin-latte` | `catppuccin-mocha` |
+| `solarized` | `solarized-light` | `solarized-dark` |
+| `tokyo-night` | `tokyo-night-day` | `tokyo-night-night` |
+| `one` | `one-light` | `one-dark` |
+| `rose-pine` | `rose-pine-dawn` | `rose-pine-main` |
+| `github` | `github-light` | `github-dark` |
+| `kanagawa` | `kanagawa-lotus` | `kanagawa-wave` |
+
+Name a family and the TUI shows its light member in a light terminal and its dark
+member in a dark one, and switches live like `auto`. Name a member to keep it
+whatever the terminal does. These have no pair and are always the same: `dracula`, `nord`,
+`catppuccin-frappe`, `catppuccin-macchiato` and `kanagawa-dragon` (all dark).
+Gruvbox is not shipped because its repository has no licence file.
+
 ##### Your own themes
 
 `theme` may also name a theme file, `$OPERAD_HOME/themes/<name>.json` (JSON
 Schema: `packages/tui/theme.schema.json`). It names only the tokens it changes;
-`extends` (`light`, `dark`, `terminal` or another theme file; `dark` when
+`extends` (`light`, `dark`, `terminal`, a shipped theme or another theme file; `dark` when
 absent) fills the rest. A colour is `"#rrggbb"` or an ANSI index from 0 to 15:
 
 ```json
@@ -283,7 +306,7 @@ absent) fills the rest. A colour is `"#rrggbb"` or an ANSI index from 0 to 15:
 
 A cycle in `extends`, an unknown token, a bad colour or an unknown key is an
 error naming the file and the key. A file with the name of a built-in theme
-(`auto`, `light`, `dark`, `terminal`) is refused.
+(`auto`, `light`, `dark`, `terminal`, a family or a shipped theme) is refused.
 
 Two examples are in `docs/themes/` and are not installed: `high-contrast.json`
 and `low-saturation.json`. To start from one:

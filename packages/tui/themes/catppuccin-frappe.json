@@ -1,0 +1,18 @@
+{
+  "$schema": "../theme.schema.json",
+  "comment": "Catppuccin Frappe. Source: https://github.com/catppuccin/palette (palette.json, frappe; version 1.8.0). Licence: MIT, Copyright (c) 2021 Catppuccin; the text is in LICENSE-catppuccin. Roles: text = text, weak = subtext0, rule = surface1, accent = mauve, run = blue, ok = green, error = red, add = green, remove = red, tint = surface0, code = mantle, background = base. No colour adjusted.",
+  "colors": {
+    "text": "#c6d0f5",
+    "weak": "#a5adce",
+    "rule": "#51576d",
+    "accent": "#ca9ee6",
+    "run": "#8caaee",
+    "ok": "#a6d189",
+    "error": "#e78284",
+    "add": "#a6d189",
+    "remove": "#e78284",
+    "tint": "#414559",
+    "code": "#292c3c",
+    "background": "#303446"
+  }
+}

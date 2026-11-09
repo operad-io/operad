@@ -1,0 +1,18 @@
+{
+  "$schema": "../theme.schema.json",
+  "comment": "Kanagawa Wave. Source: https://github.com/rebelot/kanagawa.nvim (lua/kanagawa/colors.lua for the palette, lua/kanagawa/themes.lua for the roles). Licence: MIT, Copyright (c) 2021 Tommaso Laurenzi; the text is in LICENSE-kanagawa. Roles: text = fujiWhite, weak = fujiGray, rule = sumiInk5, accent = oniViolet, run = crystalBlue, ok = springGreen, error = waveRed, add = autumnGreen, remove = autumnRed, tint = waveBlue1, code = sumiInk0, background = sumiInk3. No colour adjusted.",
+  "colors": {
+    "text": "#dcd7ba",
+    "weak": "#727169",
+    "rule": "#363646",
+    "accent": "#957fb8",
+    "run": "#7e9cd8",
+    "ok": "#98bb6c",
+    "error": "#e46876",
+    "add": "#76946a",
+    "remove": "#c34043",
+    "tint": "#223249",
+    "code": "#16161d",
+    "background": "#1f1f28"
+  }
+}
