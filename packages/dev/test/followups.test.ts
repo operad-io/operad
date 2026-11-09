@@ -58,14 +58,14 @@ async function setup() {
 }
 
 describe("review follow-ups", () => {
-  test("collects the findings of every round and task, deduplicated, grouped by level", async () => {
+  test("collects the findings of every round and task, deduplicated, grouped by task, duplicates kept once within a task", async () => {
     const s = await setup();
     const a = await s.task(
       "alpha",
       "merged",
       [
         { attempt: 1, round: 1, findings: [note("minor", "a.ts", 3, "naming"), note("major", "b.ts", 9, "old bug")] },
-        { attempt: 1, round: 2, findings: [note("minor", "a.ts", 3, "naming")] },
+        { attempt: 1, round: 2, findings: [note("minor", "a.ts", 3, "naming  ")] },
         { attempt: 2, round: 1, findings: [note("minor", "c.ts", 1, "typo")] },
       ],
       100,
@@ -85,12 +85,14 @@ describe("review follow-ups", () => {
     expect(followup?.id).toMatch(/^T-\d{4}-main-followups$/);
     expect(data?.after).toEqual([a, b]);
     const brief = data?.brief ?? "";
-    expect(brief).toContain(`[major] b.ts:9 old bug (from ${a} round 1)`);
-    expect(brief).toContain(`[minor] a.ts:3 naming (from ${a} round 1)`);
-    expect(brief).toContain(`[minor] c.ts:1 typo (from ${a} round 1)`);
-    expect(brief).toContain(`[minor] d.ts:4 spacing (from ${b} round 1)`);
-    expect(brief.match(/a\.ts:3 naming/g)).toHaveLength(1);
-    expect(brief.indexOf("## major")).toBeLessThan(brief.indexOf("## minor"));
+    expect(brief).toContain(`[major] b.ts:9 old bug (round 1)`);
+    expect(brief).toContain(`[minor] c.ts:1 typo (round 1)`);
+    expect(brief).toContain(`[minor] d.ts:4 spacing (round 1)`);
+    // once within a task, again for the other task
+    expect(brief.match(/a\.ts:3 naming/g)).toHaveLength(2);
+    expect(brief.indexOf(`## From ${a}`)).toBeLessThan(brief.indexOf(`## From ${b}`));
+    expect(brief.indexOf("d.ts:4")).toBeGreaterThan(brief.indexOf(`## From ${b}`));
+    expect(brief.indexOf("c.ts:1")).toBeLessThan(brief.indexOf(`## From ${b}`));
     expect(brief).toContain("Fix what still applies, and say which of them no longer apply.");
   });
 

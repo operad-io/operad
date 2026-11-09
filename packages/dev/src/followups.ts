@@ -30,7 +30,6 @@ export const followupTestHooks: {
 } = {};
 
 const OPEN_PHASES: readonly string[] = ["ready", "running", "review", "waiting"];
-const LEVELS: readonly string[] = ["critical", "major", "minor"];
 const SLUG_MAX = 48;
 const SUFFIX = "-followups";
 
@@ -53,14 +52,18 @@ interface Line {
   readonly round: number;
 }
 
-/** The findings of the tasks, oldest first, each `file:line` and summary once. */
+/**
+ * The findings of the tasks, oldest first. Within one task a finding with the
+ * same file, line and text (whitespace collapsed) is kept once; findings of
+ * different tasks are never merged.
+ */
 function linesOf(tasks: readonly StoredObject[]): Line[] {
-  const seen = new Set<string>();
   const lines: Line[] = [];
   for (const object of tasks) {
+    const seen = new Set<string>();
     for (const round of taskData(object.data).reviewNotes ?? []) {
       for (const note of round.findings) {
-        const key = JSON.stringify([note.file, note.line, note.summary]);
+        const key = JSON.stringify([note.file, note.line, note.summary.replace(/\s+/g, " ").trim()]);
         if (seen.has(key)) continue;
         seen.add(key);
         lines.push({ note, task: bareId(object.id), round: round.round });
@@ -70,23 +73,17 @@ function linesOf(tasks: readonly StoredObject[]): Line[] {
   return lines;
 }
 
-/** The brief of the follow-up: findings grouped by level. */
+/** The brief of the follow-up: findings grouped by task, each with level, place and text. */
 export function followupBrief(planId: string, lines: readonly Line[]): string {
   const out: string[] = [
     `The reviews of ${planId}'s tasks found these, none of which failed a review.`,
     "Fix what still applies, and say which of them no longer apply.",
   ];
-  const levels = [
-    ...LEVELS,
-    ...new Set(lines.map((line) => line.note.severity).filter((s) => !LEVELS.includes(s))),
-  ];
-  for (const level of levels) {
-    const group = lines.filter((line) => line.note.severity === level);
-    if (group.length === 0) continue;
-    out.push("", `## ${level}`, "");
-    for (const { note, task, round } of group) {
+  for (const task of new Set(lines.map((line) => line.task))) {
+    out.push("", `## From ${task}`, "");
+    for (const { note, round } of lines.filter((line) => line.task === task)) {
       const where = note.line === null ? note.file : `${note.file}:${note.line}`;
-      out.push(`- [${level}] ${where} ${note.summary} (from ${task} round ${round})`);
+      out.push(`- [${note.severity}] ${where} ${note.summary} (round ${round})`);
     }
   }
   return out.join("\n");
