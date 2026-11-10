@@ -304,6 +304,30 @@ describe("shell/check", () => {
     expect(readFileSync(String(data.log), "utf8")).not.toContain("never");
   });
 
+  test("names the byte where this call's own output starts", async () => {
+    const { registry } = await fixture();
+    const first = await registry.runStep(
+      "shell/check",
+      { lines: ["echo first"] },
+      { runId: "run-offset" },
+    );
+    const firstData = dataOf(first);
+    expect(firstData.logStart).toBe(0);
+    const before = statSync(String(firstData.log)).size;
+
+    const second = await registry.runStep(
+      "shell/check",
+      { lines: ["echo second", "exit 4"] },
+      { runId: "run-offset" },
+    );
+    expect(second.result).toBe("fail");
+    const secondData = dataOf(second);
+    expect(secondData.logStart).toBe(before);
+    const text = readFileSync(String(secondData.log), "utf8");
+    expect(text.slice(0, Number(secondData.logStart))).not.toContain("second");
+    expect(text.slice(Number(secondData.logStart))).toContain("second");
+  });
+
   test("a line that exceeds the timeout fails and names it", async () => {
     const clock = manualClock();
     const { root, registry } = await fixture(createShellPlugin({ clock }));

@@ -68,6 +68,12 @@ function logOf(outcome: PluginStepResult | undefined): string | undefined {
   return typeof log === "string" ? log : undefined;
 }
 
+/** Where the step's own output began in the shared log; 0 when it does not say. */
+function logStartOf(outcome: PluginStepResult | undefined): number {
+  const start = dataOf(outcome).logStart;
+  return typeof start === "number" ? start : 0;
+}
+
 /** How many bytes the log holds now; a log that cannot be read holds none. */
 function sizeOf(path: string | undefined): number {
   if (path === undefined) return 0;
@@ -249,7 +255,6 @@ export async function runCheckCommands(
     outcome: { result: "pass", data: { lines: 0, tail: [] } },
     hostError: undefined,
   };
-  let logSize = 0;
   const finish = (
     result: Pick<CheckRun, "outcome" | "hostError">,
   ): CheckRun => ({
@@ -291,7 +296,6 @@ export async function runCheckCommands(
       if (group.hostError !== undefined || outcome?.result !== "pass") {
         return finish(last);
       }
-      logSize = sizeOf(logOf(outcome));
       index = end;
       continue;
     }
@@ -305,7 +309,6 @@ export async function runCheckCommands(
     };
     if (first.hostError === undefined && first.outcome?.result === "pass") {
       last = numbered;
-      logSize = sizeOf(logOf(first.outcome));
       index += 1;
       continue;
     }
@@ -317,7 +320,7 @@ export async function runCheckCommands(
       return finish(numbered);
     }
     const log = logOf(first.outcome);
-    const names = failedNames(failed, logSince(log, logSize));
+    const names = failedNames(failed, logSince(log, logStartOf(first.outcome)));
     if (names.length === 0 || names.length > failed.max) return finish(numbered);
 
     reran = true;
@@ -347,7 +350,6 @@ export async function runCheckCommands(
     }
     const note = describePass(passed);
     if (note !== undefined) notes.push(note);
-    logSize = sizeOf(logOf(last.outcome) ?? log);
     index += 1;
   }
   return finish(last);

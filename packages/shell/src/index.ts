@@ -87,6 +87,18 @@ async function writeNote(logger: PluginLogger, note: string): Promise<string> {
   return logger.write(note);
 }
 
+/**
+ * The log's size before this call writes, the byte where its output starts.
+ * A log that is not there yet starts at zero.
+ */
+async function logStart(logger: PluginLogger): Promise<number> {
+  try {
+    return (await stat(logger.path)).size;
+  } catch {
+    return 0;
+  }
+}
+
 function failureData(
   outcome: LineOutcome,
   extra: Readonly<Record<string, unknown>>,
@@ -221,6 +233,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
           }
           const cwd = cwdParam(ctx, input, at);
           const timeout = timeoutParam(input, at);
+          const start = await logStart(ctx.logger);
 
           const cwdProblem = await directoryError(cwd);
           if (cwdProblem !== undefined) {
@@ -232,6 +245,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
                 message: cwdProblem,
                 exitCode: null,
                 log,
+                logStart: start,
                 tail: [cwdProblem],
               },
             };
@@ -239,7 +253,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
 
           if (lines.length === 0) {
             const log = await ctx.logger.write("");
-            return { result: "pass", data: { lines: 0, log, tail: [] } };
+            return { result: "pass", data: { lines: 0, log, logStart: start, tail: [] } };
           }
 
           for (const [index, line] of lines.entries()) {
@@ -254,6 +268,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
                   line,
                   lineNumber: index + 1,
                   log,
+                  logStart: start,
                   tail: [],
                 },
               };
@@ -275,6 +290,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
                   reason: "cancelled",
                   line,
                   lineNumber: index + 1,
+                  logStart: start,
                 }),
               };
             }
@@ -306,6 +322,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
                   message,
                   line,
                   lineNumber: index + 1,
+                  logStart: start,
                 }),
               };
             }
@@ -316,6 +333,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
             data: {
               lines: lines.length,
               log: ctx.logger.path,
+              logStart: start,
               tail: [],
             },
           };

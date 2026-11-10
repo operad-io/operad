@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, watch, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import {
   MemoryPluginStore,
   PluginRegistry,
@@ -18,6 +18,7 @@ import {
   type StepMarker,
 } from "../../src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
+import { waitForFile } from "../wait-for-file.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -92,22 +93,6 @@ async function stepWith(line: string, runId: string, root: string, home: string)
   const store = new MemoryPluginStore({ root: join(root, "store") });
   const registry = new PluginRegistry([leaver(home)], { store, home });
   return registry.runStep("leaver/run", { line }, { runId, cwd: root });
-}
-
-/** Resolves when the file exists; a directory event says so. */
-async function waitForFile(path: string): Promise<void> {
-  if (existsSync(path)) return;
-  await new Promise<void>((resolve) => {
-    const watcher = watch(dirname(path), () => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      resolve();
-    });
-    if (existsSync(path)) {
-      watcher.close();
-      resolve();
-    }
-  });
 }
 
 function marker(runId: string, home: string): StepMarker {

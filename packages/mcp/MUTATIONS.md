@@ -66,4 +66,10 @@ the row fields.
 |---|---|---|---|
 | T-0158-M1 | packages/mcp/src/channel.ts | a pending item marked `auto` was announced as a wait like any other | `a wait the plugin answers itself > is not announced, and its end is`, `the pending view and the plugin's automatic answer > an auto wait sends no block and its merge sends ended; a refused answer is announced` |
 | T-0158-M2 | packages/mcp/src/channel.ts | a skipped wait was not looked at again on a later change, so a withdrawn answer was never announced | `a wait the plugin answers itself > is announced when the automatic answer is withdrawn` |
+
+## T-0177
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0177-M4 | packages/mcp/src/channel.ts | the `announce: false` check removed, so a person's proposed task was announced | `a proposed task > is pending and drawn waiting; one block for what the plugin opened, none for a person's` |
 | T-0175-M3 | packages/mcp/src/server.ts | the instructions kept saying owner decisions are not offered when the owner allowed actions | `operad mcp > instructions follow the configured allow lists` |

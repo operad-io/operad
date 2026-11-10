@@ -501,6 +501,7 @@ async function propose(
         title: titleFor(record.name),
         brief: flakyBrief(repository.path, record),
         area: packageOf(file),
+        openedBy: "dev",
       },
       repository,
     );
