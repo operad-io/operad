@@ -4,12 +4,16 @@ import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import {
+  AccessError,
   MemoryPluginStore,
+  PluginError,
   PluginRegistry,
   Runner,
+  definePlugin,
   openLog,
   readState,
   type PluginStepResult,
+  type StepContext,
   type JsonValue,
   validateUsage,
   type TriggerView,
@@ -20,7 +24,7 @@ import {
   EVENT_NOTE_TEMPLATE,
   type RadianHarnessSettings,
 } from "../src/index.ts";
-import { runAgent as runProcess } from "@operad-io/harness-process";
+import { degradedAskRequest, runAgent as runProcess } from "@operad-io/harness-process";
 import {
   cleanupTempRoots,
   fakeRadian,
@@ -878,5 +882,117 @@ describe("harness-radian/agent step limit", () => {
   test("the setting is declared with the default {}", () => {
     const registry = registryWith({});
     expect(registry.settingsFor("harness-radian").concurrency).toEqual({});
+  });
+});
+
+/**
+ * radian is the degraded harness for questions (`operad-contract.md` decision
+ * 6): no hook sees its tool calls, so it cannot enforce a one-time permission,
+ * and a question it asks is refused once the grace passes instead of waiting
+ * for a late answer. radian itself writes no question today; these tests ask
+ * through a probe step that declares what radian's step declares.
+ */
+describe("harness-radian: a question is reject_once", () => {
+  const radian = createRadianHarnessPlugin().steps.find((step) => step.name === "agent");
+  if (radian === undefined) throw new Error("harness-radian has no agent step");
+
+  type Run = (ctx: StepContext, params: unknown) => Promise<PluginStepResult>;
+
+  function probe(ask: Run) {
+    return definePlugin({
+      name: "probe",
+      kind: "harness",
+      version: "0.0.0",
+      steps: [{ name: "agent", results: radian?.results ?? [], grants: radian?.grants, resumable: radian?.resumable, run: ask }],
+    });
+  }
+
+  async function registryOf(run: Run) {
+    const root = await tempRoot();
+    return new PluginRegistry([probe(run)], {
+      home: root,
+      cwd: root,
+      store: new MemoryPluginStore({ root: join(root, "store") }),
+    });
+  }
+
+  test("radian declares no `waiting` result and no grants: nothing can resume a call", () => {
+    expect(radian.results).toEqual(["done", "failed", "interrupted"]);
+    expect(radian.grants).toBe(false);
+  });
+
+  test("a grace that passes is a refusal: the step goes on with rejected true and never ends waiting", async () => {
+    const asked: unknown[] = [];
+    const registry = await registryOf(async (ctx) => {
+      const answer = await ctx.ask(degradedAskRequest("Run git push?"));
+      return { result: "done", data: { rejected: answer.rejected === true } };
+    });
+    const result = await registry.runStep(
+      "probe/agent",
+      {},
+      {
+        runId: "run-degraded",
+        asker: {
+          ask: (request) => {
+            asked.push(request);
+            return Promise.resolve({ kind: "timeout", waitId: "w", prompt: request.prompt, choices: request.choices ?? [] });
+          },
+          useGrant: () => Promise.resolve(false),
+        },
+      },
+    );
+    expect(result).toEqual({ result: "done", data: { rejected: true } });
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({ onTimeout: "reject_once" });
+    expect(asked[0]).not.toHaveProperty("resume");
+  });
+
+  test("a question that would wait for a late answer is refused: radian has no `waiting` result", async () => {
+    const registry = await registryOf(async (ctx) => {
+      await ctx.ask({ prompt: "Run git push?", choices: ["allow_once", "reject_once"] });
+      return { result: "done" };
+    });
+    let error: unknown;
+    try {
+      await registry.runStep("probe/agent", {}, { runId: "run-waiting", asker: { ask: () => Promise.reject(new Error("nobody is asked")), useGrant: () => Promise.resolve(false) } });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(PluginError);
+    expect(String((error as Error).message)).toContain('onTimeout "waiting"');
+  });
+
+  test("a question that offers a one-time permission is refused before anyone is asked", async () => {
+    const asked: unknown[] = [];
+    const registry = await registryOf(async (ctx) => {
+      await ctx.ask({
+        prompt: "Run git push?",
+        choices: ["allow_once", "reject_once"],
+        onTimeout: "reject_once",
+        resume: { session: "s", grant: { kind: "command", value: "git push", choice: "allow_once" } },
+      });
+      return { result: "done" };
+    });
+    let error: unknown;
+    try {
+      await registry.runStep("probe/agent", {}, { runId: "run-grant-ask", asker: { ask: (request) => { asked.push(request); return Promise.reject(new Error("no")); }, useGrant: () => Promise.resolve(false) } });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(PluginError);
+    expect(String((error as Error).message)).toContain("cannot enforce a one-time permission");
+    expect(asked).toEqual([]);
+  });
+
+  test("a profile with askCommands is refused at start and the field is named", async () => {
+    const env = await setup("done");
+    let error: unknown;
+    try {
+      env.registry.checkAccess("harness-radian:prompt", { askCommands: ["git push"] });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(AccessError);
+    expect(String((error as Error).message)).toContain("askCommands");
   });
 });

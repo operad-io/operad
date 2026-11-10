@@ -5,6 +5,7 @@
  * and the way one line names a tool call differ.
  */
 
+export * from "./ask-call.ts";
 export * from "./ask-note.ts";
 export * from "./event-note.ts";
 export * from "./grants.ts";

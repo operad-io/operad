@@ -112,6 +112,32 @@ switch (mode) {
     process.exit(0);
     break;
   }
+  case "ask": {
+    // What the real program does for a call that must ask a person. A run with
+    // a one-time permission (an answered question came back) first uses it up
+    // for the call it covers, then asks about another call.
+    const access = (input as { access?: { grants?: Array<{ waitId: string }> } }).access;
+    const grant = access?.grants?.at(0);
+    const session = (input as { resumeSession?: string }).resumeSession ?? "11111111-2222-4333-8444-555555555555";
+    if (grant !== undefined) {
+      line({ type: "grant_use", id: 1, waitId: grant.waitId });
+      const used = await stdinLine();
+      if (recordPath !== undefined) writeFileSync(`${recordPath}.grant`, used);
+    }
+    mark();
+    line({ type: "ask_call", id: 7, kind: "command", value: grant === undefined ? "git push origin main" : "git push origin other", shown: "git push", session });
+    process.on("SIGTERM", () => {
+      line(result({ result: "cancelled" }));
+      process.exit(143);
+    });
+    const ack = await stdinLine();
+    if (recordPath !== undefined) writeFileSync(`${recordPath}.ack`, ack);
+    line({ type: "ask_resolved", id: 7 });
+    if ((JSON.parse(ack) as { decision?: string }).decision === "stop") await hang();
+    line(result());
+    process.exit(0);
+    break;
+  }
   case "message": {
     // Waits for a message from the host and records it.
     mark();

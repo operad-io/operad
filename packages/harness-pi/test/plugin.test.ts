@@ -3,7 +3,6 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  AccessError,
   MemoryPluginStore,
   PluginRegistry,
   Runner,
@@ -576,28 +575,17 @@ describe("harness-pi/agent", () => {
     expect(dataOf(result).reason).toBe("missing");
   });
 
-  test("the step declares the deny fields it enforces and a timeout above its wall time", async () => {
+  test("the step declares the deny and ask fields it enforces and a timeout above its wall time", async () => {
     const env = await setup("done");
     const type = env.registry.stepTypes().find((item) => item.name === "harness-pi/agent");
-    expect(type?.enforces).toEqual(["denyPaths", "denyCommands"]);
+    expect(type?.enforces).toEqual(["denyPaths", "denyCommands", "askCommands", "askPaths"]);
     expect(type?.timeoutSecs).toBeGreaterThan(3600);
   });
 
-  test("a profile with askCommands is refused at start and the field is named", async () => {
+  test("a profile with askCommands is accepted: the step enforces it", async () => {
     const env = await setup("done");
-    let error: unknown;
-    try {
-      env.registry.checkAccess("harness-pi:prompt", { askCommands: ["git push"] });
-    } catch (caught) {
-      error = caught;
-    }
-    expect(error).toBeInstanceOf(AccessError);
-    expect(String((error as Error).message)).toContain("askCommands");
     expect(() =>
-      env.registry.checkAccess("harness-pi:prompt", {
-        denyCommands: ["rm"],
-        denyPaths: ["/etc"],
-      }),
+      env.registry.checkAccess("harness-pi:prompt", { askCommands: ["git push"], denyCommands: ["rm"], denyPaths: ["/etc"] }),
     ).not.toThrow();
   });
 });
