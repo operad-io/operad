@@ -36,7 +36,8 @@ this manual prints a secret.
   also be an array of module names.
 - `store`: where the objects and their history live. `backend` is `jsonl` or
   `sqlite`; `path` is a directory for `jsonl` and a file for `sqlite`. A
-  relative path resolves against the home.
+  relative path resolves against the home. Changing `backend` alone starts from
+  an empty store; to keep what you have, see [Moving the store](#moving-the-store).
 - `http`: the interface `operad serve` exposes to clients. It is off unless
   `enabled` is true; no other command opens the port.
 - `ask`: how long `ctx.ask` waits for an answer by default; see
@@ -539,6 +540,19 @@ Every error body is:
 | `422` | The action's plugin refused it; `message` is the plugin's own message. |
 | `504` | A section did not load in time. |
 | `500` | Anything else; the body carries no stack trace. |
+
+## Moving the store
+
+`operad store copy <jsonl|sqlite>` copies the store the config names into a new
+store of the other kind, beside it in the same directory (`log.sqlite` and
+`plugins.sqlite` for `sqlite`; `runs/`, `inputs.jsonl`, `outcomes.jsonl`,
+`plugins/facts.jsonl` and `schema.json` for `jsonl`). It keeps every step, its
+time and cause, every run and what each object held. The current store is not
+changed, and `triggers/`, `logs/` and the plugins' directories stay where they
+are, shared by both. It refuses while `operad serve` or a run is going, and when
+the new store's files exist already (move them away first). `operad store use
+<jsonl|sqlite>` then changes `store` in `config.json` to the copy; changing it
+back is the same command.
 
 ## The History section
 

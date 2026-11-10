@@ -33,6 +33,8 @@ export interface Fact extends NewFact {
 export interface GlobalFact extends NewFact {
   readonly seq: number;
   readonly time: number;
+  /** The key `appendGlobal` was given, when it was given one. */
+  readonly uniqueKey?: string;
 }
 
 export interface RunInfo {
@@ -94,6 +96,11 @@ export interface RunsOptions {
 export interface LogBackendOptions {
   /** The clock every stored time comes from. Defaults to `Date.now`. */
   readonly clock?: () => number;
+  /**
+   * Makes the id of each new run. Defaults to a random UUID. A copy of a log
+   * passes the ids of the runs it copies.
+   */
+  readonly runId?: () => string;
   /**
    * How often an open subscription re-reads storage for another process's
    * write, in milliseconds. Defaults to 500. The watch is the fast path; this

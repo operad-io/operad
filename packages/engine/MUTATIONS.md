@@ -405,3 +405,11 @@ the row fields.
 |---|---|---|---|
 | T-0206-M1 | packages/engine/src/plugin/file-store.ts | read the facts from byte 0 instead of from `this.offset`, so every refresh read the whole file | `the file plugin store > a second reader sees facts another writer appended`; `the file plugin store > refresh reads only past its offset, and a torn multi-byte line waits for its newline` |
 | T-0206-M2 | packages/engine/src/plugin/file-store.ts | treated the bytes after the last newline as complete, so a torn line was consumed before its newline landed | `the file plugin store > refresh reads only past its offset, and a torn multi-byte line waits for its newline` |
+| T-0208-M1 | packages/engine/src/store-copy/copy.ts | skipped the check that the new store's files do not exist | `store copy > it refuses a target that already exists` |
+| T-0208-M2 | packages/engine/src/store-copy/copy.ts | took no home lock, so a running serve did not stop the copy | `store copy > it refuses while serve or a run has the store open, and writes nothing` |
+| T-0208-M3 | packages/engine/src/store-copy/copy.ts | did not look at the run locks | `store copy > it refuses while serve or a run has the store open, and writes nothing` |
+| T-0208-M4 | packages/engine/src/store-copy/copy.ts | wrote every plugin object version as a plain fact, never as an object | `store copy > a store with a finished, a waiting and a failed run answers the same from its copy` |
+| T-0208-M5 | packages/engine/src/store-copy/copy.ts | dropped the unique key of each global fact | `store copy > a store with a finished, a waiting and a failed run answers the same from its copy`; `store copy > jsonl to sqlite to jsonl gives equal facts` |
+| T-0208-M6 | packages/engine/src/store-copy/copy.ts | copied runs newest first, so a waiting run started before the older run of the same flow and object | `store copy > jsonl to sqlite to jsonl gives equal facts` |
+| T-0208-M7 | packages/engine/src/log/sqlite.ts | `startRun` ignored the `runId` option | `log backend: sqlite > the runId option names the runs it starts` |
+| T-0208-M8 | packages/engine/src/log/jsonl.ts | `readGlobal` left out the unique key | `log backend: jsonl > readGlobal returns the unique key a fact was written with` |

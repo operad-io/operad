@@ -442,6 +442,7 @@ function globalFactOf(stored: StoredGlobalFact): GlobalFact {
     payload: stored.payload,
     cause: stored.cause,
     time: stored.time,
+    ...(stored.uniqueKey === undefined ? {} : { uniqueKey: stored.uniqueKey }),
   };
 }
 
@@ -453,6 +454,7 @@ class JsonlLogBackend implements LogBackend {
   readonly #globalFactsPath: string;
   readonly #lockPath: string;
   readonly #clock: () => number;
+  readonly #newRunId: () => string;
   readonly #subscriptionWatch: SubscriptionWatch;
   readonly #inputIds = new Set<string>();
   #inputBytes = 0;
@@ -465,7 +467,12 @@ class JsonlLogBackend implements LogBackend {
   #snapshot: Map<string, { readonly size: number; readonly ended: boolean }> | undefined;
   readonly #listeners = new Set<(change: LogChange) => void>();
 
-  constructor(directory: string, clock: () => number, subscriptionWatch: SubscriptionWatch) {
+  constructor(
+    directory: string,
+    clock: () => number,
+    newRunId: () => string,
+    subscriptionWatch: SubscriptionWatch,
+  ) {
     this.#directory = directory;
     this.#runsDirectory = join(directory, RUNS_DIR);
     this.#inputsPath = join(directory, INPUTS_FILE);
@@ -473,6 +480,7 @@ class JsonlLogBackend implements LogBackend {
     this.#globalFactsPath = join(directory, GLOBAL_FACTS_FILE);
     this.#lockPath = join(directory, LOCK_FILE);
     this.#clock = clock;
+    this.#newRunId = newRunId;
     this.#subscriptionWatch = subscriptionWatch;
   }
 
@@ -491,7 +499,8 @@ class JsonlLogBackend implements LogBackend {
       );
       if (active) throw new ActiveRunError(flow, object, active.runId);
 
-      const runId = randomUUID();
+      const runId = this.#newRunId();
+      assertRunId(runId);
       const startedAt = this.#clock();
       const header: RunHeader = {
         type: "run",
@@ -923,13 +932,7 @@ class JsonlLogBackend implements LogBackend {
             );
           }
           expectedSeq += 1;
-          yield {
-            seq: fact.seq,
-            kind: fact.kind,
-            payload: fact.payload,
-            cause: fact.cause,
-            time: fact.time,
-          };
+          yield globalFactOf(fact);
         }
       }
     } finally {
@@ -1207,6 +1210,7 @@ export function openJsonlLogBackend(
   const backend = new JsonlLogBackend(
     directory,
     options.clock ?? Date.now,
+    options.runId ?? randomUUID,
     resolveSubscriptionWatch(options),
   );
   backend.recover();

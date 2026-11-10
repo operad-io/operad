@@ -471,6 +471,43 @@ export function runLogConformance(factory: LogConformanceFactory): void {
       }
     });
 
+    test("readGlobal returns the unique key a fact was written with", async () => {
+      const directory = tempDirectory("global-unique-read");
+      const backend = await openStore(factory, directory, { clock: fixedClock() });
+      try {
+        const keyed = await backend.appendGlobal(
+          { kind: "seen", payload: {}, cause: "input-one" },
+          "seen:input-one",
+        );
+        await backend.appendGlobal({ kind: "seen", payload: {}, cause: "input-two" });
+        expect(keyed.uniqueKey).toBe("seen:input-one");
+        const read = await collectGlobal(backend.readGlobal());
+        expect(read.map((fact) => fact.uniqueKey)).toEqual(["seen:input-one", undefined]);
+        expect("uniqueKey" in (read[1] ?? {})).toBe(false);
+      } finally {
+        await backend.close();
+        cleanup(directory);
+      }
+    });
+
+    test("the runId option names the runs it starts", async () => {
+      const directory = tempDirectory("run-id-option");
+      const backend = await openStore(factory, directory, {
+        clock: fixedClock(),
+        runId: () => "run-named-by-caller",
+      });
+      try {
+        const run = await backend.startRun("flow", "object");
+        expect(run.runId).toBe("run-named-by-caller");
+        await backend.append(run.runId, 0, [{ kind: "one", payload: {}, cause: 1 }]);
+        expect((await backend.runs()).map((item) => item.runId)).toEqual(["run-named-by-caller"]);
+        await expect(backend.startRun("flow", "other-object")).rejects.toThrow();
+      } finally {
+        await backend.close();
+        cleanup(directory);
+      }
+    });
+
     test("appendGlobal with a uniqueKey writes once and returns the stored fact", async () => {
       const directory = tempDirectory("global-unique");
       const first = await openStore(factory, directory, { clock: fixedClock() });
