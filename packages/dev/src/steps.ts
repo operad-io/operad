@@ -42,7 +42,6 @@ import {
   wrapUpMessage,
   type Progress,
 } from "./progress.ts";
-import { newWordsOf } from "./words.ts";
 import { MAX_WORK_WAITS, STEP_TIMEOUT_SECS } from "./timeouts.ts";
 import {
   assertInsideRepository,
@@ -1266,9 +1265,6 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       ...nextAttempt,
       result,
       workNote: typeof extra.message === "string" ? extra.message : null,
-      workWords: newWordsOf(
-        typeof outcomeData.finalMessage === "string" ? outcomeData.finalMessage : "",
-      ),
       ...(waitsForModel ? {} : { workRetryAt: null }),
       // An attempt that left no note keeps the one before it for later attempts.
       progress: progress ?? progressOf(attempt.previousProgress) ?? null,

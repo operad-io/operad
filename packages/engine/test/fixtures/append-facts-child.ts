@@ -3,28 +3,10 @@
  * test it is ready, waits for the go file, then appends facts as fast as it can.
  */
 
-import { existsSync, watch, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { FilePluginStore } from "../../src/index.ts";
-
-function waitForFile(path: string): Promise<void> {
-  if (existsSync(path)) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const watcher = watch(dirname(path), () => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      resolve();
-    });
-    watcher.on("error", (error) => {
-      watcher.close();
-      reject(error);
-    });
-    if (existsSync(path)) {
-      watcher.close();
-      resolve();
-    }
-  });
-}
+import { waitForFile } from "../wait-for-file.ts";
 
 const root = process.argv[2] ?? "";
 const name = process.argv[3] ?? "a";
