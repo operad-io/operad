@@ -377,7 +377,7 @@ describe("dev scheduling", () => {
     expect((await tick(run)).length).toBe(1);
   });
 
-  test("auto merge does not answer a passed review that names new words", async () => {
+  test("auto merge answers a passed review whose worker answer ends with New words: foo", async () => {
     const words = await setup();
     const plan = await makePlan(words, { slug: "plan", auto: "merge" });
     const task = await makeTask(words, plan.key, "task");
@@ -387,14 +387,12 @@ describe("dev scheduling", () => {
       attempt: {
         number: 1,
         run: "run-1",
-        review: { result: "pass", newWords: ["alpha"] },
+        workNote: "Changed things.\nNew words: foo",
+        review: { result: "pass", words: ["foo"] },
       },
     });
     await tick(words);
-    expect(words.answers).toEqual([]);
-    expect(
-      taskData((await getTask(words.store, task.key)).data).autoMergeAttempt,
-    ).toBeUndefined();
+    expect(words.answers.length).toBe(1);
   });
 
   test("auto merge answers a passed review once and never answers other waits", async () => {

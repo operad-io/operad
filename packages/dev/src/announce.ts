@@ -8,7 +8,6 @@
 import type { PluginStepResult, StepContext } from "@operad-io/engine";
 import { messageOf } from "@operad-io/engine";
 import type { TaskData } from "./model.ts";
-import { wordsReason } from "./words.ts";
 import {
   cancelledStep,
   claimAllows,
@@ -99,8 +98,6 @@ export function waitingReason(
       };
     case "review":
       if (edge.result === "pass") {
-        const words = attempt?.review?.newWords ?? [];
-        if (words.length > 0) return { reason: wordsReason(words) };
         return { reason: "ready to merge" };
       }
       {

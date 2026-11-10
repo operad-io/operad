@@ -221,36 +221,6 @@ describe("dev actions", () => {
     expect(answers).toEqual([["merge", undefined]]);
   });
 
-  test("merge answers a wait for new words: the owner's merge is the approval", async () => {
-    const answers: [string, string | undefined][] = [];
-    const { store, registry, repository } = await setup(undefined, (_runId, choice, note) => {
-      answers.push([choice, note]);
-    });
-    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
-    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
-    await setTaskPhase(store, task.id, "waiting");
-    await verifiedHead(store, task.id);
-    const current = taskData((await getTask(store, task.id)).data);
-    await store.put(
-      "task",
-      task.id,
-      {
-        ...current,
-        attempt: {
-          ...(current.attempt ?? { number: 1, run: "run-1" }),
-          review: { result: "pass", newWords: ["alpha"] },
-        },
-      },
-      "test:words",
-    );
-    await registry.runAction("dev/merge", {}, {
-      object: await getTask(store, task.id),
-      runId: "run-1",
-      actor: ACTOR,
-    });
-    expect(answers).toEqual([["merge", undefined]]);
-  });
-
   test("merge refuses a task whose head was never verified, and says why", async () => {
     const answers: string[] = [];
     const { store, registry, repository } = await setup(undefined, (_runId, choice) => {

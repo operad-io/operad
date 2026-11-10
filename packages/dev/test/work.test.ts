@@ -105,7 +105,7 @@ function fakeHarness(record: string) {
               },
             };
           }
-          if (mode === "commit" || mode === "commit-words" || mode === "commit-standard" || mode === "commit-incomplete" || mode === "commit-broken") {
+          if (mode === "commit" || mode === "commit-standard" || mode === "commit-incomplete" || mode === "commit-broken") {
             writeFileSync(join(input.cwd, "worker.txt"), "done\n");
             gitOrThrow(input.cwd, ["add", "worker.txt"]);
             gitOrThrow(input.cwd, [
@@ -150,9 +150,6 @@ function fakeHarness(record: string) {
             result: "done",
             data: {
               sessionId: "fake-session",
-              ...(mode === "commit-words"
-                ? { finalMessage: "Changed things.\nNew words: reviewer.first.use, `stallSecs`" }
-                : {}),
               cost: { micros: FAKE_COST_MICROS },
               usage: {},
             },
@@ -324,18 +321,6 @@ describe("dev/work", () => {
     const task = await taskDataOf(state);
     expect(task.attempt?.costQuality).toBe("incomplete");
     expect(task.costQuality).toBe("incomplete");
-  });
-
-  test("the New words line of the final answer is kept on the attempt", async () => {
-    const state = await fixture("commit-words");
-    await runWork(state);
-    expect((await taskDataOf(state)).attempt?.workWords).toEqual([
-      "reviewer.first.use",
-      "stallSecs",
-    ]);
-    const none = await fixture("commit");
-    await runWork(none);
-    expect((await taskDataOf(none)).attempt?.workWords).toEqual([]);
   });
 
   test("a usage that is not standard is ignored and logged with the run", async () => {
