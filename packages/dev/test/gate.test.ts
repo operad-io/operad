@@ -2868,6 +2868,38 @@ describe("dev/verify reruns only the failed tests", () => {
     ]);
   });
 
+  test("an earlier attempt's names in the run log do not stop this attempt's rerun", async () => {
+    const root = await tempRoot();
+    const ran = join(root, "ran");
+    const state = await fixture({
+      commands: [
+        object(
+          failing("new suite > one", "new suite > two"),
+          `printf '%s\n' {name} >> '${ran}'`,
+          2,
+        ),
+      ],
+    });
+    // A run's log holds every attempt. More old names than max must not be
+    // mistaken for this command's failures.
+    const earlier = await state.registry.runStep(
+      "shell/check",
+      { lines: [failing("old a", "old b", "old c")] },
+      { runId: "verify-run" },
+    );
+    expect(earlier.result).toBe("fail");
+
+    const result = await verify(state);
+    expect(result.result).toBe("pass");
+    expect(readFileSync(ran, "utf8")).toBe("new suite > one\nnew suite > two\n");
+    expect(result.data?.note).toBe(
+      "passed on rerun: new suite > one; new suite > two",
+    );
+    const text = readFileSync(String(result.data?.log), "utf8");
+    expect(text).toContain("(fail) old a [1.00ms]");
+    expect(text).toContain("===== rerun of failed test: new suite > one =====");
+  });
+
   test("a test that reaches check.flakyTask is proposed in the flaky-tests plan, with no notice", async () => {
     const root = await tempRoot();
     const state = await fixture({

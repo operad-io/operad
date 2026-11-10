@@ -524,3 +524,9 @@ the row fields.
 |---|---|---|---|
 | T-0173-M1 | packages/dev/src/service.ts | the one-time pass left a repository without `activeTasks` uncounted (the `undefined` check replaced by `false`) | `the repo type > a repository stored without a running-task count shows running for a task already running` |
 | T-0175-M2 | packages/dev/src/commands.ts | a task edit with an empty command input opened the editor instead of refusing | `operad mcp > task edit takes the new brief as command input and refuses an empty one` (packages/mcp/test/server.test.ts; the run hangs on the editor and times out) |
+
+## T-0201 — rerun reads only this command's log
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0201-M1 | packages/dev/src/rerun.ts | read the failed names from byte 0 instead of the command's `logStart` | `dev/verify reruns only the failed tests > an earlier attempt's names in the run log do not stop this attempt's rerun` |
