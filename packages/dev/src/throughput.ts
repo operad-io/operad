@@ -12,7 +12,9 @@ import {
   repositoryData,
   taskData,
   type TaskAttempt,
+  type TaskData,
 } from "./model.ts";
+import { classifyStop, STOP_REASONS } from "./stops.ts";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -67,7 +69,7 @@ function pad(value: number): string {
 
 function hourLabel(start: number): string {
   const d = new Date(start);
-  return `${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:00`;
+  return `${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 }
 
 function dayLabel(start: number): string {
@@ -110,6 +112,30 @@ function stopReason(step: string, attempt: TaskAttempt | undefined): string {
   return step === "" ? "stopped" : step.replaceAll("_", " ");
 }
 
+/**
+ * Why a task stopped for a person: the cause dev recorded for a spent retry or
+ * a stopped run when it did, else what the step and its attempt say.
+ */
+function reasonOf(data: TaskData, cause: string): string {
+  const retry = data.retry;
+  if (retry !== undefined && retry !== null && retry.state === "asked" && retry.cause.length > 0) {
+    return retry.cause;
+  }
+  const stop = data.stop;
+  if (stop !== undefined && stop !== null) {
+    if (stop.reason === STOP_REASONS.runEnded) return "run stopped";
+    const verdict = classifyStop({
+      step: stop.step,
+      result: stop.result,
+      reason: stop.reason,
+      use: stop.use,
+    });
+    if (verdict.cause !== undefined) return verdict.cause;
+  }
+  const step = /^dev:(\w+)$/.exec(cause)?.[1] ?? "";
+  return stopReason(step, data.attempt);
+}
+
 /** Reads one merged task's facts; undefined when it did not merge in the window. */
 async function readTask(
   ctx: ViewContext,
@@ -122,6 +148,8 @@ async function readTask(
   let waitFrom: number | undefined;
   let integrateWaitMs = 0;
   const runs: string[] = [];
+  // Each attempt's cost, the latest recorded for it: a rework is paid for too.
+  const attemptCosts = new Map<number, number>();
   const reasons = new Set<string>();
   let cursor: string | undefined;
   for (;;) {
@@ -135,12 +163,14 @@ async function readTask(
       const attempt = data.attempt;
       if (data.phase === "merged" && mergedAt === undefined) mergedAt = fact.at;
       if (data.phase === "waiting" && previous !== "waiting") {
-        const step = /^dev:(\w+)$/.exec(fact.cause)?.[1] ?? "";
-        reasons.add(stopReason(step, attempt));
+        reasons.add(reasonOf(data, fact.cause));
       }
       previous = data.phase;
       if (attempt !== undefined) {
         maxAttempt = Math.max(maxAttempt, attempt.number);
+        if (typeof attempt.cost === "number" && Number.isFinite(attempt.cost)) {
+          attemptCosts.set(attempt.number, attempt.cost);
+        }
         if (typeof attempt.run === "string" && !runs.includes(attempt.run)) runs.push(attempt.run);
         const waiting = typeof attempt.integrationWait === "string" && attempt.integrationWait.length > 0;
         if (waiting && waitFrom === undefined) waitFrom = fact.at;
@@ -154,10 +184,16 @@ async function readTask(
     cursor = page.next;
   }
   if (mergedAt === undefined || mergedAt < since) return undefined;
-  const cost = taskData(object.data).cost;
+  const own = taskData(object.data).cost;
+  const total = [...attemptCosts.values()].reduce((sum, cost) => sum + cost, 0);
   return {
     mergedAt,
-    cost: typeof cost === "number" && Number.isFinite(cost) ? cost : undefined,
+    cost:
+      attemptCosts.size > 0
+        ? total
+        : typeof own === "number" && Number.isFinite(own)
+          ? own
+          : undefined,
     reworks: Math.max(0, maxAttempt - 1),
     runs,
     integrateWaitMs,
@@ -222,8 +258,8 @@ function countTable(
 }
 
 /**
- * The repository's Metrics at `now`. Hours and days are UTC and calendar
- * aligned; the last one is the one `now` is in.
+ * The repository's Metrics at `now`. Hour rows are the 24 hours ending at
+ * `now`; day rows are UTC calendar days, the last one the day `now` is in.
  */
 export async function repositoryMetrics(
   ctx: ViewContext,
@@ -231,7 +267,6 @@ export async function repositoryMetrics(
   now: number = Date.now(),
 ): Promise<string> {
   const name = repositoryData(repository.data).name;
-  const hourStart = Math.floor(now / HOUR) * HOUR;
   const dayStart = Math.floor(now / DAY) * DAY;
   const since = dayStart - 6 * DAY;
   const tasks = (await listAll(ctx.store, "task")).filter((object) => {
@@ -248,9 +283,10 @@ export async function repositoryMetrics(
   }
   if (merged.length === 0) return "_No merged tasks in the last 7 days._";
 
-  const hours = Array.from({ length: 24 }, (_, i) => hourStart - (23 - i) * HOUR);
+  // Rolling hours ending now, so the rows add up to the last 24 hours.
+  const hours = Array.from({ length: 24 }, (_, i) => now - (24 - i) * HOUR);
   const days = Array.from({ length: 7 }, (_, i) => dayStart - (6 - i) * DAY);
-  const lastDay = merged.filter((task) => task.mergedAt >= hourStart - 23 * HOUR);
+  const lastDay = merged.filter((task) => task.mergedAt >= now - 24 * HOUR);
 
   const timed: Record<StepRow, number>[] = [];
   for (let index = 0; index < merged.length; index += BATCH) {

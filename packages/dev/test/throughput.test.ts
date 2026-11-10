@@ -46,6 +46,10 @@ async function world() {
     touchedAt?: number;
     /** A second write of a task that is still waiting, by another step. */
     repeatWaiting?: boolean;
+    /** Each attempt's own cost, as the attempts record it. */
+    attemptCosts?: number[];
+    /** The waiting fact a spent retry or a stopped run writes. */
+    waitingData?: { cause: string; data: Record<string, unknown> };
   }): Promise<void> {
     count += 1;
     const slug = `t${count}`;
@@ -71,6 +75,19 @@ async function world() {
         });
       }
       await put(first + (index + 1) * 1000 + 500, "test:resume", { phase: "running", attempt: { number: 1, run } });
+    }
+    for (const [index, cost] of (options.attemptCosts ?? []).entries()) {
+      await put(first + 100_000 + index, "dev:work", {
+        phase: "running",
+        attempt: { number: index + 1, run, cost },
+      });
+    }
+    if (options.waitingData !== undefined) {
+      await put(first + 200_000, options.waitingData.cause, {
+        phase: "waiting",
+        attempt: { number: 1, run },
+        ...options.waitingData.data,
+      });
     }
     if (options.queuedFrom !== undefined) {
       await put(options.queuedFrom, "dev:integrate", {
@@ -131,21 +148,24 @@ describe("repository metrics", () => {
     await w.merged({ mergedAt: Date.UTC(2026, 10, 9, 13, 5), segments: [seg("work", 0, 50 * MIN)] });
     await w.merged({ mergedAt: Date.UTC(2026, 10, 8, 9, 0), cost: 2, segments: [seg("work", 0, 20 * MIN)] });
     await w.merged({ mergedAt: Date.UTC(2026, 10, 8, 23, 59), cost: 2 });
+    // 14:45 the day before is inside the 24 hours ending 14:30, and in the first hour row.
+    await w.merged({ mergedAt: Date.UTC(2026, 10, 8, 14, 45), cost: 2 });
     // Merged 8 days ago and written again a minute ago: it is not in the window.
     await w.merged({ mergedAt: at(8 * 24), touchedAt: NOW - 60_000, cost: 9 });
     const object = await findRepository(w.store, w.repository.name);
     if (object === undefined) throw new Error("no repository");
     const text = await repositoryMetrics(w.ctx, object, NOW);
     const rows = text.split("\n");
-    expect(text).toContain("**Last 24 hours** 4 merged");
-    expect(rows).toContain("| 11-09 14:00 | 2 | $2.00 |");
-    expect(rows).toContain("| 11-09 13:00 | 1 | - |");
-    expect(rows).toContain("| 11-09 12:00 | 0 | - |");
-    expect(rows).toContain("| 11-08 23:00 | 1 | $2.00 |");
-    expect(rows.filter((row) => /^\| 11-\d\d \d\d:00 \|/.test(row))).toHaveLength(24);
-    expect(text).toContain("**Last 7 days** 5 merged");
+    expect(text).toContain("**Last 24 hours** 5 merged");
+    expect(rows).toContain("| 11-09 13:30 | 2 | $2.00 |");
+    expect(rows).toContain("| 11-09 12:30 | 1 | - |");
+    expect(rows).toContain("| 11-09 11:30 | 0 | - |");
+    expect(rows).toContain("| 11-08 23:30 | 1 | $2.00 |");
+    expect(rows).toContain("| 11-08 14:30 | 1 | $2.00 |");
+    expect(rows.filter((row) => /^\| 11-\d\d \d\d:30 \|/.test(row))).toHaveLength(24);
+    expect(text).toContain("**Last 7 days** 6 merged");
     expect(rows).toContain("| 2026-11-09 | 3 | $2.00 |");
-    expect(rows).toContain("| 2026-11-08 | 2 | $2.00 |");
+    expect(rows).toContain("| 2026-11-08 | 3 | $2.00 |");
     expect(rows).toContain("| 2026-11-03 | 0 | - |");
     expect(rows.filter((row) => /^\| 2026-11-\d\d \|/.test(row))).toHaveLength(7);
     // Work: 10m, 30m, 50m, 20m (the fifth has no run on record). Nearest rank: median 20m, p90 50m.
@@ -157,13 +177,40 @@ describe("repository metrics", () => {
     expect(rows).toContain("| waiting to integrate | 0s | 4m |");
     expect(rows).toContain("| integrate | 0s | 16m |");
     expect(rows).toContain("| rework rounds | 0 | 2 |");
-    expect(text).toContain("_Times are from 4 of 5 tasks; the others have no run on record._");
+    expect(text).toContain("_Times are from 4 of 6 tasks; the others have no run on record._");
     // Two of five stopped for a person; review findings count once per task.
-    expect(text).toContain("**Stopped for a person** 2 of 5 tasks (40%)");
+    expect(text).toContain("**Stopped for a person** 2 of 6 tasks (33%)");
     expect(rows).toContain("| review: findings | 2 |");
     expect(rows).toContain("| conflict | 1 |");
     // A write of a task that is already waiting is not a new stop.
     expect(text).not.toContain("| note |");
+  });
+
+  test("a reworked task costs every attempt, and a stop keeps the reason dev recorded", async () => {
+    const w = await world();
+    await w.merged({ mergedAt: NOW - HOUR, attempts: 2, cost: 2, attemptCosts: [1, 2] });
+    await w.merged({
+      mergedAt: NOW - 2 * HOUR,
+      waitingData: {
+        cause: "dev:retry",
+        data: { retry: { attempt: 1, step: "work", cause: "settings could not be read", at: 0, state: "asked" } },
+      },
+    });
+    await w.merged({
+      mergedAt: NOW - 3 * HOUR,
+      waitingData: {
+        cause: "dev:task-run-stopped",
+        data: { stop: { step: "worktree", result: "interrupted", reason: "run_ended" } },
+      },
+    });
+    const object = await findRepository(w.store, w.repository.name);
+    if (object === undefined) throw new Error("no repository");
+    const rows = (await repositoryMetrics(w.ctx, object, NOW)).split("\n");
+    // The first task paid $1 and then $2; the others recorded no attempt cost and no task cost.
+    expect(rows).toContain("| 11-09 13:30 | 1 | $3.00 |");
+    expect(rows).toContain("| settings could not be read | 1 |");
+    expect(rows).toContain("| run stopped | 1 |");
+    expect(rows.join("\n")).not.toContain("| retry |");
   });
 
   test("a home with 300 merged tasks opens well under the section limit", async () => {

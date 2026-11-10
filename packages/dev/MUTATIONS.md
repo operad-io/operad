@@ -533,3 +533,6 @@ the row fields.
 | T-0176-M2 | packages/dev/src/throughput.ts | the time waiting for a turn was not taken out of the integrate time | `repository metrics > counts per hour and per day, cost per merge, and step times` |
 | T-0176-M3 | packages/dev/src/throughput.ts | a task merged before the window but written again inside it was counted | `repository metrics > counts per hour and per day, cost per merge, and step times` |
 | T-0176-M4 | packages/dev/src/throughput.ts | every write of a waiting task counted as a new stop (the check for an already waiting task removed) | `repository metrics > counts per hour and per day, cost per merge, and step times` |
+| T-0176-M5 | packages/dev/src/throughput.ts | the last-24-hours count began 23 hours back instead of 24 | `repository metrics > counts per hour and per day, cost per merge, and step times` |
+| T-0176-M6 | packages/dev/src/throughput.ts | the cost per merge used the task's last cost and not the sum of its attempts | `repository metrics > a reworked task costs every attempt, and a stop keeps the reason dev recorded` |
+| T-0176-M7 | packages/dev/src/throughput.ts | a spent retry was reported as `retry` instead of its recorded cause | `repository metrics > a reworked task costs every attempt, and a stop keeps the reason dev recorded` |
