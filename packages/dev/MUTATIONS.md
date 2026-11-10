@@ -518,6 +518,13 @@ the row fields.
 | T-0159-M4 | packages/dev/src/schedule.ts | every refill of the last free slot went by turn (the check for a running oldest-plan-slot task removed) | `dev scheduling > once the repository is full, a freed slot goes by priority; only the reserved slot goes by turn` |
 | T-0170-M1 | packages/dev/src/actions.ts | the old action name `hold` was still declared next to `pause` | `dev:pause and dev:resume > dev:hold and dev:release are no longer actions` |
 
+## T-0173 — TUI follow-ups 2
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0173-M1 | packages/dev/src/service.ts | the one-time pass left a repository without `activeTasks` uncounted (the `undefined` check replaced by `false`) | `the repo type > a repository stored without a running-task count shows running for a task already running` |
+| T-0175-M2 | packages/dev/src/commands.ts | a task edit with an empty command input opened the editor instead of refusing | `operad mcp > task edit takes the new brief as command input and refuses an empty one` (packages/mcp/test/server.test.ts; the run hangs on the editor and times out) |
+
 ## T-0177
 
 | id | file | mutation | failing test |
@@ -525,12 +532,6 @@ the row fields.
 | T-0177-M1 | packages/dev/src/standing.ts | only a proposed task with an `openedBy` was a pending item | `a proposed task is pending > a task added by \`task add\` is pending with confirm and cancel, drawn waiting, and leaves on confirm` |
 | T-0177-M2 | packages/dev/src/marks.ts | a confirmed plan never read `waitingCount` (threshold raised to 99) | `a proposed task is pending > a task waiting at a stop also turns the plan row waiting` |
 | T-0177-M3 | packages/dev/src/service.ts | `confirmTask` did not refresh the plan's counts | `a proposed task is pending > a task added by \`task add\` is pending with confirm and cancel, drawn waiting, and leaves on confirm` |
-## T-0173 — TUI follow-ups 2
-
-| id | file | mutation | failing test |
-|---|---|---|---|
-| T-0173-M1 | packages/dev/src/service.ts | the one-time pass left a repository without `activeTasks` uncounted (the `undefined` check replaced by `false`) | `the repo type > a repository stored without a running-task count shows running for a task already running` |
-| T-0175-M2 | packages/dev/src/commands.ts | a task edit with an empty command input opened the editor instead of refusing | `operad mcp > task edit takes the new brief as command input and refuses an empty one` (packages/mcp/test/server.test.ts; the run hangs on the editor and times out) |
 
 ## T-0177 — rework 2
 
