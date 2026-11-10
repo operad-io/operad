@@ -3,14 +3,43 @@
   "name": "operad",
   "concurrency": 3,
   "maxAutoRework": 4,
-  "worker": {
-    "use": "harness-claude/agent",
-    "args": [
-      "--model",
-      "sonnet"
-    ],
-    "stallSecs": 900,
-    "wallTimeSecs": 7200
+  "workers": {
+    "claude": {
+      "use": "harness-claude/agent",
+      "args": [
+        "--model",
+        "sonnet"
+      ],
+      "stallSecs": 900,
+      "wallTimeSecs": 7200
+    },
+    "pi": {
+      "use": "harness-pi/agent",
+      "args": [
+        "--model",
+        "opencode-go/deepseek-v4.1-flash"
+      ],
+      "stallSecs": 900,
+      "wallTimeSecs": 7200
+    },
+    "radian": {
+      "use": "harness-radian/agent",
+      "args": [
+        "--provider",
+        "opencode-go",
+        "--model",
+        "deepseek-v4.1-flash"
+      ],
+      "stallSecs": 900,
+      "wallTimeSecs": 7200
+    }
+  },
+  "pools": {
+    "default": [
+      "claude",
+      "pi",
+      "radian"
+    ]
   },
   "reviewer": {
     "use": "harness-pi/agent",
