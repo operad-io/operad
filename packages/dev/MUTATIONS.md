@@ -523,3 +523,10 @@ the row fields.
 |---|---|---|---|
 | T-0159-M4 | packages/dev/src/schedule.ts | every refill of the last free slot went by turn (the check for a running oldest-plan-slot task removed) | `dev scheduling > once the repository is full, a freed slot goes by priority; only the reserved slot goes by turn` |
 | T-0170-M1 | packages/dev/src/actions.ts | the old action name `hold` was still declared next to `pause` | `dev:pause and dev:resume > dev:hold and dev:release are no longer actions` |
+
+## T-0164 rework 1 — a batch leader killed after the push
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0164-M3 | packages/dev/src/integrate.ts | a task whose merge a dead leader already landed was not looked up on main (`alreadyOnMain` result ignored), so it merged its commit again and reported someone else's sha | `a batch leader killed after the push > the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone` |
+| T-0164-M4 | packages/dev/src/integrate.ts | the leader's replay dropped the "integrated in a batch with" line (`previousBatch.length === 0` replaced by `true`) | `a batch leader killed after the push > the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone` |

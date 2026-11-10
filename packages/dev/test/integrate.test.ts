@@ -696,6 +696,82 @@ describe("dev/integrate rerun after a kill", () => {
   }
 });
 
+describe("a batch leader killed after the push", () => {
+  test("the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone", async () => {
+    const state = await fixture({ more: 2, batch: 3 });
+    const [second, third] = state.others;
+    if (second === undefined || third === undefined) throw new Error("tasks missing");
+    const queued = new Map([
+      [second.taskId, signal()],
+      [third.taskId, signal()],
+    ]);
+    integrateTestHooks.queued = (task) => queued.get(task)?.resolve();
+    const child = Bun.spawn({
+      cmd: [
+        process.execPath,
+        CHILD,
+        state.store.root,
+        state.remote.repository,
+        state.taskKey,
+        "integrate-run",
+        "push",
+        "dev/integrate",
+      ],
+      cwd: state.remote.repository,
+      env: { ...process.env, OPERAD_TEST_HOLD: "1", OPERAD_TEST_HOME: state.root },
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    try {
+      const reader = child.stdout.getReader();
+      expect(new TextDecoder().decode((await reader.read()).value)).toBe("held\n");
+      reader.releaseLock();
+      const b = integrate(second, "integrate-run-2");
+      await queued.get(second.taskId)?.promise;
+      const c = integrate(third, "integrate-run-3");
+      await queued.get(third.taskId)?.promise;
+      child.stdin.write("go\n");
+      await child.stdin.flush();
+      await child.exited;
+      expect(child.signalCode).toBe("SIGKILL");
+      // The leader's push landed all three merges.
+      expect(firstParentSubjects(state)).toHaveLength(4);
+
+      expect((await b).result).toBe("merged");
+      expect((await c).result).toBe("merged");
+      const rerun = await freshRegistry(state).runStep("dev/integrate", {}, {
+        runId: "integrate-run",
+        object: { type: "task", id: state.taskKey, data: {} },
+      });
+      expect(rerun.result).toBe("merged");
+    } finally {
+      integrateTestHooks.queued = undefined;
+      child.kill("SIGKILL");
+    }
+
+    // Main holds each task's merge once and nothing else.
+    const subjects = firstParentSubjects(state);
+    expect(subjects).toHaveLength(4);
+    for (const task of [state, second, third]) {
+      expect(subjects.filter((line) => line.startsWith(`Merge work/${task.taskId} (`))).toHaveLength(1);
+      const data = await taskOf(task);
+      expect(data.phase).toBe("merged");
+      expect(data.brief.split("merged as ").length - 1).toBe(1);
+      // The sha it reports is its own merge commit.
+      const sha = /merged as ([0-9a-f]+)/.exec(data.brief)?.[1] ?? "";
+      expect(gitOrThrow(state.remote.origin, ["log", "-1", "--format=%s", sha])).toStartWith(
+        `Merge work/${task.taskId} (`,
+      );
+    }
+    expect((await taskOf(state)).brief).toContain(
+      `integrated in a batch with ${second.taskId}, ${third.taskId}`,
+    );
+    expect(gitOrThrow(state.remote.repository, ["rev-parse", "HEAD"])).toBe(remoteMain(state));
+    expect(gitOrThrow(state.remote.repository, ["status", "--porcelain"])).toBe("");
+  }, 60_000);
+});
+
 describe("dev/cleanup rerun after a kill", () => {
   for (const nth of [1, 2, 3, 4, 5]) {
     test(`a kill after hook ${nth}, then a rerun, leaves nothing behind`, async () => {

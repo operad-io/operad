@@ -23,6 +23,17 @@ if (
   throw new Error("usage: integrate-child <store> <repository> <task> <run> [point] [step] [n]");
 }
 
+// With OPERAD_TEST_HOLD the child holds its turn after it is taken, says so, and
+// goes on when the parent writes a line: the parent queues other tasks behind it
+// first, so the child merges them in one batch. OPERAD_TEST_HOME names the
+// home the parent's queue lives in.
+if (process.env.OPERAD_TEST_HOLD !== undefined) {
+  integrateTestHooks.turnTaken = async () => {
+    process.stdout.write("held\n");
+    for await (const _line of console) break;
+  };
+}
+
 const die = (): void => {
   process.kill(process.pid, "SIGKILL");
 };
@@ -39,7 +50,7 @@ if (point === "push") {
 
 const store = new FilePluginStore({ root: storeRoot });
 const registry = new PluginRegistry([createDevPlugin(), createShellPlugin()], {
-  home: storeRoot,
+  home: process.env.OPERAD_TEST_HOME ?? storeRoot,
   cwd: repository,
   store,
 });

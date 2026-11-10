@@ -428,11 +428,16 @@ export async function runIntegrate(
         pushed: true,
         style: settings.integration.style,
       };
+      // A batch's leader saved the batch's head and its other tasks with the
+      // candidate: the clone follows the head, and the brief says the batch.
+      const previousBatch = Array.isArray(previous.batch)
+        ? previous.batch.filter((name): name is string => typeof name === "string")
+        : [];
       const clone = followMain(
         context.repository,
         ctx.home,
         settings.mainBranch,
-        previous.candidate,
+        typeof previous.batchHead === "string" ? previous.batchHead : previous.candidate,
       );
       const cloneChange = mainCloneChange(clone);
       const withClone: IntegrationRecord = {
@@ -451,6 +456,9 @@ export async function runIntegrate(
                   ...(typeof previous.checkNote === "string"
                     ? [previous.checkNote]
                     : []),
+                  ...(previousBatch.length === 0
+                    ? []
+                    : [`integrated in a batch with ${previousBatch.join(", ")}`]),
                   `merged as ${shortSha(previous.candidate)}`,
                   ...(cloneChange === undefined ? [] : [cloneChange]),
                 ],
@@ -497,6 +505,27 @@ export async function runIntegrate(
   integrateTestHooks.queued?.(context.taskId);
 
   /** Lands the tasks of a batch with one candidate; undefined means fall back to one by one. */
+  /** This task's merge commit when main already has it, and the main that has it. */
+  const alreadyOnMain = (): { sha: string; main: string } | undefined => {
+    if (!git(repository, ["fetch", "--prune", settings.remote]).ok) return undefined;
+    const main = revParse(repository, mainRef);
+    if (main === undefined || !contains(repository, verified, main)) return undefined;
+    const found = git(repository, [
+      "log",
+      "--first-parent",
+      "--fixed-strings",
+      `--grep=${message}`,
+      "--format=%H%x09%s",
+      main,
+    ]);
+    if (!found.ok) return undefined;
+    for (const line of found.out.split("\n")) {
+      const [sha, subject] = line.split("\t");
+      if (sha !== undefined && subject === message) return { sha, main };
+    }
+    return undefined;
+  };
+
   const landBatch = async (
     followers: readonly Ticket[],
   ): Promise<PluginStepResult | undefined> => {
@@ -573,6 +602,8 @@ export async function runIntegrate(
         head: head ?? null,
         headMoved,
         pushed: false,
+        batchHead,
+        batch: members.filter((member) => member.task !== context.taskId).map((member) => member.task),
         ...(checkNote === undefined ? {} : { checkNote }),
       };
       if ((await writeIntegration(ctx, context, task, attempt, pending, {
@@ -644,6 +675,28 @@ export async function runIntegrate(
     }
     if (turn.kind === "batched") return await recordBatched(turn.result);
     await integrateTestHooks.turnTaken?.(context.taskId);
+
+    // A leader that died after its push left this task's merge on main, and the
+    // task's own record knows nothing of it: find the merge there instead of
+    // merging the same commit again into an empty candidate.
+    const landed = alreadyOnMain();
+    if (landed !== undefined) {
+      return recordMerged(
+        {
+          result: "merged",
+          run: ctx.runId,
+          style: settings.integration.style,
+          verified,
+          candidate: landed.sha,
+          head: head ?? null,
+          headMoved,
+          pushed: true,
+        },
+        landed.sha,
+        { replayed: true },
+        landed.main,
+      );
+    }
 
     // From here the step builds and checks the candidate: the row says integrating.
     if (
