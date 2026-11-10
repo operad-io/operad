@@ -9,6 +9,7 @@ import { join } from "node:path";
 import {
   ActiveRunError,
   StateError,
+  type FlowDefinition,
   type ObjectStore,
   type StoredObject,
   type TickContext,
@@ -43,6 +44,11 @@ import {
 import { collectFollowups } from "./followups.ts";
 import { missingPlugins } from "./standing.ts";
 import {
+  compileDevFlow,
+  DEFAULT_FLOW_NAME,
+  flowNameFor,
+} from "./flow-compiler.ts";
+import {
   DEV_SETTINGS_FILE,
   readDevSettings,
   runningTaskCap,
@@ -66,6 +72,70 @@ function isActive(task: TaskData): boolean {
 
 function planOf(task: TaskData): string {
   return task.plan;
+}
+
+/** The flow a ready task starts when it has no flow recorded yet. */
+interface StartFlow {
+  readonly name: string;
+  readonly graph?: FlowDefinition | undefined;
+}
+
+/** Every flow a repository declares, by name, and the one `default` means. */
+interface RepositoryFlows {
+  readonly named: ReadonlyMap<string, StartFlow>;
+  readonly fallback: StartFlow;
+}
+
+/**
+ * Declares every flow the repository sets. A repository that writes no `flows`
+ * runs the built-in `dev` flow, so its old runs and tests keep their ids.
+ */
+function declareRepositoryFlows(
+  ctx: TickContext,
+  repository: string,
+  settings: DevSettings,
+): RepositoryFlows {
+  const named = new Map<string, StartFlow>();
+  let fallback: StartFlow = { name: DEFAULT_FLOW_NAME };
+  for (const [flowName, spec] of Object.entries(settings.flows)) {
+    const name = flowNameFor(repository, flowName, spec);
+    const start = {
+      name,
+      graph: compileDevFlow(name, spec.stages, { gradingName: flowName }),
+    };
+    ctx.declareFlow(start.graph);
+    named.set(flowName, start);
+    if (flowName === "default") fallback = start;
+  }
+  named.set("default", fallback);
+  return { named, fallback };
+}
+
+/** The repository flow a task starts with, or undefined when it names none. */
+function flowFor(
+  flows: RepositoryFlows,
+  name: string | undefined,
+): StartFlow | undefined {
+  return flows.named.get(name ?? "default");
+}
+
+/** What the scheduler last said about a task whose flow name is unknown. */
+const reportedFlowProblems = new Map<string, string>();
+
+/** Says once per task and name that its flow is not in dev.json. */
+function reportFlowProblem(id: string, name: string | undefined): void {
+  const wanted = name ?? "default";
+  if (reportedFlowProblems.get(id) === wanted) return;
+  reportedFlowProblems.set(id, wanted);
+  writeSchedulerLine(`${bareId(id)} ready -> ready (no flow "${wanted}" in dev.json)`);
+}
+
+/** Re-declares the graph every task started with, so a fresh process resumes it. */
+function declareStoredFlows(ctx: TickContext, tasks: readonly StoredObject[]): void {
+  for (const object of tasks) {
+    const graph = taskData(object.data).flowGraph;
+    if (graph !== undefined) ctx.declareFlow(graph);
+  }
 }
 
 function tasksOf(
@@ -193,12 +263,25 @@ async function startOne(
   object: StoredObject,
   params?: Readonly<Record<string, string>>,
   oldestPlanSlot = false,
+  fallbackFlow: StartFlow = { name: DEFAULT_FLOW_NAME },
 ): Promise<boolean> {
+  const stored = taskData(object.data);
+  const flow =
+    stored.flowName !== undefined
+      ? { name: stored.flowName, graph: stored.flowGraph }
+      : fallbackFlow;
+  // A task that started before the repository's flow changed keeps the graph
+  // it started with; the name is content-addressed, so a new graph gets a new
+  // name and never replaces the running attempt's definition.
+  if (flow?.graph !== undefined) ctx.declareFlow(flow.graph);
   // A start that only parks the task for a person (a cancelled dependency)
   // runs no work, so it is not held by an area.
   const claimed = await claimTaskStart(ctx.store, object.id, {
     checkArea: params?.blockedBy === undefined,
     oldestPlanSlot,
+    ...(flow === undefined
+      ? {}
+      : { flow: { name: flow.name, ...(flow.graph === undefined ? {} : { graph: flow.graph }) } }),
   });
   if (claimed === undefined) return false;
   const token = claimed.claim?.token;
@@ -207,7 +290,7 @@ async function startOne(
       ? params
       : { ...(params ?? {}), token };
   await ctx.start({
-    flow: "dev",
+    flow: flow?.name ?? DEFAULT_FLOW_NAME,
     object: { type: "task", id: object.id },
     ...(startParams === undefined ? {} : { params: startParams }),
   });
@@ -282,6 +365,7 @@ async function reconcileTaskRuns(
   repository: string,
   tasks: readonly StoredObject[],
   canStartWork: boolean,
+  flows: RepositoryFlows,
 ): Promise<void> {
   const runs = ctx.runLookup;
   if (runs === undefined) return;
@@ -306,9 +390,19 @@ async function reconcileTaskRuns(
     // runs through, the task waits where it is.
     if (!canStartWork) continue;
     const step = task.run === null ? null : await runs.lastStep(task.run);
+    const plan = await ctx.store.get("plan", storeKey(task.repository, task.plan));
+    const requested = task.flow ?? (plan === undefined ? undefined : planData(plan.data).flow);
+    const selected =
+      task.flowName !== undefined
+        ? { name: task.flowName, graph: task.flowGraph }
+        : flowFor(flows, requested);
+    if (selected === undefined) {
+      reportFlowProblem(object.id, requested);
+      continue;
+    }
     if ((await reopenTask(ctx.store, object.id)) === undefined) continue;
     try {
-      if (await startOne(ctx, object, { runStoppedAt: step ?? "the run" })) {
+      if (await startOne(ctx, object, { runStoppedAt: step ?? "the run" }, false, selected)) {
         writeSchedulerLine(
           `${bareId(object.id)} ${task.phase} -> waiting (run stopped during ${step ?? "the run"})`,
         );
@@ -366,9 +460,15 @@ async function scheduleRepository(
   // stays ready instead of failing.
   const canStartWork = missingPlugins(ctx.loaded).length === 0;
 
+  // Compile every repository flow once; a start records its graph on the task,
+  // and a graph recorded there is declared again below so a fresh process
+  // resumes a running attempt on the graph it started with.
+  const flows = declareRepositoryFlows(ctx, repository.name, settings);
+  declareStoredFlows(ctx, initialTasks);
+
   // Repair a run that ended without an edge, or one whose phase was left
   // behind, before the scheduler reads phases and starts anything else.
-  await reconcileTaskRuns(ctx, repository.name, initialTasks, canStartWork);
+  await reconcileTaskRuns(ctx, repository.name, initialTasks, canStartWork, flows);
 
   // A claim is not durable until the kernel records the run. A task left
   // running with no run is a start that never landed (a crash or a kernel
@@ -402,6 +502,7 @@ async function scheduleRepository(
   const tasksById = new Map(
     allCurrent.map((object) => [object.id, taskData(object.data)]),
   );
+  declareStoredFlows(ctx, current);
 
   await reportIntegrationResults(ctx.store, current);
   await reportFinishedPlans(ctx.store, plans, current);
@@ -480,6 +581,7 @@ async function scheduleRepository(
    */
   const startReady = async (
     inScope: (task: TaskData, plan: PlanData) => boolean,
+    flows: RepositoryFlows,
   ): Promise<void> => {
     const scoped = (planObject: StoredObject): readonly StoredObject[] => {
       const plan = planData(planObject.data);
@@ -493,14 +595,21 @@ async function scheduleRepository(
     };
     // A cancelled dependency parks the task for a person; it takes no slot.
     for (const planObject of plans) {
+      const plan = planData(planObject.data);
       for (const object of scoped(planObject)) {
         const task = taskData(object.data);
         const dependencies = dependencyState(task, tasksById);
         if (dependencies.cancelled === undefined || started.has(object.id)) {
           continue;
         }
+        const requested = task.flow ?? plan.flow;
+        const selected = flowFor(flows, requested);
+        if (selected === undefined) {
+          reportFlowProblem(object.id, requested);
+          continue;
+        }
         if (
-          await startOne(ctx, object, { blockedBy: dependencies.cancelled })
+          await startOne(ctx, object, { blockedBy: dependencies.cancelled }, false, selected)
         ) {
           writeSchedulerLine(`${bareId(object.id)} ready -> waiting`);
           started.add(object.id);
@@ -531,7 +640,14 @@ async function scheduleRepository(
         );
         if (pick === undefined) continue;
         progress = true;
-        if (!(await startOne(ctx, pick, undefined, useOldestPlan))) {
+        const requested = taskData(pick.data).flow ?? plan.flow;
+        const selected = flowFor(flows, requested);
+        if (selected === undefined) {
+          reportFlowProblem(pick.id, requested);
+          failed.add(pick.id);
+          continue;
+        }
+        if (!(await startOne(ctx, pick, undefined, useOldestPlan, selected))) {
           failed.add(pick.id);
           break;
         }
@@ -581,9 +697,10 @@ async function scheduleRepository(
 
   // The owner's manual start is exempt from the auto level, not from the
   // dependencies or the limits that keep two runs off one repository.
-  await startReady((task) => task.startRequested === true);
+  await startReady((task) => task.startRequested === true, flows);
   await startReady(
     (task, plan) => plan.auto !== "off" && task.startRequested !== true,
+    flows,
   );
 
   // The queue of each area: ready tasks in the order the scheduler considers

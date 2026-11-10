@@ -544,6 +544,12 @@ the row fields.
 |---|---|---|---|
 | T-0194-M1 | packages/dev/src/schedule.ts | the dependency lookup was limited to the repository's own tasks | `--after across plans and repositories > a task of another repository blocks until it merges and the note names the repository` |
 | T-0194-M2 | packages/dev/src/service.ts | the cycle walk ignored the tasks of other repositories | `--after across plans and repositories > a task cannot follow itself or close a cycle; an unknown task is refused` |
+## T-0060 — the dev flow compiler
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0060-M1 | packages/dev/src/flow-compiler.ts | a failed stage returned to the first work entry instead of the nearest work stage before it | `a failed review returns to the nearest work stage before it` |
+| T-0060-M2 | packages/dev/src/settings.ts | removed the rule that a flow's last stage is human | `both hard rules refuse the flow by name` |
 ## T-0201 — rerun reads only this command's log
 
 | id | file | mutation | failing test |
@@ -572,3 +578,17 @@ the row fields.
 | T-0206-M4 | packages/dev/src/views.ts | started the worker-log tail at the end of the file, so the log section was empty | `dev views > the log section is the tail of the current attempt's worker log` |
 | T-0194-M3 | packages/dev/src/service.ts | a cross-repository `--after` change took only its own repository's lock | `--after validation under races and removed repositories > two cross-repository updates at once cannot close a cycle` (a race; it failed in 3 of 3 runs) |
 | T-0194-M4 | packages/dev/src/service.ts | a dependency's repository was no longer required to be registered | `--after validation under races and removed repositories > a task of a removed repository cannot be named` |
+
+## T-0060 — rework 3: named flows, beforeAttempt, the human rule
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0060-M4 | packages/dev/src/schedule.ts | every task started the repository's `default` flow, ignoring its plan's `flow` | `a plan's flow selects a named repository flow` |
+| T-0060-M5 | packages/dev/src/steps.ts | `beforeAttempt: "merge-main"` did nothing before the worker ran | `dev/work > beforeAttempt merge-main merges the latest main; none leaves it alone` |
+| T-0060-M6 | packages/dev/src/settings.ts | required a flow's last user stage to be human again | `a flow with no human stage is valid and ends at integrate` |
+
+## T-0060 — rework 6: a non-final human stage is valid
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0060-M7 | packages/dev/src/settings.ts | restored the removed rule that a flow's last user stage must be human, so a non-final human stage was refused | `[human, check] loads and compiles human -> check -> integrate` |

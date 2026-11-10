@@ -12,7 +12,7 @@ import {
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { ViewError } from "@operad-io/engine";
-import type { ObjectStore, StoredObject } from "@operad-io/engine";
+import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
 import { withRepositoryLock } from "./lock.ts";
 import {
   appendChange,
@@ -819,6 +819,8 @@ export interface AddPlanOptions {
   readonly concurrency?: number | undefined;
   /** The auto level the plan starts at; `off` when unset. */
   readonly auto?: AutoMode | undefined;
+  /** The flow the plan's tasks start with; unset means `default`. */
+  readonly flow?: string | undefined;
 }
 
 /** The fixed range of a plan's concurrency. */
@@ -838,6 +840,13 @@ export function validatePlanConcurrency(value: unknown): number {
     );
   }
   return value;
+}
+
+function validateFlowSelection(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const name = value.trim();
+  if (name.length === 0) throw new DevError("flow", "must be a non-empty name");
+  return name;
 }
 
 export async function addPlan(
@@ -863,6 +872,7 @@ export async function addPlan(
       taskCount: 0,
       mergedCount: 0,
       cancelledCount: 0,
+      ...(options.flow === undefined ? {} : { flow: validateFlowSelection(options.flow) }),
     };
     return writePlan(store, storeKey(repository.name, id), data, "dev:plan-add");
   });
@@ -969,6 +979,8 @@ export interface AddTaskOptions {
   readonly followupOf?: readonly string[] | undefined;
   /** Set by the code in dev that proposes tasks on its own. */
   readonly openedBy?: "dev" | undefined;
+  /** The flow this task starts with; unset inherits the plan's flow. */
+  readonly flow?: string | undefined;
 }
 
 export async function addTask(
@@ -1036,6 +1048,7 @@ export async function addTaskLocked(
     ...(area === undefined ? {} : { area }),
     ...(options.followupOf === undefined ? {} : { followupOf: options.followupOf }),
     ...(options.openedBy === undefined ? {} : { openedBy: options.openedBy }),
+    ...(options.flow === undefined ? {} : { flow: validateFlowSelection(options.flow) }),
     phase: "proposed",
     attempts: 0,
     run: null,
@@ -1088,6 +1101,8 @@ export interface UpdateTaskOptions {
   readonly after?: readonly string[] | undefined;
   /** A new area; the empty string clears it. */
   readonly area?: string | undefined;
+  /** The flow before the task's first attempt. */
+  readonly flow?: string | undefined;
 }
 
 /**
@@ -1116,17 +1131,20 @@ export async function updateTask(
   if (
     options.title === undefined &&
     options.after === undefined &&
-    options.area === undefined
+    options.area === undefined &&
+    options.flow === undefined
   ) {
     throw new DevError(
       "update",
-      "nothing to change; pass --title, --after or --area",
+      "nothing to change; pass --title, --after, --area or --flow",
     );
   }
   const title =
     options.title === undefined ? undefined : validateTitle(options.title);
   const area =
     options.area === undefined ? undefined : validateArea(options.area);
+  const flow =
+    options.flow === undefined ? undefined : validateFlowSelection(options.flow);
   const initial = await getTask(store, id);
   const initialData = taskData(initial.data);
   const releasable = (data: TaskData, tasks: readonly StoredObject[]) =>
@@ -1166,6 +1184,9 @@ export async function updateTask(
     if (areaChanged) {
       lines.push(area === undefined ? "area: none" : `area: ${area}`);
     }
+    if (flow !== undefined && flow !== data.flow) {
+      lines.push(`flow: ${flow}`);
+    }
     let brief = data.brief;
     for (const line of lines) brief = appendChange(brief, line);
     // A new area drops the old hold; the next tick decides it again.
@@ -1188,6 +1209,7 @@ export async function updateTask(
       ...(releases ? { phase: "ready" as const, run: null, claim: null } : {}),
       brief: releases ? appendChange(brief, "ready") : brief,
       ...(nextArea === undefined ? {} : { area: nextArea }),
+      ...(flow === undefined ? {} : { flow }),
       ...(nextHeld === undefined ? {} : { areaHeldBy: nextHeld }),
       ...(nextHeld === undefined || data.areaAhead === undefined
         ? {}
@@ -1249,6 +1271,8 @@ export async function claimTaskStart(
   options: {
     readonly checkArea?: boolean | undefined;
     readonly oldestPlanSlot?: boolean | undefined;
+    /** The flow this start runs; its graph is kept on the task for recovery. */
+    readonly flow?: { readonly name: string; readonly graph?: FlowDefinition | undefined } | undefined;
   } = {},
 ): Promise<TaskData | undefined> {
   const initial = await getTask(store, id);
@@ -1275,6 +1299,12 @@ export async function claimTaskStart(
     const next: TaskData = {
       ...rest,
       ...(options.oldestPlanSlot === true ? { oldestPlanSlot: true } : {}),
+      ...(options.flow === undefined
+        ? {}
+        : {
+            flowName: options.flow.name,
+            ...(options.flow.graph === undefined ? {} : { flowGraph: options.flow.graph }),
+          }),
       phase: "running",
       run: null,
       brief: appendChange(latest.brief, "running"),
