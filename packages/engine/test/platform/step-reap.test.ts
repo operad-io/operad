@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, watch, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
   MemoryPluginStore,
   PluginRegistry,
@@ -12,6 +12,7 @@ import {
   markerEnv,
   parseEnvColumn,
   StepTracker,
+  waitForChange,
   type ProcessRow,
   reapStale,
   runLine,
@@ -94,20 +95,11 @@ async function stepWith(line: string, runId: string, root: string, home: string)
   return registry.runStep("leaver/run", { line }, { runId, cwd: root });
 }
 
-/** Resolves when the file exists; a directory event says so. */
+/** Resolves when the file exists: a directory watch, re-checked on a timer (a watch can miss an event under load). */
 async function waitForFile(path: string): Promise<void> {
-  if (existsSync(path)) return;
-  await new Promise<void>((resolve) => {
-    const watcher = watch(dirname(path), () => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      resolve();
-    });
-    if (existsSync(path)) {
-      watcher.close();
-      resolve();
-    }
-  });
+  while (!existsSync(path)) {
+    await waitForChange(dirname(path), basename(path), 200);
+  }
 }
 
 function marker(runId: string, home: string): StepMarker {
