@@ -134,6 +134,7 @@ export class ConfigError extends Error {
 export const DEFAULT_PLUGINS: readonly string[] = [
   "shell",
   "harness-radian",
+  "chat",
   "dev",
 ];
 

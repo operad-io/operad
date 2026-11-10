@@ -304,6 +304,23 @@ async function openContext(
         io.write("recorded; it runs when `operad serve` is running\n");
       }
     },
+    onEvent: async (event) => {
+      if (loaded === undefined) return;
+      const rules = await loadTriggerRules({
+        home,
+        registry: loaded,
+        onLog: (message) => io.error(`${message}\n`),
+      });
+      const kernel = new Kernel({
+        log,
+        registry: loaded,
+        home,
+        storeRoot,
+        rules,
+        onLog: (message) => io.error(`${message}\n`),
+      });
+      await kernel.receive(event);
+    },
     onCancelRun: async (runId) => {
       const runs = await log.runs();
       const run = runs.find((candidate) => candidate.runId === runId);

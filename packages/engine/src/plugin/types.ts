@@ -723,8 +723,23 @@ export interface ActionTypeDefinition {
   readonly run: (ctx: ActionContext, args: unknown) => MaybePromise<unknown>;
 }
 
+/** An event an action sends: the person's client is the source. */
+export interface ActionEvent {
+  /** Where it came from, such as `ios`; never `operad`. */
+  readonly source: string;
+  readonly type: string;
+  /** Makes a repeat of the same event a no-op. */
+  readonly key: string;
+  /** The object it is about, as `<type>:<id>`. */
+  readonly object?: string | undefined;
+  readonly summary?: string | undefined;
+  readonly data?: JsonValue | undefined;
+}
+
 /** The context an action receives. `runId` is set when it answers a person wait. */
 export interface ActionContext extends PluginBaseContext {
+  /** Sends an event through the kernel's rules; set when the host can route events. */
+  readonly emit?: ((event: ActionEvent) => Promise<void>) | undefined;
   readonly runId: string | undefined;
   readonly object: RunObject;
   /** Who asked for the action: a person through a client. */
