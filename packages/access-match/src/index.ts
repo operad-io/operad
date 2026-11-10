@@ -19,6 +19,14 @@ export interface AccessGrant {
 export interface AccessProfile {
   readonly denyPaths?: readonly string[] | undefined;
   readonly denyCommands?: readonly string[] | undefined;
+  /** Command rules in the shape of `denyCommands`; a match asks a person instead of refusing. */
+  readonly askCommands?: readonly string[] | undefined;
+  /**
+   * Paths a write asks about (`~/.zshrc`, `~/.*profile`): `*` matches within one
+   * path segment, and a path under a match counts. Judged for the `write` and
+   * `edit` tools, and for a `bash` redirect (`>`, `>>`) to such a path.
+   */
+  readonly askPaths?: readonly string[] | undefined;
   /** Permissions not yet used; the caller uses one up before it lets a call through. */
   readonly grants?: readonly AccessGrant[] | undefined;
 }
@@ -29,7 +37,37 @@ export interface ToolCall {
   readonly cwd: string;
 }
 
-export type Verdict = { readonly allow: true } | { readonly allow: false; readonly reason: string; /** The profile rule that refused, as the profile wrote it; never part of the call. */ readonly rule?: string };
+/**
+ * What the profile says about one call. The precedence is fixed: a deny wins
+ * over an ask, and an ask wins over an allow. So a call that matches
+ * `denyCommands` or `denyPaths` anywhere is refused whatever `askCommands` or
+ * `askPaths` say; a call that matches only those asks; every other call is
+ * allowed. A caller that does not know `ask` reads it as a refusal
+ * (`allow: false`), never as a pass.
+ */
+export type Verdict =
+  | { readonly allow: true; readonly ask?: undefined }
+  | {
+      readonly allow: false;
+      readonly ask?: undefined;
+      readonly reason: string;
+      /** The profile rule that refused, as the profile wrote it; never part of the call. */
+      readonly rule?: string;
+    }
+  | {
+      readonly allow: false;
+      readonly ask: true;
+      readonly reason: string;
+      /** The `askCommands` or `askPaths` rule that matched, or `inline code` when the command hides what it runs. */
+      readonly rule: string;
+      /**
+       * What a person is asked about: the whole command of a `bash` call, or the
+       * path as the call wrote it with the `tool` that writes it.
+       */
+      readonly kind: "command" | "path";
+      readonly value: string;
+      readonly tool?: string;
+    };
 
 export interface MatchOptions {
   /** What `~` means; defaults to the user's home directory. */
@@ -45,8 +83,8 @@ export function readProfile(value: unknown): ProfileRead {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return { ok: false, message: "the access profile must be an object" };
   }
-  const found: { denyPaths?: string[]; denyCommands?: string[]; grants?: AccessGrant[] } = {};
-  for (const field of ["denyPaths", "denyCommands"] as const) {
+  const found: { denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; grants?: AccessGrant[] } = {};
+  for (const field of ["denyPaths", "denyCommands", "askCommands", "askPaths"] as const) {
     const entry: unknown = Reflect.get(value, field);
     if (entry === undefined) continue;
     if (!Array.isArray(entry) || !entry.every((item): item is string => typeof item === "string")) {
@@ -169,7 +207,81 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
   return ALLOW;
 }
 
-/** Whether one tool call may run under the profile. Pure and lexical. */
+interface AskedPaths {
+  readonly entries: ReadonlyArray<{ readonly written: string; readonly pattern: RegExp }>;
+}
+
+/** The `askPaths` entries as patterns over normalised paths; `*` stays within a segment. */
+function askedPaths(profile: AccessProfile, cwd: string, home: string): AskedPaths | undefined {
+  const entries = (profile.askPaths ?? [])
+    .filter((written) => written.length > 0)
+    .map((written) => {
+      const source = normalise(written, cwd, home)
+        .split("*")
+        .map((piece) => piece.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+        .join("[^/]*");
+      return { written, pattern: new RegExp(`^${source}(?:/.*)?$`) };
+    });
+  return entries.length > 0 ? { entries } : undefined;
+}
+
+function askedRule(asked: AskedPaths, normal: string): string | undefined {
+  return asked.entries.find((entry) => entry.pattern.test(normal))?.written;
+}
+
+/** The path a word or the word after it redirects output to, if it does. */
+function redirectTarget(word: string, next: string | undefined): string | undefined {
+  const match = /^(?:\d*|&)>>?(.*)$/.exec(word);
+  if (match === null) return undefined;
+  const glued = match[1] ?? "";
+  const target = glued.length > 0 ? glued : next;
+  return target !== undefined && target.length > 0 && !target.startsWith("&") ? target : undefined;
+}
+
+/**
+ * The ask verdict of a command, when no deny applied. A command that hides what
+ * it runs (inline code) cannot be matched, so it asks while `askCommands` is
+ * set (`operad-sandbox.md` decision 4).
+ */
+function askBash(profile: AccessProfile, command: string, asked: AskedPaths | undefined, cwd: string, home: string): Verdict {
+  const texts = profile.askCommands ?? [];
+  let found: { readonly target: string; readonly rule: string } | undefined;
+  if (texts.length === 0 && asked === undefined) return ALLOW;
+  const rules = texts.map((text) => parseRule(text)).filter((rule): rule is Rule => rule !== undefined);
+  const { parts, substitution } = scan(command);
+  const ask = (reason: string, rule: string): Verdict => ({ allow: false, ask: true, reason, rule, kind: "command", value: command });
+  if (asked !== undefined) {
+    // Only a redirect writes by itself: a word after `>` or `>>`, or glued to it.
+    for (const part of parts) {
+      part.words.forEach((word, index) => {
+        const target = redirectTarget(word, part.words.at(index + 1));
+        if (target === undefined) return;
+        const hit = askedRule(asked, normalise(target, cwd, home));
+        if (hit !== undefined && found === undefined) found = { target, rule: hit };
+      });
+    }
+    if (found !== undefined) return ask(`command "${command}" writes "${found.target}", which is under askPaths entry "${found.rule}"`, found.rule);
+  }
+  if (texts.length === 0) return ALLOW;
+  if (substitution !== undefined) {
+    return ask(`command "${command}" runs inline code (${substitution}); it asks while askCommands is set`, "inline code");
+  }
+  for (const part of parts) {
+    const form = inlineFormOf(part);
+    if (form !== undefined) {
+      return ask(`part "${part.text}" runs inline code (${form}); it asks while askCommands is set`, "inline code");
+    }
+  }
+  const hit = findDenied(rules, parts);
+  if (hit !== undefined) return ask(`part "${hit.text}" matches askCommands rule "${hit.rule}"`, hit.rule);
+  return ALLOW;
+}
+
+/**
+ * Whether one tool call may run under the profile. Pure and lexical. Deny wins
+ * over ask and ask over allow: the deny rules and paths are checked first, and
+ * `askCommands` only when nothing denied the call.
+ */
 export function match(profile: AccessProfile, call: ToolCall, options: MatchOptions = {}): Verdict {
   const home = options.home ?? homedir();
   const entries = (profile.denyPaths ?? [])
@@ -179,11 +291,24 @@ export function match(profile: AccessProfile, call: ToolCall, options: MatchOpti
 
   if (call.tool === "bash") {
     const command: unknown = call.input["command"];
-    return typeof command === "string" ? checkBash(profile, command, denied) : ALLOW;
+    if (typeof command !== "string") return ALLOW;
+    const verdict = checkBash(profile, command, denied);
+    return verdict.allow ? askBash(profile, command, askedPaths(profile, call.cwd, home), call.cwd, home) : verdict;
   }
-  if (PATH_TOOLS.has(call.tool) && denied !== undefined) {
+  if (PATH_TOOLS.has(call.tool)) {
     const path: unknown = call.input["path"] ?? call.input["file_path"];
-    if (typeof path === "string" && path.length > 0) return checkPath(denied, path);
+    if (typeof path === "string" && path.length > 0) {
+      if (denied !== undefined) {
+        const verdict = checkPath(denied, path);
+        if (!verdict.allow) return verdict;
+      }
+      // Ask comes after deny: a write to a path that is asked about asks.
+      const asked = call.tool === "write" || call.tool === "edit" ? askedPaths(profile, call.cwd, home) : undefined;
+      const hit = asked === undefined ? undefined : askedRule(asked, normalise(path, call.cwd, home));
+      if (hit !== undefined) {
+        return { allow: false, ask: true, reason: `path "${path}" is under askPaths entry "${hit}"`, rule: hit, kind: "path", value: path, tool: call.tool };
+      }
+    }
   }
   return ALLOW;
 }

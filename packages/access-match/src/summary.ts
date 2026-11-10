@@ -150,7 +150,8 @@ export function summarizeCall(
   if (!isRecord(input)) return undefined;
   const tool = toolName.toLowerCase();
   const verdict = match(profile, { tool, input, cwd });
-  if (!verdict.allow) {
+  // A call that asks a person is shown as itself: the person sees what runs.
+  if (!verdict.allow && verdict.ask !== true) {
     return `${toolName} denied by the access profile${verdict.rule === undefined ? "" : ` (rule: ${oneLine(verdict.rule, SUMMARY_CHARS)})`}`;
   }
   let text: string | undefined;
