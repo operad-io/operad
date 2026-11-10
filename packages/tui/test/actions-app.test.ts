@@ -73,7 +73,7 @@ describe("actions against the in-process server", () => {
     try {
       h.store.put("item", "one", { title: "One", state: "new" }, "seed");
       shell.key({ name: "r" });
-      await view.until((state) => state.tabs.find((tab) => tab.id === "type:item")?.list.rows.length === 1);
+      await view.until((state) => state.tabs.find((tab) => tab.id === "plugin:tuitest")?.list.rows.length === 1);
       // The plugin's default keys arrive from /v1/keys.
       await view.until((state) => state.bindings.some((binding) => binding.key === "m"));
       shell.key({ name: "3" });

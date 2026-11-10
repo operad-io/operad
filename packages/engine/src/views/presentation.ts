@@ -119,6 +119,8 @@ export interface ViewObject {
   readonly actions: readonly ViewAction[];
   /** Set when the object's plugin is no longer loaded. */
   readonly unavailable?: string | undefined;
+  /** The ids of the objects of this type whose row has this one in `after`. */
+  readonly dependents?: readonly string[] | undefined;
 }
 
 /** What one section read returns. */
@@ -945,6 +947,7 @@ export class Views {
     let sections: ViewSectionInfo[] = [];
     const actions: ViewAction[] = [];
     let unavailable: string | undefined;
+    let dependents: readonly string[] = [];
 
     if (owner !== undefined && object !== undefined) {
       const { scope: _scope, ...guarded } = this.guardedRow(
@@ -962,6 +965,7 @@ export class Views {
         sections = [];
       }
       actions.push(...(await this.availableActions(resolved.type, object)));
+      dependents = await this.dependentsOf(owner.plugin, resolved.type, row.id);
     } else {
       row = {
         id: resolved.id,
@@ -985,7 +989,29 @@ export class Views {
       sections,
       actions,
       ...(unavailable === undefined ? {} : { unavailable }),
+      ...(dependents.length === 0 ? {} : { dependents }),
     };
+  }
+
+  /** The ids of the objects of a type whose row names `rowId` in `after`. */
+  private async dependentsOf(
+    plugin: string,
+    type: string,
+    rowId: string,
+  ): Promise<readonly string[]> {
+    const found: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await this.store.list(type, cursor === undefined ? {} : { cursor });
+      for (const object of page.objects) {
+        const row = this.guardedRow(plugin, type, object);
+        if (row.id !== rowId && row.after?.includes(rowId) === true) {
+          found.push(row.id);
+        }
+      }
+      cursor = page.next;
+    } while (cursor !== undefined);
+    return found.sort();
   }
 
   /** The Markdown of one section; `history` is served by the kernel. */

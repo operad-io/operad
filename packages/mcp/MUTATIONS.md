@@ -72,3 +72,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0177-M4 | packages/mcp/src/channel.ts | the `announce: false` check removed, so a person's proposed task was announced | `a proposed task > is pending and drawn waiting; one block for what the plugin opened, none for a person's` |
+| T-0175-M3 | packages/mcp/src/server.ts | the instructions kept saying owner decisions are not offered when the owner allowed actions | `operad mcp > instructions follow the configured allow lists` |

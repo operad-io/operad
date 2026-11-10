@@ -42,7 +42,7 @@ function opened(state: string = "run"): TuiState {
   s = reduce(s, { type: "types", types: [{ type: "item", title: "Item" }] });
   s = reduce(s, {
     type: "rows",
-    tabId: "type:item",
+    tabId: "plugin:item",
     rows: [object.row],
   });
   s = reduce(s, { type: "key", key: "3" });

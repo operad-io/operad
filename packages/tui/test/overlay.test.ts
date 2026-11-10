@@ -10,7 +10,7 @@ function listState(width: number, height: number, theme: "light" | "dark" = "dar
   state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
   state = reduce(state, {
     type: "rows",
-    tabId: "type:item",
+    tabId: "plugin:item",
     rows: Array.from({ length: Math.max(1, height - 6) }, (_, at) => ({
       id: `item:T-${String(at).padStart(4, "0")}-worker-pool-${"x".repeat(60)}`,
       title: "Z".repeat(120),

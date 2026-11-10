@@ -37,7 +37,7 @@ function opened(): TuiState {
   });
   state = reduce(state, {
     type: "page",
-    tabId: "type:item",
+    tabId: "plugin:item",
     replace: true,
     page: { rows: [row()] },
   });

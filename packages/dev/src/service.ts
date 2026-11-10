@@ -219,6 +219,12 @@ export async function migrateLegacyRepositories(store: ObjectStore): Promise<voi
       "dev:repo-migrate",
     );
   }
+  // A repository stored before the running-task count existed has none: count once.
+  for (const object of await listAll(store, REPOSITORY_TYPE)) {
+    if (repositoryData(object.data).activeTasks === undefined) {
+      await refreshRepositoryCounts(store, object.id);
+    }
+  }
 }
 
 async function repositories(store: ObjectStore): Promise<readonly StoredObject[]> {

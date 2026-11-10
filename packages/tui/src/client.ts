@@ -22,6 +22,12 @@ export type FetchLike = (
 /** The default fetch, so a client needs no global to be constructed. */
 export const defaultFetch: FetchLike = (input, init) => fetch(input, init);
 
+/** One level of the hierarchy a list asks for: the top level, or the objects under one. */
+export interface TuiLevel {
+  readonly root?: boolean | undefined;
+  readonly parent?: string | undefined;
+}
+
 /** One object type a client can list. */
 export interface TuiTypeInfo {
   readonly type: string;
@@ -308,9 +314,16 @@ export class TuiClient {
     cursor?: string,
     signal?: AbortSignal,
     filter?: string,
+    level?: TuiLevel,
   ): Promise<ViewListPage> {
     return (await this.request("/v1/objects", {
-      query: { type, cursor, filter },
+      query: {
+        type,
+        cursor,
+        filter,
+        ...(level?.root === true ? { root: "1" } : {}),
+        ...(level?.parent === undefined ? {} : { parent: level.parent }),
+      },
       signal,
     })) as ViewListPage;
   }
