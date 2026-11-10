@@ -305,14 +305,18 @@ export class StepLimits {
   }
 
   private async locked<T>(work: () => Promise<T>): Promise<T> {
-    if (this.lockRoot !== undefined) {
-      return withLockFile(join(this.lockRoot, "locks", "limits.lock"), work, {
-        label: "limits",
-        onLog: () => undefined,
-      });
-    }
+    const hold = (): Promise<T> =>
+      this.lockRoot === undefined
+        ? work()
+        : withLockFile(join(this.lockRoot, "locks", "limits.lock"), work, {
+            label: "limits",
+            onLog: () => undefined,
+          });
+    // Grants in one process take turns before the file lock, so only one of
+    // them waits on it; the others wait here, where a slow read is not a
+    // timeout that would fail the step that asked.
     const tail = localTails.get(this.log) ?? Promise.resolve();
-    const run = tail.then(work, work);
+    const run = tail.then(hold, hold);
     localTails.set(
       this.log,
       run.catch(() => undefined),

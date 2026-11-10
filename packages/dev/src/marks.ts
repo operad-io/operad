@@ -91,7 +91,13 @@ export function taskBadge(task: TaskData): string {
 
 const PLAN_MARKS: Readonly<Record<PlanState, (plan: PlanData) => RowMark>> = {
   draft: () => "proposed",
-  confirmed: (plan) => ((plan.activeCount ?? 0) > 0 ? "running" : "todo"),
+  // A task waiting for a person wins over running: the owner has something to do.
+  confirmed: (plan) =>
+    (plan.waitingCount ?? 0) > 0
+      ? "waiting"
+      : (plan.activeCount ?? 0) > 0
+        ? "running"
+        : "todo",
   paused: () => "paused",
   cancelled: () => "cancelled",
   finished: () => "done",

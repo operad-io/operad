@@ -73,7 +73,7 @@ below):
   carries `auto: true` for the channel only. If the answer does not come (dev
   refuses it, or the plan's auto level changes) the next change finds the wait
   unmarked and the block is sent then. A wait the plugin does not answer
-  (rework asked, work did nothing, new words, review failed twice) is sent as
+  (rework asked, work did nothing, review failed twice) is sent as
   before.
 - **ended**: the object reaches a final state. The plugin declares which states
   are final by setting `final: true` on the row it returns (dev: a task that is

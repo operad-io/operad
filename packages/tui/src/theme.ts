@@ -137,7 +137,7 @@ export const DEFAULT_THEME = "auto";
 export function resolvePalette(name: string, mode: TuiMode): TuiPalette {
   if (name === "auto") return TUI_PALETTE[mode];
   if (name === "light" || name === "dark" || name === "terminal") return BUILTIN_THEMES[name];
-  const shipped = SHIPPED_PALETTES.get(name);
+  const shipped = shippedPalette(name);
   if (shipped !== undefined) return shipped;
   const family = THEME_FAMILIES[name];
   if (family !== undefined) return resolvePalette(family[mode], mode);
@@ -217,15 +217,25 @@ function colourValue(file: string, token: string, value: unknown): string {
   );
 }
 
-/** The shipped themes' palettes, read once from `themes/` and checked like any theme file. */
-const SHIPPED_PALETTES: ReadonlyMap<string, TuiPalette> = new Map(
-  SHIPPED_THEMES.map((name): [string, TuiPalette] => {
-    const file = shippedThemeFile(name);
-    const { parent, changes } = parseThemeFile(file);
-    if (parent !== "dark") throw new Error(`${file}: a shipped theme extends dark, not "${parent}"`);
-    return [name, { ...DARK, ...changes }];
-  }),
-);
+/**
+ * The shipped themes already read, by name. A file is read the first time its
+ * theme is chosen, not when this module is imported: a missing or broken file
+ * fails that choice, not every TUI start.
+ */
+const SHIPPED_PALETTES = new Map<string, TuiPalette>();
+
+/** One shipped palette, read on first use and checked like any theme file. */
+function shippedPalette(name: string): TuiPalette | undefined {
+  if (!SHIPPED_THEMES.includes(name)) return undefined;
+  const cached = SHIPPED_PALETTES.get(name);
+  if (cached !== undefined) return cached;
+  const file = shippedThemeFile(name);
+  const { parent, changes } = parseThemeFile(file);
+  if (parent !== "dark") throw new Error(`${file}: a shipped theme extends dark, not "${parent}"`);
+  const palette = { ...DARK, ...changes };
+  SHIPPED_PALETTES.set(name, palette);
+  return palette;
+}
 
 /** What a theme file says: the theme it extends and the tokens it changes. */
 function parseThemeFile(file: string): {
@@ -280,7 +290,7 @@ function loadFileTheme(home: string, name: string, chain: readonly string[]): Tu
   }
   const { parent, changes } = parseThemeFile(file);
   let base: TuiPalette;
-  const shipped = SHIPPED_PALETTES.get(parent);
+  const shipped = shippedPalette(parent);
   if (parent === "light" || parent === "dark" || parent === "terminal") {
     if (existsSync(themeFile(home, parent))) throw new Error(clash(home, parent));
     base = BUILTIN_THEMES[parent];
@@ -309,6 +319,15 @@ function clash(home: string, name: string): string {
 export function resolveSelection(home: string, name: string): ThemeSelection {
   if (isBuiltin(name)) {
     if (existsSync(themeFile(home, name))) throw new Error(clash(home, name));
+    // A shipped theme is checked when it is chosen; a family checks both of its
+    // members, whichever one the terminal's mode later picks.
+    const family = THEME_FAMILIES[name];
+    if (family !== undefined) {
+      shippedPalette(family.light);
+      shippedPalette(family.dark);
+    } else {
+      shippedPalette(name);
+    }
     return { name };
   }
   if (!FILE_THEME_NAME.test(name) || !existsSync(themeFile(home, name))) {

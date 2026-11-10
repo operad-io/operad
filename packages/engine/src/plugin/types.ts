@@ -99,6 +99,11 @@ export interface ObjectRow {
    * passes it through untouched; clients draw it.
    */
   readonly after?: readonly string[] | undefined;
+  /**
+   * The object waits for a person although no run does, as a proposed task
+   * does. The row is drawn waiting, like one with a run waiting.
+   */
+  readonly waiting?: boolean | undefined;
 }
 
 /** One section a detail page offers. `live` means its content still grows. */
@@ -844,6 +849,15 @@ export interface StandingItem {
   readonly id: string;
   /** What the person reads. */
   readonly prompt: string;
+  /**
+   * The object the item is about. The item then carries the actions of the
+   * plugins whose `when` holds for it, and the object's row, like a waiting run.
+   */
+  readonly object?: ObjectRef | undefined;
+  /** False keeps a channel from announcing the item; it is still pending. */
+  readonly announce?: boolean | undefined;
+  /** Other objects the item stands for, such as the proposed tasks of a draft plan. */
+  readonly covers?: readonly ObjectRef[] | undefined;
 }
 
 /** The context a plugin's `standing` hook receives. */

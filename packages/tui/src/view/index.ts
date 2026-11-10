@@ -190,6 +190,9 @@ function dividerContent(state: TuiState, palette: TuiPalette): StyledText {
   ]);
 }
 
+/** The columns a row under a group is indented. */
+const GROUP_INDENT = 2;
+
 type MarkColour = "weak" | "accent" | "run" | "ok" | "error";
 
 /** One single-cell character and colour role per mark. */
@@ -233,9 +236,11 @@ function drawRow(
   palette: TuiPalette,
   width: number,
   titles = true,
+  place: { readonly indent?: number; readonly folder?: boolean } = {},
 ): TextChunk[] {
+  const indent = place.indent ?? 0;
   const tint = selected ? palette.tint : undefined;
-  const room = Math.max(0, width - ROW_INDENT);
+  const room = Math.max(0, width - ROW_INDENT - indent);
   const name = row.unnamed === true && row.title !== "" ? row.title : rowName(row);
   const head = fit(name, room);
   const left = room - displayWidth(head);
@@ -252,29 +257,27 @@ function drawRow(
   return [
     chunk(selected ? "❯" : " ", palette.accent, undefined, tint),
     chunk(" ", undefined, undefined, tint),
-    glyph(row, palette, tint),
+    ...(indent === 0 ? [] : [chunk(" ".repeat(indent), undefined, undefined, tint)]),
+    place.folder === true ? folder(row, palette, tint) : glyph(row, palette, tint),
     chunk(" ", undefined, undefined, tint),
     chunk(first, selected ? palette.accent : palette.text, undefined, tint),
     ...(title === "" ? [] : [chunk(title, palette.text, undefined, tint)]),
     ...fill(pad1),
     chunk("\n"),
-    chunk(" ".repeat(ROW_INDENT), undefined, undefined, tint),
+    chunk(" ".repeat(ROW_INDENT + indent), undefined, undefined, tint),
     ...(detail === "" ? [] : [chunk(detail, palette.weak, undefined, tint)]),
     ...fill(pad2),
     chunk("\n"),
   ];
 }
 
-/** A group's heading: the top-level object's row, dim, and not a row the cursor can reach. */
-function drawHeading(group: TuiRow, palette: TuiPalette, width: number): TextChunk[] {
-  const mark = glyph(group, palette);
-  return [
-    chunk("  ", palette.weak),
-    chunk(mark.text, palette.weak),
-    chunk(" ", palette.weak),
-    chunk(fit(rowName(group), Math.max(0, width - 4)), palette.weak),
-    chunk("\n"),
-  ];
+/** The folder icon of a repository group: one cell, in the colour its row's mark has when that is the running colour. */
+const FOLDER = "▤";
+
+function folder(row: TuiRow, palette: TuiPalette, tint?: string): TextChunk {
+  const mark = rowMark(row);
+  const running = mark !== "none" && MARK_GLYPHS[mark]?.colour === "run";
+  return chunk(FOLDER, running ? palette.run : palette.weak, undefined, tint);
 }
 
 /** The columns a list row has, marker and glyph included. */
@@ -302,11 +305,17 @@ function listContent(
   const chunks: TextChunk[] = [chunk("\n"), ...listTitle(tab, palette)];
   const window = listWindow(tab.list, Math.max(1, bodyHeight(state) - LIST_HEAD));
   const titles = tab.kind !== "plugin";
+  const grouped = tab.list.rows.some((row) => row.group !== undefined);
   tab.list.rows.slice(window.start, window.end).forEach((row, offset) => {
     if (offset > 0) chunks.push(chunk("\n"));
-    if (row.group !== undefined) chunks.push(...drawHeading(row.group, palette, width));
+    if (row.group !== undefined) {
+      chunks.push(...drawRow(row.group, false, palette, width, titles, { folder: true }));
+      chunks.push(chunk("\n"));
+    }
     chunks.push(
-      ...drawRow(row, window.start + offset === tab.list.cursor, palette, width, titles),
+      ...drawRow(row, window.start + offset === tab.list.cursor, palette, width, titles, {
+        indent: grouped ? GROUP_INDENT : 0,
+      }),
     );
   });
   if (tab.list.loading) chunks.push(chunk("loading more…\n", palette.weak));
