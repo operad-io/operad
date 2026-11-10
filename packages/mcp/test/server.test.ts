@@ -11,6 +11,7 @@ import {
   CHANNEL_CAPABILITY,
   CHANNEL_METHOD,
   INSTRUCTIONS,
+  instructionsFor,
   PROTOCOL_VERSION,
   TOOLS,
 } from "../src/index.ts";
@@ -384,7 +385,14 @@ describe("operad mcp", () => {
       expect(init.protocolVersion).toBe(PROTOCOL_VERSION);
       expect(init.capabilities).toEqual({ tools: {} });
       expect(init.serverInfo).toEqual({ name: "operad", version: "0.0.0" });
-      expect(init.instructions).toBe(INSTRUCTIONS);
+      expect(init.instructions).toBe(
+        instructionsFor({
+          channel: { notify: [], loopAfter: 3 },
+          actions: ["demo:approve", "demo:drop"],
+          confirmActions: ["demo:drop"],
+        }),
+      );
+      expect(init.instructions).toContain("demo:approve, demo:drop");
       expect(INSTRUCTIONS.split(". ")).toHaveLength(2);
 
       child.notify("notifications/initialized");
@@ -474,6 +482,10 @@ describe("operad mcp", () => {
         name: "running",
         arguments: {},
       });
+      const load = structuredOf(running).load as { load1: number; cores: number };
+      expect(load.load1).toBeGreaterThanOrEqual(0);
+      expect(load.cores).toBeGreaterThanOrEqual(1);
+      expect(textOf(running)).toContain(`Load: ${load.load1} (1 minute), ${load.cores} cores`);
       const runningItems = structuredOf(running).items as {
         runId: string;
         object?: string | null;
@@ -794,6 +806,76 @@ describe("operad mcp", () => {
     const store = new FilePluginStore({ root: pluginStoreRoot(home) });
     const invoked = store.facts().find((fact) => fact.type === "action_invoked");
     expect(invoked?.data.actor).toEqual({ via: "mcp", id: "lead" });
+  });
+
+  test("instructions follow the configured allow lists", () => {
+    const none = { channel: { notify: [], loopAfter: 3 }, actions: [], confirmActions: [] };
+    expect(instructionsFor(none)).toBe(INSTRUCTIONS);
+    const some = instructionsFor({ ...none, actions: ["dev:rework", "dev:merge"], confirmActions: ["dev:merge", "dev:other"] });
+    expect(some).toContain("dev:rework, dev:merge");
+    expect(some).not.toContain("dev:other");
+    expect(some).not.toContain("Owner decisions are not offered here");
+  });
+
+  test("task edit takes the new brief as command input and refuses an empty one", async () => {
+    const { home, repository } = await makeDevHome();
+    const child = start(home, repository);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      const call = (id: number, verb: string, args: string[], input?: string) =>
+        child.request(id, "tools/call", {
+          name: "command",
+          arguments: { plugin: "dev", verb, args, ...(input === undefined ? {} : { input }) },
+        });
+      await call(2, "repo", ["add", "."]);
+      await call(3, "plan", ["add", "--slug", "alpha", "--title", "Alpha"], "Do it.\n");
+      await call(4, "task", ["add", "--plan", "P-0001-alpha", "--slug", "first", "--title", "First"], "Old brief\n");
+      const edited = await call(5, "task", ["edit", "T-0001-first"], "# Brief\n\nNew brief\n");
+      expect(resultOf(edited).isError).toBeUndefined();
+      expect(String(taskData(home, "T-0001-first").brief)).toContain("New brief");
+      expect(String(taskData(home, "T-0001-first").brief)).not.toContain("Old brief");
+      const empty = await call(6, "task", ["edit", "T-0001-first"]);
+      expect(resultOf(empty).isError).toBe(true);
+      expect(textOf(empty)).toContain("needs the new brief");
+      expect(String(taskData(home, "T-0001-first").brief)).toContain("New brief");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("show of a task lists the tasks after it", async () => {
+    const { home, repository } = await makeDevHome();
+    const child = start(home, repository);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      const call = (id: number, verb: string, args: string[], input: string) =>
+        child.request(id, "tools/call", {
+          name: "command",
+          arguments: { plugin: "dev", verb, args, input },
+        });
+      await call(2, "repo", ["add", "."], "");
+      await call(3, "plan", ["add", "--slug", "alpha", "--title", "Alpha"], "Do it.\n");
+      const base = ["add", "--plan", "P-0001-alpha"];
+      await call(4, "task", [...base, "--slug", "first", "--title", "First"], "a\n");
+      await call(5, "task", [...base, "--slug", "second", "--title", "Second", "--after", "T-0001-first"], "b\n");
+      await call(6, "task", [...base, "--slug", "third", "--title", "Third", "--after", "T-0001-first"], "c\n");
+      const shown = await child.request(7, "tools/call", {
+        name: "show",
+        arguments: { id: "T-0001-first" },
+      });
+      expect(structuredOf(shown).dependents).toEqual(["T-0002-second", "T-0003-third"]);
+      expect(textOf(shown)).toContain("- after this one: T-0002-second, T-0003-third");
+      const leaf = await child.request(8, "tools/call", {
+        name: "show",
+        arguments: { id: "T-0003-third" },
+      });
+      expect(structuredOf(leaf).dependents).toBeUndefined();
+      expect(textOf(leaf)).not.toContain("after this one");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
   });
 
   test("a confirm action runs when both MCP lists name it", async () => {
