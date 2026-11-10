@@ -108,23 +108,23 @@ function manualClock(): ManualClock {
   };
 }
 
-/** Resolves when the file exists, without polling: it watches the directory. */
+/**
+ * Resolves when the file exists. A directory watch wakes it at once; a watch
+ * can miss an event under load, so a look every 100 ms backs it.
+ */
 function waitForFile(path: string): Promise<void> {
   if (existsSync(path)) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const watcher = watch(dirname(path), () => {
+  return new Promise((resolve) => {
+    const check = (): void => {
       if (!existsSync(path)) return;
       watcher.close();
+      clearInterval(timer);
       resolve();
-    });
-    watcher.on("error", (error) => {
-      watcher.close();
-      reject(error);
-    });
-    if (existsSync(path)) {
-      watcher.close();
-      resolve();
-    }
+    };
+    const watcher = watch(dirname(path), check);
+    watcher.on("error", check);
+    const timer = setInterval(check, 100);
+    check();
   });
 }
 

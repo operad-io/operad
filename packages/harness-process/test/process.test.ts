@@ -20,23 +20,23 @@ afterAll(async () => {
   }
 });
 
-/** Resolves when the file exists, watching the directory instead of polling. */
+/**
+ * Resolves when the file exists. A directory watch wakes it at once; a watch
+ * can miss an event under load, so a look every 100 ms backs it.
+ */
 function waitForFile(path: string): Promise<void> {
   if (existsSync(path)) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const watcher = watch(dirname(path), () => {
+  return new Promise((resolve) => {
+    const check = (): void => {
       if (!existsSync(path)) return;
       watcher.close();
+      clearInterval(timer);
       resolve();
-    });
-    watcher.on("error", (error) => {
-      watcher.close();
-      reject(error);
-    });
-    if (existsSync(path)) {
-      watcher.close();
-      resolve();
-    }
+    };
+    const watcher = watch(dirname(path), check);
+    watcher.on("error", check);
+    const timer = setInterval(check, 100);
+    check();
   });
 }
 
@@ -125,22 +125,19 @@ function waitForPid(path: string): Promise<number> {
   };
   const first = read();
   if (first !== undefined) return Promise.resolve(first);
-  return new Promise((resolve, reject) => {
-    const watcher = watch(dirname(path), () => {
+  // A watch can miss an event under load, so a look every 100 ms backs it.
+  return new Promise((resolve) => {
+    const check = (): void => {
       const pid = read();
       if (pid === undefined) return;
       watcher.close();
+      clearInterval(timer);
       resolve(pid);
-    });
-    watcher.on("error", (error) => {
-      watcher.close();
-      reject(error);
-    });
-    const again = read();
-    if (again !== undefined) {
-      watcher.close();
-      resolve(again);
-    }
+    };
+    const watcher = watch(dirname(path), check);
+    watcher.on("error", check);
+    const timer = setInterval(check, 100);
+    check();
   });
 }
 
