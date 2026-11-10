@@ -578,3 +578,9 @@ the row fields.
 | T-0060-M4 | packages/dev/src/schedule.ts | every task started the repository's `default` flow, ignoring its plan's `flow` | `a plan's flow selects a named repository flow` |
 | T-0060-M5 | packages/dev/src/steps.ts | `beforeAttempt: "merge-main"` did nothing before the worker ran | `dev/work > beforeAttempt merge-main merges the latest main; none leaves it alone` |
 | T-0060-M6 | packages/dev/src/settings.ts | required a flow's last user stage to be human again | `a flow with no human stage is valid and ends at integrate` |
+
+## T-0060 — rework 6: a non-final human stage is valid
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0060-M7 | packages/dev/src/settings.ts | restored the removed rule that a flow's last user stage must be human, so a non-final human stage was refused | `[human, check] loads and compiles human -> check -> integrate` |
