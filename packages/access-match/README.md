@@ -10,7 +10,7 @@ tool-call hook: pi today, Claude and the command adapter later.
 match(profile, { tool, input, cwd }):
   | { allow: true }
   | { allow: false, reason, rule? }                          // refused
-  | { allow: false, ask: true, reason, rule, kind: "command", value }  // asks a person
+  | { allow: false, ask: true, reason, rule, kind: "command" | "path", value, tool? }  // asks a person
 ```
 
 Precedence: **deny wins over ask, and ask wins over allow.** A call that matches
@@ -30,7 +30,8 @@ the `home` option). `test/match.test.ts` follows the tables below.
 |---|---|---|
 | `denyPaths` | string[], optional | a call that touches a path under one of these is refused |
 | `denyCommands` | string[], optional | a `bash` command part that matches one of these is refused |
-| `askCommands` | string[], optional | rules in the shape of `denyCommands`; a `bash` command part that matches one of these asks a person (`operad-sandbox.md` decisions 1 and 3). There is no ask for paths: `operad-sandbox.md` names none |
+| `askPaths` | string[], optional | paths a write asks about (`~/.zshrc`, `~/.*profile`); `*` stays within one path segment and a path under a match counts. Judged for `write` and `edit`, and for a `bash` redirect (`>`, `>>`) to such a path, which asks with the whole command. Deny wins over it |
+| `askCommands` | string[], optional | rules in the shape of `denyCommands`; a `bash` command part that matches one of these asks a person (`operad-sandbox.md` decisions 1 and 3). Writes to shell profiles are `askPaths` |
 
 | `grants` | `{ waitId, kind: "command" \| "path", value, tool? }[]`, optional | one-time permissions not yet used; see `findGrant` |
 

@@ -1,6 +1,6 @@
 /**
  * The host's side of a question about one call. A harness program whose access
- * profile says a call must ask a person (`askCommands`) writes one `ask_call`
+ * profile says a call must ask a person (`askCommands`, `askPaths`) writes one `ask_call`
  * line and waits for one `ask_ack` line on its stdin. The host turns the line
  * into `ctx.ask`, serially (the kernel takes one open question per step), and
  * answers:
@@ -81,8 +81,7 @@ export function askToolEvent(line: string): "tool-start" | "tool-end" | undefine
 /** Whether the run's access profile has a rule that may make a call ask. */
 export function canAsk(access: unknown): boolean {
   if (!isRecord(access)) return false;
-  const rules: unknown = access.askCommands;
-  return Array.isArray(rules) && rules.length > 0;
+  return [access.askCommands, access.askPaths].some((rules) => Array.isArray(rules) && rules.length > 0);
 }
 
 /** The question for one call. The grace and `onTimeout` are the kernel's defaults. */

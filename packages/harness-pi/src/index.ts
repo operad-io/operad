@@ -461,7 +461,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
         // `waiting`: a question about a call was not answered within the grace.
         results: ["done", "failed", "interrupted", "waiting"],
         // The deny and ask fields are applied in the worker's tool_call hook.
-        enforces: ["denyPaths", "denyCommands", "askCommands"],
+        enforces: ["denyPaths", "denyCommands", "askCommands", "askPaths"],
         timeoutSecs: STEP_TIMEOUT_SECS,
         // The model the step uses: its `--model` argument, else the setting.
         limit: modelLimit("harness-pi", (params, settings) => {

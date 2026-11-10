@@ -259,7 +259,7 @@ export async function runWorker(
         } else {
           const shown = summarizeCall(profile, event.toolName, event.input, input.cwd, { secrets: input.secretValues });
           try {
-            answer = await io.ask({ kind: verdict.kind, value: verdict.value, shown: shown ?? verdict.value, session: sessionFile });
+            answer = await io.ask({ kind: verdict.kind, value: verdict.value, ...(verdict.tool === undefined ? {} : { tool: verdict.tool }), shown: shown ?? verdict.value, session: sessionFile });
           } catch {
             answer = { decision: "deny", reason: "the question could not be asked" };
           }

@@ -945,3 +945,25 @@ test("a secret of the operad store sent as secretValues is masked in the logged 
   expect(toolLines(run).start[0]?.["input"]).toBe("curl -H *** x");
   expect(JSON.stringify(toolLines(run).start)).not.toContain("store-secret-9");
 });
+
+test("a write to an askPaths path asks with the path and the tool; allowed, the file is written", async () => {
+  const s = setup();
+  const target = join(s.dir, "profile-file");
+  const calls: Array<Record<string, unknown>> = [];
+  const run = await runAsking(
+    s,
+    [
+      { text: "", toolCall: { name: "write", arguments: { path: target, content: "x\n" } } },
+      { text: "finished" },
+    ],
+    { ...s.input, access: { askPaths: [target] } },
+    (call) => {
+      calls.push(call);
+      return "allow";
+    },
+  );
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toMatchObject({ type: "ask_call", kind: "path", value: target, tool: "write" });
+  expect(existsSync(target)).toBe(true);
+  expect(last(run)).toMatchObject({ result: "done" });
+});

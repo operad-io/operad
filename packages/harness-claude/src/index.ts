@@ -451,7 +451,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
         // `waiting`: a question about a call was not answered within the grace.
         results: ["done", "failed", "interrupted", "waiting"],
         // The deny and ask fields are applied in the worker's canUseTool.
-        enforces: ["denyPaths", "denyCommands", "askCommands"],
+        enforces: ["denyPaths", "denyCommands", "askCommands", "askPaths"],
         timeoutSecs: STEP_TIMEOUT_SECS,
         // The model the step uses: its `--model` argument, else the setting.
         limit: modelLimit(HARNESS, (params, settings) => {

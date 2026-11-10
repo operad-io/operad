@@ -18,3 +18,4 @@ and the row fields.
 | T-0063-M11 | `packages/access-match/src/summary.ts` | a denied call dropped the rule name | `a call the profile denies is logged as denied, never its arguments or reason` |
 | T-0187-M1 | packages/access-match/src/index.ts | `askCommands` was checked before the deny rules, so an ask won over a deny | `deny wins over ask, and ask wins over allow` |
 | T-0187-M2 | packages/access-match/src/index.ts | inline code (`$(…)`) did not ask while `askCommands` was set | `inline code asks while askCommands is set and is allowed without it` |
+| T-0187-M12 | packages/access-match/src/index.ts | `write` and `edit` calls were not judged against `askPaths` | `a write or edit to an askPaths path asks with the path and the tool` |

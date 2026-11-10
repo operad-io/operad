@@ -48,7 +48,8 @@ describe("askToolEvent", () => {
 describe("canAsk", () => {
   test("is true only for a profile with an askCommands rule", () => {
     expect(canAsk({ askCommands: ["git push"] })).toBe(true);
-    expect(canAsk({ askCommands: [] })).toBe(false);
+    expect(canAsk({ askPaths: ["~/.zshrc"] })).toBe(true);
+    expect(canAsk({ askCommands: [], askPaths: [] })).toBe(false);
     expect(canAsk({ denyCommands: ["rm"] })).toBe(false);
     expect(canAsk(null)).toBe(false);
   });

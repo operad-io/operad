@@ -340,3 +340,55 @@ test("a one-time grant covers an asked command exactly", () => {
   expect(findGrant(profile, call)?.waitId).toBe("w9");
   expect(findGrant(profile, { ...call, input: { command: "git push origin other" } })).toBeUndefined();
 });
+
+// -- askPaths ----------------------------------------------------------------
+
+const PROFILES: AccessProfile = { askPaths: ["~/.zshrc", "~/.*profile"] };
+
+function write(profile: AccessProfile, path: string, tool = "write"): ReturnType<typeof match> {
+  return match(profile, { tool, input: { path }, cwd: CWD }, { home: HOME });
+}
+
+test("a write or edit to an askPaths path asks with the path and the tool", () => {
+  for (const [path, rule] of [["~/.zshrc", "~/.zshrc"], ["/home/u/.bash_profile", "~/.*profile"], ["~/.zprofile", "~/.*profile"]] as const) {
+    const verdict = write(PROFILES, path, "edit");
+    if (verdict.allow || verdict.ask !== true) throw new Error("expected an ask");
+    expect(verdict).toMatchObject({ kind: "path", value: path, tool: "edit", rule });
+  }
+  expect(write(PROFILES, "~/.zshrc").ask).toBe(true);
+});
+
+test("other paths and read tools are allowed", () => {
+  expect(write(PROFILES, "~/.zshrc.bak2/../notes")).toEqual({ allow: true });
+  expect(write(PROFILES, "/home/u/src/a.ts")).toEqual({ allow: true });
+  expect(write(PROFILES, "~/.zshrc", "read")).toEqual({ allow: true });
+  expect(write(PROFILES, "~/x/.profile")).toEqual({ allow: true });
+});
+
+test("a bash redirect to an askPaths path asks with the whole command; a read does not", () => {
+  const verdict = bash(PROFILES, "echo 'export A=1' >> ~/.zshrc");
+  if (verdict.allow || verdict.ask !== true) throw new Error("expected an ask");
+  expect(verdict).toMatchObject({ kind: "command", value: "echo 'export A=1' >> ~/.zshrc", rule: "~/.zshrc" });
+  expect(bash(PROFILES, "echo a >~/.profile").ask).toBe(true);
+  expect(bash(PROFILES, "cat ~/.zshrc")).toEqual({ allow: true });
+  expect(bash(PROFILES, "echo a > /tmp/x 2>&1")).toEqual({ allow: true });
+});
+
+test("deny wins over an askPaths ask", () => {
+  const verdict = write({ ...PROFILES, denyPaths: ["~/.zshrc"] }, "~/.zshrc");
+  expect(verdict.allow).toBe(false);
+  expect(verdict.ask).toBeUndefined();
+  expect(bash({ ...PROFILES, denyPaths: ["~/.zshrc"] }, "echo a >> ~/.zshrc").ask).toBeUndefined();
+});
+
+test("a path grant for the tool covers the asked write, and only that", () => {
+  const profile: AccessProfile = { ...PROFILES, grants: [{ waitId: "w5", kind: "path", value: "~/.zshrc", tool: "write" }] };
+  const call = { tool: "write", input: { path: "~/.zshrc" }, cwd: CWD };
+  expect(findGrant(profile, call, { home: HOME })?.waitId).toBe("w5");
+  expect(findGrant(profile, { ...call, tool: "edit" }, { home: HOME })).toBeUndefined();
+});
+
+test("readProfile reads askPaths", () => {
+  expect(readProfile({ askPaths: ["~/.zshrc"] })).toEqual({ ok: true, profile: { askPaths: ["~/.zshrc"] } });
+  expect(readProfile({ askPaths: 1 }).ok).toBe(false);
+});

@@ -98,7 +98,7 @@ export type AccessDecision =
 /**
  * Whether one call of claude may run. `useGrant` asks the host to use up a
  * one-time permission; without it no grant applies. `ask` asks a person about a
- * call the profile says must ask (`askCommands`); without it such a call is
+ * call the profile says must ask (`askCommands`, `askPaths`); without it such a call is
  * refused. A deny wins over an ask, so `ask` only ever sees a call no deny
  * rule matched.
  */
@@ -146,7 +146,7 @@ export async function decideAccess(
   if (verdict.ask === true && ask !== undefined) {
     let answer: CallAnswer;
     try {
-      answer = await ask({ kind: verdict.kind, value: verdict.value });
+      answer = await ask({ kind: verdict.kind, value: verdict.value, ...(verdict.tool === undefined ? {} : { tool: verdict.tool }) });
     } catch {
       answer = { decision: "deny", reason: "the question could not be asked" };
     }

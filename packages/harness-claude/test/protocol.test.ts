@@ -1105,3 +1105,26 @@ test("after a late answer the one-time grant lets that command through and any o
   const answers = run.record.filter((entry) => "askReply" in entry).map((entry) => (entry["answer"] as Line)["behavior"]);
   expect(answers).toEqual(["allow", "deny"]);
 });
+
+test("a Write to an askPaths path asks with the path and the tool, and runs once when allowed", async () => {
+  const s = setup();
+  s.input["access"] = { askPaths: ["~/.zshrc"] };
+  const child = new Child(
+    FAKE_WORKER,
+    s.env({
+      steps: [
+        { say: systemInit() },
+        { ask: { toolName: "Write", toolUseId: "tool-1", input: { file_path: "~/.zshrc" } } },
+        { say: result() },
+      ],
+    }),
+    s.recordFile,
+  );
+  child.sendLine(JSON.stringify(s.input));
+  const call = await child.untilLine("ask_call");
+  child.sendLine(JSON.stringify({ type: "ask_ack", id: call?.["id"], decision: "allow" }));
+  child.endInput();
+  const run = await child.finish();
+  expect(call).toMatchObject({ type: "ask_call", kind: "path", value: "~/.zshrc", tool: "write", session: SESSION });
+  expect(answerOf(run)["behavior"]).toBe("allow");
+});
