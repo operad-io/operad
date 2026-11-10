@@ -185,6 +185,25 @@ describe("store lifecycle and concurrency", () => {
     }
   });
 
+  test("a sqlite store opened for one-shot use starts no timer", async () => {
+    let repeats = 0;
+    const store = new SqlitePluginStore({
+      root: join(await tempRoot(), "sqlite"),
+      follow: false,
+      repeat: () => {
+        repeats += 1;
+        return () => undefined;
+      },
+    });
+    try {
+      const stop = store.subscribe(() => undefined);
+      stop();
+      expect(repeats).toBe(0);
+    } finally {
+      store.close();
+    }
+  });
+
   test("a sqlite subscription sees a fact another connection appended", async () => {
     const root = join(await tempRoot(), "sqlite");
     const first = new SqlitePluginStore({ root });

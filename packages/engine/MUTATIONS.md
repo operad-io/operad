@@ -387,3 +387,12 @@ the row fields.
 |---|---|---|---|
 | T-0177-M6 | packages/engine/src/plugin/registry.ts | a standing item's object came with no actions (`actions: []` instead of `actionsHolding`) | `a proposed task is pending > a task added by \`task add\` is pending with confirm and cancel, drawn waiting, and leaves on confirm` (packages/dev/test/proposed-pending.test.ts) |
 | T-0153-M1 | packages/engine/test/wait-for-file.ts | the wait looked once, then waited on the directory watch alone, with no 100 ms look | `store lifecycle and concurrency > two jsonl writers assign unique, contiguous sequences` (timed out 20 of 200 stressed runs with the old watch-only wait; not deterministic) |
+
+## T-0207 — one-shot commands set no directory watch
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0207-M1 | packages/engine/src/plugin/file-store.ts | `ensureWatch` started the watch even when the store was opened without following | `the file plugin store > a store opened for one-shot use sets no watch or timer on subscribe` |
+| T-0207-M2 | packages/engine/src/plugin/sqlite-store.ts | `ensurePolling` started the timer even when the store was opened without following | `store lifecycle and concurrency > a sqlite store opened for one-shot use starts no timer` |
+| T-0207-M3 | packages/engine/src/platform/watch.ts | `followsChanges` returned true for every caller | `a log opened for a one-shot command starts no watch or timer` |
+| T-0207-M4 | packages/engine/src/views/presentation.ts | a view subscribed to its store and log even when it was opened for a one-shot command | `object type prepare > a one-shot view adds no change listener` |
