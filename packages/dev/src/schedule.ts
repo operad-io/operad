@@ -16,6 +16,8 @@ import {
 import {
   bareId,
   changeClock,
+  dependencyKey,
+  dependencyLabel,
   listAll,
   planData,
   priorityIndex,
@@ -147,22 +149,35 @@ function orderPlans(plans: readonly StoredObject[]): readonly StoredObject[] {
 interface DependencyState {
   readonly ready: boolean;
   readonly cancelled?: string | undefined;
+  /** The tasks not merged yet, as a note names them. */
+  readonly waitingFor: readonly string[];
 }
 
-/** A task starts once every task it follows is merged. */
+/**
+ * A task starts once every task it follows is merged, in any plan and any
+ * repository. `byKey` holds the tasks of every repository by store key.
+ */
 function dependencyState(
   task: TaskData,
-  byId: ReadonlyMap<string, TaskData>,
+  byKey: ReadonlyMap<string, TaskData>,
 ): DependencyState {
-  for (const id of task.after) {
-    const dependency = byId.get(id);
-    if (dependency === undefined) return { ready: false };
-    if (dependency.phase === "cancelled") {
-      return { ready: false, cancelled: id };
+  const waitingFor: string[] = [];
+  let cancelled: string | undefined;
+  for (const entry of task.after) {
+    const key = dependencyKey(task.repository, entry);
+    const label = dependencyLabel(task.repository, key);
+    const dependency = byKey.get(key);
+    if (dependency?.phase === "merged") continue;
+    waitingFor.push(label);
+    if (dependency?.phase === "cancelled" && cancelled === undefined) {
+      cancelled = label;
     }
-    if (dependency.phase !== "merged") return { ready: false };
   }
-  return { ready: true };
+  return {
+    ready: waitingFor.length === 0,
+    ...(cancelled === undefined ? {} : { cancelled }),
+    waitingFor,
+  };
 }
 
 function planConcurrency(plan: PlanData): number {
@@ -383,10 +398,11 @@ async function scheduleRepository(
   await collectFollowups(ctx.store, repository.name, settings);
 
   // A recovered claim changes the store; read the phases again before counting.
-  const current = tasksOf(await listAll(ctx.store, "task"), repository.name);
+  const allCurrent = await listAll(ctx.store, "task");
+  const current = tasksOf(allCurrent, repository.name);
   const plans = orderPlans(plansOf(initialPlans, repository.name));
   const tasksById = new Map(
-    current.map((object) => [bareId(object.id), taskData(object.data)]),
+    allCurrent.map((object) => [object.id, taskData(object.data)]),
   );
 
   await reportIntegrationResults(ctx.store, current);
@@ -617,6 +633,7 @@ async function scheduleRepository(
       ctx.store,
       object.id,
       !dependencies.ready && dependencies.cancelled === undefined,
+      dependencies.waitingFor,
     );
   }
 

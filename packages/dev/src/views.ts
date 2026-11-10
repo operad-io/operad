@@ -15,6 +15,8 @@ import {
   listAll,
   PLAN_FINAL_STATES,
   TASK_FINAL_STATES,
+  dependencyKey,
+  dependencyLabel,
   planData,
   planNote,
   planState,
@@ -56,6 +58,13 @@ function waitNote(task: TaskData): string | undefined {
     !TASK_FINAL_STATES.includes(task.phase)
   ) {
     return `waiting to integrate: ${turn}`;
+  }
+  if (
+    task.phase === "ready" &&
+    task.dependencyHeld === true &&
+    (task.dependencyHeldFor ?? []).length > 0
+  ) {
+    return `waiting for ${(task.dependencyHeldFor ?? []).join(", ")}`;
   }
   if (task.phase !== "waiting") return undefined;
   const integration = task.attempt?.integration;
@@ -234,7 +243,11 @@ export const taskViews: ObjectViews = {
       mark: taskMark(task),
       badge: taskBadge(task),
       parent: `plan:${storeKey(task.repository, task.plan)}`,
-      ...(task.after.length === 0 ? {} : { after: [...task.after] }),
+      ...(task.after.length === 0 ? {} : {
+            after: task.after.map((entry) =>
+              dependencyLabel(task.repository, dependencyKey(task.repository, entry)),
+            ),
+          }),
     };
   },
 
