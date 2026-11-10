@@ -396,6 +396,13 @@ the row fields.
 | T-0207-M2 | packages/engine/src/plugin/sqlite-store.ts | `ensurePolling` started the timer even when the store was opened without following | `store lifecycle and concurrency > a sqlite store opened for one-shot use starts no timer` |
 | T-0207-M3 | packages/engine/src/platform/watch.ts | `followsChanges` returned true for every caller | `a log opened for a one-shot command starts no watch or timer` |
 | T-0207-M4 | packages/engine/src/views/presentation.ts | a view subscribed to its store and log even when it was opened for a one-shot command | `object type prepare > a one-shot view adds no change listener` |
+## T-0205 — process groups and code fingerprints on Linux
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0205-M2 | packages/engine/src/platform/process-group.ts | the sentinel killed its group with `kill -KILL -- "-$$"`, which dash rejects, so a line whose host died stayed running | `the sentinel's host > a line still running when its host dies is stopped with its sentinel` (Linux) |
+| T-0205-M3 | packages/engine/src/loop/code-watch.ts | `hashFile` trusted a size and mtime cache key again, even for a file written within the millisecond | `a code watch > the timer finds a change no event reported` (Linux; the same stale hash made the other watch tests miss a same-size rewrite in some runs) |
+| T-0205-M4 | packages/engine/src/loop/code-watch.ts | the cache trusted a hash whenever the key matched and the stamp was old, including a hash read while the stamp was still fresh | `code fingerprints > a hash read while its stamps were fresh is read again after they are old` |
 ## T-0165 — a queued step is not failed by a slow grant
 
 | id | file | mutation | failing test |

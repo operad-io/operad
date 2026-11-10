@@ -59,7 +59,8 @@ const SENTINEL = [
   "trap ':' TERM",
   'parent=$2',
   // The helper's output goes nowhere, so it never holds the control pipe open.
-  '( while kill -0 "$parent" 2>/dev/null; do sleep 1; done; kill -KILL -- "-$$" ) >/dev/null 2>&1 &',
+  // The numeric group form is POSIX; dash does not accept `--` before it.
+  '( while kill -0 "$parent" 2>/dev/null; do sleep 1; done; kill -KILL -$$ ) >/dev/null 2>&1 &',
   "printf 'ready\\n' >&2",
   'err=$1',
   "shift 2",

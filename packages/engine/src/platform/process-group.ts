@@ -40,7 +40,8 @@ export const KILL_GRACE_MS = 500;
 const SENTINEL = [
   "trap ':' TERM",
   // The helper's output goes nowhere, so it never holds the control pipe open.
-  '( while kill -0 "$2" 2>/dev/null; do sleep 1; done; kill -KILL -- "-$$" ) >/dev/null 2>&1 &',
+  // The numeric group form is POSIX; dash does not accept `--` before it.
+  '( while kill -0 "$2" 2>/dev/null; do sleep 1; done; kill -KILL -$$ ) >/dev/null 2>&1 &',
   "printf 'ready\\n' >&2",
   'sh -c "$1" 2>&1',
   "status=$?",

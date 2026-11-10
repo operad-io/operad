@@ -506,8 +506,13 @@ test("nothing under the fake HOME .pi is read or created", async () => {
   expect(run.exitCode).toBe(0);
   expect(last(run)).toMatchObject({ result: "done" });
   expect(files.map((file) => statSync(file).atimeMs)).toEqual(before);
-  // Bun's own transpiler cache makes Library/ under HOME; it is not pi's.
-  expect(readdirSync(s.home).filter((name) => name !== "Library")).toEqual([".pi"]);
+  // Bun's own transpiler cache makes Library/ under HOME on macOS and
+  // .bun/install/cache on Linux; neither belongs to pi. Importing an unrelated
+  // package with Bun and HOME set to a scratch directory made the same
+  // .bun/install/cache/@t@/*.pile files without pi running.
+  expect(
+    readdirSync(s.home).filter((name) => name !== "Library" && name !== ".bun"),
+  ).toEqual([".pi"]);
   expect(readdirSync(join(s.home, ".pi")).sort()).toEqual(["agent"]);
   expect(readdirSync(agent).sort()).toEqual(["AGENTS.md", "auth.json", "models.json", "settings.json", "skills"]);
 });
