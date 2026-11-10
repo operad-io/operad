@@ -70,7 +70,7 @@
   "gate": {
     "commands": [
       {
-        "run": "if [ -f scripts/check-changed.sh ]; then bash scripts/check-changed.sh; else bash scripts/verify.sh; fi",
+        "run": "if [ -f scripts/remote-check.sh ]; then bash scripts/remote-check.sh 'OPERAD_TEST_PARALLEL=$(( $(nproc 2>/dev/null || echo 4) / 2 )) bash scripts/check-changed.sh'; else bash scripts/verify.sh; fi",
         "failed": {
           "match": "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$",
           "rerun": "bun test --timeout 30000 -t {pattern}"
@@ -83,7 +83,7 @@
     "batch": 3,
     "keyCommands": [
       {
-        "run": "bash scripts/verify.sh",
+        "run": "bash scripts/remote-check.sh 'OPERAD_TEST_PARALLEL=$(( $(nproc 2>/dev/null || echo 4) / 2 )) bash scripts/verify.sh'",
         "failed": {
           "match": "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$",
           "rerun": "bun test --timeout 30000 -t {pattern}"
