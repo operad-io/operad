@@ -499,6 +499,12 @@ the row fields.
 |---|---|---|---|
 | T-0157-M1 | packages/dev/src/gate.ts | a verify failure kept the previous review failure (`reviewFailed` set for every source) | `dev/rework after two review failures in a row > review fail, verify fail, review fail reworks again` |
 
+## T-0164 — integrate and cleanup run again after a kill
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0164-M1 | packages/dev/src/integrate.ts | the rerun after the merge was recorded added its "merged as" lines again (the `previous.result === "merged"` check replaced by `false`) | `dev/integrate rerun after a kill > merge: a kill at merged-saved, then a rerun, merges once` |
+| T-0164-M2 | packages/dev/src/settings.ts | the default hook that removes the gate worktree ran without checking the worktree exists | `dev/cleanup rerun after a kill > a kill after hook 2, then a rerun, leaves nothing behind` |
 ## T-0163 — rework 1
 
 | id | file | mutation | failing test |
@@ -512,11 +518,24 @@ the row fields.
 | T-0159-M4 | packages/dev/src/schedule.ts | every refill of the last free slot went by turn (the check for a running oldest-plan-slot task removed) | `dev scheduling > once the repository is full, a freed slot goes by priority; only the reserved slot goes by turn` |
 | T-0170-M1 | packages/dev/src/actions.ts | the old action name `hold` was still declared next to `pause` | `dev:pause and dev:resume > dev:hold and dev:release are no longer actions` |
 
+## T-0164 rework 1 — a batch leader killed after the push
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0164-M3 | packages/dev/src/integrate.ts | a task whose merge a dead leader already landed was not looked up on main (`alreadyOnMain` result ignored), so it merged its commit again and reported someone else's sha | `a batch leader killed after the push > the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone` |
+| T-0164-M4 | packages/dev/src/integrate.ts | the leader's replay dropped the "integrated in a batch with" line (`previousBatch.length === 0` replaced by `true`) | `a batch leader killed after the push > the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone` |
 ## T-0173 — TUI follow-ups 2
 
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0173-M1 | packages/dev/src/service.ts | the one-time pass left a repository without `activeTasks` uncounted (the `undefined` check replaced by `false`) | `the repo type > a repository stored without a running-task count shows running for a task already running` |
+
+## T-0164 rework 3 — the batch result is left before the push
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0164-M5 | packages/dev/src/integrate.ts | the candidate-with-main's-tree guard never fired (condition replaced by `false`) | `a candidate with nothing left to merge > merge: a change already on main under another message is already on main, not merged again` (and the squash one) |
+| T-0164-M6 | packages/dev/src/integrate.ts, packages/dev/src/integration-queue.ts | a dead leader's pending result was never taken as landed and the subject lookup was off (`landed` returns `false`, `alreadyOnMain` ignored) | `a batch leader killed after the push > merge: the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone` (and the squash one) |
 | T-0175-M2 | packages/dev/src/commands.ts | a task edit with an empty command input opened the editor instead of refusing | `operad mcp > task edit takes the new brief as command input and refuses an empty one` (packages/mcp/test/server.test.ts; the run hangs on the editor and times out) |
 
 ## T-0201 — rerun reads only this command's log
