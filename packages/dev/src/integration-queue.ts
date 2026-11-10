@@ -49,6 +49,12 @@ export interface BatchResult {
   /** The pushed head of the batch. */
   readonly head: string;
   readonly note?: string | undefined;
+  /**
+   * `pending` from before the leader pushes until it has recorded the merge. A
+   * pending result whose leader is gone is settled by whether `head` landed.
+   * A result without a state is done.
+   */
+  readonly state?: "pending" | "done" | undefined;
   readonly members: readonly { readonly task: string; readonly sha: string }[];
 }
 
@@ -79,6 +85,8 @@ export interface QueueOptions {
   readonly wait?: ((ms: number) => Promise<void>) | undefined;
   /** Whether a process is alive; tests inject this. */
   readonly alive?: ((pid: number) => boolean) | undefined;
+  /** Whether a dead leader's pending batch reached the remote's main. */
+  readonly landed?: ((result: BatchResult) => boolean) | undefined;
 }
 
 export function integrationQueueDirectory(
@@ -298,8 +306,18 @@ export class IntegrationQueue {
         // A merge already on main is reported even when the step was aborted
         // after the push: the result is read before the abort is.
         const result = this.readResult(claimed);
-        if (result !== undefined) {
+        if (result !== undefined && result.state !== "pending") {
           return { kind: "batched", leader: claimed, result };
+        }
+        if (result !== undefined && !tickets.some((ticket) => ticket.task === claimed)) {
+          // The leader died between writing the result and recording the merge.
+          if (this.options.landed?.(result) === true) {
+            return { kind: "batched", leader: claimed, result };
+          }
+          // Its push never landed: the claim is void and this task goes on alone.
+          rmSync(this.claimPath(claimed), { force: true });
+          rmSync(this.resultPath(claimed), { force: true });
+          continue;
         }
         holder = claimed;
       }
@@ -356,9 +374,16 @@ export class IntegrationQueue {
     rmSync(this.resultPath(this.options.task), { force: true });
   }
 
-  /** Leaves what the claimed tasks need to record their merges. */
+  /** Leaves what the claimed tasks need to record their merges, before the push. */
   publish(result: BatchResult): void {
-    writeAtomic(this.resultPath(this.options.task), result);
+    writeAtomic(this.resultPath(this.options.task), { ...result, state: "pending" });
+  }
+
+  /** The push landed and the leader has recorded it: the result is final. */
+  finish(): void {
+    const result = this.readResult(this.options.task);
+    if (result === undefined) return;
+    writeAtomic(this.resultPath(this.options.task), { ...result, state: "done" });
   }
 
   /** A claimed task is done with the result. */

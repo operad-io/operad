@@ -204,6 +204,7 @@ export async function collectFollowups(
           brief: followupBrief(planId, lines),
           after: ids,
           followupOf: ids,
+          openedBy: "dev",
         },
         fresh,
       );

@@ -232,6 +232,8 @@ export const taskViews: ObjectViews = {
       scope: task.repository,
       final: TASK_FINAL_STATES.includes(task.phase),
       mark: taskMark(task),
+      // A proposed task has no run but waits for the owner, as pending says.
+      ...(task.phase === "proposed" ? { waiting: true } : {}),
       badge: taskBadge(task),
       parent: `plan:${storeKey(task.repository, task.plan)}`,
       ...(task.after.length === 0 ? {} : { after: [...task.after] }),

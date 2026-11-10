@@ -912,8 +912,11 @@ export function listWidth(state: TuiState): number {
   if (tab?.kind !== "plugin" || tab.list.rows.length === 0) return cap;
   let need = PLUGIN_LIST_MIN;
   for (const row of tab.list.rows) {
-    need = Math.max(need, ROW_INDENT + cells(rowName(row)), ROW_INDENT + cells(rowDetail(row)));
-    if (row.group !== undefined) need = Math.max(need, ROW_INDENT + cells(rowName(row.group)));
+    const indent = tab.list.rows.some((one) => one.group !== undefined) ? 2 : 0;
+    need = Math.max(need, ROW_INDENT + indent + cells(rowName(row)), ROW_INDENT + indent + cells(rowDetail(row)));
+    if (row.group !== undefined) {
+      need = Math.max(need, ROW_INDENT + cells(rowName(row.group)), ROW_INDENT + cells(rowDetail(row.group)));
+    }
   }
   return Math.min(cap, need);
 }
@@ -2480,7 +2483,7 @@ export const ROW_LINES = 3;
 
 /** The lines one row takes; an error row shows its text elsewhere. */
 export function rowLines(row: TuiRow): number {
-  return ROW_LINES + (row.group === undefined ? 0 : 1);
+  return ROW_LINES * (row.group === undefined ? 1 : 2);
 }
 
 /**
