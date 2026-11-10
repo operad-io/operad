@@ -406,3 +406,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0165-M2 | packages/engine/test/platform/step-reap.test.ts | the pid-file wait used the directory watch alone, with no timer look | `what a step leaves behind > a system shell that starts the marked process again is stopped with it` (timed out at 30 s in the check; 0 of 200 stressed runs at `--load 2`; not deterministic) |
+## T-0206 — the plugin store reads only past its offset
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0206-M1 | packages/engine/src/plugin/file-store.ts | read the facts from byte 0 instead of from `this.offset`, so every refresh read the whole file | `the file plugin store > a second reader sees facts another writer appended`; `the file plugin store > refresh reads only past its offset, and a torn multi-byte line waits for its newline` |
+| T-0206-M2 | packages/engine/src/plugin/file-store.ts | treated the bytes after the last newline as complete, so a torn line was consumed before its newline landed | `the file plugin store > refresh reads only past its offset, and a torn multi-byte line waits for its newline` |
