@@ -22,11 +22,13 @@ and the boundary the kernel keeps.
   root `MUTATIONS.md` indexes the package files.
 - Repository text is English.
 
-Before you finish, run `bash scripts/check-changed.sh` and make it pass. It
-installs with the lockfile, type-checks and runs the tests of the packages you
-changed and of the packages that load them. Do not run the full
-`bash scripts/verify.sh` and do not wait for other checks to end: the task's
-check runs after you finish, and the full suite runs before merge.
+Before you finish, run `bunx tsc -b` and the test files you added or changed
+(`bun test --timeout 30000 <files>`), and make them pass. Do not run
+`bash scripts/check-changed.sh` or `bash scripts/verify.sh`, and do not wait
+for other checks to end: the task's check runs `check-changed.sh` after you
+finish, with a limit on how many checks run on this machine at once, and the
+full suite runs before merge. A task whose brief names another check runs
+that one too.
 
 Commit each whole piece of work as you finish it and leave the worktree clean.
 Never write under `.git`. Never kill, signal or stop a process you did not start.
