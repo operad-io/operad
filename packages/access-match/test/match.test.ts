@@ -392,3 +392,33 @@ test("readProfile reads askPaths", () => {
   expect(readProfile({ askPaths: ["~/.zshrc"] })).toEqual({ ok: true, profile: { askPaths: ["~/.zshrc"] } });
   expect(readProfile({ askPaths: 1 }).ok).toBe(false);
 });
+
+// -- readOnly ----------------------------------------------------------------
+
+test("a read-only working directory asks about a write under it, and only a write", () => {
+  const profile: AccessProfile = { readOnly: true };
+  const write = match(profile, { tool: "write", input: { path: "src/a.ts" }, cwd: CWD }, { home: HOME });
+  expect(write).toMatchObject({ allow: false, ask: true, kind: "path", value: "src/a.ts", tool: "write" });
+  const edit = match(profile, { tool: "edit", input: { path: `${CWD}/b.ts` }, cwd: CWD }, { home: HOME });
+  expect(edit).toMatchObject({ allow: false, ask: true, tool: "edit" });
+  expect(match(profile, { tool: "read", input: { path: "src/a.ts" }, cwd: CWD }, { home: HOME })).toEqual({ allow: true });
+  expect(match(profile, { tool: "write", input: { path: "/tmp/scratch" }, cwd: CWD }, { home: HOME })).toEqual({ allow: true });
+  expect(match({}, { tool: "write", input: { path: "src/a.ts" }, cwd: CWD }, { home: HOME })).toEqual({ allow: true });
+});
+
+test("a read-only working directory asks about a bash redirect into it, and a deny still wins", () => {
+  expect(bash({ readOnly: true }, "echo hi > notes.txt")).toMatchObject({ allow: false, ask: true, kind: "command" });
+  expect(bash({ readOnly: true }, "ls -la")).toEqual({ allow: true });
+  const denied = match(
+    { readOnly: true, denyPaths: ["src"] },
+    { tool: "write", input: { path: "src/a.ts" }, cwd: CWD },
+    { home: HOME },
+  );
+  expect(denied).toMatchObject({ allow: false });
+  expect(denied.ask).toBeUndefined();
+});
+
+test("readOnly is read from a profile, and only a boolean is accepted", () => {
+  expect(readProfile({ readOnly: true })).toEqual({ ok: true, profile: { readOnly: true } });
+  expect(readProfile({ readOnly: "yes" })).toEqual({ ok: false, message: "readOnly must be true or false" });
+});

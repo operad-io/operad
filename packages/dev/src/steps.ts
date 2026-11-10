@@ -330,7 +330,7 @@ export function changedFiles(worktree: string): readonly string[] {
   return [...new Set(files)].filter((file) => file !== PROGRESS_FILE).sort();
 }
 
-interface Prepared {
+export interface Prepared {
   readonly kind: "ready" | "conflict" | "failed";
   readonly base?: string | undefined;
   readonly message?: string | undefined;
@@ -402,7 +402,7 @@ function mergeLatest(path: string, mainRef: string): Prepared {
 }
 
 /** Fetches, creates the worktree when needed, and merges main into a reused one. */
-function prepareWorktree(
+export function prepareWorktree(
   repository: RepositoryData,
   settings: DevSettings,
   taskId: string,

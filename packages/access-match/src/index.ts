@@ -27,6 +27,12 @@ export interface AccessProfile {
    * `edit` tools, and for a `bash` redirect (`>`, `>>`) to such a path.
    */
   readonly askPaths?: readonly string[] | undefined;
+  /**
+   * The working directory is read-only: a write there (the `write` and `edit`
+   * tools, a `bash` redirect) asks, as if the directory were in `askPaths`.
+   * Deny wins over it.
+   */
+  readonly readOnly?: boolean | undefined;
   /** Permissions not yet used; the caller uses one up before it lets a call through. */
   readonly grants?: readonly AccessGrant[] | undefined;
 }
@@ -83,7 +89,12 @@ export function readProfile(value: unknown): ProfileRead {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return { ok: false, message: "the access profile must be an object" };
   }
-  const found: { denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; grants?: AccessGrant[] } = {};
+  const found: { denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; readOnly?: boolean; grants?: AccessGrant[] } = {};
+  const readOnly: unknown = Reflect.get(value, "readOnly");
+  if (readOnly !== undefined) {
+    if (typeof readOnly !== "boolean") return { ok: false, message: "readOnly must be true or false" };
+    found.readOnly = readOnly;
+  }
   for (const field of ["denyPaths", "denyCommands", "askCommands", "askPaths"] as const) {
     const entry: unknown = Reflect.get(value, field);
     if (entry === undefined) continue;
@@ -282,8 +293,11 @@ function askBash(profile: AccessProfile, command: string, asked: AskedPaths | un
  * over ask and ask over allow: the deny rules and paths are checked first, and
  * `askCommands` only when nothing denied the call.
  */
-export function match(profile: AccessProfile, call: ToolCall, options: MatchOptions = {}): Verdict {
+export function match(given: AccessProfile, call: ToolCall, options: MatchOptions = {}): Verdict {
   const home = options.home ?? homedir();
+  // A read-only working directory is a directory whose writes ask.
+  const profile: AccessProfile =
+    given.readOnly === true ? { ...given, askPaths: [...(given.askPaths ?? []), call.cwd] } : given;
   const entries = (profile.denyPaths ?? [])
     .filter((written) => written.length > 0)
     .map((written) => ({ written, path: normalise(written, call.cwd, home) }));

@@ -81,6 +81,7 @@ export function askToolEvent(line: string): "tool-start" | "tool-end" | undefine
 /** Whether the run's access profile has a rule that may make a call ask. */
 export function canAsk(access: unknown): boolean {
   if (!isRecord(access)) return false;
+  if (access.readOnly === true) return true;
   return [access.askCommands, access.askPaths].some((rules) => Array.isArray(rules) && rules.length > 0);
 }
 

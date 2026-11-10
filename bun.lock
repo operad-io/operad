@@ -54,6 +54,7 @@
       "name": "@operad-io/dev",
       "version": "0.0.0",
       "dependencies": {
+        "@operad-io/chat": "workspace:*",
         "@operad-io/engine": "workspace:*",
         "@operad-io/pool": "workspace:*",
         "@operad-io/review-grading": "workspace:*",

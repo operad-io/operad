@@ -31,6 +31,7 @@ describe("operad config", () => {
         module: "@operad-io/harness-radian",
         enabled: true,
       },
+      chat: { module: "@operad-io/chat", enabled: true },
       dev: { module: "@operad-io/dev", enabled: true },
     });
   });
