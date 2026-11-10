@@ -210,7 +210,7 @@ test("the matcher keeps no state between calls", () => {
 test("readProfile names the field at fault and keeps only what the matcher reads", () => {
   expect(readProfile({ denyPaths: ["a"], askCommands: ["x"], network: "none" })).toEqual({
     ok: true,
-    profile: { denyPaths: ["a"] },
+    profile: { denyPaths: ["a"], askCommands: ["x"] },
   });
   expect(readProfile({ denyCommands: "sudo" })).toEqual({ ok: false, message: "denyCommands must be an array of strings" });
   expect(readProfile({ denyPaths: [1] })).toEqual({ ok: false, message: "denyPaths must be an array of strings" });
@@ -270,4 +270,73 @@ test("readProfile reads grants and refuses a malformed one", () => {
   for (const bad of [{ grants: "x" }, { grants: [1] }, { grants: [{ waitId: "a", kind: "url", value: "x" }] }]) {
     expect(readProfile(bad).ok).toBe(false);
   }
+});
+
+// -- askCommands -------------------------------------------------------------
+
+const ASKING: AccessProfile = { askCommands: ["git push", "rm -r", "brew install"] };
+
+function asked(verdict: ReturnType<typeof match>): { reason: string; rule: string; value: string } {
+  if (verdict.allow || verdict.ask !== true) throw new Error("expected an ask");
+  expect(verdict.kind).toBe("command");
+  return { reason: verdict.reason, rule: verdict.rule, value: verdict.value };
+}
+
+test("a command that matches askCommands asks, with the whole command as the value", () => {
+  expect(asked(bash(ASKING, "git push origin main"))).toEqual({
+    reason: 'part "git push origin main" matches askCommands rule "git push"',
+    rule: "git push",
+    value: "git push origin main",
+  });
+  expect(asked(bash(ASKING, "make && brew install jq")).rule).toBe("brew install");
+  expect(asked(bash(ASKING, "env A=1 rm -rf build")).rule).toBe("rm -r");
+});
+
+test("a command that matches no askCommands rule is allowed", () => {
+  expect(bash(ASKING, "git status && ls")).toEqual({ allow: true });
+  expect(bash({ askCommands: [] }, "git push")).toEqual({ allow: true });
+});
+
+test("deny wins over ask, and ask wins over allow", () => {
+  const both: AccessProfile = { denyCommands: ["git push --force*"], askCommands: ["git push"] };
+  // Only the ask rule matches: ask.
+  expect(asked(bash(both, "git push origin")).rule).toBe("git push");
+  // Both match: the deny is the verdict and nobody is asked.
+  const denied = bash(both, "git push --force origin");
+  expect(denied.allow).toBe(false);
+  expect(denied.ask).toBeUndefined();
+  expect(refusal(denied)).toContain('denyCommands rule "git push --force*"');
+  // A deny in another part of the command wins over an ask in this one.
+  expect(bash({ denyCommands: ["sudo"], askCommands: ["git push"] }, "git push && sudo ls").ask).toBeUndefined();
+  // A denied path wins over an ask.
+  const path = bash({ denyPaths: ["~/.ssh"], askCommands: ["git push"] }, "git push ~/.ssh/id");
+  expect(path.allow).toBe(false);
+  expect(path.ask).toBeUndefined();
+  expect(refusal(path)).toContain("denyPaths");
+  // Ask over allow.
+  expect(asked(bash({ ...COMMANDS, ...ASKING }, "git push")).rule).toBe("git push");
+  expect(bash({ ...COMMANDS, ...ASKING }, "git status")).toEqual({ allow: true });
+});
+
+test("inline code asks while askCommands is set and is allowed without it", () => {
+  expect(asked(bash(ASKING, "bash -c 'git push'")).rule).toBe("inline code");
+  expect(asked(bash(ASKING, "echo $(whoami)")).rule).toBe("inline code");
+  expect(bash({ askCommands: [] }, "bash -c 'git push'")).toEqual({ allow: true });
+});
+
+test("an ask verdict is a refusal to a caller that does not know ask", () => {
+  expect(bash(ASKING, "git push").allow).toBe(false);
+});
+
+test("readProfile reads askCommands and refuses a malformed one", () => {
+  expect(readProfile({ askCommands: ["git push"] })).toEqual({ ok: true, profile: { askCommands: ["git push"] } });
+  expect(readProfile({ askCommands: "git push" })).toEqual({ ok: false, message: "askCommands must be an array of strings" });
+});
+
+test("a one-time grant covers an asked command exactly", () => {
+  const profile: AccessProfile = { ...ASKING, grants: [{ waitId: "w9", kind: "command", value: "git push origin main" }] };
+  const call = { tool: "bash", input: { command: "git push origin main" }, cwd: CWD };
+  expect(match(profile, call, { home: HOME }).allow).toBe(false);
+  expect(findGrant(profile, call)?.waitId).toBe("w9");
+  expect(findGrant(profile, { ...call, input: { command: "git push origin other" } })).toBeUndefined();
 });

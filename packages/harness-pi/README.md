@@ -223,8 +223,35 @@ input line. A `tool_call` the profile refuses and that equals a grant exactly
 before it answers `used: true`; only then does the call run. A second identical
 call finds the grant used and is checked against the profile as usual.
 
+
+### Asking about a call
+
+A call the profile's `askCommands` matches (and that no deny rule matched: deny
+wins over ask) asks a person instead of running. The step keeps the worker's
+stdin open. The worker writes `{"type":"ask_call","id":n,"kind":"command","value":"<the whole command>","shown":"...","session":"<session>"|null}`
+and holds the call; the host asks with `ctx.ask` (choices `allow_once` and
+`reject_once`, the grace period of the kernel: 10 minutes by default, set by
+`ask.graceSecs`, `askGraceSecs` of the step or the question) and answers on
+stdin `{"type":"ask_ack","id":n,"decision":"allow"|"deny"|"stop","reason"?}`,
+after which the worker writes `{"type":"ask_resolved","id":n}`. Questions go
+one at a time. A command that holds a value of the operad secret store is
+refused and never asked about, so no fact holds a secret.
+
+- Answered within the grace period (`allow`): the same step goes on and this one
+  call runs; nothing is kept for another call. `reject_once` is `deny`.
+- Not answered in time (`stop`): the worker holds the call, the host ends the
+  program, and the step ends `waiting` (the result is declared). The one pending
+  item stays, with the run's object. The flow's `waiting` route goes to a wait
+  for a person and back to the step.
+- Answered later: the step runs again with `resumeSession`, `askAnswer` and
+  `grants: [{ waitId, kind, value }]` for `allow_once`. The worker uses the grant
+  for the one call it covers (`grant_use`, above); any other call asks again.
+  After `reject_once` no grant arrives and the model is told so in the prompt.
+
+The host's half (`createCallAsker`, `askCall`, `askRequest`) is in
+`@operad-io/harness-process`. `askCommands` is in the step's `enforces`.
+
 ### Access profile
 
-The step declares `enforces: ["denyPaths", "denyCommands"]` and passes the run's
-profile to the worker. A profile that sets `askCommands` is refused when the run
-starts, with `askCommands` named.
+The step declares `enforces: ["denyPaths", "denyCommands", "askCommands"]` and
+passes the run's profile to the worker, whose `tool_call` handler applies it.

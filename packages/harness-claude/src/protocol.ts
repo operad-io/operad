@@ -120,6 +120,22 @@ export type WorkerLine =
    * `GrantAck` line; only `used: true` lets the call run.
    */
   | { readonly type: "grant_use"; readonly id: number; readonly waitId: string }
+  /**
+   * The program asks a person whether one call may run (the access profile's
+   * `askCommands`) and holds the call until the host answers with an `AskAck`
+   * line. `session` is what a late answer continues. `ask_resolved` follows
+   * the answer, so the host knows the question is closed.
+   */
+  | {
+      readonly type: "ask_call";
+      readonly id: number;
+      readonly kind: "command" | "path";
+      readonly value: string;
+      readonly tool?: string;
+      readonly shown: string;
+      readonly session: string | null;
+    }
+  | { readonly type: "ask_resolved"; readonly id: number }
   | WorkerResult;
 
 /** A stdin line after the input: the host's answer to a `grant_use` line. */
@@ -127,6 +143,18 @@ export interface GrantAck {
   readonly type: "grant_ack";
   readonly id: number;
   readonly used: boolean;
+}
+
+/**
+ * A stdin line after the input: the host's answer to an `ask_call` line.
+ * `allow` lets this one call run; `deny` refuses it; `stop` means the wait
+ * ended and the program is about to be ended: it holds the call.
+ */
+export interface AskAck {
+  readonly type: "ask_ack";
+  readonly id: number;
+  readonly decision: "allow" | "deny" | "stop";
+  readonly reason?: string;
 }
 
 export type ParsedInput =

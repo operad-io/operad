@@ -613,6 +613,161 @@ test("a grant the host cannot confirm lets nothing through", async () => {
   expect(run.lines.filter((line) => line["type"] === "blocked")).toHaveLength(1);
 });
 
+/**
+ * Runs the fake worker with a host that answers `ask_call` lines. `decide` sees
+ * each question and answers; after a `stop` the host ends the program, as the
+ * real host does.
+ */
+async function runAsking(
+  s: Setup,
+  script: unknown[],
+  input: Record<string, unknown>,
+  decide: (call: Record<string, unknown>) => "allow" | "deny" | "stop",
+): Promise<Run> {
+  const child = Bun.spawn(["bun", FAKE_WORKER], {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, HOME: s.home, FAKE_SCRIPT: JSON.stringify(script) },
+  });
+  child.stdin.write(`${JSON.stringify(input)}\n`);
+  void child.stdin.flush();
+  const raw: string[] = [];
+  const decoder = new TextDecoder();
+  let pending = "";
+  for await (const chunk of child.stdout) {
+    pending += decoder.decode(chunk, { stream: true });
+    for (;;) {
+      const newline = pending.indexOf("\n");
+      if (newline === -1) break;
+      const line = pending.slice(0, newline);
+      pending = pending.slice(newline + 1);
+      raw.push(line);
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      if (parsed["type"] === "grant_use") {
+        child.stdin.write(`${JSON.stringify({ type: "grant_ack", id: parsed["id"], used: true })}\n`);
+        void child.stdin.flush();
+      }
+      if (parsed["type"] === "ask_call") {
+        const decision = decide(parsed);
+        child.stdin.write(`${JSON.stringify({ type: "ask_ack", id: parsed["id"], decision, reason: "no thanks" })}\n`);
+        void child.stdin.flush();
+        if (decision === "stop") child.kill("SIGTERM");
+      }
+    }
+  }
+  const exitCode = await child.exited;
+  const stderr = await new Response(child.stderr).text();
+  return { lines: raw.map((line) => JSON.parse(line) as Record<string, unknown>), raw, stderr, exitCode };
+}
+
+test("a command askCommands matches asks a person: allowed, it runs once; the same command again asks again", async () => {
+  const s = setup();
+  const marker = join(s.dir, "marker");
+  const calls: Array<Record<string, unknown>> = [];
+  let markerSeenAtFirst: boolean | undefined;
+  const run = await runAsking(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${marker}` } } },
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${marker}` } } },
+      { text: "finished" },
+    ],
+    { ...s.input, access: { askCommands: ["touch"] } },
+    (call) => {
+      calls.push(call);
+      markerSeenAtFirst ??= existsSync(marker);
+      // The first question is allowed; the second is refused.
+      return calls.length === 1 ? "allow" : "deny";
+    },
+  );
+
+  expect(run.exitCode).toBe(0);
+  expect(calls).toHaveLength(2);
+  expect(calls[0]).toMatchObject({ type: "ask_call", kind: "command", value: `touch ${marker}`, shown: `touch ${marker}` });
+  // The session a late answer continues is pi's session file.
+  expect(typeof calls[0]?.["session"]).toBe("string");
+  expect(markerSeenAtFirst).toBe(false);
+  expect(existsSync(marker)).toBe(true);
+  // One call was let through and one refused.
+  expect(run.lines.filter((line) => line["type"] === "blocked")).toHaveLength(1);
+  expect(run.raw.filter((text) => text.includes('"ask_resolved"'))).toHaveLength(2);
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "finished" });
+});
+
+test("a denied command is never asked about: deny wins over ask", async () => {
+  const s = setup();
+  const marker = join(s.dir, "marker");
+  const run = await runAsking(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${marker}` } } },
+      { text: "finished" },
+    ],
+    { ...s.input, access: { askCommands: ["touch"], denyCommands: ["touch"] } },
+    () => "allow",
+  );
+  expect(existsSync(marker)).toBe(false);
+  expect(run.raw.filter((text) => text.includes('"ask_call"'))).toHaveLength(0);
+});
+
+test("a stop holds the call: the command never runs and the program ends when the host ends it", async () => {
+  const s = setup();
+  const marker = join(s.dir, "marker");
+  const run = await runAsking(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${marker}` } } },
+      { text: "finished" },
+    ],
+    { ...s.input, access: { askCommands: ["touch"] } },
+    () => "stop",
+  );
+  expect(existsSync(marker)).toBe(false);
+  expect(run.lines.some((line) => line["type"] === "result" && line["result"] === "done")).toBe(false);
+});
+
+test("a command that holds a secret value is refused and never asked about", async () => {
+  const s = setup();
+  const marker = join(s.dir, "marker");
+  const run = await runAsking(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${marker}-hunter2hunter2` } } },
+      { text: "finished" },
+    ],
+    { ...s.input, access: { askCommands: ["touch"] }, secretValues: ["hunter2hunter2"] },
+    () => "allow",
+  );
+  expect(existsSync(`${marker}-hunter2hunter2`)).toBe(false);
+  expect(run.raw.filter((text) => text.includes('"ask_call"'))).toHaveLength(0);
+});
+
+test("after a late answer the permission lets the asked command through and a different command asks again", async () => {
+  const s = setup();
+  const marker = join(s.dir, "marker");
+  const other = join(s.dir, "other");
+  const asked: string[] = [];
+  const run = await runAsking(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${marker}` } } },
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${other}` } } },
+      { text: "finished" },
+    ],
+    { ...s.input, access: { askCommands: ["touch"], grants: [{ waitId: "w1", kind: "command", value: `touch ${marker}` }] } },
+    (call) => {
+      asked.push(String(call["value"]));
+      return "deny";
+    },
+  );
+  // The covered command used the permission and did not ask; the other one asked.
+  expect(run.lines.filter((line) => line["type"] === "grant_use")).toHaveLength(1);
+  expect(asked).toEqual([`touch ${other}`]);
+  expect(existsSync(marker)).toBe(true);
+  expect(existsSync(other)).toBe(false);
+});
+
 function makeFifo(path: string): void {
   const made = Bun.spawnSync({ cmd: ["mkfifo", path] });
   if (made.exitCode !== 0) throw new Error(`mkfifo failed for ${path}`);

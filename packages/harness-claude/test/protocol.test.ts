@@ -975,3 +975,133 @@ test("a secret of the operad store sent as secretValues is masked in the logged 
   expect(toolLines(run).start[0]?.["input"]).toBe("curl -H *** x");
   expect(run.stdout).not.toContain("store-secret-9");
 });
+
+// -- askCommands: a call that must ask a person ------------------------------
+
+const ASK_PUSH: FakeStep[] = [
+  { say: systemInit() },
+  { hook: "PreToolUse", toolName: "Bash", toolUseId: "tool-1", input: { command: "git push origin main" } },
+  { ask: { toolName: "Bash", toolUseId: "tool-1", input: { command: "git push origin main" } } },
+  { say: assistant("m1", "done") },
+  { say: result() },
+];
+const ASKING = { askCommands: ["git push"] };
+
+async function askRun(decision: "allow" | "deny" | "stop" | "gone"): Promise<{ run: Run; call: Line | undefined }> {
+  const s = setup();
+  s.input["access"] = ASKING;
+  const child = new Child(FAKE_WORKER, s.env({ steps: ASK_PUSH }), s.recordFile);
+  child.sendLine(JSON.stringify(s.input));
+  if (decision === "gone") {
+    child.endInput();
+    return { run: await child.finish(), call: undefined };
+  }
+  const call = await child.untilLine("ask_call");
+  if (call === undefined) return { run: await child.finish(), call };
+  child.sendLine(JSON.stringify({ type: "ask_ack", id: call["id"], decision, reason: "no thanks" }));
+  if (decision === "stop") {
+    // The host ends the program after it answers `stop`.
+    await child.untilLine("ask_resolved");
+    child.signal("SIGTERM");
+  }
+  child.endInput();
+  return { run: await child.finish(), call };
+}
+
+test("a command that askCommands matches writes an ask_call with the command and the session, and runs once when allowed", async () => {
+  const { run, call } = await askRun("allow");
+  expect(call).toEqual({
+    type: "ask_call",
+    id: 1,
+    kind: "command",
+    value: "git push origin main",
+    shown: "git push origin main",
+    session: SESSION,
+  });
+  expect(answerOf(run)["behavior"]).toBe("allow");
+  expect(kinds(run)).not.toContain("blocked");
+  // The start line shows the call as itself: it is not refused.
+  expect(run.lines.find((line) => line["type"] === "tool_execution_start")?.["input"]).toBe("git push origin main");
+  expect(kinds(run).indexOf("ask_call")).toBeLessThan(kinds(run).indexOf("ask_resolved"));
+  expect(kinds(run).indexOf("ask_resolved")).toBeLessThan(kinds(run).indexOf("message_end"));
+  expect(last(run)).toMatchObject({ result: "done" });
+});
+
+test("a refused question denies the call with the reason and the run goes on", async () => {
+  const { run } = await askRun("deny");
+  expect(answerOf(run)["behavior"]).toBe("deny");
+  expect(String(answerOf(run)["message"])).toContain('matches askCommands rule "git push"');
+  expect(String(answerOf(run)["message"])).toContain("no thanks");
+  expect(kinds(run)).toContain("blocked");
+  expect(last(run)).toMatchObject({ result: "done" });
+});
+
+test("a host that is gone refuses the call", async () => {
+  const { run } = await askRun("gone");
+  expect(answerOf(run)["behavior"]).toBe("deny");
+  expect(last(run)).toMatchObject({ result: "done" });
+});
+
+test("a stop holds the call until the program is ended, and the call never runs", async () => {
+  const { run } = await askRun("stop");
+  expect(kinds(run)).not.toContain("message_end");
+  expect(answerOf(run)["behavior"]).not.toBe("allow");
+});
+
+test("a deny wins over an ask: nobody is asked about a denied command", async () => {
+  const s = setup();
+  s.input["access"] = { askCommands: ["git push"], denyCommands: ["git push --force*"] };
+  const run = await runFake(s, {
+    steps: [
+      { say: systemInit() },
+      { ask: { toolName: "Bash", toolUseId: "tool-1", input: { command: "git push --force origin" } } },
+      { say: result() },
+    ],
+  });
+  expect(answerOf(run)["behavior"]).toBe("deny");
+  expect(kinds(run)).not.toContain("ask_call");
+});
+
+test("a command that holds a secret value is refused and never asked about", async () => {
+  const s = setup();
+  s.input["access"] = ASKING;
+  s.input["secretValues"] = ["hunter2hunter2"];
+  const steps: FakeStep[] = [
+    { say: systemInit() },
+    { ask: { toolName: "Bash", toolUseId: "tool-1", input: { command: "git push https://u:hunter2hunter2@h/r" } } },
+    { say: result() },
+  ];
+  // The host stays and would allow whatever it is asked.
+  const child = new Child(FAKE_WORKER, s.env({ steps }), s.recordFile);
+  child.sendLine(JSON.stringify(s.input));
+  const call = await child.untilLine("ask_call");
+  if (call !== undefined) child.sendLine(JSON.stringify({ type: "ask_ack", id: call["id"], decision: "allow" }));
+  child.endInput();
+  const run = await child.finish();
+  expect(call).toBeUndefined();
+  expect(answerOf(run)["behavior"]).toBe("deny");
+  expect(run.stdout).not.toContain("hunter2hunter2");
+});
+
+test("after a late answer the one-time grant lets that command through and any other asks again", async () => {
+  const s = setup();
+  s.input["access"] = { ...ASKING, grants: [{ waitId: "w1", kind: "command", value: "git push origin main" }] };
+  const steps: FakeStep[] = [
+    { say: systemInit() },
+    { ask: { toolName: "Bash", toolUseId: "tool-1", input: { command: "git push origin main" } } },
+    { ask: { toolName: "Bash", toolUseId: "tool-2", input: { command: "git push origin other" } } },
+    { say: result() },
+  ];
+  const child = new Child(FAKE_WORKER, s.env({ steps }), s.recordFile);
+  child.sendLine(JSON.stringify(s.input));
+  const use = await child.untilLine("grant_use");
+  child.sendLine(JSON.stringify({ type: "grant_ack", id: use?.["id"], used: true }));
+  const call = await child.untilLine("ask_call");
+  // The granted call did not ask; the other one does.
+  expect(call?.["value"]).toBe("git push origin other");
+  child.sendLine(JSON.stringify({ type: "ask_ack", id: call?.["id"], decision: "deny" }));
+  child.endInput();
+  const run = await child.finish();
+  const answers = run.record.filter((entry) => "askReply" in entry).map((entry) => (entry["answer"] as Line)["behavior"]);
+  expect(answers).toEqual(["allow", "deny"]);
+});

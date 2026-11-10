@@ -1,14 +1,23 @@
 # @operad-io/access-match
 
 The access profile matcher. `match(profile, call)` says whether one tool call
-may run under the `denyPaths` and `denyCommands` of an access profile
+may run under the `denyPaths`, `denyCommands` and `askCommands` of an access profile
 (`docs/backlog/operad-sandbox.md` decisions 1 and 4,
 `docs/backlog/operad-harness-pi.md` decision 7). Harnesses call it in their
 tool-call hook: pi today, Claude and the command adapter later.
 
 ```ts
-match(profile, { tool, input, cwd }): { allow: true } | { allow: false, reason }
+match(profile, { tool, input, cwd }):
+  | { allow: true }
+  | { allow: false, reason, rule? }                          // refused
+  | { allow: false, ask: true, reason, rule, kind: "command", value }  // asks a person
 ```
+
+Precedence: **deny wins over ask, and ask wins over allow.** A call that matches
+`denyCommands` or `denyPaths` anywhere is refused, whatever `askCommands` says,
+and nobody is asked; a call that matches only `askCommands` asks; any other call
+is allowed. A caller that does not know `ask` sees `allow: false` and refuses,
+never passes.
 
 The matcher is pure and synchronous and keeps no state between calls. It never
 touches the file system: paths are resolved **lexically** against `cwd`. The
@@ -21,6 +30,7 @@ the `home` option). `test/match.test.ts` follows the tables below.
 |---|---|---|
 | `denyPaths` | string[], optional | a call that touches a path under one of these is refused |
 | `denyCommands` | string[], optional | a `bash` command part that matches one of these is refused |
+| `askCommands` | string[], optional | rules in the shape of `denyCommands`; a `bash` command part that matches one of these asks a person (`operad-sandbox.md` decisions 1 and 3). There is no ask for paths: `operad-sandbox.md` names none |
 
 | `grants` | `{ waitId, kind: "command" \| "path", value, tool? }[]`, optional | one-time permissions not yet used; see `findGrant` |
 
@@ -30,8 +40,8 @@ for character, a `path` grant a call of the one `tool` it names (not another pat
 pure. The caller must use the grant up (the engine writes `grant_used`) before it
 lets the call run, and match the call as usual when it cannot.
 
-Other fields of the access profile (`cwd`, `outside`, `askCommands`,
-`network`) are not read here. `readProfile(value)` checks an untrusted object
+Other fields of the access profile (`cwd`, `outside`, `network`) are not read
+here. `readProfile(value)` checks an untrusted object
 and names the field at fault.
 
 ## Call
@@ -81,6 +91,13 @@ A rule is a pattern of words; `*` in a word matches any characters.
 | `\|` between words | the rule spans a pipeline: each side matches one part, and the parts follow each other joined by `\|`, so `curl … \| sh` matches `curl x \| sh` and `curl x \| tee y \| sh` does not |
 
 The reason is `part "<part>" is refused by denyCommands rule "<rule>"`.
+
+`askCommands` rules are matched the same way, after every deny check has passed
+(precedence above). The reason is `part "<part>" matches askCommands rule
+"<rule>"`, and the verdict's `value` is the whole command of the call: that is
+what a person is asked about and what a one-time permission (`findGrant`) covers.
+Inline code (below) asks while `askCommands` is set, with the rule `inline code`:
+what it runs cannot be matched (`operad-sandbox.md` decision 4).
 
 ## Inline code
 

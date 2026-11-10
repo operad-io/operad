@@ -19,6 +19,8 @@ export interface AccessGrant {
 export interface AccessProfile {
   readonly denyPaths?: readonly string[] | undefined;
   readonly denyCommands?: readonly string[] | undefined;
+  /** Command rules in the shape of `denyCommands`; a match asks a person instead of refusing. */
+  readonly askCommands?: readonly string[] | undefined;
   /** Permissions not yet used; the caller uses one up before it lets a call through. */
   readonly grants?: readonly AccessGrant[] | undefined;
 }
@@ -29,7 +31,33 @@ export interface ToolCall {
   readonly cwd: string;
 }
 
-export type Verdict = { readonly allow: true } | { readonly allow: false; readonly reason: string; /** The profile rule that refused, as the profile wrote it; never part of the call. */ readonly rule?: string };
+/**
+ * What the profile says about one call. The precedence is fixed: a deny wins
+ * over an ask, and an ask wins over an allow. So a call that matches
+ * `denyCommands` or `denyPaths` anywhere is refused whatever `askCommands`
+ * says; a call that matches only `askCommands` asks; every other call is
+ * allowed. A caller that does not know `ask` reads it as a refusal
+ * (`allow: false`), never as a pass.
+ */
+export type Verdict =
+  | { readonly allow: true; readonly ask?: undefined }
+  | {
+      readonly allow: false;
+      readonly ask?: undefined;
+      readonly reason: string;
+      /** The profile rule that refused, as the profile wrote it; never part of the call. */
+      readonly rule?: string;
+    }
+  | {
+      readonly allow: false;
+      readonly ask: true;
+      readonly reason: string;
+      /** The `askCommands` rule that matched, or `inline code` when the command hides what it runs. */
+      readonly rule: string;
+      /** What a person is asked about: the whole command of the call. */
+      readonly kind: "command";
+      readonly value: string;
+    };
 
 export interface MatchOptions {
   /** What `~` means; defaults to the user's home directory. */
@@ -45,8 +73,8 @@ export function readProfile(value: unknown): ProfileRead {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return { ok: false, message: "the access profile must be an object" };
   }
-  const found: { denyPaths?: string[]; denyCommands?: string[]; grants?: AccessGrant[] } = {};
-  for (const field of ["denyPaths", "denyCommands"] as const) {
+  const found: { denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; grants?: AccessGrant[] } = {};
+  for (const field of ["denyPaths", "denyCommands", "askCommands"] as const) {
     const entry: unknown = Reflect.get(value, field);
     if (entry === undefined) continue;
     if (!Array.isArray(entry) || !entry.every((item): item is string => typeof item === "string")) {
@@ -169,7 +197,36 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
   return ALLOW;
 }
 
-/** Whether one tool call may run under the profile. Pure and lexical. */
+/**
+ * The ask verdict of a command, when no deny applied. A command that hides what
+ * it runs (inline code) cannot be matched, so it asks while `askCommands` is
+ * set (`operad-sandbox.md` decision 4).
+ */
+function askBash(profile: AccessProfile, command: string): Verdict {
+  const texts = profile.askCommands ?? [];
+  if (texts.length === 0) return ALLOW;
+  const rules = texts.map((text) => parseRule(text)).filter((rule): rule is Rule => rule !== undefined);
+  const { parts, substitution } = scan(command);
+  const ask = (reason: string, rule: string): Verdict => ({ allow: false, ask: true, reason, rule, kind: "command", value: command });
+  if (substitution !== undefined) {
+    return ask(`command "${command}" runs inline code (${substitution}); it asks while askCommands is set`, "inline code");
+  }
+  for (const part of parts) {
+    const form = inlineFormOf(part);
+    if (form !== undefined) {
+      return ask(`part "${part.text}" runs inline code (${form}); it asks while askCommands is set`, "inline code");
+    }
+  }
+  const hit = findDenied(rules, parts);
+  if (hit !== undefined) return ask(`part "${hit.text}" matches askCommands rule "${hit.rule}"`, hit.rule);
+  return ALLOW;
+}
+
+/**
+ * Whether one tool call may run under the profile. Pure and lexical. Deny wins
+ * over ask and ask over allow: the deny rules and paths are checked first, and
+ * `askCommands` only when nothing denied the call.
+ */
 export function match(profile: AccessProfile, call: ToolCall, options: MatchOptions = {}): Verdict {
   const home = options.home ?? homedir();
   const entries = (profile.denyPaths ?? [])
@@ -179,7 +236,9 @@ export function match(profile: AccessProfile, call: ToolCall, options: MatchOpti
 
   if (call.tool === "bash") {
     const command: unknown = call.input["command"];
-    return typeof command === "string" ? checkBash(profile, command, denied) : ALLOW;
+    if (typeof command !== "string") return ALLOW;
+    const verdict = checkBash(profile, command, denied);
+    return verdict.allow ? askBash(profile, command) : verdict;
   }
   if (PATH_TOOLS.has(call.tool) && denied !== undefined) {
     const path: unknown = call.input["path"] ?? call.input["file_path"];
