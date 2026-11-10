@@ -387,3 +387,10 @@ the row fields.
 |---|---|---|---|
 | T-0177-M6 | packages/engine/src/plugin/registry.ts | a standing item's object came with no actions (`actions: []` instead of `actionsHolding`) | `a proposed task is pending > a task added by \`task add\` is pending with confirm and cancel, drawn waiting, and leaves on confirm` (packages/dev/test/proposed-pending.test.ts) |
 | T-0153-M1 | packages/engine/test/wait-for-file.ts | the wait looked once, then waited on the directory watch alone, with no 100 ms look | `store lifecycle and concurrency > two jsonl writers assign unique, contiguous sequences` (timed out 20 of 200 stressed runs with the old watch-only wait; not deterministic) |
+
+## T-0206 — the plugin store reads only past its offset
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0206-M1 | packages/engine/src/plugin/file-store.ts | read the facts from byte 0 instead of from `this.offset`, so every refresh read the whole file | `the file plugin store > a second reader sees facts another writer appended`; `the file plugin store > refresh reads only past its offset, and a torn multi-byte line waits for its newline` |
+| T-0206-M2 | packages/engine/src/plugin/file-store.ts | treated the bytes after the last newline as complete, so a torn line was consumed before its newline landed | `the file plugin store > refresh reads only past its offset, and a torn multi-byte line waits for its newline` |

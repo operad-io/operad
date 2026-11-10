@@ -557,3 +557,10 @@ the row fields.
 |---|---|---|---|
 | T-0177-M5 | packages/dev/src/standing.ts | a draft plan's proposed tasks were listed as task items again (draft grouping skipped) | `a proposed task is pending > a draft plan keeps its own mark and note` |
 | T-0167-M1 | packages/dev/src/steps.ts | the work-wait bound `waits < MAX_WORK_WAITS` became `<=` (or `< MAX_WORK_WAITS - 1`) | `dev/work > unavailable: after the allowed waits the failure goes to a person` |
+
+## T-0206 — the check log and the worker log read only their tails
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0206-M3 | packages/dev/src/rerun.ts | read the failed names from byte 0 instead of the command's `logStart` | `dev/verify reruns only the failed tests > an earlier attempt's names in the run log do not stop this attempt's rerun` |
+| T-0206-M4 | packages/dev/src/views.ts | started the worker-log tail at the end of the file, so the log section was empty | `dev views > the log section is the tail of the current attempt's worker log` |
