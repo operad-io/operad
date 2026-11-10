@@ -231,11 +231,17 @@ describe("shell/command", () => {
     // Job control puts the background job in a process group of its own. It
     // keeps the inherited output descriptors and can no longer be signaled
     // through the command's group; the step's own sweep stops it at the end.
+    // macOS's /bin/sh turns on job control here; Linux's dash refuses it
+    // without a tty, so there `setsid` starts the job in a group of its own.
+    const escaped =
+      process.platform === "linux"
+        ? `setsid sleep 60 & echo $! > '${pidFile}'; sleep 0.05`
+        : `set -m; sleep 60 & echo $! > '${pidFile}'; sleep 0.05`;
     const running = registry.runStep(
       "shell/command",
       // The shell lives a few tens of milliseconds more, as a shell does that
       // reads its profile and ends a command: the sweep sees the job below it.
-      { line: `set -m; sleep 60 & echo $! > '${pidFile}'; sleep 0.05` },
+      { line: escaped },
       { runId: "run-escape" },
     );
 

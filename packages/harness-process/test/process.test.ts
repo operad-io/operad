@@ -193,9 +193,15 @@ describe("the harness process", () => {
     const root = await tempRoot();
     const pidFile = join(root, "escaped.pid");
     const clock = manualClock();
+    // macOS's /bin/sh turns on job control here; Linux's dash refuses it
+    // without a tty, so there `setsid` puts the child in a group of its own.
+    const escaped =
+      process.platform === "linux"
+        ? `setsid sleep 60 & echo $! > '${pidFile}'`
+        : `set -m; sleep 60 & echo $! > '${pidFile}'`;
     const running = runAgent({
       command: "sh",
-      args: ["-c", `set -m; sleep 60 & echo $! > '${pidFile}'`],
+      args: ["-c", escaped],
       cwd: root,
       wallMs: 0,
       stallMs: 0,
