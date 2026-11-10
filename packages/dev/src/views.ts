@@ -7,7 +7,13 @@ import type {
   ViewContext,
   ViewSection,
 } from "@operad-io/engine";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  fstatSync,
+  openSync,
+  readSync,
+} from "node:fs";
 import { join } from "node:path";
 import {
   bareId,
@@ -547,12 +553,29 @@ function logPathFor(ctx: ViewContext, use: string, run: string): string | undefi
   return join(ctx.store.root, "logs", segment(plugin), "runs", segment(run), `${segment(step)}.log`);
 }
 
+/** The last `limit` bytes of a file, never the bytes before them. */
+function readTail(path: string, limit: number): Buffer {
+  const fd = openSync(path, "r");
+  try {
+    const size = fstatSync(fd).size;
+    const start = Math.max(0, size - limit);
+    const buffer = Buffer.allocUnsafe(size - start);
+    let read = 0;
+    while (read < buffer.length) {
+      const count = readSync(fd, buffer, read, buffer.length - read, start + read);
+      if (count === 0) break;
+      read += count;
+    }
+    return buffer.subarray(0, read);
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /** The readable lines of one log file, or undefined when there is no file. */
 function readLogLines(path: string | undefined): string[] | undefined {
   if (path === undefined || !existsSync(path)) return undefined;
-  const size = statSync(path).size;
-  const bytes = readFileSync(path);
-  const tail = bytes.subarray(Math.max(0, size - LOG_TAIL_BYTES));
+  const tail = readTail(path, LOG_TAIL_BYTES);
   return readableLog(tail.toString("utf8").split("\n"));
 }
 
