@@ -42,3 +42,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0099-M3 | packages/harness-process/src/process.ts | the run did not tell the inbox its wall time when it began | `runAgent with an inbox > a message sent while the command runs is written to its stdin as a message line, and the listener is dropped at the end` |
+
+## T-0205 — the sentinel's host check works under dash
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0205-M1 | packages/harness-process/src/process.ts | the sentinel killed its group with `kill -KILL -- "-$$"`, which dash rejects, so a harness whose host died stayed running | `the harness process > a harness still running when its host dies is stopped with its sentinel` (Linux) |

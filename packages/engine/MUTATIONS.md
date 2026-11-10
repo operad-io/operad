@@ -387,3 +387,10 @@ the row fields.
 |---|---|---|---|
 | T-0177-M6 | packages/engine/src/plugin/registry.ts | a standing item's object came with no actions (`actions: []` instead of `actionsHolding`) | `a proposed task is pending > a task added by \`task add\` is pending with confirm and cancel, drawn waiting, and leaves on confirm` (packages/dev/test/proposed-pending.test.ts) |
 | T-0153-M1 | packages/engine/test/wait-for-file.ts | the wait looked once, then waited on the directory watch alone, with no 100 ms look | `store lifecycle and concurrency > two jsonl writers assign unique, contiguous sequences` (timed out 20 of 200 stressed runs with the old watch-only wait; not deterministic) |
+
+## T-0205 — process groups and code fingerprints on Linux
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0205-M2 | packages/engine/src/platform/process-group.ts | the sentinel killed its group with `kill -KILL -- "-$$"`, which dash rejects, so a line whose host died stayed running | `the sentinel's host > a line still running when its host dies is stopped with its sentinel` (Linux) |
+| T-0205-M3 | packages/engine/src/loop/code-watch.ts | `hashFile` trusted a size and mtime cache key again, even for a file written within the millisecond | `a code watch > the timer finds a change no event reported` (Linux; the same stale hash made the other watch tests miss a same-size rewrite in some runs) |
