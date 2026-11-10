@@ -162,6 +162,32 @@ describe("ensureServer", () => {
     }
   });
 
+  test("a long log's tail keeps the last ten lines and decodes a multi-byte line across reads", async () => {
+    const { home, cleanup } = await makeHome();
+    try {
+      const lines = Array.from({ length: 20 }, (_, index) => `line ${index}`);
+      const long = `${"€".repeat(10_000)} boom`;
+      const error = await ensureServer({
+        home,
+        fetch: async () => { throw new Error("refused"); },
+        spawn: (log) => {
+          writeFileSync(log, `${lines.join("\n")}\n${long}\n`);
+          return { exited: Promise.resolve(1) };
+        },
+        wait: noWait,
+        lockHeld: () => false,
+      }).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(TuiStartError);
+      const message = (error as Error).message;
+      expect(message).toContain("line 19");
+      expect(message).not.toContain("line 0\n");
+      expect(message).toContain("boom");
+      expect(message).not.toContain("\uFFFD");
+    } finally {
+      await cleanup();
+    }
+  });
+
   test("a child that cannot listen because the port is taken says the port is in use", async () => {
     const { home, cleanup } = await makeHome();
     try {

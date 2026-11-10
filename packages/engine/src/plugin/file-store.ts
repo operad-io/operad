@@ -7,6 +7,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readSync,
   rmSync,
   statSync,
   writeSync,
@@ -79,6 +80,14 @@ export interface FilePluginStoreOptions extends FollowOptions {
         onChange: (filename: string | null) => void,
       ) => () => void)
     | undefined;
+  /**
+   * Reads exactly `length` bytes at `position` from `path`. Defaults to one
+   * open, a read at the position and a close. A test passes one that records
+   * the positions and lengths it was asked for.
+   */
+  readonly readAt?:
+    | ((path: string, position: number, length: number) => Buffer)
+    | undefined;
 }
 
 /** A lock older than this belongs to a writer that died while holding it. */
@@ -103,6 +112,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Waits without spinning the CPU; appends hold the lock for microseconds. */
 function sleepSync(ms: number): void {
   Bun.sleepSync(ms);
+}
+
+/** Reads `length` bytes at `position`, never a byte before it. */
+function readAtSync(path: string, position: number, length: number): Buffer {
+  const fd = openSync(path, "r");
+  try {
+    const buffer = Buffer.allocUnsafe(length);
+    let read = 0;
+    while (read < length) {
+      const count = readSync(fd, buffer, read, length - read, position + read);
+      if (count === 0) break;
+      read += count;
+    }
+    return read === length ? buffer : buffer.subarray(0, read);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 function parseFact(value: unknown): PluginFact | undefined {
@@ -147,6 +173,11 @@ export class FilePluginStore implements PluginStore {
     directory: string,
     onChange: (filename: string | null) => void,
   ) => () => void;
+  private readonly readAt: (
+    path: string,
+    position: number,
+    length: number,
+  ) => Buffer;
   private readonly factsPath: string;
   private readonly lockPath: string;
   private readonly objects = new Map<string, Map<string, StoredObject>>();
@@ -170,6 +201,7 @@ export class FilePluginStore implements PluginStore {
     this.pollMs = options.pollMs ?? DEFAULT_STORE_POLL_MS;
     this.repeat = options.repeat ?? repeatEvery;
     this.watch = options.watch ?? watchDirectory;
+    this.readAt = options.readAt ?? readAtSync;
     this.factsPath = join(options.root, "facts.jsonl");
     this.lockPath = join(options.root, "facts.lock");
     mkdirSync(options.root, { recursive: true });
@@ -448,13 +480,14 @@ export class FilePluginStore implements PluginStore {
    */
   private refresh(): void {
     if (!existsSync(this.factsPath)) return;
-    if (statSync(this.factsPath).size <= this.offset) return;
-    const text = readFileSync(this.factsPath).subarray(this.offset).toString("utf8");
-    const end = text.lastIndexOf("\n");
+    const size = statSync(this.factsPath).size;
+    if (size <= this.offset) return;
+    const bytes = this.readAt(this.factsPath, this.offset, size - this.offset);
+    const end = bytes.lastIndexOf(0x0a);
     if (end < 0) return;
-    const complete = text.slice(0, end + 1);
-    this.offset += Buffer.byteLength(complete, "utf8");
-    for (const line of complete.split("\n")) {
+    const complete = bytes.subarray(0, end + 1);
+    this.offset += complete.length;
+    for (const line of complete.toString("utf8").split("\n")) {
       if (line.length === 0) continue;
       let raw: unknown;
       try {

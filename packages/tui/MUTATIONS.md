@@ -250,3 +250,9 @@ the row fields.
 | T-0149-M6 | packages/tui/themes/solarized-dark.json | code went back to base02, the tint and rule colour | `shipped themes: the files > every shipped theme resolves to a full palette equal to its file` (code is not tint) |
 | T-0149-M7 | packages/tui/themes/solarized-light.json | code went back to base2, the tint and rule colour | `shipped themes: the files > every shipped theme resolves to a full palette equal to its file` (code is not tint) |
 | T-0149-M8 | packages/tui/themes/one-light.json | code went back to the selection colour, leaving no second background | `shipped themes: the files > every shipped theme resolves to a full palette equal to its file` (code is not tint) |
+
+## T-0206 — the serve log tail reads only the end
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0206-M5 | packages/tui/src/autostart.ts | decoded each backward chunk on its own, so a multi-byte character split across two reads became U+FFFD | `ensureServer > a long log's tail keeps the last ten lines and decodes a multi-byte line across reads` |
