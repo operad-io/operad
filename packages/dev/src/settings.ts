@@ -32,6 +32,11 @@ import {
 } from "@operad-io/pool";
 import { defaultOperadHome } from "@operad-io/engine";
 import { DevError, isRecord, type AutoMode } from "./model.ts";
+import {
+  type DevFlowSpec,
+  type DevFlows,
+  type DevStage,
+} from "./flow-compiler.ts";
 
 /** Where a repository keeps its dev settings. */
 export const DEV_SETTINGS_FILE = ".operad/dev.json";
@@ -241,6 +246,8 @@ export interface DevSettings {
   /** The auto level a new plan starts at. */
   readonly autoDefault: AutoMode;
   readonly retry: RetrySettings;
+  /** The repository's own flows; an absent map runs the built-in default. */
+  readonly flows: DevFlows;
 }
 
 /**
@@ -308,6 +315,7 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
   maxAutoRework: 2,
   autoDefault: "off",
   retry: { environmentWaitMinutes: 60 },
+  flows: {},
 };
 
 const KNOWN_FIELDS = new Set([
@@ -335,6 +343,7 @@ const KNOWN_FIELDS = new Set([
   "maxAutoRework",
   "autoDefault",
   "retry",
+  "flows",
 ]);
 
 function nonEmptyString(value: unknown, field: string): string {
@@ -932,7 +941,149 @@ export function runningTaskCap(settings: DevSettings): number {
   return settings.concurrencySet ? Math.min(total, settings.concurrency) : total;
 }
 
-/** Validates one parsed dev.json value and fills the defaults. */
+/** The fields a stage of each kind may name. */
+const STAGE_FIELDS: Readonly<Record<DevStage["stage"], readonly string[]>> = {
+  work: ["stage", "use", "args", "brief", "beforeAttempt"],
+  check: ["stage", "commands", "rerun"],
+  review: ["stage", "use", "args", "later", "grading"],
+  human: ["stage"],
+};
+
+function stageOf(value: unknown, field: string): DevStage {
+  if (!isRecord(value)) {
+    throw new DevError(field, "must be a JSON object");
+  }
+  const kind = value.stage;
+  if (
+    kind !== "work" &&
+    kind !== "check" &&
+    kind !== "review" &&
+    kind !== "human"
+  ) {
+    throw new DevError(
+      `${field}.stage`,
+      'must be "work", "check", "review" or "human"',
+    );
+  }
+  for (const key of Object.keys(value)) {
+    if (!STAGE_FIELDS[kind].includes(key)) {
+      throw new DevError(`${field}.${key}`, "is not a stage setting");
+    }
+  }
+  const optionalString = (key: string): string | undefined =>
+    value[key] === undefined ? undefined : nonEmptyString(value[key], `${field}.${key}`);
+  const optionalList = (key: string): readonly string[] | undefined =>
+    value[key] === undefined ? undefined : stringList(value[key], `${field}.${key}`);
+  switch (kind) {
+    case "work": {
+      const use = optionalString("use");
+      const args = optionalList("args");
+      const brief = optionalString("brief");
+      const beforeAttempt = optionalString("beforeAttempt");
+      return {
+        stage: "work",
+        ...(use === undefined ? {} : { use }),
+        ...(args === undefined ? {} : { args }),
+        ...(brief === undefined ? {} : { brief }),
+        ...(beforeAttempt === undefined ? {} : { beforeAttempt }),
+      };
+    }
+    case "check": {
+      const commands =
+        value.commands === undefined
+          ? undefined
+          : commandList(value.commands, `${field}.commands`);
+      const rerun =
+        value.rerun === undefined
+          ? undefined
+          : nonNegativeInteger(value.rerun, `${field}.rerun`);
+      return {
+        stage: "check",
+        ...(commands === undefined ? {} : { commands }),
+        ...(rerun === undefined ? {} : { rerun }),
+      };
+    }
+    case "review": {
+      const use = optionalString("use");
+      const args = optionalList("args");
+      const later = optionalList("later");
+      const grading = optionalString("grading");
+      return {
+        stage: "review",
+        ...(use === undefined ? {} : { use }),
+        ...(args === undefined ? {} : { args }),
+        ...(later === undefined ? {} : { later }),
+        ...(grading === undefined ? {} : { grading }),
+      };
+    }
+    case "human":
+      return { stage: "human" };
+  }
+}
+
+function flowSpecOf(value: unknown, field: string): DevFlowSpec {
+  if (!isRecord(value)) {
+    throw new DevError(field, "must be a JSON object");
+  }
+  for (const key of Object.keys(value)) {
+    if (key !== "stages") {
+      throw new DevError(`${field}.${key}`, "is not a flow setting");
+    }
+  }
+  if (!Array.isArray(value.stages)) {
+    throw new DevError(`${field}.stages`, "must be an array of stages");
+  }
+  const stages = value.stages.map((stage: unknown, index) =>
+    stageOf(stage, `${field}.stages[${index}]`),
+  );
+  return { stages };
+}
+
+/**
+ * The repository's flows, and the two hard rules: a flow needs a check, review
+ * or human stage, and its last stage is human because integrate is the step
+ * that puts a change on main.
+ */
+function flowsOf(value: unknown): DevFlows {
+  if (value === undefined) return DEFAULT_DEV_SETTINGS.flows;
+  if (!isRecord(value)) {
+    throw new DevError("flows", "must be a JSON object");
+  }
+  const flows: Record<string, DevFlowSpec> = {};
+  for (const [name, raw] of Object.entries(value)) {
+    if (name.trim().length === 0) {
+      throw new DevError("flows", "a flow needs a non-empty name");
+    }
+    const field = `flows.${name}`;
+    const flow = flowSpecOf(raw, field);
+    if (!flow.stages.some((stage) => stage.stage !== "work")) {
+      throw new DevError(
+        `${field}.stages`,
+        "needs at least one check, review or human stage",
+      );
+    }
+    if (flow.stages[flow.stages.length - 1]?.stage !== "human") {
+      throw new DevError(
+        `${field}.stages`,
+        "the last stage must be human: integrate is the last step, and a change reaches main only through it",
+      );
+    }
+    flow.stages.forEach((stage, index) => {
+      if (stage.stage === "human" && index !== flow.stages.length - 1) {
+        throw new DevError(
+          `${field}.stages[${index}]`,
+          "a human stage must be the last stage: integrate follows it",
+        );
+      }
+    });
+    flows[name] = flow;
+  }
+  return flows;
+}
+
+/**
+ * Validates one parsed dev.json value and fills the defaults.
+ */
 export function validateDevSettings(value: unknown): DevSettings {
   if (!isRecord(value)) {
     throw new DevError("dev.json", "must be a JSON object");
@@ -1009,6 +1160,7 @@ export function validateDevSettings(value: unknown): DevSettings {
       value.retry === undefined
         ? DEFAULT_DEV_SETTINGS.retry
         : retrySettings(value.retry, "retry"),
+    flows: flowsOf(value.flows),
   };
 }
 

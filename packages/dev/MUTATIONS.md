@@ -524,3 +524,10 @@ the row fields.
 |---|---|---|---|
 | T-0173-M1 | packages/dev/src/service.ts | the one-time pass left a repository without `activeTasks` uncounted (the `undefined` check replaced by `false`) | `the repo type > a repository stored without a running-task count shows running for a task already running` |
 | T-0175-M2 | packages/dev/src/commands.ts | a task edit with an empty command input opened the editor instead of refusing | `operad mcp > task edit takes the new brief as command input and refuses an empty one` (packages/mcp/test/server.test.ts; the run hangs on the editor and times out) |
+
+## T-0060 — the dev flow compiler
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0060-M1 | packages/dev/src/flow-compiler.ts | a failed stage returned to the first work entry instead of the nearest work stage before it | `a failed review returns to the nearest work stage before it` |
+| T-0060-M2 | packages/dev/src/settings.ts | removed the rule that a flow's last stage is human | `both hard rules refuse the flow by name` |

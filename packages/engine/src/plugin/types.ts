@@ -827,6 +827,13 @@ export interface TickContext extends PluginBaseContext {
     access?: JsonValue,
   ): Promise<void>;
   /**
+   * Adds a flow this plugin generated, so `start` can name it and a later
+   * process that sees the same run gets the same graph. Declaring a name again
+   * with the same definition is a no-op; a different definition under a name
+   * already in use is refused.
+   */
+  declareFlow(flow: FlowDefinition): void;
+  /**
    * Answers the current person wait of a run this plugin owns. The kernel's
    * configured answer handler records the answer; a run that no longer waits
    * rejects with a `StateError`.

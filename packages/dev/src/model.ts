@@ -1,6 +1,6 @@
 /** The objects the dev plugin owns, and the pure rules that change them. */
 
-import type { ObjectStore, StoredObject } from "@operad-io/engine";
+import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
 import type { ReviewHistoryEntry, ReviewSettingsUsed } from "./rework.ts";
 
 /**
@@ -447,6 +447,10 @@ export type TaskData = {
   readonly phase: TaskPhase;
   readonly attempts: number;
   readonly run: string | null;
+  /** The flow this attempt runs; absent for a run that started before flows had names. */
+  readonly flowName?: string | undefined;
+  /** The compiled graph this attempt started with, so a later config cannot change it midway. */
+  readonly flowGraph?: FlowDefinition | undefined;
   readonly attempt?: TaskAttempt | undefined;
   /** What each review reported, newest last; the next review follows it. */
   readonly reviewHistory?: readonly ReviewHistoryEntry[] | undefined;

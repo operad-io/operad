@@ -1,0 +1,263 @@
+import { afterAll, expect, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { PluginRegistry } from "@operad-io/engine";
+import { createPoolPlugin } from "@operad-io/pool";
+import { createShellPlugin } from "@operad-io/shell";
+import {
+  addPlan,
+  addRepository,
+  addTask,
+  compileDevFlow,
+  confirmPlan,
+  createDevPlugin,
+  flowNameFor,
+  schedulerTestHooks,
+  setAuto,
+  taskData,
+  validateDevSettings,
+  type DevStage,
+} from "../src/index.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "./support.ts";
+
+afterAll(cleanupTempRoots);
+guardLockHandles();
+
+function nextOf(steps: ReturnType<typeof compileDevFlow>["steps"], id: string): Readonly<Record<string, string>> {
+  const found = steps.find((step) => step.id === id);
+  if (found === undefined) throw new Error(`no step ${id}`);
+  return (found.next ?? {}) as Readonly<Record<string, string>>;
+}
+
+function stepOf(steps: ReturnType<typeof compileDevFlow>["steps"], id: string) {
+  const found = steps.find((step) => step.id === id);
+  if (found === undefined) throw new Error(`no step ${id}`);
+  return found;
+}
+
+test("the built-in default keeps today's ids and edges", () => {
+  const flow = compileDevFlow("dev", [
+    { stage: "work" },
+    { stage: "check" },
+    { stage: "review" },
+    { stage: "human" },
+  ]);
+  expect(flow.entry).toBe("worktree");
+  expect(nextOf(flow.steps, "work")).toMatchObject({
+    done: "verify",
+    unavailable: "work_retry",
+  });
+  expect(nextOf(flow.steps, "verify")).toEqual({
+    pass: "review",
+    fail: "rework",
+    cancelled: "end_cancelled",
+  });
+  expect(nextOf(flow.steps, "review")).toMatchObject({
+    pass: "announce_ready",
+    fail: "rework",
+    unavailable: "review_retry",
+  });
+  expect(nextOf(flow.steps, "rework")).toEqual({
+    again: "worktree",
+    ask: "announce_rework",
+    cancelled: "end_cancelled",
+  });
+  expect(nextOf(flow.steps, "wait")).toMatchObject({
+    merge: "integrate",
+    reverify: "reverify",
+  });
+});
+
+test("a flow with no review skips review", () => {
+  const flow = compileDevFlow("quick", [
+    { stage: "work" },
+    { stage: "check" },
+    { stage: "human" },
+  ]);
+  expect(flow.steps.some((step) => step.id.startsWith("review"))).toBe(false);
+  expect(nextOf(flow.steps, "check").pass).toBe("human");
+  expect(nextOf(flow.steps, "human").merge).toBe("integrate");
+});
+
+test("a failed review returns to the nearest work stage before it", () => {
+  const flow = compileDevFlow("twice", [
+    { stage: "work" },
+    { stage: "check" },
+    { stage: "work" },
+    { stage: "review" },
+    { stage: "human" },
+  ]);
+  expect(nextOf(flow.steps, "work").done).toBe("check");
+  expect(nextOf(flow.steps, "check").pass).toBe("work_2");
+  expect(nextOf(flow.steps, "work_2").done).toBe("review");
+  expect(nextOf(flow.steps, "review").fail).toBe("rework_review");
+  expect(nextOf(flow.steps, "rework_review").again).toBe("work_2");
+});
+
+test("a failed check with no work stage waits for a person", () => {
+  const flow = compileDevFlow("no-work", [{ stage: "check" }, { stage: "human" }]);
+  expect(nextOf(flow.steps, "check").fail).toBe("wait");
+  expect(stepOf(flow.steps, "wait").kind).toBe("wait_person");
+});
+
+test("both hard rules refuse the flow by name", () => {
+  expect(() =>
+    validateDevSettings({
+      flows: { gate: { stages: [{ stage: "work" }, { stage: "work" }] } },
+    }),
+  ).toThrow(/flows\.gate\.stages: needs at least one check, review or human stage/);
+  expect(() =>
+    validateDevSettings({
+      flows: { open: { stages: [{ stage: "work" }, { stage: "check" }] } },
+    }),
+  ).toThrow(/flows\.open\.stages: the last stage must be human: integrate is the last step/);
+});
+
+test("a flow's stage settings are read and unknown fields refused", () => {
+  const settings = validateDevSettings({
+    flows: {
+      default: {
+        stages: [
+          {
+            stage: "work",
+            use: "harness-claude/agent",
+            args: ["--model", "sonnet"],
+            brief: "Keep the diff small.",
+            beforeAttempt: "merge-main",
+          },
+          { stage: "check", commands: ["bun test"], rerun: 0 },
+          { stage: "review", use: "harness-pi/agent", later: ["--fast"] },
+          { stage: "human" },
+        ],
+      },
+    },
+  });
+  expect(settings.flows.default?.stages[0]).toEqual({
+    stage: "work",
+    use: "harness-claude/agent",
+    args: ["--model", "sonnet"],
+    brief: "Keep the diff small.",
+    beforeAttempt: "merge-main",
+  });
+  expect(settings.flows.default?.stages[1]).toEqual({
+    stage: "check",
+    commands: ["bun test"],
+    rerun: 0,
+  });
+  expect(() =>
+    validateDevSettings({
+      flows: { default: { stages: [{ stage: "human", args: ["x"] }] } },
+    }),
+  ).toThrow(/flows\.default\.stages\[0\]\.args: is not a stage setting/);
+});
+
+test("stage parameters reach the compiled steps", () => {
+  const flow = compileDevFlow("params", [
+    { stage: "work", use: "harness-claude/agent", args: ["--model", "x"], brief: "short" },
+    { stage: "check", commands: ["bun test"], rerun: 0 },
+    { stage: "review", use: "harness-pi/agent", args: ["--fast"], later: ["--slow"], grading: "strict" },
+    { stage: "human" },
+  ]);
+  expect(stepOf(flow.steps, "work").params).toEqual({
+    use: "dev/work",
+    params: {
+      flowUse: "harness-claude/agent",
+      flowArgs: ["--model", "x"],
+      flowBrief: "short",
+    },
+  });
+  expect(stepOf(flow.steps, "check").params).toEqual({
+    use: "dev/verify",
+    params: { commands: ["bun test"], rerun: 0 },
+  });
+  expect(stepOf(flow.steps, "review").params).toEqual({
+    use: "dev/review",
+    params: {
+      use: "harness-pi/agent",
+      args: ["--fast"],
+      later: ["--slow"],
+      grading: "strict",
+    },
+  });
+});
+
+test("a ready task starts the repository's default flow by its registered name", async () => {
+  const root = await tempRoot();
+  const repositoryPath = await makeGitRepository(root);
+  const store = storeAt(root);
+  const repository = await addRepository(store, { path: repositoryPath, name: "repo" });
+  const plan = await addPlan(store, { repository, slug: "plan", title: "Plan" });
+  await addTask(store, { plan: plan.id, slug: "task", title: "Task", brief: "Do it." });
+  await setAuto(store, plan.id, "run");
+  await confirmPlan(store, plan.id);
+  const stages: readonly DevStage[] = [{ stage: "work" }, { stage: "check" }, { stage: "human" }];
+  writeFileSync(
+    join(repositoryPath, ".operad", "dev.json"),
+    JSON.stringify({ name: "repo", flows: { default: { stages } } }),
+  );
+  schedulerTestHooks.write = () => undefined;
+  const registry = new PluginRegistry(
+    [createDevPlugin(), createPoolPlugin(), createShellPlugin()],
+    { home: root, cwd: repositoryPath, store, storeRoot: store.root },
+  );
+  await registry.tick();
+  const name = flowNameFor("repo", "default", { stages });
+  expect(registry.flow(name)?.flow.name).toBe(name);
+  expect(registry.takeStartedRuns()[0]?.flow).toBe(name);
+});
+
+test("changing dev.json leaves a running attempt on the graph it started with", async () => {
+  const root = await tempRoot();
+  const repositoryPath = await makeGitRepository(root);
+  const store = storeAt(root);
+  const repository = await addRepository(store, { path: repositoryPath, name: "repo" });
+  const plan = await addPlan(store, { repository, slug: "plan", title: "Plan" });
+  const task = await addTask(store, {
+    plan: plan.id,
+    slug: "task",
+    title: "Task",
+    brief: "Do it.",
+  });
+  const firstStages: readonly DevStage[] = [
+    { stage: "work" },
+    { stage: "check" },
+    { stage: "human" },
+  ];
+  const secondStages: readonly DevStage[] = [
+    { stage: "work" },
+    { stage: "review" },
+    { stage: "human" },
+  ];
+  const first = compileDevFlow(flowNameFor("repo", "default", { stages: firstStages }), firstStages);
+  await store.put(
+    "task",
+    task.id,
+    { ...taskData((await store.get("task", task.id))?.data ?? {}), phase: "waiting", flowName: first.name, flowGraph: first },
+    "test:started",
+  );
+  mkdirSync(join(repositoryPath, ".operad"), { recursive: true });
+  writeFileSync(
+    join(repositoryPath, ".operad", "dev.json"),
+    JSON.stringify({ flows: { default: { stages: firstStages } } }),
+  );
+  const registry = new PluginRegistry([createDevPlugin()], {
+    home: root,
+    cwd: repositoryPath,
+    store,
+    storeRoot: store.root,
+  });
+  await registry.tick();
+  expect(registry.flow(first.name)?.flow).toBeDefined();
+
+  writeFileSync(
+    join(repositoryPath, ".operad", "dev.json"),
+    JSON.stringify({ flows: { default: { stages: secondStages } } }),
+  );
+  await registry.tick();
+  const secondName = flowNameFor("repo", "default", { stages: secondStages });
+  expect(secondName).not.toBe(first.name);
+  expect(registry.flow(secondName)?.flow).toBeDefined();
+  // The attempt's graph still resolves, and the new settings added a new one.
+  expect(registry.flow(first.name)?.flow.steps.some((step) => step.id.startsWith("review"))).toBe(false);
+  expect(registry.flow(secondName)?.flow.steps.some((step) => step.id.startsWith("review"))).toBe(true);
+});

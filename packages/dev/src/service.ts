@@ -12,7 +12,7 @@ import {
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { ViewError } from "@operad-io/engine";
-import type { ObjectStore, StoredObject } from "@operad-io/engine";
+import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
 import { withRepositoryLock } from "./lock.ts";
 import {
   appendChange,
@@ -1193,6 +1193,8 @@ export async function claimTaskStart(
   options: {
     readonly checkArea?: boolean | undefined;
     readonly oldestPlanSlot?: boolean | undefined;
+    /** The flow this start runs; its graph is kept on the task for recovery. */
+    readonly flow?: { readonly name: string; readonly graph?: FlowDefinition | undefined } | undefined;
   } = {},
 ): Promise<TaskData | undefined> {
   const initial = await getTask(store, id);
@@ -1218,6 +1220,12 @@ export async function claimTaskStart(
     const next: TaskData = {
       ...rest,
       ...(options.oldestPlanSlot === true ? { oldestPlanSlot: true } : {}),
+      ...(options.flow === undefined
+        ? {}
+        : {
+            flowName: options.flow.name,
+            ...(options.flow.graph === undefined ? {} : { flowGraph: options.flow.graph }),
+          }),
       phase: "running",
       run: null,
       brief: appendChange(latest.brief, "running"),

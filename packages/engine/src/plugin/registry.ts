@@ -1105,6 +1105,11 @@ export class PluginRegistry {
     { readonly plugin: LoadedPlugin; readonly step: StepTypeDefinition }
   >;
   private readonly starts: StartRunRequest[] = [];
+  /** Flows a plugin generated while the process ran, by name. */
+  private readonly declaredFlows = new Map<
+    string,
+    { readonly plugin: string; readonly flow: FlowDefinition }
+  >();
   private readonly refusalList: PluginRefusal[] = [];
   private readonly settingsByPlugin: ReadonlyMap<
     string,
@@ -1474,19 +1479,62 @@ export class PluginRegistry {
     readonly flow: FlowDefinition;
     readonly source: string | undefined;
   }[] {
-    return this.plugins.flatMap((plugin) =>
+    const staticFlows = this.plugins.flatMap((plugin) =>
       plugin.flows.map((flow) => ({
         plugin: plugin.name,
         flow,
         source: this.sourceByPlugin.get(plugin.name),
       })),
     );
+    const names = new Set(staticFlows.map((item) => item.flow.name));
+    const generated = [...this.declaredFlows.values()]
+      .filter((item) => !names.has(item.flow.name))
+      .map((item) => ({
+        plugin: item.plugin,
+        flow: item.flow,
+        source: this.sourceByPlugin.get(item.plugin),
+      }));
+    return [...staticFlows, ...generated];
+  }
+
+  /**
+   * Adds a flow a plugin generated. A name already in use keeps the definition
+   * it got first, so a run that started with it keeps its graph when the
+   * repository's settings change.
+   */
+  private declareFlow(pluginName: string, raw: FlowDefinition): void {
+    let flow: FlowDefinition;
+    try {
+      flow = validateFlow(raw, this.stepTypes());
+    } catch (error) {
+      if (error instanceof FlowError) {
+        throw new PluginError(`plugin "${pluginName}": ${error.message}`, {
+          cause: error,
+        });
+      }
+      throw error;
+    }
+    const existing = this.flow(flow.name);
+    if (existing !== undefined) {
+      if (
+        existing.plugin === pluginName &&
+        JSON.stringify(existing.flow) === JSON.stringify(flow)
+      ) {
+        return;
+      }
+      throw new PluginError(
+        `plugin "${pluginName}": flow "${flow.name}": already declared`,
+      );
+    }
+    this.declaredFlows.set(flow.name, { plugin: pluginName, flow });
   }
 
   /** The flow with this name, whichever plugin declares it. */
   flow(name: string):
     | { readonly plugin: string; readonly flow: FlowDefinition }
     | undefined {
+    const declared = this.declaredFlows.get(name);
+    if (declared !== undefined) return declared;
     for (const plugin of this.plugins) {
       const flow = plugin.flows.find((item) => item.name === name);
       if (flow !== undefined) return { plugin: plugin.name, flow };
@@ -2159,8 +2207,8 @@ export class PluginRegistry {
                     ? {}
                     : { access: flowOrRequest.access }),
                 };
-          const flow = plugin.flows.find((item) => item.name === request.flow);
-          if (flow === undefined) {
+          const found = this.flow(request.flow);
+          if (found === undefined || found.plugin !== plugin.name) {
             throw new PluginError(
               `plugin "${plugin.name}": flow "${request.flow}": not declared`,
             );
@@ -2170,6 +2218,9 @@ export class PluginRegistry {
           if (this.onStartRun !== undefined) {
             await this.onStartRun(request);
           }
+        },
+        declareFlow: (flow) => {
+          this.declareFlow(plugin.name, flow);
         },
         answer: async (runId, choice, note) => {
           if (this.onAnswer === undefined) {
