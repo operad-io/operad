@@ -8,8 +8,9 @@
  * program is running), `FAKE_CLAUDE_RELEASE` (a path the program waits for).
  */
 
-import { existsSync, watch, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, writeFileSync } from "node:fs";
+import { basename, dirname } from "node:path";
+import { waitForChange } from "@operad-io/engine/platform";
 
 const mode = process.env["FAKE_CLAUDE_MODE"] ?? "done";
 const recordPath = process.env["FAKE_CLAUDE_RECORD"];
@@ -66,20 +67,16 @@ function mark(): void {
   if (marker !== undefined) writeFileSync(marker, String(process.pid));
 }
 
-/** Resolves when the release file exists; the directory watch wakes it. */
-function released(): Promise<void> {
-  if (release === undefined || existsSync(release)) return Promise.resolve();
-  return new Promise((resolve) => {
-    const watcher = watch(dirname(release), () => {
-      if (!existsSync(release)) return;
-      watcher.close();
-      resolve();
-    });
-    if (existsSync(release)) {
-      watcher.close();
-      resolve();
-    }
-  });
+/**
+ * Resolves when the release file exists. The directory watch is the fast path;
+ * a look every 100 ms besides, because a watch can miss the event of a file
+ * created as it starts, and nothing then wakes the wait.
+ */
+async function released(): Promise<void> {
+  if (release === undefined) return;
+  while (!existsSync(release)) {
+    await waitForChange(dirname(release), basename(release), 100);
+  }
 }
 
 const hang = (): Promise<never> => new Promise(() => {});

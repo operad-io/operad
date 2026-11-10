@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, watch, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   CursorError,
   FilePluginStore,
@@ -11,6 +11,7 @@ import {
   type PluginStore,
   type PluginStoreBackend,
 } from "../../src/index.ts";
+import { waitForFile } from "../wait-for-file.ts";
 import { cleanupTempRoots, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
@@ -21,26 +22,6 @@ const APPEND_CHILD = join(
   "fixtures",
   "append-facts-child.ts",
 );
-
-/** Resolves when the file exists, without polling: watches its directory. */
-function waitForFile(path: string): Promise<void> {
-  if (existsSync(path)) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const watcher = watch(dirname(path), () => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      resolve();
-    });
-    watcher.on("error", (error) => {
-      watcher.close();
-      reject(error);
-    });
-    if (existsSync(path)) {
-      watcher.close();
-      resolve();
-    }
-  });
-}
 
 const BACKENDS: readonly PluginStoreBackend[] = ["jsonl", "sqlite"];
 

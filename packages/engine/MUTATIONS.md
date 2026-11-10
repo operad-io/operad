@@ -380,3 +380,4 @@ the row fields.
 |---|---|---|---|
 | T-0158-M3 | packages/engine/src/views/pending.ts | a marked wait stayed in the pending view when `withAuto` was not given | `the pending view and the plugin's automatic answer > a marked wait is left out of the pending view unless asked for` (packages/mcp/test/channel.test.ts) |
 | T-0175-M1 | packages/engine/src/views/presentation.ts | the dependents of a shown object listed the objects that do not follow it | `operad mcp > show of a task lists the tasks after it` (packages/mcp/test/server.test.ts) |
+| T-0153-M1 | packages/engine/test/wait-for-file.ts | the wait looked once, then waited on the directory watch alone, with no 100 ms look | `store lifecycle and concurrency > two jsonl writers assign unique, contiguous sequences` (timed out 20 of 200 stressed runs with the old watch-only wait; not deterministic) |
