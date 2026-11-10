@@ -524,3 +524,4 @@ the row fields.
 |---|---|---|---|
 | T-0173-M1 | packages/dev/src/service.ts | the one-time pass left a repository without `activeTasks` uncounted (the `undefined` check replaced by `false`) | `the repo type > a repository stored without a running-task count shows running for a task already running` |
 | T-0175-M2 | packages/dev/src/commands.ts | a task edit with an empty command input opened the editor instead of refusing | `operad mcp > task edit takes the new brief as command input and refuses an empty one` (packages/mcp/test/server.test.ts; the run hangs on the editor and times out) |
+| T-0167-M1 | packages/dev/src/steps.ts | the work-wait bound `waits < MAX_WORK_WAITS` became `<=` (or `< MAX_WORK_WAITS - 1`) | `dev/work > unavailable: after the allowed waits the failure goes to a person` |

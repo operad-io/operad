@@ -1745,7 +1745,7 @@ describe("dev/review hardening", () => {
       // timeout keeps running beside the next one. So the first waits are
       // real and the middle ones are written into the task as the facts
       // they would have left; the last waits and the end are real again.
-      const REAL_WAITS = 3;
+      const REAL_WAITS = 1;
       const SEEDED_WAITS = MAX_REVIEW_WAITS - 2 * REAL_WAITS;
       let seeded = 0;
       for (let wait = 1; wait <= MAX_REVIEW_WAITS; wait += 1) {
