@@ -20,12 +20,12 @@
  * directories under `plugins/`, and `locks/` (which only holds live locks).
  */
 
-import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, rmdirSync } from "node:fs";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { StateError } from "../runner/errors.ts";
-import { acquireLock, pidAlive, readLockPid, runLockPath, serveLockPath } from "../runner/lock.ts";
+import { acquireLock, pidAlive, readLockPid, runLockPath, serveLockPath, storeMoveLockPath } from "../runner/lock.ts";
 import { ConfigError, configPath, storeRootOf, type OperadConfig } from "../config/config.ts";
 import { openJsonlLogBackend } from "../log/jsonl.ts";
 import { openLog } from "../log/open-log.ts";
@@ -100,6 +100,39 @@ function assertNoRunHolds(root: string): void {
       );
     }
   }
+}
+
+/**
+ * Takes the home lock (so no serve starts) and then the store's move lock (so no
+ * run starts), and only then looks for runs in progress. The move lock file is
+ * the one thing written under the store, and it is removed with the `locks/`
+ * directory when this made it.
+ */
+function holdStore(home: string, root: string): { release(): void } {
+  const serve = acquireLock(serveLockPath(home));
+  const hadLocks = existsSync(join(root, "locks"));
+  let move: { release(): void } | undefined;
+  try {
+    move = acquireLock(storeMoveLockPath(root));
+    assertNoRunHolds(root);
+  } catch (error) {
+    move?.release();
+    serve.release();
+    throw error;
+  }
+  return {
+    release: () => {
+      move?.release();
+      if (!hadLocks) {
+        try {
+          rmdirSync(join(root, "locks"));
+        } catch {
+          // Something else made it meanwhile; leave it.
+        }
+      }
+      serve.release();
+    },
+  };
 }
 
 /** A queue of the times the next writes must record. */
@@ -289,9 +322,8 @@ export async function copyStore(options: CopyStoreOptions): Promise<CopyStoreRes
 
   // The home lock is the one serve takes first, so no serve starts while this
   // runs; a running serve or command makes this throw before anything is read.
-  const lock = acquireLock(serveLockPath(home));
+  const lock = holdStore(home, root);
   try {
-    assertNoRunHolds(root);
     for (const file of ownedFiles(to, root)) {
       if (existsSync(file)) {
         throw new StateError(
@@ -404,9 +436,8 @@ export async function useStore(home: string, config: OperadConfig, kind: StoreKi
     throw new StateError(`the store already uses ${kind}`);
   }
   const root = storeRootOf(config);
-  const lock = acquireLock(serveLockPath(home));
+  const lock = holdStore(home, root);
   try {
-    assertNoRunHolds(root);
     const marker = kind === "sqlite" ? join(root, SQLITE_FILE_NAME) : join(root, "schema.json");
     if (!existsSync(marker)) {
       throw new StateError(`there is no ${kind} store beside this one; copy it first`);

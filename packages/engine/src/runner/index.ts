@@ -12,6 +12,7 @@ export {
   readLockPid,
   runLockPath,
   serveLockPath,
+  storeMoveLockPath,
 } from "./lock.ts";
 export type { LockHandle, LockOptions } from "./lock.ts";
 export {

@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   FilePluginStore,
+  LockHeldError,
   Runner,
   acquireLock,
   answerRun,
@@ -24,6 +25,7 @@ import {
   readConfig,
   runLockPath,
   serveLockPath,
+  storeMoveLockPath,
   storeRootOf,
   type LogBackend,
 } from "@operad-io/engine";
@@ -366,6 +368,38 @@ describe("store copy", () => {
     unchanged();
     expect((await run(home, ["store", "use", "jsonl"])).code).toBe(0);
     unchanged();
+  });
+
+  test("a run that starts while the store is being copied is refused", async () => {
+    const { home, root } = await seededHome();
+    const config = await readConfig(home);
+    const objects = new FilePluginStore({ root: join(root, "plugins") });
+    const registry = await loadPluginRegistry({ home, store: objects });
+    const found = registry.flow("simple");
+    if (found === undefined) throw new Error("missing flow simple");
+    const log = openConfigLog(config);
+    try {
+      const info = await log.startRun("simple", "card:9");
+      const runner = new Runner({ log, flow: found.flow, runId: info.runId, registry, lockRoot: root });
+      // What a copy holds from before it looks at the run locks until it ends.
+      const moving = acquireLock(storeMoveLockPath(root));
+      try {
+        await expect(runner.run()).rejects.toBeInstanceOf(LockHeldError);
+        expect(existsSync(runLockPath(root, info.runId))).toBe(false);
+      } finally {
+        moving.release();
+      }
+      expect(await runner.run()).toBe("ended");
+    } finally {
+      await log.close();
+    }
+  });
+
+  test("a copy of a store with no locks directory leaves none behind", async () => {
+    const { home, root } = await seededHome();
+    rmSync(join(root, "locks"), { recursive: true, force: true });
+    expect((await run(home, ["store", "copy", "sqlite"])).code).toBe(0);
+    expect(existsSync(join(root, "locks"))).toBe(false);
   });
 
   test("use refuses while a run holds the store", async () => {

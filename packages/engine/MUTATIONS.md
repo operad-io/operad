@@ -440,3 +440,5 @@ the row fields.
 |---|---|---|---|
 | T-0160-M1 | packages/engine/src/views/settings.ts | ran the read-modify-write without the lock file, so concurrent sets lost updates | `settings > sets at the same moment all land, and the file keeps its mode` |
 | T-0160-M2 | packages/engine/src/views/settings.ts | dropped the chmod of the temporary file, so the config lost its mode on rename | `settings > sets at the same moment all land, and the file keeps its mode` |
+| T-0208-M13 | packages/engine/src/runner/runner.ts | a run ignored the store's move lock after taking its own lock | `store copy > a run that starts while the store is being copied is refused` |
+| T-0208-M14 | packages/engine/src/store-copy/copy.ts | left the `locks/` directory the copy made in the source store | `store copy > a copy of a store with no locks directory leaves none behind` |

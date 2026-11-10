@@ -138,3 +138,12 @@ export function runLockPath(lockRoot: string, runId: string): string {
 export function serveLockPath(home: string): string {
   return join(home, "serve.lock");
 }
+
+/**
+ * Held while a store is being copied or switched. A run takes its own lock
+ * first and then looks for this one, and the copy takes this one first and then
+ * looks for run locks, so one of them always sees the other.
+ */
+export function storeMoveLockPath(root: string): string {
+  return join(root, "locks", "store-move.lock");
+}
