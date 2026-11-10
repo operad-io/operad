@@ -75,27 +75,25 @@ function errorCode(error: unknown): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
-/** Resolve when the file exists, driven by the directory watcher, never a sleep. */
+/**
+ * Resolve when the file exists. The directory watcher wakes it at once; a
+ * watch can miss an event under load, so a look every 100 ms backs it.
+ */
 async function waitForFile(path: string): Promise<void> {
   if (existsSync(path)) return;
-  await new Promise<void>((resolve, reject) => {
-    const watcher = watch(dirname(path), () => {
-      // Directory events may name a different file in the same directory, so
-      // the gate's existence is the event this waits for.
-      if (existsSync(path)) {
-        watcher.close();
-        resolve();
-      }
-    });
-    watcher.on("error", (error) => {
+  await new Promise<void>((resolve) => {
+    const check = (): void => {
+      if (!existsSync(path)) return;
       watcher.close();
-      reject(error);
-    });
-    // Close the window between the check above and the watcher starting.
-    if (existsSync(path)) {
-      watcher.close();
+      clearInterval(timer);
       resolve();
-    }
+    };
+    // Directory events may name a different file in the same directory, so
+    // the gate's existence is the event this waits for.
+    const watcher = watch(dirname(path), check);
+    watcher.on("error", check);
+    const timer = setInterval(check, 100);
+    check();
   });
 }
 

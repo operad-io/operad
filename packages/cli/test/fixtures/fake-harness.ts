@@ -53,16 +53,22 @@ function recordDir(cwd: string): string {
  */
 function holdForKill(directory: string): Promise<void> {
   const release = join(directory, "review-release");
+  // A watch can miss an event under load, so a look every 100 ms backs it.
   return new Promise((resolve) => {
-    const handle = watch(directory, () => {
+    const check = (): void => {
       if (!existsSync(release)) return;
       handle.close();
+      clearInterval(timer);
       resolve();
-    });
+    };
+    const handle = watch(directory, check);
     handle.on("error", () => {
       handle.close();
+      clearInterval(timer);
       resolve();
     });
+    const timer = setInterval(check, 100);
+    check();
   });
 }
 

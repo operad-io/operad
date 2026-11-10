@@ -100,4 +100,3 @@ setup it depends on, in the order they were recorded. The root
 |---|---|---|---|
 | T-0099-M1 | packages/harness-claude/src/worker.ts | a `message` line was not given to the SDK as a user turn | `a message line from the host reaches claude as a user turn while the run hangs` |
 | T-0099-M2 | packages/harness-claude/src/index.ts | the step did not pass the inbox to the process | `harness-claude/agent > a message the host sends through the inbox reaches the program as a message line` |
-| T-0153-M1 | packages/harness-claude/test/fake-lines-worker.ts | the release wait used the directory watch alone, with no 100 ms look | `harness-claude/agent > silence with an open tool call is not a stall` (timed out 5 of 200 stressed runs with the old watch-only wait; not deterministic) |

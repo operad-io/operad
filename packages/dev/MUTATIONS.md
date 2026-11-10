@@ -524,4 +524,3 @@ the row fields.
 |---|---|---|---|
 | T-0173-M1 | packages/dev/src/service.ts | the one-time pass left a repository without `activeTasks` uncounted (the `undefined` check replaced by `false`) | `the repo type > a repository stored without a running-task count shows running for a task already running` |
 | T-0175-M2 | packages/dev/src/commands.ts | a task edit with an empty command input opened the editor instead of refusing | `operad mcp > task edit takes the new brief as command input and refuses an empty one` (packages/mcp/test/server.test.ts; the run hangs on the editor and times out) |
-| T-0153-M1 | packages/dev/test/gate.test.ts | the marker wait used the directory watch alone, with no 100 ms look | `dev/verify > a timeout is not rerun` (timed out at 30 s in the verify run and once alone; not deterministic) |
