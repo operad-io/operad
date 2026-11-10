@@ -847,6 +847,22 @@ test("no process started by this file's tests is left alive", () => {
   expect(processesUnder(tempRoots())).toEqual([]);
 });
 
+test("a marker wait survives a directory that appears after it starts", async () => {
+  // No watch can be armed on a directory that is not there yet, so only the
+  // fallback look can find the marker; the same look covers an event the
+  // platform dropped while the machine was loaded.
+  const root = await tempRoot();
+  const directory = join(root, "late");
+  const marker = join(directory, "marker");
+  const waiting = waitForFile(marker);
+
+  await mkdir(directory, { recursive: true });
+  writeFileSync(marker, String(process.pid));
+  await waiting;
+
+  expect(existsSync(marker)).toBe(true);
+});
+
 describe("harness-radian/agent step limit", () => {
   function registryWith(settings: Record<string, unknown>): PluginRegistry {
     return new PluginRegistry([createRadianHarnessPlugin({})], {
