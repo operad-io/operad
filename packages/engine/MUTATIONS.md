@@ -395,3 +395,14 @@ the row fields.
 | T-0205-M2 | packages/engine/src/platform/process-group.ts | the sentinel killed its group with `kill -KILL -- "-$$"`, which dash rejects, so a line whose host died stayed running | `the sentinel's host > a line still running when its host dies is stopped with its sentinel` (Linux) |
 | T-0205-M3 | packages/engine/src/loop/code-watch.ts | `hashFile` trusted a size and mtime cache key again, even for a file written within the millisecond | `a code watch > the timer finds a change no event reported` (Linux; the same stale hash made the other watch tests miss a same-size rewrite in some runs) |
 | T-0205-M4 | packages/engine/src/loop/code-watch.ts | the cache trusted a hash whenever the key matched and the stamp was old, including a hash read while the stamp was still fresh | `code fingerprints > a hash read while its stamps were fresh is read again after they are old` |
+## T-0165 — a queued step is not failed by a slow grant
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0165-M1 | packages/engine/src/runner/limits.ts | `locked` took the file lock without first serializing the grants of one process | `step limits > a step cancelled while it waits leaves the queue` (3 of 20 stressed runs at `--load 2`; not deterministic) |
+
+## T-0165 — the pid-file wait keeps a timer look
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0165-M2 | packages/engine/test/platform/step-reap.test.ts | the pid-file wait used the directory watch alone, with no timer look | `what a step leaves behind > a system shell that starts the marked process again is stopped with it` (timed out at 30 s in the check; 0 of 200 stressed runs at `--load 2`; not deterministic) |
