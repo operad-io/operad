@@ -13,7 +13,11 @@ import {
   writeSync,
 } from "node:fs";
 import { join } from "node:path";
-import { watchDirectory } from "../platform/index.ts";
+import {
+  followsChanges,
+  watchDirectory,
+  type FollowOptions,
+} from "../platform/index.ts";
 import {
   assertWhere,
   CursorError,
@@ -49,7 +53,7 @@ function repeatEvery(ms: number, callback: () => void): () => void {
   };
 }
 
-export interface FilePluginStoreOptions {
+export interface FilePluginStoreOptions extends FollowOptions {
   readonly root: string;
   readonly clock?: (() => number) | undefined;
   /**
@@ -162,6 +166,7 @@ export class FilePluginStore implements PluginStore {
   readonly root: string;
   readonly location: PluginStoreLocation;
   private readonly clock: () => number;
+  private readonly follow: boolean;
   private readonly pollMs: number;
   private readonly repeat: (ms: number, callback: () => void) => () => void;
   private readonly watch: (
@@ -192,6 +197,7 @@ export class FilePluginStore implements PluginStore {
     this.root = options.root;
     this.location = { backend: "jsonl", root: options.root };
     this.clock = options.clock ?? (() => Date.now());
+    this.follow = followsChanges(options);
     this.pollMs = options.pollMs ?? DEFAULT_STORE_POLL_MS;
     this.repeat = options.repeat ?? repeatEvery;
     this.watch = options.watch ?? watchDirectory;
@@ -382,6 +388,7 @@ export class FilePluginStore implements PluginStore {
 
   /** Starts the shared directory watcher on the first listener of either kind. */
   private ensureWatch(): void {
+    if (!this.follow) return;
     if (this.stopWatch !== undefined) return;
     this.stopWatch = this.watch(this.root, (filename) => {
       if (filename !== null && filename !== "facts.jsonl") return;

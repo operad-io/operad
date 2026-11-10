@@ -233,9 +233,10 @@ describe("one tab per plugin", () => {
       "ops/T-0002-second",
     ]);
     const page = text(drawState(shell.state).right);
-    // The page's rows keep their titles, unlike the left column's.
-    expect(page).toContain("T-0001 first  First task");
-    expect(page).toContain("TASK 2");
+    expect(page).toContain("T-0001-first");
+    expect(page).toContain("T-0002-second");
+    expect(page).toContain("TASK");
+    expect(page).toContain("0 / 2");
 
     shell.key({ name: "enter" }); // into the page's list
     expect(shell.state.object?.children?.focused).toBe(true);

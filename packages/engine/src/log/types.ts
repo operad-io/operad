@@ -1,5 +1,7 @@
 /** The public shapes of the append-only fact log. */
 
+import type { FollowOptions } from "../platform/watch.ts";
+
 /** A value that JSON can represent without losing anything. */
 export type JsonValue =
   | string
@@ -93,7 +95,7 @@ export interface RunsOptions {
   readonly active?: boolean;
 }
 
-export interface LogBackendOptions {
+export interface LogBackendOptions extends FollowOptions {
   /** The clock every stored time comes from. Defaults to `Date.now`. */
   readonly clock?: () => number;
   /**

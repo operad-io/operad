@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   FilePluginStore,
@@ -9,7 +9,7 @@ import {
   openConfigLog,
   readConfig,
 } from "@operad-io/engine";
-import { watchDirectory } from "@operad-io/engine/platform";
+import { waitForChange } from "@operad-io/engine/platform";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 
 afterAll(cleanupTempRoots);
@@ -65,34 +65,26 @@ async function wait(home: string, object: string, waitId: string, prompt: string
   }
 }
 
-/** Resolves once `file` holds at least `count` lines; a watch decides when to look. */
-function waitForLines(
+/**
+ * Resolves once `file` holds at least `count` lines. The directory watch is the
+ * fast path; a look every 100 ms besides, because a watch can miss the event of
+ * a file the other process created or wrote.
+ */
+async function waitForLines(
   file: string,
   count: number,
   keep: (line: string) => boolean = () => true,
   timeoutMs = 20_000,
 ): Promise<string[]> {
-  return new Promise((resolve, reject) => {
-    const read = (): string[] =>
-      existsSync(file)
-        ? readFileSync(file, "utf8").split("\n").filter((line) => line !== "" && keep(line))
-        : [];
-    let stop: () => void = () => undefined;
-    const timer = setTimeout(() => {
-      stop();
-      reject(new Error(`${file} never reached ${count} lines`));
-    }, timeoutMs);
-    const check = (): void => {
-      const lines = read();
-      if (lines.length >= count) {
-        clearTimeout(timer);
-        stop();
-        resolve(lines);
-      }
-    };
-    stop = watchDirectory(dirname(file), check);
-    check();
-  });
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const lines = existsSync(file)
+      ? readFileSync(file, "utf8").split("\n").filter((line) => line !== "" && keep(line))
+      : [];
+    if (lines.length >= count) return lines;
+    if (Date.now() > deadline) throw new Error(`${file} never reached ${count} lines`);
+    await waitForChange(dirname(file), basename(file), 100);
+  }
 }
 
 function startServe(home: string): Bun.Subprocess<"ignore", "pipe", "pipe"> {
@@ -124,6 +116,21 @@ async function stop(child: Bun.Subprocess<"ignore", "pipe", "pipe">): Promise<st
   const [, errors] = await Promise.all([child.exited, new Response(child.stderr).text()]);
   return errors;
 }
+
+describe("waiting for a line another process writes", () => {
+  test("a watch that cannot see the directory is backed by the 100 ms look", async () => {
+    const root = await tempRoot();
+    const directory = join(root, "store");
+    const file = join(directory, "global-facts.jsonl");
+    // The directory does not exist when the wait starts, so there is nothing
+    // to watch. The file appears before the fallback look; only that look can
+    // find it.
+    const waiting = waitForLines(file, 1, () => true, 2_000);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(file, '{"kind":"notified"}\n');
+    expect(await waiting).toEqual(['{"kind":"notified"}']);
+  });
+});
 
 describe("operad serve notify", () => {
   test("runs the command once per wait with the four variables, not again after a restart, and never with the token", async () => {

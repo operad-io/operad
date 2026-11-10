@@ -7,8 +7,8 @@ keys, flags and states.
 ## Themes
 
 Colours are tokens of a `TuiPalette` (`src/theme.ts`, the only file that names a
-colour value): `text`, `weak`, `rule`, `accent`, `run`, `ok`, `error`, `add`,
-`remove`, `tint`, `code`, `background`. The built-in themes are `auto` (the default; `light` or
+colour value): `text`, `weak`, `rule`, `accent`, `run`, `ok`, `error`,
+`cancelled`, `add`, `remove`, `tint`, `code`, `background`. The built-in themes are `auto` (the default; `light` or
 `dark` by the terminal's theme mode, live), `light`, `dark` (the operad app's
 tokens) and `terminal` (the terminal's own 16 ANSI colours).
 
@@ -20,8 +20,10 @@ the families (`catppuccin`, `kanagawa`, ...) that follow the terminal's mode.
 Choose one in `~/.operad/tui.json` (schema: `tui.schema.json`):
 
 ```json
-{ "theme": "dark" }
+{ "theme": "dark", "layout": "tree" }
 ```
+`layout` is `tree` (children nested under the first sibling in their `after`) or
+`list` (one flat list); `t` switches it on an object page and saves the choice.
 
 `operad tui --theme <name>` overrides the file for one session. An unknown name,
 or a `tui.json` that cannot be read, is an error and the TUI does not start.

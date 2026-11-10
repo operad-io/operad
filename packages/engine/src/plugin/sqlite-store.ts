@@ -4,6 +4,10 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
+  followsChanges,
+  type FollowOptions,
+} from "../platform/index.ts";
+import {
   assertWhere,
   CursorError,
   decodeCursor,
@@ -26,11 +30,27 @@ import type {
   StoredObject,
 } from "./types.ts";
 
-export interface SqlitePluginStoreOptions {
+export interface SqlitePluginStoreOptions extends FollowOptions {
   readonly root: string;
   /** The database file; defaults to `<root>/plugins.sqlite`. */
   readonly file?: string | undefined;
   readonly clock?: (() => number) | undefined;
+  /**
+   * Starts a repeating timer that calls `callback` every `ms` and returns a
+   * stop function. Defaults to `setInterval`. A test passes a stub it fires by
+   * hand, so no test waits on wall time.
+   */
+  readonly repeat?:
+    | ((ms: number, callback: () => void) => () => void)
+    | undefined;
+}
+
+function repeatEvery(ms: number, callback: () => void): () => void {
+  const timer = setInterval(callback, ms);
+  (timer as { unref?: () => void }).unref?.();
+  return () => {
+    clearInterval(timer);
+  };
 }
 
 interface ObjectRow {
@@ -117,15 +137,19 @@ export class SqlitePluginStore implements PluginStore {
   readonly location: PluginStoreLocation;
   private readonly db: Database;
   private readonly clock: () => number;
+  private readonly follow: boolean;
+  private readonly repeat: (ms: number, callback: () => void) => () => void;
   private readonly listeners = new Set<(object: ObjectRef) => void>();
   private readonly factListeners = new Set<Subscription>();
   /** The last sequence any subscription has been told about. */
   private polledSequence = 0;
-  private pollTimer: ReturnType<typeof setInterval> | undefined;
+  private stopPoll: (() => void) | undefined;
 
   constructor(options: SqlitePluginStoreOptions) {
     this.root = options.root;
     this.clock = options.clock ?? (() => Date.now());
+    this.follow = followsChanges(options);
+    this.repeat = options.repeat ?? repeatEvery;
     const file = options.file ?? join(options.root, SCHEMA_FILE);
     this.location = { backend: "sqlite", root: options.root, file };
     mkdirSync(dirname(file), { recursive: true });
@@ -384,30 +408,26 @@ export class SqlitePluginStore implements PluginStore {
 
   /** Closes the database; tests open many homes. */
   close(): void {
-    if (this.pollTimer !== undefined) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = undefined;
-    }
+    this.stopPoll?.();
+    this.stopPoll = undefined;
     this.db.close();
   }
 
   /** Polls for facts another connection committed; SQLite has no notification. */
   private ensurePolling(): void {
+    if (!this.follow) return;
     if (this.factListeners.size === 0 && this.listeners.size === 0) return;
-    if (this.pollTimer !== undefined) return;
+    if (this.stopPoll !== undefined) return;
     if (this.factListeners.size === 0) {
       this.polledSequence = Math.max(this.polledSequence, this.maxSequence());
     }
-    this.pollTimer = setInterval(() => this.pollFacts(), 25);
-    (this.pollTimer as { unref?: () => void }).unref?.();
+    this.stopPoll = this.repeat(25, () => this.pollFacts());
   }
 
   private releasePolling(): void {
     if (this.factListeners.size > 0 || this.listeners.size > 0) return;
-    if (this.pollTimer !== undefined) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = undefined;
-    }
+    this.stopPoll?.();
+    this.stopPoll = undefined;
   }
 
   private maxSequence(): number {

@@ -484,7 +484,14 @@ rest the weak colour.
 for, in the form row ids have; it is an array of non-empty strings, or the row is
 an error row. It is passed through list, get and pending rows unchanged, and
 `operad list` and `operad show` do not print it. The `dev` plugin fills a task's
-`after` with the task ids it waits for in its plan.
+`after` with the task ids it waits for, as stored: a task of another repository shows as
+`<repository>/<task id>`.
+
+`operad task add` and `operad task update` take `--after <task>` for a task of the same
+repository (any plan) or `--after <repository>/<task>` for a task of any registered
+repository. The task is blocked until every task it follows is merged, wherever it is,
+and its note says what it waits for (`waiting for operad/T-0188` for another repository).
+The named task must exist, and a task cannot follow itself or close a cycle.
 
 `badge` is a short text the client shows as it is, after the state: one line of
 at most 16 characters, or the row is an error row. The `dev` plugin sets a

@@ -18,6 +18,8 @@ import {
   appendChange,
   appendRework,
   bareId,
+  dependencyKey,
+  dependencyLabel,
   DevError,
   DevRefusal,
   editBrief,
@@ -142,6 +144,41 @@ export async function withRepoLock<T>(
     const fresh = await repositoryOf(store, repository);
     return work(fresh);
   });
+}
+
+/**
+ * Holds the locks of every repository in `names`, taken in name order so two
+ * commands that need several never wait for each other.
+ */
+async function withRepoLocks<T>(
+  store: ObjectStore,
+  names: readonly string[],
+  work: () => Promise<T>,
+): Promise<T> {
+  const ordered = [...new Set(names)].sort();
+  const run = async (index: number): Promise<T> =>
+    index >= ordered.length
+      ? work()
+      : withRepoLock(store, ordered[index] ?? "", () => run(index + 1));
+  return run(0);
+}
+
+/**
+ * The repositories whose locks a change of `after` takes. A dependency in
+ * another repository can close a cycle through any repository, so such a
+ * change holds every registered repository's lock.
+ */
+async function afterLockNames(
+  store: ObjectStore,
+  repository: string,
+  after: readonly string[],
+): Promise<readonly string[]> {
+  const cross = after.some(
+    (entry) => keyRepository(dependencyKey(repository, entry)) !== repository,
+  );
+  if (!cross) return [repository];
+  const names = (await listRepositories(store)).map((item) => item.name);
+  return [repository, ...names];
 }
 
 /* ---------------------------------------------------------------------------
@@ -863,62 +900,61 @@ export async function addConfirmedPlanLocked(
   return writePlan(store, storeKey(repository.name, id), data, "dev:plan-add");
 }
 
+async function registeredNames(store: ObjectStore): Promise<ReadonlySet<string>> {
+  return new Set((await listRepositories(store)).map((item) => item.name));
+}
+
+/**
+ * Checks and normalizes `--after`: each entry is a task id of the task's own
+ * repository (any plan) or `<repository>/<task id>`; it is stored as the full
+ * key. A task cannot follow itself or close a cycle across plans and
+ * repositories.
+ */
 function validateAfter(
   tasks: readonly StoredObject[],
   repository: string,
-  planId: string,
-  taskId: string,
+  taskKey: string,
   after: readonly string[],
+  registered: ReadonlySet<string>,
 ): readonly string[] {
   const unique: string[] = [];
-  for (const id of after) {
-    if (!unique.includes(id)) unique.push(id);
+  for (const entry of after) {
+    const key = dependencyKey(repository, entry);
+    if (!unique.includes(key)) unique.push(key);
   }
-  const byId = new Map(
-    tasks
-      .filter((object) => taskData(object.data).repository === repository)
-      .map((object) => [bareId(object.id), object]),
-  );
-  for (const id of unique) {
-    if (id === taskId) throw new DevError("after", "a task cannot follow itself");
-    const found = byId.get(id);
-    if (found === undefined) {
-      throw new DevError("after", `no task "${id}"`);
-    }
-    const data = taskData(found.data);
-    if (data.repository !== repository) {
-      throw new DevError("after", `task "${id}" belongs to another repository`);
-    }
-    if (data.plan !== planId && data.phase !== "merged") {
-      throw new DevError(
-        "after",
-        `task "${id}" is in another plan and is not merged`,
-      );
-    }
+  const known = new Set(tasks.map((object) => object.id));
+  for (const key of unique) {
+    if (key === taskKey) throw new DevError("after", "a task cannot follow itself");
+    if (!known.has(key) || !registered.has(keyRepository(key))) throw new DevError("after", `no task "${dependencyLabel(repository, key)}"`);
   }
 
   const follows = new Map<string, readonly string[]>();
   for (const object of tasks) {
     const data = taskData(object.data);
-    if (data.repository !== repository) continue;
-    const id = bareId(object.id);
-    follows.set(id, id === taskId ? unique : data.after);
+    follows.set(
+      object.id,
+      data.after.map((entry) => dependencyKey(data.repository, entry)),
+    );
   }
-  follows.set(taskId, unique);
+  follows.set(taskKey, unique);
 
-  const visiting = new Set<string>();
+  const visiting: string[] = [];
   const done = new Set<string>();
-  const visit = (id: string): void => {
-    if (done.has(id)) return;
-    if (visiting.has(id)) {
-      throw new DevError("after", `cycle through "${id}"`);
+  const visit = (key: string): void => {
+    if (done.has(key)) return;
+    const at = visiting.indexOf(key);
+    if (at >= 0) {
+      const path = [...visiting.slice(at), key].map((id) =>
+        dependencyLabel(repository, id),
+      );
+      throw new DevError("after", `cycle: ${path.join(" -> ")}`);
     }
-    visiting.add(id);
-    for (const next of follows.get(id) ?? []) visit(next);
-    visiting.delete(id);
-    done.add(id);
+    visiting.push(key);
+    for (const next of follows.get(key) ?? []) visit(next);
+    visiting.pop();
+    done.add(key);
   };
-  visit(taskId);
+  visit(taskKey);
   return unique;
 }
 
@@ -947,8 +983,13 @@ export async function addTask(
     throw new DevError("plan", `plan "${bareId(plan.id)}" is cancelled`);
   }
   await devTestHooks.beforeLock?.("task-add");
-  return withRepoLock(store, planObject.repository, (repository) =>
-    addTaskLocked(store, options, repository),
+  const names = await afterLockNames(
+    store,
+    planObject.repository,
+    options.after ?? [],
+  );
+  return withRepoLocks(store, names, async () =>
+    addTaskLocked(store, options, await repositoryOf(store, planObject.repository)),
   );
 }
 
@@ -979,9 +1020,9 @@ export async function addTaskLocked(
   const after = validateAfter(
     tasks,
     repository.name,
-    bareId(currentPlan.id),
-    id,
+    storeKey(repository.name, id),
     options.after ?? [],
+    await registeredNames(store),
   );
   const brief = appendChange(options.brief ?? "", "created");
   const area =
@@ -1061,7 +1102,7 @@ function waitsForCancelledDependency(
   return data.after.some((dependency) =>
     tasks.some(
       (object) =>
-        object.id === storeKey(data.repository, dependency) &&
+        object.id === dependencyKey(data.repository, dependency) &&
         taskData(object.data).phase === "cancelled",
     ),
   );
@@ -1091,7 +1132,12 @@ export async function updateTask(
   const releasable = (data: TaskData, tasks: readonly StoredObject[]) =>
     options.after !== undefined && waitsForCancelledDependency(data, tasks);
   if (!releasable(initialData, await allTasks(store))) requireEditable(initialData);
-  const updated = await withRepoLock(store, initialData.repository, async () => {
+  const lockNames = await afterLockNames(
+    store,
+    initialData.repository,
+    options.after ?? [],
+  );
+  const updated = await withRepoLocks(store, lockNames, async () => {
     const current = await getTask(store, id);
     const tasks = await allTasks(store);
     const data = taskData(current.data);
@@ -1103,9 +1149,9 @@ export async function updateTask(
         : validateAfter(
             tasks,
             data.repository,
-            data.plan,
-            bareId(id),
+            id,
             options.after,
+            await registeredNames(store),
           );
     const lines: string[] = [];
     if (title !== undefined && title !== data.title) {
@@ -1128,6 +1174,7 @@ export async function updateTask(
       areaHeldBy: _held,
       areaAhead: _ahead,
       dependencyHeld: _waits,
+      dependencyHeldFor: _waitsFor,
       ...kept
     } = data;
     const nextArea = options.area === undefined ? data.area : area;
@@ -1221,6 +1268,7 @@ export async function claimTaskStart(
       areaHeldBy: _held,
       areaAhead: _ahead,
       dependencyHeld: _waits,
+      dependencyHeldFor: _waitsFor,
       oldestPlanSlot: _oldest,
       ...rest
     } = latest;
@@ -1297,19 +1345,35 @@ export async function setDependencyHold(
   store: ObjectStore,
   id: string,
   held: boolean,
+  waitingFor: readonly string[] = [],
 ): Promise<void> {
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
-  if ((data.dependencyHeld === true) === held) return;
+  const same = (left: readonly string[] | undefined) =>
+    (left ?? []).join("\n") === waitingFor.join("\n");
+  if ((data.dependencyHeld === true) === held && (!held || same(data.dependencyHeldFor))) {
+    return;
+  }
   await withRepoLock(store, data.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
-    if (latest.phase !== "ready" || (latest.dependencyHeld === true) === held) return;
-    const { dependencyHeld: _waits, ...rest } = latest;
+    if (
+      latest.phase !== "ready" ||
+      ((latest.dependencyHeld === true) === held &&
+        (!held || same(latest.dependencyHeldFor)))
+    ) {
+      return;
+    }
+    const { dependencyHeld: _waits, dependencyHeldFor: _for, ...rest } = latest;
     await writeTask(
       store,
       id,
-      { ...rest, ...(held ? { dependencyHeld: true } : {}) },
+      {
+        ...rest,
+        ...(held
+          ? { dependencyHeld: true, dependencyHeldFor: [...waitingFor] }
+          : {}),
+      },
       "dev:task-dependency-hold",
     );
   });
@@ -1721,7 +1785,12 @@ export async function pauseTask(
     const data = taskData(task.data);
     refuseTask("pause", data, id);
     const runs = data.run === null ? [] : [data.run];
-    const { areaHeldBy: _area, dependencyHeld: _waits, ...rest } = data;
+    const {
+      areaHeldBy: _area,
+      dependencyHeld: _waits,
+      dependencyHeldFor: _waitsFor,
+      ...rest
+    } = data;
     const written = await writeTask(
       store,
       id,

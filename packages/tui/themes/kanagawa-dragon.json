@@ -1,6 +1,6 @@
 {
   "$schema": "../theme.schema.json",
-  "comment": "Kanagawa Dragon. Source: https://github.com/rebelot/kanagawa.nvim (lua/kanagawa/colors.lua for the palette, lua/kanagawa/themes.lua for the roles). Licence: MIT, Copyright (c) 2021 Tommaso Laurenzi; the text is in LICENSE-kanagawa. Roles: text = dragonWhite, weak = dragonAsh, rule = dragonBlack5, accent = dragonViolet, run = dragonBlue2, ok = dragonGreen2, error = dragonRed, add = autumnGreen, remove = autumnRed, tint = waveBlue1, code = dragonBlack0, background = dragonBlack3. No colour adjusted.",
+  "comment": "Kanagawa Dragon. Source: https://github.com/rebelot/kanagawa.nvim (lua/kanagawa/colors.lua for the palette, lua/kanagawa/themes.lua for the roles). Licence: MIT, Copyright (c) 2021 Tommaso Laurenzi; the text is in LICENSE-kanagawa. Roles: text = dragonWhite, weak = dragonAsh, rule = dragonBlack5, accent = dragonViolet, run = dragonBlue2, ok = dragonGreen2, error = dragonRed, add = autumnGreen, remove = autumnRed, tint = waveBlue1, code = dragonBlack0, background = dragonBlack3. No colour adjusted. cancelled = error with lightness 60% for a cancelled child's bar segment.",
   "colors": {
     "text": "#c5c9c5",
     "weak": "#737c73",
@@ -9,6 +9,7 @@
     "run": "#8ba4b0",
     "ok": "#8a9a7b",
     "error": "#c4746e",
+    "cancelled": "#833a35",
     "add": "#76946a",
     "remove": "#c34043",
     "tint": "#223249",
