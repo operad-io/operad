@@ -6,7 +6,13 @@
  */
 
 import { spawn } from "node:child_process";
-import { closeSync, openSync, readFileSync } from "node:fs";
+import {
+  closeSync,
+  fstatSync,
+  openSync,
+  readSync,
+  statSync,
+} from "node:fs";
 import { join } from "node:path";
 import { lastLines } from "@operad-io/engine/platform";
 import {
@@ -139,17 +145,74 @@ export function portInUse(text: string): boolean {
   return /Failed to start server|EADDRINUSE|address already in use|port \d+ in use/i.test(text);
 }
 
-function readLog(log: string): string {
+/** How many bytes a log holds now; a log that cannot be read holds none. */
+function logSize(log: string): number {
   try {
-    return readFileSync(log, "utf8");
+    return statSync(log).size;
+  } catch {
+    return 0;
+  }
+}
+
+/** Reads a log from `offset` on; a log that cannot be read holds nothing. */
+function readSince(log: string, offset: number): string {
+  try {
+    const fd = openSync(log, "r");
+    try {
+      const size = fstatSync(fd).size;
+      if (size <= offset) return "";
+      const buffer = Buffer.allocUnsafe(size - offset);
+      let read = 0;
+      while (read < buffer.length) {
+        const count = readSync(fd, buffer, read, buffer.length - read, offset + read);
+        if (count === 0) break;
+        read += count;
+      }
+      return buffer.subarray(0, read).toString("utf8");
+    } finally {
+      closeSync(fd);
+    }
   } catch {
     return "";
   }
 }
 
+/** The end of a log, including at least `lines` newlines when the file has them. */
+function readTail(log: string, lines: number): string {
+  const fd = openSync(log, "r");
+  try {
+    const size = fstatSync(fd).size;
+    if (size === 0) return "";
+    const chunkSize = 8192;
+    const chunks: Buffer[] = [];
+    let start = size;
+    let found = 0;
+    while (start > 0 && found <= lines) {
+      const from = Math.max(0, start - chunkSize);
+      const length = start - from;
+      const buffer = Buffer.allocUnsafe(length);
+      let read = 0;
+      while (read < length) {
+        const count = readSync(fd, buffer, read, length - read, from + read);
+        if (count === 0) break;
+        read += count;
+      }
+      const part = buffer.subarray(0, read);
+      chunks.unshift(part);
+      for (let index = part.length - 1; index >= 0; index -= 1) {
+        if (part[index] === 0x0a) found += 1;
+      }
+      start = from;
+    }
+    return Buffer.concat(chunks).toString("utf8");
+  } finally {
+    closeSync(fd);
+  }
+}
+
 function tailOf(log: string): string {
   try {
-    const lines = lastLines(readFileSync(log, "utf8"), 10);
+    const lines = lastLines(readTail(log, 10), 10);
     return lines.length === 0 ? "(the log is empty)" : lines.join("\n");
   } catch {
     return "(no log was written)";
@@ -191,7 +254,7 @@ export async function ensureServer(options: EnsureServerOptions): Promise<string
 
   const log = join(home, "serve.log");
   // Only what the started serve writes counts, not what older ones left.
-  const logBefore = readLog(log).length;
+  const logBefore = logSize(log);
   options.write?.(`starting operad serve (log: ${log})`);
   const started = options.spawn(log);
   let exitCode: number | null | undefined;
@@ -210,7 +273,7 @@ export async function ensureServer(options: EnsureServerOptions): Promise<string
   for (;;) {
     if (exitCode !== undefined && !adopted) {
       if (!lockCheck(serveLockPath(home))) {
-        if (portInUse(readLog(log).slice(logBefore))) {
+        if (portInUse(readSince(log, logBefore))) {
           throw new TuiStartError(
             `operad serve could not start: port ${config.http.port} is in use and nothing answers on ${url}; an operad serve of this home that still runs does not answer on ${url}; log ${log}:\n${tailOf(log)}`,
           );
