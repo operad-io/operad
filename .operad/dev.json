@@ -76,7 +76,8 @@
           "rerun": "bun test --timeout 30000 -t {pattern}"
         }
       }
-    ]
+    ],
+    "commandTimeoutSecs": 2700
   },
   "integration": {
     "batch": 3,
