@@ -1073,14 +1073,6 @@ function flowsOf(value: unknown): DevFlows {
         "needs at least one check, review or human stage",
       );
     }
-    flow.stages.forEach((stage, index) => {
-      if (stage.stage === "human" && index !== flow.stages.length - 1) {
-        throw new DevError(
-          `${field}.stages[${index}]`,
-          "a human stage must be the last stage: integrate follows it",
-        );
-      }
-    });
     flows[name] = flow;
   }
   return flows;

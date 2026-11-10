@@ -165,10 +165,13 @@ cleanup at the end, so a repository writes neither.
 A repository that writes no `flows` runs the built-in `default` flow: work,
 check, review, human. A flow named `default` is the one a task starts with; a
 plan or task may choose another with `--flow <name>`, and once a task's first
-attempt starts it keeps that flow. A `human` stage, when a flow has one, is the
-last stage because integrate follows it. Every flow needs at least one `check`,
-`review` or `human` stage. A flow that breaks either rule makes dev.json invalid,
-with a message naming the flow and the rule.
+attempt starts it keeps that flow. Every flow needs at least one `check`,
+`review` or `human` stage. A `human` stage asks a person; when it is the last
+stage, its merge answer goes to integrate, and when it is not, that answer
+continues with the next stage. A flow whose last stage is not `human` goes
+straight to integrate after that stage passes, so its plan's auto level has no
+human wait to answer. A flow with no gate makes dev.json invalid, with a message
+naming the flow and the rule.
 
 ### Stages
 

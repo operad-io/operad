@@ -110,17 +110,20 @@ test("a flow with no human stage is valid and ends at integrate", () => {
   expect(flow.steps.some((step) => step.id === "wait")).toBe(true);
 });
 
-test("both hard rules refuse the flow by name", () => {
+test("[human, check] loads and compiles human -> check -> integrate", () => {
+  const stages: readonly DevStage[] = [{ stage: "human" }, { stage: "check" }];
+  expect(() => validateDevSettings({ flows: { ask: { stages } } })).not.toThrow();
+  const flow = compileDevFlow("ask", stages);
+  expect(nextOf(flow.steps, "human").merge).toBe("check");
+  expect(nextOf(flow.steps, "check").pass).toBe("integrate");
+});
+
+test("a flow with no gate is refused by name", () => {
   expect(() =>
     validateDevSettings({
       flows: { gate: { stages: [{ stage: "work" }, { stage: "work" }] } },
     }),
   ).toThrow(/flows\.gate\.stages: needs at least one check, review or human stage/);
-  expect(() =>
-    validateDevSettings({
-      flows: { late: { stages: [{ stage: "work" }, { stage: "human" }, { stage: "check" }] } },
-    }),
-  ).toThrow(/flows\.late\.stages\[1\]: a human stage must be the last stage: integrate follows it/);
 });
 
 test("a flow's stage settings are read and unknown fields refused", () => {

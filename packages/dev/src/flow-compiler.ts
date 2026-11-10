@@ -758,7 +758,7 @@ function generatedSteps(
             "The task is waiting for you: merge it, reject it, or verify and review it again.",
             choices,
             {
-              merge: "integrate",
+              merge: next,
               reject: reworkTarget,
               rework: reworkTarget,
               ...(hasReverify ? { reverify: "reverify" } : {}),

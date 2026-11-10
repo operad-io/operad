@@ -99,7 +99,7 @@
       ]
     },
     "flow": {
-      "description": "One repository flow: its stages, in order. A human stage, when present, is last because integrate follows it, and at least one stage must be check, review or human.",
+      "description": "One repository flow: its stages, in order. At least one stage must be check, review or human. A human stage asks a person; when it is last its merge goes to integrate, and when it is not it continues with the next stage.",
       "type": "object",
       "properties": {
         "stages": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/stage" } }
@@ -559,7 +559,7 @@
       }
     },
     "flows": {
-      "description": "The repository's own flows, by name. An absent map runs the built-in default. A flow is an ordered list of stages; dev adds the worktree at the start and integrate and cleanup at the end. A plan or task chooses a flow with --flow, and a flow with no review skips review.",
+      "description": "The repository's own flows, by name. An absent map runs the built-in default. A flow is an ordered list of stages; dev adds the worktree at the start and integrate and cleanup at the end. A plan or task chooses a flow with --flow, and a flow with no review skips review. A flow whose last stage is not human goes straight to integrate after it passes.",
       "type": "object",
       "additionalProperties": { "$ref": "#/$defs/flow" }
     }
