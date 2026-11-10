@@ -15,7 +15,7 @@
 3. 只会发文字的通道用一个不跑脚本的表单链接兜底，持有即可答，限期。
 4. 来源协议：`POST` 事件（来源、编号、类型、对象、一句话、链接），同一来源同一编号只记一次；事件带 `cwd`、harness、access 直接拒收；`summary` 和 `detail` 只当资料写进文件，不进提示词。
 5. 来源分三档：observe（只记录"本会接受"）、候选、自动；归属已有运行的事件直通该运行，不开新运行。
-6. 首个通道是 Telegram，首个来源是 cron 加 HTTP。
+6. 首个通道是 Telegram，首个来源是 cron 加 HTTP。Telegram 插件的形状在 `operad-telegram.md`（2026-11-10 写下，未定）。
 
 ## trigger 的内核接口（已定，dogfood 期间先落地内核部分）
 
