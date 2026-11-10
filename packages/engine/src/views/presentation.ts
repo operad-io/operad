@@ -909,7 +909,8 @@ export class Views {
     return {
       ...row,
       ...(withScope && scope !== undefined ? { scope } : {}),
-      waiting: flag.waiting,
+      // A plugin's own `waiting` is an object a person must act on that has no run.
+      waiting: row.waiting || flag.waiting,
       running: flag.running,
     };
   }
@@ -951,7 +952,7 @@ export class Views {
         resolved.type,
         object,
       );
-      row = { ...guarded, ...flags };
+      row = { ...guarded, ...flags, waiting: guarded.waiting || flags.waiting };
       try {
         sections = this.sectionDirectory(owner.plugin, object);
       } catch (error) {
@@ -1728,7 +1729,7 @@ export class Views {
       ...(outcome.final === true ? { final: true } : {}),
       ...(mark === undefined ? {} : { mark }),
       ...(typeof badge === "string" ? { badge } : {}),
-      waiting: false,
+      waiting: outcome.waiting === true,
       running: false,
     };
   }

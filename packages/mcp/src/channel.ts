@@ -562,6 +562,10 @@ class ClaudeChannel implements ChannelHandle {
       if (item?.auto === true) {
         this.quiet.set(key, object);
         waitingOn = false;
+      } else if (item?.announce === false) {
+        // Pending, but its plugin says the lead needs no block for it.
+        this.quiet.delete(key);
+        waitingOn = false;
       } else {
         this.quiet.delete(key);
         waitingOn = true;
