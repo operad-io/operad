@@ -504,6 +504,12 @@ describe("dev scheduling", () => {
         fixture.store.put("plan", key, { ...plan.data, auto: "run" }, "test");
       }),
     ).toBe(false);
+    // Invalid settings: the scheduler returns early, so nothing answers the wait.
+    expect(
+      await marked("merge", passedAttempt, async (fixture) => {
+        writeFileSync(join(fixture.repositoryPath, ".operad/dev.json"), "{ not json");
+      }),
+    ).toBe(false);
     // Waits the scheduler never answers, and an integrate that was refused.
     expect(
       await marked("merge", { number: 1, run: "run-1", result: "nothing" }),
@@ -1131,6 +1137,29 @@ describe("dev scheduling", () => {
       const started = (await tick(fixture)).map((request) => startedId(request));
       expect(started.length).toBe(3);
       expect(started).toContain(lowTask.key);
+    } finally {
+      changeClock.now = () => Date.now();
+    }
+  });
+
+  test("a task that waits gives up the reserved slot, so a resumed task does not hold it twice", async () => {
+    let now = 1_000;
+    changeClock.now = () => (now += 1_000);
+    try {
+      const fixture = await setup({ concurrency: 3 });
+      const high = await makePlan(fixture, { slug: "high", auto: "run", priority: "P2", concurrency: 3 });
+      const low = await makePlan(fixture, { slug: "low", auto: "run", priority: "P3", concurrency: 3 });
+      for (const slug of ["h1", "h2", "h3"]) await makeTask(fixture, high.key, slug);
+      const lowTask = await makeTask(fixture, low.key, "l1");
+      await confirm(fixture, high.key);
+      await confirm(fixture, low.key);
+      const started = (await tick(fixture)).map((request) => startedId(request));
+      for (const id of started) await putTask(fixture, id, { run: `run-${id}` });
+      expect(taskData((await getTask(fixture.store, lowTask.key)).data).oldestPlanSlot).toBe(true);
+
+      await phase(fixture, lowTask.key, "waiting", `run-${lowTask.key}`);
+      await tick(fixture);
+      expect(taskData((await getTask(fixture.store, lowTask.key)).data).oldestPlanSlot).toBeUndefined();
     } finally {
       changeClock.now = () => Date.now();
     }
