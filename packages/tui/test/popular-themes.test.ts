@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { initialState, reduce, type TuiState } from "../src/state.ts";
@@ -126,13 +126,24 @@ describe("shipped themes: the files", () => {
   });
 
   test("a missing shipped file fails when its theme or family is chosen, not when the module is imported", () => {
-    const file = shippedThemeFile("rose-pine-main");
-    const hidden = `${file}.missing`;
-    const module = JSON.stringify(join(PACKAGE, "src", "theme.ts"));
-    renameSync(file, hidden);
+    // A copy outside the repository: the test never moves a shipped file, so a
+    // killed test cannot leave the worktree with one missing.
+    const root = mkdtempSync(join(tmpdir(), "operad-lazy-theme-"));
+    const missing = join(root, "themes", "rose-pine-main.json");
     try {
+      mkdirSync(join(root, "src"));
+      mkdirSync(join(root, "themes"));
+      copyFileSync(join(PACKAGE, "src", "theme.ts"), join(root, "src", "theme.ts"));
+      copyFileSync(join(PACKAGE, "src", "themes.ts"), join(root, "src", "themes.ts"));
+      for (const name of SHIPPED_THEMES) {
+        if (name !== "rose-pine-main") {
+          copyFileSync(shippedThemeFile(name), join(root, "themes", `${name}.json`));
+        }
+      }
+      symlinkSync(join(PACKAGE, "node_modules"), join(root, "node_modules"), "dir");
+      const module = JSON.stringify(join(root, "src", "theme.ts"));
       const imported = spawnSync(process.execPath, ["-e", `await import(${module})`], {
-        cwd: PACKAGE,
+        cwd: root,
         encoding: "utf8",
       });
       expect(imported.status, imported.stderr).toBe(0);
@@ -143,13 +154,13 @@ describe("shipped themes: the files", () => {
             "-e",
             `const { resolveSelection } = await import(${module}); try { resolveSelection(${JSON.stringify(home())}, ${JSON.stringify(name)}); } catch (error) { console.error(error.message); process.exit(3); }`,
           ],
-          { cwd: PACKAGE, encoding: "utf8" },
+          { cwd: root, encoding: "utf8" },
         );
         expect(chosen.status, `${name}: ${chosen.stderr}`).toBe(3);
-        expect(chosen.stderr, name).toContain(file);
+        expect(chosen.stderr, name).toContain(missing);
       }
     } finally {
-      renameSync(hidden, file);
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });
