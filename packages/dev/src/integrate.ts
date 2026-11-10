@@ -170,7 +170,9 @@ function mergeCandidate(
   message: string,
 ): Candidate {
   if (style === "squash") {
-    const merge = git(path, ["merge", "--squash", verified]);
+    // `--ff` overrides a user's `merge.ff=only`, which would refuse a squash
+    // onto a main that moved.
+    const merge = git(path, ["merge", "--squash", "--ff", verified]);
     if (!merge.ok) {
       const files = conflictedFiles(path);
       if (files.length > 0) return { kind: "conflict", files };
@@ -298,6 +300,59 @@ function integrationData(
 }
 
 /** Step `dev/integrate`: land the verified commit on main. */
+function treeOf(cwd: string, commit: string): string | undefined {
+  const result = git(cwd, ["rev-parse", "--verify", "--quiet", `${commit}^{tree}`]);
+  return result.ok && result.out.length > 0 ? result.out : undefined;
+}
+
+/** The patch id of a diff, which ignores line numbers and whitespace. */
+function patchIdOf(cwd: string, args: readonly string[]): string | undefined {
+  const diff = Bun.spawnSync({
+    cmd: ["git", "-C", cwd, ...args],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (diff.exitCode !== 0 || diff.stdout.length === 0) return undefined;
+  const id = Bun.spawnSync({
+    cmd: ["git", "-C", cwd, "patch-id", "--stable"],
+    stdin: diff.stdout,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const first = id.stdout.toString().trim().split(/\s+/)[0];
+  return id.exitCode === 0 && first !== undefined && first.length > 0 ? first : undefined;
+}
+
+/**
+ * The commit on `main` that carries the change of `verified`, found by patch
+ * id, so a squash or a merge made under another message is still recognised.
+ */
+function carrierOnMain(cwd: string, verified: string, main: string): string | undefined {
+  // A verified commit that main contains arrived in the first commit of main's
+  // own line that has it.
+  if (git(cwd, ["merge-base", "--is-ancestor", verified, main]).ok) {
+    const arrived = git(cwd, [
+      "rev-list",
+      "--first-parent",
+      "--ancestry-path",
+      "--reverse",
+      `${verified}..${main}`,
+    ]);
+    return arrived.ok ? arrived.out.split("\n")[0] || undefined : undefined;
+  }
+  const base = git(cwd, ["merge-base", verified, main]);
+  if (!base.ok || base.out.length === 0) return undefined;
+  const want = patchIdOf(cwd, ["diff", base.out, verified]);
+  if (want === undefined) return undefined;
+  const recent = git(cwd, ["rev-list", "--first-parent", "--max-count=200", main]);
+  if (!recent.ok) return undefined;
+  for (const commit of recent.out.split("\n")) {
+    if (commit.length === 0) continue;
+    if (patchIdOf(cwd, ["diff", `${commit}^`, commit]) === want) return commit;
+  }
+  return undefined;
+}
+
 export async function runIntegrate(
   ctx: StepContext,
 ): Promise<PluginStepResult> {
@@ -361,6 +416,7 @@ export async function runIntegrate(
     sha: string,
     extra: Readonly<Record<string, unknown>> = {},
     cloneSha: string = sha,
+    mergedLine: string = `merged as ${shortSha(sha)}`,
   ): Promise<PluginStepResult> => {
     const note = record.checkNote;
     const clone = followMain(context.repository, ctx.home, settings.mainBranch, cloneSha);
@@ -375,7 +431,7 @@ export async function runIntegrate(
           ...(batchWith.length === 0
             ? []
             : [`integrated in a batch with ${batchWith.join(", ")}`]),
-          `merged as ${shortSha(sha)}`,
+          mergedLine,
           ...(cloneChange === undefined ? [] : [cloneChange]),
         ],
       })) === undefined
@@ -483,6 +539,11 @@ export async function runIntegrate(
     message,
     signal: ctx.signal,
     wait: integrateTestHooks.wait,
+    landed: (result) => {
+      if (!git(repository, ["fetch", "--prune", settings.remote]).ok) return false;
+      const main = revParse(repository, mainRef);
+      return main !== undefined && contains(repository, result.head, main);
+    },
     say: async (line, holder) => {
       await ctx.logger.write(line);
       const saved = await saveTaskGuarded(
@@ -504,12 +565,11 @@ export async function runIntegrate(
   await queue.join();
   integrateTestHooks.queued?.(context.taskId);
 
-  /** Lands the tasks of a batch with one candidate; undefined means fall back to one by one. */
   /** This task's merge commit when main already has it, and the main that has it. */
   const alreadyOnMain = (): { sha: string; main: string } | undefined => {
     if (!git(repository, ["fetch", "--prune", settings.remote]).ok) return undefined;
     const main = revParse(repository, mainRef);
-    if (main === undefined || !contains(repository, verified, main)) return undefined;
+    if (main === undefined) return undefined;
     const found = git(repository, [
       "log",
       "--first-parent",
@@ -526,6 +586,7 @@ export async function runIntegrate(
     return undefined;
   };
 
+  /** Lands the tasks of a batch with one candidate; undefined means fall back to one by one. */
   const landBatch = async (
     followers: readonly Ticket[],
   ): Promise<PluginStepResult | undefined> => {
@@ -546,6 +607,7 @@ export async function runIntegrate(
         return undefined;
       }
       const members: { task: string; sha: string }[] = [];
+      let treeBefore = treeOf(gate, "HEAD");
       for (const entry of entries) {
         const built = mergeCandidate(
           gate,
@@ -555,6 +617,9 @@ export async function runIntegrate(
         );
         if (built.kind === "conflict") clearConflict(gate);
         if (built.kind !== "ok" || built.sha === undefined) return undefined;
+        // A member with nothing left to merge is already on main: one by one.
+        if (treeOf(gate, built.sha) === treeBefore) return undefined;
+        treeBefore = treeOf(gate, built.sha);
         members.push({ task: entry.task, sha: built.sha });
       }
       const batchHead = headOf(gate);
@@ -611,20 +676,24 @@ export async function runIntegrate(
         })) === undefined) {
         return cancelledStep();
       }
+      // The result is left before the push, pending: a leader that dies after the
+      // push leaves what its followers need to recognise their merges on main.
+      const result: BatchResult = {
+        base,
+        head: batchHead,
+        ...(checkNote === undefined ? {} : { note: checkNote }),
+        members,
+      };
       const land = async (extra: Readonly<Record<string, unknown>>): Promise<PluginStepResult> => {
-        const result: BatchResult = {
-          base,
-          head: batchHead,
-          ...(checkNote === undefined ? {} : { note: checkNote }),
-          members,
-        };
-        queue.publish(result);
         batchWith = members.filter((member) => member.task !== context.taskId).map((member) => member.task);
-        return recordMerged({ ...pending, result: "merged", pushed: true }, own.sha, extra, batchHead);
+        const merged = await recordMerged({ ...pending, result: "merged", pushed: true }, own.sha, extra, batchHead);
+        queue.finish();
+        return merged;
       };
       // A claimed task that left (cancelled) is not merged: one by one instead.
       // Checked last, so the window between this and the push is as short as it can be.
       if (queue.stillQueued(followers).length !== followers.length) return undefined;
+      queue.publish(result);
       const push = git(gate, ["push", settings.remote, `HEAD:refs/heads/${settings.mainBranch}`]);
       if (push.ok) {
         integrateTestHooks.afterPush?.(batchHead);
@@ -794,6 +863,29 @@ export async function runIntegrate(
       }
       const sha = candidate.sha;
       integrateTestHooks.at?.("candidate-built");
+      // A candidate with main's own tree has nothing left to merge: the change
+      // is already there, in whatever commit carries it. Nothing is pushed and
+      // no commit is claimed as this task's.
+      if (treeOf(gate, sha) === treeOf(repository, base)) {
+        const carrier = carrierOnMain(repository, verified, base);
+        return recordMerged(
+          {
+            result: "merged",
+            run: ctx.runId,
+            style: settings.integration.style,
+            verified,
+            candidate: carrier ?? base,
+            base,
+            head: head ?? null,
+            headMoved,
+            pushed: true,
+          },
+          carrier ?? base,
+          { alreadyOnMain: true },
+          base,
+          carrier === undefined ? "already on main" : `already on main as ${shortSha(carrier)}`,
+        );
+      }
 
       let checkNote: string | undefined;
       if (keyCommands.length > 0) {

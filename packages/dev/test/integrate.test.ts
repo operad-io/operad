@@ -697,8 +697,9 @@ describe("dev/integrate rerun after a kill", () => {
 });
 
 describe("a batch leader killed after the push", () => {
-  test("the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone", async () => {
-    const state = await fixture({ more: 2, batch: 3 });
+  for (const style of ["merge", "squash"] as const) {
+  test(`${style}: the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone`, async () => {
+    const state = await fixture({ more: 2, batch: 3, style });
     const [second, third] = state.others;
     if (second === undefined || third === undefined) throw new Error("tasks missing");
     const queued = new Map([
@@ -770,6 +771,39 @@ describe("a batch leader killed after the push", () => {
     expect(gitOrThrow(state.remote.repository, ["rev-parse", "HEAD"])).toBe(remoteMain(state));
     expect(gitOrThrow(state.remote.repository, ["status", "--porcelain"])).toBe("");
   }, 60_000);
+  }
+});
+
+describe("a candidate with nothing left to merge", () => {
+  for (const style of ["merge", "squash"] as const) {
+    test(`${style}: a change already on main under another message is already on main, not merged again`, async () => {
+      const state = await fixture({ style });
+      const scratch = join(state.root, "scratch");
+      gitOrThrow(state.root, ["clone", "-q", state.remote.origin, scratch]);
+      gitOrThrow(scratch, ["config", "user.email", "t@example.com"]);
+      gitOrThrow(scratch, ["config", "user.name", "T"]);
+      const branch = `origin/work/${state.taskId}`;
+      gitOrThrow(scratch, [
+        "merge",
+        ...(style === "squash" ? ["--squash"] : ["--no-ff", "-m", "by hand"]),
+        branch,
+      ]);
+      if (style === "squash") gitOrThrow(scratch, ["commit", "-q", "-m", "by hand"]);
+      gitOrThrow(scratch, ["push", "-q", "origin", "HEAD:main"]);
+      const byHand = gitOrThrow(scratch, ["rev-parse", "HEAD"]);
+      const count = gitOrThrow(state.remote.origin, ["rev-list", "--count", "main"]);
+
+      const result = await integrate(state);
+      expect(result.data?.message ?? result.result).toBe("merged");
+      expect(gitOrThrow(state.remote.origin, ["rev-list", "--count", "main"])).toBe(count);
+      expect(remoteMain(state)).toBe(byHand);
+      const task = await taskOf(state);
+      expect(task.phase).toBe("merged");
+      expect(task.brief).toContain(`already on main as ${byHand.slice(0, 7)}`);
+      expect(task.brief).not.toContain("merged as ");
+      expect(gitOrThrow(state.remote.repository, ["rev-parse", "HEAD"])).toBe(byHand);
+    }, 60_000);
+  }
 });
 
 describe("dev/cleanup rerun after a kill", () => {

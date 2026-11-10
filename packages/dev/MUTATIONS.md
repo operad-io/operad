@@ -535,3 +535,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0173-M1 | packages/dev/src/service.ts | the one-time pass left a repository without `activeTasks` uncounted (the `undefined` check replaced by `false`) | `the repo type > a repository stored without a running-task count shows running for a task already running` |
+
+## T-0164 rework 3 — the batch result is left before the push
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0164-M5 | packages/dev/src/integrate.ts | the candidate-with-main's-tree guard never fired (condition replaced by `false`) | `a candidate with nothing left to merge > merge: a change already on main under another message is already on main, not merged again` (and the squash one) |
+| T-0164-M6 | packages/dev/src/integrate.ts, packages/dev/src/integration-queue.ts | a dead leader's pending result was never taken as landed and the subject lookup was off (`landed` returns `false`, `alreadyOnMain` ignored) | `a batch leader killed after the push > merge: the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone` (and the squash one) |
