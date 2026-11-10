@@ -265,7 +265,6 @@ export const DEFAULT_WORKER_BRIEF = [
   "Commit each whole piece of work as you finish it; leave the worktree clean.",
   "Before you finish, run the repository's verify command and make it pass.",
   "End with a summary of what you changed and what is left.",
-  "End your final answer with a line `New words: none` or `New words: <word>, <word>`. A new word is a user-visible one your change adds: a command or action name, a setting key, a word in command output, an error meant for users, a word in user docs. Internal names are not new words.",
 ].join("\n");
 
 export const DEFAULT_DEV_SETTINGS: DevSettings = {

@@ -32,3 +32,7 @@ that one too.
 
 Commit each whole piece of work as you finish it and leave the worktree clean.
 Never write under `.git`. Never kill, signal or stop a process you did not start.
+
+End your final answer with `New words: none` or `New words: <word>, <word>`,
+naming the user-visible words the change adds (command or action names, setting
+keys, labels; not whole sentences), so the lead can tell the owner.
