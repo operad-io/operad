@@ -539,6 +539,12 @@ the row fields.
 | T-0164-M6 | packages/dev/src/integrate.ts, packages/dev/src/integration-queue.ts | a dead leader's pending result was never taken as landed and the subject lookup was off (`landed` returns `false`, `alreadyOnMain` ignored) | `a batch leader killed after the push > merge: the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone` (and the squash one) |
 | T-0175-M2 | packages/dev/src/commands.ts | a task edit with an empty command input opened the editor instead of refusing | `operad mcp > task edit takes the new brief as command input and refuses an empty one` (packages/mcp/test/server.test.ts; the run hangs on the editor and times out) |
 
+## T-0194 — `--after` across plans and repositories
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0194-M1 | packages/dev/src/schedule.ts | the dependency lookup was limited to the repository's own tasks | `--after across plans and repositories > a task of another repository blocks until it merges and the note names the repository` |
+| T-0194-M2 | packages/dev/src/service.ts | the cycle walk ignored the tasks of other repositories | `--after across plans and repositories > a task cannot follow itself or close a cycle; an unknown task is refused` |
 ## T-0201 — rerun reads only this command's log
 
 | id | file | mutation | failing test |
@@ -577,3 +583,5 @@ the row fields.
 | T-0210-M5 | packages/dev/src/schedule.ts | a task that left running kept the mark of the reserved slot | `dev scheduling > a task that waits gives up the reserved slot, so a resumed task does not hold it twice` |
 | T-0210-M6 | packages/dev/src/model.ts | a task stored with the old phase `held` was not read as paused | `dev:pause and dev:resume > a task stored with the old phase held reads as paused and can be resumed` |
 | T-0210-M10 | packages/dev/src/service.ts | the release in task update did not refresh the plan's cached counts | `dev:pause and dev:resume > task update --after releases a task waiting on a cancelled dependency` |
+| T-0194-M3 | packages/dev/src/service.ts | a cross-repository `--after` change took only its own repository's lock | `--after validation under races and removed repositories > two cross-repository updates at once cannot close a cycle` (a race; it failed in 3 of 3 runs) |
+| T-0194-M4 | packages/dev/src/service.ts | a dependency's repository was no longer required to be registered | `--after validation under races and removed repositories > a task of a removed repository cannot be named` |

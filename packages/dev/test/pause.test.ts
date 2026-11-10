@@ -259,7 +259,7 @@ describe("dev:pause and dev:resume", () => {
     const released = await task(s, second);
     expect(released.phase).toBe("ready");
     expect(released.run).toBeNull();
-    expect(released.after).toEqual([bareId(other)]);
+    expect(released.after).toEqual([other]);
     // The plan's cached count follows at once, not at the next tick.
     expect(planData((await getPlan(s.store, s.plan.id)).data).waitingCount).toBe(0);
     expect(await tick(s)).toEqual([second]);

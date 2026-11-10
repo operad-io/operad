@@ -1,6 +1,6 @@
 {
   "$schema": "../theme.schema.json",
-  "comment": "Tokyo Night Day. Source: https://github.com/tokyo-night/tokyo-night-vscode-theme (themes/tokyo-night-light-color-theme.json). Licence: MIT, Copyright (c) 2018-present Enkia; the text is in LICENSE-tokyo-night. Roles: text = editor.foreground, weak = icon.foreground, rule = panel.border, accent = terminal.ansiMagenta, run = terminal.ansiBlue, ok = terminal.ansiGreen, error = terminal.ansiRed, add = gitDecoration.addedResourceForeground, remove = gitDecoration.deletedResourceForeground, tint = editorWidget.background, code = editor.lineHighlightBackground, background = editor.background. The upstream repository names this variant Tokyo Night Light; operad calls it Day, as the family of Tokyo Night themes does. No colour adjusted.",
+  "comment": "Tokyo Night Day. Source: https://github.com/tokyo-night/tokyo-night-vscode-theme (themes/tokyo-night-light-color-theme.json). Licence: MIT, Copyright (c) 2018-present Enkia; the text is in LICENSE-tokyo-night. Roles: text = editor.foreground, weak = icon.foreground, rule = panel.border, accent = terminal.ansiMagenta, run = terminal.ansiBlue, ok = terminal.ansiGreen, error = terminal.ansiRed, add = gitDecoration.addedResourceForeground, remove = gitDecoration.deletedResourceForeground, tint = editorWidget.background, code = editor.lineHighlightBackground, background = editor.background. The upstream repository names this variant Tokyo Night Light; operad calls it Day, as the family of Tokyo Night themes does. No colour adjusted. cancelled = error with lightness 60% for a cancelled child's bar segment.",
   "colors": {
     "text": "#343b59",
     "weak": "#707280",
@@ -9,6 +9,7 @@
     "run": "#2959aa",
     "ok": "#33635c",
     "error": "#8c4351",
+    "cancelled": "#542831",
     "add": "#166775",
     "remove": "#914c54",
     "tint": "#d6d8df",

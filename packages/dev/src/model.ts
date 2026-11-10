@@ -438,6 +438,8 @@ export type TaskData = {
   readonly oldestPlanSlot?: boolean | undefined;
   /** True while a task this ready task follows is not merged; the scheduler sets it. */
   readonly dependencyHeld?: boolean | undefined;
+  /** What the held task waits for, as a note names it; set with `dependencyHeld`. */
+  readonly dependencyHeldFor?: readonly string[] | undefined;
   readonly phase: TaskPhase;
   readonly attempts: number;
   readonly run: string | null;
@@ -672,6 +674,20 @@ export function storeKey(repository: string, id: string): string {
 export function bareId(key: string): string {
   const at = key.indexOf("/");
   return at < 0 ? key : key.slice(at + 1);
+}
+
+/**
+ * The store key a task's `after` entry names: an entry with a repository
+ * prefix is already a key; a bare id (also what older tasks stored) is a task
+ * of the task's own repository.
+ */
+export function dependencyKey(repository: string, entry: string): string {
+  return entry.includes("/") ? entry : storeKey(repository, entry);
+}
+
+/** How a dependency is named in a note: bare in its own repository. */
+export function dependencyLabel(repository: string, key: string): string {
+  return keyRepository(key) === repository ? bareId(key) : key;
 }
 
 /** The repository part of a store key. */

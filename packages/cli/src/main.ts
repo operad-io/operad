@@ -246,13 +246,26 @@ interface Context {
   readonly code: CodeSnapshot | undefined;
 }
 
+interface OpenContextOptions {
+  /** A namespace named explicitly, handed to each type's `resolve`. */
+  readonly scope?: string | undefined;
+  /** Where view ids resolve; defaults to this process's directory. */
+  readonly viewsCwd?: string | undefined;
+  /** Whether to snapshot the code this process loaded. */
+  readonly trackCode?: boolean | undefined;
+  /**
+   * Whether this process follows changes. A command that answers once and
+   * exits leaves this false; a long-lived process passes true.
+   */
+  readonly follow?: boolean | undefined;
+}
+
 async function openContext(
   home: string,
   io: CliIo,
-  scope?: string,
-  viewsCwd?: string,
-  trackCode = false,
+  options: OpenContextOptions = {},
 ): Promise<Context> {
+  const { scope, viewsCwd, trackCode = false, follow = false } = options;
   const cwd = process.cwd();
   const config = await readConfig(home);
   // Taken before anything loads: a file that changes while loading then
@@ -260,8 +273,12 @@ async function openContext(
   const code = trackCode ? takeCodeSnapshot(home, config.plugins) : undefined;
   const problems: string[] = [];
   const storeRoot = storeRootOf(config);
-  const store = openPluginStore({ backend: config.store.backend, root: storeRoot });
-  const log = openConfigLog(config);
+  const store = openPluginStore({
+    backend: config.store.backend,
+    root: storeRoot,
+    follow,
+  });
+  const log = openConfigLog(config, { follow });
   let loaded: PluginRegistry | undefined;
   const registry = await loadPluginRegistry({
     home,
@@ -328,6 +345,7 @@ async function openContext(
       store,
       log,
       cwd: viewsCwd ?? cwd,
+      follow,
       ...(scope === undefined ? {} : { scope }),
       onLog: (message) => io.error(`${message}\n`),
     }),
@@ -381,7 +399,11 @@ async function commandInit(home: string, io: CliIo): Promise<number> {
   const registry = await loadPluginRegistry({
     home,
     cwd: home,
-    store: openPluginStore({ backend: config.store.backend, root: storeRoot }),
+    store: openPluginStore({
+      backend: config.store.backend,
+      root: storeRoot,
+      follow: false,
+    }),
     kernelVerbs: KERNEL_VERBS,
     onLog: (message) => io.error(`${message}\n`),
   });
@@ -2361,7 +2383,10 @@ export async function main(
     }
 
     if (command === "run-internal") {
-      const context = await openContext(home, io, undefined, undefined, true);
+      const context = await openContext(home, io, {
+        trackCode: true,
+        follow: true,
+      });
       try {
         await commandRunInternal(context, io, args.slice(1));
       } finally {
@@ -2407,7 +2432,11 @@ export async function main(
           // serve answers clients that are in no directory: a bare id must not
           // be scoped to the repository serve happened to start in, so its
           // views resolve ids from the home, outside every repository.
-          const context = await openContext(home, io, undefined, home, true);
+          const context = await openContext(home, io, {
+            viewsCwd: home,
+            trackCode: true,
+            follow: true,
+          });
           try {
             return await commandServe(context, io, args.slice(1), lock, isSupervised, retryBind);
           } finally {
@@ -2487,7 +2516,9 @@ export async function main(
       // `show` accepts `--repo <name>` to say where a bare id lives.
       const showRepo =
         command === "show" ? takeValueFlag(args.slice(1), "--repo") : undefined;
-      const context = await openContext(home, io, showRepo?.value);
+      const context = await openContext(home, io, {
+        ...(showRepo?.value === undefined ? {} : { scope: showRepo.value }),
+      });
       try {
         if (command === "pending") {
           const { args: rest, present } = splitFlag(args.slice(1), "--json");
@@ -2562,7 +2593,9 @@ export async function main(
     // An action takes `--repo <name>` to say where a bare id lives; a plugin
     // command reads its own `--repo`, so it still gets the arguments whole.
     const actionRepo = takeValueFlag(args, "--repo");
-    const context = await openContext(home, io, actionRepo.value);
+    const context = await openContext(home, io, {
+      ...(actionRepo.value === undefined ? {} : { scope: actionRepo.value }),
+    });
     try {
       const action = kernelAction(command, context.registry);
       if (action !== undefined) {

@@ -252,6 +252,14 @@ dependency was cancelled: changing its dependencies, or clearing them with
 `--after ""`, ends that wait (its run is stopped), and the task starts on a later
 tick like any ready task.
 
+`--after` takes a task id (a task of this repository, in any plan) or
+`<repository>/<task id>` (a task of any registered repository). Either way the
+full key is stored. A task is `blocked` until every task it follows is merged,
+wherever it is; its note says `waiting for operad/T-0188` when the task is in
+another repository. A task must exist when it is named; a task cannot follow
+itself or close a cycle (the refusal shows the cycle). A cancelled dependency,
+in any plan or repository, makes the task wait for a person as above.
+
 A task whose dependency was cancelled starts no work. The scheduler starts its
 flow into the person wait instead, so the task is a real pending item: `merge`
 and `reject` answer it like any other wait, and `cancel` stops the run. The task
