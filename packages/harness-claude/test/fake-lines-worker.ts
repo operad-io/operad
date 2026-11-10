@@ -66,19 +66,23 @@ function mark(): void {
   if (marker !== undefined) writeFileSync(marker, String(process.pid));
 }
 
-/** Resolves when the release file exists; the directory watch wakes it. */
+/**
+ * Resolves when the release file exists. The directory watch wakes it at once;
+ * a watch can miss an event under load, so a look every 100 ms backs it.
+ */
 function released(): Promise<void> {
   if (release === undefined || existsSync(release)) return Promise.resolve();
+  const path = release;
   return new Promise((resolve) => {
-    const watcher = watch(dirname(release), () => {
-      if (!existsSync(release)) return;
+    const check = (): void => {
+      if (!existsSync(path)) return;
       watcher.close();
+      clearInterval(timer);
       resolve();
-    });
-    if (existsSync(release)) {
-      watcher.close();
-      resolve();
-    }
+    };
+    const watcher = watch(dirname(path), check);
+    const timer = setInterval(check, 100);
+    check();
   });
 }
 

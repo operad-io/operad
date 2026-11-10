@@ -19,7 +19,7 @@ import {
   writeFileSync,
   type FSWatcher,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   cleanupTempRoots,
@@ -89,23 +89,23 @@ async function run(
   return { out, err, code };
 }
 
-/** Resolves when the file exists, without asking repeatedly: watches the directory. */
+/**
+ * Resolves when the file exists. A directory watch wakes it at once; a watch
+ * can miss an event under load, so a look every 100 ms backs it.
+ */
 function waitForFile(path: string): Promise<void> {
   if (existsSync(path)) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const handle = watch(path.slice(0, path.lastIndexOf("/")), () => {
+  return new Promise((resolve) => {
+    const check = (): void => {
       if (!existsSync(path)) return;
-      handle.close();
+      watcher.close();
+      clearInterval(timer);
       resolve();
-    });
-    handle.on("error", (error) => {
-      handle.close();
-      reject(error);
-    });
-    if (existsSync(path)) {
-      handle.close();
-      resolve();
-    }
+    };
+    const watcher = watch(dirname(path), check);
+    watcher.on("error", check);
+    const timer = setInterval(check, 100);
+    check();
   });
 }
 
@@ -126,12 +126,15 @@ function waitForStore(
     let checking = false;
     let again = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // A watch can miss an event under load, so a look every 100 ms backs it.
+    let look: ReturnType<typeof setInterval> | undefined;
 
     const finish = (error?: Error): void => {
       if (settled) return;
       settled = true;
       for (const watcher of watchers) watcher.close();
       if (timer !== undefined) globalThis.clearTimeout(timer);
+      if (look !== undefined) globalThis.clearInterval(look);
       if (error === undefined) resolve();
       else reject(error);
     };
@@ -172,6 +175,7 @@ function waitForStore(
       watcher.on("error", (error) => finish(error));
       watchers.push(watcher);
     }
+    look = globalThis.setInterval(evaluate, 100);
     evaluate();
   });
 }
