@@ -48,22 +48,25 @@ function isCodeFile(name: string): boolean {
   return !name.endsWith(".md") && !name.endsWith(".test.ts");
 }
 
-/** Remembers a file's hash while its size and timestamps stay the same. */
-export interface HashCache {
-  readonly entries: Map<string, { readonly key: string; readonly hash: string }>;
-}
-
-export function newHashCache(): HashCache {
-  return { entries: new Map() };
-}
-
 /**
- * A stamp this close to now is not trusted for a cache hit. Linux rounds a
- * newly written file's timestamps to the millisecond, so a rewrite of the same
- * size can keep the size and both stamps; a hash kept from before the write
- * would then miss the change. The hash is read again until the stamp is safely
- * in the past.
+ * Remembers a file's hash under its size and timestamps. A hash read while
+ * the stamps were still fresh stays untrusted: Linux rounds a newly written
+ * file's timestamps to the millisecond, so a same-size rewrite can keep the
+ * key, and a later poll must read the file again before it believes the hash.
  */
+export interface HashCache {
+  readonly entries: Map<
+    string,
+    { readonly key: string; readonly hash: string; readonly trusted: boolean }
+  >;
+  readonly now: () => number;
+}
+
+export function newHashCache(now: () => number = Date.now): HashCache {
+  return { entries: new Map(), now };
+}
+
+/** How close a stamp may be to now before a cached hash stops being trusted. */
 const RACY_MS = 2_000;
 
 function hashFile(path: string, cache: HashCache): string | undefined {
@@ -71,10 +74,10 @@ function hashFile(path: string, cache: HashCache): string | undefined {
     const info = statSync(path);
     const key = `${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
     const cached = cache.entries.get(path);
-    const older = Date.now() - Math.max(info.mtimeMs, info.ctimeMs) > RACY_MS;
-    if (cached?.key === key && older) return cached.hash;
+    if (cached?.key === key && cached.trusted) return cached.hash;
     const hash = Bun.hash(readFileSync(path)).toString(16);
-    cache.entries.set(path, { key, hash });
+    const trusted = cache.now() - Math.max(info.mtimeMs, info.ctimeMs) > RACY_MS;
+    cache.entries.set(path, { key, hash, trusted });
     return hash;
   } catch {
     return undefined;
