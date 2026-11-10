@@ -195,9 +195,10 @@ describe("the harness process", () => {
     const clock = manualClock();
     // macOS's /bin/sh turns on job control here; Linux's dash refuses it
     // without a tty, so there `setsid` puts the child in a group of its own.
+    // The child writes the pid itself, after it left the group.
     const escaped =
       process.platform === "linux"
-        ? `setsid sleep 60 & echo $! > '${pidFile}'`
+        ? `setsid sh -c 'echo $$ > "${pidFile}"; sleep 60' &`
         : `set -m; sleep 60 & echo $! > '${pidFile}'`;
     const running = runAgent({
       command: "sh",
@@ -210,12 +211,13 @@ describe("the harness process", () => {
       onLine() {},
     });
 
-    // The drain grace comes from the injected clock, so the test ends it.
+    // Wait until the child reports from its own group, then end the drain
+    // grace the injected clock holds.
+    const pid = await waitForPid(pidFile);
     await clock.when(() => clock.pending > 0);
     expect(clock.fireTimers()).toBe(1);
 
     const outcome = await running;
-    const pid = await waitForPid(pidFile);
     try {
       expect(outcome.exitCode).toBe(0);
       expect(alive(pid)).toBe(true);
