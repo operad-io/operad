@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { initialState, reduce, type TuiState } from "../src/state.ts";
@@ -126,48 +126,45 @@ describe("shipped themes: the files", () => {
   });
 
   test("a missing shipped file fails when its theme or family is chosen, not when the module is imported", () => {
-    // A copy outside the repository: the test never moves a shipped file, so a
-    // killed test cannot leave the worktree with one missing.
-    const root = mkdtempSync(join(tmpdir(), "operad-lazy-theme-"));
-    const missing = join(root, "themes", "rose-pine-main.json");
-    try {
-      mkdirSync(join(root, "src"));
-      mkdirSync(join(root, "themes"));
-      copyFileSync(join(PACKAGE, "src", "theme.ts"), join(root, "src", "theme.ts"));
-      copyFileSync(join(PACKAGE, "src", "themes.ts"), join(root, "src", "themes.ts"));
-      for (const name of SHIPPED_THEMES) {
-        if (name !== "rose-pine-main") {
-          copyFileSync(shippedThemeFile(name), join(root, "themes", `${name}.json`));
-        }
-      }
-      symlinkSync(join(PACKAGE, "node_modules"), join(root, "node_modules"), "dir");
-      const module = JSON.stringify(join(root, "src", "theme.ts"));
-      // One child does the import and both choices: each extra Bun start costs
-      // more than the test itself.
-      const script = `
-        const { resolveSelection } = await import(${module});
-        for (const name of ["rose-pine-main", "rose-pine"]) {
-          try {
-            resolveSelection(${JSON.stringify(home())}, name);
-            console.error("chose " + name);
-            process.exit(4);
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            if (!message.includes(${JSON.stringify(missing)})) {
-              console.error(name + ": " + message);
-              process.exit(5);
-            }
+    const missing = shippedThemeFile("rose-pine-main");
+    const module = JSON.stringify(join(PACKAGE, "src", "theme.ts"));
+    // One child does the import and both choices. It stubs the modules that
+    // only drawing needs, so the test does not pay for the native renderer.
+    const script = `
+      import { mock } from "bun:test";
+      import * as fs from "node:fs";
+      const realRead = fs.readFileSync;
+      mock.module("node:fs", () => ({
+        ...fs,
+        readFileSync: (path, options) => {
+          if (String(path) === ${JSON.stringify(missing)}) {
+            throw new Error("ENOENT: no such file or directory, open '" + String(path) + "'");
+          }
+          return realRead(path, options);
+        },
+      }));
+      mock.module("@opentui/core", () => ({ RGBA: {} }));
+      mock.module("@operad-io/engine/platform", () => ({ watchDirectory: () => () => {} }));
+      const { resolveSelection } = await import(${module});
+      for (const name of ["rose-pine-main", "rose-pine"]) {
+        try {
+          resolveSelection(${JSON.stringify(home())}, name);
+          console.error("chose " + name);
+          process.exit(4);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!message.includes(${JSON.stringify(missing)})) {
+            console.error(name + ": " + message);
+            process.exit(5);
           }
         }
-      `;
-      const checked = spawnSync(process.execPath, ["-e", script], {
-        cwd: root,
-        encoding: "utf8",
-      });
-      expect(checked.status, checked.stderr).toBe(0);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
+      }
+    `;
+    const checked = spawnSync(process.execPath, ["-e", script], {
+      cwd: PACKAGE,
+      encoding: "utf8",
+    });
+    expect(checked.status, checked.stderr).toBe(0);
   });
 });
 
