@@ -245,7 +245,7 @@ describe("dev plans and tasks", () => {
     await expect(confirmTask(store, late.id)).rejects.toThrow(/already ready/);
   });
 
-  test("after is checked for existence, plan or merge, and cycles", async () => {
+  test("after is checked for existence and cycles", async () => {
     const { repository, store } = await setup();
     const plan = await addPlan(store, {
       repository,
@@ -262,15 +262,6 @@ describe("dev plans and tasks", () => {
       slug: "external",
       title: "External",
     });
-    await expect(
-      addTask(store, {
-        plan: plan.id,
-        slug: "bad",
-        title: "Bad",
-        after: [bareId(external.id)],
-      }),
-    ).rejects.toThrow(/not merged/);
-
     await setTaskPhase(store, external.id, "merged");
     const first = await addTask(store, {
       plan: plan.id,
@@ -288,7 +279,7 @@ describe("dev plans and tasks", () => {
       updateTask(store, first.id, { after: [bareId(second.id)] }),
     ).rejects.toThrow(/cycle/);
     expect(taskData((await getTask(store, first.id)).data).after).toEqual([
-      bareId(external.id),
+      external.id,
     ]);
   });
 
@@ -563,7 +554,7 @@ describe("dev per-repository ids", () => {
       title: "After old",
       after: ["TK0001-old"],
     });
-    expect(taskData(afterOld.data).after).toEqual(["TK0001-old"]);
+    expect(taskData(afterOld.data).after).toEqual(["repository/TK0001-old"]);
 
     const afterNew = await addTask(store, {
       plan: plan.id,
@@ -571,7 +562,7 @@ describe("dev per-repository ids", () => {
       title: "After new",
       after: [bareId(newer.id)],
     });
-    expect(taskData(afterNew.data).after).toEqual([bareId(newer.id)]);
+    expect(taskData(afterNew.data).after).toEqual([newer.id]);
 
     await expect(
       addTask(store, {

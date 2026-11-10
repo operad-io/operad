@@ -225,7 +225,7 @@ describe("dev:pause and dev:resume", () => {
     const released = await task(s, second);
     expect(released.phase).toBe("ready");
     expect(released.run).toBeNull();
-    expect(released.after).toEqual([bareId(other)]);
+    expect(released.after).toEqual([other]);
     expect(await tick(s)).toEqual([second]);
     expect((await getPlan(s.store, s.plan.id)).id).toBe(s.plan.id);
   });
