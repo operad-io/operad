@@ -386,3 +386,27 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0060-M3 | packages/engine/src/plugin/registry.ts | a second declaration of a name replaced the graph instead of keeping the first | `a name already used keeps the graph it got first` |
+## T-0177 — a standing item carries the actions of its object
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0177-M6 | packages/engine/src/plugin/registry.ts | a standing item's object came with no actions (`actions: []` instead of `actionsHolding`) | `a proposed task is pending > a task added by \`task add\` is pending with confirm and cancel, drawn waiting, and leaves on confirm` (packages/dev/test/proposed-pending.test.ts) |
+| T-0153-M1 | packages/engine/test/wait-for-file.ts | the wait looked once, then waited on the directory watch alone, with no 100 ms look | `store lifecycle and concurrency > two jsonl writers assign unique, contiguous sequences` (timed out 20 of 200 stressed runs with the old watch-only wait; not deterministic) |
+
+## T-0165 — a queued step is not failed by a slow grant
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0165-M1 | packages/engine/src/runner/limits.ts | `locked` took the file lock without first serializing the grants of one process | `step limits > a step cancelled while it waits leaves the queue` (3 of 20 stressed runs at `--load 2`; not deterministic) |
+
+## T-0165 — the pid-file wait keeps a timer look
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0165-M2 | packages/engine/test/platform/step-reap.test.ts | the pid-file wait used the directory watch alone, with no timer look | `what a step leaves behind > a system shell that starts the marked process again is stopped with it` (timed out at 30 s in the check; 0 of 200 stressed runs at `--load 2`; not deterministic) |
+## T-0206 — the plugin store reads only past its offset
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0206-M1 | packages/engine/src/plugin/file-store.ts | read the facts from byte 0 instead of from `this.offset`, so every refresh read the whole file | `the file plugin store > a second reader sees facts another writer appended`; `the file plugin store > refresh reads only past its offset, and a torn multi-byte line waits for its newline` |
+| T-0206-M2 | packages/engine/src/plugin/file-store.ts | treated the bytes after the last newline as complete, so a torn line was consumed before its newline landed | `the file plugin store > refresh reads only past its offset, and a torn multi-byte line waits for its newline` |

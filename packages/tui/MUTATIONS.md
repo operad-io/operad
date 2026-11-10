@@ -242,3 +242,17 @@ the row fields.
 | T-0121-M4 | packages/tui/src/view/index.ts | a plugin tab's rows drew their title after the id and slug | `two-line rows > at the one-pane width nothing is wider than the pane, and a long id and title cut with …` |
 | T-0121-M5 | packages/tui/src/state.ts | a child's page took the child's id as its source, so a refresh of the left list reopened the plan | `one tab per plugin > a refresh of the left list leaves a child's page open` |
 | T-0121-M6 | packages/tui/src/state.ts | a changed row was not put in place on the open page's next-level list | `one tab per plugin > a change to a child refreshes its row on the open plan page` |
+| T-0149-M1 | packages/tui/src/theme.ts | the shipped palettes were read again when the module was imported, so a missing file failed every start | `shipped themes: the files > a missing shipped file fails when its theme or family is chosen, not when the module is imported` |
+| T-0149-M2 | packages/tui/src/theme.ts | choosing a shipped theme no longer read and checked its file | `shipped themes: the files > a missing shipped file fails when its theme or family is chosen, not when the module is imported` |
+| T-0149-M3 | packages/tui/src/theme.ts | choosing a family checked only the family name, not both of its members | `shipped themes: the files > a missing shipped file fails when its theme or family is chosen, not when the module is imported` |
+| T-0149-M4 | packages/tui/themes/rose-pine-main.json, packages/tui/themes/rose-pine-dawn.json | the tint went back to the surface colour, which is barely visible on the base and equals code | `shipped themes: the files > Rosé Pine's selected row is visible on its base` |
+| T-0149-M5 | packages/tui/themes/dracula.json | code went back to the selection colour, so a code block looked like a selected row | `shipped themes: the files > every shipped theme resolves to a full palette equal to its file` (code is not tint) |
+| T-0149-M6 | packages/tui/themes/solarized-dark.json | code went back to base02, the tint and rule colour | `shipped themes: the files > every shipped theme resolves to a full palette equal to its file` (code is not tint) |
+| T-0149-M7 | packages/tui/themes/solarized-light.json | code went back to base2, the tint and rule colour | `shipped themes: the files > every shipped theme resolves to a full palette equal to its file` (code is not tint) |
+| T-0149-M8 | packages/tui/themes/one-light.json | code went back to the selection colour, leaving no second background | `shipped themes: the files > every shipped theme resolves to a full palette equal to its file` (code is not tint) |
+
+## T-0206 — the serve log tail reads only the end
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0206-M5 | packages/tui/src/autostart.ts | decoded each backward chunk on its own, so a multi-byte character split across two reads became U+FFFD | `ensureServer > a long log's tail keeps the last ten lines and decodes a multi-byte line across reads` |

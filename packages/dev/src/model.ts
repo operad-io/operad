@@ -117,6 +117,8 @@ export type PlanData = {
   readonly costTotals?: PlanCostTotals | undefined;
   /** Tasks being worked or reviewed now; the scheduler keeps it current. */
   readonly activeCount?: number | undefined;
+  /** Tasks waiting for a person (proposed, or stopped and asking); the scheduler keeps it current. */
+  readonly waitingCount?: number | undefined;
   /** True once the scheduler has reported that every task ended. */
   readonly finishedReported?: boolean | undefined;
   /** When the scheduler last started one of the plan's tasks (ms); the order within a priority reads it. */
@@ -213,8 +215,6 @@ export interface ReviewRunRecord {
   /** The findings a report run returned, with pre-existing marks. */
   readonly findings?: readonly ReviewFinding[] | null;
   readonly verified?: readonly string[] | null;
-  /** The user-visible words this run found in the diff. */
-  readonly words?: readonly string[];
   /** How many of the findings are at or above the fix level. */
   readonly counted?: number | null;
 }
@@ -262,10 +262,6 @@ export interface ReviewRecord {
   readonly reason?: string | null;
   /** The commit the reviewer saw. */
   readonly sha?: string | null;
-  /** The user-visible words the reviewer found in the diff. */
-  readonly words?: readonly string[];
-  /** The words of the worker and the reviewer that nobody approved; a passed review waits on them. */
-  readonly newWords?: readonly string[];
 }
 
 /** What the integrate step found while landing the verified commit. */
@@ -360,8 +356,6 @@ export type TaskAttempt = {
   readonly workMs?: number | null;
   /** Why the work step did not finish cleanly, in the harness's words. */
   readonly workNote?: string | null;
-  /** The words the worker's final answer named in its `New words:` line. */
-  readonly workWords?: readonly string[] | null;
   /** How many times the work step waited for an unavailable model in this attempt. */
   readonly workWaits?: number | null;
   /** When a work step that found its model unavailable may run again (epoch ms). */
@@ -484,6 +478,8 @@ export type TaskData = {
   readonly followups?: FollowupMark | undefined;
   /** The tasks a follow-up task collects; set only on a follow-up. */
   readonly followupOf?: readonly string[] | undefined;
+  /** Set when dev itself proposed the task (the flaky detector, a follow-up), not a person. */
+  readonly openedBy?: "dev" | undefined;
 };
 
 /** A finding that did not fail its review round. */
@@ -1060,7 +1056,18 @@ export function planNote(plan: PlanData): string {
   // Cancelled tasks are not part of the total the owner is working through.
   const progress = `${plan.mergedCount}/${plan.taskCount - plan.cancelledCount}`;
   const cost = planCost(plan);
-  const parts = [progress, ...(cost === undefined ? [] : [cost]), plan.auto, plan.priority];
+  // Only a confirmed plan says how many tasks wait for the owner.
+  const waiting =
+    planState(plan) === "confirmed" && (plan.waitingCount ?? 0) > 0
+      ? [`${plan.waitingCount} waiting`]
+      : [];
+  const parts = [
+    progress,
+    ...waiting,
+    ...(cost === undefined ? [] : [cost]),
+    plan.auto,
+    plan.priority,
+  ];
   return `${parts.join(" · ")} // ${plan.concurrency}`;
 }
 

@@ -452,12 +452,6 @@ the row fields.
 | T-0151-M2 | packages/dev/src/rework.ts | an argument list from `firstArgs` was recorded as coming from `first` | `review settings by round > firstArgs still belongs to the first review of every attempt, rework round included` |
 | T-0114-M4 | packages/dev/src/views.ts | a group of the run with no recorded attempt was dropped (the pending attempt was never made) | `metrics times come from the run's own facts > a rework whose worktree is still being prepared: the next attempt is already running it` |
 | T-0148-M9 | packages/dev/src/steps.ts | the work wait bound was `<=`, so one wait too many before the failure went to a person | `dev/work > unavailable: after the allowed waits the failure goes to a person` |
-| T-0155-M1 | packages/dev/src/schedule.ts | auto merge answered a passed review that names new words (the `newWords` check removed) | `auto merge does not answer a passed review that names new words` |
-| T-0155-M2 | packages/dev/src/gate.ts | the worker's words were left out of the words a passed review checks (only the reviewer's counted) | `dev/review > new words > a word the worker named and nobody approved is recorded on the passed review` |
-| T-0155-M3 | packages/dev/src/gate.ts | the reviewer's words were left out (only the worker's counted) | `dev/review > new words > a word the reviewer reports and the worker omitted is recorded` |
-| T-0155-M4 | packages/dev/src/words.ts | a word in main's README counted as unapproved (the docs check removed) | `dev/review > new words > a word already in main's README is not recorded` |
-| T-0155-M5 | packages/dev/src/words.ts | the `Approved words:` line was ignored | `dev/review > new words > a word marked approved in the brief is not recorded` |
-| T-0155-M6 | packages/dev/src/announce.ts | a passed review with new words still said `ready to merge` | `dev.waiting > a passed review with new words waits for approval: one event, once, also when the step runs again` |
 | T-0150-M1 | packages/dev/src/integration-queue.ts | `turn()` checked the abort signal before it read a leader's result | `a claimed task aborted after the leader's push > reports the merge that is on main, not a cancel` |
 | T-0102-M5 | packages/dev/src/steps.ts | the work wait bound allowed one wait too many (`<=` for `<`) | `dev/work > unavailable: after the allowed waits the failure goes to a person` |
 
@@ -505,6 +499,12 @@ the row fields.
 |---|---|---|---|
 | T-0157-M1 | packages/dev/src/gate.ts | a verify failure kept the previous review failure (`reviewFailed` set for every source) | `dev/rework after two review failures in a row > review fail, verify fail, review fail reworks again` |
 
+## T-0164 — integrate and cleanup run again after a kill
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0164-M1 | packages/dev/src/integrate.ts | the rerun after the merge was recorded added its "merged as" lines again (the `previous.result === "merged"` check replaced by `false`) | `dev/integrate rerun after a kill > merge: a kill at merged-saved, then a rerun, merges once` |
+| T-0164-M2 | packages/dev/src/settings.ts | the default hook that removes the gate worktree ran without checking the worktree exists | `dev/cleanup rerun after a kill > a kill after hook 2, then a rerun, leaves nothing behind` |
 ## T-0163 — rework 1
 
 | id | file | mutation | failing test |
@@ -518,11 +518,24 @@ the row fields.
 | T-0159-M4 | packages/dev/src/schedule.ts | every refill of the last free slot went by turn (the check for a running oldest-plan-slot task removed) | `dev scheduling > once the repository is full, a freed slot goes by priority; only the reserved slot goes by turn` |
 | T-0170-M1 | packages/dev/src/actions.ts | the old action name `hold` was still declared next to `pause` | `dev:pause and dev:resume > dev:hold and dev:release are no longer actions` |
 
+## T-0164 rework 1 — a batch leader killed after the push
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0164-M3 | packages/dev/src/integrate.ts | a task whose merge a dead leader already landed was not looked up on main (`alreadyOnMain` result ignored), so it merged its commit again and reported someone else's sha | `a batch leader killed after the push > the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone` |
+| T-0164-M4 | packages/dev/src/integrate.ts | the leader's replay dropped the "integrated in a batch with" line (`previousBatch.length === 0` replaced by `true`) | `a batch leader killed after the push > the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone` |
 ## T-0173 — TUI follow-ups 2
 
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0173-M1 | packages/dev/src/service.ts | the one-time pass left a repository without `activeTasks` uncounted (the `undefined` check replaced by `false`) | `the repo type > a repository stored without a running-task count shows running for a task already running` |
+
+## T-0164 rework 3 — the batch result is left before the push
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0164-M5 | packages/dev/src/integrate.ts | the candidate-with-main's-tree guard never fired (condition replaced by `false`) | `a candidate with nothing left to merge > merge: a change already on main under another message is already on main, not merged again` (and the squash one) |
+| T-0164-M6 | packages/dev/src/integrate.ts, packages/dev/src/integration-queue.ts | a dead leader's pending result was never taken as landed and the subject lookup was off (`landed` returns `false`, `alreadyOnMain` ignored) | `a batch leader killed after the push > merge: the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone` (and the squash one) |
 | T-0175-M2 | packages/dev/src/commands.ts | a task edit with an empty command input opened the editor instead of refusing | `operad mcp > task edit takes the new brief as command input and refuses an empty one` (packages/mcp/test/server.test.ts; the run hangs on the editor and times out) |
 
 ## T-0060 — the dev flow compiler
@@ -531,3 +544,29 @@ the row fields.
 |---|---|---|---|
 | T-0060-M1 | packages/dev/src/flow-compiler.ts | a failed stage returned to the first work entry instead of the nearest work stage before it | `a failed review returns to the nearest work stage before it` |
 | T-0060-M2 | packages/dev/src/settings.ts | removed the rule that a flow's last stage is human | `both hard rules refuse the flow by name` |
+## T-0201 — rerun reads only this command's log
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0201-M1 | packages/dev/src/rerun.ts | read the failed names from byte 0 instead of the command's `logStart` | `dev/verify reruns only the failed tests > an earlier attempt's names in the run log do not stop this attempt's rerun` |
+## T-0177
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0177-M1 | packages/dev/src/standing.ts | only a proposed task with an `openedBy` was a pending item | `a proposed task is pending > a task added by \`task add\` is pending with confirm and cancel, drawn waiting, and leaves on confirm` |
+| T-0177-M2 | packages/dev/src/marks.ts | a confirmed plan never read `waitingCount` (threshold raised to 99) | `a proposed task is pending > a task waiting at a stop also turns the plan row waiting` |
+| T-0177-M3 | packages/dev/src/service.ts | `confirmTask` did not refresh the plan's counts | `a proposed task is pending > a task added by \`task add\` is pending with confirm and cancel, drawn waiting, and leaves on confirm` |
+
+## T-0177 — rework 2
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0177-M5 | packages/dev/src/standing.ts | a draft plan's proposed tasks were listed as task items again (draft grouping skipped) | `a proposed task is pending > a draft plan keeps its own mark and note` |
+| T-0167-M1 | packages/dev/src/steps.ts | the work-wait bound `waits < MAX_WORK_WAITS` became `<=` (or `< MAX_WORK_WAITS - 1`) | `dev/work > unavailable: after the allowed waits the failure goes to a person` |
+
+## T-0206 — the check log and the worker log read only their tails
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0206-M3 | packages/dev/src/rerun.ts | read the failed names from byte 0 instead of the command's `logStart` | `dev/verify reruns only the failed tests > an earlier attempt's names in the run log do not stop this attempt's rerun` |
+| T-0206-M4 | packages/dev/src/views.ts | started the worker-log tail at the end of the file, so the log section was empty | `dev views > the log section is the tail of the current attempt's worker log` |
