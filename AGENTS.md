@@ -69,7 +69,9 @@ Never raise a timeout or add a retry inside a test to make it pass.
 
 Only a task that fixes a flaky test runs `scripts/stress.sh`, and it runs it
 twice: once to reproduce before the fix and once to confirm after it. Every
-other task's check is `bash scripts/verify.sh`.
+other task's check is `bash scripts/check-changed.sh`: the packages the change
+touches and the packages that load them. The full `bash scripts/verify.sh` runs
+once more at integration, before merge.
 
 Size a stress run by time, not by a fixed count: time one run of the file
 alone, then choose `--runs` so the stress run takes about ten minutes, at least
@@ -92,7 +94,8 @@ with a stress run before you change anything.
 
 ## Verify
 
-Run this before you say a change is done. It must pass.
+Run this before you say a change is done. It must pass. A task worker runs
+`bash scripts/check-changed.sh` instead; the full suite runs before merge.
 
 ```sh
 bash scripts/verify.sh
