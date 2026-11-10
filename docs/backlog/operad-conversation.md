@@ -30,7 +30,7 @@ OpenClaw 是聊天优先，operad 到现在是流程优先。第一个要满足�
     - 新建就是对父对象做动作，参数是 harness（枚举，已加载的 harness 插件；默认值来自 `dev.json` 或 profile）和标题，客户端用已有的参数表单画。内核不加类型级动作，不加新对象。继续一个旧 chat 就是打开它再 `chat:send`。
 13. **harness 每个 chat 自己选，开始后不换**；要换就新建（和 task 开工后不换 flow 同一个规矩）。各 harness 的能力按描述文件照实显示：radian 没有一次性许可，它的 chat 里助理问权限只能拒绝一次（`operad-contract.md` 决定 6），新建时就说明，不等启动后才发现。三种 harness 同时接，ask 闭环在 claude 和 pi 上做，radian 是降级那一档。
 14. **仓库 chat 默认在 main clone，只读**。agent 判断要改代码时用 `ctx.ask` 问要不要开 worktree；答应后 `dev` 开一个 `work/chat-<id>` 的 worktree，chat 的工作目录切过去（只切这一次），那里可写，main clone 仍只读。worktree 里的改动只能由这个 chat 开出的、指向这个 worktree 的 task 经 integrate 进 main（`operad-dev-flows.md` 决定 4 的硬约束不变）。
-15. **chat 通过 operad 的 MCP 工具调用插件**，不在 shell 里敲 `operad` 命令：`operad mcp` 的读工具、插件动词和允许列表里的动作挂进 harness（claude 进程内 `createSdkMcpServer`，pi `customTools`，radian stdio MCP，见 `operad-harness.md` 决定 3、4）。助理 chat 看任务、开 task、问一个 task 为什么卡住，都走它，不自己改仓库文件；仓库 chat 同样。T-0175（lead 用 MCP 能做 shell 里能做的事）是前置。
+15. **chat 通过 operad 的 MCP 工具调用插件**，不在 shell 里敲 `operad` 命令：`operad mcp` 的读工具、插件动词和允许列表里的动作挂进 harness（claude 和 radian 用 stdio MCP（`mcpServers`、`--mcp-config`），pi `customTools`，见 `operad-harness.md` 决定 3、4；claude 不用 `createSdkMcpServer` 的原因见那里，2026-11-10）。助理 chat 看任务、开 task、问一个 task 为什么卡住，都走它，不自己改仓库文件；仓库 chat 同样。T-0175（lead 用 MCP 能做 shell 里能做的事）是前置。
 16. **第一版不导入 operad 之外开的会话**（终端里的 Claude Code、pi 的会话）。以后做时是 `chat` 插件加一个 `external: true` 的对象类型（`operad-contract.md` 决定 3），内核不动。
 
 ## 顺序
