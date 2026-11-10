@@ -406,6 +406,7 @@ function prepareWorktree(
   repository: RepositoryData,
   settings: DevSettings,
   taskId: string,
+  mergeMain = true,
 ): Prepared {
   const fetch = git(repository.path, ["fetch", "--prune", settings.remote]);
   if (!fetch.ok) {
@@ -439,6 +440,9 @@ function prepareWorktree(
       return failed(
         `${path} is on "${currentBranch(path) ?? "no branch"}", not "${branch}"`,
       );
+    }
+    if (!mergeMain) {
+      return { kind: "ready", base: headOf(path) };
     }
     if (mergeInProgress(path)) {
       return {
@@ -483,7 +487,7 @@ function prepareWorktree(
   }
   // A branch kept from an earlier attempt continues from its old base, so the
   // freshly fetched main is merged before the worker sees it.
-  if (reused) return mergeLatest(path, mainRef);
+  if (reused && mergeMain) return mergeLatest(path, mainRef);
   return { kind: "ready", base: headOf(path) };
 }
 
@@ -720,7 +724,12 @@ export async function runWorktree(
     ctx,
     context.settings,
     worktreePath(context.repository.path, context.settings, context.taskId),
-    prepareWorktree(context.repository, context.settings, context.taskId),
+    prepareWorktree(
+      context.repository,
+      context.settings,
+      context.taskId,
+      beforeAttemptOf(ctx.params) !== "none",
+    ),
   );
   const base = prepared.base ?? attempt.base ?? null;
   const nextAttempt: TaskAttempt = {
@@ -1017,6 +1026,14 @@ function stageParamsOf(params: unknown): {
   };
 }
 
+/** The preparation a work stage asks for before its attempt. */
+type BeforeAttempt = "merge-main" | "none";
+
+function beforeAttemptOf(params: unknown): BeforeAttempt | undefined {
+  const given = ((params ?? {}) as { readonly beforeAttempt?: unknown }).beforeAttempt;
+  return given === "merge-main" || given === "none" ? given : undefined;
+}
+
 /** The history line of a work run: `claude`, or `pi (fallback from claude)`. */
 function workLine(attempt: TaskAttempt): string {
   const base = `work: ${String(attempt.worker)}`;
@@ -1105,6 +1122,52 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
         message: `no worktree at ${path}; run the worktree step first`,
       }),
     };
+  }
+
+  if (beforeAttemptOf(ctx.params) === "merge-main") {
+    const remote = context.settings.remote;
+    const mainRef = `${remote}/${context.settings.mainBranch}`;
+    const failBefore = async (message: string): Promise<PluginStepResult> => {
+      const nextAttempt: TaskAttempt = {
+        ...attempt,
+        run: ctx.runId,
+        worktree: path,
+        branch,
+        base,
+        result: "failed",
+        worked: true,
+      };
+      const written = await saveTaskGuarded(
+        ctx,
+        context.taskKey,
+        {
+          ...task,
+          phase: "waiting",
+          run: ctx.runId,
+          attempts,
+          attempt: nextAttempt,
+        },
+        "dev:work",
+      );
+      if (!written) return cancelledStep();
+      return {
+        result: "failed",
+        data: resultData(nextAttempt, harnessReading({}), {
+          reason: "before_attempt",
+          message,
+        }),
+      };
+    };
+    const fetch = git(context.repository.path, ["fetch", "--prune", remote]);
+    if (!fetch.ok) {
+      return failBefore(
+        `cannot fetch "${remote}": ${fetch.err || fetch.out || "git fetch failed"}`,
+      );
+    }
+    const prepared = mergeLatest(path, mainRef);
+    if (prepared.kind === "failed") {
+      return failBefore(prepared.message ?? `cannot merge "${mainRef}"`);
+    }
   }
 
   const workerBrief = await readWorkerBrief(

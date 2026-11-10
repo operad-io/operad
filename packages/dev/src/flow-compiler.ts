@@ -212,6 +212,11 @@ function checkParams(stage: CheckStage): Readonly<Record<string, unknown>> {
 }
 
 /** The params a work stage gives `dev/work`; unset fields read dev.json. */
+function worktreeParams(work: WorkStage | undefined): Readonly<Record<string, unknown>> {
+  return work?.beforeAttempt === undefined ? {} : { beforeAttempt: work.beforeAttempt };
+}
+
+/** The params a work stage gives `dev/work`; unset fields read dev.json. */
 function workParams(stage: WorkStage): Readonly<Record<string, unknown>> {
   return {
     ...(stage.use === undefined ? {} : { flowUse: stage.use }),
@@ -246,7 +251,7 @@ function defaultSteps(
   const review = stages[2] as ReviewStage;
   const work = stages[0] as WorkStage;
   return [
-    { ...WORKTREE, next: { ...(WORKTREE.next as Edge) } },
+    { ...WORKTREE, params: { use: "dev/worktree", params: worktreeParams(work) }, next: { ...(WORKTREE.next as Edge) } },
     { ...REVERIFY, next: { ...(REVERIFY.next as Edge) } },
     plugin(
       "work",
@@ -503,10 +508,12 @@ function generatedSteps(
   const nextAfter = (index: number): string =>
     named[index + 1]?.id ?? "integrate";
 
+  const firstWorkStage = firstWork?.stage.stage === "work" ? firstWork.stage : undefined;
   const steps: StepShape[] = [];
   const waitId = "wait";
   steps.push({
     ...WORKTREE,
+    params: { use: "dev/worktree", params: worktreeParams(firstWorkStage) },
     next: {
       ready: firstStage,
       conflict: firstWork === undefined ? waitId : firstWork.id,

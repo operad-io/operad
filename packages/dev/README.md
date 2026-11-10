@@ -54,10 +54,10 @@ views and `--after` accept both forms, and an id is matched exactly.
 operad repo add <path> [--name <name>]
 operad repo list
 operad repo remove <name>
-operad plan add --slug <slug> --title <title> [--concurrency <n>] [--repo <name>]   # request on stdin
-operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--repo <name>]   # brief on stdin
+operad plan add --slug <slug> --title <title> [--concurrency <n>] [--flow <name>] [--repo <name>]   # request on stdin
+operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--flow <name>] [--repo <name>]   # brief on stdin
 operad task edit <id>      # $EDITOR on the brief body; proposed or ready only
-operad task update <id> [--title <title>] [--after <task>]... [--area <area>]   # --area "" clears it, --after "" clears the dependencies
+operad task update <id> [--title <title>] [--after <task>]... [--area <area>] [--flow <name>]   # --area "" clears it, --after "" clears the dependencies
 operad start <task>        # start one ready task now, whatever its plan's auto level
 operad reruns              # how often each test passed only on its own rerun, most frequent first
 ```
@@ -163,17 +163,18 @@ cleanup at the end, so a repository writes neither.
 ```
 
 A repository that writes no `flows` runs the built-in `default` flow: work,
-check, review, human. A flow named `default` is the one a task starts with. The
-last stage must be `human` (integrate is the last step, and a change reaches
-main only through it), and every flow needs at least one `check`, `review` or
-`human` stage. A flow that breaks either rule makes dev.json invalid, with a
-message naming the flow and the rule.
+check, review, human. A flow named `default` is the one a task starts with; a
+plan or task may choose another with `--flow <name>`, and once a task's first
+attempt starts it keeps that flow. A `human` stage, when a flow has one, is the
+last stage because integrate follows it. Every flow needs at least one `check`,
+`review` or `human` stage. A flow that breaks either rule makes dev.json invalid,
+with a message naming the flow and the rule.
 
 ### Stages
 
 | stage | parameters | what it does | results |
 |---|---|---|---|
-| `work` | `use`, `args`, `brief`, `beforeAttempt` | a worker changes the task branch; `use` and `args` replace the harness step and its arguments, `brief` is appended to the worker's prompt, and `beforeAttempt` names work done first (`merge-main` is what dev does before every attempt) | `done`, `nothing`, `failed`, `unavailable`, `cancelled`, `interrupted` |
+| `work` | `use`, `args`, `brief`, `beforeAttempt` | a worker changes the task branch; `use` and `args` replace the harness step and its arguments, `brief` is appended to the worker's prompt, and `beforeAttempt` is the preparation before the attempt: `merge-main` fetches and merges the latest main, `none` leaves the branch as it is | `done`, `nothing`, `failed`, `unavailable`, `cancelled`, `interrupted` |
 | `check` | `commands`, `rerun` | runs the commands in a gate checkout of the verified commit; unset values come from `gate.commands` and `check.rerun` | `pass`, `fail`, `cancelled` |
 | `review` | `use`, `args`, `later`, `grading` | a reviewer reads the diff from the merge base to the verified commit; unset values come from `reviewer`, `later` replaces the arguments after the first review of an attempt, and `grading` names the entry in `.operad/review.json` (unset means the flow's own name) | `pass`, `fail`, `failed`, `unavailable`, `timed_out`, `exhausted`, `out_of_time`, `cancelled` |
 | `human` | none | waits for a person to merge, reject, rework or reverify | the person's choice |

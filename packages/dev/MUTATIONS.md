@@ -570,3 +570,11 @@ the row fields.
 |---|---|---|---|
 | T-0206-M3 | packages/dev/src/rerun.ts | read the failed names from byte 0 instead of the command's `logStart` | `dev/verify reruns only the failed tests > an earlier attempt's names in the run log do not stop this attempt's rerun` |
 | T-0206-M4 | packages/dev/src/views.ts | started the worker-log tail at the end of the file, so the log section was empty | `dev views > the log section is the tail of the current attempt's worker log` |
+
+## T-0060 — rework 3: named flows, beforeAttempt, the human rule
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0060-M4 | packages/dev/src/schedule.ts | every task started the repository's `default` flow, ignoring its plan's `flow` | `a plan's flow selects a named repository flow` |
+| T-0060-M5 | packages/dev/src/steps.ts | `beforeAttempt: "merge-main"` did nothing before the worker ran | `dev/work > beforeAttempt merge-main merges the latest main; none leaves it alone` |
+| T-0060-M6 | packages/dev/src/settings.ts | required a flow's last user stage to be human again | `a flow with no human stage is valid and ends at integrate` |

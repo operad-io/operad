@@ -12,8 +12,10 @@ import {
   confirmPlan,
   createDevPlugin,
   flowNameFor,
+  planData,
   schedulerTestHooks,
   setAuto,
+  storeKey,
   taskData,
   validateDevSettings,
   type DevStage,
@@ -100,6 +102,14 @@ test("a failed check with no work stage waits for a person", () => {
   expect(stepOf(flow.steps, "wait").kind).toBe("wait_person");
 });
 
+test("a flow with no human stage is valid and ends at integrate", () => {
+  const stages: readonly DevStage[] = [{ stage: "work" }, { stage: "check" }];
+  expect(() => validateDevSettings({ flows: { gated: { stages } } })).not.toThrow();
+  const flow = compileDevFlow("gated", stages);
+  expect(nextOf(flow.steps, "check").pass).toBe("integrate");
+  expect(flow.steps.some((step) => step.id === "wait")).toBe(true);
+});
+
 test("both hard rules refuse the flow by name", () => {
   expect(() =>
     validateDevSettings({
@@ -108,9 +118,9 @@ test("both hard rules refuse the flow by name", () => {
   ).toThrow(/flows\.gate\.stages: needs at least one check, review or human stage/);
   expect(() =>
     validateDevSettings({
-      flows: { open: { stages: [{ stage: "work" }, { stage: "check" }] } },
+      flows: { late: { stages: [{ stage: "work" }, { stage: "human" }, { stage: "check" }] } },
     }),
-  ).toThrow(/flows\.open\.stages: the last stage must be human: integrate is the last step/);
+  ).toThrow(/flows\.late\.stages\[1\]: a human stage must be the last stage: integrate follows it/);
 });
 
 test("a flow's stage settings are read and unknown fields refused", () => {
@@ -149,6 +159,13 @@ test("a flow's stage settings are read and unknown fields refused", () => {
       flows: { default: { stages: [{ stage: "human", args: ["x"] }] } },
     }),
   ).toThrow(/flows\.default\.stages\[0\]\.args: is not a stage setting/);
+  expect(() =>
+    validateDevSettings({
+      flows: {
+        default: { stages: [{ stage: "work", beforeAttempt: "rebase" }, { stage: "check" }] },
+      },
+    }),
+  ).toThrow(/flows\.default\.stages\[0\]\.beforeAttempt: must be "merge-main" or "none"/);
 });
 
 test("stage parameters reach the compiled steps", () => {
@@ -204,6 +221,96 @@ test("a ready task starts the repository's default flow by its registered name",
   const name = flowNameFor("repo", "default", { stages });
   expect(registry.flow(name)?.flow.name).toBe(name);
   expect(registry.takeStartedRuns()[0]?.flow).toBe(name);
+});
+
+test("a work stage's beforeAttempt reaches the worktree and the work step", () => {
+  const flow = compileDevFlow("prep", [
+    { stage: "work", beforeAttempt: "none" },
+    { stage: "check" },
+  ]);
+  expect(stepOf(flow.steps, "worktree").params).toEqual({
+    use: "dev/worktree",
+    params: { beforeAttempt: "none" },
+  });
+  expect(stepOf(flow.steps, "work").params).toMatchObject({
+    params: { beforeAttempt: "none" },
+  });
+});
+
+test("a plan's flow selects a named repository flow", async () => {
+  const root = await tempRoot();
+  const repositoryPath = await makeGitRepository(root);
+  const store = storeAt(root);
+  const repository = await addRepository(store, { path: repositoryPath, name: "repo" });
+  const plan = await addPlan(store, {
+    repository,
+    slug: "plan",
+    title: "Plan",
+    flow: "quick",
+  });
+  await addTask(store, { plan: plan.id, slug: "task", title: "Task", brief: "Do it." });
+  await setAuto(store, plan.id, "run");
+  await confirmPlan(store, plan.id);
+  const quick: readonly DevStage[] = [{ stage: "work" }, { stage: "check" }, { stage: "human" }];
+  const usual: readonly DevStage[] = [
+    { stage: "work" },
+    { stage: "check" },
+    { stage: "review" },
+    { stage: "human" },
+  ];
+  writeFileSync(
+    join(repositoryPath, ".operad", "dev.json"),
+    JSON.stringify({ flows: { default: { stages: usual }, quick: { stages: quick } } }),
+  );
+  schedulerTestHooks.write = () => undefined;
+  const registry = new PluginRegistry(
+    [createDevPlugin(), createPoolPlugin(), createShellPlugin()],
+    { home: root, cwd: repositoryPath, store, storeRoot: store.root },
+  );
+  await registry.tick();
+  const name = flowNameFor("repo", "quick", { stages: quick });
+  expect(registry.flow(name)?.flow.name).toBe(name);
+  expect(registry.takeStartedRuns()[0]?.flow).toBe(name);
+});
+
+test("plan add --flow and task add --flow store the choice and refuse an unknown one", async () => {
+  const root = await tempRoot();
+  const repositoryPath = await makeGitRepository(root);
+  const store = storeAt(root);
+  const repository = await addRepository(store, { path: repositoryPath, name: "repo" });
+  const stages: readonly DevStage[] = [{ stage: "work" }, { stage: "check" }, { stage: "human" }];
+  writeFileSync(
+    join(repositoryPath, ".operad", "dev.json"),
+    JSON.stringify({ flows: { quick: { stages } } }),
+  );
+  const registry = new PluginRegistry([createDevPlugin()], {
+    home: root,
+    cwd: repositoryPath,
+    store,
+    storeRoot: store.root,
+  });
+  const planned = await registry.runCommand(
+    ["dev", "plan", "add", "--slug", "p", "--title", "P", "--flow", "quick"],
+    { cwd: repositoryPath, input: "request\n" },
+  );
+  const planId = String(planned?.value);
+  const planObject = await store.get("plan", storeKey("repo", planId));
+  expect(planData(planObject?.data ?? {}).flow).toBe("quick");
+
+  const made = await registry.runCommand(
+    ["dev", "task", "add", "--plan", planId, "--slug", "t", "--title", "T", "--flow", "default"],
+    { cwd: repositoryPath, input: "brief\n" },
+  );
+  const taskId = String(made?.value);
+  const taskObject = await store.get("task", storeKey("repo", taskId));
+  expect(taskData(taskObject?.data ?? {}).flow).toBe("default");
+
+  await expect(
+    registry.runCommand(
+      ["dev", "plan", "add", "--slug", "q", "--title", "Q", "--flow", "missing"],
+      { cwd: repositoryPath, input: "request\n" },
+    ),
+  ).rejects.toThrow(/no flow "missing" in repository "repo"/);
 });
 
 test("changing dev.json leaves a running attempt on the graph it started with", async () => {

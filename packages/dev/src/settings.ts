@@ -981,6 +981,16 @@ function stageOf(value: unknown, field: string): DevStage {
       const args = optionalList("args");
       const brief = optionalString("brief");
       const beforeAttempt = optionalString("beforeAttempt");
+      if (
+        beforeAttempt !== undefined &&
+        beforeAttempt !== "merge-main" &&
+        beforeAttempt !== "none"
+      ) {
+        throw new DevError(
+          `${field}.beforeAttempt`,
+          'must be "merge-main" or "none"',
+        );
+      }
       return {
         stage: "work",
         ...(use === undefined ? {} : { use }),
@@ -1061,12 +1071,6 @@ function flowsOf(value: unknown): DevFlows {
       throw new DevError(
         `${field}.stages`,
         "needs at least one check, review or human stage",
-      );
-    }
-    if (flow.stages[flow.stages.length - 1]?.stage !== "human") {
-      throw new DevError(
-        `${field}.stages`,
-        "the last stage must be human: integrate is the last step, and a change reaches main only through it",
       );
     }
     flow.stages.forEach((stage, index) => {

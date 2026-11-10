@@ -123,6 +123,8 @@ export type PlanData = {
   readonly finishedReported?: boolean | undefined;
   /** When the scheduler last started one of the plan's tasks (ms); the order within a priority reads it. */
   readonly lastStartedAt?: number | undefined;
+  /** The flow the plan's tasks start with; absent means `default`. */
+  readonly flow?: string | undefined;
 };
 
 /** What the verify step found when it ran the gate commands. */
@@ -441,6 +443,8 @@ export type TaskData = {
   readonly phase: TaskPhase;
   readonly attempts: number;
   readonly run: string | null;
+  /** The flow this task starts with; absent inherits the plan's flow. */
+  readonly flow?: string | undefined;
   /** The flow this attempt runs; absent for a run that started before flows had names. */
   readonly flowName?: string | undefined;
   /** The compiled graph this attempt started with, so a later config cannot change it midway. */
