@@ -388,7 +388,7 @@ describe("dev scheduling", () => {
         number: 1,
         run: "run-1",
         workNote: "Changed things.\nNew words: foo",
-        review: { result: "pass", words: ["foo"] },
+        review: { result: "pass" },
       },
     });
     await tick(words);

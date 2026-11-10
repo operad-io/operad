@@ -18,6 +18,17 @@ function committed(): Record<string, unknown> {
   return JSON.parse(readFileSync(CONFIG, "utf8")) as Record<string, unknown>;
 }
 
+/**
+ * The committed settings without `workers` and `pools`: those are the other
+ * form of the worker setting, and a test that sets the single `worker` cannot
+ * have them too.
+ */
+function committedSingleWorker(): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(committed()).filter(([key]) => key !== "workers" && key !== "pools"),
+  );
+}
+
 async function plugin(path: string): Promise<{ readonly default: unknown }> {
   return (await import(new URL(path, import.meta.url).href)) as { readonly default: unknown };
 }
@@ -25,7 +36,7 @@ async function plugin(path: string): Promise<{ readonly default: unknown }> {
 describe("this repository's dev.json with the pi worker", () => {
   test("worker.use harness-pi/agent validates and the dev flow resolves it", async () => {
     const settings = validateDevSettings({
-      ...committed(),
+      ...committedSingleWorker(),
       worker: { use: "harness-pi/agent", args: [] },
     });
     expect(settings.worker.use).toBe("harness-pi/agent");
@@ -67,7 +78,7 @@ describe("this repository's dev.json with the pi worker", () => {
 describe("this repository's dev.json with the claude worker", () => {
   test("worker.use harness-claude/agent with --model and --effort validates and the dev flow resolves it", async () => {
     const settings = validateDevSettings({
-      ...committed(),
+      ...committedSingleWorker(),
       worker: { use: "harness-claude/agent", args: ["--model", "sonnet"] },
       reviewer: {
         ...(committed().reviewer as Record<string, unknown>),
