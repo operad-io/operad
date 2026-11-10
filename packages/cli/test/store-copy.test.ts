@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   FilePluginStore,
+  copyStore,
   LockHeldError,
   Runner,
   acquireLock,
@@ -400,6 +401,57 @@ describe("store copy", () => {
     rmSync(join(root, "locks"), { recursive: true, force: true });
     expect((await run(home, ["store", "copy", "sqlite"])).code).toBe(0);
     expect(existsSync(join(root, "locks"))).toBe(false);
+  });
+
+  test("an answer or a plugin write while the store is being moved is refused", async () => {
+    const { home, root, runs } = await seededHome();
+    const moving = acquireLock(storeMoveLockPath(root));
+    try {
+      const answered = await run(home, ["cards:approve", "card:2"]);
+      expect(answered.code).toBe(4);
+      expect(answered.err).toContain("store move is in progress");
+      const objects = new FilePluginStore({ root: join(root, "plugins") });
+      expect(() => objects.put("card", "9", { title: "late" }, "late")).toThrow(
+        "store move is in progress",
+      );
+      const log = openConfigLog(await readConfig(home));
+      try {
+        await expect(log.appendGlobal({ kind: "late", payload: {}, cause: 1 })).rejects.toThrow(
+          "store move is in progress",
+        );
+        // Reading is not refused.
+        expect((await log.runs()).some((info) => info.runId === runs.waiting)).toBe(true);
+      } finally {
+        await log.close();
+      }
+    } finally {
+      moving.release();
+    }
+    // Once the move is over the same answer goes through.
+    expect((await run(home, ["cards:approve", "card:2"])).code).toBe(0);
+  });
+
+  test("a write that reaches the source after it was read makes the copy fail and leaves no target", async () => {
+    const { home, root } = await seededHome();
+    const config = await readConfig(home);
+    await expect(
+      copyStore({
+        home,
+        config,
+        to: "sqlite",
+        afterSnapshot: () => {
+          // A writer that began before the copy took its lock: raw bytes, no checks.
+          appendFileSync(
+            join(root, "plugins", "facts.jsonl"),
+            `${JSON.stringify({ sequence: 99, type: "note", cause: "late", at: 1, data: {} })}\n`,
+          );
+        },
+      }),
+    ).rejects.toThrow("changed while it was being copied");
+    expect(existsSync(join(root, "log.sqlite"))).toBe(false);
+    expect(existsSync(join(root, "plugins.sqlite"))).toBe(false);
+    expect(existsSync(join(root, ".copying-source"))).toBe(false);
+    expect(existsSync(join(root, "locks", "store-move.lock"))).toBe(false);
   });
 
   test("use refuses while a run holds the store", async () => {

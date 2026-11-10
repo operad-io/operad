@@ -20,7 +20,7 @@
  * directories under `plugins/`, and `locks/` (which only holds live locks).
  */
 
-import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, rmdirSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, rmdirSync, statSync } from "node:fs";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -49,6 +49,8 @@ export interface CopyStoreOptions {
   readonly config: OperadConfig;
   /** The kind of the new store; the source is the one the config names. */
   readonly to: StoreKind;
+  /** Called once the source has been read into the snapshot; tests write to the source here. */
+  readonly afterSnapshot?: (() => void | Promise<void>) | undefined;
 }
 
 export interface CopyStoreResult {
@@ -284,6 +286,44 @@ function closeObjects(store: PluginStore): void {
   if (store instanceof SqlitePluginStore) store.close();
 }
 
+/**
+ * What the source's own files look like: path, size and modification time of
+ * every file the copy reads. A write to the source while it is copied changes
+ * this. It only reads.
+ */
+function fingerprint(config: OperadConfig, root: string): string {
+  const files: string[] = [];
+  const walk = (directory: string): void => {
+    if (!existsSync(directory)) return;
+    for (const name of readdirSync(directory)) {
+      const path = join(directory, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else files.push(path);
+    }
+  };
+  if (config.store.backend === "jsonl") {
+    walk(join(root, "runs"));
+    for (const name of ["inputs.jsonl", "outcomes.jsonl", "global-facts.jsonl", "schema.json"]) {
+      files.push(join(root, name));
+    }
+    files.push(join(root, "plugins", "facts.jsonl"));
+  } else {
+    for (const suffix of ["", "-wal"]) {
+      files.push(`${config.store.path}${suffix}`, join(root, `${PLUGIN_SQLITE_FILE}${suffix}`));
+    }
+  }
+  return files
+    .map((path) => {
+      try {
+        const info = statSync(path);
+        return `${path} ${info.size} ${info.mtimeMs}`;
+      } catch {
+        return `${path} none`;
+      }
+    })
+    .join("\n");
+}
+
 /** Copies the files of the source store that the copy reads; returns the log's path in the snapshot. */
 function snapshotSource(config: OperadConfig, root: string, snapshot: string): string {
   mkdirSync(snapshot, { recursive: true });
@@ -362,7 +402,9 @@ export async function copyStore(options: CopyStoreOptions): Promise<CopyStoreRes
     // old schema marker is rewritten, a missing directory is made). Nothing of
     // the source is opened in place: everything the copy reads is copied into
     // a snapshot first, and only the snapshot is opened.
+    const seen = fingerprint(config, root);
     const sourceLog = snapshotSource(config, root, temporary.snapshot);
+    await options.afterSnapshot?.();
     const source = openLog({ backend: from, path: sourceLog });
     const sourceObjects = openPluginStore({ backend: from, root: temporary.snapshot });
     let target: LogBackend | undefined;
@@ -392,6 +434,13 @@ export async function copyStore(options: CopyStoreOptions): Promise<CopyStoreRes
 
       const counts = await copyLog(source, target, times, ids);
       const objectFacts = copyObjects(sourceObjects, targetObjects, objectTime);
+      // A write that reached the source after it was read is not in the copy;
+      // switching to the copy would lose it.
+      if (fingerprint(config, root) !== seen) {
+        throw new StateError(
+          "the store changed while it was being copied; nothing was switched, try again when nothing is writing to it",
+        );
+      }
       await target.close();
       target = undefined;
       closeObjects(targetObjects);

@@ -6,6 +6,16 @@ export default definePlugin({
   kind: "domain",
   version: "0.0.1",
   objects: [{ name: "card" }],
+  actions: [
+    {
+      name: "approve",
+      on: "card",
+      when: () => true,
+      async run(ctx, args) {
+        await ctx.answer?.(typeof args === "string" ? args : "finish");
+      },
+    },
+  ],
   views: {
     card: {
       row: (object) => ({

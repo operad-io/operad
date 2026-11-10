@@ -7,6 +7,7 @@ export type {
 } from "./answer.ts";
 export {
   acquireLock,
+  assertStoreNotMoving,
   lockHeld,
   pidAlive,
   readLockPid,

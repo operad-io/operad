@@ -34,6 +34,7 @@ import {
 } from "./facts.ts";
 import { assertJsonValue } from "./json-value.ts";
 import { SCHEMA_VERSION } from "./schema.ts";
+import { assertStoreNotMoving } from "../runner/lock.ts";
 import {
   linkExclusive,
   resolveSubscriptionWatch,
@@ -494,6 +495,7 @@ class JsonlLogBackend implements LogBackend {
     assertName(object, "object");
     if (access !== undefined) assertJsonValue(access, "run access");
     return this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       const active = this.#listRunsUnlocked(true).find(
         (run) => run.flow === flow && run.object === object,
       );
@@ -534,6 +536,7 @@ class JsonlLogBackend implements LogBackend {
   async endRun(runId: string): Promise<void> {
     assertRunId(runId);
     this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       const path = this.#runPath(runId);
       if (!existsSync(path)) throw new RunNotFoundError(runId);
       const endPath = this.#endPath(runId);
@@ -557,6 +560,7 @@ class JsonlLogBackend implements LogBackend {
     assertName(sourceKey, "sourceKey");
     assertJsonValue(payload, "input payload");
     return this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       if (runId !== null) {
         const info = this.#runInfoUnlocked(runId);
         if (!info.active) throw new RunEndedError(runId);
@@ -626,6 +630,7 @@ class JsonlLogBackend implements LogBackend {
     assertName(kind, "outcome kind");
     assertJsonValue(payload, "outcome payload");
     return this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       this.#refreshOutcomesUnlocked();
       const key = outcomeKey(inputId, kind);
       const existing = this.#outcomes.get(key);
@@ -670,6 +675,7 @@ class JsonlLogBackend implements LogBackend {
     for (const fact of facts) validateNewFact(fact);
 
     return this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       const path = this.#runPath(runId);
       if (!existsSync(path)) throw new RunNotFoundError(runId);
       const info = this.#runInfoUnlocked(runId);
@@ -708,6 +714,7 @@ class JsonlLogBackend implements LogBackend {
     validateNewFact(fact);
     if (uniqueKey !== undefined) assertName(uniqueKey, "uniqueKey");
     return this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       truncateTornLine(this.#globalFactsPath);
       if (uniqueKey !== undefined) {
         const existing = this.#globalFactWithKeyUnlocked(uniqueKey);

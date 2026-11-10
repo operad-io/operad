@@ -12,7 +12,8 @@ import {
   statSync,
   writeSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { assertStoreNotMoving } from "../runner/lock.ts";
 import {
   followsChanges,
   watchDirectory,
@@ -413,6 +414,8 @@ export class FilePluginStore implements PluginStore {
     requireName(input.type, "fact type");
     const cause = input.cause;
     requireName(cause, "cause");
+    // The store directory holds `plugins/`; a move of it holds the lock there.
+    assertStoreNotMoving(dirname(this.root));
     const release = this.lockFacts();
     try {
       // Another writer may have appended since this store last read, so the

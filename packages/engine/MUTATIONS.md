@@ -442,3 +442,6 @@ the row fields.
 | T-0160-M2 | packages/engine/src/views/settings.ts | dropped the chmod of the temporary file, so the config lost its mode on rename | `settings > sets at the same moment all land, and the file keeps its mode` |
 | T-0208-M13 | packages/engine/src/runner/runner.ts | a run ignored the store's move lock after taking its own lock | `store copy > a run that starts while the store is being copied is refused` |
 | T-0208-M14 | packages/engine/src/store-copy/copy.ts | left the `locks/` directory the copy made in the source store | `store copy > a copy of a store with no locks directory leaves none behind` |
+| T-0208-M15 | packages/engine/src/store-copy/copy.ts | skipped the check that the source did not change while it was copied | `store copy > a write that reaches the source after it was read makes the copy fail and leaves no target` |
+| T-0208-M16 | packages/engine/src/log/jsonl.ts | removed the store-move check from every jsonl log write | `store copy > an answer or a plugin write while the store is being moved is refused` |
+| T-0208-M17 | packages/engine/src/plugin/file-store.ts | removed the store-move check from the plugin store's append | `store copy > an answer or a plugin write while the store is being moved is refused` |
