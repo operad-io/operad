@@ -407,3 +407,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0165-M2 | packages/engine/test/platform/step-reap.test.ts | the pid-file wait used the directory watch alone, with no timer look | `what a step leaves behind > a system shell that starts the marked process again is stopped with it` (timed out at 30 s in the check; 0 of 200 stressed runs at `--load 2`; not deterministic) |
+| T-0207-M5 | packages/engine/src/plugin/file-store.ts | `ensureWatch` stopped before starting the shared watch even for a following store | `the file plugin store > a following store watches and polls once for all its listeners` |

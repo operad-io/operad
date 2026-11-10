@@ -46,6 +46,37 @@ describe("the file plugin store", () => {
     expect(repeats).toBe(0);
   });
 
+  test("a following store watches and polls once for all its listeners", async () => {
+    const root = await tempRoot();
+    let watches = 0;
+    let repeats = 0;
+    let stops = 0;
+    const store = new FilePluginStore({
+      root: join(root, "plugins"),
+      watch: () => {
+        watches += 1;
+        return () => {
+          stops += 1;
+        };
+      },
+      repeat: () => {
+        repeats += 1;
+        return () => {
+          stops += 1;
+        };
+      },
+    });
+    const first = store.subscribe(() => undefined);
+    const second = store.subscribe(() => undefined);
+    expect(watches).toBe(1);
+    expect(repeats).toBe(1);
+
+    first();
+    expect(stops).toBe(0);
+    second();
+    expect(stops).toBe(2);
+  });
+
   test("a subscription still reports a write the watch does not", async () => {
     const root = await tempRoot();
     const directory = join(root, "plugins");
