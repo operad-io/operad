@@ -1,6 +1,6 @@
 # operad-assistant：个人助理，替掉自己的 OpenClaw 场景
 
-- 状态：decided（场景与形状；第三方来源的接入细节未定）
+- 状态：decided（场景与形状；2026-11-09 owner 定了 `assistant` 插件、profile 和主工作目录；第三方来源的接入细节未定）
 - 涉及 ADR：0021、0025
 - 涉及：`operad-conversation.md`；`operad-sandbox.md`；`operad-channels.md`；`operad-plugins.md`
 - 来源：`operad.md`；owner 的使用场景；`research/2026-11-04-agent-autoloop.md`「拿来即用的场景模板」；`research/2026-11-05-noop.md`「决定、门禁、自治」
@@ -22,10 +22,13 @@
 6. **通道只做四个**，顺序按 `operad-channels.md` 决定 17：Telegram、WhatsApp、Slack、iMessage。这三个场景的卡和消息走 Telegram 和 iOS。
 7. **技能格式**：助理和这些 flow 的 skill 用 Agent Skills 的 `SKILL.md` 格式，和 pi、Claude Code 的技能互通，只读文本、不跑技能里的代码；不做技能市场（`operad-plugins.md` 决定 8）。
 8. **不做**：语音、Canvas、摄像头和屏幕一类设备动作、暴露在公网的网关、影子 judge 之外任何"模型替人决定"。
+9. **助理是一个插件 `assistant`，它的对象是 profile**（2026-11-09 owner 定）。用户可见的新词：助理（assistant）、profile。一个 profile 是一套人格和权限：主工作目录、默认 harness、挂载的 skills（`SKILL.md` 目录，contract 决定 13）、访问档（`operad-sandbox.md` 决定 1）。默认只有一个 profile，叫 `default`；要几个就配几个（比如一个只读的、一个能动知识库的）。profile 写在 `config.json` 的 `assistant` 段（contract 决定 10 的插件 `settings`，带 JSON Schema，T-0080 的设置接口能看能改），每个 profile 在列表里是一行，是助理 chat 的父对象。
+10. **主工作目录是 `~/.operad/assistant/`**，默认 profile 直接用它，别的 profile 各有自己的目录（不写时是 `~/.operad/assistant/<名字>`）。知识库和助理的记忆以后也住这里。`~/.operad` 的其余部分（事实日志、`secrets`、token）仍在默认访问档的 `denyPaths` 里：助理的 cwd 是 operad 家目录的一个子目录，不是家目录本身。
+11. **助理 chat 是 `chat` 基础插件的对象**（`operad-conversation.md` 决定 12）：`assistant:chat` 在一个 profile 上新建，harness 当时选、之后不换；skills 和访问档每次回复时从 profile 现读，收紧权限或加一个 skill 不用新建 chat。助理要碰仓库时通过 operad 的 MCP 工具调 `dev`（看任务、开 task），不自己改仓库文件（`operad-conversation.md` 决定 15）。Telegram 绑进来的 chat 用 `default` profile，以后规则里可以指定。
 
 ## 顺序
 
-`operad-conversation`（含 iOS 后端）→ `operad-sandbox` 第一版 → Telegram 通道 → `brain` 三个 flow → `digest`（先 `hn` 和 `rss`，再 `reddit`，`x` 看费用）。
+`operad-conversation`（ask 闭环 → `chat` 基础插件加 `dev:chat` → `assistant` 插件的 profile 加 `assistant:chat` → app 的输入框）→ `operad-sandbox` 第一版的其余部分 → Telegram 通道 → `brain` 三个 flow → `digest`（先 `hn` 和 `rss`，再 `reddit`，`x` 看费用）。
 
 ## 待决问题（未定）
 
@@ -33,6 +36,7 @@
 2. `digest` 卡上的反应从 Telegram 怎么回来（表情反应还是按钮），和卡片协议（`operad-channels.md` 决定 1–3）怎么对齐。
 3. 知识库的自动提交要不要推远端；推的话凭据怎么给（走 `askCommands` 的 `git push`，还是单独授权）。
 4. 影子 judge 保留为以后的想法，不在这三个场景里做。
+5. 一个 profile 的 skills 目录由谁写：随 operad 装一份默认的助理 `SKILL.md`，还是第一次用时由助理自己按用户的描述写出来（`operad.md` 决定 1 的第六个要求）。
 
 ## 验收
 

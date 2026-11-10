@@ -748,6 +748,9 @@ async function commandShow(
   const note = object.row.note === undefined ? "" : `  ${object.row.note}`;
   io.write(`${object.row.id}  ${state}  ${object.row.title}${note}\n`);
   if (object.row.parent !== undefined) io.write(`parent: ${object.row.parent}\n`);
+  if (object.dependents !== undefined) {
+    io.write(`after this one: ${object.dependents.join(", ")}\n`);
+  }
   if (object.unavailable !== undefined) {
     io.error(`operad: ${object.unavailable}\n`);
   }

@@ -1,5 +1,6 @@
 export {
   INSTRUCTIONS,
+  instructionsFor,
   PROTOCOL_VERSION,
   RPC_ERRORS,
   runMcpServer,

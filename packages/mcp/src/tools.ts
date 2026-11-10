@@ -20,6 +20,7 @@ import {
   ViewError,
   type Actor,
 } from "@operad-io/engine";
+import { machineLoad, type MachineLoad } from "@operad-io/engine/platform";
 import { InvalidToolArguments, validateArguments } from "./arguments.ts";
 import {
   historyMarkdown,
@@ -168,7 +169,8 @@ export const TOOLS = [
   },
   {
     name: "running",
-    description: "List the runs in progress.",
+    description:
+      "List the runs in progress, with the machine's 1-minute load average and core count.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -274,6 +276,8 @@ export interface ToolContext {
   readonly clock: () => number;
   readonly cwd?: string | undefined;
   readonly mcp?: McpConfig | undefined;
+  /** Reads the machine load; tests inject it. */
+  readonly load?: (() => MachineLoad) | undefined;
 }
 
 function text(value: string): ToolTextContent {
@@ -373,9 +377,10 @@ export async function runTool(
         context.clock,
         context.views,
       );
+      const load = (context.load ?? machineLoad)();
       return {
-        content: [text(runningMarkdown(running))],
-        structuredContent: { items: running },
+        content: [text(runningMarkdown(running, load))],
+        structuredContent: { items: running, load },
       };
     }
     case "history": {
