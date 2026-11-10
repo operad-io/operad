@@ -5,7 +5,15 @@
  * A timeout is not rerun: a hang stays a hang.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  fstatSync,
+  openSync,
+  readFileSync,
+  readSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import {
   messageOf,
   type PluginStepResult,
@@ -78,7 +86,7 @@ function logStartOf(outcome: PluginStepResult | undefined): number {
 function sizeOf(path: string | undefined): number {
   if (path === undefined) return 0;
   try {
-    return readFileSync(path).length;
+    return statSync(path).size;
   } catch {
     return 0;
   }
@@ -207,7 +215,21 @@ function withLineNumber(
 function logSince(path: string | undefined, offset: number): string {
   if (path === undefined) return "";
   try {
-    return readFileSync(path).subarray(offset).toString("utf8");
+    const fd = openSync(path, "r");
+    try {
+      const size = fstatSync(fd).size;
+      if (size <= offset) return "";
+      const buffer = Buffer.allocUnsafe(size - offset);
+      let read = 0;
+      while (read < buffer.length) {
+        const count = readSync(fd, buffer, read, buffer.length - read, offset + read);
+        if (count === 0) break;
+        read += count;
+      }
+      return buffer.subarray(0, read).toString("utf8");
+    } finally {
+      closeSync(fd);
+    }
   } catch {
     return "";
   }
