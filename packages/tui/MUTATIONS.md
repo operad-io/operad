@@ -266,3 +266,4 @@ the row fields.
 |---|---|---|---|
 | T-0206-M5 | packages/tui/src/autostart.ts | decoded each backward chunk on its own, so a multi-byte character split across two reads became U+FFFD | `ensureServer > a long log's tail keeps the last ten lines and decodes a multi-byte line across reads` |
 | T-0103-M10 | packages/tui/src/state.ts | the tree kept an active child under its cancelled parent instead of moving every cancelled row last | `the progress bar and its heading > an active child of a cancelled parent is still before every cancelled row` |
+| T-0103-M11 | packages/tui/src/state.ts | an active row took its first `after` parent even when that parent was cancelled, so it hung from a cancelled row instead of drawing top-level | `the progress bar and its heading > an active child of a cancelled parent is drawn top-level before every cancelled row` |

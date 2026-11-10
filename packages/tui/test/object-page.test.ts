@@ -327,22 +327,41 @@ describe("the progress bar and its heading", () => {
     ]);
   });
 
-  test("an active child of a cancelled parent is still before every cancelled row", () => {
+  test("an active child of a cancelled parent is drawn top-level before every cancelled row", () => {
     const rows = [
       row("T-1-gone", "cancelled", { mark: "cancelled" }),
       row("T-2-open", "new", { mark: "todo", after: ["T-1-gone"] }),
       row("T-3-root", "new", { mark: "todo" }),
     ];
-    expect(displayChildren(rows, "tree").map((entry) => entry.row.id)).toEqual([
-      "T-3-root",
+    const tree = displayChildren(rows, "tree");
+    expect(tree.map((entry) => entry.row.id)).toEqual([
       "T-2-open",
+      "T-3-root",
       "T-1-gone",
     ]);
+    const open = tree.find((entry) => entry.row.id === "T-2-open");
+    expect(open?.connector).toBe("");
+    expect(open?.depth).toBe(0);
+    expect(open?.alsoAfter).toEqual([]);
     expect(displayChildren(rows, "list").map((entry) => entry.row.id)).toEqual([
       "T-2-open",
       "T-3-root",
       "T-1-gone",
     ]);
+
+    const lines = rightLines(opened(rows));
+    const lineOf = (id: string): string => {
+      const found = lines.find((line) => line.includes(id));
+      if (found === undefined) throw new Error(`no drawn line for ${id}`);
+      return found;
+    };
+    const openLine = lineOf("T-2-open");
+    const rootLine = lineOf("T-3-root");
+    const cancelledLine = lineOf("T-1-gone");
+    expect(openLine).not.toContain("└─");
+    expect(openLine).not.toContain("├─");
+    expect(openLine.indexOf("○")).toBe(rootLine.indexOf("○"));
+    expect(lines.indexOf(openLine)).toBeLessThan(lines.indexOf(cancelledLine));
   });
 });
 

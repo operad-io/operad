@@ -851,9 +851,21 @@ function flatChildEntries(rows: readonly TuiRow[]): TuiChildEntry[] {
   });
 }
 
-/** A chain of first parents that comes back to itself: the tree cannot place it. */
+/** The parent the tree can use: a cancelled row hangs only under cancelled rows. */
+function treeParent(
+  rows: readonly TuiRow[],
+  row: TuiRow,
+  at: number,
+): ChildParent | undefined {
+  const cancelled = cancelledRow(row);
+  return childParents(rows, row, at).find(
+    (parent) => cancelledRow(rows[parent.index] as TuiRow) === cancelled,
+  );
+}
+
+/** A chain of tree parents that comes back to itself: the tree cannot place it. */
 function hasChildCycle(rows: readonly TuiRow[]): boolean {
-  const parents = rows.map((row, index) => childParents(rows, row, index)[0]?.index);
+  const parents = rows.map((row, index) => treeParent(rows, row, index)?.index);
   for (let start = 0; start < rows.length; start += 1) {
     const seen = new Set<number>();
     let at: number | undefined = start;
@@ -869,7 +881,7 @@ function hasChildCycle(rows: readonly TuiRow[]): boolean {
 function treeChildEntries(rows: readonly TuiRow[]): TuiChildEntry[] {
   // A cycle has no root: the list order is the only order that shows every row.
   if (hasChildCycle(rows)) return flatChildEntries(rows);
-  const parents = rows.map((row, index) => childParents(rows, row, index)[0]);
+  const parents = rows.map((row, index) => treeParent(rows, row, index));
   const children = new Map<number, number[]>();
   for (let index = 0; index < rows.length; index += 1) {
     const parent = parents[index]?.index ?? -1;
@@ -877,7 +889,6 @@ function treeChildEntries(rows: readonly TuiRow[]): TuiChildEntry[] {
     if (list === undefined) children.set(parent, [index]);
     else list.push(index);
   }
-  for (const [parent, list] of children) children.set(parent, cancelledLast(list, rows));
 
   const out: TuiChildEntry[] = [];
   const visited = new Set<number>();
@@ -886,11 +897,15 @@ function treeChildEntries(rows: readonly TuiRow[]): TuiChildEntry[] {
     visited.add(index);
     const row = rows[index] as TuiRow;
     const all = childParents(rows, row, index);
+    const parent = parents[index];
     out.push({
       row,
       depth: root ? 0 : Math.trunc(prefix.length / 2) + 1,
       connector: root ? "" : `${prefix}${last ? "└─" : "├─"}`,
-      alsoAfter: all.slice(1).map((parent) => parent.id),
+      alsoAfter:
+        parent === undefined
+          ? []
+          : all.filter((one) => one.index !== parent.index).map((one) => one.id),
     });
     const childPrefix = root ? "" : `${prefix}${last ? "  " : "│ "}`;
     const below = children.get(index) ?? [];
@@ -898,11 +913,11 @@ function treeChildEntries(rows: readonly TuiRow[]): TuiChildEntry[] {
   };
 
   const roots = children.get(-1) ?? [];
-  roots.forEach((index, at) => walk(index, "", true, at + 1 === roots.length));
-  // A cycle has no root: name its rows in list order, so none is hidden.
-  for (let index = 0; index < rows.length; index += 1) {
-    if (!visited.has(index)) walk(index, "", true, true);
-  }
+  // Cancelled rows are the last group, so an active child never hangs from one.
+  const active = roots.filter((index) => !cancelledRow(rows[index] as TuiRow));
+  const cancelled = roots.filter((index) => cancelledRow(rows[index] as TuiRow));
+  active.forEach((index, at) => walk(index, "", true, at + 1 === active.length));
+  cancelled.forEach((index, at) => walk(index, "", true, at + 1 === cancelled.length));
   return out;
 }
 
@@ -912,13 +927,7 @@ export function displayChildren(
   layout: TuiChildLayout,
 ): readonly TuiChildEntry[] {
   if (rows.length === 0) return [];
-  const shown = layout === "list" ? flatChildEntries(rows) : treeChildEntries(rows);
-  // The tree can place an active child under a cancelled parent; the page still
-  // puts every cancelled row last.
-  return [
-    ...shown.filter((entry) => !cancelledRow(entry.row)),
-    ...shown.filter((entry) => cancelledRow(entry.row)),
-  ];
+  return layout === "list" ? flatChildEntries(rows) : treeChildEntries(rows);
 }
 
 /** The next level's bar cells and counts: cancelled children last and not counted. */
