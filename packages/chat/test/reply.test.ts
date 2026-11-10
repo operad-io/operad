@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { allMessages, currentSession, unanswered } from "../src/index.ts";
 import { cleanupRoots, reply, rig } from "./support.ts";
 
@@ -14,6 +15,9 @@ describe("chat/reply", () => {
     expect(r.calls).toHaveLength(1);
     expect(r.calls[0]?.params.prompt).toBe("hello");
     expect(r.calls[0]?.params.resumeSession).toBeUndefined();
+    // The agent gets operad's tools of the home it runs in, not a shell command.
+    expect(r.calls[0]?.params.operadTools).toEqual({ home: join(r.root, "home") });
+    expect(r.calls[0]?.params.cwd).toBe(r.root);
     const messages = allMessages(r.store, chat);
     expect(messages.map((message) => [message.role, message.text])).toEqual([
       ["user", "hello"],

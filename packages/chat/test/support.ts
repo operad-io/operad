@@ -55,6 +55,7 @@ export function reply(text: string, sessionId = "s-1"): PluginStepResult {
 export interface Rig {
   readonly registry: PluginRegistry;
   readonly store: MemoryPluginStore;
+  readonly root: string;
   readonly calls: Call[];
   readonly events: TriggerEvent[];
   /** A chat that uses the fake harness. */
@@ -89,6 +90,7 @@ export async function rig(script: Script): Promise<Rig> {
   return {
     registry,
     store,
+    root,
     calls,
     events,
     async chat(extra) {

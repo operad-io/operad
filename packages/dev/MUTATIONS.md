@@ -572,3 +572,5 @@ the row fields.
 | T-0206-M4 | packages/dev/src/views.ts | started the worker-log tail at the end of the file, so the log section was empty | `dev views > the log section is the tail of the current attempt's worker log` |
 | T-0194-M3 | packages/dev/src/service.ts | a cross-repository `--after` change took only its own repository's lock | `--after validation under races and removed repositories > two cross-repository updates at once cannot close a cycle` (a race; it failed in 3 of 3 runs) |
 | T-0194-M4 | packages/dev/src/service.ts | a dependency's repository was no longer required to be registered | `--after validation under races and removed repositories > a task of a removed repository cannot be named` |
+| T-0188-M9 | packages/dev/src/chat.ts | the worktree step moved the chat's directory again when it already had a worktree (both already-moved checks removed) | `dev/chat_worktree > opens work/chat-<id>, moves the working directory there once, and it is writable there` |
+| T-0188-M10 | packages/dev/src/chat.ts | dev:chat made the chat writable in the main clone | `dev:chat > creates a chat under the repository, in the main clone, read-only` |

@@ -164,6 +164,8 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
       {
         prompt: promptFor(pending),
         cwd: chat.cwd,
+        // Operad's own tools, so the agent never runs the `operad` command.
+        operadTools: { home: ctx.home },
         ...(session === undefined ? {} : { resumeSession: session }),
         ...(resumed.askAnswer === undefined ? {} : { askAnswer: resumed.askAnswer }),
       },

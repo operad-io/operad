@@ -307,6 +307,37 @@ describe("harness-radian/agent", () => {
     expect(record.argv[record.argv.indexOf("--resume") + 1]).toBe("session-7");
   });
 
+  test("operad's tools are given to radian as an MCP config that starts the tools program with the home", async () => {
+    const env = await setup("done");
+    const result = await runAgent(env, {
+      prompt: "hello",
+      cwd: env.root,
+      operadTools: { home: "/operad/home" },
+    });
+    expect(result.result).toBe("done");
+    const record = JSON.parse(readFileSync(env.record, "utf8")) as {
+      readonly argv: readonly string[];
+    };
+    const file = record.argv[record.argv.indexOf("--mcp-config") + 1];
+    expect(file).toBeDefined();
+    const config = JSON.parse(readFileSync(String(file), "utf8")) as {
+      mcpServers: Record<string, { command: string; args: string[]; env: Record<string, string> }>;
+    };
+    const server = config.mcpServers["operad"];
+    expect(server?.args.slice(-2)).toEqual(["--home", "/operad/home"]);
+    expect(server?.args[0]).toMatch(/mcp\/src\/stdio\.ts$/);
+    expect(server?.env["OPERAD_HOME"]).toBe("/operad/home");
+  });
+
+  test("without operadTools radian gets no MCP config", async () => {
+    const env = await setup("done");
+    await runAgent(env, { prompt: "hello", cwd: env.root });
+    const record = JSON.parse(readFileSync(env.record, "utf8")) as {
+      readonly argv: readonly string[];
+    };
+    expect(record.argv).not.toContain("--mcp-config");
+  });
+
   test("a step that continues after a question passes the session and adds the paragraph", async () => {
     const env = await setup("done");
     const result = await runAgent(env, {

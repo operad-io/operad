@@ -73,3 +73,4 @@ the row fields.
 |---|---|---|---|
 | T-0177-M4 | packages/mcp/src/channel.ts | the `announce: false` check removed, so a person's proposed task was announced | `a proposed task > is pending and drawn waiting; one block for what the plugin opened, none for a person's` |
 | T-0175-M3 | packages/mcp/src/server.ts | the instructions kept saying owner decisions are not offered when the owner allowed actions | `operad mcp > instructions follow the configured allow lists` |
+| T-0188-M16 | packages/mcp/src/server.ts | an unknown tool threw instead of giving an error result | `the tools opened in a harness's own process > an unknown tool and a bad argument are error results, not throws` |

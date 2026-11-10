@@ -5,7 +5,8 @@
  * used; the kernel never knows how radian is started.
  */
 
-import { stat } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { firstErrorLine, readProfile, secretValuesOf, summarizeCall, type AccessProfile } from "@operad-io/access-match";
 import {
   defineFlow,
@@ -22,6 +23,9 @@ import {
   flagValue,
   JsonlLog,
   MAX_LINE_CHARS,
+  OPERAD_SERVER,
+  operadToolsOf,
+  serverCommand,
   standardUsage,
   type RawCost,
   type RawCounts,
@@ -366,9 +370,11 @@ function radianArgs(
   args: readonly string[],
   prompt: string,
   resumeSession: string | undefined,
+  mcpConfig?: string | undefined,
 ): { readonly args: string[]; readonly stdin: string | undefined } {
   const argv = ["exec", "--workspace", cwd, "--output", "jsonl"];
   if (resumeSession !== undefined) argv.push("--resume", resumeSession);
+  if (mcpConfig !== undefined) argv.push("--mcp-config", mcpConfig);
   argv.push(...args);
 
   const stdin =
@@ -609,7 +615,27 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             };
           }
 
-          const command = radianArgs(cwd, args, promptWithNote, resumeSession);
+          // Operad's tools: radian starts the server named in this file.
+          const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
+          let mcpConfig: string | undefined;
+          if (operadTools !== undefined) {
+            const server = serverCommand(operadTools);
+            mcpConfig = `${ctx.logger.path}.mcp.json`;
+            await mkdir(dirname(mcpConfig), { recursive: true });
+            await writeFile(
+              mcpConfig,
+              JSON.stringify({
+                mcpServers: {
+                  [OPERAD_SERVER]: {
+                    command: server.command,
+                    args: server.args,
+                    env: { OPERAD_HOME: operadTools.home },
+                  },
+                },
+              }),
+            );
+          }
+          const command = radianArgs(cwd, args, promptWithNote, resumeSession, mcpConfig);
           const started = Date.now();
           const jsonl = new JsonlLog(ctx.logger);
           let result: ParsedResult | undefined;

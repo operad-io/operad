@@ -1280,6 +1280,40 @@ curl -s \
 with `"command": "sh ~/.operad/notify.sh"`. A topic name is a password for
 anyone who guesses it; pick a long random one or use a self-hosted server.
 
+## Chats
+
+A chat is a long conversation with an agent. The `chat` plugin comes with
+`operad init`; a chat belongs to the plugin that opens it. `dev` opens one on a
+repository:
+
+```
+operad dev:chat --repo operad --title "The build" [--harness harness-claude]
+operad chat:send C-0001 --note "why does the gate fail on main?"
+operad show C-0001 --section transcript
+```
+
+With `harness-radian` the agent's questions about a call can only be refused
+once; it cannot allow one call. `dev:chat` says so in its description.
+
+`chat:send` records the message and sends an event (source `ios`, `telegram` or
+`cli`, key = the message id, about the chat). The plugin's own rule starts
+`chat:reply` for each of the three sources, automatically; a rule of yours in
+`triggers.json` with the same source and type replaces it. The reply reads the
+messages no reply answers yet from the chat's own record, continues the harness
+session, records the reply, and goes round again while new messages came in
+meanwhile (at most 20 rounds). After a restart a reply that was already
+recorded is not given twice.
+
+A chat on a repository works in the main clone, read-only. When the agent wants
+to change code it asks whether to open a worktree. On yes, `dev` opens
+`work/chat-<id>` and the chat works there from then on, once; the main clone
+stays read-only. The worktree's changes reach main only through a task that
+points at it, through the normal gate and integrate.
+
+The agent reaches operad through its tools (`list`, `show`, `section`, `pending`,
+`running`, `history`, `command`, `act`, under the same allow lists as
+`operad mcp`), never by running `operad` in a shell.
+
 ## MCP server
 
 `operad mcp` runs an MCP server on stdio for a lead agent. It reads the same

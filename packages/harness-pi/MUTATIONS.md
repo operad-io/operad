@@ -47,3 +47,4 @@ the row fields.
 | T-0187-M8 | packages/harness-pi/src/worker.ts | an `allow` answer did not let the call through | `a command askCommands matches asks a person: allowed, it runs once; the same command again asks again` |
 | T-0187-M9 | packages/harness-pi/src/worker.ts | a command holding a secret value was asked about | `a command that holds a secret value is refused and never asked about` |
 | T-0187-M10 | packages/harness-pi/src/index.ts | the step did not throw the unanswered question, so no `waiting` result | `harness-pi: a call that must ask a person > not answered in time: the step ends waiting, the process exits, the one item stays` |
+| T-0188-M14 | packages/harness-pi/src/worker.ts | pi was not given operad's tools | `operadTools registers operad's tools with pi: the model calls one and it runs against the home` |

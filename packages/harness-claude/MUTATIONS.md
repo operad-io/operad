@@ -102,3 +102,5 @@ setup it depends on, in the order they were recorded. The root
 | T-0099-M2 | packages/harness-claude/src/index.ts | the step did not pass the inbox to the process | `harness-claude/agent > a message the host sends through the inbox reaches the program as a message line` |
 | T-0187-M5 | packages/harness-claude/src/index.ts | the step did not throw the unanswered question, so no `waiting` result | `harness-claude: a call that must ask a person > not answered in time: the step ends waiting, the process exits, the one item stays` |
 | T-0187-M7 | packages/harness-claude/src/worker.ts | a command holding a secret value was asked about | `a command that holds a secret value is refused and never asked about` |
+| T-0188-M11 | packages/harness-claude/src/worker.ts | claude was given no MCP server for operad's tools | `operad's tools are given to claude as an MCP server that runs from the program, with the home` |
+| T-0188-M12 | packages/harness-claude/src/access.ts | operad's tools were judged by the access profile and refused | `operad's own tools > are not judged by the profile, though other MCP tools are refused while a deny rule is set` |
