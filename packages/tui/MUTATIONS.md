@@ -256,3 +256,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0206-M5 | packages/tui/src/autostart.ts | decoded each backward chunk on its own, so a multi-byte character split across two reads became U+FFFD | `ensureServer > a long log's tail keeps the last ten lines and decodes a multi-byte line across reads` |
+
+## FATAL-FLAKY — the fault tests' terminal restore is not cut short by load
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| FATAL-FLAKY-M1 | packages/tui/test/fatal.test.ts | the test renderer's native session went back to a wall-clock close deadline (`closeTimeoutMs: 0`, what a one-second stall of the loop amounts to) instead of the virtual scheduler | `a fault that ends the app > a view that throws while a request is answered: the terminal is restored before the message is written` (also the uncaught exception and rejection cases) |
