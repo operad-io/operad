@@ -117,6 +117,21 @@ async function stop(child: Bun.Subprocess<"ignore", "pipe", "pipe">): Promise<st
   return errors;
 }
 
+describe("waiting for a line another process writes", () => {
+  test("a watch that cannot see the directory is backed by the 100 ms look", async () => {
+    const root = await tempRoot();
+    const directory = join(root, "store");
+    const file = join(directory, "global-facts.jsonl");
+    // The directory does not exist when the wait starts, so there is nothing
+    // to watch. The file appears before the fallback look; only that look can
+    // find it.
+    const waiting = waitForLines(file, 1, () => true, 2_000);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(file, '{"kind":"notified"}\n');
+    expect(await waiting).toEqual(['{"kind":"notified"}']);
+  });
+});
+
 describe("operad serve notify", () => {
   test("runs the command once per wait with the four variables, not again after a restart, and never with the token", async () => {
     const { root, home } = await makeHome(
