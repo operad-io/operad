@@ -146,6 +146,41 @@ export async function withRepoLock<T>(
   });
 }
 
+/**
+ * Holds the locks of every repository in `names`, taken in name order so two
+ * commands that need several never wait for each other.
+ */
+async function withRepoLocks<T>(
+  store: ObjectStore,
+  names: readonly string[],
+  work: () => Promise<T>,
+): Promise<T> {
+  const ordered = [...new Set(names)].sort();
+  const run = async (index: number): Promise<T> =>
+    index >= ordered.length
+      ? work()
+      : withRepoLock(store, ordered[index] ?? "", () => run(index + 1));
+  return run(0);
+}
+
+/**
+ * The repositories whose locks a change of `after` takes. A dependency in
+ * another repository can close a cycle through any repository, so such a
+ * change holds every registered repository's lock.
+ */
+async function afterLockNames(
+  store: ObjectStore,
+  repository: string,
+  after: readonly string[],
+): Promise<readonly string[]> {
+  const cross = after.some(
+    (entry) => keyRepository(dependencyKey(repository, entry)) !== repository,
+  );
+  if (!cross) return [repository];
+  const names = (await listRepositories(store)).map((item) => item.name);
+  return [repository, ...names];
+}
+
 /* ---------------------------------------------------------------------------
  * Repositories
  * ------------------------------------------------------------------------- */
@@ -865,6 +900,10 @@ export async function addConfirmedPlanLocked(
   return writePlan(store, storeKey(repository.name, id), data, "dev:plan-add");
 }
 
+async function registeredNames(store: ObjectStore): Promise<ReadonlySet<string>> {
+  return new Set((await listRepositories(store)).map((item) => item.name));
+}
+
 /**
  * Checks and normalizes `--after`: each entry is a task id of the task's own
  * repository (any plan) or `<repository>/<task id>`; it is stored as the full
@@ -876,6 +915,7 @@ function validateAfter(
   repository: string,
   taskKey: string,
   after: readonly string[],
+  registered: ReadonlySet<string>,
 ): readonly string[] {
   const unique: string[] = [];
   for (const entry of after) {
@@ -885,7 +925,7 @@ function validateAfter(
   const known = new Set(tasks.map((object) => object.id));
   for (const key of unique) {
     if (key === taskKey) throw new DevError("after", "a task cannot follow itself");
-    if (!known.has(key)) throw new DevError("after", `no task "${dependencyLabel(repository, key)}"`);
+    if (!known.has(key) || !registered.has(keyRepository(key))) throw new DevError("after", `no task "${dependencyLabel(repository, key)}"`);
   }
 
   const follows = new Map<string, readonly string[]>();
@@ -943,8 +983,13 @@ export async function addTask(
     throw new DevError("plan", `plan "${bareId(plan.id)}" is cancelled`);
   }
   await devTestHooks.beforeLock?.("task-add");
-  return withRepoLock(store, planObject.repository, (repository) =>
-    addTaskLocked(store, options, repository),
+  const names = await afterLockNames(
+    store,
+    planObject.repository,
+    options.after ?? [],
+  );
+  return withRepoLocks(store, names, async () =>
+    addTaskLocked(store, options, await repositoryOf(store, planObject.repository)),
   );
 }
 
@@ -977,6 +1022,7 @@ export async function addTaskLocked(
     repository.name,
     storeKey(repository.name, id),
     options.after ?? [],
+    await registeredNames(store),
   );
   const brief = appendChange(options.brief ?? "", "created");
   const area =
@@ -1086,7 +1132,12 @@ export async function updateTask(
   const releasable = (data: TaskData, tasks: readonly StoredObject[]) =>
     options.after !== undefined && waitsForCancelledDependency(data, tasks);
   if (!releasable(initialData, await allTasks(store))) requireEditable(initialData);
-  const updated = await withRepoLock(store, initialData.repository, async () => {
+  const lockNames = await afterLockNames(
+    store,
+    initialData.repository,
+    options.after ?? [],
+  );
+  const updated = await withRepoLocks(store, lockNames, async () => {
     const current = await getTask(store, id);
     const tasks = await allTasks(store);
     const data = taskData(current.data);
@@ -1100,6 +1151,7 @@ export async function updateTask(
             data.repository,
             id,
             options.after,
+            await registeredNames(store),
           );
     const lines: string[] = [];
     if (title !== undefined && title !== data.title) {

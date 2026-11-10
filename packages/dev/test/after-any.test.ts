@@ -8,6 +8,7 @@ import {
   addRepository,
   addTask,
   confirmPlan,
+  removeRepository,
   getTask,
   setAuto,
   setTaskPhase,
@@ -138,5 +139,32 @@ describe("--after across plans and repositories", () => {
     await expect(updateTask(s.store, first, { after: [first] })).rejects.toThrow(/follow itself/);
     await expect(s.task(planA, "third", ["T-9999"])).rejects.toThrow(/no task/);
     await expect(s.task(planA, "fourth", ["nowhere/T-0001"])).rejects.toThrow(/no task/);
+  });
+});
+
+describe("--after validation under races and removed repositories", () => {
+  test("two cross-repository updates at once cannot close a cycle", async () => {
+    const s = await setup();
+    const planA = await s.plan(s.main, "a");
+    const planB = await s.plan(s.other, "b");
+    const first = await s.task(planA, "first");
+    const second = await s.task(planB, "second");
+    const results = await Promise.allSettled([
+      updateTask(s.store, first, { after: [second] }),
+      updateTask(s.store, second, { after: [first] }),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(String((rejected as PromiseRejectedResult).reason)).toMatch(/cycle/);
+  });
+
+  test("a task of a removed repository cannot be named", async () => {
+    const s = await setup();
+    const planA = await s.plan(s.main, "a");
+    const planB = await s.plan(s.other, "b");
+    const gone = await s.task(planB, "gone");
+    await setTaskPhase(s.store, gone, "cancelled");
+    await removeRepository(s.store, "operad");
+    await expect(s.task(planA, "late", [gone])).rejects.toThrow(/no task/);
   });
 });
