@@ -44,3 +44,6 @@ the row fields.
 |---|---|---|---|
 | T-0099-M1 | packages/harness-pi/src/worker.ts | a `message` line was not steered into the session | `a message line from the host steers the agent: the model's next call sees it` |
 | T-0099-M2 | packages/harness-pi/src/index.ts | the step did not pass the inbox to the process | `harness-pi/agent > a message the host sends through the inbox reaches the program as a message line` |
+| T-0187-M8 | packages/harness-pi/src/worker.ts | an `allow` answer did not let the call through | `a command askCommands matches asks a person: allowed, it runs once; the same command again asks again` |
+| T-0187-M9 | packages/harness-pi/src/worker.ts | a command holding a secret value was asked about | `a command that holds a secret value is refused and never asked about` |
+| T-0187-M10 | packages/harness-pi/src/index.ts | the step did not throw the unanswered question, so no `waiting` result | `harness-pi: a call that must ask a person > not answered in time: the step ends waiting, the process exits, the one item stays` |

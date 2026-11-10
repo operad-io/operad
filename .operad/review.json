@@ -10,7 +10,8 @@
       "rules": [
         "Grade against the brief. A decision the brief or a lead rework note states is not a finding.",
         "Each critical or major finding names a concrete trigger a user or caller hits; without one it is minor.",
-        "Do not raise again, in other words, a finding the previous review raised and this change addressed."
+        "Do not raise again, in other words, a finding the previous review raised and this change addressed.",
+        "A new or changed behaviour with no row in a MUTATIONS.md naming this task is a major finding; a refactor or move that changes no behaviour needs no row."
       ],
       "fixLevel": "major"
     }

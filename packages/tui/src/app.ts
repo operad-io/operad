@@ -59,12 +59,15 @@ import {
   type TuiTheme,
 } from "./state.ts";
 import {
+  chooseChildLayout,
   chooseSelection,
   installedThemes,
   resolveSelection,
+  saveChildLayout,
   saveThemeChoice,
   watchThemes,
   type ThemeHolder,
+  type TuiChildLayout,
 } from "./theme.ts";
 import { createTuiView, type TuiView } from "./view/index.ts";
 import type { TuiLevel, TuiSetInput, TuiSetting, TuiTypeInfo } from "./client.ts";
@@ -162,6 +165,10 @@ export interface TuiShellDeps {
   readonly width: number;
   readonly height: number;
   readonly theme: TuiTheme;
+  /** The child list layout to start with; the tree when unset. */
+  readonly childLayout?: TuiChildLayout | undefined;
+  /** Keeps a chosen child layout; a failure is shown as a footer line. */
+  readonly onChildLayout?: ((layout: TuiChildLayout) => void) | undefined;
   /** Where a refusal's status goes: a log, never the screen. */
   readonly onLog?: ((message: string) => void) | undefined;
   /** A failed request; the page shows it too, and the app goes on. */
@@ -256,6 +263,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     width: deps.width,
     height: deps.height,
     theme: deps.theme,
+    childLayout: deps.childLayout,
     url: deps.url,
     recent: deps.recent,
     themeNames: deps.themes?.list(),
@@ -1037,6 +1045,15 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         state = reduce(state, { type: "theme-names", names: themes.list(), current: themes.current() });
       }
     }
+    const layoutAsked = state.layoutRequest;
+    if (layoutAsked !== undefined) {
+      state = reduce(state, { type: "layout-launched" });
+      try {
+        deps.onChildLayout?.(layoutAsked);
+      } catch (error) {
+        state = reduce(state, { type: "status", message: `layout not saved: ${messageOf(error)}` });
+      }
+    }
     const refreshing = state.refreshRequested;
     if (refreshing) state = reduce(state, { type: "refreshed" });
     // Requests belong to the object version that asked: another open, or a
@@ -1153,6 +1170,7 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
   const holder: ThemeHolder = {
     current: chooseSelection({ home: themeHome, flag: options.theme }),
   };
+  const childLayout = chooseChildLayout({ home: themeHome });
   // A theme chosen in the `:` palette beats `--theme` for the rest of the session.
   let flag = options.theme;
   const themes: TuiThemes = {
@@ -1242,6 +1260,8 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
       width: created.width,
       height: created.height,
       theme: themeOf(created, "dark"),
+      childLayout,
+      onChildLayout: (layout) => saveChildLayout(themeHome, layout),
       onFatal: (message) => {
         messages.push(message);
         code = 1;

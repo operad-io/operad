@@ -231,21 +231,28 @@ describe("shell/command", () => {
     // Job control puts the background job in a process group of its own. It
     // keeps the inherited output descriptors and can no longer be signaled
     // through the command's group; the step's own sweep stops it at the end.
+    // macOS's /bin/sh turns on job control here; Linux's dash refuses it
+    // without a tty, so there `setsid` starts the job in a group of its own.
+    // The child writes the pid itself, after it left the group.
+    const escaped =
+      process.platform === "linux"
+        ? `setsid sh -c 'echo $$ > "${pidFile}"; sleep 60' & sleep 0.05`
+        : `set -m; sleep 60 & echo $! > '${pidFile}'; sleep 0.05`;
     const running = registry.runStep(
       "shell/command",
       // The shell lives a few tens of milliseconds more, as a shell does that
       // reads its profile and ends a command: the sweep sees the job below it.
-      { line: `set -m; sleep 60 & echo $! > '${pidFile}'; sleep 0.05` },
+      { line: escaped },
       { runId: "run-escape" },
     );
 
-    // The drain grace is the injected clock's timer: the test ends it, so the
-    // run does not wait a real second for the escaped child's descriptors.
+    // Wait until the child reports from its own group, then end the drain
+    // grace the injected clock holds.
+    const pid = await waitForPid(pidFile);
     await clock.when(() => clock.pending > 0);
     expect(clock.fireTimeouts()).toBe(1);
 
     const result = await running;
-    const pid = await waitForPid(pidFile);
 
     try {
       expect(result.result).toBe("pass");

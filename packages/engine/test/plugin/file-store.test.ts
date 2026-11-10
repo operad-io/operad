@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { appendFileSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { FilePluginStore } from "../../src/index.ts";
+import { FilePluginStore, openPluginStore } from "../../src/index.ts";
 import { cleanupTempRoots, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
@@ -22,6 +22,60 @@ describe("the file plugin store", () => {
     expect(object?.version).toBe(2);
     expect(reader.list("job").objects.length).toBe(1);
     expect(reader.facts().length).toBe(2);
+  });
+
+  test("a store opened for one-shot use sets no watch or timer on subscribe", async () => {
+    const root = await tempRoot();
+    let watches = 0;
+    let repeats = 0;
+    const store = openPluginStore({
+      backend: "jsonl",
+      root,
+      follow: false,
+      watch: () => {
+        watches += 1;
+        return () => undefined;
+      },
+      repeat: () => {
+        repeats += 1;
+        return () => undefined;
+      },
+    });
+    const stop = store.subscribe(() => undefined);
+    stop();
+    expect(watches).toBe(0);
+    expect(repeats).toBe(0);
+  });
+
+  test("a following store watches and polls once for all its listeners", async () => {
+    const root = await tempRoot();
+    let watches = 0;
+    let repeats = 0;
+    let stops = 0;
+    const store = new FilePluginStore({
+      root: join(root, "plugins"),
+      watch: () => {
+        watches += 1;
+        return () => {
+          stops += 1;
+        };
+      },
+      repeat: () => {
+        repeats += 1;
+        return () => {
+          stops += 1;
+        };
+      },
+    });
+    const first = store.subscribe(() => undefined);
+    const second = store.subscribe(() => undefined);
+    expect(watches).toBe(1);
+    expect(repeats).toBe(1);
+
+    first();
+    expect(stops).toBe(0);
+    second();
+    expect(stops).toBe(2);
   });
 
   test("refresh reads only past its offset, and a torn multi-byte line waits for its newline", async () => {

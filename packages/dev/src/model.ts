@@ -1,6 +1,6 @@
 /** The objects the dev plugin owns, and the pure rules that change them. */
 
-import type { ObjectStore, StoredObject } from "@operad-io/engine";
+import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
 import type { ReviewHistoryEntry, ReviewSettingsUsed } from "./rework.ts";
 
 /**
@@ -123,6 +123,8 @@ export type PlanData = {
   readonly finishedReported?: boolean | undefined;
   /** When the scheduler last started one of the plan's tasks (ms); the order within a priority reads it. */
   readonly lastStartedAt?: number | undefined;
+  /** The flow the plan's tasks start with; absent means `default`. */
+  readonly flow?: string | undefined;
 };
 
 /** What the verify step found when it ran the gate commands. */
@@ -438,9 +440,17 @@ export type TaskData = {
   readonly oldestPlanSlot?: boolean | undefined;
   /** True while a task this ready task follows is not merged; the scheduler sets it. */
   readonly dependencyHeld?: boolean | undefined;
+  /** What the held task waits for, as a note names it; set with `dependencyHeld`. */
+  readonly dependencyHeldFor?: readonly string[] | undefined;
   readonly phase: TaskPhase;
   readonly attempts: number;
   readonly run: string | null;
+  /** The flow this task starts with; absent inherits the plan's flow. */
+  readonly flow?: string | undefined;
+  /** The flow this attempt runs; absent for a run that started before flows had names. */
+  readonly flowName?: string | undefined;
+  /** The compiled graph this attempt started with, so a later config cannot change it midway. */
+  readonly flowGraph?: FlowDefinition | undefined;
   readonly attempt?: TaskAttempt | undefined;
   /** What each review reported, newest last; the next review follows it. */
   readonly reviewHistory?: readonly ReviewHistoryEntry[] | undefined;
@@ -670,6 +680,20 @@ export function storeKey(repository: string, id: string): string {
 export function bareId(key: string): string {
   const at = key.indexOf("/");
   return at < 0 ? key : key.slice(at + 1);
+}
+
+/**
+ * The store key a task's `after` entry names: an entry with a repository
+ * prefix is already a key; a bare id (also what older tasks stored) is a task
+ * of the task's own repository.
+ */
+export function dependencyKey(repository: string, entry: string): string {
+  return entry.includes("/") ? entry : storeKey(repository, entry);
+}
+
+/** How a dependency is named in a note: bare in its own repository. */
+export function dependencyLabel(repository: string, key: string): string {
+  return keyRepository(key) === repository ? bareId(key) : key;
 }
 
 /** The repository part of a store key. */

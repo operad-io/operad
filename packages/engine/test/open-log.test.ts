@@ -26,6 +26,35 @@ test("openLog opens the jsonl backend on a directory", async () => {
   }
 });
 
+test("a log opened for a one-shot command starts no watch or timer", async () => {
+  const directory = tempDirectory("open-log-one-shot");
+  let watches = 0;
+  let repeats = 0;
+  const backend = openLog({
+    backend: "jsonl",
+    path: directory,
+    follow: false,
+    watch: () => {
+      watches += 1;
+      return () => undefined;
+    },
+    repeat: () => {
+      repeats += 1;
+      return () => undefined;
+    },
+  });
+  try {
+    const unsubscribe = backend.subscribe?.(() => undefined);
+    expect(unsubscribe).toBeTypeOf("function");
+    unsubscribe?.();
+  } finally {
+    await backend.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+  expect(watches).toBe(0);
+  expect(repeats).toBe(0);
+});
+
 test("openLog opens the sqlite backend on one file", async () => {
   const directory = tempDirectory("open-log-sqlite");
   const path = join(directory, "store.sqlite");

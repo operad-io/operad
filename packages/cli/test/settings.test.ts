@@ -187,7 +187,7 @@ describe("operad settings", () => {
         body: JSON.stringify({ action: "webtest:limit", id: "one" }),
       });
       expect(acted.status).toBe(200);
-      expect(JSON.stringify(await acted.json())).toContain("6");
+      expect(((await acted.json()) as { value: unknown }).value).toBe(6);
       const shown = await operad(home, "settings");
       expect(shown.out).toContain("global  webtest.limit  6  default 2");
     } finally {

@@ -54,10 +54,10 @@ views and `--after` accept both forms, and an id is matched exactly.
 operad repo add <path> [--name <name>]
 operad repo list
 operad repo remove <name>
-operad plan add --slug <slug> --title <title> [--concurrency <n>] [--repo <name>]   # request on stdin
-operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--repo <name>]   # brief on stdin
+operad plan add --slug <slug> --title <title> [--concurrency <n>] [--flow <name>] [--repo <name>]   # request on stdin
+operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--flow <name>] [--repo <name>]   # brief on stdin
 operad task edit <id>      # $EDITOR on the brief body; proposed or ready only
-operad task update <id> [--title <title>] [--after <task>]... [--area <area>]   # --area "" clears it, --after "" clears the dependencies
+operad task update <id> [--title <title>] [--after <task>]... [--area <area>] [--flow <name>]   # --area "" clears it, --after "" clears the dependencies
 operad start <task>        # start one ready task now, whatever its plan's auto level
 operad reruns              # how often each test passed only on its own rerun, most frequent first
 ```
@@ -133,6 +133,87 @@ They are listed in `pending` after `merge` and `reject`.
 Each action claims the task at the version it saw. A `merge`, `reject`, `cancel`
 or second `rework` or `reverify` that got there first wins; the other reports
 what happened and changes nothing.
+
+## Flows
+
+A repository sets its own development flows in `.operad/dev.json`. A flow is an
+ordered list of stages; dev keeps the worktree at the start and integrate and
+cleanup at the end, so a repository writes neither.
+
+```json
+{
+  "flows": {
+    "default": {
+      "stages": [
+        { "stage": "work" },
+        { "stage": "check" },
+        { "stage": "review", "grading": "default" },
+        { "stage": "human" }
+      ]
+    },
+    "quick": {
+      "stages": [
+        { "stage": "work" },
+        { "stage": "check", "commands": ["bun test"] },
+        { "stage": "human" }
+      ]
+    }
+  }
+}
+```
+
+A repository that writes no `flows` runs the built-in `default` flow: work,
+check, review, human. A flow named `default` is the one a task starts with; a
+plan or task may choose another with `--flow <name>`, and once a task's first
+attempt starts it keeps that flow. Every flow needs at least one `check`,
+`review` or `human` stage. A `human` stage asks a person; when it is the last
+stage, its merge answer goes to integrate, and when it is not, that answer
+continues with the next stage. A flow whose last stage is not `human` goes
+straight to integrate after that stage passes, so its plan's auto level has no
+human wait to answer. A flow with no gate makes dev.json invalid, with a message
+naming the flow and the rule.
+
+### Stages
+
+| stage | parameters | what it does | results |
+|---|---|---|---|
+| `work` | `use`, `args`, `brief`, `beforeAttempt` | a worker changes the task branch; `use` and `args` replace the harness step and its arguments, `brief` is appended to the worker's prompt, and `beforeAttempt` is the preparation before the attempt: `merge-main` fetches and merges the latest main, `none` leaves the branch as it is | `done`, `nothing`, `failed`, `unavailable`, `cancelled`, `interrupted` |
+| `check` | `commands`, `rerun` | runs the commands in a gate checkout of the verified commit; unset values come from `gate.commands` and `check.rerun` | `pass`, `fail`, `cancelled` |
+| `review` | `use`, `args`, `later`, `grading` | a reviewer reads the diff from the merge base to the verified commit; unset values come from `reviewer`, `later` replaces the arguments after the first review of an attempt, and `grading` names the entry in `.operad/review.json` (unset means the flow's own name) | `pass`, `fail`, `failed`, `unavailable`, `timed_out`, `exhausted`, `out_of_time`, `cancelled` |
+| `human` | none | waits for a person to merge, reject, rework or reverify | the person's choice |
+
+A failed `check` or `review` appends its rework section and goes back to the
+nearest `work` stage before it. With no `work` before it, the run waits for a
+person instead. The retry steps, the unavailable-model waits, the review
+timeout waits, cancellation and the announcements are the ones the built-in
+flow has, one set per stage.
+
+A work stage passes its harness override as the step params `flowUse`,
+`flowArgs` and `flowBrief`; a check stage passes `commands` and `rerun`, and a
+review stage passes `use`, `args`, `later` and `grading`. A hand-written flow
+passes the same names to `dev/work`, `dev/verify` and `dev/review`.
+
+### How a flow is registered
+
+The built-in flow keeps the name `dev`, so runs and history from before
+projects could set flows keep working. A repository's flow is registered under
+`dev/<repository>/<flow>/<hash>`, where the hash is the first 12 hex digits of
+the SHA-1 of its stages. Two repositories may therefore use the same flow name,
+and a changed `flows` entry gets a new name instead of replacing a graph a
+running attempt still uses. A start records the graph on the task; every tick
+declares the graphs of the tasks it finds, so a fresh process resumes a running
+attempt on the graph it started with.
+
+### Writing a flow in TypeScript
+
+The compiled stages are the building blocks for `.operad/flows/<name>.flow.ts`:
+a hand-written flow calls the same plugin steps. `dev/worktree`,
+`dev/reverify`, `dev/work`, `dev/verify`, `dev/review`, `dev/rework`,
+`dev/integrate` and `dev/cleanup` are described in the Steps table below;
+`dev/retry`, `dev/review_due`, `dev/work_due` and `dev/retry_due` are the waits
+and retries around them, and `dev/announce` tells the outside world that a run
+stopped. A hand-written flow keeps the same hard rules: integrate and cleanup
+last, and at least one gate.
 
 ## Steps
 
@@ -250,6 +331,14 @@ concurrency limits still hold, so an ineligible task waits for a later tick.
 dependency was cancelled: changing its dependencies, or clearing them with
 `--after ""`, ends that wait (its run is stopped), and the task starts on a later
 tick like any ready task.
+
+`--after` takes a task id (a task of this repository, in any plan) or
+`<repository>/<task id>` (a task of any registered repository). Either way the
+full key is stored. A task is `blocked` until every task it follows is merged,
+wherever it is; its note says `waiting for operad/T-0188` when the task is in
+another repository. A task must exist when it is named; a task cannot follow
+itself or close a cycle (the refusal shows the cycle). A cancelled dependency,
+in any plan or repository, makes the task wait for a person as above.
 
 A task whose dependency was cancelled starts no work. The scheduler starts its
 flow into the person wait instead, so the task is a real pending item: `merge`

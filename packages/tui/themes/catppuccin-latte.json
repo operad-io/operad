@@ -1,6 +1,6 @@
 {
   "$schema": "../theme.schema.json",
-  "comment": "Catppuccin Latte. Source: https://github.com/catppuccin/palette (palette.json, latte; version 1.8.0). Licence: MIT, Copyright (c) 2021 Catppuccin; the text is in LICENSE-catppuccin. Roles: text = text, weak = subtext0, rule = surface1, accent = mauve, run = blue, ok = green, error = red, add = green, remove = red, tint = surface0 (PmenuSel), code = mantle, background = base. The iOS app uses mantle for its selected-row tint, but Catppuccin's own editor theme selects with surface0 and keeps mantle for the popup's base, so tint keeps surface0. Adjusted for contrast, nothing else changed: ok #40a02b (green) -> #3f9d2a: lightness 40% -> 39% for 3:1 on #eff1f5 (was 2.96:1); add #40a02b (green) -> #3f9d2a: lightness 40% -> 39% for 3:1 on #eff1f5 (was 2.96:1).",
+  "comment": "Catppuccin Latte. Source: https://github.com/catppuccin/palette (palette.json, latte; version 1.8.0). Licence: MIT, Copyright (c) 2021 Catppuccin; the text is in LICENSE-catppuccin. Roles: text = text, weak = subtext0, rule = surface1, accent = mauve, run = blue, ok = green, error = red, add = green, remove = red, tint = surface0 (PmenuSel), code = mantle, background = base. The iOS app uses mantle for its selected-row tint, but Catppuccin's own editor theme selects with surface0 and keeps mantle for the popup's base, so tint keeps surface0. Adjusted for contrast, nothing else changed: ok #40a02b (green) -> #3f9d2a: lightness 40% -> 39% for 3:1 on #eff1f5 (was 2.96:1); add #40a02b (green) -> #3f9d2a: lightness 40% -> 39% for 3:1 on #eff1f5 (was 2.96:1). cancelled = error with lightness 60% for a cancelled child's bar segment.",
   "colors": {
     "text": "#4c4f69",
     "weak": "#6c6f85",
@@ -9,6 +9,7 @@
     "run": "#1e66f5",
     "ok": "#3f9d2a",
     "error": "#d20f39",
+    "cancelled": "#7e0922",
     "add": "#3f9d2a",
     "remove": "#d20f39",
     "tint": "#ccd0da",

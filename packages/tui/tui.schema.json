@@ -13,6 +13,12 @@
       "type": "string",
       "minLength": 1,
       "default": "auto"
+    },
+    "layout": {
+      "description": "How an object page draws its next level: tree nests children under the first sibling in their after; list is one flat list. t switches it for the session.",
+      "type": "string",
+      "enum": ["tree", "list"],
+      "default": "tree"
     }
   }
 }

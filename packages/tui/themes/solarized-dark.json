@@ -1,6 +1,6 @@
 {
   "$schema": "../theme.schema.json",
-  "comment": "Solarized Dark. Source: https://github.com/altercation/solarized (README.md, the scss snippet with the rebase mixin). Licence: MIT, Copyright (c) 2011 Ethan Schoonover; the text is in LICENSE-solarized. Roles: text = base0, weak = base01, rule = base02, accent = violet, run = blue, ok = green, error = red, add = green, remove = red, tint = base02, code = base03, background = base03. Solarized names one highlight background beyond the base, so rule and tint take it and code takes the base itself; a code block and a selected row do not look the same. Adjusted for contrast, nothing else changed: weak #586e75 (base01) -> #5e767d: lightness 40% -> 43% for 3:1 on #002b36 (was 2.79:1).",
+  "comment": "Solarized Dark. Source: https://github.com/altercation/solarized (README.md, the scss snippet with the rebase mixin). Licence: MIT, Copyright (c) 2011 Ethan Schoonover; the text is in LICENSE-solarized. Roles: text = base0, weak = base01, rule = base02, accent = violet, run = blue, ok = green, error = red, add = green, remove = red, tint = base02, code = base03, background = base03. Solarized names one highlight background beyond the base, so rule and tint take it and code takes the base itself; a code block and a selected row do not look the same. Adjusted for contrast, nothing else changed: weak #586e75 (base01) -> #5e767d: lightness 40% -> 43% for 3:1 on #002b36 (was 2.79:1). cancelled = error with lightness 60% for a cancelled child's bar segment.",
   "colors": {
     "text": "#839496",
     "weak": "#5e767d",
@@ -9,6 +9,7 @@
     "run": "#268bd2",
     "ok": "#859900",
     "error": "#dc322f",
+    "cancelled": "#891917",
     "add": "#859900",
     "remove": "#dc322f",
     "tint": "#073642",
