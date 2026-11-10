@@ -393,3 +393,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0165-M1 | packages/engine/src/runner/limits.ts | `locked` took the file lock without first serializing the grants of one process | `step limits > a step cancelled while it waits leaves the queue` (3 of 20 stressed runs at `--load 2`; not deterministic) |
+
+## T-0165 — the pid-file wait keeps a timer look
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0165-M2 | packages/engine/test/platform/step-reap.test.ts | the pid-file wait used the directory watch alone, with no timer look | `what a step leaves behind > a system shell that starts the marked process again is stopped with it` (timed out at 30 s in the check; 0 of 200 stressed runs at `--load 2`; not deterministic) |
