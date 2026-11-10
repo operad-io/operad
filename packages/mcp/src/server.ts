@@ -21,6 +21,7 @@ import {
   type Views,
 } from "@operad-io/engine";
 import { InvalidToolArguments } from "./arguments.ts";
+import { mcpPolicy } from "./policy.ts";
 import {
   CHANNEL_CAPABILITY,
   CHANNEL_INSTRUCTIONS,
@@ -39,9 +40,23 @@ import type { ToolDefinition } from "./tools.ts";
 /** The MCP protocol version this server implements. */
 export const PROTOCOL_VERSION = "2025-06-18";
 
-/** What `initialize` tells a client, in two sentences. */
+/** What `initialize` tells a client when the owner allows no action. */
 export const INSTRUCTIONS =
   "The operad MCP server reads objects, pending items and history, and writes the commands and lead actions it is allowed to. Owner decisions are not offered here.";
+
+/** What `initialize` tells a client, following the configured allow lists. */
+export function instructionsFor(mcp: OperadConfig["mcp"] | undefined): string {
+  const policy = mcpPolicy(mcp);
+  const allowed = [...policy.actions].filter(
+    (name) => !policy.confirmActions.has(name),
+  );
+  const confirmed = [...policy.confirmActions].filter((name) =>
+    policy.actions.has(name),
+  );
+  if (allowed.length === 0 && confirmed.length === 0) return INSTRUCTIONS;
+  const names = [...allowed, ...confirmed].join(", ");
+  return `The operad MCP server reads objects, pending items and history, and writes the commands it is allowed to. The owner's configuration lets the lead run these actions: ${names}. Every other action stays with the owner; show lists the ones it does not offer.`;
+}
 
 /** JSON-RPC error codes used by this server. */
 export const RPC_ERRORS = {
@@ -298,8 +313,8 @@ async function dispatch(
           : { tools: {} },
         serverInfo: { name: "operad", version: ENGINE_VERSION },
         instructions: claudeChannel
-          ? `${INSTRUCTIONS}\n\n${CHANNEL_INSTRUCTIONS}`
-          : INSTRUCTIONS,
+          ? `${instructionsFor(context.mcp)}\n\n${CHANNEL_INSTRUCTIONS}`
+          : instructionsFor(context.mcp),
       };
     case "ping":
       requireEmptyParams(params);

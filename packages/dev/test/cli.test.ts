@@ -581,6 +581,39 @@ describe("operad with the dev plugin", () => {
     expect(brief.out).not.toContain("Old body");
   });
 
+  test("task edit takes the new brief from piped stdin without an editor", async () => {
+    const { home, repository } = await setup();
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const plan = await run(home, repository, ["plan", "add", "--slug", "p", "--title", "P"], "req\n");
+    const task = await run(
+      home,
+      repository,
+      ["task", "add", "--plan", plan.out.trim(), "--slug", "s", "--title", "S"],
+      "Old body\n",
+    );
+    const id = task.out.trim();
+    const edited = await run(home, repository, ["task", "edit", id], "Piped body\n", {
+      EDITOR: "false",
+    });
+    expect(edited.code).toBe(0);
+    const brief = await run(home, repository, ["show", id, "--section", "brief"]);
+    expect(brief.out).toContain("Piped body");
+    expect(brief.out).not.toContain("Old body");
+  });
+
+  test("show lists the tasks after this one", async () => {
+    const { home, repository } = await setup();
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const plan = await run(home, repository, ["plan", "add", "--slug", "p", "--title", "P"], "req\n");
+    const planId = plan.out.trim();
+    const first = (await run(home, repository, ["task", "add", "--plan", planId, "--slug", "a", "--title", "A"], "x\n")).out.trim();
+    const second = (await run(home, repository, ["task", "add", "--plan", planId, "--slug", "b", "--title", "B", "--after", first], "y\n")).out.trim();
+    const shown = await run(home, repository, ["show", first]);
+    expect(shown.out).toContain(`after this one: ${second}`);
+    const other = await run(home, repository, ["show", second]);
+    expect(other.out).not.toContain("after this one");
+  });
+
   test("show and an action take --repo for a bare id from outside any repository", async () => {
     const { root, home, repository } = await setup();
     const name = repository.split("/").pop() ?? "repository";

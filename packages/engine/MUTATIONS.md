@@ -379,3 +379,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0158-M3 | packages/engine/src/views/pending.ts | a marked wait stayed in the pending view when `withAuto` was not given | `the pending view and the plugin's automatic answer > a marked wait is left out of the pending view unless asked for` (packages/mcp/test/channel.test.ts) |
+| T-0175-M1 | packages/engine/src/views/presentation.ts | the dependents of a shown object listed the objects that do not follow it | `operad mcp > show of a task lists the tasks after it` (packages/mcp/test/server.test.ts) |
