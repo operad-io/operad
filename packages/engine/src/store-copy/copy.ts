@@ -20,7 +20,7 @@
  * directories under `plugins/`, and `locks/` (which only holds live locks).
  */
 
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -42,6 +42,7 @@ const BATCH = 500;
 const PLUGIN_SQLITE_FILE = "plugins.sqlite";
 const COPYING_SUFFIX = ".copying";
 const COPYING_DIRECTORY = ".copying-jsonl";
+const SNAPSHOT_DIRECTORY = ".copying-source";
 
 export interface CopyStoreOptions {
   readonly home: string;
@@ -278,6 +279,7 @@ export async function copyStore(options: CopyStoreOptions): Promise<CopyStoreRes
       log: join(root, `${SQLITE_FILE_NAME}${COPYING_SUFFIX}`),
       plugins: join(root, `${PLUGIN_SQLITE_FILE}${COPYING_SUFFIX}`),
       directory: join(root, COPYING_DIRECTORY),
+      snapshot: join(root, SNAPSHOT_DIRECTORY),
     };
     const clean = (): void => {
       for (const base of [temporary.log, temporary.plugins]) {
@@ -286,6 +288,7 @@ export async function copyStore(options: CopyStoreOptions): Promise<CopyStoreRes
         }
       }
       rmSync(temporary.directory, { recursive: true, force: true });
+      rmSync(temporary.snapshot, { recursive: true, force: true });
     };
     clean();
 
@@ -298,7 +301,18 @@ export async function copyStore(options: CopyStoreOptions): Promise<CopyStoreRes
       return id;
     };
 
-    const source = openLog({ backend: from, path: config.store.path });
+    // Opening a jsonl log repairs it (a torn last line is cut, an old schema
+    // marker is rewritten). That repair is done on a snapshot, so the source
+    // keeps every byte it has.
+    let sourcePath = config.store.path;
+    if (from === "jsonl") {
+      sourcePath = temporary.snapshot;
+      mkdirSync(sourcePath, { recursive: true });
+      for (const name of ["runs", "inputs.jsonl", "outcomes.jsonl", "global-facts.jsonl", "schema.json"]) {
+        if (existsSync(join(root, name))) cpSync(join(root, name), join(sourcePath, name), { recursive: true });
+      }
+    }
+    const source = openLog({ backend: from, path: sourcePath });
     const sourceObjects = openPluginStore({ backend: from, root });
     let target: LogBackend | undefined;
     let targetObjects: PluginStore | undefined;
@@ -373,6 +387,7 @@ export async function useStore(home: string, config: OperadConfig, kind: StoreKi
   const root = storeRootOf(config);
   const lock = acquireLock(serveLockPath(home));
   try {
+    assertNoRunHolds(root);
     const marker = kind === "sqlite" ? join(root, SQLITE_FILE_NAME) : join(root, "schema.json");
     if (!existsSync(marker)) {
       throw new StateError(`there is no ${kind} store beside this one; copy it first`);

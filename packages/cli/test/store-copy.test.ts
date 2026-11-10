@@ -205,10 +205,16 @@ describe("store copy", () => {
     expect(copied.code).toBe(0);
     expect(copied.out).toContain("copied the jsonl store to sqlite");
 
-    // The source keeps every file it had (the torn tail is not a record and
-    // opening a store drops it, as every command does).
+    // The source keeps every file it had, and the torn tail too: the copy
+    // repaired a snapshot, not the source.
     const after = snapshot(root);
-    for (const [file, hash] of Object.entries(original)) expect(after[file]).toBe(hash);
+    const tornFile = `runs/${runs.waiting}.jsonl`;
+    for (const [file, hash] of Object.entries(original)) {
+      if (file === tornFile) expect(after[file]).not.toBe(hash);
+      else expect(after[file]).toBe(hash);
+    }
+    expect(readFileSync(join(root, tornFile), "utf8").endsWith('{"runId":"x')).toBe(true);
+    expect(existsSync(join(root, ".copying-source"))).toBe(false);
     expect(Object.keys(after).filter((file) => !(file in original)).sort()).toEqual([
       "log.sqlite",
       "plugins.sqlite",
@@ -311,6 +317,20 @@ describe("store copy", () => {
     expect(snapshot(root)).toEqual(original);
     expect(existsSync(join(root, "log.sqlite"))).toBe(false);
     expect(existsSync(serveLockPath(home))).toBe(false);
+  });
+
+  test("use refuses while a run holds the store", async () => {
+    const { home, root, runs } = await seededHome();
+    expect((await run(home, ["store", "copy", "sqlite"])).code).toBe(0);
+    const running = acquireLock(runLockPath(root, runs.waiting));
+    try {
+      const refused = await run(home, ["store", "use", "sqlite"]);
+      expect(refused.code).toBe(3);
+      expect(refused.err).toContain(runs.waiting);
+    } finally {
+      running.release();
+    }
+    expect(JSON.parse(readFileSync(join(home, "config.json"), "utf8")).store.backend).toBe("jsonl");
   });
 
   test("it refuses a target that already exists", async () => {

@@ -413,3 +413,5 @@ the row fields.
 | T-0208-M6 | packages/engine/src/store-copy/copy.ts | copied runs newest first, so a waiting run started before the older run of the same flow and object | `store copy > jsonl to sqlite to jsonl gives equal facts` |
 | T-0208-M7 | packages/engine/src/log/sqlite.ts | `startRun` ignored the `runId` option | `log backend: sqlite > the runId option names the runs it starts` |
 | T-0208-M8 | packages/engine/src/log/jsonl.ts | `readGlobal` left out the unique key | `log backend: jsonl > readGlobal returns the unique key a fact was written with` |
+| T-0208-M9 | packages/engine/src/store-copy/copy.ts | opened the jsonl source itself instead of a snapshot, so its recovery cut the torn tail | `store copy > a store with a finished, a waiting and a failed run answers the same from its copy` |
+| T-0208-M10 | packages/engine/src/store-copy/copy.ts | `useStore` did not look at the run locks | `store copy > use refuses while a run holds the store` |
