@@ -367,7 +367,7 @@ function commandEntries(state: TuiState): readonly TuiPaletteEntry[] {
       : make(`go to ${kind}`, `show the ${kind} list`, found.key, { kind: "go", tabId: found.tab.id });
   };
   const types = tabs
-    .filter((item) => item.tab.kind === "type")
+    .filter((item) => item.tab.kind === "plugin")
     .map((item) =>
       make(`go to ${item.tab.title}`, `show the list of ${item.tab.title}`, item.key, {
         kind: "go",

@@ -76,7 +76,8 @@ class CountingClient implements TuiShellClient {
     this.check();
     return [];
   }
-  async objects(): Promise<ViewListPage> {
+  async objects(_t?: string, _c?: string, _s?: AbortSignal, _f?: string, level?: { readonly parent?: string | undefined }): Promise<ViewListPage> {
+    if (level?.parent !== undefined) return { rows: [] };
     this.objectsCalls += 1;
     this.check();
     return { rows: [...this.titles].map(([id, title]) => row(id, title)) };
@@ -152,7 +153,7 @@ async function settled(): Promise<void> {
 }
 
 const titles = (state: TuiState): string[] =>
-  state.tabs.find((tab) => tab.id === "type:item")?.list.rows.map((r) => r.title) ?? [];
+  state.tabs.find((tab) => tab.kind === "plugin")?.list.rows.map((r) => r.title) ?? [];
 
 function start(configure: (client: CountingClient) => void = () => undefined) {
   const client = new CountingClient();
@@ -479,9 +480,9 @@ describe("the states a session meets", () => {
     state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
     state = reduce(state, { type: "pending", items: [] });
     expect(text(drawState(state).list)).toContain("nothing waits for you");
-    state = reduce(state, { type: "page", tabId: "type:item", page: { rows: [] } });
+    state = reduce(state, { type: "page", tabId: "plugin:item", page: { rows: [] } });
     state = reduce(state, { type: "key", key: "3", text: "3" });
-    expect(text(drawState(state).list)).toContain("no item yet");
+    expect(text(drawState(state).list)).toContain("nothing in item");
     state = reduce(state, { type: "connection", connection: "unreachable" });
     expect(text(drawState(state).footer)).toContain("http://x:1");
   });
@@ -490,7 +491,7 @@ describe("the states a session meets", () => {
     let state = initialState({ width: 100, height: 20 });
     state = reduce(state, { type: "pending", items: [] });
     state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
-    state = reduce(state, { type: "page", tabId: "type:item", page: { rows: [row("a")] } });
+    state = reduce(state, { type: "page", tabId: "plugin:item", page: { rows: [row("a")] } });
     state = reduce(state, { type: "key", key: "3", text: "3" });
     const colours = (s: TuiState): string[] =>
       drawState(s).list.chunks.map((part) => JSON.stringify(part.fg ?? null));
@@ -504,7 +505,7 @@ describe("the states a session meets", () => {
   test("a section that failed shows its message and r asks for it again", () => {
     let state = initialState({ width: 120, height: 20 });
     state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
-    state = reduce(state, { type: "page", tabId: "type:item", page: { rows: [row("a")] } });
+    state = reduce(state, { type: "page", tabId: "plugin:item", page: { rows: [row("a")] } });
     state = reduce(state, { type: "key", key: "3", text: "3" });
     state = reduce(state, { type: "key", key: "return" });
     state = reduce(state, {

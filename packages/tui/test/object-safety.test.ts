@@ -12,6 +12,7 @@ import {
   initialState,
   markdownLineCount,
   reduce,
+  rightX,
   sectionLayout,
   startShell,
   type TuiEvent,
@@ -70,7 +71,8 @@ class EvilClient implements TuiShellClient {
   running(): Promise<readonly RunningItem[]> {
     return Promise.resolve([]);
   }
-  objects(): Promise<ViewListPage> {
+  objects(_t?: string, _c?: string, _s?: AbortSignal, _f?: string, level?: { readonly parent?: string | undefined }): Promise<ViewListPage> {
+    if (level?.parent !== undefined) return Promise.resolve({ rows: [] });
     return Promise.resolve({
       rows: [
         {
@@ -140,7 +142,7 @@ describe("server text never reaches the terminal as a control", () => {
       theme: "dark",
     });
     try {
-      await view.until((state) => state.tabs.find((tab) => tab.id === "type:item")?.list.loaded === true);
+      await view.until((state) => state.tabs.find((tab) => tab.id === "plugin:item")?.list.loaded === true);
       shell.key({ name: "3" });
       shell.key({ name: "enter" });
       await view.until((state) => state.object?.sections[0]?.loaded === true);
@@ -173,7 +175,7 @@ describe("server text never reaches the terminal as a control", () => {
       theme: "dark",
     });
     try {
-      await view.until((state) => state.tabs.find((tab) => tab.id === "type:item")?.list.loaded === true);
+      await view.until((state) => state.tabs.find((tab) => tab.id === "plugin:item")?.list.loaded === true);
       shell.key({ name: "3" });
       shell.key({ name: "enter" });
       await view.until((state) => state.object?.sections[0]?.loaded === true);
@@ -203,7 +205,7 @@ function openedWith(markdown: string, width = 120, height = 24): TuiState {
   });
   state = reduce(state, {
     type: "page",
-    tabId: "type:item",
+    tabId: "plugin:item",
     replace: true,
     page: {
       rows: [{ id: "one", title: "One", state: "new", waiting: false, running: false }],
@@ -273,9 +275,9 @@ describe("wrapping is by display width", () => {
     const section = state.object?.sections[0];
     if (section === undefined) throw new Error("no section");
     const layout = sectionLayout(state, section);
-    expect(layout.length).toBe(markdownLineCount(text, 120 - 52 - 1));
+    expect(layout.length).toBe(markdownLineCount(text, 120 - rightX(state) - 1));
     for (const line of layout) {
-      expect(textWidth(line.text)).toBeLessThanOrEqual(120 - 52 - 1);
+      expect(textWidth(line.text)).toBeLessThanOrEqual(120 - rightX(state) - 1);
     }
     expect(layout.length).toBeGreaterThan(1);
   });

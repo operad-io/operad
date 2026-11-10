@@ -1111,6 +1111,7 @@ export async function updateTask(
     const {
       area: _area,
       areaHeldBy: _held,
+      areaAhead: _ahead,
       dependencyHeld: _waits,
       ...kept
     } = data;
@@ -1126,6 +1127,9 @@ export async function updateTask(
       brief: releases ? appendChange(brief, "ready") : brief,
       ...(nextArea === undefined ? {} : { area: nextArea }),
       ...(nextHeld === undefined ? {} : { areaHeldBy: nextHeld }),
+      ...(nextHeld === undefined || data.areaAhead === undefined
+        ? {}
+        : { areaAhead: data.areaAhead }),
     };
     return {
       object: await writeTask(store, id, next, "dev:task-update"),
@@ -1180,7 +1184,10 @@ export async function setTaskPhase(
 export async function claimTaskStart(
   store: ObjectStore,
   id: string,
-  options: { readonly checkArea?: boolean | undefined } = {},
+  options: {
+    readonly checkArea?: boolean | undefined;
+    readonly oldestPlanSlot?: boolean | undefined;
+  } = {},
 ): Promise<TaskData | undefined> {
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
@@ -1195,9 +1202,16 @@ export async function claimTaskStart(
       const holder = await areaHolder(store, latest.repository, latest.area, id);
       if (holder !== undefined) return undefined;
     }
-    const { areaHeldBy: _held, dependencyHeld: _waits, ...rest } = latest;
+    const {
+      areaHeldBy: _held,
+      areaAhead: _ahead,
+      dependencyHeld: _waits,
+      oldestPlanSlot: _oldest,
+      ...rest
+    } = latest;
     const next: TaskData = {
       ...rest,
+      ...(options.oldestPlanSlot === true ? { oldestPlanSlot: true } : {}),
       phase: "running",
       run: null,
       brief: appendChange(latest.brief, "running"),
@@ -1234,19 +1248,27 @@ export async function setAreaHold(
   store: ObjectStore,
   id: string,
   holder: string | undefined,
+  ahead = 0,
 ): Promise<void> {
+  const same = (task: TaskData): boolean =>
+    task.areaHeldBy === holder &&
+    (holder === undefined || (task.areaAhead ?? 0) === ahead);
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
-  if (data.areaHeldBy === holder) return;
+  if (same(data)) return;
   await withRepoLock(store, data.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
-    if (latest.phase !== "ready" || latest.areaHeldBy === holder) return;
-    const { areaHeldBy: _held, ...rest } = latest;
+    if (latest.phase !== "ready" || same(latest)) return;
+    const { areaHeldBy: _held, areaAhead: _ahead, ...rest } = latest;
     await writeTask(
       store,
       id,
-      { ...rest, ...(holder === undefined ? {} : { areaHeldBy: holder }) },
+      {
+        ...rest,
+        ...(holder === undefined ? {} : { areaHeldBy: holder }),
+        ...(holder === undefined || ahead === 0 ? {} : { areaAhead: ahead }),
+      },
       "dev:task-area-hold",
     );
   });
@@ -1669,17 +1691,17 @@ export async function cancelTask(
  * the task keeps its branch, worktree, commits, attempt count and place. It
  * holds no concurrency slot and the scheduler does not start it.
  */
-export async function holdTask(
+export async function pauseTask(
   store: ObjectStore,
   id: string,
   options: CancelOptions = {},
 ): Promise<{ readonly task: StoredObject; readonly runs: readonly string[] }> {
   const initial = await getTask(store, id);
   const initialData = taskData(initial.data);
-  const held = await withRepoLock(store, initialData.repository, async () => {
+  const paused = await withRepoLock(store, initialData.repository, async () => {
     const task = await getTask(store, id);
     const data = taskData(task.data);
-    refuseTask("hold", data, id);
+    refuseTask("pause", data, id);
     const runs = data.run === null ? [] : [data.run];
     const { areaHeldBy: _area, dependencyHeld: _waits, ...rest } = data;
     const written = await writeTask(
@@ -1687,26 +1709,26 @@ export async function holdTask(
       id,
       {
         ...rest,
-        phase: "held",
+        phase: "paused",
         run: null,
         claim: null,
         startRequested: false,
-        brief: appendChange(data.brief, "held"),
+        brief: appendChange(data.brief, "paused"),
       },
-      "dev:task-hold",
+      "dev:task-pause",
     );
     const plan = await getPlan(store, storeKey(data.repository, data.plan));
     await refreshPlanCounts(store, plan);
     return { task: written, runs };
   });
-  for (const run of held.runs) {
+  for (const run of paused.runs) {
     await options.runs?.cancel(run);
   }
-  return held;
+  return paused;
 }
 
-/** Returns a held task to ready; its next start continues from its branch. */
-export async function releaseTask(
+/** Returns a paused task to ready; its next start continues from its branch. */
+export async function resumeTask(
   store: ObjectStore,
   id: string,
 ): Promise<StoredObject> {
@@ -1715,12 +1737,12 @@ export async function releaseTask(
   return withRepoLock(store, initialData.repository, async () => {
     const task = await getTask(store, id);
     const data = taskData(task.data);
-    refuseTask("release", data, id);
+    refuseTask("resume", data, id);
     return writeTask(
       store,
       id,
       { ...data, phase: "ready", brief: appendChange(data.brief, "ready") },
-      "dev:task-release",
+      "dev:task-resume",
     );
   });
 }

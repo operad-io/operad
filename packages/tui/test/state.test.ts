@@ -65,24 +65,24 @@ describe("the TUI reducer", () => {
     expect(state.tabs.map((tab) => tab.id)).toEqual([
       "pending",
       "running",
-      "type:item",
-      "type:task",
+      "plugin:item",
+      "plugin:task",
     ]);
     expect(headerText(state)).toBe("operad ─ Pending 0 · Running 0 · Item · Task");
 
     state = reduce(state, { type: "key", key: "3" });
-    expect(activeTab(state)?.id).toBe("type:item");
+    expect(activeTab(state)?.id).toBe("plugin:item");
     state = reduce(state, { type: "key", key: "tab" });
-    expect(activeTab(state)?.id).toBe("type:task");
+    expect(activeTab(state)?.id).toBe("plugin:task");
     state = reduce(state, { type: "key", key: "tab", shift: true });
-    expect(activeTab(state)?.id).toBe("type:item");
+    expect(activeTab(state)?.id).toBe("plugin:item");
     state = reduce(state, { type: "key", key: "9" });
-    expect(activeTab(state)?.id).toBe("type:item");
+    expect(activeTab(state)?.id).toBe("plugin:item");
 
     state = reduce(state, { type: "key", key: "1" });
     expect(activeTab(state)?.id).toBe("pending");
     state = reduce(state, { type: "key", key: "tab", shift: true });
-    expect(activeTab(state)?.id).toBe("type:task");
+    expect(activeTab(state)?.id).toBe("plugin:task");
   });
 
   test("moving past the end asks for the next page once and appends it once", () => {
@@ -90,7 +90,7 @@ describe("the TUI reducer", () => {
     state = reduce(state, { type: "key", key: "3" });
     state = reduce(state, {
       type: "page",
-      tabId: "type:item",
+      tabId: "plugin:item",
       replace: true,
       page: { rows: [row("one"), row("two")], next: "after-two" },
     });
@@ -100,7 +100,7 @@ describe("the TUI reducer", () => {
     state = reduce(state, { type: "key", key: "j" });
     expect(activeTab(state)?.list.cursor).toBe(1);
     expect(state.pageRequest).toEqual({
-      tabId: "type:item",
+      tabId: "plugin:item",
       cursor: "after-two",
       version: 1,
     });
@@ -113,7 +113,7 @@ describe("the TUI reducer", () => {
 
     state = reduce(state, {
       type: "page",
-      tabId: "type:item",
+      tabId: "plugin:item",
       page: { rows: [row("three"), row("four")] },
     });
     expect(activeTab(state)?.list.rows.map((entry) => entry.id)).toEqual([
@@ -132,26 +132,26 @@ describe("the TUI reducer", () => {
     state = reduce(state, { type: "key", key: "3" });
     state = reduce(state, {
       type: "page",
-      tabId: "type:item",
+      tabId: "plugin:item",
       replace: true,
       page: { rows: [row("one")], next: "more" },
     });
     state = reduce(state, { type: "key", key: "down" });
     expect(state.pageRequest).toEqual({
-      tabId: "type:item",
+      tabId: "plugin:item",
       cursor: "more",
       version: 1,
     });
 
     state = reduce(state, {
       type: "page-error",
-      tabId: "type:item",
+      tabId: "plugin:item",
       message: "offline",
     });
     expect(state.pageRequest).toBeUndefined();
     state = reduce(state, { type: "key", key: "down" });
     expect(state.pageRequest).toEqual({
-      tabId: "type:item",
+      tabId: "plugin:item",
       cursor: "more",
       version: 1,
     });
@@ -217,7 +217,7 @@ describe("the TUI reducer", () => {
     state = reduce(state, { type: "running", items: [running] });
     state = reduce(state, {
       type: "page",
-      tabId: "type:item",
+      tabId: "plugin:item",
       replace: true,
       page: {
         rows: [
@@ -261,7 +261,7 @@ describe("the TUI reducer", () => {
     });
     expect(runningRow === undefined ? undefined : rowMark(runningRow)).toBe("running");
 
-    const item = state.tabs.find((tab) => tab.id === "type:item")?.list.rows ?? [];
+    const item = state.tabs.find((tab) => tab.id === "plugin:item")?.list.rows ?? [];
     expect(item.map(rowMark)).toEqual([
       "waiting",
       "running",
@@ -277,7 +277,7 @@ describe("the TUI reducer", () => {
     state = reduce(state, { type: "key", key: "3" });
     state = reduce(state, {
       type: "page",
-      tabId: "type:item",
+      tabId: "plugin:item",
       replace: true,
       page: { rows: [row("one"), row("two"), row("three")], next: "more" },
     });
@@ -307,7 +307,7 @@ describe("the TUI reducer", () => {
     state = reduce(state, { type: "key", key: "3" });
     state = reduce(state, {
       type: "page",
-      tabId: "type:item",
+      tabId: "plugin:item",
       replace: true,
       page: { rows: [row("one"), row("two")], next: "two" },
     });
@@ -315,7 +315,7 @@ describe("the TUI reducer", () => {
     expect(state.pageRequest).toBeDefined();
     state = reduce(state, {
       type: "page-error",
-      tabId: "type:item",
+      tabId: "plugin:item",
       message: "the server went away",
     });
     expect(activeTab(state)?.list.error).toBe("the server went away");
@@ -392,12 +392,12 @@ describe("rework 1 states", () => {
     let state = withTypes(initialState({ width: 80, height: 24, url: "http://x" }));
     state = reduce(state, {
       type: "page",
-      tabId: "type:item",
+      tabId: "plugin:item",
       replace: true,
       page: { rows: [row("one"), row("two")] },
     });
     state = reduce(state, { type: "row-gone", id: "one" });
-    const ids = state.tabs.find((t) => t.id === "type:item")?.list.rows.map((r) => r.id);
+    const ids = state.tabs.find((t) => t.id === "plugin:item")?.list.rows.map((r) => r.id);
     expect(ids).toEqual(["two"]);
   });
 

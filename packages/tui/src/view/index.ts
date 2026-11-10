@@ -26,8 +26,13 @@ import {
 import { sanitize } from "../sanitize.ts";
 import { displayWidth, graphemes } from "../wrap.ts";
 import {
+  CHILD_ROWS,
   KEY_LIST,
+  ROW_INDENT,
   activeSection,
+  bareId,
+  rowDetail,
+  rowName,
   activeTab,
   LIST_HEAD,
   dividerX,
@@ -112,7 +117,7 @@ export function fit(text: string, width: number): string {
 
 /** The count a tab shows after its name, when it has one. */
 function tabCount(tab: TuiTab): number | undefined {
-  if (tab.kind === "type" && !tab.list.loaded) return undefined;
+  if (tab.kind === "plugin" && !tab.list.loaded) return undefined;
   return tab.list.rows.length;
 }
 
@@ -221,46 +226,13 @@ function glyph(row: TuiRow, palette: TuiPalette, tint?: string): TextChunk {
   return chunk("○", palette.weak, undefined, tint);
 }
 
-/** The row id without its type: `item:T-1-x` is `T-1-x`. */
-function bareId(id: string): string {
-  const at = id.indexOf(":");
-  return at < 0 ? id : id.slice(at + 1);
-}
-
-/** The short id and the slug of an id like `T-0031-tui-object`. */
-function splitId(id: string): { readonly short: string; readonly slug: string } {
-  const match = /^([A-Za-z]+-\d+)-(.+)$/.exec(id);
-  if (match === null) return { short: id, slug: "" };
-  return { short: match[1] ?? id, slug: match[2] ?? "" };
-}
-
-/** The short id and slug of a row, without its type or repository. */
-function rowName(row: TuiRow): string {
-  const bare = bareId(row.id);
-  const { short, slug } = splitId(bare.slice(bare.lastIndexOf("/") + 1));
-  if (row.error !== undefined || slug === "") return short;
-  return `${short} ${slug}`;
-}
-
-/** The parts of a row's dim line: state and badge, then the note, unless the row says. */
-function rowDetail(row: TuiRow): string {
-  const parts =
-    row.detail ?? [`${row.state}${row.badge === undefined ? "" : ` ${row.badge}`}`, row.note ?? ""];
-  return parts
-    .map((part) => sanitize(part).replace(/\n/g, " ").trim())
-    .filter((part) => part !== "")
-    .join(" · ");
-}
-
-/** The columns before a row's text: marker, glyph and their spaces. */
-const ROW_INDENT = 4;
-
 /** One object: its line, its dim line, both tinted to the pane's edge when selected. */
 function drawRow(
   row: TuiRow,
   selected: boolean,
   palette: TuiPalette,
   width: number,
+  titles = true,
 ): TextChunk[] {
   const tint = selected ? palette.tint : undefined;
   const room = Math.max(0, width - ROW_INDENT);
@@ -268,7 +240,9 @@ function drawRow(
   const head = fit(name, room);
   const left = room - displayWidth(head);
   const title =
-    row.unnamed === true || row.title === "" || left < 4 ? "" : fit(row.title, left - 2);
+    !titles || row.unnamed === true || row.title === "" || left < 4
+      ? ""
+      : fit(row.title, left - 2);
   const first = title === "" ? head : `${head}  `;
   const pad1 = " ".repeat(Math.max(0, room - displayWidth(first) - displayWidth(title)));
   const detail = fit(rowDetail(row), room);
@@ -291,6 +265,18 @@ function drawRow(
   ];
 }
 
+/** A group's heading: the top-level object's row, dim, and not a row the cursor can reach. */
+function drawHeading(group: TuiRow, palette: TuiPalette, width: number): TextChunk[] {
+  const mark = glyph(group, palette);
+  return [
+    chunk("  ", palette.weak),
+    chunk(mark.text, palette.weak),
+    chunk(" ", palette.weak),
+    chunk(fit(rowName(group), Math.max(0, width - 4)), palette.weak),
+    chunk("\n"),
+  ];
+}
+
 /** The columns a list row has, marker and glyph included. */
 function listCells(state: TuiState): number {
   return twoPane(state) ? listWidth(state) : Math.max(1, state.width - LIST_X - 1);
@@ -307,19 +293,21 @@ function listContent(
       ? "loading…"
       : tab.kind === "pending"
         ? "nothing waits for you"
-        : tab.kind === "type"
-          ? tab.filters !== undefined && tab.filter !== undefined
-            ? `no ${tab.filter} ${tab.title.toLowerCase()}s`
-            : `no ${tab.title.toLowerCase()} yet`
+        : tab.filters !== undefined && tab.filter !== undefined
+          ? `nothing ${tab.filter} in ${tab.title.toLowerCase()}`
           : `nothing in ${tab.title.toLowerCase()}`;
     return styled([chunk("\n"), ...listTitle(tab, palette), chunk(message, palette.weak)]);
   }
   const width = listCells(state);
   const chunks: TextChunk[] = [chunk("\n"), ...listTitle(tab, palette)];
   const window = listWindow(tab.list, Math.max(1, bodyHeight(state) - LIST_HEAD));
+  const titles = tab.kind !== "plugin";
   tab.list.rows.slice(window.start, window.end).forEach((row, offset) => {
     if (offset > 0) chunks.push(chunk("\n"));
-    chunks.push(...drawRow(row, window.start + offset === tab.list.cursor, palette, width));
+    if (row.group !== undefined) chunks.push(...drawHeading(row.group, palette, width));
+    chunks.push(
+      ...drawRow(row, window.start + offset === tab.list.cursor, palette, width, titles),
+    );
   });
   if (tab.list.loading) chunks.push(chunk("loading more…\n", palette.weak));
   if (tab.list.error !== undefined) {
@@ -356,6 +344,44 @@ function objectHeader(
     third,
     chunk("\n"),
   ];
+}
+
+/** The page's next level: a heading and one line per row, the one under the cursor tinted when the list has the keys. */
+function childrenContent(object: TuiObject, palette: TuiPalette, width: number): TextChunk[] {
+  const children = object.children;
+  if (children === undefined || children.rows.length === 0) return [];
+  const type = children.rows[0]?.type ?? "";
+  const chunks: TextChunk[] = [
+    chunk(`${type.toUpperCase()} ${children.rows.length}`, palette.weak),
+    chunk("\n"),
+  ];
+  const start = children.cursor >= CHILD_ROWS ? children.cursor - CHILD_ROWS + 1 : 0;
+  children.rows.slice(start, start + CHILD_ROWS).forEach((row, offset) => {
+    const selected = children.focused && start + offset === children.cursor;
+    const tint = selected ? palette.tint : undefined;
+    const room = Math.max(1, width - 4);
+    const detail = rowDetail(row);
+    const name = `${rowName(row)}${row.title === "" ? "" : `  ${row.title}`}`;
+    const detailRoom = Math.min(displayWidth(detail), Math.max(0, room - 12));
+    const shownDetail = fit(detail, detailRoom);
+    const head = fit(name, Math.max(1, room - displayWidth(shownDetail) - 2));
+    const pad = " ".repeat(
+      Math.max(0, room - displayWidth(head) - displayWidth(shownDetail) - (shownDetail === "" ? 0 : 2)),
+    );
+    chunks.push(
+      chunk(selected ? "❯" : " ", palette.accent, undefined, tint),
+      chunk(" ", undefined, undefined, tint),
+      glyph(row, palette, tint),
+      chunk(" ", undefined, undefined, tint),
+      chunk(head, selected ? palette.accent : palette.text, undefined, tint),
+      chunk(shownDetail === "" ? "" : "  ", undefined, undefined, tint),
+      chunk(pad, undefined, undefined, tint),
+      chunk(shownDetail, palette.weak, undefined, tint),
+      chunk("\n"),
+    );
+  });
+  chunks.push(chunk("\n"));
+  return chunks;
 }
 
 function sectionTabs(object: TuiObject, palette: TuiPalette, width: number): TextChunk[] {
@@ -442,6 +468,7 @@ function objectContent(state: TuiState, palette: TuiPalette): StyledText {
   return styled([
     chunk("\n"),
     ...objectHeader(object, palette, width, pagePosition(section, state)),
+    ...childrenContent(object, palette, width),
     ...sectionTabs(object, palette, width),
     ...(section === undefined
       ? sectionContent(state, section, palette)

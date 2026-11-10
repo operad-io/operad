@@ -468,18 +468,30 @@ the row fields.
 | T-0151-M3 | packages/dev/src/gate.ts | a review whose followed commit is missing was given the settings of a first review (the `rework` mapping removed) | `dev/review rework rounds > settings by round > a review whose followed commit is missing from the checkout is a later review for its settings` |
 | T-0151-M4 | packages/dev/src/gate.ts | a report from the fallback was recorded with the primary's harness and arguments (the fallback block switched off) | `dev/review fallback and retry > a 429 falls back once, and the round passes without a rework` |
 
+## T-0159 — scheduling by turns
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0159-M1 | packages/dev/src/schedule.ts | the last free slot followed priority like the others (the oldest-plan order switched off) | `dev scheduling > the last free slot goes to the plan that waited longest, whatever its priority` |
+| T-0159-M2 | packages/dev/src/schedule.ts | plans of one priority ignored who started last (the turn tie-break removed) | `dev scheduling > plans of one priority take turns` |
+| T-0159-M3 | packages/dev/src/schedule.ts | the area queue counted no task ahead (`aheadOf` returned 0) | `dev scheduling > a waiting task counts the tasks ahead of it in its area` |
 ## T-0158 — a merge wait at auto merge is marked as answered automatically
 
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0158-M4 | packages/dev/src/schedule.ts | the mark did not require the plan to be at auto merge | `dev scheduling > a merge wait is marked as answered automatically only at auto merge` |
 | T-0158-M5 | packages/dev/src/schedule.ts | a refused integrate still counted as a wait the scheduler answers | `dev scheduling > auto merge answers a passed review once and never answers other waits`, `dev scheduling > a merge wait is marked as answered automatically only at auto merge` |
-| T-0156-M1 | packages/dev/src/steps.ts | a held task still let the step that was running write the task (the claim check ignored `held`) | `dev:hold and dev:release > hold stops the running step, keeps the branch and commits, and frees the slot` |
-| T-0156-M2 | packages/dev/src/schedule.ts | a held dependency was treated as cancelled, so its dependent went into a person wait | `dev:hold and dev:release > a held ready task is not started, and its dependent stays queued` |
-| T-0156-M3 | packages/dev/src/service.ts | release left the task held instead of making it ready | `dev:hold and dev:release > release makes the task ready and the next run continues on its branch` |
-| T-0156-M4 | packages/dev/src/service.ts | task update never released a task waiting on a cancelled dependency | `dev:hold and dev:release > task update --after releases a task waiting on a cancelled dependency` |
-| T-0156-M5 | packages/dev/src/service.ts | hold did not ask the kernel to cancel the task's run | `dev:hold and dev:release > hold stops the running step, keeps the branch and commits, and frees the slot` |
-| T-0156-M6 | packages/dev/src/service.ts | hold dropped the task's attempt record | `dev:hold and dev:release > hold stops the running step, keeps the branch and commits, and frees the slot` |
+## T-0163 — flaky review hardening tests
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0163-M1 | packages/dev/src/gate.ts | the review wait bound allowed one wait too many (`> MAX_REVIEW_WAITS + 1`), which the seeded waits must still count | `dev/review hardening > an unavailable model waits at most MAX_REVIEW_WAITS times, across a restart` |
+| T-0156-M1 | packages/dev/src/steps.ts | a held task still let the step that was running write the task (the claim check ignored `held`) | `dev:pause and dev:resume > pause stops the running step, keeps the branch and commits, and frees the slot` |
+| T-0156-M2 | packages/dev/src/schedule.ts | a held dependency was treated as cancelled, so its dependent went into a person wait | `dev:pause and dev:resume > a paused ready task is not started, and its dependent stays queued` |
+| T-0156-M3 | packages/dev/src/service.ts | release left the task held instead of making it ready | `dev:pause and dev:resume > resume makes the task ready and the next run continues on its branch` |
+| T-0156-M4 | packages/dev/src/service.ts | task update never released a task waiting on a cancelled dependency | `dev:pause and dev:resume > task update --after releases a task waiting on a cancelled dependency` |
+| T-0156-M5 | packages/dev/src/service.ts | hold did not ask the kernel to cancel the task's run | `dev:pause and dev:resume > pause stops the running step, keeps the branch and commits, and frees the slot` |
+| T-0156-M6 | packages/dev/src/service.ts | hold dropped the task's attempt record | `dev:pause and dev:resume > pause stops the running step, keeps the branch and commits, and frees the slot` |
 
 ## T-0162 — repository row mark
 
@@ -499,3 +511,15 @@ the row fields.
 |---|---|---|---|
 | T-0164-M1 | packages/dev/src/integrate.ts | the rerun after the merge was recorded added its "merged as" lines again (the `previous.result === "merged"` check replaced by `false`) | `dev/integrate rerun after a kill > merge: a kill at merged-saved, then a rerun, merges once` |
 | T-0164-M2 | packages/dev/src/settings.ts | the default hook that removes the gate worktree ran without checking the worktree exists | `dev/cleanup rerun after a kill > a kill after hook 2, then a rerun, leaves nothing behind` |
+## T-0163 — rework 1
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0163-M2 | packages/dev/test/gate.test.ts | the hook remover deleted a hook it had not installed (identity check replaced by `true`) | `review test hooks > a test that ends late removes only the hooks it installed` |
+| T-0163-M3 | packages/dev/test/gate.test.ts | the out-of-time test's clock moved on a call its own reviewer did not make (own-call check removed) | `dev/review hardening > runs that cannot fit in the step deadline are skipped and a person decides` |
+## T-0159 — rework 1
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0159-M4 | packages/dev/src/schedule.ts | every refill of the last free slot went by turn (the check for a running oldest-plan-slot task removed) | `dev scheduling > once the repository is full, a freed slot goes by priority; only the reserved slot goes by turn` |
+| T-0170-M1 | packages/dev/src/actions.ts | the old action name `hold` was still declared next to `pause` | `dev:pause and dev:resume > dev:hold and dev:release are no longer actions` |

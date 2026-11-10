@@ -14,7 +14,7 @@ merge. It is a plugin: the kernel knows none of these words.
 | **rework** | another pass over a task, added as `## Rework <n> (<source>)` |
 | **confirm** | accept a plan (its tasks then become ready) or a single proposed task |
 | **cancel** | stop a plan and its open tasks, or one task |
-| **hold** | stop a task for a while; **release** undoes it |
+| **pause** | stop a task for a while; **resume** undoes it |
 | **auto** | how far a plan may run without you: off, run, merge |
 | **priority** | P0 (most urgent) to P5 (least urgent), default P3 |
 
@@ -103,8 +103,8 @@ Every action is also a command: `operad dev:<action> <id>`.
 | `dev:rework` | task | | add the lead's own rework: `--note <text>` becomes `## Rework <n> (lead)`, and the worker runs again; history reads "you chose rework" with the note |
 | `dev:reverify` | task | | run verify and review again on the task's current commit, with no worker |
 | `dev:cancel` | plan, task | `x` | cancel a plan and its open tasks, or one task; asks first |
-| `dev:hold` | task | | stop a ready, running or reviewing task for a while: the step stops as `cancel` stops it (its processes too), but the task keeps its branch, worktree, commits, attempt count and place. It shows as held (mark `paused`), holds no concurrency slot, and is not started; a task that follows it stays queued as for any unmerged task. Owner action, not offered through MCP; asks first |
-| `dev:release` | task | | undo hold: the task is ready again, and its next start is a new attempt that begins with the worktree step on the existing branch, as a rework does. Owner action, not offered through MCP; asks first |
+| `dev:pause` | task | | stop a ready, running or reviewing task for a while: the step stops as `cancel` stops it (its processes too), but the task keeps its branch, worktree, commits, attempt count and place. It shows as paused (mark `paused`), holds no concurrency slot, and is not started; a task that follows it stays queued as for any unmerged task. Owner action, not offered through MCP; asks first |
+| `dev:resume` | task | | undo pause: the task is ready again, and its next start is a new attempt that begins with the worktree step on the existing branch, as a rework does. Owner action, not offered through MCP; asks first |
 | `dev:auto` | plan | | set auto: `--level off`, `--level run` or `--level merge` |
 | `dev:priority` | plan | | set the priority: `--level P0` (most urgent) to `--level P5` |
 | `dev:concurrency` | plan | | set how many of the plan's tasks may run at once: `--count 1` to `--count 16`; takes effect at the next tick, running tasks are not stopped |
@@ -225,7 +225,13 @@ On every tick of the kernel loop, `dev` starts ready tasks whose dependencies
 have merged. A task starts only while its plan is at auto `run` or `merge`, the
 plan's running count is under its `concurrency`, and the repository's running
 count is under its `concurrency` setting. Plans are considered most urgent
-first, and each registered repository is scheduled on its own. A task the
+first; within one priority they take turns (the plan that started a task least
+recently goes first). When the repository has more than one slot, one slot
+is kept for the plan that has gone longest without starting a task: while no
+running task holds it, the last free slot goes to that plan, whatever its
+priority. Every other freed slot goes by priority. So a plan with a startable
+task never waits forever behind more urgent plans. With one slot, priority alone orders the queue. Each
+registered repository is scheduled on its own. A task the
 scheduler claimed but whose run never recorded itself (a crash between the two)
 returns to `ready` on the next tick, so the scheduler can start it again.
 
@@ -266,7 +272,8 @@ not limited, and the same area name in two repositories does not block.
 
 `operad show <task>` prints the area, and `operad list task` shows `area: <a>`.
 A ready task held back by its area shows `waiting for area <a> (<task>)`, naming
-the task that holds it. A task waiting for a person does not hold its area, the
+the task that holds it; when ready tasks of the area are queued before it, the
+note ends `, <n> ahead`. A task waiting for a person does not hold its area, the
 same way it holds no concurrency slot.
 
 The check and the start are one decision: the scheduler claims a task under the

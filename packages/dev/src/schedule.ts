@@ -15,6 +15,7 @@ import {
 } from "@operad-io/engine";
 import {
   bareId,
+  changeClock,
   listAll,
   planData,
   priorityIndex,
@@ -178,11 +179,13 @@ async function startOne(
   ctx: TickContext,
   object: StoredObject,
   params?: Readonly<Record<string, string>>,
+  oldestPlanSlot = false,
 ): Promise<boolean> {
   // A start that only parks the task for a person (a cancelled dependency)
   // runs no work, so it is not held by an area.
   const claimed = await claimTaskStart(ctx.store, object.id, {
     checkArea: params?.blockedBy === undefined,
+    oldestPlanSlot,
   });
   if (claimed === undefined) return false;
   const token = claimed.claim?.token;
@@ -382,7 +385,7 @@ async function scheduleRepository(
   // A recovered claim changes the store; read the phases again before counting.
   const current = tasksOf(await listAll(ctx.store, "task"), repository.name);
   const plans = orderPlans(plansOf(initialPlans, repository.name));
-  const byId = new Map(
+  const tasksById = new Map(
     current.map((object) => [bareId(object.id), taskData(object.data)]),
   );
 
@@ -412,38 +415,132 @@ async function scheduleRepository(
     }
   }
 
-  /** Starts one ready task when its dependencies and both limits allow it. */
-  const startEligible = async (
+  /** Tasks started in this tick into the slot kept for the oldest plan. */
+  const oldestPlanHeld = new Set<string>();
+  const lastStarted = new Map<string, number>(
+    plans.map((object) => [
+      bareId(object.id),
+      planData(object.data).lastStartedAt ?? 0,
+    ]),
+  );
+  const turnOf = (object: StoredObject): number =>
+    lastStarted.get(bareId(object.id)) ?? 0;
+  const byUrgency = (left: StoredObject, right: StoredObject): number =>
+    priorityIndex(planData(left.data).priority) -
+    priorityIndex(planData(right.data).priority);
+  const byId = (left: StoredObject, right: StoredObject): number =>
+    bareId(left.id).localeCompare(bareId(right.id));
+  /** Priority first; within one priority the plan that started longest ago. */
+  const turnOrder = (): readonly StoredObject[] =>
+    [...plans].sort(
+      (left, right) =>
+        byUrgency(left, right) || turnOf(left) - turnOf(right) || byId(left, right),
+    );
+  /** The last free slot: longest without a start first, then most urgent. */
+  const oldestPlanOrder = (): readonly StoredObject[] =>
+    [...plans].sort(
+      (left, right) =>
+        turnOf(left) - turnOf(right) || byUrgency(left, right) || byId(left, right),
+    );
+
+  /** Whether a ready task's dependencies and all three limits allow a start now. */
+  const canStart = (
     object: StoredObject,
     plan: PlanData,
     planId: string,
-  ): Promise<void> => {
-    if (started.has(object.id)) return;
+  ): boolean => {
+    if (started.has(object.id)) return false;
     const task = taskData(object.data);
-    if (task.phase !== "ready") return;
-    const dependencies = dependencyState(task, byId);
-    if (dependencies.cancelled !== undefined) {
-      // A cancelled dependency makes the task a person wait. The run starts at
-      // the worktree step, which recognises the parameter and logs a real
-      // `waiting_person` run instead of preparing a worktree.
-      if (!(await startOne(ctx, object, { blockedBy: dependencies.cancelled }))) {
-        return;
+    if (task.phase !== "ready") return false;
+    if (!dependencyState(task, tasksById).ready) return false;
+    if (!canStartWork) return false;
+    if (task.area !== undefined && areaActive.has(task.area)) return false;
+    if (planConcurrency(plan) - (planActive.get(planId) ?? 0) <= 0) return false;
+    return repositoryActive < repositoryConcurrency(settings);
+  };
+
+  /**
+   * Starts ready tasks one at a time. Each start changes whose turn it is, so
+   * plans of one priority alternate; while the repository has more than one
+   * slot, the last free slot goes by turn alone, whatever the priority.
+   */
+  const startReady = async (
+    inScope: (task: TaskData, plan: PlanData) => boolean,
+  ): Promise<void> => {
+    const scoped = (planObject: StoredObject): readonly StoredObject[] => {
+      const plan = planData(planObject.data);
+      if (plan.status !== "confirmed") return [];
+      return planTasks(current, bareId(planObject.id))
+        .filter((object) => {
+          const task = taskData(object.data);
+          return task.phase === "ready" && inScope(task, plan);
+        })
+        .sort(byId);
+    };
+    // A cancelled dependency parks the task for a person; it takes no slot.
+    for (const planObject of plans) {
+      for (const object of scoped(planObject)) {
+        const task = taskData(object.data);
+        const dependencies = dependencyState(task, tasksById);
+        if (dependencies.cancelled === undefined || started.has(object.id)) {
+          continue;
+        }
+        if (
+          await startOne(ctx, object, { blockedBy: dependencies.cancelled })
+        ) {
+          writeSchedulerLine(`${bareId(object.id)} ready -> waiting`);
+          started.add(object.id);
+        }
       }
-      writeSchedulerLine(`${bareId(object.id)} ready -> waiting`);
-      started.add(object.id);
-      return;
     }
-    if (!dependencies.ready) return;
-    if (!canStartWork) return;
-    if (task.area !== undefined && areaActive.has(task.area)) return;
-    if (planConcurrency(plan) - (planActive.get(planId) ?? 0) <= 0) return;
-    if (repositoryActive >= repositoryConcurrency(settings)) return;
-    if (!(await startOne(ctx, object))) return;
-    writeSchedulerLine(`${bareId(object.id)} ready -> running`);
-    planActive.set(planId, (planActive.get(planId) ?? 0) + 1);
-    repositoryActive += 1;
-    if (task.area !== undefined) areaActive.set(task.area, bareId(object.id));
-    started.add(object.id);
+    const failed = new Set<string>();
+    for (;;) {
+      const cap = repositoryConcurrency(settings);
+      // One slot is kept for the plan that has gone longest without starting a task: the last free slot goes by
+      // turn only while no running task already holds that slot.
+      const useOldestPlan =
+        cap > 1 &&
+        cap - repositoryActive === 1 &&
+        !current.some((object) => {
+          const task = taskData(object.data);
+          return task.oldestPlanSlot === true && isActive(task);
+        }) &&
+        !oldestPlanHeld.size;
+      const order = useOldestPlan ? oldestPlanOrder() : turnOrder();
+      let progress = false;
+      for (const planObject of order) {
+        const plan = planData(planObject.data);
+        const planId = bareId(planObject.id);
+        const pick = scoped(planObject).find(
+          (object) =>
+            !failed.has(object.id) && canStart(object, plan, planId),
+        );
+        if (pick === undefined) continue;
+        progress = true;
+        if (!(await startOne(ctx, pick, undefined, useOldestPlan))) {
+          failed.add(pick.id);
+          break;
+        }
+        const task = taskData(pick.data);
+        writeSchedulerLine(`${bareId(pick.id)} ready -> running`);
+        planActive.set(planId, (planActive.get(planId) ?? 0) + 1);
+        repositoryActive += 1;
+        if (task.area !== undefined) areaActive.set(task.area, bareId(pick.id));
+        started.add(pick.id);
+        if (useOldestPlan) oldestPlanHeld.add(pick.id);
+        const at = changeClock.now();
+        lastStarted.set(planId, at);
+        const latest = await getPlan(ctx.store, planObject.id);
+        await ctx.store.put(
+          "plan",
+          planObject.id,
+          { ...planData(latest.data), lastStartedAt: at },
+          "dev:plan-start",
+        );
+        break;
+      }
+      if (!progress) return;
+    }
   };
 
   for (const planObject of plans) {
@@ -470,35 +567,40 @@ async function scheduleRepository(
 
   // The owner's manual start is exempt from the auto level, not from the
   // dependencies or the limits that keep two runs off one repository.
-  for (const planObject of plans) {
-    const plan = planData(planObject.data);
-    if (plan.status !== "confirmed") continue;
-    const planId = bareId(planObject.id);
-    const requested = planTasks(current, planId)
-      .filter((object) => {
-        const task = taskData(object.data);
-        return task.phase === "ready" && task.startRequested === true;
-      })
-      .sort((left, right) => bareId(left.id).localeCompare(bareId(right.id)));
-    for (const object of requested) {
-      await startEligible(object, plan, planId);
-    }
-  }
+  await startReady((task) => task.startRequested === true);
+  await startReady(
+    (task, plan) => plan.auto !== "off" && task.startRequested !== true,
+  );
 
-  for (const planObject of plans) {
-    const plan = planData(planObject.data);
-    if (plan.status !== "confirmed" || plan.auto === "off") continue;
-    const planId = bareId(planObject.id);
-    const ready = planTasks(current, planId)
-      .filter((object) => {
+  // The queue of each area: ready tasks in the order the scheduler considers
+  // them, manual starts first, so a waiting task can say how many are ahead.
+  const queued: StoredObject[] = [];
+  const queuedIds = new Set<string>();
+  const enqueue = (inScope: (task: TaskData, plan: PlanData) => boolean) => {
+    for (const planObject of turnOrder()) {
+      const plan = planData(planObject.data);
+      if (plan.status !== "confirmed") continue;
+      for (const object of [...planTasks(current, bareId(planObject.id))].sort(byId)) {
         const task = taskData(object.data);
-        return task.phase === "ready" && task.startRequested !== true;
-      })
-      .sort((left, right) => bareId(left.id).localeCompare(bareId(right.id)));
-    for (const object of ready) {
-      await startEligible(object, plan, planId);
+        if (task.phase !== "ready" || started.has(object.id)) continue;
+        if (queuedIds.has(object.id) || !inScope(task, plan)) continue;
+        if (!dependencyState(task, tasksById).ready) continue;
+        queued.push(object);
+        queuedIds.add(object.id);
+      }
     }
-  }
+  };
+  enqueue((task) => task.startRequested === true);
+  enqueue((task, plan) => plan.auto !== "off");
+  const aheadOf = (object: StoredObject): number => {
+    const area = taskData(object.data).area;
+    let ahead = 0;
+    for (const other of queued) {
+      if (other.id === object.id) return ahead;
+      if (taskData(other.data).area === area) ahead += 1;
+    }
+    return 0;
+  };
 
   // Say why a ready task whose dependencies are met is not starting: its area
   // is held. The record is cleared once the area is free or the task started.
@@ -506,11 +608,11 @@ async function scheduleRepository(
     const task = taskData(object.data);
     if (task.phase !== "ready" || started.has(object.id)) continue;
     const holder =
-      task.area !== undefined && dependencyState(task, byId).ready
+      task.area !== undefined && dependencyState(task, tasksById).ready
         ? areaActive.get(task.area)
         : undefined;
-    await setAreaHold(ctx.store, object.id, holder);
-    const dependencies = dependencyState(task, byId);
+    await setAreaHold(ctx.store, object.id, holder, aheadOf(object));
+    const dependencies = dependencyState(task, tasksById);
     await setDependencyHold(
       ctx.store,
       object.id,

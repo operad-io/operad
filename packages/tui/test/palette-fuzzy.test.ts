@@ -21,7 +21,7 @@ function opened(): TuiState {
   state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
   state = reduce(state, {
     type: "rows",
-    tabId: "type:item",
+    tabId: "plugin:item",
     rows: [{ id: "item:one", title: "One", state: "new", waiting: false, running: false }],
   });
   state = reduce(state, { type: "key", key: "3" });

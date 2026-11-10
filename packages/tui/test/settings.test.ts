@@ -105,7 +105,8 @@ class FakeServer implements TuiShellClient {
   running(): Promise<readonly RunningItem[]> {
     return Promise.resolve([]);
   }
-  objects(): Promise<ViewListPage> {
+  objects(_t?: string, _c?: string, _s?: AbortSignal, _f?: string, level?: { readonly parent?: string | undefined }): Promise<ViewListPage> {
+    if (level?.parent !== undefined) return Promise.resolve({ rows: [] });
     return Promise.resolve(EMPTY);
   }
   settings(scope?: string): Promise<readonly TuiSetting[]> {
@@ -296,7 +297,7 @@ describe("the scopes the palette lists", () => {
     let state = initialState({ width: 100 });
     state = reduce(state, { type: "types", types: [{ type, title: type }] });
     const row = { id, title: "x", state: "new", waiting: false, running: false };
-    state = reduce(state, { type: "rows", tabId: `type:${type}`, rows: [row] });
+    state = reduce(state, { type: "rows", tabId: `plugin:${type}`, rows: [row] });
     state = reduce(state, { type: "key", key: "3" });
     state = reduce(state, { type: "key", key: "enter" });
     return reduce(state, {

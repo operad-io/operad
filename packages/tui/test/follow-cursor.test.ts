@@ -66,7 +66,8 @@ class Client implements TuiShellClient {
   running(): Promise<readonly RunningItem[]> {
     return Promise.resolve([]);
   }
-  async objects(): Promise<ViewListPage> {
+  async objects(_t?: string, _c?: string, _s?: AbortSignal, _f?: string, level?: { readonly parent?: string | undefined }): Promise<ViewListPage> {
+    if (level?.parent !== undefined) return { rows: [] };
     await this.listGate;
     return { rows: this.rows };
   }
@@ -106,7 +107,7 @@ async function start(width: number, rows?: ViewRow[]) {
     clock,
     followDelayMs: 100,
   });
-  await view.until((s) => s.tabs.find((t) => t.id === "type:item")?.list.loaded === true);
+  await view.until((s) => s.tabs.find((t) => t.id === "plugin:item")?.list.loaded === true);
   shell.key({ name: "3" });
   return { client, view, shell, clock };
 }
@@ -130,10 +131,10 @@ describe("the object pane follows the cursor", () => {
       followDelayMs: 100,
     });
     try {
-      await view.until((s) => s.tabs.some((t) => t.id === "type:item"));
+      await view.until((s) => s.tabs.some((t) => t.id === "plugin:item"));
       shell.key({ name: "3" });
       client.holdList?.();
-      await view.until((s) => s.tabs.find((t) => t.id === "type:item")?.list.loaded === true);
+      await view.until((s) => s.tabs.find((t) => t.id === "plugin:item")?.list.loaded === true);
       clock.advance(100);
       await view.until((s) => s.object?.id === "item:a" && !s.object.loading);
     } finally {
