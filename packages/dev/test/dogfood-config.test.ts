@@ -14,20 +14,27 @@ import { storeAt, tempRoot } from "./support.ts";
 
 const CONFIG = fileURLToPath(new URL("../../../.operad/dev.json", import.meta.url));
 
-function committed(): Record<string, unknown> {
+function file(): Record<string, unknown> {
   return JSON.parse(readFileSync(CONFIG, "utf8")) as Record<string, unknown>;
 }
 
 /**
- * The committed settings without `workers` and `pools`: those are the other
- * form of the worker setting, and a test that sets the single `worker` cannot
- * have them too.
+ * The committed file without its `workers` and `pools`, so a test can switch to
+ * the old single `worker` form (a file may not hold both).
  */
-function committedSingleWorker(): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(committed()).filter(([key]) => key !== "workers" && key !== "pools"),
-  );
+function committed(): Record<string, unknown> {
+  const { workers: _workers, pools: _pools, ...rest } = file();
+  return rest;
 }
+
+describe("this repository's committed dev.json", () => {
+  test("validates as it is, with its workers in the default pool", () => {
+    const settings = validateDevSettings(file());
+    const names = settings.workers?.workers.map((worker) => worker.name) ?? [];
+    expect(names.length).toBeGreaterThan(0);
+    expect(settings.workers?.pools.default).toEqual(names);
+  });
+});
 
 async function plugin(path: string): Promise<{ readonly default: unknown }> {
   return (await import(new URL(path, import.meta.url).href)) as { readonly default: unknown };
@@ -36,7 +43,7 @@ async function plugin(path: string): Promise<{ readonly default: unknown }> {
 describe("this repository's dev.json with the pi worker", () => {
   test("worker.use harness-pi/agent validates and the dev flow resolves it", async () => {
     const settings = validateDevSettings({
-      ...committedSingleWorker(),
+      ...committed(),
       worker: { use: "harness-pi/agent", args: [] },
     });
     expect(settings.worker.use).toBe("harness-pi/agent");
@@ -78,7 +85,7 @@ describe("this repository's dev.json with the pi worker", () => {
 describe("this repository's dev.json with the claude worker", () => {
   test("worker.use harness-claude/agent with --model and --effort validates and the dev flow resolves it", async () => {
     const settings = validateDevSettings({
-      ...committedSingleWorker(),
+      ...committed(),
       worker: { use: "harness-claude/agent", args: ["--model", "sonnet"] },
       reviewer: {
         ...(committed().reviewer as Record<string, unknown>),
