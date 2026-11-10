@@ -95,7 +95,9 @@ with a stress run before you change anything.
 ## Verify
 
 Run this before you say a change is done. It must pass. A task worker runs
-`bash scripts/check-changed.sh` instead; the full suite runs before merge.
+`bunx tsc -b` and the test files it added or changed instead; the task's check
+runs `bash scripts/check-changed.sh` after it, and the full suite runs before
+merge.
 
 ```sh
 bash scripts/verify.sh

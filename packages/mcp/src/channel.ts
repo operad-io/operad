@@ -507,7 +507,9 @@ class ClaudeChannel implements ChannelHandle {
     if (this.pendingItems === undefined) return undefined;
     try {
       const key = `${object.type}:${object.id}`;
-      return (await this.pendingItems()).find((entry) => entry.object === key);
+      return (await this.pendingItems()).find(
+        (entry) => entry.object === key || entry.covers?.includes(key) === true,
+      );
     } catch (error) {
       this.onLog(`channel: the pending items could not be read: ${messageOf(error)}`);
       return undefined;
@@ -561,6 +563,10 @@ class ClaudeChannel implements ChannelHandle {
       item = await this.waitItem(object);
       if (item?.auto === true) {
         this.quiet.set(key, object);
+        waitingOn = false;
+      } else if (item?.announce === false) {
+        // Pending, but its plugin says the lead needs no block for it.
+        this.quiet.delete(key);
         waitingOn = false;
       } else {
         this.quiet.delete(key);

@@ -128,6 +128,7 @@ describe("dev views", () => {
       scope: "repository",
       final: false,
       mark: "proposed",
+      waiting: true,
       badge: "#0",
       parent: "plan:repository/P-0001-storage",
     });

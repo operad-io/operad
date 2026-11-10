@@ -29,6 +29,7 @@ import {
   type FactWriter,
   type MaybePromise,
   type ObjectRef,
+  type StoredObject,
   type ObjectTypeDefinition,
   type RunLookup,
   type ObjectViews,
@@ -157,6 +158,18 @@ export interface KeyBinding {
   readonly action: string;
   readonly name: string;
   readonly source: "plugin" | "user";
+}
+
+/** One standing item with the plugin that gave it, and the actions that hold for its object. */
+export interface StandingEntry {
+  readonly plugin: string;
+  readonly id: string;
+  readonly prompt: string;
+  readonly object?: ObjectRef;
+  readonly actions: readonly PendingActionView[];
+  readonly announce?: false;
+  /** Object keys (`type:id`) the item stands for besides its own. */
+  readonly covers?: readonly string[];
 }
 
 /**
@@ -1122,10 +1135,8 @@ export class PluginRegistry {
    * The items plugins ask a person to know about. A hook that throws is
    * logged and shows nothing, so one plugin cannot hide the others.
    */
-  async standing(): Promise<
-    readonly { readonly plugin: string; readonly id: string; readonly prompt: string }[]
-  > {
-    const items: { plugin: string; id: string; prompt: string }[] = [];
+  async standing(): Promise<readonly StandingEntry[]> {
+    const items: StandingEntry[] = [];
     for (const plugin of this.plugins) {
       if (plugin.standing === undefined) continue;
       try {
@@ -1142,13 +1153,47 @@ export class PluginRegistry {
           loaded: this.plugins.map((item) => item.name),
         });
         for (const item of found) {
-          items.push({ plugin: plugin.name, id: item.id, prompt: item.prompt });
+          const object =
+            item.object === undefined
+              ? undefined
+              : await this.store.get(item.object.type, item.object.id);
+          // An item about an object that is gone says nothing.
+          if (item.object !== undefined && object === undefined) continue;
+          items.push({
+            plugin: plugin.name,
+            id: item.id,
+            prompt: item.prompt,
+            actions: object === undefined ? [] : await this.actionsHolding(object),
+            ...(item.object === undefined ? {} : { object: item.object }),
+            ...(item.announce === false ? { announce: false as const } : {}),
+            ...(item.covers === undefined || item.covers.length === 0
+              ? {}
+              : { covers: item.covers.map((ref) => `${ref.type}:${ref.id}`) }),
+          });
         }
       } catch (error) {
         this.log(`plugin "${plugin.name}": standing failed: ${messageOf(error)}`);
       }
     }
     return items;
+  }
+
+  /** The actions whose `when` holds for the object; a throwing `when` is logged and hidden. */
+  private async actionsHolding(object: StoredObject): Promise<readonly PendingActionView[]> {
+    const actions: PendingActionView[] = [];
+    for (const { plugin, action } of this.actionsFor(object.type)) {
+      let holds: unknown;
+      try {
+        holds = await action.when(object.data, { store: this.store });
+      } catch (error) {
+        this.log(
+          `plugin "${plugin.name}": action "${action.name}": when failed: ${messageOf(error)}`,
+        );
+        continue;
+      }
+      if (holds === true) actions.push({ plugin: plugin.name, action: action.name });
+    }
+    return actions;
   }
 
   /**
@@ -1184,21 +1229,7 @@ export class PluginRegistry {
         continue;
       }
 
-      const actions: PendingActionView[] = [];
-      for (const { plugin, action } of this.actionsFor(object.type)) {
-        let holds: unknown;
-        try {
-          holds = await action.when(object.data, { store: this.store });
-        } catch (error) {
-          this.log(
-            `plugin "${plugin.name}": action "${action.name}": when failed: ${messageOf(error)}`,
-          );
-          continue;
-        }
-        if (holds === true) {
-          actions.push({ plugin: plugin.name, action: action.name });
-        }
-      }
+      const actions = await this.actionsHolding(object);
       entries.push({
         runId: run.runId,
         prompt: run.prompt,

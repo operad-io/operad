@@ -37,9 +37,21 @@ By role, as each project's own editor theme uses its colours: `accent` is the
 purple or mauve, `run` the blue (cyan where the palette has no blue: Dracula;
 foam in Rosé Pine), `ok` the green (pine in Rosé Pine), `error` the red, `add`
 and `remove` the green and red of its diffs, `tint` its selection or highlight
-background, `code` a second background and `background` the palette's own base
-colour, which is the colour the contrast check measures against (the terminal's
-own background is unknown).
+background, `code` a second background (or the base itself where the palette
+names only one) and `background` the palette's own base colour, which is the
+colour the contrast check measures against (the terminal's own background is
+unknown).
+
+## Cross-check with the iOS app
+
+The app's palettes (`radian-ios OperadApp/Theme/Palettes.swift`) are a
+cross-check, not the source. Where a role differs, the file's `comment` says
+why: Catppuccin Latte's `tint` is surface0 (PmenuSel), while the app's mantle is
+the popup's base; Rosé Pine's `tint` is the editor's Visual blend and its `code`
+the surface panel; and Kanagawa and Tokyo Night follow upstream `bg_visual` and
+`list.activeSelectionBackground`, where the app's values are stale. The app also
+adjusts every colour to 4.5:1, so its other values can differ where this project
+needs only the token's stated ratio.
 
 ## Contrast
 

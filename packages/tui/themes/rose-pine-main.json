@@ -1,6 +1,6 @@
 {
   "$schema": "../theme.schema.json",
-  "comment": "Rosé Pine. Source: https://github.com/rose-pine/palette (palette.json, main). Licence: MIT, Copyright (c) mvllow; the text is in LICENSE-rose-pine. Roles: text = text, weak = subtle, rule = overlay, accent = iris, run = foam, ok = pine, error = love, add = foam, remove = love, tint = surface, code = overlay, background = base. Rosé Pine has no green or blue: ok is pine and run is foam, as its own editor themes use them. No colour adjusted.",
+  "comment": "Rosé Pine. Source: https://github.com/rose-pine/palette (palette.json, main). Licence: MIT, Copyright (c) mvllow; the text is in LICENSE-rose-pine. Roles: text = text, weak = subtle, rule = overlay, accent = iris, run = foam, ok = pine, error = love, add = foam, remove = love, tint = iris at 15% over base (Visual), code = surface (NormalFloat), background = base. Rosé Pine has no green or blue: ok is pine and run is foam, as its own editor themes use them. The list and cursor-line highlights use overlay, but Visual blends iris 15% over base; tint takes that blend so a selected row is visible and differs from rule. No colour adjusted.",
   "colors": {
     "text": "#e0def4",
     "weak": "#908caa",
@@ -11,8 +11,8 @@
     "error": "#eb6f92",
     "add": "#9ccfd8",
     "remove": "#eb6f92",
-    "tint": "#1f1d2e",
-    "code": "#26233a",
+    "tint": "#332d41",
+    "code": "#1f1d2e",
     "background": "#191724"
   }
 }

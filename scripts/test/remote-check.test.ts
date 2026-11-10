@@ -124,11 +124,19 @@ describe("remote-check.sh", () => {
       env,
       `echo started > '${started}'; read -r _ < '${release}'; touch '${ended}'`,
     );
-    await readFifo(started);
-    const second = run(local, env, `if [ -f '${ended}' ]; then echo after > '${seen}'; else echo during > '${seen}'; fi`);
-    await Bun.spawn(["sh", "-c", `echo go > '${release}'`], { stdin: "ignore" }).exited;
-    expect((await first).code).toBe(0);
-    expect((await second).code).toBe(0);
-    expect(readFileSync(seen, "utf8").trim()).toBe("after");
+    try {
+      await readFifo(started);
+      const second = run(local, env, `if [ -f '${ended}' ]; then echo after > '${seen}'; else echo during > '${seen}'; fi`);
+      await Bun.spawn(["sh", "-c", `echo go > '${release}'`], { stdin: "ignore" }).exited;
+      expect((await first).code).toBe(0);
+      expect((await second).code).toBe(0);
+      expect(readFileSync(seen, "utf8").trim()).toBe("after");
+    } finally {
+      // A test that fails before the release must not leave the first check
+      // waiting on the fifo for ever. Opening it read-write never blocks, and a
+      // line nobody reads is dropped with the fifo.
+      await Bun.spawn(["sh", "-c", `exec 3<>'${release}'; echo go >&3`], { stdin: "ignore" }).exited;
+      await first;
+    }
   });
 });

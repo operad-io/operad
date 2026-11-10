@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { initialState, reduce, type TuiState } from "../src/state.ts";
@@ -112,6 +113,43 @@ describe("shipped themes: the files", () => {
       expect(palette, name).toEqual(themeFile(name).colors as unknown as TuiPalette);
       // A shipped theme is fixed: the terminal's mode does not change it.
       expect(resolvePalette(name, "light"), name).toBe(palette);
+      // A code block and a selected row must not share a background.
+      expect(palette.code, name).not.toBe(palette.tint);
+    }
+  });
+
+  test("Rosé Pine's selected row is visible on its base", () => {
+    for (const name of ["rose-pine-main", "rose-pine-dawn"]) {
+      const palette = resolvePalette(name, "dark");
+      expect(contrast(palette.tint, palette.background), name).toBeGreaterThan(1.1);
+    }
+  });
+
+  test("a missing shipped file fails when its theme or family is chosen, not when the module is imported", () => {
+    const file = shippedThemeFile("rose-pine-main");
+    const hidden = `${file}.missing`;
+    const module = JSON.stringify(join(PACKAGE, "src", "theme.ts"));
+    renameSync(file, hidden);
+    try {
+      const imported = spawnSync(process.execPath, ["-e", `await import(${module})`], {
+        cwd: PACKAGE,
+        encoding: "utf8",
+      });
+      expect(imported.status, imported.stderr).toBe(0);
+      for (const name of ["rose-pine-main", "rose-pine"]) {
+        const chosen = spawnSync(
+          process.execPath,
+          [
+            "-e",
+            `const { resolveSelection } = await import(${module}); try { resolveSelection(${JSON.stringify(home())}, ${JSON.stringify(name)}); } catch (error) { console.error(error.message); process.exit(3); }`,
+          ],
+          { cwd: PACKAGE, encoding: "utf8" },
+        );
+        expect(chosen.status, `${name}: ${chosen.stderr}`).toBe(3);
+        expect(chosen.stderr, name).toContain(file);
+      }
+    } finally {
+      renameSync(hidden, file);
     }
   });
 });
