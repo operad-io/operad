@@ -142,23 +142,29 @@ describe("shipped themes: the files", () => {
       }
       symlinkSync(join(PACKAGE, "node_modules"), join(root, "node_modules"), "dir");
       const module = JSON.stringify(join(root, "src", "theme.ts"));
-      const imported = spawnSync(process.execPath, ["-e", `await import(${module})`], {
+      // One child does the import and both choices: each extra Bun start costs
+      // more than the test itself.
+      const script = `
+        const { resolveSelection } = await import(${module});
+        for (const name of ["rose-pine-main", "rose-pine"]) {
+          try {
+            resolveSelection(${JSON.stringify(home())}, name);
+            console.error("chose " + name);
+            process.exit(4);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (!message.includes(${JSON.stringify(missing)})) {
+              console.error(name + ": " + message);
+              process.exit(5);
+            }
+          }
+        }
+      `;
+      const checked = spawnSync(process.execPath, ["-e", script], {
         cwd: root,
         encoding: "utf8",
       });
-      expect(imported.status, imported.stderr).toBe(0);
-      for (const name of ["rose-pine-main", "rose-pine"]) {
-        const chosen = spawnSync(
-          process.execPath,
-          [
-            "-e",
-            `const { resolveSelection } = await import(${module}); try { resolveSelection(${JSON.stringify(home())}, ${JSON.stringify(name)}); } catch (error) { console.error(error.message); process.exit(3); }`,
-          ],
-          { cwd: root, encoding: "utf8" },
-        );
-        expect(chosen.status, `${name}: ${chosen.stderr}`).toBe(3);
-        expect(chosen.stderr, name).toContain(missing);
-      }
+      expect(checked.status, checked.stderr).toBe(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
