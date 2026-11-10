@@ -962,7 +962,11 @@ describe("the pending view and the plugin's automatic answer", () => {
       const all = await listPending(s.log, s.registry, undefined, undefined, {
         withAuto: true,
       });
-      expect(all.map((item) => [item.object, item.auto])).toEqual([
+      // Runs started in the same millisecond have no fixed order: sort by object.
+      const byObject = all
+        .map((item) => [item.object, item.auto])
+        .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+      expect(byObject).toEqual([
         ["task:t-1", true],
         ["task:t-2", undefined],
       ]);
