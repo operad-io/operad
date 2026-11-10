@@ -1,4 +1,4 @@
-import { existsSync, watch, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import {
   chmod,
   mkdir,
@@ -7,7 +7,8 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { waitForChange } from "@operad-io/engine/platform";
 import type { Clock } from "@operad-io/harness-process";
 
 const roots: string[] = [];
@@ -132,24 +133,15 @@ async function unlock(path: string): Promise<void> {
   }
 }
 
-/** Resolves when the file exists, without asking repeatedly: watches the directory. */
-export function waitForFile(path: string): Promise<void> {
-  if (existsSync(path)) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const watcher = watch(dirname(path), () => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      resolve();
-    });
-    watcher.on("error", (error) => {
-      watcher.close();
-      reject(error);
-    });
-    if (existsSync(path)) {
-      watcher.close();
-      resolve();
-    }
-  });
+/**
+ * Resolves when the file exists. A directory watch wakes it at once; a watch
+ * can miss an event under load (macOS coalesces them), so a look every 100 ms
+ * backs it instead of hanging until the test's timeout.
+ */
+export async function waitForFile(path: string): Promise<void> {
+  while (!existsSync(path)) {
+    await waitForChange(dirname(path), basename(path), 100);
+  }
 }
 
 /** Resolves when `predicate` holds, without waiting out a fixed sleep. */

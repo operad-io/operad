@@ -70,13 +70,14 @@
   "gate": {
     "commands": [
       {
-        "run": "bash scripts/verify.sh",
+        "run": "if [ -f scripts/check-changed.sh ]; then bash scripts/check-changed.sh; else bash scripts/verify.sh; fi",
         "failed": {
           "match": "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$",
           "rerun": "bun test --timeout 30000 -t {pattern}"
         }
       }
-    ]
+    ],
+    "commandTimeoutSecs": 2700
   },
   "integration": {
     "batch": 3,
