@@ -1159,7 +1159,13 @@ bash scripts/remote-check.sh '<command>'
 ```
 
 `verify.sh` installs with the lockfile, type-checks and runs the whole test
-suite. `check-changed.sh` installs and type-checks the same way, then tests only
+suite with `scripts/run-tests.sh`. That script runs the test files in parallel
+worker processes (`bun test --parallel`), and the `tui` package afterwards, one
+file after another, because its terminal library does not load in a parallel
+worker. `OPERAD_TEST_PARALLEL` (a whole number of 1 or more, default `4`) is the
+number of worker processes; any other value stops the script with a message
+that names the variable. Given package names (`bash scripts/run-tests.sh dev
+shell`), it runs only those packages' tests. `check-changed.sh` installs and type-checks the same way, then tests only
 the packages a change touches: every package with a file changed since the merge
 base of `HEAD` and `origin/main` (committed, staged, unstaged or untracked), and
 every package whose code loads one of those, directly or through others. A

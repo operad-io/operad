@@ -13,8 +13,7 @@ selection=$(bun scripts/changed-packages.ts "$PWD")
 echo "check-changed: testing ${selection}"
 case "$selection" in
   none) exit 0 ;;
-  all) exec bun test --timeout 30000 ;;
+  all) exec bash scripts/run-tests.sh ;;
 esac
-paths=()
-for name in $selection; do paths+=("./packages/${name}/"); done
-exec bun test --timeout 30000 "${paths[@]}"
+# shellcheck disable=SC2086 # the names are separate words
+exec bash scripts/run-tests.sh $selection
