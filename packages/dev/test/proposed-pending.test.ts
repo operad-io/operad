@@ -145,6 +145,16 @@ describe("a proposed task is pending", () => {
     const row = (await s.views.get(`plan:${draft.id}`)).row;
     expect(row.mark).toBe("proposed");
     expect(row.note).not.toContain("waiting");
+    // Its tasks wait with it: one item for the plan, which confirm and cancel act on.
+    const items = await s.proposed();
+    expect(items).toHaveLength(0);
+    const planItems = (await s.items()).filter((item) => item.object === `plan:${draft.id}`);
+    expect(planItems).toHaveLength(1);
+    expect(planItems[0]?.actions).toContainEqual({ plugin: "dev", action: "confirm" });
+    expect(planItems[0]?.actions).toContainEqual({ plugin: "dev", action: "cancel" });
+    expect(planItems[0]?.covers).toHaveLength(1);
+    await confirmPlan(s.store, draft.id);
+    expect((await s.items()).filter((item) => item.object === `plan:${draft.id}`)).toEqual([]);
     expect(bareId(draft.id)).toBeTruthy();
   });
 });

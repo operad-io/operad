@@ -507,7 +507,9 @@ class ClaudeChannel implements ChannelHandle {
     if (this.pendingItems === undefined) return undefined;
     try {
       const key = `${object.type}:${object.id}`;
-      return (await this.pendingItems()).find((entry) => entry.object === key);
+      return (await this.pendingItems()).find(
+        (entry) => entry.object === key || entry.covers?.includes(key) === true,
+      );
     } catch (error) {
       this.onLog(`channel: the pending items could not be read: ${messageOf(error)}`);
       return undefined;

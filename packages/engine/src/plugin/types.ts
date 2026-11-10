@@ -856,6 +856,8 @@ export interface StandingItem {
   readonly object?: ObjectRef | undefined;
   /** False keeps a channel from announcing the item; it is still pending. */
   readonly announce?: boolean | undefined;
+  /** Other objects the item stands for, such as the proposed tasks of a draft plan. */
+  readonly covers?: readonly ObjectRef[] | undefined;
 }
 
 /** The context a plugin's `standing` hook receives. */

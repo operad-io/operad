@@ -1071,6 +1071,8 @@ export interface StandingEntry {
   readonly object?: ObjectRef;
   readonly actions: readonly PendingActionView[];
   readonly announce?: false;
+  /** Object keys (`type:id`) the item stands for besides its own. */
+  readonly covers?: readonly string[];
 }
 
 /**
@@ -2067,6 +2069,9 @@ export class PluginRegistry {
             actions: object === undefined ? [] : await this.actionsHolding(object),
             ...(item.object === undefined ? {} : { object: item.object }),
             ...(item.announce === false ? { announce: false as const } : {}),
+            ...(item.covers === undefined || item.covers.length === 0
+              ? {}
+              : { covers: item.covers.map((ref) => `${ref.type}:${ref.id}`) }),
           });
         }
       } catch (error) {
