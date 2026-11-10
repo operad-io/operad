@@ -32,8 +32,8 @@ arc 今天住在 radian 二进制里（ADR 0032、0043、0048），worker 只有
     - 三个对外视图：待处理、历史、正在跑的。
     跑命令和检查、调度（并发、依赖、优先级、auto 级别）、git、worker、review、合并，都不在内核里。
 13. **存储是可换的后台**：内核定一个日志接口和一份一致性测试，自带 `jsonl` 和 `sqlite` 两个后台，按仓库配置选。插件和用户碰不到存储格式；插件的对象（比如 `dev` 的 task 和 brief）存成事实，通过插件的命令读写。
-14. **用户名词尽量少。** 内核对用户只暴露三个词：flow、待处理、历史。其余名词都属于某个插件，不用那个插件的用户不必知道。新增用户可见的名词要 owner 同意。
-15. **开发是一个插件（`dev`）**，默认装上，可以不用：对象 plan、task、brief、rework、follow-up（review 没阻塞的问题汇总成的 task，2026-11-08 owner 同意）；动作 confirm、merge、reject、cancel、auto（出现在待处理里，命令行也能直接用）；`dev` 提供开发流程的骨架和步骤，具体流程由项目在 `.operad/dev.json` 里设置（2026-11-07 owner 定，见 `operad-dev-flows.md`）；没设置时是默认流程：worktree → worker → verify → review → 等人合并 → 合并到 main → 清理。需要完全不同的开发规范时，仍然可以另写或让 agent 生成一个开发插件。`dev` 只通过插件接口和内核打交道，它需要绕过接口时说明接口设计错了。
+14. **用户名词尽量少。** 内核对用户只暴露三个词：flow、待处理、历史。其余名词都属于某个插件，不用那个插件的用户不必知道。新增用户可见的名词要 owner 同意。已同意的：`chat` 插件的 chat（2026-11-09，不叫 conversation 或 session）；`assistant` 插件的助理和 profile（2026-11-09）。
+15. **开发是一个插件（`dev`）**，默认装上，可以不用：对象 plan、task、brief、rework、follow-up（review 没阻塞的问题汇总成的 task，2026-11-08 owner 同意）；动作 confirm、merge、reject、cancel、auto（出现在待处理里，命令行也能直接用），以及 repository 上的 chat（在这个仓库里开一个 chat，2026-11-09 owner 定，见 `operad-conversation.md` 决定 12、14）；`dev` 提供开发流程的骨架和步骤，具体流程由项目在 `.operad/dev.json` 里设置（2026-11-07 owner 定，见 `operad-dev-flows.md`）；没设置时是默认流程：worktree → worker → verify → review → 等人合并 → 合并到 main → 清理。需要完全不同的开发规范时，仍然可以另写或让 agent 生成一个开发插件。`dev` 只通过插件接口和内核打交道，它需要绕过接口时说明接口设计错了。
 16. **内核不绑定仓库。** operad 只有一个家目录（默认 `~/.operad`）：配置、存储、调度循环都在那里，命令在任何目录都能用，内核不读 git。绑定仓库的是 `dev` 插件：它登记若干仓库（`operad repo add`），每个仓库自己的设置放在仓库里；个人助理一类插件不需要仓库。
 17. **配置文件尽量用 JSON**（家目录的 `config.json`、仓库里的 `.operad/dev.json`），各带一份 JSON Schema，编辑器能补全和检查；flow 和插件才是 TypeScript。
 
