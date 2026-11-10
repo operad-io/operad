@@ -421,3 +421,10 @@ the row fields.
 |---|---|---|---|
 | T-0206-M1 | packages/engine/src/plugin/file-store.ts | read the facts from byte 0 instead of from `this.offset`, so every refresh read the whole file | `the file plugin store > a second reader sees facts another writer appended`; `the file plugin store > refresh reads only past its offset, and a torn multi-byte line waits for its newline` |
 | T-0206-M2 | packages/engine/src/plugin/file-store.ts | treated the bytes after the last newline as complete, so a torn line was consumed before its newline landed | `the file plugin store > refresh reads only past its offset, and a torn multi-byte line waits for its newline` |
+
+## T-0160 — settings follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0160-M1 | packages/engine/src/views/settings.ts | ran the read-modify-write without the lock file, so concurrent sets lost updates | `settings > sets at the same moment all land, and the file keeps its mode` |
+| T-0160-M2 | packages/engine/src/views/settings.ts | dropped the chmod of the temporary file, so the config lost its mode on rename | `settings > sets at the same moment all land, and the file keeps its mode` |

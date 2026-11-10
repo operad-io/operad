@@ -12,9 +12,9 @@ import {
   type TuiState,
   type TuiView,
 } from "../src/index.ts";
-import { paletteEntries, settingScopes } from "../src/actions.ts";
+import { paletteEntries, settingScopes, settingValue } from "../src/actions.ts";
 import { initialState, reduce } from "../src/state.ts";
-import { drawState } from "../src/view/index.ts";
+import { drawState, overlayBox } from "../src/view/index.ts";
 import { immediateClock } from "./support.ts";
 
 class Quiet implements TuiEventSource {
@@ -288,6 +288,27 @@ describe("settings in the palette", () => {
     expect(text).toContain("How many at once.");
     expect(text).toContain("value: 3");
     expect(text).toContain("default: 2");
+    s.shell.stop();
+  });
+});
+
+describe("typed setting text", () => {
+  test("a string setting keeps text that reads as JSON; other types parse it", () => {
+    expect(settingValue("42", "string")).toBe("42");
+    expect(settingValue("true", "string")).toBe("true");
+    expect(settingValue("42", "integer")).toBe(42);
+    expect(settingValue("42")).toBe(42);
+    expect(settingValue("hello", "integer")).toBe("hello");
+  });
+
+  test("a text prompt's box has a line for the typed text and one for the hint", async () => {
+    const s = setup();
+    await palette(s, "demo.limit");
+    s.shell.key({ name: "enter" });
+    const state = s.shell.state;
+    const drawn = drawState(state, "dark").overlay?.chunks.map((c) => c.text).join("") ?? "";
+    expect(drawn).toContain("enter sets");
+    expect(overlayBox(state)?.height ?? 0).toBeGreaterThanOrEqual(drawn.split("\n").length + 4);
     s.shell.stop();
   });
 });

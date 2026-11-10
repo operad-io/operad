@@ -1640,7 +1640,6 @@ export function pageEntries(state: TuiState): readonly TuiPageEntry[] {
     .map(({ label, index }) => ({ label, index }));
 }
 
-/** A key arrives while the page picker is open. */
 /** The theme list: moving shows the theme under the cursor, Enter keeps it, Esc puts the old one back. */
 function themesKey(
   state: TuiState,
@@ -1672,6 +1671,7 @@ function themesKey(
   return state;
 }
 
+/** A key arrives while the page picker is open. */
 function pagesKey(
   state: TuiState,
   input: Extract<TuiInput, { readonly kind: "pages" }>,
@@ -2580,7 +2580,15 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       };
     }
     case "theme-names":
-      return { ...state, themeNames: event.names, themeCurrent: event.current };
+      return {
+        ...state,
+        themeNames: event.names,
+        themeCurrent: event.current,
+        // A theme file removed while the list is open must not leave the cursor past the end.
+        ...(state.input?.kind === "themes"
+          ? { input: { ...state.input, cursor: Math.min(state.input.cursor, Math.max(0, event.names.length - 1)) } }
+          : {}),
+      };
     case "theme-launched":
       return { ...state, themeRequest: undefined };
     case "layout-launched":
