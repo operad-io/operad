@@ -265,3 +265,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0206-M5 | packages/tui/src/autostart.ts | decoded each backward chunk on its own, so a multi-byte character split across two reads became U+FFFD | `ensureServer > a long log's tail keeps the last ten lines and decodes a multi-byte line across reads` |
+| T-0103-M10 | packages/tui/src/state.ts | the tree kept an active child under its cancelled parent instead of moving every cancelled row last | `the progress bar and its heading > an active child of a cancelled parent is still before every cancelled row` |

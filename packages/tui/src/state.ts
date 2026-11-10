@@ -912,7 +912,13 @@ export function displayChildren(
   layout: TuiChildLayout,
 ): readonly TuiChildEntry[] {
   if (rows.length === 0) return [];
-  return layout === "list" ? flatChildEntries(rows) : treeChildEntries(rows);
+  const shown = layout === "list" ? flatChildEntries(rows) : treeChildEntries(rows);
+  // The tree can place an active child under a cancelled parent; the page still
+  // puts every cancelled row last.
+  return [
+    ...shown.filter((entry) => !cancelledRow(entry.row)),
+    ...shown.filter((entry) => cancelledRow(entry.row)),
+  ];
 }
 
 /** The next level's bar cells and counts: cancelled children last and not counted. */

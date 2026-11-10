@@ -326,6 +326,24 @@ describe("the progress bar and its heading", () => {
       "T-3-gone",
     ]);
   });
+
+  test("an active child of a cancelled parent is still before every cancelled row", () => {
+    const rows = [
+      row("T-1-gone", "cancelled", { mark: "cancelled" }),
+      row("T-2-open", "new", { mark: "todo", after: ["T-1-gone"] }),
+      row("T-3-root", "new", { mark: "todo" }),
+    ];
+    expect(displayChildren(rows, "tree").map((entry) => entry.row.id)).toEqual([
+      "T-3-root",
+      "T-2-open",
+      "T-1-gone",
+    ]);
+    expect(displayChildren(rows, "list").map((entry) => entry.row.id)).toEqual([
+      "T-2-open",
+      "T-3-root",
+      "T-1-gone",
+    ]);
+  });
 });
 
 describe("the tree and list layouts", () => {
