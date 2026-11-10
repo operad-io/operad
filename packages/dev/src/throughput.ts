@@ -249,9 +249,15 @@ function countTable(
   size: number,
   name: (start: number) => string,
   tasks: readonly MergedTask[],
+  /** True for a bucket that includes its end and not its start. */
+  endClosed: boolean = false,
 ): string {
   const rows = starts.map((start) => {
-    const inside = tasks.filter((task) => task.mergedAt >= start && task.mergedAt < start + size);
+    const inside = tasks.filter((task) =>
+      endClosed
+        ? task.mergedAt > start && task.mergedAt <= start + size
+        : task.mergedAt >= start && task.mergedAt < start + size,
+    );
     return [name(start), String(inside.length), perMerge(inside)];
   });
   return table([label, "merged", "cost per merge"], rows);
@@ -283,10 +289,10 @@ export async function repositoryMetrics(
   }
   if (merged.length === 0) return "_No merged tasks in the last 7 days._";
 
-  // Rolling hours ending now, so the rows add up to the last 24 hours.
+  // Rolling hours, each (start, start + 1h]: the rows add up to the (now - 24h, now] summary.
   const hours = Array.from({ length: 24 }, (_, i) => now - (24 - i) * HOUR);
   const days = Array.from({ length: 7 }, (_, i) => dayStart - (6 - i) * DAY);
-  const lastDay = merged.filter((task) => task.mergedAt >= now - 24 * HOUR);
+  const lastDay = merged.filter((task) => task.mergedAt > now - 24 * HOUR && task.mergedAt <= now);
 
   const timed: Record<StepRow, number>[] = [];
   for (let index = 0; index < merged.length; index += BATCH) {
@@ -311,7 +317,7 @@ export async function repositoryMetrics(
 
   const sections = [
     `**Last 24 hours** ${lastDay.length} merged · ${perMerge(lastDay)} per merge`,
-    countTable("hour (UTC)", hours, HOUR, hourLabel, merged),
+    countTable("hour (UTC)", hours, HOUR, hourLabel, merged, true),
     `**Last 7 days** ${merged.length} merged · ${perMerge(merged)} per merge`,
     countTable("day (UTC)", days, DAY, dayLabel, merged),
     `**Time per step** ${merged.length} tasks merged in the last 7 days`,

@@ -536,3 +536,4 @@ the row fields.
 | T-0176-M5 | packages/dev/src/throughput.ts | the last-24-hours count began 23 hours back instead of 24 | `repository metrics > counts per hour and per day, cost per merge, and step times` |
 | T-0176-M6 | packages/dev/src/throughput.ts | the cost per merge used the task's last cost and not the sum of its attempts | `repository metrics > a reworked task costs every attempt, and a stop keeps the reason dev recorded` |
 | T-0176-M7 | packages/dev/src/throughput.ts | a spent retry was reported as `retry` instead of its recorded cause | `repository metrics > a reworked task costs every attempt, and a stop keeps the reason dev recorded` |
+| T-0176-M8 | packages/dev/src/throughput.ts | the hourly buckets went back to including their start and not their end, so a merge at `now` was in the summary and in no row | `repository metrics > the last-24-hours count is the sum of the hourly rows at both ends of the window` |

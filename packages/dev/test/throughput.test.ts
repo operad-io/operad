@@ -207,10 +207,27 @@ describe("repository metrics", () => {
     if (object === undefined) throw new Error("no repository");
     const rows = (await repositoryMetrics(w.ctx, object, NOW)).split("\n");
     // The first task paid $1 and then $2; the others recorded no attempt cost and no task cost.
-    expect(rows).toContain("| 11-09 13:30 | 1 | $3.00 |");
+    expect(rows).toContain("| 11-09 12:30 | 1 | $3.00 |");
     expect(rows).toContain("| settings could not be read | 1 |");
     expect(rows).toContain("| run stopped | 1 |");
     expect(rows.join("\n")).not.toContain("| retry |");
+  });
+
+  test("the last-24-hours count is the sum of the hourly rows at both ends of the window", async () => {
+    const w = await world();
+    await w.merged({ mergedAt: NOW, cost: 1 });
+    await w.merged({ mergedAt: NOW - 24 * HOUR, cost: 1 });
+    await w.merged({ mergedAt: NOW - 24 * HOUR + 1, cost: 1 });
+    const object = await findRepository(w.store, w.repository.name);
+    if (object === undefined) throw new Error("no repository");
+    const rows = (await repositoryMetrics(w.ctx, object, NOW)).split("\n");
+    // (now - 24h, now]: the merge at now counts, the one at exactly now - 24h does not.
+    expect(rows).toContain("**Last 24 hours** 2 merged · $1.00 per merge");
+    const hourly = rows
+      .filter((row) => /^\| 11-\d\d \d\d:30 \|/.test(row))
+      .map((row) => Number(row.split("|")[2]));
+    expect(hourly.reduce((sum, count) => sum + count, 0)).toBe(2);
+    expect(rows).toContain("| 11-09 13:30 | 1 | $1.00 |");
   });
 
   test("a home with 300 merged tasks opens well under the section limit", async () => {
