@@ -1,6 +1,6 @@
 {
   "$schema": "../theme.schema.json",
-  "comment": "Solarized Light. Source: https://github.com/altercation/solarized (README.md, the scss snippet with the rebase mixin). Licence: MIT, Copyright (c) 2011 Ethan Schoonover; the text is in LICENSE-solarized. Roles: text = base00, weak = base1, rule = base2, accent = violet, run = blue, ok = green, error = red, add = green, remove = red, tint = base2, code = base3, background = base3. Solarized names one highlight background beyond the base, so rule and tint take it and code takes the base itself; a code block and a selected row do not look the same. Adjusted for contrast, nothing else changed: text #657b83 (base00) -> #5f747c: lightness 45% -> 43% for 4.5:1 on #fdf6e3 (was 4.13:1); weak #93a1a1 (base1) -> #829292: lightness 60% -> 54% for 3:1 on #fdf6e3 (was 2.48:1); ok #859900 (green) -> #819400: lightness 30% -> 29% for 3:1 on #fdf6e3 (was 2.97:1); add #859900 (green) -> #819400: lightness 30% -> 29% for 3:1 on #fdf6e3 (was 2.97:1).",
+  "comment": "Solarized Light. Source: https://github.com/altercation/solarized (README.md, the scss snippet with the rebase mixin). Licence: MIT, Copyright (c) 2011 Ethan Schoonover; the text is in LICENSE-solarized. Roles: text = base00, weak = base1, rule = base2, accent = violet, run = blue, ok = green, error = red, add = green, remove = red, tint = base2, code = base3, background = base3. Solarized names one highlight background beyond the base, so rule and tint take it and code takes the base itself; a code block and a selected row do not look the same. Adjusted for contrast, nothing else changed: text #657b83 (base00) -> #5f747c: lightness 45% -> 43% for 4.5:1 on #fdf6e3 (was 4.13:1); weak #93a1a1 (base1) -> #829292: lightness 60% -> 54% for 3:1 on #fdf6e3 (was 2.48:1); ok #859900 (green) -> #819400: lightness 30% -> 29% for 3:1 on #fdf6e3 (was 2.97:1); add #859900 (green) -> #819400: lightness 30% -> 29% for 3:1 on #fdf6e3 (was 2.97:1). cancelled = error with lightness 60% for a cancelled child's bar segment.",
   "colors": {
     "text": "#5f747c",
     "weak": "#829292",
@@ -9,6 +9,7 @@
     "run": "#268bd2",
     "ok": "#819400",
     "error": "#dc322f",
+    "cancelled": "#891917",
     "add": "#819400",
     "remove": "#dc322f",
     "tint": "#eee8d5",

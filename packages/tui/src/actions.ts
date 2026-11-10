@@ -25,7 +25,7 @@ export const RESERVED_KEYS: readonly string[] = [
   "pageup", "page-up", "prior", "pagedown", "page-down", "next",
   "home", "end", "space", " ",
   "[", "]", ":", "?", "/",
-  "b", "f", "g", "j", "k", "n", "p", "q", "r",
+  "b", "f", "g", "j", "k", "n", "p", "q", "r", "t",
   "1", "2", "3", "4", "5", "6", "7", "8", "9",
 ];
 

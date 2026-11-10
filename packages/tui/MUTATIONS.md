@@ -250,6 +250,15 @@ the row fields.
 | T-0149-M6 | packages/tui/themes/solarized-dark.json | code went back to base02, the tint and rule colour | `shipped themes: the files > every shipped theme resolves to a full palette equal to its file` (code is not tint) |
 | T-0149-M7 | packages/tui/themes/solarized-light.json | code went back to base2, the tint and rule colour | `shipped themes: the files > every shipped theme resolves to a full palette equal to its file` (code is not tint) |
 | T-0149-M8 | packages/tui/themes/one-light.json | code went back to the selection colour, leaving no second background | `shipped themes: the files > every shipped theme resolves to a full palette equal to its file` (code is not tint) |
+| T-0103-M1 | packages/tui/src/state.ts | a cycle no longer fell back to the list order | `the object page's child list > a cycle falls back to the list order` |
+| T-0103-M2 | packages/tui/src/state.ts | every parent in `after` was printed as `also after`, not only the ones after the first | `the object page's child list > a child with two parents hangs under the first and names the other as also after` |
+| T-0103-M3 | packages/tui/src/state.ts | cancelled children kept their list place instead of moving last | `the progress bar and its heading > the child list puts cancelled rows last` |
+| T-0103-M4 | packages/tui/src/state.ts | cancelled children counted in the done total and were left out of the bar cells | `the progress bar and its heading > cancelled children are counted in neither done nor total, but still draw a cell at the end` |
+| T-0103-M5 | packages/tui/src/view/index.ts | a cancelled bar segment took the weak grey instead of the cancelled dark red | `the progress bar and its heading > the bar takes its colours from each mark; cancelled is dark red and comes last` |
+| T-0103-M6 | packages/tui/src/actions.ts | `t` was no longer reserved, so a binding could take it | `the tree and list layouts > t toggles the child list, is reserved, and the footer names the layout it switches to` |
+| T-0103-M7 | packages/tui/src/view/index.ts | a long title was cut with `…` instead of wrapped | `the object page's frame and columns > the title wraps inside the frame` |
+| T-0103-M8 | packages/tui/src/view/index.ts | the child heading carried the state word `done` beside the numbers | `the progress bar and its heading > cancelled children are counted in neither done nor total, but still draw a cell at the end` |
+| T-0103-M9 | packages/tui/src/theme.ts | reading `tui.json` ignored the saved child layout | `the tree and list layouts > the chosen layout is read from tui.json and saved next to the theme` |
 
 ## T-0206 — the serve log tail reads only the end
 
@@ -262,3 +271,5 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | FATAL-FLAKY-M1 | packages/tui/test/fatal.test.ts | the test renderer's native session went back to a wall-clock close deadline (`closeTimeoutMs: 0`, what a one-second stall of the loop amounts to) instead of the virtual scheduler | `a fault that ends the app > a view that throws while a request is answered: the terminal is restored before the message is written` (also the uncaught exception and rejection cases) |
+| T-0103-M10 | packages/tui/src/state.ts | the tree kept an active child under its cancelled parent instead of moving every cancelled row last | `the progress bar and its heading > an active child of a cancelled parent is still before every cancelled row` |
+| T-0103-M11 | packages/tui/src/state.ts | an active row took its first `after` parent even when that parent was cancelled, so it hung from a cancelled row instead of drawing top-level | `the progress bar and its heading > an active child of a cancelled parent is drawn top-level before every cancelled row` |

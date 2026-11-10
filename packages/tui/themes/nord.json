@@ -1,6 +1,6 @@
 {
   "$schema": "../theme.schema.json",
-  "comment": "Nord. Source: https://github.com/nordtheme/nord (src/nord.scss). Licence: MIT, Copyright (c) 2016-present Sven Greb; the text is in LICENSE-nord. Roles: text = nord4, weak = nord3, rule = nord3, accent = nord15, run = nord9, ok = nord14, error = nord11, add = nord14, remove = nord11, tint = nord2, code = nord1, background = nord0. Adjusted for contrast, nothing else changed: weak #4c566a (nord3) -> #707e99: lightness 36% -> 52% for 3:1 on #2e3440 (was 1.69:1).",
+  "comment": "Nord. Source: https://github.com/nordtheme/nord (src/nord.scss). Licence: MIT, Copyright (c) 2016-present Sven Greb; the text is in LICENSE-nord. Roles: text = nord4, weak = nord3, rule = nord3, accent = nord15, run = nord9, ok = nord14, error = nord11, add = nord14, remove = nord11, tint = nord2, code = nord1, background = nord0. Adjusted for contrast, nothing else changed: weak #4c566a (nord3) -> #707e99: lightness 36% -> 52% for 3:1 on #2e3440 (was 1.69:1). cancelled = error with lightness 60% for a cancelled child's bar segment.",
   "colors": {
     "text": "#d8dee9",
     "weak": "#707e99",
@@ -9,6 +9,7 @@
     "run": "#81a1c1",
     "ok": "#a3be8c",
     "error": "#bf616a",
+    "cancelled": "#7b3239",
     "add": "#a3be8c",
     "remove": "#bf616a",
     "tint": "#434c5e",

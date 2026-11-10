@@ -29,6 +29,8 @@ export interface TuiPalette {
   /** Success. */
   readonly ok: string;
   readonly error: string;
+  /** A cancelled object: a dark red, apart from error and weak. */
+  readonly cancelled: string;
   /** An added diff line. */
   readonly add: string;
   /** A removed diff line. */
@@ -52,6 +54,7 @@ export const TUI_TOKENS: readonly TuiToken[] = [
   "run",
   "ok",
   "error",
+  "cancelled",
   "add",
   "remove",
   "tint",
@@ -67,6 +70,7 @@ const LIGHT: TuiPalette = {
   run: "#1f6fd1",
   ok: "#1d7a4b",
   error: "#c3242c",
+  cancelled: "#8a1c22",
   add: "#1a7f37",
   remove: "#cf222e",
   tint: "#f1eefc",
@@ -82,6 +86,7 @@ const DARK: TuiPalette = {
   run: "#6aa9ff",
   ok: "#5fcf9a",
   error: "#ff7d82",
+  cancelled: "#b23b45",
   add: "#7ee787",
   remove: "#ff7b72",
   tint: "#1c1830",
@@ -98,6 +103,7 @@ const TERMINAL: TuiPalette = {
   run: "ansi:4",
   ok: "ansi:2",
   error: "ansi:1",
+  cancelled: "ansi:9",
   add: "ansi:2",
   remove: "ansi:1",
   tint: "default-bg",
@@ -375,6 +381,35 @@ export interface ThemeHolder {
   preview?: ThemeSelection | undefined;
 }
 
+/** How the object page draws its next level, from `tui.json`. */
+export type TuiChildLayout = "tree" | "list";
+
+const CHILD_LAYOUTS: readonly TuiChildLayout[] = ["tree", "list"];
+
+interface TuiConfig {
+  readonly theme?: string | undefined;
+  readonly layout?: TuiChildLayout | undefined;
+}
+
+/** The child layout in force for a session: `tui.json`'s, or the tree. */
+export function chooseChildLayout(options: { readonly home: string }): TuiChildLayout {
+  return readTuiConfig(tuiConfigPath(options.home)).layout ?? "tree";
+}
+
+/** Writes one choice to `tui.json`, keeping every other key in the file. */
+function saveTuiChoice(home: string, key: "theme" | "layout", value: string): void {
+  const file = tuiConfigPath(home);
+  // Reading checks the file first, so a broken one is never overwritten.
+  readTuiConfig(file);
+  const existing: Record<string, unknown> = existsSync(file)
+    ? (JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>)
+    : {};
+  mkdirSync(home, { recursive: true });
+  const temporary = `${file}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify({ ...existing, [key]: value }, null, 2)}\n`);
+  renameSync(temporary, file);
+}
+
 /**
  * Writes the theme choice to `tui.json`, keeping every other key in the file.
  * It throws, and writes nothing, when the name is not a theme or the file
@@ -382,16 +417,15 @@ export interface ThemeHolder {
  */
 export function saveThemeChoice(home: string, name: string): void {
   resolveSelection(home, name);
-  const file = tuiConfigPath(home);
-  // Reading checks the file first, so a broken one is never overwritten.
-  readThemeFile(file);
-  const existing: Record<string, unknown> = existsSync(file)
-    ? (JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>)
-    : {};
-  mkdirSync(home, { recursive: true });
-  const temporary = `${file}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify({ ...existing, theme: name }, null, 2)}\n`);
-  renameSync(temporary, file);
+  saveTuiChoice(home, "theme", name);
+}
+
+/** Writes the child layout to `tui.json`, keeping every other key in the file. */
+export function saveChildLayout(home: string, layout: TuiChildLayout): void {
+  if (!CHILD_LAYOUTS.includes(layout)) {
+    throw new Error(`unknown child layout "${layout}"; use tree or list`);
+  }
+  saveTuiChoice(home, "layout", layout);
 }
 
 /**
@@ -461,8 +495,8 @@ function repeatEvery(ms: number, callback: () => void): () => void {
   return () => clearInterval(timer);
 }
 
-function readThemeFile(file: string): string | undefined {
-  if (!existsSync(file)) return undefined;
+function readTuiConfig(file: string): TuiConfig {
+  if (!existsSync(file)) return {};
   let value: unknown;
   try {
     value = JSON.parse(readFileSync(file, "utf8"));
@@ -474,12 +508,24 @@ function readThemeFile(file: string): string | undefined {
     throw new Error(`${file} must be a JSON object like {"theme": "dark"}`);
   }
   for (const key of Object.keys(value)) {
-    if (key !== "theme" && key !== "$schema") {
-      throw new Error(`${file} has an unknown key "${key}"; only "theme" is allowed`);
+    if (key !== "theme" && key !== "layout" && key !== "$schema") {
+      throw new Error(`${file} has an unknown key "${key}"; only "theme" and "layout" are allowed`);
     }
   }
   const theme = (value as { readonly theme?: unknown }).theme;
-  if (theme === undefined) return undefined;
-  if (typeof theme !== "string") throw new Error(`${file}: "theme" must be a string`);
-  return theme;
+  if (theme !== undefined && typeof theme !== "string") {
+    throw new Error(`${file}: "theme" must be a string`);
+  }
+  const layout = (value as { readonly layout?: unknown }).layout;
+  if (layout !== undefined && !CHILD_LAYOUTS.includes(layout as TuiChildLayout)) {
+    throw new Error(`${file}: "layout" must be "tree" or "list"`);
+  }
+  return {
+    ...(theme === undefined ? {} : { theme }),
+    ...(layout === undefined ? {} : { layout: layout as TuiChildLayout }),
+  };
+}
+
+function readThemeFile(file: string): string | undefined {
+  return readTuiConfig(file).theme;
 }
