@@ -675,7 +675,7 @@ function inputLines(state: TuiState): number {
   }
   if (input?.kind === "setting") {
     const { setting, field } = input;
-    const body = field?.kind === "pick" ? field.options.length + 1 : 1;
+    const body = field?.kind === "pick" ? field.options.length + 1 : 2;
     return 3 + (setting.description === undefined ? 0 : 1) + body;
   }
   if (input?.kind === "note") return input.text.split("\n").length + 2;

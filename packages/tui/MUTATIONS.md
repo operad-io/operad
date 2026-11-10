@@ -256,3 +256,5 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0206-M5 | packages/tui/src/autostart.ts | decoded each backward chunk on its own, so a multi-byte character split across two reads became U+FFFD | `ensureServer > a long log's tail keeps the last ten lines and decodes a multi-byte line across reads` |
+| T-0160-M3 | packages/tui/src/actions.ts | parsed typed text as JSON even for a string setting | `typed setting text > a string setting keeps text that reads as JSON; other types parse it` |
+| T-0160-M4 | packages/tui/src/state.ts | left the theme list cursor where it was when the list got shorter | `the theme command: list and keys > a theme file removed while the list is open keeps the cursor on a theme` |

@@ -4,10 +4,12 @@
  * keep under a registered repository's `.operad/` (project).
  */
 
-import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { chmod, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { ActionArgsError, validateSchemaValue } from "../plugin/action-schema.ts";
 import { configPath } from "../config/config.ts";
+import { withLockFile } from "../platform/index.ts";
 import type { JsonValue } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type {
@@ -89,7 +91,11 @@ export async function writeFileAtomic(
   await mkdir(dirname(path), { recursive: true });
   const temp = join(
     dirname(path),
-    `.${basename(path)}.${process.pid}.${Date.now().toString(36)}.tmp`,
+    `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
+  );
+  const mode = await stat(path).then(
+    (info) => info.mode & 0o777,
+    () => undefined,
   );
   try {
     const handle = await open(temp, "w");
@@ -99,6 +105,7 @@ export async function writeFileAtomic(
     } finally {
       await handle.close();
     }
+    if (mode !== undefined) await chmod(temp, mode);
     await hooks.beforeRename?.();
     await rename(temp, path);
   } catch (error) {
@@ -360,28 +367,45 @@ export async function setSetting(
     );
   }
 
-  const file = await readJsonFile(place.file, place.fresh);
-  if (place.scope === GLOBAL_SCOPE) {
-    const plugins = file.value.plugins;
-    const plugin = place.inside[1] ?? "";
-    if (!isRecord(plugins)) {
-      throw new SettingsError(
-        "args",
-        `${place.file}: plugins must be an object keyed by plugin name to change a setting`,
-      );
+  return withLockFile(`${place.file}.lock`, async () => {
+    const file = await readJsonFile(place.file, place.fresh);
+    if (place.scope === GLOBAL_SCOPE) {
+      const plugins = file.value.plugins;
+      const plugin = place.inside[1] ?? "";
+      if (!isRecord(plugins)) {
+        throw new SettingsError(
+          "args",
+          `${place.file}: plugins must be an object keyed by plugin name to change a setting`,
+        );
+      }
+      const entry = plugins[plugin];
+      if (typeof entry === "string") {
+        plugins[plugin] = { module: entry, enabled: true };
+      } else if (!isRecord(entry)) {
+        throw new SettingsError(
+          "not-found",
+          `${place.file}: plugin "${plugin}" is not listed`,
+        );
+      }
     }
-    const entry = plugins[plugin];
-    if (typeof entry === "string") {
-      plugins[plugin] = { module: entry, enabled: true };
-    } else if (!isRecord(entry)) {
-      throw new SettingsError(
-        "not-found",
-        `${place.file}: plugin "${plugin}" is not listed`,
+    setAt(file.value, [...place.inside, ...leaf.path], value);
+    try {
+      validateSchemaValue(
+        place.schema,
+        valueAt(file.value, place.inside),
+        name,
+        "settings",
       );
+    } catch (error) {
+      if (error instanceof ActionArgsError) {
+        throw new SettingsError("args", error.message.replace(": args.", ": "), {
+          cause: error,
+        });
+      }
+      throw error;
     }
-  }
-  setAt(file.value, [...place.inside, ...leaf.path], value);
-  await writeFileAtomic(place.file, render(file), set.hooks);
+    await writeFileAtomic(place.file, render(file), set.hooks);
 
-  return infoOf(place, leaf, valueAt(file.value, place.inside));
+    return infoOf(place, leaf, valueAt(file.value, place.inside));
+  });
 }

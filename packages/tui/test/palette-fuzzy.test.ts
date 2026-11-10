@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ViewAction, ViewObject } from "@operad-io/engine";
-import { matchPositions, paletteEntries } from "../src/actions.ts";
+import { fuzzyScore, matchPositions, paletteEntries } from "../src/actions.ts";
 import { loadRecent, saveRecent, stateFile } from "../src/recent.ts";
 import { initialState, reduce, type TuiState, type TuiStateEvent } from "../src/state.ts";
 import { drawState } from "../src/view/index.ts";
@@ -86,8 +86,15 @@ describe("palette search: query to first entry", () => {
   test("equal scores keep the order the entries were listed in", () => {
     const names = search("dev:mer").map((entry) => entry.name);
     expect(names.slice(0, 2)).toEqual(["dev:merge", "dev:mergeback"]);
-    const same = search("e").filter((entry) => entry.group === "actions");
-    expect(same.map((entry) => entry.name)).toEqual(search("e").filter((e) => e.group === "actions").map((e) => e.name));
+    const listed = paletteEntries(press(opened(), ":")).map((entry) => entry.name);
+    const found = search("e").filter((entry) => entry.group === "actions");
+    for (let i = 1; i < found.length; i++) {
+      const before = found[i - 1];
+      const after = found[i];
+      if (before === undefined || after === undefined) continue;
+      if (fuzzyScore("e", before.name) !== fuzzyScore("e", after.name)) continue;
+      expect(listed.indexOf(before.name)).toBeLessThan(listed.indexOf(after.name));
+    }
   });
 });
 

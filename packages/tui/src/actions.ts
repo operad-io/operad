@@ -208,6 +208,9 @@ function wordsOf(query: string): string[][] {
     .map(unitsOf);
 }
 
+/** Above any word score, so a match never goes negative (-1 means no match). */
+const FUZZY_BASE = 100000;
+
 /**
  * Does `query` match `name`? A space in the query separates words that may
  * match in any order; each word is a subsequence, best where it starts a word.
@@ -223,7 +226,7 @@ export function fuzzyScore(query: string, name: string): number {
     if (found === undefined) return -1;
     total += found.score;
   }
-  return Math.max(0, 100000 - total * 10) + text.length;
+  return Math.max(0, FUZZY_BASE - total * 10) + text.length;
 }
 
 /** What a palette entry is called in the list of recent entries. */
@@ -335,8 +338,9 @@ export function settingField(setting: TuiSetting): ArgField {
   };
 }
 
-/** What the server is sent for typed text: JSON when it reads as JSON, else the text; the server checks it. */
-export function settingValue(text: string): unknown {
+/** What the server is sent for typed text: the text for a string setting, else JSON when it reads as JSON, else the text; the server checks it. */
+export function settingValue(text: string, type?: string | undefined): unknown {
+  if (type === "string") return text;
   try {
     return JSON.parse(text);
   } catch {
@@ -537,7 +541,7 @@ function settingKey(
     const option = field.options[input.cursor];
     return enter && option !== undefined ? settingAnswered(state, input.setting, option.value) : state;
   }
-  if (enter) return settingAnswered(state, input.setting, settingValue(input.text));
+  if (enter) return settingAnswered(state, input.setting, settingValue(input.text, input.setting.type));
   if (key === "backspace") return { ...state, input: { ...input, text: dropLast(input.text) } };
   const text = event.ctrl === true || event.meta === true ? undefined : typed(event);
   return text === undefined ? state : { ...state, input: { ...input, text: input.text + text } };
