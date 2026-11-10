@@ -29,6 +29,7 @@ import {
 } from "./model.ts";
 import { planMark, repositoryMark, taskBadge, taskMark } from "./marks.ts";
 import { git, workBranch } from "./steps.ts";
+import { repositoryMetrics } from "./throughput.ts";
 import { findRepository, listRepositories } from "./service.ts";
 import { DEV_SETTINGS_FILE, readDevSettings, settingsProblem } from "./settings.ts";
 
@@ -124,10 +125,14 @@ export const repoViews: ObjectViews = {
   },
 
   sections(): readonly ViewSection[] {
-    return [{ id: "overview", title: "Overview" }];
+    return [
+      { id: "overview", title: "Overview" },
+      { id: "metrics", title: "Metrics" },
+    ];
   },
 
-  async load(_ctx, object, sectionId) {
+  async load(ctx, object, sectionId) {
+    if (sectionId === "metrics") return { markdown: await repositoryMetrics(ctx, object) };
     if (sectionId !== "overview") return { markdown: "" };
     const repository = repositoryData(object.data);
     const lines = [`- Path: \`${repository.path}\``];

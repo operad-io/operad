@@ -524,3 +524,12 @@ the row fields.
 |---|---|---|---|
 | T-0173-M1 | packages/dev/src/service.ts | the one-time pass left a repository without `activeTasks` uncounted (the `undefined` check replaced by `false`) | `the repo type > a repository stored without a running-task count shows running for a task already running` |
 | T-0175-M2 | packages/dev/src/commands.ts | a task edit with an empty command input opened the editor instead of refusing | `operad mcp > task edit takes the new brief as command input and refuses an empty one` (packages/mcp/test/server.test.ts; the run hangs on the editor and times out) |
+
+## T-0176 — repository throughput
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0176-M1 | packages/dev/src/throughput.ts | the percentile took the floor of the rank instead of the ceiling | `repository metrics > percentiles use the nearest rank` |
+| T-0176-M2 | packages/dev/src/throughput.ts | the time waiting for a turn was not taken out of the integrate time | `repository metrics > counts per hour and per day, cost per merge, and step times` |
+| T-0176-M3 | packages/dev/src/throughput.ts | a task merged before the window but written again inside it was counted | `repository metrics > counts per hour and per day, cost per merge, and step times` |
+| T-0176-M4 | packages/dev/src/throughput.ts | every write of a waiting task counted as a new stop (the check for an already waiting task removed) | `repository metrics > counts per hour and per day, cost per merge, and step times` |
