@@ -259,3 +259,9 @@ the row fields.
 | T-0103-M7 | packages/tui/src/view/index.ts | a long title was cut with `…` instead of wrapped | `the object page's frame and columns > the title wraps inside the frame` |
 | T-0103-M8 | packages/tui/src/view/index.ts | the child heading carried the state word `done` beside the numbers | `the progress bar and its heading > cancelled children are counted in neither done nor total, but still draw a cell at the end` |
 | T-0103-M9 | packages/tui/src/theme.ts | reading `tui.json` ignored the saved child layout | `the tree and list layouts > the chosen layout is read from tui.json and saved next to the theme` |
+
+## T-0206 — the serve log tail reads only the end
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0206-M5 | packages/tui/src/autostart.ts | decoded each backward chunk on its own, so a multi-byte character split across two reads became U+FFFD | `ensureServer > a long log's tail keeps the last ten lines and decodes a multi-byte line across reads` |
