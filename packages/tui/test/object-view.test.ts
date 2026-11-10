@@ -86,7 +86,7 @@ describe("the object pane view", () => {
         object: { ...open, row: { ...open.row, badge: "#2" } },
       });
       await setup.renderOnce();
-      expect(setup.captureCharFrame()).toContain("open #2 · $1");
+      expect(setup.captureCharFrame()).toContain("one · open · #2 · $1");
       view.destroy();
     } finally {
       await setup.dispose();

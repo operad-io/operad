@@ -1,6 +1,6 @@
 {
   "$schema": "../theme.schema.json",
-  "comment": "GitHub Dark. Source: https://github.com/primer/primitives (src/tokens/functional/color/*.json5 resolved through src/tokens/base/color/dark/dark.json5). Licence: MIT, Copyright (c) 2018 GitHub Inc.; the text is in LICENSE-github. Roles: text = fgColor.default, weak = fgColor.muted, rule = borderColor.default, accent = fgColor.done, run = fgColor.accent, ok = fgColor.success, error = fgColor.danger, add = fgColor.success, remove = fgColor.danger, tint = bgColor.accent.muted (10% alpha over bgColor.default), code = bgColor.muted, background = bgColor.default. No colour adjusted.",
+  "comment": "GitHub Dark. Source: https://github.com/primer/primitives (src/tokens/functional/color/*.json5 resolved through src/tokens/base/color/dark/dark.json5). Licence: MIT, Copyright (c) 2018 GitHub Inc.; the text is in LICENSE-github. Roles: text = fgColor.default, weak = fgColor.muted, rule = borderColor.default, accent = fgColor.done, run = fgColor.accent, ok = fgColor.success, error = fgColor.danger, add = fgColor.success, remove = fgColor.danger, tint = bgColor.accent.muted (10% alpha over bgColor.default), code = bgColor.muted, background = bgColor.default. No colour adjusted. cancelled = error with lightness 60% for a cancelled child's bar segment.",
   "colors": {
     "text": "#f0f6fc",
     "weak": "#9198a1",
@@ -9,6 +9,7 @@
     "run": "#4493f8",
     "ok": "#3fb950",
     "error": "#f85149",
+    "cancelled": "#b90f07",
     "add": "#3fb950",
     "remove": "#f85149",
     "tint": "#111d2e",

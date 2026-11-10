@@ -24,13 +24,16 @@ import {
   type TuiPalette,
 } from "../theme.ts";
 import { sanitize } from "../sanitize.ts";
-import { displayWidth, graphemes } from "../wrap.ts";
+import { displayWidth, graphemes, wrapText } from "../wrap.ts";
 import {
   CHILD_ROWS,
   KEY_LIST,
   ROW_INDENT,
   activeSection,
   bareId,
+  cancelledRow,
+  childProgress,
+  displayChildren,
   rowDetail,
   rowName,
   activeTab,
@@ -51,6 +54,7 @@ import {
   sectionViewport,
   statusText,
   twoPane,
+  type TuiChildEntry,
   type TuiObject,
   rowMark,
   type TuiRow,
@@ -325,71 +329,175 @@ function listContent(
   return styled(chunks);
 }
 
-function objectHeader(
-  object: TuiObject,
-  palette: TuiPalette,
-  width: number,
-  position?: string | undefined,
-): TextChunk[] {
-  const row = object.row;
-  const note = row.note === undefined ? "" : ` · ${row.note}`;
-  const badge = row.badge === undefined ? "" : ` ${row.badge}`;
-  const title = row.title === "" || row.title === row.id ? "" : `  ${row.title}`;
-  const third =
-    object.error !== undefined
-      ? chunk(fit(object.error, width), palette.error)
-      : row.error !== undefined
-        ? chunk(fit(row.error, width), palette.error)
-        : object.unavailable !== undefined
-        ? chunk(fit(object.unavailable, width), palette.weak)
-        : position !== undefined
-          ? chunk(fit(position, width), palette.accent)
-          : chunk("");
+/** The line of the frame's top border: the row's id, state, badge and note. */
+function objectLabel(row: TuiRow): string {
+  return [bareId(row.id), row.state, row.badge ?? "", row.note ?? ""]
+    .map((part) => part.trim())
+    .filter((part) => part !== "")
+    .join(" · ");
+}
+
+/** The top border of the page's frame, with the row's line cut to fit. */
+function frameTop(label: string, width: number, palette: TuiPalette): TextChunk[] {
+  const shown = fit(label, Math.max(0, width - 4));
+  const dashes = Math.max(0, width - 4 - displayWidth(shown));
   return [
-    chunk(fit(`${bareId(row.id)}${title}`, width), palette.text, TextAttributes.BOLD),
-    chunk("\n"),
-    chunk(fit(`${row.state}${badge}${note}`, width), palette.weak),
-    chunk("\n"),
-    third,
+    chunk("╭─ ", palette.rule),
+    chunk(shown, palette.weak),
+    chunk(` ${"─".repeat(dashes)}`, palette.rule),
     chunk("\n"),
   ];
 }
 
-/** The page's next level: a heading and one line per row, the one under the cursor tinted when the list has the keys. */
-function childrenContent(object: TuiObject, palette: TuiPalette, width: number): TextChunk[] {
+function frameBottom(palette: TuiPalette): TextChunk[] {
+  return [chunk("╰──", palette.rule), chunk("\n")];
+}
+
+/** One line inside the frame's left rail. */
+function rail(chunks: readonly TextChunk[], palette: TuiPalette): TextChunk[] {
+  return [chunk("│ ", palette.rule), ...chunks, chunk("\n")];
+}
+
+/** The colour role of a mark's glyph. */
+function markColour(row: TuiRow, palette: TuiPalette): string {
+  if (row.error !== undefined) return palette.error;
+  const mark = rowMark(row);
+  if (mark === "none") {
+    return /^(done|merged)$/i.test(row.state) ? palette.ok : palette.weak;
+  }
+  return palette[MARK_GLYPHS[mark].colour];
+}
+
+/** The colour of one bar cell: a cancelled child is dark red, after every other cell. */
+function barColour(row: TuiRow, palette: TuiPalette): string {
+  return cancelledRow(row) ? palette.cancelled : markColour(row, palette);
+}
+
+/** The bar's cells as chunks across `width`: each child's own colour, cancelled last. */
+function progressBar(
+  entries: readonly { readonly row: TuiRow }[],
+  width: number,
+  palette: TuiPalette,
+): TextChunk[] {
+  if (entries.length === 0) return [];
+  const base = Math.floor(width / entries.length);
+  const extra = width % entries.length;
+  const chunks: TextChunk[] = [];
+  entries.forEach((entry, at) => {
+    const cells = base + (at < extra ? 1 : 0);
+    if (cells > 0) chunks.push(chunk("█".repeat(cells), barColour(entry.row, palette)));
+  });
+  return chunks;
+}
+
+/** The heading under the bar: the type name left, `done / total` right. */
+function childHeading(
+  type: string,
+  done: number,
+  total: number,
+  width: number,
+  palette: TuiPalette,
+): TextChunk[] {
+  const left = type === "" ? "" : type.toUpperCase();
+  const right = `${done} / ${total}`;
+  const gap = Math.max(1, width - displayWidth(left) - displayWidth(right));
+  return [chunk(fit(`${left}${" ".repeat(gap)}${right}`, width), palette.weak)];
+}
+
+/** A child's id without its type or repository. */
+function childId(row: TuiRow): string {
+  const bare = bareId(row.id);
+  const slash = bare.lastIndexOf("/");
+  return slash < 0 ? bare : bare.slice(slash + 1);
+}
+
+interface ChildColumns {
+  readonly lead: number;
+  readonly id: number;
+  readonly state: number;
+  readonly badge: number;
+}
+
+/** The fixed column widths of one child list, so every state starts in one place. */
+function childColumns(entries: readonly TuiChildEntry[], width: number): ChildColumns {
+  const lead = Math.max(0, ...entries.map((entry) => displayWidth(entry.connector)));
+  const names = Math.max(0, ...entries.map((entry) => displayWidth(childId(entry.row))));
+  const state = Math.max(0, ...entries.map((entry) => displayWidth(entry.row.state)));
+  const badge = Math.max(0, ...entries.map((entry) => displayWidth(entry.row.badge ?? "")));
+  // cursor, connector, glyph, id, state and badge, with one space between columns.
+  const fixed = 2 + lead + (lead === 0 ? 0 : 1) + 2 + 1 + state + (badge === 0 ? 0 : badge + 1);
+  const id = Math.min(names, Math.max(4, width - fixed));
+  return { lead, id, state, badge };
+}
+
+function padTo(text: string, width: number): string {
+  const shown = fit(text, width);
+  return shown + " ".repeat(Math.max(0, width - displayWidth(shown)));
+}
+
+/** One child row: connector, glyph, id, state, badge, note and `also after`. */
+function childRow(
+  entry: TuiChildEntry,
+  selected: boolean,
+  palette: TuiPalette,
+  width: number,
+  columns: ChildColumns,
+): TextChunk[] {
+  const row = entry.row;
+  const tint = selected ? palette.tint : undefined;
+  const colour = markColour(row, palette);
+  const mark = rowMark(row);
+  const glyph =
+    mark === "none"
+      ? /^(done|merged)$/i.test(row.state)
+        ? "✓"
+        : "○"
+      : MARK_GLYPHS[mark].char;
+  const state = padTo(row.state, columns.state);
+  const badge = columns.badge === 0 ? "" : padTo(row.badge ?? "", columns.badge);
+  const notes = [row.note ?? "", entry.alsoAfter.length === 0 ? "" : `also after ${entry.alsoAfter.join(", ")}`]
+    .filter((part) => part !== "");
+  const chunks: TextChunk[] = [
+    chunk(selected ? "❯ " : "  ", palette.accent, undefined, tint),
+    ...(columns.lead === 0
+      ? []
+      : [chunk(padTo(entry.connector, columns.lead) + " ", palette.rule, undefined, tint)]),
+    chunk(`${glyph} `, colour, undefined, tint),
+    chunk(padTo(childId(row), columns.id), selected ? palette.accent : palette.text, undefined, tint),
+    chunk(" ", undefined, undefined, tint),
+    chunk(state, colour, undefined, tint),
+    ...(columns.badge === 0
+      ? []
+      : [chunk(" ", undefined, undefined, tint), chunk(badge, palette.weak, undefined, tint)]),
+    ...(notes.length === 0
+      ? []
+      : [chunk(`  ${notes.join("  ")}`, palette.weak, undefined, tint)]),
+  ];
+  return truncateChunks(chunks, width);
+}
+
+/** The page's next level: the bar, its heading and one aligned line per child. */
+function childrenContent(
+  object: TuiObject,
+  state: TuiState,
+  palette: TuiPalette,
+  width: number,
+): TextChunk[] {
   const children = object.children;
   if (children === undefined || children.rows.length === 0) return [];
-  const type = children.rows[0]?.type ?? "";
+  const progress = childProgress(children.rows, state.childLayout);
+  const shown = displayChildren(children.rows, state.childLayout);
+  const type = shown[0]?.row.type ?? "";
+  const columns = childColumns(shown, width);
   const chunks: TextChunk[] = [
-    chunk(`${type.toUpperCase()} ${children.rows.length}`, palette.weak),
-    chunk("\n"),
+    ...rail(progressBar(progress.entries, width, palette), palette),
+    ...rail(childHeading(type, progress.done, progress.total, width, palette), palette),
   ];
   const start = children.cursor >= CHILD_ROWS ? children.cursor - CHILD_ROWS + 1 : 0;
-  children.rows.slice(start, start + CHILD_ROWS).forEach((row, offset) => {
+  shown.slice(start, start + CHILD_ROWS).forEach((entry, offset) => {
     const selected = children.focused && start + offset === children.cursor;
-    const tint = selected ? palette.tint : undefined;
-    const room = Math.max(1, width - 4);
-    const detail = rowDetail(row);
-    const name = `${rowName(row)}${row.title === "" ? "" : `  ${row.title}`}`;
-    const detailRoom = Math.min(displayWidth(detail), Math.max(0, room - 12));
-    const shownDetail = fit(detail, detailRoom);
-    const head = fit(name, Math.max(1, room - displayWidth(shownDetail) - 2));
-    const pad = " ".repeat(
-      Math.max(0, room - displayWidth(head) - displayWidth(shownDetail) - (shownDetail === "" ? 0 : 2)),
-    );
-    chunks.push(
-      chunk(selected ? "❯" : " ", palette.accent, undefined, tint),
-      chunk(" ", undefined, undefined, tint),
-      glyph(row, palette, tint),
-      chunk(" ", undefined, undefined, tint),
-      chunk(head, selected ? palette.accent : palette.text, undefined, tint),
-      chunk(shownDetail === "" ? "" : "  ", undefined, undefined, tint),
-      chunk(pad, undefined, undefined, tint),
-      chunk(shownDetail, palette.weak, undefined, tint),
-      chunk("\n"),
-    );
+    chunks.push(...rail(childRow(entry, selected, palette, width, columns), palette));
   });
-  chunks.push(chunk("\n"));
   return chunks;
 }
 
@@ -399,8 +507,8 @@ function sectionTabs(object: TuiObject, palette: TuiPalette, width: number): Tex
   let used = 0;
   object.sections.forEach((section, index) => {
     const label = `${section.title}${section.live ? " ●" : ""}`;
-    const gap = index > 0 ? "  " : "";
-    if (used + gap.length + label.length > width) return;
+    const gap = index > 0 ? " · " : "";
+    if (used + displayWidth(gap) + displayWidth(label) > width) return;
     const active = index === object.active;
     chunks.push(chunk(gap));
     chunks.push(
@@ -410,8 +518,8 @@ function sectionTabs(object: TuiObject, palette: TuiPalette, width: number): Tex
         active ? TextAttributes.BOLD : TextAttributes.NONE,
       ),
     );
-    rule += `${" ".repeat(gap.length)}${(active ? "─" : " ").repeat(label.length)}`;
-    used += gap.length + label.length;
+    rule += `${" ".repeat(displayWidth(gap))}${(active ? "─" : " ").repeat(displayWidth(label))}`;
+    used += displayWidth(gap) + displayWidth(label);
   });
   chunks.push(chunk("\n"));
   chunks.push(chunk(rule.trimEnd(), palette.rule));
@@ -474,18 +582,43 @@ function objectContent(state: TuiState, palette: TuiPalette): StyledText {
   }
   const section = activeSection(state);
   const width = sectionWidth(state);
-  return styled([
-    chunk("\n"),
-    ...objectHeader(object, palette, width, pagePosition(section, state)),
-    ...childrenContent(object, palette, width),
-    ...sectionTabs(object, palette, width),
+  const inside = Math.max(1, width - 2);
+  const chunks: TextChunk[] = [
+    ...frameTop(objectLabel(object.row), width, palette),
+    ...rail([], palette),
+  ];
+  if (object.row.title !== "") {
+    for (const line of wrapText(object.row.title, inside)) {
+      chunks.push(...rail([chunk(line, palette.text)], palette));
+    }
+  }
+  const position = pagePosition(section, state);
+  const status =
+    object.error !== undefined
+      ? { text: object.error, colour: palette.error }
+      : object.row.error !== undefined
+        ? { text: object.row.error, colour: palette.error }
+        : object.unavailable !== undefined
+          ? { text: object.unavailable, colour: palette.weak }
+          : position === undefined
+            ? undefined
+            : { text: position, colour: palette.accent };
+  if (status !== undefined) {
+    chunks.push(...rail([chunk(fit(status.text, inside), status.colour)], palette));
+  }
+  chunks.push(...childrenContent(object, state, palette, inside));
+  chunks.push(...frameBottom(palette));
+  chunks.push(chunk("\n"));
+  chunks.push(...sectionTabs(object, palette, width));
+  chunks.push(
     ...(section === undefined
       ? sectionContent(state, section, palette)
       : [
           ...sectionContent(state, section, palette),
           ...sectionHint(section, section.following, palette, width),
         ]),
-  ]);
+  );
+  return styled(chunks);
 }
 
 function keyContent(palette: TuiPalette): StyledText {

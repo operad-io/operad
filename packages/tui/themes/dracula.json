@@ -1,6 +1,6 @@
 {
   "$schema": "../theme.schema.json",
-  "comment": "Dracula. Source: https://github.com/dracula/dracula-theme (README.md, Color Palette). Licence: MIT, Copyright (c) 2023 Dracula Theme; the text is in LICENSE-dracula. Roles: text = Foreground, weak = Comment, rule = Current Line, accent = Purple, run = Cyan, ok = Green, error = Red, add = Green, remove = Red, tint = Selection, code = Current Line, background = Background. Dracula has no blue, so run is its cyan. The main palette names one selection/current-line colour and no second background, so tint is Selection #44475a and code is the editor interface's darker background BGDark #21222c from https://github.com/dracula/visual-studio-code (src/dracula.yml); the two differ, so a code block and a selected row do not look the same. No colour adjusted.",
+  "comment": "Dracula. Source: https://github.com/dracula/dracula-theme (README.md, Color Palette). Licence: MIT, Copyright (c) 2023 Dracula Theme; the text is in LICENSE-dracula. Roles: text = Foreground, weak = Comment, rule = Current Line, accent = Purple, run = Cyan, ok = Green, error = Red, add = Green, remove = Red, tint = Selection, code = Current Line, background = Background. Dracula has no blue, so run is its cyan. The main palette names one selection/current-line colour and no second background, so tint is Selection #44475a and code is the editor interface's darker background BGDark #21222c from https://github.com/dracula/visual-studio-code (src/dracula.yml); the two differ, so a code block and a selected row do not look the same. No colour adjusted. cancelled = error with lightness 60% for a cancelled child's bar segment.",
   "colors": {
     "text": "#f8f8f2",
     "weak": "#6272a4",
@@ -9,6 +9,7 @@
     "run": "#8be9fd",
     "ok": "#50fa7b",
     "error": "#ff5555",
+    "cancelled": "#cc0000",
     "add": "#50fa7b",
     "remove": "#ff5555",
     "tint": "#44475a",

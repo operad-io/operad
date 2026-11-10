@@ -273,8 +273,10 @@ Schema is `packages/tui/tui.schema.json`) or for one session with `--theme`:
 | `terminal` | The terminal's own 16 colours (accent magenta, run blue, ok green, error red, weak bright black), so its scheme decides the look; it works without truecolor. |
 
 An unknown name is an error that lists the names. A `tui.json` that is not a
-JSON object, is not valid JSON, has a key other than `theme`, or names no known
-theme is an error that names the file and the problem; the TUI does not start.
+JSON object, is not valid JSON, has a key other than `theme` or `layout`, or
+names no known theme is an error that names the file and the problem; the TUI
+does not start. `layout` is `tree` (the default: children nest under the first
+sibling in their `after`) or `list` (one flat list).
 
 ##### Popular themes
 
@@ -330,7 +332,8 @@ change.
 
 Every theme defines the same tokens: `text`, `weak` (secondary text), `rule`
 (rules and borders), `accent` (needs you), `run` (in progress), `ok` (success),
-`error`, `add` and `remove` (diff lines), `tint` (the selected row's background)
+`error`, `cancelled` (a cancelled child's bar segment, a dark red), `add` and
+`remove` (diff lines), `tint` (the selected row's background)
 `code` (a code block's background) and `background` (the fill of the palette, note, confirmation and key list boxes).
 
 `operad tui` uses the terminal size: at 100 columns or wider the list and the
@@ -338,9 +341,16 @@ object pane sit side by side, and below 100 columns the list fills the screen
 and an open object replaces it until `escape`. The header counts Pending and
 Running and then names every object type from `/v1/types`. The right pane says
 `select an object` until a row is opened. `enter` opens the selected row with
-`GET /v1/objects/<id>`: the pane starts with that row (id, title, state, note
-badge and mark), then the section tabs in the server's order (History last), then the
-section's Markdown. A live section has a dot on its tab and follows its end
+`GET /v1/objects/<id>`: the pane opens a frame whose top border names the row
+(id, state, badge and note), then a blank line, the wrapped title and, when the
+object has children, a segmented progress bar with the child type and its
+`done / total` below it. The children follow in aligned columns: mark, id,
+state, badge and note. They nest under the first sibling in their `after`, with
+`└─` indentation and the other parents as `also after <id>`; `t` switches
+between that tree and one flat list. Cancelled children are last and count in
+neither the done nor the total, but still draw a dark red bar segment after the
+others. Then the section tabs in the server's order (History last), separated
+by ` · `, then the section's Markdown. A live section has a dot on its tab and follows its end
 while the pane is at the bottom (`following`); scrolling up stops following and
 `End` resumes it. A section the server cut at its size cap shows a `Truncated`
 hint and `f` loads the whole section. A failed request, or a refused event
@@ -376,11 +386,12 @@ loads the section. Every key the app reads is below.
 | `[` / `]` | key | none | Switch to the previous or next section tab. |
 | `←` / `→` | key | none | The same as `[` / `]`. |
 | `f` | key | none | Load a capped section with `full=true`. |
+| `t` | key | none | Switch the child list between the tree and the flat list; the choice is kept in `tui.json`. The footer names the layout it switches to. |
 | `g` | key | none | The first row; under 100 columns with an object open, the top of the section. |
 | `G` | key | none | The last row; under 100 columns with an object open, the end of the section (it resumes following a live section). |
 | `r` | key | none | Fetch every list again, and the open object with its live sections. When the open section failed to load, it asks for that section again too. |
 | `a` | key | none | Run the open object's main action, the first one the object offers now (the footer names it with its key). A key bound to an action (below) wins over `a`. With no action, one footer line says so. |
-| a bound key | key | `GET /v1/keys` | Run that action on the open object. A user binding in `keys.json` beats a plugin default on the same key. Reserved keys cannot be bound: `enter`, `return`, `escape`, `esc`, `tab`, the arrows (`up`, `down`, `left`, `right`), `pageup`, `pagedown`, `home`, `end`, `space`, `[`, `]`, `:`, `?`, `/`, `b`, `f`, `g`, `j`, `k`, `q`, `r` (letters in either case) and `1`–`9`, as well as Ctrl-C and any Ctrl or Meta chord. A plugin default or `keys.json` entry on a reserved key is dropped; at start one footer line names each dropped key with its action and source. The action stays reachable from the `:` palette, with no key shown. If the object does not offer the action now, one footer line says it is not available. |
+| a bound key | key | `GET /v1/keys` | Run that action on the open object. A user binding in `keys.json` beats a plugin default on the same key. Reserved keys cannot be bound: `enter`, `return`, `escape`, `esc`, `tab`, the arrows (`up`, `down`, `left`, `right`), `pageup`, `pagedown`, `home`, `end`, `space`, `[`, `]`, `:`, `?`, `/`, `b`, `f`, `g`, `j`, `k`, `q`, `r`, `t` (letters in either case) and `1`–`9`, as well as Ctrl-C and any Ctrl or Meta chord. A plugin default or `keys.json` entry on a reserved key is dropped; at start one footer line names each dropped key with its action and source. The action stays reachable from the `:` palette, with no key shown. If the object does not offer the action now, one footer line says it is not available. |
 | `:` | key | none | Open the palette: type to fuzzy match the `plugin:action` names the open object offers, each with its key and "needs a note" or "asks to confirm". `↑` / `↓` (or Ctrl-P / Ctrl-N) move, `enter` runs, `escape` closes. With no object open it lists nothing but "no object is selected". |
 | note input | key | none | An action with a note field opens a text input. Typing adds text, `backspace` deletes, `shift-enter` or `Ctrl-J` adds a line, `enter` sends and `escape` cancels. A required note cannot be sent empty. |
 | confirmation | key | none | An action that asks to confirm shows `<action> <id>? [y/N]` in red. `y` sends it with `confirmed: true`; any other key cancels. |

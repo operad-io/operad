@@ -35,7 +35,8 @@ repository ships it. The `one-*` themes share `LICENSE-one` because
 
 By role, as each project's own editor theme uses its colours: `accent` is the
 purple or mauve, `run` the blue (cyan where the palette has no blue: Dracula;
-foam in Rosé Pine), `ok` the green (pine in Rosé Pine), `error` the red, `add`
+foam in Rosé Pine), `ok` the green (pine in Rosé Pine), `error` the red,
+`cancelled` that red darkened for a cancelled child's bar segment, `add`
 and `remove` the green and red of its diffs, `tint` its selection or highlight
 background, `code` a second background (or the base itself where the palette
 names only one) and `background` the palette's own base colour, which is the
@@ -57,7 +58,8 @@ needs only the token's stated ratio.
 
 `test/popular-themes.test.ts` computes the WCAG contrast of each token against
 `background`: `text` must reach 4.5:1; `weak`, `accent`, `run`, `ok`, `error`,
-`add` and `remove` 3:1. A colour that missed is lightened (dark palettes) or
+`add` and `remove` 3:1. `cancelled` is a dark red by design, so it is checked
+apart from `error` and `weak` rather than against a text ratio. A colour that missed is lightened (dark palettes) or
 darkened (light palettes) in whole-percent steps of HSL lightness until it
 passes, and the file's `comment` says which token moved from which upstream colour
 to which. Nothing else is changed. Upstream colours that pass are used as they
