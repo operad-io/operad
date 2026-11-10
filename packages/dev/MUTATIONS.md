@@ -524,3 +524,10 @@ the row fields.
 |---|---|---|---|
 | T-0173-M1 | packages/dev/src/service.ts | the one-time pass left a repository without `activeTasks` uncounted (the `undefined` check replaced by `false`) | `the repo type > a repository stored without a running-task count shows running for a task already running` |
 | T-0175-M2 | packages/dev/src/commands.ts | a task edit with an empty command input opened the editor instead of refusing | `operad mcp > task edit takes the new brief as command input and refuses an empty one` (packages/mcp/test/server.test.ts; the run hangs on the editor and times out) |
+
+## T-0116 — main action order
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0116-M1 | packages/dev/src/actions.ts | `merge` ranked first in every waiting state (the ready-to-merge check removed) | `the order of the actions > a waiting for a rework answer task offers dev:rework first` |
+| T-0116-M2 | packages/engine/src/views/presentation.ts | the views listed actions in plugin order (the sort by rank removed) | `the order of the actions > the views list a confirmed plan's actions in the same order, auto first` (packages/dev/test/action-order.test.ts) |

@@ -23,6 +23,7 @@ import {
   type ActionRun,
   type ActionRunOptions,
   type ActionTypeDefinition,
+  type ObjectData,
   type Actor,
   type Answer,
   type CommandContext,
@@ -195,6 +196,25 @@ function noteInfo(
 ): { readonly name: string | undefined; readonly required: boolean } {
   const note = noteProperty(args);
   return { name: note?.name, required: note?.required === true };
+}
+
+/** An action's rank for an object's data; a failing `rank` counts as 0. */
+export function rankOf(action: ActionTypeDefinition, data: ObjectData): number {
+  if (action.rank === undefined) return 0;
+  try {
+    const rank = action.rank(data);
+    return Number.isFinite(rank) ? rank : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Orders by rank, lower first; equal ranks keep their order. */
+export function sortByRank<T extends { readonly rank: number }>(items: readonly T[]): T[] {
+  return items
+    .map((item, at) => ({ item, at }))
+    .sort((a, b) => a.item.rank - b.item.rank || a.at - b.at)
+    .map(({ item }) => item);
 }
 
 /** Splits `<plugin>:<action>` or `<plugin>/<action>` without splitting an id. */
@@ -707,6 +727,9 @@ function normalizeActions(
       ...(args === undefined ? {} : { args }),
       ...(confirm === undefined ? {} : { confirm }),
       when: entry.when as ActionTypeDefinition["when"],
+      ...(typeof entry.rank === "function"
+        ? { rank: entry.rank as NonNullable<ActionTypeDefinition["rank"]> }
+        : {}),
       ...(typeof entry.settled === "function"
         ? { settled: entry.settled as NonNullable<ActionTypeDefinition["settled"]> }
         : {}),
@@ -2087,7 +2110,7 @@ export class PluginRegistry {
         continue;
       }
 
-      const actions: PendingActionView[] = [];
+      const held: { plugin: string; action: string; rank: number }[] = [];
       for (const { plugin, action } of this.actionsFor(object.type)) {
         let holds: unknown;
         try {
@@ -2099,9 +2122,10 @@ export class PluginRegistry {
           continue;
         }
         if (holds === true) {
-          actions.push({ plugin: plugin.name, action: action.name });
+          held.push({ plugin: plugin.name, action: action.name, rank: rankOf(action, object.data) });
         }
       }
+      const actions: PendingActionView[] = sortByRank(held).map(({ plugin, action }) => ({ plugin, action }));
       entries.push({
         runId: run.runId,
         prompt: run.prompt,

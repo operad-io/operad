@@ -271,12 +271,9 @@ describe("dev:rework and dev:reverify", () => {
       { runId: "run-1", object: { type: "task", id: fixture.task.id } },
     ]);
     const names = pending[0]?.actions.map((action) => action.action) ?? [];
-    expect(names.slice(names.indexOf("merge"))).toEqual([
-      "merge",
-      "reject",
-      "rework",
-      "reverify",
-    ]);
+    // The head was never verified, so rework comes first and cancel last.
+    expect(names.slice(0, -1)).toEqual(["rework", "merge", "reverify", "reject"]);
+    expect(names.at(-1)).toBe("cancel");
   });
 
   test("reverify of a task that never worked refuses and leaves it alone", async () => {
