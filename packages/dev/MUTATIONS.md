@@ -524,3 +524,16 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0201-M1 | packages/dev/src/rerun.ts | read the failed names from byte 0 instead of the command's `logStart` | `dev/verify reruns only the failed tests > an earlier attempt's names in the run log do not stop this attempt's rerun` |
+## T-0177
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0177-M1 | packages/dev/src/standing.ts | only a proposed task with an `openedBy` was a pending item | `a proposed task is pending > a task added by \`task add\` is pending with confirm and cancel, drawn waiting, and leaves on confirm` |
+| T-0177-M2 | packages/dev/src/marks.ts | a confirmed plan never read `waitingCount` (threshold raised to 99) | `a proposed task is pending > a task waiting at a stop also turns the plan row waiting` |
+| T-0177-M3 | packages/dev/src/service.ts | `confirmTask` did not refresh the plan's counts | `a proposed task is pending > a task added by \`task add\` is pending with confirm and cancel, drawn waiting, and leaves on confirm` |
+
+## T-0177 — rework 2
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0177-M5 | packages/dev/src/standing.ts | a draft plan's proposed tasks were listed as task items again (draft grouping skipped) | `a proposed task is pending > a draft plan keeps its own mark and note` |

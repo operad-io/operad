@@ -117,6 +117,8 @@ export type PlanData = {
   readonly costTotals?: PlanCostTotals | undefined;
   /** Tasks being worked or reviewed now; the scheduler keeps it current. */
   readonly activeCount?: number | undefined;
+  /** Tasks waiting for a person (proposed, or stopped and asking); the scheduler keeps it current. */
+  readonly waitingCount?: number | undefined;
   /** True once the scheduler has reported that every task ended. */
   readonly finishedReported?: boolean | undefined;
   /** When the scheduler last started one of the plan's tasks (ms); the order within a priority reads it. */
@@ -472,6 +474,8 @@ export type TaskData = {
   readonly followups?: FollowupMark | undefined;
   /** The tasks a follow-up task collects; set only on a follow-up. */
   readonly followupOf?: readonly string[] | undefined;
+  /** Set when dev itself proposed the task (the flaky detector, a follow-up), not a person. */
+  readonly openedBy?: "dev" | undefined;
 };
 
 /** A finding that did not fail its review round. */
@@ -1048,7 +1052,18 @@ export function planNote(plan: PlanData): string {
   // Cancelled tasks are not part of the total the owner is working through.
   const progress = `${plan.mergedCount}/${plan.taskCount - plan.cancelledCount}`;
   const cost = planCost(plan);
-  const parts = [progress, ...(cost === undefined ? [] : [cost]), plan.auto, plan.priority];
+  // Only a confirmed plan says how many tasks wait for the owner.
+  const waiting =
+    planState(plan) === "confirmed" && (plan.waitingCount ?? 0) > 0
+      ? [`${plan.waitingCount} waiting`]
+      : [];
+  const parts = [
+    progress,
+    ...waiting,
+    ...(cost === undefined ? [] : [cost]),
+    plan.auto,
+    plan.priority,
+  ];
   return `${parts.join(" · ")} // ${plan.concurrency}`;
 }
 

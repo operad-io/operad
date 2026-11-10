@@ -218,6 +218,11 @@ export function taskStateOf(task: TaskData): TaskState {
   return task.phase;
 }
 
+/** A task a person has to act on: proposed, or stopped and asking (not a review model's wait). */
+export function needsPerson(task: TaskData): boolean {
+  return task.phase === "proposed" || (task.phase === "waiting" && !inReviewWait(task));
+}
+
 /**
  * True while a review waits for its model to come back. The flow is not asking
  * a person anything then, so merge, reject, rework and reverify are not offered.

@@ -53,6 +53,7 @@ import {
 } from "./model.ts";
 import {
   planLine,
+  needsPerson,
   taskLine,
   type PlanActionName,
   type TaskActionName,
@@ -743,13 +744,17 @@ export async function refreshPlanCounts(
     const phase = taskData(object.data).phase;
     return phase === "running" || phase === "review";
   }).length;
+  const waitingCount = tasks.filter((object) =>
+    needsPerson(taskData(object.data)),
+  ).length;
   const costTotals = data.costTotals ?? (await totalsOfTasks(store, plan.id));
   if (
     data.costTotals !== undefined &&
     data.taskCount === taskCount &&
     data.mergedCount === mergedCount &&
     data.cancelledCount === cancelledCount &&
-    (data.activeCount ?? 0) === activeCount
+    (data.activeCount ?? 0) === activeCount &&
+    (data.waitingCount ?? 0) === waitingCount
   ) {
     return plan;
   }
@@ -759,6 +764,7 @@ export async function refreshPlanCounts(
     mergedCount,
     cancelledCount,
     activeCount,
+    waitingCount,
     costTotals,
     // A new task reopens a plan the scheduler already called finished.
     ...(taskCount > 0 && mergedCount + cancelledCount === taskCount
@@ -925,6 +931,8 @@ export interface AddTaskOptions {
   readonly area?: string | undefined;
   /** The tasks this follow-up collects; set only by the follow-up collection. */
   readonly followupOf?: readonly string[] | undefined;
+  /** Set by the code in dev that proposes tasks on its own. */
+  readonly openedBy?: "dev" | undefined;
 }
 
 export async function addTask(
@@ -986,6 +994,7 @@ export async function addTaskLocked(
     after,
     ...(area === undefined ? {} : { area }),
     ...(options.followupOf === undefined ? {} : { followupOf: options.followupOf }),
+    ...(options.openedBy === undefined ? {} : { openedBy: options.openedBy }),
     phase: "proposed",
     attempts: 0,
     run: null,
@@ -1564,7 +1573,8 @@ export async function confirmPlan(
       );
     }
     const next: PlanData = { ...data, status: "confirmed" };
-    return writePlan(store, id, next, "dev:plan-confirm");
+    const written = await writePlan(store, id, next, "dev:plan-confirm");
+    return refreshPlanCounts(store, written);
   });
 }
 
@@ -1585,12 +1595,14 @@ export async function confirmTask(
       id: data.plan,
       state: planState(planData(plan.data)),
     });
-    return writeTask(
+    const written = await writeTask(
       store,
       id,
       { ...data, phase: "ready", brief: appendChange(data.brief, "ready") },
       "dev:task-confirm",
     );
+    await refreshPlanCounts(store, plan);
+    return written;
   });
 }
 

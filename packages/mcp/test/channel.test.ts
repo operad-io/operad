@@ -962,7 +962,11 @@ describe("the pending view and the plugin's automatic answer", () => {
       const all = await listPending(s.log, s.registry, undefined, undefined, {
         withAuto: true,
       });
-      expect(all.map((item) => [item.object, item.auto])).toEqual([
+      // Runs started in the same millisecond have no fixed order: sort by object.
+      const byObject = all
+        .map((item) => [item.object, item.auto])
+        .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+      expect(byObject).toEqual([
         ["task:t-1", true],
         ["task:t-2", undefined],
       ]);
@@ -1009,6 +1013,39 @@ describe("the pending view and the plugin's automatic answer", () => {
       expect(waiting.meta).toMatchObject({ id: "t-2", reason: "waiting" });
       expect(waiting.content).toContain("ready to merge");
       expect(sent.all).toHaveLength(2);
+    } finally {
+      await channel.close();
+      s.views.close();
+      await s.log.close();
+    }
+  });
+});
+
+describe("a proposed task", () => {
+  test("is pending and drawn waiting; one block for what the plugin opened, none for a person's", async () => {
+    const s = await setup();
+    const sent = new Sent();
+    const channel = await startClaudeChannel({
+      notify: ["waiting"],
+      views: s.views,
+      registry: s.registry,
+      log: s.log,
+      pending: () => listPending(s.log, s.registry, undefined, s.views),
+      send: sent.push,
+    });
+    try {
+      put(s, "task", "t-person", { title: "Mine", phase: "proposed" });
+      put(s, "task", "t-dev", { title: "Theirs", phase: "proposed", by: "dev" });
+      const block = await sent.next();
+      expect(block.meta).toMatchObject({ id: "t-dev", waiting: "true", reason: "waiting" });
+      const items = await listPending(s.log, s.registry, undefined, s.views);
+      expect(items.map((item) => item.object).sort()).toEqual(["task:t-dev", "task:t-person"]);
+      expect(items.find((item) => item.object === "task:t-person")?.row?.waiting).toBe(true);
+      // The person's task was seen before the block arrived; nothing else was sent.
+      expect(sent.all).toHaveLength(1);
+      // Confirmed, the task leaves pending and nothing is sent.
+      put(s, "task", "t-dev", { title: "Theirs", phase: "ready", by: "dev" });
+      expect((await listPending(s.log, s.registry)).map((item) => item.object)).toEqual(["task:t-person"]);
     } finally {
       await channel.close();
       s.views.close();
