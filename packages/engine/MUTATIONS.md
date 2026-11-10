@@ -415,3 +415,5 @@ the row fields.
 | T-0208-M8 | packages/engine/src/log/jsonl.ts | `readGlobal` left out the unique key | `log backend: jsonl > readGlobal returns the unique key a fact was written with` |
 | T-0208-M9 | packages/engine/src/store-copy/copy.ts | opened the jsonl source itself instead of a snapshot, so its recovery cut the torn tail | `store copy > a store with a finished, a waiting and a failed run answers the same from its copy` |
 | T-0208-M10 | packages/engine/src/store-copy/copy.ts | `useStore` did not look at the run locks | `store copy > use refuses while a run holds the store` |
+| T-0208-M11 | packages/engine/src/store-copy/copy.ts | the run-lock check called `lockHeld`, which removes a stale lock file from the source | `store copy > copy and use change nothing under the source directory` |
+| T-0208-M12 | packages/engine/src/store-copy/copy.ts | opened the source's plugin objects in place instead of from the snapshot, which makes `plugins/` | `store copy > copy and use change nothing under the source directory` |

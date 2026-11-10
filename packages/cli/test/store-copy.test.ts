@@ -6,7 +6,9 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -317,6 +319,53 @@ describe("store copy", () => {
     expect(snapshot(root)).toEqual(original);
     expect(existsSync(join(root, "log.sqlite"))).toBe(false);
     expect(existsSync(serveLockPath(home))).toBe(false);
+  });
+
+  test("copy and use change nothing under the source directory", async () => {
+    const { home, root, runs } = await seededHome();
+    // No plugins directory, a stale lock of a dead process, a torn last line
+    // and an older schema marker: each is something opening a store repairs.
+    rmSync(join(root, "plugins"), { recursive: true, force: true });
+    const dead = Bun.spawnSync({ cmd: ["true"] }).pid;
+    mkdirSync(join(root, "locks", "runs"), { recursive: true });
+    writeFileSync(join(root, "locks", "runs", "gone.lock"), `${JSON.stringify({ pid: dead, at: 1 })}\n`);
+    appendFileSync(join(root, "runs", `${runs.waiting}.jsonl`), '{"type":"batch","facts":[{"runId":"x');
+    writeFileSync(join(root, "schema.json"), '{"schema_version":1}\n');
+
+    // Every path with its kind, size, mode and content hash, directories too.
+    const tree = (directory: string, prefix = ""): Record<string, string> => {
+      const result: Record<string, string> = {};
+      for (const name of readdirSync(directory)) {
+        const path = join(directory, name);
+        const info = statSync(path);
+        const key = `${prefix}${name}`;
+        if (info.isDirectory()) {
+          result[`${key}/`] = `dir ${info.mode}`;
+          Object.assign(result, tree(path, `${key}/`));
+        } else {
+          const hash = new Bun.CryptoHasher("sha256").update(readFileSync(path)).digest("hex");
+          result[key] = `file ${info.size} ${info.mode} ${hash}`;
+        }
+      }
+      return result;
+    };
+    const before = tree(root);
+    const unchanged = (): void => {
+      const after = tree(root);
+      for (const [path, what] of Object.entries(before)) expect([path, after[path]]).toEqual([path, what]);
+      expect(Object.keys(after).filter((path) => !(path in before)).sort()).toEqual([
+        "log.sqlite",
+        "plugins.sqlite",
+      ]);
+    };
+
+    const copied = await run(home, ["store", "copy", "sqlite"]);
+    expect([copied.code, copied.err]).toEqual([0, ""]);
+    unchanged();
+    expect((await run(home, ["store", "use", "sqlite"])).code).toBe(0);
+    unchanged();
+    expect((await run(home, ["store", "use", "jsonl"])).code).toBe(0);
+    unchanged();
   });
 
   test("use refuses while a run holds the store", async () => {

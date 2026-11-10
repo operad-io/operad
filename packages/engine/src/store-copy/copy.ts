@@ -25,7 +25,7 @@ import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { StateError } from "../runner/errors.ts";
-import { acquireLock, lockHeld, runLockPath, serveLockPath } from "../runner/lock.ts";
+import { acquireLock, pidAlive, readLockPid, runLockPath, serveLockPath } from "../runner/lock.ts";
 import { ConfigError, configPath, storeRootOf, type OperadConfig } from "../config/config.ts";
 import { openJsonlLogBackend } from "../log/jsonl.ts";
 import { openLog } from "../log/open-log.ts";
@@ -83,14 +83,18 @@ function ownedFiles(kind: StoreKind, root: string): string[] {
       ];
 }
 
-/** Refuses while a live process holds a run's lock. */
+/**
+ * Refuses while a live process holds a run's lock. It only reads: a lock whose
+ * process is gone is stale and does not block, and no file is removed.
+ */
 function assertNoRunHolds(root: string): void {
   const directory = join(root, "locks", "runs");
   if (!existsSync(directory)) return;
   for (const name of readdirSync(directory)) {
     if (!name.endsWith(".lock")) continue;
     const runId = name.slice(0, -".lock".length);
-    if (lockHeld(runLockPath(root, runId))) {
+    const pid = readLockPid(runLockPath(root, runId));
+    if (pid !== undefined && pidAlive(pid)) {
       throw new StateError(
         `run "${runId}" is in progress; wait for it to end before copying the store`,
       );
@@ -247,6 +251,27 @@ function closeObjects(store: PluginStore): void {
   if (store instanceof SqlitePluginStore) store.close();
 }
 
+/** Copies the files of the source store that the copy reads; returns the log's path in the snapshot. */
+function snapshotSource(config: OperadConfig, root: string, snapshot: string): string {
+  mkdirSync(snapshot, { recursive: true });
+  const take = (from: string, to: string): void => {
+    if (existsSync(from)) cpSync(from, to, { recursive: true });
+  };
+  if (config.store.backend === "jsonl") {
+    for (const name of ["runs", "inputs.jsonl", "outcomes.jsonl", "global-facts.jsonl", "schema.json"]) {
+      take(join(root, name), join(snapshot, name));
+    }
+    mkdirSync(join(snapshot, "plugins"), { recursive: true });
+    take(join(root, "plugins", "facts.jsonl"), join(snapshot, "plugins", "facts.jsonl"));
+    return snapshot;
+  }
+  for (const suffix of ["", "-wal", "-shm"]) {
+    take(`${config.store.path}${suffix}`, join(snapshot, `${SQLITE_FILE_NAME}${suffix}`));
+    take(join(root, `${PLUGIN_SQLITE_FILE}${suffix}`), join(snapshot, `${PLUGIN_SQLITE_FILE}${suffix}`));
+  }
+  return join(snapshot, SQLITE_FILE_NAME);
+}
+
 /**
  * Copies the store the config names into a new store of kind `to`, beside it
  * under the same store directory. Refuses while the home's serve or a run
@@ -301,19 +326,13 @@ export async function copyStore(options: CopyStoreOptions): Promise<CopyStoreRes
       return id;
     };
 
-    // Opening a jsonl log repairs it (a torn last line is cut, an old schema
-    // marker is rewritten). That repair is done on a snapshot, so the source
-    // keeps every byte it has.
-    let sourcePath = config.store.path;
-    if (from === "jsonl") {
-      sourcePath = temporary.snapshot;
-      mkdirSync(sourcePath, { recursive: true });
-      for (const name of ["runs", "inputs.jsonl", "outcomes.jsonl", "global-facts.jsonl", "schema.json"]) {
-        if (existsSync(join(root, name))) cpSync(join(root, name), join(sourcePath, name), { recursive: true });
-      }
-    }
-    const source = openLog({ backend: from, path: sourcePath });
-    const sourceObjects = openPluginStore({ backend: from, root });
+    // Opening a store repairs and creates things (a torn last line is cut, an
+    // old schema marker is rewritten, a missing directory is made). Nothing of
+    // the source is opened in place: everything the copy reads is copied into
+    // a snapshot first, and only the snapshot is opened.
+    const sourceLog = snapshotSource(config, root, temporary.snapshot);
+    const source = openLog({ backend: from, path: sourceLog });
+    const sourceObjects = openPluginStore({ backend: from, root: temporary.snapshot });
     let target: LogBackend | undefined;
     let targetObjects: PluginStore | undefined;
     try {
