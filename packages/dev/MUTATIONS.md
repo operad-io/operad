@@ -564,3 +564,11 @@ the row fields.
 |---|---|---|---|
 | T-0206-M3 | packages/dev/src/rerun.ts | read the failed names from byte 0 instead of the command's `logStart` | `dev/verify reruns only the failed tests > an earlier attempt's names in the run log do not stop this attempt's rerun` |
 | T-0206-M4 | packages/dev/src/views.ts | started the worker-log tail at the end of the file, so the log section was empty | `dev views > the log section is the tail of the current attempt's worker log` |
+
+## T-0147 — git that exits 0 and prints nothing is run again
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0147-M1 | packages/dev/src/git.ts | the empty-output rerun loop never ran (`attempt < 1`) | `git that exits 0 and prints nothing > headOf returns the commit after empty answers` (also the `dev/work` no-worktree test and the two `repo add` tests) |
+| T-0147-M2 | packages/dev/src/git.ts | every command was treated as one that must print (`printsOnSuccess` returned true) | `git that exits 0 and prints nothing > a query allowed to print nothing is run once` |
+| T-0147-M3 | packages/dev/src/git.ts | the rerun bound was one too many (`attempt <= GIT_EMPTY_ATTEMPTS`) | `git that exits 0 and prints nothing > a query that never prints fails with git's words and says it was empty` |
