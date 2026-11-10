@@ -11,7 +11,6 @@ import {
   readdirSync,
   rmSync,
   symlinkSync,
-  watch,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -28,6 +27,7 @@ import {
   type KernelState,
   type PluginStepResult,
 } from "@operad-io/engine";
+import { waitForChange } from "@operad-io/engine/platform";
 import { createShellPlugin } from "@operad-io/shell";
 import { setTaskPhase } from "../src/service.ts";
 import type { CheckCommand } from "../src/settings.ts";
@@ -108,24 +108,15 @@ function manualClock(): ManualClock {
   };
 }
 
-/** Resolves when the file exists, without polling: it watches the directory. */
-function waitForFile(path: string): Promise<void> {
-  if (existsSync(path)) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const watcher = watch(dirname(path), () => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      resolve();
-    });
-    watcher.on("error", (error) => {
-      watcher.close();
-      reject(error);
-    });
-    if (existsSync(path)) {
-      watcher.close();
-      resolve();
-    }
-  });
+/**
+ * Resolves when the file exists. The directory watch is the fast path; a look
+ * every 100 ms besides, because a watch that goes live late misses the event of
+ * a file created just before, and nothing then wakes the wait.
+ */
+async function waitForFile(path: string): Promise<void> {
+  while (!existsSync(path)) {
+    await waitForChange(dirname(path), basename(path), 100);
+  }
 }
 
 interface ReviewCall {
