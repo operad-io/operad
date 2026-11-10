@@ -1450,6 +1450,7 @@ describe("a claimed task aborted after the leader's push", () => {
       head: "2".repeat(40),
       members: [{ task: "T-b", sha: "2".repeat(40) }],
     });
+    a.finish();
     cancelled.abort();
     expect((await b.turn()).kind).toBe("batched");
   });
