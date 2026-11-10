@@ -556,3 +556,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0177-M5 | packages/dev/src/standing.ts | a draft plan's proposed tasks were listed as task items again (draft grouping skipped) | `a proposed task is pending > a draft plan keeps its own mark and note` |
+| T-0167-M1 | packages/dev/src/steps.ts | the work-wait bound `waits < MAX_WORK_WAITS` became `<=` (or `< MAX_WORK_WAITS - 1`) | `dev/work > unavailable: after the allowed waits the failure goes to a person` |

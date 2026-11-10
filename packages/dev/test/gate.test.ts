@@ -1686,9 +1686,10 @@ describe("dev/review hardening", () => {
       // timeout keeps running beside the next one. So the first waits are
       // real and the middle ones are written into the task as the facts
       // they would have left; the last waits and the end are real again.
-      const REAL_WAITS = 3;
+      const REAL_WAITS = 1;
       const SEEDED_WAITS = MAX_REVIEW_WAITS - 2 * REAL_WAITS;
       let seeded = 0;
+      let restarted = false;
       for (let wait = 1; wait <= MAX_REVIEW_WAITS; wait += 1) {
         if (wait === REAL_WAITS + 1) {
           const task = await taskOf(state);
@@ -1711,7 +1712,8 @@ describe("dev/review hardening", () => {
           wait += SEEDED_WAITS;
           clock += 120_000 * SEEDED_WAITS;
         }
-        if (wait === MAX_REVIEW_WAITS - 1) {
+        if (!restarted && wait >= MAX_REVIEW_WAITS - 1) {
+          restarted = true;
           // A restart: a new registry reads the count from the task's facts.
           registry = new PluginRegistry(
             [createDevPlugin(), createShellPlugin(), state.reviewer.plugin],

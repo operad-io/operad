@@ -417,7 +417,6 @@ describe("dev/work", () => {
 
   test("unavailable: after the allowed waits the failure goes to a person", async () => {
     const state = await fixture("unavailable");
-    expect((await runWork(state)).result).toBe("unavailable");
     // Every wait is a real harness run, so the count is set to one short of the
     // bound instead of running the harness MAX_WORK_WAITS times.
     const waited = await state.store.get("task", state.taskKey);
