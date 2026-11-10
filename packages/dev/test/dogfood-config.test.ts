@@ -14,8 +14,10 @@ import { storeAt, tempRoot } from "./support.ts";
 
 const CONFIG = fileURLToPath(new URL("../../../.operad/dev.json", import.meta.url));
 
+/** The committed file without its `workers`/`pools`, so a test can set the single `worker`. */
 function committed(): Record<string, unknown> {
-  return JSON.parse(readFileSync(CONFIG, "utf8")) as Record<string, unknown>;
+  const { workers: _workers, pools: _pools, ...rest } = JSON.parse(readFileSync(CONFIG, "utf8")) as Record<string, unknown>;
+  return rest;
 }
 
 async function plugin(path: string): Promise<{ readonly default: unknown }> {
