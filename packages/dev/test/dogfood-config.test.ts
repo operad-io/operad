@@ -14,11 +14,27 @@ import { storeAt, tempRoot } from "./support.ts";
 
 const CONFIG = fileURLToPath(new URL("../../../.operad/dev.json", import.meta.url));
 
-/** The committed file without its `workers`/`pools`, so a test can set the single `worker`. */
+function file(): Record<string, unknown> {
+  return JSON.parse(readFileSync(CONFIG, "utf8")) as Record<string, unknown>;
+}
+
+/**
+ * The committed file without its `workers` and `pools`, so a test can switch to
+ * the old single `worker` form (a file may not hold both).
+ */
 function committed(): Record<string, unknown> {
-  const { workers: _workers, pools: _pools, ...rest } = JSON.parse(readFileSync(CONFIG, "utf8")) as Record<string, unknown>;
+  const { workers: _workers, pools: _pools, ...rest } = file();
   return rest;
 }
+
+describe("this repository's committed dev.json", () => {
+  test("validates as it is, with its workers in the default pool", () => {
+    const settings = validateDevSettings(file());
+    const names = settings.workers?.workers.map((worker) => worker.name) ?? [];
+    expect(names.length).toBeGreaterThan(0);
+    expect(settings.workers?.pools.default).toEqual(names);
+  });
+});
 
 async function plugin(path: string): Promise<{ readonly default: unknown }> {
   return (await import(new URL(path, import.meta.url).href)) as { readonly default: unknown };
