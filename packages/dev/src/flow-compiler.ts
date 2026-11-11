@@ -9,6 +9,7 @@ import { type FlowDefinition, type StepShape } from "@operad-io/engine";
 import { createHash } from "node:crypto";
 import type { CheckCommand } from "./settings.ts";
 import { DEV_MAX_VISITS } from "./timeouts.ts";
+import { WAIT_STEPS, waitChoices } from "./waits.ts";
 
 /** The worker stage: the harness changes the task branch. */
 export interface WorkStage {
@@ -282,9 +283,9 @@ function defaultSteps(
       fail: "rework",
       failed: "announce_review_failed",
       unavailable: "review_retry",
-      timed_out: "wait_review_timeout",
-      exhausted: "wait_review_unavailable",
-      out_of_time: "wait_review_out_of_time",
+      timed_out: WAIT_STEPS["review-timeout"],
+      exhausted: WAIT_STEPS["review-unavailable"],
+      out_of_time: WAIT_STEPS["review-out-of-time"],
       cancelled: "end_cancelled",
     }),
     waitCheck("review_retry", "dev/review_due", {
@@ -292,9 +293,9 @@ function defaultSteps(
       interrupted: "end_cancelled",
     }),
     waitPerson(
-      "wait_review_timeout",
+      WAIT_STEPS["review-timeout"],
       "The task is waiting for you: merge it or reject it.\n\nreview timed out twice",
-      ["merge", "reject", "rework"],
+      waitChoices("review-timeout", true),
       {
         merge: "integrate",
         reject: "worktree",
@@ -304,21 +305,22 @@ function defaultSteps(
       "review timed out twice",
     ),
     waitPerson(
-      "wait_review_unavailable",
+      WAIT_STEPS["review-unavailable"],
       "The task is waiting for you: merge it or reject it.\n\nreview did not finish (model unavailable)",
-      ["merge", "reject", "rework"],
+      waitChoices("review-unavailable", true),
       {
         merge: "integrate",
         reject: "worktree",
         rework: "worktree",
+        reverify: "reverify",
         interrupted: "end_cancelled",
       },
       "review did not finish (model unavailable)",
     ),
     waitPerson(
-      "wait_review_out_of_time",
+      WAIT_STEPS["review-out-of-time"],
       "The task is waiting for you: merge it or reject it.\n\nreview did not finish (out of time)",
-      ["merge", "reject", "rework"],
+      waitChoices("review-out-of-time", true),
       {
         merge: "integrate",
         reject: "worktree",
@@ -422,9 +424,9 @@ function defaultSteps(
     announce("announce_rework", "rework", "ask", "wait"),
     announce("announce_integrate", "integrate", "failed", "wait"),
     waitPerson(
-      "wait",
+      WAIT_STEPS.person,
       "The task is waiting for you: merge it, reject it, or verify and review it again.",
-      ["merge", "reject", "rework", "reverify"],
+      waitChoices("person", true),
       {
         merge: "integrate",
         reject: "worktree",
@@ -480,9 +482,7 @@ function generatedSteps(
   const firstWork = named.find((item) => item.stage.stage === "work");
   const usedKinds = new Set(named.map((item) => item.stage.stage));
   const hasReverify = usedKinds.has("check") || usedKinds.has("review");
-  const choices = hasReverify
-    ? ["merge", "reject", "rework", "reverify"]
-    : ["merge", "reject", "rework"];
+  const choices = waitChoices("person", hasReverify);
   const lastWork = [...named].reverse().find((item) => item.stage.stage === "work");
   const reverifyTarget =
     lastWork === undefined
@@ -512,7 +512,7 @@ function generatedSteps(
 
   const firstWorkStage = firstWork?.stage.stage === "work" ? firstWork.stage : undefined;
   const steps: StepShape[] = [];
-  const waitId = "wait";
+  const waitId = WAIT_STEPS.person;
   steps.push({
     ...WORKTREE,
     params: { use: "dev/worktree", params: worktreeParams(firstWorkStage) },
@@ -695,9 +695,9 @@ function generatedSteps(
             fail: target === undefined ? waitId : `rework_${id}`,
             failed: `announce_review_failed_${id}`,
             unavailable: `${id}_retry`,
-            timed_out: `wait_review_timeout_${id}`,
-            exhausted: `wait_review_unavailable_${id}`,
-            out_of_time: `wait_review_out_of_time_${id}`,
+            timed_out: `${WAIT_STEPS["review-timeout"]}_${id}`,
+            exhausted: `${WAIT_STEPS["review-unavailable"]}_${id}`,
+            out_of_time: `${WAIT_STEPS["review-out-of-time"]}_${id}`,
             cancelled: "end_cancelled",
           }),
           waitCheck(`${id}_retry`, "dev/review_due", {
@@ -705,9 +705,9 @@ function generatedSteps(
             interrupted: "end_cancelled",
           }),
           waitPerson(
-            `wait_review_timeout_${id}`,
+            `${WAIT_STEPS["review-timeout"]}_${id}`,
             "The task is waiting for you: merge it or reject it.\n\nreview timed out twice",
-            ["merge", "reject", "rework"],
+            waitChoices("review-timeout", hasReverify),
             {
               merge: "integrate",
               reject: target ?? firstStage,
@@ -717,21 +717,22 @@ function generatedSteps(
             "review timed out twice",
           ),
           waitPerson(
-            `wait_review_unavailable_${id}`,
+            `${WAIT_STEPS["review-unavailable"]}_${id}`,
             "The task is waiting for you: merge it or reject it.\n\nreview did not finish (model unavailable)",
-            ["merge", "reject", "rework"],
+            waitChoices("review-unavailable", hasReverify),
             {
               merge: "integrate",
               reject: target ?? firstStage,
               rework: target ?? firstStage,
+              ...(hasReverify ? { reverify: "reverify" } : {}),
               interrupted: "end_cancelled",
             },
             "review did not finish (model unavailable)",
           ),
           waitPerson(
-            `wait_review_out_of_time_${id}`,
+            `${WAIT_STEPS["review-out-of-time"]}_${id}`,
             "The task is waiting for you: merge it or reject it.\n\nreview did not finish (out of time)",
-            ["merge", "reject", "rework"],
+            waitChoices("review-out-of-time", hasReverify),
             {
               merge: "integrate",
               reject: target ?? firstStage,

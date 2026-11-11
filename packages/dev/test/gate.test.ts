@@ -2822,14 +2822,19 @@ describe("the dev flow", () => {
       out_of_time: "wait_review_out_of_time",
       cancelled: "end_cancelled",
     });
-    for (const id of ["wait_review_unavailable", "wait_review_out_of_time"]) {
-      expect(nextOf(id)).toEqual({
-        merge: "integrate",
-        reject: "worktree",
-        rework: "worktree",
-        interrupted: "end_cancelled",
-      });
-    }
+    expect(nextOf("wait_review_unavailable")).toEqual({
+      merge: "integrate",
+      reject: "worktree",
+      rework: "worktree",
+      reverify: "reverify",
+      interrupted: "end_cancelled",
+    });
+    expect(nextOf("wait_review_out_of_time")).toEqual({
+      merge: "integrate",
+      reject: "worktree",
+      rework: "worktree",
+      interrupted: "end_cancelled",
+    });
     // The flow's visit bound is finite and equals the one the waits are sized by.
     expect(found?.flow.maxVisits).toBe(DEV_MAX_VISITS);
     expect(nextOf("review_retry")).toEqual({
