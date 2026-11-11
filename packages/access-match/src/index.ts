@@ -197,7 +197,7 @@ function expandWord(word: string, home: string): Expanded {
   const tilde = text.startsWith("~");
   const components = text.split("/");
   const globbed = components.slice(0, -1).some((component) => /[*?[]/.test(component));
-  const unresolved = tilde || globbed || /\$[A-Za-z_{(]|`/.test(text);
+  const unresolved = tilde || globbed || /\$[A-Za-z0-9_{(@*#?$!-]|`|\{[^{}]*(?:,|\.\.)[^{}]*\}/.test(text);
   return { text, unresolved };
 }
 
@@ -205,6 +205,10 @@ function expandWord(word: string, home: string): Expanded {
 function cdTarget(words: readonly string[]): string | undefined {
   let index = 0;
   while (index < words.length && ASSIGNMENT_WORD.test(words.at(index) ?? "")) index += 1;
+  while (words.at(index) === "builtin" || words.at(index) === "command") {
+    index += 1;
+    while ((words.at(index) ?? "").startsWith("-") && words.at(index) !== "--") index += 1;
+  }
   const name = words.at(index);
   if (name !== "cd" && name !== "pushd") return undefined;
   const rest = words.slice(index + 1).filter((word) => word !== "--" && word !== "-L" && word !== "-P");

@@ -492,3 +492,12 @@ test("a plain command with no expansion is still allowed under denyPaths", () =>
   expect(bash(PATHS, "cat src/a.ts && cd docs && ls ./b")).toEqual({ allow: true });
   expect(bash(PATHS, 'echo "$HOME is home" | cat')).toEqual({ allow: true });
 });
+
+test("brace expansion and positional parameters ask; builtin and command wrappers still track cd", () => {
+  for (const command of ["cat /home/u/{.ssh,tmp}/id", "cat /home/u/$1/.ssh/id", "cd $1 && cat .ssh/id", "cat /home/u/$@/x", "cat /a/{1..3}"]) {
+    expect(bash(PATHS, command)).toMatchObject({ allow: false, ask: true, rule: "inline code" });
+  }
+  for (const command of ['builtin cd "$HOME" && cat .ssh/id_rsa', 'command cd "$HOME" && cat .ssh/id_rsa', 'command -- cd ~ && cat .ssh/id_rsa']) {
+    expect(bash(PATHS, command)).toMatchObject({ allow: false, rule: "~/.ssh" });
+  }
+});

@@ -54,3 +54,9 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0282-M1 | packages/access-match/src/index.ts | `expandWord` stopped replacing `$HOME` and `${HOME}`, so `cat "$HOME/.ssh/id_rsa"` read as a relative path | `denyPaths follows ~, $HOME and ${HOME} in a bash command, quoted or not` |
+
+## T-0282 — rework 1
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0282-M2 | packages/access-match/src/index.ts | `cdTarget` stopped skipping `builtin` and `command`, so `builtin cd "$HOME"` left later paths on the call's cwd | `brace expansion and positional parameters ask; builtin and command wrappers still track cd` |
