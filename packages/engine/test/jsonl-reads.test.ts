@@ -53,4 +53,26 @@ describe("the jsonl backend over a large history", () => {
       await log.close();
     }
   }, 120_000);
+
+  test("listing the active runs does not open the logs of ended runs", async () => {
+    const root = await tempRoot();
+    const log = openLog({ backend: "jsonl", path: join(root, "store") });
+    try {
+      for (let index = 0; index < 200; index += 1) {
+        const run = await log.startRun("old", `job:${index}`);
+        await log.endRun(run.runId);
+      }
+      const live = await log.startRun("live", "job:live");
+      const opened = spyOn(fs, "openSync");
+      try {
+        const active = await log.runs({ active: true });
+        expect(active.map((run) => run.runId)).toEqual([live.runId]);
+        expect(opened.mock.calls.length).toBeLessThanOrEqual(4);
+      } finally {
+        opened.mockRestore();
+      }
+    } finally {
+      await log.close();
+    }
+  });
 });

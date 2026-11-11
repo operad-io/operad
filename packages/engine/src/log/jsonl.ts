@@ -1100,9 +1100,16 @@ class JsonlLogBackend implements LogBackend {
 
   #listRunsUnlocked(activeOnly: boolean): RunInfo[] {
     const runs: RunInfo[] = [];
-    for (const name of readdirSync(this.#runsDirectory)) {
+    const names = readdirSync(this.#runsDirectory);
+    // The active runs are named by the directory listing alone: an ended run's
+    // header and last line are not read.
+    const ended = activeOnly
+      ? new Set(names.filter((name) => name.endsWith(".end")))
+      : undefined;
+    for (const name of names) {
       if (!name.endsWith(".jsonl")) continue;
       const runId = name.slice(0, -".jsonl".length);
+      if (ended?.has(`${runId}.end`) === true) continue;
       let info: RunInfo;
       try {
         info = this.#runInfoUnlocked(runId);

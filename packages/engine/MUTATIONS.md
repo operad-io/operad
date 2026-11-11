@@ -481,3 +481,4 @@ the row fields.
 | T-0251-M6 | packages/engine/src/log/jsonl.ts | `findInput` read the line at the wrong offset (start + 1) | `reading by position and by id (jsonl) > inputs after a position, one input by id, and outcomes after a sequence` |
 | T-0251-M7 | packages/engine/src/log/jsonl.ts | `readOutcomesAfter` filtered every remembered outcome instead of bisecting the sequence-ordered list | `the jsonl backend over a large history > a lookup or a quiet read does not read the whole files` |
 | T-0251-M8 | packages/engine/src/log/jsonl.ts | `findInput` read the whole inputs file besides using its remembered place | `the jsonl backend over a large history > a lookup or a quiet read does not read the whole files` |
+| T-0251-M9 | packages/engine/src/log/jsonl.ts | the active-only run listing opened every ended run again | `the jsonl backend over a large history > listing the active runs does not open the logs of ended runs` |
