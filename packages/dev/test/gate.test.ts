@@ -380,6 +380,14 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             writeFileSync(input.resultPath, "this is not JSON\n");
             return { result: "done", data: {} };
           }
+          if (mode === "stale-sha") {
+            // A report for a commit that is not the checked one.
+            writeFileSync(
+              input.resultPath,
+              JSON.stringify({ findings: [], verified: ["the diff"], sha: "0".repeat(40) }),
+            );
+            return { result: "done", data: {} };
+          }
           if (mode.startsWith("file:")) {
             // The findings come from a file, so a test can change them per round.
             writeFileSync(
@@ -884,6 +892,15 @@ describe("dev/review", () => {
         findings: [expect.objectContaining({ severity: "minor", summary: "a minor thing" })],
       },
     ]);
+  });
+
+  test("a report whose sha is not the checked commit is refused", async () => {
+    const state = await fixture({ reviewerArgs: ["stale-sha"] });
+    const verified = await verify(state);
+    const result = await review(state);
+    expect(result.result).toBe("failed");
+    expect(result.data?.reason).toBe("wrong_commit");
+    expect((await taskOf(state)).attempt?.review?.sha).toBe(verified.data?.verified as string);
   });
 
   test("a finding that failed the round is not a note", async () => {

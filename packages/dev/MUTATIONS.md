@@ -736,3 +736,4 @@ the row fields.
 |---|---|---|---|
 | T-0246-M1 | packages/dev/src/schedule.ts | the sweep of cancelled tasks' runs ran after the settings were read, so unreadable settings skipped it | `a run on a cancelled task is ended even when the repository's settings cannot be read` |
 | T-0122-M2 | packages/dev/src/views.ts | a plan listed a Tasks section again | `dev views > a plan loads its request and has no tasks section` |
+| T-0260-M2 | packages/dev/src/gate.ts | review accepted a report whose sha was not the checked commit | `dev/review > a report whose sha is not the checked commit is refused` |

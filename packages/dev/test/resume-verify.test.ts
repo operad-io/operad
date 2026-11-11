@@ -30,6 +30,8 @@ interface Run {
   readonly verified: unknown;
   readonly head: string;
   readonly replayed: readonly boolean[];
+  /** The commit each review call found checked out. */
+  readonly reviewed: readonly string[];
 }
 
 /** Runs the dev flow once; the branch has `commits` made before the run and the worker commits nothing. */
@@ -54,6 +56,15 @@ async function run(options: {
       mainBranch: "main",
       worktreeRoot: ".operad-worktrees",
       worker: { use: "fake-harness/agent", args: [] },
+      gate: { commands: ["true"], commandTimeoutSecs: 60 },
+      reviewer: {
+        use: "fake-reviewer/agent",
+        args: [],
+        fixLevel: "major",
+        retrySecs: 120,
+        maxFileDiffBytes: 200_000,
+        maxDiffBytes: 1_000_000,
+      },
     }),
   );
   const plan = await addPlan(store, { repository, slug: "plan", title: "Plan", request: "do it" });
@@ -112,8 +123,30 @@ async function run(options: {
       },
     ],
   });
+  const reviewed: string[] = [];
+  const reviewer = definePlugin({
+    name: "fake-reviewer",
+    kind: "harness",
+    version: "0.0.0",
+    steps: [
+      {
+        name: "agent",
+        results: ["done", "failed", "interrupted"],
+        run: (_ctx, params): PluginStepResult => {
+          const input = params as { readonly cwd: string; readonly resultPath: string };
+          const seen = gitOrThrow(input.cwd, ["rev-parse", "HEAD"]);
+          reviewed.push(seen);
+          writeFileSync(
+            input.resultPath,
+            JSON.stringify({ findings: [], verified: ["the diff"], sha: seen }),
+          );
+          return { result: "done", data: {} };
+        },
+      },
+    ],
+  });
   const registry = new PluginRegistry(
-    [createDevPlugin(), createPoolPlugin(), createShellPlugin(), worker] as never,
+    [createDevPlugin(), createPoolPlugin(), createShellPlugin(), worker, reviewer] as never,
     { home: root, cwd: remote.repository, store },
   );
   const log = openLog({ backend: "jsonl", path: join(root, "log") });
@@ -158,6 +191,7 @@ async function run(options: {
     steps,
     whys,
     replayed,
+    reviewed,
     verified: data.attempt?.verified ?? null,
     head: path === "" ? "" : gitOrThrow(path, ["rev-parse", "HEAD"]),
   };
@@ -192,10 +226,12 @@ describe("work that ends with no new commit", () => {
     expect(result.reasons).not.toContain("work did nothing");
   });
 
-  test("a commit the worker makes last is verified, not answered by the verify of the commit before it", async () => {
-    const result = await run({ commits: 1, verify: "pass", sameRun: true, workerCommits: 1 });
-    expect(result.steps).toContain("verify");
+  test("a worker that commits twice, the second just before it ends, gets that commit verified and reviewed", async () => {
+    const result = await run({ commits: 1, verify: "pass", sameRun: true, workerCommits: 2 });
+    expect(result.steps.indexOf("verify")).toBeGreaterThan(result.steps.indexOf("work"));
+    expect(result.steps.indexOf("review")).toBeGreaterThan(result.steps.indexOf("verify"));
     expect(result.replayed).toEqual([false]);
     expect(result.verified).toBe(result.head);
+    expect(result.reviewed).toEqual([result.head]);
   });
 });

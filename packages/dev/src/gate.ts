@@ -802,6 +802,8 @@ function parseFinding(value: unknown): FindingShape | undefined {
 interface Report {
   readonly findings: readonly FindingShape[];
   readonly verified: readonly string[];
+  /** The commit the reviewer says it read; absent when it did not say. */
+  readonly sha?: string;
 }
 
 function parseReport(text: string): Report | undefined {
@@ -821,9 +823,11 @@ function parseReport(text: string): Report | undefined {
     if (finding === undefined) return undefined;
     findings.push(finding);
   }
+  if (value.sha !== undefined && typeof value.sha !== "string") return undefined;
   return {
     findings,
     verified: value.verified as readonly string[],
+    ...(typeof value.sha === "string" ? { sha: value.sha } : {}),
   };
 }
 
@@ -968,8 +972,8 @@ function reviewPrompt(
     ].join("\n"),
     "## What to write",
     [
-      `Write a JSON object to ${resultPath} (inside the worktree you are in). The file must contain exactly:`,
-      '{ "findings": [{ "file": "<path>", "line": <number>, "severity": "critical|major|minor", "summary": "<one line>", "trigger": "<what causes it>" }], "verified": ["<what you checked>"] }',
+      `Write a JSON object to ${resultPath} (inside the worktree you are in). The file must contain exactly (\`sha\` is the commit you reviewed, ${sha}):`,
+      `{ "findings": [{ "file": "<path>", "line": <number>, "severity": "critical|major|minor", "summary": "<one line>", "trigger": "<what causes it>" }], "verified": ["<what you checked>"], "sha": "${sha}" }`,
       "List every problem you find; the gate decides which of them are old, not you.",
       ...(rework === undefined
         ? []
@@ -2382,6 +2386,19 @@ export async function runReview(
     }
     reviewTestHooks.afterCall?.({ role: action.role, reason: action.reason });
     let runRecord: ReviewRunRecord;
+    // A report for another commit is refused, not recorded as this commit's.
+    if (
+      call.outcome === "report" &&
+      call.report?.sha !== undefined &&
+      call.report.sha !== sha
+    ) {
+      const message = `the review report is for ${call.report.sha}, not the checked commit ${sha}`;
+      return finish(
+        { result: "failed", run: ctx.runId, sha, round, reason: "wrong_commit", message },
+        "failed",
+        { reason: "wrong_commit", message },
+      );
+    }
     if (call.outcome === "report" && call.report !== undefined) {
       // Dev decides what is pre-existing; a mark the model wrote is dropped.
       const findings: ReviewFinding[] = call.report.findings.map((reported) => {
