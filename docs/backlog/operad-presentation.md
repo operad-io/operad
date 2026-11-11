@@ -25,7 +25,7 @@
    - 第一层是插件：`/v1/types` 的每个类型带上它所属的插件，客户端按插件分组。
    - 点进一个插件，列出它的顶层对象：这个插件各类型里没有 `parent` 的对象。
    - 对象页在 row 和分段之间列出它的下一层：`parent` 等于这个 id 的对象，每行和列表里的一行一样（等人、在跑的标记，可点进去），再往下同样。
-   - API：`list` 接受 `parent=<id>`（下一层）和 `root`（顶层）；类型声明的 filter 和默认 filter 照样作用在下一层的列表上，隐藏的个数照样给出。
+   - API：`list` 接受 `parent=<id>`（下一层）和 `root`（顶层）；类型声明的 filter 和默认 filter 照样作用在下一层的列表上，隐藏的个数照样给出，并按隐藏行的 `mark` 给 `done`、`cancelled`、`other` 三个数（2026-11-10 owner 定）。
    - `dev` 的层级是 仓库 → plan → task：`dev` 新增 `repo` 对象类型（`operad dev repo add` 登记的仓库），plan 的 `parent` 是它的仓库，task 的 `parent` 是它的 plan。
    - 客户端仍不认识插件：层级、名字都来自 `/v1`。命令行的 `operad list <类型>` 照旧平铺。
    - TUI（2026-11-08 owner 定，照 arc 的 plans 页）：顶栏是待处理、正在跑，再加每个插件一个 tab（`dev`），不再每个类型一个 tab。插件 tab 左栏列出它的顶层对象；顶层对象都有下一层时，左栏改列下一层，按顶层对象分组，组名是顶层对象那一行（`dev` 左栏就是按仓库分组的 plan）。右栏是选中对象的页面：row、进度条、下一层列表（每行 mark、id、状态、badge、note，回车打开那个对象自己的页面），再往下是分段。下一层已经由客户端画成列表，插件不再另给一个列出下一层的分段（`dev` 去掉 plan 的 Tasks 段）。不在左栏的对象（如 task）只从上一层的页面、待处理、正在跑打开。
@@ -37,7 +37,7 @@
    - `dev` 的映射：task 的 proposed→`proposed`；ready→`todo`（等前置任务或同区任务时→`blocked`，模型不可用、定了重试时间时→`retry_wait`）；running 时按当前步骤：worktree→`starting`、work 和 rework→`running`、verify 和 review→`checking`、integrate→`integrating`；waiting 时按等的原因：verify 和 review 都过了等合并→`ready_to_merge`，问要不要返工→`rework_pending`，其余→`waiting`；merged→`done`；cancelled→`cancelled`；auto rework 用完放弃→`failed`。plan 的 draft→`proposed`，confirmed→有任务等人（proposed，或停下来问人的 waiting）时 `waiting`（2026-11-09 owner 定：决定 10 允许 waiting 优先），否则有任务在跑时 `running`、否则 `todo`；每个 proposed 的 task 都是 pending 的一项（`dev` 的 standing 项，带 `dev:confirm`、`dev:cancel`），行画成 `waiting` 为真、mark 为 `proposed`，confirm 或 cancel 后消失，暂停→`paused`，finished→`done`，cancelled→`cancelled`。
    - `row` 还可以带 `badge`：一小段原样显示的文字，客户端放在状态后面（`done.merged · #2` 的 `#2`）。`dev` 的 task 填 `#<第几次 attempt>`，还没开始的填 `#0`。
    - `row` 还可以带 `after`：同一个上一层下、这个对象要等的兄弟对象的 id 列表（2026-11-08 owner 定：plan 下的 task 列表照 arc 画）。客户端画下一层列表时按它排成树：一行挂在它 `after` 里排在最前的那个兄弟下面，用 `└─` 缩进；`after` 里其余的兄弟写在行尾，`also after <id>`。`after` 指向不在列表里的对象时忽略那一项；有环时按原顺序平铺。`dev` 的 task 填它的 `after`。
-   - 对象页的进度条：对象页在 row 下面、下一层列表上面画一条分段的条，条占满整行，按“完成数 / 总数”只把完成的孩子填成完成色，没完成的孩子留空，不再按每个孩子的 `mark` 上色（2026-11-10 owner 定，替换 2026-11-08 的按 `mark` 上色）。条下面一行是下一层列表的标题行：左边是下一层的类型名，右边是“完成数 / 总数”，只写数字，后面不跟状态词（2026-11-08 owner 定，照 arc 的 plan 页）。完成数 / 总数算对象的全部孩子，包括列表隐藏的孩子；隐藏的已完成孩子按完成计入，隐藏的已取消孩子和已取消的一样不算；隐藏的个数和其中已取消的个数由服务端列表答案得出，不靠读每一页（2026-11-10 owner 定）。已取消的不算进完成数，也不算进总数；条上仍画它们的暗红格，排在所有其他格后面；下一层列表里已取消的也排在最后；`dev` 的 plan 行里的“合并数/任务数”同样不算已取消的任务（2026-11-09 owner 定）。没有下一层的对象不画。这是客户端按决定 9 的下一层列表算出来的，插件不用多给东西。
+   - 对象页的进度条：对象页在 row 下面、下一层列表上面画一条分段的条，条占满整行，按“完成数 / 总数”只把完成的孩子填成完成色，没完成的孩子留空，不再按每个孩子的 `mark` 上色（2026-11-10 owner 定，替换 2026-11-08 的按 `mark` 上色）。条下面一行是下一层列表的标题行：左边是下一层的类型名，右边是“完成数 / 总数”，只写数字，后面不跟状态词（2026-11-08 owner 定，照 arc 的 plan 页）。完成数 / 总数算对象的全部孩子，包括列表隐藏的孩子；隐藏的已完成孩子按完成计入，隐藏的已取消孩子和已取消的一样不算；隐藏的个数和其中 `done`、`cancelled`、`other` 的个数由服务端列表答案得出，不靠读每一页，也不靠猜是哪个 filter 把它们藏了（2026-11-10 owner 定）。已取消的不算进完成数，也不算进总数；条上仍画它们的暗红格，排在所有其他格后面；下一层列表里已取消的也排在最后；`dev` 的 plan 行里的“合并数/任务数”同样不算已取消的任务（2026-11-09 owner 定）。没有下一层的对象不画。这是客户端按决定 9 的下一层列表算出来的，插件不用多给东西。
 
 11. **设置由内核读写，客户端通过同一套 API 改。**（2026-11-08 owner 定：“放进 kernel”，P-0014。）
    - 设置有两种：全局设置是 `~/.operad/config.json` 里每个插件的那一段（`plugins.<插件>.settings`，插件声明 JSON Schema，内核加载时已经校验）；项目设置是插件声明的、放在登记仓库 `.operad/` 下的 JSON 文件（比如 `dev` 的 `review.json`），也带 schema。
