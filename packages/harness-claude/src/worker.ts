@@ -45,7 +45,8 @@ export const EXIT_CANCELLED = 143;
 /**
  * What the program sets for the `claude` it starts, so that it does not
  * remember, read project instruction files, report or phone home on its own.
- * `SPIKE.md` lists which names the installed Claude Code reads.
+ * `docs/research/2026-11-07-claude-isolation-env.md` lists which names the
+ * installed Claude Code reads.
  */
 export const ISOLATION_ENV: Readonly<Record<string, string>> = {
   CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",

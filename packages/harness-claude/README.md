@@ -9,7 +9,8 @@ Run it as `bun packages/harness-claude/src/worker.ts`. stderr is free text for
 humans and is never parsed.
 
 operad bundles no claude. The root `package.json` replaces the eight
-platform packages of the SDK with empty ones (`SPIKE.md`), and the worker finds
+platform packages of the SDK with empty ones
+(`docs/backlog/operad-harness-claude.md` decision 2), and the worker finds
 `claude` on `PATH` (or at the `command` it is given) and resolves its real path.
 The login is the one `claude` already has; the worker passes no credential. A
 `CLAUDE_CODE_OAUTH_TOKEN` in the environment (from `claude setup-token`) reaches
