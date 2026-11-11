@@ -1604,6 +1604,7 @@ function commandFlows(context: Context, io: CliIo, json: boolean): void {
 }
 
 const CLI_ENTRY = fileURLToPath(new URL("../bin/operad.ts", import.meta.url));
+console.error("DEBUG cli", import.meta.url, CLI_ENTRY, process.argv.slice(2));
 
 function spawnChild(
   home: string,
