@@ -75,9 +75,9 @@ const typeText = (text: string): TuiStateEvent[] =>
 describe("actions in the reducer", () => {
   test("the footer offers the first action under its bound key and the rest under :", () => {
     const state = opened(ACTIONS, [{ key: "m", action: "tuitest:approve", source: "plugin" }]);
-    expect(footerText(state).startsWith("m tuitest:approve  : more  ")).toBe(true);
+    expect(footerText(state).startsWith("m tuitest:approve · : more · ")).toBe(true);
     const lone = opened([ACTIONS[3] as ViewAction]);
-    expect(footerText(lone).startsWith("a other:ship  j/k")).toBe(true);
+    expect(footerText(lone).startsWith("a other:ship · j/k")).toBe(true);
     const none = opened([]);
     expect(footerText(none).startsWith("a ")).toBe(false);
   });

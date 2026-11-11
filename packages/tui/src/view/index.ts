@@ -14,7 +14,7 @@ import {
 } from "@opentui/core";
 import type { RowMark } from "@operad-io/engine";
 import { allowedText } from "../args.ts";
-import { confirmText, entryHint, matchPositions, paletteEntries, settingText } from "../actions.ts";
+import { confirmText, entryDetail, matchPositions, paletteEntries, settingText, type TuiPaletteEntry } from "../actions.ts";
 import { chunksOfLine } from "../markdown.ts";
 import {
   TUI_PALETTE,
@@ -27,6 +27,8 @@ import { sanitize } from "../sanitize.ts";
 import { displayWidth, graphemes, wrapText } from "../wrap.ts";
 import {
   CHILD_ROWS,
+  HELP_LINES,
+  KEY_GROUPS,
   KEY_LIST,
   ROW_INDENT,
   activeSection,
@@ -44,7 +46,8 @@ import {
   LIST_X,
   bodyHeight,
   filterHeader,
-  footerText,
+  footerSegments,
+  helpViewport,
   noticeText,
   pageEntries,
   pagePosition,
@@ -621,13 +624,151 @@ function objectContent(state: TuiState, palette: TuiPalette): StyledText {
   return styled(chunks);
 }
 
-function keyContent(palette: TuiPalette): StyledText {
-  const chunks: TextChunk[] = [chunk("keys\n", palette.accent, TextAttributes.BOLD)];
-  for (const [key, what] of KEY_LIST) {
-    chunks.push(chunk(`  ${key}`, palette.accent));
-    chunks.push(chunk(`  ${what}\n`, palette.weak));
+function keyContent(state: TuiState, palette: TuiPalette): StyledText {
+  const width = Math.max(...KEY_LIST.map(([key]) => displayWidth(key)));
+  const room = Math.max(1, overlayTextWidth(state) - 2 - width - 2);
+  const lines: TextChunk[][] = [[chunk("keys\n", palette.accent, TextAttributes.BOLD)]];
+  KEY_GROUPS.forEach((group, at) => {
+    if (at > 0) lines.push([chunk("\n")]);
+    for (const [key, what] of group) {
+      const pad = " ".repeat(Math.max(0, width - displayWidth(key)));
+      lines.push([
+        chunk(`  ${key}${pad}  `, palette.accent),
+        chunk(`${fit(what, room)}\n`, palette.weak),
+      ]);
+    }
+  });
+  const rows = helpViewport(state);
+  const start = Math.min(Math.max(0, state.helpScroll), Math.max(0, lines.length - rows));
+  return styled(lines.slice(start, start + rows).flat());
+}
+
+/** One line of the palette's body: a blank, a group label, or an entry. */
+type PaletteLine =
+  | { readonly kind: "blank" }
+  | { readonly kind: "group"; readonly group: string }
+  | { readonly kind: "entry"; readonly entry: TuiPaletteEntry; readonly at: number };
+
+/** The palette's body in drawing order: each group label over its entries, a blank line between groups. */
+function paletteDisplayLines(entries: readonly TuiPaletteEntry[]): readonly PaletteLine[] {
+  const lines: PaletteLine[] = [];
+  let last: string | undefined;
+  entries.forEach((entry, at) => {
+    if (entry.group !== last) {
+      if (last !== undefined) lines.push({ kind: "blank" });
+      lines.push({ kind: "group", group: entry.group });
+      last = entry.group;
+    }
+    lines.push({ kind: "entry", entry, at });
+  });
+  return lines;
+}
+
+/** The object a palette entry acts on: the open object, for its actions. */
+function paletteObject(state: TuiState, entry: TuiPaletteEntry): string {
+  return entry.group === "actions" && state.object !== undefined ? bareId(state.object.id) : "";
+}
+
+/** What a palette entry says after its name: the command's title, or the action's own detail. */
+function paletteDetail(entry: TuiPaletteEntry): string {
+  return entry.group === "tui" ? entry.title : entryDetail(entry);
+}
+
+interface PaletteColumns {
+  readonly name: number;
+  readonly object: number;
+  readonly detail: number;
+  readonly key: number;
+  readonly hasObject: boolean;
+  readonly hasKey: boolean;
+}
+
+/** The cells between two palette columns. */
+const PALETTE_GAP = 2;
+
+/** The column widths of a palette at `width` cells: name, object, detail and a right-aligned key. */
+function paletteColumns(
+  state: TuiState,
+  entries: readonly TuiPaletteEntry[],
+  width: number,
+): PaletteColumns {
+  const widest = (texts: readonly string[]): number =>
+    texts.reduce((most, text) => Math.max(most, displayWidth(text)), 0);
+  let hasObject = entries.some((entry) => paletteObject(state, entry) !== "");
+  const hasKey = entries.some((entry) => entry.key !== undefined);
+  const keyWidth = hasKey ? Math.min(8, Math.max(1, widest(entries.map((entry) => entry.key ?? "")))) : 0;
+  let name = Math.min(26, Math.max(1, widest(entries.map((entry) => entry.name))));
+  let object = hasObject ? Math.min(24, widest(entries.map((entry) => paletteObject(state, entry)))) : 0;
+  const gaps = 2 + PALETTE_GAP + (hasObject ? PALETTE_GAP : 0) + (hasKey ? PALETTE_GAP + keyWidth : 0);
+  let detail = width - gaps - name - object;
+  // A long name gives way first, then a long object, so the detail keeps some room.
+  const give = (from: number, floor: number): number => {
+    const cut = Math.min(from - floor, Math.max(0, 6 - detail));
+    detail += cut;
+    return from - cut;
+  };
+  if (detail < 6) name = give(name, 4);
+  if (detail < 6) object = give(object, 0);
+  if (object === 0 && hasObject) {
+    hasObject = false;
+    detail += PALETTE_GAP;
   }
-  return styled(chunks);
+  if (detail < 1 && name > 1) name = give(name, 1);
+  if (detail < 1) object = give(object, 0);
+  return { name, object, detail: Math.max(1, detail), key: keyWidth, hasObject: object > 0, hasKey };
+}
+
+/** One palette entry in its columns, the key at the right edge. */
+function paletteEntryLine(
+  state: TuiState,
+  line: Extract<PaletteLine, { readonly kind: "entry" }>,
+  columns: PaletteColumns,
+  width: number,
+  palette: TuiPalette,
+): TextChunk[] {
+  const { entry, at } = line;
+  const input = state.input;
+  const query = input?.kind === "palette" ? input.query : "";
+  const selected = input?.kind === "palette" && at === input.cursor;
+  const shown = fit(entry.name, columns.name);
+  const marked = new Set(matchPositions(query, entry));
+  const colour = selected ? palette.accent : palette.text;
+  const chunks: TextChunk[] = [chunk(selected ? "❯ " : "  ", palette.accent)];
+  let used = 0;
+  for (const run of nameRuns(shown, marked)) {
+    used += displayWidth(run.text);
+    chunks.push(
+      run.marked
+        ? chunk(run.text, palette.accent, TextAttributes.BOLD | TextAttributes.UNDERLINE)
+        : chunk(run.text, colour),
+    );
+  }
+  chunks.push(chunk(" ".repeat(Math.max(0, columns.name - used))));
+  if (columns.hasObject) {
+    const object = fit(paletteObject(state, entry), columns.object);
+    chunks.push(chunk(" ".repeat(PALETTE_GAP)));
+    chunks.push(chunk(object, palette.weak));
+    chunks.push(chunk(" ".repeat(Math.max(0, columns.object - displayWidth(object)))));
+  }
+  chunks.push(chunk(" ".repeat(PALETTE_GAP)));
+  const detail = fit(paletteDetail(entry), columns.detail);
+  chunks.push(chunk(detail, palette.weak));
+  if (columns.hasKey) {
+    chunks.push(chunk(" ".repeat(Math.max(0, columns.detail - displayWidth(detail)) + PALETTE_GAP)));
+    const key = entry.key ?? "";
+    chunks.push(chunk(" ".repeat(Math.max(0, columns.key - displayWidth(key))), undefined));
+    chunks.push(chunk(key, palette.text));
+  }
+  // Keep every entry the same width, so the key column stays at the right edge.
+  const drawn = chunks.reduce((sum, part) => sum + displayWidth(part.text), 0);
+  if (drawn < width) chunks.push(chunk(" ".repeat(width - drawn)));
+  chunks.push(chunk("\n"));
+  return chunks;
+}
+
+/** The width inside an overlay's frame, its one-cell padding on each side taken. */
+function overlayTextWidth(state: TuiState): number {
+  return Math.max(1, (overlayBox(state)?.width ?? OVERLAY_WIDTH) - 4);
 }
 
 /** An entry's name cut into runs, each wholly matched or wholly not. */
@@ -731,28 +872,26 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
     });
     return styled(chunks);
   }
-  const chunks: TextChunk[] = [chunk(`: ${input.query}${bar}\n`, palette.accent)];
+  const chunks: TextChunk[] = [chunk(`: ${input.query}${bar}\n`, palette.accent), chunk("\n")];
   const entries = paletteEntries(state);
-  if (entries.length === 0) chunks.push(chunk("nothing matches", palette.weak));
-  // The box holds fewer lines than a long list: keep the cursor in view.
-  const rows = Math.max(1, (overlayBox(state)?.height ?? 5) - 4 - 1);
-  const start = Math.max(0, Math.min(input.cursor - Math.floor(rows / 2), entries.length - rows));
-  entries.slice(start, start + rows).forEach((entry, offset) => {
-    const at = start + offset;
-    const hint = entryHint(entry);
-    chunks.push(chunk(at === input.cursor ? "❯ " : "  ", palette.accent));
-    chunks.push(chunk(`${entry.group.padEnd(7)} `, palette.weak));
-    const marked = new Set(matchPositions(input.query, entry));
-    const colour = at === input.cursor ? palette.accent : palette.text;
-    for (const run of nameRuns(entry.name, marked)) {
-      chunks.push(
-        run.marked
-          ? chunk(run.text, palette.accent, TextAttributes.BOLD | TextAttributes.UNDERLINE)
-          : chunk(run.text, colour),
-      );
-    }
-    chunks.push(chunk(hint === "" ? "\n" : `  ${hint}\n`, palette.weak));
-  });
+  if (entries.length === 0) {
+    chunks.push(chunk("nothing matches", palette.weak));
+    return styled(chunks);
+  }
+  const lines = paletteDisplayLines(entries);
+  const columns = paletteColumns(state, entries, overlayTextWidth(state));
+  // The input line and the blank line under it stay put; only the body scrolls.
+  const rows = Math.max(0, (overlayBox(state)?.height ?? 5) - 4 - 2);
+  const selected = lines.findIndex((line) => line.kind === "entry" && line.at === input.cursor);
+  const start =
+    selected < rows
+      ? 0
+      : Math.max(0, Math.min(selected - Math.floor(rows / 2), lines.length - rows));
+  for (const line of lines.slice(start, start + rows)) {
+    if (line.kind === "blank") chunks.push(chunk("\n"));
+    else if (line.kind === "group") chunks.push(chunk(`${line.group}\n`, palette.weak));
+    else chunks.push(...paletteEntryLine(state, line, columns, overlayTextWidth(state), palette));
+  }
   return styled(chunks);
 }
 
@@ -786,7 +925,7 @@ export function overlayBox(state: TuiState): OverlayBox | undefined {
   const kind = state.keys ? "keys" : state.input?.kind;
   if (kind === undefined) return undefined;
   const width = Math.max(10, Math.min(OVERLAY_WIDTH, state.width - 4));
-  const lines = kind === "keys" ? KEY_LIST.length + 1 : kind === "confirm" || kind === "setting-confirm" ? 2 : inputLines(state);
+  const lines = kind === "keys" ? HELP_LINES : kind === "confirm" || kind === "setting-confirm" ? 2 : inputLines(state);
   // Border (2) and a one-cell margin of background (2) around the text.
   const wanted = lines + 4;
   const left = Math.max(0, Math.floor((state.width - width) / 2));
@@ -812,7 +951,10 @@ function inputLines(state: TuiState): number {
     return 3 + (setting.description === undefined ? 0 : 1) + body;
   }
   if (input?.kind === "note") return input.text.split("\n").length + 2;
-  if (input?.kind === "palette") return Math.max(1, paletteEntries(state).length) + 1;
+  if (input?.kind === "palette") {
+    const entries = paletteEntries(state);
+    return entries.length === 0 ? 3 : 2 + paletteDisplayLines(entries).length;
+  }
   if (input?.kind === "themes") return Math.max(1, state.themeNames.length) + 1;
   if (input?.kind === "pages") return Math.max(1, pageEntries(state).length) + 1;
   return 0;
@@ -828,6 +970,17 @@ export interface TuiDrawing {
   readonly footer: StyledText;
   /** The `?` key list, the palette, the note or the confirmation, drawn in a filled box. */
   readonly overlay: StyledText | undefined;
+}
+
+/** The footer: keys in the text colour, their hints weak, separated by a dot. */
+function footerContent(state: TuiState, palette: TuiPalette): StyledText {
+  const chunks: TextChunk[] = [chunk(" ")];
+  footerSegments(state).forEach((segment, at) => {
+    if (at > 0) chunks.push(chunk(" · ", palette.weak));
+    if (segment.key !== undefined) chunks.push(chunk(`${segment.key} `, palette.text));
+    chunks.push(chunk(segment.hint, palette.weak));
+  });
+  return styled(truncateChunks(chunks, Math.max(1, state.width - 2)));
 }
 
 /** The styled text of every area for one state; the view only places it. */
@@ -847,7 +1000,7 @@ export function drawState(
     divider: dividerContent(state, palette),
     footer:
       status === undefined
-        ? styled([chunk(` ${fit(footerText(state), width)}`, palette.weak)])
+        ? footerContent(state, palette)
         : styled([chunk(` ${fit(status, width)}`, palette.error)]),
     list: dimmed(
       listContent(state, activeTab(state), palette),
@@ -856,7 +1009,7 @@ export function drawState(
     ),
     right: objectContent(state, palette),
     overlay: state.keys
-      ? keyContent(palette)
+      ? keyContent(state, palette)
       : (inputContent(state, palette) ?? confirmContent(state, palette)),
   };
 }
@@ -942,7 +1095,7 @@ export function createTuiView(
     left: 2,
     top: 2,
     width: 60,
-    height: KEY_LIST.length + 5,
+    height: HELP_LINES + 4,
     border: true,
     borderStyle: "rounded",
     borderColor: toRgba(TUI_PALETTE.dark.rule),
