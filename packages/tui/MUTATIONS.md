@@ -288,3 +288,15 @@ the row fields.
 | T-0104-M8 | packages/tui/src/view/index.ts | drew the footer's keys in the weak colour | `the overlays' spacing > the footer separates hints with a dot, the keys in the text colour and the hints weak` |
 | T-0104-M9 | packages/tui/src/actions.ts | listed the recent palette entries across groups instead of grouping them | `palette search: recent entries > an empty query keeps the last five used first inside each group, and lists the groups in order` |
 | T-0104-M10 | packages/tui/src/view/index.ts | drew the key list from its first row, so a short terminal could not reach its last group | `the overlays' spacing > the key list scrolls to its last group on a 24-row terminal at 80 columns` |
+
+## T-0105 — diff text contrast
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0105-M1 | packages/tui/src/layout.ts | gave code text with no role the weak role again | `a diff block > gives header, hunk, add, remove and context their roles` |
+| T-0105-M2 | packages/tui/src/layout.ts | drew the fence's language as a line | `a diff block > has no line for the fence's language` |
+| T-0105-M3 | packages/tui/src/layout.ts | did not pad code rows to the pane's width | `a diff block > is one rectangle: every row has the pane's width and one column of left padding` |
+| T-0105-M4 | packages/tui/src/layout.ts | drew the whole --stat line in one colour | `a diff block > colours the + and - runs of a --stat line` |
+| T-0105-M5 | packages/tui/src/theme.ts | set the dark theme's weak colour to #5a5a66 | `theme contrast > dark: text and weak read on the background and the code background` |
+| T-0105-M6 | packages/tui/src/layout.ts | wrapped code rows without re-adding the left padding to continuation rows | `a wrapped code row > keeps the block's left padding and its width on every row` |
+| T-0105-M7 | packages/tui/src/layout.ts | counted the --stat head in UTF-16 units instead of graphemes | `code rows at narrow widths and with astral characters > colours the first + of a --stat line whose file name has an astral character` |

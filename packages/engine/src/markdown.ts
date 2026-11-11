@@ -32,6 +32,10 @@ export interface RenderOptions {
 export interface MarkdownLine {
   readonly text: string;
   readonly code: boolean;
+  /** For a fenced code line: the fence's info string (empty when it has none). */
+  readonly language?: string;
+  /** True for the line that prints the fence's info string, not a code line. */
+  readonly label?: boolean;
 }
 
 function styled(text: string, code: string): string {
@@ -318,23 +322,25 @@ function renderCode(
     lines.push({
       text: colour ? styled(`  ${language}`, ANSI.dim) : `  ${language}`,
       code: true,
+      language,
+      label: true,
     });
   }
   const diff = language === "diff";
   for (const codeLine of code) {
     const body = `  ${codeLine}`;
     if (!colour || codeLine.length === 0) {
-      lines.push({ text: body, code: true });
+      lines.push({ text: body, code: true, language });
       continue;
     }
     if (diff && codeLine.startsWith("+")) {
-      lines.push({ text: styled(body, ANSI.green), code: true });
+      lines.push({ text: styled(body, ANSI.green), code: true, language });
     } else if (diff && codeLine.startsWith("-")) {
-      lines.push({ text: styled(body, ANSI.red), code: true });
+      lines.push({ text: styled(body, ANSI.red), code: true, language });
     } else if (diff && codeLine.startsWith("@@")) {
-      lines.push({ text: styled(body, ANSI.cyan), code: true });
+      lines.push({ text: styled(body, ANSI.cyan), code: true, language });
     } else {
-      lines.push({ text: styled(body, ANSI.dim), code: true });
+      lines.push({ text: styled(body, ANSI.dim), code: true, language });
     }
   }
   return lines;

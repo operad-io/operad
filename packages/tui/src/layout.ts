@@ -48,7 +48,7 @@ function roleFor(code: number): LayoutRole | null {
 }
 
 /** Reads the ANSI the engine's renderer emits into styled display characters. */
-function glyphsFor(text: string, code: boolean): WrapGlyph<LayoutStyle>[] {
+function glyphsFor(text: string): WrapGlyph<LayoutStyle>[] {
   const glyphs: WrapGlyph<LayoutStyle>[] = [];
   let role: LayoutRole;
   let attributes = 0;
@@ -57,7 +57,7 @@ function glyphsFor(text: string, code: boolean): WrapGlyph<LayoutStyle>[] {
   const plain = (value: string): void => {
     // The text was cleaned before it was rendered; what is left of ESC is the
     // renderer's own styles, read below. A tab becomes spaces.
-    const effective: LayoutRole = code && role === undefined ? "weak" : role;
+    const effective: LayoutRole = role;
     for (const char of graphemes(value.replace(/\t/g, "    "))) {
       glyphs.push({ char, value: { role: effective, attributes } });
     }
@@ -84,6 +84,65 @@ function glyphsFor(text: string, code: boolean): WrapGlyph<LayoutStyle>[] {
   }
   plain(sanitize(text.slice(at)));
   return glyphs;
+}
+
+const DIFF_HEADER = /^(diff --git|index |new file mode|deleted file mode|old mode|new mode|similarity index|dissimilarity index|rename from|rename to|copy from|copy to)/;
+const STAT_LINE = /^(\s*\S.*?\|\s*\d+\s+)([+-]+)\s*$/;
+
+/**
+ * The glyphs of one fenced code row. The engine's own styling is not used: a
+ * row has no role unless it is a diff line, and then the role follows the
+ * line's first characters (or, in a --stat line, the + and - runs).
+ */
+function codeGlyphs(text: string, language: string): WrapGlyph<LayoutStyle>[] {
+  // The engine indents code by two columns; the block keeps one.
+  const plain = sanitize(text.replace(/\x1b\[[0-9;]*m/g, "")).replace(/\t/g, "    ").replace(/^ /, "");
+  const body = plain.replace(/^ /, "");
+  const make = (role: LayoutRole, attributes = 0) =>
+    graphemes(plain).map((char): WrapGlyph<LayoutStyle> => ({ char, value: { role, attributes } }));
+  if (language !== "diff") return make(undefined);
+  if (body.startsWith("+")) return make("add");
+  if (body.startsWith("-")) return make("remove");
+  if (body.startsWith("@@")) return make("accent");
+  if (body.startsWith("diff --git")) return make("accent", TextAttributes.BOLD);
+  if (DIFF_HEADER.test(body)) return make("accent");
+  const stat = STAT_LINE.exec(body);
+  if (stat !== null) {
+    const head = 1 + graphemes(stat[1] ?? "").length;
+    return graphemes(plain).map((char, index): WrapGlyph<LayoutStyle> => ({
+      char,
+      value: {
+        role: index < head ? undefined : char === "+" ? "add" : char === "-" ? "remove" : undefined,
+        attributes: 0,
+      },
+    }));
+  }
+  return make(undefined);
+}
+
+/**
+ * Cuts a code row into rows of `width` columns at any column, keeping its
+ * indentation, and gives every row the block's one column of left padding.
+ */
+function cutCode(glyphs: readonly WrapGlyph<LayoutStyle>[], width: number): WrapGlyph<LayoutStyle>[][] {
+  const [pad, ...body] = glyphs;
+  if (pad === undefined) return [[]];
+  const limit = Math.max(1, Math.trunc(width) - 1);
+  const rows: WrapGlyph<LayoutStyle>[][] = [];
+  let row: WrapGlyph<LayoutStyle>[] = [pad];
+  let used = 0;
+  for (const glyph of body) {
+    const size = Bun.stringWidth(glyph.char);
+    if (used > 0 && used + size > limit) {
+      rows.push(row);
+      row = [pad];
+      used = 0;
+    }
+    row.push(glyph);
+    used += size;
+  }
+  rows.push(row);
+  return rows;
 }
 
 function sameStyle(left: LayoutStyle, right: LayoutStyle): boolean {
@@ -125,9 +184,25 @@ export function layoutMarkdown(
     colour: true,
     width,
   })) {
-    const glyphs = glyphsFor(line.text, line.code);
-    const wrapped = width === undefined ? [glyphs] : wrapGlyphs(glyphs, width);
+    // The fence's info string is not drawn.
+    if (line.label === true) continue;
+    const glyphs = line.code
+      ? codeGlyphs(line.text, line.language ?? "")
+      : glyphsFor(line.text);
+    const wrapped =
+      width === undefined
+        ? [glyphs]
+        : line.code
+          ? cutCode(glyphs, width)
+          : wrapGlyphs(glyphs, width);
     for (const row of wrapped) {
+      if (line.code && width !== undefined) {
+        // One rectangle: every row of the block is as wide as the pane.
+        const used = row.reduce((sum, glyph) => sum + Bun.stringWidth(glyph.char), 0);
+        for (let pad = used; pad < width; pad += 1) {
+          row.push({ char: " ", value: { role: undefined, attributes: 0 } });
+        }
+      }
       rows.push({
         text: row.map((glyph) => glyph.char).join(""),
         code: line.code,
@@ -135,7 +210,7 @@ export function layoutMarkdown(
       });
     }
   }
-  while (rows.length > 0 && (rows[rows.length - 1]?.text ?? "") === "") rows.pop();
+  while (rows.length > 0 && (rows[rows.length - 1]?.text ?? "").trim() === "") rows.pop();
   return rows;
 }
 

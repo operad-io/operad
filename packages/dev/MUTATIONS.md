@@ -741,3 +741,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0240-M13 | packages/dev/src/views.ts | blank lines of a command were not counted in the lines left | `dev views > a multi-line command shows its first line and the count of lines left; a long one-liner is cut` |
+## T-0246 — a cancelled task's run ends when the settings cannot be read
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0246-M1 | packages/dev/src/schedule.ts | the sweep of cancelled tasks' runs ran after the settings were read, so unreadable settings skipped it | `a run on a cancelled task is ended even when the repository's settings cannot be read` |
+| T-0122-M2 | packages/dev/src/views.ts | a plan listed a Tasks section again | `dev views > a plan loads its request and has no tasks section` |
