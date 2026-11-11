@@ -1083,6 +1083,12 @@ export function shiftCostTotals(
 function planCost(plan: PlanData): string | undefined {
   const t = plan.costTotals;
   if (t === undefined) return undefined;
+  const fields = [
+    t.exactMicros, t.estimatedMicros, t.incompleteMicros,
+    t.exactTasks, t.estimatedTasks, t.incompleteTasks,
+  ];
+  // A stored plan may carry a malformed total; show no cost rather than NaN.
+  if (!fields.every((n) => typeof n === "number" && Number.isFinite(n))) return undefined;
   const tasks = t.exactTasks + t.estimatedTasks + t.incompleteTasks;
   if (tasks <= 0) return undefined;
   const micros = t.exactMicros + t.estimatedMicros + t.incompleteMicros;

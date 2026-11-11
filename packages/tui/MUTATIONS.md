@@ -333,3 +333,6 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0296-M1 | packages/tui/src/app.ts | the grouped list needed every top-level object to have a next level (`every` for `some`), so one empty repository dropped the list back to the roots | `one tab per plugin > a repository with no plans is still a group row among the grouped plans` |
+| T-0302-M1 | packages/tui/src/view/index.ts | the list title was not cut to the list width | `spacing follow-ups > a long list title is cut to the list width` |
+| T-0302-M2 | packages/tui/src/state.ts | a list refresh restarted a follow that was already waiting (moveSeq bumped again) | `spacing follow-ups > a refresh does not restart a follow that is already waiting` |
+| T-0302-M3 | packages/tui/src/state.ts | an empty list left the object open while a follow waited | `spacing follow-ups > an empty list closes the object beside it, even while a follow waits` |

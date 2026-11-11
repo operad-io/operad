@@ -762,6 +762,21 @@ describe("dev views", () => {
     expect(await note()).toBe("0/2 · $1.70 · off · P3 // 1");
   });
 
+  test("a refresh heals a plan total that drifted, and a malformed total shows no cost", async () => {
+    const { store, plan, task } = await setup();
+    const stored = taskData((await getTask(store, task.id)).data);
+    await store.put("task", task.id, { ...stored, cost: 2, costQuality: "exact" }, "test:raw");
+    const current = planData((await getPlan(store, plan.id)).data);
+    // A crash between the task write and the plan write leaves the total behind.
+    await store.put("plan", plan.id, { ...current, costTotals: { ...current.costTotals, exactMicros: 5 } }, "test:drift");
+    const { refreshPlanCounts } = await import("../src/service.ts");
+    await refreshPlanCounts(store, await getPlan(store, plan.id));
+    expect(planViews.row(await getPlan(store, plan.id)).note).toBe("0/1 · $2.00 · off · P3 // 1");
+    const broken = planData((await getPlan(store, plan.id)).data);
+    await store.put("plan", plan.id, { ...broken, costTotals: { exactTasks: 1 } }, "test:broken");
+    expect(planViews.row(await getPlan(store, plan.id)).note).toBe("0/1 · off · P3 // 1");
+  });
+
   test("a plan stored without a total gets one when its tasks are refreshed", async () => {
     const { store, plan, task } = await setup();
     const stored = taskData((await getTask(store, task.id)).data);

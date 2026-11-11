@@ -1782,7 +1782,7 @@ export class Views {
     if (
       after !== undefined &&
       (!Array.isArray(after) ||
-        after.some((entry) => typeof entry !== "string" || entry.length === 0))
+        Array.from(after).some((entry) => typeof entry !== "string" || entry.length === 0))
     ) {
       return this.failRow(
         plugin,
@@ -1796,7 +1796,7 @@ export class Views {
       state,
       ...(note === undefined ? {} : { note }),
       ...(typeof parent === "string" ? { parent } : {}),
-      ...(Array.isArray(after) ? { after: [...after] } : {}),
+      ...(Array.isArray(after) ? { after: Array.from(after) } : {}),
       ...(scope === undefined ? {} : { scope }),
       ...(outcome.final === true ? { final: true } : {}),
       ...(mark === undefined ? {} : { mark }),

@@ -870,3 +870,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0278-M1 | packages/dev/src/chat.ts | the harness argument dropped its `enum`, so a free-text name reached the run's refusal instead of the schema | `dev:chat > a harness outside the choice is refused by the schema before the run` |
+| T-0302-M4 | packages/dev/src/service.ts | a recount kept the stored cost total instead of recomputing it from the tasks | `dev views > a refresh heals a plan total that drifted, and a malformed total shows no cost` |

@@ -161,7 +161,7 @@ describe("one tab per plugin", () => {
       "plugin:dev",
       "plugin:notes",
     ]);
-    expect(text(drawState(state).header)).toContain("Pending 0 · Running 0 · dev · notes");
+    expect(text(drawState(state).header)).toContain("Pending 0 │ Running 0 │ dev │ notes");
     // A plugin's types are on its tab, not tabs of their own.
     expect(tabOf(state, "plugin:dev")?.types?.map((t) => t.type)).toEqual(["repo", "plan", "task"]);
   });
