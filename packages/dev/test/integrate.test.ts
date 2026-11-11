@@ -491,27 +491,33 @@ describe("dev/integrate", () => {
   });
 
   test("a failing integration check still proposes the flaky task, in the flaky-tests plan", async () => {
-    const state = await fixture({ style: "merge" });
-    const plan = await state.store.get("plan", state.planKey);
-    await state.store.put("plan", state.planKey, { ...(plan?.data ?? {}), status: "draft" }, "test");
-    writeDevJson(state.remote.repository, {
-      style: "merge",
-      check: { flakyTask: 1 },
-      keyCommands: [
-        {
-          run: 'echo "(fail) a > flaky [1.00ms]" >&2; echo "(fail) b > broken [1.00ms]" >&2; exit 1',
-          failed: { match: "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$", rerun: "case {name} in *broken) exit 1;; esac" },
-        },
-      ],
-    });
-    const result = await integrate(state);
-    expect(result.result).toBe("fail");
-    expect(String(result.data?.message)).not.toContain("no task was proposed");
-    const proposed = (await listAll(state.store, "task")).filter(
-      (object) => String((object.data as { title?: unknown }).title) === "Fix the flaky test: a > flaky",
-    );
-    expect(proposed).toHaveLength(1);
-    expect(String((proposed[0]?.data as { plan?: unknown } | undefined)?.plan)).toMatch(/-flaky-tests$/);
+    // A pass on a busy machine never counts, so the load is a quiet one, not the host's.
+    notCodeTestHooks.load = () => ({ load1: 0, cores: 10 });
+    try {
+      const state = await fixture({ style: "merge" });
+      const plan = await state.store.get("plan", state.planKey);
+      await state.store.put("plan", state.planKey, { ...(plan?.data ?? {}), status: "draft" }, "test");
+      writeDevJson(state.remote.repository, {
+        style: "merge",
+        check: { flakyTask: 1 },
+        keyCommands: [
+          {
+            run: 'echo "(fail) a > flaky [1.00ms]" >&2; echo "(fail) b > broken [1.00ms]" >&2; exit 1',
+            failed: { match: "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$", rerun: "case {name} in *broken) exit 1;; esac" },
+          },
+        ],
+      });
+      const result = await integrate(state);
+      expect(result.result).toBe("fail");
+      expect(String(result.data?.message)).not.toContain("no task was proposed");
+      const proposed = (await listAll(state.store, "task")).filter(
+        (object) => String((object.data as { title?: unknown }).title) === "Fix the flaky test: a > flaky",
+      );
+      expect(proposed).toHaveLength(1);
+      expect(String((proposed[0]?.data as { plan?: unknown } | undefined)?.plan)).toMatch(/-flaky-tests$/);
+    } finally {
+      notCodeTestHooks.load = undefined;
+    }
   });
 
   test("an integration check killed by a signal twice waits for a person, not for the worker", async () => {
