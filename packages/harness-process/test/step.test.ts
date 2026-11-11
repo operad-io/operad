@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { modelErrorOf, parseResult, parseStepFlags } from "../src/index.ts";
 
-// Moved from harness-claude/test/plugin.test.ts (the same test stays in harness-pi until its slimming task).
+// Moved from harness-claude/test/plugin.test.ts.
 describe("modelErrorOf", () => {
   test("a usage-limit text wins over a 429 in the same text", () => {
     expect(modelErrorOf("429 usage limit reached").kind).toBe("usage_limit");
@@ -28,6 +28,13 @@ describe("parseStepFlags", () => {
   test("a harness may refuse a model value", () => {
     const strict = { ...spec, modelProblem: (value: string) => (value.includes("/") ? undefined : "nope") };
     expect(parseStepFlags(["--model", "a"], strict)).toBe("nope");
+  });
+
+  test("a harness may take a value that starts with a dash", () => {
+    expect(parseStepFlags(["--model", "--effort", "high"], spec)).toBe('args: "--model" has no value');
+    const dashed = { ...spec, dashValues: true, modelProblem: () => "named" };
+    expect(parseStepFlags(["--model", "--effort"], dashed)).toBe("named");
+    expect(parseStepFlags(["--model"], dashed)).toBe('args: "--model" has no value');
   });
 });
 

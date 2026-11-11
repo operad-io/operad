@@ -16,7 +16,7 @@ import {
   type LogBackend,
 } from "@operad-io/engine";
 import { createPiHarnessPlugin } from "../src/index.ts";
-import { alive, cleanupTempRoots, manualClock, tempRoot, waitForGone, waitForPid } from "./support.ts";
+import { alive, cleanupTempRoots, manualClock, tempRoot, waitForGone, waitForPid } from "@operad-io/harness-process/test-support";
 
 afterAll(cleanupTempRoots);
 
