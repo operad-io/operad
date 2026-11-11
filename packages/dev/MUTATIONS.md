@@ -753,3 +753,4 @@ the row fields.
 | T-0239-M3 | packages/dev/src/marks.ts | a task whose step waits for a check place kept the `checking` mark | `dev views > a task whose check waits for a place says so, with how many are ahead, until it takes the place` |
 | T-0239-M4 | packages/dev/src/places.ts | a check that took its place did not end its report to the kernel before the command started | `check places > a waiting check tells the kernel and the task its place group until it takes the place` |
 | T-0239-M8 | packages/dev/src/place-wait.ts | counting the waiters and saving the wait record was not one locked turn, so two checks reaching a held place together both showed 0 ahead | `dev views > a task whose check waits for a place says so, with how many are ahead, until it takes the place` |
+| T-0260-M3 | packages/dev/src/gate.ts | review accepted a report that named no commit | `dev/review > a report that names no commit is refused` |

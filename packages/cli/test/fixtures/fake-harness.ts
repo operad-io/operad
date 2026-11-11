@@ -101,7 +101,12 @@ export function createFakeHarnessPlugin() {
             }
             writeFileSync(
               resultPath,
-              JSON.stringify({ findings: [], verified: [], summary: "clean" }),
+              JSON.stringify({
+                findings: [],
+                verified: [],
+                summary: "clean",
+                sha: Bun.spawnSync({ cmd: ["git", "rev-parse", "HEAD"], cwd }).stdout.toString().trim(),
+              }),
             );
             return done(ctx, "reviewed");
           }

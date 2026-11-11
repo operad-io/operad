@@ -802,7 +802,7 @@ function parseFinding(value: unknown): FindingShape | undefined {
 interface Report {
   readonly findings: readonly FindingShape[];
   readonly verified: readonly string[];
-  /** The commit the reviewer says it read; absent when it did not say. */
+  /** The commit the reviewer says it read; absent when it did not say, which dev refuses. */
   readonly sha?: string;
 }
 
@@ -2395,12 +2395,11 @@ export async function runReview(
     reviewTestHooks.afterCall?.({ role: action.role, reason: action.reason });
     let runRecord: ReviewRunRecord;
     // A report for another commit is refused, not recorded as this commit's.
-    if (
-      call.outcome === "report" &&
-      call.report?.sha !== undefined &&
-      call.report.sha !== sha
-    ) {
-      const message = `the review report is for ${call.report.sha}, not the checked commit ${sha}`;
+    if (call.outcome === "report" && call.report?.sha !== sha) {
+      const message =
+        call.report?.sha === undefined
+          ? `the review report does not name the commit it reviewed; the checked commit is ${sha}`
+          : `the review report is for ${call.report.sha}, not the checked commit ${sha}`;
       return finish(
         { result: "failed", run: ctx.runId, sha, round, reason: "wrong_commit", message },
         "failed",
