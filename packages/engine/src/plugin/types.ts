@@ -695,6 +695,20 @@ export interface ActionArgSchema {
   readonly minLength?: number | undefined;
   readonly maxLength?: number | undefined;
   readonly items?: ActionArgSchema | undefined;
+  readonly minItems?: number | undefined;
+  readonly exclusiveMinimum?: number | undefined;
+  readonly exclusiveMaximum?: number | undefined;
+  readonly minProperties?: number | undefined;
+  /** A regular expression the string must match somewhere. */
+  readonly pattern?: string | undefined;
+  /** The one value allowed. */
+  readonly const?: unknown;
+  /** In a declaration: a reference `#/$defs/<name>`, replaced at load by what it names. */
+  readonly $ref?: string | undefined;
+  /** In a declaration's root: the schemas a `$ref` may name. */
+  readonly $defs?: Readonly<Record<string, unknown>> | undefined;
+  /** Exactly one of these must fit. A `$ref` is already replaced by what it names. */
+  readonly oneOf?: readonly ActionArgSchema[] | undefined;
   readonly properties?: Readonly<Record<string, ActionArgSchema>> | undefined;
   readonly required?: readonly string[] | undefined;
   readonly additionalProperties?: false | ActionArgSchema | undefined;

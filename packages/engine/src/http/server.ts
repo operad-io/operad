@@ -748,7 +748,10 @@ export async function startHttpServer(
     clearInterval(tokenCheck);
     hub.stop();
     streams.closeAll();
-    await stopAll();
+    // An address this start already bound and could not release is still held
+    // by this process. A retry would run against it, so report that first.
+    const unreleased = await stopAll();
+    if (unreleased.length > 0) throw new HttpStopError(unreleased);
     throw error;
   }
 

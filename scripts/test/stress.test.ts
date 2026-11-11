@@ -9,8 +9,6 @@ const flaky = join(import.meta.dir, "flaky.fixture.ts");
 const steady = join(import.meta.dir, "steady.fixture.ts");
 const leak = join(import.meta.dir, "leak.fixture.ts");
 
-const stress = runStress;
-
 function scratch(): string {
   return mkdtempSync(join(tmpdir(), "stress-test-"));
 }
@@ -30,7 +28,7 @@ describe("scripts/stress.sh", () => {
   test("a fixture failing every third run reports the counts and exits 1", async () => {
     const counter = join(scratch(), "counter");
     writeFileSync(counter, "0");
-    const { out, code } = await stress(["--runs", "9", flaky], { STRESS_COUNTER: counter });
+    const { out, code } = await runStress(["--runs", "9", flaky], { STRESS_COUNTER: counter });
     expect(code).toBe(1);
     expect(out).toContain("runs: 9\n");
     expect(out).toContain("passes: 6\n");
@@ -42,7 +40,7 @@ describe("scripts/stress.sh", () => {
   });
 
   test("a passing fixture exits 0", async () => {
-    const { out, code } = await stress(["--runs", "4", steady]);
+    const { out, code } = await runStress(["--runs", "4", steady]);
     expect(code).toBe(0);
     expect(out).toContain("runs: 4\n");
     expect(out).toContain("passes: 4\n");
@@ -51,25 +49,25 @@ describe("scripts/stress.sh", () => {
   });
 
   test("-t limits the run to matching tests", async () => {
-    const { out, code } = await stress(["--runs", "3", "-t", "steady", steady]);
+    const { out, code } = await runStress(["--runs", "3", "-t", "steady", steady]);
     expect(code).toBe(0);
     expect(out).toContain("passes: 3\n");
   });
 
   test("a pattern that matches nothing is a failure, not a pass", async () => {
-    const { out, code } = await stress(["--runs", "3", "-t", "no such test", steady]);
+    const { out, code } = await runStress(["--runs", "3", "-t", "no such test", steady]);
     expect(out).toContain("runs: 0\n");
     expect(code).toBe(1);
   });
 
   test("a missing test file is a failure, not a pass", async () => {
-    const { code } = await stress(["--runs", "2", join(scratch(), "missing.test.ts")]);
+    const { code } = await runStress(["--runs", "2", join(scratch(), "missing.test.ts")]);
     expect(code).toBe(1);
   });
 
   test("--load starts busy helpers and none is left after exit", async () => {
     const pidfile = join(scratch(), "pids");
-    const { code } = await stress(["--runs", "2", "--load", "2", steady], { STRESS_PIDFILE: pidfile });
+    const { code } = await runStress(["--runs", "2", "--load", "2", steady], { STRESS_PIDFILE: pidfile });
     expect(code).toBe(0);
     const pids = readFileSync(pidfile, "utf8").split("\n").filter(Boolean).map(Number);
     expect(pids.length).toBeGreaterThan(0);
@@ -78,9 +76,20 @@ describe("scripts/stress.sh", () => {
 
   test("--load never starts more helpers than there are CPUs", async () => {
     const pidfile = join(scratch(), "pids");
-    await stress(["--runs", "1", "--load", "100000", steady], { STRESS_PIDFILE: pidfile, STRESS_CPUS: "2" });
+    await runStress(["--runs", "1", "--load", "100000", steady], { STRESS_PIDFILE: pidfile, STRESS_CPUS: "2" });
     const pids = readFileSync(pidfile, "utf8").split("\n").filter(Boolean);
     expect(pids.length).toBe(2);
+  });
+
+  test("STRESS_CPUS=0 is refused instead of starting no helper", async () => {
+    const pidfile = join(scratch(), "pids");
+    const { code, err } = await runStress(["--runs", "1", "--load", "2", steady], {
+      STRESS_PIDFILE: pidfile,
+      STRESS_CPUS: "0",
+    });
+    expect(code).toBe(2);
+    expect(err).toContain("STRESS_CPUS wants a positive number");
+    expect(existsSync(pidfile)).toBe(false);
   });
 
   test("the load helpers are alive while the tests run", async () => {
@@ -98,7 +107,7 @@ test("helpers are running", () => {
 });
 `,
     );
-    const { out, code } = await stress(["--runs", "1", "--load", "1", probe], { STRESS_PIDFILE: pidfile });
+    const { out, code } = await runStress(["--runs", "1", "--load", "1", probe], { STRESS_PIDFILE: pidfile });
     expect(out).toContain("failures: 0\n");
     expect(code).toBe(0);
   });
@@ -115,6 +124,37 @@ test("helpers are running", () => {
       run.kill();
     }
   });
+
+  test("SIGKILL of the script stops the test runner it started", async () => {
+    const dir = scratch();
+    const pidfile = join(dir, "pids");
+    const started = join(dir, "started");
+    const release = join(dir, "release");
+    const blocker = join(dir, "blocker.fixture.ts");
+    writeFileSync(
+      blocker,
+      `import { test } from "bun:test";
+import { existsSync, writeFileSync } from "node:fs";
+test("blocker", async () => {
+  writeFileSync(${JSON.stringify(started)}, String(process.pid));
+  while (!existsSync(${JSON.stringify(release)})) await Bun.sleep(5);
+}, 60000);
+`,
+    );
+    const run = spawnStress(["--runs", "100000", "--load", "2", blocker], {
+      STRESS_PIDFILE: pidfile,
+      STRESS_CPUS: "2",
+    });
+    try {
+      await waitForPids(pidfile, 2);
+      const testPid = await waitForNumber(started);
+      process.kill(run.pid, "SIGKILL");
+      await run.child.exited;
+      await expectGone([testPid]);
+    } finally {
+      run.kill();
+    }
+  }, 60000);
 
   describe("the machine-wide lock", () => {
     /** A test file that records its pid in `started`, then waits for `release` to exist. */
@@ -177,6 +217,35 @@ test("blocker", async () => {
       expect(existsSync(lock)).toBe(false);
     }, 60000);
 
+    test("two runs with different TMPDIR values still share the lock", async () => {
+      const dir = scratch();
+      const home = join(dir, "home");
+      const tmpA = join(dir, "tmp-a");
+      const tmpB = join(dir, "tmp-b");
+      mkdirSync(home, { recursive: true });
+      mkdirSync(tmpA, { recursive: true });
+      mkdirSync(tmpB, { recursive: true });
+      const b = blocker(dir);
+      const first = spawnStress(["--runs", "1", b.file], {
+        HOME: home,
+        TMPDIR: tmpA,
+        STRESS_LOCK: "",
+      });
+      await until("the first run's test to start", () => existsSync(b.started));
+      const second = spawnStress(["--runs", "1", steady], {
+        HOME: home,
+        TMPDIR: tmpB,
+        STRESS_LOCK: "",
+      });
+      const err = await readUntil(second.child.stderr as ReadableStream<Uint8Array>, /waiting for the stress run/);
+      expect(err).toContain(`pid ${first.pid}`);
+      writeFileSync(b.release, "");
+      const [secondCode, firstCode] = await Promise.all([second.child.exited, first.child.exited]);
+      expect(secondCode).toBe(0);
+      expect(firstCode).toBe(0);
+      expect(existsSync(join(home, ".operad-stress.lock"))).toBe(false);
+    }, 60000);
+
     test("a lock held by a dead pid is taken over", async () => {
       const dir = scratch();
       const lock = join(dir, "lock");
@@ -187,7 +256,7 @@ test("blocker", async () => {
       writeFileSync(join(lock, "cwd"), dir);
       writeFileSync(join(lock, "since"), "0");
       writeFileSync(join(lock, "pid"), `${dead.pid}\n`);
-      const { out, err, code } = await stress(["--runs", "2", steady], { STRESS_LOCK: lock });
+      const { out, err, code } = await runStress(["--runs", "2", steady], { STRESS_LOCK: lock });
       expect(code).toBe(0);
       expect(out).toContain("passes: 2\n");
       expect(err.match(/taking over/g)?.length).toBe(1);
@@ -195,12 +264,34 @@ test("blocker", async () => {
       expect(existsSync(lock)).toBe(false);
     });
 
+    test("a lock whose pid now belongs to another program is taken over", async () => {
+      const dir = scratch();
+      const lock = join(dir, "lock");
+      const other = Bun.spawn(["sleep", "30"], { stdout: "ignore", stderr: "ignore" });
+      try {
+        mkdirSync(lock);
+        writeFileSync(join(lock, "cmd"), "bash scripts/stress.sh gone");
+        writeFileSync(join(lock, "cwd"), dir);
+        writeFileSync(join(lock, "since"), "0");
+        writeFileSync(join(lock, "pid"), `${other.pid}\n`);
+        const { out, err, code } = await runStress(["--runs", "2", steady], { STRESS_LOCK: lock });
+        expect(code).toBe(0);
+        expect(out).toContain("passes: 2\n");
+        expect(err).toContain(`pid ${other.pid}`);
+        expect(err.match(/taking over/g)?.length).toBe(1);
+        expect(existsSync(lock)).toBe(false);
+      } finally {
+        other.kill("SIGKILL");
+        await other.exited;
+      }
+    });
+
     test("--no-lock runs while another run holds the lock", async () => {
       const dir = scratch();
       const lock = join(dir, "lock");
       mkdirSync(lock);
       writeFileSync(join(lock, "pid"), `${process.pid}\n`);
-      const { code, err } = await stress(["--runs", "1", "--no-lock", steady], { STRESS_LOCK: lock });
+      const { code, err } = await runStress(["--runs", "1", "--no-lock", steady], { STRESS_LOCK: lock });
       expect(code).toBe(0);
       expect(err).not.toContain("waiting");
       expect(readFileSync(join(lock, "pid"), "utf8").trim()).toBe(String(process.pid));
@@ -262,7 +353,9 @@ test("blocker", async () => {
         expect(pids.length).toBe(3);
         runner.kill(signal);
         await runner.exited;
-        await expectGone(pids);
+        // The SIGTERM handler stops the group at once. Without it the script's
+        // starter watcher is the only stop, which this bound does not allow.
+        await expectGone(pids, signal === "SIGTERM" ? 1500 : 5000);
       } finally {
         runner.kill("SIGKILL");
         // The stress group is not ours to the outer test; pids[0] is its group.
@@ -290,6 +383,21 @@ async function waitForPids(pidfile: string, count: number): Promise<number[]> {
   }
 }
 
+/** Reads a pid a fixture wrote, once the file holds one. */
+async function waitForNumber(path: string): Promise<number> {
+  const deadline = Date.now() + 3000;
+  for (;;) {
+    try {
+      const value = Number(readFileSync(path, "utf8").trim());
+      if (Number.isInteger(value) && value > 1) return value;
+    } catch {
+      // Not there yet.
+    }
+    if (Date.now() > deadline) throw new Error(`timed out waiting for a pid in ${path}`);
+    await Bun.sleep(5);
+  }
+}
+
 /** Reads the runner's stdout until the fixture prints `ready <pids...>`. */
 async function readReady(stream: ReadableStream<Uint8Array>): Promise<number[]> {
   const decoder = new TextDecoder();
@@ -303,8 +411,8 @@ async function readReady(stream: ReadableStream<Uint8Array>): Promise<number[]> 
 }
 
 /** A pid that is not a child has no exit event; wait for it with a bound. */
-async function expectGone(pids: number[]): Promise<void> {
-  const deadline = Date.now() + 3000;
+async function expectGone(pids: number[], timeoutMs = 3000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
   while (pids.some(alive) && Date.now() < deadline) await Bun.sleep(10);
   expect(pids.filter(alive)).toEqual([]);
 }

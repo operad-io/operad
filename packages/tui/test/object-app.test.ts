@@ -15,6 +15,8 @@ import {
   type TuiState,
   type TuiView,
 } from "../src/index.ts";
+import { drawState } from "../src/view/index.ts";
+import { BUILTIN_THEMES, toRgba } from "../src/theme.ts";
 import { immediateClock } from "./support.ts";
 
 function row(id: string, title = `Title ${id}`): ViewRow {
@@ -154,6 +156,218 @@ describe("the TUI object app", () => {
       await shell.done;
     }
   });
+  test("the object page counts the children the list leaves out", async () => {
+    let hide = false;
+    class Hidden extends Client {
+      override objects(
+        _t?: string,
+        _c?: string,
+        _s?: AbortSignal,
+        _f?: string,
+        level?: { readonly parent?: string | undefined },
+      ): Promise<ViewListPage> {
+        if (hide && level?.parent === "item:item:one") {
+          return Promise.resolve({
+            rows: [
+              {
+                id: "two",
+                title: "Waiting task",
+                state: "waiting",
+                waiting: true,
+                running: false,
+                mark: "waiting",
+              },
+            ],
+            hidden: 3,
+            hiddenCounts: { done: 3, cancelled: 0, other: 0 },
+          });
+        }
+        return super.objects(_t, _c, _s, _f, level);
+      }
+    }
+    const client = new Hidden();
+    const events = new Events();
+    const view = new View();
+    const shell = startShell({
+      client,
+      events: () => events,
+      view,
+      width: 80,
+      height: 20,
+      theme: "dark",
+      clock: immediateClock,
+    });
+    try {
+      await view.until((state) =>
+        state.tabs.find((tab) => tab.id === "plugin:item")?.list.loaded === true,
+      );
+      hide = true;
+      shell.key({ name: "3" });
+      shell.key({ name: "enter" });
+      await view.until((state) => state.object?.row.title === "One");
+      await view.until((state) => state.object?.children?.hidden === 3);
+      const lines = drawState(shell.state).right.chunks.map((chunk) => chunk.text).join("").split("\n");
+      expect(lines.find((line) => line.includes(" / "))).toContain("3 / 4");
+      expect(shell.state.object?.children?.rows.map((row) => row.id)).toEqual(["two"]);
+    } finally {
+      shell.stop();
+      await shell.done;
+    }
+  });
+
+  test("a hidden cancelled child is not counted as progress", async () => {
+    let hide = false;
+    class HiddenCancelled extends Client {
+      override types() {
+        return Promise.resolve({
+          types: [
+            {
+              type: "item",
+              title: "Item",
+              filters: [
+                { name: "active", states: ["waiting"] },
+                { name: "all" },
+                { name: "done", states: ["merged"] },
+              ],
+              defaultFilter: "active",
+            },
+          ],
+        });
+      }
+      override objects(
+        _t?: string,
+        _c?: string,
+        _s?: AbortSignal,
+        _f?: string,
+        level?: { readonly parent?: string | undefined },
+      ): Promise<ViewListPage> {
+        if (hide && level?.parent === "item:item:one") {
+          return Promise.resolve({
+            rows: [
+              {
+                ...row("work"),
+                state: "waiting",
+                waiting: true,
+                mark: "waiting" as const,
+              },
+            ],
+            hidden: 1,
+            hiddenCounts: { done: 0, cancelled: 1, other: 0 },
+          });
+        }
+        return super.objects(_t, _c, _s, _f, level);
+      }
+    }
+    const client = new HiddenCancelled();
+    const events = new Events();
+    const view = new View();
+    const shell = startShell({
+      client,
+      events: () => events,
+      view,
+      width: 80,
+      height: 20,
+      theme: "dark",
+      clock: immediateClock,
+    });
+    try {
+      await view.until((state) =>
+        state.tabs.find((tab) => tab.id === "plugin:item")?.list.loaded === true,
+      );
+      hide = true;
+      shell.key({ name: "3" });
+      shell.key({ name: "enter" });
+      await view.until((state) => state.object?.row.title === "One");
+      await view.until((state) => state.object?.children !== undefined);
+      expect(shell.state.object?.children?.hidden).toBe(1);
+      expect(shell.state.object?.children?.hiddenDone).toBe(0);
+      const right = drawState(shell.state).right;
+      const text = right.chunks.map((chunk) => chunk.text).join("");
+      expect(text).toContain("0 / 1");
+      const cells = right.chunks.filter((chunk) => /^█+$/.test(chunk.text));
+      expect(cells.length).toBe(1);
+      expect((cells[0]?.fg?.toInts() ?? []).join(",")).toBe(
+        toRgba(BUILTIN_THEMES.dark.cancelled).toInts().join(","),
+      );
+    } finally {
+      shell.stop();
+      await shell.done;
+    }
+  });
+
+  test("the cancelled filter counts hidden waiting and merged children by role", async () => {
+    let hide = false;
+    class CancelledFilter extends Client {
+      override types() {
+        return Promise.resolve({
+          types: [
+            {
+              type: "item",
+              title: "Item",
+              filters: [
+                { name: "cancelled", states: ["cancelled"] },
+                { name: "all" },
+                { name: "active", states: ["waiting"] },
+                { name: "done", states: ["merged"] },
+              ],
+              defaultFilter: "cancelled",
+            },
+          ],
+        });
+      }
+      override objects(
+        _t?: string,
+        _c?: string,
+        _s?: AbortSignal,
+        _f?: string,
+        level?: { readonly parent?: string | undefined },
+      ): Promise<ViewListPage> {
+        if (hide && level?.parent === "item:item:one") {
+          return Promise.resolve({
+            rows: [
+              {
+                ...row("gone"),
+                state: "cancelled",
+                mark: "cancelled" as const,
+              },
+            ],
+            hidden: 2,
+            hiddenCounts: { done: 1, cancelled: 0, other: 1 },
+          });
+        }
+        return super.objects(_t, _c, _s, _f, level);
+      }
+    }
+    const client = new CancelledFilter();
+    const events = new Events();
+    const view = new View();
+    const shell = startShell({
+      client,
+      events: () => events,
+      view,
+      width: 80,
+      height: 20,
+      theme: "dark",
+      clock: immediateClock,
+    });
+    try {
+      await view.until((state) =>
+        state.tabs.find((tab) => tab.id === "plugin:item")?.list.loaded === true,
+      );
+      hide = true;
+      shell.key({ name: "3" });
+      shell.key({ name: "enter" });
+      await view.until((state) => state.object?.row.title === "One");
+      await view.until((state) => state.object?.children?.hidden === 2);
+      expect(shell.state.object?.children?.hiddenDone).toBe(1);
+      const text = drawState(shell.state).right.chunks.map((chunk) => chunk.text).join("");
+      expect(text).toContain("1 / 2");
+    } finally {
+      shell.stop();
+      await shell.done;
+    }
+  });
+
   test("a row opens by its typed id; a server that refuses bare ids is never asked for one", async () => {
     class Strict extends Client {
       override object(id: string): Promise<ViewObject> {
@@ -192,7 +406,7 @@ describe("the TUI object app", () => {
       // The answer carries a bare id; the sections and the refresh still name the type.
       await view.until((state) => state.object?.sections[0]?.markdown === "info one");
       expect(view.last?.object?.id).toBe("one");
-      events.push({ kind: "change", id: "item:one" });
+      events.push({ kind: "change", id: "one" });
       await view.until(() => client.objectCalls.length >= 2);
       expect(client.objectCalls.every((id) => id === "item:one")).toBe(true);
       expect(client.sectionCalls.every((call) => call.id === "item:one")).toBe(true);

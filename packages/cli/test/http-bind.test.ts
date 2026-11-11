@@ -1,6 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { ConfigError } from "@operad-io/engine";
-import { BindFailed, HandOverStuck, leaveStuck, startWithRetry, type StuckActions } from "../src/http-bind.ts";
+import { ConfigError, HttpStopError } from "@operad-io/engine";
+import { SUPERVISED_ENV } from "../src/code-reload.ts";
+import {
+  BindFailed,
+  HandOverStuck,
+  REPLACES_ENV,
+  leaveStuck,
+  replacementEnv,
+  serveStartFlags,
+  startWithRetry,
+  takeReplacesFlag,
+  type StuckActions,
+} from "../src/http-bind.ts";
 
 /** A clock that only moves when the code under test waits. */
 function clock(): { now: () => number; wait: (ms: number) => Promise<void>; waits: number[] } {
@@ -49,6 +60,20 @@ describe("startWithRetry", () => {
     expect(c.now()).toBe(1_000);
   });
 
+  test("does not try again a start whose own address could not be released", async () => {
+    const c = clock();
+    let tries = 0;
+    const error = await startWithRetry(
+      async () => {
+        tries += 1;
+        throw new HttpStopError(["127.0.0.1"]);
+      },
+      { retryMs: 1_000, stepMs: 100, now: c.now, wait: c.wait },
+    ).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(HttpStopError);
+    expect(tries).toBe(1);
+  });
+
   test("does not try again a configuration that is wrong", async () => {
     const c = clock();
     let tries = 0;
@@ -61,6 +86,34 @@ describe("startWithRetry", () => {
     ).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(ConfigError);
     expect(tries).toBe(1);
+  });
+});
+
+describe("serveStartFlags", () => {
+  test("a supervised serve retries its bind, and a replacement does too", () => {
+    const supervised = { [SUPERVISED_ENV]: "1" };
+    expect(serveStartFlags(supervised)).toEqual({ supervised: true, replaces: false, retryBind: true });
+    expect(supervised[SUPERVISED_ENV]).toBeUndefined();
+    const replacing = { [REPLACES_ENV]: "1" };
+    expect(serveStartFlags(replacing)).toEqual({ supervised: false, replaces: true, retryBind: true });
+    expect(replacing[REPLACES_ENV]).toBeUndefined();
+    expect(serveStartFlags({})).toEqual({ supervised: false, replaces: false, retryBind: false });
+  });
+
+  test("a replacement's environment carries the flag main starts it with", () => {
+    const env = replacementEnv({ KEEP: "yes" });
+    expect(env[REPLACES_ENV]).toBe("1");
+    expect(env.KEEP).toBe("yes");
+  });
+});
+
+describe("takeReplacesFlag", () => {
+  test("takes the flag from the environment so the replacement does not pass it on", () => {
+    const env: NodeJS.ProcessEnv = { [REPLACES_ENV]: "1", KEEP: "yes" };
+    expect(takeReplacesFlag(env)).toBe(true);
+    expect(env[REPLACES_ENV]).toBeUndefined();
+    expect(env.KEEP).toBe("yes");
+    expect(takeReplacesFlag(env)).toBe(false);
   });
 });
 

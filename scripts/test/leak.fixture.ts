@@ -1,6 +1,6 @@
 // Fixture for stress.test.ts, not a test of its own: starts a long stress run,
 // announces its pids on stdout and waits to be killed from outside.
-import { expect, test } from "bun:test";
+import { test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnStress } from "./stress-group.ts";
@@ -19,5 +19,4 @@ test("leak fixture", async () => {
   }
   console.log(`ready ${run.pid} ${helpers.join(" ")}`);
   await new Promise(() => {});
-  expect(true).toBe(true);
 }, 120000);

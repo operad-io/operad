@@ -5,6 +5,7 @@ import { PluginRegistry } from "@operad-io/engine";
 import { createDevPlugin } from "../src/index.ts";
 import { addRepository, listRepositories } from "../src/service.ts";
 import { cleanupTempRoots, storeAt, tempRoot } from "./support.ts";
+import { silentGit } from "./git-support.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -209,6 +210,20 @@ describe("dev init check", () => {
     expect(check?.ok).toBe(false);
     expect(check?.message).toContain('remote "origin" has no branch "main"');
     expect(refs(remote)).toBe(before);
+  });
+
+  test("an empty answer from the remote query is asked again", async () => {
+    const { root, repositoryPath } = await setup();
+    const store = storeAt(root);
+    await addRepository(store, { path: repositoryPath });
+    const stub = silentGit(root, "ls-remote --heads", 2);
+    try {
+      const [check] = await registryAt(root, store, repositoryPath).checks();
+      expect(check?.ok).toBe(true);
+      expect(stub.calls()).toBe(3);
+    } finally {
+      stub.restore();
+    }
   });
 
   test("the check asks through the remote name, not its URL", async () => {

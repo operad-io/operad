@@ -53,3 +53,9 @@ and the row fields.
 |---|---|---|---|
 | T-0205-M1 | packages/harness-process/src/process.ts | the sentinel killed its group with `kill -KILL -- "-$$"`, which dash rejects, so a harness whose host died stayed running | `the harness process > a harness still running when its host dies is stopped with its sentinel` (Linux) |
 | T-0188-M15 | packages/harness-process/src/ask-call.ts | a read-only profile did not open the question channel | `canAsk > is true only for a profile with an askCommands rule` |
+
+## T-0297 — follow-ups from the flaky-test work
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0297-M1 | packages/harness-process/test/support.ts | `pidValue` accepted 0 and 1 as pids | `test support > a pid must be a finite integer above 1` |

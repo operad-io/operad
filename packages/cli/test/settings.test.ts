@@ -1,4 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { testEnv } from "./env.ts";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -147,7 +148,7 @@ describe("operad settings", () => {
     const child = Bun.spawn({
       cmd: [process.execPath, CLI_ENTRY, "serve"],
       cwd: home,
-      env: { ...(process.env as Record<string, string>), OPERAD_HOME: home, OPERAD_RELOAD_QUIET_MS: "50", OPERAD_RELOAD_POLL_MS: "200" },
+      env: { ...testEnv(), OPERAD_HOME: home, OPERAD_RELOAD_QUIET_MS: "50", OPERAD_RELOAD_POLL_MS: "200" },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",

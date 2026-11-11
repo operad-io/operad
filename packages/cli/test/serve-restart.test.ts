@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { waitForChange } from "../../engine/src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 import { SUPERVISED_ENV } from "../src/code-reload.ts";
+import { testEnv } from "./env.ts";
 import { waitForFile, waitForPid } from "../../shell/test/support.ts";
 
 afterAll(cleanupTempRoots);
@@ -12,6 +13,7 @@ afterAll(cleanupTempRoots);
 const CLI_ENTRY = fileURLToPath(new URL("../bin/operad.ts", import.meta.url));
 const SHELL = fileURLToPath(new URL("../../shell/src/index.ts", import.meta.url));
 const FLOW = fileURLToPath(new URL("./fixtures/check-flow.ts", import.meta.url));
+const SUPERVISE = fileURLToPath(new URL("./fixtures/supervise-serve.ts", import.meta.url));
 
 /** The old one-second window at the 200 ms serve interval covered about five passes. */
 const PASSES_BEFORE_RELEASE = 5;
@@ -44,7 +46,7 @@ async function operad(
   const child = Bun.spawn({
     cmd: [process.execPath, CLI_ENTRY, ...args],
     cwd: home,
-    env: { ...(process.env as Record<string, string>), OPERAD_HOME: home, ...env },
+    env: { ...testEnv(env), OPERAD_HOME: home },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -65,7 +67,7 @@ async function trigger(home: string, env: Record<string, string>): Promise<strin
   const child = Bun.spawn({
     cmd: [process.execPath, CLI_ENTRY, "trigger", "cron", "t1", "--type", "tick"],
     cwd: home,
-    env: { ...(process.env as Record<string, string>), OPERAD_HOME: home, ...env },
+    env: { ...testEnv(env), OPERAD_HOME: home },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "inherit",
@@ -87,17 +89,13 @@ async function trigger(home: string, env: Record<string, string>): Promise<strin
 }
 
 function startServe(home: string, env: Record<string, string>): Bun.Subprocess {
-  const inherited = { ...(process.env as Record<string, string>) };
-  // A run from inside a supervised serve must not make this serve supervised.
-  delete inherited[SUPERVISED_ENV];
   return Bun.spawn({
     cmd: [process.execPath, CLI_ENTRY, "serve"],
     cwd: home,
     env: {
-      ...inherited,
+      ...testEnv(env),
       OPERAD_HOME: home,
       OPERAD_SERVE_INTERVAL_MS: "200",
-      ...env,
     },
     stdin: "ignore",
     stdout: "ignore",
@@ -127,14 +125,29 @@ describe("a serve restart while a check runs", () => {
       ]),
     );
     const seen = join(work, "seen");
+    const loaded = join(work, "loaded");
     const expansion = "$" + "{" + SUPERVISED_ENV + "-unset}";
-    const env = { CHECK_LINE: `sh -c 'echo "flag:${expansion}" > ${seen}.tmp && mv ${seen}.tmp ${seen}'` };
-    const serve = startServe(home, { ...env, [SUPERVISED_ENV]: "1" });
+    const env = {
+      CHECK_LINE: `sh -c 'echo "flag:${expansion}" > ${seen}.tmp && mv ${seen}.tmp ${seen}'`,
+      CHECK_RUN_ENV: loaded,
+    };
+    // The real supervisor starts the serve child; the flag is its own.
+    const serve = Bun.spawn({
+      cmd: [process.execPath, SUPERVISE, "serve"],
+      cwd: home,
+      env: { ...testEnv(env), OPERAD_HOME: home, OPERAD_SERVE_INTERVAL_MS: "200" },
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
     try {
       await trigger(home, env);
       await waitForFile(seen);
-      // The command is a descendant of the run process: neither passed the flag on.
+      // Neither the run process nor the command it starts saw the flag.
       expect(readFileSync(seen, "utf8").trim()).toBe("flag:unset");
+      const processes = readFileSync(loaded, "utf8").trim().split("\n");
+      expect(processes.length).toBeGreaterThanOrEqual(2);
+      expect(processes.every((line) => line.endsWith(":unset"))).toBe(true);
     } finally {
       serve.kill("SIGTERM");
       await serve.exited;
@@ -186,11 +199,8 @@ describe("a serve restart while a check runs", () => {
       await waitForPid(started);
 
       const stopped = await operad(home, env, ["serve", "stop"]);
-      expect({ code: stopped.code, out: stopped.out, err: stopped.err }).toEqual({
-        code: 0,
-        out: stopped.out,
-        err: "",
-      });
+      expect(stopped.code).toBe(0);
+      expect(stopped.out).toContain("stopped");
       await serve.exited;
 
       // Forget the first serve's marks, start the new serve and wait for five

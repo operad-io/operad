@@ -427,8 +427,6 @@ the row fields.
 | T-0144-M4 | packages/dev/src/integrate.ts | the batch's merges were built in reverse queue order | `integration queue > with integration.batch 3 and three queued tasks, the key commands run once and three merge commits land in order` |
 | T-0144-M5 | packages/dev/src/integrate.ts | a failing key command in a batch did not fall back | `integration queue > a failing key command in a batch falls back, and only that task goes back to its worker` |
 | T-0144-M6 | packages/dev/src/settings.ts | `integration.batch` accepted anything | `integration.batch setting > is an integer of 1 or more, and 1 when unset` |
-| T-0110-M1 | packages/dev/src/service.ts | `gitPrinting` stopped rerunning a git query that exited 0 with no output | `git that succeeds without printing > repo add runs a query again when git exits 0 and prints nothing` |
-| T-0110-M2 | packages/dev/src/service.ts | `addRepository` dropped git's stderr from the "not a git work tree" refusal | `repo add reports git's stderr > a failing rev-parse puts its stderr in the refusal` |
 | T-0090-M2 | packages/dev/src/views.ts | a file's page entry pointed at the previous file's cursor | `dev views > the diff section is the stat and the diff, and pages by file when long` |
 | T-0145-M1 | packages/dev/src/gate.ts | left the gate commands out of the review prompt's checks section | `prepare > the review prompt names the gate commands and says not to run them again` |
 | T-0124-M1 | packages/dev/src/views.ts | `costNote` swapped the `~` and `≥` symbols | `dev views > a task row reads the phase and the cost` |
@@ -642,6 +640,13 @@ the row fields.
 |---|---|---|---|
 | T-0206-M4 | packages/dev/src/views.ts | started the worker-log tail at the end of the file, so the log section was empty | `dev views > the log section is the tail of the current attempt's worker log` |
 
+## T-0110 — a git query that exits 0 with no output is asked again
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0110-M1 | packages/dev/src/service.ts | `gitPrinting` stopped rerunning a git query that exited 0 with no output | `git that succeeds without printing > repo add runs a query again when git exits 0 and prints nothing` |
+| T-0110-M2 | packages/dev/src/service.ts | `addRepository` dropped git's stderr from the "not a git work tree" refusal | `repo add reports git's stderr > a failing rev-parse puts its stderr in the refusal` |
+
 ## T-0147 — git that exits 0 and prints nothing is run again
 
 | id | file | mutation | failing test |
@@ -832,3 +837,20 @@ the row fields.
 | T-0267-M1 | packages/dev/src/commands.ts | re-broke TK0019-M7 (`task edit`/`task update` looked a task up by its bare id) with the in-process cli tests | `operad with the dev plugin > task edit and update resolve the repository like every other command` (also three more in cli.test.ts) |
 | T-0267-M2 | packages/dev/src/model.ts | re-broke TK0011-M9 (`PLAN_ID`/`TASK_ID` rejected the old `PL`/`TK` form) | `operad with the dev plugin > show and dev:confirm take an old id, and an id is matched exactly` |
 | T-0267-M3 | packages/dev/src/views.ts | re-broke waiting-notices-M8 (`showRepository` always false) | `operad with the dev plugin > lists name the repository once more than one is registered` |
+## T-0290 — verify checks the branch's current head
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0290-M1 | packages/dev/src/gate.ts | the replay of a same-run result no longer compared the recorded commit with the branch head (`attempt.verified === sha` replaced by `true`) | `dev/verify > a commit that lands after a pass in the same run is checked, not replayed (T-0290)` (packages/dev/test/gate.test.ts) |
+
+## T-0297 — follow-ups from the flaky-test work
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0297-M1 | packages/dev/src/git.ts | `emptyIsSuccess` no longer accepted an empty `ls-remote` as a real answer | `dev init check > a reachable remote without the main branch is a failed check that writes nothing` |
+| T-0297-M2 | packages/dev/src/git.ts | `ls-remote` was no longer treated as a query whose output is expected | `dev init check > an empty answer from the remote query is asked again` |
+| T-0297-M3 | packages/dev/src/git.ts | `remote` with no arguments was again treated as a query whose output is expected | `git that exits 0 and prints nothing > a repository with no remote is not asked five times` |
+| T-0297-M4 | packages/dev/src/flaky.ts | `noticed` was written but no longer checked before returning a proposal notice | `a flaky test proposes a task > a proposal that keeps failing returns its notice only once for the same count` |
+| T-0297-M5 | packages/dev/src/flaky.ts | a missing `check.flakyPlan` fell back to the flaky-tests plan with no notice | `a flaky test proposes a task > check.flakyPlan that names no plan says so and still proposes in flaky-tests` |
+| T-0297-M6 | packages/dev/src/flaky.ts | the test-file search descended into `node_modules` again | `a flaky test proposes a task > a test whose file the log does not give is found by name in the test files, else the file is unknown` |
+| T-0297-M7 | packages/dev/src/check.ts | the init check used a git runner of its own that did not ask again after an empty success | `dev init check > an empty answer from the remote query is asked again` |

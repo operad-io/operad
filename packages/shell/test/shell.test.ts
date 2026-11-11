@@ -689,7 +689,17 @@ describe("a flow through the runner", () => {
 
       expect(await running).toBe("ended");
       expect((await readState(log, info.runId)).endedStatus).toBe("failed");
-      await waitForGone(pid);
+      try {
+        await waitForGone(pid);
+      } finally {
+        if (alive(pid)) {
+          try {
+            process.kill(-pid, "SIGKILL");
+          } catch {
+            process.kill(pid, "SIGKILL");
+          }
+        }
+      }
     } finally {
       await log.close();
     }

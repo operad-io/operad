@@ -97,12 +97,11 @@ export const integrateTestHooks: {
 
 /** The repository whose code this module was loaded from. */
 function ownCodeRoot(): string {
-  const result = Bun.spawnSync({
-    cmd: ["git", "-C", fileURLToPath(new URL(".", import.meta.url)), "rev-parse", "--show-toplevel"],
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  return result.exitCode === 0 ? result.stdout.toString().trim() : "";
+  const result = git(fileURLToPath(new URL(".", import.meta.url)), [
+    "rev-parse",
+    "--show-toplevel",
+  ]);
+  return result.ok ? result.out : "";
 }
 
 export function followMain(
@@ -308,20 +307,11 @@ function treeOf(cwd: string, commit: string): string | undefined {
 
 /** The patch id of a diff, which ignores line numbers and whitespace. */
 function patchIdOf(cwd: string, args: readonly string[]): string | undefined {
-  const diff = Bun.spawnSync({
-    cmd: ["git", "-C", cwd, ...args],
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  if (diff.exitCode !== 0 || diff.stdout.length === 0) return undefined;
-  const id = Bun.spawnSync({
-    cmd: ["git", "-C", cwd, "patch-id", "--stable"],
-    stdin: diff.stdout,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const first = id.stdout.toString().trim().split(/\s+/)[0];
-  return id.exitCode === 0 && first !== undefined && first.length > 0 ? first : undefined;
+  const diff = git(cwd, args, { raw: true });
+  if (!diff.ok || diff.out.length === 0) return undefined;
+  const id = git(cwd, ["patch-id", "--stable"], { input: diff.out });
+  const first = id.out.split(/\s+/)[0];
+  return id.ok && first !== undefined && first.length > 0 ? first : undefined;
 }
 
 /**
