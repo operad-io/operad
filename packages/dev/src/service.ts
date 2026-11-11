@@ -13,6 +13,7 @@ import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { ViewError } from "@operad-io/engine";
 import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
+import { git } from "./git.ts";
 import { withRepositoryLock } from "./lock.ts";
 import {
   appendChange,
@@ -93,42 +94,7 @@ const EXCLUDES = [".operad-worktrees/", ".radian-sandbox/"] as const;
  */
 export const devTestHooks: {
   beforeLock?: ((operation: string) => Promise<void> | void) | undefined;
-  /** Replaces the process run of a git query that must print something. */
-  gitQuery?: ((cwd: string, args: readonly string[]) => GitResult) | undefined;
 } = {};
-
-interface GitResult {
-  readonly ok: boolean;
-  readonly out: string;
-  readonly err: string;
-}
-
-function git(cwd: string, args: readonly string[]): GitResult {
-  const result = Bun.spawnSync({
-    cmd: ["git", "-C", cwd, ...args],
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  return {
-    ok: result.exitCode === 0,
-    out: result.stdout.toString().trim(),
-    err: result.stderr.toString().trim(),
-  };
-}
-
-/**
- * A git query whose success always prints something. Under heavy load git
- * sometimes exits 0 with no output at all (seen with git 2.53 on macOS, in
- * plain `spawnSync` loops of `rev-parse`, 8 in 120000 runs), so an empty
- * success is run again a few times before it is believed.
- */
-function gitPrinting(cwd: string, args: readonly string[]): GitResult {
-  let result = (devTestHooks.gitQuery ?? git)(cwd, args);
-  for (let attempt = 1; attempt < 5 && result.ok && result.out.length === 0; attempt += 1) {
-    result = (devTestHooks.gitQuery ?? git)(cwd, args);
-  }
-  return result;
-}
 
 /**
  * The one way a command changes a repository: refuse a removed repository,
@@ -481,7 +447,7 @@ export async function resolveDevKey(
 }
 
 function ensureExcludes(repositoryPath: string): void {
-  const path = gitPrinting(repositoryPath, ["rev-parse", "--git-path", "info/exclude"]);
+  const path = git(repositoryPath, ["rev-parse", "--git-path", "info/exclude"]);
   if (!path.ok) {
     throw new DevError("path", `is not a git work tree: ${path.err}`);
   }
@@ -532,7 +498,7 @@ export async function addRepository(
   if (!existsSync(from) || !statSync(from).isDirectory()) {
     throw new DevError("path", `no directory "${from}"`);
   }
-  const top = gitPrinting(from, ["rev-parse", "--show-toplevel"]);
+  const top = git(from, ["rev-parse", "--show-toplevel"]);
   if (!top.ok || top.out.length === 0) {
     throw new DevError(
       "path",
@@ -546,11 +512,11 @@ export async function addRepository(
       `"${from}" is not the root of a git work tree`,
     );
   }
-  const bare = gitPrinting(path, ["rev-parse", "--is-bare-repository"]);
+  const bare = git(path, ["rev-parse", "--is-bare-repository"]);
   if (bare.ok && bare.out === "true") {
     throw new DevError("path", `"${path}" is a bare repository`);
   }
-  const remotes = gitPrinting(path, ["remote"]);
+  const remotes = git(path, ["remote"]);
   if (!remotes.ok || remotes.out.length === 0) {
     throw new DevError(
       "path",

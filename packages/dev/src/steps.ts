@@ -29,6 +29,7 @@ import {
   type TaskData,
 } from "./model.ts";
 import { DEFAULT_POOL, resolvePool, type WorkerDefinition } from "@operad-io/pool";
+import { git, type GitResult } from "./git.ts";
 import { runPrepare } from "./prepare.ts";
 import { classifyStop, STOP_REASONS } from "./stops.ts";
 import { findRepository, putTaskKeepingPlanCost, withRepoLock } from "./service.ts";
@@ -50,28 +51,7 @@ import {
   type DevSettings,
 } from "./settings.ts";
 
-export interface GitResult {
-  readonly ok: boolean;
-  readonly out: string;
-  readonly err: string;
-}
-
-/**
- * Runs git. The output is trimmed unless `raw` is set; output whose leading or
- * trailing spaces mean something (`status --porcelain`) must be read raw.
- */
-export function git(cwd: string, args: readonly string[], raw = false): GitResult {
-  const result = Bun.spawnSync({
-    cmd: ["git", "-C", cwd, ...args],
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  return {
-    ok: result.exitCode === 0,
-    out: raw ? result.stdout.toString() : result.stdout.toString().trim(),
-    err: result.stderr.toString().trim(),
-  };
-}
+export { git, type GitResult };
 
 function resolvePath(path: string): string {
   try {
