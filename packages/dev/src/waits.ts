@@ -6,7 +6,7 @@
  * drift apart.
  */
 
-import type { TaskData } from "./model.ts";
+import type { ReviewRecord, TaskData } from "./model.ts";
 
 /** The actions a person wait answers. */
 export const WAIT_ACTIONS = ["merge", "reject", "rework", "reverify"] as const;
@@ -56,10 +56,30 @@ export function inReviewWait(task: TaskData): boolean {
   );
 }
 
+/** The wait a finished review leaves, when it leaves the task waiting for a person. */
+export function reviewWaitKind(review: ReviewRecord): WaitKind | undefined {
+  if (review.reason === "timed_out") return "review-timeout";
+  if (review.reason === "exhausted") return "review-unavailable";
+  if (review.reason === "out_of_time") return "review-out-of-time";
+  if (review.decision === "findings" || review.result === "fail") return undefined;
+  if (review.decision === "unavailable" && typeof review.retryAt === "number") {
+    return undefined;
+  }
+  return "person";
+}
+
 /** The wait a task is in, or undefined when it is not waiting for a person. */
 export function waitKindOf(task: TaskData): WaitKind | undefined {
   if (task.phase !== "waiting" || inReviewWait(task)) return undefined;
-  const reason = task.attempt?.review?.reason;
+  if (task.waitKind !== undefined) return task.waitKind;
+  // A task from before the kind was written: the review record is the best it
+  // has, though a later ordinary wait may still carry that older record. An
+  // integrate result means the review wait is behind the task.
+  const attempt = task.attempt;
+  if (attempt?.integration !== undefined && attempt.integration !== null) {
+    return "person";
+  }
+  const reason = attempt?.review?.reason;
   if (reason === "timed_out") return "review-timeout";
   if (reason === "exhausted") return "review-unavailable";
   if (reason === "out_of_time") return "review-out-of-time";

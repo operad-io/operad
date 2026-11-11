@@ -1648,6 +1648,7 @@ describe("dev/review fallback and retry", () => {
     expect(state.reviewer.calls).toHaveLength(2);
     const task = await taskOf(state);
     expect(task.phase).toBe("waiting");
+    expect(task.waitKind).toBe("review-timeout");
     expect(task.attempt?.review?.decision).toBe("timed_out");
     expect(task.attempt?.review?.message).toBe("review timed out twice");
     expect(task.attempt?.reviews).toBe(1);

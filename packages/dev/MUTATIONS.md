@@ -822,6 +822,7 @@ the row fields.
 | T-0130-M1 | packages/dev/src/actions.ts | `dev:reverify` was offered on every waiting task instead of only on a wait that takes it | `the actions a waiting task offers > the default flow: a task offers exactly the actions its wait takes` |
 | T-0130-M2 | packages/dev/src/flow-compiler.ts | `wait_review_unavailable` took `reverify` in its choices but had no edge for it | `reverify from wait_review_unavailable > runs the reverify step, then verify, then review` |
 | T-0130-M3 | packages/dev/src/refusals.ts | an action the current wait did not take got no line, so the action ran and answered the wait | `an action the current wait does not take > is refused in the task's words, naming what it can do, with no run id` |
+| T-0130-M4 | packages/dev/src/waits.ts | the wait a task records was ignored, so an ordinary wait after a timed-out review was named by the older review record | `an action the current wait does not take > a generic wait after a stopped timed-out review takes reverify too` |
 ## T-0294 — the flaky-task gate test reads an injected quiet load
 
 | id | file | mutation | failing test |

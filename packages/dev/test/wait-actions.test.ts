@@ -15,11 +15,14 @@ import { compileDevFlow } from "../src/flow-compiler.ts";
 import { addPlan, addRepository, addTask, getTask } from "../src/service.ts";
 import {
   taskData,
+  type ReviewRecord,
   type TaskAttempt,
+  type TaskData,
 } from "../src/model.ts";
 import {
   WAIT_ACTIONS,
   WAIT_STEPS,
+  reviewWaitKind,
   waitChoices,
   waitKindOf,
   type WaitAction,
@@ -210,6 +213,59 @@ describe("the actions a waiting task offers", () => {
   }
 });
 
+describe("the wait a review leaves", () => {
+  const record = (change: Partial<ReviewRecord>): ReviewRecord => ({
+    result: "unavailable",
+    ...change,
+  });
+
+  test("each review ending names its wait, or none when a person has nothing to answer", () => {
+    expect(reviewWaitKind(record({ reason: "timed_out" }))).toBe(
+      "review-timeout",
+    );
+    expect(reviewWaitKind(record({ reason: "exhausted" }))).toBe(
+      "review-unavailable",
+    );
+    expect(reviewWaitKind(record({ reason: "out_of_time" }))).toBe(
+      "review-out-of-time",
+    );
+    expect(reviewWaitKind(record({ decision: "passed" }))).toBe("person");
+    expect(reviewWaitKind(record({ result: "failed" }))).toBe("person");
+    expect(reviewWaitKind(record({ decision: "findings" }))).toBeUndefined();
+    expect(reviewWaitKind(record({ result: "fail" }))).toBeUndefined();
+    expect(
+      reviewWaitKind(record({ decision: "unavailable", retryAt: 1 })),
+    ).toBeUndefined();
+  });
+
+  test("a task from before the wait was recorded is not named by a review it has left", () => {
+    const task = (change: Partial<TaskData>): TaskData => ({
+      repository: "r",
+      plan: "p",
+      title: "t",
+      brief: "",
+      after: [],
+      phase: "waiting",
+      attempts: 1,
+      run: null,
+      ...change,
+    });
+    expect(waitKindOf(task({ attempt: reviewWait("timed_out") }))).toBe(
+      "review-timeout",
+    );
+    expect(
+      waitKindOf(
+        task({
+          attempt: {
+            ...reviewWait("timed_out"),
+            integration: { result: "failed" },
+          },
+        }),
+      ),
+    ).toBe("person");
+  });
+});
+
 describe("an action the current wait does not take", () => {
   test("is refused in the task's words, naming what it can do, with no run id", async () => {
     const fixture = await setup(devFlow, reviewWait("timed_out"));
@@ -230,6 +286,48 @@ describe("an action the current wait does not take", () => {
       }),
     ).rejects.toThrow(line);
     expect(fixture.answers).toEqual([]);
+  });
+
+  test("a generic wait after a timed-out review offers reverify and takes it", async () => {
+    const fixture = await setup(devFlow, {
+      ...reviewWait("timed_out"),
+      integration: { result: "failed", message: "the merge did not run" },
+    });
+    await fixture.registry.runStep(
+      "dev/announce",
+      { from: "integrate", result: "failed" },
+      { runId: "run-1", object: { type: "task", id: fixture.taskId, data: {} } },
+    );
+    const task = taskData(
+      (await getTask(fixture.store, fixture.taskId)).data,
+    );
+    expect(task.waitKind).toBe("person");
+    expect(await offered(fixture.registry, fixture.taskId)).toEqual(
+      [...waitChoices("person", true)].sort(),
+    );
+
+    await fixture.registry.runAction("dev/reverify", {}, {
+      object: await getTask(fixture.store, fixture.taskId),
+      runId: "run-1",
+      actor: ACTOR,
+    });
+    expect(fixture.answers).toEqual(["reverify"]);
+  });
+
+  test("a generic wait after a stopped timed-out review takes reverify too", async () => {
+    const fixture = await setup(devFlow, reviewWait("timed_out"));
+    await fixture.registry.runStep(
+      "dev/announce",
+      { from: "worktree", result: "interrupted" },
+      { runId: "run-1", object: { type: "task", id: fixture.taskId, data: {} } },
+    );
+    const task = taskData(
+      (await getTask(fixture.store, fixture.taskId)).data,
+    );
+    expect(task.waitKind).toBe("person");
+    expect(await offered(fixture.registry, fixture.taskId)).toEqual(
+      [...waitChoices("person", true)].sort(),
+    );
   });
 
   test("a flow with no check or review refuses reverify the same way", async () => {

@@ -62,6 +62,7 @@ import {
   type ReviewerFallback,
   type ReviewerSettings,
 } from "./settings.ts";
+import { reviewWaitKind } from "./waits.ts";
 import { appendChange } from "./model.ts";
 import {
   briefText,
@@ -1910,6 +1911,8 @@ export async function runReview(
         : recorded;
     const record: ReviewRecord =
       used === undefined ? stamped : { ...stamped, reviewSettings: used };
+    const waiting =
+      record.decision !== "findings" && record.result !== "fail";
     const written = await saveTaskGuarded(
       ctx,
       context.taskKey,
@@ -1917,10 +1920,8 @@ export async function runReview(
         ...task,
         // A findings review continues to the rework step; every other ending
         // is a wait, either for a person or for the next review time.
-        phase:
-          record.decision === "findings" || record.result === "fail"
-            ? "review"
-            : "waiting",
+        phase: waiting ? "waiting" : "review",
+        waitKind: waiting ? reviewWaitKind(record) : undefined,
         run: ctx.runId,
         attempts: Math.max(task.attempts, attempt.number),
         attempt: {
