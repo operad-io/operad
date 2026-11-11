@@ -569,3 +569,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0240-M11 | packages/engine/src/markdown.ts | a code span with a longer backtick fence was not read as one span | `markdown fences > inline code written with a longer backtick fence is one span` |
+| T-0259-M2 | packages/engine/src/store-copy/copy.ts | the source fingerprint counted an empty `-wal` file as different from none, so a sqlite source in rollback-journal mode failed the copy on Linux | `store copy > copying out of a sqlite home in rollback-journal mode leaves its databases in WAL` (fails on the Linux check host) |
