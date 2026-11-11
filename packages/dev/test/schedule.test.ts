@@ -13,6 +13,7 @@ import {
   recordAnswer,
   Runner,
   serveOnce,
+  type KernelState,
   type RunInfo,
   type RunLookup,
 } from "@operad-io/engine";
@@ -685,6 +686,72 @@ describe("dev scheduling", () => {
     expect(after.phase).toBe("running");
     expect(after.claim?.token).toBe(claimed.claim?.token);
     expect(fixture.lines).toEqual([`${task.id} ready -> running`]);
+  });
+
+  describe("a task in review follows its run", () => {
+    const info = (key: string, runId: string): RunInfo => ({
+      runId,
+      flow: "dev",
+      object: `task:${key}`,
+      active: true,
+      startedAt: 0,
+      endedAt: null,
+      lastSeq: 1,
+      startInputId: null,
+    });
+
+    test("a run waiting for a person makes it waiting", async () => {
+      const fixture = await setup({ concurrency: 1 });
+      const plan = await makePlan(fixture, { slug: "plan", auto: "off" });
+      const task = await makeTask(fixture, plan.key, "task");
+      await confirm(fixture, plan.key);
+      await setTaskPhase(fixture.store, task.key, "review", { run: "run-1" });
+      const runs: RunLookup = {
+        active: async (object?: string) =>
+          [info(task.key, "run-1")].filter((run) => object === undefined || run.object === object),
+        state: async () => ({ status: "waiting_person" }) as unknown as KernelState,
+        lastStep: async () => "announcereviewfailed",
+      };
+      await fixture.registry.tick(runs);
+      const after = taskData((await getTask(fixture.store, task.key)).data);
+      expect(after.phase).toBe("waiting");
+      expect(after.run).toBe("run-1");
+    });
+
+    test("a run that ended is repaired like a running task's", async () => {
+      const fixture = await setup({ concurrency: 1 });
+      const plan = await makePlan(fixture, { slug: "plan", auto: "off" });
+      const task = await makeTask(fixture, plan.key, "task");
+      await confirm(fixture, plan.key);
+      await setTaskPhase(fixture.store, task.key, "review", { run: "run-gone" });
+      const runs: RunLookup = {
+        active: async () => [],
+        state: async () => undefined,
+        lastStep: async () => "review",
+      };
+      await fixture.registry.tick(runs);
+      const after = taskData((await getTask(fixture.store, task.key)).data);
+      expect(after.phase).not.toBe("review");
+      expect(fixture.registry.takeStartedRuns()).toHaveLength(1);
+      expect(fixture.lines).toEqual([`${task.id} review -> waiting (run stopped during review)`]);
+    });
+
+    test("with no run at all it goes back to ready", async () => {
+      const fixture = await setup({ concurrency: 1 });
+      const plan = await makePlan(fixture, { slug: "plan", auto: "off" });
+      const task = await makeTask(fixture, plan.key, "task");
+      await confirm(fixture, plan.key);
+      await setTaskPhase(fixture.store, task.key, "review", { run: null });
+      const runs: RunLookup = {
+        active: async () => [],
+        state: async () => undefined,
+        lastStep: async () => null,
+      };
+      await fixture.registry.tick(runs);
+      const after = taskData((await getTask(fixture.store, task.key)).data);
+      expect(after.phase).toBe("ready");
+      expect(fixture.lines).toEqual([`${task.id} running -> ready`]);
+    });
   });
 
   test("a manual start survives a crash before the run records itself", async () => {

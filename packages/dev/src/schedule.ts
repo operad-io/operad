@@ -435,24 +435,26 @@ async function reconcileTaskRuns(
   if (runs === undefined) return;
   for (const object of tasksOf(tasks, repository)) {
     const task = taskData(object.data);
-    if (task.phase !== "waiting" && task.phase !== "running") continue;
+    if (task.phase !== "waiting" && task.phase !== "running" && task.phase !== "review") {
+      continue;
+    }
     const active = await runs.active(`task:${object.id}`);
     const run = active[0];
     if (run !== undefined) {
       // A run paused for a person is the truth: the task is waiting.
       const state = await runs.state(run.runId);
-      if (state?.status === "waiting_person" && task.phase === "running") {
-        const moved = await moveTaskPhase(ctx.store, object.id, "running", "waiting", {
+      if (state?.status === "waiting_person" && task.phase !== "waiting") {
+        const moved = await moveTaskPhase(ctx.store, object.id, task.phase, "waiting", {
           run: run.runId,
         });
         if (moved === undefined) continue;
-        writeSchedulerLine(`${bareId(object.id)} running -> waiting`);
+        writeSchedulerLine(`${bareId(object.id)} ${task.phase} -> waiting`);
       }
       continue;
     }
     // A running task with no run id is a start that never landed; the claim
     // release below gives it back to ready.
-    if (task.phase === "running" && task.run === null) continue;
+    if ((task.phase === "running" || task.phase === "review") && task.run === null) continue;
     // A recovered run starts the dev flow again; without the plugins it
     // runs through, the task waits where it is.
     if (!canStartWork) continue;
@@ -551,7 +553,7 @@ async function scheduleRepository(
   // that run and start another one on the next tick, forever.
   for (const object of tasksOf(initialTasks, repository.name)) {
     const task = taskData(object.data);
-    if (task.phase !== "running" || task.run !== null) continue;
+    if ((task.phase !== "running" && task.phase !== "review") || task.run !== null) continue;
     if (
       ctx.runLookup !== undefined &&
       (await ctx.runLookup.active(`task:${object.id}`)).length > 0

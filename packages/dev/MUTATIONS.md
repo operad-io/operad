@@ -790,3 +790,13 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0116-M3 | packages/tui/src/actions.ts | the main action was the first action again (the skip of ending actions removed) | `the main key skips an action that ends the object, and says none is available when only it is left` (packages/tui/test/actions.test.ts) |
+
+## T-0288 — a stopped run's task waits
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0288-M1 | packages/dev/src/announce.ts | the announce step no longer marked a running or review task waiting | `dev.waiting > a task still in review says it waits once its wait is announced` (packages/dev/test/waiting.test.ts) |
+| T-0288-M2 | packages/dev/src/retry.ts | a recovered run that gave up kept the phase it had | `a spent retry hands the task to a person > a recovered run that gives up says waiting, not the phase it had` (packages/dev/test/retry.test.ts) |
+| T-0288-M3 | packages/dev/src/schedule.ts | a review task whose run waited for a person was left in review | `a task in review follows its run > a run waiting for a person makes it waiting` (packages/dev/test/schedule.test.ts) |
+| T-0288-M4 | packages/dev/src/service.ts | reopening a task refused a review task whose run ended | `a task in review follows its run > a run that ended is repaired like a running task's` (packages/dev/test/schedule.test.ts) |
+| T-0288-M5 | packages/dev/src/service.ts | releasing a claim refused a review task with no run | `a task in review follows its run > with no run at all it goes back to ready` (packages/dev/test/schedule.test.ts) |

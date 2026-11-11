@@ -1535,7 +1535,11 @@ export async function reopenTask(
   return withRepoLock(store, data.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
-    if (latest.phase !== "waiting" && latest.phase !== "running") {
+    if (
+      latest.phase !== "waiting" &&
+      latest.phase !== "running" &&
+      latest.phase !== "review"
+    ) {
       return undefined;
     }
     const next: TaskData = {
@@ -1565,7 +1569,12 @@ export async function releaseTaskClaim(
   return withRepoLock(store, data.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
-    if (latest.phase !== "running" || latest.run !== null) return undefined;
+    if (
+      (latest.phase !== "running" && latest.phase !== "review") ||
+      latest.run !== null
+    ) {
+      return undefined;
+    }
     const next: TaskData = {
       ...latest,
       phase: "ready",
