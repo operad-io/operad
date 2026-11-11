@@ -475,7 +475,7 @@ test("a relative path after cd is matched against the cd target, not the call's 
 });
 
 test("a path or cd target with an expansion the matcher cannot resolve asks", () => {
-  for (const command of ["cat $OTHER/x", "cat ${OTHER}/x", "cat $(pwd)/x", "cat `pwd`/x", "cd $OTHER && ls", "cat ~/.s*/id_rsa", "cat ~other/x"]) {
+  for (const command of ["cat $OTHER/x", "cat ${OTHER}/x", "cat $(pwd)/x", "cat `pwd`/x", "cd $OTHER && ls", "cat ~other/x"]) {
     expect(bash(PATHS, command)).toMatchObject({ allow: false, ask: true, kind: "command", value: command, rule: "inline code" });
   }
   // a glob in the last component stays inside the denied directory
@@ -525,4 +525,21 @@ test("an unknown directory covers the command name; pushd -n keeps the directory
   expect(bash({ denyPaths: [".git/config"] }, "pushd -n /tmp && cat .git/config")).toMatchObject({ allow: false, rule: ".git/config" });
   expect(bash(PATHS, "cat $'/home/u/.ssh/id_rsa'")).toMatchObject({ allow: false, rule: "~/.ssh" });
   expect(bash(PATHS, "cat $'/home/u/\\x2essh/id_rsa'")).toMatchObject({ allow: false, ask: true, rule: "inline code" });
+});
+
+test("globs: a cd target with one asks; other words are refused when the pattern can reach a denied path", () => {
+  for (const command of ["cd ~/.ss* && cat id_rsa", "cd /tmp/* && cat file", "cd ~/.ssh? && cat id_rsa", "cd ~/.ss[h] && cat id_rsa", "cd ~/{.ssh,x} && cat id_rsa"]) {
+    const verdict = bash(PATHS, command);
+    expect(verdict.allow).toBe(false);
+  }
+  // the cd word itself can reach the denied directory, so it is refused; elsewhere it asks
+  expect(bash({ denyPaths: ["/tmp/secret"] }, "cd /tmp/* && cat file")).toMatchObject({ allow: false, rule: "/tmp/secret" });
+  expect(bash({ denyPaths: ["/tmp/secret"] }, "cd /tmp/?ecret && cat file")).toMatchObject({ allow: false, rule: "/tmp/secret" });
+  expect(bash({ denyPaths: ["/etc/secret"] }, "cd /tmp/* && cat file")).toMatchObject({ allow: false, ask: true });
+  for (const command of ["cat ~/.ss*/id_rsa", "cat ~/.ssh/*", "cat ~/*/id_rsa", "cat ~/.s[s]h/x", "cat /home/u/.ss?/x"]) {
+    expect(bash(PATHS, command)).toMatchObject({ allow: false, rule: "~/.ssh" });
+  }
+  expect(bash(PATHS, "ls src/*.ts")).toEqual({ allow: true });
+  expect(bash(PATHS, "cat ~/docs/*/x /home/*")).toEqual({ allow: true });
+  expect(bash(PATHS, "cat ~/**/id")).toMatchObject({ allow: false, ask: true });
 });

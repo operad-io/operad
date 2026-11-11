@@ -78,3 +78,9 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0282-M5 | packages/access-match/src/index.ts | `pushd -n` was not recognised, so its operand moved the tracked directory | `an unknown directory covers the command name; pushd -n keeps the directory; $'…' words are read` |
+
+## T-0282 — rework 8
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0282-M6 | packages/access-match/src/index.ts | a glob in a cd target was no longer asked about, so `cd /tmp/*` was read as a literal directory | `globs: a cd target with one asks; other words are refused when the pattern can reach a denied path` |

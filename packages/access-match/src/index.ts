@@ -186,6 +186,10 @@ interface Expanded {
   readonly text: string;
   /** Still holds an expansion the matcher cannot resolve. */
   readonly unresolved: boolean;
+  /** A simple glob character (`*`, `?`, `[`) in any component. */
+  readonly glob: boolean;
+  /** A simple glob character in a component before the last. */
+  readonly dirGlob: boolean;
 }
 
 /** Expands `~`, `$HOME` and `${HOME}` to `home`; reports what else a shell would still expand. */
@@ -196,10 +200,48 @@ function expandWord(word: string, home: string): Expanded {
   text = text.replace(/\$\{HOME\}|\$HOME(?![A-Za-z0-9_])/g, () => home);
   const tilde = text.startsWith("~");
   const components = text.split("/");
-  const globbed = components.slice(0, -1).some((component) => /[*?[]|[@!+]\(/.test(component));
-  const unresolved = tilde || globbed || /\$[A-Za-z0-9_{(@*#?$!-]|`|\{[^{}]*(?:,|\.\.)[^{}]*\}/.test(text);
-  return { text, unresolved };
+  const simple = /[*?[]/;
+  const glob = components.some((component) => simple.test(component));
+  const dirGlob = components.slice(0, -1).some((component) => simple.test(component));
+  // `**` may span directories; the matcher cannot tell where it ends.
+  const unresolved = tilde || components.includes("**") || /\$[A-Za-z0-9_{(@*#?$!-]|`|\{[^{}]*(?:,|\.\.)[^{}]*\}/.test(text);
+  return { text, unresolved, glob, dirGlob };
 }
+
+function componentPattern(component: string): RegExp {
+  let source = "";
+  for (let i = 0; i < component.length; i += 1) {
+    const ch = component.charAt(i);
+    if (ch === "*") source += "[^/]*";
+    else if (ch === "?") source += "[^/]";
+    else if (ch === "[") {
+      const close = component.indexOf("]", i + 2);
+      if (close === -1) {
+        source += "\\[";
+        continue;
+      }
+      const body = component.slice(i + 1, close).replace(/\\/g, "\\\\");
+      source += body.startsWith("!") ? `[^${body.slice(1)}]` : `[${body}]`;
+      i = close;
+    } else source += ch.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${source}$`);
+}
+
+/** Refuses a glob word whose pattern can name a denied path or one under it; an ancestor of an entry is not under it. */
+function checkGlob(denied: Denied, text: string, cwd: string, written: string): Verdict {
+  const pattern = posix.resolve(cwd, text).split("/").filter((piece) => piece.length > 0);
+  for (const entry of denied.entries) {
+    const names = entry.path.split("/").filter((piece) => piece.length > 0);
+    if (pattern.length < names.length) continue;
+    if (names.every((name, index) => componentPattern(pattern.at(index) ?? "").test(name))) {
+      return { allow: false, reason: `path "${written}" can match a path under denyPaths entry "${entry.written}"`, rule: entry.written };
+    }
+  }
+  return ALLOW;
+}
+
+const CD_GLOB = /[*?[\]{]|[@!+]\(/;
 
 /** The leading `cd`, `pushd` or `popd` of a part and its first operand, as written; "" when it has none. */
 function cdTarget(words: readonly string[]): { readonly name: string; readonly target: string; readonly keeps: boolean } | undefined {
@@ -248,7 +290,7 @@ function bashWords(parts: readonly { readonly words: readonly string[] }[], cwd:
       continue;
     }
     if (dir === undefined) {
-      if (target !== "" && !expandWord(target, home).unresolved && expandWord(target, home).text.startsWith("/")) dir = posix.resolve(expandWord(target, home).text);
+      if (target !== "" && !expandWord(target, home).unresolved && !CD_GLOB.test(target) && expandWord(target, home).text.startsWith("/")) dir = posix.resolve(expandWord(target, home).text);
       else if (target === "") dir = home;
       else unresolvedCd = true;
       continue;
@@ -258,7 +300,7 @@ function bashWords(parts: readonly { readonly words: readonly string[] }[], cwd:
       continue;
     }
     const expanded = expandWord(target, home);
-    if (expanded.unresolved || target === "-") unresolvedCd = true;
+    if (expanded.unresolved || CD_GLOB.test(expanded.text) || target === "-") unresolvedCd = true;
     else dir = posix.resolve(dir, expanded.text);
   }
   return { words, unresolvedCd };
@@ -307,7 +349,9 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
           unresolved ??= `"${reading}"`;
           continue;
         }
-        const verdict = checkPath(denied, expanded.text, dir ?? denied.cwd, reading);
+        const verdict = expanded.glob
+          ? checkGlob(denied, expanded.text, dir ?? denied.cwd, reading)
+          : checkPath(denied, expanded.text, dir ?? denied.cwd, reading);
         if (!verdict.allow) return verdict;
       }
     }
@@ -379,7 +423,7 @@ function askBash(profile: AccessProfile, command: string, asked: AskedPaths | un
       if (target === undefined) continue;
       redirects = true;
       const expanded = expandWord(target, home);
-      if (expanded.unresolved) {
+      if (expanded.unresolved || expanded.dirGlob) {
         unresolved ??= `"${target}"`;
         continue;
       }
