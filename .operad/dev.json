@@ -91,5 +91,56 @@
         }
       }
     ]
+  },
+  "flows": {
+    "default": {
+      "stages": [
+        {
+          "stage": "work",
+          "use": "harness-claude/agent",
+          "args": [
+            "--model",
+            "sonnet"
+          ]
+        },
+        {
+          "stage": "check",
+          "commands": [
+            "bash scripts/verify.sh"
+          ],
+          "rerun": 1
+        },
+        {
+          "stage": "review",
+          "use": "harness-pi/agent",
+          "args": [
+            "--model",
+            "openai-codex/gpt-5.6-terra",
+            "--thinking",
+            "medium"
+          ],
+          "later": [
+            "--model",
+            "opencode-go/deepseek-v4.1-flash"
+          ]
+        },
+        {
+          "stage": "human"
+        }
+      ]
+    },
+    "docs": {
+      "stages": [
+        {
+          "stage": "work"
+        },
+        {
+          "stage": "review"
+        },
+        {
+          "stage": "human"
+        }
+      ]
+    }
   }
 }

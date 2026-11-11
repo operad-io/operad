@@ -277,10 +277,12 @@ function runWork(
   state: Fixture,
   runId = "work-run",
   onEvent: (plugin: string, type: string) => void = () => undefined,
+  params?: { readonly flowBrief: string },
 ) {
   return state.registry.runStep("dev/work", {}, {
     runId,
     object: { type: "task", id: state.taskKey, data: {} },
+    ...(params === undefined ? {} : { params }),
     emit: (plugin, event) => {
       onEvent(plugin, event.type);
     },
@@ -547,6 +549,17 @@ describe("dev/work", () => {
     expect(prompt).toContain("Add the detail the review asked for.");
     expect(prompt).not.toContain("## Changes");
     expect(cwd).toContain(join(".operad-worktrees", state.taskId));
+  });
+
+  test("a work stage's brief ends the prompt; a stage without one adds nothing", async () => {
+    const withBrief = await fixture("nothing", { workerBrief: "Repository brief." });
+    await runWork(withBrief, "work-run", () => undefined, { flowBrief: "Keep the diff small." });
+    const { prompt } = readRecord(withBrief);
+    expect(prompt.startsWith("Repository brief.")).toBe(true);
+    expect(prompt.endsWith("\n\nKeep the diff small.")).toBe(true);
+    const without = await fixture("nothing", { workerBrief: "Repository brief." });
+    await runWork(without);
+    expect(readRecord(without).prompt).not.toContain("Keep the diff small.");
   });
 
   test("a conflict left by the worktree step starts the prompt", async () => {

@@ -183,7 +183,7 @@ naming the flow and the rule.
 |---|---|---|---|
 | `work` | `use`, `args`, `brief`, `beforeAttempt` | a worker changes the task branch; `use` and `args` replace the harness step and its arguments, `brief` is appended to the worker's prompt, and `beforeAttempt` is the preparation before the attempt: `merge-main` fetches and merges the latest main, `none` leaves the branch as it is | `done`, `nothing`, `failed`, `unavailable`, `cancelled`, `interrupted` |
 | `check` | `commands`, `rerun` | runs the commands in a gate checkout of the verified commit; unset values come from `gate.commands` and `check.rerun` | `pass`, `fail`, `cancelled` |
-| `review` | `use`, `args`, `later`, `grading` | a reviewer reads the diff from the merge base to the verified commit; unset values come from `reviewer`, `later` replaces the arguments after the first review of an attempt, and `grading` names the entry in `.operad/review.json` (unset means the flow's own name) | `pass`, `fail`, `failed`, `unavailable`, `timed_out`, `exhausted`, `out_of_time`, `cancelled` |
+| `review` | `use`, `args`, `later`, `grading` | a reviewer reads the diff from the merge base to the verified commit; unset values come from `reviewer`, `later` replaces the arguments of every review round after the first of a task, and `grading` names the entry in `.operad/review.json` (unset means the flow's own name) | `pass`, `fail`, `failed`, `unavailable`, `timed_out`, `exhausted`, `out_of_time`, `cancelled` |
 | `human` | none | waits for a person to merge, reject, rework or reverify | the person's choice |
 
 A failed `check` or `review` appends its rework section and goes back to the
@@ -218,6 +218,13 @@ a hand-written flow calls the same plugin steps. `dev/worktree`,
 and retries around them, and `dev/announce` tells the outside world that a run
 stopped. A hand-written flow keeps the same hard rules: integrate and cleanup
 last, and at least one gate.
+
+dev loads each `.operad/flows/<name>.flow.ts` whose default export is a
+`defineFlow` value as a flow named `<name>`, and a plan or task chooses it with
+`--flow <name>`. It refuses the file, with the reason, when a step other than
+integrate (or the cleanup right after it) leads to the end, when there is no
+integrate step, when there is no check, review or human step, or when
+`dev.json` also defines `<name>`. A refused name starts no task.
 
 ## Steps
 

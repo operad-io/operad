@@ -8,6 +8,7 @@ import type {
 import { DevError, bareId, briefBody, storeKey, taskData, type RepositoryData } from "./model.ts";
 import { flakyTasksByName } from "./flaky.ts";
 import { listRerunCounts } from "./reruns.ts";
+import { loadProjectFlows } from "./project-flows.ts";
 import { readDevSettings } from "./settings.ts";
 import { readStdinText } from "./stdin.ts";
 import { editText } from "./editor.ts";
@@ -176,7 +177,10 @@ function flowFlag(raw: string | undefined): string | undefined {
 async function assertFlow(repository: RepositoryData, flow: string): Promise<void> {
   if (flow === "default") return;
   const settings = await readDevSettings(repository.path);
-  if (settings.flows[flow] === undefined) {
+  const project = await loadProjectFlows(repository.path, repository.name, settings);
+  const refused = project.refused.get(flow);
+  if (refused !== undefined) throw new DevError("--flow", refused);
+  if (settings.flows[flow] === undefined && !project.flows.has(flow)) {
     throw new DevError(
       "--flow",
       `no flow "${flow}" in repository "${repository.name}"`,
