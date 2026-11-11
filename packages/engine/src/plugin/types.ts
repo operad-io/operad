@@ -547,6 +547,10 @@ export interface StepRunOptions {
   readonly emit?:
     | ((plugin: string, event: StepEvent) => MaybePromise<void>)
     | undefined;
+  /** Sees each event this step sends, besides the destination; only the step it is given to. */
+  readonly observe?:
+    | ((plugin: string, event: StepEvent) => MaybePromise<void>)
+    | undefined;
 }
 
 /** A step type a plugin declares. The use name is `<plugin>/<name>`. */

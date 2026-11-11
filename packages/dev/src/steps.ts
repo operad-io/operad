@@ -12,6 +12,7 @@ import {
   type CostQuality,
   type PluginStepResult,
   type StepContext,
+  type StepEvent,
   type StepRunOptions,
 } from "@operad-io/engine";
 import {
@@ -28,7 +29,13 @@ import {
   type TaskAttempt,
   type TaskData,
 } from "./model.ts";
-import { DEFAULT_POOL, resolvePool, type WorkerDefinition } from "@operad-io/pool";
+import {
+  ACQUIRED_EVENT,
+  DEFAULT_POOL,
+  resolvePool,
+  WAITING_EVENT,
+  type WorkerDefinition,
+} from "@operad-io/pool";
 import { git, type GitResult } from "./git.ts";
 import { runPrepare } from "./prepare.ts";
 import { classifyStop, STOP_REASONS } from "./stops.ts";
@@ -975,6 +982,7 @@ function poolParams(
   worker: string | undefined,
   resumeSession: string | undefined,
   inbox: unknown,
+  holder: string,
   stage?: { readonly use?: string | undefined; readonly args?: readonly string[] | undefined },
 ): Record<string, unknown> {
   const resolved = resolvePool(settings.workers, DEFAULT_POOL);
@@ -997,6 +1005,7 @@ function poolParams(
     cwd: worktree,
     inbox,
     prefix: `${repository.name}/${DEFAULT_POOL}`,
+    holder,
     workers: fallback === undefined ? workers : [...workers, fallback],
     fallbacks: resolved.fallbacks,
     ...(worker === undefined ? {} : { worker }),
@@ -1305,6 +1314,45 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   let outcome: PluginStepResult | undefined;
   let hostError: string | undefined;
   let notLoaded: string | undefined;
+  // While a rework waits for the worker it asked for, the task says what it
+  // waits for and who holds it, in the row and in the step log.
+  let waitingFor: string | undefined;
+  const setWorkerWait = async (text: string | null): Promise<void> => {
+    await saveTaskGuarded(
+      ctx,
+      context.taskKey,
+      { ...task, attempt: { ...attempt, workerWait: text } },
+      "dev:work-wait",
+    );
+  };
+  const onPoolEvent = async (_plugin: string, event: StepEvent): Promise<void> => {
+    if (asked === undefined) return;
+    const data: unknown = event.data;
+    if (event.type === WAITING_EVENT) {
+      const entries = Array.isArray((data as { workers?: unknown } | undefined)?.workers)
+        ? ((data as { workers: unknown[] }).workers)
+        : [];
+      const mine = entries.find(
+        (entry): entry is { holders?: unknown } =>
+          typeof entry === "object" &&
+          entry !== null &&
+          (entry as { worker?: unknown }).worker === asked,
+      );
+      const holders = Array.isArray(mine?.holders)
+        ? mine.holders.filter((item): item is string => typeof item === "string")
+        : [];
+      const line = `waiting for worker ${asked}${
+        holders.length === 0 ? "" : `: held by ${holders.join(", ")}`
+      }`;
+      waitingFor = line;
+      await ctx.logger.write(line);
+      await setWorkerWait(line);
+    } else if (event.type === ACQUIRED_EVENT && waitingFor !== undefined) {
+      waitingFor = undefined;
+      await ctx.logger.write(`worker ${asked} is free; the work starts`);
+      await setWorkerWait(null);
+    }
+  };
   try {
     outcome = await runStep(
       "pool/agent",
@@ -1316,14 +1364,19 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
         asked,
         typeof attempt.previousSession === "string" ? attempt.previousSession : undefined,
         outbox.inbox,
+        context.taskId,
         stageParamsOf(ctx.params),
       ),
-      options,
+      { ...options, observe: onPoolEvent },
     );
   } catch (error) {
     hostError = messageOf(error);
     notLoaded = notLoadedStep(error);
   } finally {
+    if (waitingFor !== undefined) {
+      waitingFor = undefined;
+      await ctx.logger.write(`stopped waiting for worker ${String(asked)}`).catch(() => undefined);
+    }
     for (const timer of [...timers, ...runTimers]) clock.clearTimeout(timer);
     ctx.signal.removeEventListener("abort", forwardAbort);
   }

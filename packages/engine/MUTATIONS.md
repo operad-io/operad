@@ -467,3 +467,9 @@ the row fields.
 | T-0131-M5 | packages/engine/src/views/history.ts | left the outcome out of the fold signature, so a different outcome in between folded | `folded repeats in run history > the same step ending differently is not folded with the others` |
 | T-0131-M6 | packages/engine/src/views/history.ts | normalized every number in the detail instead of only ISO times | `folded repeats in run history > attempts whose reasons differ by more than a time are not folded` |
 | T-0131-M7 | packages/engine/src/views/history.ts | folded any two alternating steps, not only a step and its `_retry` step | `folded repeats in run history > two different steps that alternate are not a step and its retry` |
+
+## T-0216 — a caller may observe the events of a step it runs
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0216-M3 | packages/engine/src/plugin/registry.ts | a step's events were not given to the caller's `observe` | `a step's events > a caller that observes a step sees its events besides the destination` |

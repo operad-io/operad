@@ -652,3 +652,9 @@ the row fields.
 | T-0152-M1 | packages/dev/src/service.ts | `recordMergeReported` stopped checking the mark under the lock, so every caller claimed it | `a scheduler line prints once > the merge mark goes to one claimant, as when another process races a pass` |
 | T-0152-M2 | packages/dev/src/service.ts | `recordPlanFinishedReported` stopped checking the mark under the lock | `a scheduler line prints once > the finished mark goes to one claimant` |
 | T-0152-M3 | packages/dev/src/schedule.ts | `runScheduler` ran every asked pass at once instead of one after another | `a scheduler line prints once > a pass asked for while one runs runs once after it, never beside it` |
+
+## T-0216 — a rework's wait for its worker is shown
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0216-M2 | packages/dev/src/marks.ts | a task waiting for its worker kept the `running` mark | `dev/work with workers > a rework whose worker is busy shows the wait and the holding task until it is released` |
