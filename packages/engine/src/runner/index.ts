@@ -7,11 +7,13 @@ export type {
 } from "./answer.ts";
 export {
   acquireLock,
+  assertStoreNotMoving,
   lockHeld,
   pidAlive,
   readLockPid,
   runLockPath,
   serveLockPath,
+  storeMoveLockPath,
 } from "./lock.ts";
 export type { LockHandle, LockOptions } from "./lock.ts";
 export {
