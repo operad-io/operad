@@ -9,12 +9,14 @@ import { CHAT_TYPE, chatData, createChat } from "@operad-io/chat";
 import type {
   ActionTypeDefinition,
   JsonValue,
+  ObjectStore,
   PluginStepResult,
   StepContext,
 } from "@operad-io/engine";
-import { DevError, DevRefusal, repositoryData } from "./model.ts";
+import { existsSync } from "node:fs";
+import { DevError, DevRefusal, repositoryData, type RepositoryData } from "./model.ts";
 import { readDevSettings } from "./settings.ts";
-import { prepareWorktree, workBranch, worktreePath } from "./steps.ts";
+import { isRegistered, prepareWorktree, workBranch, worktreePath } from "./steps.ts";
 
 /**
  * The harnesses a repository chat offers, in order: the ones that can stop a
@@ -38,6 +40,30 @@ export const CHAT_ACCESS: Readonly<Record<string, JsonValue>> = {
 /** The directory name and branch suffix of a chat's worktree. */
 export function chatWorktreeName(chatId: string): string {
   return `chat-${chatId}`;
+}
+
+/**
+ * The worktree name a task opened from chat `chatId` works in. The chat must be
+ * about this repository and must already have been given its worktree.
+ */
+export async function chatWorktreeOf(
+  store: ObjectStore,
+  repository: RepositoryData,
+  chatId: string,
+): Promise<string> {
+  const stored = await store.get(CHAT_TYPE, chatId);
+  if (stored === undefined) throw new DevError("chat", `there is no chat ${chatId}`);
+  if (stored.data.parent !== `repo:${repository.name}`) {
+    throw new DevError("chat", `chat ${chatId} is not a chat about repository "${repository.name}"`);
+  }
+  if (typeof stored.data.worktree !== "object" || stored.data.worktree === null) {
+    throw new DevError("chat", `chat ${chatId} has no worktree yet`);
+  }
+  const recorded = (stored.data.worktree as { readonly path?: unknown }).path;
+  if (typeof recorded !== "string" || !existsSync(recorded) || !isRegistered(repository.path, recorded)) {
+    throw new DevError("chat", `the worktree of chat ${chatId} is gone`);
+  }
+  return chatWorktreeName(chatId);
 }
 
 const chatAction: ActionTypeDefinition = {

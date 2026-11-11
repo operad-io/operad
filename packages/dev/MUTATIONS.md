@@ -873,6 +873,17 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0278-M1 | packages/dev/src/chat.ts | the harness argument dropped its `enum`, so a free-text name reached the run's refusal instead of the schema | `dev:chat > a harness outside the choice is refused by the schema before the run` |
+
+## T-0301 — a task opened from a chat works in the chat's worktree
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0301-M1 | packages/dev/src/steps.ts | the work worktree step prepared a worktree named by the task id, not the chat worktree the task names | `task add --chat > the task's worktree step uses the chat's worktree and branch` |
+| T-0301-M2 | packages/dev/src/chat.ts | `chatWorktreeOf` no longer refused a chat that has no worktree yet | `task add --chat > a chat without a worktree, or one that does not exist, is refused and adds no task` |
+| T-0301-M3 | packages/dev/src/chat.ts | `chatWorktreeOf` accepted a chat whose recorded worktree no longer exists | `task add --chat > a chat whose recorded worktree was removed is refused` |
+| T-0301-M4 | packages/dev/src/integrate.ts | cleanup exported the chat worktree as the task's worktree, so the after-merge hook removed it | `task add --chat > cleanup after the merge leaves the chat's worktree and branch` |
+
+`packages/harness-claude/acceptance/` was removed by T-0266, so the finding about it has no code left to mutate.
 | T-0298-M1 | packages/dev/src/service.ts | cancelTask threw on a result that was already true instead of succeeding | `dev plans and tasks > a task added to a confirmed plan waits for its own confirm` |
 | T-0298-M2 | packages/dev/src/views.ts | an older run's unrecorded group became a phantom attempt numbered past the later ones | `dev views > a group nobody recorded in an older run is not numbered past a later attempt` |
 | T-0298-M3 | packages/dev/src/views.ts | the total row showed `0s` when no attempt's run could be read | `dev views > the total row shows a dash when no attempt's run can be read` |

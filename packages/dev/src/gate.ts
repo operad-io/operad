@@ -114,9 +114,9 @@ export function gateWorktreePath(
 export function branchHead(
   repositoryPath: string,
   settings: DevSettings,
-  taskId: string,
+  workName: string,
 ): string | undefined {
-  const branch = workBranch(taskId);
+  const branch = workBranch(workName);
   const local = git(repositoryPath, [
     "rev-parse",
     "--verify",
@@ -221,7 +221,7 @@ export async function runVerify(
   const sha = branchHead(
     context.repository.path,
     context.settings,
-    context.taskId,
+    context.workName,
   );
   // A replay of the same run reads the result it already recorded, but only
   // while the branch is still at the commit that result is for: a commit that
@@ -287,7 +287,7 @@ export async function runVerify(
 
   if (sha === undefined) {
     return failed(
-      `no branch "${workBranch(context.taskId)}" or "${context.settings.remote}/${workBranch(context.taskId)}" to verify`,
+      `no branch "${workBranch(context.workName)}" or "${context.settings.remote}/${workBranch(context.workName)}" to verify`,
     );
   }
   const prepared = recreateGateWorktree(
