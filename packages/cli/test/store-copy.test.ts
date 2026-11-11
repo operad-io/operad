@@ -89,7 +89,14 @@ async function seededHome(): Promise<{
     JSON.stringify({ plugins: [pluginPath, cardsPath], store: { backend: "jsonl", path: root } }),
   );
 
-  const objects = new FilePluginStore({ root: join(root, "plugins") });
+  // Everything the seeding stores takes its time from this clock, so the
+  // stored times are the same on every run.
+  let now = 1_700_000_000_000;
+  const clock = (): number => {
+    now += 1000;
+    return now;
+  };
+  const objects = new FilePluginStore({ root: join(root, "plugins"), clock });
   objects.put("card", "1", { title: "Fix the gate" }, "seed");
   objects.put("card", "1", { title: "Fix the gate", state: "second" }, "seed");
   objects.put("card", "2", { title: "Review it" }, "seed");
@@ -99,13 +106,13 @@ async function seededHome(): Promise<{
 
   const config = await readConfig(home);
   const start = async (flowName: string, object: string): Promise<string> => {
-    const log = openConfigLog(config);
+    const log = openLog({ backend: "jsonl", path: root, clock });
     try {
       const registry = await loadPluginRegistry({ home, store: objects });
       const found = registry.flow(flowName);
       if (found === undefined) throw new Error(`missing flow ${flowName}`);
       const info = await log.startRun(flowName, object);
-      await new Runner({ log, flow: found.flow, runId: info.runId, registry, lockRoot: root }).run();
+      await new Runner({ log, flow: found.flow, runId: info.runId, registry, lockRoot: root, clock }).run();
       return info.runId;
     } finally {
       await log.close();
@@ -115,7 +122,7 @@ async function seededHome(): Promise<{
   // The same flow and object ran before: that run was answered and ended, and
   // the one now waiting started after it.
   const answered = await start("ask", "card:2");
-  const answering = openConfigLog(config);
+  const answering = openLog({ backend: "jsonl", path: root, clock });
   const registry = await loadPluginRegistry({ home, store: objects });
   const ask = registry.flow("ask");
   if (ask === undefined) throw new Error("missing flow ask");
@@ -125,12 +132,13 @@ async function seededHome(): Promise<{
     runId: answered,
     choice: "finish",
     actor: { via: "test", id: "tester" },
+    clock,
   });
   await answering.close();
   const waiting = await start("ask", "card:2");
   const failed = await start("throwing", "card:3");
 
-  const log = openConfigLog(config);
+  const log = openLog({ backend: "jsonl", path: root, clock });
   await log.appendGlobal({ kind: "seen", payload: { n: 1 }, cause: 1 }, "key-one");
   await log.appendGlobal({ kind: "seen", payload: { n: 2 }, cause: 1 });
   await log.recordInput(null, "test", "event-1", { hello: "world" });
