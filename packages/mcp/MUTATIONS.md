@@ -80,3 +80,4 @@ the row fields.
 |---|---|---|---|
 | T-0210-M9 | packages/mcp/src/server.ts | the instructions named an action that asks for confirmation and is not in `confirmActions` | `operad mcp > instructions do not promise an action that asks for confirmation and is not confirmed` |
 | T-0210-M14 | packages/mcp/src/channel.ts | a block sent for a waiting object for another reason did not read the wait's pending prompt | `the channel's sources > what the default sends > a block for a state change of a waiting object still carries the wait's prompt` |
+| T-0188-M16 | packages/mcp/src/server.ts | an unknown tool threw instead of giving an error result | `the tools opened in a harness's own process > an unknown tool and a bad argument are error results, not throws` |

@@ -181,7 +181,7 @@ describe("the repo type", () => {
   test("the Overview names the path, the default branch, dev.json, worker and reviewer", async () => {
     const { views, alphaPath } = await setup();
     const object = await views.get("repo:alpha");
-    expect(object.sections.map((section) => section.id)).toEqual(["overview", "history"]);
+    expect(object.sections.map((section) => section.id)).toEqual(["overview", "metrics", "history"]);
     const defaults = (await views.section("repo:alpha", "overview")).markdown;
     expect(defaults).toContain(`- Path: \`${alphaPath}\``);
     expect(defaults).toContain("- Default branch: `main` on `origin`");

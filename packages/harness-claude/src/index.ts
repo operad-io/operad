@@ -29,6 +29,7 @@ import {
   flagValue,
   hasGrants,
   inboxOf,
+  operadToolsOf,
   JsonlLog,
   modelLimit,
   standardUsage,
@@ -529,6 +530,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
           const cwdProblem = await directoryError(cwd);
           if (cwdProblem !== undefined) return refuse("cwd", cwdProblem);
 
+          const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
           const claudeCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
           const storeSecrets = await secretValuesOf(ctx.secrets);
           const stdin: Record<string, unknown> = {
@@ -541,6 +543,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             ...(maxTurns === undefined ? {} : { maxTurns }),
             ...(budgetUsd === undefined ? {} : { budgetUsd }),
             ...(bashTimeoutSecs === undefined ? {} : { bashTimeoutSecs }),
+            ...(operadTools === undefined ? {} : { operadTools }),
             ...(isRecord(ctx.access) ? { access: ctx.access } : {}),
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };

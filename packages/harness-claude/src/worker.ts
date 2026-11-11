@@ -24,7 +24,7 @@ import {
   type AccessProfile,
 } from "@operad-io/access-match";
 import { decideAccess, hasRules, translate, type CallAnswer } from "./access.ts";
-import { messageText } from "@operad-io/harness-process";
+import { messageText, OPERAD_SERVER, serverCommand } from "@operad-io/harness-process";
 import { findClaude } from "./claude-install.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
@@ -272,6 +272,16 @@ export async function runWorker(
     return { behavior: "deny", message: verdict.reason };
   };
 
+  // Operad's tools: the program that serves them on stdio, started by claude.
+  const operadServer =
+    input.operadTools === undefined
+      ? undefined
+      : {
+          type: "stdio" as const,
+          command: serverCommand(input.operadTools).command,
+          args: [...serverCommand(input.operadTools).args],
+          env: { OPERAD_HOME: input.operadTools.home },
+        };
   const stderrTail: string[] = [];
   const options: Options = {
     cwd: input.cwd,
@@ -300,6 +310,7 @@ export async function runWorker(
       for (const text of data.split("\n")) if (text.trim().length > 0) stderrTail.push(text.trim());
       if (stderrTail.length > 5) stderrTail.splice(0, stderrTail.length - 5);
     },
+    ...(operadServer === undefined ? {} : { mcpServers: { [OPERAD_SERVER]: operadServer } }),
     ...(input.resumeSession !== undefined ? { resume: input.resumeSession } : {}),
     ...(input.model !== undefined ? { model: input.model } : {}),
     ...(input.effort !== undefined ? { effort: input.effort } : {}),

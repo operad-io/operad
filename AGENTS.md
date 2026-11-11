@@ -12,7 +12,8 @@ The direction, the decisions in force and the open questions are in
 `docs/backlog/operad.md`; each part has its own item (`operad-engine.md`,
 `operad-plugins.md`, `operad-harness.md`, `operad-channels.md`,
 `operad-contract.md`, `operad-presentation.md`, `operad-conversation.md`,
-`operad-sandbox.md`, `operad-assistant.md`, `operad-worker-pool.md`, `operad-dev-flows.md`). Read the items that touch what you change before you
+`operad-sandbox.md`, `operad-assistant.md`, `operad-worker-pool.md`, `operad-dev-flows.md`,
+`operad-open-framework.md`, `operad-slimming.md`, `operad-test-slimming.md`). Read the items that touch what you change before you
 change it, and do not contradict a decided point. A change that needs a decided
 point reversed changes that item first, in its own docs-only commit.
 

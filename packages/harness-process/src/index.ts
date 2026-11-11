@@ -11,6 +11,7 @@ export * from "./event-note.ts";
 export * from "./grants.ts";
 export * from "./inbox.ts";
 export * from "./jsonl-log.ts";
+export * from "./operad-tools.ts";
 export * from "./process.ts";
 export * from "./limit.ts";
 export * from "./usage.ts";

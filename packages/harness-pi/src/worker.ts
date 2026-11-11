@@ -21,6 +21,7 @@ import type {
   ExtensionFactory,
   ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
+import { openMcpTools, type McpTools } from "@operad-io/mcp";
 import { messageText, type CallAnswer } from "@operad-io/harness-process";
 import { findPi, loadPi } from "./pi-install.ts";
 import {
@@ -299,7 +300,35 @@ export async function runWorker(
   });
   await resourceLoader.reload();
 
+  // Operad's tools, as pi's own custom tools; each call runs against the home.
+  let operad: McpTools | undefined;
+  if (input.operadTools !== undefined) {
+    operad = await openMcpTools({
+      home: input.operadTools.home,
+      cwd: input.cwd,
+      onLog: (message) => io.log(message),
+    });
+  }
+  const mcp = operad;
+  const customTools =
+    mcp === undefined
+      ? undefined
+      : mcp.tools.map((tool) => ({
+          name: `operad_${tool.name}`,
+          label: `operad ${tool.name}`,
+          description: tool.description,
+          // The same JSON Schema the MCP server states; pi checks arguments against it.
+          parameters: { ...tool.inputSchema },
+          async execute(_id: string, params: Record<string, unknown>) {
+            const outcome = await mcp.call(tool.name, params);
+            const text = outcome.content.map((block) => block.text).join("\n");
+            if (outcome.isError === true) throw new Error(text);
+            return { content: [{ type: "text" as const, text }], details: outcome.structuredContent ?? {} };
+          },
+        }));
+
   const { session } = await createAgentSession({
+    ...(customTools === undefined ? {} : { customTools }),
     cwd: input.cwd,
     agentDir: input.agentDir,
     modelRuntime: runtime,

@@ -49,6 +49,8 @@ import {
   rotateHttpToken,
   serve,
   serveLockPath,
+  copyStore,
+  useStore,
   setPluginEnabled,
   splitActionName,
   startHttpServer,
@@ -207,6 +209,7 @@ const KERNEL_VERBS = [
   "secret",
   "settings",
   "http",
+  "store",
   "pair",
   "tui",
   "run-internal",
@@ -241,6 +244,10 @@ const HELP = [
   "  settings set <name> <value> [--repo <name>] [--yes]",
   "                       change a setting (the value is JSON, or a plain string)",
   "  http token rotate    replace the token the operad app uses",
+  "  store copy <jsonl|sqlite>",
+  "                       copy the store into the other kind, beside it (stop serve first)",
+  "  store use <jsonl|sqlite>",
+  "                       switch the configuration to a copied store",
   "  pair [--url <url>] [--show-token]",
   "                       show the address and token as a QR code for the operad app",
   "  tui [--url <url>] [--token <token>] [--no-start] [--theme <name>]",
@@ -343,6 +350,23 @@ async function openContext(
       if (!lockHeld(serveLockPath(home))) {
         io.write("recorded; it runs when `operad serve` is running\n");
       }
+    },
+    onEvent: async (event) => {
+      if (loaded === undefined) return;
+      const rules = await loadTriggerRules({
+        home,
+        registry: loaded,
+        onLog: (message) => io.error(`${message}\n`),
+      });
+      const kernel = new Kernel({
+        log,
+        registry: loaded,
+        home,
+        storeRoot,
+        rules,
+        onLog: (message) => io.error(`${message}\n`),
+      });
+      await kernel.receive(event);
     },
     onCancelRun: async (runId) => {
       const runs = await log.runs();
@@ -2123,6 +2147,36 @@ async function commandSettings(
   }
 }
 
+async function commandStore(
+  home: string,
+  io: CliIo,
+  argv: readonly string[],
+): Promise<number> {
+  const [verb, kind, ...extra] = argv;
+  if (
+    (verb !== "copy" && verb !== "use") ||
+    (kind !== "jsonl" && kind !== "sqlite") ||
+    extra.length > 0
+  ) {
+    throw new UsageError("store needs `copy <jsonl|sqlite>` or `use <jsonl|sqlite>`");
+  }
+  const config = await readConfig(home);
+  if (verb === "use") {
+    const path = await useStore(home, config, kind);
+    io.write(`the store is now ${kind} at ${path}; start serve again\n`);
+    return 0;
+  }
+  const started = performance.now();
+  const result = await copyStore({ home, config, to: kind });
+  const seconds = ((performance.now() - started) / 1000).toFixed(1);
+  io.write(
+    `copied the ${result.from} store to ${result.to} at ${result.path} in ${seconds}s: ` +
+      `${result.runs} runs, ${result.facts + result.globalFacts + result.objectFacts} records\n` +
+      `the current store is unchanged; \`operad store use ${result.to}\` switches to the copy\n`,
+  );
+  return 0;
+}
+
 async function commandHttp(
   home: string,
   io: CliIo,
@@ -2371,6 +2425,10 @@ export async function main(
 
     if (command === "settings") {
       return await commandSettings(home, io, args.slice(1));
+    }
+
+    if (command === "store") {
+      return await commandStore(home, io, args.slice(1));
     }
 
     if (command === "http") {

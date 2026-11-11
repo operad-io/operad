@@ -539,6 +539,18 @@ the row fields.
 | T-0164-M6 | packages/dev/src/integrate.ts, packages/dev/src/integration-queue.ts | a dead leader's pending result was never taken as landed and the subject lookup was off (`landed` returns `false`, `alreadyOnMain` ignored) | `a batch leader killed after the push > merge: the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone` (and the squash one) |
 | T-0175-M2 | packages/dev/src/commands.ts | a task edit with an empty command input opened the editor instead of refusing | `operad mcp > task edit takes the new brief as command input and refuses an empty one` (packages/mcp/test/server.test.ts; the run hangs on the editor and times out) |
 
+## T-0176 — repository throughput
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0176-M1 | packages/dev/src/throughput.ts | the percentile took the floor of the rank instead of the ceiling | `repository metrics > percentiles use the nearest rank` |
+| T-0176-M2 | packages/dev/src/throughput.ts | the time waiting for a turn was not taken out of the integrate time | `repository metrics > counts per hour and per day, cost per merge, and step times` |
+| T-0176-M3 | packages/dev/src/throughput.ts | a task merged before the window but written again inside it was counted | `repository metrics > counts per hour and per day, cost per merge, and step times` |
+| T-0176-M4 | packages/dev/src/throughput.ts | every write of a waiting task counted as a new stop (the check for an already waiting task removed) | `repository metrics > counts per hour and per day, cost per merge, and step times` |
+| T-0176-M5 | packages/dev/src/throughput.ts | the last-24-hours count began 23 hours back instead of 24 | `repository metrics > counts per hour and per day, cost per merge, and step times` |
+| T-0176-M6 | packages/dev/src/throughput.ts | the cost per merge used the task's last cost and not the sum of its attempts | `repository metrics > a reworked task costs every attempt, and a stop keeps the reason dev recorded` |
+| T-0176-M7 | packages/dev/src/throughput.ts | a spent retry was reported as `retry` instead of its recorded cause | `repository metrics > a reworked task costs every attempt, and a stop keeps the reason dev recorded` |
+| T-0176-M8 | packages/dev/src/throughput.ts | the hourly buckets went back to including their start and not their end, so a merge at `now` was in the summary and in no row | `repository metrics > the last-24-hours count is the sum of the hourly rows at both ends of the window` |
 ## T-0194 — `--after` across plans and repositories
 
 | id | file | mutation | failing test |
@@ -600,6 +612,8 @@ the row fields.
 | T-0210-M13 | packages/dev/src/schedule.ts | the area queue always followed the turn order, ignoring the kept slot's order | `dev scheduling > the tasks ahead follow the order of the kept slot when it is the next start` |
 | T-0194-M3 | packages/dev/src/service.ts | a cross-repository `--after` change took only its own repository's lock | `--after validation under races and removed repositories > two cross-repository updates at once cannot close a cycle` (a race; it failed in 3 of 3 runs) |
 | T-0194-M4 | packages/dev/src/service.ts | a dependency's repository was no longer required to be registered | `--after validation under races and removed repositories > a task of a removed repository cannot be named` |
+| T-0188-M9 | packages/dev/src/chat.ts | the worktree step moved the chat's directory again when it already had a worktree (both already-moved checks removed) | `dev/chat_worktree > opens work/chat-<id>, moves the working directory there once, and it is writable there` |
+| T-0188-M10 | packages/dev/src/chat.ts | dev:chat made the chat writable in the main clone | `dev:chat > creates a chat under the repository, in the main clone, read-only` |
 
 ## T-0060 — rework 3: named flows, beforeAttempt, the human rule
 
@@ -614,6 +628,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0060-M7 | packages/dev/src/settings.ts | restored the removed rule that a flow's last user stage must be human, so a non-final human stage was refused | `[human, check] loads and compiles human -> check -> integrate` |
+| T-0131-M1 | packages/dev/src/gate.ts | used the flat `retrySecs` for every wait instead of `reviewWaitMs` | `dev/review hardening > each further wait of an unavailable model doubles` |
+| T-0131-M2 | packages/dev/src/timeouts.ts | removed the 30-minute cap in `reviewWaitMs` | `review waits > double from retrySecs and stop at the cap` |
+| T-0131-M3 | packages/dev/src/timeouts.ts | set `MAX_REVIEW_WAITS` back to 36 | `review waits > the give-up point is about the time it was (about 90 minutes at the default)` |
 
 ## T-0061 — choosing a flow
 
@@ -624,3 +641,9 @@ the row fields.
 | T-0061-M3 | packages/dev/src/schedule.ts | a ready task with an undefined flow was given no reason on its row and its plan's row | `an undefined flow does not start, and the rows say why` |
 | T-0061-M4 | packages/dev/src/schedule.ts | rows named the flow even when the repository defines only the default one | `rows and the brief name the flow only when the repository defines more than one` |
 | T-0061-M5 | packages/dev/src/schedule.ts | the flow label was not kept for a cancelled task, so its row and Brief named no flow | `a task cancelled before any tick still names its flow` |
+| T-0188-M18 | packages/dev/src/chat.ts | `dev:chat` accepted a harness that is not loaded | `dev:chat > the harness must be loaded: one that is not is refused and the loaded ones are named` |
+| T-0188-M19 | packages/dev/src/chat.ts | the chat profile did not deny the `operad` command | `dev:chat > the profile keeps the agent out of the operad command` |
+| T-0188-M28 | packages/dev/src/chat.ts | `dev:chat` no longer refused harness-radian by name | `dev:chat > harness-radian is refused with the reason, whether given or the only one loaded` |
+| T-0152-M1 | packages/dev/src/service.ts | `recordMergeReported` stopped checking the mark under the lock, so every caller claimed it | `a scheduler line prints once > the merge mark goes to one claimant, as when another process races a pass` |
+| T-0152-M2 | packages/dev/src/service.ts | `recordPlanFinishedReported` stopped checking the mark under the lock | `a scheduler line prints once > the finished mark goes to one claimant` |
+| T-0152-M3 | packages/dev/src/schedule.ts | `runScheduler` ran every asked pass at once instead of one after another | `a scheduler line prints once > a pass asked for while one runs runs once after it, never beside it` |

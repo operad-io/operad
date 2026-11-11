@@ -92,6 +92,7 @@ import {
 } from "./rework.ts";
 import {
   MAX_REVIEW_WAITS,
+  reviewWaitMs,
   REVIEW_WAIT_CHUNK_MS,
   STEP_TIMEOUT_SECS,
 } from "./timeouts.ts";
@@ -2523,8 +2524,12 @@ export async function runReview(
   }
 
   if (next === "wait-unavailable") {
+    const waits = runs.filter(
+      (run) => run.role === "primary" && run.outcome === "unavailable",
+    ).length;
     const retryAt =
-      (reviewTestHooks.now?.() ?? Date.now()) + settings.retrySecs * 1000;
+      (reviewTestHooks.now?.() ?? Date.now()) +
+      reviewWaitMs(settings.retrySecs, waits);
     const message = reviewMessage("unavailable", runs, retryAt);
     const record: ReviewRecord = {
       result: "unavailable",

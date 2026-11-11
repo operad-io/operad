@@ -27,6 +27,8 @@ export interface WorkerInput {
   readonly access?: Readonly<Record<string, unknown>> | undefined;
   /** The longest one bash call may run, in seconds; unset means `DEFAULT_BASH_TIMEOUT_SECS`. */
   readonly bashTimeoutSecs?: number | undefined;
+  /** Operad's own tools, registered with pi as custom tools that read this home. */
+  readonly operadTools?: { readonly home: string } | undefined;
   /** Secret values of the operad secret store; a log line shows `***` where one appears. */
   readonly secretValues?: readonly string[] | undefined;
 }
@@ -189,6 +191,11 @@ export function parseInput(value: unknown): ParsedInput {
     return { ok: false, message: "bashTimeoutSecs must be a positive integer" };
   }
 
+  const operadTools = value["operadTools"];
+  if (operadTools !== undefined && (!isRecord(operadTools) || typeof operadTools["home"] !== "string" || operadTools["home"].length === 0)) {
+    return { ok: false, message: "operadTools must be an object with a home" };
+  }
+
   const secretValues = value["secretValues"];
   if (secretValues !== undefined && (!Array.isArray(secretValues) || !secretValues.every((v): v is string => typeof v === "string"))) {
     return { ok: false, message: "secretValues must be an array of strings" };
@@ -218,6 +225,7 @@ export function parseInput(value: unknown): ParsedInput {
       thinkingLevel,
       access,
       bashTimeoutSecs,
+      operadTools: operadTools === undefined ? undefined : { home: String(operadTools["home"]) },
       secretValues,
     },
   };
