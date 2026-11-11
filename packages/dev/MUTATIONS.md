@@ -766,7 +766,7 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0240-M14 | packages/dev/src/views.ts | a turn end with stop reason `tool_use` was shown when the agent had text | `dev views > the agent's text, a tool error's first line and a turn's end are shown; tool output is not` |
-| T-0240-M15 | packages/dev/src/views.ts | leading and trailing blank lines of a command were not counted | `dev views > a multi-line command shows its first line and the count of lines left; a long one-liner is cut` |
+| T-0240-M15 | packages/dev/src/views.ts | leading and trailing blank lines of a command were trimmed away before the count | `dev views > a multi-line command shows its first line and the count of lines left; a long one-liner is cut` |
 | T-0239-M3 | packages/dev/src/marks.ts | a task whose step waits for a check place kept the `checking` mark | `dev views > a task whose check waits for a place says so, with how many are ahead, until it takes the place` |
 | T-0239-M4 | packages/dev/src/places.ts | a check that took its place did not end its report to the kernel before the command started | `check places > a waiting check tells the kernel and the task its place group until it takes the place` |
 | T-0239-M8 | packages/dev/src/place-wait.ts | counting the waiters and saving the wait record was not one locked turn, so two checks reaching a held place together both showed 0 ahead | `dev views > a task whose check waits for a place says so, with how many are ahead, until it takes the place` |

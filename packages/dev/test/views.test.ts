@@ -807,9 +807,9 @@ describe("dev views", () => {
     expect(readableLog(toolLines(`cd ${WT}; ${heredoc}`), { worktree: WT })).toEqual([
       "tool Bash 3s `python3 - <<'EOF' … (+3 lines)`",
     ]);
-    // Leading and trailing blank lines count too; the first line shown is the first with text.
+    // Leading and trailing blank lines count too: the first line is the command's first, blank or not.
     expect(readableLog(toolLines("\npython3 - <<'EOF'\nprint(1)\nEOF\n"))).toEqual([
-      "tool Bash 3s `python3 - <<'EOF' … (+3 lines)`",
+      "tool Bash 3s ` … (+4 lines)`",
     ]);
     // A blank line inside the command counts as a line left.
     expect(readableLog(toolLines("python3 - <<'EOF'\nprint(1)\n\nprint(2)\nEOF"))).toEqual([

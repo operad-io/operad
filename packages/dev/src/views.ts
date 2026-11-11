@@ -363,12 +363,11 @@ function shownCommand(command: string, worktree: string | undefined): string {
     text = text.replace(new RegExp(`${path}/`, "g"), "");
     text = text.replace(new RegExp(`${path}(?![\\w./-])`, "g"), ".");
   }
-  // Every line counts, blank ones too; the first line shown is the first with text.
+  // Every line counts, blank ones too, and the first line is the command's first.
   const lines = text.split("\n");
-  const at = Math.max(0, lines.findIndex((line) => line.trim().length > 0));
-  const first = (lines[at] ?? "").trim();
+  const first = (lines[0] ?? "").trim();
   const head = first.length <= COMMAND_SHOWN_CHARS ? first : `${first.slice(0, COMMAND_SHOWN_CHARS - 1)}…`;
-  return lines.length - at > 1 ? `${head} … (+${lines.length - at - 1} lines)` : head;
+  return lines.length > 1 ? `${head} … (+${lines.length - 1} lines)` : head;
 }
 
 /** Text as Markdown inline code; the fence is longer than any backtick run inside. */
