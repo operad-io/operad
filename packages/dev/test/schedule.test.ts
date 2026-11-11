@@ -1,3 +1,4 @@
+import { compileDevFlow } from "../src/flow-compiler.ts";
 import { createShellPlugin } from "@operad-io/shell";
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
@@ -399,6 +400,58 @@ describe("dev scheduling", () => {
     });
     await tick(words);
     expect(words.answers.length).toBe(1);
+  });
+
+  test("auto merge answers the wait of a configured human stage in a flow without review", async () => {
+    const words = await setup();
+    const plan = await makePlan(words, { slug: "plan", auto: "merge" });
+    const task = await makeTask(words, plan.key, "task");
+    await confirm(words, plan.key);
+    await phase(words, task.key, "waiting", "run-1");
+    const flowGraph = compileDevFlow("f", [
+      { stage: "work" },
+      { stage: "check" },
+      { stage: "human" },
+    ]);
+    // A failed check is a wait for a person, never a merge answer.
+    await putTask(words, task.key, {
+      flowGraph,
+      attempt: { number: 1, run: "run-1", result: "done", verify: { result: "fail" } },
+    });
+    await tick(words);
+    expect(words.answers.length).toBe(0);
+    await putTask(words, task.key, {
+      attempt: { number: 1, run: "run-1", result: "done", verify: { result: "pass" } },
+    });
+    await tick(words);
+    expect(words.answers).toEqual([{ runId: "run-1", choice: "merge" }]);
+  });
+
+  test("auto merge answers a human stage that a later review follows, until that review has run", async () => {
+    const words = await setup();
+    const plan = await makePlan(words, { slug: "plan", auto: "merge" });
+    const task = await makeTask(words, plan.key, "task");
+    await confirm(words, plan.key);
+    await phase(words, task.key, "waiting", "run-1");
+    const flowGraph = compileDevFlow("g", [
+      { stage: "work" },
+      { stage: "check" },
+      { stage: "human" },
+      { stage: "review" },
+    ]);
+    const verify = { result: "pass" };
+    // The later review failed: that wait is not the human stage.
+    await putTask(words, task.key, {
+      flowGraph,
+      attempt: { number: 1, run: "run-1", result: "done", verify, review: { result: "fail" } },
+    });
+    await tick(words);
+    expect(words.answers.length).toBe(0);
+    await putTask(words, task.key, {
+      attempt: { number: 1, run: "run-1", result: "done", verify },
+    });
+    await tick(words);
+    expect(words.answers).toEqual([{ runId: "run-1", choice: "merge" }]);
   });
 
   test("auto merge answers a passed review once and never answers other waits", async () => {

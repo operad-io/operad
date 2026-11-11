@@ -189,6 +189,34 @@ function plansOf(
 }
 
 /**
+ * Whether a task's flow has a configured human stage that no review stage
+ * comes before, and the work and check before it finished well: the wait the
+ * task is in is that stage. A review before the human stage is answered
+ * through its pass; a review after it has not run yet at that wait.
+ */
+function atHumanStage(task: TaskData): boolean {
+  const steps = task.flowGraph?.steps;
+  const attempt = task.attempt;
+  if (steps === undefined || attempt === undefined) return false;
+  const indexOf = (kind: string): number =>
+    steps.findIndex((step) => new RegExp(`^${kind}(_\\d+)?$`).test(step.id));
+  const human = indexOf("human");
+  if (human < 0) return false;
+  const review = indexOf("review");
+  if (review >= 0 && review < human) return false;
+  // A review after the human stage has not run while the task waits here.
+  if (review > human && attempt.review !== undefined && attempt.review !== null) {
+    return false;
+  }
+  if (attempt.result !== undefined && attempt.result !== null && attempt.result !== "done") {
+    return false;
+  }
+  const check = indexOf("check");
+  if (check >= 0 && check < human) return attempt.verify?.result === "pass";
+  return attempt.worked === true;
+}
+
+/**
  * Whether a task waits for a merge answer the scheduler gives at auto merge:
  * its review passed, its integrate has not run and it was not answered for
  * this attempt yet. Whether the plan is at auto merge is the caller's check.
@@ -202,7 +230,7 @@ function autoMergeWaits(task: TaskData): boolean {
     review?.decision === "passed" ||
     review?.result === "pass" ||
     review?.result === "passed";
-  if (!passed) return false;
+  if (!passed && !atHumanStage(task)) return false;
   // An integrate that failed is a person wait, never a second answer.
   if (attempt.integration !== undefined && attempt.integration !== null) {
     return false;

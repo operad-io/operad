@@ -851,3 +851,5 @@ the row fields.
 | T-0297-M5 | packages/dev/src/flaky.ts | a missing `check.flakyPlan` fell back to the flaky-tests plan with no notice | `a flaky test proposes a task > check.flakyPlan that names no plan says so and still proposes in flaky-tests` |
 | T-0297-M6 | packages/dev/src/flaky.ts | the test-file search descended into `node_modules` again | `a flaky test proposes a task > a test whose file the log does not give is found by name in the test files, else the file is unknown` |
 | T-0297-M7 | packages/dev/src/check.ts | the init check used a git runner of its own that did not ask again after an empty success | `dev init check > an empty answer from the remote query is asked again` |
+| T-0291-M1 | packages/dev/src/schedule.ts | auto merge answered a human-stage wait whose check had failed | `dev scheduling > auto merge answers the wait of a configured human stage in a flow without review` |
+| T-0291-M2 | packages/dev/src/schedule.ts | auto merge answered a wait after a later review had failed, taking it for the human stage | `dev scheduling > auto merge answers a human stage that a later review follows, until that review has run` |
