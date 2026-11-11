@@ -501,3 +501,12 @@ test("brace expansion and positional parameters ask; builtin and command wrapper
     expect(bash(PATHS, command)).toMatchObject({ allow: false, rule: "~/.ssh" });
   }
 });
+
+test("extended globs in a directory component ask; combined cd options are not the target", () => {
+  for (const command of ["cat /home/u/@(.ssh|tmp)/id", "cat /home/u/!(tmp)/id", "cat /home/u/+(.ssh)/id"]) {
+    expect(bash(PATHS, command)).toMatchObject({ allow: false, ask: true, rule: "inline code" });
+  }
+  for (const command of ['cd -LP "$HOME" && cat .ssh/id_rsa', 'cd -P -L ~ && cat .ssh/id_rsa', 'cd -L -- ~ && cat .ssh/id_rsa']) {
+    expect(bash(PATHS, command)).toMatchObject({ allow: false, rule: "~/.ssh" });
+  }
+});

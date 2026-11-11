@@ -196,7 +196,7 @@ function expandWord(word: string, home: string): Expanded {
   text = text.replace(/\$\{HOME\}|\$HOME(?![A-Za-z0-9_])/g, () => home);
   const tilde = text.startsWith("~");
   const components = text.split("/");
-  const globbed = components.slice(0, -1).some((component) => /[*?[]/.test(component));
+  const globbed = components.slice(0, -1).some((component) => /[*?[]|[@!+]\(/.test(component));
   const unresolved = tilde || globbed || /\$[A-Za-z0-9_{(@*#?$!-]|`|\{[^{}]*(?:,|\.\.)[^{}]*\}/.test(text);
   return { text, unresolved };
 }
@@ -211,7 +211,7 @@ function cdTarget(words: readonly string[]): string | undefined {
   }
   const name = words.at(index);
   if (name !== "cd" && name !== "pushd") return undefined;
-  const rest = words.slice(index + 1).filter((word) => word !== "--" && word !== "-L" && word !== "-P");
+  const rest = words.slice(index + 1).filter((word) => word !== "--" && !/^-[LPe@]+$/.test(word));
   return rest.at(0) ?? "";
 }
 

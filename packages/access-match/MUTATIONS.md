@@ -60,3 +60,9 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0282-M2 | packages/access-match/src/index.ts | `cdTarget` stopped skipping `builtin` and `command`, so `builtin cd "$HOME"` left later paths on the call's cwd | `brace expansion and positional parameters ask; builtin and command wrappers still track cd` |
+
+## T-0282 — rework 3
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0282-M3 | packages/access-match/src/index.ts | `cdTarget` skipped only a lone `-L` or `-P`, so `cd -LP "$HOME"` took `-LP` as the target | `extended globs in a directory component ask; combined cd options are not the target` |
