@@ -135,6 +135,24 @@ describe("runCheckSteadily", () => {
   });
 });
 
+describe("runCheckSteadily records the load", () => {
+  test("the start and the end of the command, each as it was read", async () => {
+    const readings = [30, 1];
+    let index = 0;
+    notCodeTestHooks.load = () => ({
+      load1: readings[Math.min(index++, readings.length - 1)] ?? 0,
+      cores: 10,
+    });
+    const steady = await runCheckSteadily({
+      run: async () => run({ reason: "exit", exitCode: 1 }),
+      limit: undefined,
+    });
+    expect(steady.loads).toEqual([
+      { start: { load1: 30, cores: 10 }, end: { load1: 1, cores: 10 } },
+    ]);
+  });
+});
+
 describe("a model connection error is a stop outside the task's work", () => {
   test("the host's words for a dropped connection are recognised", () => {
     expect(isConnectionError("The socket connection was closed unexpectedly")).toBe(true);

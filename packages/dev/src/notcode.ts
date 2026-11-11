@@ -175,6 +175,12 @@ export function notCodeCause(found: NotCode, load: MachineLoad): string {
   return `${found.what} twice under load ${Math.round(load.load1)} on ${load.cores} cores`;
 }
 
+/** The load when one run of a command started and when it ended. */
+export interface CheckLoad {
+  readonly start: MachineLoad;
+  readonly end: MachineLoad;
+}
+
 export interface SteadyCheck {
   readonly checked: CheckRun;
   /** Set when the check ended "not the code" twice: a person decides. */
@@ -183,6 +189,8 @@ export interface SteadyCheck {
   readonly runs: number;
   /** The busiest the machine was when the check started and when each run ended. */
   readonly load: MachineLoad;
+  /** The load at the start and the end of each run of the command. */
+  readonly loads: readonly CheckLoad[];
   /** Set when the run was cancelled while it waited for the load. */
   readonly cancelled?: boolean | undefined;
 }
@@ -224,26 +232,35 @@ export async function runCheckSteadily(input: {
   readonly signal?: AbortSignal | undefined;
   readonly log?: ((text: string) => Promise<unknown> | unknown) | undefined;
 }): Promise<SteadyCheck> {
-  let peak = currentLoad();
+  const firstStart = currentLoad();
+  let peak = firstStart;
   const sample = (): MachineLoad => {
     const now = currentLoad();
     if (now.load1 > peak.load1) peak = now;
     return now;
   };
   const first = await input.run();
-  sample();
-  if (!worthAnotherRun(classifyRun(first))) return { checked: first, runs: 1, load: peak };
-  if (!(await waitForQuiet(input.limit, input.signal, input.log ?? (() => {})))) {
-    return { checked: first, runs: 1, load: peak, cancelled: true };
+  const firstEnd = sample();
+  const loads: CheckLoad[] = [{ start: firstStart, end: firstEnd }];
+  if (!worthAnotherRun(classifyRun(first))) {
+    return { checked: first, runs: 1, load: peak, loads };
   }
+  if (!(await waitForQuiet(input.limit, input.signal, input.log ?? (() => {})))) {
+    return { checked: first, runs: 1, load: peak, loads, cancelled: true };
+  }
+  const secondStart = sample();
   const second = await input.run();
   const after = sample();
+  loads.push({ start: secondStart, end: after });
   const found = classifyRun(second);
-  if (!worthAnotherRun(found)) return { checked: second, runs: 2, load: peak };
+  if (!worthAnotherRun(found)) {
+    return { checked: second, runs: 2, load: peak, loads };
+  }
   return {
     checked: second,
     runs: 2,
     load: peak,
+    loads,
     notCode: { cause: notCodeCause(found, after), kind: found.kind },
   };
 }

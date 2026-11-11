@@ -778,3 +778,13 @@ the row fields.
 | T-0239-M4 | packages/dev/src/places.ts | a check that took its place did not end its report to the kernel before the command started | `check places > a waiting check tells the kernel and the task its place group until it takes the place` |
 | T-0239-M8 | packages/dev/src/place-wait.ts | counting the waiters and saving the wait record was not one locked turn, so two checks reaching a held place together both showed 0 ahead | `dev views > a task whose check waits for a place says so, with how many are ahead, until it takes the place` |
 | T-0260-M3 | packages/dev/src/gate.ts | review accepted a report that named no commit | `dev/review > a report that names no commit is refused` |
+
+## T-0174 — a failed test seen under load opens no flaky task
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0174-M1 | packages/dev/src/flaky.ts | `busyLoad` ignored the start reading and looked only at the end | `a flaky test proposes a task > a failure seen above the load limit opens no task and says it was skipped` |
+| T-0174-M2 | packages/dev/src/flaky.ts | the default limit was the core count instead of twice it | `a flaky test proposes a task > a failure below the load limit opens the flaky task as before` |
+| T-0174-M3 | packages/dev/src/settings.ts | `check.flakyLoadLimit` was accepted but not read from the settings | `a flaky test proposes a task > check.flakyLoadLimit is read and validated` |
+| T-0174-M4 | packages/dev/src/notcode.ts | the end reading was the start reading, so a check that ended quiet looked busy | `runCheckSteadily records the load > the start and the end of the command, each as it was read` |
+| T-0174-M5 | packages/dev/src/flaky.ts | the skipped failure was left out of the check's own log | `dev/verify tells a result that is not the code from one that is > a test that passes on rerun under load is recorded and proposes no task` |
