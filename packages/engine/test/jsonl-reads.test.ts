@@ -75,4 +75,39 @@ describe("the jsonl backend over a large history", () => {
       await log.close();
     }
   });
+
+  test("a quiet listing of the active runs does not list the runs directory", async () => {
+    const root = await tempRoot();
+    let now = Date.now();
+    const log = openLog({ backend: "jsonl", path: join(root, "store"), clock: () => now });
+    try {
+      for (let index = 0; index < 100; index += 1) {
+        const run = await log.startRun("old", `job:${index}`);
+        await log.endRun(run.runId);
+      }
+      const live = await log.startRun("live", "job:live");
+      now += 60_000;
+      expect((await log.runs({ active: true })).map((run) => run.runId)).toEqual([live.runId]);
+
+      const listed = spyOn(fs, "readdirSync");
+      try {
+        for (let pass = 0; pass < 5; pass += 1) {
+          expect(await log.runs({ active: true })).toHaveLength(1);
+        }
+        expect(listed).not.toHaveBeenCalled();
+      } finally {
+        listed.mockRestore();
+      }
+
+      // A start and an end are still seen at once.
+      const second = await log.startRun("live", "job:second");
+      expect((await log.runs({ active: true })).map((run) => run.runId).sort()).toEqual(
+        [live.runId, second.runId].sort(),
+      );
+      await log.endRun(live.runId);
+      expect((await log.runs({ active: true })).map((run) => run.runId)).toEqual([second.runId]);
+    } finally {
+      await log.close();
+    }
+  });
 });

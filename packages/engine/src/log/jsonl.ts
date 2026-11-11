@@ -243,6 +243,9 @@ function findLastByte(fd: number, from: number, byte: number): number {
 }
 
 /** Cut off bytes after the last newline. */
+/** A directory change this recent may share its time with the next one. */
+const SETTLE_MS = 2000;
+
 function truncateTornLine(path: string): void {
   if (!existsSync(path)) return;
   const fd = openSync(path, "r+");
@@ -492,6 +495,9 @@ class JsonlLogBackend implements LogBackend {
   readonly #outcomes = new Map<string, StoredOutcome>();
   /** The same outcomes in sequence order, so a reader can start after a cursor. */
   #outcomeList: StoredOutcome[] = [];
+  #activeCache:
+    | { readonly mtimeNs: bigint; readonly settled: boolean; readonly ids: readonly string[] }
+    | undefined;
   #outcomeSeq = 0;
   #outcomeBytes = 0;
   #closed = false;
@@ -1098,18 +1104,39 @@ class JsonlLogBackend implements LogBackend {
     }
   }
 
+  #allRunIds(): string[] {
+    return readdirSync(this.#runsDirectory)
+      .filter((name) => name.endsWith(".jsonl"))
+      .map((name) => name.slice(0, -".jsonl".length));
+  }
+
+  /**
+   * The ids of the active runs. Starting or ending a run adds a file to the
+   * runs directory, which changes its modification time; while that time is
+   * unchanged (and old enough that a later change cannot share it) the
+   * remembered ids stand and the directory is not listed again.
+   */
+  #activeRunIds(): readonly string[] {
+    const stat = statSync(this.#runsDirectory, { bigint: true });
+    const cached = this.#activeCache;
+    if (cached !== undefined && cached.settled && cached.mtimeNs === stat.mtimeNs) {
+      return cached.ids;
+    }
+    const names = readdirSync(this.#runsDirectory);
+    const ended = new Set(names.filter((name) => name.endsWith(".end")));
+    const ids = names
+      .filter((name) => name.endsWith(".jsonl"))
+      .map((name) => name.slice(0, -".jsonl".length))
+      .filter((runId) => !ended.has(`${runId}.end`));
+    const settled = this.#clock() - Number(stat.mtimeNs / 1_000_000n) > SETTLE_MS;
+    this.#activeCache = { mtimeNs: stat.mtimeNs, settled, ids };
+    return ids;
+  }
+
   #listRunsUnlocked(activeOnly: boolean): RunInfo[] {
     const runs: RunInfo[] = [];
-    const names = readdirSync(this.#runsDirectory);
-    // The active runs are named by the directory listing alone: an ended run's
-    // header and last line are not read.
-    const ended = activeOnly
-      ? new Set(names.filter((name) => name.endsWith(".end")))
-      : undefined;
-    for (const name of names) {
-      if (!name.endsWith(".jsonl")) continue;
-      const runId = name.slice(0, -".jsonl".length);
-      if (ended?.has(`${runId}.end`) === true) continue;
+    const runIds = activeOnly ? this.#activeRunIds() : this.#allRunIds();
+    for (const runId of runIds) {
       let info: RunInfo;
       try {
         info = this.#runInfoUnlocked(runId);

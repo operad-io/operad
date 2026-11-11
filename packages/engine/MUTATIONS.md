@@ -482,3 +482,4 @@ the row fields.
 | T-0251-M7 | packages/engine/src/log/jsonl.ts | `readOutcomesAfter` filtered every remembered outcome instead of bisecting the sequence-ordered list | `the jsonl backend over a large history > a lookup or a quiet read does not read the whole files` |
 | T-0251-M8 | packages/engine/src/log/jsonl.ts | `findInput` read the whole inputs file besides using its remembered place | `the jsonl backend over a large history > a lookup or a quiet read does not read the whole files` |
 | T-0251-M9 | packages/engine/src/log/jsonl.ts | the active-only run listing opened every ended run again | `the jsonl backend over a large history > listing the active runs does not open the logs of ended runs` |
+| T-0251-M10 | packages/engine/src/log/jsonl.ts | the active-run listing never trusted its remembered ids and listed the runs directory each call | `the jsonl backend over a large history > a quiet listing of the active runs does not list the runs directory` |
