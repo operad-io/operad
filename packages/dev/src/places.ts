@@ -220,7 +220,7 @@ export async function withCheckPlace<T>(
           reported = undefined;
           await previous?.end().catch(() => undefined);
           try {
-            reported = { key, end: await places.queued(key) };
+            reported = { key, end: await places.queued(key, since) };
           } catch {
             reported = undefined;
           }

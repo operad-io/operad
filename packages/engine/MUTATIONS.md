@@ -604,3 +604,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0281-M1 | packages/engine/src/plugin/action-schema.ts | a `oneOf` accepted a value only when it fitted its first branch (the check of the other branches removed) | `settings with a choice of forms > a set keeps the object form of a check command and every other value` (packages/engine/test/views/settings-schema.test.ts) |
+
+## T-0295-check-places-fifo — a reported wait is ordered by the time its plugin gives
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0295-M7 | packages/engine/src/runner/limits.ts | the queue ordered a reported wait by when it was reported, ignoring `since` | `reported waits with a start time (memory) > the queue follows the time the plugin says the wait began, not when it was reported` |

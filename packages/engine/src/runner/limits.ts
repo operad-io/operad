@@ -79,7 +79,11 @@ async function scanRun(
         step: typeof payload.step === "string" ? payload.step : null,
         key: payload.key,
         concurrent: payload.concurrent,
-        time: fact.time,
+        // A reported wait is ordered by when its plugin says it began.
+        time:
+          payload.reported === true && typeof payload.since === "number"
+            ? payload.since
+            : fact.time,
         seq: fact.seq,
         granted: false,
         reported: payload.reported === true,
@@ -225,13 +229,16 @@ export class StepLimits {
    * does not grant): the run shows queued under `key`, with the reports
    * ahead of it counted. `release` ends the wait.
    */
-  async report(claim: Omit<LimitClaim, "concurrent">): Promise<void> {
+  async report(
+    claim: Omit<LimitClaim, "concurrent"> & { readonly since?: number | undefined },
+  ): Promise<void> {
     await this.appendFact(claim.runId, "step_queued", {
       step: claim.step,
       effectId: claim.effectId,
       key: claim.key,
       concurrent: 0,
       reported: true,
+      ...(claim.since === undefined ? {} : { since: claim.since }),
     });
   }
 
@@ -322,7 +329,13 @@ export class StepLimits {
       },
       report: async (request) => {
         next += 1;
-        const claim = { runId, effectId: `${effectId}#${next}`, step, key: request.key };
+        const claim = {
+          runId,
+          effectId: `${effectId}#${next}`,
+          step,
+          key: request.key,
+          since: request.since,
+        };
         await this.report(claim);
         return () => this.release({ ...claim, concurrent: 0 });
       },

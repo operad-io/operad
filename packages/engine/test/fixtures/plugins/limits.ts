@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { defineFlow, definePlugin } from "../../../src/index.ts";
 import { waitForChange } from "../../../src/platform/index.ts";
@@ -82,7 +82,10 @@ export default definePlugin({
       results: ["ok", "failed", "interrupted"],
       async run(ctx) {
         const info = infoOf(ctx.params);
-        const end = await ctx.queued?.("shared place");
+        // A test may say when the wait began, which can differ from when it was reported.
+        const sincePath = join(info.dir, `since-${info.name}`);
+        const since = existsSync(sincePath) ? Number(readFileSync(sincePath, "utf8")) : undefined;
+        const end = await ctx.queued?.("shared place", since);
         writeFileSync(join(info.dir, `queued-${info.name}`), "1");
         await waitForFile(join(info.dir, `place-${info.name}`));
         await end?.();

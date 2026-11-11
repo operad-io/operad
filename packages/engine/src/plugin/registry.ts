@@ -970,7 +970,7 @@ export class PluginRegistry {
       queued:
         limiter === undefined
           ? undefined
-          : (key) => limiter.report({ key }),
+          : (key, since) => limiter.report({ key, ...(since === undefined ? {} : { since }) }),
       stepLoaded: (name) => this.stepIndex.has(name),
       runStep: (nestedUse, nestedParams, nestedOptions) => {
         // Declarations must not drift: tests fail on a call the step did not

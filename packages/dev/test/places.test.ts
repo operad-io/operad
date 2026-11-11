@@ -544,6 +544,26 @@ describe("check places are served in the order checks began to wait", () => {
     expect(waiters(home)).toEqual([]);
   });
 
+  test("a waiting check tells the kernel when it began to wait, so the running view orders by it", async () => {
+    const home = await osTempRoot();
+    const holder = await holdPlace(home);
+    const started: string[] = [];
+    const told: { key: string; since: number | undefined }[] = [];
+    const w = waiter(home, "w", 42, started, {
+      queued: (key, since) => {
+        told.push({ key, since });
+        return Promise.resolve(() => Promise.resolve());
+      },
+    });
+    await until(() => told.length === 1);
+    expect(told).toEqual([{ key: "check place", since: 42 }]);
+    await holder.release();
+    w.rings.ring();
+    await until(() => started.length === 1);
+    w.gate.resolve();
+    await w.done;
+  });
+
   test("a waiter whose process is dead is skipped and its entry removed", async () => {
     const home = await osTempRoot();
     const child = Bun.spawn({ cmd: [process.execPath, "-e", ""], stdout: "ignore", stderr: "ignore" });

@@ -224,6 +224,32 @@ for (const mode of ["memory", "file"] as const) {
     });
   });
 
+  describe(`reported waits with a start time (${mode})`, () => {
+    test("the queue follows the time the plugin says the wait began, not when it was reported", async () => {
+      const env = await setup(mode);
+      try {
+        const a = await env.create("lim-reported", "a");
+        const b = await env.create("lim-reported", "b");
+        // a reports first but says its wait began later than b's.
+        writeFileSync(join(env.dir, "since-a"), "2000");
+        writeFileSync(join(env.dir, "since-b"), "1000");
+        const runs: Promise<RunnerOutcome>[] = [env.runner(a, "a").run()];
+        await fileExists(join(env.dir, "queued-a"));
+        runs.push(env.runner(b, "b").run());
+        await fileExists(join(env.dir, "queued-b"));
+        const waiting = await listRunning(env.log);
+        expect(waiting.find((item) => item.runId === b)?.queued).toEqual({ key: "shared place", ahead: 0 });
+        expect(waiting.find((item) => item.runId === a)?.queued).toEqual({ key: "shared place", ahead: 1 });
+        env.open("a", "b");
+        writeFileSync(join(env.dir, "place-a"), "go");
+        writeFileSync(join(env.dir, "place-b"), "go");
+        expect(await Promise.all(runs)).toEqual(["ended", "ended"]);
+      } finally {
+        await env.close();
+      }
+    });
+  });
+
   describe(`step limits (${mode})`, () => {
     test("two steps run, the third starts when one ends", async () => {
       const env = await setup(mode);
