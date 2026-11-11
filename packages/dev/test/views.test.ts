@@ -165,7 +165,6 @@ describe("dev views", () => {
     const before = await getTask(store, task.id);
     expect(planViews.sections(before)).toEqual([
       { id: "request", title: "Request" },
-      { id: "tasks", title: "Tasks" },
     ]);
     expect(taskViews.sections(before).map((section) => section.id)).toEqual([
       "brief",
@@ -200,22 +199,29 @@ describe("dev views", () => {
     expect(rework.markdown).not.toContain("## Changes");
   });
 
-  test("a plan loads its request and a table of tasks", async () => {
-    const { store, plan, task } = await setup();
+  test("a plan loads its request and has no tasks section", async () => {
+    const { store, plan } = await setup();
     const stored = await getPlan(store, plan.id);
     expect(await planViews.load({ store } as never, stored, "request", {})).toEqual({
       markdown: "# Request\n\nWrite the store.",
     });
-    const table = (await planViews.load(
-      { store } as never,
-      stored,
-      "tasks",
-      {},
-    )) as { markdown: string };
-    expect(table.markdown).toContain("| id | title | phase | after |");
-    expect(table.markdown).toContain(
-      `| ${bareId(task.id)} | JSONL | proposed | - |`,
+    expect(planViews.sections(stored).map((section) => section.id)).not.toContain("tasks");
+    expect(await planViews.load({ store } as never, stored, "tasks", {})).toEqual({ markdown: "" });
+  });
+
+  test("a task row carries its after list", async () => {
+    const { store, task } = await setup();
+    const stored = await getTask(store, task.id);
+    expect(taskViews.row(stored).after).toBeUndefined();
+    await store.put(
+      "task",
+      task.id,
+      { ...taskData(stored.data), after: [`${taskData(stored.data).repository}/t-9`] },
+      "test:after",
     );
+    const row = taskViews.row(await getTask(store, task.id));
+    expect(row.after).toHaveLength(1);
+    expect(row.after?.[0]).toContain("t-9");
   });
 
   test("a worker log line is one readable line, and bookkeeping is left out", () => {

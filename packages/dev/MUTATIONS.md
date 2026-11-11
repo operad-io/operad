@@ -730,3 +730,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0260-M1 | packages/dev/src/steps.ts | the work step kept the earlier verify result when the worker had committed past the verified commit | `work that ends with no new commit > a commit the worker makes last is verified, not answered by the verify of the commit before it` |
+## T-0246 — a cancelled task's run ends when the settings cannot be read
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0246-M1 | packages/dev/src/schedule.ts | the sweep of cancelled tasks' runs ran after the settings were read, so unreadable settings skipped it | `a run on a cancelled task is ended even when the repository's settings cannot be read` |
+| T-0122-M2 | packages/dev/src/views.ts | a plan listed a Tasks section again | `dev views > a plan loads its request and has no tasks section` |
