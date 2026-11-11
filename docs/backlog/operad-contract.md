@@ -2,7 +2,7 @@
 
 - 状态：decided（全部条目；标注了哪些要在 `dev` 插件落地前进合约）
 - 涉及 ADR：0024、0012、0020
-- 涉及：`operad.md` 决定 12–17；`operad-plugins.md`；`operad-presentation.md`；`operad-channels.md` 决定 7–18；`operad-conversation.md`；`operad-sandbox.md`；`operad-assistant.md`
+- 涉及：`operad.md` 决定 12–17；`operad-plugins.md`；`operad-presentation.md`；`operad-channels.md` 决定 7–18；`operad-conversation.md`；`operad-sandbox.md`；`operad-bot.md`
 - 来源：对话、知识库（可换后台）、记忆、来源插件、每日搜集这几个场景对内核的要求；radian arc 的 reviewer 被 429 吃掉十次 attempt 的教训
 
 ## 背景
