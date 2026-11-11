@@ -68,11 +68,25 @@ function setup(): { root: string; local: string; home: string; env: Record<strin
   };
 }
 
+/**
+ * The test process's environment without the OPERAD_CHECK_* settings. When the
+ * suite itself runs inside a check on the host, remote-check.sh has exported
+ * OPERAD_CHECK_SLOTS and OPERAD_CHECK_LANE=integration there; a test that does
+ * not set them would otherwise take the integration slot and its tree.
+ */
+function cleanEnv(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined && !key.startsWith("OPERAD_CHECK_")) out[key] = value;
+  }
+  return out;
+}
+
 async function run(local: string, env: Record<string, string>, command: string, ...words: string[]) {
   const args = words.length > 0 ? ["--", command, ...words] : [command];
   const child = Bun.spawn(["bash", join(local, "scripts", "remote-check.sh"), ...args], {
     cwd: local,
-    env: { ...process.env, ...env },
+    env: { ...cleanEnv(), ...env },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -348,7 +362,7 @@ describe("remote-check.sh > the -- form", () => {
       const command = rerunCommand(template, name);
       const child = Bun.spawn(["bash", "-c", command], {
         cwd: local,
-        env: { ...process.env, ...env },
+        env: { ...cleanEnv(), ...env },
         stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",
@@ -385,7 +399,7 @@ describe("remote-check.sh > the -- form", () => {
     const command = rerunCommand(config.gate.commands[0].failed.rerun, name);
     const child = Bun.spawn(["bash", "-c", command], {
       cwd: local,
-      env: { ...process.env, ...env, OPERAD_CHECK_PATH: bin },
+      env: { ...cleanEnv(), ...env, OPERAD_CHECK_PATH: bin },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
