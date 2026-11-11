@@ -149,7 +149,15 @@ export async function loadProjectFlows(
       continue;
     }
     const flow = value as FlowDefinition;
-    flows.set(name, { ...flow, name: registeredName(repository, name, flow.steps) });
+    // A review step that names no grading reads the entry of this flow's name.
+    const steps = flow.steps.map((step): StepShape => {
+      if (useOf(step as unknown as Record<string, unknown>) !== "dev/review") return step;
+      const outer = step.params as { readonly use: string; readonly params: unknown };
+      const inner = isRecord(outer.params) ? outer.params : {};
+      if (inner.grading !== undefined) return step;
+      return { ...step, params: { ...outer, params: { ...inner, grading: name } } };
+    });
+    flows.set(name, { ...flow, steps, name: registeredName(repository, name, steps) });
   }
   return { flows, refused };
 }

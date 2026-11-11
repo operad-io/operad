@@ -159,3 +159,35 @@ test("a name defined in dev.json and as a TS file is refused, and plan add says 
     ),
   ).rejects.toThrow(/defined in dev\.json and in \.operad\/flows\/mine\.flow\.ts/);
 });
+
+test("a TS flow's review step reads the grading of the flow's name unless it names one", async () => {
+  const flow = compileDevFlow("docs", [{ stage: "work" }, { stage: "review" }, { stage: "human" }]);
+  const text = (grading?: string): string =>
+    [
+      `import { defineFlow } from ${JSON.stringify(ENGINE)};`,
+      `const flow = ${JSON.stringify(flow)};`,
+      `const steps = flow.steps.map((s: { id: string; params: object }) => s.id === "review" ? { ...s, params: { ...s.params, params: { ${grading === undefined ? "" : `grading: ${JSON.stringify(grading)}`} } } } : s);`,
+      "export default defineFlow({ ...flow, steps } as never);",
+      "",
+    ].join("\n");
+  const { path } = await repositoryWith({ "docs.flow.ts": text(), "own.flow.ts": text("strict") });
+  const found = await loadProjectFlows(path, "repo", validateDevSettings({}));
+  const gradingOf = (name: string): unknown =>
+    (found.flows.get(name)?.steps.find((s) => s.id === "review")?.params as { params: { grading?: string } }).params.grading;
+  expect(gradingOf("docs")).toBe("docs");
+  expect(gradingOf("own")).toBe("strict");
+});
+
+test("--flow default is refused when a TS default flow clashes with dev.json", async () => {
+  const devJson = { flows: { default: { stages: [{ stage: "work" }, { stage: "human" }] } } };
+  const { root, path } = await repositoryWith({ "default.flow.ts": flowFile() }, devJson);
+  const store = storeAt(root);
+  await addRepository(store, { path, name: "repo" });
+  const registry = new PluginRegistry([createDevPlugin()], { home: root, cwd: path, store, storeRoot: store.root });
+  await expect(
+    registry.runCommand(
+      ["dev", "plan", "add", "--slug", "p", "--title", "P", "--flow", "default"],
+      { cwd: path, input: "request\n" },
+    ),
+  ).rejects.toThrow(/defined in dev\.json and in \.operad\/flows\/default\.flow\.ts/);
+});

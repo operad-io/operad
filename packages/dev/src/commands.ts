@@ -175,11 +175,11 @@ function flowFlag(raw: string | undefined): string | undefined {
 }
 
 async function assertFlow(repository: RepositoryData, flow: string): Promise<void> {
-  if (flow === "default") return;
   const settings = await readDevSettings(repository.path);
   const project = await loadProjectFlows(repository.path, repository.name, settings);
   const refused = project.refused.get(flow);
   if (refused !== undefined) throw new DevError("--flow", refused);
+  if (flow === "default") return;
   if (settings.flows[flow] === undefined && !project.flows.has(flow)) {
     throw new DevError(
       "--flow",

@@ -636,3 +636,5 @@ the row fields.
 | T-0062-M5 | packages/dev/src/project-flows.ts | a name defined in dev.json and as a TS file was accepted | `a name defined in dev.json and as a TS file is refused, and plan add says so` |
 | T-0062-M6 | packages/dev/src/project-flows.ts | a step other than integrate could lead to the end of a TS flow | `a TS flow that leads to the end from another step than integrate is refused` |
 | T-0062-M7 | packages/dev/src/schedule.ts | the scheduler did not declare the repository's TS flows | `a ready task of a plan that names a TS flow starts it` |
+| T-0062-M8 | packages/dev/src/commands.ts | `--flow default` returned before the refusal of a clashing TS default flow was read | `--flow default is refused when a TS default flow clashes with dev.json` |
+| T-0062-M9 | packages/dev/src/project-flows.ts | a TS flow's review step got no grading of the flow's name | `a TS flow's review step reads the grading of the flow's name unless it names one` |
