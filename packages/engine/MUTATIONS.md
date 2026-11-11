@@ -473,3 +473,6 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0216-M3 | packages/engine/src/plugin/registry.ts | a step's events were not given to the caller's `observe` | `a step's events > a caller that observes a step sees its events besides the destination` |
+| T-0250-M1 | packages/engine/src/plugin/sqlite-store.ts | the constructor skipped `setBusyTimeout`, so a write met SQLITE_BUSY at once | `a write waits for another process's write transaction and succeeds after it commits` |
+| T-0250-M3 | packages/engine/src/plugin/sqlite-store.ts | the constructor set `PRAGMA busy_timeout = 0` instead of the platform timeout | `the store's own connection has the platform busy timeout and WAL` (and `a write waits for another process's write transaction and succeeds after it commits`) |
+| T-0250-M4 | packages/engine/src/store-copy/copy.ts | the copy's writer-hold opener skipped `enableWal` | `store copy > copying out of a sqlite home in rollback-journal mode leaves its databases in WAL` (packages/cli/test/store-copy.test.ts) |
