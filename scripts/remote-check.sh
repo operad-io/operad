@@ -4,13 +4,17 @@
 # With OPERAD_CHECK_HOST unset or empty, it runs `bash -c <command>` in the
 # repository root. With it set (an ssh destination such as user@host), it
 # copies HEAD to that host as a git bundle (`HEAD --not origin/main`; none when
-# HEAD is already on origin/main) and there, holding the lock
-# ~/.operad-check.lock (one check at a time per host), fetches origin and the
-# bundle into OPERAD_CHECK_TREE, checks out HEAD's sha detached, and runs the
-# command. The output streams back and the exit code is the command's. A step
+# HEAD is already on origin/main) and there, holding one of OPERAD_CHECK_SLOTS
+# slots (~/.operad-check-<i>.lock), fetches origin and the bundle into that
+# slot's tree, checks out HEAD's sha detached, and runs the command. Slot 1's
+# tree is OPERAD_CHECK_TREE; every other slot, and the integration slot, has a
+# git worktree of it (<tree>-slot<i>, <tree>-integration) made on first use. The output streams back and the exit code is the command's. A step
 # that fails before the command (bundle, copy, connect, fetch, checkout) exits
 # 1 with one line that names it.
 #
+# OPERAD_CHECK_SLOTS  how many checks run at once on the host (whole number, default 1)
+# OPERAD_CHECK_LANE   "integration" takes the integration slot
+#                    (~/.operad-check-integration.lock) instead of a task slot
 # OPERAD_CHECK_TREE  the clone on the host, relative to its home (default Code/operad)
 # OPERAD_CHECK_PATH  directories put first on the host's PATH (default
 #                    $HOME/.bun-operad/bin:$HOME/.bun/bin)
@@ -36,6 +40,17 @@ fail() {
   exit 1
 }
 
+slots=${OPERAD_CHECK_SLOTS-1}
+case "$slots" in
+  [1-9] | [1-9][0-9]*) ;;
+  *) fail "OPERAD_CHECK_SLOTS must be a whole number of 1 or more, not '$slots'" ;;
+esac
+lane=${OPERAD_CHECK_LANE:-}
+case "$lane" in
+  "" | integration) ;;
+  *) fail "OPERAD_CHECK_LANE must be 'integration' or unset, not '$lane'" ;;
+esac
+
 sha=$(git rev-parse HEAD) || fail "cannot read HEAD"
 git fetch -q origin || fail "fetch origin failed"
 bundle=none
@@ -48,20 +63,45 @@ if ! git merge-base --is-ancestor HEAD origin/main; then
 fi
 
 echo "remote-check: checking $sha on $host"
-quoted=$(printf '%q ' "$sha" "$bundle" "$tree" "$path_dirs" "$command")
+quoted=$(printf '%q ' "$sha" "$bundle" "$tree" "$path_dirs" "$command" "$slots" "$lane")
 "${ssh_cmd[@]}" "$host" "bash -s -- $quoted" <<'REMOTE'
-sha=$1; bundle=$2; tree=$3; path_dirs=$4; command=$5
+sha=$1; bundle=$2; tree=$3; path_dirs=$4; command=$5; slots=$6; lane=$7
 cleanup() { [ "$bundle" = none ] || rm -f "$HOME/$bundle"; }
 trap cleanup EXIT
-lock="$HOME/.operad-check.lock"
-if command -v flock >/dev/null 2>&1; then
-  exec 8>"$lock"
-  flock 8
-else
-  # No flock (macOS): a directory is the lock; it is removed on exit.
-  until mkdir "$lock.d" 2>/dev/null; do sleep 1; done
-  trap 'cleanup; rmdir "$lock.d"' EXIT
+export OPERAD_CHECK_SLOTS=$slots
+if [ -n "$lane" ]; then export OPERAD_CHECK_LANE=$lane; else unset OPERAD_CHECK_LANE; fi
+# Names the slots this check may take: the integration slot, or task slots 1..N.
+if [ "$lane" = integration ]; then names=integration; else names=$(seq 1 "$slots"); fi
+use_flock=
+command -v flock >/dev/null 2>&1 && use_flock=1
+slot=
+while [ -z "$slot" ]; do
+  for name in $names; do
+    lock="$HOME/.operad-check-$name.lock"
+    if [ -n "$use_flock" ]; then
+      exec 8>"$lock"
+      if flock -n 8; then slot=$name; break; fi
+      exec 8>&-
+    elif mkdir "$lock.d" 2>/dev/null; then
+      # No flock (macOS): a directory is the lock; it is removed on exit.
+      slot=$name
+      trap 'cleanup; rmdir "$lock.d"' EXIT
+      break
+    fi
+  done
+  [ -n "$slot" ] || sleep 1
+done
+case "$slot" in
+  1) slot_tree=$tree ;;
+  integration) slot_tree=$tree-integration ;;
+  *) slot_tree=$tree-slot$slot ;;
+esac
+if [ "$slot_tree" != "$tree" ] && [ ! -e "$HOME/$slot_tree" ]; then
+  # First use of this slot: a worktree of the base clone, with its own files.
+  (cd "$HOME/$tree" 2>/dev/null && git worktree prune && git worktree add -q --detach "$HOME/$slot_tree" HEAD) >/dev/null 2>&1 \
+    || { echo "remote-check: cannot make the tree ~/$slot_tree for slot $slot" >&2; exit 1; }
 fi
+tree=$slot_tree
 cd "$HOME/$tree" 2>/dev/null || { echo "remote-check: no clone at ~/$tree" >&2; exit 1; }
 git fetch -q origin || { echo "remote-check: fetch origin failed on the host" >&2; exit 1; }
 if [ "$bundle" != none ]; then

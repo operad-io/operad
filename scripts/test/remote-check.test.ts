@@ -151,4 +151,135 @@ describe("remote-check.sh", () => {
       await first;
     }
   });
+
+  describe("slots and the integration lane", () => {
+    /** Starts a check that reports its tree, then blocks until `release` is written. */
+    function blocker(local: string, env: Record<string, string>, root: string, name: string) {
+      const started = join(root, `${name}-started`);
+      const release = join(root, `${name}-release`);
+      spawnSync("mkfifo", [started, release]);
+      const done = run(local, env, `pwd -P > '${started}'; read -r _ < '${release}'; touch '${join(root, `${name}-ended`)}'`);
+      return {
+        done,
+        started: async () => {
+          const out = Bun.spawn(["cat", started], { stdin: "ignore", stdout: "pipe" });
+          return (await new Response(out.stdout).text()).trim();
+        },
+        release: () =>
+          Bun.spawn(["sh", "-c", `exec 3<>'${release}'; echo go >&3`], { stdin: "ignore" }).exited,
+      };
+    }
+
+    test("with two slots two checks run at once in different trees and a third waits", async () => {
+      const { root, local, home, env } = setup();
+      const e = { ...env, OPERAD_CHECK_SLOTS: "2" };
+      const a = blocker(local, e, root, "a");
+      const b = blocker(local, e, root, "b");
+      try {
+        const [ta, tb] = await Promise.all([a.started(), b.started()]);
+        expect(new Set([ta, tb]).size).toBe(2);
+        expect([ta, tb].map((t) => realpathSync(t)).sort()).toEqual(
+          [join(home, "Code", "operad"), join(home, "Code", "operad-slot2")].map((t) => realpathSync(t)).sort(),
+        );
+        const seen = join(root, "third-saw");
+        // The third check records how many holders had ended when it ran.
+        const third = run(local, e, `ls '${root}' | grep -c -- '-ended$' > '${seen}'; true`);
+        await a.release();
+        expect((await third).code).toBe(0);
+        // It ran only after a holder ended, so it was waiting for a slot.
+        expect(Number(readFileSync(seen, "utf8").trim())).toBeGreaterThanOrEqual(1);
+        expect((await a.done).code).toBe(0);
+      } finally {
+        await a.release();
+        await b.release();
+        await Promise.all([a.done, b.done]);
+      }
+    });
+
+    test("with every task slot taken an integration check runs at once, in its own tree", async () => {
+      const { root, local, home, env } = setup();
+      const e = { ...env, OPERAD_CHECK_SLOTS: "2" };
+      const a = blocker(local, e, root, "a");
+      const b = blocker(local, e, root, "b");
+      try {
+        const [ta, tb] = await Promise.all([a.started(), b.started()]);
+        const result = await run(local, { ...e, OPERAD_CHECK_LANE: "integration" }, "pwd -P");
+        expect(result.code).toBe(0);
+        const tree = result.out.trim().split("\n").pop() ?? "";
+        expect(realpathSync(tree)).toBe(realpathSync(join(home, "Code", "operad-integration")));
+        expect([ta, tb]).not.toContain(realpathSync(tree));
+      } finally {
+        await a.release();
+        await b.release();
+        await Promise.all([a.done, b.done]);
+      }
+    });
+
+    test("a task check never takes the integration slot, and a second integration waits for the first", async () => {
+      const { root, local, env } = setup();
+      const lane = { ...env, OPERAD_CHECK_SLOTS: "2", OPERAD_CHECK_LANE: "integration" };
+      const first = blocker(local, lane, root, "i1");
+      try {
+        await first.started();
+        const seen = join(root, "second-saw");
+        const second = run(local, lane, `echo ran > '${seen}'`);
+        // A task check is not held back by the integration check.
+        const task = await run(local, { ...env, OPERAD_CHECK_SLOTS: "2" }, "true");
+        expect(task.code).toBe(0);
+        await first.release();
+        expect((await second).code).toBe(0);
+        expect(readFileSync(seen, "utf8").trim()).toBe("ran");
+        expect((await first.done).code).toBe(0);
+      } finally {
+        await first.release();
+        await first.done;
+      }
+    });
+
+    test("a second integration check does not start while the first runs", async () => {
+      const { root, local, env } = setup();
+      const lane = { ...env, OPERAD_CHECK_LANE: "integration" };
+      const started = join(root, "i1-started");
+      const release = join(root, "i1-release");
+      const ended = join(root, "i1-ended");
+      const seen = join(root, "i2-saw");
+      spawnSync("mkfifo", [started, release]);
+      const first = run(local, lane, `echo s > '${started}'; read -r _ < '${release}'; touch '${ended}'`);
+      try {
+        await readFifo(started);
+        const second = run(local, lane, `if [ -f '${ended}' ]; then echo after > '${seen}'; else echo during > '${seen}'; fi`);
+        await Bun.spawn(["sh", "-c", `echo go > '${release}'`], { stdin: "ignore" }).exited;
+        expect((await first).code).toBe(0);
+        expect((await second).code).toBe(0);
+        expect(readFileSync(seen, "utf8").trim()).toBe("after");
+      } finally {
+        await Bun.spawn(["sh", "-c", `exec 3<>'${release}'; echo go >&3`], { stdin: "ignore" }).exited;
+        await first;
+      }
+    });
+
+    test("the command sees OPERAD_CHECK_SLOTS on the host", async () => {
+      const { local, env } = setup();
+      const result = await run(local, { ...env, OPERAD_CHECK_SLOTS: "3" }, 'echo "slots=$OPERAD_CHECK_SLOTS"');
+      expect(result.out).toContain("slots=3");
+    });
+
+    for (const bad of ["0", "x", "-1", "1.5", ""]) {
+      test(`OPERAD_CHECK_SLOTS='${bad}' stops with a message naming the variable`, async () => {
+        const { local, env } = setup();
+        const result = await run(local, { ...env, OPERAD_CHECK_SLOTS: bad }, "echo ran");
+        expect(result.code).toBe(1);
+        expect(result.err).toContain("OPERAD_CHECK_SLOTS");
+        expect(result.out).not.toContain("ran");
+      });
+    }
+
+    test("a bad OPERAD_CHECK_LANE stops with a message naming the variable", async () => {
+      const { local, env } = setup();
+      const result = await run(local, { ...env, OPERAD_CHECK_LANE: "fast" }, "echo ran");
+      expect(result.code).toBe(1);
+      expect(result.err).toContain("OPERAD_CHECK_LANE");
+      expect(result.out).not.toContain("ran");
+    });
+  });
 });

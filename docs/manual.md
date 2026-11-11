@@ -1196,18 +1196,30 @@ runs `verify.sh`.
 `remote-check.sh` runs one command (a shell line) as a check. With
 `OPERAD_CHECK_HOST` unset or empty it runs the line here, in the repository
 root. With it set to an ssh destination (`user@host`) it copies `HEAD` to that
-host as a git bundle, and there, holding the lock `~/.operad-check.lock` so one
-check runs at a time per host, fetches `origin` and the bundle, checks out
-`HEAD`'s commit detached, removes untracked files except `node_modules`, and
-runs the line. The output comes back as it is written and the exit code is the
-line's; a failure before the line runs (bundle, copy, connection, fetch,
-checkout) exits 1 with one line that names the step. The host needs a clone of
+host as a git bundle, and there, holding one of `OPERAD_CHECK_SLOTS` slots
+(the lock `~/.operad-check-<i>.lock`; it waits only when all are taken), fetches
+`origin` and the bundle, checks out `HEAD`'s commit detached, removes untracked
+files except `node_modules`, and runs the line. Each slot has its own tree, so a
+checkout or clean in one never touches another: slot 1 uses the clone
+`OPERAD_CHECK_TREE` (`~/Code/operad`), and every other slot uses a git worktree
+of that clone made on first use, `<tree>-slot<i>` (for example
+`~/Code/operad-slot2`), with its own `node_modules` once the line installs. With
+`OPERAD_CHECK_LANE=integration` the check takes the one integration slot instead
+(lock `~/.operad-check-integration.lock`, worktree `<tree>-integration`): an
+integration never waits for a task check, and a task check never takes that
+slot. The line sees `OPERAD_CHECK_SLOTS` on the host, so a check can use
+`cores / (N + 1)` test workers. The output comes back as it is written and the
+exit code is the line's; a failure before the line runs (bundle, copy,
+connection, fetch, checkout) exits 1 with one line that names the step. The host
+needs a clone of
 the repository and Bun.
 
 | Variable | Type | Default | What it does |
 |---|---|---|---|
 | `OPERAD_CHECK_HOST` | ssh destination | empty | Where the check runs; empty runs it here. |
 | `OPERAD_CHECK_TREE` | path | `Code/operad` | The clone on the host, relative to its home directory. |
+| `OPERAD_CHECK_SLOTS` | whole number, 1 or more | `1` | How many task checks run at once on the host; any other value stops the script. |
+| `OPERAD_CHECK_LANE` | `integration` | unset | `integration` takes the integration slot instead of a task slot; any other value stops the script. |
 | `OPERAD_CHECK_PATH` | directories | `$HOME/.bun-operad/bin:$HOME/.bun/bin` | Put first on the host's `PATH` before the line runs, expanded on the host. |
 | `OPERAD_CHECK_SSH` | command | `ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4` | The ssh command. |
 | `OPERAD_CHECK_SCP` | command | `scp -q -o BatchMode=yes` | The scp command. |
