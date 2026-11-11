@@ -213,6 +213,92 @@ describe("the TUI object app", () => {
     }
   });
 
+  test("a hidden cancelled child is not counted as progress", async () => {
+    let hide = false;
+    class HiddenCancelled extends Client {
+      override types() {
+        return Promise.resolve({
+          types: [
+            {
+              type: "item",
+              title: "Item",
+              filters: [
+                { name: "active", states: ["waiting"] },
+                { name: "all" },
+                { name: "done", states: ["merged"] },
+                { name: "cancelled", states: ["cancelled"] },
+              ],
+              defaultFilter: "active",
+            },
+          ],
+        });
+      }
+      override objects(
+        _t?: string,
+        _c?: string,
+        _s?: AbortSignal,
+        filter?: string,
+        level?: { readonly parent?: string | undefined },
+      ): Promise<ViewListPage> {
+        if (hide && level?.parent === "item:item:one") {
+          if (filter === "cancelled") {
+            return Promise.resolve({
+              rows: [
+                {
+                  ...row("gone"),
+                  state: "cancelled",
+                  mark: "cancelled" as const,
+                },
+              ],
+              hidden: 1,
+            });
+          }
+          return Promise.resolve({
+            rows: [
+              {
+                ...row("work"),
+                state: "waiting",
+                waiting: true,
+                mark: "waiting" as const,
+              },
+            ],
+            hidden: 1,
+          });
+        }
+        return super.objects(_t, _c, _s, filter, level);
+      }
+    }
+    const client = new HiddenCancelled();
+    const events = new Events();
+    const view = new View();
+    const shell = startShell({
+      client,
+      events: () => events,
+      view,
+      width: 80,
+      height: 20,
+      theme: "dark",
+      clock: immediateClock,
+    });
+    try {
+      await view.until((state) =>
+        state.tabs.find((tab) => tab.id === "plugin:item")?.list.loaded === true,
+      );
+      hide = true;
+      shell.key({ name: "3" });
+      shell.key({ name: "enter" });
+      await view.until((state) => state.object?.row.title === "One");
+      await view.until((state) => state.object?.children !== undefined);
+      expect(shell.state.object?.children?.hidden).toBeUndefined();
+      const text = drawState(shell.state).right.chunks.map((chunk) => chunk.text).join("");
+      expect(text).toContain("0 / 1");
+      expect(text).not.toContain("█");
+    } finally {
+      shell.stop();
+      await shell.done;
+    }
+  });
+
   test("a row opens by its typed id; a server that refuses bare ids is never asked for one", async () => {
     class Strict extends Client {
       override object(id: string): Promise<ViewObject> {

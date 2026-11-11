@@ -42,6 +42,7 @@ import {
   pluginTabOf,
   rowFromView,
   sameObject,
+  cancelledRow,
   type TuiTab,
   type TuiTreeEntry,
   type TuiObject,
@@ -489,12 +490,48 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     return { rows, hidden };
   }
 
+  /** The filter of a type that shows only cancelled rows. */
+  function cancelledFilterOf(info: TuiTypeInfo): string | undefined {
+    return info.filters?.find((declared) => {
+      const states = declared.states ?? [];
+      return (
+        states.length > 0 &&
+        states.every((state) => /(^|\.)cancelled$/i.test(state))
+      );
+    })?.name;
+  }
+
+  /**
+   * The hidden children that still count as finished. The server's hidden
+   * count also holds cancelled children, so the cancelled filter's hidden
+   * count and the rows already read subtract them without another page walk.
+   */
+  async function hiddenFinished(
+    info: TuiTypeInfo,
+    level: TuiLevel,
+    asked: string | undefined,
+    found: { readonly rows: readonly ViewRow[]; readonly hidden: number },
+    signal: AbortSignal,
+  ): Promise<number> {
+    if (asked === undefined || found.hidden === 0) return found.hidden;
+    const cancelled = cancelledFilterOf(info);
+    if (cancelled === undefined || cancelled === asked) return found.hidden;
+    const page = await client.objects(info.type, undefined, signal, cancelled, level);
+    const total = found.rows.length + found.hidden;
+    const cancelledTotal = Math.max(0, total - (page.hidden ?? 0));
+    const cancelledShown = found.rows.filter((row) =>
+      cancelledRow(rowFromView(row, info.type)),
+    ).length;
+    return Math.max(0, found.hidden - Math.max(0, cancelledTotal - cancelledShown));
+  }
+
   /** The rows of one level across the types of a plugin, each tagged with its type. */
   async function fetchTypes(
     tab: TuiTab,
     level: TuiLevel,
     signal: AbortSignal,
     filter: string | undefined,
+    finishedOnly = false,
   ): Promise<{ readonly entries: readonly TuiTreeEntry[]; readonly hidden: number }> {
     const per = await Promise.all(
       (tab.types ?? []).map(async (info) => {
@@ -502,7 +539,9 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         const asked = named && info.filters?.some((f) => f.name === filter) === true ? filter : undefined;
         const found = await fetchLevel(info.type, level, signal, asked);
         return {
-          hidden: found.hidden,
+          hidden: finishedOnly
+            ? await hiddenFinished(info, level, asked, found, signal)
+            : found.hidden,
           entries: found.rows.map((row): TuiTreeEntry => ({ row, type: info.type })),
         };
       }),
@@ -569,6 +608,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         { parent: `${object.type}:${object.id}` },
         signal,
         tab.filter,
+        true,
       );
       if (signal.aborted || finished) return;
       dispatch({
