@@ -614,3 +614,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0060-M7 | packages/dev/src/settings.ts | restored the removed rule that a flow's last user stage must be human, so a non-final human stage was refused | `[human, check] loads and compiles human -> check -> integrate` |
+
+## T-0228 — a resumed branch with unchecked work goes on to verify
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0228-M1 | packages/dev/src/steps.ts | work that added no commit always ended `nothing`, even on a branch with unchecked commits | `work that ends with no new commit > a branch with unchecked work goes on to verify, and says why` |

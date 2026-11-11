@@ -158,6 +158,13 @@ it as `event dev.waiting from operad: T-0001-switch waiting: <reason>`. The rule
 for it only observes; replace the `operad` / `dev.waiting` rule in `triggers.json`
 to send it to a channel.
 
+`work did nothing` means the worker added no commit and the branch has nothing
+beyond main, or its latest commit already passed verify. When the worker adds no
+commit but the branch already holds commits not on main whose latest commit has
+not passed verify (an earlier run stopped before verify ended), the task does
+not wait: history says `the branch already has unchecked work; checking it` and
+the task goes on to verify.
+
 ## When something is stuck
 
 1. `operad pending` — is it waiting for you? A task that needs a decision stays

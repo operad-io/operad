@@ -383,6 +383,29 @@ describe("dev/work", () => {
     expect((await taskDataOf(state)).attempt?.sessionId).toBe("fake-session");
   });
 
+  test("nothing: a branch whose head already passed verify is not checked again", async () => {
+    const state = await fixture("nothing");
+    const path = join(state.remote.repository, ".operad-worktrees", state.taskId);
+    await commitIn(path, "branch.txt", "branch\n", "earlier work");
+    const prepared = await state.registry.runStep("dev/worktree", {}, {
+      runId: "resume-run",
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+    expect(prepared.result).toBe("ready");
+    const head = gitOrThrow(path, ["rev-parse", "HEAD"]);
+    const stored = await state.store.get("task", state.taskKey);
+    if (stored === undefined) throw new Error("task disappeared");
+    const current = taskData(stored.data);
+    await state.store.put(
+      "task",
+      state.taskKey,
+      { ...current, attempt: { ...current.attempt, verified: head } },
+      "test:verified",
+    );
+    const result = await runWork(state, "resume-work");
+    expect(result.result).toBe("nothing");
+  });
+
   test("nothing: a reset below the base is not new work", async () => {
     const state = await fixture("reset");
     const path = join(
