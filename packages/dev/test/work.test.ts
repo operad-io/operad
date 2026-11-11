@@ -24,6 +24,7 @@ import {
   gitOrThrow,
   makeRemote,
   type RemoteSetup,
+  silentGit,
 } from "./git-support.ts";
 import {
   cleanupTempRoots,
@@ -855,5 +856,18 @@ describe("dev/work with workers", () => {
     const result = await runWork(state);
     expect(result.data).toMatchObject({ worker: "fresh" });
     expect(JSON.parse(readFileSync(stale, "utf8"))).toHaveProperty("workers.old");
+  });
+
+  test("an empty answer from git does not make an existing worktree missing", async () => {
+    const state = await fixture("commit");
+    const stub = silentGit(state.root, "rev-parse --is-inside-work-tree", 2);
+    try {
+      const result = await runWork(state);
+      expect(result.data?.reason).not.toBe("no_worktree");
+      expect(result.result).toBe("done");
+      expect(stub.calls()).toBeGreaterThanOrEqual(3);
+    } finally {
+      stub.restore();
+    }
   });
 });
