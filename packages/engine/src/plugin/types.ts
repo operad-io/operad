@@ -846,6 +846,8 @@ export interface TickContext extends PluginBaseContext {
   answer(runId: string, choice: string, note?: string): Promise<void>;
   /** What the kernel knows about runs, when the loop supplies it. */
   readonly runLookup?: RunLookup | undefined;
+  /** Set when the kernel can cancel a run for this plugin. */
+  readonly runs?: RunControl | undefined;
   /** The names of the plugins this process loaded. */
   readonly loaded: readonly string[];
 }

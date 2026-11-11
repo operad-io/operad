@@ -6,6 +6,7 @@ import {
   FilePluginStore,
   openConfigLog,
   readConfig,
+  readState,
 } from "@operad-io/engine";
 import {
   CHANNEL_CAPABILITY,
@@ -155,12 +156,20 @@ async function addRun(
   object: string,
   waiting: { readonly prompt: string } | undefined,
   choices: readonly string[] = ["yes"],
+  flow = "demo-flow",
 ): Promise<string> {
   const log = openConfigLog(await readConfig(home));
   try {
-    const info = await log.startRun("demo-flow", object);
-    if (waiting !== undefined) {
+    const info = await log.startRun(flow, object);
+    // A run of a real flow has started; one that only waits is a bare record.
+    const started = flow === "demo-flow" ? 0 : 1;
+    if (started === 1) {
       await log.append(info.runId, 0, [
+        { kind: "run_started", payload: { flow }, cause: "test" },
+      ]);
+    }
+    if (waiting !== undefined) {
+      await log.append(info.runId, started, [
         {
           kind: "waiting_for_person",
           payload: {
@@ -875,6 +884,59 @@ describe("operad mcp", () => {
     } finally {
       const closed = await child.close();
       expect(closed.code).toBe(0);
+    }
+  });
+
+  test("cancelling a task through MCP ends the run that waits on it", async () => {
+    const { home, repository } = await makeDevHome({
+      mcp: { actions: ["dev:cancel"], confirmActions: ["dev:cancel"] },
+    });
+    const child = start(home, repository);
+    let runId = "";
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      const call = (id: number, verb: string, args: string[], input?: string) =>
+        child.request(id, "tools/call", {
+          name: "command",
+          arguments: { plugin: "dev", verb, args, ...(input === undefined ? {} : { input }) },
+        });
+      await call(2, "repo", ["add", "."]);
+      await call(3, "plan", ["add", "--slug", "alpha", "--title", "Alpha"], "Do the thing.\n");
+      await call(
+        4,
+        "task",
+        ["add", "--plan", "P-0001-alpha", "--slug", "first", "--title", "First task"],
+        "# Brief\n",
+      );
+      runId = await addRun(
+        home,
+        `task:${taskKey("T-0001-first")}`,
+        { prompt: "Ready?" },
+        ["merge", "reject"],
+        "dev",
+      );
+      patchTask(home, "T-0001-first", {
+        phase: "waiting",
+        run: runId,
+        attempt: { number: 1, run: runId, worktree: "/tmp/none", verified: "abc123" },
+      });
+      const cancel = await child.request(5, "tools/call", {
+        name: "act",
+        arguments: { action: "dev:cancel", id: "T-0001-first" },
+      });
+      expect(resultOf(cancel).isError).toBeUndefined();
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+    expect(taskData(home, "T-0001-first").phase).toBe("cancelled");
+    const log = openConfigLog(await readConfig(home));
+    try {
+      const run = (await log.runs()).find((item) => item.runId === runId);
+      expect(run?.active).toBe(false);
+      expect((await readState(log, runId)).status).toBe("ended");
+    } finally {
+      await log.close();
     }
   });
 

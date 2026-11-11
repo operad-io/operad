@@ -16,6 +16,7 @@ import {
   TriggerError,
   ViewError,
   applyInput,
+  cancelRun,
   createViews,
   defaultOperadHome,
   ensureConfig,
@@ -344,27 +345,8 @@ async function openContext(
         io.write("recorded; it runs when `operad serve` is running\n");
       }
     },
-    onCancelRun: async (runId) => {
-      const runs = await log.runs();
-      const run = runs.find((candidate) => candidate.runId === runId);
-      if (run === undefined) return;
-      const found = loaded?.flow(run.flow);
-      if (found === undefined) {
-        throw new StateError(`run "${runId}": flow "${run.flow}" is not loaded`);
-      }
-      const state = await readState(log, runId);
-      if (state.status === "ended" || state.status === "idle") return;
-      await applyInput(
-        log,
-        found.flow,
-        runId,
-        state,
-        { kind: "cancel" },
-        Date.now(),
-        "dev",
-        `cancel:${runId}`,
-      );
-    },
+    onCancelRun: (runId) =>
+      cancelRun({ log, flow: (name) => loaded?.flow(name)?.flow, runId }),
   });
   loaded = registry;
   return {

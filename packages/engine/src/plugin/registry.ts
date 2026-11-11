@@ -1305,6 +1305,7 @@ export class PluginRegistry {
         settings: this.settingsFor(plugin.name),
         secrets: this.secretsFor(plugin.name),
         ...(runs === undefined ? {} : { runLookup: runs }),
+        ...(this.onCancelRun === undefined ? {} : { runs: this.runControl() }),
         loaded: this.plugins.map((item) => item.name),
         start: async (flowOrRequest, objectArg, accessArg) => {
           const request: StartRunRequest =

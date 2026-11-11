@@ -600,3 +600,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0060-M7 | packages/dev/src/settings.ts | restored the removed rule that a flow's last user stage must be human, so a non-final human stage was refused | `[human, check] loads and compiles human -> check -> integrate` |
+
+## T-0227 — a cancelled task ends its run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0227-M1 | packages/dev/src/schedule.ts | the tick did not end a run still active on a cancelled task | `a run still active on a cancelled task is ended by the tick` |
