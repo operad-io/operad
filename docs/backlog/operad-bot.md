@@ -25,6 +25,8 @@
 9. **bot 是一个插件 `bot`，它的对象是 profile**（2026-11-09 owner 定；2026-11-11 owner 改名：原来叫 `assistant`、助理，插件名、配置段、动作、目录和用户可见的词一律改成 bot，不留别名）。用户可见的新词：bot、profile。一个 profile 是一套人格和权限：主工作目录、默认 harness、挂载的 skills（`SKILL.md` 目录，contract 决定 13）、访问档（`operad-sandbox.md` 决定 1）。默认只有一个 profile，叫 `default`；要几个就配几个（比如一个只读的、一个能动知识库的）。profile 写在 `config.json` 的 `bot` 段（contract 决定 10 的插件 `settings`，带 JSON Schema，T-0080 的设置接口能看能改），每个 profile 在列表里是一行，是 bot chat 的父对象。
 10. **主工作目录是 `~/.operad/bot/`**，默认 profile 直接用它，别的 profile 各有自己的目录（不写时是 `~/.operad/bot/<名字>`）。知识库和 bot 的记忆以后也住这里。`~/.operad` 的其余部分（事实日志、`secrets`、token）仍在默认访问档的 `denyPaths` 里：bot 的 cwd 是 operad 家目录的一个子目录，不是家目录本身。
 11. **bot chat 是 `chat` 基础插件的对象**（`operad-conversation.md` 决定 12）：`bot:chat` 在一个 profile 上新建，harness 当时选、之后不换；skills 和访问档每次回复时从 profile 现读，收紧权限或加一个 skill 不用新建 chat。bot 要碰仓库时通过 operad 的 MCP 工具调 `dev`（看任务、开 task），不自己改仓库文件（`operad-conversation.md` 决定 15）。Telegram 绑进来的 chat 用 `default` profile，以后规则里可以指定。
+12. **每个 bot 有一个费用上限，到了就停**（2026-11-11 owner 定，`research/2026-11-11-grok-bot.md`）：profile 上设一个周期预算；这个 bot 的 chat 和定时 flow 的用量（harness 记下的费用事实）加起来到了上限，运行停在当前步骤，成为一个待处理项，人答了才继续或结束。是当场停下，不是事后提醒：Grok Bot 的月上限不在运行中途停，用户抱怨最多的就是这个。
+13. **不是人当场发起的运行更严**：bot 的定时 flow 和由事件发起的运行按 `operad-sandbox.md` 决定 8，对外写的动作先问或只存草稿。
 
 ## 顺序
 
@@ -37,6 +39,8 @@
 3. 知识库的自动提交要不要推远端；推的话凭据怎么给（走 `askCommands` 的 `git push`，还是单独授权）。
 4. 影子 judge 保留为以后的想法，不在这三个场景里做。
 5. 一个 profile 的 skills 目录由谁写：随 operad 装一份默认的 bot `SKILL.md`，还是第一次用时由 bot 自己按用户的描述写出来（`operad.md` 决定 1 的第六个要求）。
+6. 对象要不要直接叫 bot、去掉 profile 这个用户词（`bot:chat <bot>`，配置里 `bots.default`）：同类产品的对象都是“一个 bot”，现在用户要记 bot 和 profile 两个词（`research/2026-11-11-grok-bot.md` 判断 2）。定了要改决定 9，并在 T-0303 开工前并进它的 brief。
+7. 费用上限（决定 12）的周期、默认值和设置里的字段名；费用是估算（订阅登录）时上限怎么算。
 
 ## 验收
 
