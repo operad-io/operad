@@ -450,3 +450,7 @@ the row fields.
 | T-0208-M15 | packages/engine/src/store-copy/copy.ts | skipped the check that the source did not change while it was copied | `store copy > a write that reaches the source after it was read makes the copy fail and leaves no target` |
 | T-0208-M16 | packages/engine/src/log/jsonl.ts | removed the store-move check from every jsonl log write | `store copy > an answer or a plugin write while the store is being moved is refused` |
 | T-0208-M17 | packages/engine/src/plugin/file-store.ts | removed the store-move check from the plugin store's append | `store copy > an answer or a plugin write while the store is being moved is refused` |
+| T-0208-M18 | packages/engine/src/store-copy/copy.ts | took the snapshot without the locks the source's writers hold | `store copy > a plugin write under way when the copy starts is in the copy` |
+| T-0208-M19 | packages/engine/src/store-copy/copy.ts | `useStore` did not compare the source with what the copy recorded | `store copy > use refuses a copy that is older than its source, and switching back is allowed` |
+| T-0208-M20 | packages/engine/src/log/sqlite.ts | removed the store-move check from every sqlite log write | `store copy > a sqlite store refuses writes while a move holds it` |
+| T-0208-M21 | packages/engine/src/plugin/sqlite-store.ts | removed the store-move check from the sqlite plugin store's writes | `store copy > a sqlite store refuses writes while a move holds it` |

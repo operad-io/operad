@@ -221,6 +221,7 @@ describe("store copy", () => {
     expect(readFileSync(join(root, tornFile), "utf8").endsWith('{"runId":"x')).toBe(true);
     expect(existsSync(join(root, ".copying-source"))).toBe(false);
     expect(Object.keys(after).filter((file) => !(file in original)).sort()).toEqual([
+      ".store-copy.json",
       "log.sqlite",
       "plugins.sqlite",
     ]);
@@ -357,6 +358,7 @@ describe("store copy", () => {
       const after = tree(root);
       for (const [path, what] of Object.entries(before)) expect([path, after[path]]).toEqual([path, what]);
       expect(Object.keys(after).filter((path) => !(path in before)).sort()).toEqual([
+        ".store-copy.json",
         "log.sqlite",
         "plugins.sqlite",
       ]);
@@ -454,6 +456,76 @@ describe("store copy", () => {
     expect(existsSync(join(root, "locks", "store-move.lock"))).toBe(false);
   });
 
+  test("a plugin write under way when the copy starts is in the copy", async () => {
+    const { home, root } = await seededHome();
+    const child = Bun.spawn({
+      cmd: [process.execPath, fileURLToPath(new URL("./fixtures/hold-facts-lock.ts", import.meta.url)), root],
+      stdout: "pipe",
+      stderr: "inherit",
+    });
+    const reader = child.stdout.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain("held");
+    const before = new FilePluginStore({ root: join(root, "plugins") }).facts().length;
+    // The copy waits for the writer's lock, so it sees the writer's fact.
+    const copied = await run(home, ["store", "copy", "sqlite"]);
+    expect([copied.code, copied.err]).toEqual([0, ""]);
+    await child.exited;
+    const sqlite = openPluginStore({ backend: "sqlite", root });
+    try {
+      expect(sqlite.facts()).toHaveLength(before + 1);
+      expect(sqlite.facts().some((fact) => fact.cause === "slow")).toBe(true);
+    } finally {
+      (sqlite as unknown as { close(): void }).close();
+    }
+  });
+
+  test("a sqlite store refuses writes while a move holds it", async () => {
+    const { home, root } = await seededHome();
+    expect((await run(home, ["store", "copy", "sqlite"])).code).toBe(0);
+    expect((await run(home, ["store", "use", "sqlite"])).code).toBe(0);
+    const moving = acquireLock(storeMoveLockPath(root));
+    try {
+      const answered = await run(home, ["cards:approve", "card:2"]);
+      expect(answered.code).toBe(4);
+      expect(answered.err).toContain("store move is in progress");
+      const log = openLog({ backend: "sqlite", path: join(root, "log.sqlite") });
+      try {
+        await expect(log.appendGlobal({ kind: "late", payload: {}, cause: 1 })).rejects.toThrow(
+          "store move is in progress",
+        );
+      } finally {
+        await log.close();
+      }
+      const objects = openPluginStore({ backend: "sqlite", root });
+      try {
+        expect(() => objects.put("card", "9", { title: "late" }, "late")).toThrow("store move is in progress");
+        expect(objects.get("card", "9")).toBeUndefined();
+      } finally {
+        (objects as unknown as { close(): void }).close();
+      }
+    } finally {
+      moving.release();
+    }
+  });
+
+  test("use refuses a copy that is older than its source, and switching back is allowed", async () => {
+    const { home, root } = await seededHome();
+    expect((await run(home, ["store", "copy", "sqlite"])).code).toBe(0);
+    // Something is written to the store the copy was made from.
+    new FilePluginStore({ root: join(root, "plugins") }).put("card", "7", { title: "after the copy" }, "later");
+    const stale = await run(home, ["store", "use", "sqlite"]);
+    expect(stale.code).toBe(3);
+    expect(stale.err).toContain("changed after it was copied");
+    expect(JSON.parse(readFileSync(join(home, "config.json"), "utf8")).store.backend).toBe("jsonl");
+    expect(existsSync(join(root, ".copying-source"))).toBe(false);
+
+    // Starting again from a clean target works, and going back needs no check.
+    for (const name of ["log.sqlite", "plugins.sqlite"]) rmSync(join(root, name));
+    expect((await run(home, ["store", "copy", "sqlite"])).code).toBe(0);
+    expect((await run(home, ["store", "use", "sqlite"])).code).toBe(0);
+    expect((await run(home, ["store", "use", "jsonl"])).code).toBe(0);
+  });
+
   test("use refuses while a run holds the store", async () => {
     const { home, root, runs } = await seededHome();
     expect((await run(home, ["store", "copy", "sqlite"])).code).toBe(0);
@@ -493,9 +565,10 @@ describe("store copy", () => {
     expect(unused.err).toContain("copy it first");
 
     // A leftover of a killed copy is removed, not mistaken for a store.
-    await Bun.write(join(root, "log.sqlite.copying"), "partial");
+    mkdirSync(join(root, ".copying-sqlite"));
+    await Bun.write(join(root, ".copying-sqlite", "log.sqlite"), "partial");
     expect((await run(home, ["store", "copy", "sqlite"])).code).toBe(0);
-    expect(existsSync(join(root, "log.sqlite.copying"))).toBe(false);
+    expect(existsSync(join(root, ".copying-sqlite"))).toBe(false);
     expect(storeRootOf(await readConfig(home))).toBe(root);
   });
 

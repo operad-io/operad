@@ -559,7 +559,7 @@ changed, and `triggers/`, `logs/` and the plugins' directories stay where they
 are, shared by both. It refuses while `operad serve` or a run is going, and when
 the new store's files exist already (move them away first). `operad store use
 <jsonl|sqlite>` then changes `store` in `config.json` to the copy; changing it
-back is the same command.
+back is the same command. `use` refuses a copy when the store it was copied from has been written to since; remove the copy's files and copy again.
 
 ## The History section
 

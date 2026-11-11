@@ -94,6 +94,57 @@ export interface FilePluginStoreOptions extends FollowOptions {
 /** A lock older than this belongs to a writer that died while holding it. */
 const LOCK_STALE_MS = 10_000;
 
+/**
+ * Serializes appends across processes, so two writers never pick the same
+ * sequence number. The lock is a file created exclusively next to the facts;
+ * the returned function releases it.
+ */
+export function lockFactsFile(lockPath: string): () => void {
+  const started = Date.now();
+  for (;;) {
+    try {
+      const fd = openSync(lockPath, "wx");
+      try {
+        writeSync(fd, JSON.stringify({ pid: process.pid, at: Date.now() }));
+      } finally {
+        closeSync(fd);
+      }
+      return () => {
+        rmSync(lockPath, { force: true });
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+
+    // A writer that died while holding the lock must not block the store.
+    let stale = Date.now() - started > LOCK_STALE_MS;
+    try {
+      const raw: unknown = JSON.parse(readFileSync(lockPath, "utf8"));
+      const at = isRecord(raw) ? raw.at : undefined;
+      if (typeof at === "number" && Date.now() - at > LOCK_STALE_MS) {
+        stale = true;
+      }
+    } catch {
+      // A lock being written is not stale on that alone; keep waiting.
+    }
+    if (stale) {
+      rmSync(lockPath, { force: true });
+      continue;
+    }
+    sleepSync(1);
+  }
+}
+
+/** Runs `fn` while holding the facts lock at `lockPath`. */
+export function withFactsLock<T>(lockPath: string, fn: () => T): T {
+  const release = lockFactsFile(lockPath);
+  try {
+    return fn();
+  } finally {
+    release();
+  }
+}
+
 interface FactSubscription {
   readonly key: string;
   readonly after: number;
@@ -414,10 +465,11 @@ export class FilePluginStore implements PluginStore {
     requireName(input.type, "fact type");
     const cause = input.cause;
     requireName(cause, "cause");
-    // The store directory holds `plugins/`; a move of it holds the lock there.
-    assertStoreNotMoving(dirname(this.root));
     const release = this.lockFacts();
     try {
+      // Checked while holding the facts lock, so a copy that waits for this
+      // lock sees the write, and a write that starts after it is refused.
+      assertStoreNotMoving(dirname(this.root));
       // Another writer may have appended since this store last read, so the
       // next sequence is chosen under the lock that the append also holds.
       this.refresh();
@@ -442,39 +494,7 @@ export class FilePluginStore implements PluginStore {
    * sequence number. The lock is a file created exclusively next to the facts.
    */
   private lockFacts(): () => void {
-    const started = Date.now();
-    for (;;) {
-      try {
-        const fd = openSync(this.lockPath, "wx");
-        try {
-          writeSync(fd, JSON.stringify({ pid: process.pid, at: Date.now() }));
-        } finally {
-          closeSync(fd);
-        }
-        return () => {
-          rmSync(this.lockPath, { force: true });
-        };
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      }
-
-      // A writer that died while holding the lock must not block the store.
-      let stale = Date.now() - started > LOCK_STALE_MS;
-      try {
-        const raw: unknown = JSON.parse(readFileSync(this.lockPath, "utf8"));
-        const at = isRecord(raw) ? raw.at : undefined;
-        if (typeof at === "number" && Date.now() - at > LOCK_STALE_MS) {
-          stale = true;
-        }
-      } catch {
-        // A lock being written is not stale on that alone; keep waiting.
-      }
-      if (stale) {
-        rmSync(this.lockPath, { force: true });
-        continue;
-      }
-      sleepSync(1);
-    }
+    return lockFactsFile(this.lockPath);
   }
 
   /**

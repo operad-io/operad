@@ -20,13 +20,16 @@
  * directories under `plugins/`, and `locks/` (which only holds live locks).
  */
 
-import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, rmdirSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { StateError } from "../runner/errors.ts";
 import { acquireLock, pidAlive, readLockPid, runLockPath, serveLockPath, storeMoveLockPath } from "../runner/lock.ts";
 import { ConfigError, configPath, storeRootOf, type OperadConfig } from "../config/config.ts";
+import { Database } from "bun:sqlite";
+import { setBusyTimeout, withFileLock } from "../platform/index.ts";
+import { withFactsLock } from "../plugin/file-store.ts";
 import { openJsonlLogBackend } from "../log/jsonl.ts";
 import { openLog } from "../log/open-log.ts";
 import { SQLITE_FILE_NAME } from "../log/sqlite.ts";
@@ -40,8 +43,9 @@ export type StoreKind = "jsonl" | "sqlite";
 /** How many facts one write carries. */
 const BATCH = 500;
 const PLUGIN_SQLITE_FILE = "plugins.sqlite";
-const COPYING_SUFFIX = ".copying";
 const COPYING_DIRECTORY = ".copying-jsonl";
+const COPYING_SQLITE = ".copying-sqlite";
+const SIDECAR = ".store-copy.json";
 const SNAPSHOT_DIRECTORY = ".copying-source";
 
 export interface CopyStoreOptions {
@@ -324,6 +328,45 @@ function fingerprint(config: OperadConfig, root: string): string {
     .join("\n");
 }
 
+/** Runs `fn` while holding the locks the source's writers take, so no write is half done. */
+function withWriters<T>(config: OperadConfig, root: string, fn: () => T): T {
+  const holders: Array<(inner: () => T) => T> = [];
+  if (config.store.backend === "jsonl") {
+    // A store that has none of these files has had no writer.
+    if (existsSync(join(root, ".lock"))) holders.push((inner) => withFileLock(join(root, ".lock"), inner));
+    if (existsSync(join(root, "plugins"))) {
+      holders.push((inner) => withFactsLock(join(root, "plugins", "facts.lock"), inner));
+    }
+  } else {
+    for (const file of [config.store.path, join(root, PLUGIN_SQLITE_FILE)]) {
+      if (!existsSync(file)) continue;
+      holders.push((inner) => {
+        const database = new Database(file, { readwrite: true });
+        try {
+          setBusyTimeout(database);
+          return database.transaction(inner).immediate();
+        } finally {
+          database.close();
+        }
+      });
+    }
+  }
+  return holders.reduceRight<() => T>((inner, hold) => () => hold(inner), fn)();
+}
+
+/** A summary of what the source holds, to tell later whether it moved on. */
+async function marksOf(log: LogBackend, objects: PluginStore): Promise<string> {
+  const runs = (await log.runs()).map((run) => `${run.runId}:${run.lastSeq}:${run.endedAt}`).sort();
+  let globals = 0;
+  for await (const fact of log.readGlobal()) globals = fact.seq;
+  let inputs = 0;
+  for await (const input of log.readInputs()) inputs += input.inputId.length > 0 ? 1 : 0;
+  let outcomes = 0;
+  for await (const outcome of log.readOutcomes()) outcomes = outcome.seq;
+  const facts = objects.facts();
+  return JSON.stringify({ runs, globals, inputs, outcomes, objects: facts.at(-1)?.sequence ?? 0, count: facts.length });
+}
+
 /** Copies the files of the source store that the copy reads; returns the log's path in the snapshot. */
 function snapshotSource(config: OperadConfig, root: string, snapshot: string): string {
   mkdirSync(snapshot, { recursive: true });
@@ -373,17 +416,15 @@ export async function copyStore(options: CopyStoreOptions): Promise<CopyStoreRes
     }
     // A copy that was killed leaves only these; nothing else reads them.
     const temporary = {
-      log: join(root, `${SQLITE_FILE_NAME}${COPYING_SUFFIX}`),
-      plugins: join(root, `${PLUGIN_SQLITE_FILE}${COPYING_SUFFIX}`),
+      // Their own directory, so the writers' move check (which looks beside the
+      // file) does not refuse the copy's own writes.
+      log: join(root, COPYING_SQLITE, SQLITE_FILE_NAME),
+      plugins: join(root, COPYING_SQLITE, PLUGIN_SQLITE_FILE),
       directory: join(root, COPYING_DIRECTORY),
       snapshot: join(root, SNAPSHOT_DIRECTORY),
     };
     const clean = (): void => {
-      for (const base of [temporary.log, temporary.plugins]) {
-        for (const suffix of ["", "-wal", "-shm", "-journal"]) {
-          rmSync(`${base}${suffix}`, { force: true });
-        }
-      }
+      rmSync(join(root, COPYING_SQLITE), { recursive: true, force: true });
       rmSync(temporary.directory, { recursive: true, force: true });
       rmSync(temporary.snapshot, { recursive: true, force: true });
     };
@@ -402,8 +443,14 @@ export async function copyStore(options: CopyStoreOptions): Promise<CopyStoreRes
     // old schema marker is rewritten, a missing directory is made). Nothing of
     // the source is opened in place: everything the copy reads is copied into
     // a snapshot first, and only the snapshot is opened.
-    const seen = fingerprint(config, root);
-    const sourceLog = snapshotSource(config, root, temporary.snapshot);
+    // The snapshot is taken while holding every lock a writer of the source
+    // takes: a write already under way finishes first and is in the snapshot,
+    // and a write that starts later finds the move lock and is refused.
+    let seen = "";
+    const sourceLog = withWriters(config, root, () => {
+      seen = fingerprint(config, root);
+      return snapshotSource(config, root, temporary.snapshot);
+    });
     await options.afterSnapshot?.();
     const source = openLog({ backend: from, path: sourceLog });
     const sourceObjects = openPluginStore({ backend: from, root: temporary.snapshot });
@@ -432,6 +479,7 @@ export async function copyStore(options: CopyStoreOptions): Promise<CopyStoreRes
         });
       }
 
+      const marks = await marksOf(source, sourceObjects);
       const counts = await copyLog(source, target, times, ids);
       const objectFacts = copyObjects(sourceObjects, targetObjects, objectTime);
       // A write that reached the source after it was read is not in the copy;
@@ -445,6 +493,9 @@ export async function copyStore(options: CopyStoreOptions): Promise<CopyStoreRes
       target = undefined;
       closeObjects(targetObjects);
       targetObjects = undefined;
+
+      // What the source held, so `use` can tell whether it moved on since.
+      writeFileSync(join(root, SIDECAR), `${JSON.stringify({ to, marks })}\n`);
 
       // Move into place; the file `use` and every open look for comes last.
       if (to === "sqlite") {
@@ -477,6 +528,45 @@ export async function copyStore(options: CopyStoreOptions): Promise<CopyStoreRes
 }
 
 /**
+ * A copy made by `copyStore` records what its source held. Switching to it
+ * while the source holds something else would lose what was written since.
+ * Switching back to a store this command did not just make is not checked.
+ */
+async function assertCopyCurrent(config: OperadConfig, root: string, kind: StoreKind): Promise<void> {
+  const sidecar = join(root, SIDECAR);
+  if (!existsSync(sidecar)) return;
+  let recorded: { to?: unknown; marks?: unknown };
+  try {
+    recorded = JSON.parse(readFileSync(sidecar, "utf8")) as { to?: unknown; marks?: unknown };
+  } catch {
+    return;
+  }
+  if (recorded.to !== kind) return;
+  const snapshot = join(root, SNAPSHOT_DIRECTORY);
+  rmSync(snapshot, { recursive: true, force: true });
+  try {
+    const path = withWriters(config, root, () => snapshotSource(config, root, snapshot));
+    const log = openLog({ backend: config.store.backend, path });
+    const objects = openPluginStore({ backend: config.store.backend, root: snapshot });
+    try {
+      if ((await marksOf(log, objects)) !== recorded.marks) {
+        const files = ownedFiles(kind, root)
+          .map((file) => file.slice(root.length + 1))
+          .join(", ");
+        throw new StateError(
+          `the store changed after it was copied; remove ${files} and run \`operad store copy ${kind}\` again`,
+        );
+      }
+    } finally {
+      closeObjects(objects);
+      await log.close();
+    }
+  } finally {
+    rmSync(snapshot, { recursive: true, force: true });
+  }
+}
+
+/**
  * Points the configuration at the store `copyStore` made. Refuses while serve
  * runs, and when there is no such store beside the current one.
  */
@@ -491,6 +581,7 @@ export async function useStore(home: string, config: OperadConfig, kind: StoreKi
     if (!existsSync(marker)) {
       throw new StateError(`there is no ${kind} store beside this one; copy it first`);
     }
+    await assertCopyCurrent(config, root, kind);
     const file = configPath(home);
     let raw: unknown;
     try {
