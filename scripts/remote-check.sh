@@ -68,7 +68,10 @@ if [ "$bundle" != none ]; then
   git fetch -q "$HOME/$bundle" HEAD 2>/dev/null || { echo "remote-check: fetch of the bundle failed" >&2; exit 1; }
 fi
 git checkout -q --detach --force "$sha" || { echo "remote-check: checkout of $sha failed" >&2; exit 1; }
-git clean -q -fdx -e node_modules >/dev/null 2>&1 || true
+# Only the root node_modules survives: a package directory that a previous
+# commit had and this one does not would otherwise stay behind holding just its
+# node_modules, and tests that list packages/ would find it.
+git clean -q -ffdx -e /node_modules >/dev/null 2>&1 || true
 export PATH="$(eval echo "$path_dirs"):$PATH"
 bash -c "$command"
 REMOTE
