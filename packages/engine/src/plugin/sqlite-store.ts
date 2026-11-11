@@ -2,6 +2,7 @@
 
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
+import { enableWal, setBusyTimeout } from "../platform/index.ts";
 import { assertStoreNotMoving } from "../runner/lock.ts";
 import { dirname, join } from "node:path";
 import {
@@ -165,7 +166,14 @@ export class SqlitePluginStore implements PluginStore {
     this.location = { backend: "sqlite", root: options.root, file };
     mkdirSync(dirname(file), { recursive: true });
     this.db = new Database(file);
-    this.db.exec(SCHEMA);
+    try {
+      setBusyTimeout(this.db);
+      enableWal(this.db);
+      this.db.exec(SCHEMA);
+    } catch (error) {
+      this.db.close();
+      throw error;
+    }
   }
 
   declare(type: string, index: readonly string[]): void {
