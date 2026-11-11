@@ -875,18 +875,28 @@ describe("dev/verify", () => {
     }
   });
 
-  test("a replay of the same run keeps the first verified commit", async () => {
+  test("a replay of the same run reads back the result while the branch is where it was", async () => {
+    const state = await fixture();
+    const first = await verify(state);
+    expect(first.result).toBe("pass");
+    const again = await verify(state);
+    expect(again.data?.replayed).toBe(true);
+    expect(again.data?.verified).toBe(first.data?.verified);
+  });
+
+  test("a commit that lands after a pass in the same run is checked, not replayed (T-0290)", async () => {
     const state = await fixture();
     const first = await verify(state);
     expect(first.result).toBe("pass");
     const sha = first.data?.verified as string;
     await commitIn(state.worktree, "moved.txt", "moved\n", "branch moves");
+    const moved = await head(state);
+    expect(moved).not.toBe(sha);
 
     const again = await verify(state);
-    expect(again.result).toBe("pass");
-    expect(again.data?.replayed).toBe(true);
-    expect(again.data?.verified).toBe(sha);
-    expect((await head(state))).not.toBe(sha);
+    expect(again.data?.replayed).toBeUndefined();
+    expect(again.data?.verified).toBe(moved);
+    expect((await taskOf(state)).attempt?.verified).toBe(moved);
   });
 });
 

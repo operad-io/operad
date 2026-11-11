@@ -236,23 +236,6 @@ export async function runVerify(
   const task = context.task;
   const attempt = attemptOf(ctx, task);
   const previous = attempt.verify;
-  // A replay of the same run reads the result it already recorded; the branch
-  // may have moved since, and the verified sha must be the one review sees.
-  if (
-    previous !== undefined &&
-    previous !== null &&
-    previous.run === ctx.runId
-  ) {
-    return {
-      result: typeof previous.notCode === "string" ? "not_code" : previous.result,
-      data: verifyData(previous, {
-        attempt: attempt.number,
-        verified: attempt.verified ?? null,
-        replayed: true,
-      }),
-    };
-  }
-
   git(context.repository.path, [
     "fetch",
     "--prune",
@@ -263,6 +246,26 @@ export async function runVerify(
     context.settings,
     context.taskId,
   );
+  // A replay of the same run reads the result it already recorded, but only
+  // while the branch is still at the commit that result is for: a commit that
+  // landed since (T-0290: the worker's last commit, the merge of main) has no
+  // result, and review must not see it without a check.
+  if (
+    previous !== undefined &&
+    previous !== null &&
+    previous.run === ctx.runId &&
+    sha !== undefined &&
+    attempt.verified === sha
+  ) {
+    return {
+      result: typeof previous.notCode === "string" ? "not_code" : previous.result,
+      data: verifyData(previous, {
+        attempt: attempt.number,
+        verified: attempt.verified,
+        replayed: true,
+      }),
+    };
+  }
   const path = gateWorktreePath(
     context.repository.path,
     context.settings,
