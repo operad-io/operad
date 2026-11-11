@@ -49,8 +49,8 @@ const chatAction: ActionTypeDefinition = {
     properties: {
       harness: {
         type: "string",
-        minLength: 1,
-        description: `One of the loaded harnesses ${CHAT_HARNESSES.join(", ")}; the first loaded one when left out. It cannot change later.`,
+        enum: [...CHAT_HARNESSES],
+        description: "Which harness runs the chat; the first loaded one when left out. It cannot change later.",
       },
       title: {
         type: "string",

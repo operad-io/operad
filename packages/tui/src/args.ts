@@ -33,12 +33,20 @@ export type ArgParse =
   | { readonly ok: true; readonly value: string | number | boolean }
   | { readonly ok: false; readonly reason: string };
 
-/** The required arguments of `action` other than the note, in schema order. */
+/**
+ * The arguments of `action` other than the note, in the order it asks them:
+ * the required ones, then any optional enum (a choice with a value to start on).
+ */
 export function argFields(action: ViewAction, row: ViewRow | undefined): readonly ArgField[] {
   const schema = action.args;
   if (schema?.properties === undefined) return [];
+  const names = [...(schema.required ?? [])];
+  for (const [name, prop] of Object.entries(schema.properties)) {
+    if (names.includes(name) || prop.role === "note") continue;
+    if (prop.enum !== undefined && prop.enum.length > 0) names.push(name);
+  }
   const fields: ArgField[] = [];
-  for (const name of schema.required ?? []) {
+  for (const name of names) {
     const prop = schema.properties[name];
     if (prop === undefined || prop.role === "note") continue;
     const description = prop.description === undefined ? undefined : sanitize(prop.description);

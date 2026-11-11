@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { PluginRegistry, definePlugin, type StoredObject } from "@operad-io/engine";
 import { createChatPlugin, createChat, CHAT_TYPE } from "@operad-io/chat";
 import { createShellPlugin } from "@operad-io/shell";
-import { addRepository, chatActions, createDevPlugin, RADIAN_NOTE } from "../src/index.ts";
+import { addRepository, CHAT_HARNESSES, chatActions, createDevPlugin, RADIAN_NOTE } from "../src/index.ts";
 import { git, makeRemote } from "./git-support.ts";
 import { cleanupTempRoots, guardLockHandles, storeAt, tempRoot } from "./support.ts";
 
@@ -83,11 +83,21 @@ describe("dev:chat", () => {
     expect((await must(r.store, CHAT_TYPE, second)).data.harness).toBe("harness-claude");
   });
 
-  test("harness-radian is refused with the reason, whether given or the only one loaded", async () => {
+  test("harness-radian is refused by the choice, and when it is the only one loaded the run says so", async () => {
     const r = await rig();
-    await expect(openChat(r, { harness: "harness-radian" })).rejects.toThrow("cannot stop a tool call before it starts");
+    await expect(openChat(r, { harness: "harness-radian" })).rejects.toThrow(
+      'args.harness: "harness-radian" is not one of "harness-claude", "harness-pi"',
+    );
     const alone = await rigWith(["harness-radian"]);
     await expect(openChat(alone)).rejects.toThrow("no harness for a repository chat is loaded");
+  });
+
+  test("a harness outside the choice is refused by the schema before the run", async () => {
+    const r = await rig();
+    await expect(openChat(r, { harness: "Claude" })).rejects.toThrow(
+      'action "dev:chat": args.harness: "Claude" is not one of "harness-claude", "harness-pi"',
+    );
+    expect((await r.store.list(CHAT_TYPE)).objects).toEqual([]);
   });
 
   test("a harness that is not loaded or not offered is refused and the usable ones are named", async () => {
@@ -105,11 +115,15 @@ describe("dev:chat", () => {
     expect(access.denyCommands).toContain("operad");
   });
 
-  test("the action says up front that radian is not offered", () => {
+  test("the action lists its harness choices, keeps the field optional and says radian is not offered", () => {
     const action = chatActions[0];
     expect(action?.args?.description).toContain(RADIAN_NOTE);
     expect(action?.args?.description).toContain("harness-radian is not offered here");
-    expect(action?.args?.properties?.harness?.enum).toBeUndefined();
+    expect(action?.args?.properties?.harness?.enum).toEqual([...CHAT_HARNESSES]);
+    expect(action?.args?.properties?.harness?.description).toBe(
+      "Which harness runs the chat; the first loaded one when left out. It cannot change later.",
+    );
+    expect(action?.args?.required ?? []).not.toContain("harness");
   });
 });
 
