@@ -345,8 +345,8 @@ async function openContext(
         io.write("recorded; it runs when `operad serve` is running\n");
       }
     },
-    onCancelRun: (runId) =>
-      cancelRun({ log, flow: (name) => loaded?.flow(name)?.flow, runId }),
+    onCancelRun: (runId, graph) =>
+      cancelRun({ log, flow: (name) => loaded?.flow(name)?.flow, runId, graph }),
   });
   loaded = registry;
   return {

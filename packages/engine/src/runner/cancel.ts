@@ -10,6 +10,8 @@ export interface CancelRunOptions {
   /** Finds a flow by name; undefined when it is not loaded. */
   readonly flow: (name: string) => FlowDefinition | undefined;
   readonly runId: string;
+  /** The run's own graph, for a flow no loaded plugin declares. */
+  readonly graph?: FlowDefinition | undefined;
   readonly clock?: (() => number) | undefined;
 }
 
@@ -19,7 +21,10 @@ export async function cancelRun(options: CancelRunOptions): Promise<void> {
   const runs = await log.runs();
   const run = runs.find((candidate) => candidate.runId === runId);
   if (run === undefined) return;
-  const flow = options.flow(run.flow);
+  const flow =
+    options.graph !== undefined && options.graph.name === run.flow
+      ? options.graph
+      : options.flow(run.flow);
   if (flow === undefined) {
     throw new StateError(`run "${runId}": flow "${run.flow}" is not loaded`);
   }

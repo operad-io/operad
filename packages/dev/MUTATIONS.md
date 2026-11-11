@@ -606,3 +606,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0227-M1 | packages/dev/src/schedule.ts | the tick did not end a run still active on a cancelled task | `a run still active on a cancelled task is ended by the tick` |
+| T-0227-M3 | packages/dev/src/service.ts | cancel did not pass the task's stored flow graph to the run control | `cancelling a task through MCP ends a run of the flow the task stored` |

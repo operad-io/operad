@@ -940,6 +940,74 @@ describe("operad mcp", () => {
     }
   });
 
+  test("cancelling a task through MCP ends a run of the flow the task stored", async () => {
+    const { home, repository } = await makeDevHome({
+      mcp: { actions: ["dev:cancel"], confirmActions: ["dev:cancel"] },
+    });
+    const child = start(home, repository);
+    let runId = "";
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      const call = (id: number, verb: string, args: string[], input?: string) =>
+        child.request(id, "tools/call", {
+          name: "command",
+          arguments: { plugin: "dev", verb, args, ...(input === undefined ? {} : { input }) },
+        });
+      await call(2, "repo", ["add", "."]);
+      await call(3, "plan", ["add", "--slug", "alpha", "--title", "Alpha"], "Do the thing.\n");
+      await call(
+        4,
+        "task",
+        ["add", "--plan", "P-0001-alpha", "--slug", "first", "--title", "First task"],
+        "# Brief\n",
+      );
+      runId = await addRun(
+        home,
+        `task:${taskKey("T-0001-first")}`,
+        { prompt: "Ready?" },
+        ["merge", "reject"],
+        "stored-flow",
+      );
+      patchTask(home, "T-0001-first", {
+        phase: "waiting",
+        run: runId,
+        flowName: "stored-flow",
+        flowGraph: {
+          name: "stored-flow",
+          entry: "wait",
+          steps: [
+            {
+              id: "wait",
+              kind: "wait_person",
+              params: { prompt: "Ready?", choices: ["merge"] },
+              replay: "safe",
+              next: { merge: "done", interrupted: "done" },
+            },
+            { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+          ],
+        },
+        attempt: { number: 1, run: runId, worktree: "/tmp/none", verified: "abc123" },
+      });
+      const cancel = await child.request(5, "tools/call", {
+        name: "act",
+        arguments: { action: "dev:cancel", id: "T-0001-first" },
+      });
+      expect(resultOf(cancel).isError).toBeUndefined();
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+    expect(taskData(home, "T-0001-first").phase).toBe("cancelled");
+    const log = openConfigLog(await readConfig(home));
+    try {
+      const run = (await log.runs()).find((item) => item.runId === runId);
+      expect(run?.active).toBe(false);
+      expect((await readState(log, runId)).status).toBe("ended");
+    } finally {
+      await log.close();
+    }
+  });
+
   test("a confirm action runs when both MCP lists name it", async () => {
     const { home, repository } = await makeDevHome({
       mcp: {

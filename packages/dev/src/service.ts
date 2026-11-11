@@ -65,7 +65,8 @@ import { DEFAULT_DEV_SETTINGS, DEV_SETTINGS_SCHEMA } from "./settings.ts";
 
 /** An optional way for the dev plugin to ask the kernel to cancel a run. */
 export interface DevRunControl {
-  cancel(runId: string): Promise<void> | void;
+  /** `flow` is the run's own graph, when the task stores one the loaded plugins lack. */
+  cancel(runId: string, flow?: FlowDefinition): Promise<void> | void;
 }
 
 export interface ResolveRepositoryOptions {
@@ -1183,10 +1184,13 @@ export async function updateTask(
     };
     return {
       object: await writeTask(store, id, next, "dev:task-update"),
-      released: releases ? data.run : null,
+      released:
+        releases && data.run !== null
+          ? { run: data.run, flow: data.flowGraph }
+          : null,
     };
   });
-  if (updated.released !== null) await options.runs?.cancel(updated.released);
+  if (updated.released !== null) await cancelRuns(options.runs, [updated.released]);
   return updated.object;
 }
 
@@ -1666,15 +1670,31 @@ export async function confirmTask(
   });
 }
 
+/** A run to cancel, with the graph its task stored when it started one. */
+interface RunToCancel {
+  readonly run: string;
+  readonly flow: FlowDefinition | undefined;
+}
+
+async function cancelRuns(
+  control: DevRunControl | undefined,
+  runs: readonly RunToCancel[],
+): Promise<void> {
+  for (const { run, flow } of runs) {
+    if (flow === undefined) await control?.cancel(run);
+    else await control?.cancel(run, flow);
+  }
+}
+
 async function cancelTasks(
   store: ObjectStore,
   tasks: readonly StoredObject[],
-): Promise<readonly string[]> {
-  const runs: string[] = [];
+): Promise<readonly RunToCancel[]> {
+  const runs: RunToCancel[] = [];
   for (const object of tasks) {
     const data = taskData(object.data);
     if (!isOpenTask(data)) continue;
-    if (data.run !== null) runs.push(data.run);
+    if (data.run !== null) runs.push({ run: data.run, flow: data.flowGraph });
     await writeTask(
       store,
       object.id,
@@ -1699,7 +1719,7 @@ export async function cancelPlan(
   store: ObjectStore,
   id: string,
   options: CancelOptions = {},
-): Promise<{ readonly plan: StoredObject; readonly runs: readonly string[] }> {
+): Promise<{ readonly plan: StoredObject; readonly runs: readonly RunToCancel[] }> {
   const initial = await getPlan(store, id);
   const initialData = planData(initial.data);
   const cancelled = await withRepoLock(
@@ -1717,9 +1737,7 @@ export async function cancelPlan(
       return { plan: written, runs };
     },
   );
-  for (const run of cancelled.runs) {
-    await options.runs?.cancel(run);
-  }
+  await cancelRuns(options.runs, cancelled.runs);
   return cancelled;
 }
 
@@ -1727,7 +1745,7 @@ export async function cancelTask(
   store: ObjectStore,
   id: string,
   options: CancelOptions = {},
-): Promise<{ readonly task: StoredObject; readonly runs: readonly string[] }> {
+): Promise<{ readonly task: StoredObject; readonly runs: readonly RunToCancel[] }> {
   const initial = await getTask(store, id);
   const initialData = taskData(initial.data);
   const cancelled = await withRepoLock(
@@ -1737,7 +1755,8 @@ export async function cancelTask(
       const task = await getTask(store, id);
       const data = taskData(task.data);
       refuseTask("cancel", data, id);
-      const runs = data.run === null ? [] : [data.run];
+      const runs: readonly RunToCancel[] =
+        data.run === null ? [] : [{ run: data.run, flow: data.flowGraph }];
       const written = await writeTask(
         store,
         id,
@@ -1758,9 +1777,7 @@ export async function cancelTask(
       return { task: written, runs };
     },
   );
-  for (const run of cancelled.runs) {
-    await options.runs?.cancel(run);
-  }
+  await cancelRuns(options.runs, cancelled.runs);
   return cancelled;
 }
 
@@ -1773,14 +1790,15 @@ export async function pauseTask(
   store: ObjectStore,
   id: string,
   options: CancelOptions = {},
-): Promise<{ readonly task: StoredObject; readonly runs: readonly string[] }> {
+): Promise<{ readonly task: StoredObject; readonly runs: readonly RunToCancel[] }> {
   const initial = await getTask(store, id);
   const initialData = taskData(initial.data);
   const paused = await withRepoLock(store, initialData.repository, async () => {
     const task = await getTask(store, id);
     const data = taskData(task.data);
     refuseTask("pause", data, id);
-    const runs = data.run === null ? [] : [data.run];
+    const runs: readonly RunToCancel[] =
+        data.run === null ? [] : [{ run: data.run, flow: data.flowGraph }];
     const {
       areaHeldBy: _area,
       dependencyHeld: _waits,
@@ -1804,9 +1822,7 @@ export async function pauseTask(
     await refreshPlanCounts(store, plan);
     return { task: written, runs };
   });
-  for (const run of paused.runs) {
-    await options.runs?.cancel(run);
-  }
+  await cancelRuns(options.runs, paused.runs);
   return paused;
 }
 
