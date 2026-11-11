@@ -406,7 +406,7 @@ describe("the TUI object app", () => {
       // The answer carries a bare id; the sections and the refresh still name the type.
       await view.until((state) => state.object?.sections[0]?.markdown === "info one");
       expect(view.last?.object?.id).toBe("one");
-      events.push({ kind: "change", id: "item:one" });
+      events.push({ kind: "change", id: "one" });
       await view.until(() => client.objectCalls.length >= 2);
       expect(client.objectCalls.every((id) => id === "item:one")).toBe(true);
       expect(client.sectionCalls.every((call) => call.id === "item:one")).toBe(true);

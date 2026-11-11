@@ -198,6 +198,7 @@ export const BIND_FAILED_EXIT = 76;
  */
 export async function superviseServe(
   restore?: () => Promise<"stopped" | "reload">,
+  log: (message: string) => void = () => undefined,
 ): Promise<number> {
   let stopping: NodeJS.Signals | undefined;
   let child: Bun.Subprocess | undefined;
@@ -238,6 +239,13 @@ export async function superviseServe(
         let outcome: "stopped" | "reload";
         try {
           outcome = await restore();
+        } catch (error) {
+          // The old code is gone too: say so rather than leave the one line
+          // that promised its addresses standing as the last word.
+          log(
+            `reload: the old code could not listen either (${error instanceof Error ? error.message : String(error)}); this serve ends\n`,
+          );
+          throw error;
         } finally {
           attach();
         }

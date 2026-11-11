@@ -605,3 +605,9 @@ the row fields.
 |---|---|---|---|
 | T-0281-M1 | packages/engine/src/plugin/action-schema.ts | a `oneOf` accepted a value only when it fitted its first branch (the check of the other branches removed) | `settings with a choice of forms > a set keeps the object form of a check command and every other value` (packages/engine/test/views/settings-schema.test.ts) |
 | T-0237-M3 | packages/engine/src/views/presentation.ts | a hidden row no longer added its count to its mark role, so `hiddenCounts` stayed zero | `object type filters > a filter keeps matching rows and counts the rest as hidden` |
+
+## T-0297 — follow-ups from the flaky-test work
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0297-M1 | packages/engine/src/http/server.ts | a failed start ignored the addresses its own cleanup could not release and rethrew the original bind error | `a start that fails after binding reports an address it could not release` |

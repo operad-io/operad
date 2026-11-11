@@ -27,7 +27,7 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | T-0091-M2 | scripts/stress.sh | `stop_helpers` no longer killed the helpers | `scripts/stress.sh > --load starts busy helpers and none is left after exit` |
 | T-0091-M3 | scripts/stress.sh | removed the cap of `--load` at the CPU count | `scripts/stress.sh > --load never starts more helpers than there are CPUs` |
 | T-0115-M1 | scripts/stress.sh | the helper loops no longer checked that the script is alive | `scripts/stress.sh > SIGKILL of the script leaves no helper alive` |
-| T-0115-M2 | scripts/test/stress-group.ts | the runner's SIGINT/SIGTERM handlers no longer killed the stress group | `scripts/stress.sh > killing the test runner mid-test leaves no stress.sh or helper` |
+| T-0115-M2 | scripts/test/stress-group.ts | the runner's SIGTERM handler no longer killed the stress group | `scripts/stress.sh > SIGTERM to the test runner mid-test leaves no stress.sh or helper` |
 | T-0115-M3 | scripts/stress.sh | `STRESS_CPUS` was ignored | `scripts/stress.sh > --load never starts more helpers than there are CPUs` |
 | T-0115-M4 | scripts/stress.sh | the script no longer stopped when its starting process was gone | `scripts/stress.sh > SIGKILL to the test runner mid-test leaves no stress.sh or helper` |
 | T-0143-M1 | scripts/stress.sh | a held lock was treated as free, so a second run did not wait | `scripts/stress.sh > the machine-wide lock > a second run waits while the first holds the lock, and starts when it ends` |
@@ -44,3 +44,12 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | T-0234-M1 | scripts/remote-check.sh | the `--` form joined its words with a plain space instead of quoting each, so a word with a quote or `$` was split or run by the host shell | `remote-check.sh > the -- form > a word with quotes, backquotes, $ and a regex arrives byte for byte and is not run` |
 | T-0259-M1 | .operad/dev.json | the rerun no longer ran `bun install --frozen-lockfile` before the test | `remote-check.sh > the -- form > a rerun after a checkout that changes the workspace packages installs first and reaches the test` |
 | T-0255-M1 | scripts/test/remote-check.test.ts | the tests passed the surrounding check's `OPERAD_CHECK_*` settings on to the script again | `remote-check.sh > slots and the integration lane > a task check never takes the integration slot, and a second integration waits for the first` (run with `OPERAD_CHECK_LANE=integration OPERAD_CHECK_SLOTS=2` in the environment) |
+
+## T-0297 — follow-ups from the flaky-test work
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0297-M1 | scripts/stress.sh | the lock holder was alive whenever `ps -p` found any process with its pid | `scripts/stress.sh > the machine-wide lock > a lock whose pid now belongs to another program is taken over` |
+| T-0297-M2 | scripts/stress.sh | `STRESS_CPUS=0` was accepted and capped `--load` at 0 | `scripts/stress.sh > STRESS_CPUS=0 is refused instead of starting no helper` |
+| T-0297-M3 | scripts/stress.sh | no watcher stopped the `bun test` child when the script itself was SIGKILLed | `scripts/stress.sh > SIGKILL of the script stops the test runner it started` |
+| T-0297-M4 | scripts/stress.sh | the default lock path was under `TMPDIR` again | `scripts/stress.sh > the machine-wide lock > two runs with different TMPDIR values still share the lock` |

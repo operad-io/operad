@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { testEnv } from "./env.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,7 +54,7 @@ describe("a reader that closes the pipe", () => {
         "--limit",
         "4000",
       ],
-      env: { ...process.env, OPERAD_HOME: home },
+      env: { ...testEnv(), OPERAD_HOME: home },
       stdin: "ignore",
       stdout: "ignore",
       stderr: "pipe",

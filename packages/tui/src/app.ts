@@ -789,7 +789,20 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   ): Promise<void> {
     const read = client.object;
     if (read === undefined) return;
-    const result = await settle(read.call(client, id, signal));
+    // The server publishes a bare id. The list row it names knows the type, so
+    // the request is scoped the same way an open row's request is.
+    const page = state.object;
+    const knownRow =
+      state.tabs
+        .filter((tab) => tab.kind === "plugin")
+        .flatMap((tab) => tab.list.rows)
+        .find((row) => sameObject(row.id, id)) ??
+      page?.children?.rows.find((row) => sameObject(row.id, id));
+    const requestId =
+      knownRow?.type !== undefined && !knownRow.id.startsWith(`${knownRow.type}:`)
+        ? `${knownRow.type}:${knownRow.id}`
+        : knownRow?.id ?? wire(id);
+    const result = await settle(read.call(client, requestId, signal));
     if (signal.aborted || finished) return;
     if (!result.ok) {
       // An object that is gone from the server is not a failure of the screen.
@@ -800,11 +813,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       }
       return;
     }
-    const known = state.tabs.some(
-      (tab) => tab.kind === "plugin" && tab.list.rows.some((row) => sameObject(row.id, id)),
-    );
+    const known = knownRow !== undefined;
     // A child on the open page: its row there is refreshed, and a new child is read in.
-    const page = state.object;
     const onPage = page?.children?.rows.some((row) => sameObject(row.id, id)) === true;
     const parent = result.value.row.parent;
     const underPage =

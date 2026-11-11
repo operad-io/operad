@@ -9,6 +9,7 @@
  */
 
 import { afterAll, describe, expect, test } from "bun:test";
+import { testEnv } from "./env.ts";
 import {
   closeSync,
   existsSync,
@@ -74,7 +75,7 @@ async function run(
   const child = Bun.spawn({
     cmd: [process.execPath, CLI_ENTRY, ...args],
     cwd,
-    env: { ...process.env, OPERAD_HOME: home, ...env },
+    env: { ...testEnv(), OPERAD_HOME: home, ...env },
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
@@ -344,7 +345,7 @@ describe("dogfood end to end", () => {
         cmd: [process.execPath, CLI_ENTRY, "serve"],
         cwd: repository,
         env: {
-          ...process.env,
+          ...testEnv(),
           OPERAD_HOME: home,
           OPERAD_SERVE_INTERVAL_MS: "1000",
           FAKE_HARNESS_DIR: state,

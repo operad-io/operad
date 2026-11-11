@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { testEnv } from "./env.ts";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,7 +45,7 @@ async function operad(home: string, args: readonly string[]): Promise<Result> {
   const child = Bun.spawn({
     cmd: [process.execPath, CLI_ENTRY, ...args],
     cwd: home,
-    env: { ...(process.env as Record<string, string>), OPERAD_HOME: home },
+    env: { ...testEnv(), OPERAD_HOME: home },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -120,7 +121,7 @@ describe("operad serve stop", () => {
     const serve = Bun.spawn({
       cmd: [process.execPath, CLI_ENTRY, "serve"],
       cwd: home,
-      env: { ...(process.env as Record<string, string>), OPERAD_HOME: home },
+      env: { ...testEnv(), OPERAD_HOME: home },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
@@ -170,6 +171,7 @@ describe("operad serve stop", () => {
     const { home, lock } = await makeHome();
     writeLock(lock, 4242);
     const signalled: number[] = [];
+    let asks = 0;
     let thrown = "";
     try {
       await serveStop({
@@ -177,15 +179,42 @@ describe("operad serve stop", () => {
         timeoutSecs: 5,
         write: () => {},
         isAlive: () => true,
-        commandOf: () => undefined,
+        commandOf: () => {
+          asks += 1;
+          return undefined;
+        },
         signal: (pid) => signalled.push(pid),
         sleep: async () => {},
       });
     } catch (error) {
       thrown = error instanceof Error ? error.message : String(error);
     }
-    expect(thrown).toContain("not an operad serve");
+    expect(asks).toBe(20);
+    expect(thrown).toContain("ps could not say");
     expect(signalled).toEqual([]);
+  });
+
+  test("a process that dies during the empty answers is a lock with no serve, not a refusal", async () => {
+    const { home, lock } = await makeHome();
+    writeLock(lock, 4242);
+    const written: string[] = [];
+    const signalled: number[] = [];
+    let asks = 0;
+    await serveStop({
+      home,
+      timeoutSecs: 5,
+      write: (text) => written.push(text),
+      isAlive: () => asks < 3,
+      commandOf: () => {
+        asks += 1;
+        return undefined;
+      },
+      signal: (pid) => signalled.push(pid),
+      sleep: async () => {},
+    });
+    expect(asks).toBe(3);
+    expect(signalled).toEqual([]);
+    expect(written.join("")).toBe(`no operad serve runs for ${home}\n`);
   });
 
   test("refuses a live process that is not a serve, and never signals it", async () => {

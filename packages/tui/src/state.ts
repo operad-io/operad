@@ -1408,8 +1408,7 @@ function applyObject(
     objectRequest:
       state.objectRequest !== undefined &&
       (state.objectRequest.version === version ||
-        state.objectRequest.version === previous?.version ||
-        state.objectRequest.id === view.id)
+        state.objectRequest.version === previous?.version)
         ? undefined
         : state.objectRequest,
     sectionRequest: undefined,

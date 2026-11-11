@@ -7,6 +7,15 @@ import { defineFlow, definePlugin } from "../../../engine/src/index.ts";
  */
 const line = process.env.CHECK_LINE ?? "true";
 
+/** A test can see the flag in the process that loads this plugin (serve or run). */
+const runEnv = process.env.CHECK_RUN_ENV;
+if (runEnv !== undefined) {
+  appendFileSync(
+    runEnv,
+    `${process.pid}:${process.env.OPERAD_SERVE_SUPERVISED ?? "unset"}\n`,
+  );
+}
+
 const check = defineFlow({
   name: "check",
   entry: "check",

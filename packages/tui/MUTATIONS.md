@@ -316,3 +316,8 @@ the row fields.
 | T-0237-M2 | packages/tui/src/app.ts | the hidden finished count kept cancelled children, so they counted as done progress | `the TUI object app > a hidden cancelled child is not counted as progress` |
 | T-0237-M4 | packages/tui/src/state.ts | progress used the whole hidden count as done and left hidden cancelled in the total | `the progress bar and its heading > hidden done fills while hidden cancelled leaves both numbers` |
 | T-0237-M5 | packages/tui/src/view/index.ts | the bar counted only cancelled rows the filter showed, so a hidden cancelled child lost its dark red cell | `the progress bar and its heading > hidden done fills while hidden cancelled leaves both numbers and its cell` |
+## T-0297 — follow-ups from the flaky-test work
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0297-M1 | packages/tui/src/app.ts | a live event's bare id was sent as the object request even when a listed row knew its type | `live updates in the shell > an event refetches Pending once per window and only its own row` |
