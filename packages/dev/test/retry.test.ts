@@ -373,28 +373,22 @@ describe("an environment failure of the work step", () => {
   });
 });
 
-describe("the night of 2026-11-08 at 08:01", () => {
-  test("nine tasks start while pool is disabled; when it is enabled every task continues by itself", async () => {
+describe("a step that is not loaded, for several tasks", () => {
+  test("within the bound every task stays running and nothing waits for a person; once loaded each continues", async () => {
     const clock = manualClock();
     const worker = scripted(() => DONE);
-    const w = await world(9);
-    const disabled = registryOf(w, [createDevPlugin(), worker.plugin]);
+    const w = await world(2);
+    const without = registryOf(w, [createDevPlugin(), worker.plugin]);
     const runs = new Map<string, string>();
-    expect(await drive(w, disabled, runs)).toEqual(Array(9).fill("blocked"));
+    expect(await drive(w, without, runs)).toEqual(["blocked", "blocked"]);
     clock.advance(30 * MINUTE);
-    expect(await drive(w, disabled, runs)).toEqual(Array(9).fill("blocked"));
-    expect(w.events.filter((event) => event.type === "dev.waiting")).toEqual([]);
-    for (const key of w.tasks) {
-      expect((await taskOf(w, key)).phase).toBe("running");
-    }
+    expect(await drive(w, without, runs)).toEqual(["blocked", "blocked"]);
+    expect(waitingReasons(w)).toEqual([]);
+    for (const key of w.tasks) expect((await taskOf(w, key)).phase).toBe("running");
 
-    // The restart: a new process with the plugin enabled.
-    const enabled = registryOf(w, [createDevPlugin(), createPoolPlugin(), worker.plugin]);
-    expect(await drive(w, enabled, runs)).toEqual(Array(9).fill("waiting"));
-    expect(worker.state.calls).toBe(9);
-    // Every task now waits for a reason of its own (the fake worker changed
-    // nothing); none waits because of the incident.
-    expect(waitingReasons(w)).toEqual(Array(9).fill("work did nothing"));
+    const withPool = registryOf(w, [createDevPlugin(), createPoolPlugin(), worker.plugin]);
+    expect(await drive(w, withPool, runs)).toEqual(["waiting", "waiting"]);
+    expect(worker.state.calls).toBe(2);
   });
 });
 
