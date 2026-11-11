@@ -494,7 +494,20 @@ async function reconcileTaskRuns(
         ? { name: task.flowName, graph: task.flowGraph }
         : flowFor(flows, requested);
     if (selected === undefined) {
+      const reason =
+        flows.refused.get(requested ?? "default") ??
+        `no flow "${requested ?? "default"}" in dev.json`;
       reportFlowProblem(object.id, requested, flows.refused.get(requested ?? "default"));
+      // There is no graph to resume. End the task's wait for its run and leave
+      // it for a person; a flow defined again resumes it on a later tick.
+      if (task.phase !== "waiting" || task.run !== null) {
+        const moved = await moveTaskPhase(ctx.store, object.id, task.phase, "waiting", {
+          run: null,
+        });
+        if (moved !== undefined) {
+          writeSchedulerLine(`${bareId(object.id)} ${task.phase} -> waiting (${reason})`);
+        }
+      }
       continue;
     }
     if ((await reopenTask(ctx.store, object.id)) === undefined) continue;
@@ -868,7 +881,10 @@ async function scheduleRepository(
     if (task.repository !== repository.name) continue;
     const requested = task.flow ?? plansById.get(task.plan)?.flow ?? "default";
     const missing =
-      task.phase === "ready" && task.flowName === undefined && flowFor(flows, requested) === undefined;
+      (task.phase === "ready" ||
+        (task.phase === "waiting" && task.run === null)) &&
+      task.flowName === undefined &&
+      flowFor(flows, requested) === undefined;
     await setFlowNote(ctx.store, object.id, {
       shown: flows.named.size > 1 ? requested : undefined,
       held: missing

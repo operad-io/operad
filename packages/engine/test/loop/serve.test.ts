@@ -101,6 +101,48 @@ function spawn(home: Home, runId: string, recover: boolean) {
 }
 
 describe("serve loop", () => {
+  test("a run whose flow is not loaded fails, names it, and is not spawned", async () => {
+    const home = await makeHome();
+    const log = openConfigLog(home.config);
+    const registry = await loadPluginRegistry({
+      home: home.home,
+      store: new MemoryPluginStore({ root: home.storeRoot }),
+    });
+    try {
+      const info = await log.startRun("gone", "job:1");
+      const spawned: string[] = [];
+      const messages: string[] = [];
+      await serveOnce({
+        log,
+        registry,
+        lockRoot: home.storeRoot,
+        storeRoot: home.storeRoot,
+        home: home.home,
+        spawnRun: (runId) => {
+          spawned.push(runId);
+        },
+        onLog: (message) => messages.push(message),
+      });
+
+      const state = await readState(log, info.runId);
+      expect(state.status).toBe("ended");
+      expect(state.endedStatus).toBe("failed");
+      const facts = [];
+      for await (const fact of log.read(info.runId)) facts.push(fact);
+      const ended = facts.find((fact) => fact.kind === "run_ended");
+      expect((ended?.payload as { reason?: string } | undefined)?.reason).toBe(
+        'flow "gone" is not loaded',
+      );
+      expect(spawned).toEqual([]);
+      expect(messages).toContain(`run ${info.runId}: flow "gone" is not loaded`);
+      expect((await log.runs({ active: true })).some((run) => run.runId === info.runId)).toBe(
+        false,
+      );
+    } finally {
+      await log.close();
+    }
+  });
+
   test("serve start stops marked processes of runs that are not active, and says so once", async () => {
     const home = await makeHome();
     const log = openConfigLog(home.config);

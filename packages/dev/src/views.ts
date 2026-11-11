@@ -80,7 +80,12 @@ function waitNote(task: TaskData): string | undefined {
   ) {
     return `waiting for ${(task.dependencyHeldFor ?? []).join(", ")}`;
   }
-  if (task.phase === "ready" && task.flowHeld !== undefined) return task.flowHeld;
+  if (
+    (task.phase === "ready" || (task.phase === "waiting" && task.run === null)) &&
+    task.flowHeld !== undefined
+  ) {
+    return task.flowHeld;
+  }
   if (task.phase !== "waiting") return undefined;
   const integration = task.attempt?.integration;
   if (integration === undefined || integration === null) return undefined;

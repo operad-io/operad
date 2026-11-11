@@ -789,6 +789,27 @@ describe("dev scheduling", () => {
       expect(fixture.lines).toEqual([`${task.id} review -> waiting (run stopped during review)`]);
     });
 
+    test("a run that is gone and a flow that is not defined leave it waiting for a person", async () => {
+      const fixture = await setup({ concurrency: 1 });
+      const plan = await makePlan(fixture, { slug: "plan", auto: "off" });
+      const task = await makeTask(fixture, plan.key, "task");
+      await putTask(fixture, task.key, { flow: "missing" });
+      await confirm(fixture, plan.key);
+      await phase(fixture, task.key, "running", "run-gone");
+      const runs: RunLookup = {
+        active: async () => [],
+        state: async () => undefined,
+        lastStep: async () => "work",
+      };
+      await fixture.registry.tick(runs);
+      const after = taskData((await getTask(fixture.store, task.key)).data);
+      expect(after.phase).toBe("waiting");
+      expect(after.run).toBeNull();
+      const row = taskViews.row(await getTask(fixture.store, task.key));
+      expect(row.mark).toBe("waiting");
+      expect(row.note).toContain("flow missing is not defined in .operad/dev.json");
+    });
+
     test("with no run at all it goes back to ready", async () => {
       const fixture = await setup({ concurrency: 1 });
       const plan = await makePlan(fixture, { slug: "plan", auto: "off" });

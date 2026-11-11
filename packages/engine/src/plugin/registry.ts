@@ -4,6 +4,7 @@ import { loadFlow as loadFlowFile } from "../flow/load.ts";
 import { FlowError, validateFlow } from "../flow/validate.ts";
 import type { JsonValue } from "../log/types.ts";
 import { validateActionArgs } from "./action-schema.ts";
+import { readDeclaredFlows, writeDeclaredFlow } from "./declared-flows.ts";
 import { AccessError, AskTimeoutError, messageOf, PluginError, StepNotLoadedError } from "./errors.ts";
 import { defaultOperadHome } from "./home.ts";
 import { createPluginLogger } from "./logger.ts";
@@ -450,6 +451,24 @@ export class PluginRegistry {
       }
     }
     this.stepIndex = stepIndex;
+    this.loadDeclaredFlows();
+  }
+
+  /** Loads flows an earlier process declared, so a run can find its graph. */
+  private loadDeclaredFlows(): void {
+    if (this.store.kind !== "file") return;
+    for (const stored of readDeclaredFlows(this.store.root)) {
+      let flow: FlowDefinition;
+      try {
+        flow = validateFlow(stored.flow, this.stepTypes());
+      } catch {
+        // A flow whose steps this process cannot load is left for the loop to
+        // report when it tries to start a run of it.
+        continue;
+      }
+      if (this.flow(flow.name) !== undefined) continue;
+      this.declaredFlows.set(flow.name, { plugin: stored.plugin, flow });
+    }
   }
 
   /** Every action the loaded plugins declare, addressed as `plugin:action`. */
@@ -669,6 +688,16 @@ export class PluginRegistry {
       throw new PluginError(
         `plugin "${pluginName}": flow "${flow.name}": already declared`,
       );
+    }
+    if (this.store.kind === "file") {
+      try {
+        writeDeclaredFlow(this.store.root, pluginName, flow);
+      } catch (error) {
+        throw new PluginError(
+          `plugin "${pluginName}": flow "${flow.name}": could not be saved: ${messageOf(error)}`,
+          { cause: error },
+        );
+      }
     }
     this.declaredFlows.set(flow.name, { plugin: pluginName, flow });
   }

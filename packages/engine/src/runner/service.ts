@@ -18,6 +18,33 @@ export async function readState(
   return state;
 }
 
+/**
+ * Ends a run no flow can drive, with its own ending fact so history says why.
+ * An ended run is only marked ended; a run the log does not know is left alone.
+ */
+export async function endRunDirectly(
+  log: LogBackend,
+  runId: string,
+  status: "failed" | "cancelled",
+  reason: string | null,
+): Promise<KernelState | undefined> {
+  const run = (await log.runs()).find((candidate) => candidate.runId === runId);
+  if (run === undefined) return undefined;
+  let state = await readState(log, runId);
+  if (state.status !== "ended") {
+    const appended = await log.append(runId, state.lastSeq, [
+      {
+        kind: "run_ended",
+        payload: { status, reason },
+        cause: `${status}:${runId}`,
+      },
+    ]);
+    for (const fact of appended.facts) state = evolve(state, fact);
+  }
+  await log.endRun(runId);
+  return state;
+}
+
 export function objectKey(object: ObjectRef | undefined): string {
   return object === undefined
     ? "flow"

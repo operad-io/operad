@@ -464,7 +464,7 @@ export type TaskData = {
   readonly worktree?: string | undefined;
   /** The flow a row and the brief name, set only while the repository defines more than one. */
   readonly flowShown?: string | undefined;
-  /** Why this ready task does not start: its flow is not defined in the repository's dev.json. */
+  /** Why this ready task does not start, or why this waiting task lost its run: its flow is not defined in the repository's dev.json. */
   readonly flowHeld?: string | undefined;
   /** The flow this attempt runs; absent for a run that started before flows had names. */
   readonly flowName?: string | undefined;
