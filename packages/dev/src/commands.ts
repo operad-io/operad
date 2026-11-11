@@ -6,6 +6,7 @@ import type {
   StoredObject,
 } from "@operad-io/engine";
 import { DevError, bareId, briefBody, storeKey, taskData, type RepositoryData } from "./model.ts";
+import { chatWorktreeOf } from "./chat.ts";
 import { flakyTasksByName } from "./flaky.ts";
 import { listRerunCounts } from "./reruns.ts";
 import { loadProjectFlows } from "./project-flows.ts";
@@ -251,6 +252,7 @@ async function runTask(
     "--after",
     "--area",
     "--flow",
+    "--chat",
   ]);
   const call = subcommand(parsed, ["add", "edit", "update"], "task");
 
@@ -276,6 +278,9 @@ async function runTask(
     }
     const flow = flowFlag(one(parsed, "--flow"));
     if (flow !== undefined) await assertFlow(repository, flow);
+    const chat = one(parsed, "--chat");
+    const worktree =
+      chat === undefined ? undefined : await chatWorktreeOf(ctx.store, repository, chat);
     const task = await addTask(ctx.store, {
       plan: planKey,
       slug: required(parsed, "--slug", "task add"),
@@ -284,6 +289,7 @@ async function runTask(
       after: many(parsed, "--after"),
       area: one(parsed, "--area"),
       ...(flow === undefined ? {} : { flow }),
+      ...(worktree === undefined ? {} : { worktree }),
     });
     return bareId(task.id);
   }
@@ -372,7 +378,7 @@ export const commands: readonly CommandDefinition[] = [
   {
     name: "task",
     args:
-      "add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--flow <name>] [--repo <name>] | edit <id> [--repo <name>] (the new brief on stdin, or $EDITOR) | update <id> [--title <title>] [--after <task>]... [--area <area>] [--flow <name>] [--repo <name>]",
+      "add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--flow <name>] [--repo <name>] [--chat <id>] | edit <id> [--repo <name>] (the new brief on stdin, or $EDITOR) | update <id> [--title <title>] [--after <task>]... [--area <area>] [--flow <name>] [--repo <name>]",
     run: runTask,
   },
   {

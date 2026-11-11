@@ -1013,6 +1013,8 @@ export interface AddTaskOptions {
   readonly openedBy?: "dev" | undefined;
   /** The flow this task starts with; unset inherits the plan's flow. */
   readonly flow?: string | undefined;
+  /** The chat worktree name the task works in; checked by the caller. */
+  readonly worktree?: string | undefined;
 }
 
 export async function addTask(
@@ -1081,6 +1083,7 @@ export async function addTaskLocked(
     ...(options.followupOf === undefined ? {} : { followupOf: options.followupOf }),
     ...(options.openedBy === undefined ? {} : { openedBy: options.openedBy }),
     ...(options.flow === undefined ? {} : { flow: validateFlowSelection(options.flow) }),
+    ...(options.worktree === undefined ? {} : { worktree: options.worktree }),
     phase: "proposed",
     attempts: 0,
     run: null,

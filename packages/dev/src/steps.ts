@@ -100,6 +100,8 @@ export interface TaskContext {
   readonly repository: RepositoryData;
   readonly taskKey: string;
   readonly taskId: string;
+  /** The name of the task's worktree and branch: the task id, or the chat worktree it was opened on. */
+  readonly workName: string;
   readonly settings: DevSettings;
 }
 
@@ -162,7 +164,7 @@ async function taskParts(
   if ((await ctx.store.get("task", taskKey)) === undefined) {
     taskKey = storeKey(repository.name, taskId);
   }
-  return { task, repository, taskKey, taskId };
+  return { task, repository, taskKey, taskId, workName: task.worktree ?? taskId };
 }
 
 interface AttemptState {
@@ -717,11 +719,11 @@ export async function runWorktree(
   const prepared = await withPrepare(
     ctx,
     context.settings,
-    worktreePath(context.repository.path, context.settings, context.taskId),
+    worktreePath(context.repository.path, context.settings, context.workName),
     prepareWorktree(
       context.repository,
       context.settings,
-      context.taskId,
+      context.workName,
       beforeAttemptOf(ctx.params) !== "none",
     ),
   );
@@ -732,9 +734,9 @@ export async function runWorktree(
     worktree: worktreePath(
       context.repository.path,
       context.settings,
-      context.taskId,
+      context.workName,
     ),
-    branch: workBranch(context.taskId),
+    branch: workBranch(context.workName),
     base,
     result: prepared.kind,
     workWaits: 0,
@@ -814,14 +816,14 @@ export async function runReverify(
   const prepared = await withPrepare(
     ctx,
     context.settings,
-    worktreePath(context.repository.path, context.settings, context.taskId),
-    prepareWorktree(context.repository, context.settings, context.taskId),
+    worktreePath(context.repository.path, context.settings, context.workName),
+    prepareWorktree(context.repository, context.settings, context.workName),
   );
   const base = prepared.base ?? attempt.base ?? null;
   const worktree = worktreePath(
     context.repository.path,
     context.settings,
-    context.taskId,
+    context.workName,
   );
   const message =
     prepared.kind === "conflict"
@@ -835,7 +837,7 @@ export async function runReverify(
     ...attempt,
     run: ctx.runId,
     worktree,
-    branch: workBranch(context.taskId),
+    branch: workBranch(context.workName),
     base,
     result: prepared.kind,
     // A conflict is worked on again; a clean merge goes straight to the gate.
@@ -1122,8 +1124,8 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   const task = context.task;
   const path =
     task.attempt?.worktree ??
-    worktreePath(context.repository.path, context.settings, context.taskId);
-  const branch = task.attempt?.branch ?? workBranch(context.taskId);
+    worktreePath(context.repository.path, context.settings, context.workName);
+  const branch = task.attempt?.branch ?? workBranch(context.workName);
   const attempt: TaskAttempt = task.attempt ?? {
     number: Math.max(task.attempts, 0) + 1,
     run: ctx.runId,
