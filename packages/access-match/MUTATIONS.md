@@ -48,3 +48,9 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0240-M16 | packages/access-match/src/summary.ts | leading and trailing blank lines of a kept command were dropped | `a bash call keeps its lines when the log asks for them, still cut at 500 characters` |
+
+## T-0282 — shell expansion in bash paths
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0282-M1 | packages/access-match/src/index.ts | `expandWord` stopped replacing `$HOME` and `${HOME}`, so `cat "$HOME/.ssh/id_rsa"` read as a relative path | `denyPaths follows ~, $HOME and ${HOME} in a bash command, quoted or not` |

@@ -175,7 +175,7 @@ test("a path that only looks safe lexically is allowed: symlinks are not followe
   // `link` could point at ~/.ssh on disk; the matcher never asks the file system.
   expect(read(PATHS, "link/id_ed25519")).toEqual({ allow: true });
   expect(bash(PATHS, "cat link/id_ed25519")).toEqual({ allow: true });
-  expect(bash(PATHS, "cat $HOME/.ssh/id_ed25519")).toEqual({ allow: true });
+  expect(bash(PATHS, "cat $HOME/.ssh/id_ed25519").allow).toBe(false);
 });
 
 test("bash arguments that look like paths are checked", () => {
@@ -451,4 +451,44 @@ test("a read-only directory asks about a command that is not on the allowlist, a
   expect(bash({ readOnly: true }, "echo hi &> a.ts")).toMatchObject({ allow: false, ask: true, kind: "command" });
   expect(bash({ readOnly: true, denyCommands: ["git status"] }, "git status").ask).toBeUndefined();
   expect(bash({}, "sed -i s/a/b/ a.ts")).toEqual({ allow: true });
+});
+
+test("denyPaths follows ~, $HOME and ${HOME} in a bash command, quoted or not", () => {
+  for (const command of [
+    "cat ~/.ssh/id_rsa",
+    'cat "$HOME/.ssh/id_rsa"',
+    "cat ${HOME}/.ssh/id_rsa",
+    "cat $HOME/.ssh/id_rsa",
+    'cd "$HOME" && cat .ssh/id_rsa',
+    "cd ~ && cat .ssh/id_rsa",
+    "cd ${HOME}/.ssh; cat id_rsa",
+  ]) {
+    expect(bash(PATHS, command)).toMatchObject({ allow: false, rule: "~/.ssh" });
+  }
+});
+
+test("a relative path after cd is matched against the cd target, not the call's cwd", () => {
+  const repo: AccessProfile = { denyPaths: ["~/Code/repo"] };
+  expect(bash(repo, 'cd "$HOME/Code/repo" && printf x > src/file')).toMatchObject({ allow: false, rule: "~/Code/repo" });
+  expect(bash(repo, "cd /tmp && printf x > src/file")).toEqual({ allow: true });
+  expect(bash({ denyPaths: ["/work/project/secret"] }, "cd /tmp && cat secret")).toEqual({ allow: true });
+});
+
+test("a path or cd target with an expansion the matcher cannot resolve asks", () => {
+  for (const command of ["cat $OTHER/x", "cat ${OTHER}/x", "cat $(pwd)/x", "cat `pwd`/x", "cd $OTHER && ls", "cat ~/.s*/id_rsa", "cat ~other/x"]) {
+    expect(bash(PATHS, command)).toMatchObject({ allow: false, ask: true, kind: "command", value: command, rule: "inline code" });
+  }
+  // a glob in the last component stays inside the denied directory
+  expect(bash(PATHS, "cat ~/.ssh/id_*")).toMatchObject({ allow: false, rule: "~/.ssh" });
+  expect(bash({ askPaths: ["~/.zshrc"] }, "echo x > $OTHER/f")).toMatchObject({ allow: false, ask: true, rule: "inline code" });
+});
+
+test("a deny wins over an ask for an unresolved expansion", () => {
+  expect(bash(PATHS, "cat $OTHER/x ~/.ssh/id_rsa")).toMatchObject({ allow: false, rule: "~/.ssh" });
+  expect(bash(PATHS, "cd $OTHER && cat ~/.ssh/id_rsa").ask).toBeUndefined();
+});
+
+test("a plain command with no expansion is still allowed under denyPaths", () => {
+  expect(bash(PATHS, "cat src/a.ts && cd docs && ls ./b")).toEqual({ allow: true });
+  expect(bash(PATHS, 'echo "$HOME is home" | cat')).toEqual({ allow: true });
 });

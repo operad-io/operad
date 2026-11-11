@@ -149,3 +149,7 @@ Lexical means the file system is never asked. These pass:
 - paths in a script the agent wrote and then runs.
 
 The profile is a guard rail, not a boundary (`operad-sandbox.md` decision 7).
+
+## Shell expansion in bash paths
+
+Before a path word of a `bash` command is matched, `~`, `$HOME` and `${HOME}` become the matcher's home, and a later relative path is read against the last `cd` target of the chain. A path word, a redirect target or a `cd` target that still holds an expansion the matcher cannot resolve (`$OTHER`, `${OTHER}`, `$(…)`, backticks, `~user`, a glob outside the last component) asks, like inline code; a deny still wins over that ask. Only words that look like paths (they hold a `/`, or start with `~` or `.`) are judged, so `cat $OTHER` is not.

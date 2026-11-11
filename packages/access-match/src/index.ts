@@ -154,11 +154,11 @@ interface Denied {
   readonly home: string;
 }
 
-function checkPath(denied: Denied, path: string): Verdict {
-  const normal = normalise(path, denied.cwd, denied.home);
+function checkPath(denied: Denied, path: string, cwd: string = denied.cwd, written: string = path): Verdict {
+  const normal = normalise(path, cwd, denied.home);
   for (const entry of denied.entries) {
     if (isUnder(normal, entry.path)) {
-      return { allow: false, reason: `path "${path}" is under denyPaths entry "${entry.written}"`, rule: entry.written };
+      return { allow: false, reason: `path "${written}" is under denyPaths entry "${entry.written}"`, rule: entry.written };
     }
   }
   return ALLOW;
@@ -172,12 +172,75 @@ function pathLike(word: string): boolean {
 }
 
 /** The readings of one word that may be a path: itself, minus a redirect, after `=`. */
-function readings(word: string): string[] {
+function readings(word: string, home: string): string[] {
   const unredirected = word.replace(REDIRECT, "");
   const found = [word, unredirected];
   const equals = unredirected.indexOf("=");
   if (equals !== -1) found.push(unredirected.slice(equals + 1));
-  return found.filter((reading, index) => reading.length > 0 && found.indexOf(reading) === index && pathLike(reading));
+  return found.filter(
+    (reading, index) => reading.length > 0 && found.indexOf(reading) === index && pathLike(expandWord(reading, home).text),
+  );
+}
+
+interface Expanded {
+  readonly text: string;
+  /** Still holds an expansion the matcher cannot resolve. */
+  readonly unresolved: boolean;
+}
+
+/** Expands `~`, `$HOME` and `${HOME}` to `home`; reports what else a shell would still expand. */
+function expandWord(word: string, home: string): Expanded {
+  let text = word;
+  if (text === "~") text = home;
+  else if (text.startsWith("~/")) text = `${home}${text.slice(1)}`;
+  text = text.replace(/\$\{HOME\}|\$HOME(?![A-Za-z0-9_])/g, () => home);
+  const tilde = text.startsWith("~");
+  const components = text.split("/");
+  const globbed = components.slice(0, -1).some((component) => /[*?[]/.test(component));
+  const unresolved = tilde || globbed || /\$[A-Za-z_{(]|`/.test(text);
+  return { text, unresolved };
+}
+
+/** The target of a leading `cd` (or `pushd`), as written; "" when it names no directory. */
+function cdTarget(words: readonly string[]): string | undefined {
+  let index = 0;
+  while (index < words.length && ASSIGNMENT_WORD.test(words.at(index) ?? "")) index += 1;
+  const name = words.at(index);
+  if (name !== "cd" && name !== "pushd") return undefined;
+  const rest = words.slice(index + 1).filter((word) => word !== "--" && word !== "-L" && word !== "-P");
+  return rest.at(0) ?? "";
+}
+
+const ASSIGNMENT_WORD = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+interface BashWord {
+  readonly word: string;
+  readonly next: string | undefined;
+  /** The directory relative paths of this word mean: the call's, or the last `cd` target. */
+  readonly dir: string;
+}
+
+/**
+ * The words of a command with the directory each is read in, and whether a
+ * `cd` target could not be resolved. Every segment of a chain is covered.
+ */
+function bashWords(parts: readonly { readonly words: readonly string[] }[], cwd: string, home: string): { words: BashWord[]; unresolvedCd: boolean } {
+  const words: BashWord[] = [];
+  let dir = cwd;
+  let unresolvedCd = false;
+  for (const part of parts) {
+    part.words.forEach((word, index) => words.push({ word, next: part.words.at(index + 1), dir }));
+    const target = cdTarget(part.words);
+    if (target === undefined) continue;
+    if (target === "") {
+      dir = home;
+      continue;
+    }
+    const expanded = expandWord(target, home);
+    if (expanded.unresolved || target === "-") unresolvedCd = true;
+    else dir = posix.resolve(dir, expanded.text);
+  }
+  return { words, unresolvedCd };
 }
 
 function checkBash(profile: AccessProfile, command: string, denied: Denied | undefined): Verdict {
@@ -209,13 +272,29 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
   }
 
   if (denied !== undefined) {
-    for (const part of parts) {
-      for (const word of part.words) {
-        for (const reading of readings(word)) {
-          const verdict = checkPath(denied, reading);
-          if (!verdict.allow) return verdict;
+    const { words, unresolvedCd } = bashWords(parts, denied.cwd, denied.home);
+    let unresolved = unresolvedCd ? "a cd target" : substitution === undefined ? undefined : `a command substitution (${substitution})`;
+    for (const { word, dir } of words) {
+      for (const reading of readings(word, denied.home)) {
+        const expanded = expandWord(reading, denied.home);
+        if (expanded.unresolved) {
+          unresolved ??= `"${reading}"`;
+          continue;
         }
+        const verdict = checkPath(denied, expanded.text, dir, reading);
+        if (!verdict.allow) return verdict;
       }
+    }
+    // A deny wins over this ask: it is only reached when no path was denied.
+    if (unresolved !== undefined) {
+      return {
+        allow: false,
+        ask: true,
+        reason: `command "${command}" uses ${unresolved}, which holds a shell expansion that cannot be matched against denyPaths; it asks`,
+        rule: "inline code",
+        kind: "command",
+        value: command,
+      };
     }
   }
   return ALLOW;
@@ -266,15 +345,27 @@ function askBash(profile: AccessProfile, command: string, asked: AskedPaths | un
   const ask = (reason: string, rule: string): Verdict => ({ allow: false, ask: true, reason, rule, kind: "command", value: command });
   if (asked !== undefined) {
     // Only a redirect writes by itself: a word after `>` or `>>`, or glued to it.
-    for (const part of parts) {
-      part.words.forEach((word, index) => {
-        const target = redirectTarget(word, part.words.at(index + 1));
-        if (target === undefined) return;
-        const hit = askedRule(asked, normalise(target, cwd, home));
-        if (hit !== undefined && found === undefined) found = { target, rule: hit };
-      });
+    const walked = bashWords(parts, cwd, home);
+    let unresolved: string | undefined;
+    let redirects = false;
+    for (const { word, next, dir } of walked.words) {
+      const target = redirectTarget(word, next);
+      if (target === undefined) continue;
+      redirects = true;
+      const expanded = expandWord(target, home);
+      if (expanded.unresolved) {
+        unresolved ??= `"${target}"`;
+        continue;
+      }
+      const hit = askedRule(asked, normalise(expanded.text, dir, home));
+      if (hit !== undefined && found === undefined) found = { target, rule: hit };
     }
     if (found !== undefined) return ask(`command "${command}" writes "${found.target}", which is under askPaths entry "${found.rule}"`, found.rule);
+    if (redirects && walked.unresolvedCd) unresolved ??= "a cd target";
+    if (redirects && substitution !== undefined) unresolved ??= `a command substitution (${substitution})`;
+    if (unresolved !== undefined) {
+      return ask(`command "${command}" writes to ${unresolved}, which holds a shell expansion that cannot be matched against askPaths; it asks`, "inline code");
+    }
   }
   if (texts.length === 0) return ALLOW;
   if (substitution !== undefined) {
