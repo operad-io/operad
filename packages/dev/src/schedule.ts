@@ -33,6 +33,7 @@ import {
   getPlan,
   setAreaHold,
   setDependencyHold,
+  setFlowNote,
   clearOldestPlanSlot,
   listRepositories,
   recordAutoMerge,
@@ -771,6 +772,21 @@ async function scheduleRepository(
       !dependencies.ready && dependencies.cancelled === undefined,
       dependencies.waitingFor,
     );
+  }
+
+  // Name each open task's flow when the repository defines more than one, and
+  // say why a ready task whose flow is not defined does not start.
+  const plansById = new Map(plans.map((object) => [bareId(object.id), planData(object.data)]));
+  for (const object of await listAll(ctx.store, "task")) {
+    const task = taskData(object.data);
+    if (task.repository !== repository.name) continue;
+    const requested = task.flow ?? plansById.get(task.plan)?.flow ?? "default";
+    const missing =
+      task.phase === "ready" && task.flowName === undefined && flowFor(flows, requested) === undefined;
+    await setFlowNote(ctx.store, object.id, {
+      shown: flows.named.size > 1 ? requested : undefined,
+      held: missing ? `flow ${requested} is not defined in .operad/dev.json` : undefined,
+    });
   }
 
   // Keep each plan's cached counts, and with them its row's mark, current.

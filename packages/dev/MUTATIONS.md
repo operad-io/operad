@@ -617,3 +617,13 @@ the row fields.
 | T-0131-M1 | packages/dev/src/gate.ts | used the flat `retrySecs` for every wait instead of `reviewWaitMs` | `dev/review hardening > each further wait of an unavailable model doubles` |
 | T-0131-M2 | packages/dev/src/timeouts.ts | removed the 30-minute cap in `reviewWaitMs` | `review waits > double from retrySecs and stop at the cap` |
 | T-0131-M3 | packages/dev/src/timeouts.ts | set `MAX_REVIEW_WAITS` back to 36 | `review waits > the give-up point is about the time it was (about 90 minutes at the default)` |
+
+## T-0061 — choosing a flow
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0061-M1 | packages/dev/src/service.ts | `task update --flow` was allowed after the task's first attempt | `a flow changes only before the first attempt` |
+| T-0061-M2 | packages/dev/src/schedule.ts | every task started the repository's `default` flow, ignoring its own and its plan's `--flow` | `a task takes its own flow, then its plan's, then default` |
+| T-0061-M3 | packages/dev/src/schedule.ts | a ready task with an undefined flow was given no reason on its row and its plan's row | `an undefined flow does not start, and the rows say why` |
+| T-0061-M4 | packages/dev/src/schedule.ts | rows named the flow even when the repository defines only the default one | `rows and the brief name the flow only when the repository defines more than one` |
+| T-0061-M5 | packages/dev/src/schedule.ts | the flow label was not kept for a cancelled task, so its row and Brief named no flow | `a task cancelled before any tick still names its flow` |
