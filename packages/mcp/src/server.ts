@@ -15,13 +15,14 @@ import {
   readConfig,
   recordAnswer,
   storeRootOf,
+  type ActionInfo,
   type LogBackend,
   type OperadConfig,
   type PluginRegistry,
   type Views,
 } from "@operad-io/engine";
 import { InvalidToolArguments } from "./arguments.ts";
-import { mcpPolicy } from "./policy.ts";
+import { actionInfoNamed, actionMayRun, mcpPolicy } from "./policy.ts";
 import {
   CHANNEL_CAPABILITY,
   CHANNEL_INSTRUCTIONS,
@@ -45,13 +46,22 @@ export const INSTRUCTIONS =
   "The operad MCP server reads objects, pending items and history, and writes the commands and lead actions it is allowed to. Owner decisions are not offered here.";
 
 /** What `initialize` tells a client, following the configured allow lists. */
-export function instructionsFor(mcp: OperadConfig["mcp"] | undefined): string {
+export function instructionsFor(
+  mcp: OperadConfig["mcp"] | undefined,
+  actions: readonly ActionInfo[] = [],
+): string {
   const policy = mcpPolicy(mcp);
+  // An action that asks for confirmation and is not in `confirmActions` is
+  // refused when run, so it is not promised here.
+  const runnable = (name: string): boolean => {
+    const info = actionInfoNamed(actions, name);
+    return info === undefined || actionMayRun(policy, info);
+  };
   const allowed = [...policy.actions].filter(
-    (name) => !policy.confirmActions.has(name),
+    (name) => !policy.confirmActions.has(name) && runnable(name),
   );
-  const confirmed = [...policy.confirmActions].filter((name) =>
-    policy.actions.has(name),
+  const confirmed = [...policy.confirmActions].filter(
+    (name) => policy.actions.has(name) && runnable(name),
   );
   if (allowed.length === 0 && confirmed.length === 0) return INSTRUCTIONS;
   const names = [...allowed, ...confirmed].join(", ");
@@ -313,8 +323,8 @@ async function dispatch(
           : { tools: {} },
         serverInfo: { name: "operad", version: ENGINE_VERSION },
         instructions: claudeChannel
-          ? `${instructionsFor(context.mcp)}\n\n${CHANNEL_INSTRUCTIONS}`
-          : instructionsFor(context.mcp),
+          ? `${instructionsFor(context.mcp, context.registry.actions())}\n\n${CHANNEL_INSTRUCTIONS}`
+          : instructionsFor(context.mcp, context.registry.actions()),
       };
     case "ping":
       requireEmptyParams(params);
