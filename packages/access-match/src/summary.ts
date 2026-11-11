@@ -139,7 +139,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** The lines of a command, each with its spaces collapsed, blank lines kept so a count of them is true, cut at the limit. */
 function linesOf(text: string, limit: number): string {
   const flat = text
-    .trim()
     .split(/\r?\n/)
     .map((line) => line.replace(/[ \t]+/g, " ").trim())
     .join("\n");

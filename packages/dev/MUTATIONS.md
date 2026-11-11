@@ -747,3 +747,10 @@ the row fields.
 |---|---|---|---|
 | T-0246-M1 | packages/dev/src/schedule.ts | the sweep of cancelled tasks' runs ran after the settings were read, so unreadable settings skipped it | `a run on a cancelled task is ended even when the repository's settings cannot be read` |
 | T-0122-M2 | packages/dev/src/views.ts | a plan listed a Tasks section again | `dev views > a plan loads its request and has no tasks section` |
+
+## T-0240 — rework 10: turn ends and blank command lines
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0240-M14 | packages/dev/src/views.ts | a turn end with stop reason `tool_use` was shown when the agent had text | `dev views > the agent's text, a tool error's first line and a turn's end are shown; tool output is not` |
+| T-0240-M15 | packages/dev/src/views.ts | leading and trailing blank lines of a command were not counted | `dev views > a multi-line command shows its first line and the count of lines left; a long one-liner is cut` |

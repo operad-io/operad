@@ -360,10 +360,12 @@ function shownCommand(command: string, worktree: string | undefined): string {
     text = text.replace(new RegExp(`${path}/`, "g"), "");
     text = text.replace(new RegExp(`${path}(?![\\w./-])`, "g"), ".");
   }
-  const lines = text.trim().split("\n");
-  const first = (lines[0] ?? "").trim();
+  // Every line counts, blank ones too; the first line shown is the first with text.
+  const lines = text.split("\n");
+  const at = Math.max(0, lines.findIndex((line) => line.trim().length > 0));
+  const first = (lines[at] ?? "").trim();
   const head = first.length <= COMMAND_SHOWN_CHARS ? first : `${first.slice(0, COMMAND_SHOWN_CHARS - 1)}…`;
-  return lines.length > 1 ? `${head} … (+${lines.length - 1} lines)` : head;
+  return lines.length - at > 1 ? `${head} … (+${lines.length - at - 1} lines)` : head;
 }
 
 /** Text as Markdown inline code; the fence is longer than any backtick run inside. */
@@ -454,7 +456,7 @@ export function readableLog(lines: readonly string[], options: { readonly worktr
       const parts = [stop, tokenText(record.usage), costText(record.cost)].filter(
         (part): part is string => part !== undefined,
       );
-      if (parts.length > 0 && said) out.push(`turn ended: ${parts.join(" · ")}`);
+      if (parts.length > 0 && said && stop !== "tool_use") out.push(`turn ended: ${parts.join(" · ")}`);
       said = false;
       continue;
     }
@@ -498,7 +500,9 @@ export function readableLog(lines: readonly string[], options: { readonly worktr
         const parts = [stringField(data, ["stop_reason"]), tokenText(data.usage), costText(data.fee)].filter(
           (part): part is string => part !== undefined,
         );
-        if (parts.length > 0 && said) out.push(`turn ended: ${parts.join(" · ")}`);
+        if (parts.length > 0 && said && stringField(data, ["stop_reason"]) !== "tool_use") {
+          out.push(`turn ended: ${parts.join(" · ")}`);
+        }
         said = false;
         continue;
       }

@@ -42,3 +42,9 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0240-M12 | packages/access-match/src/summary.ts | blank lines of a command were dropped when its lines are kept | `a bash call keeps its lines when the log asks for them, still cut at 500 characters` |
+
+## T-0240 — rework 10: turn ends and blank command lines
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0240-M16 | packages/access-match/src/summary.ts | leading and trailing blank lines of a kept command were dropped | `a bash call keeps its lines when the log asks for them, still cut at 500 characters` |

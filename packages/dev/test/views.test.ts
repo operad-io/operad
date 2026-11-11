@@ -299,7 +299,6 @@ describe("dev views", () => {
     ].map((line) => JSON.stringify(line));
     expect(readableLog(lines)).toEqual([
       "**agent:** I will run the tests.",
-      "turn ended: tool_use · 120 in / 30 out tokens · $0.0123",
       "tool Bash 2s `false`",
       "tool Bash failed: exit code 1",
       "result: done · 5 in / 6 out tokens · $0.0123",
@@ -770,6 +769,10 @@ describe("dev views", () => {
   test("a multi-line command shows its first line and the count of lines left; a long one-liner is cut", () => {
     const heredoc = "python3 - <<'EOF'\nimport json\nprint(1)\nEOF";
     expect(readableLog(toolLines(`cd ${WT}; ${heredoc}`), { worktree: WT })).toEqual([
+      "tool Bash 3s `python3 - <<'EOF' … (+3 lines)`",
+    ]);
+    // Leading and trailing blank lines count too; the first line shown is the first with text.
+    expect(readableLog(toolLines("\npython3 - <<'EOF'\nprint(1)\nEOF\n"))).toEqual([
       "tool Bash 3s `python3 - <<'EOF' … (+3 lines)`",
     ]);
     // A blank line inside the command counts as a line left.
