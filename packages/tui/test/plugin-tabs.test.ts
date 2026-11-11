@@ -15,7 +15,15 @@ import {
   type TuiState,
   type TuiView,
 } from "../src/index.ts";
-import { initialState, listWidth, listWidthFor, reduce } from "../src/state.ts";
+import {
+  initialState,
+  listWidth,
+  listWidthFor,
+  PLUGIN_LIST_MAX_WIDTH,
+  PLUGIN_LIST_MIN,
+  reduce,
+  twoPane,
+} from "../src/state.ts";
 import { drawState } from "../src/view/index.ts";
 import { immediateClock } from "./support.ts";
 
@@ -303,13 +311,15 @@ describe("one tab per plugin", () => {
     shell.stop();
   });
 
-  test("a plugin column is as wide as its rows, never wider than the terminal's share", async () => {
+  test("a plugin column is as wide as its rows, never wider than its own narrower share", async () => {
     const { view, shell } = open(new TreeClient(), 200);
     await view.until((state) => tabOf(state, "plugin:dev")?.list.loaded === true);
     shell.key({ name: "3" });
-    // The longest line is `    work 2m`-like or the id and slug: well under 60.
+    // The rows need only the floor, not the terminal's old share.
+    expect(listWidth(shell.state)).toBe(PLUGIN_LIST_MIN);
     expect(listWidth(shell.state)).toBeLessThan(listWidthFor(200));
-    expect(listWidth(shell.state)).toBeGreaterThanOrEqual("    P-0003 gamma".length);
+    const shortLines = text(drawState(shell.state).list).split("\n");
+    expect(Math.max(...shortLines.map((line) => line.length))).toBe(PLUGIN_LIST_MIN);
     shell.stop();
     const long = new TreeClient([
       ...DATA,
@@ -318,8 +328,55 @@ describe("one tab per plugin", () => {
     const wide = open(long, 200);
     await wide.view.until((state) => tabOf(state, "plugin:dev")?.list.loaded === true);
     wide.shell.key({ name: "3" });
-    expect(listWidth(wide.shell.state)).toBe(listWidthFor(200));
+    expect(listWidth(wide.shell.state)).toBe(PLUGIN_LIST_MAX_WIDTH);
     wide.shell.stop();
+  });
+
+  test("at 120 and 200 a long dev note gives a column 30–40% narrower than before", async () => {
+    const note = "confirmed merge · 5/6 · ~$6.57 · merge · P3 // 1 ".repeat(4);
+    const long = new TreeClient([
+      ...DATA,
+      entry("plan", `ops/P-0009-${"a-long-plan-slug-".repeat(4)}`, "Long", "repo:ops", note),
+    ]);
+    for (const width of [120, 200]) {
+      const { view, shell } = open(long, width);
+      await view.until((state) => tabOf(state, "plugin:dev")?.list.loaded === true);
+      shell.key({ name: "3" });
+      const before = listWidthFor(width);
+      const now = listWidth(shell.state);
+      expect(now / before).toBeLessThanOrEqual(0.65);
+      expect(1 - now / before).toBeGreaterThanOrEqual(0.3);
+      expect(1 - now / before).toBeLessThanOrEqual(0.4);
+      const lines = text(drawState(shell.state).list).split("\n");
+      const head = lines.findIndex((line) => line.includes("P-0009"));
+      expect(head).toBeGreaterThanOrEqual(0);
+      expect(lines[head]?.trimEnd()).toEndWith("…");
+      expect(lines[head + 1]?.trimEnd()).toEndWith("…");
+      for (const line of lines) expect(line.length).toBeLessThanOrEqual(now);
+      shell.stop();
+    }
+  });
+
+  test("at 99 columns a long plugin row gets the narrow column beside the object pane", async () => {
+    const note = "confirmed merge · 5/6 · ~$6.57 · merge · P3 // 1 ".repeat(4);
+    const long = new TreeClient([
+      ...DATA,
+      entry("plan", `ops/P-0009-${"a-long-plan-slug-".repeat(4)}`, "Long", "repo:ops", note),
+    ]);
+    const { view, shell } = open(long, 99);
+    await view.until((state) => tabOf(state, "plugin:dev")?.list.loaded === true);
+    shell.key({ name: "3" });
+    expect(twoPane(shell.state)).toBe(true);
+    expect(listWidth(shell.state)).toBe(25);
+    const drawn = drawState(shell.state);
+    expect(text(drawn.divider)).toContain("│");
+    const lines = text(drawn.list).split("\n");
+    const head = lines.findIndex((line) => line.includes("P-0009"));
+    expect(head).toBeGreaterThanOrEqual(0);
+    expect(lines[head]?.trimEnd()).toEndWith("…");
+    expect(lines[head + 1]?.trimEnd()).toEndWith("…");
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(25);
+    shell.stop();
   });
 
   test("a refresh of the left list leaves a child's page open", () => {
