@@ -291,7 +291,8 @@ describe("store copy", () => {
     }
     renameSync(join(root, "plugins", "facts.jsonl"), join(aside, "plugins", "facts.jsonl"));
 
-    expect((await run(home, ["store", "copy", "jsonl"])).code).toBe(0);
+    const copied = await run(home, ["store", "copy", "jsonl"]);
+    expect({ code: copied.code, err: copied.err }).toEqual({ code: 0, err: "" });
     expect((await run(home, ["store", "use", "jsonl"])).code).toBe(0);
 
     const second = openLog({ backend: "jsonl", path: root });
