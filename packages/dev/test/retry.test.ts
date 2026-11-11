@@ -389,6 +389,9 @@ describe("a step that is not loaded, for several tasks", () => {
     const withPool = registryOf(w, [createDevPlugin(), createPoolPlugin(), worker.plugin]);
     expect(await drive(w, withPool, runs)).toEqual(["waiting", "waiting"]);
     expect(worker.state.calls).toBe(2);
+    // Each task waits for a reason of its own (the fake worker changed
+    // nothing), not because the step was missing.
+    expect(waitingReasons(w)).toEqual(["work did nothing", "work did nothing"]);
   });
 });
 
