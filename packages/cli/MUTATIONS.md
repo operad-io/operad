@@ -94,3 +94,4 @@ the row fields.
 | T-0125-M1 | packages/cli/src/main.ts | a write to a closed pipe was not recognised as EPIPE (the catch rethrew and the error event was not handled), so a stack trace reached stderr | `a reader that closes the pipe > list with more rows than the pipe holds: the reader reads one line and closes; status 141, nothing on stderr` |
 | T-0208-M22 | packages/cli/src/main.ts | `store` accepted a missing or unknown store kind instead of a usage error | `store copy > it explains itself without internal words` |
 | T-0122-M1 | packages/cli/src/main.ts | `show` did not print the object's children | `operad list hierarchy > show prints an object's children as rows between the row and the sections` |
+| T-0239-M7 | packages/cli/src/main.ts | `operad running` did not show the queued time | `operad running line > a step that waited for a place shows its queued time after the step time` |

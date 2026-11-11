@@ -167,6 +167,23 @@ describe("two-line rows", () => {
     expect(textOf(lines[5])).toContain("◐ T-0092");
   });
 
+  test("a run queued for a check place says so, and how long it waited once it runs", () => {
+    const queued = run(1, {
+      stepLabel: "verify queued (check place, 1 ahead)",
+      queued: { key: "check place", ahead: 1 },
+      stepStartedAt: null,
+      stepElapsedMs: 0,
+      queuedMs: 540_000,
+      mark: "blocked",
+    });
+    const waiting = drawnLines(running(240, [queued]));
+    expect(textOf(waiting[3])).toContain("verify queued (check place, 1 ahead) · 0ms · queued 9m");
+    const taken = drawnLines(
+      running(240, [run(1, { stepLabel: "verify", stepElapsedMs: 5_000, queuedMs: 540_000 })]),
+    );
+    expect(textOf(taken[3])).toContain("verify · 5.0s · queued 9m");
+  });
+
   test("a long dim line is cut with … at the pane edge", () => {
     const lines = drawnLines(
       running(60, [run(1, { stepLabel: `queued (${"key-".repeat(30)}, 3 ahead)` })]),

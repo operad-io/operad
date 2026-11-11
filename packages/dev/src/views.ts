@@ -35,6 +35,7 @@ import {
   type TaskAttempt,
   type TaskData,
 } from "./model.ts";
+import { placeWaitNote } from "./place-wait.ts";
 import { planMark, repositoryMark, taskBadge, taskMark } from "./marks.ts";
 import { git, workBranch } from "./steps.ts";
 import { repositoryMetrics } from "./throughput.ts";
@@ -57,6 +58,8 @@ function costNote(cost: unknown, quality?: unknown): string | undefined {
  * sees it next to the task before deciding what to do.
  */
 function waitNote(task: TaskData): string | undefined {
+  const place = TASK_FINAL_STATES.includes(task.phase) ? undefined : placeWaitNote(task);
+  if (place !== undefined) return place;
   const turn = task.attempt?.integrationWait;
   // A task that ended (cancelled while it waited) is not waiting any more.
   if (

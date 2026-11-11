@@ -32,6 +32,8 @@ export interface LimitEntry {
   readonly time: number;
   readonly seq: number;
   readonly granted: boolean;
+  /** True for a wait a step reports for a place it manages itself; grants skip it. */
+  readonly reported: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, JsonValue> {
@@ -80,6 +82,7 @@ async function scanRun(
         time: fact.time,
         seq: fact.seq,
         granted: false,
+        reported: payload.reported === true,
         released: false,
       });
     } else if (existing !== undefined) {
@@ -104,6 +107,7 @@ async function scanRun(
       time: entry.time,
       seq: entry.seq,
       granted: entry.granted,
+      reported: entry.reported,
     });
   }
   return { entries, lastSeq };
@@ -216,6 +220,21 @@ export class StepLimits {
     }
   }
 
+  /**
+   * Records that a step waits for a place it manages itself (one the kernel
+   * does not grant): the run shows queued under `key`, with the reports
+   * ahead of it counted. `release` ends the wait.
+   */
+  async report(claim: Omit<LimitClaim, "concurrent">): Promise<void> {
+    await this.appendFact(claim.runId, "step_queued", {
+      step: claim.step,
+      effectId: claim.effectId,
+      key: claim.key,
+      concurrent: 0,
+      reported: true,
+    });
+  }
+
   /** Gives a claim's place back, or leaves the queue. */
   async release(claim: LimitClaim): Promise<void> {
     const own = await scanRun(this.log, claim.runId);
@@ -267,7 +286,7 @@ export class StepLimits {
         let held = entries.filter(
           (entry) => entry.key === key && entry.granted,
         ).length;
-        for (const next of queueOf(entries, key)) {
+        for (const next of queueOf(entries, key).filter((entry) => !entry.reported)) {
           if (held >= next.concurrent) break;
           await this.appendFact(next.runId, "step_slot", {
             step: next.step,
@@ -300,6 +319,12 @@ export class StepLimits {
         };
         await this.acquire(claim, request.signal);
         return () => this.release(claim);
+      },
+      report: async (request) => {
+        next += 1;
+        const claim = { runId, effectId: `${effectId}#${next}`, step, key: request.key };
+        await this.report(claim);
+        return () => this.release({ ...claim, concurrent: 0 });
       },
     };
   }

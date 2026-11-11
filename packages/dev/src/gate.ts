@@ -353,7 +353,7 @@ export async function runVerify(
         commands,
         stepOptions(ctx, path),
         rerun,
-        checkPlaces(ctx, context.repository, context.settings.gate.places),
+        checkPlaces(ctx, context.repository, context.settings.gate.places, context.taskKey),
       ),
     limit: context.settings.check.loadLimit,
     signal: ctx.signal,
