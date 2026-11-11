@@ -295,9 +295,10 @@ describe("folded repeats in run history", () => {
     const facts = [
       ...attempt("review", 1, "unavailable", start, { message: "HTTP 429" }),
       ...attempt("review", 2, "unavailable", start + MIN, { message: "HTTP 500" }),
+      ...attempt("review", 3, "unavailable", start + 2 * MIN, { message: "HTTP 429" }),
     ];
     const lines = runHistoryLines(facts, { now: start + 9 * MIN, full: false });
-    expect(lines).toHaveLength(3);
+    expect(lines).toHaveLength(4);
     expect(lines.join("\n")).not.toContain("×");
   });
 
