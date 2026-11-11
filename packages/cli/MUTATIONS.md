@@ -69,7 +69,7 @@ the row fields.
 | T-0098-M7 | packages/cli/src/main.ts | a serve that stopped for new code exited 0 instead of handing the restart to its supervisor | `a serve picks up changed code > a running step finishes on the old code; the next step runs the new code` |
 | T-0098-M8 | packages/cli/src/main.ts | a supervised serve handled a stop signal once (`process.once`), so a repeated one ended it by the default action | `a serve picks up changed code > a stop signal that arrives twice after a reload still stops the serve gracefully` (caught in 3 of 4 runs: it depends on signals not being merged) |
 | T-0098-M9 | packages/cli/src/main.ts | the serve did not count a triggers.json error at start among the problems it began with | `a serve picks up changed code > a triggers.json that did not read at start does not make code that loads look broken` |
-| T-0108-M1 | packages/cli/src/serve-stop.ts | `serve stop` asked `ps` for the serve's command line only once, so an empty answer under load refused with exit 3 | `serve stop > a ps that answers nothing for a live serve is asked again, then the serve is stopped` |
+| T-0108-M1 | packages/cli/src/serve-stop.ts | `serve stop` asked `ps` for the serve's command line only once, so an empty answer under load refused with exit 3 | `operad serve stop > a ps that answers nothing for a live serve is asked again, then the serve is stopped` |
 | T-0128-M1 | packages/cli/src/code-reload.ts | problemKey kept newlines, so a multi-line known problem never matched its one-line form | `what counts as loading > a message that spans lines is the same problem as its one-line form` |
 | T-0132-M1 | packages/cli/src/code-reload.ts | `takeSupervisedFlag` did not delete the flag from the environment | `a serve restart while a check runs > a supervised serve keeps the supervisor's flag from its run process and the commands it runs` |
 | T-0132-M2 | packages/cli/test/reload.test.ts | `childEnv` passed the test's own `OPERAD_SERVE_SUPERVISED` on to the serve | `a serve picks up changed code > the same case passes when the test itself runs inside a supervised serve` |
@@ -96,3 +96,15 @@ the row fields.
 | T-0122-M1 | packages/cli/src/main.ts | `show` did not print the object's children | `operad list hierarchy > show prints an object's children as rows between the row and the sections` |
 | T-0239-M7 | packages/cli/src/main.ts | `operad running` did not show the queued time | `operad running line > a step that waited for a place shows its queued time after the step time` |
 | T-0289-M1 | packages/cli/src/main.ts | `writeStream` wrote with `stream.write` again instead of a synchronous write on the descriptor, so a close during a large write went unseen and the status was 0 | `a reader that closes the pipe > list with more rows than the pipe holds: the reader reads one line and closes; status 141, nothing on stderr` (fails in a share of runs; found with `scripts/stress.sh --runs 20 --load 2`) |
+
+## T-0297 — follow-ups from the flaky-test work
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0297-M1 | packages/cli/src/serve-stop.ts | a process that died during the empty `ps` answers was refused as a non-serve instead of reported as no run | `operad serve stop > a process that dies during the empty answers is a lock with no serve, not a refusal` |
+| T-0297-M2 | packages/cli/src/serve-stop.ts | an unanswered `ps` was still reported as `is not an operad serve` | `operad serve stop > a ps that never answers for a live process refuses without signalling` |
+| T-0297-M3 | packages/cli/src/http-bind.ts | a start whose own address could not be released was retried like a busy port | `startWithRetry > does not try again a start whose own address could not be released` |
+| T-0297-M4 | packages/tui/src/autostart.ts | the port-in-use line claimed an operad serve of this home still runs although the home lock was free | `ensureServer > a child that cannot listen because the port is taken says the port is in use` |
+| T-0297-M5 | packages/cli/src/http-bind.ts | `takeReplacesFlag` read the replacement flag without deleting it | `takeReplacesFlag > takes the flag from the environment so the replacement does not pass it on` |
+| T-0297-M6 | packages/cli/src/http-bind.ts | a serve started as a replacement did not turn on the bind retry | `serveStartFlags > a supervised serve retries its bind, and a replacement does too` |
+| T-0297-M7 | packages/cli/src/http-bind.ts | the environment of a replacement left out `OPERAD_SERVE_REPLACES` | `serveStartFlags > a replacement's environment carries the flag main starts it with` |

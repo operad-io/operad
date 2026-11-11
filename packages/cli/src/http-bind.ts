@@ -5,8 +5,8 @@
  * bounded time before the new code gives up.
  */
 
-import { ConfigError } from "@operad-io/engine";
-import { RELOAD_EXIT } from "./code-reload.ts";
+import { ConfigError, HttpStopError } from "@operad-io/engine";
+import { RELOAD_EXIT, takeSupervisedFlag } from "./code-reload.ts";
 
 export interface BindRetryOptions {
   /** How long to keep trying, in milliseconds. */
@@ -37,7 +37,7 @@ export async function startWithRetry<T>(
     try {
       return await start();
     } catch (error) {
-      if (error instanceof ConfigError) throw error;
+      if (error instanceof ConfigError || error instanceof HttpStopError) throw error;
       if (options.now() >= deadline) throw new BindFailed(error);
       options.onRetry?.(error);
     }
@@ -63,6 +63,25 @@ export function takeReplacesFlag(env: NodeJS.ProcessEnv = process.env): boolean 
   const replaces = env[REPLACES_ENV] === "1";
   delete env[REPLACES_ENV];
   return replaces;
+}
+
+export interface ServeStartFlags {
+  readonly supervised: boolean;
+  readonly replaces: boolean;
+  /** A serve that is supervised or takes over from one asks again for its port. */
+  readonly retryBind: boolean;
+}
+
+/** Takes the start flags from the environment, so no child sees them. */
+export function serveStartFlags(env: NodeJS.ProcessEnv = process.env): ServeStartFlags {
+  const supervised = takeSupervisedFlag(env);
+  const replaces = takeReplacesFlag(env);
+  return { supervised, replaces, retryBind: supervised || replaces };
+}
+
+/** The environment of a replacement a stuck serve starts in its place. */
+export function replacementEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...env, [REPLACES_ENV]: "1" };
 }
 
 export interface StuckActions {

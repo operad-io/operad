@@ -79,7 +79,6 @@ import {
   BIND_FAILED_EXIT,
   codeChecker,
   RELOAD_EXIT,
-  takeSupervisedFlag,
   superviseServe,
   settingsRoots,
   takeCodeSnapshot,
@@ -88,10 +87,10 @@ import type { CodeSnapshot } from "./code-reload.ts";
 import {
   BindFailed,
   HandOverStuck,
-  REPLACES_ENV,
   leaveStuck,
+  replacementEnv,
+  serveStartFlags,
   startWithRetry,
-  takeReplacesFlag,
 } from "./http-bind.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { QrTooLongError, encodeQr, renderQr } from "./qr.ts";
@@ -2547,8 +2546,7 @@ export async function main(
       // The home lock comes first, before the store, the plugins or the port:
       // a second serve fails here, with exit 4, and touches nothing. The lock
       // is handed to `serve`, so there is no check and then act.
-      const supervised = takeSupervisedFlag();
-      const replaces = takeReplacesFlag();
+      const { supervised, replaces, retryBind } = serveStartFlags();
       const runChecked = async (isSupervised: boolean, retryBind: boolean): Promise<"stopped" | "reload"> => {
         const lock = acquireLock(serveLockPath(home));
         try {
@@ -2570,6 +2568,16 @@ export async function main(
           lock.release();
         }
       };
+      const startReplacement = (): void => {
+        Bun.spawn({
+          cmd: [process.execPath, ...process.argv.slice(1)],
+          cwd: process.cwd(),
+          env: replacementEnv(),
+          stdin: "ignore",
+          stdout: "inherit",
+          stderr: "inherit",
+        }).unref();
+      };
       const runOnce = async (
         isSupervised: boolean,
         retryBind: boolean,
@@ -2583,29 +2591,31 @@ export async function main(
             supervised: isSupervised,
             log: (message) => io.error(message),
             exit: (code) => process.exit(code),
-            startReplacement: () => {
-              Bun.spawn({
-                cmd: [process.execPath, ...process.argv.slice(1)],
-                cwd: process.cwd(),
-                env: { ...process.env, [REPLACES_ENV]: "1" },
-                stdin: "ignore",
-                stdout: "inherit",
-                stderr: "inherit",
-              }).unref();
-            },
+            startReplacement,
           });
         }
       };
       let result: "stopped" | "reload";
       try {
-        result = await runOnce(supervised, supervised || replaces);
+        result = await runOnce(supervised, retryBind);
       } catch (error) {
-        if (supervised && error instanceof BindFailed) {
-          // One line, then the process that started the serve serves again.
-          io.error(
-            `reload: the new code could not listen (${error.message}); the old code serves every address again\n`,
-          );
-          return BIND_FAILED_EXIT;
+        if (error instanceof BindFailed) {
+          if (supervised) {
+            // One line, then the process that started the serve serves again.
+            io.error(
+              `reload: the new code could not listen (${error.message}); the old code tries every address again\n`,
+            );
+            return BIND_FAILED_EXIT;
+          }
+          if (replaces) {
+            // There is no supervisor to restore the old code: try once more in
+            // a new process rather than leave the home with no serve.
+            io.error(
+              `reload: the new code could not listen (${error.message}); starting another serve\n`,
+            );
+            startReplacement();
+            return BIND_FAILED_EXIT;
+          }
         }
         throw error;
       }
@@ -2613,7 +2623,12 @@ export async function main(
       // again under the process that was started: a supervised serve hands
       // the restart back with a code, the first one becomes the supervisor.
       if (result === "reload") {
-        return supervised ? RELOAD_EXIT : await superviseServe(() => runOnce(false, true));
+        return supervised
+          ? RELOAD_EXIT
+          : await superviseServe(
+              () => runOnce(false, true),
+              (message) => io.error(message),
+            );
       }
       return 0;
     }
