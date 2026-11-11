@@ -472,7 +472,11 @@ export class Views {
     if (this.preparing === undefined) {
       const running = (async () => {
         for (const entry of this.registry.objectTypes()) {
-          await entry.definition.prepare?.({ store: this.store });
+          await entry.definition.prepare?.({
+            store: this.store,
+            home: this.registry.home,
+            settings: this.registry.settingsFor(entry.plugin),
+          });
         }
       })();
       this.preparing = running;

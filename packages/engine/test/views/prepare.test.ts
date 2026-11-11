@@ -58,6 +58,41 @@ describe("object type prepare", () => {
     expect(runs()).toBe(1);
   });
 
+  test("prepare gets the home and the plugin's validated settings", async () => {
+    const store = new MemoryPluginStore({ root: "unused" });
+    let seen: unknown;
+    const plugin = definePlugin({
+      name: "owner",
+      kind: "domain",
+      version: "0.0.0",
+      settings: {
+        type: "object",
+        properties: { size: { type: "integer", default: 3 } },
+        additionalProperties: false,
+      },
+      objects: [
+        {
+          name: "thing",
+          prepare: ({ home, settings }) => {
+            seen = { home, settings };
+          },
+        },
+      ],
+      views: {
+        thing: {
+          row: (object) => ({ id: object.id, title: object.id, state: "open" }),
+          sections: () => [],
+          load: async () => ({ markdown: "" }),
+        },
+      },
+    });
+    const registry = new PluginRegistry([plugin], { store, home: "/the/home" });
+    const views = createViews({ registry, store, onLog: () => undefined });
+    opened.push(views);
+    await views.list("thing");
+    expect(seen).toEqual({ home: "/the/home", settings: { size: 3 } });
+  });
+
   test("a root list called first sees them too", async () => {
     const { store, views } = setup();
     await store.put("old", "a", {}, "seed");

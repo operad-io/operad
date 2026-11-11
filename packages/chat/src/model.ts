@@ -37,6 +37,13 @@ export interface ChatData {
   readonly session?: string | null | undefined;
   /** The channels (`telegram:<chat>`) whose messages land here. */
   readonly channels: readonly string[];
+  /**
+   * A step (`<plugin>/<step>`) that gives the working directory, access profile
+   * and skills as they are now; the reply asks it every time, so a chat whose
+   * settings live elsewhere (an assistant profile) follows them. The fields
+   * above are then what the chat started with.
+   */
+  readonly refresh?: string | undefined;
 }
 
 /** What a plugin gives to create a chat. */
@@ -48,6 +55,8 @@ export interface NewChat {
   readonly skills?: readonly string[] | undefined;
   readonly title: string;
   readonly channels?: readonly string[] | undefined;
+  /** See {@link ChatData.refresh}. */
+  readonly refresh?: string | undefined;
 }
 
 /** What a message fact holds. Attachment paths stay empty until attachments exist. */
@@ -92,6 +101,7 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
     skills: stringList(data.skills),
     title: typeof data.title === "string" ? data.title : "",
     channels: stringList(data.channels),
+    ...(typeof data.refresh === "string" && data.refresh.length > 0 ? { refresh: data.refresh } : {}),
   };
 }
 
@@ -138,6 +148,7 @@ export async function createChat(
     title: input.title.trim(),
     session: null,
     channels: input.channels ?? [],
+    ...(input.refresh === undefined ? {} : { refresh: input.refresh }),
   };
   // The id counts up; a taken one (two chats made at once) moves on to the next.
   for (let attempt = 0; attempt < 20; attempt += 1) {

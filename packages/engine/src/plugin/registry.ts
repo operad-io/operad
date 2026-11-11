@@ -955,6 +955,7 @@ export class PluginRegistry {
         if (
           process.env.NODE_ENV === "test" &&
           !(found.step.calls ?? []).includes(nestedUse) &&
+          found.step.callsNamedByData !== true &&
           // A harness step is named by settings (a worker, a reviewer), so a
           // caller cannot list it.
           this.stepIndex.get(nestedUse)?.plugin.kind !== "harness"

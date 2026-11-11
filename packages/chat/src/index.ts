@@ -119,6 +119,8 @@ export function createChatPlugin() {
         name: "reply",
         // The harness's question comes back as `resumeSession` and `askAnswer`.
         resumable: true,
+        // The harness and the chat's `refresh` step are named by the chat.
+        callsNamedByData: true,
         results: ["done", "more", "waiting", "failed", "interrupted"],
         // The harness runs inside this step and may take as long as a task's work.
         timeoutSecs: 8 * 3600,

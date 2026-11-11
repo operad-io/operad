@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { allMessages, currentSession, unanswered } from "../src/index.ts";
+import { allMessages, createChat, currentSession, unanswered } from "../src/index.ts";
 import { cleanupRoots, reply, rig } from "./support.ts";
 
 afterAll(cleanupRoots);
@@ -126,5 +126,21 @@ describe("chat/reply", () => {
     expect(resumed.result).toBe("done");
     expect(r.calls[1]?.params.resumeSession).toBe("s-q");
     expect(r.calls[1]?.params.askAnswer).toEqual({ prompt: "Proceed?", choice: "yes" });
+  });
+});
+
+describe("a chat that names a refresh step", () => {
+  test("a reply fails, and never answers from the older copy, when that step is not loaded", async () => {
+    const r = await rig(() => reply("never"));
+    const chat = await createChat(
+      r.store,
+      { harness: "fake", cwd: r.root, title: "Refreshed", refresh: "nowhere/settings" },
+      "test",
+    );
+    await r.say(chat, "hello");
+    const result = await r.round(chat);
+    expect(result.result).toBe("failed");
+    expect(result.data).toMatchObject({ reason: "profile" });
+    expect(r.calls).toHaveLength(0);
   });
 });
