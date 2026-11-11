@@ -372,6 +372,40 @@ function costText(cost: unknown): string | undefined {
   return dollars === undefined ? undefined : `$${dollars.toFixed(4)}`;
 }
 
+/** A command's characters shown in a log line before it is cut. */
+const COMMAND_SHOWN_CHARS = 160;
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * A command as the log shows it: the `cd` into the task's worktree dropped,
+ * the worktree path relative, then the first line only (with the count of the
+ * lines left) and at most 160 characters.
+ */
+function shownCommand(command: string, worktree: string | undefined): string {
+  let text = command;
+  if (worktree !== undefined && worktree.length > 0) {
+    const root = worktree.replace(/\/+$/, "");
+    const path = escapeRegExp(root);
+    text = text.replace(new RegExp(`^\\s*cd\\s+(?:"${path}"|'${path}'|${path})/?\\s*(?:;|&&)\\s*`), "");
+    text = text.replace(new RegExp(`${path}/`, "g"), "");
+    text = text.replace(new RegExp(`${path}(?![\\w./-])`, "g"), ".");
+  }
+  const lines = text.split("\n").filter((line) => line.trim().length > 0);
+  const first = (lines[0] ?? "").trim();
+  const head = first.length <= COMMAND_SHOWN_CHARS ? first : `${first.slice(0, COMMAND_SHOWN_CHARS - 1)}…`;
+  return lines.length > 1 ? `${head} … (+${lines.length - 1} lines)` : head;
+}
+
+/** Text as Markdown inline code; the fence is longer than any backtick run inside. */
+function inlineCode(text: string): string {
+  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = "`".repeat(longest + 1);
+  return longest > 0 ? `${fence} ${text} ${fence}` : `${fence}${text}${fence}`;
+}
+
 function parseObject(text: string): Record<string, unknown> | undefined {
   try {
     const value: unknown = JSON.parse(text);
@@ -388,9 +422,10 @@ function parseObject(text: string): Record<string, unknown> | undefined {
  * ran and how long it took, or since when it has been running when no end line
  * follows. The agent's own text is marked as the agent's; a turn's end gives
  * its stop reason, tokens and cost; a tool's output is never shown, only the
- * first line of an error.
+ * first line of an error. A command is shown as inline code after its label.
+ * A turn's end is shown only after the agent's own text in that turn.
  */
-export function readableLog(lines: readonly string[]): string[] {
+export function readableLog(lines: readonly string[], options: { readonly worktree?: string | undefined } = {}): string[] {
   const ends = new Map<string, ToolEnd>();
   const starts = new Set<string>();
   let finished = false;
@@ -408,6 +443,8 @@ export function readableLog(lines: readonly string[]): string[] {
     });
   }
   const out: string[] = [];
+  // Whether the agent has said something since the last turn ended.
+  let said = false;
   for (const line of lines) {
     const record = parseObject(line.trim());
     const kind = record === undefined ? undefined : stringField(record, ["type"]);
@@ -425,8 +462,8 @@ export function readableLog(lines: readonly string[]): string[] {
           : finished
             ? ` no end logged${at === undefined ? "" : ` (started ${clockTime(at)})`}`
             : ` running${at === undefined ? "" : ` since ${clockTime(at)}`}`;
-      // The summary is already one line and at most 500 characters: kept whole.
-      out.push(`tool ${name}${when}${input === undefined ? "" : `  ${input.replace(/\s+/g, " ")}`}`);
+      const command = input === undefined ? "" : shownCommand(input, options.worktree);
+      out.push(`tool ${name}${when}${command.length === 0 ? "" : ` ${inlineCode(command)}`}`);
       if (end?.error !== undefined) out.push(`tool ${name} failed: ${end.error.replace(/\s+/g, " ")}`);
       continue;
     }
@@ -442,12 +479,16 @@ export function readableLog(lines: readonly string[]): string[] {
     }
     if (record !== undefined && kind === "message_end") {
       const text = stringField(record, ["text"]);
-      if (text !== undefined) out.push(`**agent:** ${agentText(text)}`);
+      if (text !== undefined) {
+        out.push(`**agent:** ${agentText(text)}`);
+        said = true;
+      }
       const stop = stringField(record, ["stopReason"]);
       const parts = [stop, tokenText(record.usage), costText(record.cost)].filter(
         (part): part is string => part !== undefined,
       );
-      if (parts.length > 0) out.push(`turn ended: ${parts.join(" · ")}`);
+      if (parts.length > 0 && said) out.push(`turn ended: ${parts.join(" · ")}`);
+      said = false;
       continue;
     }
     if (record !== undefined && kind === "blocked") {
@@ -459,8 +500,8 @@ export function readableLog(lines: readonly string[]): string[] {
     }
     if (record !== undefined && (kind === "result" || kind === "Result")) {
       if (kind === "Result") {
-        const said = stringField(record, ["text"]);
-        if (said !== undefined) out.push(`**agent:** ${agentText(said)}`);
+        const text = stringField(record, ["text"]);
+        if (text !== undefined) out.push(`**agent:** ${agentText(text)}`);
       }
       const parts = [
         stringField(record, kind === "Result" ? ["stop_reason"] : ["result"]),
@@ -476,18 +517,22 @@ export function readableLog(lines: readonly string[]): string[] {
         const message = isObject(data.message) ? data.message : {};
         const assistant = isObject(message.assistant) ? message.assistant : undefined;
         const blocks: unknown[] = Array.isArray(assistant?.content) ? assistant.content : [];
-        const said = blocks
+        const text = blocks
           .map((block) => (isObject(block) && isObject(block.text) ? stringField(block.text, ["text"]) : undefined))
           .filter((part): part is string => part !== undefined)
           .join(" ");
-        if (said.trim().length > 0) out.push(`**agent:** ${agentText(said)}`);
+        if (text.trim().length > 0) {
+          out.push(`**agent:** ${agentText(text)}`);
+          said = true;
+        }
         continue;
       }
       if (record.event === "ModelUsageRecorded") {
         const parts = [stringField(data, ["stop_reason"]), tokenText(data.usage), costText(data.fee)].filter(
           (part): part is string => part !== undefined,
         );
-        if (parts.length > 0) out.push(`turn ended: ${parts.join(" · ")}`);
+        if (parts.length > 0 && said) out.push(`turn ended: ${parts.join(" · ")}`);
+        said = false;
         continue;
       }
     }
@@ -598,10 +643,10 @@ function readTail(path: string, limit: number): Buffer {
 }
 
 /** The readable lines of one log file, or undefined when there is no file. */
-function readLogLines(path: string | undefined): string[] | undefined {
+function readLogLines(path: string | undefined, worktree: string | undefined): string[] | undefined {
   if (path === undefined || !existsSync(path)) return undefined;
   const tail = readTail(path, LOG_TAIL_BYTES);
-  return readableLog(tail.toString("utf8").split("\n"));
+  return readableLog(tail.toString("utf8").split("\n"), { worktree });
 }
 
 /**
@@ -612,7 +657,8 @@ function readLogLines(path: string | undefined): string[] | undefined {
 async function workerLog(ctx: ViewContext, task: TaskData): Promise<string> {
   const attempt = task.attempt;
   const blocks: Array<{ readonly label: string; readonly lines: string[] }> = [];
-  const worker = readLogLines(await workerLogPath(ctx, task));
+  const worktree = typeof attempt?.worktree === "string" ? attempt.worktree : undefined;
+  const worker = readLogLines(await workerLogPath(ctx, task), worktree);
   if (worker !== undefined && worker.length > 0) {
     blocks.push({ label: `Worker, attempt ${attempt?.number ?? 1}`, lines: worker });
   }
@@ -630,7 +676,7 @@ async function workerLog(ctx: ViewContext, task: TaskData): Promise<string> {
     if (path === undefined || seen.has(path)) continue;
     seen.add(path);
     reviewing = true;
-    const lines = readLogLines(path);
+    const lines = readLogLines(path, worktree);
     if (lines === undefined || lines.length === 0) continue;
     blocks.push({ label: `Reviewer, round ${review.round} (${review.model})`, lines });
   }

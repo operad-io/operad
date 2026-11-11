@@ -198,7 +198,7 @@ export async function runWorker(
     const denied = deniedByProfile(name, toolInput);
     const summary = denied !== undefined
       ? `${name} denied by the access profile${denied.rule === undefined ? "" : ` (rule: ${denied.rule.replace(/\s+/g, " ").slice(0, 300)})`}`
-      : summarizeCall(profile, name, toolInput, input.cwd, { secrets: input.secretValues });
+      : summarizeCall(profile, name, toolInput, input.cwd, { secrets: input.secretValues, keepLines: true });
     io.line({
       type: "tool_execution_start",
       toolCallId: id,

@@ -269,17 +269,17 @@ describe("dev views", () => {
       { type: "tool_execution_end", toolCallId: "b", toolName: "Read", isError: false, durationMs: 400 },
     ].map((line) => JSON.stringify(line));
     expect(readableLog(lines)).toEqual([
-      "tool Bash 1m12s  xcodebuild test -only-testing X",
-      "tool Read <1s  /w/a.ts",
+      "tool Bash 1m12s `xcodebuild test -only-testing X`",
+      "tool Read <1s `/w/a.ts`",
     ]);
   });
 
   test("a call without an end line is marked running, with its start time", () => {
     const start = { type: "tool_execution_start", toolCallId: "a", toolName: "Bash", at: Date.UTC(2026, 10, 7, 14, 3, 22), input: "sleep 9999" };
-    expect(readableLog([JSON.stringify(start)])).toEqual(["tool Bash running since 14:03:22Z  sleep 9999"]);
+    expect(readableLog([JSON.stringify(start)])).toEqual(["tool Bash running since 14:03:22Z `sleep 9999`"]);
     // After the result line nothing is running any more.
     expect(readableLog([JSON.stringify(start), JSON.stringify({ type: "result", result: "failed" })])[0]).toBe(
-      "tool Bash no end logged (started 14:03:22Z)  sleep 9999",
+      "tool Bash no end logged (started 14:03:22Z) `sleep 9999`",
     );
   });
 
@@ -294,9 +294,8 @@ describe("dev views", () => {
     expect(readableLog(lines)).toEqual([
       "**agent:** I will run the tests.",
       "turn ended: tool_use · 120 in / 30 out tokens · $0.0123",
-      "tool Bash 2s  false",
+      "tool Bash 2s `false`",
       "tool Bash failed: exit code 1",
-      "turn ended: end_turn · 1 in / 2 out tokens",
       "result: done · 5 in / 6 out tokens · $0.0123",
     ]);
   });
@@ -738,5 +737,73 @@ describe("dev views", () => {
     expect(planNote(base)).toBe("1/7 · off · P2 // 2");
     expect(planNote({ ...base, auto: "run" })).toBe("1/7 · run · P2 // 2");
     expect(planNote({ ...base, auto: "merge" })).toBe("1/7 · merge · P2 // 2");
+  });
+
+  const WT = "/Users/hai/Code/operad/.operad-worktrees/T-0208-store-migrate";
+  const toolLines = (command: string, extra: object[] = []): string[] =>
+    [
+      { type: "tool_execution_start", toolCallId: "a", toolName: "Bash", at: 1, input: command },
+      { type: "tool_execution_end", toolCallId: "a", toolName: "Bash", isError: false, durationMs: 3000 },
+      ...extra,
+    ].map((line) => JSON.stringify(line));
+
+  test("a leading cd into the task's worktree is dropped, and its paths are relative; other cd targets stay", () => {
+    const options = { worktree: WT };
+    expect(readableLog(toolLines(`cd ${WT}; bun test packages/cli`), options)).toEqual(["tool Bash 3s `bun test packages/cli`"]);
+    expect(readableLog(toolLines(`cd ${WT} && git status`), options)).toEqual(["tool Bash 3s `git status`"]);
+    expect(readableLog(toolLines(`cd ${WT}; cat ${WT}/packages/cli/a.ts ${WT}`), options)).toEqual([
+      "tool Bash 3s `cat packages/cli/a.ts .`",
+    ]);
+    expect(readableLog(toolLines(`cd /tmp/elsewhere; ls ${WT}-other`), options)).toEqual([
+      `tool Bash 3s \`cd /tmp/elsewhere; ls ${WT}-other\``,
+    ]);
+    // Without a known worktree nothing is rewritten.
+    expect(readableLog(toolLines(`cd ${WT}; ls`))[0]).toBe(`tool Bash 3s \`cd ${WT}; ls\``);
+  });
+
+  test("a multi-line command shows its first line and the count of lines left; a long one-liner is cut", () => {
+    const heredoc = "python3 - <<'EOF'\nimport json\nprint(1)\nEOF";
+    expect(readableLog(toolLines(`cd ${WT}; ${heredoc}`), { worktree: WT })).toEqual([
+      "tool Bash 3s `python3 - <<'EOF' … (+3 lines)`",
+    ]);
+    expect(readableLog(toolLines(`echo ${"x".repeat(300)}`))[0]).toBe(`tool Bash 3s \`echo ${"x".repeat(154)}…\``);
+    const exact = `echo ${"y".repeat(155)}`;
+    expect(exact).toHaveLength(160);
+    expect(readableLog(toolLines(exact))[0]).toBe(`tool Bash 3s \`${exact}\``);
+  });
+
+  test("the command is inline code after the label; backticks inside it get a longer fence", () => {
+    expect(readableLog(toolLines("echo `date`"))[0]).toBe("tool Bash 3s `` echo `date` ``");
+    const failed = [
+      { type: "tool_execution_start", toolCallId: "a", toolName: "Bash", at: 1, input: "false" },
+      { type: "tool_execution_end", toolCallId: "a", toolName: "Bash", isError: true, durationMs: 1000, error: "exit code 1" },
+    ].map((line) => JSON.stringify(line));
+    expect(readableLog(failed)).toEqual(["tool Bash 1s `false`", "tool Bash failed: exit code 1"]);
+  });
+
+  test("a run of tool turns shows no turn end; a turn end after the agent's text and the result stay", () => {
+    const usage = { input: 2, output: 6 };
+    const lines = [
+      { type: "message_end", role: "assistant", stopReason: "tool_use", usage },
+      ...toolLines("ls").map((line) => JSON.parse(line) as object),
+      { type: "message_end", role: "assistant", stopReason: "tool_use", usage },
+      { type: "message_end", role: "assistant", text: "Tests pass.", stopReason: "end_turn", usage },
+      { type: "message_end", role: "assistant", stopReason: "end_turn", usage },
+      { type: "result", result: "done", usage: { input: 9, output: 9 }, cost: { micros: 20000 } },
+    ].map((line) => JSON.stringify(line));
+    expect(readableLog(lines)).toEqual([
+      "tool Bash 3s `ls`",
+      "**agent:** Tests pass.",
+      "turn ended: end_turn · 2 in / 6 out tokens",
+      "result: done · 9 in / 9 out tokens · $0.0200",
+    ]);
+  });
+
+  test("radian turn usage without agent text is not shown", () => {
+    const lines = [
+      { event: "MessageAppended", data: { message: { assistant: { content: [], tool_calls: [{ id: "c" }] } } } },
+      { event: "ModelUsageRecorded", data: { usage: { input: 12, output: 3 } } },
+    ].map((line) => JSON.stringify(line));
+    expect(readableLog(lines)).toEqual([]);
   });
 });

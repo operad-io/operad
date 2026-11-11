@@ -724,3 +724,14 @@ the row fields.
 | T-0216-M2 | packages/dev/src/marks.ts | a task waiting for its worker kept the `running` mark | `dev/work with workers > a rework whose worker is busy shows the wait and the holding task until it is released` |
 | T-0250-M2 | packages/dev/src/service.ts | `refreshPlanCounts` rethrew SQLITE_BUSY after the task was already written | `a task that was written is not reported as failed when the plan counts hit a busy store` |
 | T-0250-M5 | packages/dev/src/service.ts | `writePlan` rethrew SQLITE_BUSY from the repository-count refresh after the plan was written | `a plan that was confirmed is not reported as failed when the repository counts hit a busy store` |
+
+## T-0240 — the Log section is readable
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0240-M1 | packages/dev/src/views.ts | a leading `cd <worktree>` was kept in a shown command | `dev views > a leading cd into the task's worktree is dropped, and its paths are relative; other cd targets stay` |
+| T-0240-M2 | packages/dev/src/views.ts | the worktree path inside a command stayed absolute | `dev views > a leading cd into the task's worktree is dropped, and its paths are relative; other cd targets stay` |
+| T-0240-M3 | packages/dev/src/views.ts | a multi-line command lost its `(+N lines)` count | `dev views > a multi-line command shows its first line and the count of lines left; a long one-liner is cut` |
+| T-0240-M4 | packages/dev/src/views.ts | a long one-line command was not cut at 160 characters | `dev views > a multi-line command shows its first line and the count of lines left; a long one-liner is cut` |
+| T-0240-M5 | packages/dev/src/views.ts | the command was not set in inline code | `dev views > a tool call is one line with what ran and how long it took` |
+| T-0240-M6 | packages/dev/src/views.ts | a turn end without agent text was shown | `dev views > a run of tool turns shows no turn end; a turn end after the agent's text and the result stay` |

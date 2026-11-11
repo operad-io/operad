@@ -30,6 +30,8 @@ export interface SummaryOptions {
   readonly secrets?: readonly string[] | undefined;
   /** The environment whose secret-named values are masked; defaults to this process's. */
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;
+  /** A command keeps its line breaks (still cut at 500 characters), for a log that shows its first line. */
+  readonly keepLines?: boolean | undefined;
 }
 
 /** Keys that hold the main argument of a tool, in the order they are tried. */
@@ -134,6 +136,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** The lines of a command, each with its spaces collapsed and no empty one, cut at the limit. */
+function linesOf(text: string, limit: number): string {
+  const flat = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .filter((line) => line.length > 0)
+    .join("\n");
+  return flat.length <= limit ? flat : `${flat.slice(0, limit - 1)}…`;
+}
+
 /**
  * The summary of one tool call, or undefined when the tool has no main
  * argument. `bash` shows its command (500 characters, one line), the file tools
@@ -172,7 +184,8 @@ export function summarizeCall(
     }
   }
   if (text === undefined || text.trim().length === 0) return undefined;
-  return oneLine(withoutSecretValues(text, options), limit);
+  const masked = withoutSecretValues(text, options);
+  return options.keepLines === true && tool === "bash" ? linesOf(masked, limit) : oneLine(masked, limit);
 }
 
 /** The first non-empty line of an error text, cut; undefined when there is none. */
