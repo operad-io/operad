@@ -388,7 +388,7 @@ describe("harness-radian/agent", () => {
   });
 
   describe("a read-only working directory", () => {
-    async function attempt(toolName: string, input: Record<string, unknown>, access: Record<string, unknown>) {
+    async function attempt(toolName: string, input: Record<string, JsonValue>, access: Record<string, JsonValue>) {
       const env = await setup("call");
       setEnv("FAKE_RADIAN_CALL", JSON.stringify({ toolName, input }));
       const result = await env.registry.runStep(
