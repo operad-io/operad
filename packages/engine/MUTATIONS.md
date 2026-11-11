@@ -473,3 +473,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0216-M3 | packages/engine/src/plugin/registry.ts | a step's events were not given to the caller's `observe` | `a step's events > a caller that observes a step sees its events besides the destination` |
+
+## T-0211 — a run ended elsewhere stops the step that is running
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0211-M1 | packages/engine/src/runner/runner.ts | the watch for the run's end did not abort the step's signal | `pause and cancel stop what the step started > pause while the check command runs ends its processes and frees the place` (packages/dev) |
+| T-0211-M2 | packages/engine/src/runner/runner.ts | a result recorded on an ended run was thrown, not dropped | `pause and cancel stop what the step started > pause while the worker step runs ends its processes` (packages/dev) |
