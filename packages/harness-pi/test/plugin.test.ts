@@ -569,7 +569,12 @@ describe("harness-pi/agent", () => {
         { signal: controller.signal, runId: `run-${i}` },
       );
       await waitForFile(env.marker);
-      const pid = Number(readFileSync(env.marker, "utf8"));
+      // The file exists before the worker has written its pid into it.
+      let pid = Number(readFileSync(env.marker, "utf8"));
+      while (!(pid > 0)) {
+        await new Promise((r) => setTimeout(r, 1));
+        pid = Number(readFileSync(env.marker, "utf8"));
+      }
       controller.abort();
       const result = await running;
       expect(result.result).toBe("interrupted");
