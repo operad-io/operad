@@ -76,7 +76,7 @@ describe("arguments of an action", () => {
     expect(state.actionRequest).toEqual({ action: "devtest:auto", id: "item:one", args: { level: "merge" } });
   });
 
-  test("an optional enum is a choice; an optional text is not asked", () => {
+  test("an optional enum is a choice that starts unset; an optional text is not asked", () => {
     const chat = action("devtest:chat", {
       args: {
         type: "object",
@@ -84,14 +84,20 @@ describe("arguments of an action", () => {
         additionalProperties: false,
       },
     });
-    let state = press(opened("run", undefined, [chat]), ":", ...typeText("devtest:chat"), "enter");
+    const open = (): TuiState =>
+      press(opened("run", undefined, [chat]), ":", ...typeText("devtest:chat"), "enter");
+    const state = open();
     expect(state.input?.kind).toBe("args");
     if (state.input?.kind !== "args") return;
     expect(state.input.fields.map((field) => field.name)).toEqual(["harness"]);
     expect(state.input.fields[0]?.options.map((o) => o.label)).toEqual(["harness-claude", "harness-pi"]);
-    expect(state.input.cursor).toBe(0);
-    state = press(state, "j", "enter");
-    expect(state.actionRequest).toEqual({
+    expect(state.input.cursor).toBe(-1);
+    // Enter without a pick leaves the harness out, so the run uses the first loaded one.
+    expect(press(state, "enter").actionRequest).toEqual({
+      action: "devtest:chat",
+      id: "item:one",
+    });
+    expect(press(open(), "j", "j", "enter").actionRequest).toEqual({
       action: "devtest:chat",
       id: "item:one",
       args: { harness: "harness-pi" },

@@ -608,7 +608,7 @@ function argsInput(
     fields,
     at,
     values,
-    cursor: field?.current ?? 0,
+    cursor: field?.optional === true && field.current === undefined ? -1 : (field?.current ?? 0),
     text: field?.initial ?? "",
     note,
     confirm,
@@ -619,7 +619,9 @@ function argsInput(
 function answer(state: TuiState, input: ArgsInput, value: unknown): TuiState {
   const field = input.fields[input.at];
   if (field === undefined) return { ...state, input: undefined };
-  const values = { ...input.values, [field.name]: value };
+  const values = value === undefined
+    ? { ...input.values }
+    : { ...input.values, [field.name]: value };
   if (input.at + 1 < input.fields.length) {
     return {
       ...state,
@@ -813,8 +815,12 @@ function argsKey(
     const down = key === "down" || key === "arrowdown" || (event.ctrl !== true && event.text === "j") || (event.ctrl === true && (key === "n" || key === "j"));
     const up = key === "up" || key === "arrowup" || (event.ctrl !== true && event.text === "k") || (event.ctrl === true && (key === "p" || key === "k"));
     if (down || up) {
-      const cursor = Math.min(Math.max(0, input.cursor + (down ? 1 : -1)), field.options.length - 1);
+      const floor = field.optional === true ? -1 : 0;
+      const cursor = Math.min(Math.max(floor, input.cursor + (down ? 1 : -1)), field.options.length - 1);
       return { ...state, input: { ...input, cursor } };
+    }
+    if (enter && field.optional === true && input.cursor < 0) {
+      return answer(state, input, undefined);
     }
     const option = field.options[input.cursor];
     return enter && option !== undefined ? answer(state, input, option.value) : state;

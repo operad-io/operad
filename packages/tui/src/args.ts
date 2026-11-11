@@ -25,6 +25,8 @@ export interface ArgField {
   readonly description?: string | undefined;
   /** The option that is the current value, when the row or a default gives one. */
   readonly current?: number | undefined;
+  /** An optional choice starts unset, so Enter keeps the action's default. */
+  readonly optional?: boolean | undefined;
   /** The text a number or text input starts with. */
   readonly initial: string;
 }
@@ -35,7 +37,7 @@ export type ArgParse =
 
 /**
  * The arguments of `action` other than the note, in the order it asks them:
- * the required ones, then any optional enum (a choice with a value to start on).
+ * the required ones, then any optional enum (a choice that starts unset).
  */
 export function argFields(action: ViewAction, row: ViewRow | undefined): readonly ArgField[] {
   const schema = action.args;
@@ -57,7 +59,17 @@ export function argFields(action: ViewAction, row: ViewRow | undefined): readonl
       const found = seen
         .map((text) => (text === undefined ? -1 : options.findIndex((o) => o.label === text)))
         .find((at) => at >= 0);
-      fields.push({ name, kind: "pick", integer: false, options, description, current: found, initial: "" });
+      const optional = !(schema.required ?? []).includes(name);
+      fields.push({
+        name,
+        kind: "pick",
+        integer: false,
+        options,
+        description,
+        current: found,
+        ...(optional ? { optional: true } : {}),
+        initial: "",
+      });
     } else if (prop.type === "boolean") {
       const options = [
         { value: true, label: "yes" },

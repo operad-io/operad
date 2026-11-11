@@ -867,7 +867,12 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
         chunks.push(chunk(option.label, at === input.cursor ? palette.accent : palette.text));
         chunks.push(chunk(at === field.current ? "  current\n" : "\n", palette.weak));
       });
-      chunks.push(chunk("j/k or arrows move · enter picks · esc cancels", palette.weak));
+      chunks.push(chunk(
+        field.optional === true && input.cursor < 0
+          ? "j/k or arrows move · enter leaves it out · esc cancels"
+          : "j/k or arrows move · enter picks · esc cancels",
+        palette.weak,
+      ));
     } else if (field !== undefined) {
       chunks.push(chunk(`${input.text}${bar}\n`, palette.text));
       chunks.push(chunk(`${allowedText(field)}\n`, input.error === undefined ? palette.weak : palette.accent));
