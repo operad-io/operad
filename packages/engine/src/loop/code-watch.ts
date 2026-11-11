@@ -183,6 +183,12 @@ function packageDirectoryOf(file: string): string | undefined {
   }
 }
 
+/** The directory of the engine package, which every process loads. */
+export const ENGINE_CODE_ROOT: CodeRoot = {
+  label: "engine",
+  path: fileURLToPath(new URL("../../", import.meta.url)),
+};
+
 /** The file a plugin specifier names, resolved the way the loader does. */
 export function pluginFile(specifier: string, home: string): string | undefined {
   try {
@@ -193,7 +199,9 @@ export function pluginFile(specifier: string, home: string): string | undefined 
     if (specifier.startsWith(".") || specifier.startsWith("/")) {
       return realpathSync(resolve(home, specifier));
     }
-    return realpathSync(Bun.resolveSync(specifier, home));
+    // The loader imports a bare module name from inside the engine package,
+    // not from the operad home: resolve it from there.
+    return realpathSync(Bun.resolveSync(specifier, ENGINE_CODE_ROOT.path));
   } catch {
     return undefined;
   }
@@ -222,12 +230,6 @@ function workspaceDependencies(directory: string): string[] {
   }
   return found;
 }
-
-/** The directory of the engine package, which every process loads. */
-export const ENGINE_CODE_ROOT: CodeRoot = {
-  label: "engine",
-  path: fileURLToPath(new URL("../../", import.meta.url)),
-};
 
 /**
  * The code roots of a process: the engine, the extra roots the caller names (the

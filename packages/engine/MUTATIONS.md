@@ -605,3 +605,9 @@ the row fields.
 |---|---|---|---|
 | T-0281-M1 | packages/engine/src/plugin/action-schema.ts | a `oneOf` accepted a value only when it fitted its first branch (the check of the other branches removed) | `settings with a choice of forms > a set keeps the object form of a check command and every other value` (packages/engine/test/views/settings-schema.test.ts) |
 | T-0237-M3 | packages/engine/src/views/presentation.ts | a hidden row no longer added its count to its mark role, so `hiddenCounts` stayed zero | `object type filters > a filter keeps matching rows and counts the rest as hidden` |
+
+## T-0299 — a loaded plugin's package reloads serve
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0299-M1 | packages/engine/src/loop/code-watch.ts | a bare plugin module name was resolved against the operad home again, so a home outside the workspace found no plugin package | `code roots > a plugin named by its package is found where the loader imports it` |

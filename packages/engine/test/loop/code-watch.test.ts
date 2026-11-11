@@ -1,6 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   CodeWatch,
   codeRoots,
@@ -123,6 +125,29 @@ describe("code roots", () => {
     });
     expect(together.map((entry) => entry.path)).toContain(join(pkg, "src", "index.ts"));
     expect(together.map((entry) => entry.path)).not.toContain(pkg);
+  });
+
+  test("a plugin named by its package is found where the loader imports it", () => {
+    // Outside the workspace, so a home that is not the engine's parent cannot
+    // find the plugin package through the repository's node_modules.
+    const root = mkdtempSync(join(tmpdir(), "operad-code-roots-"));
+    try {
+      const home = join(root, "home");
+      mkdirSync(home, { recursive: true });
+
+      const roots = codeRoots({
+        home,
+        plugins: [{ name: "dev", module: "@operad-io/dev" }],
+      });
+      // The loader imports a bare name from the engine package, so the plugin
+      // package is found through the workspace there, not under the home.
+      expect(roots).toContainEqual({
+        label: "plugin dev",
+        path: fileURLToPath(new URL("../../../dev", import.meta.url)),
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
