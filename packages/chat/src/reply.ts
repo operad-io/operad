@@ -7,6 +7,8 @@
 
 import {
   AskTimeoutError,
+  type JsonValue,
+  type RunObject,
   messageOf,
   type AskOutcome,
   type AskRequest,
@@ -17,6 +19,7 @@ import {
 import {
   allMessages,
   chatData,
+  type ChatData,
   chatRef,
   currentSession,
   MESSAGE_FACT,
@@ -115,6 +118,49 @@ function answeredQuestion(params: unknown): { readonly prompt: string; readonly 
   return typeof prompt === "string" && typeof choice === "string" ? { prompt, choice } : undefined;
 }
 
+/** What a chat's `refresh` step gives back. */
+interface Live {
+  readonly cwd: string;
+  readonly access: Readonly<Record<string, JsonValue>>;
+  readonly skills: readonly string[];
+}
+
+/**
+ * The working directory, access profile and skills for this reply: the
+ * chat's own, or what its `refresh` step says now. A reply that cannot read
+ * them fails; it never falls back to the older, possibly looser, copy.
+ */
+async function liveSettings(
+  ctx: StepContext,
+  chat: ChatData,
+  object: RunObject,
+  runStep: NonNullable<StepContext["runStep"]>,
+): Promise<Live | PluginStepResult> {
+  const own: Live = { cwd: chat.cwd, access: chat.access, skills: chat.skills };
+  if (chat.refresh === undefined) return own;
+  if (ctx.stepLoaded !== undefined && !ctx.stepLoaded(chat.refresh)) {
+    return failed("profile", `"${chat.refresh}", which gives this chat's settings, is not loaded`);
+  }
+  let outcome: PluginStepResult;
+  try {
+    outcome = await runStep(chat.refresh, { chat: object.id }, { runId: ctx.runId, object, params: ctx.params, signal: ctx.signal });
+  } catch (error) {
+    return failed("profile", messageOf(error));
+  }
+  const data = isRecord(outcome.data) ? outcome.data : {};
+  if (outcome.result !== "done") {
+    return failed("profile", typeof data.message === "string" ? data.message : "the chat's settings could not be read");
+  }
+  if (typeof data.cwd !== "string" || data.cwd.length === 0 || !isRecord(data.access) || !Array.isArray(data.skills)) {
+    return failed("profile", "the chat's settings came back in a shape the chat cannot use");
+  }
+  return {
+    cwd: data.cwd,
+    access: data.access as Record<string, JsonValue>,
+    skills: data.skills.filter((item): item is string => typeof item === "string"),
+  };
+}
+
 /** Runs one round of an answer; see the file's comment. */
 export async function runReply(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
   const object = ctx.object;
@@ -135,10 +181,14 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     return failed("harness", `the harness "${chat.harness}" is not loaded`);
   }
 
+  const settled = await liveSettings(ctx, chat, object, runStep);
+  if ("result" in settled) return settled;
+  const live = settled;
+
   const resumed = isRecord(params) ? params : {};
   const session =
     typeof resumed.resumeSession === "string" ? resumed.resumeSession : currentSession(chat, messages);
-  const readOnly = chat.access.readOnly === true;
+  const readOnly = live.access.readOnly === true;
   let worktreeAsked = 0;
   const asker = readOnly
     ? readOnlyAsker(ctx, async () => {
@@ -168,7 +218,8 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
       use,
       {
         prompt: promptFor(pending),
-        cwd: chat.cwd,
+        cwd: live.cwd,
+        ...(live.skills.length === 0 ? {} : { skills: live.skills }),
         // Operad's own tools, so the agent never runs the `operad` command.
         operadTools: { home: ctx.home },
         ...(session === undefined ? {} : { resumeSession: session }),
@@ -176,10 +227,10 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
       },
       {
         runId: ctx.runId,
-        cwd: chat.cwd,
+        cwd: live.cwd,
         object,
         params: ctx.params,
-        access: chat.access,
+        access: live.access,
         ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
         signal: ctx.signal,
         ...(asker === undefined ? {} : { asker }),

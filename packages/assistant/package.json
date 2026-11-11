@@ -1,0 +1,16 @@
+{
+  "name": "@operad-io/assistant",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@operad-io/chat": "workspace:*",
+    "@operad-io/engine": "workspace:*"
+  },
+  "devDependencies": {
+    "@operad-io/access-match": "workspace:*"
+  }
+}

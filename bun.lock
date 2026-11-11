@@ -24,6 +24,17 @@
       "name": "@operad-io/access-match",
       "version": "0.0.0",
     },
+    "packages/assistant": {
+      "name": "@operad-io/assistant",
+      "version": "0.0.0",
+      "dependencies": {
+        "@operad-io/chat": "workspace:*",
+        "@operad-io/engine": "workspace:*",
+      },
+      "devDependencies": {
+        "@operad-io/access-match": "workspace:*",
+      },
+    },
     "packages/chat": {
       "name": "@operad-io/chat",
       "version": "0.0.0",
@@ -262,6 +273,8 @@
     "@opentui/core-win32-x64": ["@opentui/core-win32-x64@0.6.8", "", { "os": "win32", "cpu": "x64" }, "sha512-6dZuSw883BDetY59G2QwWHJG1kwfPkL+lWhDQ3a6ICxW4/7nito3uPkMRaRDb8DiTHgx0wMt/RdiydjQmZd+lw=="],
 
     "@operad-io/access-match": ["@operad-io/access-match@workspace:packages/access-match"],
+
+    "@operad-io/assistant": ["@operad-io/assistant@workspace:packages/assistant"],
 
     "@operad-io/chat": ["@operad-io/chat@workspace:packages/chat"],
 

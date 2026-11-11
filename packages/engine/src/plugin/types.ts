@@ -574,6 +574,12 @@ export interface StepTypeDefinition {
    * does not start when one of them is not loaded.
    */
   readonly calls?: readonly string[] | undefined;
+  /**
+   * The step also calls steps that settings or an object name (a chat's
+   * `refresh` step), so `calls` cannot list them. A run does not wait on them
+   * to start; a call to one that is not loaded fails where it is made.
+   */
+  readonly callsNamedByData?: boolean | undefined;
   /** Access profile fields this step applies, such as `denyPaths`. */
   readonly enforces?: readonly string[] | undefined;
   /**
@@ -629,7 +635,12 @@ export interface ObjectTypeDefinition {
    * before a client reads them. Views run it once per instance, before the
    * first list or get; it must be safe to run again.
    */
-  readonly prepare?: (ctx: { readonly store: ObjectStore }) => MaybePromise<void>;
+  readonly prepare?: (ctx: {
+    readonly store: ObjectStore;
+    readonly home: string;
+    /** The owning plugin's validated settings. */
+    readonly settings: Readonly<Record<string, JsonValue>>;
+  }) => MaybePromise<void>;
   /**
    * Whether the plugin itself will answer this object's wait for a person
    * automatically. It runs each time the pending view is built and returns

@@ -525,6 +525,15 @@ function normalizeSteps(
       ...(entry.grants === undefined
         ? {}
         : { grants: normalizeFlag(entry.grants, "grants", `${at}[${index}]`) }),
+      ...(entry.callsNamedByData === undefined
+        ? {}
+        : {
+            callsNamedByData: normalizeFlag(
+              entry.callsNamedByData,
+              "callsNamedByData",
+              `${at}[${index}]`,
+            ),
+          }),
       ...(entry.resumable === undefined
         ? {}
         : { resumable: normalizeResumable(entry.resumable, `${at}[${index}]`) }),
