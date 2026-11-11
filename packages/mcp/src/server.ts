@@ -5,6 +5,7 @@ import {
   ENGINE_VERSION,
   Kernel,
   ViewError,
+  cancelRun,
   createViews,
   defaultOperadHome,
   loadPluginRegistry,
@@ -198,10 +199,13 @@ async function openContext(
     root: storeRoot,
   });
   const log = openConfigLog(config);
+  let loaded: PluginRegistry | undefined;
   const registry = await loadPluginRegistry({
     home,
     cwd,
     store,
+    onCancelRun: (runId, graph) =>
+      cancelRun({ log, flow: (name) => loaded?.flow(name)?.flow, runId, graph, clock }),
     onAnswer: async (runId, choice, note, actor) => {
       await recordAnswer({
         log,
@@ -215,6 +219,7 @@ async function openContext(
       void onLog(message);
     },
   });
+  loaded = registry;
   const views = createViews({
     registry,
     store,

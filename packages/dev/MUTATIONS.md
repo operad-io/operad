@@ -637,6 +637,12 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0228-M1 | packages/dev/src/steps.ts | work that added no commit always ended `nothing`, even on a branch with unchecked commits | `work that ends with no new commit > a branch with unchecked work goes on to verify, and says why` |
+## T-0227 — a cancelled task ends its run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0227-M1 | packages/dev/src/schedule.ts | the tick did not end a run still active on a cancelled task | `a run still active on a cancelled task is ended by the tick` |
+| T-0227-M3 | packages/dev/src/service.ts | cancel did not pass the task's stored flow graph to the run control | `cancelling a task through MCP ends a run of the flow the task stored` |
 ## T-0061 — choosing a flow
 
 | id | file | mutation | failing test |
