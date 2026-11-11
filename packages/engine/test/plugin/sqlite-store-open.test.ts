@@ -3,6 +3,7 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { BUSY_TIMEOUT_MS } from "../../src/platform/index.ts";
 import { SqlitePluginStore } from "../../src/plugin/sqlite-store.ts";
 
 const HOLD_CHILD = join(import.meta.dir, "..", "fixtures", "sqlite-hold.ts");
@@ -62,6 +63,25 @@ test("a store created in delete mode is WAL after it is opened", () => {
   const store = new SqlitePluginStore({ root: join(file, ".."), file });
   store.close();
   expect(journalMode(file)).toBe("wal");
+});
+
+test("the store's own connection has the platform busy timeout and WAL", () => {
+  // bun:sqlite gives no event for "the busy handler is waiting", so the wait
+  // cannot be proved from outside; the settings on the connection that does
+  // the work are what make it wait, and the test below is the end-to-end check.
+  const file = tempFile();
+  const store = new SqlitePluginStore({ root: join(file, ".."), file });
+  try {
+    const connection = store["db"];
+    expect(connection.query<{ timeout: number }, []>("PRAGMA busy_timeout").get()?.timeout).toBe(
+      BUSY_TIMEOUT_MS,
+    );
+    expect(
+      connection.query<{ journal_mode: string }, []>("PRAGMA journal_mode").get()?.journal_mode,
+    ).toBe("wal");
+  } finally {
+    store.close();
+  }
 });
 
 test("a write waits for another process's write transaction and succeeds after it commits", async () => {

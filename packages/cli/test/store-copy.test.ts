@@ -10,6 +10,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -264,6 +265,34 @@ describe("store copy", () => {
     const back = await run(home, ["store", "use", "jsonl"]);
     expect(back.code).toBe(0);
     expect(await views(home, ids)).toEqual(before);
+  });
+
+  test("copying out of a sqlite home in rollback-journal mode leaves its databases in WAL", async () => {
+    const { home, root } = await seededHome();
+    expect((await run(home, ["store", "copy", "sqlite"])).code).toBe(0);
+    expect((await run(home, ["store", "use", "sqlite"])).code).toBe(0);
+
+    const modeOf = (file: string, set?: string): string | undefined => {
+      const database = new Database(file);
+      try {
+        const pragma = set === undefined ? "PRAGMA journal_mode" : `PRAGMA journal_mode = ${set}`;
+        return database.query<{ journal_mode: string }, []>(pragma).get()?.journal_mode;
+      } finally {
+        database.close();
+      }
+    };
+    const files = [join(root, "log.sqlite"), join(root, "plugins.sqlite")];
+    for (const file of files) expect(modeOf(file, "DELETE")).toBe("delete");
+
+    const aside = join(root, "..", "aside-wal");
+    mkdirSync(join(aside, "plugins"), { recursive: true });
+    for (const name of ["runs", "inputs.jsonl", "outcomes.jsonl", "global-facts.jsonl", "schema.json", ".lock"]) {
+      renameSync(join(root, name), join(aside, name));
+    }
+    renameSync(join(root, "plugins", "facts.jsonl"), join(aside, "plugins", "facts.jsonl"));
+
+    expect((await run(home, ["store", "copy", "jsonl"])).code).toBe(0);
+    for (const file of files) expect(modeOf(file)).toBe("wal");
   });
 
   test("jsonl to sqlite to jsonl gives equal facts", async () => {

@@ -665,3 +665,4 @@ the row fields.
 |---|---|---|---|
 | T-0216-M2 | packages/dev/src/marks.ts | a task waiting for its worker kept the `running` mark | `dev/work with workers > a rework whose worker is busy shows the wait and the holding task until it is released` |
 | T-0250-M2 | packages/dev/src/service.ts | `refreshPlanCounts` rethrew SQLITE_BUSY after the task was already written | `a task that was written is not reported as failed when the plan counts hit a busy store` |
+| T-0250-M5 | packages/dev/src/service.ts | `writePlan` rethrew SQLITE_BUSY from the repository-count refresh after the plan was written | `a plan that was confirmed is not reported as failed when the repository counts hit a busy store` |

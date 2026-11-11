@@ -682,7 +682,13 @@ async function writePlan(
   cause: string,
 ): Promise<StoredObject> {
   const written = await store.put(PLAN_TYPE, id, data, cause);
-  await refreshRepositoryCounts(store, data.repository);
+  // The counts are a cache the scheduler keeps current; a busy store must not
+  // turn the plan write that already happened into a reported failure.
+  try {
+    await refreshRepositoryCounts(store, data.repository);
+  } catch (error) {
+    if (!isBusy(error)) throw error;
+  }
   return written;
 }
 
