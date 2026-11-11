@@ -281,5 +281,15 @@ describe("remote-check.sh", () => {
       expect(result.err).toContain("OPERAD_CHECK_LANE");
       expect(result.out).not.toContain("ran");
     });
+
+    test("a bad OPERAD_CHECK_SLOTS or OPERAD_CHECK_LANE stops the check even with no host", async () => {
+      const { local, env } = setup();
+      for (const bad of [{ OPERAD_CHECK_SLOTS: "0" }, { OPERAD_CHECK_LANE: "fast" }]) {
+        const result = await run(local, { ...env, OPERAD_CHECK_HOST: "", ...bad }, "echo ran");
+        expect(result.code).toBe(1);
+        expect(result.err).toContain(Object.keys(bad)[0] ?? "");
+        expect(result.out).not.toContain("ran");
+      }
+    });
   });
 });

@@ -26,15 +26,6 @@ if [ $# -ne 1 ]; then
   exit 2
 fi
 command=$1
-host=${OPERAD_CHECK_HOST:-}
-if [ -z "$host" ]; then
-  exec bash -c "$command"
-fi
-tree=${OPERAD_CHECK_TREE:-Code/operad}
-path_dirs=${OPERAD_CHECK_PATH:-'$HOME/.bun-operad/bin:$HOME/.bun/bin'}
-read -r -a ssh_cmd <<<"${OPERAD_CHECK_SSH:-ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4}"
-read -r -a scp_cmd <<<"${OPERAD_CHECK_SCP:-scp -q -o BatchMode=yes}"
-
 fail() {
   echo "remote-check: $1" >&2
   exit 1
@@ -50,6 +41,15 @@ case "$lane" in
   "" | integration) ;;
   *) fail "OPERAD_CHECK_LANE must be 'integration' or unset, not '$lane'" ;;
 esac
+
+host=${OPERAD_CHECK_HOST:-}
+if [ -z "$host" ]; then
+  exec bash -c "$command"
+fi
+tree=${OPERAD_CHECK_TREE:-Code/operad}
+path_dirs=${OPERAD_CHECK_PATH:-'$HOME/.bun-operad/bin:$HOME/.bun/bin'}
+read -r -a ssh_cmd <<<"${OPERAD_CHECK_SSH:-ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4}"
+read -r -a scp_cmd <<<"${OPERAD_CHECK_SCP:-scp -q -o BatchMode=yes}"
 
 sha=$(git rev-parse HEAD) || fail "cannot read HEAD"
 git fetch -q origin || fail "fetch origin failed"
@@ -103,7 +103,13 @@ if [ "$slot_tree" != "$tree" ] && [ ! -e "$HOME/$slot_tree" ]; then
 fi
 tree=$slot_tree
 cd "$HOME/$tree" 2>/dev/null || { echo "remote-check: no clone at ~/$tree" >&2; exit 1; }
-git fetch -q origin || { echo "remote-check: fetch origin failed on the host" >&2; exit 1; }
+# Worktrees share refs/remotes/origin/*, so concurrent fetches can collide; retry.
+fetched=
+for _ in 1 2 3 4 5 6; do
+  if git fetch -q origin 2>/dev/null; then fetched=1; break; fi
+  sleep 1
+done
+[ -n "$fetched" ] || { echo "remote-check: fetch origin failed on the host" >&2; exit 1; }
 if [ "$bundle" != none ]; then
   git fetch -q "$HOME/$bundle" HEAD 2>/dev/null || { echo "remote-check: fetch of the bundle failed" >&2; exit 1; }
 fi
