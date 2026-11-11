@@ -21,6 +21,7 @@ import { dirname, join, resolve } from "node:path";
 import { checkPlaces } from "./places.ts";
 import { linkWorkspacePackages, runPrepare, stepOptions } from "./prepare.ts";
 import { runCheckCommands } from "./rerun.ts";
+import { isLoaded, runCheckSteadily } from "./notcode.ts";
 import { reportFlakyTests } from "./flaky.ts";
 import { recordRerunPasses } from "./reruns.ts";
 import {
@@ -243,7 +244,7 @@ export async function runVerify(
     previous.run === ctx.runId
   ) {
     return {
-      result: previous.result,
+      result: typeof previous.notCode === "string" ? "not_code" : previous.result,
       data: verifyData(previous, {
         attempt: attempt.number,
         verified: attempt.verified ?? null,
@@ -344,14 +345,22 @@ export async function runVerify(
     );
   }
 
-  const checked = await runCheckCommands(
-    runStep,
-    { cwd: path, timeoutSecs: context.settings.gate.commandTimeoutSecs },
-    commands,
-    stepOptions(ctx, path),
-    rerun,
-    checkPlaces(ctx, context.repository, context.settings.gate.places),
-  );
+  const steady = await runCheckSteadily({
+    run: () =>
+      runCheckCommands(
+        runStep,
+        { cwd: path, timeoutSecs: context.settings.gate.commandTimeoutSecs },
+        commands,
+        stepOptions(ctx, path),
+        rerun,
+        checkPlaces(ctx, context.repository, context.settings.gate.places, context.taskKey),
+      ),
+    limit: context.settings.check.loadLimit,
+    signal: ctx.signal,
+    log: (text) => ctx.logger.write(text),
+  });
+  if (steady.cancelled === true) return cancelledStep();
+  const { checked } = steady;
   await recordRerunPasses(ctx.store, checked.passedOnRerun);
   const flakyNotice = await reportFlakyTests({
     ctx,
@@ -360,6 +369,7 @@ export async function runVerify(
     threshold: context.settings.check.flakyTask,
     flakyPlan: context.settings.check.flakyPlan,
     check: checked,
+    ...(isLoaded(steady.load, context.settings.check.loadLimit) ? { load: steady.load } : {}),
   });
   const { outcome, hostError } = checked;
   // A notice joins the check's own note, so the task's Changes and the step's history say it.
@@ -375,12 +385,16 @@ export async function runVerify(
   const command =
     typeof outcomeData.line === "string" ? outcomeData.line : undefined;
   const log = typeof outcomeData.log === "string" ? outcomeData.log : undefined;
-  const failure =
+  const failureText =
     hostError ??
     (typeof outcomeData.message === "string" ? outcomeData.message : undefined) ??
     (result === "fail"
       ? `the gate commands failed (${outcome?.result ?? "unknown"})`
       : undefined);
+  const failure =
+    steady.notCode === undefined
+      ? failureText
+      : [steady.notCode.cause, failureText].filter((part) => part !== undefined).join("; ");
   // History shows the message before the reason, so a failure carries the notice.
   const message =
     failure !== undefined && flakyNotice !== undefined
@@ -399,6 +413,7 @@ export async function runVerify(
     ...(log === undefined ? {} : { log }),
     ...(message === undefined ? {} : { message }),
     ...(lineNumber === undefined ? {} : { lineNumber }),
+    ...(steady.notCode === undefined ? {} : { notCode: steady.notCode.cause }),
   };
   const nextAttempt: TaskAttempt = {
     ...recordVerify(attempt, record),
@@ -410,7 +425,8 @@ export async function runVerify(
     context.taskKey,
     {
       ...task,
-      phase: "review",
+      // A check that was not the code waits for a person, not for the worker.
+      phase: steady.notCode === undefined ? "review" : "waiting",
       run: ctx.runId,
       attempts: Math.max(task.attempts, attempt.number),
       attempt: nextAttempt,
@@ -422,7 +438,7 @@ export async function runVerify(
   );
   if (!written) return cancelledStep();
   return {
-    result,
+    result: steady.notCode === undefined ? result : "not_code",
     data: verifyData(record, {
       ...(note === undefined ? {} : { note }),
       ...(flakyNotice === undefined ? {} : { reason: flakyNotice }),
@@ -1765,7 +1781,7 @@ function stringsOf(value: unknown): readonly string[] | undefined {
 function stageReviewerOf(
   base: ReviewerSettings,
   params: unknown,
-  kind: ReviewKind,
+  laterRound: boolean,
 ): ReviewerSettings {
   const given = (params ?? {}) as {
     readonly use?: unknown;
@@ -1776,7 +1792,7 @@ function stageReviewerOf(
   const args = stringsOf(given.args);
   const later = stringsOf(given.later);
   const first = base.first;
-  return {
+  const stage: ReviewerSettings = {
     ...base,
     ...(use === undefined ? {} : { use }),
     ...(args === undefined
@@ -1789,8 +1805,12 @@ function stageReviewerOf(
     ...(first !== undefined && use !== undefined
       ? { first: { ...first, use, ...(args === undefined ? {} : { args }) } }
       : {}),
-    ...(kind !== "first" && later !== undefined ? { args: later } : {}),
   };
+  if (!laterRound || later === undefined) return stage;
+  // `later` is the task's second round on: it replaces the first-review
+  // arguments too, which a rework's first review of an attempt would keep.
+  const { firstArgs: _firstArgs, first: _first, ...rest } = stage;
+  return { ...rest, args: later };
 }
 
 /** Step `dev/review`: have the reviewer read the verified commit's diff. */
@@ -2079,7 +2099,11 @@ export async function runReview(
   // settings, even when the followed commit is missing and it reads like a first.
   used = reviewSettingsOf(
     kind === "first" && history.length > 0 ? "rework" : kind,
-    stageReviewerOf(context.settings.reviewer, ctx.params, kind),
+    stageReviewerOf(
+      context.settings.reviewer,
+      ctx.params,
+      kind !== "first" || history.length > 0,
+    ),
     reviews === 0,
   );
   // The lines the task's own change added, for the pre-existing rules.

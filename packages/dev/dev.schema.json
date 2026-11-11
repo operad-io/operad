@@ -308,6 +308,11 @@
           "description": "The id of the plan dev proposes the flaky-test tasks in. When it is not set, or that plan is finished or cancelled, dev makes a plan flaky-tests (title Flaky tests) once and uses it.",
           "type": "string",
           "minLength": 1
+        },
+        "loadLimit": {
+          "description": "The 1-minute load average below which the machine is idle enough to trust a check. A check that timed out, was killed by a signal nobody in the task sent, or failed only by test timeouts waits for the load to fall below this, then runs once more by itself; a second such result waits for a person. A test that passes on rerun while the load is at or above this is recorded with the load and no task is proposed for it. When it is not set, the limit is the number of cores.",
+          "type": "number",
+          "exclusiveMinimum": 0
         }
       },
       "additionalProperties": false,

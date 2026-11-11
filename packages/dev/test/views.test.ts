@@ -8,7 +8,8 @@ import {
   getTask,
   setTaskPhase,
 } from "../src/service.ts";
-import { FilePluginStore } from "@operad-io/engine";
+import { FilePluginStore, type StepContext } from "@operad-io/engine";
+import { taskPlaceWait } from "../src/place-wait.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -165,7 +166,6 @@ describe("dev views", () => {
     const before = await getTask(store, task.id);
     expect(planViews.sections(before)).toEqual([
       { id: "request", title: "Request" },
-      { id: "tasks", title: "Tasks" },
     ]);
     expect(taskViews.sections(before).map((section) => section.id)).toEqual([
       "brief",
@@ -200,22 +200,29 @@ describe("dev views", () => {
     expect(rework.markdown).not.toContain("## Changes");
   });
 
-  test("a plan loads its request and a table of tasks", async () => {
-    const { store, plan, task } = await setup();
+  test("a plan loads its request and has no tasks section", async () => {
+    const { store, plan } = await setup();
     const stored = await getPlan(store, plan.id);
     expect(await planViews.load({ store } as never, stored, "request", {})).toEqual({
       markdown: "# Request\n\nWrite the store.",
     });
-    const table = (await planViews.load(
-      { store } as never,
-      stored,
-      "tasks",
-      {},
-    )) as { markdown: string };
-    expect(table.markdown).toContain("| id | title | phase | after |");
-    expect(table.markdown).toContain(
-      `| ${bareId(task.id)} | JSONL | proposed | - |`,
+    expect(planViews.sections(stored).map((section) => section.id)).not.toContain("tasks");
+    expect(await planViews.load({ store } as never, stored, "tasks", {})).toEqual({ markdown: "" });
+  });
+
+  test("a task row carries its after list", async () => {
+    const { store, task } = await setup();
+    const stored = await getTask(store, task.id);
+    expect(taskViews.row(stored).after).toBeUndefined();
+    await store.put(
+      "task",
+      task.id,
+      { ...taskData(stored.data), after: [`${taskData(stored.data).repository}/t-9`] },
+      "test:after",
     );
+    const row = taskViews.row(await getTask(store, task.id));
+    expect(row.after).toHaveLength(1);
+    expect(row.after?.[0]).toContain("t-9");
   });
 
   test("a worker log line is one readable line, and bookkeeping is left out", () => {
@@ -692,6 +699,41 @@ describe("dev views", () => {
       "test:a",
     );
     expect(await row()).toBe("$1.50 · harness-claude · area: app-core · push refused");
+  });
+
+  test("a task whose check waits for a place says so, with how many are ahead, until it takes the place", async () => {
+    const { store, plan, task } = await setup();
+    const other = await addTask(store, { plan: plan.id, slug: "two", title: "Two", brief: "# Brief\n\nx" });
+    const running = { number: 1, worktree: "w", worked: true };
+    for (const id of [task.id, other.id]) {
+      const stored = taskData((await getTask(store, id)).data);
+      await store.put("task", id, { ...stored, phase: "running", attempt: running }, "test:a");
+    }
+    const ctx = { store, runId: "r", params: null, home: await tempRoot() } as unknown as StepContext;
+    const row = async (id: string) => taskViews.row(await getTask(store, id));
+    expect((await row(task.id)).mark).toBe("checking");
+
+    // Two checks reaching the held place at the same moment still count each other.
+    await Promise.all([taskPlaceWait(ctx, task.id, "check place"), taskPlaceWait(ctx, other.id, "check place")]);
+    const notes = [(await row(task.id)).note, (await row(other.id)).note].sort();
+    expect(notes).toEqual(["$0.00 · waiting for a check place", "$0.00 · waiting for a check place, 1 ahead"]);
+    await taskPlaceWait(ctx, task.id, null);
+    await taskPlaceWait(ctx, other.id, null);
+    await taskPlaceWait(ctx, task.id, "check place");
+    await taskPlaceWait(ctx, other.id, "check place");
+    expect(await row(task.id)).toMatchObject({ mark: "blocked", note: "$0.00 · waiting for a check place" });
+    expect(await row(other.id)).toMatchObject({
+      mark: "blocked",
+      note: "$0.00 · waiting for a check place, 1 ahead",
+    });
+
+    // The first takes its place: it is checking again, and the second moves up.
+    await taskPlaceWait(ctx, task.id, null);
+    await taskPlaceWait(ctx, other.id, "check place");
+    expect(await row(task.id)).toMatchObject({ mark: "checking", note: "$0.00" });
+    expect((await row(other.id)).note).toBe("$0.00 · waiting for a check place");
+    await taskPlaceWait(ctx, other.id, null);
+    expect(await row(other.id)).toMatchObject({ mark: "checking", note: "$0.00" });
   });
 
   test("a plan note shows the cost of its tasks at the weakest quality", async () => {

@@ -1,7 +1,7 @@
 {
   "$schema": "../packages/dev/dev.schema.json",
   "name": "operad",
-  "concurrency": 4,
+  "concurrency": 3,
   "maxAutoRework": 4,
   "workers": {
     "claude": {
@@ -10,7 +10,7 @@
         "--model",
         "sonnet"
       ],
-      "count": 2,
+      "count": 1,
       "stallSecs": 900,
       "wallTimeSecs": 7200
     },
@@ -20,6 +20,7 @@
         "--model",
         "opencode-go/deepseek-v4.1-flash"
       ],
+      "count": 1,
       "stallSecs": 900,
       "wallTimeSecs": 7200,
       "fallback": "claude"
@@ -32,6 +33,7 @@
         "--model",
         "deepseek-v4.1-flash"
       ],
+      "count": 1,
       "stallSecs": 900,
       "wallTimeSecs": 7200,
       "fallback": "claude"
@@ -74,7 +76,7 @@
         "run": "if [ -f scripts/remote-check.sh ]; then bash scripts/remote-check.sh 'OPERAD_TEST_PARALLEL=${OPERAD_TEST_PARALLEL:-$(p=$(( $(nproc 2>/dev/null || echo 4) / (${OPERAD_CHECK_SLOTS:-1} + 1) )); echo $(( p > 1 ? p : 1 )))} bash scripts/check-changed.sh'; else bash scripts/verify.sh; fi",
         "failed": {
           "match": "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$",
-          "rerun": "bun test --timeout 30000 -t {pattern}"
+          "rerun": "if [ -f scripts/remote-check.sh ]; then bash scripts/remote-check.sh -- bash -c 'bun install --frozen-lockfile && bun test --timeout 30000 -t \"$0\"' {pattern}; else bun test --timeout 30000 -t {pattern}; fi"
         }
       }
     ],
@@ -87,9 +89,60 @@
         "run": "OPERAD_CHECK_LANE=integration bash scripts/remote-check.sh 'OPERAD_TEST_PARALLEL=${OPERAD_TEST_PARALLEL:-$(p=$(( $(nproc 2>/dev/null || echo 4) / (${OPERAD_CHECK_SLOTS:-1} + 1) )); echo $(( p > 1 ? p : 1 )))} bash scripts/verify.sh'",
         "failed": {
           "match": "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$",
-          "rerun": "bun test --timeout 30000 -t {pattern}"
+          "rerun": "if [ -f scripts/remote-check.sh ]; then bash scripts/remote-check.sh -- bash -c 'bun install --frozen-lockfile && bun test --timeout 30000 -t \"$0\"' {pattern}; else bun test --timeout 30000 -t {pattern}; fi"
         }
       }
     ]
+  },
+  "flows": {
+    "default": {
+      "stages": [
+        {
+          "stage": "work",
+          "use": "harness-claude/agent",
+          "args": [
+            "--model",
+            "sonnet"
+          ]
+        },
+        {
+          "stage": "check",
+          "commands": [
+            "bash scripts/verify.sh"
+          ],
+          "rerun": 1
+        },
+        {
+          "stage": "review",
+          "use": "harness-pi/agent",
+          "args": [
+            "--model",
+            "openai-codex/gpt-5.6-terra",
+            "--thinking",
+            "medium"
+          ],
+          "later": [
+            "--model",
+            "opencode-go/deepseek-v4.1-flash"
+          ]
+        },
+        {
+          "stage": "human"
+        }
+      ]
+    },
+    "docs": {
+      "stages": [
+        {
+          "stage": "work"
+        },
+        {
+          "stage": "review"
+        },
+        {
+          "stage": "human"
+        }
+      ]
+    }
   }
 }

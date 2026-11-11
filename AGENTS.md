@@ -65,7 +65,8 @@ changes no behaviour needs none; the existing tests passing is its check.
 Record each in the `MUTATIONS.md` of the package whose code the mutation broke
 (`packages/<name>/MUTATIONS.md`); the root `MUTATIONS.md` indexes the package
 files. A row's id is the arc task id followed by `-M` and a number starting at 1
-for each task: `TK0001-M1`.
+for each task: `TK0001-M1`. Rows are only appended, and `.gitattributes`
+merges every `MUTATIONS.md` as a union, so both sides' rows are kept on a merge.
 
 ## Flaky tests
 
@@ -109,3 +110,12 @@ bash scripts/verify.sh
 ```
 
 It runs `bun install --frozen-lockfile`, `bunx tsc -b` and `bun test`.
+
+A task that changes how checks run (the gate, integration or rerun commands in
+`.operad/dev.json`, `scripts/remote-check.sh`, `scripts/run-tests.sh`,
+`scripts/check-changed.sh`, `scripts/verify.sh`) runs each changed command once
+through `scripts/remote-check.sh` on the check host before it is done, including
+the rerun of one failing test, and its final answer gives the command and the
+result. dev reads these commands from main, so a task's own check runs the old
+ones and cannot show the new ones work (T-0234's rerun broke every check after
+it merged, 2026-11-11).

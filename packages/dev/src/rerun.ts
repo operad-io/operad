@@ -212,7 +212,7 @@ function withLineNumber(
 }
 
 /** Reads the log from `offset` on; a log that cannot be read holds no names. */
-function logSince(path: string | undefined, offset: number): string {
+export function readSince(path: string | undefined, offset: number): string {
   if (path === undefined) return "";
   try {
     const fd = openSync(path, "r");
@@ -342,7 +342,7 @@ export async function runCheckCommands(
       return finish(numbered);
     }
     const log = logOf(first.outcome);
-    const names = failedNames(failed, logSince(log, logStartOf(first.outcome)));
+    const names = failedNames(failed, readSince(log, logStartOf(first.outcome)));
     if (names.length === 0 || names.length > failed.max) return finish(numbered);
 
     reran = true;

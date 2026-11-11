@@ -1945,7 +1945,6 @@ export class Views {
       } catch (error) {
         lines.push(`- could not read this run: ${messageOf(error)}`);
       }
-      lines.push(`<sub>run ${run.runId}</sub>`);
       lines.push("");
     }
     return `${lines.join("\n").trimEnd()}\n`;

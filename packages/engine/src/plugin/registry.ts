@@ -818,6 +818,7 @@ export class PluginRegistry {
     }
 
     const cause = `step:${use}`;
+    const limiter = options.limits;
     const emit = async (event: StepEvent): Promise<void> => {
       if (!event.type.startsWith(`${found.plugin.name}.`)) {
         throw new PluginError(
@@ -943,6 +944,10 @@ export class PluginRegistry {
       trigger: options.trigger,
       emit,
       ask,
+      queued:
+        limiter === undefined
+          ? undefined
+          : (key) => limiter.report({ key }),
       stepLoaded: (name) => this.stepIndex.has(name),
       runStep: (nestedUse, nestedParams, nestedOptions) => {
         // Declarations must not drift: tests fail on a call the step did not

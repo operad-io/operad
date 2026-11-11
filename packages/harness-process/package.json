@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./test-support": "./test/support.ts",
+    "./test-fake-lines": "./test/fake-lines.ts"
   },
   "dependencies": {
     "@operad-io/engine": "workspace:*",

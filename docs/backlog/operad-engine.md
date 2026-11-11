@@ -17,7 +17,7 @@
 5. 今天的 arc 流水线（worker → commands → mutation → review → ci → human → integration）由 `dev` 插件表达为第一个 flow，现有行为测试当它的验收规格。插件可以从项目的 JSON 配置生成 flow（`dev` 把 `.operad/dev.json` 的 stage 列表编译成 `defineFlow` 的值，见 `operad-dev-flows.md`）；生成的 flow 和 TS 写的 flow 在引擎里没有区别。
 6. 幂等与熔断进核心：同一来源同一编号的事件只记一次；事件引发的事件带跳数，上限之外只记录不派发；一个 flow 的一次运行连续失败到上限不再重试。
 7. 同一个 flow 同一个对象一次只有一个运行。
-8. 存储是可换的后台：日志接口加一份一致性测试，`jsonl`（一个运行一个只追加文件，崩溃留下的半行在打开时截掉，去重索引在打开时重建）和 `sqlite`（`bun:sqlite`，WAL）两个后台都要通过；仓库配置选哪个。
+8. 存储是可换的后台：日志接口加一份一致性测试，自带的只有 `sqlite`（`bun:sqlite`，WAL），它要通过一致性测试。原先的 `jsonl` 后台（一个运行一个只追加文件）2026-11-11 由 owner 决定去掉（`operad.md` 决定 13、`operad-slimming.md` 决定 1）。
 9. 测试包括固定种子模拟、有界穷举和真的强杀续跑。
 
 ## 待决问题（未定）

@@ -28,7 +28,7 @@ import { StateError } from "../runner/errors.ts";
 import { acquireLock, pidAlive, readLockPid, runLockPath, serveLockPath, storeMoveLockPath } from "../runner/lock.ts";
 import { ConfigError, configPath, storeRootOf, type OperadConfig } from "../config/config.ts";
 import { Database } from "bun:sqlite";
-import { setBusyTimeout, withFileLock } from "../platform/index.ts";
+import { enableWal, setBusyTimeout, withFileLock } from "../platform/index.ts";
 import { withFactsLock } from "../plugin/file-store.ts";
 import { openJsonlLogBackend } from "../log/jsonl.ts";
 import { openLog } from "../log/open-log.ts";
@@ -296,6 +296,9 @@ function closeObjects(store: PluginStore): void {
  * this. It only reads.
  */
 function fingerprint(config: OperadConfig, root: string): string {
+  // A sqlite source is watched by `watchSqlite`: its file sizes and times also
+  // move when a connection closes and folds the write-ahead file in, which is
+  // not a write.
   const files: string[] = [];
   const walk = (directory: string): void => {
     if (!existsSync(directory)) return;
@@ -311,15 +314,14 @@ function fingerprint(config: OperadConfig, root: string): string {
       files.push(join(root, name));
     }
     files.push(join(root, "plugins", "facts.jsonl"));
-  } else {
-    for (const suffix of ["", "-wal"]) {
-      files.push(`${config.store.path}${suffix}`, join(root, `${PLUGIN_SQLITE_FILE}${suffix}`));
-    }
   }
   return files
     .map((path) => {
       try {
         const info = statSync(path);
+        // The writers' own lock opens a sqlite source, which makes an empty
+        // -wal file that is gone again once it closes: empty is the same as none.
+        if (path.endsWith("-wal") && info.size === 0) return `${path} none`;
         return `${path} ${info.size} ${info.mtimeMs}`;
       } catch {
         return `${path} none`;
@@ -344,6 +346,7 @@ function withWriters<T>(config: OperadConfig, root: string, fn: () => T): T {
         const database = new Database(file, { readwrite: true });
         try {
           setBusyTimeout(database);
+          enableWal(database);
           return database.transaction(inner).immediate();
         } finally {
           database.close();
@@ -365,6 +368,24 @@ async function marksOf(log: LogBackend, objects: PluginStore): Promise<string> {
   for await (const outcome of log.readOutcomes()) outcomes = outcome.seq;
   const facts = objects.facts();
   return JSON.stringify({ runs, globals, inputs, outcomes, objects: facts.at(-1)?.sequence ?? 0, count: facts.length });
+}
+
+/** What the source holds now, read from a fresh snapshot taken under the writers' locks. */
+async function sourceMarks(config: OperadConfig, root: string, snapshot: string): Promise<string> {
+  rmSync(snapshot, { recursive: true, force: true });
+  try {
+    const path = withWriters(config, root, () => snapshotSource(config, root, snapshot));
+    const log = openLog({ backend: config.store.backend, path });
+    const objects = openPluginStore({ backend: config.store.backend, root: snapshot });
+    try {
+      return await marksOf(log, objects);
+    } finally {
+      closeObjects(objects);
+      await log.close();
+    }
+  } finally {
+    rmSync(snapshot, { recursive: true, force: true });
+  }
 }
 
 /** Copies the files of the source store that the copy reads; returns the log's path in the snapshot. */
@@ -422,11 +443,13 @@ export async function copyStore(options: CopyStoreOptions): Promise<CopyStoreRes
       plugins: join(root, COPYING_SQLITE, PLUGIN_SQLITE_FILE),
       directory: join(root, COPYING_DIRECTORY),
       snapshot: join(root, SNAPSHOT_DIRECTORY),
+      check: join(root, `${SNAPSHOT_DIRECTORY}-check`),
     };
     const clean = (): void => {
       rmSync(join(root, COPYING_SQLITE), { recursive: true, force: true });
       rmSync(temporary.directory, { recursive: true, force: true });
       rmSync(temporary.snapshot, { recursive: true, force: true });
+      rmSync(temporary.check, { recursive: true, force: true });
     };
     clean();
 
@@ -484,7 +507,10 @@ export async function copyStore(options: CopyStoreOptions): Promise<CopyStoreRes
       const objectFacts = copyObjects(sourceObjects, targetObjects, objectTime);
       // A write that reached the source after it was read is not in the copy;
       // switching to the copy would lose it.
-      if (fingerprint(config, root) !== seen) {
+      // A sqlite source's file sizes and times also move when a connection
+      // closes and folds the write-ahead file in, which is not a write, so it
+      // is judged by what it holds: a second snapshot, read the same way.
+      if (fingerprint(config, root) !== seen || (await sourceMarks(config, root, temporary.check)) !== marks) {
         throw new StateError(
           "the store changed while it was being copied; nothing was switched, try again when nothing is writing to it",
         );

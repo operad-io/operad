@@ -572,6 +572,29 @@ the new store's files exist already (move them away first). `operad store use
 <jsonl|sqlite>` then changes `store` in `config.json` to the copy; changing it
 back is the same command. `use` refuses a copy when the store it was copied from has been written to since; remove the copy's files and copy again.
 
+A switch, step by step:
+
+1. Stop `serve` (`operad serve stop`) and wait until `operad running` lists
+   nothing.
+2. `operad store copy <kind>`, then `operad store use <kind>`.
+3. Compare a few views before and after: `operad list task`, `operad pending`
+   and the History of two or three objects should read the same.
+4. Start `serve` again with the same environment it had before.
+5. Restart every other long-running client: an MCP server
+   (`/mcp reconnect <name>` in Claude Code) or a terminal client. A client
+   started before `store use` keeps the store it opened and writes there until
+   it restarts.
+6. With `serve` running, run a few commands that write (an action on a task)
+   while tasks run, and look for `database is locked` in the serve log; there
+   should be none.
+7. Time `serve` from a client for a minute (for example one request to
+   `/v1/types` every 100 ms): no answer should take more than a fraction of a
+   second.
+
+To go back, `operad store use` the other kind and restart `serve` and the
+clients the same way; the old store's files were not changed by the copy, but
+anything written after the switch is only in the new store.
+
 ## The History section
 
 Every object has a History section (`operad show <id> --section history`, the
@@ -595,7 +618,6 @@ starts each new day.
 - 22:22:02  confirm  reverify  8m
 - 22:30:02  you chose merge: via plugin, as dev
 - 22:30:04  verify  after reverify  running  2m
-<sub>run 01bb7a85-d171-4d83-81d0-8990b77dab78</sub>
 ```
 
 `operad show <id> --section history --full` keeps each detail whole.
@@ -1188,6 +1210,7 @@ do not apply to them.
 bash scripts/verify.sh
 bash scripts/check-changed.sh
 bash scripts/remote-check.sh '<command>'
+bash scripts/remote-check.sh -- <word>...
 ```
 
 `verify.sh` installs with the lockfile, type-checks and runs the whole test
@@ -1208,6 +1231,13 @@ packages it chose before the tests (`all`, `none`, or the names).
 `OPERAD_CHECK_BASE` (a commit, default the merge base) changes what it compares
 with. This repository's task check runs `check-changed.sh`, and its integration
 runs `verify.sh`.
+
+`remote-check.sh` runs a command here, or on the check host when
+`OPERAD_CHECK_HOST` is set, at the same commit. It takes the command as one
+argument (a shell command line), or after `--` as separate words that are passed
+on as they are: no shell reads them as code on the way, so a word may hold
+quotes, backquotes or `$`. The rerun of a failed test (`failed.rerun` in
+`.operad/dev.json`) uses the `--` form, so it runs where the check ran.
 
 `remote-check.sh` runs one command (a shell line) as a check. With
 `OPERAD_CHECK_HOST` unset or empty it runs the line here, in the repository

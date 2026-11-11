@@ -15,6 +15,7 @@ export {
   readSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeSync,

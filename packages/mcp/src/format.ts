@@ -185,7 +185,7 @@ export function runningMarkdown(
   ];
   for (const item of running) {
     lines.push(
-      `| ${cell(item.object ?? item.runId)} | ${cell(item.title ?? "")} | ${cell(item.flow)} | ${cell(item.stepLabel ?? "-")} | ${item.stepElapsedMs === null ? "-" : elapsed(item.stepElapsedMs)} | ${elapsed(item.elapsedMs)} |`,
+      `| ${cell(item.object ?? item.runId)} | ${cell(item.title ?? "")} | ${cell(item.flow)} | ${cell(item.stepLabel ?? "-")} | ${item.stepElapsedMs === null ? "-" : elapsed(item.stepElapsedMs)}${item.queuedMs === undefined || item.queuedMs <= 0 ? "" : ` (queued ${elapsed(item.queuedMs)})`} | ${elapsed(item.elapsedMs)} |`,
     );
   }
   return `${lines.join("\n")}\n\n${loadLine}`;

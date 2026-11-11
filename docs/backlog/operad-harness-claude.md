@@ -22,7 +22,7 @@
 
 ## 决定（已定）
 
-1. **Claude 是 operad 的第三种 harness，`sdk` 接法**，包名 `@operad-io/harness-claude`，步骤 `harness-claude/agent`，流程 `harness-claude:prompt`。参数、结果名、事实形状和 `harness-pi` 完全一样；`args` 读 `--model <名字>` 和 `--effort <low|medium|high|xhigh|max>`，其余条目按 `harness-pi` 的规则拒绝。界面和文档里叫 `claude`，不叫 "Claude Code"。
+1. **Claude 是 operad 的第三种 harness，`sdk` 接法**，包名 `@operad-io/harness-claude`，步骤 `harness-claude/agent`，流程 `harness-claude:prompt`（2026-11-11 改名：插件名 `claude`，步骤 `claude/agent`，流程 `claude:prompt`，见 `operad-harness.md` 决定 9）。参数、结果名、事实形状和 `harness-pi` 完全一样；`args` 读 `--model <名字>` 和 `--effort <low|medium|high|xhigh|max>`，其余条目按 `harness-pi` 的规则拒绝。界面和文档里叫 `claude`，不叫 "Claude Code"。
 2. **两层子进程，二进制是用户装的。** hub 起 `bun worker.ts`；`worker.ts` import SDK，SDK 用 `pathToClaudeCodeExecutable` 起 PATH 上的 `claude`（设置 `command` 可改，和 `harness-radian` 一样）。operad 不自带 Claude Code：`package.json` 的 `overrides` 把八个 `@anthropic-ai/claude-agent-sdk-<平台>` 包换成 `empty-npm-package`，SDK 客户端写范围（`^0.3.319`），不钉精确版本。`operad plugin check` 跑 `claude --version` 和 `claude auth status`，报 Claude Code 版本、SDK 版本、登录方式；Claude Code 低于 worker 写时的版本下限（现在 2.1.319）或没登录时拒绝并说出来，SDK 版本只报不拒。
 3. **凭据就是用户自己的 claude 登录，operad 什么都不传。** 订阅登录在 Keychain，SDK 起的进程自己读。无浏览器的机器由用户把 `claude setup-token` 的结果放进环境里的 `CLAUDE_CODE_OAUTH_TOKEN`，worker 原样透传。等合约决定 11 的 `ctx.secrets` 进了 `StepContext`，API key 走 `env: { ANTHROPIC_API_KEY }` 这条路，不换接法。政策：用户用自己的订阅跑自己的工具；operad 作为产品发给别人时不替用户做 claude.ai 登录，只走 API key。这一句写进用户文档。
 4. **子进程里的 Claude 不做发现**：`settingSources: []`，`permissionMode: 'default'` 显式给（不接受默认的 `auto` 分类器），`permissionPrompts: 'host'`，`canUseTool` 是唯一的权限面；系统提示用 SDK 自带的 `claude_code` 预设，不追加；工具集用 SDK 的默认集，operad 自己的工具第一版不接；不加载插件、技能、钩子文件。opencode 关掉自动记忆等的那串环境变量逐个核对现版本还认不认，认的照抄。
