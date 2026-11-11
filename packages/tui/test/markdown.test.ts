@@ -73,7 +73,7 @@ function state(): TuiState {
 const ints = (colour: string): string => RGBA.fromHex(colour).toInts().join(",");
 
 describe("the TUI Markdown", () => {
-  test("a diff is coloured, a table is aligned and a mermaid block keeps its label", async () => {
+  test("a diff is coloured, a table is aligned and a fence's language is not drawn", async () => {
     const setup = await createTestRenderer({ width: 120, height: 30 });
     try {
       const view = createTuiView(setup.renderer);
@@ -86,7 +86,7 @@ describe("the TUI Markdown", () => {
       expect(frame).toContain("────────────");
       expect(frame).toContain("alpha      1");
       expect(frame).toContain("long       2");
-      expect(frame).toContain("mermaid");
+      expect(frame).not.toContain("mermaid");
       expect(frame).toContain("graph TD");
       expect(frame).toContain("A-->B");
       expect(frame).toContain("+hello");
@@ -106,9 +106,10 @@ describe("the TUI Markdown", () => {
   test("the engine's lines keep fenced code marked for a monospace client", () => {
     const lines = markdownLines(MARKDOWN, TUI_PALETTE.dark);
     const diff = lines.find((line) => line.text.includes("+hello"));
-    const mermaid = lines.find((line) => line.text.includes("mermaid"));
+    const mermaid = lines.find((line) => line.text.includes("A-->B"));
     expect(diff?.code).toBe(true);
     expect(mermaid?.code).toBe(true);
+    expect(lines.some((line) => line.text.includes("mermaid"))).toBe(false);
     expect(lines.find((line) => line.text.includes("alpha"))?.code).toBe(false);
   });
 
@@ -130,8 +131,8 @@ describe("the TUI Markdown", () => {
     expect(colourOf("--- a/f")).toBe(ints(TUI_PALETTE.dark.remove));
     expect(colourOf("@@")).toBe(ints(TUI_PALETTE.dark.accent));
     const texts = lines.map((line) => line.text);
-    expect(texts).toContain("   docs/manual.md | 2 +-");
-    expect(texts).toContain("   docs/other.md | 1 +");
+    expect(texts).toContain("  docs/manual.md | 2 +-");
+    expect(texts).toContain("  docs/other.md | 1 +");
   });
 });
 
