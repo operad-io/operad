@@ -691,7 +691,7 @@ async function diffSection(
   if (found === undefined) return { markdown: "_The repository is not registered._" };
   const repository = repositoryData(found.data);
   const settings = await readDevSettings(repository.path);
-  const branch = task.attempt?.branch ?? workBranch(bareId(object.id));
+  const branch = task.attempt?.branch ?? workBranch(task.worktree ?? bareId(object.id));
   const main = `${settings.remote}/${settings.mainBranch}`;
   const range = `${main}...${branch}`;
   const stat = git(repository.path, ["diff", "--stat", range], true);

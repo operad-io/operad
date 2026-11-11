@@ -461,6 +461,8 @@ export type TaskData = {
   readonly run: string | null;
   /** The flow this task starts with; absent inherits the plan's flow. */
   readonly flow?: string | undefined;
+  /** The chat worktree (`chat-<id>`) this task works in instead of one of its own; set when the task is added. */
+  readonly worktree?: string | undefined;
   /** The flow a row and the brief name, set only while the repository defines more than one. */
   readonly flowShown?: string | undefined;
   /** Why this ready task does not start: its flow is not defined in the repository's dev.json. */

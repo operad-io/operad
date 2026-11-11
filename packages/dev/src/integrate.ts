@@ -353,7 +353,7 @@ export async function runIntegrate(
     settings,
     context.taskId,
   );
-  const head = branchHead(repository, settings, context.taskId);
+  const head = branchHead(repository, settings, context.workName);
   const mainRef = `refs/remotes/${settings.remote}/${settings.mainBranch}`;
   const keyCommands = settings.integration.keyCommands;
   const runStep = ctx.runStep;
@@ -430,7 +430,7 @@ export async function runIntegrate(
     return fail("the task has no verified commit to integrate");
   }
   const headMoved = head !== undefined && head !== verified;
-  const message = `Merge work/${context.taskId} (${shortSha(verified)})`;
+  const message = `Merge work/${context.workName} (${shortSha(verified)})`;
 
   // A replay after the push must not push again. The candidate saved before the
   // push and the remote's main decide whether the push already landed.
@@ -1134,6 +1134,7 @@ export async function runCleanup(
     number: Math.max(task.attempts, 0) + 1,
     run: ctx.runId,
   };
+  // A task opened on a chat's worktree has none of its own to clean: the chat keeps its worktree.
   const worktree = worktreePath(
     context.repository.path,
     settings,
