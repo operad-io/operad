@@ -38,7 +38,7 @@ import {
 } from "@operad-io/pool";
 import { git, type GitResult } from "./git.ts";
 import { runPrepare } from "./prepare.ts";
-import { classifyStop, STOP_REASONS } from "./stops.ts";
+import { classifyStop, isConnectionError, STOP_REASONS } from "./stops.ts";
 import { findRepository, putTaskKeepingPlanCost, withRepoLock } from "./service.ts";
 import {
   createOutbox,
@@ -1059,6 +1059,14 @@ function modelUnavailable(data: Record<string, unknown>): boolean {
   return kind === "unavailable" || kind === "usage_limit";
 }
 
+/** The lines of a step's `stderr` data, which may be a string or a list. */
+function stderrLines(value: unknown): readonly string[] {
+  if (typeof value === "string") return [value];
+  return Array.isArray(value)
+    ? value.filter((line): line is string => typeof line === "string")
+    : [];
+}
+
 /** True when the attempt's verify passed on exactly `head`. */
 function passedAt(attempt: TaskAttempt | undefined, head: string | null): boolean {
   return (
@@ -1526,7 +1534,12 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
 
   if (hostError !== undefined) {
     return finish("failed", {
-      reason: notLoaded === undefined ? "harness" : STOP_REASONS.stepNotLoaded,
+      reason:
+        notLoaded !== undefined
+          ? STOP_REASONS.stepNotLoaded
+          : isConnectionError(hostError)
+            ? STOP_REASONS.connection
+            : "harness",
       ...(notLoaded === undefined ? {} : { use: notLoaded }),
       message: hostError,
       ...(dirty.length === 0 ? {} : { files: dirty }),
@@ -1562,7 +1575,11 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       outcome?.result === "interrupted" &&
       (outcomeData.reason === "signal" || outcomeData.reason === "cancelled");
     return finish("failed", {
-      reason: stopped ? STOP_REASONS.stopped : "harness",
+      reason: stopped
+        ? STOP_REASONS.stopped
+        : isConnectionError(message, ...stderrLines(outcomeData.stderr))
+          ? STOP_REASONS.connection
+          : "harness",
       harnessResult: outcome?.result ?? "unknown",
       // A failed attempt still reports the files it left behind.
       message:

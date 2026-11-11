@@ -28,7 +28,7 @@ import { StateError } from "../runner/errors.ts";
 import { acquireLock, pidAlive, readLockPid, runLockPath, serveLockPath, storeMoveLockPath } from "../runner/lock.ts";
 import { ConfigError, configPath, storeRootOf, type OperadConfig } from "../config/config.ts";
 import { Database } from "bun:sqlite";
-import { setBusyTimeout, withFileLock } from "../platform/index.ts";
+import { enableWal, setBusyTimeout, withFileLock } from "../platform/index.ts";
 import { withFactsLock } from "../plugin/file-store.ts";
 import { openJsonlLogBackend } from "../log/jsonl.ts";
 import { openLog } from "../log/open-log.ts";
@@ -344,6 +344,7 @@ function withWriters<T>(config: OperadConfig, root: string, fn: () => T): T {
         const database = new Database(file, { readwrite: true });
         try {
           setBusyTimeout(database);
+          enableWal(database);
           return database.transaction(inner).immediate();
         } finally {
           database.close();

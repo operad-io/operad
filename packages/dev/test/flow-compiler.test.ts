@@ -52,6 +52,7 @@ test("the built-in default keeps today's ids and edges", () => {
   expect(nextOf(flow.steps, "verify")).toEqual({
     pass: "review",
     fail: "rework",
+    not_code: "announce_verify_not_code",
     cancelled: "end_cancelled",
   });
   expect(nextOf(flow.steps, "review")).toMatchObject({
