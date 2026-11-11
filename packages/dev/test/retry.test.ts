@@ -515,6 +515,34 @@ describe("settings that cannot be read, in the worktree step", () => {
   });
 });
 
+describe("a spent retry hands the task to a person", () => {
+  test("a recovered run that gives up says waiting, not the phase it had", async () => {
+    manualClock();
+    const w = await world(1);
+    const registry = registryOf(w, [createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
+    const key = w.tasks[0] as string;
+    const object = { type: "task", id: key, data: {} };
+    const before = await taskOf(w, key);
+    await w.store.put(
+      "task",
+      key,
+      {
+        ...before,
+        phase: "review",
+        retry: { attempt: before.attempts, step: "review", cause: "database is locked", at: 1, state: "retrying" },
+      },
+      "test",
+    );
+    const out = await registry.runStep(
+      "dev/retry",
+      { from: "review", result: "interrupted" },
+      { runId: "r9", object },
+    );
+    expect(out.result).toBe("give_up");
+    expect((await taskOf(w, key)).phase).toBe("waiting");
+  });
+});
+
 describe("a real process killed by a signal", () => {
   test("the work retries once by itself", async () => {
     const root = await tempRoot();
