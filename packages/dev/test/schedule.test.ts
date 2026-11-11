@@ -615,6 +615,36 @@ describe("dev scheduling", () => {
     expect(fixture.cancelled).toEqual(["run-1"]);
   });
 
+  test("a run on a cancelled task is ended even when the repository's settings cannot be read", async () => {
+    const fixture = await setup({ concurrency: 1 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "off" });
+    const task = await makeTask(fixture, plan.key, "task");
+    await confirm(fixture, plan.key);
+    await setTaskPhase(fixture.store, task.key, "waiting", { run: "run-1" });
+    await cancelTask(fixture.store, task.key);
+    writeFileSync(join(fixture.repositoryPath, ".operad/dev.json"), "{ not json");
+
+    const runs: RunLookup = {
+      active: async (object?: string) =>
+        [
+          {
+            runId: "run-1",
+            flow: "dev",
+            object: `task:${task.key}`,
+            active: true,
+            startedAt: 0,
+            endedAt: null,
+            lastSeq: 1,
+            startInputId: null,
+          } satisfies RunInfo,
+        ].filter((run) => object === undefined || run.object === object),
+      state: async () => undefined,
+      lastStep: async () => null,
+    };
+    await fixture.registry.tick(runs);
+    expect(fixture.cancelled).toEqual(["run-1"]);
+  });
+
   test("a claim whose run the kernel holds is not released before the run records itself", async () => {
     const fixture = await setup({ concurrency: 1 });
     const plan = await makePlan(fixture, { slug: "plan", auto: "run" });

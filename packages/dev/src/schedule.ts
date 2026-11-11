@@ -405,7 +405,6 @@ async function reconcileTaskRuns(
 ): Promise<void> {
   const runs = ctx.runLookup;
   if (runs === undefined) return;
-  await endRunsOfCancelledTasks(ctx, runs, tasks, repository);
   for (const object of tasksOf(tasks, repository)) {
     const task = taskData(object.data);
     if (task.phase !== "waiting" && task.phase !== "running") continue;
@@ -488,6 +487,10 @@ async function scheduleRepository(
   initialPlans: readonly StoredObject[],
 ): Promise<void> {
   reportSettingsProblem(repository);
+  // A cancelled task's run ends whether or not the settings can be read.
+  if (ctx.runLookup !== undefined) {
+    await endRunsOfCancelledTasks(ctx, ctx.runLookup, initialTasks, repository.name);
+  }
   let settings: DevSettings;
   try {
     settings = await readDevSettings(repository.path);
