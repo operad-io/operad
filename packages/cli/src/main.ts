@@ -661,6 +661,33 @@ async function commandList(
   }
 }
 
+/** The object's children as rows, the same line `list` prints, when it has any. */
+async function writeChildren(
+  context: Context,
+  io: CliIo,
+  id: string,
+  tty: boolean,
+): Promise<void> {
+  let cursor: string | undefined;
+  let hidden = 0;
+  for (;;) {
+    const page = await context.views.listTree(undefined, {
+      parent: id,
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+    for (const row of page.rows) {
+      const state = paintState(row, row.state, tty);
+      const note = row.note === undefined ? "" : `  ${row.note}`;
+      const name = row.scope === undefined ? row.id : `${row.scope}/${row.id}`;
+      io.write(`${name}  ${state}  ${row.title}${note}\n`);
+    }
+    hidden = page.hidden ?? hidden;
+    if (page.next === undefined) break;
+    cursor = page.next;
+  }
+  if (hidden > 0) io.write(`${hidden} hidden (operad list --parent ${shellQuote(id)} --filter all)\n`);
+}
+
 function firstSection(object: ViewObject): string | undefined {
   return object.sections[0]?.id;
 }
@@ -822,6 +849,7 @@ async function commandShow(
   if (object.unavailable !== undefined) {
     io.error(`operad: ${object.unavailable}\n`);
   }
+  await writeChildren(context, io, object.id, tty);
   io.write(
     `sections: ${object.sections.map((section) => (section.live === true ? `${section.title} (live)` : section.title)).join(", ")}\n`,
   );
