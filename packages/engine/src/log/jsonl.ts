@@ -490,6 +490,8 @@ class JsonlLogBackend implements LogBackend {
   readonly #inputIds = new Map<string, { readonly start: number; readonly length: number }>();
   #inputBytes = 0;
   readonly #outcomes = new Map<string, StoredOutcome>();
+  /** The same outcomes in sequence order, so a reader can start after a cursor. */
+  #outcomeList: StoredOutcome[] = [];
   #outcomeSeq = 0;
   #outcomeBytes = 0;
   #closed = false;
@@ -689,10 +691,18 @@ class JsonlLogBackend implements LogBackend {
     this.#assertOpen();
     return this.#withLock(() => {
       this.#refreshOutcomesUnlocked();
-      return [...this.#outcomes.values()]
-        .filter((stored) => stored.seq > seq)
-        .sort((left, right) => left.seq - right.seq)
-        .map((stored) => this.#asOutcome(stored));
+      const list = this.#outcomeList;
+      // The first outcome above the cursor, by bisection: a pass with nothing
+      // new looks at one entry, not at every outcome ever recorded.
+      let low = 0;
+      let high = list.length;
+      while (low < high) {
+        const middle = (low + high) >> 1;
+        const entry = list[middle];
+        if (entry !== undefined && entry.seq > seq) high = middle;
+        else low = middle + 1;
+      }
+      return list.slice(low).map((stored) => this.#asOutcome(stored));
     });
   }
 
@@ -722,7 +732,7 @@ class JsonlLogBackend implements LogBackend {
         time: this.#clock(),
       };
       appendLineSynced(this.#outcomesPath, `${JSON.stringify(stored)}\n`);
-      this.#outcomes.set(key, stored);
+      this.#rememberOutcome(stored);
       this.#outcomeBytes = statSync(this.#outcomesPath).size;
       return { duplicate: false, outcome: this.#asOutcome(stored) };
     });
@@ -1165,6 +1175,20 @@ class JsonlLogBackend implements LogBackend {
     this.#inputBytes = buffer.length;
   }
 
+  #rememberOutcome(stored: StoredOutcome): void {
+    const key = outcomeKey(stored.inputId, stored.kind);
+    const previous = this.#outcomes.get(key);
+    this.#outcomes.set(key, stored);
+    if (previous !== undefined) {
+      this.#outcomeList = this.#outcomeList.filter((item) => item !== previous);
+    }
+    const last = this.#outcomeList[this.#outcomeList.length - 1];
+    this.#outcomeList.push(stored);
+    if (last !== undefined && last.seq > stored.seq) {
+      this.#outcomeList.sort((left, right) => left.seq - right.seq);
+    }
+  }
+
   #asOutcome(stored: StoredOutcome): InputOutcome {
     return {
       inputId: stored.inputId,
@@ -1202,13 +1226,14 @@ class JsonlLogBackend implements LogBackend {
       if (stored === undefined) {
         throw new CorruptLogError("outcomes", "an outcome line is not valid");
       }
-      this.#outcomes.set(outcomeKey(stored.inputId, stored.kind), stored);
+      this.#rememberOutcome(stored);
       this.#outcomeSeq = Math.max(this.#outcomeSeq, stored.seq);
     }
   }
 
   #rebuildOutcomes(): void {
     this.#outcomes.clear();
+    this.#outcomeList = [];
     this.#outcomeSeq = 0;
     if (!existsSync(this.#outcomesPath)) {
       this.#outcomeBytes = 0;
