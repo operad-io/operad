@@ -16,6 +16,17 @@ const KEYWORDS = new Set([
   "minLength",
   "maxLength",
   "items",
+  "minItems",
+  "exclusiveMinimum",
+  "minProperties",
+  "pattern",
+  "const",
+  "oneOf",
+  "$ref",
+  "$defs",
+  "$schema",
+  "$id",
+  "title",
   "additionalProperties",
   "default",
   "description",
@@ -56,7 +67,17 @@ function schemaError(message: string): never {
   throw new Error(message);
 }
 
-function normalizeSchema(value: unknown, at: string): ActionArgSchema {
+/** The `$defs` of the schema's root, and the references being followed. */
+interface Context {
+  readonly defs: Record<string, unknown>;
+  readonly following: string[];
+}
+
+function normalizeSchema(
+  value: unknown,
+  at: string,
+  context: Context,
+): ActionArgSchema {
   if (!isRecord(value)) {
     throw new Error(`${at}: must be an object`);
   }
@@ -64,6 +85,28 @@ function normalizeSchema(value: unknown, at: string): ActionArgSchema {
     if (!KEYWORDS.has(key)) {
       throw new Error(`${at}: unknown keyword "${key}"`);
     }
+  }
+
+  if (value.$ref !== undefined) {
+    const ref = value.$ref;
+    const name =
+      typeof ref === "string" && ref.startsWith("#/$defs/")
+        ? ref.slice("#/$defs/".length)
+        : undefined;
+    if (name === undefined || !Object.hasOwn(context.defs, name)) {
+      throw new Error(`${at}.$ref: must name an entry of the schema's $defs, as #/$defs/<name>`);
+    }
+    if (context.following.includes(name)) {
+      throw new Error(`${at}.$ref: "${name}" refers to itself`);
+    }
+    const { $ref: _ref, ...siblings } = value;
+    const target = normalizeSchema(
+      context.defs[name],
+      `${at}.$ref`,
+      { defs: context.defs, following: [...context.following, name] },
+    );
+    const own = normalizeSchema(siblings, at, context);
+    return { ...target, ...own };
   }
 
   const type = value.type;
@@ -105,7 +148,15 @@ function normalizeSchema(value: unknown, at: string): ActionArgSchema {
   }
 
   const numeric: Record<string, number | undefined> = {};
-  for (const key of ["minimum", "maximum", "minLength", "maxLength"] as const) {
+  for (const key of [
+    "minimum",
+    "maximum",
+    "minLength",
+    "maxLength",
+    "minItems",
+    "exclusiveMinimum",
+    "minProperties",
+  ] as const) {
     const item = value[key];
     if (item !== undefined && typeof item !== "number") {
       throw new Error(`${at}.${key}: must be a number`);
@@ -113,12 +164,32 @@ function normalizeSchema(value: unknown, at: string): ActionArgSchema {
     numeric[key] = typeof item === "number" ? item : undefined;
   }
 
+  const pattern = value.pattern;
+  if (pattern !== undefined) {
+    if (typeof pattern !== "string") throw new Error(`${at}.pattern: must be a string`);
+    try {
+      new RegExp(pattern);
+    } catch {
+      throw new Error(`${at}.pattern: is not a regular expression`);
+    }
+  }
+
+  let oneOf: ActionArgSchema[] | undefined;
+  if (value.oneOf !== undefined) {
+    if (!Array.isArray(value.oneOf) || value.oneOf.length === 0) {
+      throw new Error(`${at}.oneOf: must be a non-empty array of schemas`);
+    }
+    oneOf = value.oneOf.map((branch: unknown, index: number) =>
+      normalizeSchema(branch, `${at}.oneOf[${index}]`, context),
+    );
+  }
+
   const additionalRaw = value.additionalProperties;
   const additional: false | ActionArgSchema | undefined =
     additionalRaw === undefined || additionalRaw === false
       ? additionalRaw
       : isRecord(additionalRaw)
-        ? normalizeSchema(additionalRaw, `${at}.additionalProperties`)
+        ? normalizeSchema(additionalRaw, `${at}.additionalProperties`, context)
         : schemaError(`${at}.additionalProperties: must be false or a schema`);
 
   let properties: Record<string, ActionArgSchema> | undefined;
@@ -128,7 +199,7 @@ function normalizeSchema(value: unknown, at: string): ActionArgSchema {
     }
     properties = {};
     for (const [name, schema] of Object.entries(value.properties)) {
-      properties[name] = normalizeSchema(schema, `${at}.properties.${name}`);
+      properties[name] = normalizeSchema(schema, `${at}.properties.${name}`, context);
     }
   }
 
@@ -150,7 +221,7 @@ function normalizeSchema(value: unknown, at: string): ActionArgSchema {
 
   let items: ActionArgSchema | undefined;
   if (value.items !== undefined) {
-    items = normalizeSchema(value.items, `${at}.items`);
+    items = normalizeSchema(value.items, `${at}.items`, context);
   }
   if (items !== undefined && type !== undefined && type !== "array") {
     throw new Error(`${at}.items: only an array has items`);
@@ -165,6 +236,16 @@ function normalizeSchema(value: unknown, at: string): ActionArgSchema {
     ...(numeric.maximum === undefined ? {} : { maximum: numeric.maximum }),
     ...(numeric.minLength === undefined ? {} : { minLength: numeric.minLength }),
     ...(numeric.maxLength === undefined ? {} : { maxLength: numeric.maxLength }),
+    ...(numeric.minItems === undefined ? {} : { minItems: numeric.minItems }),
+    ...(numeric.exclusiveMinimum === undefined
+      ? {}
+      : { exclusiveMinimum: numeric.exclusiveMinimum }),
+    ...(numeric.minProperties === undefined
+      ? {}
+      : { minProperties: numeric.minProperties }),
+    ...(pattern === undefined ? {} : { pattern: pattern as string }),
+    ...(Object.hasOwn(value, "const") ? { const: value.const } : {}),
+    ...(oneOf === undefined ? {} : { oneOf }),
     ...(properties === undefined ? {} : { properties }),
     ...(required === undefined ? {} : { required }),
     ...(items === undefined ? {} : { items }),
@@ -183,7 +264,12 @@ export function normalizeActionArgs(
   at: string,
 ): ActionArgsSchema | undefined {
   if (value === undefined) return undefined;
-  const normalized = normalizeSchema(value, at);
+  let defs: Record<string, unknown> = {};
+  if (isRecord(value) && value.$defs !== undefined) {
+    if (!isRecord(value.$defs)) throw new Error(`${at}.$defs: must be an object`);
+    defs = value.$defs;
+  }
+  const normalized = normalizeSchema(value, at, { defs, following: [] });
   if (normalized.type !== "object") {
     throw new Error(`${at}: type: must be "object"`);
   }
@@ -214,12 +300,89 @@ function fieldName(path: string, name: string): string {
   return path.length === 0 ? name : `${path}.${name}`;
 }
 
+const TYPE_WORDS: Record<string, string> = {
+  string: "text",
+  number: "a number",
+  integer: "a whole number",
+  boolean: "true or false",
+  array: "a list",
+  object: "an object",
+};
+
+/** What a schema accepts, in words a person reads. */
+function describeSchema(schema: ActionArgSchema): string {
+  if (schema.const !== undefined) return JSON.stringify(schema.const);
+  if (schema.enum !== undefined) {
+    return `one of ${schema.enum.map((item) => JSON.stringify(item)).join(", ")}`;
+  }
+  if (schema.oneOf !== undefined) {
+    return schema.oneOf.map(describeSchema).join(" or ");
+  }
+  if (schema.type === "string") {
+    const kind = schema.minLength !== undefined && schema.minLength > 0 ? "non-empty text" : "text";
+    return schema.pattern === undefined ? kind : `${kind} written as ${schema.pattern}`;
+  }
+  if (schema.type === "object") {
+    const fixed = Object.entries(schema.properties ?? {}).find(
+      ([, property]) => property.const !== undefined,
+    );
+    const names = Object.keys(schema.properties ?? {});
+    const base = fixed === undefined ? "an object" : `an object with ${fixed[0]} ${JSON.stringify(fixed[1].const)}`;
+    return fixed === undefined && names.length > 0
+      ? `${base} with the fields ${names.join(", ")}`
+      : base;
+  }
+  if (schema.type === "array") {
+    return schema.items === undefined ? "a list" : `a list of ${describeSchema(schema.items)}`;
+  }
+  return schema.type === undefined ? "any value" : (TYPE_WORDS[schema.type] ?? schema.type);
+}
+
+function fits(schema: ActionArgSchema, value: unknown): boolean {
+  try {
+    checkValue(schema, value, "", "");
+    return true;
+  } catch (error) {
+    if (error instanceof ActionArgsError) return false;
+    throw error;
+  }
+}
+
+function typeFits(schema: ActionArgSchema, actual: string): boolean {
+  if (schema.type === undefined) return true;
+  return schema.type === actual || (schema.type === "number" && actual === "integer");
+}
+
+function checkOneOf(
+  branches: readonly ActionArgSchema[],
+  value: unknown,
+  label: string,
+  field: string,
+): void {
+  const matching = branches.filter((branch) => fits(branch, value));
+  if (matching.length === 1) return;
+  if (matching.length > 1) {
+    fail(label, field, "fits more than one of the accepted forms");
+  }
+  // Exactly one branch is of the value's kind: its own reason is the useful one.
+  const actual = typeOf(value);
+  const sameKind = branches.filter((branch) => typeFits(branch, actual));
+  const [only] = sameKind;
+  if (sameKind.length === 1 && only !== undefined) {
+    checkValue(only, value, label, field);
+  }
+  fail(label, field, `must be ${branches.map(describeSchema).join(" or ")}`);
+}
+
 function checkValue(
   schema: ActionArgSchema,
   value: unknown,
   label: string,
   field: string,
 ): void {
+  if (schema.oneOf !== undefined) {
+    checkOneOf(schema.oneOf, value, label, field);
+  }
   const actual = typeOf(value);
   if (schema.type !== undefined) {
     const matches =
@@ -228,6 +391,10 @@ function checkValue(
     if (!matches) {
       fail(label, field, `must be a ${schema.type}, got ${actual}`);
     }
+  }
+
+  if (schema.const !== undefined && canonical(schema.const) !== canonical(value)) {
+    fail(label, field, `must be ${JSON.stringify(schema.const)}`);
   }
 
   if (schema.enum !== undefined) {
@@ -246,6 +413,9 @@ function checkValue(
     if (schema.maximum !== undefined && value > schema.maximum) {
       fail(label, field, `must be at most ${schema.maximum}`);
     }
+    if (schema.exclusiveMinimum !== undefined && value <= schema.exclusiveMinimum) {
+      fail(label, field, `must be more than ${schema.exclusiveMinimum}`);
+    }
   }
 
   if (typeof value === "string") {
@@ -255,14 +425,28 @@ function checkValue(
     if (schema.maxLength !== undefined && value.length > schema.maxLength) {
       fail(label, field, `must be at most ${schema.maxLength} characters`);
     }
+    if (schema.pattern !== undefined && !new RegExp(schema.pattern).test(value)) {
+      fail(label, field, `must be written as ${schema.pattern}`);
+    }
   }
 
   if (Array.isArray(value)) {
+    if (schema.minItems !== undefined && value.length < schema.minItems) {
+      fail(label, field, `must have at least ${schema.minItems} items`);
+    }
     if (schema.items !== undefined) {
       value.forEach((item, index) => {
         checkValue(schema.items as ActionArgSchema, item, label, fieldName(field, String(index)));
       });
     }
+  }
+
+  if (
+    isRecord(value) &&
+    schema.minProperties !== undefined &&
+    Object.keys(value).length < schema.minProperties
+  ) {
+    fail(label, field, `must have at least ${schema.minProperties} fields`);
   }
 
   if (
