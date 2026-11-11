@@ -751,7 +751,11 @@ export async function refreshPlanCounts(
     needsPerson(taskData(object.data)),
   ).length;
   const costTotals = data.costTotals ?? (await totalsOfTasks(store, plan.id));
+  const flowHeld = tasks
+    .map((object) => taskData(object.data))
+    .find((task) => task.phase === "ready" && task.flowHeld !== undefined)?.flowHeld;
   if (
+    data.flowHeld === flowHeld &&
     data.costTotals !== undefined &&
     data.taskCount === taskCount &&
     data.mergedCount === mergedCount &&
@@ -769,6 +773,7 @@ export async function refreshPlanCounts(
     activeCount,
     waitingCount,
     costTotals,
+    flowHeld,
     // A new task reopens a plan the scheduler already called finished.
     ...(taskCount > 0 && mergedCount + cancelledCount === taskCount
       ? {}
@@ -1127,6 +1132,12 @@ export async function updateTask(
     const data = taskData(current.data);
     const releases = releasable(data, tasks);
     if (!releases) requireEditable(data);
+    if (flow !== undefined && flow !== data.flow && (data.attempts > 0 || data.flowName !== undefined)) {
+      throw new DevError(
+        "--flow",
+        "the task has already started an attempt on its flow; a task keeps its flow after its first attempt",
+      );
+    }
     const after =
       options.after === undefined
         ? data.after
@@ -1373,6 +1384,37 @@ export async function setDependencyHold(
           : {}),
       },
       "dev:task-dependency-hold",
+    );
+  });
+}
+
+/**
+ * Records which flow a row names and why a ready task cannot start for its
+ * flow, or clears the record. Writes only on a change.
+ */
+export async function setFlowNote(
+  store: ObjectStore,
+  id: string,
+  note: { readonly shown?: string | undefined; readonly held?: string | undefined },
+): Promise<void> {
+  const initial = await getTask(store, id);
+  const same = (data: TaskData) =>
+    data.flowShown === note.shown && data.flowHeld === note.held;
+  if (same(taskData(initial.data))) return;
+  await withRepoLock(store, taskData(initial.data).repository, async () => {
+    const current = await getTask(store, id);
+    const latest = taskData(current.data);
+    if (same(latest)) return;
+    const { flowShown: _shown, flowHeld: _held, ...rest } = latest;
+    await writeTask(
+      store,
+      id,
+      {
+        ...rest,
+        ...(note.shown === undefined ? {} : { flowShown: note.shown }),
+        ...(note.held === undefined ? {} : { flowHeld: note.held }),
+      },
+      "dev:task-flow-note",
     );
   });
 }
