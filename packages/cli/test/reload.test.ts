@@ -94,13 +94,24 @@ class Output {
   async until(pattern: RegExp, count = 1): Promise<void> {
     const global = new RegExp(pattern.source, "g");
     const deadline = Date.now() + WAIT_LIMIT_MS;
-    while ((this.text.match(global)?.length ?? 0) < count) {
-      if (Date.now() > deadline) {
+    for (;;) {
+      if ((this.text.match(global)?.length ?? 0) >= count) return;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
         throw new Error(`timed out waiting for output matching ${pattern} (${count}x); got:\n${this.text}`);
       }
+      // A chunk wakes the wait; the timer only enforces the deadline, so no
+      // test pays a poll interval while it waits for output.
       await new Promise<void>((resolve) => {
-        this.waiters.push(resolve);
-        setTimeout(resolve, 200);
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const wake = (): void => {
+          if (timer !== undefined) clearTimeout(timer);
+          const index = this.waiters.indexOf(wake);
+          if (index >= 0) this.waiters.splice(index, 1);
+          resolve();
+        };
+        timer = setTimeout(wake, remaining);
+        this.waiters.push(wake);
       });
     }
   }
@@ -225,7 +236,7 @@ async function runFirstCase(): Promise<void> {
     await output.until(/serving /);
     const firstPid = readLockPid(join(s.home, "serve.lock"));
     const runId = await trigger(s);
-    await waitForFileNamed(join(s.work, "hold-started"));
+    await waitForText(join(s.work, "hold-started"), /^v1$/);
     expect(readFileSync(join(s.work, "hold-started"), "utf8")).toBe("v1");
 
     writeFileSync(s.plugin, pluginSource("v2", s.work));
@@ -240,7 +251,7 @@ async function runFirstCase(): Promise<void> {
     // The step that was running when the file changed goes on and ends on v1.
     expect(existsSync(join(s.work, "hold-finished"))).toBe(false);
     writeFileSync(join(s.work, "release"), "go\n");
-    await waitForFileNamed(join(s.work, "stamp"));
+    await waitForText(join(s.work, "stamp"), /^v2$/);
     expect(readFileSync(join(s.work, "hold-finished"), "utf8")).toBe("v1");
     expect(readFileSync(join(s.work, "stamp"), "utf8")).toBe("v2");
 
@@ -303,7 +314,7 @@ describe("a serve picks up changed code", () => {
       expect(readLockPid(join(s.home, "serve.lock"))).not.toBe(pid);
 
       // The run goes on from the next step with the fixed code.
-      await waitForFileNamed(join(s.work, "stamp"));
+      await waitForText(join(s.work, "stamp"), /^v3$/);
       expect(readFileSync(join(s.work, "hold-finished"), "utf8")).toBe("v1");
       expect(readFileSync(join(s.work, "stamp"), "utf8")).toBe("v3");
 
@@ -340,7 +351,7 @@ describe("a serve picks up changed code", () => {
       writeFileSync(configPath, config);
       await output.until(/reloading: /);
       await output.until(/serving /, 2);
-      await waitForFileNamed(join(s.work, "stamp"));
+      await waitForText(join(s.work, "stamp"), /^v2$/);
       expect(readFileSync(join(s.work, "stamp"), "utf8")).toBe("v2");
       expect(readLockPid(join(s.home, "serve.lock"))).not.toBe(pid);
     } finally {
@@ -494,7 +505,7 @@ describe("a reload with two listen addresses", () => {
     const port = await freePort();
     const second = secondAddress();
     const s = await setup({ port, listen: ["127.0.0.1", second] });
-    s.env.OPERAD_BIND_RETRY_MS = "1500";
+    s.env.OPERAD_BIND_RETRY_MS = "800";
     s.env.OPERAD_BIND_RETRY_STEP_MS = "50";
     const serve = spawnOperad(s, ["serve"]);
     const output = new Output(serve.stdout, serve.stderr);

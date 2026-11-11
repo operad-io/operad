@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 import { defineFlow, definePlugin } from "../../../engine/src/index.ts";
 
 /**
@@ -28,4 +29,9 @@ export default definePlugin({
   version: "0.0.1",
   objects: [{ name: "job" }],
   flows: [check],
+  /** One line per turn with the serve's pid: a test waits for several new turns. */
+  onTick() {
+    const ticks = process.env.CHECK_TICKS;
+    if (ticks !== undefined) appendFileSync(ticks, `${process.pid}\n`);
+  },
 });

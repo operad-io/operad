@@ -12,7 +12,7 @@ import {
 } from "../platform/index.ts";
 import { runTimes } from "./running.ts";
 import type { PluginRegistry, ActionInfo } from "../plugin/registry.ts";
-import { splitActionName } from "../plugin/registry.ts";
+import { rankOf, sortByRank, splitActionName } from "../plugin/registry.ts";
 import { messageOf } from "../plugin/errors.ts";
 import { createPluginLogger } from "../plugin/logger.ts";
 import { FileSecretStore } from "../plugin/secrets.ts";
@@ -1437,7 +1437,7 @@ export class Views {
     object: StoredObject,
   ): Promise<readonly ViewAction[]> {
     const keys = new Map(this.registry.keyBindings().map((item) => [item.name, item.key]));
-    const actions: ViewAction[] = [];
+    const actions: (ViewAction & { readonly rank: number })[] = [];
     for (const info of this.registry.actions()) {
       if (info.on !== type) continue;
       const action = this.registry.actionDefinition(
@@ -1460,9 +1460,10 @@ export class Views {
       actions.push({
         ...info,
         ...(key === undefined ? {} : { key }),
+        rank: rankOf(action, object.data),
       });
     }
-    return actions;
+    return sortByRank(actions).map(({ rank: _rank, ...view }) => view);
   }
 
   private async resolve(id: string): Promise<ResolvedObject> {

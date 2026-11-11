@@ -448,6 +448,11 @@ the row fields.
 | T-0158-M3 | packages/engine/src/views/pending.ts | a marked wait stayed in the pending view when `withAuto` was not given | `the pending view and the plugin's automatic answer > a marked wait is left out of the pending view unless asked for` (packages/mcp/test/channel.test.ts) |
 | T-0175-M1 | packages/engine/src/views/presentation.ts | the dependents of a shown object listed the objects that do not follow it | `operad mcp > show of a task lists the tasks after it` (packages/mcp/test/server.test.ts) |
 
+## T-0116 — main action order
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0116-M2 | packages/engine/src/views/presentation.ts | the views listed actions in plugin order (the sort by rank removed) | `the order of the actions > the views list a confirmed plan's actions in the same order, auto first` (packages/dev/test/action-order.test.ts) |
 ## T-0060 — a repository flow keeps its graph
 
 | id | file | mutation | failing test |

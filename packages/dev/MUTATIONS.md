@@ -584,6 +584,12 @@ the row fields.
 | T-0164-M6 | packages/dev/src/integrate.ts, packages/dev/src/integration-queue.ts | a dead leader's pending result was never taken as landed and the subject lookup was off (`landed` returns `false`, `alreadyOnMain` ignored) | `a batch leader killed after the push > merge: the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone` (and the squash one) |
 | T-0175-M2 | packages/dev/src/commands.ts | a task edit with an empty command input opened the editor instead of refusing | `operad mcp > task edit takes the new brief as command input and refuses an empty one` (packages/mcp/test/server.test.ts; the run hangs on the editor and times out) |
 
+## T-0116 — main action order
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0116-M1 | packages/dev/src/actions.ts | `merge` ranked first in every waiting state (the ready-to-merge check removed) | `the order of the actions > a waiting for a rework answer task offers dev:rework first` |
+| T-0116-M2 | packages/engine/src/views/presentation.ts | the views listed actions in plugin order (the sort by rank removed) | `the order of the actions > the views list a confirmed plan's actions in the same order, auto first` (packages/dev/test/action-order.test.ts) |
 ## T-0176 — repository throughput
 
 | id | file | mutation | failing test |
@@ -788,3 +794,8 @@ the row fields.
 | T-0174-M3 | packages/dev/src/settings.ts | `check.flakyLoadLimit` was accepted but not read from the settings | `a flaky test proposes a task > check.flakyLoadLimit is read and validated` |
 | T-0174-M4 | packages/dev/src/notcode.ts | the end reading was the start reading, so a check that ended quiet looked busy | `runCheckSteadily records the load > the start and the end of the command, each as it was read` |
 | T-0174-M5 | packages/dev/src/flaky.ts | the skipped failure was left out of the check's own log | `dev/verify tells a result that is not the code from one that is > a test that passes on rerun under load is recorded and proposes no task` |
+## T-0116 — rework 2
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0116-M3 | packages/tui/src/actions.ts | the main action was the first action again (the skip of ending actions removed) | `the main key skips an action that ends the object, and says none is available when only it is left` (packages/tui/test/actions.test.ts) |

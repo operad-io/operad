@@ -29,12 +29,12 @@ const ACTIONS: readonly ViewAction[] = [
   }),
 ];
 
-function opened(state: string = "run"): TuiState {
+function opened(state: string = "run", badge?: string): TuiState {
   const object: ViewObject = {
     id: "item:one",
     type: "item",
     link: "x",
-    row: { id: "item:one", title: "One", state, waiting: false, running: false },
+    row: { id: "item:one", title: "One", state, waiting: false, running: false, ...(badge === undefined ? {} : { badge }) },
     sections: [],
     actions: ACTIONS,
   };
@@ -73,6 +73,11 @@ describe("arguments of an action", () => {
     expect(state.input.fields[0]?.current).toBe(1);
     state = press(state, "j", "enter");
     expect(state.actionRequest).toEqual({ action: "devtest:auto", id: "item:one", args: { level: "merge" } });
+  });
+
+  test("a row's badge marks the current level, so a plugin that badges its level needs no client code", () => {
+    const state = press(opened("confirmed", "merge"), ":", ...typeText("auto"), "enter");
+    expect(state.input?.kind === "args" && state.input.cursor).toBe(2);
   });
 
   test("without a current value the list starts on the first value", () => {

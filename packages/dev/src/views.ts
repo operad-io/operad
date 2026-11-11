@@ -178,6 +178,8 @@ export const planViews: ObjectViews = {
       scope: plan.repository,
       final: PLAN_FINAL_STATES.includes(planState(plan)),
       mark: planMark(plan),
+      // The level dev:auto is asked for: a client marks the current one from it.
+      badge: plan.auto,
       parent: `repo:${plan.repository}`,
     };
   },

@@ -727,7 +727,19 @@ export interface ActionTypeDefinition {
   readonly args?: ActionArgsSchema | undefined;
   /** The action asks for confirmation before it runs. */
   readonly confirm?: boolean | undefined;
+  /**
+   * The action ends the object (a cancel). A client's main key or button never
+   * picks it, even when it is the only action offered.
+   */
+  readonly ends?: boolean | undefined;
   readonly when: (state: ObjectData, env: ActionEnv) => MaybePromise<boolean>;
+  /**
+   * Where the action stands among the object's available actions: lower comes
+   * first, equal ranks keep the plugin's order, none is 0. The first available
+   * action is the main one (a client's main key or button), so a plugin ranks
+   * what a person most likely wants next ahead of an action that ends the object.
+   */
+  readonly rank?: ((state: ObjectData) => number) | undefined;
   /**
    * Why `when` refuses this object, in one line that starts with the object's
    * own name and says when the action becomes possible. A client prints it
