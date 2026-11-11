@@ -8,7 +8,8 @@ import {
   getTask,
   setTaskPhase,
 } from "../src/service.ts";
-import { FilePluginStore } from "@operad-io/engine";
+import { FilePluginStore, type StepContext } from "@operad-io/engine";
+import { taskPlaceWait } from "../src/place-wait.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -692,6 +693,35 @@ describe("dev views", () => {
       "test:a",
     );
     expect(await row()).toBe("$1.50 · harness-claude · area: app-core · push refused");
+  });
+
+  test("a task whose check waits for a place says so, with how many are ahead, until it takes the place", async () => {
+    const { store, plan, task } = await setup();
+    const other = await addTask(store, { plan: plan.id, slug: "two", title: "Two", brief: "# Brief\n\nx" });
+    const running = { number: 1, worktree: "w", worked: true };
+    for (const id of [task.id, other.id]) {
+      const stored = taskData((await getTask(store, id)).data);
+      await store.put("task", id, { ...stored, phase: "running", attempt: running }, "test:a");
+    }
+    const ctx = { store, runId: "r", params: null } as unknown as StepContext;
+    const row = async (id: string) => taskViews.row(await getTask(store, id));
+    expect((await row(task.id)).mark).toBe("checking");
+
+    await taskPlaceWait(ctx, task.id, "check place");
+    await taskPlaceWait(ctx, other.id, "check place");
+    expect(await row(task.id)).toMatchObject({ mark: "blocked", note: "$0.00 · waiting for a check place" });
+    expect(await row(other.id)).toMatchObject({
+      mark: "blocked",
+      note: "$0.00 · waiting for a check place, 1 ahead",
+    });
+
+    // The first takes its place: it is checking again, and the second moves up.
+    await taskPlaceWait(ctx, task.id, null);
+    await taskPlaceWait(ctx, other.id, "check place");
+    expect(await row(task.id)).toMatchObject({ mark: "checking", note: "$0.00" });
+    expect((await row(other.id)).note).toBe("$0.00 · waiting for a check place");
+    await taskPlaceWait(ctx, other.id, null);
+    expect(await row(other.id)).toMatchObject({ mark: "checking", note: "$0.00" });
   });
 
   test("a plan note shows the cost of its tasks at the weakest quality", async () => {

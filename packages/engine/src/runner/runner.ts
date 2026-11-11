@@ -69,6 +69,8 @@ type StepWorkerLimit =
       readonly use: string;
       readonly key: string;
       readonly concurrent: number;
+      /** A wait the step reports for a place it manages itself. */
+      readonly report?: boolean;
     }
   | { readonly kind: "limit-cancel"; readonly id: number }
   | { readonly kind: "limit-release"; readonly id: number };
@@ -1033,6 +1035,11 @@ export class Runner {
     const wait = new AbortController();
     waits.set(message.id, wait);
     try {
+      if (message.report === true) {
+        held.set(message.id, await limiter.report({ key: message.key }));
+        reply(true);
+        return;
+      }
       const release = await limiter.acquire({
         use: message.use,
         key: message.key,

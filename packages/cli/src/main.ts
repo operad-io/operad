@@ -1510,6 +1510,7 @@ export function runningLine(item: RunningItem): string {
     item.stepLabel ?? "-",
     item.stepElapsedMs === null ? "-" : age(item.stepElapsedMs),
   ];
+  if (item.queuedMs !== undefined && item.queuedMs > 0) parts.push(`queued ${age(item.queuedMs)}`);
   if (item.title !== null) parts.push(item.title);
   parts.push(`run ${age(item.elapsedMs)}`);
   if (item.note !== undefined && item.note !== null) parts.push(item.note);
