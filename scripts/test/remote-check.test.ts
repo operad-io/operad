@@ -332,6 +332,7 @@ describe("remote-check.sh > the -- form", () => {
     const { root, local, env } = setup();
     const name = "it `works` isn't broken";
     mkdirSync(join(local, "t"), { recursive: true });
+    writeFileSync(join(local, "package.json"), "{}\n");
     writeFileSync(
       join(local, "t", "x.test.ts"),
       `import { test } from "bun:test";\ntest(${JSON.stringify(name)}, () => {});\n`,
@@ -361,5 +362,43 @@ describe("remote-check.sh > the -- form", () => {
       expect(`${out}${err}`).toContain("1 pass");
       expect(code).toBe(0);
     }
+  });
+
+  test("a rerun after a checkout that changes the workspace packages installs first and reaches the test", async () => {
+    const { root, local, env } = setup();
+    const name = "it runs after the install";
+    const bin = join(root, "fakebin");
+    mkdirSync(bin);
+    const log = join(root, "order");
+    // A fake bun: `install` links the workspace package; `test` needs the link.
+    writeFileSync(
+      join(bin, "bun"),
+      `#!/bin/bash\nif [ "$1" = install ]; then echo install >> '${log}'; mkdir -p node_modules/linked; exit 0; fi\n` +
+        `[ -d node_modules/linked ] || { echo "stale install"; exit 1; }\necho "test $*" >> '${log}'; echo "1 pass"\n`,
+    );
+    chmodSync(join(bin, "bun"), 0o755);
+    mkdirSync(join(local, "packages", "p"), { recursive: true });
+    writeFileSync(join(local, "packages", "p", "package.json"), "{}\n");
+    git(local, "add", ".");
+    git(local, "commit", "-q", "-m", "new workspace package");
+    const config = JSON.parse(readFileSync(join(import.meta.dir, "..", "..", ".operad", "dev.json"), "utf8"));
+    const command = rerunCommand(config.gate.commands[0].failed.rerun, name);
+    const child = Bun.spawn(["bash", "-c", command], {
+      cwd: local,
+      env: { ...process.env, ...env, OPERAD_CHECK_PATH: bin },
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [out, err, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    expect(`${out}${err}`).not.toContain("stale install");
+    expect(code).toBe(0);
+    const lines = readFileSync(log, "utf8").trim().split("\n");
+    expect(lines[0]).toBe("install");
+    expect(lines[1]).toStartWith("test ");
   });
 });
