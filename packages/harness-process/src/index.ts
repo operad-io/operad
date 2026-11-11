@@ -5,11 +5,14 @@
  * and the way one line names a tool call differ.
  */
 
+export * from "./ask-call.ts";
 export * from "./ask-note.ts";
 export * from "./event-note.ts";
 export * from "./grants.ts";
 export * from "./inbox.ts";
 export * from "./jsonl-log.ts";
+export * from "./operad-tools.ts";
 export * from "./process.ts";
+export * from "./step.ts";
 export * from "./limit.ts";
 export * from "./usage.ts";

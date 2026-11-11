@@ -2,7 +2,13 @@
 
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
+import { enableWal, setBusyTimeout } from "../platform/index.ts";
+import { assertStoreNotMoving } from "../runner/lock.ts";
 import { dirname, join } from "node:path";
+import {
+  followsChanges,
+  type FollowOptions,
+} from "../platform/index.ts";
 import {
   assertWhere,
   CursorError,
@@ -26,11 +32,27 @@ import type {
   StoredObject,
 } from "./types.ts";
 
-export interface SqlitePluginStoreOptions {
+export interface SqlitePluginStoreOptions extends FollowOptions {
   readonly root: string;
   /** The database file; defaults to `<root>/plugins.sqlite`. */
   readonly file?: string | undefined;
   readonly clock?: (() => number) | undefined;
+  /**
+   * Starts a repeating timer that calls `callback` every `ms` and returns a
+   * stop function. Defaults to `setInterval`. A test passes a stub it fires by
+   * hand, so no test waits on wall time.
+   */
+  readonly repeat?:
+    | ((ms: number, callback: () => void) => () => void)
+    | undefined;
+}
+
+function repeatEvery(ms: number, callback: () => void): () => void {
+  const timer = setInterval(callback, ms);
+  (timer as { unref?: () => void }).unref?.();
+  return () => {
+    clearInterval(timer);
+  };
 }
 
 interface ObjectRow {
@@ -101,6 +123,14 @@ function requireName(value: string, field: string): void {
   }
 }
 
+function deepFreeze<T>(value: T): T {
+  if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const inner of Object.values(value)) deepFreeze(inner);
+  }
+  return value;
+}
+
 function parseData(text: string): ObjectData {
   try {
     const value: unknown = JSON.parse(text);
@@ -117,20 +147,33 @@ export class SqlitePluginStore implements PluginStore {
   readonly location: PluginStoreLocation;
   private readonly db: Database;
   private readonly clock: () => number;
+  private readonly follow: boolean;
+  private readonly repeat: (ms: number, callback: () => void) => () => void;
   private readonly listeners = new Set<(object: ObjectRef) => void>();
   private readonly factListeners = new Set<Subscription>();
   /** The last sequence any subscription has been told about. */
   private polledSequence = 0;
-  private pollTimer: ReturnType<typeof setInterval> | undefined;
+  private stopPoll: (() => void) | undefined;
+  /** The objects `list` last read, by type and id; frozen, so sharing is safe. */
+  private readonly listed = new Map<string, Map<string, StoredObject>>();
 
   constructor(options: SqlitePluginStoreOptions) {
     this.root = options.root;
     this.clock = options.clock ?? (() => Date.now());
+    this.follow = followsChanges(options);
+    this.repeat = options.repeat ?? repeatEvery;
     const file = options.file ?? join(options.root, SCHEMA_FILE);
     this.location = { backend: "sqlite", root: options.root, file };
     mkdirSync(dirname(file), { recursive: true });
     this.db = new Database(file);
-    this.db.exec(SCHEMA);
+    try {
+      setBusyTimeout(this.db);
+      enableWal(this.db);
+      this.db.exec(SCHEMA);
+    } catch (error) {
+      this.db.close();
+      throw error;
+    }
   }
 
   declare(type: string, index: readonly string[]): void {
@@ -157,25 +200,28 @@ export class SqlitePluginStore implements PluginStore {
       cause,
       at: this.clock(),
     };
-    this.db
-      .query(
-        `INSERT INTO objects (type, id, data, version, cause, at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (type, id) DO UPDATE SET
-           data = excluded.data,
-           version = excluded.version,
-           cause = excluded.cause,
-           at = excluded.at`,
-      )
-      .run(
-        type,
-        id,
-        JSON.stringify(object.data),
-        object.version,
-        cause,
-        object.at,
-      );
-    this.append({ type, object: { type, id }, data, cause });
+    this.db.transaction(() => {
+      assertStoreNotMoving(dirname(this.location.file ?? this.root));
+      this.db
+        .query(
+          `INSERT INTO objects (type, id, data, version, cause, at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (type, id) DO UPDATE SET
+             data = excluded.data,
+             version = excluded.version,
+             cause = excluded.cause,
+             at = excluded.at`,
+        )
+        .run(
+          type,
+          id,
+          JSON.stringify(object.data),
+          object.version,
+          cause,
+          object.at,
+        );
+      this.insertFact({ type, object: { type, id }, data, cause });
+    }).immediate();
     return object;
   }
 
@@ -211,17 +257,39 @@ export class SqlitePluginStore implements PluginStore {
       after = cursor.after;
     }
 
-    const rows = this.db
-      .query("SELECT type, id, data, version, cause, at FROM objects WHERE type = ? ORDER BY id")
-      .all(type) as ObjectRow[];
+    // Read from the cursor on and stop once a page and one more are found. The
+    // scan reads each row's version, not its data: an object whose version,
+    // time and cause match the remembered copy is not read or parsed again, so
+    // a page costs what changed in it, not what it holds.
+    const statement = this.db.prepare(
+      "SELECT type, id, version, cause, at FROM objects WHERE type = ? AND id > ? ORDER BY id",
+    );
     const limit = pageLimit(options.limit);
     const objects: StoredObject[] = [];
-    for (const row of rows) {
-      if (after !== undefined && row.id <= after) continue;
-      const object = this.objectOf(row);
-      if (!matchesWhere(object.data, options.where)) continue;
-      objects.push(object);
-      if (objects.length > limit) break;
+    const remembered = this.listed.get(type) ?? new Map<string, StoredObject>();
+    this.listed.set(type, remembered);
+    try {
+      for (const row of statement.iterate(type, after ?? "") as IterableIterator<
+        Omit<ObjectRow, "data">
+      >) {
+        let object = remembered.get(row.id);
+        if (
+          object === undefined ||
+          object.version !== row.version ||
+          object.at !== row.at ||
+          object.cause !== row.cause
+        ) {
+          const full = this.get(type, row.id);
+          if (full === undefined) continue;
+          object = deepFreeze(full);
+          remembered.set(row.id, object);
+        }
+        if (!matchesWhere(object.data, options.where)) continue;
+        objects.push(object);
+        if (objects.length > limit) break;
+      }
+    } finally {
+      statement.finalize();
     }
     const more = objects.length > limit;
     if (more) objects.length = limit;
@@ -350,6 +418,15 @@ export class SqlitePluginStore implements PluginStore {
   }
 
   append(input: StoreFactInput): PluginFact {
+    return this.db
+      .transaction(() => {
+        assertStoreNotMoving(dirname(this.location.file ?? this.root));
+        return this.insertFact(input);
+      })
+      .immediate();
+  }
+
+  private insertFact(input: StoreFactInput): PluginFact {
     requireName(input.type, "fact type");
     const cause = input.cause;
     requireName(cause, "cause");
@@ -384,30 +461,26 @@ export class SqlitePluginStore implements PluginStore {
 
   /** Closes the database; tests open many homes. */
   close(): void {
-    if (this.pollTimer !== undefined) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = undefined;
-    }
+    this.stopPoll?.();
+    this.stopPoll = undefined;
     this.db.close();
   }
 
   /** Polls for facts another connection committed; SQLite has no notification. */
   private ensurePolling(): void {
+    if (!this.follow) return;
     if (this.factListeners.size === 0 && this.listeners.size === 0) return;
-    if (this.pollTimer !== undefined) return;
+    if (this.stopPoll !== undefined) return;
     if (this.factListeners.size === 0) {
       this.polledSequence = Math.max(this.polledSequence, this.maxSequence());
     }
-    this.pollTimer = setInterval(() => this.pollFacts(), 25);
-    (this.pollTimer as { unref?: () => void }).unref?.();
+    this.stopPoll = this.repeat(25, () => this.pollFacts());
   }
 
   private releasePolling(): void {
     if (this.factListeners.size > 0 || this.listeners.size > 0) return;
-    if (this.pollTimer !== undefined) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = undefined;
-    }
+    this.stopPoll?.();
+    this.stopPoll = undefined;
   }
 
   private maxSequence(): number {

@@ -22,12 +22,16 @@ import {
 } from "@operad-io/engine";
 import {
   answerGrant,
+  askToolEvent,
+  canAsk,
+  createCallAsker,
   CONCURRENCY_SETTING,
   eventNote,
   askNote,
   flagValue,
   hasGrants,
   inboxOf,
+  operadToolsOf,
   JsonlLog,
   modelLimit,
   standardUsage,
@@ -428,7 +432,16 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
         kind: "plugin",
         params: { use: "harness-pi/agent", params: {} },
         replay: "unsafe",
-        next: { done: "done", failed: "failed", interrupted: "cancelled" },
+        next: { done: "done", failed: "failed", interrupted: "cancelled", waiting: "person" },
+      },
+      {
+        // A question about a call ran out of grace. The answer sends the run
+        // back to the agent, which continues the session with it.
+        id: "person",
+        kind: "wait_person",
+        params: { prompt: "The agent asked about a call.", choices: ["allow_once", "reject_once"] },
+        replay: "safe",
+        next: { allow_once: "agent", reject_once: "agent", interrupted: "cancelled" },
       },
       { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
       { id: "failed", kind: "end", params: { status: "failed" }, replay: "safe" },
@@ -446,9 +459,10 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
         name: "agent",
         // A question's answer comes back as `resumeSession` and `askAnswer`.
         resumable: true,
-        results: ["done", "failed", "interrupted"],
-        // The deny fields are applied in the worker's tool_call hook.
-        enforces: ["denyPaths", "denyCommands"],
+        // `waiting`: a question about a call was not answered within the grace.
+        results: ["done", "failed", "interrupted", "waiting"],
+        // The deny and ask fields are applied in the worker's tool_call hook.
+        enforces: ["denyPaths", "denyCommands", "askCommands", "askPaths"],
         timeoutSecs: STEP_TIMEOUT_SECS,
         // The model the step uses: its `--model` argument, else the setting.
         limit: modelLimit("harness-pi", (params, settings) => {
@@ -556,6 +570,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           await mkdir(sessionDir, { recursive: true });
 
           const piCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
+          const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
           const storeSecrets = await secretValuesOf(ctx.secrets);
           const stdin: Record<string, unknown> = {
             prompt: promptWithNote,
@@ -569,6 +584,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             ...(model === undefined ? {} : { model }),
             ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
             ...(bashTimeoutSecs === undefined ? {} : { bashTimeoutSecs }),
+            ...(operadTools === undefined ? {} : { operadTools }),
             ...(isRecord(ctx.access) ? { access: ctx.access } : {}),
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };
@@ -577,6 +593,13 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           const started = Date.now();
           const jsonl = new JsonlLog(ctx.logger);
           let result: WorkerResult | undefined;
+          // Ends the program when a question about a call runs out of grace.
+          const stopper = new AbortController();
+          const asker = createCallAsker({
+            ask: (request) => ctx.ask(request),
+            onStop: () => stopper.abort(),
+            secrets: storeSecrets,
+          });
 
           const outcome = await runAgent({
             command,
@@ -584,15 +607,16 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             cwd,
             stdin: JSON.stringify(stdin),
             // The program may ask to use a one-time permission; it needs a reply.
-            interactive: hasGrants(ctx.access) || inbox !== undefined,
+            interactive: hasGrants(ctx.access) || canAsk(ctx.access) || inbox !== undefined,
             inbox,
             wallMs: wallTimeSecs * 1000,
             stallMs: stallSecs * 1000,
-            signal: ctx.signal,
+            signal: AbortSignal.any([ctx.signal, stopper.signal]),
             clock,
-            toolEvent: piToolEvent,
+            toolEvent: (line) => piToolEvent(line) ?? askToolEvent(line),
             async onLine(line, reply) {
               await answerGrant(line, (waitId) => ctx.useGrant(waitId), reply);
+              await asker.handle(line, reply);
               const writing = jsonl.push(line);
               const parsed = parseResult(line);
               if (parsed !== undefined) result = parsed;
@@ -600,6 +624,12 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             },
           });
           await jsonl.end();
+
+          // The grace passed with a question open: the program was ended on
+          // purpose. The kernel turns this into the result `waiting`, and the
+          // answer comes back with the session and a one-time grant.
+          const unanswered = asker.stopped();
+          if (unanswered !== undefined && !ctx.signal.aborted) throw unanswered.error;
 
           return resultFor(
             { harness: "harness-pi", model: model ?? null },

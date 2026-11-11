@@ -210,7 +210,7 @@ test("the matcher keeps no state between calls", () => {
 test("readProfile names the field at fault and keeps only what the matcher reads", () => {
   expect(readProfile({ denyPaths: ["a"], askCommands: ["x"], network: "none" })).toEqual({
     ok: true,
-    profile: { denyPaths: ["a"] },
+    profile: { denyPaths: ["a"], askCommands: ["x"] },
   });
   expect(readProfile({ denyCommands: "sudo" })).toEqual({ ok: false, message: "denyCommands must be an array of strings" });
   expect(readProfile({ denyPaths: [1] })).toEqual({ ok: false, message: "denyPaths must be an array of strings" });
@@ -270,4 +270,185 @@ test("readProfile reads grants and refuses a malformed one", () => {
   for (const bad of [{ grants: "x" }, { grants: [1] }, { grants: [{ waitId: "a", kind: "url", value: "x" }] }]) {
     expect(readProfile(bad).ok).toBe(false);
   }
+});
+
+// -- askCommands -------------------------------------------------------------
+
+const ASKING: AccessProfile = { askCommands: ["git push", "rm -r", "brew install"] };
+
+function asked(verdict: ReturnType<typeof match>): { reason: string; rule: string; value: string } {
+  if (verdict.allow || verdict.ask !== true) throw new Error("expected an ask");
+  expect(verdict.kind).toBe("command");
+  return { reason: verdict.reason, rule: verdict.rule, value: verdict.value };
+}
+
+test("a command that matches askCommands asks, with the whole command as the value", () => {
+  expect(asked(bash(ASKING, "git push origin main"))).toEqual({
+    reason: 'part "git push origin main" matches askCommands rule "git push"',
+    rule: "git push",
+    value: "git push origin main",
+  });
+  expect(asked(bash(ASKING, "make && brew install jq")).rule).toBe("brew install");
+  expect(asked(bash(ASKING, "env A=1 rm -rf build")).rule).toBe("rm -r");
+});
+
+test("a command that matches no askCommands rule is allowed", () => {
+  expect(bash(ASKING, "git status && ls")).toEqual({ allow: true });
+  expect(bash({ askCommands: [] }, "git push")).toEqual({ allow: true });
+});
+
+test("deny wins over ask, and ask wins over allow", () => {
+  const both: AccessProfile = { denyCommands: ["git push --force*"], askCommands: ["git push"] };
+  // Only the ask rule matches: ask.
+  expect(asked(bash(both, "git push origin")).rule).toBe("git push");
+  // Both match: the deny is the verdict and nobody is asked.
+  const denied = bash(both, "git push --force origin");
+  expect(denied.allow).toBe(false);
+  expect(denied.ask).toBeUndefined();
+  expect(refusal(denied)).toContain('denyCommands rule "git push --force*"');
+  // A deny in another part of the command wins over an ask in this one.
+  expect(bash({ denyCommands: ["sudo"], askCommands: ["git push"] }, "git push && sudo ls").ask).toBeUndefined();
+  // A denied path wins over an ask.
+  const path = bash({ denyPaths: ["~/.ssh"], askCommands: ["git push"] }, "git push ~/.ssh/id");
+  expect(path.allow).toBe(false);
+  expect(path.ask).toBeUndefined();
+  expect(refusal(path)).toContain("denyPaths");
+  // Ask over allow.
+  expect(asked(bash({ ...COMMANDS, ...ASKING }, "git push")).rule).toBe("git push");
+  expect(bash({ ...COMMANDS, ...ASKING }, "git status")).toEqual({ allow: true });
+});
+
+test("inline code asks while askCommands is set and is allowed without it", () => {
+  expect(asked(bash(ASKING, "bash -c 'git push'")).rule).toBe("inline code");
+  expect(asked(bash(ASKING, "echo $(whoami)")).rule).toBe("inline code");
+  expect(bash({ askCommands: [] }, "bash -c 'git push'")).toEqual({ allow: true });
+});
+
+test("an ask verdict is a refusal to a caller that does not know ask", () => {
+  expect(bash(ASKING, "git push").allow).toBe(false);
+});
+
+test("readProfile reads askCommands and refuses a malformed one", () => {
+  expect(readProfile({ askCommands: ["git push"] })).toEqual({ ok: true, profile: { askCommands: ["git push"] } });
+  expect(readProfile({ askCommands: "git push" })).toEqual({ ok: false, message: "askCommands must be an array of strings" });
+});
+
+test("a one-time grant covers an asked command exactly", () => {
+  const profile: AccessProfile = { ...ASKING, grants: [{ waitId: "w9", kind: "command", value: "git push origin main" }] };
+  const call = { tool: "bash", input: { command: "git push origin main" }, cwd: CWD };
+  expect(match(profile, call, { home: HOME }).allow).toBe(false);
+  expect(findGrant(profile, call)?.waitId).toBe("w9");
+  expect(findGrant(profile, { ...call, input: { command: "git push origin other" } })).toBeUndefined();
+});
+
+// -- askPaths ----------------------------------------------------------------
+
+const PROFILES: AccessProfile = { askPaths: ["~/.zshrc", "~/.*profile"] };
+
+function write(profile: AccessProfile, path: string, tool = "write"): ReturnType<typeof match> {
+  return match(profile, { tool, input: { path }, cwd: CWD }, { home: HOME });
+}
+
+test("a write or edit to an askPaths path asks with the path and the tool", () => {
+  for (const [path, rule] of [["~/.zshrc", "~/.zshrc"], ["/home/u/.bash_profile", "~/.*profile"], ["~/.zprofile", "~/.*profile"]] as const) {
+    const verdict = write(PROFILES, path, "edit");
+    if (verdict.allow || verdict.ask !== true) throw new Error("expected an ask");
+    expect(verdict).toMatchObject({ kind: "path", value: path, tool: "edit", rule });
+  }
+  expect(write(PROFILES, "~/.zshrc").ask).toBe(true);
+});
+
+test("other paths and read tools are allowed", () => {
+  expect(write(PROFILES, "~/.zshrc.bak2/../notes")).toEqual({ allow: true });
+  expect(write(PROFILES, "/home/u/src/a.ts")).toEqual({ allow: true });
+  expect(write(PROFILES, "~/.zshrc", "read")).toEqual({ allow: true });
+  expect(write(PROFILES, "~/x/.profile")).toEqual({ allow: true });
+});
+
+test("a bash redirect to an askPaths path asks with the whole command; a read does not", () => {
+  const verdict = bash(PROFILES, "echo 'export A=1' >> ~/.zshrc");
+  if (verdict.allow || verdict.ask !== true) throw new Error("expected an ask");
+  expect(verdict).toMatchObject({ kind: "command", value: "echo 'export A=1' >> ~/.zshrc", rule: "~/.zshrc" });
+  expect(bash(PROFILES, "echo a >~/.profile").ask).toBe(true);
+  expect(bash(PROFILES, "cat ~/.zshrc")).toEqual({ allow: true });
+  expect(bash(PROFILES, "echo a > /tmp/x 2>&1")).toEqual({ allow: true });
+});
+
+test("deny wins over an askPaths ask", () => {
+  const verdict = write({ ...PROFILES, denyPaths: ["~/.zshrc"] }, "~/.zshrc");
+  expect(verdict.allow).toBe(false);
+  expect(verdict.ask).toBeUndefined();
+  expect(bash({ ...PROFILES, denyPaths: ["~/.zshrc"] }, "echo a >> ~/.zshrc").ask).toBeUndefined();
+});
+
+test("a path grant for the tool covers the asked write, and only that", () => {
+  const profile: AccessProfile = { ...PROFILES, grants: [{ waitId: "w5", kind: "path", value: "~/.zshrc", tool: "write" }] };
+  const call = { tool: "write", input: { path: "~/.zshrc" }, cwd: CWD };
+  expect(findGrant(profile, call, { home: HOME })?.waitId).toBe("w5");
+  expect(findGrant(profile, { ...call, tool: "edit" }, { home: HOME })).toBeUndefined();
+});
+
+test("readProfile reads askPaths", () => {
+  expect(readProfile({ askPaths: ["~/.zshrc"] })).toEqual({ ok: true, profile: { askPaths: ["~/.zshrc"] } });
+  expect(readProfile({ askPaths: 1 }).ok).toBe(false);
+});
+
+// -- readOnly ----------------------------------------------------------------
+
+test("a read-only working directory asks about a write under it, and only a write", () => {
+  const profile: AccessProfile = { readOnly: true };
+  const write = match(profile, { tool: "write", input: { path: "src/a.ts" }, cwd: CWD }, { home: HOME });
+  expect(write).toMatchObject({ allow: false, ask: true, kind: "path", value: "src/a.ts", tool: "write" });
+  const edit = match(profile, { tool: "edit", input: { path: `${CWD}/b.ts` }, cwd: CWD }, { home: HOME });
+  expect(edit).toMatchObject({ allow: false, ask: true, tool: "edit" });
+  expect(match(profile, { tool: "read", input: { path: "src/a.ts" }, cwd: CWD }, { home: HOME })).toEqual({ allow: true });
+  expect(match(profile, { tool: "write", input: { path: "/tmp/scratch" }, cwd: CWD }, { home: HOME })).toEqual({ allow: true });
+  expect(match({}, { tool: "write", input: { path: "src/a.ts" }, cwd: CWD }, { home: HOME })).toEqual({ allow: true });
+});
+
+test("a read-only working directory asks about a bash redirect into it, and a deny still wins", () => {
+  expect(bash({ readOnly: true }, "echo hi > notes.txt")).toMatchObject({ allow: false, ask: true, kind: "command" });
+  expect(bash({ readOnly: true }, "ls -la")).toEqual({ allow: true });
+  const denied = match(
+    { readOnly: true, denyPaths: ["src"] },
+    { tool: "write", input: { path: "src/a.ts" }, cwd: CWD },
+    { home: HOME },
+  );
+  expect(denied).toMatchObject({ allow: false });
+  expect(denied.ask).toBeUndefined();
+});
+
+test("readOnly is read from a profile, and only a boolean is accepted", () => {
+  expect(readProfile({ readOnly: true })).toEqual({ ok: true, profile: { readOnly: true } });
+  expect(readProfile({ readOnly: "yes" })).toEqual({ ok: false, message: "readOnly must be true or false" });
+});
+
+// -- the read-only allowlist -------------------------------------------------
+
+import { isReadOnlyCommand } from "../src/index.ts";
+
+test("commands that only read are on the read-only allowlist", () => {
+  for (const command of [
+    "git status", "git log --oneline -5", "git diff HEAD~1", "git show abc", "git blame a.ts", "git branch --list", "ls -la src",
+    "cat a.ts | head -5 | wc -l", "grep -rn foo src", "rg foo", "find . -name '*.ts'", "sed -n 1,5p a.ts", "sed -n 3p a.ts",
+    "bun test packages/x", "bunx tsc --noEmit", "git status && git log | head", "pwd",
+  ]) expect([command, isReadOnlyCommand(command)]).toEqual([command, true]);
+});
+
+test("everything else is not read-only: redirects, tee, sed -i, cp, mv, git writes, a pipeline whose last stage writes", () => {
+  for (const command of [
+    "echo x > a.ts", "echo x >> a.ts", "echo x &> a.ts", "cat a 2> b", "cat a >| b", "ls | tee out", "cat a.ts | tee b.ts", "sed -i s/a/b/ a.ts",
+    "sed -n 'w out' a.ts", "sed s/a/b/ a.ts", "cp a b", "mv a b", "rm a", "touch a", "git checkout main", "git commit -am x", "git add .", "git push",
+    "git branch newbranch", "git -c core.fsmonitor=/tmp/x status", "git diff --output=out", "find . -delete", "find . -exec rm {} ;", "find . -fprint out",
+    "rg --pre ./x foo", "tree -o out", "bunx tsc -b", "bunx tsc", "bun run build", "bun install", "ls $(touch a)", "ls `touch a`", "FOO=1 ls", "bash -c 'ls'",
+    "cat a; rm b", "cat a && touch b", "cat a & touch b", "python3 x.py", "node -e 1", "xargs rm", "dd if=a of=b",
+  ]) expect([command, isReadOnlyCommand(command)]).toEqual([command, false]);
+});
+
+test("a read-only directory asks about a command that is not on the allowlist, and lets a reading one run", () => {
+  expect(bash({ readOnly: true }, "git status | head")).toEqual({ allow: true });
+  expect(bash({ readOnly: true }, "sed -i s/a/b/ a.ts")).toMatchObject({ allow: false, ask: true, kind: "command", rule: "readOnly" });
+  expect(bash({ readOnly: true }, "echo hi &> a.ts")).toMatchObject({ allow: false, ask: true, kind: "command" });
+  expect(bash({ readOnly: true, denyCommands: ["git status"] }, "git status").ask).toBeUndefined();
+  expect(bash({}, "sed -i s/a/b/ a.ts")).toEqual({ allow: true });
 });

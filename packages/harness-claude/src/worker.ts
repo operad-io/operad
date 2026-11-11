@@ -23,8 +23,8 @@ import {
   summarizeCall,
   type AccessProfile,
 } from "@operad-io/access-match";
-import { decideAccess, hasRules, translate } from "./access.ts";
-import { messageText } from "@operad-io/harness-process";
+import { decideAccess, hasRules, translate, type CallAnswer } from "./access.ts";
+import { messageText, OPERAD_SERVER, serverCommand } from "@operad-io/harness-process";
 import { findClaude } from "./claude-install.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
@@ -81,6 +81,18 @@ export interface WorkerIo {
    * call may run. Absent when the host cannot answer; no grant then applies.
    */
   useGrant?(waitId: string): Promise<boolean>;
+  /**
+   * Asks the host to ask a person whether one call may run, and resolves with
+   * the answer. Absent when the host cannot answer; a call that must ask is then
+   * refused.
+   */
+  ask?(call: {
+    readonly kind: "command" | "path";
+    readonly value: string;
+    readonly tool?: string;
+    readonly shown: string;
+    readonly session: string | null;
+  }): Promise<CallAnswer>;
   /**
    * Hands each message the host sends mid-run to `handler`, those that came
    * before the call first. Absent when the host cannot send any.
@@ -173,7 +185,9 @@ export async function runWorker(
     if (translated.kind === "inert") return undefined;
     if (translated.kind === "mapped") {
       const verdict = match(profile, { tool: translated.tool, input: translated.input, cwd: input.cwd });
-      return verdict.allow ? undefined : verdict.rule === undefined ? {} : { rule: verdict.rule };
+      // A call that asks is not refused: it is shown as itself.
+      if (verdict.allow || verdict.ask === true) return undefined;
+      return verdict.rule === undefined ? {} : { rule: verdict.rule };
     }
     return hasRules(profile) ? {} : undefined;
   };
@@ -184,7 +198,7 @@ export async function runWorker(
     const denied = deniedByProfile(name, toolInput);
     const summary = denied !== undefined
       ? `${name} denied by the access profile${denied.rule === undefined ? "" : ` (rule: ${denied.rule.replace(/\s+/g, " ").slice(0, 300)})`}`
-      : summarizeCall(profile, name, toolInput, input.cwd, { secrets: input.secretValues });
+      : summarizeCall(profile, name, toolInput, input.cwd, { secrets: input.secretValues, keepLines: true });
     io.line({
       type: "tool_execution_start",
       toolCallId: id,
@@ -225,13 +239,49 @@ export async function runWorker(
   // tool's result and the run goes on; the call is closed for the host.
   const canUseTool: CanUseTool = async (toolName, toolInput, options) => {
     io.log(`canUseTool ${toolName}`);
-    const verdict = await decideAccess(profile, toolName, toolInput, input.cwd, io.useGrant);
+    const askHost = io.ask;
+    const verdict = await decideAccess(
+      profile,
+      toolName,
+      toolInput,
+      input.cwd,
+      io.useGrant,
+      askHost === undefined
+        ? undefined
+        : async (question) => {
+            // A value that holds a secret is never asked about: no fact may hold it.
+            if ((input.secretValues ?? []).some((secret) => secret.length > 0 && question.value.includes(secret))) {
+              return { decision: "deny", reason: "the call holds a secret value, so nobody is asked about it" };
+            }
+            const shown = summarizeCall(profile, toolName, toolInput, input.cwd, { secrets: input.secretValues });
+            return askHost({ ...question, shown: shown ?? question.value, session: sessionId });
+          },
+    );
     if (verdict.allow) return { behavior: "allow", updatedInput: toolInput };
+    if (verdict.stop === true) {
+      // The wait ended: the host ends this program next. Hold the call until it does.
+      await new Promise<void>((resolve) => {
+        if (controller.signal.aborted) resolve();
+        controller.signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+      endCall(options.toolUseID, toolName, true, REFUSED_IN_LOG);
+      return { behavior: "deny", message: verdict.reason, interrupt: true };
+    }
     io.line({ type: "blocked", toolName, reason: REFUSED_IN_LOG });
     endCall(options.toolUseID, toolName, true, REFUSED_IN_LOG);
     return { behavior: "deny", message: verdict.reason };
   };
 
+  // Operad's tools: the program that serves them on stdio, started by claude.
+  const operadServer =
+    input.operadTools === undefined
+      ? undefined
+      : {
+          type: "stdio" as const,
+          command: serverCommand(input.operadTools).command,
+          args: [...serverCommand(input.operadTools).args],
+          env: { OPERAD_HOME: input.operadTools.home },
+        };
   const stderrTail: string[] = [];
   const options: Options = {
     cwd: input.cwd,
@@ -260,6 +310,7 @@ export async function runWorker(
       for (const text of data.split("\n")) if (text.trim().length > 0) stderrTail.push(text.trim());
       if (stderrTail.length > 5) stderrTail.splice(0, stderrTail.length - 5);
     },
+    ...(operadServer === undefined ? {} : { mcpServers: { [OPERAD_SERVER]: operadServer } }),
     ...(input.resumeSession !== undefined ? { resume: input.resumeSession } : {}),
     ...(input.model !== undefined ? { model: input.model } : {}),
     ...(input.effort !== undefined ? { effort: input.effort } : {}),
@@ -497,6 +548,8 @@ export async function main(hooks: WorkerHooks = {}): Promise<never> {
     });
   const stdin = new StdinLines();
   const waiting = new Map<number, (used: boolean) => void>();
+  const questions = new Map<number, (answer: CallAnswer) => void>();
+  let nextAsk = 1;
   const early: string[] = [];
   let onMessage: ((text: string) => void) | undefined;
   let nextGrant = 1;
@@ -518,6 +571,21 @@ export async function main(hooks: WorkerHooks = {}): Promise<never> {
         nextGrant += 1;
         waiting.set(id, resolve);
         write(`${JSON.stringify({ type: "grant_use", id, waitId })}\n`);
+      }),
+    ask: (call) =>
+      new Promise<CallAnswer>((resolve) => {
+        if (hostGone) {
+          resolve({ decision: "deny", reason: "the host is gone" });
+          return;
+        }
+        const id = nextAsk;
+        nextAsk += 1;
+        questions.set(id, (answer) => {
+          // The line that closes the question, so the host's stall timer runs again.
+          write(`${JSON.stringify({ type: "ask_resolved", id })}\n`);
+          resolve(answer);
+        });
+        write(`${JSON.stringify({ type: "ask_call", id, ...call })}\n`);
       }),
   };
   // Anything that prints to stdout by accident would corrupt the protocol.
@@ -556,6 +624,18 @@ export async function main(hooks: WorkerHooks = {}): Promise<never> {
           }
           try {
             const ack: unknown = JSON.parse(line);
+            if (typeof ack === "object" && ack !== null && Reflect.get(ack, "type") === "ask_ack") {
+              const id: unknown = Reflect.get(ack, "id");
+              const decision: unknown = Reflect.get(ack, "decision");
+              const reason: unknown = Reflect.get(ack, "reason");
+              if (typeof id === "number") {
+                questions.get(id)?.({
+                  decision: decision === "allow" || decision === "stop" ? decision : "deny",
+                  ...(typeof reason === "string" ? { reason } : {}),
+                });
+                questions.delete(id);
+              }
+            }
             if (typeof ack === "object" && ack !== null && Reflect.get(ack, "type") === "grant_ack") {
               const id: unknown = Reflect.get(ack, "id");
               const used: unknown = Reflect.get(ack, "used");
@@ -572,6 +652,8 @@ export async function main(hooks: WorkerHooks = {}): Promise<never> {
         hostGone = true;
         for (const resolve of waiting.values()) resolve(false);
         waiting.clear();
+        for (const resolve of questions.values()) resolve({ decision: "deny", reason: "the host is gone" });
+        questions.clear();
       })();
       code = await runWorker(parsed.input, io, controller.signal, hooks);
     }

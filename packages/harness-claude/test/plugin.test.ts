@@ -3,7 +3,6 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  AccessError,
   MemoryPluginStore,
   PluginRegistry,
   Runner,
@@ -15,8 +14,8 @@ import {
   type TriggerView,
 } from "@operad-io/engine";
 import { EVENT_NOTE_TEMPLATE } from "@operad-io/harness-process";
-import { claudeToolEvent, createClaudeHarnessPlugin, modelErrorOf } from "../src/index.ts";
-import { alive, cleanupTempRoots, manualClock, tempRoot, waitForFile, waitForGone, waitForPid, type ManualClock } from "./support.ts";
+import { claudeToolEvent, createClaudeHarnessPlugin } from "../src/index.ts";
+import { alive, cleanupTempRoots, manualClock, tempRoot, waitForFile, waitForGone, waitForPid, type ManualClock } from "@operad-io/harness-process/test-support";
 
 afterAll(cleanupTempRoots);
 
@@ -256,7 +255,7 @@ describe("harness-claude/agent", () => {
     const env = await setup("done");
     const type = env.registry.stepTypes().find((item) => item.name === "harness-claude/agent");
     expect(type?.resumable).toBe(true);
-    expect(type?.results).toEqual(["done", "failed", "interrupted"]);
+    expect(type?.results).toEqual(["done", "failed", "interrupted", "waiting"]);
     expect(type?.timeoutSecs).toBeGreaterThan(3600);
   });
 
@@ -384,12 +383,6 @@ describe("harness-claude/agent", () => {
     expect((dataOf(result).modelError as Record<string, unknown>).kind).toBe("protocol");
   });
 
-  test("modelErrorOf: a usage-limit text wins over a 429 in the same text", () => {
-    expect(modelErrorOf("429 usage limit reached").kind).toBe("usage_limit");
-    expect(modelErrorOf("provider is overloaded").kind).toBe("unavailable");
-    expect(modelErrorOf("a 4290 tokens message").kind).toBe("protocol");
-  });
-
   test("silence without an open tool call is a stall", async () => {
     const env = await setup("stall");
     const running = runAgent(env, { prompt: "hello", cwd: env.root, wallTimeSecs: 300, stallSecs: 1 });
@@ -492,24 +485,16 @@ describe("harness-claude/agent", () => {
 });
 
 describe("harness-claude access", () => {
-  test("the step declares the deny fields it enforces", async () => {
+  test("the step declares the deny and ask fields it enforces", async () => {
     const env = await setup("done");
     const type = env.registry.stepTypes().find((item) => item.name === "harness-claude/agent");
-    expect(type?.enforces).toEqual(["denyPaths", "denyCommands"]);
+    expect(type?.enforces).toEqual(["denyPaths", "denyCommands", "askCommands", "askPaths"]);
   });
 
-  test("a profile with askCommands is refused at start and the field is named", async () => {
+  test("a profile with askCommands is accepted: the step enforces it", async () => {
     const env = await setup("done");
-    let error: unknown;
-    try {
-      env.registry.checkAccess("harness-claude:prompt", { askCommands: ["git push"] });
-    } catch (caught) {
-      error = caught;
-    }
-    expect(error).toBeInstanceOf(AccessError);
-    expect(String((error as Error).message)).toContain("askCommands");
     expect(() =>
-      env.registry.checkAccess("harness-claude:prompt", { denyCommands: ["rm"], denyPaths: ["/etc"] }),
+      env.registry.checkAccess("harness-claude:prompt", { askCommands: ["git push"], denyCommands: ["rm"], denyPaths: ["/etc"] }),
     ).not.toThrow();
   });
 });

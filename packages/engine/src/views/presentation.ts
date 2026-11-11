@@ -6,6 +6,10 @@
 
 import { objectLink } from "../http/link.ts";
 import type { LogBackend } from "../log/types.ts";
+import {
+  followsChanges,
+  type FollowOptions,
+} from "../platform/index.ts";
 import { runTimes } from "./running.ts";
 import type { PluginRegistry, ActionInfo } from "../plugin/registry.ts";
 import { rankOf, sortByRank, splitActionName } from "../plugin/registry.ts";
@@ -176,7 +180,7 @@ export class ViewError extends Error {
   }
 }
 
-export interface ViewsOptions {
+export interface ViewsOptions extends FollowOptions {
   readonly registry: PluginRegistry;
   readonly store?: PluginStore | undefined;
   readonly log?: LogBackend | undefined;
@@ -442,22 +446,24 @@ export class Views {
     this.onLog = options.onLog ?? ((message) => console.error(message));
     this.home = options.home ?? options.registry.home;
 
-    if (typeof this.store.subscribe === "function") {
-      this.unsubscribe.push(
-        this.store.subscribe((object) => this.publish(object.id)),
-      );
-    }
-    if (typeof this.log?.subscribe === "function") {
-      this.unsubscribe.push(
-        this.log.subscribe((change) => {
-          const parsed = change.object === undefined
-            ? undefined
-            : splitId(change.object);
-          if (parsed === undefined) return;
-          if (parsed.type === "flow") return;
-          this.publish(parsed.id);
-        }),
-      );
+    if (followsChanges(options)) {
+      if (typeof this.store.subscribe === "function") {
+        this.unsubscribe.push(
+          this.store.subscribe((object) => this.publish(object.id)),
+        );
+      }
+      if (typeof this.log?.subscribe === "function") {
+        this.unsubscribe.push(
+          this.log.subscribe((change) => {
+            const parsed = change.object === undefined
+              ? undefined
+              : splitId(change.object);
+            if (parsed === undefined) return;
+            if (parsed.type === "flow") return;
+            this.publish(parsed.id);
+          }),
+        );
+      }
     }
   }
 
@@ -466,7 +472,11 @@ export class Views {
     if (this.preparing === undefined) {
       const running = (async () => {
         for (const entry of this.registry.objectTypes()) {
-          await entry.definition.prepare?.({ store: this.store });
+          await entry.definition.prepare?.({
+            store: this.store,
+            home: this.registry.home,
+            settings: this.registry.settingsFor(entry.plugin),
+          });
         }
       })();
       this.preparing = running;
@@ -911,7 +921,8 @@ export class Views {
     return {
       ...row,
       ...(withScope && scope !== undefined ? { scope } : {}),
-      waiting: flag.waiting,
+      // A plugin's own `waiting` is an object a person must act on that has no run.
+      waiting: row.waiting || flag.waiting,
       running: flag.running,
     };
   }
@@ -949,12 +960,12 @@ export class Views {
     let dependents: readonly string[] = [];
 
     if (owner !== undefined && object !== undefined) {
-      const { scope: _scope, ...guarded } = this.guardedRow(
+      const { scope, ...guarded } = this.guardedRow(
         owner.plugin,
         resolved.type,
         object,
       );
-      row = { ...guarded, ...flags };
+      row = { ...guarded, ...flags, waiting: guarded.waiting || flags.waiting };
       try {
         sections = this.sectionDirectory(owner.plugin, object);
       } catch (error) {
@@ -964,7 +975,7 @@ export class Views {
         sections = [];
       }
       actions.push(...(await this.availableActions(resolved.type, object)));
-      dependents = await this.dependentsOf(owner.plugin, resolved.type, row.id);
+      dependents = await this.dependentsOf(owner.plugin, resolved.type, row.id, scope);
     } else {
       row = {
         id: resolved.id,
@@ -992,11 +1003,15 @@ export class Views {
     };
   }
 
-  /** The ids of the objects of a type whose row names `rowId` in `after`. */
+  /**
+   * The ids of the objects of a type whose row names `rowId` in `after`. A row
+   * with a scope names only rows of its own scope.
+   */
   private async dependentsOf(
     plugin: string,
     type: string,
     rowId: string,
+    scope: string | undefined,
   ): Promise<readonly string[]> {
     const found: string[] = [];
     let cursor: string | undefined;
@@ -1004,7 +1019,11 @@ export class Views {
       const page = await this.store.list(type, cursor === undefined ? {} : { cursor });
       for (const object of page.objects) {
         const row = this.guardedRow(plugin, type, object);
-        if (row.id !== rowId && row.after?.includes(rowId) === true) {
+        if (
+          row.id !== rowId &&
+          row.scope === scope &&
+          row.after?.includes(rowId) === true
+        ) {
           found.push(row.id);
         }
       }
@@ -1755,7 +1774,7 @@ export class Views {
       ...(outcome.final === true ? { final: true } : {}),
       ...(mark === undefined ? {} : { mark }),
       ...(typeof badge === "string" ? { badge } : {}),
-      waiting: false,
+      waiting: outcome.waiting === true,
       running: false,
     };
   }
@@ -1927,7 +1946,6 @@ export class Views {
       } catch (error) {
         lines.push(`- could not read this run: ${messageOf(error)}`);
       }
-      lines.push(`<sub>run ${run.runId}</sub>`);
       lines.push("");
     }
     return `${lines.join("\n").trimEnd()}\n`;

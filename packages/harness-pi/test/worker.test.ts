@@ -506,8 +506,13 @@ test("nothing under the fake HOME .pi is read or created", async () => {
   expect(run.exitCode).toBe(0);
   expect(last(run)).toMatchObject({ result: "done" });
   expect(files.map((file) => statSync(file).atimeMs)).toEqual(before);
-  // Bun's own transpiler cache makes Library/ under HOME; it is not pi's.
-  expect(readdirSync(s.home).filter((name) => name !== "Library")).toEqual([".pi"]);
+  // Bun's own transpiler cache makes Library/ under HOME on macOS and
+  // .bun/install/cache on Linux; neither belongs to pi. Importing an unrelated
+  // package with Bun and HOME set to a scratch directory made the same
+  // .bun/install/cache/@t@/*.pile files without pi running.
+  expect(
+    readdirSync(s.home).filter((name) => name !== "Library" && name !== ".bun"),
+  ).toEqual([".pi"]);
   expect(readdirSync(join(s.home, ".pi")).sort()).toEqual(["agent"]);
   expect(readdirSync(agent).sort()).toEqual(["AGENTS.md", "auth.json", "models.json", "settings.json", "skills"]);
 });
@@ -613,6 +618,161 @@ test("a grant the host cannot confirm lets nothing through", async () => {
   expect(run.lines.filter((line) => line["type"] === "blocked")).toHaveLength(1);
 });
 
+/**
+ * Runs the fake worker with a host that answers `ask_call` lines. `decide` sees
+ * each question and answers; after a `stop` the host ends the program, as the
+ * real host does.
+ */
+async function runAsking(
+  s: Setup,
+  script: unknown[],
+  input: Record<string, unknown>,
+  decide: (call: Record<string, unknown>) => "allow" | "deny" | "stop",
+): Promise<Run> {
+  const child = Bun.spawn(["bun", FAKE_WORKER], {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, HOME: s.home, FAKE_SCRIPT: JSON.stringify(script) },
+  });
+  child.stdin.write(`${JSON.stringify(input)}\n`);
+  void child.stdin.flush();
+  const raw: string[] = [];
+  const decoder = new TextDecoder();
+  let pending = "";
+  for await (const chunk of child.stdout) {
+    pending += decoder.decode(chunk, { stream: true });
+    for (;;) {
+      const newline = pending.indexOf("\n");
+      if (newline === -1) break;
+      const line = pending.slice(0, newline);
+      pending = pending.slice(newline + 1);
+      raw.push(line);
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      if (parsed["type"] === "grant_use") {
+        child.stdin.write(`${JSON.stringify({ type: "grant_ack", id: parsed["id"], used: true })}\n`);
+        void child.stdin.flush();
+      }
+      if (parsed["type"] === "ask_call") {
+        const decision = decide(parsed);
+        child.stdin.write(`${JSON.stringify({ type: "ask_ack", id: parsed["id"], decision, reason: "no thanks" })}\n`);
+        void child.stdin.flush();
+        if (decision === "stop") child.kill("SIGTERM");
+      }
+    }
+  }
+  const exitCode = await child.exited;
+  const stderr = await new Response(child.stderr).text();
+  return { lines: raw.map((line) => JSON.parse(line) as Record<string, unknown>), raw, stderr, exitCode };
+}
+
+test("a command askCommands matches asks a person: allowed, it runs once; the same command again asks again", async () => {
+  const s = setup();
+  const marker = join(s.dir, "marker");
+  const calls: Array<Record<string, unknown>> = [];
+  let markerSeenAtFirst: boolean | undefined;
+  const run = await runAsking(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${marker}` } } },
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${marker}` } } },
+      { text: "finished" },
+    ],
+    { ...s.input, access: { askCommands: ["touch"] } },
+    (call) => {
+      calls.push(call);
+      markerSeenAtFirst ??= existsSync(marker);
+      // The first question is allowed; the second is refused.
+      return calls.length === 1 ? "allow" : "deny";
+    },
+  );
+
+  expect(run.exitCode).toBe(0);
+  expect(calls).toHaveLength(2);
+  expect(calls[0]).toMatchObject({ type: "ask_call", kind: "command", value: `touch ${marker}`, shown: `touch ${marker}` });
+  // The session a late answer continues is pi's session file.
+  expect(typeof calls[0]?.["session"]).toBe("string");
+  expect(markerSeenAtFirst).toBe(false);
+  expect(existsSync(marker)).toBe(true);
+  // One call was let through and one refused.
+  expect(run.lines.filter((line) => line["type"] === "blocked")).toHaveLength(1);
+  expect(run.raw.filter((text) => text.includes('"ask_resolved"'))).toHaveLength(2);
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "finished" });
+});
+
+test("a denied command is never asked about: deny wins over ask", async () => {
+  const s = setup();
+  const marker = join(s.dir, "marker");
+  const run = await runAsking(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${marker}` } } },
+      { text: "finished" },
+    ],
+    { ...s.input, access: { askCommands: ["touch"], denyCommands: ["touch"] } },
+    () => "allow",
+  );
+  expect(existsSync(marker)).toBe(false);
+  expect(run.raw.filter((text) => text.includes('"ask_call"'))).toHaveLength(0);
+});
+
+test("a stop holds the call: the command never runs and the program ends when the host ends it", async () => {
+  const s = setup();
+  const marker = join(s.dir, "marker");
+  const run = await runAsking(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${marker}` } } },
+      { text: "finished" },
+    ],
+    { ...s.input, access: { askCommands: ["touch"] } },
+    () => "stop",
+  );
+  expect(existsSync(marker)).toBe(false);
+  expect(run.lines.some((line) => line["type"] === "result" && line["result"] === "done")).toBe(false);
+});
+
+test("a command that holds a secret value is refused and never asked about", async () => {
+  const s = setup();
+  const marker = join(s.dir, "marker");
+  const run = await runAsking(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${marker}-hunter2hunter2` } } },
+      { text: "finished" },
+    ],
+    { ...s.input, access: { askCommands: ["touch"] }, secretValues: ["hunter2hunter2"] },
+    () => "allow",
+  );
+  expect(existsSync(`${marker}-hunter2hunter2`)).toBe(false);
+  expect(run.raw.filter((text) => text.includes('"ask_call"'))).toHaveLength(0);
+});
+
+test("after a late answer the permission lets the asked command through and a different command asks again", async () => {
+  const s = setup();
+  const marker = join(s.dir, "marker");
+  const other = join(s.dir, "other");
+  const asked: string[] = [];
+  const run = await runAsking(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${marker}` } } },
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${other}` } } },
+      { text: "finished" },
+    ],
+    { ...s.input, access: { askCommands: ["touch"], grants: [{ waitId: "w1", kind: "command", value: `touch ${marker}` }] } },
+    (call) => {
+      asked.push(String(call["value"]));
+      return "deny";
+    },
+  );
+  // The covered command used the permission and did not ask; the other one asked.
+  expect(run.lines.filter((line) => line["type"] === "grant_use")).toHaveLength(1);
+  expect(asked).toEqual([`touch ${other}`]);
+  expect(existsSync(marker)).toBe(true);
+  expect(existsSync(other)).toBe(false);
+});
+
 function makeFifo(path: string): void {
   const made = Bun.spawnSync({ cmd: ["mkfifo", path] });
   if (made.exitCode !== 0) throw new Error(`mkfifo failed for ${path}`);
@@ -712,6 +872,20 @@ function toolLines(run: Run): { start: Array<Record<string, unknown>>; end: Arra
   };
 }
 
+test("a multi-line bash command keeps its lines in the log", async () => {
+  const s = setup();
+  const run = await runFake(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: "python3 - <<'EOF'\nprint(1)\n\nEOF" } } },
+      { text: "done" },
+    ],
+    s.input,
+    { FAKE_CLOCK_STEP: "1" },
+  );
+  expect(toolLines(run).start[0]).toMatchObject({ input: "python3 - <<'EOF'\nprint(1)\n\nEOF" });
+});
+
 test("a bash call logs its command, its start time and its duration, and no output", async () => {
   const s = setup();
   const run = await runFake(
@@ -789,4 +963,84 @@ test("a secret of the operad store sent as secretValues is masked in the logged 
   ]);
   expect(toolLines(run).start[0]?.["input"]).toBe("curl -H *** x");
   expect(JSON.stringify(toolLines(run).start)).not.toContain("store-secret-9");
+});
+
+test("a write to an askPaths path asks with the path and the tool; allowed, the file is written", async () => {
+  const s = setup();
+  const target = join(s.dir, "profile-file");
+  const calls: Array<Record<string, unknown>> = [];
+  const run = await runAsking(
+    s,
+    [
+      { text: "", toolCall: { name: "write", arguments: { path: target, content: "x\n" } } },
+      { text: "finished" },
+    ],
+    { ...s.input, access: { askPaths: [target] } },
+    (call) => {
+      calls.push(call);
+      return "allow";
+    },
+  );
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toMatchObject({ type: "ask_call", kind: "path", value: target, tool: "write" });
+  expect(existsSync(target)).toBe(true);
+  expect(last(run)).toMatchObject({ result: "done" });
+});
+
+function operadHome(s: Setup): string {
+  const home = join(s.dir, "operad-home");
+  mkdirSync(home, { recursive: true });
+  const plugin = join(import.meta.dir, "..", "..", "engine", "test", "fixtures", "plugins", "presentation.ts");
+  writeFileSync(
+    join(home, "config.json"),
+    JSON.stringify({ plugins: [plugin], store: { backend: "jsonl", path: join(s.dir, "operad-store") } }),
+  );
+  return home;
+}
+
+test("operadTools registers operad's tools with pi: the model calls one and it runs against the home", async () => {
+  const s = setup();
+  const contexts = join(s.dir, "contexts.jsonl");
+  const run = await runFake(
+    s,
+    [
+      { text: "", toolCall: { name: "operad_list", arguments: { type: "item" } } },
+      { text: "I looked" },
+    ],
+    { ...s.input, operadTools: { home: operadHome(s) } },
+    { FAKE_CONTEXT_FILE: contexts },
+  );
+  expect(run.exitCode).toBe(0);
+  const ended = run.lines.find((line) => line["type"] === "tool_execution_end");
+  expect(ended).toMatchObject({ toolName: "operad_list", isError: false });
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "I looked" });
+});
+
+test("an operad tool that refuses gives the model an error and the run goes on", async () => {
+  const s = setup();
+  const run = await runFake(
+    s,
+    [
+      { text: "", toolCall: { name: "operad_list", arguments: { type: "nosuchtype" } } },
+      { text: "it refused" },
+    ],
+    { ...s.input, operadTools: { home: operadHome(s) } },
+  );
+  expect(run.lines.find((line) => line["type"] === "tool_execution_end")).toMatchObject({ toolName: "operad_list", isError: true });
+  expect(last(run)).toMatchObject({ result: "done" });
+});
+
+test("without operadTools pi has no operad tool", async () => {
+  const s = setup();
+  const run = await runFake(s, [
+    { text: "", toolCall: { name: "operad_list", arguments: { type: "item" } } },
+    { text: "none" },
+  ]);
+  expect(run.lines.find((line) => line["type"] === "tool_execution_end")).toMatchObject({ isError: true });
+});
+
+test("parseInput takes operadTools with a home and refuses one without", () => {
+  const base = { prompt: "p", cwd: "/c", authPath: "/a", modelsPath: "/m", agentDir: "/d", sessionDir: "/s" };
+  expect(parseInput({ ...base, operadTools: { home: "/h" } }).ok).toBe(true);
+  expect(parseInput({ ...base, operadTools: {} })).toEqual({ ok: false, message: "operadTools must be an object with a home" });
 });

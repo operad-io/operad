@@ -13,6 +13,7 @@
         "@operad-io/source-cron": "workspace:*",
       },
       "devDependencies": {
+        "@operad-io/chat": "workspace:*",
         "@operad-io/dev": "workspace:*",
         "@operad-io/shell": "workspace:*",
         "@types/bun": "1.3.1",
@@ -23,6 +24,24 @@
       "name": "@operad-io/access-match",
       "version": "0.0.0",
     },
+    "packages/assistant": {
+      "name": "@operad-io/assistant",
+      "version": "0.0.0",
+      "dependencies": {
+        "@operad-io/chat": "workspace:*",
+        "@operad-io/engine": "workspace:*",
+      },
+      "devDependencies": {
+        "@operad-io/access-match": "workspace:*",
+      },
+    },
+    "packages/chat": {
+      "name": "@operad-io/chat",
+      "version": "0.0.0",
+      "dependencies": {
+        "@operad-io/engine": "workspace:*",
+      },
+    },
     "packages/cli": {
       "name": "@operad-io/cli",
       "version": "0.0.1",
@@ -30,6 +49,7 @@
         "operad": "bin/operad.ts",
       },
       "dependencies": {
+        "@operad-io/chat": "workspace:*",
         "@operad-io/dev": "workspace:*",
         "@operad-io/engine": "workspace:*",
         "@operad-io/harness-claude": "workspace:*",
@@ -45,6 +65,7 @@
       "name": "@operad-io/dev",
       "version": "0.0.0",
       "dependencies": {
+        "@operad-io/chat": "workspace:*",
         "@operad-io/engine": "workspace:*",
         "@operad-io/pool": "workspace:*",
         "@operad-io/review-grading": "workspace:*",
@@ -74,6 +95,7 @@
         "@operad-io/access-match": "workspace:*",
         "@operad-io/engine": "workspace:*",
         "@operad-io/harness-process": "workspace:*",
+        "@operad-io/mcp": "workspace:*",
       },
       "devDependencies": {
         "@earendil-works/pi-coding-agent": "1.5.0",
@@ -84,6 +106,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@operad-io/engine": "workspace:*",
+        "@operad-io/mcp": "workspace:*",
       },
     },
     "packages/harness-radian": {
@@ -250,6 +273,10 @@
     "@opentui/core-win32-x64": ["@opentui/core-win32-x64@0.6.8", "", { "os": "win32", "cpu": "x64" }, "sha512-6dZuSw883BDetY59G2QwWHJG1kwfPkL+lWhDQ3a6ICxW4/7nito3uPkMRaRDb8DiTHgx0wMt/RdiydjQmZd+lw=="],
 
     "@operad-io/access-match": ["@operad-io/access-match@workspace:packages/access-match"],
+
+    "@operad-io/assistant": ["@operad-io/assistant@workspace:packages/assistant"],
+
+    "@operad-io/chat": ["@operad-io/chat@workspace:packages/chat"],
 
     "@operad-io/cli": ["@operad-io/cli@workspace:packages/cli"],
 

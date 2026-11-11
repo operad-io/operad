@@ -19,9 +19,9 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { checkPlaces } from "./places.ts";
-import { approvedWordsOf, cleanWords, unapprovedWords } from "./words.ts";
 import { linkWorkspacePackages, runPrepare, stepOptions } from "./prepare.ts";
 import { runCheckCommands } from "./rerun.ts";
+import { isLoaded, runCheckSteadily } from "./notcode.ts";
 import { reportFlakyTests } from "./flaky.ts";
 import { recordRerunPasses } from "./reruns.ts";
 import {
@@ -56,6 +56,7 @@ import {
 } from "./model.ts";
 import {
   assertInsideRepository,
+  type CheckCommand,
   type DevSettings,
   type FixLevel,
   type ReviewerFallback,
@@ -92,6 +93,7 @@ import {
 } from "./rework.ts";
 import {
   MAX_REVIEW_WAITS,
+  reviewWaitMs,
   REVIEW_WAIT_CHUNK_MS,
   STEP_TIMEOUT_SECS,
 } from "./timeouts.ts";
@@ -163,21 +165,6 @@ function mergeBase(
   const main = `${settings.remote}/${settings.mainBranch}`;
   const result = git(repositoryPath, ["merge-base", main, sha]);
   return result.ok && result.out.length > 0 ? result.out : undefined;
-}
-
-/** The text of main's user docs at a commit: README files and docs/manual.md. */
-function userDocsAt(repositoryPath: string, commit: string): string {
-  const listed = git(repositoryPath, ["ls-tree", "-r", "--name-only", commit]);
-  if (!listed.ok) return "";
-  const parts: string[] = [];
-  for (const path of listed.out.split("\n")) {
-    const name = path.slice(path.lastIndexOf("/") + 1);
-    const isDoc = /^readme.*\.md$/i.test(name) || path === "docs/manual.md";
-    if (!isDoc) continue;
-    const shown = git(repositoryPath, ["show", `${commit}:${path}`], true);
-    if (shown.ok) parts.push(shown.out);
-  }
-  return parts.join("\n").toLowerCase();
 }
 
 /** Removes whatever is at the gate path and checks a commit out detached. */
@@ -257,7 +244,7 @@ export async function runVerify(
     previous.run === ctx.runId
   ) {
     return {
-      result: previous.result,
+      result: typeof previous.notCode === "string" ? "not_code" : previous.result,
       data: verifyData(previous, {
         attempt: attempt.number,
         verified: attempt.verified ?? null,
@@ -340,7 +327,16 @@ export async function runVerify(
     });
   }
 
-  const commands = context.settings.gate.commands;
+  const commands = (() => {
+    const given = ((ctx.params ?? {}) as { readonly commands?: unknown }).commands;
+    return Array.isArray(given)
+      ? (given as readonly CheckCommand[])
+      : context.settings.gate.commands;
+  })();
+  const rerun = (() => {
+    const given = ((ctx.params ?? {}) as { readonly rerun?: unknown }).rerun;
+    return typeof given === "number" ? given : context.settings.check.rerun;
+  })();
   const runStep = ctx.runStep;
   if (runStep === undefined) {
     return failed(
@@ -349,14 +345,22 @@ export async function runVerify(
     );
   }
 
-  const checked = await runCheckCommands(
-    runStep,
-    { cwd: path, timeoutSecs: context.settings.gate.commandTimeoutSecs },
-    commands,
-    stepOptions(ctx, path),
-    context.settings.check.rerun,
-    checkPlaces(ctx, context.repository, context.settings.gate.places),
-  );
+  const steady = await runCheckSteadily({
+    run: () =>
+      runCheckCommands(
+        runStep,
+        { cwd: path, timeoutSecs: context.settings.gate.commandTimeoutSecs },
+        commands,
+        stepOptions(ctx, path),
+        rerun,
+        checkPlaces(ctx, context.repository, context.settings.gate.places, context.taskKey),
+      ),
+    limit: context.settings.check.loadLimit,
+    signal: ctx.signal,
+    log: (text) => ctx.logger.write(text),
+  });
+  if (steady.cancelled === true) return cancelledStep();
+  const { checked } = steady;
   await recordRerunPasses(ctx.store, checked.passedOnRerun);
   const flakyNotice = await reportFlakyTests({
     ctx,
@@ -365,6 +369,7 @@ export async function runVerify(
     threshold: context.settings.check.flakyTask,
     flakyPlan: context.settings.check.flakyPlan,
     check: checked,
+    ...(isLoaded(steady.load, context.settings.check.loadLimit) ? { load: steady.load } : {}),
   });
   const { outcome, hostError } = checked;
   // A notice joins the check's own note, so the task's Changes and the step's history say it.
@@ -380,12 +385,16 @@ export async function runVerify(
   const command =
     typeof outcomeData.line === "string" ? outcomeData.line : undefined;
   const log = typeof outcomeData.log === "string" ? outcomeData.log : undefined;
-  const failure =
+  const failureText =
     hostError ??
     (typeof outcomeData.message === "string" ? outcomeData.message : undefined) ??
     (result === "fail"
       ? `the gate commands failed (${outcome?.result ?? "unknown"})`
       : undefined);
+  const failure =
+    steady.notCode === undefined
+      ? failureText
+      : [steady.notCode.cause, failureText].filter((part) => part !== undefined).join("; ");
   // History shows the message before the reason, so a failure carries the notice.
   const message =
     failure !== undefined && flakyNotice !== undefined
@@ -404,6 +413,7 @@ export async function runVerify(
     ...(log === undefined ? {} : { log }),
     ...(message === undefined ? {} : { message }),
     ...(lineNumber === undefined ? {} : { lineNumber }),
+    ...(steady.notCode === undefined ? {} : { notCode: steady.notCode.cause }),
   };
   const nextAttempt: TaskAttempt = {
     ...recordVerify(attempt, record),
@@ -415,7 +425,8 @@ export async function runVerify(
     context.taskKey,
     {
       ...task,
-      phase: "review",
+      // A check that was not the code waits for a person, not for the worker.
+      phase: steady.notCode === undefined ? "review" : "waiting",
       run: ctx.runId,
       attempts: Math.max(task.attempts, attempt.number),
       attempt: nextAttempt,
@@ -427,7 +438,7 @@ export async function runVerify(
   );
   if (!written) return cancelledStep();
   return {
-    result,
+    result: steady.notCode === undefined ? result : "not_code",
     data: verifyData(record, {
       ...(note === undefined ? {} : { note }),
       ...(flakyNotice === undefined ? {} : { reason: flakyNotice }),
@@ -791,7 +802,8 @@ function parseFinding(value: unknown): FindingShape | undefined {
 interface Report {
   readonly findings: readonly FindingShape[];
   readonly verified: readonly string[];
-  readonly words: readonly string[];
+  /** The commit the reviewer says it read; absent when it did not say, which dev refuses. */
+  readonly sha?: string;
 }
 
 function parseReport(text: string): Report | undefined {
@@ -811,29 +823,26 @@ function parseReport(text: string): Report | undefined {
     if (finding === undefined) return undefined;
     findings.push(finding);
   }
-  // `words` is optional: a report without it names no new word.
-  const words =
-    Array.isArray(value.words) &&
-    value.words.every((item) => typeof item === "string")
-      ? cleanWords(value.words as readonly string[])
-      : [];
+  if (value.sha !== undefined && typeof value.sha !== "string") return undefined;
   return {
     findings,
     verified: value.verified as readonly string[],
-    words,
+    ...(typeof value.sha === "string" ? { sha: value.sha } : {}),
   };
 }
 
-/** The flow whose grading the review reads; the dev plugin has one. */
+/** The flow whose grading the review reads when a stage names none. */
 const REVIEW_FLOW = "dev";
 
 /**
  * The repository's grading for this flow. An invalid review.json fails the
- * step the way an invalid dev.json does.
+ * step the way an invalid dev.json does. A review stage may name its entry.
  */
-function gradingOf(context: TaskContext): Grading {
+function gradingOf(context: TaskContext, params: unknown): Grading {
+  const given = ((params ?? {}) as { readonly grading?: unknown }).grading;
+  const flow = typeof given === "string" && given.length > 0 ? given : REVIEW_FLOW;
   try {
-    return readReviewGrading(context.repository.path, REVIEW_FLOW);
+    return readReviewGrading(context.repository.path, flow);
   } catch (error) {
     if (error instanceof ReviewGradingError) {
       throw new DevError(
@@ -846,11 +855,14 @@ function gradingOf(context: TaskContext): Grading {
 }
 
 /** The context with review.json's fixLevel, when set, over dev.json's. */
-function gradedContext(context: TaskContext): {
+function gradedContext(
+  context: TaskContext,
+  params: unknown,
+): {
   readonly context: TaskContext;
   readonly grading: Grading;
 } {
-  const grading = gradingOf(context);
+  const grading = gradingOf(context, params);
   if (grading.fixLevel === undefined) return { context, grading };
   return {
     grading,
@@ -960,9 +972,8 @@ function reviewPrompt(
     ].join("\n"),
     "## What to write",
     [
-      `Write a JSON object to ${resultPath} (inside the worktree you are in). The file must contain exactly:`,
-      '{ "findings": [{ "file": "<path>", "line": <number>, "severity": "critical|major|minor", "summary": "<one line>", "trigger": "<what causes it>" }], "verified": ["<what you checked>"], "words": ["<word>"] }',
-      "Check the diff for new user-visible words: command and action names, setting keys, words in command output, errors meant for users, words in user docs. List each one the change adds in `words` (an empty list when there is none), whatever the worker said. Internal names are not user-visible words.",
+      `Write a JSON object to ${resultPath} (inside the worktree you are in). The file must contain exactly (\`sha\` is the commit you reviewed, ${sha}):`,
+      `{ "findings": [{ "file": "<path>", "line": <number>, "severity": "critical|major|minor", "summary": "<one line>", "trigger": "<what causes it>" }], "verified": ["<what you checked>"], "sha": "${sha}" }`,
       "List every problem you find; the gate decides which of them are old, not you.",
       ...(rework === undefined
         ? []
@@ -1758,11 +1769,59 @@ function reworkPromptOf(
   };
 }
 
+/** The string list a stage parameter holds, when it holds one. */
+function stringsOf(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.every((item): item is string => typeof item === "string")
+    ? value
+    : undefined;
+}
+
+/**
+ * A reviewer overlaid with its stage's parameters. `use` and `args` apply to
+ * every review of the stage; `later` replaces the arguments after the first
+ * review of an attempt.
+ */
+function stageReviewerOf(
+  base: ReviewerSettings,
+  params: unknown,
+  laterRound: boolean,
+): ReviewerSettings {
+  const given = (params ?? {}) as {
+    readonly use?: unknown;
+    readonly args?: unknown;
+    readonly later?: unknown;
+  };
+  const use = typeof given.use === "string" ? given.use : undefined;
+  const args = stringsOf(given.args);
+  const later = stringsOf(given.later);
+  const first = base.first;
+  const stage: ReviewerSettings = {
+    ...base,
+    ...(use === undefined ? {} : { use }),
+    ...(args === undefined
+      ? {}
+      : {
+          args,
+          firstArgs: args,
+          ...(first === undefined ? {} : { first: { ...first, args } }),
+        }),
+    ...(first !== undefined && use !== undefined
+      ? { first: { ...first, use, ...(args === undefined ? {} : { args }) } }
+      : {}),
+  };
+  if (!laterRound || later === undefined) return stage;
+  // `later` is the task's second round on: it replaces the first-review
+  // arguments too, which a rework's first review of an attempt would keep.
+  const { firstArgs: _firstArgs, first: _first, ...rest } = stage;
+  return { ...rest, args: later };
+}
+
 /** Step `dev/review`: have the reviewer read the verified commit's diff. */
 export async function runReview(
   ctx: StepContext,
 ): Promise<PluginStepResult> {
-  const { context, grading } = gradedContext(await taskContext(ctx));
+  const { context, grading } = gradedContext(await taskContext(ctx), ctx.params);
   if (!claimAllows(ctx, context.task)) return cancelledStep();
   const task = context.task;
   const attempt = attemptOf(ctx, task);
@@ -1789,7 +1848,16 @@ export async function runReview(
       previous.decision === "timed_out" ||
       previous.reason === "exhausted" ||
       previous.reason === "out_of_time";
-    if (finished && (previous.round === round || previous.run === ctx.runId)) {
+    // A round recorded for another commit is not this commit's review.
+    const sameCommit =
+      typeof previous.sha !== "string" ||
+      typeof attempt.verified !== "string" ||
+      previous.sha === attempt.verified;
+    if (
+      finished &&
+      sameCommit &&
+      (previous.round === round || previous.run === ctx.runId)
+    ) {
       return replayReview(previous, attempt);
     }
     if (previous.round === round && previous.decision === "unavailable") {
@@ -1821,19 +1889,26 @@ export async function runReview(
         sources: { ...used.sources, use: "fallback", args: "fallback" },
       };
     }
-    const withSettings: ReviewRecord =
-      used === undefined ? recorded : { ...recorded, reviewSettings: used };
-    // A review that passed still waits for a person when the worker or the
-    // reviewer names a user-visible word nobody approved.
-    let record: ReviewRecord = withSettings;
-    if (withSettings.decision === "passed" && typeof sha === "string") {
-      const named = [...(attempt.workWords ?? []), ...(withSettings.words ?? [])];
-      const mergeBaseSha = mergeBase(context.repository.path, context.settings, sha);
-      const docs =
-        mergeBaseSha === undefined ? "" : userDocsAt(context.repository.path, mergeBaseSha);
-      const unapproved = unapprovedWords(named, approvedWordsOf(task.brief), docs);
-      if (unapproved.length > 0) record = { ...withSettings, newWords: unapproved };
+    // The report names the commit it reviewed; one that is not the checked
+    // commit is refused, not recorded as a review of it.
+    if (
+      typeof sha === "string" &&
+      typeof recorded.sha === "string" &&
+      recorded.sha !== sha
+    ) {
+      const message = `the review report is for ${recorded.sha}, not the checked commit ${sha}`;
+      return finish(
+        { result: "failed", run: ctx.runId, sha, round, reason: "wrong_commit", message },
+        "failed",
+        { reason: "wrong_commit", message },
+      );
     }
+    const stamped: ReviewRecord =
+      typeof sha === "string" && recorded.sha === undefined
+        ? { ...recorded, sha }
+        : recorded;
+    const record: ReviewRecord =
+      used === undefined ? stamped : { ...stamped, reviewSettings: used };
     const written = await saveTaskGuarded(
       ctx,
       context.taskKey,
@@ -2055,7 +2130,11 @@ export async function runReview(
   // settings, even when the followed commit is missing and it reads like a first.
   used = reviewSettingsOf(
     kind === "first" && history.length > 0 ? "rework" : kind,
-    context.settings.reviewer,
+    stageReviewerOf(
+      context.settings.reviewer,
+      ctx.params,
+      kind !== "first" || history.length > 0,
+    ),
     reviews === 0,
   );
   // The lines the task's own change added, for the pre-existing rules.
@@ -2315,6 +2394,18 @@ export async function runReview(
     }
     reviewTestHooks.afterCall?.({ role: action.role, reason: action.reason });
     let runRecord: ReviewRunRecord;
+    // A report for another commit is refused, not recorded as this commit's.
+    if (call.outcome === "report" && call.report?.sha !== sha) {
+      const message =
+        call.report?.sha === undefined
+          ? `the review report does not name the commit it reviewed; the checked commit is ${sha}`
+          : `the review report is for ${call.report.sha}, not the checked commit ${sha}`;
+      return finish(
+        { result: "failed", run: ctx.runId, sha, round, reason: "wrong_commit", message },
+        "failed",
+        { reason: "wrong_commit", message },
+      );
+    }
     if (call.outcome === "report" && call.report !== undefined) {
       // Dev decides what is pre-existing; a mark the model wrote is dropped.
       const findings: ReviewFinding[] = call.report.findings.map((reported) => {
@@ -2356,7 +2447,6 @@ export async function runReview(
         run: ctx.runId,
         findings,
         verified: call.report.verified,
-        words: call.report.words,
         counted,
       };
     } else {
@@ -2444,7 +2534,6 @@ export async function runReview(
       runs,
       findings,
       verified: last.verified ?? [],
-      words: last.words ?? [],
       log: resultPath,
       message,
       base,
@@ -2502,8 +2591,12 @@ export async function runReview(
   }
 
   if (next === "wait-unavailable") {
+    const waits = runs.filter(
+      (run) => run.role === "primary" && run.outcome === "unavailable",
+    ).length;
     const retryAt =
-      (reviewTestHooks.now?.() ?? Date.now()) + settings.retrySecs * 1000;
+      (reviewTestHooks.now?.() ?? Date.now()) +
+      reviewWaitMs(settings.retrySecs, waits);
     const message = reviewMessage("unavailable", runs, retryAt);
     const record: ReviewRecord = {
       result: "unavailable",
@@ -2722,7 +2815,7 @@ export async function runRework(
 
   if (source === "review") {
     const review = attempt?.review;
-    const level = gradedContext(context).context.settings.reviewer.fixLevel;
+    const level = gradedContext(context, ctx.params).context.settings.reviewer.fixLevel;
     const findings = (review?.findings ?? []).filter(
       (finding) =>
         finding.preExisting !== true &&

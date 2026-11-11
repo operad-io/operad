@@ -115,6 +115,57 @@ describe("check places", () => {
     expect(watcher.lines).toEqual(["waiting for a check place: 2 in use"]);
   });
 
+  test("a waiting check tells the kernel and the task its place group until it takes the place", async () => {
+    const home = await osTempRoot();
+    const rings = bell();
+    const hold = deferred();
+    let holding = false;
+    const holder = withCheckPlace({ home, checks: 1, log: () => {} }, () => {
+      holding = true;
+      return hold.promise;
+    });
+    await until(() => holding);
+    const events: string[] = [];
+    const watcher = logWatcher();
+    const waiting = withCheckPlace(
+      {
+        home,
+        checks: 1,
+        log: watcher.log,
+        wait: rings.wait,
+        queued: (key) => {
+          events.push(`queued ${key}`);
+          return Promise.resolve(() => {
+            events.push(`ended ${key}`);
+            return Promise.resolve();
+          });
+        },
+        waiting: (key) => {
+          events.push(`row ${key}`);
+          return Promise.resolve();
+        },
+      },
+      () => {
+        events.push("work");
+      },
+    );
+    await watcher.seen("waiting for a check place: 1 in use");
+    await until(() => events.includes("row check place"));
+    expect(events).toEqual(["queued check place", "row check place"]);
+    hold.resolve();
+    await holder;
+    rings.ring();
+    await waiting;
+    // The kernel and the row hear it end before the command starts.
+    expect(events.slice(0, 5)).toEqual([
+      "queued check place",
+      "row check place",
+      "ended check place",
+      "row null",
+      "work",
+    ]);
+  });
+
   test("a place is given back when the work throws", async () => {
     const home = await osTempRoot();
     const places: CheckPlaces = { home, checks: 1, log: () => {} };

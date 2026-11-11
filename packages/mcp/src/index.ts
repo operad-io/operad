@@ -3,8 +3,11 @@ export {
   instructionsFor,
   PROTOCOL_VERSION,
   RPC_ERRORS,
+  openMcpTools,
   runMcpServer,
   type McpInput,
+  type McpTools,
+  type OpenMcpToolsOptions,
   type McpServerOptions,
 } from "./server.ts";
 export {

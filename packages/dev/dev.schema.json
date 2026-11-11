@@ -46,6 +46,66 @@
           "additionalProperties": false
         }
       ]
+    },
+    "stage": {
+      "description": "One stage of a repository flow. A parameter left out falls back to its dev.json setting.",
+      "oneOf": [
+        {
+          "description": "A worker changes the task branch.",
+          "type": "object",
+          "properties": {
+            "stage": { "const": "work" },
+            "use": { "description": "The harness step, such as harness-radian/agent; unset uses the repository's worker.", "type": "string", "minLength": 1 },
+            "args": { "description": "Arguments for the harness step; unset uses the worker's own.", "type": "array", "items": { "type": "string" } },
+            "brief": { "description": "Extra instructions appended to the worker's prompt.", "type": "string", "minLength": 1 },
+            "beforeAttempt": { "description": "The preparation before the attempt: merge-main (fetch and merge the latest main) or none. Unset leaves the worktree step's merge in force.", "type": "string", "enum": ["merge-main", "none"] }
+          },
+          "required": ["stage"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Commands run in a gate checkout of the task commit.",
+          "type": "object",
+          "properties": {
+            "stage": { "const": "check" },
+            "commands": { "description": "The shell lines to run; unset uses gate.commands.", "type": "array", "items": { "$ref": "#/$defs/checkCommand" } },
+            "rerun": { "description": "How many times a failed line list runs again; unset uses check.rerun.", "type": "integer", "minimum": 0 }
+          },
+          "required": ["stage"],
+          "additionalProperties": false
+        },
+        {
+          "description": "A reviewer harness reads the diff from the merge base to the verified commit.",
+          "type": "object",
+          "properties": {
+            "stage": { "const": "review" },
+            "use": { "description": "The reviewer harness step; unset uses reviewer.use.", "type": "string", "minLength": 1 },
+            "args": { "description": "The reviewer's arguments; unset uses reviewer.args.", "type": "array", "items": { "type": "string" } },
+            "later": { "description": "The arguments of every review after the first in an attempt.", "type": "array", "items": { "type": "string" } },
+            "grading": { "description": "The entry in .operad/review.json; unset names the flow itself.", "type": "string", "minLength": 1 }
+          },
+          "required": ["stage"],
+          "additionalProperties": false
+        },
+        {
+          "description": "The run waits for a person to decide.",
+          "type": "object",
+          "properties": {
+            "stage": { "const": "human" }
+          },
+          "required": ["stage"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "flow": {
+      "description": "One repository flow: its stages, in order. At least one stage must be check, review or human. A human stage asks a person; when it is last its merge goes to integrate, and when it is not it continues with the next stage.",
+      "type": "object",
+      "properties": {
+        "stages": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/stage" } }
+      },
+      "required": ["stages"],
+      "additionalProperties": false
     }
   },
   "properties": {
@@ -248,6 +308,11 @@
           "description": "The id of the plan dev proposes the flaky-test tasks in. When it is not set, or that plan is finished or cancelled, dev makes a plan flaky-tests (title Flaky tests) once and uses it.",
           "type": "string",
           "minLength": 1
+        },
+        "loadLimit": {
+          "description": "The 1-minute load average below which the machine is idle enough to trust a check. A check that timed out, was killed by a signal nobody in the task sent, or failed only by test timeouts waits for the load to fall below this, then runs once more by itself; a second such result waits for a person. A test that passes on rerun while the load is at or above this is recorded with the load and no task is proposed for it. When it is not set, the limit is the number of cores.",
+          "type": "number",
+          "exclusiveMinimum": 0
         }
       },
       "additionalProperties": false,
@@ -452,22 +517,22 @@
             "minLength": 1
           },
           "default": [
-            "git worktree remove --force \"$OPERAD_WORKTREE\"",
-            "git worktree remove --force \"$OPERAD_WORKTREE-gate\"",
+            "if [ -e \"$OPERAD_WORKTREE\" ]; then git worktree remove --force \"$OPERAD_WORKTREE\"; fi",
+            "if [ -e \"$OPERAD_WORKTREE-gate\" ]; then git worktree remove --force \"$OPERAD_WORKTREE-gate\"; fi",
             "git worktree prune",
-            "git branch -D \"work/$OPERAD_TASK\"",
-            "git push \"$OPERAD_REMOTE\" --delete \"work/$OPERAD_TASK\""
+            "if git show-ref --verify --quiet \"refs/heads/work/$OPERAD_TASK\"; then git branch -D \"work/$OPERAD_TASK\"; fi",
+            "if git ls-remote --exit-code --heads \"$OPERAD_REMOTE\" \"work/$OPERAD_TASK\" >/dev/null; then git push \"$OPERAD_REMOTE\" --delete \"work/$OPERAD_TASK\"; else [ $? -eq 2 ]; fi"
           ]
         }
       },
       "additionalProperties": false,
       "default": {
         "afterMerge": [
-          "git worktree remove --force \"$OPERAD_WORKTREE\"",
-          "git worktree remove --force \"$OPERAD_WORKTREE-gate\"",
+          "if [ -e \"$OPERAD_WORKTREE\" ]; then git worktree remove --force \"$OPERAD_WORKTREE\"; fi",
+          "if [ -e \"$OPERAD_WORKTREE-gate\" ]; then git worktree remove --force \"$OPERAD_WORKTREE-gate\"; fi",
           "git worktree prune",
-          "git branch -D \"work/$OPERAD_TASK\"",
-          "git push \"$OPERAD_REMOTE\" --delete \"work/$OPERAD_TASK\""
+          "if git show-ref --verify --quiet \"refs/heads/work/$OPERAD_TASK\"; then git branch -D \"work/$OPERAD_TASK\"; fi",
+          "if git ls-remote --exit-code --heads \"$OPERAD_REMOTE\" \"work/$OPERAD_TASK\" >/dev/null; then git push \"$OPERAD_REMOTE\" --delete \"work/$OPERAD_TASK\"; else [ $? -eq 2 ]; fi"
         ]
       }
     },
@@ -497,6 +562,11 @@
       "default": {
         "environmentWaitMinutes": 60
       }
+    },
+    "flows": {
+      "description": "The repository's own flows, by name. An absent map runs the built-in default. A flow is an ordered list of stages; dev adds the worktree at the start and integrate and cleanup at the end. A plan or task chooses a flow with --flow, and a flow with no review skips review. A flow whose last stage is not human goes straight to integrate after it passes.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/flow" }
     }
   },
   "additionalProperties": false

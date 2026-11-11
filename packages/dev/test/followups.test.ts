@@ -83,7 +83,7 @@ describe("review follow-ups", () => {
     expect(data?.phase).toBe("proposed");
     expect(data?.title).toBe(`Follow-ups from ${bareId(s.plan.id)}'s reviews`);
     expect(followup?.id).toMatch(/^T-\d{4}-main-followups$/);
-    expect(data?.after).toEqual([a, b]);
+    expect(data?.after).toEqual([a, b].map((id) => `demo/${id}`));
     const brief = data?.brief ?? "";
     expect(brief).toContain(`[major] b.ts:9 old bug (round 1)`);
     expect(brief).toContain(`[minor] c.ts:1 typo (round 1)`);
@@ -123,14 +123,14 @@ describe("review follow-ups", () => {
     const first = await s.task("first", "merged", n, 300);
     const second = await s.task("second", "merged", [{ attempt: 1, round: 1, findings: [note("minor", "b.ts", 1, "y")] }], 100);
     await s.collect();
-    expect((await s.followupTasks())[0]?.data.after).toEqual([second, first]);
+    expect((await s.followupTasks())[0]?.data.after).toEqual([second, first].map((id) => `demo/${id}`));
   });
 
   test("nothing is proposed while a task is open", async () => {
     const s = await setup();
     const n = [{ attempt: 1, round: 1, findings: [note("minor", "a.ts", 1, "x")] }];
     await s.task("done", "merged", n, 1);
-    for (const phase of ["ready", "running", "review", "waiting"] as const) {
+    for (const phase of ["ready", "running", "review", "waiting", "paused"] as const) {
       const open = await s.task(`open-${phase}`, phase);
       expect(await s.collect()).toEqual([]);
       await cancelTask(s.store, `demo/${open}`);

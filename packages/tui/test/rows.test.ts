@@ -167,6 +167,23 @@ describe("two-line rows", () => {
     expect(textOf(lines[5])).toContain("◐ T-0092");
   });
 
+  test("a run queued for a check place says so, and how long it waited once it runs", () => {
+    const queued = run(1, {
+      stepLabel: "verify queued (check place, 1 ahead)",
+      queued: { key: "check place", ahead: 1 },
+      stepStartedAt: null,
+      stepElapsedMs: 0,
+      queuedMs: 540_000,
+      mark: "blocked",
+    });
+    const waiting = drawnLines(running(240, [queued]));
+    expect(textOf(waiting[3])).toContain("verify queued (check place, 1 ahead) · 0ms · queued 9m");
+    const taken = drawnLines(
+      running(240, [run(1, { stepLabel: "verify", stepElapsedMs: 5_000, queuedMs: 540_000 })]),
+    );
+    expect(textOf(taken[3])).toContain("verify · 5.0s · queued 9m");
+  });
+
   test("a long dim line is cut with … at the pane edge", () => {
     const lines = drawnLines(
       running(60, [run(1, { stepLabel: `queued (${"key-".repeat(30)}, 3 ahead)` })]),
@@ -211,5 +228,67 @@ describe("two-line rows", () => {
     }
     expect(shown(state).at(-1)).toContain("T-0009");
     expect(shown(state)[1]).toStartWith("❯");
+  });
+
+  test("repository groups draw as a folder row with a note line, and their plans are indented", () => {
+    const view = (id: string, extra: Record<string, unknown> = {}) => ({
+      id,
+      title: id,
+      state: "active",
+      waiting: false,
+      running: false,
+      ...extra,
+    });
+    const repo = (id: string, extra: Record<string, unknown> = {}) => ({
+      type: "repo",
+      row: view(id, { note: "tasks: 2", ...extra }),
+    });
+    const plan = (id: string, parent: string, heading?: ReturnType<typeof repo>) => ({
+      type: "plan",
+      parent: `repo:${parent}`,
+      row: view(id),
+      ...(heading === undefined ? {} : { heading }),
+    });
+    const ops = repo("ops", { mark: "running" });
+    const web = repo("web");
+    let state = initialState({ width: 120, height: 30, theme: "dark" });
+    state = reduce(state, {
+      type: "types",
+      types: [
+        { type: "repo", title: "Repository", plugin: "dev" },
+        { type: "plan", title: "Plan", plugin: "dev" },
+      ],
+    });
+    state = reduce(state, {
+      type: "tree",
+      tabId: "plugin:dev",
+      level: "children",
+      entries: [
+        plan("ops/P-0001-a", "ops", ops),
+        plan("ops/P-0002-b", "ops"),
+        plan("web/P-0003-c", "web", web),
+      ],
+    });
+    state = reduce(state, { type: "key", key: "3" });
+    const lines = drawnLines(state);
+    const texts = lines.map((line) => textOf(line).trimEnd());
+    // Item, blank, item, blank: group (2 lines), blank, plan (2), blank, plan (2), blank, group...
+    expect(texts.slice(2, 14)).toEqual([
+      "  ▤ ops",
+      "    active · tasks: 2",
+      "",
+      "❯   ○ P-0001 a",
+      "      active",
+      "",
+      "    ○ P-0002 b",
+      "      active",
+      "",
+      "  ▤ web",
+      "    active · tasks: 2",
+      "",
+    ]);
+    const colour = (line: number) => lines[line]?.[2]?.fg;
+    expect(sameColour(colour(2), BUILTIN_THEMES.dark.run)).toBe(true);
+    expect(sameColour(colour(11), WEAK)).toBe(true);
   });
 });

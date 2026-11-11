@@ -54,10 +54,10 @@ views and `--after` accept both forms, and an id is matched exactly.
 operad repo add <path> [--name <name>]
 operad repo list
 operad repo remove <name>
-operad plan add --slug <slug> --title <title> [--concurrency <n>] [--repo <name>]   # request on stdin
-operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--repo <name>]   # brief on stdin
+operad plan add --slug <slug> --title <title> [--concurrency <n>] [--flow <name>] [--repo <name>]   # request on stdin
+operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--flow <name>] [--repo <name>]   # brief on stdin
 operad task edit <id>      # $EDITOR on the brief body; proposed or ready only
-operad task update <id> [--title <title>] [--after <task>]... [--area <area>]   # --area "" clears it, --after "" clears the dependencies
+operad task update <id> [--title <title>] [--after <task>]... [--area <area>] [--flow <name>]   # --area "" clears it, --after "" clears the dependencies
 operad start <task>        # start one ready task now, whatever its plan's auto level
 operad reruns              # how often each test passed only on its own rerun, most frequent first
 ```
@@ -103,7 +103,7 @@ Every action is also a command: `operad dev:<action> <id>`.
 | `dev:rework` | task | | add the lead's own rework: `--note <text>` becomes `## Rework <n> (lead)`, and the worker runs again; history reads "you chose rework" with the note |
 | `dev:reverify` | task | | run verify and review again on the task's current commit, with no worker |
 | `dev:cancel` | plan, task | `x` | cancel a plan and its open tasks, or one task; asks first |
-| `dev:pause` | task | | stop a ready, running or reviewing task for a while: the step stops as `cancel` stops it (its processes too), but the task keeps its branch, worktree, commits, attempt count and place. It shows as paused (mark `paused`), holds no concurrency slot, and is not started; a task that follows it stays queued as for any unmerged task. Owner action, not offered through MCP; asks first |
+| `dev:pause` | task | | stop a ready, running or reviewing task for a while: the step stops as `cancel` stops it: the process that runs the step is told at once, the step's processes (the whole process group, a check command or a worker) are stopped, and any check place the step holds is given back. The task keeps its branch, worktree, commits and attempt count. It shows as paused (mark `paused`), holds no concurrency slot, and is not started; a task that follows it stays queued as for any unmerged task. Owner action, not offered through MCP; asks first |
 | `dev:resume` | task | | undo pause: the task is ready again, and its next start is a new attempt that begins with the worktree step on the existing branch, as a rework does. Owner action, not offered through MCP; asks first |
 | `dev:auto` | plan | | set auto: `--level off`, `--level run` or `--level merge` |
 | `dev:priority` | plan | | set the priority: `--level P0` (most urgent) to `--level P5` |
@@ -134,6 +134,98 @@ Each action claims the task at the version it saw. A `merge`, `reject`, `cancel`
 or second `rework` or `reverify` that got there first wins; the other reports
 what happened and changes nothing.
 
+## Flows
+
+A repository sets its own development flows in `.operad/dev.json`. A flow is an
+ordered list of stages; dev keeps the worktree at the start and integrate and
+cleanup at the end, so a repository writes neither.
+
+```json
+{
+  "flows": {
+    "default": {
+      "stages": [
+        { "stage": "work" },
+        { "stage": "check" },
+        { "stage": "review", "grading": "default" },
+        { "stage": "human" }
+      ]
+    },
+    "quick": {
+      "stages": [
+        { "stage": "work" },
+        { "stage": "check", "commands": ["bun test"] },
+        { "stage": "human" }
+      ]
+    }
+  }
+}
+```
+
+A repository that writes no `flows` runs the built-in `default` flow: work,
+check, review, human. A flow named `default` is the one a task starts with; a
+plan or task may choose another with `--flow <name>`, and once a task's first
+attempt starts it keeps that flow (`task update --flow` refuses after it). A task
+without `--flow` takes its plan's flow, and a plan without one takes `default`. A task whose
+flow dev.json does not define stays ready, and its row and its plan's row say `flow <name>
+is not defined in .operad/dev.json`. When a repository defines more than one flow, the task
+row and the Brief name the task's flow, and history names it on each run start. Every flow needs at least one `check`,
+`review` or `human` stage. A `human` stage asks a person; when it is the last
+stage, its merge answer goes to integrate, and when it is not, that answer
+continues with the next stage. A flow whose last stage is not `human` goes
+straight to integrate after that stage passes, so its plan's auto level has no
+human wait to answer. A flow with no gate makes dev.json invalid, with a message
+naming the flow and the rule.
+
+### Stages
+
+| stage | parameters | what it does | results |
+|---|---|---|---|
+| `work` | `use`, `args`, `brief`, `beforeAttempt` | a worker changes the task branch; `use` and `args` replace the harness step and its arguments, `brief` is appended to the worker's prompt, and `beforeAttempt` is the preparation before the attempt: `merge-main` fetches and merges the latest main, `none` leaves the branch as it is | `done`, `nothing`, `failed`, `unavailable`, `cancelled`, `interrupted` |
+| `check` | `commands`, `rerun` | runs the commands in a gate checkout of the verified commit; unset values come from `gate.commands` and `check.rerun` | `pass`, `fail`, `cancelled` |
+| `review` | `use`, `args`, `later`, `grading` | a reviewer reads the diff from the merge base to the verified commit; unset values come from `reviewer`, `later` replaces the arguments of every review round after the first of a task, and `grading` names the entry in `.operad/review.json` (unset means the flow's own name) | `pass`, `fail`, `failed`, `unavailable`, `timed_out`, `exhausted`, `out_of_time`, `cancelled` |
+| `human` | none | waits for a person to merge, reject, rework or reverify | the person's choice |
+
+A failed `check` or `review` appends its rework section and goes back to the
+nearest `work` stage before it. With no `work` before it, the run waits for a
+person instead. The retry steps, the unavailable-model waits, the review
+timeout waits, cancellation and the announcements are the ones the built-in
+flow has, one set per stage.
+
+A work stage passes its harness override as the step params `flowUse`,
+`flowArgs` and `flowBrief`; a check stage passes `commands` and `rerun`, and a
+review stage passes `use`, `args`, `later` and `grading`. A hand-written flow
+passes the same names to `dev/work`, `dev/verify` and `dev/review`.
+
+### How a flow is registered
+
+The built-in flow keeps the name `dev`, so runs and history from before
+projects could set flows keep working. A repository's flow is registered under
+`dev/<repository>/<flow>/<hash>`, where the hash is the first 12 hex digits of
+the SHA-1 of its stages. Two repositories may therefore use the same flow name,
+and a changed `flows` entry gets a new name instead of replacing a graph a
+running attempt still uses. A start records the graph on the task; every tick
+declares the graphs of the tasks it finds, so a fresh process resumes a running
+attempt on the graph it started with.
+
+### Writing a flow in TypeScript
+
+The compiled stages are the building blocks for `.operad/flows/<name>.flow.ts`:
+a hand-written flow calls the same plugin steps. `dev/worktree`,
+`dev/reverify`, `dev/work`, `dev/verify`, `dev/review`, `dev/rework`,
+`dev/integrate` and `dev/cleanup` are described in the Steps table below;
+`dev/retry`, `dev/review_due`, `dev/work_due` and `dev/retry_due` are the waits
+and retries around them, and `dev/announce` tells the outside world that a run
+stopped. A hand-written flow keeps the same hard rules: integrate and cleanup
+last, and at least one gate.
+
+dev loads each `.operad/flows/<name>.flow.ts` whose default export is a
+`defineFlow` value as a flow named `<name>`, and a plan or task chooses it with
+`--flow <name>`. It refuses the file, with the reason, when a step other than
+integrate (or the cleanup right after it) leads to the end, when there is no
+integrate step, when there is no check, review or human step, or when
+`dev.json` also defines `<name>`. A refused name starts no task.
+
 ## Steps
 
 | step | results | what it does |
@@ -141,10 +233,10 @@ what happened and changes nothing.
 | `dev/worktree` | `ready`, `conflict`, `blocked`, `failed` | fetches, creates `worktreeRoot/<task id>` on `work/<task id>` from `<remote>/<mainBranch>`, and on a later attempt reuses it after merging the latest main; a start that carries a `blockedBy` dependency records the person wait instead |
 | `dev/reverify` | `ready`, `conflict`, `failed` | the first step of a reverify: fetches and merges the current main into the task branch in the existing worktree, keeping the attempt; `ready` goes to verify, `conflict` to the worker |
 | `dev/work` | `done`, `nothing`, `failed` | builds the worker prompt, runs the configured harness step in the worktree, then requires new commits, a clean tree and a pushed branch |
-| `dev/verify` | `pass`, `fail` | recreates `<worktreeRoot>/<task id>-gate` detached at the branch head, runs `gate.commands` through `shell/check`, and records the verified commit |
+| `dev/verify` | `pass`, `fail`, `not_code` | recreates `<worktreeRoot>/<task id>-gate` detached at the branch head, runs `gate.commands` through `shell/check`, and records the verified commit. A check result that says nothing about the code (see Checks that are not the code) does not go to the worker: verify waits for a quiet machine, runs the check once more, and a second such result ends `not_code`, which waits for a person |
 | `dev/review` | `pass`, `fail`, `failed`, `unavailable`, `timed_out` | runs the reviewer harness step in the gate worktree on the diff from the merge base to the verified commit; the previous review is the newest report for another commit (see Rework rounds); in every review a finding far from the task's own change and from the previous review's findings is moved out of the failing set as pre-existing, while a critical one or one without a place still fails |
 | `dev/review_due` | `ready`, `interrupted` | the wait a review enters after a model was unavailable; it lets the flow run the same review round again at the recorded time |
-| `dev/retry` | `again`, `hold`, `ask`, `give_up`, `cancelled` | runs in front of the announcement of a work, worktree or reverify step that stopped. A stop that is not the task's own work (the run stopped, a process killed by a signal nobody sent, a step that is not loaded, settings that cannot be read) runs the step once more in the same attempt, without a person and without counting toward `maxAutoRework`; a second one, or a wait that ran out, goes to a person and the waiting line names the cause (for example `pool/agent is not loaded`) |
+| `dev/retry` | `again`, `hold`, `ask`, `give_up`, `cancelled` | runs in front of the announcement of a work, worktree or reverify step that stopped. A stop that is not the task's own work (the run stopped, a process killed by a signal nobody sent, a step that is not loaded, settings that cannot be read) runs the step once more in the same attempt, without a person and without counting toward `maxAutoRework`; a work step that ended on a dropped connection to the harness or the model (the socket closed, a reset) is the same kind of stop, with the cause `model connection dropped during work`. A second stop, or a wait that ran out, goes to a person and the waiting line names the cause (for example `pool/agent is not loaded`) |
 | `dev/retry_due` | `ready`, `waiting`, `interrupted` | the wait a retry enters while a step is not loaded or the settings cannot be read; it ends when they are there, or after `retry.environmentWaitMinutes` (default 60) |
 | `dev/rework` | `again`, `ask` | appends `## Rework <n> (verify|review)` with the failed command or the counted findings and sends the task back to the worker; after `maxAutoRework` in a row, or when a review failure follows a review failure (whatever the findings; a verify failure or a conflict between them resets this), it asks a person instead, with the reason `review failed twice in a row` and both rounds' findings in the section |
 | `dev/integrate` | `merged`, `conflict`, `fail`, `failed` | fetches, builds the candidate in the gate worktree by merging the verified commit onto `<remote>/<mainBranch>`, runs `integration.keyCommands` through `shell/check`, and pushes plainly; a moved main starts again from the fetch, at most three times. Tasks of one repository integrate one at a time: a task whose merge was chosen waits for its turn first (see below) |
@@ -230,10 +322,11 @@ recently goes first). When the repository has more than one slot, one slot
 is kept for the plan that has gone longest without starting a task: while no
 running task holds it, the last free slot goes to that plan, whatever its
 priority. Every other freed slot goes by priority. So a plan with a startable
-task never waits forever behind more urgent plans. With one slot, priority alone orders the queue. Each
-registered repository is scheduled on its own. A task the
-scheduler claimed but whose run never recorded itself (a crash between the two)
-returns to `ready` on the next tick, so the scheduler can start it again.
+task never waits forever behind more urgent plans. With one slot, priority
+alone orders the queue. Each registered repository is scheduled on its own. A
+task the scheduler claimed but whose run never recorded itself (a crash between
+the two) returns to `ready` on the next tick, so the scheduler can start it
+again.
 
 At auto `merge`, a waiting task whose review passed in this attempt is answered
 with `merge`. A wait that follows `nothing`, `failed`, the rework limit or `review failed twice in a row` is
@@ -250,6 +343,14 @@ concurrency limits still hold, so an ineligible task waits for a later tick.
 dependency was cancelled: changing its dependencies, or clearing them with
 `--after ""`, ends that wait (its run is stopped), and the task starts on a later
 tick like any ready task.
+
+`--after` takes a task id (a task of this repository, in any plan) or
+`<repository>/<task id>` (a task of any registered repository). Either way the
+full key is stored. A task is `blocked` until every task it follows is merged,
+wherever it is; its note says `waiting for operad/T-0188` when the task is in
+another repository. A task must exist when it is named; a task cannot follow
+itself or close a cycle (the refusal shows the cycle). A cancelled dependency,
+in any plan or repository, makes the task wait for a person as above.
 
 A task whose dependency was cancelled starts no work. The scheduler starts its
 flow into the person wait instead, so the task is a real pending item: `merge`
@@ -287,34 +388,42 @@ repository lock and reads the stored tasks inside that lock, so two ticks or two
 review again on it with no worker). A task whose dependency was cancelled enters the same
 person wait directly from the worktree step. A failing verify or review goes to
 `rework`, which sends the task back to the worktree until `maxAutoRework`
-automatic reworks have run in a row, or a second review failure in a row; then it waits for a person (`review failed twice in a row`), and the lead's `rework --note` or `reject` steers the next pass. `nothing` and
+automatic reworks have run in a row, or a second review failure in a row; then it waits for a person (`review failed twice in a row`), and the lead's `rework --note` or `reject` steers the next pass. `reverify` at that wait keeps the count, so a review failure on the reverified head waits again at once; a passed review or a merge conflict clears it. `nothing` and
 `failed` from `work` also wait for a person. An unavailable reviewer waits for
 `reviewer.retrySecs` and runs the same review again; a review that times out
 twice waits for a person. `merge` builds the candidate on main and pushes it,
 then cleanup removes the worktrees and branches. A plan is finished when every
 task is merged or cancelled.
 
-## New words
+## Checks that are not the code
 
-A new user-visible word needs the owner's approval: a command or action name, a
-setting key, a word in command output, an error meant for users, a word in user
-docs. Internal names are not user-visible words. Two readers look for them:
+A check result says nothing about the code when any of these holds (the rules
+are one function, `classifyCheck` in `src/notcode.ts`):
 
-- The built-in worker brief asks the worker to end its final answer with a line
-  `New words: none` or `New words: <word>, <word>`. `dev/work` reads that line
-  from the harness's final message and keeps the words on the attempt.
-- The review prompt asks the reviewer to check the diff for new user-visible
-  words, whatever the worker said. The report is
-  `{ "findings": [...], "verified": [...], "words": ["<word>"] }`; `words` is
-  optional, and a report without it names no word.
+- the command was stopped at the gate's time limit (`gate.commandTimeoutSecs`);
+- the command ended by a signal nobody in the task sent: the shell step's
+  `signal` reason, or an exit status of 128+n (129 to 192);
+- every failed test failed at the test timeout (the `--timeout` of the failing
+  command line, else 30 s), or later, within 5% below it, so it timed out and
+  did not assert; one quicker failure, or no failed test line, is not this;
+- every test that failed in the first run passed on its rerun (the check then
+  passes; the kind only feeds the flaky-test rule below).
 
-A word is approved when a brief has a line `Approved words: <word>, <word>`, or
-when it is already in main's user docs (any README file and `docs/manual.md`, at
-the commit the task branched from; the match ignores case). When a passed review
-has a word from either reader that is not approved, the task does not auto merge.
-It waits for a person with the reason `new words need approval: <words>`, and the
-plan's auto level does not answer that wait. `merge` answers it as it answers any
-other wait: the owner's merge is the approval.
+For the first three, dev does not send the task to the worker. It waits until
+the machine's 1-minute load average (the one `running` reports) is below
+`check.loadLimit` (default: the number of cores), then runs the check once more
+by itself. A pass or an assertion failure on that run stands and goes the usual
+way. A second result of the same kind ends with the task waiting for a person,
+and the waiting line says why, for example `check timed out twice under load 18
+on 10 cores`. An integration check that ends this way waits for a person the
+same way and does not send the task back to work; in a batch, the other tasks
+integrate alone. A real assertion failure goes to the worker as before.
+
+A test that fails and then passes on rerun is still a bug until shown
+otherwise, but only for a run on an idle machine: when the load was at or above
+`check.loadLimit` the pass is recorded with the load (`operad reruns` still
+counts it) and counts toward no task. Below it, dev proposes the task as
+`check.flakyTask` says.
 
 ## Review fallback and retry
 
@@ -338,12 +447,13 @@ second time. A wait longer than one step run is split into pieces below the
 three-hour step timeout, so any positive `reviewer.retrySecs` is waited out and
 the review runs a model again only at `retryAt`.
 
-The waits are bounded. A round waits at most 36 times (`MAX_REVIEW_WAITS`, about
-72 minutes at the default 120 seconds); the count is the number of primary runs
+The waits are bounded. A round waits at most 6 times (`MAX_REVIEW_WAITS`); the first wait is
+`reviewer.retrySecs` and each further wait doubles, up to 30 minutes (2, 4, 8, 16,
+30, 30 minutes at the default: about 90); the count is the number of primary runs
 of the round recorded as unavailable in the task, so a crash and a restart agree
 on it. The next unavailable run waits for a person with the note `review did not
 finish (model unavailable)`. The dev flow's visit limit is finite (10 plus one
-visit of each wait step per allowed wait). One review step also has to end
+visit of each wait step per allowed work wait). One review step also has to end
 before its three-hour step timeout: a run that cannot fit in what is left is
 skipped, and the round waits for a person with the note `review did not finish
 (out of time)`. While a review waits for its model, `merge`, `reject`, `rework`
@@ -529,6 +639,7 @@ The file holds the repository's work settings:
 | `gate.commandTimeoutSecs` | `1800` | the longest one gate command may run |
 | `check.rerun` | `1` | how many times a failed gate or integration check runs again before it counts as failed; `0` turns it off; a timeout is never rerun. A pass on the rerun is a pass, noted in the task's Changes and the check log holds both runs |
 | `check.flakyTask` | `2` | how many times one test may pass only on its rerun in this repository before dev proposes a task `flaky-<test>` (title "Fix the flaky test: <test>") in the flaky-test plan (see `check.flakyPlan`), with the test, the count, the tasks and times, the last two failures and the stress command in its brief; `0` turns it off. The test's file is the one whose section of the check log holds the test's own `(fail)` line, never the summary bun prints again after the last file; when the log does not give it, dev searches the repository's test files for the test's name and, if that does not find exactly one file, the brief says the file is unknown. The task's area is the package that file is in (`packages/<name>/...` gives `<name>`; `tests` when the file is unknown). The brief's stress command has `--runs <N>`; N follows the sizing rule from the repository's CLAUDE.md quoted below it. One task per test until it is merged or cancelled, then the count restarts at 0. `operad reruns` shows the task beside its test |
+| `check.loadLimit` | the number of cores | the 1-minute load average below which the machine is quiet enough to trust a check. A check that timed out, was killed by a signal nobody sent, or failed only by test timeouts waits for the load to fall below it before it runs once more (see Checks that are not the code); a test that passes on rerun at or above it is recorded with the load and proposes no flaky-test task |
 | `check.flakyPlan` | unset | the id of the plan the flaky-test tasks are proposed in. When it is unset, or that plan is finished or cancelled, dev makes a plan `flaky-tests` (title "Flaky tests") once, confirmed, with the auto level and priority of the repository's newest confirmed plan (`off` and `P3` with none), and uses it until it is finished or cancelled |
 | `reviewer.use` | `harness-radian/agent` | the harness step that reviews the diff |
 | `reviewer.args` | `[]` | the arguments every review gets |
@@ -540,7 +651,7 @@ The file holds the repository's work settings:
 | `reviewer.stallSecs` | harness default | how long a review may print no new line before it is stopped |
 | `reviewer.fixLevel` | `major` | the lowest finding severity that fails the gate: `critical`, `major` or `minor` |
 | `reviewer.followups` | `true` | whether findings that did not fail a review (below `fixLevel`, or moved as pre-existing) are collected into a follow-up task |
-| `reviewer.retrySecs` | `120` | how long an unavailable review waits before the same round runs again |
+| `reviewer.retrySecs` | `120` | how long an unavailable review waits first; each further wait doubles, up to 30 minutes |
 | `reviewer.maxFileDiffBytes` | `200000` | the largest diff one file may put in the review prompt |
 | `reviewer.maxDiffBytes` | `1000000` | the largest diff the review prompt may carry; counts the prompt's text, where a rename or a deleted file is one line |
 | `autoDefault` | `"off"` | the auto level a new plan starts at: `off`, `run` or `merge` |
@@ -572,6 +683,12 @@ waits without a time limit until both are free, and says which it waits for:
 (home, then repository) and gives the home place back while it waits for the
 repository's, so two checks cannot wait for each other. The repository's places
 are lock files in the same directory, so a dead check gives both back.
+
+A rework asks for the worker that ran the attempt before. When that worker is
+busy with another task, the work step waits for it without a time limit; the
+task's row shows the `blocked` mark and `waiting for worker pi: held by T-0205`
+(in `running` and in `show`), and the step log says it when the wait starts and
+`worker pi is free; the work starts` when it ends.
 
 One integration of a repository runs at a time. A task whose wait was answered
 with `merge` joins the repository's integration queue, in the order the merges

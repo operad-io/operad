@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ObjectStore, StoredObject } from "@operad-io/engine";
 import { messageOf, type SecretStore } from "@operad-io/engine";
+import type { MachineLoad } from "@operad-io/engine/platform";
 import {
   bareId,
   changeClock,
@@ -72,6 +73,17 @@ export interface FlakyOccurrence {
   readonly file: string | undefined;
   /** The "(fail)" line and the lines before it; empty when the log was gone. */
   readonly excerpt: string;
+  /**
+   * Set when the machine was busy (load at or above `check.loadLimit`) when the
+   * test passed on rerun. Such a pass is recorded and never counts toward a
+   * task: a rerun that passes on a busy machine says little about the test.
+   */
+  readonly load?: MachineLoad | undefined;
+}
+
+/** The passes that count toward a task: the ones seen on an idle machine. */
+function countedOf(record: FlakyRecord): readonly FlakyOccurrence[] {
+  return record.occurrences.filter((entry) => entry.load === undefined);
 }
 
 export interface FlakyRecord {
@@ -91,9 +103,12 @@ function recordKey(repository: string, name: string): string {
 
 function occurrenceOf(value: unknown): FlakyOccurrence | undefined {
   if (!isRecord(value)) return undefined;
-  const { task, at, file, excerpt } = value;
+  const { task, at, file, excerpt, load } = value;
   if (typeof task !== "string" || typeof at !== "number") return undefined;
   return {
+    ...(isRecord(load) && typeof load.load1 === "number" && typeof load.cores === "number"
+      ? { load: { load1: load.load1, cores: load.cores } }
+      : {}),
     task,
     at,
     file: typeof file === "string" ? file : undefined,
@@ -125,6 +140,7 @@ function writableOf(record: FlakyRecord): Record<string, unknown> {
       task: entry.task,
       at: entry.at,
       excerpt: entry.excerpt,
+      ...(entry.load === undefined ? {} : { load: { load1: entry.load.load1, cores: entry.load.cores } }),
       ...(entry.file === undefined ? {} : { file: entry.file }),
     })),
     ...(record.task === undefined ? {} : { task: record.task }),
@@ -246,8 +262,9 @@ function stamp(at: number): string {
 /** The brief of the proposed task. */
 export function flakyBrief(
   repositoryPath: string,
-  record: FlakyRecord,
+  whole: FlakyRecord,
 ): string {
+  const record: FlakyRecord = { ...whole, occurrences: countedOf(whole) };
   const file = [...record.occurrences].reverse().find((entry) => entry.file !== undefined)?.file;
   const where = file === undefined ? "a file that is not known (the logs do not name it and no single test file holds the name)" : `\`${file}\``;
   const lines: string[] = [
@@ -392,6 +409,8 @@ export interface FlakyInput {
   readonly names: readonly string[];
   /** The check log, which still holds the first run's output. */
   readonly log: string | undefined;
+  /** The machine's load when the passes happened, when it was at or above the limit. */
+  readonly load?: MachineLoad | undefined;
   /** `check.flakyTask`; 0 turns the proposal off. */
   readonly threshold: number;
   /** `check.flakyPlan`: the plan to propose in, by id. */
@@ -452,7 +471,7 @@ export async function trackFlakyTests(input: FlakyInput): Promise<string | undef
         ...record,
         occurrences: [
           ...record.occurrences,
-          { task: input.taskId, at, file, excerpt },
+          { task: input.taskId, at, file, excerpt, ...(input.load === undefined ? {} : { load: input.load }) },
         ],
       };
       await store.put(FLAKY_TYPE, key, writableOf(record), "dev:flaky-count");
@@ -463,7 +482,7 @@ export async function trackFlakyTests(input: FlakyInput): Promise<string | undef
       if (keyRepository(object.id) !== fresh.name) continue;
       const record = recordOf(object.data);
       if (record === undefined || record.task !== undefined) continue;
-      if (record.occurrences.length < input.threshold) continue;
+      if (countedOf(record).length < input.threshold) continue;
       const notice = await propose(input, fresh, object.id, record);
       if (notice !== undefined) notices.push(notice);
     }
@@ -501,6 +520,7 @@ async function propose(
         title: titleFor(record.name),
         brief: flakyBrief(repository.path, record),
         area: packageOf(file),
+        openedBy: "dev",
       },
       repository,
     );
@@ -517,7 +537,7 @@ async function propose(
 }
 
 function noticeFor(record: FlakyRecord, reason: string): string {
-  return `flaky test "${record.name}" passed on rerun ${record.occurrences.length} times; no task was proposed: ${reason}`;
+  return `flaky test "${record.name}" passed on rerun ${countedOf(record).length} times; no task was proposed: ${reason}`;
 }
 
 /** The open task of each test name, across the home; the first one found wins. */
@@ -545,6 +565,7 @@ export interface FlakyReport {
   readonly taskId: string;
   readonly threshold: number;
   readonly flakyPlan?: string | undefined;
+  readonly load?: MachineLoad | undefined;
   readonly check: {
     readonly passedOnRerun: readonly string[];
     readonly outcome: { readonly data?: Record<string, unknown> | undefined } | undefined;
@@ -582,6 +603,7 @@ export async function reportFlakyTests(report: FlakyReport): Promise<string | un
       log: typeof log === "string" ? log : undefined,
       threshold: report.threshold,
       flakyPlan: report.flakyPlan,
+      load: report.load,
     });
   } catch (error) {
     await report.ctx.logger.write(`could not propose a task for a flaky test: ${messageOf(error)}`);

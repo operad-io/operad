@@ -4,7 +4,12 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { defaultOperadHome } from "../plugin/home.ts";
 import { MAX_ASK_GRACE_SECS } from "../plugin/types.ts";
-import { openLog, type LogBackend, type LogBackendName } from "../log/index.ts";
+import {
+  openLog,
+  type LogBackend,
+  type LogBackendName,
+  type LogBackendOptions,
+} from "../log/index.ts";
 
 /** The storage backend the log uses. */
 export type StoreBackend = LogBackendName;
@@ -129,6 +134,7 @@ export class ConfigError extends Error {
 export const DEFAULT_PLUGINS: readonly string[] = [
   "shell",
   "harness-radian",
+  "chat",
   "dev",
 ];
 
@@ -136,7 +142,7 @@ export const DEFAULT_PLUGINS: readonly string[] = [
  * Plugins shipped with operad that `operad init` does not install. They are
  * not in the default config; `plugin enable <name>` adds them.
  */
-export const OPTIONAL_PLUGINS: readonly string[] = ["harness-pi", "harness-claude", "pool"];
+export const OPTIONAL_PLUGINS: readonly string[] = ["harness-pi", "harness-claude", "pool", "assistant"];
 
 /** The package name of a plugin shipped with operad. */
 export function defaultPluginModule(name: string): string {
@@ -631,7 +637,14 @@ export async function setPluginEnabled(
   await writeFile(file, `${JSON.stringify(raw, null, 2)}\n`);
 }
 
-/** Opens the log the config selects. */
-export function openConfigLog(config: OperadConfig): LogBackend {
-  return openLog({ backend: config.store.backend, path: config.store.path });
+/** Opens the log the config selects. Options pass through to the backend. */
+export function openConfigLog(
+  config: OperadConfig,
+  options: LogBackendOptions = {},
+): LogBackend {
+  return openLog({
+    ...options,
+    backend: config.store.backend,
+    path: config.store.path,
+  });
 }

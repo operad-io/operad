@@ -502,12 +502,18 @@ class ClaudeChannel implements ChannelHandle {
     }
   }
 
+  private pendingSnapshot: readonly PendingItem[] | undefined;
+
   /** The pending item of the object's wait, if it has one. */
   private async waitItem(object: ObjectRef): Promise<PendingItem | undefined> {
     if (this.pendingItems === undefined) return undefined;
     try {
       const key = `${object.type}:${object.id}`;
-      return (await this.pendingItems()).find((entry) => entry.object === key);
+      // One pass over the quiet objects reads the list once.
+      const items = this.pendingSnapshot ?? (await this.pendingItems());
+      return items.find(
+        (entry) => entry.object === key || entry.covers?.includes(key) === true,
+      );
     } catch (error) {
       this.onLog(`channel: the pending items could not be read: ${messageOf(error)}`);
       return undefined;
@@ -518,10 +524,20 @@ class ClaudeChannel implements ChannelHandle {
     if (this.closed) return;
     if (recheck && this.quiet.size > 0) {
       // A change elsewhere (a plan's auto level) can end an automatic answer.
-      for (const [quietKey, ref] of [...this.quiet]) {
-        if (quietKey !== rowKey(object.type, object.id)) {
-          await this.handle(ref, false);
+      // The pending list is read once for the whole pass.
+      try {
+        this.pendingSnapshot = await this.pendingItems?.();
+      } catch (error) {
+        this.onLog(`channel: the pending items could not be read: ${messageOf(error)}`);
+      }
+      try {
+        for (const [quietKey, ref] of [...this.quiet]) {
+          if (quietKey !== rowKey(object.type, object.id)) {
+            await this.handle(ref, false);
+          }
         }
+      } finally {
+        this.pendingSnapshot = undefined;
       }
     }
     if (!this.types.has(object.type)) return;
@@ -562,6 +578,10 @@ class ClaudeChannel implements ChannelHandle {
       if (item?.auto === true) {
         this.quiet.set(key, object);
         waitingOn = false;
+      } else if (item?.announce === false) {
+        // Pending, but its plugin says the lead needs no block for it.
+        this.quiet.delete(key);
+        waitingOn = false;
       } else {
         this.quiet.delete(key);
         waitingOn = true;
@@ -596,7 +616,8 @@ class ClaudeChannel implements ChannelHandle {
       previous?.state ?? "new",
       await this.stepOf(object),
       reason,
-      next.waiting ? item?.prompt : undefined,
+      // A block sent for another reason still carries the wait's prompt.
+      next.waiting ? (item ?? (await this.waitItem(object)))?.prompt : undefined,
     );
     const entry: Held = { notification, key, row: next };
     if (this.held !== undefined) {

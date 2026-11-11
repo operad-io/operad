@@ -5,6 +5,7 @@ import {
   ENGINE_VERSION,
   Kernel,
   ViewError,
+  cancelRun,
   createViews,
   defaultOperadHome,
   loadPluginRegistry,
@@ -15,13 +16,14 @@ import {
   readConfig,
   recordAnswer,
   storeRootOf,
+  type ActionInfo,
   type LogBackend,
   type OperadConfig,
   type PluginRegistry,
   type Views,
 } from "@operad-io/engine";
 import { InvalidToolArguments } from "./arguments.ts";
-import { mcpPolicy } from "./policy.ts";
+import { actionInfoNamed, actionMayRun, mcpPolicy } from "./policy.ts";
 import {
   CHANNEL_CAPABILITY,
   CHANNEL_INSTRUCTIONS,
@@ -32,8 +34,10 @@ import {
 import {
   TOOLS,
   runTool,
+  toolError,
   validateArguments,
   type ToolContext,
+  type ToolResult,
 } from "./tools.ts";
 import type { ToolDefinition } from "./tools.ts";
 
@@ -45,13 +49,22 @@ export const INSTRUCTIONS =
   "The operad MCP server reads objects, pending items and history, and writes the commands and lead actions it is allowed to. Owner decisions are not offered here.";
 
 /** What `initialize` tells a client, following the configured allow lists. */
-export function instructionsFor(mcp: OperadConfig["mcp"] | undefined): string {
+export function instructionsFor(
+  mcp: OperadConfig["mcp"] | undefined,
+  actions: readonly ActionInfo[] = [],
+): string {
   const policy = mcpPolicy(mcp);
+  // An action that asks for confirmation and is not in `confirmActions` is
+  // refused when run, so it is not promised here.
+  const runnable = (name: string): boolean => {
+    const info = actionInfoNamed(actions, name);
+    return info === undefined || actionMayRun(policy, info);
+  };
   const allowed = [...policy.actions].filter(
-    (name) => !policy.confirmActions.has(name),
+    (name) => !policy.confirmActions.has(name) && runnable(name),
   );
-  const confirmed = [...policy.confirmActions].filter((name) =>
-    policy.actions.has(name),
+  const confirmed = [...policy.confirmActions].filter(
+    (name) => policy.actions.has(name) && runnable(name),
   );
   if (allowed.length === 0 && confirmed.length === 0) return INSTRUCTIONS;
   const names = [...allowed, ...confirmed].join(", ");
@@ -186,10 +199,13 @@ async function openContext(
     root: storeRoot,
   });
   const log = openConfigLog(config);
+  let loaded: PluginRegistry | undefined;
   const registry = await loadPluginRegistry({
     home,
     cwd,
     store,
+    onCancelRun: (runId, graph) =>
+      cancelRun({ log, flow: (name) => loaded?.flow(name)?.flow, runId, graph, clock }),
     onAnswer: async (runId, choice, note, actor) => {
       await recordAnswer({
         log,
@@ -203,6 +219,7 @@ async function openContext(
       void onLog(message);
     },
   });
+  loaded = registry;
   const views = createViews({
     registry,
     store,
@@ -313,8 +330,8 @@ async function dispatch(
           : { tools: {} },
         serverInfo: { name: "operad", version: ENGINE_VERSION },
         instructions: claudeChannel
-          ? `${instructionsFor(context.mcp)}\n\n${CHANNEL_INSTRUCTIONS}`
-          : instructionsFor(context.mcp),
+          ? `${instructionsFor(context.mcp, context.registry.actions())}\n\n${CHANNEL_INSTRUCTIONS}`
+          : instructionsFor(context.mcp, context.registry.actions()),
       };
     case "ping":
       requireEmptyParams(params);
@@ -484,4 +501,53 @@ export async function runMcpServer(
     opened.views.close();
     await opened.log.close();
   }
+}
+
+/** The tools of the server, opened in this process for a harness that takes tools in-process. */
+export interface McpTools {
+  readonly tools: readonly ToolDefinition[];
+  /** Runs one tool; a refusal of a view or a bad argument is an error result, never a throw. */
+  call(name: string, args: unknown): Promise<ToolResult>;
+  close(): Promise<void>;
+}
+
+/** What `openMcpTools` reads. */
+export interface OpenMcpToolsOptions {
+  readonly home?: string | undefined;
+  readonly cwd?: string | undefined;
+  readonly clock?: (() => number) | undefined;
+  readonly onLog?: ((message: string) => void) | undefined;
+}
+
+/**
+ * Opens the home and offers the same tools `runMcpServer` serves, without the
+ * protocol: the caller is a harness that registers them as its own tools.
+ */
+export async function openMcpTools(options: OpenMcpToolsOptions = {}): Promise<McpTools> {
+  const home = options.home ?? defaultOperadHome();
+  const clock = options.clock ?? (() => Date.now());
+  const opened = await openContext(home, options.cwd ?? process.cwd(), clock, (message) => {
+    options.onLog?.(message);
+  });
+  const context = toolContext(opened, clock);
+  return {
+    tools: TOOLS,
+    async call(name, args) {
+      const tool = toolByName(name);
+      if (tool === undefined) return toolError(`unknown tool "${name}"`);
+      try {
+        const checked = validateArguments(tool.inputSchema, args === undefined ? {} : args);
+        return await runTool(name, checked, context);
+      } catch (error) {
+        if (error instanceof ViewError || error instanceof InvalidToolArguments) {
+          return toolError(error.message);
+        }
+        throw error;
+      }
+    },
+    async close() {
+      opened.views.close();
+      await opened.log.close();
+    },
+  };
 }

@@ -3,47 +3,14 @@
  * the stdin object, records it, and acts by `FAKE_CLAUDE_MODE`. It never
  * imports the Agent SDK and never runs `claude`.
  *
- * Environment: `FAKE_CLAUDE_MODE`, `FAKE_CLAUDE_RECORD` (the stdin object is
- * written there), `FAKE_CLAUDE_MARKER` (the pid is written there once the
- * program is running), `FAKE_CLAUDE_RELEASE` (a path the program waits for).
+ * Environment: see `startFakeLines` in harness-process's test support, with
+ * the prefix `FAKE_CLAUDE`.
  */
 
-import { existsSync, watch, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { writeFileSync } from "node:fs";
+import { startFakeLines } from "@operad-io/harness-process/test-fake-lines";
 
-const mode = process.env["FAKE_CLAUDE_MODE"] ?? "done";
-const recordPath = process.env["FAKE_CLAUDE_RECORD"];
-const marker = process.env["FAKE_CLAUDE_MARKER"];
-const release = process.env["FAKE_CLAUDE_RELEASE"];
-
-const reader = Bun.stdin.stream().getReader();
-let buffered = "";
-const decoder = new TextDecoder();
-/** The next stdin line; stdin stays open so the host can answer later. */
-async function stdinLine(): Promise<string> {
-  for (;;) {
-    const newline = buffered.indexOf("\n");
-    if (newline !== -1) {
-      const found = buffered.slice(0, newline);
-      buffered = buffered.slice(newline + 1);
-      return found;
-    }
-    const chunk = await reader.read();
-    if (chunk.done) {
-      const rest = buffered;
-      buffered = "";
-      return rest;
-    }
-    buffered += decoder.decode(chunk.value, { stream: true });
-  }
-}
-
-const input = JSON.parse(await stdinLine()) as { cwd: string };
-if (recordPath !== undefined) writeFileSync(recordPath, JSON.stringify(input));
-
-function line(value: unknown): void {
-  process.stdout.write(`${JSON.stringify(value)}\n`);
-}
+const { mode, recordPath, input, stdinLine, line, mark, released, hang } = await startFakeLines("FAKE_CLAUDE");
 
 function result(extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -61,32 +28,6 @@ function result(extra: Record<string, unknown> = {}): Record<string, unknown> {
 function failed(reason: string, message: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return result({ result: "failed", reason, message, ...extra });
 }
-
-function mark(): void {
-  if (marker !== undefined) writeFileSync(marker, String(process.pid));
-}
-
-/**
- * Resolves when the release file exists. The directory watch wakes it at once;
- * a watch can miss an event under load, so a look every 100 ms backs it.
- */
-function released(): Promise<void> {
-  if (release === undefined || existsSync(release)) return Promise.resolve();
-  const path = release;
-  return new Promise((resolve) => {
-    const check = (): void => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      clearInterval(timer);
-      resolve();
-    };
-    const watcher = watch(dirname(path), check);
-    const timer = setInterval(check, 100);
-    check();
-  });
-}
-
-const hang = (): Promise<never> => new Promise(() => {});
 
 switch (mode) {
   case "done":
@@ -108,6 +49,32 @@ switch (mode) {
     line({ type: "grant_use", id: 1, waitId: "w1" });
     const ack = await stdinLine();
     if (recordPath !== undefined) writeFileSync(`${recordPath}.ack`, ack);
+    line(result());
+    process.exit(0);
+    break;
+  }
+  case "ask": {
+    // What the real program does for a call that must ask a person. A run with
+    // a one-time permission (an answered question came back) first uses it up
+    // for the call it covers, then asks about another call.
+    const access = (input as { access?: { grants?: Array<{ waitId: string }> } }).access;
+    const grant = access?.grants?.at(0);
+    const session = (input as { resumeSession?: string }).resumeSession ?? "11111111-2222-4333-8444-555555555555";
+    if (grant !== undefined) {
+      line({ type: "grant_use", id: 1, waitId: grant.waitId });
+      const used = await stdinLine();
+      if (recordPath !== undefined) writeFileSync(`${recordPath}.grant`, used);
+    }
+    mark();
+    line({ type: "ask_call", id: 7, kind: "command", value: grant === undefined ? "git push origin main" : "git push origin other", shown: "git push", session });
+    process.on("SIGTERM", () => {
+      line(result({ result: "cancelled" }));
+      process.exit(143);
+    });
+    const ack = await stdinLine();
+    if (recordPath !== undefined) writeFileSync(`${recordPath}.ack`, ack);
+    line({ type: "ask_resolved", id: 7 });
+    if ((JSON.parse(ack) as { decision?: string }).decision === "stop") await hang();
     line(result());
     process.exit(0);
     break;

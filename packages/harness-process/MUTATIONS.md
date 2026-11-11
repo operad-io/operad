@@ -4,16 +4,16 @@ Rows whose mutation broke code in `packages/harness-process/`, in the order they
 were recorded. The root [MUTATIONS.md](../../MUTATIONS.md) explains the format
 and the row fields.
 
+## TK0014 — the shared harness process helper
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0014-M1 | packages/harness-process/src/process.ts | ignored the `toolEvent` classifier, so no line counted as a tool call | `a pi tool call pauses the stall timer until its end line` |
+
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0009-M9 | packages/harness-process/src/process.ts | the harness drain used `globalThis.setTimeout` instead of the injected clock | `the harness process > a child that leaves the group cannot hold the run open` (timed out) |
 | TK0009-M10 | packages/harness-process/src/process.ts | a finished harness run took the grace stop instead of a direct SIGKILL | `the harness process > a child that leaves the group cannot hold the run open` (sleeps 1) |
-Rows whose mutation broke code in `packages/harness-process/`, in the order they were
-recorded. The root [MUTATIONS.md](../../MUTATIONS.md) explains the format and
-the row fields.
-
-| id | file | mutation | failing test |
-|---|---|---|---|
 | T-0021-M9 | packages/harness-process/src/limit.ts | `modelLimit` keyed a model that is not in `concurrency` instead of leaving it unlimited | `harness-pi/agent step limit > a model not in the map, or no model, has no limit` (in `packages/harness-pi`) |
 | T-0021-M12 | packages/harness-process/src/limit.ts | `flagValue` kept the first value of a repeated flag | `flagValue > takes the last occurrence of a repeated flag` |
 | T-0021-M13 | packages/harness-process/src/limit.ts | `CONCURRENCY_SETTING` dropped `minimum: 1` from its counts | `the concurrency setting > zero, a string, a fraction or a non-object refuse the plugin at load, naming the field` |
@@ -42,3 +42,14 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0099-M3 | packages/harness-process/src/process.ts | the run did not tell the inbox its wall time when it began | `runAgent with an inbox > a message sent while the command runs is written to its stdin as a message line, and the listener is dropped at the end` |
+| T-0187-M3 | packages/harness-process/src/ask-call.ts | a timeout rejection was read as an allow | `createCallAsker > reject_once and a timeout rejection answer deny` |
+| T-0187-M4 | packages/harness-process/src/ask-call.ts | questions were asked at once instead of one at a time | `createCallAsker > questions are asked one at a time` |
+| T-0187-M6 | packages/harness-process/src/ask-call.ts | the question carried no grant under `resume` | `harness-claude: a call that must ask a person > answered later: the session resumes with the one-time permission, and any other call asks again` |
+| T-0187-M11 | packages/harness-process/src/ask-call.ts | the degraded question did not reject once after the grace | `harness-radian: a question is reject_once > a grace that passes is a refusal: the step goes on with rejected true and never ends waiting` |
+
+## T-0205 — the sentinel's host check works under dash
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0205-M1 | packages/harness-process/src/process.ts | the sentinel killed its group with `kill -KILL -- "-$$"`, which dash rejects, so a harness whose host died stayed running | `the harness process > a harness still running when its host dies is stopped with its sentinel` (Linux) |
+| T-0188-M15 | packages/harness-process/src/ask-call.ts | a read-only profile did not open the question channel | `canAsk > is true only for a profile with an askCommands rule` |

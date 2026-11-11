@@ -231,21 +231,28 @@ describe("shell/command", () => {
     // Job control puts the background job in a process group of its own. It
     // keeps the inherited output descriptors and can no longer be signaled
     // through the command's group; the step's own sweep stops it at the end.
+    // macOS's /bin/sh turns on job control here; Linux's dash refuses it
+    // without a tty, so there `setsid` starts the job in a group of its own.
+    // The child writes the pid itself, after it left the group.
+    const escaped =
+      process.platform === "linux"
+        ? `setsid sh -c 'echo $$ > "${pidFile}"; sleep 60' & sleep 0.05`
+        : `set -m; sleep 60 & echo $! > '${pidFile}'; sleep 0.05`;
     const running = registry.runStep(
       "shell/command",
       // The shell lives a few tens of milliseconds more, as a shell does that
       // reads its profile and ends a command: the sweep sees the job below it.
-      { line: `set -m; sleep 60 & echo $! > '${pidFile}'; sleep 0.05` },
+      { line: escaped },
       { runId: "run-escape" },
     );
 
-    // The drain grace is the injected clock's timer: the test ends it, so the
-    // run does not wait a real second for the escaped child's descriptors.
+    // Wait until the child reports from its own group, then end the drain
+    // grace the injected clock holds.
+    const pid = await waitForPid(pidFile);
     await clock.when(() => clock.pending > 0);
     expect(clock.fireTimeouts()).toBe(1);
 
     const result = await running;
-    const pid = await waitForPid(pidFile);
 
     try {
       expect(result.result).toBe("pass");
@@ -302,6 +309,30 @@ describe("shell/check", () => {
     expect(data.exitCode).toBe(4);
     expect(data.reason).toBe("exit");
     expect(readFileSync(String(data.log), "utf8")).not.toContain("never");
+  });
+
+  test("names the byte where this call's own output starts", async () => {
+    const { registry } = await fixture();
+    const first = await registry.runStep(
+      "shell/check",
+      { lines: ["echo first"] },
+      { runId: "run-offset" },
+    );
+    const firstData = dataOf(first);
+    expect(firstData.logStart).toBe(0);
+    const before = statSync(String(firstData.log)).size;
+
+    const second = await registry.runStep(
+      "shell/check",
+      { lines: ["echo second", "exit 4"] },
+      { runId: "run-offset" },
+    );
+    expect(second.result).toBe("fail");
+    const secondData = dataOf(second);
+    expect(secondData.logStart).toBe(before);
+    const text = readFileSync(String(secondData.log), "utf8");
+    expect(text.slice(0, Number(secondData.logStart))).not.toContain("second");
+    expect(text.slice(Number(secondData.logStart))).toContain("second");
   });
 
   test("a line that exceeds the timeout fails and names it", async () => {

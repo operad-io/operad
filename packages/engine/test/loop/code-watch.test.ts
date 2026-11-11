@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   CodeWatch,
@@ -7,6 +7,7 @@ import {
   describeChange,
   diffFingerprints,
   fingerprintCode,
+  newHashCache,
   waitForCodeChange,
   type CodeChange,
 } from "../../src/index.ts";
@@ -43,6 +44,30 @@ describe("code fingerprints", () => {
     rmSync(extra);
     rmSync(file);
     expect(diffFingerprints(before, fingerprintCode(roots))?.files).toEqual([file]);
+  });
+
+  test("a hash read while its stamps were fresh is read again after they are old", async () => {
+    const { root, file } = await project();
+    const roots = [{ label: "pkg", path: root }];
+    let now = statSync(file).mtimeMs;
+    const cache = newHashCache(() => now);
+    const before = fingerprintCode(roots, cache);
+    const oldHash = before.hashes.get(file);
+    if (oldHash === undefined) throw new Error("the baseline holds the file");
+
+    // A same-size rewrite within the baseline's millisecond would keep the
+    // cache key; the delayed poll must not believe the hash read before it.
+    writeFileSync(file, "export const a = 2;\n");
+    const current = statSync(file);
+    cache.entries.set(file, {
+      key: `${current.size}:${current.mtimeMs}:${current.ctimeMs}`,
+      hash: oldHash,
+      trusted: false,
+    });
+    now = Math.max(current.mtimeMs, current.ctimeMs) + 3_000;
+
+    const after = fingerprintCode(roots, cache);
+    expect(diffFingerprints(before, after)?.files).toEqual([file]);
   });
 
   test("docs, tests and fixtures are not code", async () => {

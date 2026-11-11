@@ -54,6 +54,8 @@ function runningMark(task: TaskData): RowMark {
   // record stays, but the step is no longer integrate.
   if (isIntegrating(task)) return "integrating";
   if (typeof attempt?.workRetryAt === "number") return "retry_wait";
+  // The work step waits for a worker another task holds.
+  if (typeof attempt?.workerWait === "string" && attempt.workerWait.length > 0) return "blocked";
   if (attempt === undefined || typeof attempt.worktree !== "string") {
     return "starting";
   }
@@ -81,6 +83,15 @@ const TASK_MARKS: Readonly<Record<TaskPhase, (task: TaskData) => RowMark>> = {
 
 /** The mark of a task row. */
 export function taskMark(task: TaskData): RowMark {
+  // A step that waits for a check place is not running or checking yet.
+  const placeWait = task.attempt?.placeWait;
+  if (
+    placeWait !== undefined &&
+    placeWait !== null &&
+    (task.phase === "running" || task.phase === "review" || task.phase === "waiting")
+  ) {
+    return "blocked";
+  }
   return TASK_MARKS[task.phase](task);
 }
 
@@ -91,7 +102,13 @@ export function taskBadge(task: TaskData): string {
 
 const PLAN_MARKS: Readonly<Record<PlanState, (plan: PlanData) => RowMark>> = {
   draft: () => "proposed",
-  confirmed: (plan) => ((plan.activeCount ?? 0) > 0 ? "running" : "todo"),
+  // A task waiting for a person wins over running: the owner has something to do.
+  confirmed: (plan) =>
+    (plan.waitingCount ?? 0) > 0
+      ? "waiting"
+      : (plan.activeCount ?? 0) > 0
+        ? "running"
+        : "todo",
   paused: () => "paused",
   cancelled: () => "cancelled",
   finished: () => "done",

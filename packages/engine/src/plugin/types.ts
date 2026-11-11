@@ -99,6 +99,11 @@ export interface ObjectRow {
    * passes it through untouched; clients draw it.
    */
   readonly after?: readonly string[] | undefined;
+  /**
+   * The object waits for a person although no run does, as a proposed task
+   * does. The row is drawn waiting, like one with a run waiting.
+   */
+  readonly waiting?: boolean | undefined;
 }
 
 /** One section a detail page offers. `live` means its content still grows. */
@@ -373,7 +378,7 @@ export type Answer = (choice: string, note?: string) => MaybePromise<void>;
 /** What a plugin may ask the kernel to do with a run it owns. */
 export interface RunControl {
   /** Cancels a run through the kernel; an ended run is left alone. */
-  cancel(runId: string): MaybePromise<void>;
+  cancel(runId: string, flow?: FlowDefinition): MaybePromise<void>;
 }
 
 /** The result of one plugin's optional `check`. */
@@ -473,6 +478,13 @@ export interface StepContext extends PluginBaseContext {
    * used. Call it before the call the permission covers.
    */
   useGrant(waitId: string): Promise<boolean>;
+  /**
+   * Tells the kernel this step waits for a place the plugin manages itself
+   * (not a step limit), under `key`; the running view shows it queued. Call
+   * the returned function when the wait is over. Undefined when the host has
+   * no limiter.
+   */
+  readonly queued?: ((key: string) => Promise<() => Promise<void>>) | undefined;
   /** Whether a plugin that declares this step is loaded now. */
   readonly stepLoaded?: ((use: string) => boolean) | undefined;
   /**
@@ -522,6 +534,12 @@ export interface StepLimitRequest {
 /** Hands out places under limit keys to steps a step starts with `runStep`. */
 export interface StepLimiter {
   acquire(request: StepLimitRequest): Promise<() => Promise<void>>;
+  /**
+   * Records that the step waits for a place that it manages itself, so the
+   * running view shows the run queued under `key`. The returned function ends
+   * the wait. The kernel grants nothing for it.
+   */
+  report(request: { readonly key: string }): Promise<() => Promise<void>>;
 }
 
 /** Options for running a step through the registry. */
@@ -540,6 +558,10 @@ export interface StepRunOptions {
   readonly trigger?: TriggerView | undefined;
   /** Sends a step event; the plugin is the one that registered the step. */
   readonly emit?:
+    | ((plugin: string, event: StepEvent) => MaybePromise<void>)
+    | undefined;
+  /** Sees each event this step sends, besides the destination; only the step it is given to. */
+  readonly observe?:
     | ((plugin: string, event: StepEvent) => MaybePromise<void>)
     | undefined;
 }
@@ -565,6 +587,12 @@ export interface StepTypeDefinition {
    * does not start when one of them is not loaded.
    */
   readonly calls?: readonly string[] | undefined;
+  /**
+   * The step also calls steps that settings or an object name (a chat's
+   * `refresh` step), so `calls` cannot list them. A run does not wait on them
+   * to start; a call to one that is not loaded fails where it is made.
+   */
+  readonly callsNamedByData?: boolean | undefined;
   /** Access profile fields this step applies, such as `denyPaths`. */
   readonly enforces?: readonly string[] | undefined;
   /**
@@ -620,7 +648,12 @@ export interface ObjectTypeDefinition {
    * before a client reads them. Views run it once per instance, before the
    * first list or get; it must be safe to run again.
    */
-  readonly prepare?: (ctx: { readonly store: ObjectStore }) => MaybePromise<void>;
+  readonly prepare?: (ctx: {
+    readonly store: ObjectStore;
+    readonly home: string;
+    /** The owning plugin's validated settings. */
+    readonly settings: Readonly<Record<string, JsonValue>>;
+  }) => MaybePromise<void>;
   /**
    * Whether the plugin itself will answer this object's wait for a person
    * automatically. It runs each time the pending view is built and returns
@@ -725,8 +758,25 @@ export interface ActionTypeDefinition {
   readonly run: (ctx: ActionContext, args: unknown) => MaybePromise<unknown>;
 }
 
+/** An event an action sends: the person's client is the source. */
+export interface ActionEvent {
+  /** Where it came from, such as `ios`; never `operad`. */
+  readonly source: string;
+  readonly type: string;
+  /** Makes a repeat of the same event a no-op. */
+  readonly key: string;
+  /** The object it is about, as `<type>:<id>`. */
+  readonly object?: string | undefined;
+  readonly summary?: string | undefined;
+  readonly data?: JsonValue | undefined;
+}
+
 /** The context an action receives. `runId` is set when it answers a person wait. */
 export interface ActionContext extends PluginBaseContext {
+  /** The names of the loaded plugins of kind `harness`. */
+  readonly harnesses: readonly string[];
+  /** Sends an event through the kernel's rules; set when the host can route events. */
+  readonly emit?: ((event: ActionEvent) => Promise<void>) | undefined;
   readonly runId: string | undefined;
   readonly object: RunObject;
   /** Who asked for the action: a person through a client. */
@@ -834,6 +884,13 @@ export interface TickContext extends PluginBaseContext {
     access?: JsonValue,
   ): Promise<void>;
   /**
+   * Adds a flow this plugin generated, so `start` can name it and a later
+   * process that sees the same run gets the same graph. Declaring a name again
+   * with the same definition is a no-op; a different definition under a name
+   * already in use is refused.
+   */
+  declareFlow(flow: FlowDefinition): void;
+  /**
    * Answers the current person wait of a run this plugin owns. The kernel's
    * configured answer handler records the answer; a run that no longer waits
    * rejects with a `StateError`.
@@ -841,6 +898,8 @@ export interface TickContext extends PluginBaseContext {
   answer(runId: string, choice: string, note?: string): Promise<void>;
   /** What the kernel knows about runs, when the loop supplies it. */
   readonly runLookup?: RunLookup | undefined;
+  /** Set when the kernel can cancel a run for this plugin. */
+  readonly runs?: RunControl | undefined;
   /** The names of the plugins this process loaded. */
   readonly loaded: readonly string[];
 }
@@ -851,6 +910,15 @@ export interface StandingItem {
   readonly id: string;
   /** What the person reads. */
   readonly prompt: string;
+  /**
+   * The object the item is about. The item then carries the actions of the
+   * plugins whose `when` holds for it, and the object's row, like a waiting run.
+   */
+  readonly object?: ObjectRef | undefined;
+  /** False keeps a channel from announcing the item; it is still pending. */
+  readonly announce?: boolean | undefined;
+  /** Other objects the item stands for, such as the proposed tasks of a draft plan. */
+  readonly covers?: readonly ObjectRef[] | undefined;
 }
 
 /** The context a plugin's `standing` hook receives. */

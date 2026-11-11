@@ -8,7 +8,6 @@
 import type { PluginStepResult, StepContext } from "@operad-io/engine";
 import { messageOf } from "@operad-io/engine";
 import type { TaskData } from "./model.ts";
-import { wordsReason } from "./words.ts";
 import {
   cancelledStep,
   claimAllows,
@@ -75,6 +74,12 @@ export function waitingReason(
     const cause = task.retry?.cause ?? `run stopped during ${edge.from}`;
     return { reason: cause, step: edge.from };
   }
+  if (edge.result === "not_code") {
+    // A check that was not the code twice: the line says what and under which load.
+    const verify = attempt?.verify;
+    const said = typeof verify?.notCode === "string" ? verify.notCode : undefined;
+    return { reason: said ?? "check was not the code" };
+  }
   switch (edge.from) {
     case "worktree":
       if (edge.result === "blocked") {
@@ -99,8 +104,6 @@ export function waitingReason(
       };
     case "review":
       if (edge.result === "pass") {
-        const words = attempt?.review?.newWords ?? [];
-        if (words.length > 0) return { reason: wordsReason(words) };
         return { reason: "ready to merge" };
       }
       {
@@ -126,6 +129,9 @@ export function waitingReason(
       const verified = attempt?.verified;
       if (typeof verified !== "string" || verified.length === 0) {
         return { reason: "no verified commit" };
+      }
+      if (typeof integration?.notCode === "string") {
+        return { reason: integration.notCode };
       }
       return {
         reason: "merge refused",

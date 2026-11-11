@@ -1,6 +1,6 @@
 {
   "$schema": "../theme.schema.json",
-  "comment": "One Light. Source: https://github.com/atom/one-light-syntax (styles/colors.less and styles/syntax-variables.less; HSL values converted to hex). Licence: MIT, Copyright (c) 2016 GitHub Inc.; the text is in LICENSE-one. Roles: text = mono-1 hsl(230,8%,24%), weak = mono-2 hsl(230,6%,44%), rule = mono-3 hsl(230,4%,64%), accent = hue-3 hsl(301,63%,40%), run = hue-2 hsl(221,87%,60%), ok = hue-4 hsl(119,34%,47%), error = hue-5 hsl(5,74%,59%), add = syntax-color-added hsl(132,60%,44%), remove = syntax-color-removed hsl(0,100%,54%), tint = syntax-selection-color darken(bg,8%), code = gutter-background-color-selected darken(bg,8%), background = syntax-bg hsl(230,1%,98%). Adjusted for contrast, nothing else changed: add #2db448 (syntax-color-added hsl(132,60%,44%)) -> #29a341: lightness 44% -> 40% for 3:1 on #fafafa (was 2.60:1).",
+  "comment": "One Light. Source: https://github.com/atom/one-light-syntax (styles/colors.less and styles/syntax-variables.less; HSL values converted to hex). Licence: MIT, Copyright (c) 2016 GitHub Inc.; the text is in LICENSE-one. Roles: text = mono-1 hsl(230,8%,24%), weak = mono-2 hsl(230,6%,44%), rule = mono-3 hsl(230,4%,64%), accent = hue-3 hsl(301,63%,40%), run = hue-2 hsl(221,87%,60%), ok = hue-4 hsl(119,34%,47%), error = hue-5 hsl(5,74%,59%), add = syntax-color-added hsl(132,60%,44%), remove = syntax-color-removed hsl(0,100%,54%), tint = syntax-selection-color darken(bg,8%), code = syntax-cursor-line (mono-1 at 5% over the base), background = syntax-bg hsl(230,1%,98%). One Light uses the same gutter shade for its selection, so code takes the cursor-line tint instead and a code block and a selected row do not look the same. Adjusted for contrast, nothing else changed: add #2db448 (syntax-color-added hsl(132,60%,44%)) -> #29a341: lightness 44% -> 40% for 3:1 on #fafafa (was 2.60:1). cancelled = error with lightness 60% for a cancelled child's bar segment.",
   "colors": {
     "text": "#383a42",
     "weak": "#696c77",
@@ -9,10 +9,11 @@
     "run": "#4078f2",
     "ok": "#50a14f",
     "error": "#e45649",
+    "cancelled": "#9d2317",
     "add": "#29a341",
     "remove": "#ff1414",
     "tint": "#e5e5e6",
-    "code": "#e5e5e6",
+    "code": "#f0f0f1",
     "background": "#fafafa"
   }
 }

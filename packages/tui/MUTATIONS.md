@@ -18,15 +18,14 @@ the row fields.
 | TK0029-M10 | packages/tui/src/events.ts | a refused stream pushed no `error` event | `TuiEvents > 404 and 409 end the stream; 500 is retried with backoff` |
 | TK0029-M11 | packages/tui/src/events.ts | a reconnect with no id to resume from sent no `reset` | `TuiEvents > a reconnect with no id to resume from sends one reset` |
 | TK0029-M12 | packages/tui/src/events.ts | an event's id was not kept for the next request | `TuiEvents > the same instance reconnects with the last id and gets the missed event` |
-| TK0029-M13 | packages/tui/src/client.ts | the abort signal was not passed to `fetch` | `TuiClient > an aborted request rejects with the abort, not an unreachable server` |
-| TK0029-M14 | packages/tui/src/client.ts | an aborted request was reported as an unreachable server | `TuiClient > an aborted request rejects with the abort, not an unreachable server` |
+| TK0029-M13 | packages/tui/src/client.ts | the abort signal was not passed to `fetch` (also TK0029-M14) | `TuiClient > an aborted request rejects with the abort, not an unreachable server` |
 | T-0030-M1 | packages/tui/src/state.ts | a cursor move near the end never asked for the next page | `the TUI reducer > moving past the end asks for the next page once and appends it once` |
 | T-0030-M2 | packages/tui/src/state.ts | the two-pane threshold became `>` instead of `>=`, so 100 columns stayed one pane | `the TUI reducer > resize crosses 100 columns and carries the theme` |
 | T-0030-M3 | packages/tui/src/state.ts | a Pending row lost its waiting flag | `the TUI reducer > each list maps its own flags to a row mark` |
 | T-0030-M4 | packages/tui/src/state.ts | an appended page kept `loading` true | `the TUI reducer > moving past the end asks for the next page once and appends it once` |
 | T-0030-M5 | packages/tui/src/view/index.ts | the waiting marker used the weak gray instead of the accent | `the TUI view > two panes show the header, a waiting marker and the footer` |
 | T-0030-M6 | packages/tui/src/view/index.ts | the view always drew both panes, ignoring the width | `the TUI view > below 100 columns the right pane is gone` |
-| T-0030-M7 | packages/tui/src/state.ts/app.ts | the shell no longer cleared a page request as it launched it, so every key fetched the page again | `the TUI app > keys, resizes and refreshes while a page is in flight fetch it once` |
+| T-0030-M7 | packages/tui/src/state.ts/app.ts | the shell no longer cleared a page request as it launched it, so every key fetched the page again | `the TUI app > keys, resizes and refreshes while a page is in flight fetch it once` (removed) |
 | T-0030-M8 | packages/tui/src/state.ts | an appended page for an older list version was no longer dropped | `the TUI app > a page that lands after a refresh's replace is dropped` |
 | T-0030-M9 | packages/tui/src/app.ts | a new refresh no longer aborted the previous refresh's requests | `the TUI app > the previous refresh is aborted and its late answer is dropped` |
 | T-0030-M10 | packages/tui/src/state.ts | a replace no longer bumped the list version | `the TUI app > a page that lands after a refresh's replace is dropped` |
@@ -64,8 +63,7 @@ the row fields.
 | tui-autostart-M7 | packages/tui/src/autostart.ts | an early exit of the child was not noticed | `ensureServer > a child that exits at once is an error naming the log and showing its tail` |
 | tui-autostart-M8 | packages/tui/src/autostart.ts | the `starting operad serve` line was not printed | `ensureServer > a fresh home with no config starts serve, waits for it and returns the address` |
 | tui-autostart-M9 | packages/tui/src/autostart.ts | the child was not detached from the TUI's process group | `a real serve > a fresh home on a free port: tui starts serve, connects, and the child is stopped after` |
-| tui-autostart-M10 | packages/tui/src/app.ts | `--url` no longer skipped the start check | `runTui and the flags > --url and --no-start never start or check a serve; neither does nothing at all` |
-| tui-autostart-M11 | packages/tui/src/app.ts | `--no-start` no longer skipped the start check | `runTui and the flags > --url and --no-start never start or check a serve; neither does nothing at all` |
+| tui-autostart-M10 | packages/tui/src/app.ts | `--url` no longer skipped the start check (also tui-autostart-M11) | `runTui and the flags > --url and --no-start never start or check a serve; neither does nothing at all` |
 | tui-autostart-M13 | packages/tui/src/autostart.ts | a `200` reply without a `types` list counted as operad | `probeServer > tells operad, a silent address and another service apart` |
 | tui-autostart-M16 | packages/tui/src/autostart.ts | an early exit of the child always failed, even when another serve held the lock | `ensureServer: races and bounds > two tui starting at once both end connected to the one serve` |
 | tui-autostart-M17 | packages/tui/src/discover.ts | `http.port` 0 no longer failed before a start | `ensureServer: races and bounds > port 0 or an empty listen fails before anything is spawned` |
@@ -87,8 +85,7 @@ the row fields.
 | T-0035-M5 | packages/tui/src/view/index.ts | the footer ignored the selected row's `error` | `the TUI view > the selected row's error shows in the footer` |
 | T-0032-M1 | packages/tui/src/actions.ts | an empty required note was sent | `actions in the reducer > a note action refuses to send while a required note is empty` |
 | T-0032-M2 | packages/tui/src/state.ts | the person's key binding no longer came before the built-in keys | `actions in the reducer > a bound key runs its action; a user binding beats the plugin's and the built-in keys` |
-| T-0032-M3 | packages/tui/src/actions.ts | `y` sent `confirmed: false` | `actions in the reducer > a confirm action asks and only y sends, with confirmed` |
-| T-0032-M4 | packages/tui/src/actions.ts | any key answered the confirmation as yes | `actions in the reducer > a confirm action asks and only y sends, with confirmed` |
+| T-0032-M3 | packages/tui/src/actions.ts | `y` sent `confirmed: false` (also T-0032-M4) | `actions in the reducer > a confirm action asks and only y sends, with confirmed` |
 | T-0032-M5 | packages/tui/src/actions.ts | a refusal dropped the server's status from the footer line | `actions in the reducer > a refusal shows the server's status and message until the next key` |
 | T-0032-M6 | packages/tui/src/state.ts | `:` opened no palette | `actions in the reducer > the palette filters by fuzzy match and shows key, note and confirm` |
 | T-0032-M7 | packages/tui/src/state.ts | the `:`, `?` and `q` built-ins came before the person's key bindings | `actions in the reducer > reserved keys are dropped from the bindings, announced once, and keep their built-in use` |
@@ -137,6 +134,7 @@ the row fields.
 | T-0070-M3 | packages/tui/src/theme.ts | the terminal theme's accent was an RGB hex, not an ANSI index | `the theme tokens > the terminal theme draws ANSI indexes, not RGB` |
 | T-0070-M4 | packages/tui/src/app.ts | `runTui` skipped the config check and took the flag unchecked | `choosing the theme > the app does not start on an unknown theme or a broken file` |
 | T-0070-M5 | packages/tui/src/view/index.ts | the selected row lost its tint background | `the theme tokens > the selected row has the tint as its background` |
+
 ## T-0049 — the filter key
 
 | id | file | mutation | failing test |
@@ -207,7 +205,7 @@ the row fields.
 | T-0127-M2 | packages/tui/src/autostart.ts | a serve of the home that never answers was reported as a start that did not answer | `ensureServer > a child that lost the home lock to a serve that never answers says that serve runs and does not answer` |
 | T-0083-M1 | packages/tui/src/actions.ts | a match at the start of a word got no bonus over a match in the middle | `palette search: query to first entry > "rec" finds ops:reconcile first` |
 | T-0083-M2 | packages/tui/src/actions.ts | the group was not searched | `palette search: query to first entry > a group word keeps only the entries of that group` |
-| T-0083-M3 | packages/tui/src/actions.ts | the recent list put the newest entry last | `palette search: recent entries > an empty query lists the last five used first, the latest first, then the group order` |
+| T-0083-M3 | packages/tui/src/actions.ts | the recent list put the newest entry last | `palette search: recent entries > an empty query keeps the last five used first inside each group, and lists the groups in order` |
 | T-0083-M4 | packages/tui/src/actions.ts | equal scores were listed in reverse order | `palette search: query to first entry > equal scores keep the order the entries were listed in` |
 | T-0083-M5 | packages/tui/src/view/index.ts | the matched characters of the name were not drawn in the accent | `palette search: highlight positions > the matched characters are drawn in the accent colour` |
 | T-0084-M1 | packages/tui/src/state.ts | moving the theme list's cursor did not change the previewed theme | `the theme command: list and keys > moving previews the theme under the cursor, and stops at the ends` |
@@ -216,8 +214,7 @@ the row fields.
 | T-0084-M4 | packages/tui/src/app.ts | Enter kept the theme for the session but did not write tui.json | `the theme command in the running app > enter keeps the theme, writes tui.json, and a new start uses it` |
 | T-0084-M5 | packages/tui/src/app.ts | the view ignored the preview and always drew the theme in force | `the theme command in the running app > moving the selection changes the drawn colours; escape puts them back` |
 | T-0129-M2 | packages/tui/src/state.ts | opening a type-tab row asked for the bare id instead of `<type>:<id>` | `the TUI object app > a row opens by its typed id; a server that refuses bare ids is never asked for one` |
-| T-0112-M10 | packages/tui/src/actions.ts | a status number in front of a refusal was kept | `a refusal line > drops a status number and a field prefix, and keeps the sentence` |
-| T-0112-M11 | packages/tui/src/actions.ts | a `field: ` prefix in front of a refusal was kept | `a refusal line > drops a status number and a field prefix, and keeps the sentence` |
+| T-0112-M10 | packages/tui/src/actions.ts | a status number in front of a refusal was kept (also T-0112-M11) | `a refusal line > drops a status number and a field prefix, and keeps the sentence` |
 | T-0117-M2 | packages/tui/src/args.ts | a boolean argument was not recognised, so no yes/no list was asked | `arguments of an action > a boolean is a yes/no list that starts on its default` |
 | T-0129-M3 | packages/tui/src/app.ts | the section request sent the answer's bare id instead of `<type>:<id>` | `the TUI object app > a row opens by its typed id; a server that refuses bare ids is never asked for one` |
 | T-0102-M1 | packages/tui/src/state.ts | a list that loaded did not ask the object pane to show the cursor row | `the object pane follows the cursor > a list that loads under the open tab shows its first row` |
@@ -242,3 +239,65 @@ the row fields.
 | T-0121-M4 | packages/tui/src/view/index.ts | a plugin tab's rows drew their title after the id and slug | `two-line rows > at the one-pane width nothing is wider than the pane, and a long id and title cut with …` |
 | T-0121-M5 | packages/tui/src/state.ts | a child's page took the child's id as its source, so a refresh of the left list reopened the plan | `one tab per plugin > a refresh of the left list leaves a child's page open` |
 | T-0121-M6 | packages/tui/src/state.ts | a changed row was not put in place on the open page's next-level list | `one tab per plugin > a change to a child refreshes its row on the open plan page` |
+| T-0149-M1 | packages/tui/src/theme.ts | the shipped palettes were read again when the module was imported, so a missing file failed every start | `shipped themes: the files > a missing shipped file fails when its theme or family is chosen, not when the module is imported` |
+| T-0149-M2 | packages/tui/src/theme.ts | choosing a shipped theme no longer read and checked its file | `shipped themes: the files > a missing shipped file fails when its theme or family is chosen, not when the module is imported` |
+| T-0149-M3 | packages/tui/src/theme.ts | choosing a family checked only the family name, not both of its members | `shipped themes: the files > a missing shipped file fails when its theme or family is chosen, not when the module is imported` |
+| T-0149-M4 | packages/tui/themes/rose-pine-main.json, packages/tui/themes/rose-pine-dawn.json | the tint went back to the surface colour, which is barely visible on the base and equals code | `shipped themes: the files > Rosé Pine's selected row is visible on its base` |
+| T-0149-M5 | packages/tui/themes/dracula.json | code went back to the selection colour, so a code block looked like a selected row | `shipped themes: the files > every shipped theme resolves to a full palette equal to its file` (code is not tint) |
+| T-0149-M6 | packages/tui/themes/solarized-dark.json | code went back to base02, the tint and rule colour | `shipped themes: the files > every shipped theme resolves to a full palette equal to its file` (code is not tint) |
+| T-0149-M7 | packages/tui/themes/solarized-light.json | code went back to base2, the tint and rule colour | `shipped themes: the files > every shipped theme resolves to a full palette equal to its file` (code is not tint) |
+| T-0149-M8 | packages/tui/themes/one-light.json | code went back to the selection colour, leaving no second background | `shipped themes: the files > every shipped theme resolves to a full palette equal to its file` (code is not tint) |
+| T-0103-M1 | packages/tui/src/state.ts | a cycle no longer fell back to the list order | `the object page's child list > a cycle falls back to the list order` |
+| T-0103-M2 | packages/tui/src/state.ts | every parent in `after` was printed as `also after`, not only the ones after the first | `the object page's child list > a child with two parents hangs under the first and names the other as also after` |
+| T-0103-M3 | packages/tui/src/state.ts | cancelled children kept their list place instead of moving last | `the progress bar and its heading > the child list puts cancelled rows last` |
+| T-0103-M4 | packages/tui/src/state.ts | cancelled children counted in the done total and were left out of the bar cells | `the progress bar and its heading > cancelled children are counted in neither done nor total, but still draw a cell at the end` |
+| T-0103-M5 | packages/tui/src/view/index.ts | a cancelled bar segment took the weak grey instead of the cancelled dark red | `the progress bar and its heading > the bar takes its colours from each mark; cancelled is dark red and comes last` |
+| T-0103-M6 | packages/tui/src/actions.ts | `t` was no longer reserved, so a binding could take it | `the tree and list layouts > t toggles the child list, is reserved, and the footer names the layout it switches to` |
+| T-0103-M7 | packages/tui/src/view/index.ts | a long title was cut with `…` instead of wrapped | `the object page's frame and columns > the title wraps inside the frame` |
+| T-0103-M8 | packages/tui/src/view/index.ts | the child heading carried the state word `done` beside the numbers | `the progress bar and its heading > cancelled children are counted in neither done nor total, but still draw a cell at the end` |
+| T-0103-M9 | packages/tui/src/theme.ts | reading `tui.json` ignored the saved child layout | `the tree and list layouts > the chosen layout is read from tui.json and saved next to the theme` |
+
+## T-0206 — the serve log tail reads only the end
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0206-M5 | packages/tui/src/autostart.ts | decoded each backward chunk on its own, so a multi-byte character split across two reads became U+FFFD | `ensureServer > a long log's tail keeps the last ten lines and decodes a multi-byte line across reads` |
+
+## FATAL-FLAKY — the fault tests' terminal restore is not cut short by load
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| FATAL-FLAKY-M1 | packages/tui/test/fatal.test.ts | the test renderer's native session went back to a wall-clock close deadline (`closeTimeoutMs: 0`, what a one-second stall of the loop amounts to) instead of the virtual scheduler | `a fault that ends the app > a view that throws while a request is answered: the terminal is restored before the message is written` (also the uncaught exception and rejection cases) |
+| T-0103-M10 | packages/tui/src/state.ts | the tree kept an active child under its cancelled parent instead of moving every cancelled row last | `the progress bar and its heading > an active child of a cancelled parent is still before every cancelled row` |
+| T-0103-M11 | packages/tui/src/state.ts | an active row took its first `after` parent even when that parent was cancelled, so it hung from a cancelled row instead of drawing top-level | `the progress bar and its heading > an active child of a cancelled parent is drawn top-level before every cancelled row` |
+| T-0160-M3 | packages/tui/src/actions.ts | parsed typed text as JSON even for a string setting | `typed setting text > a string setting keeps text that reads as JSON; other types parse it` |
+| T-0160-M4 | packages/tui/src/state.ts | left the theme list cursor where it was when the list got shorter | `the theme command: list and keys > a theme file removed while the list is open keeps the cursor on a theme` |
+| T-0215-M1 | packages/tui/test/popular-themes.test.ts | the temporary copy kept `rose-pine-main.json` (the file that should be missing) | `shipped themes: the files > a missing shipped file fails when its theme or family is chosen, not when the module is imported` |
+
+## T-0104 — the overlays' and the footer's spacing
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0104-M1 | packages/tui/src/view/index.ts | put no blank line under the palette's input | `the overlays' spacing > the palette at 80 columns has a blank line under the input, a dim group label and aligned columns` |
+| T-0104-M2 | packages/tui/src/view/index.ts | put no blank line between the palette's groups | `the overlays' spacing > the palette at 160 columns has a blank line under the input, a dim group label and aligned columns` |
+| T-0104-M3 | packages/tui/src/view/index.ts | left-aligned the palette's key instead of keeping it at the right edge | `the overlays' spacing > the palette at 80 columns has a blank line under the input, a dim group label and aligned columns` |
+| T-0104-M4 | packages/tui/src/view/index.ts | drew a palette group label in the text colour instead of the weak colour | `the overlays' spacing > the palette at 80 columns has a blank line under the input, a dim group label and aligned columns` |
+| T-0104-M5 | packages/tui/src/view/index.ts | did not pad the key column of the key list | `the overlays' spacing > the key list at 80 columns aligns every key and puts a blank line between groups` |
+| T-0104-M6 | packages/tui/src/view/index.ts | put no blank line between the key list's groups | `the overlays' spacing > the key list at 160 columns aligns every key and puts a blank line between groups` |
+| T-0104-M7 | packages/tui/src/view/index.ts | separated the footer's hints with two spaces instead of ` · ` | `the overlays' spacing > the footer separates hints with a dot, the keys in the text colour and the hints weak` |
+| T-0104-M8 | packages/tui/src/view/index.ts | drew the footer's keys in the weak colour | `the overlays' spacing > the footer separates hints with a dot, the keys in the text colour and the hints weak` |
+| T-0104-M9 | packages/tui/src/actions.ts | listed the recent palette entries across groups instead of grouping them | `palette search: recent entries > an empty query keeps the last five used first inside each group, and lists the groups in order` |
+| T-0104-M10 | packages/tui/src/view/index.ts | drew the key list from its first row, so a short terminal could not reach its last group | `the overlays' spacing > the key list scrolls to its last group on a 24-row terminal at 80 columns` |
+
+## T-0105 — diff text contrast
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0105-M1 | packages/tui/src/layout.ts | gave code text with no role the weak role again | `a diff block > gives header, hunk, add, remove and context their roles` |
+| T-0105-M2 | packages/tui/src/layout.ts | drew the fence's language as a line | `a diff block > has no line for the fence's language` |
+| T-0105-M3 | packages/tui/src/layout.ts | did not pad code rows to the pane's width | `a diff block > is one rectangle: every row has the pane's width and one column of left padding` |
+| T-0105-M4 | packages/tui/src/layout.ts | drew the whole --stat line in one colour | `a diff block > colours the + and - runs of a --stat line` |
+| T-0105-M5 | packages/tui/src/theme.ts | set the dark theme's weak colour to #5a5a66 | `theme contrast > dark: text and weak read on the background and the code background` |
+| T-0105-M6 | packages/tui/src/layout.ts | wrapped code rows without re-adding the left padding to continuation rows | `a wrapped code row > keeps the block's left padding and its width on every row` |
+| T-0105-M7 | packages/tui/src/layout.ts | counted the --stat head in UTF-16 units instead of graphemes | `code rows at narrow widths and with astral characters > colours the first + of a --stat line whose file name has an astral character` |
+| T-0239-M5 | packages/tui/src/state.ts | a running row did not show the time a step spent queued | `two-line rows > a run queued for a check place says so, and how long it waited once it runs` |

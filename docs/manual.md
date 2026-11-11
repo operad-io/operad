@@ -36,7 +36,8 @@ this manual prints a secret.
   also be an array of module names.
 - `store`: where the objects and their history live. `backend` is `jsonl` or
   `sqlite`; `path` is a directory for `jsonl` and a file for `sqlite`. A
-  relative path resolves against the home.
+  relative path resolves against the home. Changing `backend` alone starts from
+  an empty store; to keep what you have, see [Moving the store](#moving-the-store).
 - `http`: the interface `operad serve` exposes to clients. It is off unless
   `enabled` is true; no other command opens the port.
 - `ask`: how long `ctx.ask` waits for an answer by default; see
@@ -58,6 +59,8 @@ action already running. The MCP server never offers the owner's actions as its
 own; `show` lists them separately so the lead can tell the owner what to run.
 
 `dev:reverify` merges the current main into the task branch first, then runs verify and review again with no worker. A clean merge goes straight to verify; a conflicting main sends the task to the worker.
+
+When the worker adds no commit, the task waits with `work did nothing` if the branch has nothing beyond main or its latest commit already passed verify. If the branch already holds commits not on main and its latest commit has not passed verify (an earlier run stopped before verify ended), the task does not wait: history says `the branch already has unchecked work; checking it` and the task goes on to verify.
 
 ### Where the reviewer writes its report
 
@@ -483,7 +486,23 @@ rest the weak colour.
 for, in the form row ids have; it is an array of non-empty strings, or the row is
 an error row. It is passed through list, get and pending rows unchanged, and
 `operad list` and `operad show` do not print it. The `dev` plugin fills a task's
-`after` with the task ids it waits for in its plan.
+`after` with the task ids it waits for, as stored: a task of another repository shows as
+`<repository>/<task id>`.
+
+`operad task add` and `operad task update` take `--after <task>` for a task of the same
+repository (any plan) or `--after <repository>/<task>` for a task of any registered
+repository. The task is blocked until every task it follows is merged, wherever it is,
+and its note says what it waits for (`waiting for operad/T-0188` for another repository).
+The named task must exist, and a task cannot follow itself or close a cycle.
+
+`operad plan add` and `operad task add` take `--flow <name>`, one of the flows the
+repository's `.operad/dev.json` defines. A task without `--flow` takes its plan's flow,
+and a plan without one takes `default`. `operad task update <id> --flow <name>` changes
+a task's flow only before its first attempt; after that the command refuses. A task
+whose flow dev.json does not define stays ready, and its row and its plan's row say
+`flow <name> is not defined in .operad/dev.json`. When the repository defines more than
+one flow, the task row's note and the Brief section name the task's flow, and History
+names the flow at the start of each run.
 
 `badge` is a short text the client shows as it is, after the state: one line of
 at most 16 characters, or the row is an error row. The `dev` plugin sets a
@@ -540,6 +559,42 @@ Every error body is:
 | `504` | A section did not load in time. |
 | `500` | Anything else; the body carries no stack trace. |
 
+## Moving the store
+
+`operad store copy <jsonl|sqlite>` copies the store the config names into a new
+store of the other kind, beside it in the same directory (`log.sqlite` and
+`plugins.sqlite` for `sqlite`; `runs/`, `inputs.jsonl`, `outcomes.jsonl`,
+`plugins/facts.jsonl` and `schema.json` for `jsonl`). It keeps every step, its
+time and cause, every run and what each object held. The current store is not
+changed, and `triggers/`, `logs/` and the plugins' directories stay where they
+are, shared by both. It refuses while `operad serve` or a run is going, and when
+the new store's files exist already (move them away first). `operad store use
+<jsonl|sqlite>` then changes `store` in `config.json` to the copy; changing it
+back is the same command. `use` refuses a copy when the store it was copied from has been written to since; remove the copy's files and copy again.
+
+A switch, step by step:
+
+1. Stop `serve` (`operad serve stop`) and wait until `operad running` lists
+   nothing.
+2. `operad store copy <kind>`, then `operad store use <kind>`.
+3. Compare a few views before and after: `operad list task`, `operad pending`
+   and the History of two or three objects should read the same.
+4. Start `serve` again with the same environment it had before.
+5. Restart every other long-running client: an MCP server
+   (`/mcp reconnect <name>` in Claude Code) or a terminal client. A client
+   started before `store use` keeps the store it opened and writes there until
+   it restarts.
+6. With `serve` running, run a few commands that write (an action on a task)
+   while tasks run, and look for `database is locked` in the serve log; there
+   should be none.
+7. Time `serve` from a client for a minute (for example one request to
+   `/v1/types` every 100 ms): no answer should take more than a fraction of a
+   second.
+
+To go back, `operad store use` the other kind and restart `serve` and the
+clients the same way; the old store's files were not changed by the copy, but
+anything written after the switch is only in the new store.
+
 ## The History section
 
 Every object has a History section (`operad show <id> --section history`, the
@@ -563,7 +618,6 @@ starts each new day.
 - 22:22:02  confirm  reverify  8m
 - 22:30:02  you chose merge: via plugin, as dev
 - 22:30:04  verify  after reverify  running  2m
-<sub>run 01bb7a85-d171-4d83-81d0-8990b77dab78</sub>
 ```
 
 `operad show <id> --section history --full` keeps each detail whole.
@@ -1156,6 +1210,7 @@ do not apply to them.
 bash scripts/verify.sh
 bash scripts/check-changed.sh
 bash scripts/remote-check.sh '<command>'
+bash scripts/remote-check.sh -- <word>...
 ```
 
 `verify.sh` installs with the lockfile, type-checks and runs the whole test
@@ -1177,21 +1232,40 @@ packages it chose before the tests (`all`, `none`, or the names).
 with. This repository's task check runs `check-changed.sh`, and its integration
 runs `verify.sh`.
 
+`remote-check.sh` runs a command here, or on the check host when
+`OPERAD_CHECK_HOST` is set, at the same commit. It takes the command as one
+argument (a shell command line), or after `--` as separate words that are passed
+on as they are: no shell reads them as code on the way, so a word may hold
+quotes, backquotes or `$`. The rerun of a failed test (`failed.rerun` in
+`.operad/dev.json`) uses the `--` form, so it runs where the check ran.
+
 `remote-check.sh` runs one command (a shell line) as a check. With
 `OPERAD_CHECK_HOST` unset or empty it runs the line here, in the repository
 root. With it set to an ssh destination (`user@host`) it copies `HEAD` to that
-host as a git bundle, and there, holding the lock `~/.operad-check.lock` so one
-check runs at a time per host, fetches `origin` and the bundle, checks out
-`HEAD`'s commit detached, removes untracked files except `node_modules`, and
-runs the line. The output comes back as it is written and the exit code is the
-line's; a failure before the line runs (bundle, copy, connection, fetch,
-checkout) exits 1 with one line that names the step. The host needs a clone of
+host as a git bundle, and there, holding one of `OPERAD_CHECK_SLOTS` slots
+(the lock `~/.operad-check-<i>.lock`; it waits only when all are taken), fetches
+`origin` and the bundle, checks out `HEAD`'s commit detached, removes untracked
+files except `node_modules`, and runs the line. Each slot has its own tree, so a
+checkout or clean in one never touches another: slot 1 uses the clone
+`OPERAD_CHECK_TREE` (`~/Code/operad`), and every other slot uses a git worktree
+of that clone made on first use, `<tree>-slot<i>` (for example
+`~/Code/operad-slot2`), with its own `node_modules` once the line installs. With
+`OPERAD_CHECK_LANE=integration` the check takes the one integration slot instead
+(lock `~/.operad-check-integration.lock`, worktree `<tree>-integration`): an
+integration never waits for a task check, and a task check never takes that
+slot. The line sees `OPERAD_CHECK_SLOTS` on the host, so a check can use
+`cores / (N + 1)` test workers. The output comes back as it is written and the
+exit code is the line's; a failure before the line runs (bundle, copy,
+connection, fetch, checkout) exits 1 with one line that names the step. The host
+needs a clone of
 the repository and Bun.
 
 | Variable | Type | Default | What it does |
 |---|---|---|---|
 | `OPERAD_CHECK_HOST` | ssh destination | empty | Where the check runs; empty runs it here. |
 | `OPERAD_CHECK_TREE` | path | `Code/operad` | The clone on the host, relative to its home directory. |
+| `OPERAD_CHECK_SLOTS` | whole number, 1 or more | `1` | How many task checks run at once on the host; any other value stops the script. |
+| `OPERAD_CHECK_LANE` | `integration` | unset | `integration` takes the integration slot instead of a task slot; any other value stops the script. |
 | `OPERAD_CHECK_PATH` | directories | `$HOME/.bun-operad/bin:$HOME/.bun/bin` | Put first on the host's `PATH` before the line runs, expanded on the host. |
 | `OPERAD_CHECK_SSH` | command | `ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4` | The ssh command. |
 | `OPERAD_CHECK_SCP` | command | `scp -q -o BatchMode=yes` | The scp command. |
@@ -1272,6 +1346,42 @@ curl -s \
 
 with `"command": "sh ~/.operad/notify.sh"`. A topic name is a password for
 anyone who guesses it; pick a long random one or use a self-hosted server.
+
+## Chats
+
+A chat is a long conversation with an agent. The `chat` plugin comes with
+`operad init`; a chat belongs to the plugin that opens it. `dev` opens one on a
+repository:
+
+```
+operad dev:chat --repo operad --title "The build" [--harness harness-pi]
+operad chat:send C-0001 --note "why does the gate fail on main?"
+operad show C-0001 --section transcript
+```
+
+`dev:chat` offers `harness-claude` and `harness-pi` (the first one loaded when `--harness` is left out): they can stop a tool call before it starts, which a read-only chat needs. `harness-radian` is refused there and stays for assistant chats.
+
+`chat:send` records the message and sends an event (source `ios`, `telegram` or
+`cli`, key = the message id, about the chat). The plugin's own rule starts
+`chat:reply` for each of the three sources, automatically; a rule of yours in
+`triggers.json` with the same source and type replaces it. The reply reads the
+messages no reply answers yet from the chat's own record, continues the harness
+session, records the reply, and goes round again while new messages came in
+meanwhile (at most 20 rounds). After a restart a reply that was already
+recorded is not given twice.
+
+A chat on a repository works in the main clone, read-only: a shell command runs
+there only when it is on a short list of commands that only read (`git status`,
+`ls`, `cat`, `grep`, `sed -n`, `bun test`, ...); every other command, and every
+write, becomes the worktree question. When the agent wants
+to change code it asks whether to open a worktree. On yes, `dev` opens
+`work/chat-<id>` and the chat works there from then on, once; the main clone
+stays read-only. The worktree's changes reach main only through a task that
+points at it, through the normal gate and integrate.
+
+The agent reaches operad through its tools (`list`, `show`, `section`, `pending`,
+`running`, `history`, `command`, `act`, under the same allow lists as
+`operad mcp`), never by running `operad` in a shell.
 
 ## MCP server
 

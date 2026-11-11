@@ -40,6 +40,7 @@ const reviewer = definePlugin({
         const input = params as {
           readonly args?: readonly string[];
           readonly resultPath: string;
+          readonly cwd: string;
         };
         appendFileSync(callLog, "call\n");
         const mode = input.args?.[0] ?? "none";
@@ -55,7 +56,11 @@ const reviewer = definePlugin({
         }
         writeFileSync(
           input.resultPath,
-          JSON.stringify({ findings: [], verified: ["the diff"] }),
+          JSON.stringify({
+            findings: [],
+            verified: ["the diff"],
+            sha: Bun.spawnSync({ cmd: ["git", "rev-parse", "HEAD"], cwd: input.cwd }).stdout.toString().trim(),
+          }),
         );
         return { result: "done", data: {} };
       },

@@ -10,6 +10,7 @@
         "--model",
         "sonnet"
       ],
+      "count": 1,
       "stallSecs": 900,
       "wallTimeSecs": 7200
     },
@@ -19,6 +20,7 @@
         "--model",
         "opencode-go/deepseek-v4.1-flash"
       ],
+      "count": 1,
       "stallSecs": 900,
       "wallTimeSecs": 7200,
       "fallback": "claude"
@@ -31,6 +33,7 @@
         "--model",
         "deepseek-v4.1-flash"
       ],
+      "count": 1,
       "stallSecs": 900,
       "wallTimeSecs": 7200,
       "fallback": "claude"
@@ -70,10 +73,10 @@
   "gate": {
     "commands": [
       {
-        "run": "if [ -f scripts/check-changed.sh ]; then bash scripts/check-changed.sh; else bash scripts/verify.sh; fi",
+        "run": "if [ -f scripts/remote-check.sh ]; then bash scripts/remote-check.sh 'OPERAD_TEST_PARALLEL=${OPERAD_TEST_PARALLEL:-$(p=$(( $(nproc 2>/dev/null || echo 4) / (${OPERAD_CHECK_SLOTS:-1} + 1) )); echo $(( p > 1 ? p : 1 )))} bash scripts/check-changed.sh'; else bash scripts/verify.sh; fi",
         "failed": {
           "match": "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$",
-          "rerun": "bun test --timeout 30000 -t {pattern}"
+          "rerun": "if [ -f scripts/remote-check.sh ]; then bash scripts/remote-check.sh -- bash -c 'bun install --frozen-lockfile && bun test --timeout 30000 -t \"$0\"' {pattern}; else bun test --timeout 30000 -t {pattern}; fi"
         }
       }
     ],
@@ -83,10 +86,10 @@
     "batch": 3,
     "keyCommands": [
       {
-        "run": "bash scripts/verify.sh",
+        "run": "OPERAD_CHECK_LANE=integration bash scripts/remote-check.sh 'OPERAD_TEST_PARALLEL=${OPERAD_TEST_PARALLEL:-$(p=$(( $(nproc 2>/dev/null || echo 4) / (${OPERAD_CHECK_SLOTS:-1} + 1) )); echo $(( p > 1 ? p : 1 )))} bash scripts/verify.sh'",
         "failed": {
           "match": "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$",
-          "rerun": "bun test --timeout 30000 -t {pattern}"
+          "rerun": "if [ -f scripts/remote-check.sh ]; then bash scripts/remote-check.sh -- bash -c 'bun install --frozen-lockfile && bun test --timeout 30000 -t \"$0\"' {pattern}; else bun test --timeout 30000 -t {pattern}; fi"
         }
       }
     ]

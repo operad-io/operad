@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { notCodeTestHooks } from "../src/notcode.ts";
 import { IntegrationQueue } from "../src/integration-queue.ts";
 import { validateDevSettings } from "../src/settings.ts";
 import { fileURLToPath } from "node:url";
@@ -61,10 +62,15 @@ const CHILD = fileURLToPath(
 interface FixtureOptions {
   readonly style?: IntegrationStyle;
   readonly keyCommands?: readonly unknown[];
+  readonly check?: Readonly<Record<string, number>>;
   readonly hooks?: readonly string[];
   /** Tasks of the same repository, verified like the first, that integrate with it. */
   readonly more?: number;
   readonly batch?: number;
+  /** Files committed to main before the tasks start: their common base. */
+  readonly base?: Readonly<Record<string, string>>;
+  /** Files the first task commits next to `code.txt`. */
+  readonly taskFiles?: Readonly<Record<string, string>>;
 }
 
 interface Fixture {
@@ -123,6 +129,10 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
     path: remote.repository,
     name: "repository",
   });
+  for (const [file, text] of Object.entries(options.base ?? {})) {
+    await advanceMain(remote, file, text, `base ${file}`);
+  }
+  gitOrThrow(remote.repository, ["pull", "--ff-only", "origin", "main"]);
   const devJson = join(remote.repository, ".operad", "dev.json");
   writeDevJson(remote.repository, options);
   // The settings file is local to the clone; keep it from making the tree dirty.
@@ -171,6 +181,11 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
     }
     const worktree = join(remote.repository, ".operad-worktrees", taskId);
     await commitIn(worktree, file, "line\n", "add code");
+    if (suffix === "") {
+      for (const [name, text] of Object.entries(options.taskFiles ?? {})) {
+        await commitIn(worktree, name, text, `change ${name}`);
+      }
+    }
     // The work step pushes the branch in the real flow; cleanup deletes it.
     gitOrThrow(worktree, ["push", "origin", `HEAD:refs/heads/work/${taskId}`]);
     const verified = await registry.runStep("dev/verify", {}, {
@@ -343,6 +358,55 @@ describe("dev/integrate", () => {
     ).toBe(2);
   });
 
+  test("two branches that each append a row to a MUTATIONS.md table merge, keeping both rows", async () => {
+    const table = "# Mutations\n\n| id | mutation |\n|---|---|\n| T-1-M1 | base |\n";
+    const attributes = readFileSync(
+      join(import.meta.dir, "..", "..", "..", ".gitattributes"),
+      "utf8",
+    );
+    {
+      const state = await fixture({
+        base: { ".gitattributes": attributes, "MUTATIONS.md": table },
+        taskFiles: { "MUTATIONS.md": `${table}| T-2-M1 | task |\n` },
+      });
+      await advanceMain(
+        state.remote,
+        "MUTATIONS.md",
+        `${table}| T-3-M1 | main |\n`,
+        "main appends a row",
+      );
+      const result = await integrate(state);
+      expect(result.result).toBe("merged");
+      const merged = gitOrThrow(state.remote.origin, ["show", "main:MUTATIONS.md"]);
+      expect(merged).toContain("| T-2-M1 | task |");
+      expect(merged).toContain("| T-3-M1 | main |");
+      expect(merged).not.toContain("<<<<<<<");
+    }
+  });
+
+  test("a real conflict in another file still falls back while MUTATIONS.md merges", async () => {
+    const table = "# Mutations\n\n| id | mutation |\n|---|---|\n| T-1-M1 | base |\n";
+    const attributes = readFileSync(
+      join(import.meta.dir, "..", "..", "..", ".gitattributes"),
+      "utf8",
+    );
+    const state = await fixture({
+      base: { ".gitattributes": attributes, "MUTATIONS.md": table },
+      taskFiles: { "MUTATIONS.md": `${table}| T-2-M1 | task |\n` },
+    });
+    await advanceMain(
+      state.remote,
+      "MUTATIONS.md",
+      `${table}| T-3-M1 | main |\n`,
+    );
+    await advanceMain(state.remote, "code.txt", "main line\n");
+    const before = remoteMain(state);
+    const result = await integrate(state);
+    expect(result.result).toBe("conflict");
+    expect(result.data?.files).toEqual(["code.txt"]);
+    expect(remoteMain(state)).toBe(before);
+  });
+
   test("a conflict appends the conflict rework and leaves main alone", async () => {
     const state = await fixture({ style: "merge" });
     await advanceMain(state.remote, "code.txt", "main line\n", "main moves");
@@ -427,27 +491,132 @@ describe("dev/integrate", () => {
   });
 
   test("a failing integration check still proposes the flaky task, in the flaky-tests plan", async () => {
-    const state = await fixture({ style: "merge" });
-    const plan = await state.store.get("plan", state.planKey);
-    await state.store.put("plan", state.planKey, { ...(plan?.data ?? {}), status: "draft" }, "test");
-    writeDevJson(state.remote.repository, {
-      style: "merge",
-      check: { flakyTask: 1 },
+    // A pass on a busy machine never counts, so the load is a quiet one, not the host's.
+    notCodeTestHooks.load = () => ({ load1: 0, cores: 10 });
+    try {
+      const state = await fixture({ style: "merge" });
+      const plan = await state.store.get("plan", state.planKey);
+      await state.store.put("plan", state.planKey, { ...(plan?.data ?? {}), status: "draft" }, "test");
+      writeDevJson(state.remote.repository, {
+        style: "merge",
+        check: { flakyTask: 1 },
+        keyCommands: [
+          {
+            run: 'echo "(fail) a > flaky [1.00ms]" >&2; echo "(fail) b > broken [1.00ms]" >&2; exit 1',
+            failed: { match: "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$", rerun: "case {name} in *broken) exit 1;; esac" },
+          },
+        ],
+      });
+      const result = await integrate(state);
+      expect(result.result).toBe("fail");
+      expect(String(result.data?.message)).not.toContain("no task was proposed");
+      const proposed = (await listAll(state.store, "task")).filter(
+        (object) => String((object.data as { title?: unknown }).title) === "Fix the flaky test: a > flaky",
+      );
+      expect(proposed).toHaveLength(1);
+      expect(String((proposed[0]?.data as { plan?: unknown } | undefined)?.plan)).toMatch(/-flaky-tests$/);
+    } finally {
+      notCodeTestHooks.load = undefined;
+    }
+  });
+
+  test("an integration check killed by a signal twice waits for a person, not for the worker", async () => {
+    // Busy before and after the first run and while waiting, quiet before the
+    // second run, busy again when that one ends.
+    const readings = [18, 18, 18, 18, 2, 18];
+    let reads = 0;
+    notCodeTestHooks.load = () => ({
+      load1: readings[Math.min(reads++, readings.length - 1)] ?? 18,
+      cores: 10,
+    });
+    notCodeTestHooks.wait = async () => true;
+    try {
+      const state = await fixture({ style: "merge", keyCommands: ["exit 143"] });
+      const before = remoteMain(state);
+      const result = await integrate(state);
+      expect(result.result).toBe("failed");
+      const task = await taskOf(state);
+      expect(task.phase).toBe("waiting");
+      expect(task.brief).not.toContain("## Rework");
+      expect(task.attempt?.integration?.notCode).toBe(
+        "check was killed by SIGTERM twice under load 18 on 10 cores",
+      );
+      expect(remoteMain(state)).toBe(before);
+    } finally {
+      notCodeTestHooks.load = undefined;
+      notCodeTestHooks.wait = undefined;
+    }
+  });
+
+  test("a batch check that is not the code twice waits for a person and does not fall back", async () => {
+    const root = await tempRoot();
+    const count = join(root, "count");
+    const state = await fixture({
+      more: 1,
+      batch: 2,
+      check: { rerun: 0 },
       keyCommands: [
-        {
-          run: 'echo "(fail) a > flaky [1.00ms]" >&2; echo "(fail) b > broken [1.00ms]" >&2; exit 1',
-          failed: { match: "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$", rerun: "case {name} in *broken) exit 1;; esac" },
-        },
+        `n=$(cat '${count}' 2>/dev/null || echo 0); n=$((n+1)); echo $n > '${count}'; [ $n -le 2 ] && exit 143; exit 0`,
       ],
     });
-    const result = await integrate(state);
-    expect(result.result).toBe("fail");
-    expect(String(result.data?.message)).not.toContain("no task was proposed");
-    const proposed = (await listAll(state.store, "task")).filter(
-      (object) => String((object.data as { title?: unknown }).title) === "Fix the flaky test: a > flaky",
-    );
-    expect(proposed).toHaveLength(1);
-    expect(String((proposed[0]?.data as { plan?: unknown } | undefined)?.plan)).toMatch(/-flaky-tests$/);
+    const follower = state.others[0];
+    if (follower === undefined) throw new Error("task missing");
+    // The leader's first check waits and reruns under the same high load; the
+    // follower's later run is on a quiet machine.
+    const readings = [18, 18, 18, 18, 18, 2, 18, 18, 18, 18, 18, 2, 18];
+    let reads = 0;
+    notCodeTestHooks.load = () => ({
+      load1: readings[Math.min(reads++, readings.length - 1)] ?? 18,
+      cores: 10,
+    });
+    notCodeTestHooks.wait = async () => true;
+    const rings = bell();
+    integrateTestHooks.wait = rings.wait;
+    const queued = new Map([
+      [state.taskId, signal()],
+      [follower.taskId, signal()],
+    ]);
+    integrateTestHooks.queued = (task) => queued.get(task)?.resolve();
+    const followerTurn = signal();
+    const release = signal();
+    integrateTestHooks.turnTaken = async (task) => {
+      if (task === state.taskId) {
+        await queued.get(follower.taskId)?.promise;
+        return;
+      }
+      if (task === follower.taskId) {
+        followerTurn.resolve();
+        await release.promise;
+      }
+    };
+    try {
+      const leader = integrate(state, "integrate-run");
+      await queued.get(state.taskId)?.promise;
+      const followerRun = integrate(follower, "integrate-run-2");
+      await queued.get(follower.taskId)?.promise;
+      await rings.parked(1);
+      const result = await leader;
+      expect(result.result).toBe("failed");
+      const task = await taskOf(state);
+      expect(task.phase).toBe("waiting");
+      expect(task.attempt?.integration?.notCode).toBe(
+        "check was killed by SIGTERM twice under load 18 on 10 cores",
+      );
+      // The leader's two runs are all: it did not fall back and run again.
+      expect(readFileSync(count, "utf8").trim()).toBe("2");
+      rings.ring();
+      await followerTurn.promise;
+      expect(readFileSync(count, "utf8").trim()).toBe("2");
+      release.resolve();
+      expect((await followerRun).result).toBe("merged");
+      expect(readFileSync(count, "utf8").trim()).toBe("3");
+      expect(gitOrThrow(state.remote.origin, ["show", "main:code1.txt"])).toBe("line");
+      expect(git(state.remote.origin, ["show", "main:code.txt"]).ok).toBe(false);
+    } finally {
+      release.resolve();
+      notCodeTestHooks.load = undefined;
+      notCodeTestHooks.wait = undefined;
+    }
   });
 
   test("a failing key command sends the task back to work", async () => {
@@ -609,6 +778,229 @@ describe("dev/integrate", () => {
     expect(readFileSync(pushes, "utf8").trim().split("\n")).toHaveLength(1);
     expect((await taskOf(state)).phase).toBe("merged");
   });
+});
+
+async function killedAt(
+  state: Fixture,
+  point: string,
+  step: "dev/integrate" | "dev/cleanup",
+  runId: string,
+  nth = 1,
+): Promise<void> {
+  const child = Bun.spawn({
+    cmd: [
+      process.execPath,
+      CHILD,
+      state.store.root,
+      state.remote.repository,
+      state.taskKey,
+      runId,
+      point,
+      step,
+      String(nth),
+    ],
+    cwd: state.remote.repository,
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  await child.exited;
+  expect(child.signalCode).toBe("SIGKILL");
+}
+
+/** A registry that has never seen the run, like a restarted process. */
+function freshRegistry(state: Fixture): PluginRegistry {
+  return new PluginRegistry([createDevPlugin(), createShellPlugin()], {
+    home: state.root,
+    cwd: state.remote.repository,
+    store: new FilePluginStore({ root: state.store.root }),
+  });
+}
+
+describe("dev/integrate rerun after a kill", () => {
+  const points = [
+    "candidate-built",
+    "pending-saved",
+    "push",
+    "clone-followed",
+    "merged-saved",
+  ] as const;
+  for (const style of ["merge", "squash"] as const) {
+    for (const point of points) {
+      test(`${style}: a kill at ${point}, then a rerun, merges once`, async () => {
+        const state = await fixture({ style });
+        const before = gitOrThrow(state.remote.origin, ["rev-list", "--count", "main"]);
+        await killedAt(state, point, "dev/integrate", "integrate-run");
+
+        const result = await freshRegistry(state).runStep("dev/integrate", {}, {
+          runId: "integrate-run",
+          object: { type: "task", id: state.taskKey, data: {} },
+        });
+        expect(result.result).toBe("merged");
+
+        const task = await taskOf(state);
+        expect(task.phase).toBe("merged");
+        expect(task.attempt?.integration?.result).toBe("merged");
+        // One commit on main for the task: a merge commit, or the squashed one.
+        const added = Number(gitOrThrow(state.remote.origin, ["rev-list", "--count", "main"])) -
+          Number(before);
+        expect(added).toBe(style === "merge" ? 2 : 1);
+        expect(
+          gitOrThrow(state.remote.origin, [
+            "log",
+            "main",
+            "--format=%s",
+            `--grep=Merge work/${state.taskId}`,
+          ]).split("\n").filter((line) => line.length > 0),
+        ).toHaveLength(1);
+        expect(gitOrThrow(state.remote.origin, ["show", "main:code.txt"])).toBe("line");
+        // The brief says "merged as" once.
+        expect(task.brief.split("merged as ").length - 1).toBe(1);
+        // The main clone is fast-forwarded and clean.
+        expect(gitOrThrow(state.remote.repository, ["rev-parse", "HEAD"])).toBe(
+          remoteMain(state),
+        );
+        expect(gitOrThrow(state.remote.repository, ["status", "--porcelain"])).toBe("");
+      }, 60_000);
+    }
+  }
+});
+
+describe("a batch leader killed after the push", () => {
+  for (const style of ["merge", "squash"] as const) {
+  test(`${style}: the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone`, async () => {
+    const state = await fixture({ more: 2, batch: 3, style });
+    const [second, third] = state.others;
+    if (second === undefined || third === undefined) throw new Error("tasks missing");
+    const queued = new Map([
+      [second.taskId, signal()],
+      [third.taskId, signal()],
+    ]);
+    integrateTestHooks.queued = (task) => queued.get(task)?.resolve();
+    const child = Bun.spawn({
+      cmd: [
+        process.execPath,
+        CHILD,
+        state.store.root,
+        state.remote.repository,
+        state.taskKey,
+        "integrate-run",
+        "push",
+        "dev/integrate",
+      ],
+      cwd: state.remote.repository,
+      env: { ...process.env, OPERAD_TEST_HOLD: "1", OPERAD_TEST_HOME: state.root },
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    try {
+      const reader = child.stdout.getReader();
+      expect(new TextDecoder().decode((await reader.read()).value)).toBe("held\n");
+      reader.releaseLock();
+      const b = integrate(second, "integrate-run-2");
+      await queued.get(second.taskId)?.promise;
+      const c = integrate(third, "integrate-run-3");
+      await queued.get(third.taskId)?.promise;
+      child.stdin.write("go\n");
+      await child.stdin.flush();
+      await child.exited;
+      expect(child.signalCode).toBe("SIGKILL");
+      // The leader's push landed all three merges.
+      expect(firstParentSubjects(state)).toHaveLength(4);
+
+      expect((await b).result).toBe("merged");
+      expect((await c).result).toBe("merged");
+      const rerun = await freshRegistry(state).runStep("dev/integrate", {}, {
+        runId: "integrate-run",
+        object: { type: "task", id: state.taskKey, data: {} },
+      });
+      expect(rerun.result).toBe("merged");
+    } finally {
+      integrateTestHooks.queued = undefined;
+      child.kill("SIGKILL");
+    }
+
+    // Main holds each task's merge once and nothing else.
+    const subjects = firstParentSubjects(state);
+    expect(subjects).toHaveLength(4);
+    for (const task of [state, second, third]) {
+      expect(subjects.filter((line) => line.startsWith(`Merge work/${task.taskId} (`))).toHaveLength(1);
+      const data = await taskOf(task);
+      expect(data.phase).toBe("merged");
+      expect(data.brief.split("merged as ").length - 1).toBe(1);
+      // The sha it reports is its own merge commit.
+      const sha = /merged as ([0-9a-f]+)/.exec(data.brief)?.[1] ?? "";
+      expect(gitOrThrow(state.remote.origin, ["log", "-1", "--format=%s", sha])).toStartWith(
+        `Merge work/${task.taskId} (`,
+      );
+    }
+    expect((await taskOf(state)).brief).toContain(
+      `integrated in a batch with ${second.taskId}, ${third.taskId}`,
+    );
+    expect(gitOrThrow(state.remote.repository, ["rev-parse", "HEAD"])).toBe(remoteMain(state));
+    expect(gitOrThrow(state.remote.repository, ["status", "--porcelain"])).toBe("");
+  }, 60_000);
+  }
+});
+
+describe("a candidate with nothing left to merge", () => {
+  for (const style of ["merge", "squash"] as const) {
+    test(`${style}: a change already on main under another message is already on main, not merged again`, async () => {
+      const state = await fixture({ style });
+      const scratch = join(state.root, "scratch");
+      gitOrThrow(state.root, ["clone", "-q", state.remote.origin, scratch]);
+      gitOrThrow(scratch, ["config", "user.email", "t@example.com"]);
+      gitOrThrow(scratch, ["config", "user.name", "T"]);
+      const branch = `origin/work/${state.taskId}`;
+      gitOrThrow(scratch, [
+        "merge",
+        ...(style === "squash" ? ["--squash"] : ["--no-ff", "-m", "by hand"]),
+        branch,
+      ]);
+      if (style === "squash") gitOrThrow(scratch, ["commit", "-q", "-m", "by hand"]);
+      gitOrThrow(scratch, ["push", "-q", "origin", "HEAD:main"]);
+      const byHand = gitOrThrow(scratch, ["rev-parse", "HEAD"]);
+      const count = gitOrThrow(state.remote.origin, ["rev-list", "--count", "main"]);
+
+      const result = await integrate(state);
+      expect(result.data?.message ?? result.result).toBe("merged");
+      expect(gitOrThrow(state.remote.origin, ["rev-list", "--count", "main"])).toBe(count);
+      expect(remoteMain(state)).toBe(byHand);
+      const task = await taskOf(state);
+      expect(task.phase).toBe("merged");
+      expect(task.brief).toContain(`already on main as ${byHand.slice(0, 7)}`);
+      expect(task.brief).not.toContain("merged as ");
+      expect(gitOrThrow(state.remote.repository, ["rev-parse", "HEAD"])).toBe(byHand);
+    }, 60_000);
+  }
+});
+
+describe("dev/cleanup rerun after a kill", () => {
+  for (const nth of [1, 2, 3, 4, 5]) {
+    test(`a kill after hook ${nth}, then a rerun, leaves nothing behind`, async () => {
+      const state = await fixture({ style: "merge" });
+      expect((await integrate(state)).result).toBe("merged");
+      await killedAt(state, "hook-ran", "dev/cleanup", "cleanup-run", nth);
+
+      const result = await freshRegistry(state).runStep("dev/cleanup", {}, {
+        runId: "cleanup-run",
+        object: { type: "task", id: state.taskKey, data: {} },
+      });
+      expect(result.result).toBe("done");
+      expect(result.data?.failures).toBe(0);
+      expect(existsSync(state.worktree)).toBe(false);
+      expect(existsSync(state.gate)).toBe(false);
+      expect(
+        git(state.remote.repository, ["show-ref", "--verify", `refs/heads/work/${state.taskId}`]).ok,
+      ).toBe(false);
+      expect(
+        git(state.remote.origin, ["show-ref", "--verify", `refs/heads/work/${state.taskId}`]).ok,
+      ).toBe(false);
+      const task = await taskOf(state);
+      expect(task.phase).toBe("merged");
+      expect(task.brief.split("merged as ").length - 1).toBe(1);
+    }, 60_000);
+  }
 });
 
 describe("dev/cleanup", () => {
@@ -1227,6 +1619,7 @@ describe("a claimed task aborted after the leader's push", () => {
       head: "2".repeat(40),
       members: [{ task: "T-b", sha: "2".repeat(40) }],
     });
+    a.finish();
     cancelled.abort();
     expect((await b.turn()).kind).toBe("batched");
   });

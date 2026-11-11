@@ -1,6 +1,6 @@
 /** The objects the dev plugin owns, and the pure rules that change them. */
 
-import type { ObjectStore, StoredObject } from "@operad-io/engine";
+import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
 import type { ReviewHistoryEntry, ReviewSettingsUsed } from "./rework.ts";
 
 /**
@@ -117,10 +117,16 @@ export type PlanData = {
   readonly costTotals?: PlanCostTotals | undefined;
   /** Tasks being worked or reviewed now; the scheduler keeps it current. */
   readonly activeCount?: number | undefined;
+  /** Tasks waiting for a person (proposed, or stopped and asking); the scheduler keeps it current. */
+  readonly waitingCount?: number | undefined;
   /** True once the scheduler has reported that every task ended. */
   readonly finishedReported?: boolean | undefined;
   /** When the scheduler last started one of the plan's tasks (ms); the order within a priority reads it. */
   readonly lastStartedAt?: number | undefined;
+  /** The flow the plan's tasks start with; absent means `default`. */
+  readonly flow?: string | undefined;
+  /** Why a ready task of this plan cannot start for its flow; the scheduler keeps it current. */
+  readonly flowHeld?: string | undefined;
 };
 
 /** What the verify step found when it ran the gate commands. */
@@ -213,8 +219,6 @@ export interface ReviewRunRecord {
   /** The findings a report run returned, with pre-existing marks. */
   readonly findings?: readonly ReviewFinding[] | null;
   readonly verified?: readonly string[] | null;
-  /** The user-visible words this run found in the diff. */
-  readonly words?: readonly string[];
   /** How many of the findings are at or above the fix level. */
   readonly counted?: number | null;
 }
@@ -262,10 +266,6 @@ export interface ReviewRecord {
   readonly reason?: string | null;
   /** The commit the reviewer saw. */
   readonly sha?: string | null;
-  /** The user-visible words the reviewer found in the diff. */
-  readonly words?: readonly string[];
-  /** The words of the worker and the reviewer that nobody approved; a passed review waits on them. */
-  readonly newWords?: readonly string[];
 }
 
 /** What the integrate step found while landing the verified commit. */
@@ -360,8 +360,6 @@ export type TaskAttempt = {
   readonly workMs?: number | null;
   /** Why the work step did not finish cleanly, in the harness's words. */
   readonly workNote?: string | null;
-  /** The words the worker's final answer named in its `New words:` line. */
-  readonly workWords?: readonly string[] | null;
   /** How many times the work step waited for an unavailable model in this attempt. */
   readonly workWaits?: number | null;
   /** When a work step that found its model unavailable may run again (epoch ms). */
@@ -383,6 +381,10 @@ export type TaskAttempt = {
   readonly integration?: IntegrationRecord | null;
   /** The run whose integrate step is working now; null once it wrote its result. */
   readonly integrating?: string | null;
+  /** While the work step waits for its named worker: what it waits for and who holds it. */
+  readonly workerWait?: string | null;
+  /** While a step waits for a check place: the place group, since when, and how many wait ahead. */
+  readonly placeWait?: { readonly key: string; readonly since: number; readonly ahead: number } | null;
   /** While the integrate step waits for its turn: who is integrating. */
   readonly integrationWait?: string | null;
   /** What the cleanup step ran after the merge. */
@@ -444,9 +446,21 @@ export type TaskData = {
   readonly oldestPlanSlot?: boolean | undefined;
   /** True while a task this ready task follows is not merged; the scheduler sets it. */
   readonly dependencyHeld?: boolean | undefined;
+  /** What the held task waits for, as a note names it; set with `dependencyHeld`. */
+  readonly dependencyHeldFor?: readonly string[] | undefined;
   readonly phase: TaskPhase;
   readonly attempts: number;
   readonly run: string | null;
+  /** The flow this task starts with; absent inherits the plan's flow. */
+  readonly flow?: string | undefined;
+  /** The flow a row and the brief name, set only while the repository defines more than one. */
+  readonly flowShown?: string | undefined;
+  /** Why this ready task does not start: its flow is not defined in the repository's dev.json. */
+  readonly flowHeld?: string | undefined;
+  /** The flow this attempt runs; absent for a run that started before flows had names. */
+  readonly flowName?: string | undefined;
+  /** The compiled graph this attempt started with, so a later config cannot change it midway. */
+  readonly flowGraph?: FlowDefinition | undefined;
   readonly attempt?: TaskAttempt | undefined;
   /** What each review reported, newest last; the next review follows it. */
   readonly reviewHistory?: readonly ReviewHistoryEntry[] | undefined;
@@ -480,6 +494,8 @@ export type TaskData = {
   readonly followups?: FollowupMark | undefined;
   /** The tasks a follow-up task collects; set only on a follow-up. */
   readonly followupOf?: readonly string[] | undefined;
+  /** Set when dev itself proposed the task (the flaky detector, a follow-up), not a person. */
+  readonly openedBy?: "dev" | undefined;
 };
 
 /** A finding that did not fail its review round. */
@@ -571,6 +587,8 @@ export function planData(data: Record<string, unknown>): PlanData {
 }
 
 export function taskData(data: Record<string, unknown>): TaskData {
+  // A task paused before the phase was renamed is stored as "held".
+  if (data.phase === "held") return { ...data, phase: "paused" } as unknown as TaskData;
   return data as unknown as TaskData;
 }
 
@@ -674,6 +692,20 @@ export function storeKey(repository: string, id: string): string {
 export function bareId(key: string): string {
   const at = key.indexOf("/");
   return at < 0 ? key : key.slice(at + 1);
+}
+
+/**
+ * The store key a task's `after` entry names: an entry with a repository
+ * prefix is already a key; a bare id (also what older tasks stored) is a task
+ * of the task's own repository.
+ */
+export function dependencyKey(repository: string, entry: string): string {
+  return entry.includes("/") ? entry : storeKey(repository, entry);
+}
+
+/** How a dependency is named in a note: bare in its own repository. */
+export function dependencyLabel(repository: string, key: string): string {
+  return keyRepository(key) === repository ? bareId(key) : key;
 }
 
 /** The repository part of a store key. */
@@ -1056,7 +1088,19 @@ export function planNote(plan: PlanData): string {
   // Cancelled tasks are not part of the total the owner is working through.
   const progress = `${plan.mergedCount}/${plan.taskCount - plan.cancelledCount}`;
   const cost = planCost(plan);
-  const parts = [progress, ...(cost === undefined ? [] : [cost]), plan.auto, plan.priority];
+  // Only a confirmed plan says how many tasks wait for the owner.
+  const waiting =
+    planState(plan) === "confirmed" && (plan.waitingCount ?? 0) > 0
+      ? [`${plan.waitingCount} waiting`]
+      : [];
+  const parts = [
+    progress,
+    ...waiting,
+    ...(cost === undefined ? [] : [cost]),
+    plan.auto,
+    plan.priority,
+    ...(plan.flowHeld === undefined ? [] : [plan.flowHeld]),
+  ];
   return `${parts.join(" · ")} // ${plan.concurrency}`;
 }
 

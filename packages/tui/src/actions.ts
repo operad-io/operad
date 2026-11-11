@@ -25,7 +25,7 @@ export const RESERVED_KEYS: readonly string[] = [
   "pageup", "page-up", "prior", "pagedown", "page-down", "next",
   "home", "end", "space", " ",
   "[", "]", ":", "?", "/",
-  "b", "f", "g", "j", "k", "n", "p", "q", "r",
+  "b", "f", "g", "j", "k", "n", "p", "q", "r", "t",
   "1", "2", "3", "4", "5", "6", "7", "8", "9",
 ];
 
@@ -208,6 +208,9 @@ function wordsOf(query: string): string[][] {
     .map(unitsOf);
 }
 
+/** Above any word score, so a match never goes negative (-1 means no match). */
+const FUZZY_BASE = 100000;
+
 /**
  * Does `query` match `name`? A space in the query separates words that may
  * match in any order; each word is a subsequence, best where it starts a word.
@@ -223,7 +226,7 @@ export function fuzzyScore(query: string, name: string): number {
     if (found === undefined) return -1;
     total += found.score;
   }
-  return Math.max(0, 100000 - total * 10) + text.length;
+  return Math.max(0, FUZZY_BASE - total * 10) + text.length;
 }
 
 /** What a palette entry is called in the list of recent entries. */
@@ -335,8 +338,9 @@ export function settingField(setting: TuiSetting): ArgField {
   };
 }
 
-/** What the server is sent for typed text: JSON when it reads as JSON, else the text; the server checks it. */
-export function settingValue(text: string): unknown {
+/** What the server is sent for typed text: the text for a string setting, else JSON when it reads as JSON, else the text; the server checks it. */
+export function settingValue(text: string, type?: string | undefined): unknown {
+  if (type === "string") return text;
   try {
     return JSON.parse(text);
   } catch {
@@ -416,13 +420,19 @@ export function paletteEntries(state: TuiState): readonly TuiPaletteEntry[] {
       .sort((a, b) => (b.found?.score ?? 0) - (a.found?.score ?? 0) || a.order - b.order)
       .map((item) => item.entry);
   const all = [...rank(actions), ...rank(commandEntries(state)), ...rank(settingEntries(state))];
-  if (words.length > 0) return all;
-  // With no query the last used entries come first, the latest first.
-  const used = state.recent
-    .map((id) => all.find((entry) => entryId(entry) === id))
-    .filter((entry): entry is TuiPaletteEntry => entry !== undefined)
-    .slice(0, RECENT_ENTRIES);
-  return [...used, ...all.filter((entry) => !used.includes(entry))];
+  const ordered =
+    words.length > 0
+      ? all
+      : (() => {
+          // With no query the last used entries lead, the latest first.
+          const used = state.recent
+            .map((id) => all.find((entry) => entryId(entry) === id))
+            .filter((entry): entry is TuiPaletteEntry => entry !== undefined)
+            .slice(0, RECENT_ENTRIES);
+          return [...used, ...all.filter((entry) => !used.includes(entry))];
+        })();
+  // The palette shows one group at a time, so a group label can separate them.
+  return PALETTE_GROUPS.flatMap((group) => ordered.filter((entry) => entry.group === group));
 }
 
 /** The state after an entry ran: it is now the latest of the recent ones. */
@@ -468,6 +478,18 @@ export function entryHint(entry: TuiPaletteEntry): string {
   }
   return [
     entry.key,
+    entry.needsNote ? "needs a note" : undefined,
+    entry.confirm ? "asks to confirm" : undefined,
+  ]
+    .filter((part): part is string => part !== undefined)
+    .join(" · ");
+}
+
+/** What an entry says after its name, without the key a column of its own shows. */
+export function entryDetail(entry: TuiPaletteEntry): string {
+  if (entry.refusal !== undefined) return entry.refusal;
+  if (entry.setting !== undefined) return entryHint(entry);
+  return [
     entry.needsNote ? "needs a note" : undefined,
     entry.confirm ? "asks to confirm" : undefined,
   ]
@@ -537,7 +559,7 @@ function settingKey(
     const option = field.options[input.cursor];
     return enter && option !== undefined ? settingAnswered(state, input.setting, option.value) : state;
   }
-  if (enter) return settingAnswered(state, input.setting, settingValue(input.text));
+  if (enter) return settingAnswered(state, input.setting, settingValue(input.text, input.setting.type));
   if (key === "backspace") return { ...state, input: { ...input, text: dropLast(input.text) } };
   const text = event.ctrl === true || event.meta === true ? undefined : typed(event);
   return text === undefined ? state : { ...state, input: { ...input, text: input.text + text } };

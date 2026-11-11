@@ -7,12 +7,18 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readSync,
   rmSync,
   statSync,
   writeSync,
 } from "node:fs";
-import { join } from "node:path";
-import { watchDirectory } from "../platform/index.ts";
+import { dirname, join } from "node:path";
+import { assertStoreNotMoving } from "../runner/lock.ts";
+import {
+  followsChanges,
+  watchDirectory,
+  type FollowOptions,
+} from "../platform/index.ts";
 import {
   assertWhere,
   CursorError,
@@ -48,7 +54,7 @@ function repeatEvery(ms: number, callback: () => void): () => void {
   };
 }
 
-export interface FilePluginStoreOptions {
+export interface FilePluginStoreOptions extends FollowOptions {
   readonly root: string;
   readonly clock?: (() => number) | undefined;
   /**
@@ -75,10 +81,69 @@ export interface FilePluginStoreOptions {
         onChange: (filename: string | null) => void,
       ) => () => void)
     | undefined;
+  /**
+   * Reads exactly `length` bytes at `position` from `path`. Defaults to one
+   * open, a read at the position and a close. A test passes one that records
+   * the positions and lengths it was asked for.
+   */
+  readonly readAt?:
+    | ((path: string, position: number, length: number) => Buffer)
+    | undefined;
 }
 
 /** A lock older than this belongs to a writer that died while holding it. */
 const LOCK_STALE_MS = 10_000;
+
+/**
+ * Serializes appends across processes, so two writers never pick the same
+ * sequence number. The lock is a file created exclusively next to the facts;
+ * the returned function releases it.
+ */
+export function lockFactsFile(lockPath: string): () => void {
+  const started = Date.now();
+  for (;;) {
+    try {
+      const fd = openSync(lockPath, "wx");
+      try {
+        writeSync(fd, JSON.stringify({ pid: process.pid, at: Date.now() }));
+      } finally {
+        closeSync(fd);
+      }
+      return () => {
+        rmSync(lockPath, { force: true });
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+
+    // A writer that died while holding the lock must not block the store.
+    let stale = Date.now() - started > LOCK_STALE_MS;
+    try {
+      const raw: unknown = JSON.parse(readFileSync(lockPath, "utf8"));
+      const at = isRecord(raw) ? raw.at : undefined;
+      if (typeof at === "number" && Date.now() - at > LOCK_STALE_MS) {
+        stale = true;
+      }
+    } catch {
+      // A lock being written is not stale on that alone; keep waiting.
+    }
+    if (stale) {
+      rmSync(lockPath, { force: true });
+      continue;
+    }
+    sleepSync(1);
+  }
+}
+
+/** Runs `fn` while holding the facts lock at `lockPath`. */
+export function withFactsLock<T>(lockPath: string, fn: () => T): T {
+  const release = lockFactsFile(lockPath);
+  try {
+    return fn();
+  } finally {
+    release();
+  }
+}
 
 interface FactSubscription {
   readonly key: string;
@@ -99,6 +164,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Waits without spinning the CPU; appends hold the lock for microseconds. */
 function sleepSync(ms: number): void {
   Bun.sleepSync(ms);
+}
+
+/** Reads `length` bytes at `position`, never a byte before it. */
+function readAtSync(path: string, position: number, length: number): Buffer {
+  const fd = openSync(path, "r");
+  try {
+    const buffer = Buffer.allocUnsafe(length);
+    let read = 0;
+    while (read < length) {
+      const count = readSync(fd, buffer, read, length - read, position + read);
+      if (count === 0) break;
+      read += count;
+    }
+    return read === length ? buffer : buffer.subarray(0, read);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 function parseFact(value: unknown): PluginFact | undefined {
@@ -136,12 +218,18 @@ export class FilePluginStore implements PluginStore {
   readonly root: string;
   readonly location: PluginStoreLocation;
   private readonly clock: () => number;
+  private readonly follow: boolean;
   private readonly pollMs: number;
   private readonly repeat: (ms: number, callback: () => void) => () => void;
   private readonly watch: (
     directory: string,
     onChange: (filename: string | null) => void,
   ) => () => void;
+  private readonly readAt: (
+    path: string,
+    position: number,
+    length: number,
+  ) => Buffer;
   private readonly factsPath: string;
   private readonly lockPath: string;
   private readonly objects = new Map<string, Map<string, StoredObject>>();
@@ -161,9 +249,11 @@ export class FilePluginStore implements PluginStore {
     this.root = options.root;
     this.location = { backend: "jsonl", root: options.root };
     this.clock = options.clock ?? (() => Date.now());
+    this.follow = followsChanges(options);
     this.pollMs = options.pollMs ?? DEFAULT_STORE_POLL_MS;
     this.repeat = options.repeat ?? repeatEvery;
     this.watch = options.watch ?? watchDirectory;
+    this.readAt = options.readAt ?? readAtSync;
     this.factsPath = join(options.root, "facts.jsonl");
     this.lockPath = join(options.root, "facts.lock");
     mkdirSync(options.root, { recursive: true });
@@ -350,6 +440,7 @@ export class FilePluginStore implements PluginStore {
 
   /** Starts the shared directory watcher on the first listener of either kind. */
   private ensureWatch(): void {
+    if (!this.follow) return;
     if (this.stopWatch !== undefined) return;
     this.stopWatch = this.watch(this.root, (filename) => {
       if (filename !== null && filename !== "facts.jsonl") return;
@@ -376,6 +467,9 @@ export class FilePluginStore implements PluginStore {
     requireName(cause, "cause");
     const release = this.lockFacts();
     try {
+      // Checked while holding the facts lock, so a copy that waits for this
+      // lock sees the write, and a write that starts after it is refused.
+      assertStoreNotMoving(dirname(this.root));
       // Another writer may have appended since this store last read, so the
       // next sequence is chosen under the lock that the append also holds.
       this.refresh();
@@ -400,39 +494,7 @@ export class FilePluginStore implements PluginStore {
    * sequence number. The lock is a file created exclusively next to the facts.
    */
   private lockFacts(): () => void {
-    const started = Date.now();
-    for (;;) {
-      try {
-        const fd = openSync(this.lockPath, "wx");
-        try {
-          writeSync(fd, JSON.stringify({ pid: process.pid, at: Date.now() }));
-        } finally {
-          closeSync(fd);
-        }
-        return () => {
-          rmSync(this.lockPath, { force: true });
-        };
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      }
-
-      // A writer that died while holding the lock must not block the store.
-      let stale = Date.now() - started > LOCK_STALE_MS;
-      try {
-        const raw: unknown = JSON.parse(readFileSync(this.lockPath, "utf8"));
-        const at = isRecord(raw) ? raw.at : undefined;
-        if (typeof at === "number" && Date.now() - at > LOCK_STALE_MS) {
-          stale = true;
-        }
-      } catch {
-        // A lock being written is not stale on that alone; keep waiting.
-      }
-      if (stale) {
-        rmSync(this.lockPath, { force: true });
-        continue;
-      }
-      sleepSync(1);
-    }
+    return lockFactsFile(this.lockPath);
   }
 
   /**
@@ -441,13 +503,14 @@ export class FilePluginStore implements PluginStore {
    */
   private refresh(): void {
     if (!existsSync(this.factsPath)) return;
-    if (statSync(this.factsPath).size <= this.offset) return;
-    const text = readFileSync(this.factsPath).subarray(this.offset).toString("utf8");
-    const end = text.lastIndexOf("\n");
+    const size = statSync(this.factsPath).size;
+    if (size <= this.offset) return;
+    const bytes = this.readAt(this.factsPath, this.offset, size - this.offset);
+    const end = bytes.lastIndexOf(0x0a);
     if (end < 0) return;
-    const complete = text.slice(0, end + 1);
-    this.offset += Buffer.byteLength(complete, "utf8");
-    for (const line of complete.split("\n")) {
+    const complete = bytes.subarray(0, end + 1);
+    this.offset += complete.length;
+    for (const line of complete.toString("utf8").split("\n")) {
       if (line.length === 0) continue;
       let raw: unknown;
       try {

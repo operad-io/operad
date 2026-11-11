@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createCliRenderer } from "@opentui/core";
+import { NativeSession, createCliRenderer, type NativeSessionScheduler } from "@opentui/core";
 import { PassThrough } from "node:stream";
 import type { PendingItem, RunningItem, ViewListPage, ViewObject } from "@operad-io/engine";
 import {
@@ -94,6 +94,29 @@ describe("a request that fails", () => {
   });
 });
 
+/**
+ * The native session gives the terminal restore one second, counted on a wall
+ * clock. A machine so busy that the event loop stalls for a second makes the
+ * session cancel the restore and reject `closed` with a message of its own.
+ * This clock is virtual: it moves only when a scheduled turn fires, by the
+ * delay that was asked for, so a stalled loop costs it nothing. The turns
+ * themselves still run on real timers.
+ */
+function virtualScheduler(): NativeSessionScheduler {
+  let now = 0n;
+  return {
+    now: () => now,
+    schedule(callback, delayMs) {
+      const delay = delayMs ?? 0;
+      const timer = setTimeout(() => {
+        now += BigInt(delay) * 1_000_000n;
+        callback();
+      }, delay);
+      return () => clearTimeout(timer);
+    },
+  };
+}
+
 /** A real renderer on streams that keep every byte written to the terminal. */
 async function recorded(): Promise<{
   renderer: Awaited<ReturnType<typeof createCliRenderer>>;
@@ -110,6 +133,7 @@ async function recorded(): Promise<{
   const renderer = await createCliRenderer({
     stdin: stdin as never,
     stdout: stdout as never,
+    nativeSession: new NativeSession(stdout as never, { scheduler: virtualScheduler() }),
     exitOnCtrlC: true,
     screenMode: "alternate-screen",
   });

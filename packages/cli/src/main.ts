@@ -16,6 +16,7 @@ import {
   TriggerError,
   ViewError,
   applyInput,
+  cancelRun,
   createViews,
   defaultOperadHome,
   ensureConfig,
@@ -49,6 +50,8 @@ import {
   rotateHttpToken,
   serve,
   serveLockPath,
+  copyStore,
+  useStore,
   setPluginEnabled,
   splitActionName,
   startHttpServer,
@@ -106,13 +109,53 @@ export interface CliIo {
   readLine?(prompt: string): Promise<string | undefined>;
 }
 
+/** The exit status of a command whose reader closed the pipe: 128 + SIGPIPE. */
+export const EXIT_CLOSED_PIPE = 141;
+
+let outputClosed = false;
+
+/** True once stdout or stderr reported EPIPE; later writes are dropped. */
+export function outputWasClosed(): boolean {
+  return outputClosed;
+}
+
+function isClosedPipe(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "EPIPE"
+  );
+}
+
+/**
+ * Writes to a process stream. A closed pipe (EPIPE) stops all output without a
+ * message; any other write error is thrown as before.
+ */
+function writeStream(stream: NodeJS.WriteStream, text: string): void {
+  if (outputClosed) return;
+  try {
+    stream.write(text);
+  } catch (error) {
+    if (!isClosedPipe(error)) throw error;
+    outputClosed = true;
+  }
+}
+
+// A write that fails later arrives as an error event; EPIPE ends output the
+// same way, anything else stays an unhandled error as it was.
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on("error", (error) => {
+    if (isClosedPipe(error)) {
+      outputClosed = true;
+      return;
+    }
+    throw error;
+  });
+}
+
 const STDIO: CliIo = {
-  write: (text) => {
-    process.stdout.write(text);
-  },
-  error: (text) => {
-    process.stderr.write(text);
-  },
+  write: (text) => writeStream(process.stdout, text),
+  error: (text) => writeStream(process.stderr, text),
 };
 
 /** A command line mistake; exit code 2. */
@@ -167,6 +210,7 @@ const KERNEL_VERBS = [
   "secret",
   "settings",
   "http",
+  "store",
   "pair",
   "tui",
   "run-internal",
@@ -201,6 +245,10 @@ const HELP = [
   "  settings set <name> <value> [--repo <name>] [--yes]",
   "                       change a setting (the value is JSON, or a plain string)",
   "  http token rotate    replace the token the operad app uses",
+  "  store copy <jsonl|sqlite>",
+  "                       copy the store into the other kind, beside it (stop serve first)",
+  "  store use <jsonl|sqlite>",
+  "                       switch the configuration to a copied store",
   "  pair [--url <url>] [--show-token]",
   "                       show the address and token as a QR code for the operad app",
   "  tui [--url <url>] [--token <token>] [--no-start] [--theme <name>]",
@@ -246,13 +294,26 @@ interface Context {
   readonly code: CodeSnapshot | undefined;
 }
 
+interface OpenContextOptions {
+  /** A namespace named explicitly, handed to each type's `resolve`. */
+  readonly scope?: string | undefined;
+  /** Where view ids resolve; defaults to this process's directory. */
+  readonly viewsCwd?: string | undefined;
+  /** Whether to snapshot the code this process loaded. */
+  readonly trackCode?: boolean | undefined;
+  /**
+   * Whether this process follows changes. A command that answers once and
+   * exits leaves this false; a long-lived process passes true.
+   */
+  readonly follow?: boolean | undefined;
+}
+
 async function openContext(
   home: string,
   io: CliIo,
-  scope?: string,
-  viewsCwd?: string,
-  trackCode = false,
+  options: OpenContextOptions = {},
 ): Promise<Context> {
+  const { scope, viewsCwd, trackCode = false, follow = false } = options;
   const cwd = process.cwd();
   const config = await readConfig(home);
   // Taken before anything loads: a file that changes while loading then
@@ -260,8 +321,12 @@ async function openContext(
   const code = trackCode ? takeCodeSnapshot(home, config.plugins) : undefined;
   const problems: string[] = [];
   const storeRoot = storeRootOf(config);
-  const store = openPluginStore({ backend: config.store.backend, root: storeRoot });
-  const log = openConfigLog(config);
+  const store = openPluginStore({
+    backend: config.store.backend,
+    root: storeRoot,
+    follow,
+  });
+  const log = openConfigLog(config, { follow });
   let loaded: PluginRegistry | undefined;
   const registry = await loadPluginRegistry({
     home,
@@ -287,27 +352,25 @@ async function openContext(
         io.write("recorded; it runs when `operad serve` is running\n");
       }
     },
-    onCancelRun: async (runId) => {
-      const runs = await log.runs();
-      const run = runs.find((candidate) => candidate.runId === runId);
-      if (run === undefined) return;
-      const found = loaded?.flow(run.flow);
-      if (found === undefined) {
-        throw new StateError(`run "${runId}": flow "${run.flow}" is not loaded`);
-      }
-      const state = await readState(log, runId);
-      if (state.status === "ended" || state.status === "idle") return;
-      await applyInput(
+    onEvent: async (event) => {
+      if (loaded === undefined) return;
+      const rules = await loadTriggerRules({
+        home,
+        registry: loaded,
+        onLog: (message) => io.error(`${message}\n`),
+      });
+      const kernel = new Kernel({
         log,
-        found.flow,
-        runId,
-        state,
-        { kind: "cancel" },
-        Date.now(),
-        "dev",
-        `cancel:${runId}`,
-      );
+        registry: loaded,
+        home,
+        storeRoot,
+        rules,
+        onLog: (message) => io.error(`${message}\n`),
+      });
+      await kernel.receive(event);
     },
+    onCancelRun: (runId, graph) =>
+      cancelRun({ log, flow: (name) => loaded?.flow(name)?.flow, runId, graph }),
   });
   loaded = registry;
   return {
@@ -328,6 +391,7 @@ async function openContext(
       store,
       log,
       cwd: viewsCwd ?? cwd,
+      follow,
       ...(scope === undefined ? {} : { scope }),
       onLog: (message) => io.error(`${message}\n`),
     }),
@@ -381,7 +445,11 @@ async function commandInit(home: string, io: CliIo): Promise<number> {
   const registry = await loadPluginRegistry({
     home,
     cwd: home,
-    store: openPluginStore({ backend: config.store.backend, root: storeRoot }),
+    store: openPluginStore({
+      backend: config.store.backend,
+      root: storeRoot,
+      follow: false,
+    }),
     kernelVerbs: KERNEL_VERBS,
     onLog: (message) => io.error(`${message}\n`),
   });
@@ -593,6 +661,33 @@ async function commandList(
   }
 }
 
+/** The object's children as rows, the same line `list` prints, when it has any. */
+async function writeChildren(
+  context: Context,
+  io: CliIo,
+  id: string,
+  tty: boolean,
+): Promise<void> {
+  let cursor: string | undefined;
+  let hidden = 0;
+  for (;;) {
+    const page = await context.views.listTree(undefined, {
+      parent: id,
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+    for (const row of page.rows) {
+      const state = paintState(row, row.state, tty);
+      const note = row.note === undefined ? "" : `  ${row.note}`;
+      const name = row.scope === undefined ? row.id : `${row.scope}/${row.id}`;
+      io.write(`${name}  ${state}  ${row.title}${note}\n`);
+    }
+    hidden = page.hidden ?? hidden;
+    if (page.next === undefined) break;
+    cursor = page.next;
+  }
+  if (hidden > 0) io.write(`${hidden} hidden (operad list --parent ${shellQuote(id)} --filter all)\n`);
+}
+
 function firstSection(object: ViewObject): string | undefined {
   return object.sections[0]?.id;
 }
@@ -754,6 +849,7 @@ async function commandShow(
   if (object.unavailable !== undefined) {
     io.error(`operad: ${object.unavailable}\n`);
   }
+  await writeChildren(context, io, object.id, tty);
   io.write(
     `sections: ${object.sections.map((section) => (section.live === true ? `${section.title} (live)` : section.title)).join(", ")}\n`,
   );
@@ -1442,6 +1538,7 @@ export function runningLine(item: RunningItem): string {
     item.stepLabel ?? "-",
     item.stepElapsedMs === null ? "-" : age(item.stepElapsedMs),
   ];
+  if (item.queuedMs !== undefined && item.queuedMs > 0) parts.push(`queued ${age(item.queuedMs)}`);
   if (item.title !== null) parts.push(item.title);
   parts.push(`run ${age(item.elapsedMs)}`);
   if (item.note !== undefined && item.note !== null) parts.push(item.note);
@@ -1573,6 +1670,7 @@ async function commandServe(
     config: context.config.notify,
     log: context.log,
     titleOf: async (type, id) => (await context.views.get(`${type}:${id}`)).row.title,
+    answeredAutomatically: (object) => context.registry.answeredAutomatically(object),
     onLog: (message) => io.error(`${message}\n`),
   });
   let http: HttpServerHandle | undefined;
@@ -1925,12 +2023,12 @@ async function readSecretValue(io: CliIo): Promise<string> {
   });
   const muted = rl as unknown as { _writeToOutput?: (text: string) => void };
   muted._writeToOutput = () => undefined;
-  process.stderr.write("secret value: ");
+  writeStream(process.stderr, "secret value: ");
   try {
     return (await rl.question("")).replace(/\r?\n$/, "");
   } finally {
     rl.close();
-    process.stderr.write("\n");
+    writeStream(process.stderr, "\n");
   }
 }
 
@@ -2058,6 +2156,36 @@ async function commandSettings(
     context.views.close();
     await context.log.close();
   }
+}
+
+async function commandStore(
+  home: string,
+  io: CliIo,
+  argv: readonly string[],
+): Promise<number> {
+  const [verb, kind, ...extra] = argv;
+  if (
+    (verb !== "copy" && verb !== "use") ||
+    (kind !== "jsonl" && kind !== "sqlite") ||
+    extra.length > 0
+  ) {
+    throw new UsageError("store needs `copy <jsonl|sqlite>` or `use <jsonl|sqlite>`");
+  }
+  const config = await readConfig(home);
+  if (verb === "use") {
+    const path = await useStore(home, config, kind);
+    io.write(`the store is now ${kind} at ${path}; start serve again\n`);
+    return 0;
+  }
+  const started = performance.now();
+  const result = await copyStore({ home, config, to: kind });
+  const seconds = ((performance.now() - started) / 1000).toFixed(1);
+  io.write(
+    `copied the ${result.from} store to ${result.to} at ${result.path} in ${seconds}s: ` +
+      `${result.runs} runs, ${result.facts + result.globalFacts + result.objectFacts} records\n` +
+      `the current store is unchanged; \`operad store use ${result.to}\` switches to the copy\n`,
+  );
+  return 0;
 }
 
 async function commandHttp(
@@ -2310,6 +2438,10 @@ export async function main(
       return await commandSettings(home, io, args.slice(1));
     }
 
+    if (command === "store") {
+      return await commandStore(home, io, args.slice(1));
+    }
+
     if (command === "http") {
       return await commandHttp(home, io, args.slice(1));
     }
@@ -2360,7 +2492,10 @@ export async function main(
     }
 
     if (command === "run-internal") {
-      const context = await openContext(home, io, undefined, undefined, true);
+      const context = await openContext(home, io, {
+        trackCode: true,
+        follow: true,
+      });
       try {
         await commandRunInternal(context, io, args.slice(1));
       } finally {
@@ -2406,7 +2541,11 @@ export async function main(
           // serve answers clients that are in no directory: a bare id must not
           // be scoped to the repository serve happened to start in, so its
           // views resolve ids from the home, outside every repository.
-          const context = await openContext(home, io, undefined, home, true);
+          const context = await openContext(home, io, {
+            viewsCwd: home,
+            trackCode: true,
+            follow: true,
+          });
           try {
             return await commandServe(context, io, args.slice(1), lock, isSupervised, retryBind);
           } finally {
@@ -2486,7 +2625,9 @@ export async function main(
       // `show` accepts `--repo <name>` to say where a bare id lives.
       const showRepo =
         command === "show" ? takeValueFlag(args.slice(1), "--repo") : undefined;
-      const context = await openContext(home, io, showRepo?.value);
+      const context = await openContext(home, io, {
+        ...(showRepo?.value === undefined ? {} : { scope: showRepo.value }),
+      });
       try {
         if (command === "pending") {
           const { args: rest, present } = splitFlag(args.slice(1), "--json");
@@ -2561,7 +2702,9 @@ export async function main(
     // An action takes `--repo <name>` to say where a bare id lives; a plugin
     // command reads its own `--repo`, so it still gets the arguments whole.
     const actionRepo = takeValueFlag(args, "--repo");
-    const context = await openContext(home, io, actionRepo.value);
+    const context = await openContext(home, io, {
+      ...(actionRepo.value === undefined ? {} : { scope: actionRepo.value }),
+    });
     try {
       const action = kernelAction(command, context.registry);
       if (action !== undefined) {

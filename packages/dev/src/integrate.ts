@@ -44,6 +44,7 @@ import {
   type MainCloneOutcome,
 } from "./mainclone.ts";
 import { recordServeCode } from "./standing.ts";
+import { isLoaded, runCheckSteadily } from "./notcode.ts";
 import { runCheckCommands } from "./rerun.ts";
 import { reportFlakyTests } from "./flaky.ts";
 import { recordRerunPasses } from "./reruns.ts";
@@ -73,6 +74,13 @@ export const MAX_INTEGRATION_ROUNDS = 3;
  */
 export const integrateTestHooks: {
   afterPush?: ((candidate: string) => void) | undefined;
+  /**
+   * Called at each point where a kill leaves outside state changed: a test child
+   * kills itself at a named point. The points are `candidate-built`,
+   * `pending-saved`, `clone-followed` and `merged-saved`; the push has its own
+   * hook above, and cleanup calls `hook-ran` after each after-merge hook.
+   */
+  at?: ((point: string) => void) | undefined;
   /** Replaces the command runner the main clone's install uses. */
   runCommand?: CommandRunner | undefined;
   /** The repository serve's code comes from; tests name a scratch one. */
@@ -163,7 +171,9 @@ function mergeCandidate(
   message: string,
 ): Candidate {
   if (style === "squash") {
-    const merge = git(path, ["merge", "--squash", verified]);
+    // `--ff` overrides a user's `merge.ff=only`, which would refuse a squash
+    // onto a main that moved.
+    const merge = git(path, ["merge", "--squash", "--ff", verified]);
     if (!merge.ok) {
       const files = conflictedFiles(path);
       if (files.length > 0) return { kind: "conflict", files };
@@ -291,6 +301,59 @@ function integrationData(
 }
 
 /** Step `dev/integrate`: land the verified commit on main. */
+function treeOf(cwd: string, commit: string): string | undefined {
+  const result = git(cwd, ["rev-parse", "--verify", "--quiet", `${commit}^{tree}`]);
+  return result.ok && result.out.length > 0 ? result.out : undefined;
+}
+
+/** The patch id of a diff, which ignores line numbers and whitespace. */
+function patchIdOf(cwd: string, args: readonly string[]): string | undefined {
+  const diff = Bun.spawnSync({
+    cmd: ["git", "-C", cwd, ...args],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (diff.exitCode !== 0 || diff.stdout.length === 0) return undefined;
+  const id = Bun.spawnSync({
+    cmd: ["git", "-C", cwd, "patch-id", "--stable"],
+    stdin: diff.stdout,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const first = id.stdout.toString().trim().split(/\s+/)[0];
+  return id.exitCode === 0 && first !== undefined && first.length > 0 ? first : undefined;
+}
+
+/**
+ * The commit on `main` that carries the change of `verified`, found by patch
+ * id, so a squash or a merge made under another message is still recognised.
+ */
+function carrierOnMain(cwd: string, verified: string, main: string): string | undefined {
+  // A verified commit that main contains arrived in the first commit of main's
+  // own line that has it.
+  if (git(cwd, ["merge-base", "--is-ancestor", verified, main]).ok) {
+    const arrived = git(cwd, [
+      "rev-list",
+      "--first-parent",
+      "--ancestry-path",
+      "--reverse",
+      `${verified}..${main}`,
+    ]);
+    return arrived.ok ? arrived.out.split("\n")[0] || undefined : undefined;
+  }
+  const base = git(cwd, ["merge-base", verified, main]);
+  if (!base.ok || base.out.length === 0) return undefined;
+  const want = patchIdOf(cwd, ["diff", base.out, verified]);
+  if (want === undefined) return undefined;
+  const recent = git(cwd, ["rev-list", "--first-parent", "--max-count=200", main]);
+  if (!recent.ok) return undefined;
+  for (const commit of recent.out.split("\n")) {
+    if (commit.length === 0) continue;
+    if (patchIdOf(cwd, ["diff", `${commit}^`, commit]) === want) return commit;
+  }
+  return undefined;
+}
+
 export async function runIntegrate(
   ctx: StepContext,
 ): Promise<PluginStepResult> {
@@ -354,9 +417,11 @@ export async function runIntegrate(
     sha: string,
     extra: Readonly<Record<string, unknown>> = {},
     cloneSha: string = sha,
+    mergedLine: string = `merged as ${shortSha(sha)}`,
   ): Promise<PluginStepResult> => {
     const note = record.checkNote;
     const clone = followMain(context.repository, ctx.home, settings.mainBranch, cloneSha);
+    integrateTestHooks.at?.("clone-followed");
     const cloneChange = mainCloneChange(clone);
     const withClone: IntegrationRecord = { ...record, mainClone: { ...clone } };
     if (
@@ -367,13 +432,14 @@ export async function runIntegrate(
           ...(batchWith.length === 0
             ? []
             : [`integrated in a batch with ${batchWith.join(", ")}`]),
-          `merged as ${shortSha(sha)}`,
+          mergedLine,
           ...(cloneChange === undefined ? [] : [cloneChange]),
         ],
       })) === undefined
     ) {
       return cancelledStep();
     }
+    integrateTestHooks.at?.("merged-saved");
     await refreshPlan(ctx, context);
     return {
       result: "merged",
@@ -419,11 +485,16 @@ export async function runIntegrate(
         pushed: true,
         style: settings.integration.style,
       };
+      // A batch's leader saved the batch's head and its other tasks with the
+      // candidate: the clone follows the head, and the brief says the batch.
+      const previousBatch = Array.isArray(previous.batch)
+        ? previous.batch.filter((name): name is string => typeof name === "string")
+        : [];
       const clone = followMain(
         context.repository,
         ctx.home,
         settings.mainBranch,
-        previous.candidate,
+        typeof previous.batchHead === "string" ? previous.batchHead : previous.candidate,
       );
       const cloneChange = mainCloneChange(clone);
       const withClone: IntegrationRecord = {
@@ -433,13 +504,21 @@ export async function runIntegrate(
       if (
         (await writeIntegration(ctx, context, task, attempt, withClone, {
           phase: "merged",
-          change: [
-            ...(typeof previous.checkNote === "string"
-              ? [previous.checkNote]
-              : []),
-            `merged as ${shortSha(previous.candidate)}`,
-            ...(cloneChange === undefined ? [] : [cloneChange]),
-          ],
+          // A kill after the merge was recorded leaves its lines in the brief;
+          // say them once.
+          change:
+            previous.result === "merged"
+              ? []
+              : [
+                  ...(typeof previous.checkNote === "string"
+                    ? [previous.checkNote]
+                    : []),
+                  ...(previousBatch.length === 0
+                    ? []
+                    : [`integrated in a batch with ${previousBatch.join(", ")}`]),
+                  `merged as ${shortSha(previous.candidate)}`,
+                  ...(cloneChange === undefined ? [] : [cloneChange]),
+                ],
         })) === undefined
       ) {
         return cancelledStep();
@@ -461,6 +540,11 @@ export async function runIntegrate(
     message,
     signal: ctx.signal,
     wait: integrateTestHooks.wait,
+    landed: (result) => {
+      if (!git(repository, ["fetch", "--prune", settings.remote]).ok) return false;
+      const main = revParse(repository, mainRef);
+      return main !== undefined && contains(repository, result.head, main);
+    },
     say: async (line, holder) => {
       await ctx.logger.write(line);
       const saved = await saveTaskGuarded(
@@ -481,6 +565,27 @@ export async function runIntegrate(
   });
   await queue.join();
   integrateTestHooks.queued?.(context.taskId);
+
+  /** This task's merge commit when main already has it, and the main that has it. */
+  const alreadyOnMain = (): { sha: string; main: string } | undefined => {
+    if (!git(repository, ["fetch", "--prune", settings.remote]).ok) return undefined;
+    const main = revParse(repository, mainRef);
+    if (main === undefined) return undefined;
+    const found = git(repository, [
+      "log",
+      "--first-parent",
+      "--fixed-strings",
+      `--grep=${message}`,
+      "--format=%H%x09%s",
+      main,
+    ]);
+    if (!found.ok) return undefined;
+    for (const line of found.out.split("\n")) {
+      const [sha, subject] = line.split("\t");
+      if (sha !== undefined && subject === message) return { sha, main };
+    }
+    return undefined;
+  };
 
   /** Lands the tasks of a batch with one candidate; undefined means fall back to one by one. */
   const landBatch = async (
@@ -503,6 +608,7 @@ export async function runIntegrate(
         return undefined;
       }
       const members: { task: string; sha: string }[] = [];
+      let treeBefore = treeOf(gate, "HEAD");
       for (const entry of entries) {
         const built = mergeCandidate(
           gate,
@@ -512,6 +618,9 @@ export async function runIntegrate(
         );
         if (built.kind === "conflict") clearConflict(gate);
         if (built.kind !== "ok" || built.sha === undefined) return undefined;
+        // A member with nothing left to merge is already on main: one by one.
+        if (treeOf(gate, built.sha) === treeBefore) return undefined;
+        treeBefore = treeOf(gate, built.sha);
         members.push({ task: entry.task, sha: built.sha });
       }
       const batchHead = headOf(gate);
@@ -522,15 +631,67 @@ export async function runIntegrate(
       if (keyCommands.length > 0) {
         if ((await runPrepare(ctx, settings, gate)) !== undefined) return undefined;
         if (runStep === undefined) return undefined;
-        const checked = await runCheckCommands(
-          runStep,
-          { cwd: gate },
-          keyCommands,
-          stepOptions(ctx, gate),
-          settings.check.rerun,
-          checkPlaces(ctx, context.repository, settings.gate.places),
-        );
+        const steady = await runCheckSteadily({
+          run: () =>
+            runCheckCommands(
+              runStep,
+              { cwd: gate },
+              keyCommands,
+              stepOptions(ctx, gate),
+              settings.check.rerun,
+              checkPlaces(ctx, context.repository, settings.gate.places, context.taskKey),
+            ),
+          limit: settings.check.loadLimit,
+          signal: ctx.signal,
+          log: (text) => ctx.logger.write(text),
+        });
+        if (steady.cancelled === true) return cancelledStep();
+        const { checked } = steady;
         await recordRerunPasses(ctx.store, checked.passedOnRerun);
+        if (steady.notCode !== undefined) {
+          // The batch's candidate was not accepted: the leader waits for a
+          // person, and the tasks it claimed integrate alone.
+          const data =
+            checked.outcome !== undefined && isRecord(checked.outcome.data)
+              ? checked.outcome.data
+              : {};
+          const command = typeof data.line === "string" ? data.line : undefined;
+          const log = typeof data.log === "string" ? data.log : undefined;
+          const lineNumber =
+            typeof data.lineNumber === "number" ? data.lineNumber : undefined;
+          const detail =
+            checked.hostError ??
+            (typeof data.message === "string"
+              ? data.message
+              : "the integration checks failed");
+          const record: IntegrationRecord = {
+            result: "failed",
+            run: ctx.runId,
+            style: settings.integration.style,
+            verified,
+            candidate: own.sha,
+            base,
+            head: head ?? null,
+            headMoved,
+            ...(command === undefined ? {} : { command }),
+            ...(log === undefined ? {} : { log }),
+            ...(lineNumber === undefined ? {} : { lineNumber }),
+            message: `${steady.notCode.cause}; ${detail}`,
+            notCode: steady.notCode.cause,
+          };
+          queue.fallBack(followers);
+          if (
+            (await writeIntegration(ctx, context, task, attempt, record, {
+              phase: "waiting",
+            })) === undefined
+          ) {
+            return cancelledStep();
+          }
+          return {
+            result: "failed",
+            data: integrationData(record, attempt, { message: record.message }),
+          };
+        }
         if (checked.hostError !== undefined || checked.outcome?.result !== "pass") {
           return undefined;
         }
@@ -541,6 +702,7 @@ export async function runIntegrate(
           threshold: context.settings.check.flakyTask,
           flakyPlan: context.settings.check.flakyPlan,
           check: checked,
+          ...(isLoaded(steady.load, settings.check.loadLimit) ? { load: steady.load } : {}),
         });
         checkNote =
           flakyNotice === undefined
@@ -559,6 +721,8 @@ export async function runIntegrate(
         head: head ?? null,
         headMoved,
         pushed: false,
+        batchHead,
+        batch: members.filter((member) => member.task !== context.taskId).map((member) => member.task),
         ...(checkNote === undefined ? {} : { checkNote }),
       };
       if ((await writeIntegration(ctx, context, task, attempt, pending, {
@@ -566,20 +730,24 @@ export async function runIntegrate(
         })) === undefined) {
         return cancelledStep();
       }
+      // The result is left before the push, pending: a leader that dies after the
+      // push leaves what its followers need to recognise their merges on main.
+      const result: BatchResult = {
+        base,
+        head: batchHead,
+        ...(checkNote === undefined ? {} : { note: checkNote }),
+        members,
+      };
       const land = async (extra: Readonly<Record<string, unknown>>): Promise<PluginStepResult> => {
-        const result: BatchResult = {
-          base,
-          head: batchHead,
-          ...(checkNote === undefined ? {} : { note: checkNote }),
-          members,
-        };
-        queue.publish(result);
         batchWith = members.filter((member) => member.task !== context.taskId).map((member) => member.task);
-        return recordMerged({ ...pending, result: "merged", pushed: true }, own.sha, extra, batchHead);
+        const merged = await recordMerged({ ...pending, result: "merged", pushed: true }, own.sha, extra, batchHead);
+        queue.finish();
+        return merged;
       };
       // A claimed task that left (cancelled) is not merged: one by one instead.
       // Checked last, so the window between this and the push is as short as it can be.
       if (queue.stillQueued(followers).length !== followers.length) return undefined;
+      queue.publish(result);
       const push = git(gate, ["push", settings.remote, `HEAD:refs/heads/${settings.mainBranch}`]);
       if (push.ok) {
         integrateTestHooks.afterPush?.(batchHead);
@@ -630,6 +798,28 @@ export async function runIntegrate(
     }
     if (turn.kind === "batched") return await recordBatched(turn.result);
     await integrateTestHooks.turnTaken?.(context.taskId);
+
+    // A leader that died after its push left this task's merge on main, and the
+    // task's own record knows nothing of it: find the merge there instead of
+    // merging the same commit again into an empty candidate.
+    const landed = alreadyOnMain();
+    if (landed !== undefined) {
+      return recordMerged(
+        {
+          result: "merged",
+          run: ctx.runId,
+          style: settings.integration.style,
+          verified,
+          candidate: landed.sha,
+          head: head ?? null,
+          headMoved,
+          pushed: true,
+        },
+        landed.sha,
+        { replayed: true },
+        landed.main,
+      );
+    }
 
     // From here the step builds and checks the candidate: the row says integrating.
     if (
@@ -726,6 +916,30 @@ export async function runIntegrate(
         return fail(candidate.message ?? "cannot build the candidate");
       }
       const sha = candidate.sha;
+      integrateTestHooks.at?.("candidate-built");
+      // A candidate with main's own tree has nothing left to merge: the change
+      // is already there, in whatever commit carries it. Nothing is pushed and
+      // no commit is claimed as this task's.
+      if (treeOf(gate, sha) === treeOf(repository, base)) {
+        const carrier = carrierOnMain(repository, verified, base);
+        return recordMerged(
+          {
+            result: "merged",
+            run: ctx.runId,
+            style: settings.integration.style,
+            verified,
+            candidate: carrier ?? base,
+            base,
+            head: head ?? null,
+            headMoved,
+            pushed: true,
+          },
+          carrier ?? base,
+          { alreadyOnMain: true },
+          base,
+          carrier === undefined ? "already on main" : `already on main as ${shortSha(carrier)}`,
+        );
+      }
 
       let checkNote: string | undefined;
       if (keyCommands.length > 0) {
@@ -741,14 +955,22 @@ export async function runIntegrate(
         if (runStep === undefined) {
           return fail("the kernel did not offer a way to run the integration checks");
         }
-        const checked = await runCheckCommands(
-          runStep,
-          { cwd: gate },
-          keyCommands,
-          stepOptions(ctx, gate),
-          settings.check.rerun,
-          checkPlaces(ctx, context.repository, settings.gate.places),
-        );
+        const steady = await runCheckSteadily({
+          run: () =>
+            runCheckCommands(
+              runStep,
+              { cwd: gate },
+              keyCommands,
+              stepOptions(ctx, gate),
+              settings.check.rerun,
+              checkPlaces(ctx, context.repository, settings.gate.places, context.taskKey),
+            ),
+          limit: settings.check.loadLimit,
+          signal: ctx.signal,
+          log: (text) => ctx.logger.write(text),
+        });
+        if (steady.cancelled === true) return cancelledStep();
+        const { checked } = steady;
         await recordRerunPasses(ctx.store, checked.passedOnRerun);
         const flakyNotice = await reportFlakyTests({
           ctx,
@@ -757,6 +979,7 @@ export async function runIntegrate(
           threshold: context.settings.check.flakyTask,
           flakyPlan: context.settings.check.flakyPlan,
           check: checked,
+          ...(isLoaded(steady.load, settings.check.loadLimit) ? { load: steady.load } : {}),
         });
         const { outcome, hostError } = checked;
         checkNote =
@@ -776,6 +999,35 @@ export async function runIntegrate(
             hostError ??
             (typeof data.message === "string" ? data.message : undefined) ??
             `the integration checks failed (${outcome?.result ?? "unknown"})`;
+          if (steady.notCode !== undefined) {
+            // Not the code: no rework, a person decides, and the line says why.
+            const record: IntegrationRecord = {
+              result: "failed",
+              run: ctx.runId,
+              style: settings.integration.style,
+              verified,
+              candidate: sha,
+              base,
+              head: head ?? null,
+              headMoved,
+              ...(command === undefined ? {} : { command }),
+              ...(log === undefined ? {} : { log }),
+              ...(lineNumber === undefined ? {} : { lineNumber }),
+              message: `${steady.notCode.cause}; ${detail}`,
+              notCode: steady.notCode.cause,
+            };
+            if (
+              (await writeIntegration(ctx, context, task, attempt, record, {
+                phase: "waiting",
+              })) === undefined
+            ) {
+              return cancelledStep();
+            }
+            return {
+              result: "failed",
+              data: integrationData(record, attempt, { message: record.message }),
+            };
+          }
           const pieces = [
             command === undefined
               ? "An integration check failed."
@@ -845,6 +1097,7 @@ export async function runIntegrate(
         })) === undefined) {
         return cancelledStep();
       }
+      integrateTestHooks.at?.("pending-saved");
 
       const push = git(gate, [
         "push",
@@ -935,6 +1188,7 @@ export async function runCleanup(
       } catch (error) {
         hostError = messageOf(error);
       }
+      integrateTestHooks.at?.("hook-ran");
       if (hostError !== undefined || outcome?.result !== "pass") {
         const data =
           outcome !== undefined && isRecord(outcome.data) ? outcome.data : {};

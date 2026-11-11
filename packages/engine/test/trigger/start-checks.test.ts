@@ -339,4 +339,31 @@ describe("calls", () => {
     expect(result.result).toBe("done");
     await e.log.close();
   });
+
+  test("a step that calls steps named by data needs no declaration, and still starts without them", async () => {
+    const other = definePlugin({
+      name: "named",
+      kind: "domain",
+      version: "0.0.1",
+      steps: [{ name: "target", results: ["done"], run: () => ({ result: "done" }) }],
+    });
+    const caller = def({
+      name: "caller",
+      steps: [
+        {
+          name: "go",
+          results: ["done"],
+          callsNamedByData: true,
+          run: async (ctx) => {
+            const run = ctx.runStep;
+            if (run === undefined) throw new Error("no host");
+            return run("named/target", {}, { runId: ctx.runId });
+          },
+        },
+      ],
+    });
+    const e = await env([caller, other]);
+    expect((await e.registry.runStep("caller/go", {}, { runId: "r1" })).result).toBe("done");
+    await e.log.close();
+  });
 });

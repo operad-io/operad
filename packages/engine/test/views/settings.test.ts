@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   createViews,
@@ -45,6 +45,7 @@ async function setup(configText?: string): Promise<Setup> {
         name: "demo",
         settings: {
           type: "object",
+          additionalProperties: false,
           properties: {
             limit: {
               type: "integer",
@@ -188,6 +189,28 @@ describe("settings", () => {
     // the global name does not exist in the repository's scope
     const wrong = await views.set("demo.limit", 5, { scope: "alpha" }).catch((e: unknown) => e);
     expect((wrong as ViewError).kind).toBe("not-found");
+  });
+
+  test("sets at the same moment all land, and the file keeps its mode", async () => {
+    const { home, views, config } = await setup();
+    chmodSync(join(home, "config.json"), 0o600);
+    await Promise.all([
+      views.set("demo.limit", 5),
+      views.set("demo.nested.depth", 4),
+      views.set("demo.mode", "b", { confirmed: true }),
+    ]);
+    const settings = JSON.parse(config()).plugins.demo.settings;
+    expect(settings).toEqual({ limit: 5, nested: { depth: 4 }, mode: "b" });
+    expect(statSync(join(home, "config.json")).mode & 0o777).toBe(0o600);
+  });
+
+  test("a set that would leave the section invalid is refused and writes nothing", async () => {
+    const { home, views, config } = await setup();
+    // The file changed after the plugin loaded: the section now carries a key the schema does not know.
+    const text = `${JSON.stringify({ plugins: { demo: { module: "demo", settings: { stray: 1 } } } }, null, 2)}\n`;
+    writeFileSync(join(home, "config.json"), text);
+    await expect(views.set("demo.limit", 5)).rejects.toThrow(/stray/);
+    expect(config()).toBe(text);
   });
 
   test("a writer killed before the rename leaves the old file whole", async () => {

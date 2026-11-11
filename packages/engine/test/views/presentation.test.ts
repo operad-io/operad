@@ -189,10 +189,30 @@ describe("presentation views", () => {
     );
 
     const history = await views.section("item:one", "history");
-    expect(history.markdown.split(runId)).toHaveLength(2);
+    expect(history.markdown).not.toContain(runId);
     expect(history.markdown).toMatch(/^## demo-flow run · started \d\d:\d\d$/m);
-    expect(history.markdown).toContain(`<sub>run ${runId}</sub>`);
+    expect(history.markdown).not.toContain("<sub>");
     expect(history.markdown).not.toContain("run started:");
+    views.close();
+    await log.close();
+  });
+
+  test("the history of an object with two runs shows no tag and no run id", async () => {
+    const { store, registry, log } = await fixture();
+    const first = await waitFact(log, "item:one", "run_started", {
+      flow: "demo-flow",
+    });
+    await log.endRun(first);
+    const second = await waitFact(log, "item:one", "run_started", {
+      flow: "demo-flow",
+    });
+    const views = trackedViews({ registry, store, log });
+    const { markdown } = await views.section("item:one", "history");
+    expect(markdown.match(/^## demo-flow run/gm)).toHaveLength(2);
+    expect(markdown).not.toContain("<sub>");
+    expect(markdown).not.toMatch(/<\/?[a-z]+>/i);
+    expect(markdown).not.toContain(first);
+    expect(markdown).not.toContain(second);
     views.close();
     await log.close();
   });
@@ -241,8 +261,9 @@ describe("presentation views", () => {
     expect(object.sections.map((section) => section.id)).toEqual(["history"]);
     expect(object.actions).toEqual([]);
     expect((await after.section("item:one", "history")).markdown).toContain(
-      runId,
+      "## demo-flow run",
     );
+    expect(runId).toBeString();
     views.close();
     after.close();
     await log.close();

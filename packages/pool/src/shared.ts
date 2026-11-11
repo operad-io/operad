@@ -32,6 +32,8 @@ interface Held {
   /** The last time the holder said it is alive; a terminated step thread stops saying it. */
   readonly beat: number;
   readonly keys: readonly string[];
+  /** Who took the place, when the claim said (a task id). */
+  readonly holder?: string;
 }
 
 interface Book {
@@ -63,6 +65,7 @@ function parseBook(text: string): Book {
           pid: entry.pid,
           beat: typeof entry.beat === "number" ? entry.beat : 0,
           keys: entry.keys as string[],
+          ...(typeof entry.holder === "string" ? { holder: entry.holder } : {}),
         });
       }
     }
@@ -159,12 +162,19 @@ export class FilePlaces implements Places {
       const book = this.live();
       const used = (key: string): number =>
         book.held.filter((entry) => entry.keys.includes(key)).length;
+      const holding = (key: string): string[] =>
+        book.held.flatMap((entry) =>
+          entry.keys.includes(key) && entry.holder !== undefined ? [entry.holder] : [],
+        );
       const full: ("flow" | "home")[] = [];
+      const holders: (readonly string[])[] = [];
       for (const [index, claim] of claims.entries()) {
         if (used(claim.own) >= claim.ownLimit) {
           full.push("flow");
+          holders.push(holding(claim.own));
         } else if (claim.homeLimit !== undefined && used(claim.home) >= claim.homeLimit) {
           full.push("home");
+          holders.push(holding(claim.home));
         } else {
           this.counter += 1;
           // Unique across instances: step threads share the pid and may share the millisecond.
@@ -173,7 +183,13 @@ export class FilePlaces implements Places {
             version: book.version + 1,
             held: [
               ...book.held,
-              { id, pid: process.pid, beat: this.now(), keys: [claim.own, claim.home] },
+              {
+                id,
+                pid: process.pid,
+                beat: this.now(),
+                keys: [claim.own, claim.home],
+                ...(claim.holder === undefined ? {} : { holder: claim.holder }),
+              },
             ],
           });
           const stop = this.beat(id);
@@ -187,7 +203,7 @@ export class FilePlaces implements Places {
           };
         }
       }
-      return { kind: "blocked", full, stamp: book.version };
+      return { kind: "blocked", full, holders, stamp: book.version };
     });
   }
 

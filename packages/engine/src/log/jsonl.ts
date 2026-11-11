@@ -1,3 +1,4 @@
+import type { BigIntStats } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import {
@@ -11,6 +12,7 @@ import {
   readSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeSync,
@@ -34,6 +36,7 @@ import {
 } from "./facts.ts";
 import { assertJsonValue } from "./json-value.ts";
 import { SCHEMA_VERSION } from "./schema.ts";
+import { assertStoreNotMoving } from "../runner/lock.ts";
 import {
   linkExclusive,
   resolveSubscriptionWatch,
@@ -46,6 +49,7 @@ import type {
   GlobalFact,
   InputOutcome,
   InputRecord,
+  InputsAfter,
   JsonValue,
   LogBackend,
   LogBackendFactory,
@@ -60,6 +64,7 @@ import type {
 
 const SCHEMA_FILE = "schema.json";
 const LOCK_FILE = ".lock";
+const RUNS_INDEX_FILE = "runs.index";
 const INPUTS_FILE = "inputs.jsonl";
 const OUTCOMES_FILE = "outcomes.jsonl";
 const GLOBAL_FACTS_FILE = "global-facts.jsonl";
@@ -442,6 +447,35 @@ function globalFactOf(stored: StoredGlobalFact): GlobalFact {
     payload: stored.payload,
     cause: stored.cause,
     time: stored.time,
+    ...(stored.uniqueKey === undefined ? {} : { uniqueKey: stored.uniqueKey }),
+  };
+}
+
+function inputOfLine(line: string): InputRecord | undefined {
+  if (line.length === 0) return undefined;
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Partial<StoredInput>;
+  if (
+    record.type !== "input" ||
+    typeof record.inputId !== "string" ||
+    typeof record.source !== "string" ||
+    typeof record.sourceKey !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    inputId: record.inputId,
+    runId: typeof record.runId === "string" ? record.runId : null,
+    source: record.source,
+    sourceKey: record.sourceKey,
+    payload: (record.payload ?? null) as JsonValue,
+    time: typeof record.time === "number" ? record.time : 0,
   };
 }
 
@@ -449,14 +483,23 @@ class JsonlLogBackend implements LogBackend {
   readonly #directory: string;
   readonly #runsDirectory: string;
   readonly #inputsPath: string;
+  readonly #indexPath: string;
   readonly #outcomesPath: string;
   readonly #globalFactsPath: string;
   readonly #lockPath: string;
   readonly #clock: () => number;
+  readonly #newRunId: () => string;
   readonly #subscriptionWatch: SubscriptionWatch;
-  readonly #inputIds = new Set<string>();
+  /** Where each input's line lies in the inputs file, by input id. */
+  readonly #inputIds = new Map<string, { readonly start: number; readonly length: number }>();
   #inputBytes = 0;
   readonly #outcomes = new Map<string, StoredOutcome>();
+  /** The same outcomes in sequence order, so a reader can start after a cursor. */
+  #outcomeList: StoredOutcome[] = [];
+  /** The runs index, read up to `#indexBytes`, and the runs it says are active. */
+  #indexBytes = 0;
+  #indexIno: bigint | undefined;
+  readonly #activeIds = new Set<string>();
   #outcomeSeq = 0;
   #outcomeBytes = 0;
   #closed = false;
@@ -465,14 +508,21 @@ class JsonlLogBackend implements LogBackend {
   #snapshot: Map<string, { readonly size: number; readonly ended: boolean }> | undefined;
   readonly #listeners = new Set<(change: LogChange) => void>();
 
-  constructor(directory: string, clock: () => number, subscriptionWatch: SubscriptionWatch) {
+  constructor(
+    directory: string,
+    clock: () => number,
+    newRunId: () => string,
+    subscriptionWatch: SubscriptionWatch,
+  ) {
     this.#directory = directory;
     this.#runsDirectory = join(directory, RUNS_DIR);
     this.#inputsPath = join(directory, INPUTS_FILE);
+    this.#indexPath = join(directory, RUNS_INDEX_FILE);
     this.#outcomesPath = join(directory, OUTCOMES_FILE);
     this.#globalFactsPath = join(directory, GLOBAL_FACTS_FILE);
     this.#lockPath = join(directory, LOCK_FILE);
     this.#clock = clock;
+    this.#newRunId = newRunId;
     this.#subscriptionWatch = subscriptionWatch;
   }
 
@@ -486,12 +536,14 @@ class JsonlLogBackend implements LogBackend {
     assertName(object, "object");
     if (access !== undefined) assertJsonValue(access, "run access");
     return this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       const active = this.#listRunsUnlocked(true).find(
         (run) => run.flow === flow && run.object === object,
       );
       if (active) throw new ActiveRunError(flow, object, active.runId);
 
-      const runId = randomUUID();
+      const runId = this.#newRunId();
+      assertRunId(runId);
       const startedAt = this.#clock();
       const header: RunHeader = {
         type: "run",
@@ -503,10 +555,15 @@ class JsonlLogBackend implements LogBackend {
         ...(access === undefined ? {} : { access }),
         startInputId,
       };
+      // Indexed before the file exists: a crash between the two leaves an id
+      // with no run, which a listing skips; the other order would hide a run.
+      this.#syncActiveUnlocked();
+      appendLineSynced(this.#indexPath, `s ${runId}\n`);
       if (!createExclusive(this.#runPath(runId), `${JSON.stringify(header)}\n`)) {
         throw new Error(`run id ${runId} already exists`);
       }
       fsyncDirectory(this.#runsDirectory);
+      this.#syncActiveUnlocked();
       this.#notify({ runId, object });
       return {
         runId,
@@ -525,6 +582,7 @@ class JsonlLogBackend implements LogBackend {
   async endRun(runId: string): Promise<void> {
     assertRunId(runId);
     this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       const path = this.#runPath(runId);
       if (!existsSync(path)) throw new RunNotFoundError(runId);
       const endPath = this.#endPath(runId);
@@ -533,6 +591,10 @@ class JsonlLogBackend implements LogBackend {
       const marker: EndMarker = { endedAt: this.#clock() };
       writeFileSynced(endPath, `${JSON.stringify(marker)}\n`);
       fsyncDirectory(this.#runsDirectory);
+      // After the marker: a crash between the two leaves an id the listing
+      // finds ended and drops.
+      appendLineSynced(this.#indexPath, `e ${runId}\n`);
+      this.#syncActiveUnlocked();
       this.#notify({ runId, object: info.object });
     });
   }
@@ -548,6 +610,7 @@ class JsonlLogBackend implements LogBackend {
     assertName(sourceKey, "sourceKey");
     assertJsonValue(payload, "input payload");
     return this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       if (runId !== null) {
         const info = this.#runInfoUnlocked(runId);
         if (!info.active) throw new RunEndedError(runId);
@@ -568,8 +631,10 @@ class JsonlLogBackend implements LogBackend {
         payload,
         time: this.#clock(),
       };
-      appendLineSynced(this.#inputsPath, `${JSON.stringify(record)}\n`);
-      this.#inputIds.add(inputId);
+      const line = `${JSON.stringify(record)}\n`;
+      const start = this.#inputBytes;
+      appendLineSynced(this.#inputsPath, line);
+      this.#inputIds.set(inputId, { start, length: Buffer.byteLength(line) });
       this.#inputBytes = statSync(this.#inputsPath).size;
       return { duplicate: false, inputId };
     });
@@ -580,32 +645,83 @@ class JsonlLogBackend implements LogBackend {
     if (!existsSync(this.#inputsPath)) return;
     const text = readFileSync(this.#inputsPath).toString("utf8");
     for (const line of text.split("\n")) {
-      if (line.length === 0) continue;
-      let value: unknown;
-      try {
-        value = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      if (typeof value !== "object" || value === null) continue;
-      const record = value as Partial<StoredInput>;
-      if (
-        record.type !== "input" ||
-        typeof record.inputId !== "string" ||
-        typeof record.source !== "string" ||
-        typeof record.sourceKey !== "string"
-      ) {
-        continue;
-      }
-      yield {
-        inputId: record.inputId,
-        runId: typeof record.runId === "string" ? record.runId : null,
-        source: record.source,
-        sourceKey: record.sourceKey,
-        payload: (record.payload ?? null) as JsonValue,
-        time: typeof record.time === "number" ? record.time : 0,
-      };
+      const record = inputOfLine(line);
+      if (record !== undefined) yield record;
     }
+  }
+
+  async readInputsAfter(position: number): Promise<InputsAfter> {
+    this.#assertOpen();
+    if (!existsSync(this.#inputsPath)) return { inputs: [], position: 0 };
+    const size = statSync(this.#inputsPath).size;
+    // A file shorter than the position was replaced: read it from the start.
+    const from = position > size ? 0 : position;
+    if (from === size) return { inputs: [], position: from };
+    const fd = openSync(this.#inputsPath, "r");
+    let chunk: Buffer;
+    try {
+      chunk = Buffer.allocUnsafe(size - from);
+      readAllAtSync(fd, chunk, from);
+    } finally {
+      closeSync(fd);
+    }
+    // Only whole lines count; a torn last line is read again next time.
+    const end = chunk.lastIndexOf(0x0a) + 1;
+    const inputs: InputRecord[] = [];
+    for (const line of chunk.subarray(0, end).toString("utf8").split("\n")) {
+      const record = inputOfLine(line);
+      if (record !== undefined) inputs.push(record);
+    }
+    return { inputs, position: from + end };
+  }
+
+  async findInput(inputId: string): Promise<InputRecord | undefined> {
+    this.#assertOpen();
+    // The remembered place of the line is read, not the whole history.
+    return this.#withLock(() => {
+      this.#refreshInputsUnlocked();
+      const place = this.#inputIds.get(inputId);
+      if (place === undefined) return undefined;
+      const fd = openSync(this.#inputsPath, "r");
+      try {
+        const buffer = Buffer.allocUnsafe(place.length);
+        readAllAtSync(fd, buffer, place.start);
+        return inputOfLine(buffer.toString("utf8").trimEnd());
+      } finally {
+        closeSync(fd);
+      }
+    });
+  }
+
+  async readOutcome(
+    inputId: string,
+    kind: string,
+  ): Promise<InputOutcome | undefined> {
+    this.#assertOpen();
+    return this.#withLock(() => {
+      this.#refreshOutcomesUnlocked();
+      const stored = this.#outcomes.get(outcomeKey(inputId, kind));
+      return stored === undefined ? undefined : this.#asOutcome(stored);
+    });
+  }
+
+  async readOutcomesAfter(seq: number): Promise<InputOutcome[]> {
+    this.#assertOpen();
+    return this.#withLock(() => {
+      this.#refreshOutcomesUnlocked();
+      const list = this.#outcomeList;
+      // The first outcome above the cursor, by bisection: a pass with nothing
+      // new looks at one entry, not at every outcome ever recorded.
+      let low = 0;
+      let high = list.length;
+      while (low < high) {
+        const middle = (low + high) >> 1;
+        const entry = list[middle];
+        if (entry !== undefined && entry.seq > seq) high = middle;
+        else low = middle + 1;
+      }
+      return list.slice(low).map((stored) => this.#asOutcome(stored));
+    });
   }
 
   async recordOutcome(
@@ -617,6 +733,7 @@ class JsonlLogBackend implements LogBackend {
     assertName(kind, "outcome kind");
     assertJsonValue(payload, "outcome payload");
     return this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       this.#refreshOutcomesUnlocked();
       const key = outcomeKey(inputId, kind);
       const existing = this.#outcomes.get(key);
@@ -633,7 +750,7 @@ class JsonlLogBackend implements LogBackend {
         time: this.#clock(),
       };
       appendLineSynced(this.#outcomesPath, `${JSON.stringify(stored)}\n`);
-      this.#outcomes.set(key, stored);
+      this.#rememberOutcome(stored);
       this.#outcomeBytes = statSync(this.#outcomesPath).size;
       return { duplicate: false, outcome: this.#asOutcome(stored) };
     });
@@ -661,6 +778,7 @@ class JsonlLogBackend implements LogBackend {
     for (const fact of facts) validateNewFact(fact);
 
     return this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       const path = this.#runPath(runId);
       if (!existsSync(path)) throw new RunNotFoundError(runId);
       const info = this.#runInfoUnlocked(runId);
@@ -699,6 +817,7 @@ class JsonlLogBackend implements LogBackend {
     validateNewFact(fact);
     if (uniqueKey !== undefined) assertName(uniqueKey, "uniqueKey");
     return this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       truncateTornLine(this.#globalFactsPath);
       if (uniqueKey !== undefined) {
         const existing = this.#globalFactWithKeyUnlocked(uniqueKey);
@@ -795,11 +914,14 @@ class JsonlLogBackend implements LogBackend {
     const previous = this.#snapshot;
     this.#snapshot = next;
     if (previous === undefined) return;
+    const changed = new Set<string>();
     for (const [runId, run] of next) {
       const before = previous.get(runId);
-      if (before !== undefined && before.size === run.size && before.ended === run.ended) {
-        continue;
-      }
+      if (before === undefined || before.size !== run.size) changed.add(runId);
+    }
+    // A run that was active and no longer is has ended.
+    for (const runId of previous.keys()) if (!next.has(runId)) changed.add(runId);
+    for (const runId of changed) {
       try {
         const info = this.#runInfoUnlocked(runId);
         this.#notify({ runId, object: info.object });
@@ -809,18 +931,20 @@ class JsonlLogBackend implements LogBackend {
     }
   }
 
+  /**
+   * The size of every active run's file. Ended runs never change, so they are
+   * not looked at: the cost follows the active runs, not the history.
+   */
   #takeRunSnapshot(): Map<string, { readonly size: number; readonly ended: boolean }> {
     const snapshot = new Map<string, { readonly size: number; readonly ended: boolean }>();
-    for (const name of readdirSync(this.#runsDirectory)) {
-      if (!name.endsWith(".jsonl")) continue;
-      const runId = name.slice(0, -6);
+    for (const runId of this.#withLock(() => [...this.#syncActiveUnlocked()])) {
       try {
         snapshot.set(runId, {
-          size: statSync(join(this.#runsDirectory, name)).size,
-          ended: existsSync(this.#endPath(runId)),
+          size: statSync(this.#runPath(runId)).size,
+          ended: false,
         });
       } catch {
-        // Removed between the directory read and the stat.
+        // Removed since the directory was read.
       }
     }
     return snapshot;
@@ -923,13 +1047,7 @@ class JsonlLogBackend implements LogBackend {
             );
           }
           expectedSeq += 1;
-          yield {
-            seq: fact.seq,
-            kind: fact.kind,
-            payload: fact.payload,
-            cause: fact.cause,
-            time: fact.time,
-          };
+          yield globalFactOf(fact);
         }
       }
     } finally {
@@ -1003,11 +1121,104 @@ class JsonlLogBackend implements LogBackend {
     }
   }
 
-  #listRunsUnlocked(activeOnly: boolean): RunInfo[] {
-    const runs: RunInfo[] = [];
-    for (const name of readdirSync(this.#runsDirectory)) {
+  #allRunIds(): string[] {
+    return readdirSync(this.#runsDirectory)
+      .filter((name) => name.endsWith(".jsonl"))
+      .map((name) => name.slice(0, -".jsonl".length));
+  }
+
+  /**
+   * The ids of the active runs. They come from the runs index, an append-only
+   * file with a line for every run start and end, written under the same lock
+   * as the run's own file. A call reads the bytes added since the last one:
+   * none when nothing happened, so a quiet tick lists no directory and reads no
+   * file. No time or modification date is compared, so a change cannot be
+   * missed. Without an index, or with one that was cut or cannot be read, the
+   * set is built from one read of the directory and the index is written anew.
+   */
+  #syncActiveUnlocked(): ReadonlySet<string> {
+    let stat: BigIntStats | undefined;
+    try {
+      stat = statSync(this.#indexPath, { bigint: true });
+    } catch {
+      stat = undefined;
+    }
+    if (stat === undefined) return this.#rebuildActiveUnlocked();
+    // An index shorter than what was already read was cut.
+    if (Number(stat.size) < this.#indexBytes) return this.#rebuildActiveUnlocked();
+    if (this.#indexIno !== stat.ino) {
+      // A new file under the name: read it from its start.
+      this.#activeIds.clear();
+      this.#indexBytes = 0;
+      this.#indexIno = stat.ino;
+    }
+    const size = Number(stat.size);
+    if (size === this.#indexBytes) return this.#activeIds;
+    let chunk: Buffer;
+    try {
+      const fd = openSync(this.#indexPath, "r");
+      try {
+        chunk = Buffer.allocUnsafe(size - this.#indexBytes);
+        readAllAtSync(fd, chunk, this.#indexBytes);
+      } finally {
+        closeSync(fd);
+      }
+    } catch {
+      // An index that cannot be read is built again from the directory.
+      return this.#rebuildActiveUnlocked();
+    }
+    const end = chunk.lastIndexOf(0x0a) + 1;
+    // Every writer holds the lock, so bytes after the last newline are what a
+    // crash left behind: the index is built again.
+    if (end !== chunk.length) return this.#rebuildActiveUnlocked();
+    const lines = chunk.subarray(0, end).toString("utf8").split("\n");
+    for (const line of lines) {
+      if (line.length === 0) continue;
+      const kind = line.slice(0, 2);
+      const runId = line.slice(2);
+      if ((kind !== "s " && kind !== "e ") || runId.length === 0) {
+        return this.#rebuildActiveUnlocked();
+      }
+      if (kind === "s ") this.#activeIds.add(runId);
+      else this.#activeIds.delete(runId);
+    }
+    this.#indexBytes += end;
+    return this.#activeIds;
+  }
+
+  /** One read of the directory; writes the index again from what it found. */
+  #rebuildActiveUnlocked(): ReadonlySet<string> {
+    const names = readdirSync(this.#runsDirectory);
+    const ended = new Set(names.filter((name) => name.endsWith(".end")));
+    const lines: string[] = [];
+    this.#activeIds.clear();
+    for (const name of names) {
       if (!name.endsWith(".jsonl")) continue;
       const runId = name.slice(0, -".jsonl".length);
+      lines.push(`s ${runId}\n`);
+      if (ended.has(`${runId}.end`)) lines.push(`e ${runId}\n`);
+      else this.#activeIds.add(runId);
+    }
+    try {
+      const temporary = `${this.#indexPath}.tmp`;
+      writeFileSynced(temporary, lines.join(""));
+      renameSync(temporary, this.#indexPath);
+      const stat = statSync(this.#indexPath, { bigint: true });
+      this.#indexIno = stat.ino;
+      this.#indexBytes = Number(stat.size);
+    } catch {
+      // The index cannot be written: the set from the directory stands, and
+      // the next call reads the directory again.
+      this.#indexIno = undefined;
+      this.#indexBytes = 0;
+    }
+    return this.#activeIds;
+  }
+
+  #listRunsUnlocked(activeOnly: boolean): RunInfo[] {
+    const runs: RunInfo[] = [];
+    const runIds = activeOnly ? [...this.#syncActiveUnlocked()] : this.#allRunIds();
+    for (const runId of runIds) {
       let info: RunInfo;
       try {
         info = this.#runInfoUnlocked(runId);
@@ -1037,15 +1248,18 @@ class JsonlLogBackend implements LogBackend {
     try {
       const buffer = Buffer.allocUnsafe(size - this.#inputBytes);
       readAllAtSync(fd, buffer, this.#inputBytes);
-      this.#consumeInputLines(buffer.toString("utf8"));
+      this.#consumeInputLines(buffer.toString("utf8"), this.#inputBytes);
     } finally {
       closeSync(fd);
     }
     this.#inputBytes = size;
   }
 
-  #consumeInputLines(text: string): void {
+  #consumeInputLines(text: string, base: number): void {
+    let offset = base;
     for (const line of text.split("\n")) {
+      const start = offset;
+      offset += Buffer.byteLength(line) + 1;
       if (line.length === 0) continue;
       let value: unknown;
       try {
@@ -1057,7 +1271,10 @@ class JsonlLogBackend implements LogBackend {
       if (record.type !== "input" || typeof record.inputId !== "string") {
         throw new CorruptLogError("inputs", "an input line has no input id");
       }
-      this.#inputIds.add(record.inputId);
+      this.#inputIds.set(record.inputId, {
+        start,
+        length: Buffer.byteLength(line) + 1,
+      });
     }
   }
 
@@ -1070,8 +1287,22 @@ class JsonlLogBackend implements LogBackend {
     // Count the bytes actually consumed, not a later stat: an append between a
     // read and a stat must stay visible to the next refresh.
     const buffer = readFileSync(this.#inputsPath);
-    this.#consumeInputLines(buffer.toString("utf8"));
+    this.#consumeInputLines(buffer.toString("utf8"), 0);
     this.#inputBytes = buffer.length;
+  }
+
+  #rememberOutcome(stored: StoredOutcome): void {
+    const key = outcomeKey(stored.inputId, stored.kind);
+    const previous = this.#outcomes.get(key);
+    this.#outcomes.set(key, stored);
+    if (previous !== undefined) {
+      this.#outcomeList = this.#outcomeList.filter((item) => item !== previous);
+    }
+    const last = this.#outcomeList[this.#outcomeList.length - 1];
+    this.#outcomeList.push(stored);
+    if (last !== undefined && last.seq > stored.seq) {
+      this.#outcomeList.sort((left, right) => left.seq - right.seq);
+    }
   }
 
   #asOutcome(stored: StoredOutcome): InputOutcome {
@@ -1111,13 +1342,14 @@ class JsonlLogBackend implements LogBackend {
       if (stored === undefined) {
         throw new CorruptLogError("outcomes", "an outcome line is not valid");
       }
-      this.#outcomes.set(outcomeKey(stored.inputId, stored.kind), stored);
+      this.#rememberOutcome(stored);
       this.#outcomeSeq = Math.max(this.#outcomeSeq, stored.seq);
     }
   }
 
   #rebuildOutcomes(): void {
     this.#outcomes.clear();
+    this.#outcomeList = [];
     this.#outcomeSeq = 0;
     if (!existsSync(this.#outcomesPath)) {
       this.#outcomeBytes = 0;
@@ -1207,6 +1439,7 @@ export function openJsonlLogBackend(
   const backend = new JsonlLogBackend(
     directory,
     options.clock ?? Date.now,
+    options.runId ?? randomUUID,
     resolveSubscriptionWatch(options),
   );
   backend.recover();

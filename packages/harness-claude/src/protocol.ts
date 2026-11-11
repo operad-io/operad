@@ -23,6 +23,8 @@ export interface WorkerInput {
   readonly budgetUsd?: number | undefined;
   /** The longest a Bash call may run in the foreground, in seconds; unset means `DEFAULT_BASH_TIMEOUT_SECS`. */
   readonly bashTimeoutSecs?: number | undefined;
+  /** Operad's own tools, served to claude as an MCP server of the named home. */
+  readonly operadTools?: { readonly home: string } | undefined;
   /** Secret values of the operad secret store; a log line shows `***` where one appears. */
   readonly secretValues?: readonly string[] | undefined;
 }
@@ -120,6 +122,22 @@ export type WorkerLine =
    * `GrantAck` line; only `used: true` lets the call run.
    */
   | { readonly type: "grant_use"; readonly id: number; readonly waitId: string }
+  /**
+   * The program asks a person whether one call may run (the access profile's
+   * `askCommands`) and holds the call until the host answers with an `AskAck`
+   * line. `session` is what a late answer continues. `ask_resolved` follows
+   * the answer, so the host knows the question is closed.
+   */
+  | {
+      readonly type: "ask_call";
+      readonly id: number;
+      readonly kind: "command" | "path";
+      readonly value: string;
+      readonly tool?: string;
+      readonly shown: string;
+      readonly session: string | null;
+    }
+  | { readonly type: "ask_resolved"; readonly id: number }
   | WorkerResult;
 
 /** A stdin line after the input: the host's answer to a `grant_use` line. */
@@ -127,6 +145,18 @@ export interface GrantAck {
   readonly type: "grant_ack";
   readonly id: number;
   readonly used: boolean;
+}
+
+/**
+ * A stdin line after the input: the host's answer to an `ask_call` line.
+ * `allow` lets this one call run; `deny` refuses it; `stop` means the wait
+ * ended and the program is about to be ended: it holds the call.
+ */
+export interface AskAck {
+  readonly type: "ask_ack";
+  readonly id: number;
+  readonly decision: "allow" | "deny" | "stop";
+  readonly reason?: string;
 }
 
 export type ParsedInput =
@@ -145,6 +175,7 @@ export const INPUT_FIELDS = [
   "maxTurns",
   "budgetUsd",
   "bashTimeoutSecs",
+  "operadTools",
   "secretValues",
 ] as const;
 
@@ -218,6 +249,11 @@ export function parseInput(value: unknown): ParsedInput {
     return { ok: false, message: "bashTimeoutSecs must be a positive integer" };
   }
 
+  const operadTools = value["operadTools"];
+  if (operadTools !== undefined && (!isRecord(operadTools) || typeof operadTools["home"] !== "string" || operadTools["home"].length === 0)) {
+    return { ok: false, message: "operadTools must be an object with a home" };
+  }
+
   const access = value["access"];
   if (access !== undefined && !isRecord(access)) {
     return { ok: false, message: "access must be an object" };
@@ -240,6 +276,7 @@ export function parseInput(value: unknown): ParsedInput {
       maxTurns,
       budgetUsd,
       bashTimeoutSecs,
+      operadTools: operadTools === undefined ? undefined : { home: String(operadTools["home"]) },
       secretValues,
     },
   };

@@ -3,9 +3,11 @@
 import { definePlugin } from "@operad-io/engine";
 import { PLAN_FILTERS, REPO_FILTERS, TASK_FILTERS } from "./model.ts";
 import devFlow from "../flows/dev.flow.ts";
+import chatWorktreeFlow from "../flows/chat-worktree.flow.ts";
 import { actions } from "./actions.ts";
 import { runAnnounce } from "./announce.ts";
 import { checkDev } from "./check.ts";
+import { chatActions, runChatWorktree } from "./chat.ts";
 import { commands } from "./commands.ts";
 import { runRework, runReview, runReviewDue, runVerify, runWorkDue } from "./gate.ts";
 import { runRetry, runRetryDue } from "./retry.ts";
@@ -68,7 +70,7 @@ export function createDevPlugin() {
         name: "verify",
         calls: ["shell/check"],
         timeoutSecs: STEP_TIMEOUT_SECS,
-        results: ["pass", "fail", "cancelled"],
+        results: ["pass", "fail", "not_code", "cancelled"],
         run: runVerify,
       },
       {
@@ -138,6 +140,12 @@ export function createDevPlugin() {
         results: ["done", "interrupted", "cancelled"],
         run: runAnnounce,
       },
+      {
+        // The worktree a chat asked for; git runs in the repository.
+        name: "chat_worktree",
+        results: ["done", "failed"],
+        run: runChatWorktree,
+      },
     ],
     settings: {
       type: "object",
@@ -154,7 +162,7 @@ export function createDevPlugin() {
       additionalProperties: false,
     },
     projectSettings: DEV_PROJECT_SETTINGS,
-    flows: [devFlow],
+    flows: [devFlow, chatWorktreeFlow],
     // Every stop that needs a person is in history; a user can route the event
     // to a channel by replacing this rule.
     rules: [
@@ -165,8 +173,16 @@ export function createDevPlugin() {
         object: "$event.object",
         mode: "observe",
       },
+      // A chat of a repository asked for a worktree and a person said yes.
+      {
+        source: "operad",
+        type: "chat.worktree",
+        start: { flow: "dev:chat-worktree" },
+        object: "$event.object",
+        mode: "auto",
+      },
     ],
-    actions,
+    actions: [...actions, ...chatActions],
     commands,
     onTick: runScheduler,
     standing: devStanding,
@@ -189,11 +205,14 @@ export default createDevPlugin();
 
 export * from "./actions.ts";
 export * from "./announce.ts";
+export * from "./chat.ts";
 export * from "./check.ts";
 export * from "./commands.ts";
 export * from "./gate.ts";
 export * from "./integrate.ts";
 export * from "./model.ts";
+export * from "./flow-compiler.ts";
+export * from "./project-flows.ts";
 export * from "./schedule.ts";
 export * from "./service.ts";
 export * from "./places.ts";

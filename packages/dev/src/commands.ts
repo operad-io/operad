@@ -8,6 +8,7 @@ import type {
 import { DevError, bareId, briefBody, storeKey, taskData, type RepositoryData } from "./model.ts";
 import { flakyTasksByName } from "./flaky.ts";
 import { listRerunCounts } from "./reruns.ts";
+import { loadProjectFlows } from "./project-flows.ts";
 import { readDevSettings } from "./settings.ts";
 import { readStdinText } from "./stdin.ts";
 import { editText } from "./editor.ts";
@@ -166,16 +167,39 @@ function concurrencyFlag(raw: string | undefined): number | undefined {
   return validatePlanConcurrency(raw.trim() === "" ? Number.NaN : Number(raw));
 }
 
+function flowFlag(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  const name = raw.trim();
+  if (name.length === 0) throw new DevError("--flow", "must be a flow name");
+  return name;
+}
+
+async function assertFlow(repository: RepositoryData, flow: string): Promise<void> {
+  const settings = await readDevSettings(repository.path);
+  const project = await loadProjectFlows(repository.path, repository.name, settings);
+  const refused = project.refused.get(flow);
+  if (refused !== undefined) throw new DevError("--flow", refused);
+  if (flow === "default") return;
+  if (settings.flows[flow] === undefined && !project.flows.has(flow)) {
+    throw new DevError(
+      "--flow",
+      `no flow "${flow}" in repository "${repository.name}"`,
+    );
+  }
+}
+
 async function runPlan(
   ctx: CommandContext,
   argv: readonly string[],
 ): Promise<string> {
-  const parsed = parseArguments(argv, ["--repo", "--slug", "--title", "--concurrency"]);
+  const parsed = parseArguments(argv, ["--repo", "--slug", "--title", "--concurrency", "--flow"]);
   const call = subcommand(parsed, ["add"], "plan");
   if (call.rest.length > 0) {
     throw new DevError("command", `plan ${call.name} takes flags, not ${call.rest[0]}`);
   }
   const repository = await objectByPlan(parsed, ctx.store, ctx.cwd);
+  const flow = flowFlag(one(parsed, "--flow"));
+  if (flow !== undefined) await assertFlow(repository, flow);
   const plan = await addPlan(ctx.store, {
     repository,
     slug: required(parsed, "--slug", "plan add"),
@@ -183,6 +207,7 @@ async function runPlan(
     request: await readStdinText(ctx.input),
     concurrency: concurrencyFlag(one(parsed, "--concurrency")),
     auto: (await readDevSettings(repository.path)).autoDefault,
+    ...(flow === undefined ? {} : { flow }),
   });
   return bareId(plan.id);
 }
@@ -225,6 +250,7 @@ async function runTask(
     "--title",
     "--after",
     "--area",
+    "--flow",
   ]);
   const call = subcommand(parsed, ["add", "edit", "update"], "task");
 
@@ -248,6 +274,8 @@ async function runTask(
         `plan "${plan}" is not in repository "${repository.name}"`,
       );
     }
+    const flow = flowFlag(one(parsed, "--flow"));
+    if (flow !== undefined) await assertFlow(repository, flow);
     const task = await addTask(ctx.store, {
       plan: planKey,
       slug: required(parsed, "--slug", "task add"),
@@ -255,6 +283,7 @@ async function runTask(
       brief: await readStdinText(ctx.input),
       after: many(parsed, "--after"),
       area: one(parsed, "--area"),
+      ...(flow === undefined ? {} : { flow }),
     });
     return bareId(task.id);
   }
@@ -283,12 +312,15 @@ async function runTask(
   const afterGiven = many(parsed, "--after");
   const after = afterGiven.filter((id) => id !== "");
   const area = one(parsed, "--area");
+  const flow = flowFlag(one(parsed, "--flow"));
+  if (flow !== undefined) await assertFlow(target.repository, flow);
   return bareId(
     (
       await updateTask(ctx.store, key, {
         ...(title === undefined ? {} : { title }),
         ...(afterGiven.length === 0 ? {} : { after }),
         ...(area === undefined ? {} : { area }),
+        ...(flow === undefined ? {} : { flow }),
         runs: ctx.runs,
       })
     ).id,
@@ -334,13 +366,13 @@ export const commands: readonly CommandDefinition[] = [
   },
   {
     name: "plan",
-    args: "add --slug <slug> --title <title> [--concurrency <n>] [--repo <name>]",
+    args: "add --slug <slug> --title <title> [--concurrency <n>] [--flow <name>] [--repo <name>]",
     run: runPlan,
   },
   {
     name: "task",
     args:
-      "add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--repo <name>] | edit <id> [--repo <name>] (the new brief on stdin, or $EDITOR) | update <id> [--title <title>] [--after <task>]... [--area <area>] [--repo <name>]",
+      "add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--flow <name>] [--repo <name>] | edit <id> [--repo <name>] (the new brief on stdin, or $EDITOR) | update <id> [--title <title>] [--after <task>]... [--area <area>] [--flow <name>] [--repo <name>]",
     run: runTask,
   },
   {

@@ -8,7 +8,8 @@ import {
   getTask,
   setTaskPhase,
 } from "../src/service.ts";
-import { FilePluginStore } from "@operad-io/engine";
+import { FilePluginStore, type StepContext } from "@operad-io/engine";
+import { taskPlaceWait } from "../src/place-wait.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -129,6 +130,7 @@ describe("dev views", () => {
       scope: "repository",
       final: false,
       mark: "proposed",
+      waiting: true,
       badge: "#0",
       parent: "plan:repository/P-0001-storage",
     });
@@ -165,7 +167,6 @@ describe("dev views", () => {
     const before = await getTask(store, task.id);
     expect(planViews.sections(before)).toEqual([
       { id: "request", title: "Request" },
-      { id: "tasks", title: "Tasks" },
     ]);
     expect(taskViews.sections(before).map((section) => section.id)).toEqual([
       "brief",
@@ -200,22 +201,29 @@ describe("dev views", () => {
     expect(rework.markdown).not.toContain("## Changes");
   });
 
-  test("a plan loads its request and a table of tasks", async () => {
-    const { store, plan, task } = await setup();
+  test("a plan loads its request and has no tasks section", async () => {
+    const { store, plan } = await setup();
     const stored = await getPlan(store, plan.id);
     expect(await planViews.load({ store } as never, stored, "request", {})).toEqual({
       markdown: "# Request\n\nWrite the store.",
     });
-    const table = (await planViews.load(
-      { store } as never,
-      stored,
-      "tasks",
-      {},
-    )) as { markdown: string };
-    expect(table.markdown).toContain("| id | title | phase | after |");
-    expect(table.markdown).toContain(
-      `| ${bareId(task.id)} | JSONL | proposed | - |`,
+    expect(planViews.sections(stored).map((section) => section.id)).not.toContain("tasks");
+    expect(await planViews.load({ store } as never, stored, "tasks", {})).toEqual({ markdown: "" });
+  });
+
+  test("a task row carries its after list", async () => {
+    const { store, task } = await setup();
+    const stored = await getTask(store, task.id);
+    expect(taskViews.row(stored).after).toBeUndefined();
+    await store.put(
+      "task",
+      task.id,
+      { ...taskData(stored.data), after: [`${taskData(stored.data).repository}/t-9`] },
+      "test:after",
     );
+    const row = taskViews.row(await getTask(store, task.id));
+    expect(row.after).toHaveLength(1);
+    expect(row.after?.[0]).toContain("t-9");
   });
 
   test("a worker log line is one readable line, and bookkeeping is left out", () => {
@@ -269,17 +277,17 @@ describe("dev views", () => {
       { type: "tool_execution_end", toolCallId: "b", toolName: "Read", isError: false, durationMs: 400 },
     ].map((line) => JSON.stringify(line));
     expect(readableLog(lines)).toEqual([
-      "tool Bash 1m12s  xcodebuild test -only-testing X",
-      "tool Read <1s  /w/a.ts",
+      "tool Bash 1m12s `xcodebuild test -only-testing X`",
+      "tool Read <1s `/w/a.ts`",
     ]);
   });
 
   test("a call without an end line is marked running, with its start time", () => {
     const start = { type: "tool_execution_start", toolCallId: "a", toolName: "Bash", at: Date.UTC(2026, 10, 7, 14, 3, 22), input: "sleep 9999" };
-    expect(readableLog([JSON.stringify(start)])).toEqual(["tool Bash running since 14:03:22Z  sleep 9999"]);
+    expect(readableLog([JSON.stringify(start)])).toEqual(["tool Bash running since 14:03:22Z `sleep 9999`"]);
     // After the result line nothing is running any more.
     expect(readableLog([JSON.stringify(start), JSON.stringify({ type: "result", result: "failed" })])[0]).toBe(
-      "tool Bash no end logged (started 14:03:22Z)  sleep 9999",
+      "tool Bash no end logged (started 14:03:22Z) `sleep 9999`",
     );
   });
 
@@ -293,10 +301,8 @@ describe("dev views", () => {
     ].map((line) => JSON.stringify(line));
     expect(readableLog(lines)).toEqual([
       "**agent:** I will run the tests.",
-      "turn ended: tool_use · 120 in / 30 out tokens · $0.0123",
-      "tool Bash 2s  false",
+      "tool Bash 2s `false`",
       "tool Bash failed: exit code 1",
-      "turn ended: end_turn · 1 in / 2 out tokens",
       "result: done · 5 in / 6 out tokens · $0.0123",
     ]);
   });
@@ -694,6 +700,41 @@ describe("dev views", () => {
     expect(await row()).toBe("$1.50 · harness-claude · area: app-core · push refused");
   });
 
+  test("a task whose check waits for a place says so, with how many are ahead, until it takes the place", async () => {
+    const { store, plan, task } = await setup();
+    const other = await addTask(store, { plan: plan.id, slug: "two", title: "Two", brief: "# Brief\n\nx" });
+    const running = { number: 1, worktree: "w", worked: true };
+    for (const id of [task.id, other.id]) {
+      const stored = taskData((await getTask(store, id)).data);
+      await store.put("task", id, { ...stored, phase: "running", attempt: running }, "test:a");
+    }
+    const ctx = { store, runId: "r", params: null, home: await tempRoot() } as unknown as StepContext;
+    const row = async (id: string) => taskViews.row(await getTask(store, id));
+    expect((await row(task.id)).mark).toBe("checking");
+
+    // Two checks reaching the held place at the same moment still count each other.
+    await Promise.all([taskPlaceWait(ctx, task.id, "check place"), taskPlaceWait(ctx, other.id, "check place")]);
+    const notes = [(await row(task.id)).note, (await row(other.id)).note].sort();
+    expect(notes).toEqual(["$0.00 · waiting for a check place", "$0.00 · waiting for a check place, 1 ahead"]);
+    await taskPlaceWait(ctx, task.id, null);
+    await taskPlaceWait(ctx, other.id, null);
+    await taskPlaceWait(ctx, task.id, "check place");
+    await taskPlaceWait(ctx, other.id, "check place");
+    expect(await row(task.id)).toMatchObject({ mark: "blocked", note: "$0.00 · waiting for a check place" });
+    expect(await row(other.id)).toMatchObject({
+      mark: "blocked",
+      note: "$0.00 · waiting for a check place, 1 ahead",
+    });
+
+    // The first takes its place: it is checking again, and the second moves up.
+    await taskPlaceWait(ctx, task.id, null);
+    await taskPlaceWait(ctx, other.id, "check place");
+    expect(await row(task.id)).toMatchObject({ mark: "checking", note: "$0.00" });
+    expect((await row(other.id)).note).toBe("$0.00 · waiting for a check place");
+    await taskPlaceWait(ctx, other.id, null);
+    expect(await row(other.id)).toMatchObject({ mark: "checking", note: "$0.00" });
+  });
+
   test("a plan note shows the cost of its tasks at the weakest quality", async () => {
     const { store, plan, task } = await setup();
     const second = await addTask(store, { plan: plan.id, slug: "two", title: "Two", brief: "# Brief\n\nx" });
@@ -738,5 +779,85 @@ describe("dev views", () => {
     expect(planNote(base)).toBe("1/7 · off · P2 // 2");
     expect(planNote({ ...base, auto: "run" })).toBe("1/7 · run · P2 // 2");
     expect(planNote({ ...base, auto: "merge" })).toBe("1/7 · merge · P2 // 2");
+  });
+
+  const WT = "/Users/hai/Code/operad/.operad-worktrees/T-0208-store-migrate";
+  const toolLines = (command: string, extra: object[] = []): string[] =>
+    [
+      { type: "tool_execution_start", toolCallId: "a", toolName: "Bash", at: 1, input: command },
+      { type: "tool_execution_end", toolCallId: "a", toolName: "Bash", isError: false, durationMs: 3000 },
+      ...extra,
+    ].map((line) => JSON.stringify(line));
+
+  test("a leading cd into the task's worktree is dropped, and its paths are relative; other cd targets stay", () => {
+    const options = { worktree: WT };
+    expect(readableLog(toolLines(`cd ${WT}; bun test packages/cli`), options)).toEqual(["tool Bash 3s `bun test packages/cli`"]);
+    expect(readableLog(toolLines(`cd ${WT} && git status`), options)).toEqual(["tool Bash 3s `git status`"]);
+    expect(readableLog(toolLines(`cd ${WT}; cat ${WT}/packages/cli/a.ts ${WT}`), options)).toEqual([
+      "tool Bash 3s `cat packages/cli/a.ts .`",
+    ]);
+    expect(readableLog(toolLines(`cd /tmp/elsewhere; ls ${WT}-other`), options)).toEqual([
+      `tool Bash 3s \`cd /tmp/elsewhere; ls ${WT}-other\``,
+    ]);
+    // Without a known worktree nothing is rewritten.
+    expect(readableLog(toolLines(`cd ${WT}; ls`))[0]).toBe(`tool Bash 3s \`cd ${WT}; ls\``);
+  });
+
+  test("a multi-line command shows its first line and the count of lines left; a long one-liner is cut", () => {
+    const heredoc = "python3 - <<'EOF'\nimport json\nprint(1)\nEOF";
+    expect(readableLog(toolLines(`cd ${WT}; ${heredoc}`), { worktree: WT })).toEqual([
+      "tool Bash 3s `python3 - <<'EOF' … (+3 lines)`",
+    ]);
+    // Leading and trailing blank lines count too: the first line is the command's first, blank or not.
+    expect(readableLog(toolLines("\npython3 - <<'EOF'\nprint(1)\nEOF\n"))).toEqual([
+      "tool Bash 3s ` … (+4 lines)`",
+    ]);
+    // Dropping the cd prefix never crosses a line break: a blank line after it stays the first line.
+    expect(readableLog(toolLines(`cd ${WT};\n\npython3 - <<'EOF'\nprint(1)\nEOF`), { worktree: WT })).toEqual([
+      "tool Bash 3s ` … (+4 lines)`",
+    ]);
+    // A blank line inside the command counts as a line left.
+    expect(readableLog(toolLines("python3 - <<'EOF'\nprint(1)\n\nprint(2)\nEOF"))).toEqual([
+      "tool Bash 3s `python3 - <<'EOF' … (+4 lines)`",
+    ]);
+    expect(readableLog(toolLines(`echo ${"x".repeat(300)}`))[0]).toBe(`tool Bash 3s \`echo ${"x".repeat(154)}…\``);
+    const exact = `echo ${"y".repeat(155)}`;
+    expect(exact).toHaveLength(160);
+    expect(readableLog(toolLines(exact))[0]).toBe(`tool Bash 3s \`${exact}\``);
+  });
+
+  test("the command is inline code after the label; backticks inside it get a longer fence", () => {
+    expect(readableLog(toolLines("echo `date`"))[0]).toBe("tool Bash 3s `` echo `date` ``");
+    const failed = [
+      { type: "tool_execution_start", toolCallId: "a", toolName: "Bash", at: 1, input: "false" },
+      { type: "tool_execution_end", toolCallId: "a", toolName: "Bash", isError: true, durationMs: 1000, error: "exit code 1" },
+    ].map((line) => JSON.stringify(line));
+    expect(readableLog(failed)).toEqual(["tool Bash 1s `false`", "tool Bash failed: exit code 1"]);
+  });
+
+  test("a run of tool turns shows no turn end; a turn end after the agent's text and the result stay", () => {
+    const usage = { input: 2, output: 6 };
+    const lines = [
+      { type: "message_end", role: "assistant", stopReason: "tool_use", usage },
+      ...toolLines("ls").map((line) => JSON.parse(line) as object),
+      { type: "message_end", role: "assistant", stopReason: "tool_use", usage },
+      { type: "message_end", role: "assistant", text: "Tests pass.", stopReason: "end_turn", usage },
+      { type: "message_end", role: "assistant", stopReason: "end_turn", usage },
+      { type: "result", result: "done", usage: { input: 9, output: 9 }, cost: { micros: 20000 } },
+    ].map((line) => JSON.stringify(line));
+    expect(readableLog(lines)).toEqual([
+      "tool Bash 3s `ls`",
+      "**agent:** Tests pass.",
+      "turn ended: end_turn · 2 in / 6 out tokens",
+      "result: done · 9 in / 9 out tokens · $0.0200",
+    ]);
+  });
+
+  test("radian turn usage without agent text is not shown", () => {
+    const lines = [
+      { event: "MessageAppended", data: { message: { assistant: { content: [], tool_calls: [{ id: "c" }] } } } },
+      { event: "ModelUsageRecorded", data: { usage: { input: 12, output: 3 } } },
+    ].map((line) => JSON.stringify(line));
+    expect(readableLog(lines)).toEqual([]);
   });
 });

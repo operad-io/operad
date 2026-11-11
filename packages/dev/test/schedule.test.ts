@@ -27,10 +27,15 @@ import {
   getTask,
   setAuto,
   setPriority,
+  cancelTask,
   claimTaskStart,
   setTaskPhase,
   updateTask,
   setConcurrency,
+  recordMergeReported,
+  recordPlanFinishedReported,
+  recordPlanStart,
+  withRepoLock,
 } from "../src/service.ts";
 import { taskViews } from "../src/views.ts";
 import {
@@ -377,7 +382,7 @@ describe("dev scheduling", () => {
     expect((await tick(run)).length).toBe(1);
   });
 
-  test("auto merge does not answer a passed review that names new words", async () => {
+  test("auto merge answers a passed review whose worker answer ends with New words: foo", async () => {
     const words = await setup();
     const plan = await makePlan(words, { slug: "plan", auto: "merge" });
     const task = await makeTask(words, plan.key, "task");
@@ -387,14 +392,12 @@ describe("dev scheduling", () => {
       attempt: {
         number: 1,
         run: "run-1",
-        review: { result: "pass", newWords: ["alpha"] },
+        workNote: "Changed things.\nNew words: foo",
+        review: { result: "pass" },
       },
     });
     await tick(words);
-    expect(words.answers).toEqual([]);
-    expect(
-      taskData((await getTask(words.store, task.key)).data).autoMergeAttempt,
-    ).toBeUndefined();
+    expect(words.answers.length).toBe(1);
   });
 
   test("auto merge answers a passed review once and never answers other waits", async () => {
@@ -506,6 +509,12 @@ describe("dev scheduling", () => {
         fixture.store.put("plan", key, { ...plan.data, auto: "run" }, "test");
       }),
     ).toBe(false);
+    // Invalid settings: the scheduler returns early, so nothing answers the wait.
+    expect(
+      await marked("merge", passedAttempt, async (fixture) => {
+        writeFileSync(join(fixture.repositoryPath, ".operad/dev.json"), "{ not json");
+      }),
+    ).toBe(false);
     // Waits the scheduler never answers, and an integrate that was refused.
     expect(
       await marked("merge", { number: 1, run: "run-1", result: "nothing" }),
@@ -569,6 +578,71 @@ describe("dev scheduling", () => {
     // A task whose run recorded itself is never claimed again.
     await putTask(fixture, task.key, { run: "run-1" });
     expect(await tick(fixture)).toEqual([]);
+  });
+
+  test("a run still active on a cancelled task is ended by the tick", async () => {
+    const fixture = await setup({ concurrency: 1 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "off" });
+    const task = await makeTask(fixture, plan.key, "task");
+    const other = await makeTask(fixture, plan.key, "other");
+    await confirm(fixture, plan.key);
+    await setTaskPhase(fixture.store, task.key, "waiting", { run: "run-1" });
+    await setTaskPhase(fixture.store, other.key, "waiting", { run: "run-2" });
+    // The cancel reached no run control, as one made through MCP did not.
+    await cancelTask(fixture.store, task.key);
+    expect(fixture.cancelled).toEqual([]);
+
+    const info = (runId: string, object: string): RunInfo => ({
+      runId,
+      flow: "dev",
+      object,
+      active: true,
+      startedAt: 0,
+      endedAt: null,
+      lastSeq: 1,
+      startInputId: null,
+    });
+    const runs: RunLookup = {
+      active: async (object?: string) =>
+        [info("run-1", `task:${task.key}`), info("run-2", `task:${other.key}`)].filter(
+          (run) => object === undefined || run.object === object,
+        ),
+      state: async () => undefined,
+      lastStep: async () => null,
+    };
+    await fixture.registry.tick(runs);
+    // Only the cancelled task's run ends; a task that waits keeps its run.
+    expect(fixture.cancelled).toEqual(["run-1"]);
+  });
+
+  test("a run on a cancelled task is ended even when the repository's settings cannot be read", async () => {
+    const fixture = await setup({ concurrency: 1 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "off" });
+    const task = await makeTask(fixture, plan.key, "task");
+    await confirm(fixture, plan.key);
+    await setTaskPhase(fixture.store, task.key, "waiting", { run: "run-1" });
+    await cancelTask(fixture.store, task.key);
+    writeFileSync(join(fixture.repositoryPath, ".operad/dev.json"), "{ not json");
+
+    const runs: RunLookup = {
+      active: async (object?: string) =>
+        [
+          {
+            runId: "run-1",
+            flow: "dev",
+            object: `task:${task.key}`,
+            active: true,
+            startedAt: 0,
+            endedAt: null,
+            lastSeq: 1,
+            startInputId: null,
+          } satisfies RunInfo,
+        ].filter((run) => object === undefined || run.object === object),
+      state: async () => undefined,
+      lastStep: async () => null,
+    };
+    await fixture.registry.tick(runs);
+    expect(fixture.cancelled).toEqual(["run-1"]);
   });
 
   test("a claim whose run the kernel holds is not released before the run records itself", async () => {
@@ -1138,6 +1212,29 @@ describe("dev scheduling", () => {
     }
   });
 
+  test("a task that waits gives up the reserved slot, so a resumed task does not hold it twice", async () => {
+    let now = 1_000;
+    changeClock.now = () => (now += 1_000);
+    try {
+      const fixture = await setup({ concurrency: 3 });
+      const high = await makePlan(fixture, { slug: "high", auto: "run", priority: "P2", concurrency: 3 });
+      const low = await makePlan(fixture, { slug: "low", auto: "run", priority: "P3", concurrency: 3 });
+      for (const slug of ["h1", "h2", "h3"]) await makeTask(fixture, high.key, slug);
+      const lowTask = await makeTask(fixture, low.key, "l1");
+      await confirm(fixture, high.key);
+      await confirm(fixture, low.key);
+      const started = (await tick(fixture)).map((request) => startedId(request));
+      for (const id of started) await putTask(fixture, id, { run: `run-${id}` });
+      expect(taskData((await getTask(fixture.store, lowTask.key)).data).oldestPlanSlot).toBe(true);
+
+      await phase(fixture, lowTask.key, "waiting", `run-${lowTask.key}`);
+      await tick(fixture);
+      expect(taskData((await getTask(fixture.store, lowTask.key)).data).oldestPlanSlot).toBeUndefined();
+    } finally {
+      changeClock.now = () => Date.now();
+    }
+  });
+
   test("once the repository is full, a freed slot goes by priority; only the reserved slot goes by turn", async () => {
     let now = 1_000;
     changeClock.now = () => (now += 1_000);
@@ -1229,6 +1326,48 @@ describe("dev scheduling", () => {
     expect(await note(third.id)).toBe(`$0.00 · waiting for area core (${holder}), 1 ahead`);
   });
 
+  test("the tasks ahead follow the order of the kept slot when it is the next start", async () => {
+    let now = 1_000;
+    changeClock.now = () => (now += 1_000);
+    try {
+      const fixture = await setup({ concurrency: 2 });
+      const urgent = await makePlan(fixture, { slug: "urgent", auto: "run", priority: "P1", concurrency: 2 });
+      const low = await makePlan(fixture, { slug: "low", auto: "run", priority: "P3", concurrency: 2 });
+      const holder = await addTask(fixture.store, { plan: urgent.key, slug: "u-one", title: "u-one", area: "core" });
+      const urgentNext = await addTask(fixture.store, { plan: urgent.key, slug: "u-two", title: "u-two", area: "core" });
+      const lowNext = await addTask(fixture.store, { plan: low.key, slug: "l-one", title: "l-one", area: "core" });
+      await confirm(fixture, urgent.key);
+      expect((await tick(fixture)).map((request) => startedId(request))).toEqual([holder.id]);
+      await confirm(fixture, low.key);
+      await tick(fixture);
+
+      // One slot is free and the low plan has waited longest: it is next, so
+      // the urgent plan's task has it ahead.
+      const note = async (id: string) => taskViews.row(await getTask(fixture.store, id)).note;
+      expect(await note(urgentNext.id)).toBe(`$0.00 · waiting for area core (${bareId(holder.id)}), 1 ahead`);
+      expect(await note(lowNext.id)).toBe(`$0.00 · waiting for area core (${bareId(holder.id)})`);
+    } finally {
+      changeClock.now = () => Date.now();
+    }
+  });
+
+  test("recording a plan start keeps a plan change made while it waits for the lock", async () => {
+    const fixture = await setup();
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run", priority: "P2" });
+    let recording: Promise<void> | undefined;
+    await withRepoLock(fixture.store, fixture.repository.name, async () => {
+      recording = recordPlanStart(fixture.store, plan.key, 5_000);
+      // Let the recording read the plan and queue for the lock, then change the plan.
+      await new Promise((resolve) => setImmediate(resolve));
+      const current = await getPlan(fixture.store, plan.key);
+      await fixture.store.put("plan", plan.key, { ...current.data, priority: "P1" }, "test");
+    });
+    await recording;
+    const stored = planData((await getPlan(fixture.store, plan.key)).data);
+    expect(stored.lastStartedAt).toBe(5_000);
+    expect(stored.priority).toBe("P1");
+  });
+
   test("a task in the review phase still holds its area", async () => {
     const fixture = await setup({ concurrency: 3 });
     const plan = await makePlan(fixture, { slug: "plan", auto: "run", concurrency: 3 });
@@ -1291,11 +1430,14 @@ describe("dev scheduling", () => {
     const second = await addTask(fixture.store, { plan: plan.key, slug: "a-two", title: "a-two", area: "core" });
     await confirm(fixture, plan.key);
 
+    // Another process opens its own store on the same files; passes of one
+    // store never overlap, so the race between processes needs a second one.
+    const otherStore = storeAt(fixture.root);
     const other = new PluginRegistry([plugin, poolPlugin, createShellPlugin()], {
       home: fixture.root,
       cwd: fixture.repositoryPath,
-      store: fixture.store,
-      storeRoot: fixture.store.root,
+      store: otherStore,
+      storeRoot: otherStore.root,
       onAnswer: async () => {},
       onCancelRun: () => {},
     });
@@ -1402,5 +1544,98 @@ describe("dev scheduling", () => {
     }
     await confirm(same, samePlan.key);
     expect((await tick(same)).length).toBe(1);
+  });
+});
+
+describe("a scheduler line prints once", () => {
+  async function mergedFixture() {
+    const fixture = await setup();
+    const plan = await makePlan(fixture, { slug: "plan", auto: "merge" });
+    const task = await makeTask(fixture, plan.key, "task");
+    await confirm(fixture, plan.key);
+    await phase(fixture, task.key, "waiting", "run-1");
+    await putTask(fixture, task.key, {
+      attempt: { number: 1, run: "run-1", review: { result: "pass" } },
+    });
+    await tick(fixture);
+    await putTask(fixture, task.key, {
+      phase: "merged",
+      attempt: {
+        number: 1,
+        run: "run-1",
+        review: { result: "pass" },
+        integration: { result: "merged" },
+      },
+    });
+    fixture.lines.length = 0;
+    return { fixture, plan, task };
+  }
+
+  test("two passes asked for at once print each transition once", async () => {
+    const { fixture, plan, task } = await mergedFixture();
+    await Promise.all([fixture.registry.tick(), fixture.registry.tick()]);
+    expect(fixture.lines.sort()).toEqual(
+      [`${task.id} integrating -> merged`, `${plan.id} confirmed -> finished`].sort(),
+    );
+  });
+
+  test("a pass asked for while one runs runs once after it, never beside it", async () => {
+    const fixture = await setup();
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run" });
+    const task = await makeTask(fixture, plan.key, "task");
+    await confirm(fixture, plan.key);
+    await phase(fixture, task.key, "running", "run-1");
+
+    let inside = 0;
+    let deepest = 0;
+    let entered = 0;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const runs: RunLookup = {
+      async active() {
+        entered += 1;
+        inside += 1;
+        deepest = Math.max(deepest, inside);
+        await gate;
+        inside -= 1;
+        return [];
+      },
+      async state() {
+        return undefined;
+      },
+      async lastStep() {
+        return null;
+      },
+    };
+    const first = fixture.registry.tick(runs);
+    const others = [fixture.registry.tick(runs), fixture.registry.tick(runs)];
+    release();
+    await Promise.all([first, ...others]);
+    expect(deepest).toBe(1);
+    // The first pass, and one shared pass for the two asked meanwhile.
+    expect(entered).toBeGreaterThanOrEqual(2);
+    expect(entered).toBeLessThanOrEqual(4);
+  });
+
+  test("the merge mark goes to one claimant, as when another process races a pass", async () => {
+    const { fixture, task } = await mergedFixture();
+    const claims = await Promise.all([
+      recordMergeReported(fixture.store, task.key, 1),
+      recordMergeReported(fixture.store, task.key, 1),
+    ]);
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    await tick(fixture);
+    expect(fixture.lines.filter((line) => line.includes("integrating -> merged"))).toEqual([]);
+  });
+
+  test("the finished mark goes to one claimant", async () => {
+    const { fixture, plan } = await mergedFixture();
+    const claims = await Promise.all([
+      recordPlanFinishedReported(fixture.store, plan.key),
+      recordPlanFinishedReported(fixture.store, plan.key),
+    ]);
+    expect(claims.filter(Boolean)).toHaveLength(1);
   });
 });

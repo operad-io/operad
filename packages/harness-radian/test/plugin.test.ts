@@ -4,12 +4,16 @@ import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import {
+  AccessError,
   MemoryPluginStore,
+  PluginError,
   PluginRegistry,
   Runner,
+  definePlugin,
   openLog,
   readState,
   type PluginStepResult,
+  type StepContext,
   type JsonValue,
   validateUsage,
   type TriggerView,
@@ -17,10 +21,11 @@ import {
 import {
   createRadianHarnessPlugin,
   radianModel,
+  radianRefusal,
   EVENT_NOTE_TEMPLATE,
   type RadianHarnessSettings,
 } from "../src/index.ts";
-import { runAgent as runProcess } from "@operad-io/harness-process";
+import { degradedAskRequest, runAgent as runProcess } from "@operad-io/harness-process";
 import {
   cleanupTempRoots,
   fakeRadian,
@@ -150,6 +155,11 @@ describe("harness-radian/agent", () => {
     const line = JSON.stringify({ type: "ToolExecutionStarted", toolCallId: "t1", toolName: "Bash", input: { command: "curl store-secret-9" } });
     const out = radianLogLine(line, () => 5, new Map(), "/work", {}, ["store-secret-9"]);
     expect(JSON.parse(out)).toMatchObject({ input: "curl ***" });
+  });
+
+  test("a multi-line command keeps its lines in the logged summary", () => {
+    const line = JSON.stringify({ event: "ToolExecutionStarted", data: { call_id: "c1", name: "shell", arguments: { command: "python3 - <<'EOF'\nprint(1)\n\nEOF" } } });
+    expect(JSON.parse(radianLogLine(line, () => 5, new Map(), "/work")).input).toBe("python3 - <<'EOF'\nprint(1)\n\nEOF");
   });
 
   test("a tool call the access profile refuses is only said to be denied in the log", async () => {
@@ -303,6 +313,37 @@ describe("harness-radian/agent", () => {
     expect(record.argv[record.argv.indexOf("--resume") + 1]).toBe("session-7");
   });
 
+  test("operad's tools are given to radian as an MCP config that starts the tools program with the home", async () => {
+    const env = await setup("done");
+    const result = await runAgent(env, {
+      prompt: "hello",
+      cwd: env.root,
+      operadTools: { home: "/operad/home" },
+    });
+    expect(result.result).toBe("done");
+    const record = JSON.parse(readFileSync(env.record, "utf8")) as {
+      readonly argv: readonly string[];
+    };
+    const file = record.argv[record.argv.indexOf("--mcp-config") + 1];
+    expect(file).toBeDefined();
+    const config = JSON.parse(readFileSync(String(file), "utf8")) as {
+      mcpServers: Record<string, { command: string; args: string[]; env: Record<string, string> }>;
+    };
+    const server = config.mcpServers["operad"];
+    expect(server?.args.slice(-2)).toEqual(["--home", "/operad/home"]);
+    expect(server?.args[0]).toMatch(/mcp\/src\/stdio\.ts$/);
+    expect(server?.env["OPERAD_HOME"]).toBe("/operad/home");
+  });
+
+  test("without operadTools radian gets no MCP config", async () => {
+    const env = await setup("done");
+    await runAgent(env, { prompt: "hello", cwd: env.root });
+    const record = JSON.parse(readFileSync(env.record, "utf8")) as {
+      readonly argv: readonly string[];
+    };
+    expect(record.argv).not.toContain("--mcp-config");
+  });
+
   test("a step that continues after a question passes the session and adds the paragraph", async () => {
     const env = await setup("done");
     const result = await runAgent(env, {
@@ -349,6 +390,40 @@ describe("harness-radian/agent", () => {
     expect(dataOf(result).reason).toBe("grant_unsupported");
     expect(String(dataOf(result).message)).toContain("radian cannot enforce a one-time permission");
     expect(existsSync(env.record)).toBe(false);
+  });
+
+  describe("a profile with rules", () => {
+    async function configOf(access: Record<string, JsonValue> | undefined) {
+      const env = await setup("done");
+      await env.registry.runStep(
+        "harness-radian/agent",
+        { prompt: "hi", cwd: env.root },
+        { runId: "run-ro", ...(access === undefined ? {} : { access }) },
+      );
+      const record = JSON.parse(readFileSync(env.record, "utf8")) as { readonly argv: readonly string[] };
+      const at = record.argv.indexOf("--config");
+      return at < 0 ? undefined : readFileSync(String(record.argv[at + 1]), "utf8");
+    }
+
+    test("radian is given a config that runs the profile's hook before every tool call", async () => {
+      const text = await configOf({ readOnly: true });
+      expect(text).toContain("[[hooks.PreToolUse]]");
+      expect(text).toContain('matcher = "*"');
+      expect(text).toMatch(/hook\.ts/);
+    });
+
+    test("a profile with no rules, and no profile, change nothing", async () => {
+      expect(await configOf({})).toBeUndefined();
+      expect(await configOf(undefined)).toBeUndefined();
+    });
+
+    test("radianRefusal lets a reading command and a read through", () => {
+      expect(radianRefusal({ readOnly: true }, "shell", { command: "git status | head" }, "/work")).toBeUndefined();
+      expect(radianRefusal({ readOnly: true }, "read", { path: "src/a.ts" }, "/work")).toBeUndefined();
+      expect(radianRefusal({ readOnly: true }, "write", { path: "src/a.ts" }, "/work")).toContain("this chat is read-only here");
+      expect(radianRefusal({ readOnly: true }, "operad__list", { type: "task" }, "/work")).toBeUndefined();
+      expect(radianRefusal({}, "write", { path: "src/a.ts" }, "/work")).toBeUndefined();
+    });
   });
 
   test("a non-zero exit is a failure that says so", async () => {
@@ -847,6 +922,22 @@ test("no process started by this file's tests is left alive", () => {
   expect(processesUnder(tempRoots())).toEqual([]);
 });
 
+test("a marker wait survives a directory that appears after it starts", async () => {
+  // No watch can be armed on a directory that is not there yet, so only the
+  // fallback look can find the marker; the same look covers an event the
+  // platform dropped while the machine was loaded.
+  const root = await tempRoot();
+  const directory = join(root, "late");
+  const marker = join(directory, "marker");
+  const waiting = waitForFile(marker);
+
+  await mkdir(directory, { recursive: true });
+  writeFileSync(marker, String(process.pid));
+  await waiting;
+
+  expect(existsSync(marker)).toBe(true);
+});
+
 describe("harness-radian/agent step limit", () => {
   function registryWith(settings: Record<string, unknown>): PluginRegistry {
     return new PluginRegistry([createRadianHarnessPlugin({})], {
@@ -878,5 +969,117 @@ describe("harness-radian/agent step limit", () => {
   test("the setting is declared with the default {}", () => {
     const registry = registryWith({});
     expect(registry.settingsFor("harness-radian").concurrency).toEqual({});
+  });
+});
+
+/**
+ * radian is the degraded harness for questions (`operad-contract.md` decision
+ * 6): no hook sees its tool calls, so it cannot enforce a one-time permission,
+ * and a question it asks is refused once the grace passes instead of waiting
+ * for a late answer. radian itself writes no question today; these tests ask
+ * through a probe step that declares what radian's step declares.
+ */
+describe("harness-radian: a question is reject_once", () => {
+  const radian = createRadianHarnessPlugin().steps.find((step) => step.name === "agent");
+  if (radian === undefined) throw new Error("harness-radian has no agent step");
+
+  type Run = (ctx: StepContext, params: unknown) => Promise<PluginStepResult>;
+
+  function probe(ask: Run) {
+    return definePlugin({
+      name: "probe",
+      kind: "harness",
+      version: "0.0.0",
+      steps: [{ name: "agent", results: radian?.results ?? [], grants: radian?.grants, resumable: radian?.resumable, run: ask }],
+    });
+  }
+
+  async function registryOf(run: Run) {
+    const root = await tempRoot();
+    return new PluginRegistry([probe(run)], {
+      home: root,
+      cwd: root,
+      store: new MemoryPluginStore({ root: join(root, "store") }),
+    });
+  }
+
+  test("radian declares no `waiting` result and no grants: nothing can resume a call", () => {
+    expect(radian.results).toEqual(["done", "failed", "interrupted"]);
+    expect(radian.grants).toBe(false);
+  });
+
+  test("a grace that passes is a refusal: the step goes on with rejected true and never ends waiting", async () => {
+    const asked: unknown[] = [];
+    const registry = await registryOf(async (ctx) => {
+      const answer = await ctx.ask(degradedAskRequest("Run git push?"));
+      return { result: "done", data: { rejected: answer.rejected === true } };
+    });
+    const result = await registry.runStep(
+      "probe/agent",
+      {},
+      {
+        runId: "run-degraded",
+        asker: {
+          ask: (request) => {
+            asked.push(request);
+            return Promise.resolve({ kind: "timeout", waitId: "w", prompt: request.prompt, choices: request.choices ?? [] });
+          },
+          useGrant: () => Promise.resolve(false),
+        },
+      },
+    );
+    expect(result).toEqual({ result: "done", data: { rejected: true } });
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({ onTimeout: "reject_once" });
+    expect(asked[0]).not.toHaveProperty("resume");
+  });
+
+  test("a question that would wait for a late answer is refused: radian has no `waiting` result", async () => {
+    const registry = await registryOf(async (ctx) => {
+      await ctx.ask({ prompt: "Run git push?", choices: ["allow_once", "reject_once"] });
+      return { result: "done" };
+    });
+    let error: unknown;
+    try {
+      await registry.runStep("probe/agent", {}, { runId: "run-waiting", asker: { ask: () => Promise.reject(new Error("nobody is asked")), useGrant: () => Promise.resolve(false) } });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(PluginError);
+    expect(String((error as Error).message)).toContain('onTimeout "waiting"');
+  });
+
+  test("a question that offers a one-time permission is refused before anyone is asked", async () => {
+    const asked: unknown[] = [];
+    const registry = await registryOf(async (ctx) => {
+      await ctx.ask({
+        prompt: "Run git push?",
+        choices: ["allow_once", "reject_once"],
+        onTimeout: "reject_once",
+        resume: { session: "s", grant: { kind: "command", value: "git push", choice: "allow_once" } },
+      });
+      return { result: "done" };
+    });
+    let error: unknown;
+    try {
+      await registry.runStep("probe/agent", {}, { runId: "run-grant-ask", asker: { ask: (request) => { asked.push(request); return Promise.reject(new Error("no")); }, useGrant: () => Promise.resolve(false) } });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(PluginError);
+    expect(String((error as Error).message)).toContain("cannot enforce a one-time permission");
+    expect(asked).toEqual([]);
+  });
+
+  test("a profile with askCommands is refused at start and the field is named", async () => {
+    const env = await setup("done");
+    let error: unknown;
+    try {
+      env.registry.checkAccess("harness-radian:prompt", { askCommands: ["git push"] });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(AccessError);
+    expect(String((error as Error).message)).toContain("askCommands");
   });
 });

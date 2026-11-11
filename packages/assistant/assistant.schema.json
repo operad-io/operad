@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://operad.io/schemas/assistant.schema.json",
+  "title": "operad assistant settings",
+  "description": "The `assistant` section of config.json, owned by the assistant plugin.",
+  "type": "object",
+  "properties": {
+    "profiles": {
+      "type": "object",
+      "description": "The assistant's profiles, by name. `default` exists even when it is not written here.",
+      "additionalProperties": {
+        "type": "object",
+        "description": "One profile.",
+        "properties": {
+          "cwd": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The working directory. Without it: ~/.operad/assistant for `default`, ~/.operad/assistant/<name> for any other. It must be inside ~/.operad/assistant or outside the operad home."
+          },
+          "harness": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The harness a new chat uses when it names none."
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Directories with a SKILL.md, given to the agent at every reply. A relative path is under the working directory."
+          },
+          "access": {
+            "type": "object",
+            "description": "Added to the default access profile: the lists are appended and readOnly can be turned on. A profile can tighten the default, never loosen it.",
+            "properties": {
+              "denyPaths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "denyCommands": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "askCommands": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "askPaths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "readOnly": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

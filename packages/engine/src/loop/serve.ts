@@ -121,6 +121,17 @@ function runLookup(log: LogBackend): RunLookup {
   };
 }
 
+interface AnswerProgress {
+  position: number;
+  readonly waiting: Map<
+    string,
+    { readonly record: InputRecord; readonly input: PersonAnswerInput }
+  >;
+}
+
+/** What each serving kernel has read of the inputs, and what still waits. */
+const answerProgress = new WeakMap<Kernel, AnswerProgress>();
+
 /**
  * Applies answers another process only recorded. The input record is the
  * hand-off: `serve` is the one process that may decide what the answer means
@@ -133,15 +144,27 @@ async function applyRecordedAnswers(options: {
   readonly clock: () => number;
   readonly shouldStop?: (() => boolean) | undefined;
 }): Promise<void> {
-  const answers: { readonly record: InputRecord; readonly input: PersonAnswerInput }[] = [];
-  for await (const record of options.log.readInputs()) {
+  // Only the inputs recorded since the last pass are read. An answer stays in
+  // `waiting` until it is applied or can no longer be: a run that has ended
+  // takes no answer, so the answers of past runs are never looked at again.
+  const progress = answerProgress.get(options.kernel) ?? {
+    position: 0,
+    waiting: new Map<string, { record: InputRecord; input: PersonAnswerInput }>(),
+  };
+  answerProgress.set(options.kernel, progress);
+  const fresh = await options.log.readInputsAfter(progress.position);
+  progress.position = fresh.position;
+  for (const record of fresh.inputs) {
     if (record.runId === null) continue;
     const input = recordedAnswer(record.payload);
-    if (input !== undefined) answers.push({ record, input });
+    if (input !== undefined) progress.waiting.set(record.inputId, { record, input });
   }
-  if (answers.length === 0) return;
+  if (progress.waiting.size === 0) return;
 
-  const runs = new Map((await options.log.runs()).map((run) => [run.runId, run]));
+  const runs = new Map(
+    (await options.log.runs({ active: true })).map((run) => [run.runId, run]),
+  );
+  const answers = [...progress.waiting.values()];
   const appliedByRun = new Map<string, Set<string>>();
   const appliedFor = async (runId: string): Promise<Set<string>> => {
     const cached = appliedByRun.get(runId);
@@ -162,12 +185,18 @@ async function applyRecordedAnswers(options: {
     if (options.shouldStop?.() === true) return;
     const runId = record.runId;
     if (runId === null) continue;
-    const applied = await appliedFor(runId);
-    if (applied.has(record.inputId)) continue;
     const run = runs.get(runId);
-    if (run === undefined) continue;
+    if (run === undefined) {
+      progress.waiting.delete(record.inputId);
+      continue;
+    }
     const flow = options.registry.flow(run.flow);
     if (flow === undefined) continue;
+    const applied = await appliedFor(runId);
+    if (applied.has(record.inputId)) {
+      progress.waiting.delete(record.inputId);
+      continue;
+    }
 
     for (let attempt = 0; ; attempt += 1) {
       let state;
@@ -181,6 +210,7 @@ async function applyRecordedAnswers(options: {
         state.wait === null ||
         state.wait.id !== input.waitId
       ) {
+        progress.waiting.delete(record.inputId);
         break;
       }
       const withId: Input = { ...input, inputId: record.inputId };
@@ -201,6 +231,7 @@ async function applyRecordedAnswers(options: {
           },
         );
         applied.add(record.inputId);
+        progress.waiting.delete(record.inputId);
         break;
       } catch (error) {
         if (error instanceof SeqConflictError && attempt < 2) continue;

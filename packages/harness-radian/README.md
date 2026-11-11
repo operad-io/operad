@@ -16,6 +16,13 @@ question that offers a one-time permission before anyone is asked. A run whose
 access profile has one anyway is refused by the step with the reason
 `grant_unsupported`, naming radian; use `harness-pi` for flows that grant.
 
+radian is the degraded harness for questions (`operad-contract.md` decision 6):
+its step declares no `enforces`, so a profile with `askCommands` is refused at
+start with the field named, and a question the step asks is `reject_once` with no
+grant (`degradedAskRequest` in `@operad-io/harness-process`): once the grace
+passes it is refused, because a late `allow_once` could not be carried out.
+`harness-claude` and `harness-pi` do the full loop.
+
 With `resumeSession`, the `Result` must name that same session; another id fails
 the step with `session_missing`, because radian started afresh.
 

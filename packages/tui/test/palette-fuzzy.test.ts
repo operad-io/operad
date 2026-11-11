@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ViewAction, ViewObject } from "@operad-io/engine";
-import { matchPositions, paletteEntries } from "../src/actions.ts";
+import { fuzzyScore, matchPositions, paletteEntries } from "../src/actions.ts";
 import { loadRecent, saveRecent, stateFile } from "../src/recent.ts";
 import { initialState, reduce, type TuiState, type TuiStateEvent } from "../src/state.ts";
 import { drawState } from "../src/view/index.ts";
@@ -86,8 +86,15 @@ describe("palette search: query to first entry", () => {
   test("equal scores keep the order the entries were listed in", () => {
     const names = search("dev:mer").map((entry) => entry.name);
     expect(names.slice(0, 2)).toEqual(["dev:merge", "dev:mergeback"]);
-    const same = search("e").filter((entry) => entry.group === "actions");
-    expect(same.map((entry) => entry.name)).toEqual(search("e").filter((e) => e.group === "actions").map((e) => e.name));
+    const listed = paletteEntries(press(opened(), ":")).map((entry) => entry.name);
+    const found = search("e").filter((entry) => entry.group === "actions");
+    for (let i = 1; i < found.length; i++) {
+      const before = found[i - 1];
+      const after = found[i];
+      if (before === undefined || after === undefined) continue;
+      if (fuzzyScore("e", before.name) !== fuzzyScore("e", after.name)) continue;
+      expect(listed.indexOf(before.name)).toBeLessThan(listed.indexOf(after.name));
+    }
   });
 });
 
@@ -127,7 +134,7 @@ describe("palette search: recent entries", () => {
   const run = (state: TuiState, query: string): TuiState =>
     press(state, ":", ...typeText(query), "enter");
 
-  test("an empty query lists the last five used first, the latest first, then the group order", () => {
+  test("an empty query keeps the last five used first inside each group, and lists the groups in order", () => {
     let state = opened();
     const baseline = paletteEntries(press(state, ":")).map((e) => e.name);
     state = { ...state, acting: false };
@@ -135,10 +142,14 @@ describe("palette search: recent entries", () => {
       state = { ...run(state, query), actionRequest: undefined, acting: false, quit: false, keys: false };
       state = { ...state, object: opened().object };
     }
-    const names = paletteEntries(press(state, ":")).map((e) => e.name);
-    expect(names.slice(0, 5)).toEqual(["quit", "go to pending", "ops:cancel", "dev:rework", "refresh"]);
-    const rest = baseline.filter((name) => !names.slice(0, 5).includes(name));
-    expect(names.slice(5)).toEqual(rest);
+    const listed = paletteEntries(press(state, ":"));
+    const ranks = listed.map((entry) => ["actions", "tui", "settings"].indexOf(entry.group));
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+    expect(listed.filter((entry) => entry.group === "actions").slice(0, 2).map((e) => e.name))
+      .toEqual(["ops:cancel", "dev:rework"]);
+    expect(listed.filter((entry) => entry.group === "tui").slice(0, 3).map((e) => e.name))
+      .toEqual(["quit", "go to pending", "refresh"]);
+    expect(new Set(listed.map((e) => e.name))).toEqual(new Set(baseline));
     expect(state.recent).toHaveLength(5);
   });
 
@@ -149,7 +160,7 @@ describe("palette search: recent entries", () => {
 
   test("an entry that no longer exists is skipped", () => {
     const state = { ...opened(), recent: ["actions/gone:away", "tui/help"] };
-    expect(paletteEntries(press(state, ":"))[0]?.name).toBe("help");
+    expect(paletteEntries(press(state, ":")).find((entry) => entry.group === "tui")?.name).toBe("help");
   });
 });
 

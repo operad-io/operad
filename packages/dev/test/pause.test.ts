@@ -13,10 +13,11 @@ import {
   confirmPlan,
   getPlan,
   getTask,
+  refreshPlanCounts,
   setAuto,
   setTaskPhase,
 } from "../src/service.ts";
-import { bareId, taskData } from "../src/model.ts";
+import { bareId, planData, taskData } from "../src/model.ts";
 import { schedulerTestHooks } from "../src/schedule.ts";
 import { taskViews } from "../src/views.ts";
 import { commitIn, git, gitOrThrow, makeRemote } from "./git-support.ts";
@@ -169,6 +170,26 @@ describe("dev:pause and dev:resume", () => {
     expect(gitOrThrow(worktree, ["log", "--format=%s", "-n", "1"])).toBe("partial work");
   });
 
+  test("a step of the paused run cannot write the task after it was resumed", async () => {
+    const s = await setup();
+    const first = await s.add("first");
+    await confirmPlan(s.store, s.plan.id);
+    expect(await tick(s)).toEqual([first]);
+    expect((await runWorktree(s, first, "run-1")).result).toBe("ready");
+    const token = (await task(s, first)).claim?.token ?? "claim-token";
+    await act(s, "pause", first);
+    await act(s, "resume", first);
+    const stale = await s.registry.runStep("dev/worktree", {}, {
+      runId: "run-1",
+      object: { type: "task", id: first, data: {} },
+      params: { token },
+    });
+    expect(stale.result).toBe("cancelled");
+    const after = await task(s, first);
+    expect(after.phase).toBe("ready");
+    expect(after.run).toBeNull();
+  });
+
   test("pause and resume refuse where they cannot work, and stay with the owner", async () => {
     const s = await setup();
     const first = await s.add("first");
@@ -188,6 +209,17 @@ describe("dev:pause and dev:resume", () => {
       expect(s.registry.actions().find((action) => action.name === name)?.confirm).toBe(true);
       expect(DEFAULT_MCP.actions).not.toContain(name);
     }
+  });
+
+  test("a task stored with the old phase held reads as paused and can be resumed", async () => {
+    const s = await setup();
+    const first = await s.add("first");
+    const stored = await getTask(s.store, first);
+    await s.store.put("task", first, { ...stored.data, phase: "held" }, "test");
+    expect((await task(s, first)).phase).toBe("paused");
+    expect(taskViews.row(await getTask(s.store, first)).mark).toBe("paused");
+    await act(s, "resume", first);
+    expect((await task(s, first)).phase).toBe("ready");
   });
 
   test("dev:hold and dev:release are no longer actions", async () => {
@@ -219,13 +251,17 @@ describe("dev:pause and dev:resume", () => {
     expect(blocked.result).toBe("blocked");
     expect((await task(s, second)).phase).toBe("waiting");
 
+    await refreshPlanCounts(s.store, await getPlan(s.store, s.plan.id));
+    expect(planData((await getPlan(s.store, s.plan.id)).data).waitingCount).toBe(1);
     await s.registry.runCommand(["dev", "task", "update", bareId(second), "--after", bareId(other)]);
 
     expect(s.cancelled).toEqual(["run-blocked"]);
     const released = await task(s, second);
     expect(released.phase).toBe("ready");
     expect(released.run).toBeNull();
-    expect(released.after).toEqual([bareId(other)]);
+    expect(released.after).toEqual([other]);
+    // The plan's cached count follows at once, not at the next tick.
+    expect(planData((await getPlan(s.store, s.plan.id)).data).waitingCount).toBe(0);
     expect(await tick(s)).toEqual([second]);
     expect((await getPlan(s.store, s.plan.id)).id).toBe(s.plan.id);
   });
