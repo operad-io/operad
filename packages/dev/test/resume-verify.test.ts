@@ -32,7 +32,11 @@ interface Run {
 }
 
 /** Runs the dev flow once; the branch has `commits` made before the run and the worker commits nothing. */
-async function run(options: { readonly commits: number; readonly verifyBefore?: boolean }): Promise<Run> {
+async function run(options: {
+  readonly commits: number;
+  /** An earlier verify of the branch head, recorded in the task before the run. */
+  readonly verify?: "pass" | "fail";
+}): Promise<Run> {
   const root = await tempRoot();
   const remote = await makeRemote(root);
   const store = storeAt(root);
@@ -59,6 +63,27 @@ async function run(options: { readonly commits: number; readonly verifyBefore?: 
       await commitIn(path, `f${index}.txt`, "x\n", `earlier work ${index}`);
     }
     gitOrThrow(remote.repository, ["worktree", "remove", "--force", path]);
+  }
+  if (options.verify !== undefined) {
+    const head = gitOrThrow(remote.repository, ["rev-parse", `work/${taskId}`]);
+    const stored = await store.get("task", task.id);
+    if (stored === undefined) throw new Error("task disappeared");
+    const current = taskData(stored.data);
+    await store.put(
+      "task",
+      task.id,
+      {
+        ...current,
+        attempt: {
+          ...current.attempt,
+          number: 1,
+          run: "earlier-run",
+          verified: head,
+          verify: { result: options.verify, run: "earlier-run" },
+        },
+      },
+      "test:verified",
+    );
   }
   const worker = definePlugin({
     name: "fake-harness",
@@ -130,5 +155,19 @@ describe("work that ends with no new commit", () => {
     const result = await run({ commits: 0 });
     expect(result.steps).not.toContain("verify");
     expect(result.reasons).toEqual(["work did nothing"]);
+  });
+
+  test("a head that already passed verify goes to wait, with no second verify", async () => {
+    const result = await run({ commits: 1, verify: "pass" });
+    expect(result.steps).toContain("work");
+    expect(result.steps).not.toContain("verify");
+    expect(result.reasons).toEqual(["work did nothing"]);
+  });
+
+  test("a head whose verify failed goes to verify again", async () => {
+    const result = await run({ commits: 1, verify: "fail" });
+    expect(result.steps.indexOf("verify")).toBeGreaterThan(result.steps.indexOf("work"));
+    expect(result.whys).toEqual([NOTE]);
+    expect(result.reasons).not.toContain("work did nothing");
   });
 });
