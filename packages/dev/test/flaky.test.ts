@@ -333,6 +333,27 @@ describe("a flaky test proposes a task", () => {
     expect((await listAll(s.store, "plan")).filter((object) => bareId(object.id).endsWith("-flaky-tests"))).toHaveLength(2);
   });
 
+  test("check.flakyPlan that names no plan says so and still proposes in flaky-tests", async () => {
+    const s = await setup(true);
+    s.options.plan = "P-9999-missing";
+    await s.track("T-0001-a", logWith(TEST), 1);
+    const tasks = await s.flaky();
+    expect(tasks).toHaveLength(1);
+    expect(s.notices).toHaveLength(1);
+    expect(s.notices[0]).toContain('check.flakyPlan "P-9999-missing" does not name an open plan of this repository');
+    expect(taskData(tasks[0]?.data ?? {}).plan).toMatch(/-flaky-tests$/);
+  });
+
+  test("a proposal that keeps failing returns its notice only once for the same count", async () => {
+    const s = await setup(true);
+    const longFile = `packages/${"p".repeat(70)}/test/x.test.ts`;
+    const log = [`${longFile}:`, `(fail) ${TEST} [1ms]`, ""].join("\n");
+    await s.track("T-0001-a", log, 1);
+    expect(s.notices).toHaveLength(1);
+    await s.track("T-0002-b", log, 1);
+    expect(s.notices).toHaveLength(1);
+  });
+
   test("a proposal that cannot be made records a notice once and the count stays", async () => {
     const s = await setup(true);
     const longFile = `packages/${"p".repeat(70)}/test/x.test.ts`;
@@ -380,6 +401,8 @@ describe("a flaky test proposes a task", () => {
     writeFileSync(join(s.path, "packages", "gizmo", "test", "g.test.ts"), 'describe("gizmo", () => { test("turns", () => {}); });\n');
     writeFileSync(join(s.path, "packages", "one", "test", "x.test.ts"), 'test("twin case", () => {});\n');
     writeFileSync(join(s.path, "packages", "two", "test", "y.test.ts"), 'test("twin case", () => {});\n');
+    mkdirSync(join(s.path, "node_modules", "pkg"), { recursive: true });
+    writeFileSync(join(s.path, "node_modules", "pkg", "z.test.ts"), 'describe("gizmo", () => { test("turns", () => {}); test("twin case", () => {}); });\n');
     const log = ["some output", " 2 tests failed:", "(fail) gizmo > turns [1ms]", "(fail) twin case [1ms]", ""].join("\n");
     await s.track("T-0001-a", log, 1, ["gizmo > turns", "twin case"]);
     const byTitle = new Map((await s.flaky()).map((object) => [taskData(object.data).title, taskData(object.data)]));
@@ -455,6 +478,13 @@ describe("a flaky test proposes a task", () => {
     expect(validateDevSettings({ name: "x" }).check.flakyLoadLimit).toBeUndefined();
     expect(validateDevSettings({ name: "x", check: { flakyLoadLimit: 6.5 } }).check.flakyLoadLimit).toBe(6.5);
     expect(() => validateDevSettings({ name: "x", check: { flakyLoadLimit: 0 } })).toThrow(/flakyLoadLimit/);
+  });
+
+  test("check.flakyPlan is read, trimmed, and refused when empty or not a string", () => {
+    expect(validateDevSettings({ name: "x" }).check.flakyPlan).toBeUndefined();
+    expect(validateDevSettings({ name: "x", check: { flakyPlan: " P-0001-work " } }).check.flakyPlan).toBe("P-0001-work");
+    expect(() => validateDevSettings({ name: "x", check: { flakyPlan: "" } })).toThrow(/flakyPlan/);
+    expect(() => validateDevSettings({ name: "x", check: { flakyPlan: 3 } })).toThrow(/flakyPlan/);
   });
 
   test("a failure seen under load opens no task from an earlier idle count", async () => {

@@ -10,7 +10,7 @@
  * exactly one.
  */
 
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ObjectStore, StoredObject } from "@operad-io/engine";
 import { messageOf, type SecretStore } from "@operad-io/engine";
@@ -138,7 +138,7 @@ export interface FlakyRecord {
   readonly occurrences: readonly FlakyOccurrence[];
   /** The task proposed for this test; the count restarts when it ended. */
   readonly task?: string | undefined;
-  /** The count a "no plan" notice was recorded for, so it is not repeated. */
+  /** Set once a proposal failure was reported, so the notice is not repeated. */
   readonly noticed?: number | undefined;
 }
 
@@ -231,7 +231,33 @@ export function failureExcerpt(
   return { excerpt, file };
 }
 
-const SEARCH_SKIP = /(?:^|\/)(?:node_modules|\.git|\.operad-worktrees)\//;
+const SEARCH_SKIP_DIRS = new Set([
+  "node_modules",
+  ".git",
+  ".operad-worktrees",
+  ".radian",
+]);
+const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
+
+/** The test files under `dir`, without descending into the directories that hold none. */
+function testFilesUnder(repositoryPath: string, dir: string, out: string[]): void {
+  let entries;
+  try {
+    entries = readdirSync(dir === "" ? repositoryPath : join(repositoryPath, dir), {
+      withFileTypes: true,
+    });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const path = dir === "" ? entry.name : `${dir}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (!SEARCH_SKIP_DIRS.has(entry.name)) testFilesUnder(repositoryPath, path, out);
+    } else if (entry.isFile() && TEST_FILE.test(entry.name)) {
+      out.push(path);
+    }
+  }
+}
 
 /**
  * The one test file of the repository that holds every part of the test's name
@@ -241,21 +267,16 @@ export function searchTestFile(repositoryPath: string, name: string): string | u
   const parts = name.split(" > ").filter((part) => part !== "");
   if (parts.length === 0) return undefined;
   const hits: string[] = [];
-  try {
-    for (const path of new Bun.Glob("**/*.{test,spec}.{ts,tsx,js,jsx,mts,cts,mjs,cjs}").scanSync({
-      cwd: repositoryPath,
-    })) {
-      if (SEARCH_SKIP.test(path)) continue;
-      let text: string;
-      try {
-        text = readFileSync(join(repositoryPath, path), "utf8");
-      } catch {
-        continue;
-      }
-      if (parts.every((part) => text.includes(part))) hits.push(path);
+  const files: string[] = [];
+  testFilesUnder(repositoryPath, "", files);
+  for (const path of files) {
+    let text: string;
+    try {
+      text = readFileSync(join(repositoryPath, path), "utf8");
+    } catch {
+      continue;
     }
-  } catch {
-    return undefined;
+    if (parts.every((part) => text.includes(part))) hits.push(path);
   }
   return hits.length === 1 ? hits[0] : undefined;
 }
@@ -370,13 +391,17 @@ async function flakyPlanFor(
   store: ObjectStore,
   repository: RepositoryData,
   configured: string | undefined,
-): Promise<StoredObject> {
+): Promise<{ readonly plan: StoredObject; readonly missing: string | undefined }> {
+  let missing: string | undefined;
   if (configured !== undefined) {
     const named = await store.get("plan", `${repository.name}/${bareId(configured)}`);
     if (named !== undefined) {
       const data = planData(named.data);
-      if (data.repository === repository.name && !isEnded(data)) return named;
+      if (data.repository === repository.name && !isEnded(data)) {
+        return { plan: named, missing: undefined };
+      }
     }
+    missing = configured;
   }
   const own = (await listAll(store, "plan"))
     .filter((object) => {
@@ -391,15 +416,16 @@ async function flakyPlanFor(
       (x, y) =>
         (parseId(bareId(y.id), "plan")?.number ?? -1) - (parseId(bareId(x.id), "plan")?.number ?? -1),
     )[0];
-  if (own !== undefined) return own;
+  if (own !== undefined) return { plan: own, missing };
   const model = await newestConfirmedPlan(store, repository.name);
   const data = model === undefined ? undefined : planData(model.data);
-  return addConfirmedPlanLocked(store, repository, {
+  const plan = await addConfirmedPlanLocked(store, repository, {
     slug: FLAKY_PLAN_SLUG,
     title: FLAKY_PLAN_TITLE,
     auto: data?.auto ?? "off",
     priority: data?.priority ?? "P3",
   });
+  return { plan, missing };
 }
 
 /** The title of the task dev proposes for a test. */
@@ -569,9 +595,13 @@ async function propose(
     );
     return undefined;
   }
-  const plan = await flakyPlanFor(store, repository, input.flakyPlan);
+  const { plan, missing } = await flakyPlanFor(store, repository, input.flakyPlan);
   await flakyTestHooks.beforePropose?.(record.name);
   const file = [...record.occurrences].reverse().find((entry) => entry.file !== undefined)?.file;
+  const fallback =
+    missing === undefined
+      ? undefined
+      : `check.flakyPlan "${missing}" does not name an open plan of this repository; the task went into "${bareId(plan.id)}"`;
   try {
     const task = await addTaskLocked(
       store,
@@ -591,9 +621,18 @@ async function propose(
       writableOf({ ...record, task: bareId(task.id) }),
       "dev:flaky-task",
     );
-    return undefined;
+    return fallback;
   } catch (error) {
-    return noticeFor(record, messageOf(error));
+    const count = countedOf(record).length;
+    if (record.noticed !== undefined) return undefined;
+    await store.put(
+      FLAKY_TYPE,
+      key,
+      writableOf({ ...record, noticed: count }),
+      "dev:flaky-task",
+    );
+    const notice = noticeFor(record, messageOf(error));
+    return fallback === undefined ? notice : `${fallback}; ${notice}`;
   }
 }
 

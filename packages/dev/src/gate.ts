@@ -110,30 +110,6 @@ export function gateWorktreePath(
   return path;
 }
 
-interface GitZ {
-  readonly ok: boolean;
-  readonly out: string;
-  readonly err: string;
-}
-
-function gitZ(
-  cwd: string,
-  args: readonly string[],
-  input?: string,
-): GitZ {
-  const result = Bun.spawnSync({
-    cmd: ["git", "-C", cwd, ...args],
-    stdin: input === undefined ? "ignore" : new TextEncoder().encode(input),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  return {
-    ok: result.exitCode === 0,
-    out: result.stdout.toString(),
-    err: result.stderr.toString().trim(),
-  };
-}
-
 /** The commit a task's branch points at, local first and then the remote. */
 export function branchHead(
   repositoryPath: string,
@@ -494,7 +470,7 @@ function attributesOf(
 ): ReadonlyMap<string, Attributes> {
   const map = new Map<string, Attributes>();
   if (paths.length === 0) return map;
-  const result = gitZ(
+  const result = git(
     repositoryPath,
     [
       "check-attr",
@@ -505,7 +481,7 @@ function attributesOf(
       "diff",
       "binary",
     ],
-    `${paths.join("\0")}\0`,
+    { raw: true, input: `${paths.join("\0")}\0` },
   );
   if (!result.ok) return map;
   const parts = result.out.split("\0");
@@ -545,14 +521,11 @@ function changesOf(
   sha: string,
 ): ReadonlyMap<string, Change> {
   const map = new Map<string, Change>();
-  const result = gitZ(repositoryPath, [
-    "diff",
-    "--name-status",
-    "-M",
-    "-z",
-    base,
-    sha,
-  ]);
+  const result = git(
+    repositoryPath,
+    ["diff", "--name-status", "-M", "-z", base, sha],
+    { raw: true },
+  );
   if (!result.ok) return map;
   const parts = result.out.split("\0");
   for (let index = 0; index < parts.length; ) {
@@ -592,14 +565,11 @@ function diffsOf(
   base: string,
   sha: string,
 ): readonly FileDiff[] {
-  const numstat = gitZ(repositoryPath, [
-    "diff",
-    "--numstat",
-    "-M",
-    "-z",
-    base,
-    sha,
-  ]);
+  const numstat = git(
+    repositoryPath,
+    ["diff", "--numstat", "-M", "-z", base, sha],
+    { raw: true },
+  );
   if (!numstat.ok) return [];
   const changes = changesOf(repositoryPath, base, sha);
   const files: FileDiff[] = [];
@@ -2141,17 +2111,21 @@ export async function runReview(
   );
   // The lines the task's own change added, for the pre-existing rules.
   const own: LineMap = addedLinesOf(
-    gitZ(context.repository.path, [
-      "-c",
-      "core.quotepath=false",
-      "diff",
-      "-U0",
-      "--no-color",
-      "--no-ext-diff",
-      "-M",
-      base,
-      sha,
-    ]).out,
+    git(
+      context.repository.path,
+      [
+        "-c",
+        "core.quotepath=false",
+        "diff",
+        "-U0",
+        "--no-color",
+        "--no-ext-diff",
+        "-M",
+        base,
+        sha,
+      ],
+      { raw: true },
+    ).out,
   );
   const reworkPrompt: ReworkPrompt | undefined =
     rework === undefined

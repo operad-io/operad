@@ -6,27 +6,14 @@
  */
 
 import { messageOf, type PluginBaseContext } from "@operad-io/engine";
+import { git as runGit, type GitResult } from "./git.ts";
 import { listRepositories } from "./service.ts";
 import { readDevSettings } from "./settings.ts";
 
-interface GitResult {
-  readonly ok: boolean;
-  readonly out: string;
-  readonly err: string;
-}
-
 function git(cwd: string, args: readonly string[]): GitResult {
-  const result = Bun.spawnSync({
-    cmd: ["git", "-C", cwd, ...args],
-    stdout: "pipe",
-    stderr: "pipe",
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-  });
-  return {
-    ok: result.exitCode === 0,
-    out: result.stdout.toString().trim(),
-    err: result.stderr.toString().trim(),
-  };
+  // The init check must never wait for a credential prompt; the shared runner
+  // retries an empty success under load.
+  return runGit(cwd, args, { env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
 }
 
 /** Git's own explanation, every line of it, or a plain note when it said nothing. */
