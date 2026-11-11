@@ -19,6 +19,31 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
       path: "dev.json",
       schema: {
         type: "object",
+        $defs: {
+          checkCommand: {
+            oneOf: [
+              { type: "string", minLength: 1 },
+              {
+                type: "object",
+                properties: {
+                  run: { type: "string", minLength: 1 },
+                  failed: {
+                    type: "object",
+                    properties: {
+                      match: { type: "string", minLength: 1 },
+                      rerun: { type: "string", minLength: 1 },
+                      max: { type: "integer", minimum: 1 },
+                    },
+                    required: ["match", "rerun"],
+                    additionalProperties: false,
+                  },
+                },
+                required: ["run"],
+                additionalProperties: false,
+              },
+            ],
+          },
+        },
         properties: {
           concurrency: {
             type: "integer",
@@ -41,7 +66,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
             properties: {
               commands: {
                 type: "array",
-                items: { type: "string", minLength: 1 },
+                items: { $ref: "#/$defs/checkCommand" },
                 default: [],
                 editable: true,
                 description:

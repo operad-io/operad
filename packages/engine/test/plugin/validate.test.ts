@@ -297,7 +297,7 @@ describe("plugin registry validation", () => {
                 args: {
                   type: "object",
                   properties: {
-                    title: { type: "string", pattern: "^a" },
+                    title: { type: "string", format: "email" },
                   },
                 } as never,
                 when: () => true,
@@ -308,7 +308,7 @@ describe("plugin registry validation", () => {
         ]),
     );
     expect(error.message).toContain('plugin "a"');
-    expect(error.message).toContain('unknown keyword "pattern"');
+    expect(error.message).toContain('unknown keyword "format"');
   });
 
   test("rejects a note property that is not a string", () => {
