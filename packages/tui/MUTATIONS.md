@@ -307,3 +307,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0229-M1 | packages/tui/src/state.ts | indented a child's prefix by two cells instead of three, so connectors fell left of the parent's glyph | `the tree's drawn connectors > a chain hangs each connector under its parent's glyph` |
+
+## T-0297 — follow-ups from the flaky-test work
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0297-M1 | packages/tui/src/app.ts | a live event's bare id was sent as the object request even when a listed row knew its type | `live updates in the shell > an event refetches Pending once per window and only its own row` |

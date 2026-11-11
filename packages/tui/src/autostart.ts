@@ -245,7 +245,7 @@ export async function ensureServer(options: EnsureServerOptions): Promise<string
   }
   if ((options.lockHeld ?? lockHeld)(serveLockPath(home))) {
     throw new TuiStartError(
-      `an operad serve already runs for this home but does not answer at ${url}; check http.enabled, http.listen and http.port in config.json`,
+      `an operad serve already runs for this home but does not answer on ${url}; check http.enabled, http.listen and http.port in config.json`,
     );
   }
   if (options.spawn === undefined) {
@@ -275,7 +275,7 @@ export async function ensureServer(options: EnsureServerOptions): Promise<string
       if (!lockCheck(serveLockPath(home))) {
         if (portInUse(readSince(log, logBefore))) {
           throw new TuiStartError(
-            `operad serve could not start: port ${config.http.port} is in use and nothing answers on ${url}; an operad serve of this home that still runs does not answer on ${url}; log ${log}:\n${tailOf(log)}`,
+            `operad serve could not start: port ${config.http.port} is in use and does not answer on ${url}; another program may hold the port; log ${log}:\n${tailOf(log)}`,
           );
         }
         throw new TuiStartError(
@@ -293,10 +293,10 @@ export async function ensureServer(options: EnsureServerOptions): Promise<string
   if (adopted) {
     // The serve that holds the home lock is not ours and did not answer.
     throw new TuiStartError(
-      `an operad serve already runs for this home but does not answer at ${url} within ${Math.round(timeout / 1000)} seconds; check http.enabled, http.listen and http.port in config.json; log ${log}:\n${tailOf(log)}`,
+      `an operad serve already runs for this home but does not answer on ${url} within ${Math.round(timeout / 1000)} seconds; check http.enabled, http.listen and http.port in config.json; log ${log}:\n${tailOf(log)}`,
     );
   }
   throw new TuiStartError(
-    `operad serve did not answer at ${url} within ${Math.round(timeout / 1000)} seconds; log ${log}:\n${tailOf(log)}`,
+    `operad serve did not answer on ${url} within ${Math.round(timeout / 1000)} seconds; log ${log}:\n${tailOf(log)}`,
   );
 }

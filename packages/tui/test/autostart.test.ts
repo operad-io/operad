@@ -205,6 +205,7 @@ describe("ensureServer", () => {
       const message = (error as Error).message;
       expect(message).toContain("is in use");
       expect(message).toContain("does not answer on http:");
+      expect(message).not.toContain("an operad serve of this home");
       expect(message).not.toContain("exited at once");
     } finally {
       await cleanup();
@@ -233,7 +234,7 @@ describe("ensureServer", () => {
       }).catch((e: unknown) => e);
       expect(error).toBeInstanceOf(TuiStartError);
       const message = (error as Error).message;
-      expect(message).toContain("already runs for this home but does not answer at");
+      expect(message).toContain("already runs for this home but does not answer on");
       expect(message).not.toContain("did not answer at");
     } finally {
       await cleanup();
