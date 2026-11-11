@@ -113,7 +113,6 @@ async function declareRepositoryFlows(
       name,
       graph: compileDevFlow(name, spec.stages, { gradingName: flowName }),
     };
-    console.error("DEBUG dev declare", start.name);
     ctx.declareFlow(start.graph);
     named.set(flowName, start);
     if (flowName === "default") fallback = start;

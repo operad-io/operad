@@ -28,31 +28,6 @@ const CLI_ENTRY = fileURLToPath(new URL("../bin/operad.ts", import.meta.url));
 const FAKE_HARNESS = fileURLToPath(new URL("./fixtures/fake-harness.ts", import.meta.url));
 const ENGINE = fileURLToPath(new URL("../../engine/src/index.ts", import.meta.url));
 
-
-function allFiles(directory: string, prefix = ""): string[] {
-  const paths: string[] = [];
-  let names: string[] = [];
-  try {
-    names = readdirSync(directory).sort();
-  } catch {
-    return paths;
-  }
-  for (const name of names) {
-    if (name === ".git") continue;
-    const path = join(directory, name);
-    const shown = prefix === "" ? name : `${prefix}/${name}`;
-    try {
-      if (readdirSync(path).length >= 0) {
-        paths.push(...allFiles(path, shown));
-        continue;
-      }
-    } catch {
-      paths.push(shown);
-    }
-  }
-  return paths;
-}
-
 interface RunResult {
   readonly code: number;
   readonly out: string;
@@ -221,22 +196,7 @@ async function fixture(options: {
   ]);
   git(seed, ["remote", "add", "origin", origin]);
   git(seed, ["push", "-q", "-u", "origin", "main"]);
-  git(root, ["clone", "-q", origin, repository]);
-  const seedSettings = readFileSync(join(seed, ".operad", "dev.json"), "utf8");
-  const tree = git(seed, ["ls-tree", "-r", "--name-only", "HEAD"]);
-  const show = git(seed, ["show", "HEAD:.operad/dev.json"]);
-  const status = git(seed, ["status", "--porcelain"]);
-  if (!tree.split("\n").includes(".operad/dev.json") || show !== seedSettings) {
-    throw new Error(
-      `seed commit lost its settings: flows=${JSON.stringify(options.flows)}\nseed: ${seedSettings}\nshow: ${show}\ntree: ${tree}\nstatus: ${status}`,
-    );
-  }
-  const clonedSettings = readFileSync(join(repository, ".operad", "dev.json"), "utf8");
-  if (seedSettings !== clonedSettings) {
-    throw new Error(
-      `clone settings differ: flows=${JSON.stringify(options.flows)}\nseed: ${seedSettings}\nclone: ${clonedSettings}\nseed tree: ${tree}`,
-    );
-  }
+  git(root, ["clone", "-q", "-b", "main", origin, repository]);
 
   const home = join(root, "home");
   mkdirSync(home, { recursive: true });
@@ -360,22 +320,7 @@ async function runFlow(
     );
   } catch (error) {
     const seen = existsSync(output) ? readFileSync(output, "utf8") : "";
-    const files = allFiles(prepared.root).filter((path) => path.includes("flow") || path.includes("store"));
-    let settings = "";
-    try {
-      settings = readFileSync(join(repository, ".operad", "dev.json"), "utf8");
-    } catch {
-      settings = "no dev.json";
-    }
-    let run = "";
-    try {
-      const runs = join(storeRoot, "runs");
-      const name = readdirSync(runs).find((item) => item.endsWith(".jsonl"));
-      run = name === undefined ? "no run file" : readFileSync(join(runs, name), "utf8");
-    } catch {
-      run = "no run dir";
-    }
-    throw new Error(`${error instanceof Error ? error.message : String(error)}\n${seen}\nfiles: ${files.join(", ")}\ndev.json: ${settings}\nrun: ${run}`);
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\n${seen}`);
   } finally {
     await stop();
   }

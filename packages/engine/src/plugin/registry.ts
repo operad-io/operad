@@ -456,7 +456,6 @@ export class PluginRegistry {
 
   /** Loads flows an earlier process declared, so a run can find its graph. */
   private loadDeclaredFlows(): void {
-    console.error("DEBUG loadDeclaredFlows", this.store.kind, this.store.root);
     if (this.store.kind !== "file") return;
     for (const stored of readDeclaredFlows(this.store.root)) {
       let flow: FlowDefinition;
@@ -667,7 +666,6 @@ export class PluginRegistry {
    * repository's settings change.
    */
   private declareFlow(pluginName: string, raw: FlowDefinition): void {
-    console.error("DEBUG declareFlow", pluginName, raw.name, this.store.kind, this.store.root);
     let flow: FlowDefinition;
     try {
       flow = validateFlow(raw, this.stepTypes());
