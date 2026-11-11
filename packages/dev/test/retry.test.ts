@@ -238,6 +238,17 @@ function waitingReasons(w: World): readonly string[] {
     .map((event) => String((event.data as { reason?: unknown } | undefined)?.reason));
 }
 
+/** Each waiting announcement with the task it belongs to, sorted by task. */
+function waitingByTask(w: World): readonly { readonly task: string; readonly reason: string }[] {
+  return w.events
+    .filter((event) => event.type === "dev.waiting")
+    .map((event) => {
+      const data = event.data as { task?: unknown; reason?: unknown } | undefined;
+      return { task: String(data?.task), reason: String(data?.reason) };
+    })
+    .sort((a, b) => a.task.localeCompare(b.task));
+}
+
 /** A clock the test moves by hand; every wait returns at once. */
 function manualClock(start = 1_000_000_000): { advance(ms: number): void } {
   let now = start;
@@ -391,7 +402,9 @@ describe("a step that is not loaded, for several tasks", () => {
     expect(worker.state.calls).toBe(2);
     // Each task waits for a reason of its own (the fake worker changed
     // nothing), not because the step was missing.
-    expect(waitingReasons(w)).toEqual(["work did nothing", "work did nothing"]);
+    expect(waitingByTask(w)).toEqual(
+      [...w.tasks].sort().map((task) => ({ task, reason: "work did nothing" })),
+    );
   });
 });
 
