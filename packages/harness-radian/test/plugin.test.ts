@@ -30,15 +30,13 @@ import {
   cleanupTempRoots,
   fakeRadian,
   fakeRadianNamed,
-  manualClock,
   processesUnder,
   stopTestProcesses,
   tempRoot,
   tempRoots,
-  waitForFile,
   waitUntil,
-  type ManualClock,
 } from "./support.ts";
+import { alive, manualClock, waitForFile, type ManualClock } from "@operad-io/harness-process/test-support";
 
 afterAll(cleanupTempRoots);
 
@@ -107,15 +105,6 @@ async function setup(
 
 function dataOf(result: PluginStepResult): Record<string, unknown> {
   return (result.data ?? {}) as Record<string, unknown>;
-}
-
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function runAgent(
