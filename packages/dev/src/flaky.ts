@@ -10,11 +10,12 @@
  * exactly one.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ObjectStore, StoredObject } from "@operad-io/engine";
 import { messageOf, type SecretStore } from "@operad-io/engine";
 import type { MachineLoad } from "@operad-io/engine/platform";
+import type { CheckLoad } from "./notcode.ts";
 import {
   bareId,
   changeClock,
@@ -74,9 +75,9 @@ export interface FlakyOccurrence {
   /** The "(fail)" line and the lines before it; empty when the log was gone. */
   readonly excerpt: string;
   /**
-   * Set when the machine was busy (load at or above `check.loadLimit`) when the
-   * test passed on rerun. Such a pass is recorded and never counts toward a
-   * task: a rerun that passes on a busy machine says little about the test.
+   * Set when the machine was busy when the test failed. Such a failure is
+   * recorded and never counts toward a task: a rerun on a busy machine says
+   * little about the test.
    */
   readonly load?: MachineLoad | undefined;
 }
@@ -84,6 +85,50 @@ export interface FlakyOccurrence {
 /** The passes that count toward a task: the ones seen on an idle machine. */
 function countedOf(record: FlakyRecord): readonly FlakyOccurrence[] {
   return record.occurrences.filter((entry) => entry.load === undefined);
+}
+
+/** `check.flakyLoadLimit`: the setting, else twice the number of cores. */
+export function flakyLoadLimitOf(configured: number | undefined, load: MachineLoad): number {
+  return configured ?? load.cores * 2;
+}
+
+/** True when a reading is above the limit. */
+function overLimit(load: MachineLoad, configured: number | undefined): boolean {
+  return load.load1 > flakyLoadLimitOf(configured, load);
+}
+
+/** The load readings a check handed over: the start and the end of each run. */
+interface LoadInput {
+  readonly load?: MachineLoad | undefined;
+  readonly startLoad?: MachineLoad | undefined;
+  readonly endLoad?: MachineLoad | undefined;
+  readonly loads?: readonly CheckLoad[] | undefined;
+  readonly loadLimit?: number | undefined;
+}
+
+/** The first reading above the limit, or undefined when the check ran idle. */
+function busyLoad(input: LoadInput): MachineLoad | undefined {
+  const readings: MachineLoad[] = [];
+  for (const run of input.loads ?? []) readings.push(run.start, run.end);
+  if (input.startLoad !== undefined) readings.push(input.startLoad);
+  if (input.endLoad !== undefined) readings.push(input.endLoad);
+  if (input.load !== undefined) readings.push(input.load);
+  return readings.find((reading) => overLimit(reading, input.loadLimit));
+}
+
+/** The history and check-log line for a failure skipped as seen under load. */
+function skippedNotice(name: string, load: MachineLoad): string {
+  return `flaky test "${name}" skipped: seen under load ${load.load1} on ${load.cores} cores`;
+}
+
+/** Adds the skip line to the check's own log; a log that cannot be written stays as it is. */
+function noteCheckLog(path: string | undefined, text: string): void {
+  if (path === undefined) return;
+  try {
+    appendFileSync(path, `${text}\n`);
+  } catch {
+    // The history still carries the line.
+  }
 }
 
 export interface FlakyRecord {
@@ -409,8 +454,15 @@ export interface FlakyInput {
   readonly names: readonly string[];
   /** The check log, which still holds the first run's output. */
   readonly log: string | undefined;
-  /** The machine's load when the passes happened, when it was at or above the limit. */
+  /** One load reading for the check, when the caller has only that. */
   readonly load?: MachineLoad | undefined;
+  /** The load at the start and the end of the check, when it is one run. */
+  readonly startLoad?: MachineLoad | undefined;
+  readonly endLoad?: MachineLoad | undefined;
+  /** The load at the start and the end of each run of the check. */
+  readonly loads?: readonly CheckLoad[] | undefined;
+  /** `check.flakyLoadLimit`: the load above which a failure is not a flaky test. */
+  readonly loadLimit?: number | undefined;
   /** `check.flakyTask`; 0 turns the proposal off. */
   readonly threshold: number;
   /** `check.flakyPlan`: the plan to propose in, by id. */
@@ -441,6 +493,10 @@ export async function trackFlakyTests(input: FlakyInput): Promise<string | undef
   const { store, repository } = input;
   const log = readLog(input.log);
   const at = changeClock.now();
+  const busy = busyLoad(input);
+  // A test seen under load this time is skipped, even when an earlier idle
+  // count already reached the threshold: that failure is not the trigger.
+  const skippedNames = busy === undefined ? new Set<string>() : new Set(input.names);
   await withRepoLock(store, repository.name, async (fresh) => {
     for (const name of input.names) {
       const key = recordKey(fresh.name, name);
@@ -463,7 +519,10 @@ export async function trackFlakyTests(input: FlakyInput): Promise<string | undef
         }
       }
       // While its task is open the count does not grow: the fix is on its way.
-      if (record.task !== undefined) continue;
+      if (record.task !== undefined) {
+        if (busy !== undefined) notices.push(skippedNotice(name, busy));
+        continue;
+      }
       const found = failureExcerpt(log, name);
       const file = found.file ?? searchTestFile(fresh.path, name);
       const excerpt = maskSecrets(found.excerpt, input.secrets ?? [], input.env);
@@ -471,10 +530,11 @@ export async function trackFlakyTests(input: FlakyInput): Promise<string | undef
         ...record,
         occurrences: [
           ...record.occurrences,
-          { task: input.taskId, at, file, excerpt, ...(input.load === undefined ? {} : { load: input.load }) },
+          { task: input.taskId, at, file, excerpt, ...(busy === undefined ? {} : { load: busy }) },
         ],
       };
       await store.put(FLAKY_TYPE, key, writableOf(record), "dev:flaky-count");
+      if (busy !== undefined) notices.push(skippedNotice(name, busy));
     }
     // Decide for every counted test of the repository: a crash after the count
     // was written and before the task was proposed is finished here.
@@ -482,6 +542,7 @@ export async function trackFlakyTests(input: FlakyInput): Promise<string | undef
       if (keyRepository(object.id) !== fresh.name) continue;
       const record = recordOf(object.data);
       if (record === undefined || record.task !== undefined) continue;
+      if (skippedNames.has(record.name)) continue;
       if (countedOf(record).length < input.threshold) continue;
       const notice = await propose(input, fresh, object.id, record);
       if (notice !== undefined) notices.push(notice);
@@ -566,6 +627,10 @@ export interface FlakyReport {
   readonly threshold: number;
   readonly flakyPlan?: string | undefined;
   readonly load?: MachineLoad | undefined;
+  readonly startLoad?: MachineLoad | undefined;
+  readonly endLoad?: MachineLoad | undefined;
+  readonly loads?: readonly CheckLoad[] | undefined;
+  readonly loadLimit?: number | undefined;
   readonly check: {
     readonly passedOnRerun: readonly string[];
     readonly outcome: { readonly data?: Record<string, unknown> | undefined } | undefined;
@@ -594,7 +659,8 @@ export async function reportFlakyTests(report: FlakyReport): Promise<string | un
   if (report.threshold <= 0 || report.check.passedOnRerun.length === 0) return undefined;
   const log = report.check.outcome?.data?.log;
   try {
-    return await trackFlakyTests({
+    const busy = busyLoad(report);
+    const notice = await trackFlakyTests({
       store: report.ctx.store,
       secrets: await secretValues(report.ctx.secrets),
       repository: report.repository,
@@ -604,7 +670,17 @@ export async function reportFlakyTests(report: FlakyReport): Promise<string | un
       threshold: report.threshold,
       flakyPlan: report.flakyPlan,
       load: report.load,
+      startLoad: report.startLoad,
+      endLoad: report.endLoad,
+      loads: report.loads,
+      loadLimit: report.loadLimit,
     });
+    // The check's log says why a failure was skipped, as its history does.
+    if (busy !== undefined && notice !== undefined) {
+      await report.ctx.logger.write(notice);
+      noteCheckLog(typeof log === "string" ? log : undefined, notice);
+    }
+    return notice;
   } catch (error) {
     await report.ctx.logger.write(`could not propose a task for a flaky test: ${messageOf(error)}`);
     return undefined;

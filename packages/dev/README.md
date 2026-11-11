@@ -420,10 +420,13 @@ same way and does not send the task back to work; in a batch, the other tasks
 integrate alone. A real assertion failure goes to the worker as before.
 
 A test that fails and then passes on rerun is still a bug until shown
-otherwise, but only for a run on an idle machine: when the load was at or above
-`check.loadLimit` the pass is recorded with the load (`operad reruns` still
-counts it) and counts toward no task. Below it, dev proposes the task as
-`check.flakyTask` says.
+otherwise, but only for a run on an idle machine. The check reads the load when
+its command starts and when it ends; if either reading is above
+`check.flakyLoadLimit` (default: twice the number of cores), the failure was
+seen under load. It is recorded with the load (`operad reruns` still counts it)
+and counts toward no task; the check log and the task's history say that it was
+skipped, with the load and the core count. Below the limit, dev proposes the
+task as `check.flakyTask` says.
 
 ## Review fallback and retry
 
@@ -639,7 +642,8 @@ The file holds the repository's work settings:
 | `gate.commandTimeoutSecs` | `1800` | the longest one gate command may run |
 | `check.rerun` | `1` | how many times a failed gate or integration check runs again before it counts as failed; `0` turns it off; a timeout is never rerun. A pass on the rerun is a pass, noted in the task's Changes and the check log holds both runs |
 | `check.flakyTask` | `2` | how many times one test may pass only on its rerun in this repository before dev proposes a task `flaky-<test>` (title "Fix the flaky test: <test>") in the flaky-test plan (see `check.flakyPlan`), with the test, the count, the tasks and times, the last two failures and the stress command in its brief; `0` turns it off. The test's file is the one whose section of the check log holds the test's own `(fail)` line, never the summary bun prints again after the last file; when the log does not give it, dev searches the repository's test files for the test's name and, if that does not find exactly one file, the brief says the file is unknown. The task's area is the package that file is in (`packages/<name>/...` gives `<name>`; `tests` when the file is unknown). The brief's stress command has `--runs <N>`; N follows the sizing rule from the repository's CLAUDE.md quoted below it. One task per test until it is merged or cancelled, then the count restarts at 0. `operad reruns` shows the task beside its test |
-| `check.loadLimit` | the number of cores | the 1-minute load average below which the machine is quiet enough to trust a check. A check that timed out, was killed by a signal nobody sent, or failed only by test timeouts waits for the load to fall below it before it runs once more (see Checks that are not the code); a test that passes on rerun at or above it is recorded with the load and proposes no flaky-test task |
+| `check.loadLimit` | the number of cores | the 1-minute load average below which the machine is quiet enough to trust a check. A check that timed out, was killed by a signal nobody sent, or failed only by test timeouts waits for the load to fall below it before it runs once more (see Checks that are not the code) |
+| `check.flakyLoadLimit` | twice the number of cores | the 1-minute load average above which a failed test was seen under load. The check reads the load when its command starts and when it ends; a reading above this limit marks the failure as skipped, so it opens or updates no flaky-test task, and the check log and the task's history say so with the load and the core count |
 | `check.flakyPlan` | unset | the id of the plan the flaky-test tasks are proposed in. When it is unset, or that plan is finished or cancelled, dev makes a plan `flaky-tests` (title "Flaky tests") once, confirmed, with the auto level and priority of the repository's newest confirmed plan (`off` and `P3` with none), and uses it until it is finished or cancelled |
 | `reviewer.use` | `harness-radian/agent` | the harness step that reviews the diff |
 | `reviewer.args` | `[]` | the arguments every review gets |

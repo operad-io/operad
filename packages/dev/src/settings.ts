@@ -142,6 +142,11 @@ export interface CheckSettings {
    * trust a check. Unset: the number of cores.
    */
   readonly loadLimit?: number | undefined;
+  /**
+   * The 1-minute load above which a failed test was seen under load and never
+   * counts toward a flaky-test task. Unset: twice the number of cores.
+   */
+  readonly flakyLoadLimit?: number | undefined;
 }
 
 /** What a task does when its step failed for a reason outside its own work. */
@@ -621,7 +626,8 @@ function checkSettings(value: unknown, field: string): CheckSettings {
     if (key !== "rerun" &&
       key !== "flakyTask" &&
       key !== "flakyPlan" &&
-      key !== "loadLimit") {
+      key !== "loadLimit" &&
+      key !== "flakyLoadLimit") {
       throw new DevError(`${field}.${key}`, "is not a check setting");
     }
   }
@@ -640,6 +646,9 @@ function checkSettings(value: unknown, field: string): CheckSettings {
     ...(value.loadLimit === undefined
       ? {}
       : { loadLimit: positiveNumber(value.loadLimit, `${field}.loadLimit`) }),
+    ...(value.flakyLoadLimit === undefined
+      ? {}
+      : { flakyLoadLimit: positiveNumber(value.flakyLoadLimit, `${field}.flakyLoadLimit`) }),
   };
 }
 

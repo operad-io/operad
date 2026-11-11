@@ -21,7 +21,7 @@ import { dirname, join, resolve } from "node:path";
 import { checkPlaces } from "./places.ts";
 import { linkWorkspacePackages, runPrepare, stepOptions } from "./prepare.ts";
 import { runCheckCommands } from "./rerun.ts";
-import { isLoaded, runCheckSteadily } from "./notcode.ts";
+import { runCheckSteadily } from "./notcode.ts";
 import { reportFlakyTests } from "./flaky.ts";
 import { recordRerunPasses } from "./reruns.ts";
 import {
@@ -369,7 +369,8 @@ export async function runVerify(
     threshold: context.settings.check.flakyTask,
     flakyPlan: context.settings.check.flakyPlan,
     check: checked,
-    ...(isLoaded(steady.load, context.settings.check.loadLimit) ? { load: steady.load } : {}),
+    loads: steady.loads,
+    loadLimit: context.settings.check.flakyLoadLimit,
   });
   const { outcome, hostError } = checked;
   // A notice joins the check's own note, so the task's Changes and the step's history say it.

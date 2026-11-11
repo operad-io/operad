@@ -14,8 +14,8 @@
  * It writes `fake-stream-started` to stderr when a call begins.
  */
 
-import { appendFileSync, existsSync, watch } from "node:fs";
-import { dirname } from "node:path";
+import { appendFileSync } from "node:fs";
+import { waitForRelease } from "@operad-io/harness-process/test-fake-lines";
 import { FakeProvider, type FakeResponse, type FakeToolCall } from "./fake-provider.ts";
 import { main } from "../src/worker.ts";
 
@@ -29,27 +29,6 @@ interface ScriptEntry {
   toolCall?: FakeToolCall;
 }
 
-/**
- * Resolves when the release file exists. The directory watch wakes it at once;
- * a watch can miss an event under load, so a look every 100 ms backs it.
- */
-function released(): Promise<void> {
-  const release = process.env["FAKE_RELEASE"];
-  if (release === undefined || existsSync(release)) return Promise.resolve();
-  const path = release;
-  return new Promise((resolve) => {
-    const check = (): void => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      clearInterval(timer);
-      resolve();
-    };
-    const watcher = watch(dirname(path), check);
-    const timer = setInterval(check, 100);
-    check();
-  });
-}
-
 const provider = new FakeProvider();
 const script = JSON.parse(process.env["FAKE_SCRIPT"] ?? "[]") as ScriptEntry[];
 for (const entry of script) {
@@ -58,7 +37,7 @@ for (const entry of script) {
   if (entry.noPrice === true) response.noPrice = true;
   if (entry.toolCall !== undefined) response.toolCall = entry.toolCall;
   if (entry.hang === true) response.before = new Promise<void>(() => {});
-  if (entry.gate === true) response.before = released();
+  if (entry.gate === true) response.before = waitForRelease(process.env["FAKE_RELEASE"]);
   provider.enqueue(response);
 }
 
