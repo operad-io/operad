@@ -207,7 +207,7 @@ function cdTarget(words: readonly string[]): string | undefined {
   while (index < words.length && ASSIGNMENT_WORD.test(words.at(index) ?? "")) index += 1;
   while (words.at(index) === "builtin" || words.at(index) === "command") {
     index += 1;
-    while ((words.at(index) ?? "").startsWith("-") && words.at(index) !== "--") index += 1;
+    while ((words.at(index) ?? "").startsWith("-")) index += 1;
   }
   const name = words.at(index);
   if (name !== "cd" && name !== "pushd") return undefined;
