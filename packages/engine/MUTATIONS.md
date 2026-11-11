@@ -473,3 +473,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0216-M3 | packages/engine/src/plugin/registry.ts | a step's events were not given to the caller's `observe` | `a step's events > a caller that observes a step sees its events besides the destination` |
+| T-0250-M1 | packages/engine/src/plugin/sqlite-store.ts | the constructor skipped `setBusyTimeout`, so a write met SQLITE_BUSY at once | `a write waits for another process's write transaction and succeeds after it commits` |

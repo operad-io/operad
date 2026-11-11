@@ -12,6 +12,7 @@ import {
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { ViewError } from "@operad-io/engine";
+import { isBusy } from "@operad-io/engine/platform";
 import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
 import { git } from "./git.ts";
 import { withRepositoryLock } from "./lock.ts";
@@ -730,8 +731,37 @@ async function totalsOfTasks(store: ObjectStore, planKey: string): Promise<PlanC
   return totals;
 }
 
-/** Recomputes the counts a plan row reads, writing the plan only on a change. */
+/**
+ * Recomputes the counts a plan row reads, writing the plan only on a change.
+ *
+ * The counts are a cache the scheduler refreshes on every tick, and callers run
+ * this after the write that was the command's work. A store another process
+ * keeps busy past the wait must not turn that finished work into a reported
+ * failure (a retry would repeat it), so a busy store leaves the counts for the
+ * next tick.
+ */
 export async function refreshPlanCounts(
+  store: ObjectStore,
+  plan: StoredObject,
+): Promise<StoredObject> {
+  try {
+    return await recountPlan(store, plan);
+  } catch (error) {
+    if (isBusy(error)) return plan;
+    throw error;
+  }
+}
+
+/** `refreshPlanCounts` for a plan named by key; its read is tolerated the same way. */
+async function refreshPlanCountsOf(store: ObjectStore, key: string): Promise<void> {
+  try {
+    await refreshPlanCounts(store, await getPlan(store, key));
+  } catch (error) {
+    if (!isBusy(error)) throw error;
+  }
+}
+
+async function recountPlan(
   store: ObjectStore,
   plan: StoredObject,
 ): Promise<StoredObject> {
@@ -1195,8 +1225,7 @@ export async function updateTask(
     };
     const object = await writeTask(store, id, next, "dev:task-update");
     if (releases) {
-      const plan = await getPlan(store, storeKey(data.repository, data.plan));
-      await refreshPlanCounts(store, plan);
+      await refreshPlanCountsOf(store, storeKey(data.repository, data.plan));
     }
     return {
       object,
@@ -1263,11 +1292,7 @@ async function changeTaskPhase(
       { ...latest, phase, run, brief },
       `dev:task-${phase}`,
     );
-    const plan = await getPlan(
-      store,
-      storeKey(latest.repository, latest.plan),
-    );
-    await refreshPlanCounts(store, plan);
+    await refreshPlanCountsOf(store, storeKey(latest.repository, latest.plan));
     return written;
   });
 }
@@ -1914,11 +1939,7 @@ export async function cancelTask(
         },
         "dev:task-cancel",
       );
-      const plan = await getPlan(
-        store,
-        storeKey(data.repository, data.plan),
-      );
-      await refreshPlanCounts(store, plan);
+      await refreshPlanCountsOf(store, storeKey(data.repository, data.plan));
       return { task: written, runs };
     },
   );
@@ -1963,8 +1984,7 @@ export async function pauseTask(
       },
       "dev:task-pause",
     );
-    const plan = await getPlan(store, storeKey(data.repository, data.plan));
-    await refreshPlanCounts(store, plan);
+    await refreshPlanCountsOf(store, storeKey(data.repository, data.plan));
     return { task: written, runs };
   });
   await cancelRuns(options.runs, paused.runs);
@@ -1988,8 +2008,7 @@ export async function resumeTask(
       { ...data, phase: "ready", brief: appendChange(data.brief, "ready") },
       "dev:task-resume",
     );
-    const plan = await getPlan(store, storeKey(data.repository, data.plan));
-    await refreshPlanCounts(store, plan);
+    await refreshPlanCountsOf(store, storeKey(data.repository, data.plan));
     return written;
   });
 }
