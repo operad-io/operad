@@ -805,3 +805,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0292-M1 | packages/dev/src/mainclone.ts | a rerun that finds the sha already in HEAD never compared the lock marker, so it skipped the missed install (the marker check replaced by `false`) | `a kill between the fast-forward and the install is repaired by the rerun` (packages/dev/test/mainclone.test.ts) |
+## T-0294 — the flaky-task gate test reads an injected quiet load
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0294-M1 | packages/dev/test/gate.test.ts | the injected load was a busy one (18 on 10 cores) again, so the rerun passes never counted | `dev/verify reruns only the failed tests > a test that reaches check.flakyTask is proposed in the flaky-tests plan, with no notice` (packages/dev/test/gate.test.ts) |
