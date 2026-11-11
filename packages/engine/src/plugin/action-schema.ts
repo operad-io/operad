@@ -18,6 +18,9 @@ const KEYWORDS = new Set([
   "items",
   "minItems",
   "exclusiveMinimum",
+  "exclusiveMaximum",
+  "deprecated",
+  "readOnly",
   "minProperties",
   "pattern",
   "const",
@@ -155,6 +158,7 @@ function normalizeSchema(
     "maxLength",
     "minItems",
     "exclusiveMinimum",
+    "exclusiveMaximum",
     "minProperties",
   ] as const) {
     const item = value[key];
@@ -243,6 +247,9 @@ function normalizeSchema(
     ...(numeric.minProperties === undefined
       ? {}
       : { minProperties: numeric.minProperties }),
+    ...(numeric.exclusiveMaximum === undefined
+      ? {}
+      : { exclusiveMaximum: numeric.exclusiveMaximum }),
     ...(pattern === undefined ? {} : { pattern: pattern as string }),
     ...(Object.hasOwn(value, "const") ? { const: value.const } : {}),
     ...(oneOf === undefined ? {} : { oneOf }),
@@ -415,6 +422,9 @@ function checkValue(
     }
     if (schema.exclusiveMinimum !== undefined && value <= schema.exclusiveMinimum) {
       fail(label, field, `must be more than ${schema.exclusiveMinimum}`);
+    }
+    if (schema.exclusiveMaximum !== undefined && value >= schema.exclusiveMaximum) {
+      fail(label, field, `must be less than ${schema.exclusiveMaximum}`);
     }
   }
 

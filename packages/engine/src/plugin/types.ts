@@ -697,6 +697,7 @@ export interface ActionArgSchema {
   readonly items?: ActionArgSchema | undefined;
   readonly minItems?: number | undefined;
   readonly exclusiveMinimum?: number | undefined;
+  readonly exclusiveMaximum?: number | undefined;
   readonly minProperties?: number | undefined;
   /** A regular expression the string must match somewhere. */
   readonly pattern?: string | undefined;

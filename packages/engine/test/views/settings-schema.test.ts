@@ -138,6 +138,7 @@ describe("schema features the shipped schemas use", () => {
         color: { oneOf: [{ type: "string", pattern: "^#[0-9a-f]{6}$" }, { type: "integer", minimum: 0, maximum: 15 }] },
         stage: { const: "work" },
         n: { type: "integer", exclusiveMinimum: 0 },
+        share: { type: "number", exclusiveMaximum: 1, deprecated: true, readOnly: true },
         list: { type: "array", minItems: 1 },
         map: { type: "object", minProperties: 1 },
       },
@@ -147,6 +148,8 @@ describe("schema features the shipped schemas use", () => {
     expect(() => check(schema, { color: "red" })).toThrow("v.color: must be written as");
     expect(() => check(schema, { color: true })).toThrow("must be text written as");
     expect(() => check(schema, { stage: "x" })).toThrow('must be "work"');
+    expect(() => check(schema, { share: 0.5 })).not.toThrow();
+    expect(() => check(schema, { share: 1 })).toThrow("must be less than 1");
     expect(() => check(schema, { n: 0 })).toThrow("must be more than 0");
     expect(() => check(schema, { list: [] })).toThrow("at least 1 items");
     expect(() => check(schema, { map: {} })).toThrow("at least 1 fields");
