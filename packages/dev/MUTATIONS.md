@@ -790,3 +790,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0116-M3 | packages/tui/src/actions.ts | the main action was the first action again (the skip of ending actions removed) | `the main key skips an action that ends the object, and says none is available when only it is left` (packages/tui/test/actions.test.ts) |
+
+## T-0292 — check-load follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0292-M1 | packages/dev/src/mainclone.ts | a rerun that finds the sha already in HEAD never compared the lock marker, so it skipped the missed install (the marker check replaced by `false`) | `a kill between the fast-forward and the install is repaired by the rerun` (packages/dev/test/mainclone.test.ts) |

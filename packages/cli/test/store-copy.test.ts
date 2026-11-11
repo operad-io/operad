@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   FilePluginStore,
+  SqlitePluginStore,
   copyStore,
   LockHeldError,
   Runner,
@@ -469,6 +470,19 @@ describe("store copy", () => {
     }
     // Once the move is over the same answer goes through.
     expect((await run(home, ["cards:approve", "card:2"])).code).toBe(0);
+  });
+
+  test("a sqlite plugin store refuses a declaration or a write while the store is being moved", async () => {
+    const { root } = await seededHome();
+    const store = new SqlitePluginStore({ root: join(root, "plugins"), file: join(root, "plugin.sqlite") });
+    const moving = acquireLock(storeMoveLockPath(root));
+    try {
+      expect(() => store.declare("card", ["title"])).toThrow("store move is in progress");
+      expect(() => store.put("card", "9", {}, "late")).toThrow("store move is in progress");
+    } finally {
+      moving.release();
+      store.close();
+    }
   });
 
   test("a write to a sqlite source after it was read makes the copy back fail and leaves no target", async () => {

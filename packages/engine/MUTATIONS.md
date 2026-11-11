@@ -592,3 +592,9 @@ the row fields.
 | T-0240-M11 | packages/engine/src/markdown.ts | a code span with a longer backtick fence was not read as one span | `markdown fences > inline code written with a longer backtick fence is one span` |
 | T-0259-M2 | packages/engine/src/store-copy/copy.ts | the source fingerprint counted an empty `-wal` file as different from none, so a sqlite source in rollback-journal mode failed the copy on Linux | `store copy > copying out of a sqlite home in rollback-journal mode leaves its databases in WAL` (fails on the Linux check host) |
 | T-0189-M5 | packages/engine/src/plugin/registry.ts | the test-only call-declaration guard ignored `callsNamedByData`, so a step that calls steps named by data was refused | `calls > a step that calls steps named by data needs no declaration, and still starts without them` |
+
+## T-0292 — check-load follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0292-M2 | packages/engine/src/plugin/sqlite-store.ts | `declare` wrote without looking for the store-move lock (the `assertStoreNotMoving` call removed) | `a sqlite plugin store refuses a declaration or a write while the store is being moved` (packages/cli/test/store-copy.test.ts) |

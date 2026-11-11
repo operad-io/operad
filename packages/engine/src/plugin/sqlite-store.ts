@@ -177,6 +177,7 @@ export class SqlitePluginStore implements PluginStore {
   }
 
   declare(type: string, index: readonly string[]): void {
+    assertStoreNotMoving(dirname(this.location.file ?? this.root));
     this.db
       .query("INSERT OR IGNORE INTO declared_types (type) VALUES (?)")
       .run(type);

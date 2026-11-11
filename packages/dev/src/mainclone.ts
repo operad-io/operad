@@ -5,7 +5,52 @@
  * through git is ever used: no reset, rebase or stash.
  */
 
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { git } from "./steps.ts";
+
+const MARKER = join("node_modules", ".operad-installed-lock");
+
+function lockHash(repository: string): string | undefined {
+  try {
+    return createHash("sha256")
+      .update(readFileSync(join(repository, "bun.lock")))
+      .digest("hex");
+  } catch {
+    return undefined;
+  }
+}
+
+function readMarker(repository: string): string | undefined {
+  try {
+    return readFileSync(join(repository, MARKER), "utf8").trim();
+  } catch {
+    return undefined;
+  }
+}
+
+function writeMarker(repository: string): void {
+  const hash = lockHash(repository);
+  if (hash === undefined || !existsSync(join(repository, "node_modules"))) return;
+  try {
+    writeFileSync(join(repository, MARKER), `${hash}\n`);
+  } catch {
+    // The marker only lets a rerun notice a missed install.
+  }
+}
+
+function install(repository: string, run: CommandRunner): MainCloneOutcome {
+  const done = run(repository, ["bun", "install", "--frozen-lockfile"]);
+  if (done.ok) writeMarker(repository);
+  return done.ok
+    ? { updated: true, installed: true, note: "bun install --frozen-lockfile done" }
+    : {
+        updated: true,
+        installed: false,
+        note: `bun install --frozen-lockfile failed: ${lastLine(done.out)}`,
+      };
+}
 
 /** What a command runner reports. */
 export interface CommandResult {
@@ -75,8 +120,17 @@ export function updateMainClone(
   const before = git(repository, ["rev-parse", "HEAD"]);
   if (!before.ok) return { updated: false, note: `cannot read HEAD: ${before.err}` };
   if (git(repository, ["merge-base", "--is-ancestor", sha, "HEAD"]).ok) {
+    // A kill between the fast-forward and the install leaves the lock file
+    // ahead of what was installed: the marker of the last install tells.
+    const marker = readMarker(repository);
+    const hash = lockHash(repository);
+    if (marker !== undefined && hash !== undefined && marker !== hash) {
+      return install(repository, run);
+    }
     return { updated: true };
   }
+  // Remember what the clone has installed before the lock file can change.
+  if (readMarker(repository) === undefined) writeMarker(repository);
   const merge = git(repository, ["merge", "--ff-only", sha]);
   if (!merge.ok) {
     return {
@@ -93,12 +147,5 @@ export function updateMainClone(
     "bun.lock",
   ]);
   if (!changed.ok || changed.out.length === 0) return { updated: true };
-  const install = run(repository, ["bun", "install", "--frozen-lockfile"]);
-  return install.ok
-    ? { updated: true, installed: true, note: "bun install --frozen-lockfile done" }
-    : {
-        updated: true,
-        installed: false,
-        note: `bun install --frozen-lockfile failed: ${lastLine(install.out)}`,
-      };
+  return install(repository, run);
 }

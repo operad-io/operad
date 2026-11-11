@@ -804,6 +804,8 @@ export async function runIntegrate(
     // merging the same commit again into an empty candidate.
     const landed = alreadyOnMain();
     if (landed !== undefined) {
+      // The dead leader's note and batch are gone; main still has the base.
+      const landedBase = revParse(repository, `${landed.sha}^1`);
       return recordMerged(
         {
           result: "merged",
@@ -811,6 +813,7 @@ export async function runIntegrate(
           style: settings.integration.style,
           verified,
           candidate: landed.sha,
+          ...(landedBase === undefined ? {} : { base: landedBase }),
           head: head ?? null,
           headMoved,
           pushed: true,
