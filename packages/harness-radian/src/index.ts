@@ -5,7 +5,7 @@
  * used; the kernel never knows how radian is started.
  */
 
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mapRadianCall } from "./refusal.ts";
@@ -22,14 +22,21 @@ import {
   CONCURRENCY_SETTING,
   askNote,
   eventNote,
+  directoryError,
   findCommand,
   flagValue,
+  isRecord,
   JsonlLog,
   MAX_LINE_CHARS,
   OPERAD_SERVER,
   operadToolsOf,
+  optionalText,
+  paramsObject,
+  secs,
   serverCommand,
   standardUsage,
+  stringList,
+  text,
   type RawCost,
   type RawCounts,
   type UsageSource,
@@ -226,54 +233,6 @@ const PLUGIN_SETTINGS = {
   },
   additionalProperties: false as const,
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function paramsObject(params: unknown, at: string): Record<string, unknown> {
-  if (!isRecord(params)) {
-    throw new Error(`${at}: params: must be an object`);
-  }
-  return params;
-}
-
-function text(value: unknown, at: string): string {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`${at}: must be a non-empty string`);
-  }
-  return value;
-}
-
-function secs(value: unknown, at: string): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    throw new Error(`${at}: must be a positive number of seconds`);
-  }
-  return value;
-}
-
-function stringList(value: unknown, at: string): string[] {
-  if (value === undefined) return [];
-  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
-    throw new Error(`${at}: must be an array of strings`);
-  }
-  return [...value];
-}
-
-function optionalText(value: unknown, at: string): string | undefined {
-  if (value === undefined) return undefined;
-  return text(value, at);
-}
-
-/** The reason a directory cannot be a working directory, if it cannot. */
-async function directoryError(cwd: string): Promise<string | undefined> {
-  try {
-    const info = await stat(cwd);
-    return info.isDirectory() ? undefined : `cwd is not a directory: ${cwd}`;
-  } catch {
-    return `cwd does not exist: ${cwd}`;
-  }
-}
 
 interface ParsedResult {
   readonly sessionId: string | null;
