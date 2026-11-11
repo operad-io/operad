@@ -57,3 +57,9 @@ the row fields.
 | T-0188-M27 | packages/harness-radian/src/hook.ts | the hook exited 0 for a call the profile refuses | `the hook program denies with exit 2 and the reason for a write, a command that writes and a denied path` |
 | T-0188-M29 | packages/harness-radian/src/refusal.ts | a `patch` was judged only on its own `path`, not on the paths of its edits | `the hook program denies a patch in every form, an unknown tool and a user's MCP tool in a read-only directory` |
 | T-0188-M30 | packages/harness-radian/src/refusal.ts | a read-only directory let an unknown tool (a user's MCP server) run | `the hook program denies a patch in every form, an unknown tool and a user's MCP tool in a read-only directory` |
+
+## T-0240 — rework: multi-line log commands and code spans
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0240-M10 | packages/harness-radian/src/index.ts | the logged shell command no longer kept its line breaks (`keepLines` removed) | `harness-radian/agent > a multi-line command keeps its lines in the logged summary` |

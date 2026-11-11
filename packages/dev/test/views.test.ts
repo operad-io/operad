@@ -766,6 +766,10 @@ describe("dev views", () => {
     expect(readableLog(toolLines(`cd ${WT}; ${heredoc}`), { worktree: WT })).toEqual([
       "tool Bash 3s `python3 - <<'EOF' … (+3 lines)`",
     ]);
+    // A blank line inside the command counts as a line left.
+    expect(readableLog(toolLines("python3 - <<'EOF'\nprint(1)\n\nprint(2)\nEOF"))).toEqual([
+      "tool Bash 3s `python3 - <<'EOF' … (+4 lines)`",
+    ]);
     expect(readableLog(toolLines(`echo ${"x".repeat(300)}`))[0]).toBe(`tool Bash 3s \`echo ${"x".repeat(154)}…\``);
     const exact = `echo ${"y".repeat(155)}`;
     expect(exact).toHaveLength(160);

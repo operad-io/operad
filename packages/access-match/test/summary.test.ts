@@ -10,7 +10,7 @@ test("a bash call summarizes to its command on one line, cut at 500 characters",
 });
 
 test("a bash call keeps its lines when the log asks for them, still cut at 500 characters", () => {
-  expect(summarizeCall({}, "Bash", { command: "python3 - <<'EOF'\n  print(1)  \n\nEOF" }, CWD, { keepLines: true })).toBe("python3 - <<'EOF'\nprint(1)\nEOF");
+  expect(summarizeCall({}, "Bash", { command: "python3 - <<'EOF'\n  print(1)  \n\nEOF" }, CWD, { keepLines: true })).toBe("python3 - <<'EOF'\nprint(1)\n\nEOF");
   const cut = summarizeCall({}, "bash", { command: `echo a\n${"x".repeat(900)}` }, CWD, { keepLines: true });
   expect(cut?.length).toBe(500);
   expect(summarizeCall({}, "Read", { file_path: "/w/a\nb" }, CWD, { keepLines: true })).toBe("/w/a b");

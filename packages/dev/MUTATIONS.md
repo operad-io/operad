@@ -735,3 +735,9 @@ the row fields.
 | T-0240-M4 | packages/dev/src/views.ts | a long one-line command was not cut at 160 characters | `dev views > a multi-line command shows its first line and the count of lines left; a long one-liner is cut` |
 | T-0240-M5 | packages/dev/src/views.ts | the command was not set in inline code | `dev views > a tool call is one line with what ran and how long it took` |
 | T-0240-M6 | packages/dev/src/views.ts | a turn end without agent text was shown | `dev views > a run of tool turns shows no turn end; a turn end after the agent's text and the result stay` |
+
+## T-0240 — rework: multi-line log commands and code spans
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0240-M13 | packages/dev/src/views.ts | blank lines of a command were not counted in the lines left | `dev views > a multi-line command shows its first line and the count of lines left; a long one-liner is cut` |

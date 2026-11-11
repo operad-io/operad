@@ -42,7 +42,7 @@ function stripInline(text: string): string {
   return text
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)")
-    .replace(/`([^`]+)`/g, "$1")
+    .replace(CODE_SPAN, (_match, _fence: string, body: string) => unpadCode(body))
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/__([^_]+)__/g, "$1")
     .replace(/(^|[^*])\*([^*]+)\*/g, "$1$2")
@@ -50,17 +50,24 @@ function stripInline(text: string): string {
     .replace(/~~([^~]+)~~/g, "$1");
 }
 
+/** A CommonMark code span: a run of backticks, a body, the same run again. */
+const CODE_SPAN = /(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)/g;
+
+/** CommonMark: a body with a space at both ends and something else inside loses one space each side. */
+function unpadCode(body: string): string {
+  return body.length > 2 && body.startsWith(" ") && body.endsWith(" ") && body.trim().length > 0 ? body.slice(1, -1) : body;
+}
+
 /** Styles inline text without changing what a terminal shows. */
 function styledInline(text: string): string {
-  const parts = text.split(/(`[^`]+`)/g);
-  return parts
-    .map((part) => {
-      if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
-        return styled(part.slice(1, -1), ANSI.cyan);
-      }
-      return styledPlainInline(part);
-    })
-    .join("");
+  let out = "";
+  let at = 0;
+  for (const match of text.matchAll(CODE_SPAN)) {
+    out += styledPlainInline(text.slice(at, match.index));
+    out += styled(unpadCode(match[2] ?? ""), ANSI.cyan);
+    at = match.index + match[0].length;
+  }
+  return out + styledPlainInline(text.slice(at));
 }
 
 function styledPlainInline(text: string): string {

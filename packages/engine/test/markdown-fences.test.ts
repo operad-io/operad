@@ -61,4 +61,13 @@ describe("markdown fences", () => {
   test("a fence indented four spaces is not a fence", () => {
     expect(code("    ```\nx")).toEqual([]);
   });
+
+  test("inline code written with a longer backtick fence is one span", () => {
+    const plain = renderMarkdownLines("tool Bash 3s `` echo `date` ``").map((line) => line.text);
+    expect(plain).toEqual(["tool Bash 3s echo `date`"]);
+    const coloured = renderMarkdownLines("a `` x`y `` b", { colour: true })[0]?.text ?? "";
+    expect(coloured).toContain(`${"\x1b[36m"}x\`y`);
+    expect(coloured).not.toContain("``");
+    expect(renderMarkdownLines("use `one` and `two`").map((line) => line.text)).toEqual(["use one and two"]);
+  });
 });

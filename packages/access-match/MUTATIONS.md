@@ -36,3 +36,9 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0240-M7 | packages/access-match/src/summary.ts | `keepLines` was ignored, so a command was flattened to one line | `a bash call keeps its lines when the log asks for them, still cut at 500 characters` |
+
+## T-0240 — rework: multi-line log commands and code spans
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0240-M12 | packages/access-match/src/summary.ts | blank lines of a command were dropped when its lines are kept | `a bash call keeps its lines when the log asks for them, still cut at 500 characters` |

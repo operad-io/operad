@@ -136,12 +136,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** The lines of a command, each with its spaces collapsed and no empty one, cut at the limit. */
+/** The lines of a command, each with its spaces collapsed, blank lines kept so a count of them is true, cut at the limit. */
 function linesOf(text: string, limit: number): string {
   const flat = text
+    .trim()
     .split(/\r?\n/)
     .map((line) => line.replace(/[ \t]+/g, " ").trim())
-    .filter((line) => line.length > 0)
     .join("\n");
   return flat.length <= limit ? flat : `${flat.slice(0, limit - 1)}…`;
 }

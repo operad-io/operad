@@ -393,7 +393,7 @@ function shownCommand(command: string, worktree: string | undefined): string {
     text = text.replace(new RegExp(`${path}/`, "g"), "");
     text = text.replace(new RegExp(`${path}(?![\\w./-])`, "g"), ".");
   }
-  const lines = text.split("\n").filter((line) => line.trim().length > 0);
+  const lines = text.trim().split("\n");
   const first = (lines[0] ?? "").trim();
   const head = first.length <= COMMAND_SHOWN_CHARS ? first : `${first.slice(0, COMMAND_SHOWN_CHARS - 1)}…`;
   return lines.length > 1 ? `${head} … (+${lines.length - 1} lines)` : head;
