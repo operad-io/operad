@@ -328,6 +328,15 @@ export async function serveOnce(
     }
     if (state.status === "waiting_person") continue;
 
+    // A run no loaded plugin declares has no graph to drive it. It fails now,
+    // naming its flow, instead of sitting at starting while a child retries.
+    if (options.registry.flow(run.flow) === undefined) {
+      const reason = `flow "${run.flow}" is not loaded`;
+      options.onLog?.(`run ${run.runId}: ${reason}`);
+      await kernel.failRun(run.runId, reason);
+      continue;
+    }
+
     const now = clock();
     if (
       state.effect?.kind === "schedule_wake" &&

@@ -870,3 +870,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0278-M1 | packages/dev/src/chat.ts | the harness argument dropped its `enum`, so a free-text name reached the run's refusal instead of the schema | `dev:chat > a harness outside the choice is refused by the schema before the run` |
+
+## T-0293 — a task whose run is gone and flow is missing waits
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0293-M4 | packages/dev/src/schedule.ts | a task whose run was gone and whose flow was not defined stayed running | `dev scheduling > a task in review follows its run > a run that is gone and a flow that is not defined leave it waiting for a person` (packages/dev/test/schedule.test.ts) |

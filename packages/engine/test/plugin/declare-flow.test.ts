@@ -1,6 +1,9 @@
-import { expect, test } from "bun:test";
-import { defineFlow, PluginRegistry } from "../../src/index.ts";
-import { def } from "./support.ts";
+import { afterAll, expect, test } from "bun:test";
+import { join } from "node:path";
+import { defineFlow, FilePluginStore, PluginRegistry } from "../../src/index.ts";
+import { cleanupTempRoots, def, tempRoot } from "./support.ts";
+
+afterAll(cleanupTempRoots);
 
 function generated(variant = 0): ReturnType<typeof defineFlow> {
   return defineFlow({
@@ -64,4 +67,36 @@ test("a name already used keeps the graph it got first", async () => {
   await registry.tick();
   expect(registry.flow("generated")?.flow).toBe(first);
   expect(logs.some((line) => line.includes('flow "generated": already declared'))).toBe(true);
+});
+
+test("a declaration is found by a later process from the same store", async () => {
+  const root = await tempRoot();
+  const storeRoot = join(root, "store");
+  const steps = [
+    { name: "step", results: ["ok"], run: async () => ({ result: "ok" }) },
+  ];
+  const make = () =>
+    def({
+      name: "p",
+      steps,
+      onTick: (ctx) => {
+        ctx.declareFlow(generated());
+      },
+    });
+  const first = new PluginRegistry([make()], {
+    home: root,
+    storeRoot,
+    store: new FilePluginStore({ root: storeRoot }),
+  });
+  await first.tick();
+  expect(first.flow("generated")?.flow.name).toBe("generated");
+
+  // A run's own process is built after the tick that declared the flow.
+  const second = new PluginRegistry([make()], {
+    home: root,
+    storeRoot,
+    store: new FilePluginStore({ root: storeRoot }),
+  });
+  expect(second.flow("generated")?.flow.name).toBe("generated");
+  expect(second.flows().some((item) => item.flow.name === "generated")).toBe(true);
 });

@@ -3,7 +3,7 @@
 import type { FlowDefinition } from "../flow/types.ts";
 import type { LogBackend } from "../log/types.ts";
 import { StateError } from "./errors.ts";
-import { applyInput, readState } from "./service.ts";
+import { applyInput, endRunDirectly, readState } from "./service.ts";
 
 export interface CancelRunOptions {
   readonly log: LogBackend;
@@ -15,12 +15,20 @@ export interface CancelRunOptions {
   readonly clock?: (() => number) | undefined;
 }
 
-/** Ends a run as cancelled; an unknown, ended or idle run is left alone. */
+/** Ends a run as cancelled; an unknown or ended run is left alone. */
 export async function cancelRun(options: CancelRunOptions): Promise<void> {
   const { log, runId } = options;
   const runs = await log.runs();
   const run = runs.find((candidate) => candidate.runId === runId);
   if (run === undefined) return;
+  const state = await readState(log, runId);
+  if (state.status === "ended") return;
+  // A run that never took its first step has no flow to answer through; its
+  // cancel still ends it, so it leaves the running view.
+  if (state.status === "idle") {
+    await endRunDirectly(log, runId, "cancelled", "cancel");
+    return;
+  }
   const flow =
     options.graph !== undefined && options.graph.name === run.flow
       ? options.graph
@@ -28,8 +36,6 @@ export async function cancelRun(options: CancelRunOptions): Promise<void> {
   if (flow === undefined) {
     throw new StateError(`run "${runId}": flow "${run.flow}" is not loaded`);
   }
-  const state = await readState(log, runId);
-  if (state.status === "ended" || state.status === "idle") return;
   await applyInput(
     log,
     flow,

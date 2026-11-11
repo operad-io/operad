@@ -622,3 +622,11 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0299-M1 | packages/engine/src/loop/code-watch.ts | a bare plugin module name was resolved against the operad home again, so a home outside the workspace found no plugin package | `code roots > a plugin named by its package is found where the loader imports it` |
+
+## T-0293 — a flow a plugin declares runs in the run's own process
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0293-M1 | packages/engine/src/plugin/registry.ts | the registry did not load the flows an earlier process declared | `a declaration is found by a later process from the same store` (packages/engine/test/plugin/declare-flow.test.ts) |
+| T-0293-M2 | packages/engine/src/loop/serve.ts | a run whose flow was not loaded was spawned again instead of failing | `serve loop > a run whose flow is not loaded fails, names it, and is not spawned` (packages/engine/test/loop/serve.test.ts) |
+| T-0293-M3 | packages/engine/src/runner/cancel.ts | a cancel left an idle run active | `runner > cancelling a run that never started ends it, even with no flow loaded` (packages/engine/test/runner/runner.test.ts) |

@@ -205,7 +205,8 @@ projects could set flows keep working. A repository's flow is registered under
 the SHA-1 of its stages. Two repositories may therefore use the same flow name,
 and a changed `flows` entry gets a new name instead of replacing a graph a
 running attempt still uses. A start records the graph on the task; every tick
-declares the graphs of the tasks it finds, so a fresh process resumes a running
+declares the graphs of the tasks it finds, and a declared graph is kept in the
+store so the run's own process finds it, so a fresh process resumes a running
 attempt on the graph it started with.
 
 ### Writing a flow in TypeScript
