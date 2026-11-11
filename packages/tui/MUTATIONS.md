@@ -321,3 +321,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0297-M1 | packages/tui/src/app.ts | a live event's bare id was sent as the object request even when a listed row knew its type | `live updates in the shell > an event refetches Pending once per window and only its own row` |
+
+## T-0296 — a repository with no plans stays a group row
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0296-M1 | packages/tui/src/app.ts | the grouped list needed every top-level object to have a next level (`every` for `some`), so one empty repository dropped the list back to the roots | `one tab per plugin > a repository with no plans is still a group row among the grouped plans` |

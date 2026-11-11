@@ -210,16 +210,49 @@ describe("one tab per plugin", () => {
     expect(notes?.level).toBe("roots");
     expect(notes?.list.rows.map((row) => row.id)).toEqual(["n1", "n2"]);
     expect(notes?.list.rows.every((row) => row.group === undefined)).toBe(true);
-    // One root without children keeps the roots on the list.
-    const mixed = open(
-      new TreeClient([...DATA, entry("repo", "empty", "Empty")]),
-    );
-    await mixed.view.until((state) => tabOf(state, "plugin:dev")?.list.loaded === true);
-    const dev = tabOf(mixed.shell.state, "plugin:dev");
+    shell.stop();
+  });
+
+  test("a repository with no plans is still a group row among the grouped plans", async () => {
+    const { view, shell } = open(new TreeClient([...DATA, entry("repo", "empty", "Empty")]));
+    await view.until((state) => tabOf(state, "plugin:dev")?.list.loaded === true);
+    shell.key({ name: "3" });
+    const dev = tabOf(shell.state, "plugin:dev");
+    expect(dev?.level).toBe("children");
+    expect(dev?.list.rows.map((row) => row.id)).toEqual([
+      "ops/P-0001-alpha",
+      "ops/P-0002-beta",
+      "web/P-0003-gamma",
+      "empty",
+    ]);
+    expect(dev?.list.rows.map((row) => row.group?.id)).toEqual(["ops", undefined, "web", undefined]);
+    expect(dev?.list.rows[3]?.bare).toBe(true);
+    const list = text(drawState(shell.state).list);
+    expect(list).toContain("empty");
+    expect(list.indexOf("P-0003 gamma")).toBeLessThan(list.indexOf("empty"));
+    // A plan opens with its tasks, and a task from there, and back.
+    await view.until((state) => state.object?.id === "ops/P-0001-alpha" && state.object.children !== undefined);
+    shell.key({ name: "enter" });
+    shell.key({ name: "enter" });
+    await view.until((state) => state.object?.id === "ops/T-0001-first" && !state.object.loading);
+    shell.key({ name: "escape" });
+    await view.until((state) => state.object?.id === "ops/P-0001-alpha");
+    // The empty repository can be opened.
+    shell.key({ name: "escape" });
+    shell.key({ name: "escape" });
+    for (let i = 0; i < 3; i++) shell.key({ name: "down" });
+    await view.until((state) => state.object?.id === "empty");
+    shell.stop();
+  });
+
+  test("zero next level anywhere keeps the roots list", async () => {
+    const roots = DATA.filter((one) => one.type === "repo");
+    const { view, shell } = open(new TreeClient([...roots, entry("repo", "empty", "Empty")]));
+    await view.until((state) => tabOf(state, "plugin:dev")?.list.loaded === true);
+    const dev = tabOf(shell.state, "plugin:dev");
     expect(dev?.level).toBe("roots");
     expect(dev?.list.rows.map((row) => row.id)).toEqual(["ops", "web", "empty"]);
     shell.stop();
-    mixed.shell.stop();
   });
 
   test("enter on a child in the page opens its own page, and back returns to the plan", async () => {
