@@ -598,3 +598,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0292-M2 | packages/engine/src/plugin/sqlite-store.ts | `declare` wrote without looking for the store-move lock (the `assertStoreNotMoving` call removed) | `a sqlite plugin store refuses a declaration or a write while the store is being moved` (packages/cli/test/store-copy.test.ts) |
+
+## T-0281 — settings set with a choice of forms
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0281-M1 | packages/engine/src/plugin/action-schema.ts | a `oneOf` accepted a value only when it fitted its first branch (the check of the other branches removed) | `settings with a choice of forms > a set keeps the object form of a check command and every other value` (packages/engine/test/views/settings-schema.test.ts) |
