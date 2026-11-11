@@ -20,18 +20,7 @@
         "--model",
         "opencode-go/deepseek-v4.1-flash"
       ],
-      "stallSecs": 900,
-      "wallTimeSecs": 7200,
-      "fallback": "claude"
-    },
-    "radian": {
-      "use": "harness-radian/agent",
-      "args": [
-        "--provider",
-        "opencode-go",
-        "--model",
-        "deepseek-v4.1-flash"
-      ],
+      "count": 1,
       "stallSecs": 900,
       "wallTimeSecs": 7200,
       "fallback": "claude"
@@ -40,8 +29,7 @@
   "pools": {
     "default": [
       "claude",
-      "pi",
-      "radian"
+      "pi"
     ]
   },
   "reviewer": {
