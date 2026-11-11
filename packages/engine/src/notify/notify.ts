@@ -53,6 +53,14 @@ export interface NotifierOptions {
   readonly log: LogBackend;
   /** The title of an object, for `OPERAD_TITLE`; failing means the id is used. */
   readonly titleOf?: ((type: string, id: string) => Promise<string>) | undefined;
+  /**
+   * True when the object's plugin answers its wait itself; no notice is sent
+   * for it, and none is recorded, so a wait that stays unanswered is noticed
+   * by a later scan. A failing hook means false.
+   */
+  readonly answeredAutomatically?:
+    | ((object: { readonly type: string; readonly id: string }) => Promise<boolean>)
+    | undefined;
   readonly onLog?: ((message: string) => void) | undefined;
   readonly run?: HookRunner | undefined;
   /** Replaces the write of the `notified` fact; a test makes it fail. */
@@ -179,6 +187,11 @@ export class Notifier {
       if (state.status !== "waiting_person" || state.wait === null) continue;
       const key = notificationKey(run.runId, state.wait.id);
       if (recorded.has(key)) continue;
+      try {
+        if ((await this.options.answeredAutomatically?.(object)) === true) continue;
+      } catch {
+        // A hook that fails answers nothing: the person is told.
+      }
       await this.notify(key, run.runId, state.wait.id, object, state.wait.prompt);
     }
   }

@@ -33,9 +33,12 @@ import {
   getPlan,
   setAreaHold,
   setDependencyHold,
+  setFlowNote,
+  clearOldestPlanSlot,
   listRepositories,
   recordAutoMerge,
   recordMergeReported,
+  recordPlanStart,
   refreshPlanCounts,
   reopenTask,
   releaseTaskClaim,
@@ -192,7 +195,19 @@ export async function taskWaitAnsweredAutomatically(
   const plan = await ctx.store.get("plan", storeKey(task.repository, planOf(task)));
   if (plan === undefined) return false;
   const found = planData(plan.data);
-  return found.status === "confirmed" && found.auto === "merge";
+  if (found.status !== "confirmed" || found.auto !== "merge") return false;
+  // The scheduler returns early for a repository whose settings are invalid,
+  // so it answers nothing there: the wait stays visible to a person.
+  const repository = (await listRepositories(ctx.store)).find(
+    (item) => item.name === task.repository,
+  );
+  if (repository === undefined) return false;
+  try {
+    await readDevSettings(repository.path);
+  } catch {
+    return false;
+  }
+  return true;
 }
 
 function planTasks(
@@ -558,6 +573,20 @@ async function scheduleRepository(
         turnOf(left) - turnOf(right) || byUrgency(left, right) || byId(left, right),
     );
 
+  /**
+   * One slot is kept for the plan that has gone longest without starting a
+   * task: the last free slot goes by turn only while no running task already
+   * holds that slot.
+   */
+  const keptSlotNext = (): boolean =>
+    repositoryConcurrency(settings) > 1 &&
+    repositoryConcurrency(settings) - repositoryActive === 1 &&
+    !current.some((object) => {
+      const task = taskData(object.data);
+      return task.oldestPlanSlot === true && isActive(task);
+    }) &&
+    !oldestPlanHeld.size;
+
   /** Whether a ready task's dependencies and all three limits allow a start now. */
   const canStart = (
     object: StoredObject,
@@ -618,17 +647,7 @@ async function scheduleRepository(
     }
     const failed = new Set<string>();
     for (;;) {
-      const cap = repositoryConcurrency(settings);
-      // One slot is kept for the plan that has gone longest without starting a task: the last free slot goes by
-      // turn only while no running task already holds that slot.
-      const useOldestPlan =
-        cap > 1 &&
-        cap - repositoryActive === 1 &&
-        !current.some((object) => {
-          const task = taskData(object.data);
-          return task.oldestPlanSlot === true && isActive(task);
-        }) &&
-        !oldestPlanHeld.size;
+      const useOldestPlan = keptSlotNext();
       const order = useOldestPlan ? oldestPlanOrder() : turnOrder();
       let progress = false;
       for (const planObject of order) {
@@ -660,13 +679,7 @@ async function scheduleRepository(
         if (useOldestPlan) oldestPlanHeld.add(pick.id);
         const at = changeClock.now();
         lastStarted.set(planId, at);
-        const latest = await getPlan(ctx.store, planObject.id);
-        await ctx.store.put(
-          "plan",
-          planObject.id,
-          { ...planData(latest.data), lastStartedAt: at },
-          "dev:plan-start",
-        );
+        await recordPlanStart(ctx.store, planObject.id, at);
         break;
       }
       if (!progress) return;
@@ -695,6 +708,14 @@ async function scheduleRepository(
     }
   }
 
+  // A task that left running while it held the kept slot no longer holds it.
+  for (const object of current) {
+    const task = taskData(object.data);
+    if (task.oldestPlanSlot === true && !isActive(task)) {
+      await clearOldestPlanSlot(ctx.store, object.id);
+    }
+  }
+
   // The owner's manual start is exempt from the auto level, not from the
   // dependencies or the limits that keep two runs off one repository.
   await startReady((task) => task.startRequested === true, flows);
@@ -708,7 +729,8 @@ async function scheduleRepository(
   const queued: StoredObject[] = [];
   const queuedIds = new Set<string>();
   const enqueue = (inScope: (task: TaskData, plan: PlanData) => boolean) => {
-    for (const planObject of turnOrder()) {
+    // The next start follows the order the loop above would use.
+    for (const planObject of keptSlotNext() ? oldestPlanOrder() : turnOrder()) {
       const plan = planData(planObject.data);
       if (plan.status !== "confirmed") continue;
       for (const object of [...planTasks(current, bareId(planObject.id))].sort(byId)) {
@@ -750,6 +772,21 @@ async function scheduleRepository(
       !dependencies.ready && dependencies.cancelled === undefined,
       dependencies.waitingFor,
     );
+  }
+
+  // Name each open task's flow when the repository defines more than one, and
+  // say why a ready task whose flow is not defined does not start.
+  const plansById = new Map(plans.map((object) => [bareId(object.id), planData(object.data)]));
+  for (const object of await listAll(ctx.store, "task")) {
+    const task = taskData(object.data);
+    if (task.repository !== repository.name) continue;
+    const requested = task.flow ?? plansById.get(task.plan)?.flow ?? "default";
+    const missing =
+      task.phase === "ready" && task.flowName === undefined && flowFor(flows, requested) === undefined;
+    await setFlowNote(ctx.store, object.id, {
+      shown: flows.named.size > 1 ? requested : undefined,
+      held: missing ? `flow ${requested} is not defined in .operad/dev.json` : undefined,
+    });
   }
 
   // Keep each plan's cached counts, and with them its row's mark, current.

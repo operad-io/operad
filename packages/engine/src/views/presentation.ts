@@ -956,7 +956,7 @@ export class Views {
     let dependents: readonly string[] = [];
 
     if (owner !== undefined && object !== undefined) {
-      const { scope: _scope, ...guarded } = this.guardedRow(
+      const { scope, ...guarded } = this.guardedRow(
         owner.plugin,
         resolved.type,
         object,
@@ -971,7 +971,7 @@ export class Views {
         sections = [];
       }
       actions.push(...(await this.availableActions(resolved.type, object)));
-      dependents = await this.dependentsOf(owner.plugin, resolved.type, row.id);
+      dependents = await this.dependentsOf(owner.plugin, resolved.type, row.id, scope);
     } else {
       row = {
         id: resolved.id,
@@ -999,11 +999,15 @@ export class Views {
     };
   }
 
-  /** The ids of the objects of a type whose row names `rowId` in `after`. */
+  /**
+   * The ids of the objects of a type whose row names `rowId` in `after`. A row
+   * with a scope names only rows of its own scope.
+   */
   private async dependentsOf(
     plugin: string,
     type: string,
     rowId: string,
+    scope: string | undefined,
   ): Promise<readonly string[]> {
     const found: string[] = [];
     let cursor: string | undefined;
@@ -1011,7 +1015,11 @@ export class Views {
       const page = await this.store.list(type, cursor === undefined ? {} : { cursor });
       for (const object of page.objects) {
         const row = this.guardedRow(plugin, type, object);
-        if (row.id !== rowId && row.after?.includes(rowId) === true) {
+        if (
+          row.id !== rowId &&
+          row.scope === scope &&
+          row.after?.includes(rowId) === true
+        ) {
           found.push(row.id);
         }
       }

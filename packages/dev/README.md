@@ -165,7 +165,11 @@ cleanup at the end, so a repository writes neither.
 A repository that writes no `flows` runs the built-in `default` flow: work,
 check, review, human. A flow named `default` is the one a task starts with; a
 plan or task may choose another with `--flow <name>`, and once a task's first
-attempt starts it keeps that flow. Every flow needs at least one `check`,
+attempt starts it keeps that flow (`task update --flow` refuses after it). A task
+without `--flow` takes its plan's flow, and a plan without one takes `default`. A task whose
+flow dev.json does not define stays ready, and its row and its plan's row say `flow <name>
+is not defined in .operad/dev.json`. When a repository defines more than one flow, the task
+row and the Brief name the task's flow, and history names it on each run start. Every flow needs at least one `check`,
 `review` or `human` stage. A `human` stage asks a person; when it is the last
 stage, its merge answer goes to integrate, and when it is not, that answer
 continues with the next stage. A flow whose last stage is not `human` goes
@@ -311,10 +315,11 @@ recently goes first). When the repository has more than one slot, one slot
 is kept for the plan that has gone longest without starting a task: while no
 running task holds it, the last free slot goes to that plan, whatever its
 priority. Every other freed slot goes by priority. So a plan with a startable
-task never waits forever behind more urgent plans. With one slot, priority alone orders the queue. Each
-registered repository is scheduled on its own. A task the
-scheduler claimed but whose run never recorded itself (a crash between the two)
-returns to `ready` on the next tick, so the scheduler can start it again.
+task never waits forever behind more urgent plans. With one slot, priority
+alone orders the queue. Each registered repository is scheduled on its own. A
+task the scheduler claimed but whose run never recorded itself (a crash between
+the two) returns to `ready` on the next tick, so the scheduler can start it
+again.
 
 At auto `merge`, a waiting task whose review passed in this attempt is answered
 with `merge`. A wait that follows `nothing`, `failed`, the rework limit or `review failed twice in a row` is
@@ -376,7 +381,7 @@ repository lock and reads the stored tasks inside that lock, so two ticks or two
 review again on it with no worker). A task whose dependency was cancelled enters the same
 person wait directly from the worktree step. A failing verify or review goes to
 `rework`, which sends the task back to the worktree until `maxAutoRework`
-automatic reworks have run in a row, or a second review failure in a row; then it waits for a person (`review failed twice in a row`), and the lead's `rework --note` or `reject` steers the next pass. `nothing` and
+automatic reworks have run in a row, or a second review failure in a row; then it waits for a person (`review failed twice in a row`), and the lead's `rework --note` or `reject` steers the next pass. `reverify` at that wait keeps the count, so a review failure on the reverified head waits again at once; a passed review or a merge conflict clears it. `nothing` and
 `failed` from `work` also wait for a person. An unavailable reviewer waits for
 `reviewer.retrySecs` and runs the same review again; a review that times out
 twice waits for a person. `merge` builds the candidate on main and pushes it,

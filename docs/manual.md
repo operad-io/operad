@@ -493,6 +493,15 @@ repository. The task is blocked until every task it follows is merged, wherever 
 and its note says what it waits for (`waiting for operad/T-0188` for another repository).
 The named task must exist, and a task cannot follow itself or close a cycle.
 
+`operad plan add` and `operad task add` take `--flow <name>`, one of the flows the
+repository's `.operad/dev.json` defines. A task without `--flow` takes its plan's flow,
+and a plan without one takes `default`. `operad task update <id> --flow <name>` changes
+a task's flow only before its first attempt; after that the command refuses. A task
+whose flow dev.json does not define stays ready, and its row and its plan's row say
+`flow <name> is not defined in .operad/dev.json`. When the repository defines more than
+one flow, the task row's note and the Brief section name the task's flow, and History
+names the flow at the start of each run.
+
 `badge` is a short text the client shows as it is, after the state: one line of
 at most 16 characters, or the row is an error row. The `dev` plugin sets a
 task's badge to `#<attempt>` (`#0` before the first attempt) and marks its tasks

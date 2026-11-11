@@ -439,6 +439,13 @@ the row fields.
 | T-0208-M11 | packages/engine/src/store-copy/copy.ts | the run-lock check called `lockHeld`, which removes a stale lock file from the source | `store copy > copy and use change nothing under the source directory` |
 | T-0208-M12 | packages/engine/src/store-copy/copy.ts | opened the source's plugin objects in place instead of from the snapshot, which makes `plugins/` | `store copy > copy and use change nothing under the source directory` |
 
+## T-0210 — follow-ups from the flow-stops reviews
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0210-M7 | packages/engine/src/notify/notify.ts | the person notifier sent a notice for a wait its plugin answers automatically | `notify > a wait the plugin answers itself sends no notice and is noticed later if it stays` |
+| T-0210-M8 | packages/engine/src/views/presentation.ts | show listed a task of another repository with the same bare id in `after` as a dependent | `operad mcp > show of a task lists the tasks after it` (packages/mcp) |
+| T-0210-M11 | packages/engine/src/plugin/registry.ts | a hook that throws counted as an automatic answer | `answeredAutomatically > a hook that throws counts as no and is logged` |
 ## T-0160 — settings follow-ups
 
 | id | file | mutation | failing test |

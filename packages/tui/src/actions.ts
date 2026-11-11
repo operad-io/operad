@@ -420,13 +420,19 @@ export function paletteEntries(state: TuiState): readonly TuiPaletteEntry[] {
       .sort((a, b) => (b.found?.score ?? 0) - (a.found?.score ?? 0) || a.order - b.order)
       .map((item) => item.entry);
   const all = [...rank(actions), ...rank(commandEntries(state)), ...rank(settingEntries(state))];
-  if (words.length > 0) return all;
-  // With no query the last used entries come first, the latest first.
-  const used = state.recent
-    .map((id) => all.find((entry) => entryId(entry) === id))
-    .filter((entry): entry is TuiPaletteEntry => entry !== undefined)
-    .slice(0, RECENT_ENTRIES);
-  return [...used, ...all.filter((entry) => !used.includes(entry))];
+  const ordered =
+    words.length > 0
+      ? all
+      : (() => {
+          // With no query the last used entries lead, the latest first.
+          const used = state.recent
+            .map((id) => all.find((entry) => entryId(entry) === id))
+            .filter((entry): entry is TuiPaletteEntry => entry !== undefined)
+            .slice(0, RECENT_ENTRIES);
+          return [...used, ...all.filter((entry) => !used.includes(entry))];
+        })();
+  // The palette shows one group at a time, so a group label can separate them.
+  return PALETTE_GROUPS.flatMap((group) => ordered.filter((entry) => entry.group === group));
 }
 
 /** The state after an entry ran: it is now the latest of the recent ones. */
@@ -472,6 +478,18 @@ export function entryHint(entry: TuiPaletteEntry): string {
   }
   return [
     entry.key,
+    entry.needsNote ? "needs a note" : undefined,
+    entry.confirm ? "asks to confirm" : undefined,
+  ]
+    .filter((part): part is string => part !== undefined)
+    .join(" · ");
+}
+
+/** What an entry says after its name, without the key a column of its own shows. */
+export function entryDetail(entry: TuiPaletteEntry): string {
+  if (entry.refusal !== undefined) return entry.refusal;
+  if (entry.setting !== undefined) return entryHint(entry);
+  return [
     entry.needsNote ? "needs a note" : undefined,
     entry.confirm ? "asks to confirm" : undefined,
   ]

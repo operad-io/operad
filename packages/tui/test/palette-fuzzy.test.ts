@@ -134,7 +134,7 @@ describe("palette search: recent entries", () => {
   const run = (state: TuiState, query: string): TuiState =>
     press(state, ":", ...typeText(query), "enter");
 
-  test("an empty query lists the last five used first, the latest first, then the group order", () => {
+  test("an empty query keeps the last five used first inside each group, and lists the groups in order", () => {
     let state = opened();
     const baseline = paletteEntries(press(state, ":")).map((e) => e.name);
     state = { ...state, acting: false };
@@ -142,10 +142,14 @@ describe("palette search: recent entries", () => {
       state = { ...run(state, query), actionRequest: undefined, acting: false, quit: false, keys: false };
       state = { ...state, object: opened().object };
     }
-    const names = paletteEntries(press(state, ":")).map((e) => e.name);
-    expect(names.slice(0, 5)).toEqual(["quit", "go to pending", "ops:cancel", "dev:rework", "refresh"]);
-    const rest = baseline.filter((name) => !names.slice(0, 5).includes(name));
-    expect(names.slice(5)).toEqual(rest);
+    const listed = paletteEntries(press(state, ":"));
+    const ranks = listed.map((entry) => ["actions", "tui", "settings"].indexOf(entry.group));
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+    expect(listed.filter((entry) => entry.group === "actions").slice(0, 2).map((e) => e.name))
+      .toEqual(["ops:cancel", "dev:rework"]);
+    expect(listed.filter((entry) => entry.group === "tui").slice(0, 3).map((e) => e.name))
+      .toEqual(["quit", "go to pending", "refresh"]);
+    expect(new Set(listed.map((e) => e.name))).toEqual(new Set(baseline));
     expect(state.recent).toHaveLength(5);
   });
 
@@ -156,7 +160,7 @@ describe("palette search: recent entries", () => {
 
   test("an entry that no longer exists is skipped", () => {
     const state = { ...opened(), recent: ["actions/gone:away", "tui/help"] };
-    expect(paletteEntries(press(state, ":"))[0]?.name).toBe("help");
+    expect(paletteEntries(press(state, ":")).find((entry) => entry.group === "tui")?.name).toBe("help");
   });
 });
 

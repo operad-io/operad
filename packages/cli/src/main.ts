@@ -1642,6 +1642,7 @@ async function commandServe(
     config: context.config.notify,
     log: context.log,
     titleOf: async (type, id) => (await context.views.get(`${type}:${id}`)).row.title,
+    answeredAutomatically: (object) => context.registry.answeredAutomatically(object),
     onLog: (message) => io.error(`${message}\n`),
   });
   let http: HttpServerHandle | undefined;

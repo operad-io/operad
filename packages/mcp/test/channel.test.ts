@@ -574,6 +574,7 @@ describe("the channel's sources", () => {
       sent: Sent,
       extra: {
         loopAfter?: number;
+        notify?: Parameters<typeof startClaudeChannel>[0]["notify"];
         sentFile?: string;
         pending?: () => Promise<readonly PendingItem[]>;
       } = {},
@@ -735,6 +736,36 @@ describe("the channel's sources", () => {
         const waiting = await sent.next();
         expect(waiting.meta.reason).toBe("waiting");
         expect(waiting.content).toContain("ready to merge");
+      } finally {
+        await shut(s, channel);
+      }
+    });
+
+    test("a block for a state change of a waiting object still carries the wait's prompt", async () => {
+      const s = await setup();
+      put(s, "task", "t-1", { title: "One", phase: "ready" });
+      const sent = new Sent();
+      const pending = async (): Promise<readonly PendingItem[]> => [
+        {
+          runId: "r-1",
+          flow: "demo-flow",
+          step: "gate",
+          prompt: "ready to merge",
+          choices: [],
+          actions: [],
+          object: "task:t-1",
+          announce: false,
+        },
+      ];
+      const channel = await open(s, sent, { pending, notify: ["changes"] });
+      try {
+        const info = await s.log.startRun("demo-flow", "task:t-1");
+        await s.log.append(info.runId, 0, [waitFact("wait:1")]);
+        // The wait itself is not announced; the state change under it is.
+        put(s, "task", "t-1", { title: "One", phase: "review" });
+        const changed = await sent.next();
+        expect(changed.meta.state).toBe("review");
+        expect(changed.content).toContain("ready to merge");
       } finally {
         await shut(s, channel);
       }
