@@ -879,6 +879,7 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0293-M4 | packages/dev/src/schedule.ts | a task whose run was gone and whose flow was not defined stayed running | `dev scheduling > a task in review follows its run > a run that is gone and a flow that is not defined leave it waiting for a person` (packages/dev/test/schedule.test.ts) |
+| T-0293-M6 | packages/dev/src/views.ts | the waiting task's row showed only the ready task's flow hold, so a waiting task with no run lost the note that names its missing flow | `dev scheduling > a task in review follows its run > a run that is gone and a flow that is not defined leave it waiting for a person` (packages/dev/test/schedule.test.ts) |
 | T-0298-M1 | packages/dev/src/service.ts | cancelTask threw on a result that was already true instead of succeeding | `dev plans and tasks > a task added to a confirmed plan waits for its own confirm` |
 | T-0298-M2 | packages/dev/src/views.ts | an older run's unrecorded group became a phantom attempt numbered past the later ones | `dev views > a group nobody recorded in an older run is not numbered past a later attempt` |
 | T-0298-M3 | packages/dev/src/views.ts | the total row showed `0s` when no attempt's run could be read | `dev views > the total row shows a dash when no attempt's run can be read` |
