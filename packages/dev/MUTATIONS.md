@@ -800,3 +800,8 @@ the row fields.
 | T-0288-M3 | packages/dev/src/schedule.ts | a review task whose run waited for a person was left in review | `a task in review follows its run > a run waiting for a person makes it waiting` (packages/dev/test/schedule.test.ts) |
 | T-0288-M4 | packages/dev/src/service.ts | reopening a task refused a review task whose run ended | `a task in review follows its run > a run that ended is repaired like a running task's` (packages/dev/test/schedule.test.ts) |
 | T-0288-M5 | packages/dev/src/service.ts | releasing a claim refused a review task with no run | `a task in review follows its run > with no run at all it goes back to ready` (packages/dev/test/schedule.test.ts) |
+## T-0292 — check-load follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0292-M1 | packages/dev/src/mainclone.ts | a rerun that finds the sha already in HEAD never compared the lock marker, so it skipped the missed install (the marker check replaced by `false`) | `a kill between the fast-forward and the install is repaired by the rerun` (packages/dev/test/mainclone.test.ts) |
