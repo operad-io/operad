@@ -3021,20 +3021,26 @@ describe("dev/verify reruns only the failed tests", () => {
   });
 
   test("a test that reaches check.flakyTask is proposed in the flaky-tests plan, with no notice", async () => {
-    const root = await tempRoot();
-    const state = await fixture({
-      commands: [object(failing("a > flaky"), `echo {name} >> '${join(root, "ran")}'`)],
-    });
-    const first = await verify(state);
-    expect(String(first.data?.note)).not.toContain("no task was proposed");
-    const second = await verify(state, "verify-run-2");
-    expect(second.data?.reason).toBeUndefined();
-    expect(String(second.data?.note)).not.toContain("no task was proposed");
-    const proposed = (await listAll(state.store, "task")).filter(
-      (object) => String((object.data as { title?: unknown }).title) === "Fix the flaky test: a > flaky",
-    );
-    expect(proposed).toHaveLength(1);
-    expect(String((proposed[0]?.data as { plan?: unknown } | undefined)?.plan)).toMatch(/-flaky-tests$/);
+    // A pass on a busy machine never counts, so the load is a quiet one, not the host's.
+    notCodeTestHooks.load = () => ({ load1: 0, cores: 10 });
+    try {
+      const root = await tempRoot();
+      const state = await fixture({
+        commands: [object(failing("a > flaky"), `echo {name} >> '${join(root, "ran")}'`)],
+      });
+      const first = await verify(state);
+      expect(String(first.data?.note)).not.toContain("no task was proposed");
+      const second = await verify(state, "verify-run-2");
+      expect(second.data?.reason).toBeUndefined();
+      expect(String(second.data?.note)).not.toContain("no task was proposed");
+      const proposed = (await listAll(state.store, "task")).filter(
+        (object) => String((object.data as { title?: unknown }).title) === "Fix the flaky test: a > flaky",
+      );
+      expect(proposed).toHaveLength(1);
+      expect(String((proposed[0]?.data as { plan?: unknown } | undefined)?.plan)).toMatch(/-flaky-tests$/);
+    } finally {
+      notCodeTestHooks.load = undefined;
+    }
   });
 
   test("a rerun that fails fails the check", async () => {

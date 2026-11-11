@@ -790,3 +790,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0116-M3 | packages/tui/src/actions.ts | the main action was the first action again (the skip of ending actions removed) | `the main key skips an action that ends the object, and says none is available when only it is left` (packages/tui/test/actions.test.ts) |
+
+## T-0294 — the flaky-task gate test reads an injected quiet load
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0294-M1 | packages/dev/test/gate.test.ts | the injected load was a busy one (18 on 10 cores) again, so the rerun passes never counted | `dev/verify reruns only the failed tests > a test that reaches check.flakyTask is proposed in the flaky-tests plan, with no notice` (packages/dev/test/gate.test.ts) |
