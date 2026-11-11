@@ -496,7 +496,7 @@ class JsonlLogBackend implements LogBackend {
   /** The same outcomes in sequence order, so a reader can start after a cursor. */
   #outcomeList: StoredOutcome[] = [];
   #activeCache:
-    | { readonly mtimeNs: bigint; readonly settled: boolean; readonly ids: readonly string[] }
+    | { readonly mtimeNs: bigint; readonly verified: boolean; readonly ids: readonly string[] }
     | undefined;
   #outcomeSeq = 0;
   #outcomeBytes = 0;
@@ -1124,9 +1124,14 @@ class JsonlLogBackend implements LogBackend {
    */
   #activeRunIds(): readonly string[] {
     const stat = statSync(this.#runsDirectory, { bigint: true });
+    const aged = Date.now() - Number(stat.mtimeNs / 1_000_000n) > SETTLE_MS;
     const cached = this.#activeCache;
-    if (cached !== undefined && cached.settled && cached.mtimeNs === stat.mtimeNs) {
-      return cached.ids;
+    if (cached !== undefined && cached.mtimeNs === stat.mtimeNs) {
+      // A change in the same instant as the one remembered would not move the
+      // time. The listing is therefore checked once more when the time has
+      // aged, and not again after that: a recent change costs one extra
+      // listing, never one per tick.
+      if (cached.verified || !aged) return cached.ids;
     }
     const names = readdirSync(this.#runsDirectory);
     const ended = new Set(names.filter((name) => name.endsWith(".end")));
@@ -1134,8 +1139,7 @@ class JsonlLogBackend implements LogBackend {
       .filter((name) => name.endsWith(".jsonl"))
       .map((name) => name.slice(0, -".jsonl".length))
       .filter((runId) => !ended.has(`${runId}.end`));
-    const settled = Date.now() - Number(stat.mtimeNs / 1_000_000n) > SETTLE_MS;
-    this.#activeCache = { mtimeNs: stat.mtimeNs, settled, ids };
+    this.#activeCache = { mtimeNs: stat.mtimeNs, verified: aged, ids };
     return ids;
   }
 

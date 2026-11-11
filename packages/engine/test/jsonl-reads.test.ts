@@ -111,6 +111,17 @@ describe("the jsonl backend over a large history", () => {
       );
       await log.endRun(live.runId);
       expect((await log.runs({ active: true })).map((run) => run.runId)).toEqual([second.runId]);
+
+      // Right after a change the directory is read once, not on every tick.
+      const afterChange = spyOn(fs, "readdirSync");
+      try {
+        for (let pass = 0; pass < 6; pass += 1) {
+          expect(await log.runs({ active: true })).toHaveLength(1);
+        }
+        expect(afterChange.mock.calls.length).toBeLessThanOrEqual(1);
+      } finally {
+        afterChange.mockRestore();
+      }
     } finally {
       await log.close();
     }
