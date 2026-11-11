@@ -189,21 +189,30 @@ function plansOf(
 }
 
 /**
- * Whether a task's flow has a configured human stage and no review stage, and
- * the task's work and check finished well: the wait it is in is that stage.
- * A flow with a review reaches its human stage through a passed review.
+ * Whether a task's flow has a configured human stage that no review stage
+ * comes before, and the work and check before it finished well: the wait the
+ * task is in is that stage. A review before the human stage is answered
+ * through its pass; a review after it has not run yet at that wait.
  */
 function atHumanStage(task: TaskData): boolean {
   const steps = task.flowGraph?.steps;
   const attempt = task.attempt;
   if (steps === undefined || attempt === undefined) return false;
-  const has = (kind: string): boolean =>
-    steps.some((step) => new RegExp(`^${kind}(_\\d+)?$`).test(step.id));
-  if (!has("human") || has("review")) return false;
+  const indexOf = (kind: string): number =>
+    steps.findIndex((step) => new RegExp(`^${kind}(_\\d+)?$`).test(step.id));
+  const human = indexOf("human");
+  if (human < 0) return false;
+  const review = indexOf("review");
+  if (review >= 0 && review < human) return false;
+  // A review after the human stage has not run while the task waits here.
+  if (review > human && attempt.review !== undefined && attempt.review !== null) {
+    return false;
+  }
   if (attempt.result !== undefined && attempt.result !== null && attempt.result !== "done") {
     return false;
   }
-  if (has("check")) return attempt.verify?.result === "pass";
+  const check = indexOf("check");
+  if (check >= 0 && check < human) return attempt.verify?.result === "pass";
   return attempt.worked === true;
 }
 

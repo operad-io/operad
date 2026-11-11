@@ -427,6 +427,33 @@ describe("dev scheduling", () => {
     expect(words.answers).toEqual([{ runId: "run-1", choice: "merge" }]);
   });
 
+  test("auto merge answers a human stage that a later review follows, until that review has run", async () => {
+    const words = await setup();
+    const plan = await makePlan(words, { slug: "plan", auto: "merge" });
+    const task = await makeTask(words, plan.key, "task");
+    await confirm(words, plan.key);
+    await phase(words, task.key, "waiting", "run-1");
+    const flowGraph = compileDevFlow("g", [
+      { stage: "work" },
+      { stage: "check" },
+      { stage: "human" },
+      { stage: "review" },
+    ]);
+    const verify = { result: "pass" };
+    // The later review failed: that wait is not the human stage.
+    await putTask(words, task.key, {
+      flowGraph,
+      attempt: { number: 1, run: "run-1", result: "done", verify, review: { result: "fail" } },
+    });
+    await tick(words);
+    expect(words.answers.length).toBe(0);
+    await putTask(words, task.key, {
+      attempt: { number: 1, run: "run-1", result: "done", verify },
+    });
+    await tick(words);
+    expect(words.answers).toEqual([{ runId: "run-1", choice: "merge" }]);
+  });
+
   test("auto merge answers a passed review once and never answers other waits", async () => {
     const passed = await setup();
     const plan = await makePlan(passed, { slug: "plan", auto: "merge" });
