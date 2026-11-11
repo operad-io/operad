@@ -347,5 +347,5 @@ and `--effort <level>` from `args`; any other entry fails the step with
 `harness-claude`; `operad plugin disable harness-claude` removes it if you want.
 
 The settings, the step's results and the model-error rules are in
-`packages/harness-claude/README.md`. A hand-run acceptance script is in
-`packages/harness-claude/acceptance.md`.
+`packages/harness-claude/README.md`. The hand-run acceptance points are in
+`docs/backlog/operad-harness-claude.md`.
