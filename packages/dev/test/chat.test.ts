@@ -218,4 +218,28 @@ describe("task add --chat", () => {
     await expect(addFromChat(r, "C-999")).rejects.toThrow(/there is no chat/);
     expect((await r.store.list("task")).objects).toHaveLength(0);
   });
+
+  test("a chat whose recorded worktree was removed is refused", async () => {
+    const r = await rig();
+    const id = await openChat(r);
+    await r.registry.runStep("dev/chat_worktree", {}, { runId: "run-1", object: { type: CHAT_TYPE, id, data: {} } });
+    const path = join(r.remote.repository, ".operad-worktrees", `chat-${id}`);
+    git(r.remote.repository, ["worktree", "remove", "--force", path]);
+    await expect(addFromChat(r, id)).rejects.toThrow(/is gone/);
+    expect((await r.store.list("task")).objects).toHaveLength(0);
+  });
+
+  test("cleanup after the merge leaves the chat's worktree and branch", async () => {
+    const r = await rig();
+    const id = await openChat(r);
+    await r.registry.runStep("dev/chat_worktree", {}, { runId: "run-1", object: { type: CHAT_TYPE, id, data: {} } });
+    await addFromChat(r, id);
+    const stored = (await r.store.list("task")).objects[0];
+    if (stored === undefined) throw new Error("no task");
+    const cleaned = await r.registry.runStep("dev/cleanup", {}, { runId: "run-2", object: { type: "task", id: stored.id, data: {} } });
+    expect(cleaned.result).not.toBe("failed");
+    const path = join(r.remote.repository, ".operad-worktrees", `chat-${id}`);
+    expect(existsSync(path)).toBe(true);
+    expect(git(r.remote.repository, ["rev-parse", "--verify", "--quiet", `refs/heads/work/chat-${id}`]).ok).toBe(true);
+  });
 });

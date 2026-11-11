@@ -877,6 +877,8 @@ the row fields.
 |---|---|---|---|
 | T-0301-M1 | packages/dev/src/steps.ts | the work worktree step prepared a worktree named by the task id, not the chat worktree the task names | `task add --chat > the task's worktree step uses the chat's worktree and branch` |
 | T-0301-M2 | packages/dev/src/chat.ts | `chatWorktreeOf` no longer refused a chat that has no worktree yet | `task add --chat > a chat without a worktree, or one that does not exist, is refused and adds no task` |
+| T-0301-M3 | packages/dev/src/chat.ts | `chatWorktreeOf` accepted a chat whose recorded worktree no longer exists | `task add --chat > a chat whose recorded worktree was removed is refused` |
+| T-0301-M4 | packages/dev/src/integrate.ts | cleanup exported the chat worktree as the task's worktree, so the after-merge hook removed it | `task add --chat > cleanup after the merge leaves the chat's worktree and branch` |
 
 `packages/harness-claude/acceptance/` was removed by T-0266, so the finding about it has no code left to mutate.
 | T-0298-M1 | packages/dev/src/service.ts | cancelTask threw on a result that was already true instead of succeeding | `dev plans and tasks > a task added to a confirmed plan waits for its own confirm` |

@@ -1149,10 +1149,11 @@ export async function runCleanup(
     number: Math.max(task.attempts, 0) + 1,
     run: ctx.runId,
   };
+  // A task opened on a chat's worktree has none of its own to clean: the chat keeps its worktree.
   const worktree = worktreePath(
     context.repository.path,
     settings,
-    context.workName,
+    context.taskId,
   );
   const env: Record<string, string> = {
     OPERAD_TASK: context.taskId,

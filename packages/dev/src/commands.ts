@@ -280,7 +280,7 @@ async function runTask(
     if (flow !== undefined) await assertFlow(repository, flow);
     const chat = one(parsed, "--chat");
     const worktree =
-      chat === undefined ? undefined : await chatWorktreeOf(ctx.store, repository.name, chat);
+      chat === undefined ? undefined : await chatWorktreeOf(ctx.store, repository, chat);
     const task = await addTask(ctx.store, {
       plan: planKey,
       slug: required(parsed, "--slug", "task add"),
