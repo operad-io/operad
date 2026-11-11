@@ -491,7 +491,9 @@ describe("store copy", () => {
           // A writer that began before the copy took its lock: a raw commit, no checks.
           const late = new Database(join(root, "plugins.sqlite"));
           try {
-            late.exec("CREATE TABLE late (x)");
+            late
+              .query("INSERT INTO facts (type, object_type, object_id, cause, at, data) VALUES (?, ?, ?, ?, ?, ?)")
+              .run("note", null, null, "late", 1, "{}");
           } finally {
             late.close();
           }
