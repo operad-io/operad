@@ -27,6 +27,11 @@ function worktree(complete = false): string {
   for (const name of readdirSync(join(root, "packages"))) {
     cpSync(join(root, "packages", name, "package.json"), join(dir, "packages", name, "package.json"));
     cpSync(join(root, "packages", name, "bunfig.toml"), join(dir, "packages", name, "bunfig.toml"));
+    mkdirSync(join(dir, "packages", name, "test"), { recursive: true });
+    cpSync(
+      join(root, "packages", name, "test", "bunfig.toml"),
+      join(dir, "packages", name, "test", "bunfig.toml"),
+    );
     manifests.push(join(dir, "packages", name));
   }
   for (const m of manifests) {
@@ -35,7 +40,12 @@ function worktree(complete = false): string {
       devDependencies?: Record<string, string>;
     };
     for (const [name, range] of Object.entries({ ...json.devDependencies, ...json.dependencies })) {
-      if (!range.startsWith("workspace:") || (!complete && name === "@operad-io/access-match")) continue;
+      if (!range.startsWith("workspace:")) {
+        // A stand-in for a hoisted npm package: a directory is enough to resolve.
+        mkdirSync(join(dir, "node_modules", name), { recursive: true });
+        continue;
+      }
+      if (!complete && name === "@operad-io/access-match") continue;
       mkdirSync(join(m, "node_modules", "@operad-io"), { recursive: true });
       symlinkSync(join(root, "packages", name.replace("@operad-io/", "")), join(m, "node_modules", name));
     }
@@ -76,11 +86,29 @@ describe("scripts/check-install.ts", () => {
     }
   });
 
+  test("a newly added npm dependency that is not installed is reported too", async () => {
+    const dir = worktree(true);
+    try {
+      const path = join(dir, "packages", "dev", "package.json");
+      const json = JSON.parse(readFileSync(path, "utf8")) as { dependencies?: Record<string, string> };
+      json.dependencies = { ...json.dependencies, "left-pad": "^1.0.0" };
+      writeFileSync(path, `${JSON.stringify(json, null, 2)}\n`);
+      const { code, err } = await run(["bun", "scripts/check-install.ts", dir], root);
+      expect(code).toBe(1);
+      expect(err.trim().split("\n")).toHaveLength(1);
+      expect(err).toContain("left-pad");
+      expect(err).toContain("run bun install");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("bun test in such a worktree stops on the same line before running a test", async () => {
     const dir = worktree();
     try {
       const { code, err } = await run(["bun", "test", "./trivial.test.ts"], dir);
       expect(code).not.toBe(0);
+      expect(err.split("\n").filter((line) => line.includes("stale install:"))).toHaveLength(1);
       expect(err).toContain("run bun install");
       expect(err).not.toContain("Cannot find module");
     } finally {
@@ -88,12 +116,13 @@ describe("scripts/check-install.ts", () => {
     }
   });
 
-  test("bun test run from a package directory stops on the same line", async () => {
+  test("bun test run from a package's test directory stops on the same line", async () => {
     const dir = worktree();
     try {
-      writeFileSync(join(dir, "packages", "dev", "trivial.test.ts"), 'import { test } from "bun:test";\ntest("runs", () => {});\n');
-      const { code, err } = await run(["bun", "test", "./trivial.test.ts"], join(dir, "packages", "dev"));
+      writeFileSync(join(dir, "packages", "dev", "test", "trivial.test.ts"), 'import { test } from "bun:test";\ntest("runs", () => {});\n');
+      const { code, err } = await run(["bun", "test", "./trivial.test.ts"], join(dir, "packages", "dev", "test"));
       expect(code).not.toBe(0);
+      expect(err.split("\n").filter((line) => line.includes("stale install:"))).toHaveLength(1);
       expect(err).toContain("run bun install");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -105,6 +134,7 @@ describe("scripts/check-install.ts", () => {
     try {
       const { code, err, out } = await run(["bash", "scripts/stress.sh", "./trivial.test.ts"], dir);
       expect(code).toBe(2);
+      expect(err.split("\n").filter((line) => line.includes("stale install:"))).toHaveLength(1);
       expect(err).toContain("run bun install");
       expect(out).not.toContain("runs:");
     } finally {
