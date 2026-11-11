@@ -383,6 +383,41 @@ describe("dev/work", () => {
     expect((await taskDataOf(state)).attempt?.sessionId).toBe("fake-session");
   });
 
+  /** A branch commit, a verify of that head recorded as `result`, then the worktree step and a no-op work. */
+  async function resumed(result: "pass" | "fail") {
+    const state = await fixture("nothing");
+    const path = join(state.remote.repository, ".operad-worktrees", state.taskId);
+    await commitIn(path, "branch.txt", "branch\n", "earlier work");
+    const head = gitOrThrow(path, ["rev-parse", "HEAD"]);
+    const stored = await state.store.get("task", state.taskKey);
+    if (stored === undefined) throw new Error("task disappeared");
+    const current = taskData(stored.data);
+    await state.store.put(
+      "task",
+      state.taskKey,
+      {
+        ...current,
+        attempt: { ...current.attempt, verified: head, verify: { result, run: "earlier" } },
+      },
+      "test:verified",
+    );
+    // A new run starts at the worktree step, which must keep a passing verify of this head.
+    const prepared = await state.registry.runStep("dev/worktree", {}, {
+      runId: "resume-run",
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+    expect(prepared.result).toBe("ready");
+    return runWork(state, "resume-work");
+  }
+
+  test("nothing: a branch whose head already passed verify is not checked again", async () => {
+    expect((await resumed("pass")).result).toBe("nothing");
+  });
+
+  test("a head whose verify failed is unchecked work, not a passed one", async () => {
+    expect((await resumed("fail")).result).toBe("done");
+  });
+
   test("nothing: a reset below the base is not new work", async () => {
     const state = await fixture("reset");
     const path = join(

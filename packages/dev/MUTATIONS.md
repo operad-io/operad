@@ -632,6 +632,11 @@ the row fields.
 | T-0131-M2 | packages/dev/src/timeouts.ts | removed the 30-minute cap in `reviewWaitMs` | `review waits > double from retrySecs and stop at the cap` |
 | T-0131-M3 | packages/dev/src/timeouts.ts | set `MAX_REVIEW_WAITS` back to 36 | `review waits > the give-up point is about the time it was (about 90 minutes at the default)` |
 
+## T-0228 — a resumed branch with unchecked work goes on to verify
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0228-M1 | packages/dev/src/steps.ts | work that added no commit always ended `nothing`, even on a branch with unchecked commits | `work that ends with no new commit > a branch with unchecked work goes on to verify, and says why` |
 ## T-0061 — choosing a flow
 
 | id | file | mutation | failing test |

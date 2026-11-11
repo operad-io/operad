@@ -733,8 +733,13 @@ export async function runWorktree(
     workWaits: 0,
     workRetryAt: null,
     // A new attempt starts with no gate results; the branch may have moved.
-    verified: null,
-    verify: null,
+    // A passing verify of the very commit the branch is at still stands.
+    ...(passedAt(context.task.attempt, prepared.base ?? null)
+      ? {
+          verified: context.task.attempt?.verified ?? null,
+          verify: context.task.attempt?.verify ?? null,
+        }
+      : { verified: null, verify: null }),
     review: null,
     reviewRuns: [],
     reviews: 0,
@@ -1045,6 +1050,30 @@ function modelUnavailable(data: Record<string, unknown>): boolean {
   return kind === "unavailable" || kind === "usage_limit";
 }
 
+/** True when the attempt's verify passed on exactly `head`. */
+function passedAt(attempt: TaskAttempt | undefined, head: string | null): boolean {
+  return (
+    head !== null &&
+    attempt?.verified === head &&
+    attempt.verify?.result === "pass"
+  );
+}
+
+const UNCHECKED_WORK_NOTE = "the branch already has unchecked work; checking it";
+
+/** True when the branch holds commits of its own (not a merge of main) that main lacks and `head` never passed verify. */
+function hasUncheckedWork(
+  path: string,
+  head: string,
+  attempt: TaskAttempt,
+  context: { readonly settings: { readonly remote: string; readonly mainBranch: string } },
+): boolean {
+  if (attempt.verified === head && attempt.verify?.result === "pass") return false;
+  const mainRef = `${context.settings.remote}/${context.settings.mainBranch}`;
+  const ahead = git(path, ["rev-list", "--count", "--no-merges", `${mainRef}..${head}`]);
+  return ahead.ok && Number(ahead.out) > 0;
+}
+
 export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   const loose = await looseTaskContext(ctx);
   if (!claimAllows(ctx, loose.task)) return cancelledStep();
@@ -1352,7 +1381,8 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     nextAttempt = {
       ...nextAttempt,
       result,
-      workNote: typeof extra.message === "string" ? extra.message : null,
+      workNote:
+        result !== "done" && typeof extra.message === "string" ? extra.message : null,
       ...(waitsForModel ? {} : { workRetryAt: null }),
       // An attempt that left no note keeps the one before it for later attempts.
       progress: progress ?? progressOf(attempt.previousProgress) ?? null,
@@ -1500,6 +1530,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   }
 
   const head = headOf(path);
+  let note: string | undefined;
   if (
     head === undefined ||
     base === null ||
@@ -1508,7 +1539,12 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     // branch must still descend from the base before anything is pushed.
     !isAncestor(path, base, head)
   ) {
-    return finish("nothing", { head: head ?? base });
+    if (head !== undefined && head === base && hasUncheckedWork(path, head, attempt, context)) {
+      // An earlier run committed this work and stopped before verify ended.
+      note = UNCHECKED_WORK_NOTE;
+    } else {
+      return finish("nothing", { head: head ?? base });
+    }
   }
 
   const push = git(path, [
@@ -1523,5 +1559,9 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       message: `cannot push "${branch}" to "${context.settings.remote}": ${push.err || push.out}`,
     });
   }
-  return finish("done", { head, pushed: true });
+  return finish("done", {
+    head,
+    pushed: true,
+    ...(note === undefined ? {} : { message: note }),
+  });
 }
