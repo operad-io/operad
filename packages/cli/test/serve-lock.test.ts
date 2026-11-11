@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { testEnv } from "./env.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +11,7 @@ function runServe(home: string): Bun.Subprocess<"ignore", "pipe", "pipe"> {
   return Bun.spawn({
     cmd: [process.execPath, CLI_ENTRY, "serve"],
     cwd: home,
-    env: { ...(process.env as Record<string, string>), OPERAD_HOME: home },
+    env: { ...testEnv(), OPERAD_HOME: home },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",

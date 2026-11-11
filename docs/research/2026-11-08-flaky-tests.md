@@ -30,17 +30,20 @@ failures plus one each of these two, which the per-file runs above did not repea
 | `dev per-repository ids > two repositories may both hold T-0001-work under different keys` | 1 (run 8) | `packages/dev/test/service.test.ts:419`, `addRepository` threw `"<.radian/tmp/dev-test-*/one>" is not a git work tree` (`packages/dev/src/service.ts:385-387`) |
 | `operad with the dev plugin > a qualified id whose repository was removed is refused though its object is stored` | 1 (run 4) | `packages/dev/test/cli.test.ts:710`, `repo add .` on a second repository returned 1, expected 0 |
 
-Classification: **unclassified**. In both, the test's own `makeGitRepository`
+**Classified by T-0110:** a transient git failure under load. `git rev-parse`
+sometimes exits 0 with empty stdout and stderr: 8 in 120000 runs with Bun and
+node. In both failures the test's own `makeGitRepository`
 (`packages/dev/test/support.ts:56-68`, whose `git` helper throws on a non-zero exit,
 lines 44-53) had just succeeded, and then `git rev-parse --show-toplevel` in
-`addRepository` failed or printed nothing. Scratch directories are under
-`<cwd>/.radian/tmp` (`support.ts:19-25`), so a transient git failure under load or
-a clash with another process using the same worktree are both possible; the product
-`git()` call at `service.ts:385` drops stderr, so the reason is lost. Frequency 1 in
-10 reruns each, in a run with other sessions' load. In that run the dogfood failures
-had a different message (`Export named 'secretValuesOf' not found in
-packages/access-match/src/index.ts`): the same stale-install environment issue as
-below. A new proposed task (6) covers the two repository failures.
+`addRepository` returned an empty success. Scratch directories are under
+`<cwd>/.radian/tmp` (`support.ts:19-25`), so another process using the same
+worktree was not the cause. Frequency 1 in 10 reruns each, in a run with other
+sessions' load. The product `git()` call now runs an expected-output query again,
+a bounded number of times (`packages/dev/src/git.ts`), before believing an empty
+answer. In that run the dogfood failures had a different message (`Export named
+'secretValuesOf' not found in packages/access-match/src/index.ts`): the same
+stale-install environment issue as below. A new proposed task (6) covered the two
+repository failures.
 
 Not run (out of time): access-match, harness-pi, harness-process, harness-radian,
 mcp, pool, review-grading, source-cron, tui. The full-suite "0 of 200" bar is not
@@ -102,15 +105,19 @@ ended, is the same assertion: `packages/shell/test/shell.test.ts` ~line 680,
 here. The earlier diagnostic edit (poll `alive`, print `ps`) was reverted and its
 finding was never recorded. Unclassified, same suspected cause.
 
-### Unclassified: cli serve restart (1 failure)
+### cli serve restart: an empty `ps` answer under load (1 failure)
 
 `packages/cli/test/serve-restart.test.ts:131`: `operad serve stop` exited 3 instead
 of 0 in run 7 of 10 (1.5 s), right after `waitForFile(started)`. Exit 3 is returned
 for an action/not-available/unavailable view error or a `StateError`
 (`packages/cli/src/main.ts:2271-2287`). The test does not print the stderr of the
 stop, so the reason is unknown. I did not read the stop code path. Plausible: stop
-raced a serve that was not yet fully registered or was already stopping. Product
-race or test bug: unclassified.
+raced a serve that was not yet fully registered or was already stopping.
+**Classified by T-0108:** `ps -p <pid> -o command=` sometimes exits 0 with empty
+output under load, so `serve stop` thought the live serve was not a serve and
+exited 3. Stop now asks again a bounded number of times while the process lives
+and refuses with a different line only when it still cannot say what the process
+is.
 
 ## Proposed tasks
 
@@ -243,8 +250,8 @@ New failures at 10 reruns (the skipped packages): one test, below.
 Other sessions' stress runs (`dev/cli.test.ts` and `dev/service.test.ts` at 200
 runs, started 00:23 and 00:34) were running on the machine the whole time, so the
 load was higher than `--load 2`; this was not a quiet machine. "Runs" counts test
-executions. engine and harness-claude and the new packages finished all files;
-dev did not (see "Left over").
+executions. engine, cli, shell, harness-claude and the new packages finished all
+files; dev did not (see "gate.test.ts alone, and what is left").
 
 | Package | Files done | Runs | Failures | Failing tests |
 |---|---|---|---|---|
@@ -269,11 +276,11 @@ Not an issue, but those tests are not covered by any stress run.
 
 ### New failures, classified
 
-Four of the five new failures are 30 s (or 10 s) hangs in a wait that depends on a
-real `fs.watch` or on a process going away. All are 1 to 3 failures in 20 reruns, so
-they are rare; no failure repeated in the same run.
+Five of the six new failures are 30 s (or 10 s) hangs in a wait that depends on a
+real `fs.watch` or on a process going away; the sixth is not a timeout. All are 1
+to 3 failures in 20 reruns, so they are rare; no failure repeated in the same run.
 
-1. **tui `the real directory watch reports an edit`: flaky, cause unconfirmed.** The
+1. **tui `the real directory watch reports an edit`: unclassified.** The
    test arms `watchThemes` on a real directory, then writes the theme file once and
    awaits a promise that only the watch callback resolves (`theme.test.ts:386-396`).
    3 of 10 at 10 reruns, 2 of 20 at 20 reruns (5 of 30 over both passes, about one
@@ -290,20 +297,19 @@ they are rare; no failure repeated in the same run.
    handshake through `ready-*`/`go` files with the same `watch` + `existsSync`
    helper; a missed directory event is a hang with no retry. Same family as 1;
    unconfirmed. Proposed task 7.
-3. **harness-claude `silence with an open tool call is not a stall`: flaky, hang,
-   unclassified.** 1 of 20 (run 2), 30 s timeout. The test waits for the marker
+3. **harness-claude `silence with an open tool call is not a stall`: unclassified.** 1 of 20 (run 2), 30 s timeout. The test waits for the marker
    file (`waitForFile`, a watch) and then `env.clock.when(clears > 0)`; I did not
    find which wait hung. Candidate: the same missed watch event (family of 1 and 2),
    or the injected clock never seeing a timer armed. Proposed task 7.
 4. **harness-radian `a zero exit without a Result record is a failure that says
-   so`: flaky, unclassified.** 1 of 20 (run 1 of the file): the test itself passed;
+   so`: unclassified.** 1 of 20 (run 1 of the file): the test itself passed;
    its `afterEach` hook (`stopTestProcesses`, `support.ts:99-108`) hit the 50 s
    timeout, i.e. `waitForGone` never saw the test's processes leave. Either a
    process matching the temp path survived the group signal or the process listing
    stalled under load. Unclassified; could be a product leak (a process outliving
    its run) or the test helper. Proposed task 8.
-5. **harness-pi `cancel stops the worker and reports interrupted`: flaky, product
-   race suspected.** 1 of 20 (run 8 of 20, 10 s): `result` was `interrupted` /
+5. **harness-pi `cancel stops the worker and reports interrupted`: unclassified,
+   with a product race suspected.** 1 of 20 (run 8 of 20, 10 s): `result` was `interrupted` /
    `cancelled` (lines 550-551 passed) but `gone(pid)` still saw the worker alive after
    polling for 10 s (`plugin.test.ts:85-92`, `kill -0` every 5 ms). Not the instant
    check of the harness-claude finding: 10 s is long enough for a reap, so either the
@@ -311,7 +317,7 @@ they are rare; no failure repeated in the same run.
    before the process group was registered) or it was a zombie nobody reaped. No
    `ps` was taken. Related to proposed task 2. Proposed task 9.
 6. **engine `step limits survive a crash > while the step runs: the slot is held and
-   recovery follows replay`: flaky, unclassified.** 1 of 20, 2.3 s, not a timeout:
+   recovery follows replay`: unclassified.** 1 of 20, 2.3 s, not a timeout:
    `env.order()` was `["q","s"]`, expected `["q","q","s"]` (`runner/limits.test.ts:481`),
    i.e. the order record shows one `q` run, while the lines before it (the restarted
    child exited 0 and `started-q-again` exists) passed. Either the first `q`
@@ -356,10 +362,19 @@ first pass's "10 of 10" gate failures were the stale install (T-0109), so this i
 the first valid gate measurement. It does not reach the 20-run bar.
 
 Left, not run in this task:
-- `packages/dev/test`, 21 of 22 files at 20 runs (only `actions.test.ts` was done:
+- `packages/dev/test`, 30 of 31 files at 20 runs (only `actions.test.ts` was done:
   440 runs, 0 failures). The first pass's 10-rerun whole-package run stands for them
-  (the two unclassified repository failures, proposed task 6).
+  (the two repository failures, now classified and fixed by T-0110).
 - `gate.test.ts` at 10 and 20 runs.
 - A quiet-machine run of anything: no package was run on a quiet machine.
-- `bash scripts/verify.sh` was not run after the last commit; the change is this
-  file only.
+- `bash scripts/verify.sh` was not run after the last commit in the original
+  survey. The change was this file only, so it cannot break the gate; AGENTS.md
+  reserves the full suite for integration, before merge, and later tasks do not
+  run it themselves.
+
+## Commit history (follow-up)
+
+The commits of the completion pass were grouped: `c1fcb5e` recorded access-match,
+harness-pi and harness-process, and `84c6e23` recorded harness-radian, mcp, pool,
+review-grading, source-cron and tui. The brief asked for one commit per package.
+That history is before this follow-up and is not rewritten.

@@ -9,13 +9,15 @@
 # holds it (pid, command line, working directory, how long), and starts no
 # helper while it waits. A lock whose holder is no longer alive is taken over,
 # saying so once. A stress run may therefore wait for another; the wait is not
-# part of its result. The lock is the directory ${TMPDIR:-/tmp}/operad-stress.lock,
-# outside any worktree, so runs from every worktree share it.
+# part of its result. The lock is the directory ${HOME:-/tmp}/.operad-stress.lock,
+# outside any worktree and independent of TMPDIR, so runs from every worktree
+# and sandbox of a user share it.
 #   --no-lock    skip the lock, for a run that knows it is alone
 #   STRESS_LOCK  names another lock path (for the tests)
 # Each helper also stops when this script is gone, so a SIGKILL of the script
-# (which runs no trap) leaves no helper behind. The script itself stops when
-# its own parent is gone, so a SIGKILL of the runner that started it ends all.
+# (which runs no trap) leaves no helper and no test runner behind. The script
+# itself stops when its own parent is gone, so a SIGKILL of the runner that
+# started it ends all.
 set -uo pipefail
 starter=$PPID
 cmdline="$0 $*"
@@ -46,6 +48,7 @@ bun scripts/check-install.ts || exit 2
 
 cpus=${STRESS_CPUS:-$( (getconf _NPROCESSORS_ONLN || nproc || sysctl -n hw.ncpu) 2>/dev/null | head -n 1)}
 case "$cpus" in ''|*[!0-9]*) cpus=1 ;; esac
+if [ "$cpus" -lt 1 ]; then echo "STRESS_CPUS wants a positive number" >&2; exit 2; fi
 [ "$load" -le "$cpus" ] || load="$cpus"
 
 helpers=()
@@ -61,7 +64,7 @@ stop_helpers() {
   fi
 }
 
-lock=${STRESS_LOCK:-${TMPDIR:-/tmp}/operad-stress.lock}
+lock=${STRESS_LOCK:-${HOME:-/tmp}/.operad-stress.lock}
 lock_held=0
 release_lock() {
   [ "$lock_held" -eq 1 ] || return 0
@@ -87,8 +90,28 @@ lock_holder() {
   echo "stress: waiting for the stress run holding $lock: pid $1, command '$(cat "$lock/cmd" 2>/dev/null)', in $(cat "$lock/cwd" 2>/dev/null), held for $((secs / 60))m $((secs % 60))s" >&2
 }
 
+take_over_lock() { # expected pid (empty while the holder has not written it)
+  local current tpid
+  if mkdir "$lock.takeover" 2>/dev/null; then
+    echo "$$" > "$lock.takeover/pid"
+    current=$(cat "$lock/pid" 2>/dev/null)
+    if [ "$current" = "$1" ]; then
+      rm -rf "$lock"
+      if [ -n "$1" ]; then
+        echo "stress: the run holding $lock (pid $1) is gone; taking over its lock" >&2
+      fi
+    fi
+    rm -rf "$lock.takeover"
+    return 0
+  fi
+  # Another waiter is taking over. Clear its directory only if its process died.
+  tpid=$(cat "$lock.takeover/pid" 2>/dev/null)
+  if [ -n "$tpid" ] && ! stress_pid_alive "$tpid"; then rm -rf "$lock.takeover"; fi
+  return 1
+}
+
 acquire_lock() {
-  local told=0 noinfo=0 nodir=0 pid moved stale
+  local told=0 noinfo=0 nodir=0 pid
   mkdir -p "$(dirname "$lock")" 2>/dev/null
   while :; do
     if mkdir "$lock" 2>/dev/null; then
@@ -110,49 +133,66 @@ acquire_lock() {
       # Another run is between mkdir and its pid file; if it never finishes, it died.
       noinfo=$((noinfo + 1))
       if [ "$noinfo" -gt 20 ]; then
-        stale="$lock.stale.$$"; rm -rf "$stale"
-        mv "$lock" "$stale" 2>/dev/null && rm -rf "$stale"
+        take_over_lock ""
+        noinfo=0
       fi
       nap 0.25
       continue
     fi
     noinfo=0
-    if ps -p "$pid" >/dev/null 2>&1; then
+    if stress_pid_alive "$pid"; then
       if [ "$told" -eq 0 ]; then told=1; lock_holder "$pid"; fi
       nap 0.5
       continue
     fi
-    # The holder is gone. Move the lock aside (one waiter wins), and put it back
-    # if it turns out to be a newer holder's.
-    stale="$lock.stale.$$"; rm -rf "$stale"
-    if mv "$lock" "$stale" 2>/dev/null; then
-      moved=$(cat "$stale/pid" 2>/dev/null)
-      if [ "$moved" = "$pid" ]; then
-        rm -rf "$stale"
-        echo "stress: the run holding $lock (pid $pid) is gone; taking over its lock" >&2
-      else
-        mv "$stale" "$lock" 2>/dev/null || rm -rf "$stale"
-      fi
+    # The holder is gone, or its pid now belongs to something else. Waiters
+    # take over through one directory, so none moves a newer lock aside.
+    if take_over_lock "$pid"; then
+      told=0
+    else
+      nap 0.15
     fi
   done
 }
 
 parent=$$
+parent_start=$(ps -p "$parent" -o lstart= 2>/dev/null)
+starter_start=$(ps -p "$starter" -o lstart= 2>/dev/null)
+
+# True when the pid is the same live process, not a reused pid or a zombie.
+same_process() {
+  local stat current
+  stat=$(ps -p "$1" -o stat= 2>/dev/null) || return 1
+  case "$stat" in *Z*) return 1 ;; esac
+  [ -z "$2" ] && return 0
+  current=$(ps -p "$1" -o lstart= 2>/dev/null)
+  [ "$current" = "$2" ]
+}
+parent_alive() { same_process "$parent" "$parent_start"; }
+starter_alive() { same_process "$starter" "$starter_start"; }
+stress_pid_alive() {
+  local stat command
+  stat=$(ps -p "$1" -o stat= 2>/dev/null) || return 1
+  case "$stat" in *Z*) return 1 ;; esac
+  command=$(ps -p "$1" -o command= 2>/dev/null)
+  case "$command" in *stress.sh*) return 0 ;; *) return 1 ;; esac
+}
 # Stop with the process that started this script (the TERM trap then runs).
-( while kill -0 "$parent" 2>/dev/null && kill -0 "$starter" 2>/dev/null; do sleep 0.5; done
+( while parent_alive && starter_alive; do sleep 2; done
   kill -TERM "$parent" 2>/dev/null ) </dev/null >/dev/null 2>&1 &
 watcher=$!
 
 [ "$use_lock" -eq 0 ] || acquire_lock
 
-# A helper runs while this script's pid exists; kill -0 is a builtin.
-# Helper 1 forks a short process in a loop; the others spin.
+# A helper runs while this script is the same live process, so a reused pid
+# or a zombie does not keep it going. Helper 1 forks a short process in a loop;
+# the others spin.
 i=0
 while [ "$i" -lt "$load" ]; do
   if [ "$i" -eq 0 ]; then
-    ( while kill -0 "$parent" 2>/dev/null; do /usr/bin/true; done ) </dev/null >/dev/null 2>&1 &
+    ( while parent_alive; do /usr/bin/true; done ) </dev/null >/dev/null 2>&1 &
   else
-    ( while kill -0 "$parent" 2>/dev/null; do :; done ) </dev/null >/dev/null 2>&1 &
+    ( while parent_alive; do :; done ) </dev/null >/dev/null 2>&1 &
   fi
   helpers+=("$!")
   i=$((i + 1))
@@ -169,6 +209,12 @@ args=(test "${files[@]}" --rerun-each "$runs" --timeout 30000)
 bun "${args[@]}" > "$log" 2>&1 < /dev/null &
 bunpid=$!
 helpers+=("$bunpid")
+# A SIGKILL of this script runs no trap: stop the test runner from a watcher.
+( while parent_alive; do sleep 0.2; done
+  kill -TERM "$bunpid" 2>/dev/null
+  sleep 0.2
+  kill -KILL "$bunpid" 2>/dev/null ) </dev/null >/dev/null 2>&1 &
+helpers+=("$!")
 wait "$bunpid"
 status=$?
 stop_helpers

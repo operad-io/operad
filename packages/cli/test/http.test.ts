@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { testEnv } from "./env.ts";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,7 +53,7 @@ async function makeHome(
 
 function env(home: string): Record<string, string> {
   return {
-    ...(process.env as Record<string, string>),
+    ...testEnv(),
     OPERAD_HOME: home,
     OPERAD_SERVE_INTERVAL_MS: "60",
   };

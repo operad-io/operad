@@ -953,6 +953,37 @@ describe("http server", () => {
     }
   });
 
+  test("a start that fails after binding reports an address it could not release", async () => {
+    const listener = ((init: { hostname?: string }) => {
+      if (init.hostname === "127.0.0.9") throw new Error("Failed to start server");
+      return {
+        port: 1,
+        stop: (): Promise<void> => new Promise<void>(() => undefined),
+      };
+    }) as unknown as typeof Bun.serve;
+    const h = await makeHarness();
+    const ticks: Array<() => void> = [];
+    const starting = startHttpServer({
+      home: h.home,
+      config: { enabled: true, port: 1, listen: ["127.0.0.1", "127.0.0.9"] },
+      views: h.views,
+      log: h.log,
+      registry: h.registry,
+      listener,
+      wait: () => new Promise<void>((resolve) => ticks.push(resolve)),
+    });
+    const settled = starting.then(
+      () => "started",
+      (error: unknown) => error,
+    );
+    while (ticks.length === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+    for (const tick of ticks) tick();
+    const error = await settled;
+    expect(error).toBeInstanceOf(HttpStopError);
+    expect((error as HttpStopError).addresses).toEqual(["127.0.0.1"]);
+    await h.close();
+  });
+
   test("refuses a request body larger than one mebibyte", async () => {
     const h = await makeHarness();
     try {

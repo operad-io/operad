@@ -252,7 +252,7 @@ describe("live updates in the shell", () => {
     await s.view.until((state) => titles(state)[0] === "A2");
     expect(s.client.pendingCalls).toBe(pendingBefore + 1);
     expect(s.client.objectsCalls).toBe(listsBefore);
-    expect(s.client.objectCalls).toEqual(["a"]);
+    expect(s.client.objectCalls).toEqual(["item:a"]);
     s.shell.stop();
   });
 

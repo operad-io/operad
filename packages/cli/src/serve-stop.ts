@@ -78,7 +78,12 @@ export async function serveStop(options: ServeStopOptions): Promise<void> {
     options.write(`no operad serve runs for ${options.home}\n`);
     return;
   }
-  if (command === undefined || !isServeCommand(command)) {
+  if (command === undefined) {
+    throw new StateError(
+      `process ${pid} holds ${path} but ps could not say what it is; nothing was signalled`,
+    );
+  }
+  if (!isServeCommand(command)) {
     throw new StateError(
       `process ${pid} holds ${path} but is not an operad serve; nothing was signalled`,
     );

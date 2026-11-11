@@ -16,7 +16,15 @@ function manifest(dir: string): Manifest | undefined {
   }
 }
 
-/** The links a checkout is missing, as `<package dir>/node_modules/<name>`. */
+/** True when `name` resolves from `dir` through the node_modules directories above it. */
+function resolves(dir: string, root: string, name: string): boolean {
+  for (let at = dir; ; at = dirname(at)) {
+    if (existsSync(join(at, "node_modules", name))) return true;
+    if (at === root) return false;
+  }
+}
+
+/** The links a checkout is missing, as the path that should resolve. */
 export function missingLinks(root: string): string[] {
   const dirs = [root];
   try {
@@ -32,9 +40,14 @@ export function missingLinks(root: string): string[] {
     if (m === undefined) continue;
     const deps = { ...m.devDependencies, ...m.dependencies };
     for (const [name, range] of Object.entries(deps)) {
-      if (!range.startsWith("workspace:")) continue;
-      const link = join(dir, "node_modules", name);
-      if (!existsSync(link)) missing.push(relative(root, link) || link);
+      if (range.startsWith("workspace:")) {
+        // A workspace package is linked beside the manifest that depends on it.
+        const link = join(dir, "node_modules", name);
+        if (!existsSync(link)) missing.push(relative(root, link) || link);
+        continue;
+      }
+      // An npm package may be hoisted to the root; any directory on the way up is fine.
+      if (!resolves(dir, root, name)) missing.push(relative(root, join(dir, "node_modules", name)));
     }
   }
   return missing;

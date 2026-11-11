@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -93,10 +93,9 @@ class Output {
   /** Resolves with the count of matches once `pattern` matches at least `count` times. */
   async until(pattern: RegExp, count = 1): Promise<void> {
     const global = new RegExp(pattern.source, "g");
-    const deadline = Date.now() + WAIT_LIMIT_MS;
     for (;;) {
       if ((this.text.match(global)?.length ?? 0) >= count) return;
-      const remaining = deadline - Date.now();
+      const remaining = waitDeadline - Date.now();
       if (remaining <= 0) {
         throw new Error(`timed out waiting for output matching ${pattern} (${count}x); got:\n${this.text}`);
       }
@@ -117,23 +116,25 @@ class Output {
   }
 }
 
-/** A wait ends with a message that names what it waited for, before the test's own timeout. */
+/** A test's whole wait budget, so a later wait cannot reach bun's test timeout first. */
 const WAIT_LIMIT_MS = 45_000;
+let waitDeadline = 0;
+beforeEach(() => {
+  waitDeadline = Date.now() + WAIT_LIMIT_MS;
+});
 
 /** Resolves once the file exists. */
 async function waitForFileNamed(path: string): Promise<void> {
-  const deadline = Date.now() + WAIT_LIMIT_MS;
   while (!existsSync(path)) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for file ${path}`);
+    if (Date.now() > waitDeadline) throw new Error(`timed out waiting for file ${path}`);
     await waitForChange(dirname(path), basename(path), 200);
   }
 }
 
 /** Resolves once the file holds text that matches. */
 async function waitForText(path: string, pattern: RegExp): Promise<void> {
-  const deadline = Date.now() + WAIT_LIMIT_MS;
   for (;;) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for text ${pattern} in ${path}`);
+    if (Date.now() > waitDeadline) throw new Error(`timed out waiting for text ${pattern} in ${path}`);
     try {
       if (pattern.test(readFileSync(path, "utf8"))) return;
     } catch {
@@ -523,14 +524,14 @@ describe("a reload with two listen addresses", () => {
           await new Promise<void>((resolve) => setImmediate(resolve));
         }
       }
-      await output.until(/the old code serves every address again/);
+      await output.until(/the old code tries every address again/);
       // The new code is gone; free the address for the old code to take back.
       await blocker.stop(true);
       blocker = undefined;
       await output.until(/serving /, 2);
       expect(await answers(urlOf("127.0.0.1", port))).toBe(true);
       expect(await answers(urlOf(second, port))).toBe(true);
-      expect(output.text.match(/the old code serves every address again/g)).toHaveLength(1);
+      expect(output.text.match(/the old code tries every address again/g)).toHaveLength(1);
       expect(serve.pid).toBe(supervisorPid);
       expect(serve.exitCode).toBeNull();
     } finally {

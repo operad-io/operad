@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { testEnv } from "./env.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -93,7 +94,7 @@ describe("cancelling an object ends the run that waits on it", () => {
       cmd: [process.execPath, CLI_ENTRY, "serve"],
       cwd: home,
       env: {
-        ...(process.env as Record<string, string>),
+        ...testEnv(),
         OPERAD_HOME: home,
         OPERAD_SERVE_INTERVAL_MS: "60",
       },
