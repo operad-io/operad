@@ -614,3 +614,6 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0060-M7 | packages/dev/src/settings.ts | restored the removed rule that a flow's last user stage must be human, so a non-final human stage was refused | `[human, check] loads and compiles human -> check -> integrate` |
+| T-0152-M1 | packages/dev/src/service.ts | `recordMergeReported` stopped checking the mark under the lock, so every caller claimed it | `a scheduler line prints once > the merge mark goes to one claimant, as when another process races a pass` |
+| T-0152-M2 | packages/dev/src/service.ts | `recordPlanFinishedReported` stopped checking the mark under the lock | `a scheduler line prints once > the finished mark goes to one claimant` |
+| T-0152-M3 | packages/dev/src/schedule.ts | `runScheduler` ran every asked pass at once instead of one after another | `a scheduler line prints once > a pass asked for while one runs runs once after it, never beside it` |
