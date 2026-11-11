@@ -1,7 +1,7 @@
 {
   "$schema": "../packages/dev/dev.schema.json",
   "name": "operad",
-  "concurrency": 3,
+  "concurrency": 4,
   "maxAutoRework": 4,
   "workers": {
     "claude": {
