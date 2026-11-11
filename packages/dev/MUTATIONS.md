@@ -674,6 +674,17 @@ the row fields.
 | T-0131-M2 | packages/dev/src/timeouts.ts | removed the 30-minute cap in `reviewWaitMs` | `review waits > double from retrySecs and stop at the cap` |
 | T-0131-M3 | packages/dev/src/timeouts.ts | set `MAX_REVIEW_WAITS` back to 36 | `review waits > the give-up point is about the time it was (about 90 minutes at the default)` |
 
+## T-0228 — a resumed branch with unchecked work goes on to verify
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0228-M1 | packages/dev/src/steps.ts | work that added no commit always ended `nothing`, even on a branch with unchecked commits | `work that ends with no new commit > a branch with unchecked work goes on to verify, and says why` |
+## T-0227 — a cancelled task ends its run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0227-M1 | packages/dev/src/schedule.ts | the tick did not end a run still active on a cancelled task | `a run still active on a cancelled task is ended by the tick` |
+| T-0227-M3 | packages/dev/src/service.ts | cancel did not pass the task's stored flow graph to the run control | `cancelling a task through MCP ends a run of the flow the task stored` |
 ## T-0061 — choosing a flow
 
 | id | file | mutation | failing test |
@@ -689,3 +700,9 @@ the row fields.
 | T-0152-M1 | packages/dev/src/service.ts | `recordMergeReported` stopped checking the mark under the lock, so every caller claimed it | `a scheduler line prints once > the merge mark goes to one claimant, as when another process races a pass` |
 | T-0152-M2 | packages/dev/src/service.ts | `recordPlanFinishedReported` stopped checking the mark under the lock | `a scheduler line prints once > the finished mark goes to one claimant` |
 | T-0152-M3 | packages/dev/src/schedule.ts | `runScheduler` ran every asked pass at once instead of one after another | `a scheduler line prints once > a pass asked for while one runs runs once after it, never beside it` |
+
+## T-0216 — a rework's wait for its worker is shown
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0216-M2 | packages/dev/src/marks.ts | a task waiting for its worker kept the `running` mark | `dev/work with workers > a rework whose worker is busy shows the wait and the holding task until it is released` |

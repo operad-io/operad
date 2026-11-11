@@ -381,6 +381,8 @@ export type TaskAttempt = {
   readonly integration?: IntegrationRecord | null;
   /** The run whose integrate step is working now; null once it wrote its result. */
   readonly integrating?: string | null;
+  /** While the work step waits for its named worker: what it waits for and who holds it. */
+  readonly workerWait?: string | null;
   /** While the integrate step waits for its turn: who is integrating. */
   readonly integrationWait?: string | null;
   /** What the cleanup step ran after the merge. */

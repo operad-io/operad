@@ -16,6 +16,7 @@ import {
   MAX_WORK_WAITS,
   reviewTestHooks,
   taskData,
+  taskViews,
 } from "../src/index.ts";
 import {
   advanceMain,
@@ -381,6 +382,41 @@ describe("dev/work", () => {
     const result = await runWork(state);
     expect(result.result).toBe("nothing");
     expect((await taskDataOf(state)).attempt?.sessionId).toBe("fake-session");
+  });
+
+  /** A branch commit, a verify of that head recorded as `result`, then the worktree step and a no-op work. */
+  async function resumed(result: "pass" | "fail") {
+    const state = await fixture("nothing");
+    const path = join(state.remote.repository, ".operad-worktrees", state.taskId);
+    await commitIn(path, "branch.txt", "branch\n", "earlier work");
+    const head = gitOrThrow(path, ["rev-parse", "HEAD"]);
+    const stored = await state.store.get("task", state.taskKey);
+    if (stored === undefined) throw new Error("task disappeared");
+    const current = taskData(stored.data);
+    await state.store.put(
+      "task",
+      state.taskKey,
+      {
+        ...current,
+        attempt: { ...current.attempt, verified: head, verify: { result, run: "earlier" } },
+      },
+      "test:verified",
+    );
+    // A new run starts at the worktree step, which must keep a passing verify of this head.
+    const prepared = await state.registry.runStep("dev/worktree", {}, {
+      runId: "resume-run",
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+    expect(prepared.result).toBe("ready");
+    return runWork(state, "resume-work");
+  }
+
+  test("nothing: a branch whose head already passed verify is not checked again", async () => {
+    expect((await resumed("pass")).result).toBe("nothing");
+  });
+
+  test("a head whose verify failed is unchecked work, not a passed one", async () => {
+    expect((await resumed("fail")).result).toBe("done");
   });
 
   test("nothing: a reset below the base is not new work", async () => {
@@ -768,6 +804,55 @@ describe("dev/work with workers", () => {
     await held.release();
     const result = await work;
     expect(result.data).toMatchObject({ worker: "second" });
+  });
+
+  test("a rework whose worker is busy shows the wait and the holding task until it is released", async () => {
+    const state = await fixture("nothing", { workers: { second: fake("nothing") } });
+    await runWork(state, "run-1");
+    rewrite(state, { workers: { first: fake("nothing"), second: fake("nothing") } });
+    await visit(state, "rework-run");
+    const places = new FilePlaces(join(state.root, "pool"));
+    const held = await places.claim([
+      {
+        own: "count:repository/default/second",
+        ownLimit: 1,
+        home: "harness:fake-harness",
+        homeLimit: undefined,
+        holder: "T-0205",
+      },
+    ]);
+    if (held.kind !== "taken") throw new Error("the place was not free");
+    let waiting: () => void = () => undefined;
+    const sawWaiting = new Promise<void>((resolve) => {
+      waiting = resolve;
+    });
+    const work = runWork(state, "run-2", (plugin, type) => {
+      if (plugin === "pool" && type === "pool.waiting") waiting();
+    });
+    await sawWaiting;
+    const object = await state.store.get("task", state.taskKey);
+    if (object === undefined) throw new Error("task disappeared");
+    const row = taskViews.row(object);
+    expect(row.mark).toBe("blocked");
+    expect(row.note).toContain("waiting for worker second: held by T-0205");
+    const logPath = join(state.store.root, "logs", "dev", "runs", "run-2", "work.log");
+    expect(readFileSync(logPath, "utf8")).toContain("waiting for worker second: held by T-0205");
+    await held.release();
+    expect((await work).data).toMatchObject({ worker: "second" });
+    expect(readFileSync(logPath, "utf8")).toContain("worker second is free; the work starts");
+    const after = await taskDataOf(state);
+    expect(after.attempt?.workerWait ?? null).toBeNull();
+  });
+
+  test("a rework whose worker is free shows no wait", async () => {
+    const state = await fixture("nothing", { workers: { second: fake("nothing") } });
+    await runWork(state, "run-1");
+    await visit(state, "rework-run");
+    await runWork(state, "run-2");
+    const logPath = join(state.store.root, "logs", "dev", "runs", "run-2", "work.log");
+    const log = existsSync(logPath) ? readFileSync(logPath, "utf8") : "";
+    expect(log).not.toContain("waiting for worker");
+    expect((await taskDataOf(state)).attempt?.workerWait ?? null).toBeNull();
   });
 
   test("a worker removed from dev.json is replaced and the change is recorded", async () => {

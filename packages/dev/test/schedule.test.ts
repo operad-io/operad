@@ -27,6 +27,7 @@ import {
   getTask,
   setAuto,
   setPriority,
+  cancelTask,
   claimTaskStart,
   setTaskPhase,
   updateTask,
@@ -577,6 +578,41 @@ describe("dev scheduling", () => {
     // A task whose run recorded itself is never claimed again.
     await putTask(fixture, task.key, { run: "run-1" });
     expect(await tick(fixture)).toEqual([]);
+  });
+
+  test("a run still active on a cancelled task is ended by the tick", async () => {
+    const fixture = await setup({ concurrency: 1 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "off" });
+    const task = await makeTask(fixture, plan.key, "task");
+    const other = await makeTask(fixture, plan.key, "other");
+    await confirm(fixture, plan.key);
+    await setTaskPhase(fixture.store, task.key, "waiting", { run: "run-1" });
+    await setTaskPhase(fixture.store, other.key, "waiting", { run: "run-2" });
+    // The cancel reached no run control, as one made through MCP did not.
+    await cancelTask(fixture.store, task.key);
+    expect(fixture.cancelled).toEqual([]);
+
+    const info = (runId: string, object: string): RunInfo => ({
+      runId,
+      flow: "dev",
+      object,
+      active: true,
+      startedAt: 0,
+      endedAt: null,
+      lastSeq: 1,
+      startInputId: null,
+    });
+    const runs: RunLookup = {
+      active: async (object?: string) =>
+        [info("run-1", `task:${task.key}`), info("run-2", `task:${other.key}`)].filter(
+          (run) => object === undefined || run.object === object,
+        ),
+      state: async () => undefined,
+      lastStep: async () => null,
+    };
+    await fixture.registry.tick(runs);
+    // Only the cancelled task's run ends; a task that waits keeps its run.
+    expect(fixture.cancelled).toEqual(["run-1"]);
   });
 
   test("a claim whose run the kernel holds is not released before the run records itself", async () => {

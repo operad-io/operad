@@ -66,6 +66,10 @@ function waitNote(task: TaskData): string | undefined {
   ) {
     return `waiting to integrate: ${turn}`;
   }
+  const workerWait = task.attempt?.workerWait;
+  if (task.phase === "running" && typeof workerWait === "string" && workerWait.length > 0) {
+    return workerWait;
+  }
   if (
     task.phase === "ready" &&
     task.dependencyHeld === true &&
