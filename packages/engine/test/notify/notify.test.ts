@@ -131,6 +131,25 @@ describe("notify", () => {
     expect(facts.filter((kind) => kind === NOTIFIED_FACT)).toHaveLength(1);
   });
 
+  test("a wait the plugin answers itself sends no notice and is noticed later if it stays", async () => {
+    const { home, log } = await openFixture();
+    await waitOn(log, "task:T-1");
+    let automatic = true;
+    const sent = counting();
+    const notifier = new Notifier({
+      home,
+      log,
+      config: ON,
+      run: sent.run,
+      answeredAutomatically: async () => automatic,
+    });
+    await notifier.pass();
+    expect(sent.calls).toHaveLength(0);
+    automatic = false;
+    await notifier.pass();
+    expect(sent.calls).toHaveLength(1);
+  });
+
   test("a new wait on the same run notifies again", async () => {
     const { home, log } = await openFixture();
     const runId = await waitOn(log, "task:T-1", "ask:1");

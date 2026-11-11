@@ -29,7 +29,13 @@ export const followupTestHooks: {
   afterPropose?: (() => Promise<void> | void) | undefined;
 } = {};
 
-const OPEN_PHASES: readonly string[] = ["ready", "running", "review", "waiting"];
+const OPEN_PHASES: readonly string[] = [
+  "ready",
+  "running",
+  "review",
+  "waiting",
+  "paused",
+];
 const SLUG_MAX = 48;
 const SUFFIX = "-followups";
 

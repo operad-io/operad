@@ -499,7 +499,14 @@ export function runToken(ctx: StepContext): string | undefined {
 export function claimAllows(ctx: StepContext, task: TaskData): boolean {
   if (task.phase === "cancelled" || task.phase === "paused") return false;
   const claim = task.claim;
-  if (claim === undefined || claim === null) return true;
+  if (claim === undefined || claim === null) {
+    // A scheduler-started step that finds the task ready with no run and no
+    // claim belongs to a run that was paused and resumed: its task is back in
+    // the queue, so its late write would overwrite the resumed task.
+    return !(
+      runToken(ctx) !== undefined && task.run === null && task.phase === "ready"
+    );
+  }
   if (runToken(ctx) !== claim.token) return false;
   if (task.run === null && task.phase !== claim.phase) return false;
   return true;
@@ -750,6 +757,8 @@ export async function runWorktree(
     startRequested: false,
     attempts,
     attempt: nextAttempt,
+    // A merge conflict between two review failures resets the count.
+    ...(prepared.kind === "conflict" ? { reviewFailed: undefined } : {}),
     ...(mergedNote === undefined
       ? {}
       : { brief: appendChange(context.task.brief, mergedNote) }),
@@ -828,6 +837,8 @@ export async function runReverify(
     run: ctx.runId,
     attempts,
     attempt: nextAttempt,
+    // A merge conflict between two review failures resets the count.
+    ...(prepared.kind === "conflict" ? { reviewFailed: undefined } : {}),
     ...(message === undefined
       ? {}
       : { brief: appendChange(context.task.brief, message) }),

@@ -130,7 +130,7 @@ describe("review follow-ups", () => {
     const s = await setup();
     const n = [{ attempt: 1, round: 1, findings: [note("minor", "a.ts", 1, "x")] }];
     await s.task("done", "merged", n, 1);
-    for (const phase of ["ready", "running", "review", "waiting"] as const) {
+    for (const phase of ["ready", "running", "review", "waiting", "paused"] as const) {
       const open = await s.task(`open-${phase}`, phase);
       expect(await s.collect()).toEqual([]);
       await cancelTask(s.store, `demo/${open}`);
