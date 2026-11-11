@@ -79,6 +79,15 @@ describe("the table of refusal lines", () => {
   });
 });
 
+describe("a finished plan", () => {
+  test("is a confirmed plan: confirming it again is already true, not a refusal", () => {
+    expect(PLAN_LINES.confirm.finished.kind).toBe("done");
+    expect(PLAN_LINES.confirm.finished.kind === "done" && PLAN_LINES.confirm.finished.say({ id: "P-0001" })).toBe(
+      "P-0001 is already confirmed; nothing to do",
+    );
+  });
+});
+
 /** Every state a task can be in, with a plan state for a proposed one. */
 async function world() {
   const root = await tempRoot();

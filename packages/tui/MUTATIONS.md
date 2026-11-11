@@ -321,3 +321,5 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0297-M1 | packages/tui/src/app.ts | a live event's bare id was sent as the object request even when a listed row knew its type | `live updates in the shell > an event refetches Pending once per window and only its own row` |
+| T-0298-M5 | packages/tui/src/state.ts | a settled result's line was dropped from the notice | `a refusal line > a result that was already true shows its line and ends the wait` |
+| T-0298-M6 | packages/tui/src/actions.ts | refusalLine stripped a leading `word: ` from the sentence again | `a refusal line > drops a status number and keeps the sentence, even one that starts like a field` |
