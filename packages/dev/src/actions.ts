@@ -433,6 +433,7 @@ export const actions: readonly ActionTypeDefinition[] = [
   {
     name: "cancel",
     on: "plan",
+    ends: true,
     rank: PLAN_RANKS.cancel,
     confirm: true,
     when(state) {
@@ -447,6 +448,7 @@ export const actions: readonly ActionTypeDefinition[] = [
   {
     name: "cancel",
     on: "task",
+    ends: true,
     rank: TASK_RANKS.cancel,
     confirm: true,
     when(state) {

@@ -178,6 +178,8 @@ export interface ActionInfo {
   readonly note?: string | undefined;
   readonly noteRequired: boolean;
   readonly confirm: boolean;
+  /** The action ends the object, so a main key or button never runs it. */
+  readonly ends?: boolean | undefined;
 }
 
 /** Where a key binding came from. */
@@ -430,6 +432,7 @@ export class PluginRegistry {
           ...(note.name === undefined ? {} : { note: note.name }),
           noteRequired: note.required,
           confirm: action.confirm === true,
+          ...(action.ends === true ? { ends: true } : {}),
         });
       }
     }

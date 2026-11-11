@@ -602,6 +602,7 @@ function normalizeActions(
       on,
       ...(args === undefined ? {} : { args }),
       ...(confirm === undefined ? {} : { confirm }),
+      ...(entry.ends === true ? { ends: true } : {}),
       when: entry.when as ActionTypeDefinition["when"],
       ...(typeof entry.rank === "function"
         ? { rank: entry.rank as NonNullable<ActionTypeDefinition["rank"]> }

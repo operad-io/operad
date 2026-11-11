@@ -727,6 +727,11 @@ export interface ActionTypeDefinition {
   readonly args?: ActionArgsSchema | undefined;
   /** The action asks for confirmation before it runs. */
   readonly confirm?: boolean | undefined;
+  /**
+   * The action ends the object (a cancel). A client's main key or button never
+   * picks it, even when it is the only action offered.
+   */
+  readonly ends?: boolean | undefined;
   readonly when: (state: ObjectData, env: ActionEnv) => MaybePromise<boolean>;
   /**
    * Where the action stands among the object's available actions: lower comes

@@ -99,6 +99,17 @@ describe("the order of the actions", () => {
     expect(names).toEqual(["confirm", "cancel"]);
   });
 
+  test("a task whose only offered action is cancel has no main action: cancel is marked as ending", async () => {
+    const { store, registry, plan, task } = await setup();
+    // Proposed in a draft plan: dev:confirm is withheld, dev:cancel remains.
+    await change(store, "task", task.id, { phase: "proposed" });
+    const views = new Views({ registry, store, onLog: () => {} });
+    const shown = await views.get(`task:${task.id}`);
+    expect(shown.actions.map((action) => action.name)).toEqual(["dev:cancel"]);
+    expect(shown.actions.every((action) => action.ends === true)).toBe(true);
+    expect(plan.id).toBeDefined();
+  });
+
   test("the views list a confirmed plan's actions in the same order, auto first", async () => {
     const { store, registry, plan } = await setup();
     await change(store, "plan", plan.id, { status: "confirmed", taskCount: 1, auto: "off" });
