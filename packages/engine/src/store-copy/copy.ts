@@ -291,11 +291,47 @@ function closeObjects(store: PluginStore): void {
 }
 
 /**
+ * Tells whether another connection committed to a sqlite source since `mark`.
+ * It keeps one read connection per database open, so the count it reads (the
+ * database's data version) changes only by a commit from elsewhere, and not by
+ * a checkpoint or a connection closing. A jsonl source has nothing to watch.
+ */
+function watchSqlite(
+  config: OperadConfig,
+  root: string,
+): { mark(): void; changed(): boolean; close(): void } {
+  const files =
+    config.store.backend === "sqlite" ? [config.store.path, join(root, PLUGIN_SQLITE_FILE)] : [];
+  const open: Array<{ database: Database; version: number }> = [];
+  const version = (database: Database): number =>
+    (database.query("PRAGMA data_version").get() as { data_version: number }).data_version;
+  return {
+    mark() {
+      for (const file of files) {
+        if (!existsSync(file)) continue;
+        const database = new Database(file, { readonly: true });
+        setBusyTimeout(database);
+        open.push({ database, version: version(database) });
+      }
+    },
+    changed() {
+      return open.some((entry) => version(entry.database) !== entry.version);
+    },
+    close() {
+      for (const entry of open.splice(0)) entry.database.close();
+    },
+  };
+}
+
+/**
  * What the source's own files look like: path, size and modification time of
  * every file the copy reads. A write to the source while it is copied changes
  * this. It only reads.
  */
 function fingerprint(config: OperadConfig, root: string): string {
+  // A sqlite source is watched by `watchSqlite`: its file sizes and times also
+  // move when a connection closes and folds the write-ahead file in, which is
+  // not a write.
   const files: string[] = [];
   const walk = (directory: string): void => {
     if (!existsSync(directory)) return;
@@ -311,10 +347,6 @@ function fingerprint(config: OperadConfig, root: string): string {
       files.push(join(root, name));
     }
     files.push(join(root, "plugins", "facts.jsonl"));
-  } else {
-    for (const suffix of ["", "-wal"]) {
-      files.push(`${config.store.path}${suffix}`, join(root, `${PLUGIN_SQLITE_FILE}${suffix}`));
-    }
   }
   return files
     .map((path) => {
@@ -448,10 +480,18 @@ export async function copyStore(options: CopyStoreOptions): Promise<CopyStoreRes
     // takes: a write already under way finishes first and is in the snapshot,
     // and a write that starts later finds the move lock and is refused.
     let seen = "";
-    const sourceLog = withWriters(config, root, () => {
-      seen = fingerprint(config, root);
-      return snapshotSource(config, root, temporary.snapshot);
-    });
+    const watch = watchSqlite(config, root);
+    let sourceLog: string;
+    try {
+      sourceLog = withWriters(config, root, () => {
+        seen = fingerprint(config, root);
+        watch.mark();
+        return snapshotSource(config, root, temporary.snapshot);
+      });
+    } catch (error) {
+      watch.close();
+      throw error;
+    }
     await options.afterSnapshot?.();
     const source = openLog({ backend: from, path: sourceLog });
     const sourceObjects = openPluginStore({ backend: from, root: temporary.snapshot });
@@ -485,7 +525,7 @@ export async function copyStore(options: CopyStoreOptions): Promise<CopyStoreRes
       const objectFacts = copyObjects(sourceObjects, targetObjects, objectTime);
       // A write that reached the source after it was read is not in the copy;
       // switching to the copy would lose it.
-      if (fingerprint(config, root) !== seen) {
+      if (fingerprint(config, root) !== seen || watch.changed()) {
         throw new StateError(
           "the store changed while it was being copied; nothing was switched, try again when nothing is writing to it",
         );
@@ -517,6 +557,7 @@ export async function copyStore(options: CopyStoreOptions): Promise<CopyStoreRes
       }
       return { from, to, path: storePathFor(to, root), ...counts, objectFacts };
     } finally {
+      watch.close();
       await target?.close();
       if (targetObjects !== undefined) closeObjects(targetObjects);
       closeObjects(sourceObjects);

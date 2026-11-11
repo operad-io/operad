@@ -471,6 +471,36 @@ describe("store copy", () => {
     expect((await run(home, ["cards:approve", "card:2"])).code).toBe(0);
   });
 
+  test("a write to a sqlite source after it was read makes the copy back fail and leaves no target", async () => {
+    const { home, root } = await seededHome();
+    expect((await run(home, ["store", "copy", "sqlite"])).code).toBe(0);
+    expect((await run(home, ["store", "use", "sqlite"])).code).toBe(0);
+    const config = await readConfig(home);
+    const aside = join(root, "..", "aside");
+    mkdirSync(join(aside, "plugins"), { recursive: true });
+    for (const name of ["runs", "inputs.jsonl", "outcomes.jsonl", "global-facts.jsonl", "schema.json", ".lock"]) {
+      renameSync(join(root, name), join(aside, name));
+    }
+    renameSync(join(root, "plugins", "facts.jsonl"), join(aside, "plugins", "facts.jsonl"));
+    await expect(
+      copyStore({
+        home,
+        config,
+        to: "jsonl",
+        afterSnapshot: () => {
+          // A writer that began before the copy took its lock: a raw commit, no checks.
+          const late = new Database(join(root, "plugins.sqlite"));
+          try {
+            late.exec("CREATE TABLE late (x)");
+          } finally {
+            late.close();
+          }
+        },
+      }),
+    ).rejects.toThrow("changed while it was being copied");
+    expect(existsSync(join(root, "runs"))).toBe(false);
+  });
+
   test("a write that reaches the source after it was read makes the copy fail and leaves no target", async () => {
     const { home, root } = await seededHome();
     const config = await readConfig(home);
