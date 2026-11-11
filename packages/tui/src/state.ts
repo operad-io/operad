@@ -38,6 +38,7 @@ import {
   isReserved,
   resolveBindings,
   remember,
+  withNotice,
   type TuiCommand,
 } from "./actions.ts";
 
@@ -671,8 +672,8 @@ export type TuiStateEvent =
   | { readonly type: "theme-launched" }
   /** The caller saved the chosen child layout; it is saved once. */
   | { readonly type: "layout-launched" }
-  /** The action ran. */
-  | { readonly type: "action-done" }
+  /** The action ran, or its result was already true and `notice` says so. */
+  | { readonly type: "action-done"; readonly notice?: string | undefined }
   /** The server refused the action; the message shows as the line, the status does not. */
   | {
       readonly type: "action-error";
@@ -2661,7 +2662,11 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
     case "settings":
       return { ...state, settings: event.settings };
     case "action-done":
-      return { ...state, acting: false, actionRequest: undefined };
+      return {
+        ...(event.notice === undefined ? state : withNotice(state, event.notice)),
+        acting: false,
+        actionRequest: undefined,
+      };
     case "action-error":
       return actionFailed(state, event.message);
     case "connection":

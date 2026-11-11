@@ -85,6 +85,11 @@ export interface TuiRunOptions {
    * is open and passed here one by one after the terminal is restored.
    */
   readonly onError?: ((message: string) => void) | undefined;
+  /**
+   * What the app logs while the screen is open (a refused action and its
+   * status). Kept until the terminal is restored, then passed one by one.
+   */
+  readonly onLog?: ((message: string) => void) | undefined;
   /** Never start `operad serve`, even when none answers. */
   readonly noStart?: boolean | undefined;
   /** The `operad` entry file a started serve runs; without it none is started. */
@@ -254,6 +259,15 @@ function themeOf(renderer: CliRenderer, fallback: TuiTheme): TuiTheme {
  * change stream, and sends keys through the reducer. `runTui` wires it to a
  * renderer; a test wires it to fakes.
  */
+/** A result that was already true says so: its line shows as the notice. */
+function settledNotice(ran: unknown): { readonly notice?: string } {
+  if (typeof ran !== "object" || ran === null) return {};
+  const { settled, value } = ran as { settled?: unknown; value?: unknown };
+  return settled === true && typeof value === "string" && value.length > 0
+    ? { notice: value }
+    : {};
+}
+
 export function startShell(deps: TuiShellDeps): TuiShell {
   const { client, view } = deps;
   const abort = new AbortController();
@@ -962,7 +976,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       return;
     }
     try {
-      await act.call(client, {
+      const ran = await act.call(client, {
         action: request.action,
         id: wire(request.id),
         ...(request.note === undefined ? {} : { note: request.note }),
@@ -971,7 +985,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         signal: abort.signal,
       });
       if (abort.signal.aborted) return;
-      dispatch({ type: "action-done" });
+      dispatch({ type: "action-done", ...settledNotice(ran) });
       requestRefresh();
     } catch (error) {
       if (abort.signal.aborted) return;
@@ -1243,6 +1257,7 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
   });
   const client = new TuiClient(location);
   const messages: string[] = [];
+  const logs: string[] = [];
   let renderer: CliRenderer | undefined;
   let view: TuiView | undefined;
   let shell: TuiShell | undefined;
@@ -1295,6 +1310,7 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
       view: createdView,
       // Request failures show on the page and are echoed after the screen closes.
       onMessage: (message) => messages.push(message),
+      onLog: (message) => logs.push(message),
       width: created.width,
       height: created.height,
       theme: themeOf(created, "dark"),
@@ -1376,5 +1392,6 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
   }
   const onError = options.onError ?? (() => undefined);
   for (const message of messages) onError(message);
+  for (const line of logs) options.onLog?.(line);
   return code;
 }

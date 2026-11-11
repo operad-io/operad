@@ -8,6 +8,7 @@ import {
   TASK_ACTIONS,
   TASK_LINES,
   TASK_STATES,
+  EMPTY_DRAFT,
   type Facts,
   type Line,
   type PlanActionName,
@@ -61,6 +62,7 @@ describe("the table of refusal lines", () => {
       ...PLAN_ACTIONS.flatMap((a) =>
         PLAN_STATES.map((s): [string, Line] => [`${a} ${s}`, PLAN_LINES[a][s]]),
       ),
+      ["confirm empty draft", EMPTY_DRAFT],
     ];
     let seen = 0;
     for (const [where, line] of all) {
