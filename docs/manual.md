@@ -1304,7 +1304,12 @@ session, records the reply, and goes round again while new messages came in
 meanwhile (at most 20 rounds). After a restart a reply that was already
 recorded is not given twice.
 
-A chat on a repository works in the main clone, read-only. When the agent wants
+A chat on a repository works in the main clone, read-only: a shell command runs
+there only when it is on a short list of commands that only read (`git status`,
+`ls`, `cat`, `grep`, `sed -n`, `bun test`, ...); every other command, and every
+write, becomes the worktree question. `harness-radian` cannot ask, so it ends the
+run with the reason `refused` as soon as its agent calls a write or a command
+that is not on the list. When the agent wants
 to change code it asks whether to open a worktree. On yes, `dev` opens
 `work/chat-<id>` and the chat works there from then on, once; the main clone
 stays read-only. The worktree's changes reach main only through a task that

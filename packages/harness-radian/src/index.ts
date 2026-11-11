@@ -7,7 +7,7 @@
 
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { firstErrorLine, readProfile, secretValuesOf, summarizeCall, type AccessProfile } from "@operad-io/access-match";
+import { firstErrorLine, match, readProfile, secretValuesOf, summarizeCall, type AccessProfile } from "@operad-io/access-match";
 import {
   defineFlow,
   definePlugin,
@@ -83,14 +83,11 @@ function firstString(record: Record<string, unknown>, keys: readonly string[]): 
  * `shell` is a bash command, `patch` an edit, `glob` a find, and any other tool
  * with a `path` is a read of it. The log still names the radian tool.
  */
-function summarizeRadianCall(
-  profile: AccessProfile,
+/** One radian tool call as the access-match call it stands for. */
+function mapRadianCall(
   toolName: string,
-  args: unknown,
-  cwd: string,
-  secrets: readonly string[],
-): string | undefined {
-  if (!isRecord(args)) return undefined;
+  args: Record<string, unknown>,
+): { readonly mapped: string; readonly input: Record<string, unknown> } {
   const lower = toolName.toLowerCase();
   let mapped = lower;
   let input: Record<string, unknown> = args;
@@ -104,12 +101,58 @@ function summarizeRadianCall(
   else if (!["bash", "read", "write", "edit", "grep", "find", "ls"].includes(lower) && typeof args.path === "string") {
     mapped = "read";
   }
+  return { mapped, input };
+}
+
+/**
+ * Why the access profile refuses a radian tool call, or undefined when it lets
+ * it run. radian has no hook that could ask, so a call that would ask is refused
+ * too (a read-only working directory refuses a write and a command that is not
+ * known to only read; `operad-conversation.md` decision 13).
+ */
+export function radianRefusal(profile: AccessProfile, toolName: string, args: unknown, cwd: string): string | undefined {
+  if (!isRecord(args)) return undefined;
+  const { mapped, input } = mapRadianCall(toolName, args);
+  const verdict = match(profile, { tool: mapped, input, cwd });
+  if (verdict.allow) return undefined;
+  return verdict.rule === "readOnly" || (verdict.ask === true && profile.readOnly === true)
+    ? "this chat is read-only here"
+    : verdict.rule === undefined
+      ? "refused by the access profile"
+      : `refused by the access profile (rule: ${verdict.rule.replace(/\s+/g, " ").slice(0, 120)})`;
+}
+
+function summarizeRadianCall(
+  profile: AccessProfile,
+  toolName: string,
+  args: unknown,
+  cwd: string,
+  secrets: readonly string[],
+): string | undefined {
+  if (!isRecord(args)) return undefined;
+  const lower = toolName.toLowerCase();
+  const { mapped, input } = mapRadianCall(toolName, args);
   const summary = summarizeCall(profile, mapped, input, cwd, { secrets });
   const denied = `${mapped} denied by the access profile`;
   if (summary !== undefined && summary.startsWith(denied)) return `${toolName}${summary.slice(mapped.length)}`;
   // Unknown tools keep the plain summary of their main argument.
   if (mapped === "read" && lower !== "read") return summarizeCall({}, toolName, args, cwd, { secrets });
   return summary;
+}
+
+/** The tool name and arguments of a radian tool-start line. */
+export function radianCallOf(line: string): { readonly toolName: string; readonly args: unknown } | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(value)) return undefined;
+  const nested = isRecord(value.data) ? value.data : isRecord(value.payload) ? value.payload : {};
+  const toolName = firstString(value, ["toolName", "tool_name", "tool", "name"]) ?? firstString(nested, ["toolName", "tool_name", "tool", "name"]);
+  if (toolName === undefined) return undefined;
+  return { toolName, args: value.input ?? value.args ?? value.arguments ?? nested.input ?? nested.args ?? nested.arguments };
 }
 
 /**
@@ -641,6 +684,10 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
           let result: ParsedResult | undefined;
           const openTools = new Map<string, { at: number; name: string }>();
 
+          // radian runs its own tools and nothing here can hold a call back, so
+          // a call the profile refuses ends the run as soon as its line shows.
+          const refuser = new AbortController();
+          let refused: string | undefined;
           const outcome = await runAgent({
             command: commandName,
             args: command.args,
@@ -648,10 +695,18 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             stdin: command.stdin,
             wallMs: wallTimeSecs * 1000,
             stallMs: stallSecs * 1000,
-            signal: ctx.signal,
+            signal: AbortSignal.any([ctx.signal, refuser.signal]),
             clock: defaults.clock,
             toolEvent: radianToolEvent,
             onLine(line) {
+              if (refused === undefined && radianToolEvent(line) === "tool-start") {
+                const call = radianCallOf(line);
+                const why = call === undefined ? undefined : radianRefusal(logProfile, call.toolName, call.args, cwd);
+                if (call !== undefined && why !== undefined) {
+                  refused = `radian's ${call.toolName} call was ${why}`;
+                  refuser.abort();
+                }
+              }
               const writing = jsonl.push(radianLogLine(line, defaults.now, openTools, cwd, logProfile, logSecrets));
               const parsed = parseResult(line);
               if (parsed !== undefined) result = parsed;
@@ -659,6 +714,16 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             },
           });
           await jsonl.end();
+
+          if (refused !== undefined && !ctx.signal.aborted) {
+            return {
+              result: "failed",
+              data: failureData(who, outcome, result, ctx.logger.path, Date.now() - started, {
+                reason: "refused",
+                message: refused,
+              }),
+            };
+          }
 
           // A resumed run continues the session it was given. Another id means
           // radian started afresh and the earlier conversation is lost.

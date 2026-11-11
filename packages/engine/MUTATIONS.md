@@ -434,3 +434,4 @@ the row fields.
 | T-0160-M1 | packages/engine/src/views/settings.ts | ran the read-modify-write without the lock file, so concurrent sets lost updates | `settings > sets at the same moment all land, and the file keeps its mode` |
 | T-0160-M2 | packages/engine/src/views/settings.ts | dropped the chmod of the temporary file, so the config lost its mode on rename | `settings > sets at the same moment all land, and the file keeps its mode` |
 | T-0188-M7 | packages/engine/src/plugin/registry.ts | an action could send an event whose source is operad | `ctx.emit in an action > the source operad is reserved for the kernel` |
+| T-0188-M20 | packages/engine/src/plugin/registry.ts | the action context's harness list named plugins of another kind | `ctx.harnesses in an action > names the loaded plugins of kind harness` |

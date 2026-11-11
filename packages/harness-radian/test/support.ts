@@ -299,6 +299,16 @@ if (mode === "tool-detail") {
   process.exit(0);
 }
 
+if (mode === "call") {
+  // One tool call, then a long turn: only the host ending the run stops it.
+  const call = JSON.parse(process.env.FAKE_RADIAN_CALL ?? "{}");
+  line({ type: "journal", event: "ToolExecutionStarted", toolCallId: "c1", toolName: call.toolName, input: call.input });
+  await new Promise((resolve) => setTimeout(resolve, 60000));
+  if (marker) writeFileSync(marker, "ran");
+  line(result());
+  process.exit(0);
+}
+
 if (mode === "done") {
   line({ type: "journal", event: "TurnStarted" });
   line(result());

@@ -41,15 +41,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Whether a harness question is about writing a file (a write or edit of a path, or a command with a redirect): the one a read-only chat turns into a worktree question. */
+/**
+ * Whether a harness question is about a call in the working directory: a
+ * path write or edit, or a shell command. A read-only chat lets no such call
+ * through on a one-time permission (the profile already let the read-only ones
+ * run), so each becomes the worktree question.
+ */
 export function isWriteQuestion(request: AskRequest): boolean {
   const resume = request.resume;
-  if (!isRecord(resume)) return false;
-  const grant = resume.grant;
-  if (!isRecord(grant)) return false;
-  if (grant.kind === "path") return grant.tool === "write" || grant.tool === "edit";
-  // A shell command that redirects its output writes a file too.
-  return grant.kind === "command" && typeof grant.value === "string" && /(?:^|[^>&\d])\d*>>?(?!&)/.test(grant.value);
+  if (isRecord(resume) && isRecord(resume.grant)) {
+    const grant = resume.grant;
+    if (grant.kind === "command") return true;
+    return grant.kind === "path" && (grant.tool === "write" || grant.tool === "edit");
+  }
+  // A question with no session to continue carries no grant; its words say what it is about.
+  return /^(?:Run this command\?|Let (?:write|edit) use this path\?)/.test(request.prompt);
 }
 
 function failed(reason: string, message: string): PluginStepResult {

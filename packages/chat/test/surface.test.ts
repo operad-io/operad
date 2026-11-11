@@ -189,15 +189,32 @@ describe("a read-only chat", () => {
     expect(asked).toEqual([WORKTREE_QUESTION]);
   });
 
-  test("a no sends nothing, and a command question goes through unchanged", async () => {
+  test("a call question with no session to continue is the worktree question too", async () => {
+    const asked: string[] = [];
+    const r = await rig(async (ctx: StepContext) => {
+      await ctx.ask({ prompt: "Run this command? rm -r src", choices: ["allow_once", "reject_once"], onTimeout: "reject_once" });
+      return reply("done");
+    });
+    const chat = await r.chat({ access: { readOnly: true } });
+    await r.say(chat, "go");
+    const asker = {
+      async ask(request: { prompt: string }) {
+        asked.push(request.prompt);
+        return { kind: "answered" as const, answer: { choice: "no" } };
+      },
+      async useGrant() {
+        return false;
+      },
+    };
+    await r.round(chat, {}, asker, () => undefined);
+    expect(asked).toEqual([WORKTREE_QUESTION]);
+  });
+
+  test("a no sends nothing, and a question that is not about a call goes through unchanged", async () => {
     const asked: string[] = [];
     const r = await rig(async (ctx: StepContext) => {
       await ctx.ask(writeAsk);
-      await ctx.ask({
-        prompt: "Run this command? git push",
-        choices: ["allow_once", "reject_once"],
-        resume: { session: "s", grant: { kind: "command", value: "git push", choice: "allow_once" } },
-      });
+      await ctx.ask({ prompt: "Which branch?", choices: ["a", "b"] });
       return reply("done");
     });
     const chat = await r.chat({ access: { readOnly: true } });
@@ -213,7 +230,7 @@ describe("a read-only chat", () => {
     };
     const emitted: string[] = [];
     expect((await r.round(chat, {}, asker, (event) => emitted.push(event.type))).result).toBe("done");
-    expect(asked).toEqual([WORKTREE_QUESTION, "Run this command? git push"]);
+    expect(asked).toEqual([WORKTREE_QUESTION, "Which branch?"]);
     expect(emitted).toEqual([]);
   });
 

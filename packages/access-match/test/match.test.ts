@@ -422,3 +422,33 @@ test("readOnly is read from a profile, and only a boolean is accepted", () => {
   expect(readProfile({ readOnly: true })).toEqual({ ok: true, profile: { readOnly: true } });
   expect(readProfile({ readOnly: "yes" })).toEqual({ ok: false, message: "readOnly must be true or false" });
 });
+
+// -- the read-only allowlist -------------------------------------------------
+
+import { isReadOnlyCommand } from "../src/index.ts";
+
+test("commands that only read are on the read-only allowlist", () => {
+  for (const command of [
+    "git status", "git log --oneline -5", "git diff HEAD~1", "git show abc", "git blame a.ts", "git branch --list", "ls -la src",
+    "cat a.ts | head -5 | wc -l", "grep -rn foo src", "rg foo", "find . -name '*.ts'", "sed -n 1,5p a.ts", "sed -n 3p a.ts",
+    "bun test packages/x", "bunx tsc --noEmit", "git status && git log | head", "pwd",
+  ]) expect([command, isReadOnlyCommand(command)]).toEqual([command, true]);
+});
+
+test("everything else is not read-only: redirects, tee, sed -i, cp, mv, git writes, a pipeline whose last stage writes", () => {
+  for (const command of [
+    "echo x > a.ts", "echo x >> a.ts", "echo x &> a.ts", "cat a 2> b", "cat a >| b", "ls | tee out", "cat a.ts | tee b.ts", "sed -i s/a/b/ a.ts",
+    "sed -n 'w out' a.ts", "sed s/a/b/ a.ts", "cp a b", "mv a b", "rm a", "touch a", "git checkout main", "git commit -am x", "git add .", "git push",
+    "git branch newbranch", "git -c core.fsmonitor=/tmp/x status", "git diff --output=out", "find . -delete", "find . -exec rm {} ;", "find . -fprint out",
+    "rg --pre ./x foo", "tree -o out", "bunx tsc -b", "bunx tsc", "bun run build", "bun install", "ls $(touch a)", "ls `touch a`", "FOO=1 ls", "bash -c 'ls'",
+    "cat a; rm b", "cat a && touch b", "cat a & touch b", "python3 x.py", "node -e 1", "xargs rm", "dd if=a of=b",
+  ]) expect([command, isReadOnlyCommand(command)]).toEqual([command, false]);
+});
+
+test("a read-only directory asks about a command that is not on the allowlist, and lets a reading one run", () => {
+  expect(bash({ readOnly: true }, "git status | head")).toEqual({ allow: true });
+  expect(bash({ readOnly: true }, "sed -i s/a/b/ a.ts")).toMatchObject({ allow: false, ask: true, kind: "command", rule: "readOnly" });
+  expect(bash({ readOnly: true }, "echo hi &> a.ts")).toMatchObject({ allow: false, ask: true, kind: "command" });
+  expect(bash({ readOnly: true, denyCommands: ["git status"] }, "git status").ask).toBeUndefined();
+  expect(bash({}, "sed -i s/a/b/ a.ts")).toEqual({ allow: true });
+});

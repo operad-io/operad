@@ -21,6 +21,7 @@ import {
 import {
   createRadianHarnessPlugin,
   radianModel,
+  radianRefusal,
   EVENT_NOTE_TEMPLATE,
   type RadianHarnessSettings,
 } from "../src/index.ts";
@@ -384,6 +385,46 @@ describe("harness-radian/agent", () => {
     expect(dataOf(result).reason).toBe("grant_unsupported");
     expect(String(dataOf(result).message)).toContain("radian cannot enforce a one-time permission");
     expect(existsSync(env.record)).toBe(false);
+  });
+
+  describe("a read-only working directory", () => {
+    async function attempt(toolName: string, input: Record<string, unknown>, access: Record<string, unknown>) {
+      const env = await setup("call");
+      setEnv("FAKE_RADIAN_CALL", JSON.stringify({ toolName, input }));
+      const result = await env.registry.runStep(
+        "harness-radian/agent",
+        { prompt: "change it", cwd: env.root },
+        { runId: "run-ro", access },
+      );
+      return { env, result };
+    }
+
+    test("a radian chat whose agent tries to write a file is refused with a reason, and the run ends", async () => {
+      const { env, result } = await attempt("write", { path: "src/a.ts", content: "x" }, { readOnly: true });
+      expect(result.result).toBe("failed");
+      expect(dataOf(result).reason).toBe("refused");
+      expect(String(dataOf(result).message)).toBe("radian's write call was this chat is read-only here");
+      expect(existsSync(env.marker)).toBe(false);
+    });
+
+    test("a patch and a shell command that is not known to read are refused the same way", async () => {
+      expect(dataOf((await attempt("patch", { path: "a.ts", old: "a", new: "b" }, { readOnly: true })).result).reason).toBe("refused");
+      expect(dataOf((await attempt("shell", { command: "echo x &> a.ts" }, { readOnly: true })).result).reason).toBe("refused");
+      expect(dataOf((await attempt("shell", { command: "sed -i s/a/b/ a.ts" }, { readOnly: true })).result).reason).toBe("refused");
+    });
+
+    test("a deny rule refuses a call without a read-only directory too", async () => {
+      const { result } = await attempt("shell", { command: "sudo ls" }, { denyCommands: ["sudo"] });
+      expect(dataOf(result).reason).toBe("refused");
+      expect(String(dataOf(result).message)).toContain("rule: sudo");
+    });
+
+    test("radianRefusal lets a reading command and a read through", () => {
+      expect(radianRefusal({ readOnly: true }, "shell", { command: "git status | head" }, "/work")).toBeUndefined();
+      expect(radianRefusal({ readOnly: true }, "read", { path: "src/a.ts" }, "/work")).toBeUndefined();
+      expect(radianRefusal({ readOnly: true }, "write", { path: "src/a.ts" }, "/work")).toBe("this chat is read-only here");
+      expect(radianRefusal({}, "write", { path: "src/a.ts" }, "/work")).toBeUndefined();
+    });
   });
 
   test("a non-zero exit is a failure that says so", async () => {
