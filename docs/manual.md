@@ -1188,6 +1188,7 @@ do not apply to them.
 bash scripts/verify.sh
 bash scripts/check-changed.sh
 bash scripts/remote-check.sh '<command>'
+bash scripts/remote-check.sh -- <word>...
 ```
 
 `verify.sh` installs with the lockfile, type-checks and runs the whole test
@@ -1208,6 +1209,13 @@ packages it chose before the tests (`all`, `none`, or the names).
 `OPERAD_CHECK_BASE` (a commit, default the merge base) changes what it compares
 with. This repository's task check runs `check-changed.sh`, and its integration
 runs `verify.sh`.
+
+`remote-check.sh` runs a command here, or on the check host when
+`OPERAD_CHECK_HOST` is set, at the same commit. It takes the command as one
+argument (a shell command line), or after `--` as separate words that are passed
+on as they are: no shell reads them as code on the way, so a word may hold
+quotes, backquotes or `$`. The rerun of a failed test (`failed.rerun` in
+`.operad/dev.json`) uses the `--` form, so it runs where the check ran.
 
 `remote-check.sh` runs one command (a shell line) as a check. With
 `OPERAD_CHECK_HOST` unset or empty it runs the line here, in the repository

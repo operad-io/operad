@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # remote-check.sh <command>: runs a check command here, or on another machine.
+# remote-check.sh -- <word>...: the same, for a command given as separate
+# words (argv): no shell reads the words as code, here or on the host, so a
+# word may hold any quote, backquote or `$`.
 #
 # With OPERAD_CHECK_HOST unset or empty, it runs `bash -c <command>` in the
 # repository root. With it set (an ssh destination such as user@host), it
@@ -21,11 +24,18 @@
 # OPERAD_CHECK_SSH, OPERAD_CHECK_SCP  the ssh and scp commands (tests replace them)
 set -uo pipefail
 cd "$(dirname "$0")/.."
-if [ $# -ne 1 ]; then
-  echo "remote-check: usage: remote-check.sh <command>" >&2
+argv=()
+if [ "${1-}" = -- ]; then
+  shift
+  [ $# -ge 1 ] || { echo "remote-check: usage: remote-check.sh -- <word>..." >&2; exit 2; }
+  argv=("$@")
+  command=$(printf '%q ' "$@")
+elif [ $# -ne 1 ]; then
+  echo "remote-check: usage: remote-check.sh <command> | remote-check.sh -- <word>..." >&2
   exit 2
+else
+  command=$1
 fi
-command=$1
 fail() {
   echo "remote-check: $1" >&2
   exit 1
@@ -43,6 +53,7 @@ fi
 
 host=${OPERAD_CHECK_HOST:-}
 if [ -z "$host" ]; then
+  if [ ${#argv[@]} -gt 0 ]; then exec "${argv[@]}"; fi
   exec bash -c "$command"
 fi
 tree=${OPERAD_CHECK_TREE:-Code/operad}

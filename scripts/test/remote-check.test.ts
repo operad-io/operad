@@ -2,7 +2,9 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { anchoredPattern, rerunCommand } from "../../packages/dev/src/rerun.ts";
 
 const script = join(import.meta.dir, "..", "remote-check.sh");
 const roots: string[] = [];
@@ -66,8 +68,9 @@ function setup(): { root: string; local: string; home: string; env: Record<strin
   };
 }
 
-async function run(local: string, env: Record<string, string>, command: string) {
-  const child = Bun.spawn(["bash", join(local, "scripts", "remote-check.sh"), command], {
+async function run(local: string, env: Record<string, string>, command: string, ...words: string[]) {
+  const args = words.length > 0 ? ["--", command, ...words] : [command];
+  const child = Bun.spawn(["bash", join(local, "scripts", "remote-check.sh"), ...args], {
     cwd: local,
     env: { ...process.env, ...env },
     stdin: "ignore",
@@ -301,5 +304,62 @@ describe("remote-check.sh", () => {
         expect(result.out).not.toContain("ran");
       }
     });
+  });
+});
+
+describe("remote-check.sh > the -- form", () => {
+  test("a word with quotes, backquotes, $ and a regex arrives byte for byte and is not run", async () => {
+    const { root, local, home, env } = setup();
+    const nasty = `it's "q" \`touch ${root}/pwned1\` $(touch ${root}/pwned2) $HOME ${anchoredPattern("a > b (c) [d] 'e' \`f\`")}`;
+    const got = join(root, "got");
+    const result = await run(local, env, "bash", "-c", `printf %s "$1" > '${got}'; exit 5`, "x", nasty);
+    expect(result.code).toBe(5);
+    expect(readFileSync(got, "utf8")).toBe(nasty);
+    expect(existsSync(join(root, "pwned1"))).toBe(false);
+    expect(existsSync(join(root, "pwned2"))).toBe(false);
+  });
+
+  test("without a host the words run here as they are", async () => {
+    const { root, local } = setup();
+    const got = join(root, "got-local");
+    const nasty = "a'b\"c`d`$e";
+    const result = await run(local, { OPERAD_CHECK_HOST: "" }, "bash", "-c", `printf %s "$1" > '${got}'`, "x", nasty);
+    expect(result.code).toBe(0);
+    expect(readFileSync(got, "utf8")).toBe(nasty);
+  });
+
+  test("the committed dev.json rerun goes through remote-check.sh and finds the test", async () => {
+    const { root, local, env } = setup();
+    const name = "it `works` isn't broken";
+    mkdirSync(join(local, "t"), { recursive: true });
+    writeFileSync(
+      join(local, "t", "x.test.ts"),
+      `import { test } from "bun:test";\ntest(${JSON.stringify(name)}, () => {});\n`,
+    );
+    git(local, "add", ".");
+    git(local, "commit", "-q", "-m", "test file");
+    const config = JSON.parse(readFileSync(join(import.meta.dir, "..", "..", ".operad", "dev.json"), "utf8"));
+    const templates: string[] = [
+      config.gate.commands[0].failed.rerun,
+      config.integration.keyCommands[0].failed.rerun,
+    ];
+    for (const template of templates) {
+      const command = rerunCommand(template, name);
+      const child = Bun.spawn(["bash", "-c", command], {
+        cwd: local,
+        env: { ...process.env, ...env },
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [out, err, code] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ]);
+      expect(`${out}${err}`).toContain("remote-check: checking");
+      expect(`${out}${err}`).toContain("1 pass");
+      expect(code).toBe(0);
+    }
   });
 });
