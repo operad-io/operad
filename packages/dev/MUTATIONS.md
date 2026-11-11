@@ -4,6 +4,47 @@ Rows whose mutation broke code in `packages/dev/`, in the order they were
 recorded. The root [MUTATIONS.md](../../MUTATIONS.md) explains the format and
 the row fields.
 
+## TK0002 — reviewer fallback and retry
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0002-M1 | packages/dev/src/gate.ts | `failureOutcome` stopped treating a model error or HTTP 429 as unavailable | `dev/review fallback and retry > a 429 falls back once, and the round passes without a rework` |
+| TK0002-M2 | packages/dev/src/gate.ts | a second timeout ended as `failed` instead of waiting for a person | `dev/review fallback and retry > a second timeout waits for a person with the note` |
+| TK0002-M3 | packages/dev/src/gate.ts | an unavailable round counted itself as a finished review | `dev/review fallback and retry > no fallback and a 429 wait for retrySecs, then run the review only` |
+| TK0002-M4 | packages/dev/src/gate.ts | a model run was not written to the task before the round continued | `dev/review crash recovery > a crash after the first run resumes the same round on the fallback` |
+| TK0002-M5 | packages/dev/flows/dev.flow.ts | sent an unavailable review to the person wait instead of the retry wait | `the dev flow > loads with the gate and the rework edges` |
+| TK0002-M6 | packages/dev/src/settings.ts | ignored `reviewer.retrySecs` and always used the 120-second default | `dev/review fallback and retry > a fallback that is also unavailable waits without a rework` |
+| TK0002-M7 | packages/dev/src/gate.ts | let a retry after the wait choose the fallback again in the same round | `dev/review fallback and retry > a retry after the wait does not use the fallback a second time` |
+| TK0002-M8 | packages/dev/src/gate.ts | removed the chunk bound from `runReviewDue`, so it asked for the whole remaining wait in one step | `dev/review fallback and retry > a retry longer than the step timeout waits in pieces and reruns only when due` |
+| TK0002-M9 | packages/dev/src/gate.ts | stopped writing a reviewer's outcome beside the report, so a crash after the answer repeated the model run | `dev/review crash recovery > a crash after the first result reuses it instead of asking again` |
+| TK0002-M10 | packages/dev/flows/dev.flow.ts | left `maxVisits` at the engine default, so a long review wait hit the visit limit | `the dev flow > a review wait longer than ten pieces keeps waiting` |
+| TK0002-M11 | packages/dev/src/actions.ts | reverify kept the old round's `reviewRuns` and `reviewPending` | `dev/review hardening > reverify starts review round 1 again and asks the reviewer` |
+| TK0002-M12 | packages/dev/src/gate.ts | treated any `429` in the stderr tail as unavailable | `dev/review hardening > a 429 only in a stderr line or a number is not unavailable` |
+| TK0002-M13 | packages/dev/src/gate.ts | judged the harness outcome before reading the report, dropping a valid report from a failed exit | `dev/review hardening > a valid report from a reviewer that then failed (report-then-exit) is used and kept` |
+| TK0002-M15 | packages/dev/src/gate.ts | removed the cap on unavailable waits (also T-0163-M1) | `dev/review hardening > an unavailable model waits at most MAX_REVIEW_WAITS times, across a restart` |
+| TK0002-M16 | packages/dev/src/gate.ts | started a reviewer run that cannot end inside the step deadline | `dev/review hardening > runs that cannot fit in the step deadline are skipped and a person decides` |
+| TK0002-M17 | packages/dev/src/actions.ts | offered merge, reject, rework and reverify during the review model wait | `dev:rework and dev:reverify > a review waiting for its model offers no merge, reject, rework or reverify` |
+| TK0002-M18 | packages/dev/flows/dev.flow.ts | set the flow's visit bound to 10, below the review waits | `the dev flow > loads with the gate and the rework edges` |
+
+## T-0019-http-api — rework 4: lead actions claim the version they were offered
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0019-http-api-M15 | packages/dev/src/actions.ts | claimed at the version read inside the action instead of the version the action was offered on, so two lead actions both won | `dev:rework and dev:reverify > an action offered a stale object loses even while the task still waits` |
+
+## T-0020 — pairing, links and the notification hook
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0008-M16 | `packages/dev/src/steps.ts` | a worker model error went to a person instead of waiting | `dev/work > unavailable: a model error waits for the model instead of a person` |
+| TK0008-M17 | `packages/dev/src/steps.ts` | removed the bound on work waits (also T-0148-M9, T-0102-M5, T-0167-M1) | `dev/work > unavailable: after the allowed waits the failure goes to a person` |
+
+## T-0109 — stale install check
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0109-M4 | packages/dev/bunfig.toml | emptied the package's test preload | `scripts/check-install.ts > bun test run from a package directory stops on the same line` |
+
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0019-M1 | packages/dev/src/model.ts | stopped skipping headings inside a fenced block | `dev model > a fenced Rework heading is text, not a section` |
@@ -61,12 +102,11 @@ the row fields.
 | TK0023-M8 | packages/dev/src/schedule.ts | ignored `startRequested`, so a manual start never started | `dev scheduling > start starts one ready task while its plan is at auto off` |
 | TK0023-M9 | packages/dev/src/gate.ts | set a failed verify back to `running` instead of `review` | `dev/verify > a failing command records the command and its log` |
 | TK0023-M10 | packages/dev/src/schedule.ts | removed the per-attempt auto-merge marker, so a second tick answered again | `dev scheduling > auto merge answers a passed review once and never answers other waits` |
-| TK0023-M11 | packages/dev/src/schedule.ts | removed the claim recovery, so a task left running with no run stayed stranded | `dev scheduling > a claim whose start never landed returns to ready and starts again` |
+| TK0023-M11 | packages/dev/src/schedule.ts | removed the claim recovery, so a task left running with no run stayed stranded (also TK0023-M16) | `dev scheduling > a claim whose start never landed returns to ready and starts again` |
 | TK0023-M12 | packages/dev/src/schedule.ts | let the manual-start pass reset both concurrency counters | `dev scheduling > start still respects the repository concurrency` |
 | TK0023-M13 | packages/dev/src/schedule.ts | skipped the dependency check for a requested start | `dev scheduling > start still respects a dependency` |
 | TK0023-M14 | packages/dev/src/gate.ts | set the early verify failure back to `running` instead of `review` | `dev/verify > a verify with no branch still records the review phase` |
 | TK0023-M15 | packages/dev/src/steps.ts | ignored the flow's `blockedBy` parameter, so a cancelled dependency prepared a worktree instead of a person wait | `dev scheduling > a cancelled dependency leaves the dependent task as a person wait` |
-| TK0023-M16 | packages/dev/src/schedule.ts | disabled the claim recovery, so the child-process crash test leaves the claimed task stranded | `dev scheduling > a claim whose start never landed returns to ready and starts again` |
 | TK0023-M17 | packages/dev/src/service.ts | cleared `startRequested` when the claim was taken instead of when the run recorded itself | `dev scheduling > a manual start survives a crash before the run records itself` |
 | TK0023-M18 | packages/dev/src/steps.ts | let a cancelled task through the claim check | `dev scheduling > a cancelled task never starts work` |
 | TK0023-M19 | packages/dev/src/schedule.ts | printed `waiting -> merged` when answering the merge instead of waiting for the integrate result | `dev scheduling reports the integration transition > a refused push prints integrating -> waiting, never merged` |
@@ -200,6 +240,7 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0064-M7 | packages/dev/src/model.ts | a finished plan was not a final state | `dev views > a plan row shows the derived state and merged/total` |
+
 ## T-0066 — reverify merges main first
 
 | id | file | mutation | failing test |
@@ -234,9 +275,6 @@ the row fields.
 | T-0067-M4 | packages/dev/src/gate.ts | the report was not copied from the old worktree before it was replaced | `dev/review crash before the store copy > a crash after the report was written and before its copy resumes by copying it` |
 | T-0067-M5 | packages/dev/src/gate.ts | a failed store write was swallowed and the report counted | `dev/review report in the workspace > a failed store write fails the step and leaves the workspace report` |
 | T-0067-M6 | packages/dev/src/gate.ts | the store path was not read when the workspace had no file | `dev/review report in the workspace > a report at the store path from an older prompt is read when the workspace has none` |
-| T-0044-M1 | packages/dev/src/views.ts | a long worker name was not cut in the row | `dev views > a task row shows the last attempt's worker, short, and nothing before pools` |
-| T-0044-M2 | packages/dev/src/views.ts | an attempt with no worker got a row named "undefined" | `dev views > the metrics section splits cost, time and first pass by worker` |
-| T-0044-M3 | packages/dev/src/views.ts | a pass in a later review round counted as first pass | `dev views > the metrics section splits cost, time and first pass by worker` |
 | T-0067-M7 | packages/dev/src/gate.ts | the folders were not looked at again after the call | `dev/review report in the workspace > a review folder swapped for a link during the call is not read through` |
 | T-0067-M8 | packages/dev/src/gate.ts | a non-done call with no file kept its plain failure message | `dev/review report in the workspace > a reviewer that exits without a report is labelled as unable to write it` |
 | T-0067-M9 | packages/dev/src/gate.ts | a failed run with no report file stayed outcome `failed` | `dev/review report in the workspace > a reviewer that exits without a report is labelled as unable to write it` |
@@ -287,6 +325,7 @@ the row fields.
 | T-0075-M17 | packages/dev/src/views.ts | a worktree, reverify or work step that failed showed no result | `metrics follow the run's own step > a failed worktree ends the run: nothing runs and no later step is shown` |
 | T-0075-M18 | packages/dev/src/views.ts | a current step that is not a recorded one (rework, a retry wait) was not shown | `metrics follow the run's own step > a failed gate: the rework step runs, then the person wait shows the failure` |
 | T-0075-M19 | packages/dev/src/views.ts | a cancelled task did not show cancelled | `dev views > how an attempt ended: merged, verify failed, conflict, cancelled` |
+
 ## T-0087 — rework-round review
 
 | id | file | mutation | failing test |
@@ -451,9 +490,7 @@ the row fields.
 | T-0151-M1 | packages/dev/src/followups.ts | a repeated finding kept its oldest copy instead of the newest | `review follow-ups > collects the findings of every round and task, deduplicated, grouped by task, duplicates kept once within a task` |
 | T-0151-M2 | packages/dev/src/rework.ts | an argument list from `firstArgs` was recorded as coming from `first` | `review settings by round > firstArgs still belongs to the first review of every attempt, rework round included` |
 | T-0114-M4 | packages/dev/src/views.ts | a group of the run with no recorded attempt was dropped (the pending attempt was never made) | `metrics times come from the run's own facts > a rework whose worktree is still being prepared: the next attempt is already running it` |
-| T-0148-M9 | packages/dev/src/steps.ts | the work wait bound was `<=`, so one wait too many before the failure went to a person | `dev/work > unavailable: after the allowed waits the failure goes to a person` |
 | T-0150-M1 | packages/dev/src/integration-queue.ts | `turn()` checked the abort signal before it read a leader's result | `a claimed task aborted after the leader's push > reports the merge that is on main, not a cancel` |
-| T-0102-M5 | packages/dev/src/steps.ts | the work wait bound allowed one wait too many (`<=` for `<`) | `dev/work > unavailable: after the allowed waits the failure goes to a person` |
 
 ## T-0151 — rework 1
 
@@ -476,11 +513,11 @@ the row fields.
 |---|---|---|---|
 | T-0158-M4 | packages/dev/src/schedule.ts | the mark did not require the plan to be at auto merge | `dev scheduling > a merge wait is marked as answered automatically only at auto merge` |
 | T-0158-M5 | packages/dev/src/schedule.ts | a refused integrate still counted as a wait the scheduler answers | `dev scheduling > auto merge answers a passed review once and never answers other waits`, `dev scheduling > a merge wait is marked as answered automatically only at auto merge` |
+
 ## T-0163 — flaky review hardening tests
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0163-M1 | packages/dev/src/gate.ts | the review wait bound allowed one wait too many (`> MAX_REVIEW_WAITS + 1`), which the seeded waits must still count | `dev/review hardening > an unavailable model waits at most MAX_REVIEW_WAITS times, across a restart` |
 | T-0156-M1 | packages/dev/src/steps.ts | a paused task still let the step that was running write the task (the claim check ignored `paused`) | `dev:pause and dev:resume > pause stops the running step, keeps the branch and commits, and frees the slot` |
 | T-0156-M2 | packages/dev/src/schedule.ts | a paused dependency was treated as cancelled, so its dependent went into a person wait | `dev:pause and dev:resume > a paused ready task is not started, and its dependent stays queued` |
 | T-0156-M3 | packages/dev/src/service.ts | resume left the task paused instead of making it ready | `dev:pause and dev:resume > resume makes the task ready and the next run continues on its branch` |
@@ -506,12 +543,14 @@ the row fields.
 |---|---|---|---|
 | T-0164-M1 | packages/dev/src/integrate.ts | the rerun after the merge was recorded added its "merged as" lines again (the `previous.result === "merged"` check replaced by `false`) | `dev/integrate rerun after a kill > merge: a kill at merged-saved, then a rerun, merges once` |
 | T-0164-M2 | packages/dev/src/settings.ts | the default hook that removes the gate worktree ran without checking the worktree exists | `dev/cleanup rerun after a kill > a kill after hook 2, then a rerun, leaves nothing behind` |
+
 ## T-0163 — rework 1
 
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0163-M2 | packages/dev/test/gate.test.ts | the hook remover deleted a hook it had not installed (identity check replaced by `true`) | `review test hooks > a test that ends late removes only the hooks it installed` |
 | T-0163-M3 | packages/dev/test/gate.test.ts | the out-of-time test's clock moved on a call its own reviewer did not make (own-call check removed) | `dev/review hardening > runs that cannot fit in the step deadline are skipped and a person decides` |
+
 ## T-0159 — rework 1
 
 | id | file | mutation | failing test |
@@ -525,6 +564,7 @@ the row fields.
 |---|---|---|---|
 | T-0164-M3 | packages/dev/src/integrate.ts | a task whose merge a dead leader already landed was not looked up on main (`alreadyOnMain` result ignored), so it merged its commit again and reported someone else's sha | `a batch leader killed after the push > the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone` |
 | T-0164-M4 | packages/dev/src/integrate.ts | the leader's replay dropped the "integrated in a batch with" line (`previousBatch.length === 0` replaced by `true`) | `a batch leader killed after the push > the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone` |
+
 ## T-0173 — TUI follow-ups 2
 
 | id | file | mutation | failing test |
@@ -557,17 +597,20 @@ the row fields.
 |---|---|---|---|
 | T-0194-M1 | packages/dev/src/schedule.ts | the dependency lookup was limited to the repository's own tasks | `--after across plans and repositories > a task of another repository blocks until it merges and the note names the repository` |
 | T-0194-M2 | packages/dev/src/service.ts | the cycle walk ignored the tasks of other repositories | `--after across plans and repositories > a task cannot follow itself or close a cycle; an unknown task is refused` |
+
 ## T-0060 — the dev flow compiler
 
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0060-M1 | packages/dev/src/flow-compiler.ts | a failed stage returned to the first work entry instead of the nearest work stage before it | `a failed review returns to the nearest work stage before it` |
 | T-0060-M2 | packages/dev/src/settings.ts | removed the rule that a flow's last stage is human | `both hard rules refuse the flow by name` |
+
 ## T-0201 — rerun reads only this command's log
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0201-M1 | packages/dev/src/rerun.ts | read the failed names from byte 0 instead of the command's `logStart` | `dev/verify reruns only the failed tests > an earlier attempt's names in the run log do not stop this attempt's rerun` |
+| T-0201-M1 | packages/dev/src/rerun.ts | read the failed names from byte 0 instead of the command's `logStart` (also T-0206-M3) | `dev/verify reruns only the failed tests > an earlier attempt's names in the run log do not stop this attempt's rerun` |
+
 ## T-0177
 
 | id | file | mutation | failing test |
@@ -581,13 +624,11 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0177-M5 | packages/dev/src/standing.ts | a draft plan's proposed tasks were listed as task items again (draft grouping skipped) | `a proposed task is pending > a draft plan keeps its own mark and note` |
-| T-0167-M1 | packages/dev/src/steps.ts | the work-wait bound `waits < MAX_WORK_WAITS` became `<=` (or `< MAX_WORK_WAITS - 1`) | `dev/work > unavailable: after the allowed waits the failure goes to a person` |
 
 ## T-0206 — the check log and the worker log read only their tails
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0206-M3 | packages/dev/src/rerun.ts | read the failed names from byte 0 instead of the command's `logStart` | `dev/verify reruns only the failed tests > an earlier attempt's names in the run log do not stop this attempt's rerun` |
 | T-0206-M4 | packages/dev/src/views.ts | started the worker-log tail at the end of the file, so the log section was empty | `dev views > the log section is the tail of the current attempt's worker log` |
 
 ## T-0147 — git that exits 0 and prints nothing is run again
@@ -597,6 +638,7 @@ the row fields.
 | T-0147-M1 | packages/dev/src/git.ts | the empty-output rerun loop never ran (`attempt < 1`) | `git that exits 0 and prints nothing > headOf returns the commit after empty answers` (also the `dev/work` no-worktree test and the two `repo add` tests) |
 | T-0147-M2 | packages/dev/src/git.ts | every command was treated as one that must print (`printsOnSuccess` returned true) | `git that exits 0 and prints nothing > a query allowed to print nothing is run once` |
 | T-0147-M3 | packages/dev/src/git.ts | the rerun bound was one too many (`attempt <= GIT_EMPTY_ATTEMPTS`) | `git that exits 0 and prints nothing > a query that never prints fails with git's words and says it was empty` |
+
 ## T-0210 — follow-ups from the flow-stops reviews
 
 | id | file | mutation | failing test |
