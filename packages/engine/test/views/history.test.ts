@@ -224,3 +224,83 @@ describe("readable run history", () => {
     expect(lines).toEqual(["**2026-11-08**", "09:00:00  work  done  5s", "09:00:05  run done"]);
   });
 });
+
+describe("folded repeats in run history", () => {
+  const MIN = 60_000;
+  const start = at(8, 20, 47, 0);
+  const U = { reason: "unavailable", message: "the model is unavailable; it runs again at X" };
+
+  function attempt(step: string, visit: number, result: string, time: number, data: object = {}): Fact[] {
+    return [
+      timed("step_entered", { step, visit, kind: "plugin" }, time),
+      timed("step_result", { step, result, data }, time + 1000),
+      timed("edge_taken", { step, result, target: "next" }, time + 1000),
+    ];
+  }
+
+  /** `count` unavailable reviews with a review_retry between each. */
+  function outage(count: number): Fact[] {
+    const out: Fact[] = [];
+    for (let n = 0; n < count; n += 1) {
+      const time = start + n * 2 * MIN;
+      out.push(...attempt("review", n + 1, "unavailable", time, { ...U, message: `${U.message} ${n}` }));
+      if (n < count - 1) out.push(...attempt("review_retry", n + 1, "ready", time + 1500));
+    }
+    return out;
+  }
+
+  test("37 unavailable reviews with their waits fold into one line", () => {
+    const facts = outage(37);
+    const lines = runHistoryLines(facts, { now: at(8, 23, 0, 0), full: false });
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toStartWith("review  unavailable ×37  20:47–");
+    expect(lines[1]).toContain("the model is unavailable; it runs again at X 36");
+  });
+
+  test("a step repeating alone folds too", () => {
+    const facts = [
+      ...attempt("poll", 1, "again", start),
+      ...attempt("poll", 2, "again", start + MIN),
+      ...attempt("poll", 3, "again", start + 2 * MIN),
+    ];
+    const lines = runHistoryLines(facts, { now: start + 5 * MIN, full: false });
+    expect(lines[2]).toBe("poll  after again  again ×2  20:48–20:49");
+  });
+
+  test("a different outcome in between breaks the fold", () => {
+    const facts = outage(3);
+    const broken = [
+      ...facts.slice(0, 5),
+      ...attempt("review_retry", 2, "failed", start + 3 * MIN),
+      ...outage(3).slice(5).map((fact, index) => ({ ...fact, time: fact.time + 10 * MIN, seq: index })),
+    ];
+    const lines = runHistoryLines(broken, { now: at(8, 23, 0, 0), full: false });
+    expect(lines.some((line) => line.includes("failed"))).toBe(true);
+    expect(lines.join("\n")).not.toContain("×3");
+  });
+
+  test("the same step ending differently is not folded with the others", () => {
+    const facts = [
+      ...attempt("poll", 1, "again", start),
+      ...attempt("poll", 2, "again", start + MIN),
+      ...attempt("poll", 3, "again", start + 2 * MIN),
+      ...attempt("poll", 4, "failed", start + 3 * MIN),
+    ];
+    const lines = runHistoryLines(facts, { now: start + 9 * MIN, full: false });
+    expect(lines[2]).toBe("poll  after again  again ×2  20:48–20:49");
+    expect(lines[3]).toStartWith("20:50:00  poll  attempt 4  after again  failed");
+  });
+
+  test("a lone attempt is not folded", () => {
+    const lines = runHistoryLines(attempt("review", 1, "unavailable", start), { now: start + MIN, full: false });
+    expect(lines[1]).toStartWith("20:47:00  review  unavailable");
+    expect(lines.join("\n")).not.toContain("×");
+  });
+
+  test("the entry list keeps every line", async () => {
+    const facts = outage(37);
+    let count = 0;
+    for await (const _entry of historyEntries(from(facts))) count += 1;
+    expect(count).toBe(facts.length);
+  });
+});

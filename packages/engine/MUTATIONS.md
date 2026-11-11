@@ -440,3 +440,5 @@ the row fields.
 |---|---|---|---|
 | T-0160-M1 | packages/engine/src/views/settings.ts | ran the read-modify-write without the lock file, so concurrent sets lost updates | `settings > sets at the same moment all land, and the file keeps its mode` |
 | T-0160-M2 | packages/engine/src/views/settings.ts | dropped the chmod of the temporary file, so the config lost its mode on rename | `settings > sets at the same moment all land, and the file keeps its mode` |
+| T-0131-M4 | packages/engine/src/views/history.ts | dropped the retry-step half of the pair check, so an alternating pair never folded | `folded repeats in run history > 37 unavailable reviews with their waits fold into one line` |
+| T-0131-M5 | packages/engine/src/views/history.ts | left the outcome out of the fold signature, so a different outcome in between folded | `folded repeats in run history > the same step ending differently is not folded with the others` |

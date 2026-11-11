@@ -394,7 +394,97 @@ interface Attempt {
   detail: string;
 }
 
-type Item = Attempt | { readonly time: number; readonly text: string };
+/** Attempts of one step that repeated with the same outcome, as one line. */
+interface Folded {
+  readonly time: number;
+  readonly last: Attempt;
+  readonly count: number;
+  readonly lastTime: number;
+}
+
+type Item = Attempt | Folded | { readonly time: number; readonly text: string };
+
+function isFolded(item: Item): item is Folded {
+  return "count" in item;
+}
+
+/**
+ * What two attempts must share to fold: the step, how it started and how it
+ * ended. Time and attempt number do not count, and neither do the digits of
+ * the detail (a retry time, a count).
+ */
+function signature(item: Item): string | undefined {
+  if (!isAttempt(item) || item.outcome === undefined || item.outcome === "waiting") {
+    return undefined;
+  }
+  return JSON.stringify([
+    item.step,
+    item.reason,
+    item.outcome,
+    item.detail.replace(/\d+/g, "#"),
+  ]);
+}
+
+/**
+ * Folds consecutive attempts that repeat: the same attempt again and again, or
+ * a step that alternates with its retry step (the pair folds as one, shown by
+ * the first step). Anything else in between breaks the fold.
+ */
+function foldRepeats(items: readonly Item[]): Item[] {
+  const out: Item[] = [];
+  let index = 0;
+  while (index < items.length) {
+    const first = items[index];
+    const firstSig = first === undefined ? undefined : signature(first);
+    if (first === undefined || !isAttempt(first) || firstSig === undefined) {
+      if (first !== undefined) out.push(first);
+      index += 1;
+      continue;
+    }
+    // The same attempt repeated.
+    let end = index + 1;
+    while (end < items.length && signatureAt(items, end) === firstSig) end += 1;
+    let count = end - index;
+    let lastAt = end - 1;
+    if (count < 2) {
+      // A step that alternates with another one.
+      const secondSig = signatureAt(items, index + 1);
+      if (secondSig !== undefined && secondSig !== firstSig) {
+        let cursor = index;
+        count = 0;
+        while (
+          signatureAt(items, cursor) === firstSig &&
+          signatureAt(items, cursor + 1) === secondSig
+        ) {
+          count += 1;
+          lastAt = cursor;
+          cursor += 2;
+        }
+        // The run may end on the first step with no retry after it.
+        if (count > 0 && signatureAt(items, cursor) === firstSig) {
+          count += 1;
+          lastAt = cursor;
+          cursor += 1;
+        }
+        end = cursor;
+      }
+    }
+    const lastItem = items[lastAt];
+    if (count >= 2 && lastItem !== undefined && isAttempt(lastItem)) {
+      out.push({ time: first.time, last: lastItem, count, lastTime: lastItem.time });
+      index = end;
+    } else {
+      out.push(first);
+      index += 1;
+    }
+  }
+  return out;
+}
+
+function signatureAt(items: readonly Item[], index: number): string | undefined {
+  const item = items[index];
+  return item === undefined ? undefined : signature(item);
+}
 
 function isAttempt(item: Item): item is Attempt {
   return "attempt" in item;
@@ -501,11 +591,22 @@ export function runHistoryLines(
 
   const lines: string[] = [];
   let day = "";
-  for (const item of items) {
+  for (const item of foldRepeats(items)) {
     const today = localDay(item.time);
     if (today !== day) {
       day = today;
       lines.push(`**${today}**`);
+    }
+    if (isFolded(item)) {
+      const parts: string[] = [item.last.step];
+      if (item.last.reason.length > 0) parts.push(item.last.reason);
+      parts.push(
+        `${item.last.outcome ?? ""} ×${item.count}`,
+        `${localMinute(item.time)}–${localMinute(item.lastTime)}`,
+      );
+      if (item.last.detail.length > 0) parts.push(oneLine(item.last.detail, options.full));
+      lines.push(parts.join("  "));
+      continue;
     }
     if (!isAttempt(item)) {
       lines.push(`${localTime(item.time)}  ${item.text}`);
