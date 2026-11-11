@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { initialState, reduce, type TuiState } from "../src/state.ts";
@@ -126,30 +126,55 @@ describe("shipped themes: the files", () => {
   });
 
   test("a missing shipped file fails when its theme or family is chosen, not when the module is imported", () => {
-    const file = shippedThemeFile("rose-pine-main");
-    const hidden = `${file}.missing`;
-    const module = JSON.stringify(join(PACKAGE, "src", "theme.ts"));
-    renameSync(file, hidden);
+    // A copy of the package in a temporary root mirroring the repository layout
+    // (<root>/packages/tui), so the test never moves a shipped file: a killed
+    // test cannot leave the worktree with a theme missing. The copy resolves
+    // its dependencies through links to the real node_modules directories, both
+    // the repository's and the package's (the install may hoist into either).
+    const repository = join(PACKAGE, "..", "..");
+    const root = mkdtempSync(join(tmpdir(), "operad-lazy-theme-"));
+    const copy = join(root, "packages", "tui");
+    const missing = join(copy, "themes", "rose-pine-main.json");
     try {
-      const imported = spawnSync(process.execPath, ["-e", `await import(${module})`], {
-        cwd: PACKAGE,
-        encoding: "utf8",
-      });
-      expect(imported.status, imported.stderr).toBe(0);
-      for (const name of ["rose-pine-main", "rose-pine"]) {
-        const chosen = spawnSync(
-          process.execPath,
-          [
-            "-e",
-            `const { resolveSelection } = await import(${module}); try { resolveSelection(${JSON.stringify(home())}, ${JSON.stringify(name)}); } catch (error) { console.error(error.message); process.exit(3); }`,
-          ],
-          { cwd: PACKAGE, encoding: "utf8" },
-        );
-        expect(chosen.status, `${name}: ${chosen.stderr}`).toBe(3);
-        expect(chosen.stderr, name).toContain(file);
+      mkdirSync(join(copy, "src"), { recursive: true });
+      mkdirSync(join(copy, "themes"));
+      // theme.ts imports ./themes.ts, whose shipped directory is ../themes.
+      for (const file of ["theme.ts", "themes.ts"]) {
+        copyFileSync(join(PACKAGE, "src", file), join(copy, "src", file));
       }
+      for (const name of SHIPPED_THEMES) {
+        if (name !== "rose-pine-main") {
+          copyFileSync(shippedThemeFile(name), join(copy, "themes", `${name}.json`));
+        }
+      }
+      for (const directory of [join(repository, "node_modules"), join(PACKAGE, "node_modules")]) {
+        if (existsSync(directory)) {
+          symlinkSync(directory, join(directory === join(PACKAGE, "node_modules") ? copy : root, "node_modules"), "dir");
+        }
+      }
+      const module = JSON.stringify(join(copy, "src", "theme.ts"));
+      // One child does the import and both choices: each extra Bun start costs
+      // more than the test itself.
+      const script = `
+        const { resolveSelection } = await import(${module});
+        for (const name of ["rose-pine-main", "rose-pine"]) {
+          try {
+            resolveSelection(${JSON.stringify(home())}, name);
+            console.error("chose " + name);
+            process.exit(4);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (!message.includes(${JSON.stringify(missing)})) {
+              console.error(name + ": " + message);
+              process.exit(5);
+            }
+          }
+        }
+      `;
+      const checked = spawnSync(process.execPath, ["-e", script], { cwd: copy, encoding: "utf8" });
+      expect(checked.status, checked.stderr).toBe(0);
     } finally {
-      renameSync(hidden, file);
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });
