@@ -5,23 +5,8 @@
  */
 
 import { fileURLToPath } from "node:url";
-import {
-  messageOf,
-  type PluginStepResult,
-  type StepContext,
-  type StepRunOptions,
-} from "@operad-io/engine";
-import {
-  appendChange,
-  appendRework,
-  isRecord,
-  storeKey,
-  type CleanupFailure,
-  type CleanupRecord,
-  type IntegrationRecord,
-  type TaskAttempt,
-  type TaskData,
-} from "./model.ts";
+import { isRecord, messageOf, type PluginStepResult, type StepContext, type StepRunOptions } from "@operad-io/engine";
+import { appendChange, appendRework, storeKey, type CleanupFailure, type CleanupRecord, type IntegrationRecord, type TaskAttempt, type TaskData } from "./model.ts";
 import {
   branchHead,
   gateWorktreePath,

@@ -15,6 +15,7 @@ import { EventEmitter } from "node:events";
 import { appendFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import type { SpawnOptions, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
+import { isRecord } from "@operad-io/engine";
 
 export type HookName = "PreToolUse" | "PostToolUse" | "PostToolUseFailure";
 
@@ -40,10 +41,6 @@ export interface FakeScript {
 }
 
 type Json = Record<string, unknown>;
-
-function isRecord(value: unknown): value is Json {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /** What the fake saw, appended to `recordFile` as JSON lines. */
 function record(recordFile: string | undefined, entry: Json): void {

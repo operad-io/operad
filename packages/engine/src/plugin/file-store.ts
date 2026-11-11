@@ -41,18 +41,11 @@ import type {
   PluginStoreLocation,
   StoredObject,
 } from "./types.ts";
+import { isRecord, requireName } from "../util.ts";
+import { repeatEvery } from "../util.ts";
 
 /** How often an open subscription re-reads the file by default. */
 export const DEFAULT_STORE_POLL_MS = 500;
-
-function repeatEvery(ms: number, callback: () => void): () => void {
-  const timer = setInterval(callback, ms);
-  // A subscription must not keep the process alive by itself.
-  (timer as { unref?: () => void }).unref?.();
-  return () => {
-    clearInterval(timer);
-  };
-}
 
 export interface FilePluginStoreOptions extends FollowOptions {
   readonly root: string;
@@ -149,16 +142,6 @@ interface FactSubscription {
   readonly key: string;
   readonly after: number;
   readonly listener: (fact: PluginFact) => void;
-}
-
-function requireName(value: string, field: string): void {
-  if (value.trim().length === 0) {
-    throw new Error(`${field}: must be a non-empty string`);
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** Waits without spinning the CPU; appends hold the lock for microseconds. */

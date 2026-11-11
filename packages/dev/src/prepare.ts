@@ -13,12 +13,8 @@ import {
   symlinkSync,
 } from "node:fs";
 import { join, relative } from "node:path";
-import {
-  messageOf,
-  type StepContext,
-  type StepRunOptions,
-} from "@operad-io/engine";
-import { isRecord } from "./model.ts";
+import { isRecord, messageOf, type StepContext, type StepRunOptions } from "@operad-io/engine";
+
 import type { DevSettings } from "./settings.ts";
 
 /** The reason a step reports when a prepare command failed. */

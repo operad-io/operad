@@ -41,6 +41,7 @@ import { git, workBranch } from "./steps.ts";
 import { repositoryMetrics } from "./throughput.ts";
 import { findRepository, listRepositories } from "./service.ts";
 import { DEV_SETTINGS_FILE, readDevSettings, settingsProblem } from "./settings.ts";
+import { oneLine } from "@operad-io/engine";
 
 function costNote(cost: unknown, quality?: unknown): string | undefined {
   if (typeof cost === "number" && Number.isFinite(cost)) {
@@ -293,13 +294,6 @@ function agentText(text: string): string {
   return flat.length <= 300 ? flat : `${flat.slice(0, 299)}…`;
 }
 
-function oneLine(text: string): string {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length <= LOG_LINE_CHARS
-    ? flat
-    : `${flat.slice(0, LOG_LINE_CHARS - 1)}…`;
-}
-
 function stringField(
   record: Record<string, unknown>,
   names: readonly string[],
@@ -446,7 +440,7 @@ export function readableLog(lines: readonly string[], options: { readonly worktr
       const id = stringField(record, ["toolCallId"]);
       const hasStart = id !== undefined && starts.has(id);
       if (error !== undefined && !hasStart) {
-        out.push(oneLine(`tool ${stringField(record, ["toolName"]) ?? "tool"} failed: ${error}`));
+        out.push(oneLine(`tool ${stringField(record, ["toolName"]) ?? "tool"} failed: ${error}`, LOG_LINE_CHARS));
       }
       continue;
     }
@@ -467,7 +461,7 @@ export function readableLog(lines: readonly string[], options: { readonly worktr
     if (record !== undefined && kind === "blocked") {
       const reason = stringField(record, ["reason"]);
       out.push(
-        oneLine(`blocked ${stringField(record, ["toolName"]) ?? "tool"}${reason === undefined ? "" : `: ${reason}`}`),
+        oneLine(`blocked ${stringField(record, ["toolName"]) ?? "tool"}${reason === undefined ? "" : `: ${reason}`}`, LOG_LINE_CHARS),
       );
       continue;
     }
@@ -528,10 +522,10 @@ export function readableLogLine(line: string): string | undefined {
   try {
     value = JSON.parse(text);
   } catch {
-    return oneLine(text);
+    return oneLine(text, LOG_LINE_CHARS);
   }
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return oneLine(text);
+    return oneLine(text, LOG_LINE_CHARS);
   }
   const record = value as Record<string, unknown>;
   const kind = stringField(record, ["type"]) ?? "";
@@ -542,15 +536,15 @@ export function readableLogLine(line: string): string | undefined {
     const shown =
       input === undefined
         ? ""
-        : ` ${oneLine(typeof input === "string" ? input : JSON.stringify(input))}`;
-    return oneLine(`tool ${tool}${shown}`);
+        : ` ${oneLine(typeof input === "string" ? input : JSON.stringify(input), LOG_LINE_CHARS)}`;
+    return oneLine(`tool ${tool}${shown}`, LOG_LINE_CHARS);
   }
   if (kind === "journal") {
-    return /tool/i.test(event) ? oneLine(`tool: ${event}`) : undefined;
+    return /tool/i.test(event) ? oneLine(`tool: ${event}`, LOG_LINE_CHARS) : undefined;
   }
   const said = stringField(record, ["text", "message", "content"]);
   if (said !== undefined) {
-    return oneLine(`${kind === "Result" ? "result" : "assistant"}: ${said}`);
+    return oneLine(`${kind === "Result" ? "result" : "assistant"}: ${said}`, LOG_LINE_CHARS);
   }
   return undefined;
 }

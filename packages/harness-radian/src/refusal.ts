@@ -1,8 +1,5 @@
 import { match, type AccessProfile } from "@operad-io/access-match";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+import { isRecord } from "@operad-io/engine";
 
 /** One radian tool call as the access-match call it stands for. */
 export function mapRadianCall(

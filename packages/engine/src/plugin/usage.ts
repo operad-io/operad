@@ -1,3 +1,4 @@
+import { isRecord } from "../util.ts";
 /**
  * The standard shapes a step's data uses for what a run used and how it ended.
  * Every harness reports `usage` in the one `Usage` shape and ends in one of the
@@ -50,10 +51,6 @@ const TOKEN_FIELDS = ["input", "output", "cacheread", "cachewrite"] as const;
 export type UsageCheck =
   | { readonly ok: true; readonly usage: Usage }
   | { readonly ok: false; readonly field: string; readonly message: string };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isCount(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;

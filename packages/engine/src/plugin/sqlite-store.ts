@@ -31,6 +31,8 @@ import type {
   PluginStoreLocation,
   StoredObject,
 } from "./types.ts";
+import { isRecord, requireName } from "../util.ts";
+import { repeatEvery } from "../util.ts";
 
 export interface SqlitePluginStoreOptions extends FollowOptions {
   readonly root: string;
@@ -45,14 +47,6 @@ export interface SqlitePluginStoreOptions extends FollowOptions {
   readonly repeat?:
     | ((ms: number, callback: () => void) => () => void)
     | undefined;
-}
-
-function repeatEvery(ms: number, callback: () => void): () => void {
-  const timer = setInterval(callback, ms);
-  (timer as { unref?: () => void }).unref?.();
-  return () => {
-    clearInterval(timer);
-  };
 }
 
 interface ObjectRow {
@@ -112,16 +106,6 @@ const SCHEMA = `
 `;
 
 const SCHEMA_FILE = "plugin.sqlite";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function requireName(value: string, field: string): void {
-  if (value.trim().length === 0) {
-    throw new Error(`${field}: must be a non-empty string`);
-  }
-}
 
 function deepFreeze<T>(value: T): T {
   if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {

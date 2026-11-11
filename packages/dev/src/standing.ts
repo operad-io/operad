@@ -16,9 +16,10 @@ import {
 } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { StandingContext, StandingItem } from "@operad-io/engine";
-import { bareId, isRecord, listAll, planData, storeKey, taskData } from "./model.ts";
+import { bareId, listAll, planData, storeKey, taskData } from "./model.ts";
 import { listRepositories } from "./service.ts";
 import { hasValidSettings, settingsProblem } from "./settings.ts";
+import { isRecord } from "@operad-io/engine";
 
 /** A plugin dev starts steps of, so it cannot start work without it. */
 export interface RequiredPlugin {

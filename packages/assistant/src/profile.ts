@@ -8,13 +8,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import {
-  configPath,
-  prepareSettings,
-  type ActionArgsSchema,
-  type JsonValue,
-  type ObjectStore,
-} from "@operad-io/engine";
+import { configPath, isRecord, prepareSettings, type ActionArgsSchema, type JsonValue, type ObjectStore } from "@operad-io/engine";
 
 /** The object type of a profile. */
 export const PROFILE_TYPE = "profile";
@@ -102,10 +96,6 @@ export class ProfileError extends Error {
     super(message);
     this.name = "ProfileError";
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** The `assistant` working directory of a home. */

@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFile
 import { join } from "node:path";
 import { RGBA } from "@opentui/core";
 import { watchDirectory } from "@operad-io/engine/platform";
+import { repeatEvery } from "@operad-io/engine";
 import { SHIPPED_THEMES, THEME_FAMILIES, shippedThemeFile } from "./themes.ts";
 
 /** The theme mode a terminal reports. */
@@ -486,13 +487,6 @@ export function watchThemes(options: {
     stopHome();
     stopThemes?.();
   };
-}
-
-function repeatEvery(ms: number, callback: () => void): () => void {
-  const timer = setInterval(callback, ms);
-  // The fallback must not keep the process alive by itself.
-  (timer as { unref?: () => void }).unref?.();
-  return () => clearInterval(timer);
 }
 
 function readTuiConfig(file: string): TuiConfig {

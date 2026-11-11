@@ -25,7 +25,7 @@ import {
   type TuiActInput,
   type TuiKeyBinding,
 } from "./client.ts";
-import { defaultOperadHome } from "@operad-io/engine";
+import { defaultOperadHome, messageOf } from "@operad-io/engine";
 import { loadRecent, saveRecent } from "./recent.ts";
 import { discoverServer } from "./discover.ts";
 import { TuiEvents, retryDelay, type TuiEvent } from "./events.ts";
@@ -244,10 +244,6 @@ async function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
   } catch (error) {
     return { ok: false, error };
   }
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function themeOf(renderer: CliRenderer, fallback: TuiTheme): TuiTheme {

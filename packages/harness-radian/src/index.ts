@@ -12,6 +12,8 @@ import { mapRadianCall } from "./refusal.ts";
 export { radianRefusal } from "./refusal.ts";
 import { firstErrorLine, match, readProfile, secretValuesOf, summarizeCall, type AccessProfile } from "@operad-io/access-match";
 import {
+  isRecord,
+  paramsObject,
   defineFlow,
   definePlugin,
   type AgentResultData,
@@ -25,17 +27,15 @@ import {
   directoryError,
   findCommand,
   flagValue,
-  isRecord,
   JsonlLog,
   MAX_LINE_CHARS,
   OPERAD_SERVER,
   operadToolsOf,
   optionalText,
-  paramsObject,
   secs,
   serverCommand,
   standardUsage,
-  stringList,
+  stringListParam,
   text,
   type RawCost,
   type RawCounts,
@@ -542,7 +542,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             .filter((part): part is string => part !== undefined)
             .join("\n\n");
           const cwd = text(input.cwd ?? flow.cwd, `${at}: params.cwd`);
-          const args = stringList(
+          const args = stringListParam(
             input.args === undefined ? flow.args : input.args,
             `${at}: params.args`,
           );

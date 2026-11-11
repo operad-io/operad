@@ -6,24 +6,12 @@
 
 import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
-import {
-  definePlugin,
-  type PluginLogger,
-  type PluginStepResult,
-  type StepContext,
-} from "@operad-io/engine";
+import { definePlugin, paramsObject, type PluginLogger, type PluginStepResult, type StepContext } from "@operad-io/engine";
 import {
   runLine,
   type Clock,
   type LineOutcome,
 } from "@operad-io/engine/platform";
-
-function paramsObject(params: unknown, at: string): Record<string, unknown> {
-  if (typeof params !== "object" || params === null || Array.isArray(params)) {
-    throw new Error(`${at}: params: must be an object`);
-  }
-  return params as Record<string, unknown>;
-}
 
 function lineParam(params: Record<string, unknown>, at: string): string {
   const line = params.line;

@@ -13,24 +13,10 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ObjectStore, StoredObject } from "@operad-io/engine";
-import { messageOf, type SecretStore } from "@operad-io/engine";
+import { isRecord, messageOf, type SecretStore } from "@operad-io/engine";
 import type { MachineLoad } from "@operad-io/engine/platform";
 import type { CheckLoad } from "./notcode.ts";
-import {
-  bareId,
-  changeClock,
-  isOpenTask,
-  isRecord,
-  keyRepository,
-  listAll,
-  parseId,
-  planData,
-  planState,
-  splitBrief,
-  taskData,
-  type PlanData,
-  type RepositoryData,
-} from "./model.ts";
+import { bareId, changeClock, isOpenTask, keyRepository, listAll, parseId, planData, planState, splitBrief, taskData, type PlanData, type RepositoryData } from "./model.ts";
 import { anchoredPattern, shellQuote } from "./rerun.ts";
 import { addConfirmedPlanLocked, addTaskLocked, withRepoLock } from "./service.ts";
 

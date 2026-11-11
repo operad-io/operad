@@ -1,6 +1,7 @@
 /** Shared paging, cursor and `where` rules for the object stores. */
 
 import type { ObjectData } from "./types.ts";
+import { isRecord } from "../util.ts";
 
 /** The number of objects or facts one page holds when the caller names none. */
 export const DEFAULT_PAGE_LIMIT = 100;
@@ -22,10 +23,6 @@ export class WhereError extends Error {
     super(message);
     this.name = "WhereError";
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isJsonScalar(value: unknown): boolean {

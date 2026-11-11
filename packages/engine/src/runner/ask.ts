@@ -21,6 +21,7 @@ import type {
 import { StateError } from "./errors.ts";
 import type { Grant, KernelState } from "../kernel/types.ts";
 import { useGrant } from "./grants.ts";
+import { isRecord } from "../util.ts";
 
 /** How often a waiting step looks again when no change was announced. */
 const RECHECK_MS = 1000;
@@ -57,10 +58,6 @@ export interface AskRecord {
 
 export function askWaitId(runId: string, effectId: string, n: number): string {
   return `${runId}:${effectId}:${n}`;
-}
-
-function isRecord(value: unknown): value is Record<string, JsonValue> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function actorOf(value: unknown): Actor | undefined {

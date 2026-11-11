@@ -12,6 +12,7 @@
 import { watch } from "node:fs";
 import type { FSWatcher } from "node:fs";
 import { basename } from "node:path";
+import { repeatEvery } from "../util.ts";
 
 /**
  * Calls `onChange` when anything in `directory` changes, with the entry name
@@ -90,15 +91,6 @@ export interface SubscriptionWatchOptions extends FollowOptions {
 
 function never(): () => void {
   return () => undefined;
-}
-
-function repeatEvery(ms: number, callback: () => void): () => void {
-  const timer = setInterval(callback, ms);
-  // A subscription must not keep the process alive by itself.
-  (timer as { unref?: () => void }).unref?.();
-  return () => {
-    clearInterval(timer);
-  };
 }
 
 export function resolveSubscriptionWatch(

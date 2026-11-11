@@ -11,6 +11,8 @@ import { secretValuesOf } from "@operad-io/access-match";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
+  isRecord,
+  paramsObject,
   defineFlow,
   definePlugin,
   type AgentResultData,
@@ -29,14 +31,12 @@ import {
   hasGrants,
   directoryError,
   inboxOf,
-  isRecord,
   optionalText,
-  paramsObject,
   parseResult,
   parseStepFlags,
   resultFor,
   secs,
-  stringList,
+  stringListParam,
   text,
   operadToolsOf,
   JsonlLog,
@@ -229,7 +229,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             .join("\n\n");
           const cwd = text(input.cwd ?? flow.cwd, `${at}: params.cwd`);
           const flags = parseStepFlags(
-            stringList(input.args === undefined ? flow.args : input.args, `${at}: params.args`),
+            stringListParam(input.args === undefined ? flow.args : input.args, `${at}: params.args`),
             STEP_FLAGS,
           );
           const settingModel = typeof ctx.settings.model === "string" ? ctx.settings.model : undefined;

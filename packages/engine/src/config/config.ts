@@ -10,6 +10,7 @@ import {
   type LogBackendName,
   type LogBackendOptions,
 } from "../log/index.ts";
+import { isRecord } from "../util.ts";
 
 /** The storage backend the log uses. */
 export type StoreBackend = LogBackendName;
@@ -175,10 +176,6 @@ export function storeRootOf(config: OperadConfig): string {
   return config.store.backend === "jsonl"
     ? config.store.path
     : dirname(config.store.path);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** Module names an older version wrote that moved; a config keeps working. */

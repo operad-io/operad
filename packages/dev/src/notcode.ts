@@ -30,7 +30,7 @@
 import { machineLoad, type MachineLoad } from "@operad-io/engine/platform";
 import { waitFor } from "./gate.ts";
 import { readSince, type CheckRun } from "./rerun.ts";
-import { isRecord } from "./model.ts";
+import { isRecord } from "@operad-io/engine";
 
 /** The kind of a "not the code" result. */
 export type NotCodeKind = "limit" | "signal" | "test-timeout" | "rerun-passed";

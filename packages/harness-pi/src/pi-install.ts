@@ -9,6 +9,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isRecord } from "@operad-io/engine";
 
 /** The package the worker uses. */
 export const PI_PACKAGE = "@earendil-works/pi-coding-agent";
@@ -47,10 +48,6 @@ export interface FindPiOptions {
   readonly cwd?: string | undefined;
   /** The floor to compare with; defaults to `PI_FLOOR`. */
   readonly floor?: string | undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readJson(path: string): Record<string, unknown> | undefined {

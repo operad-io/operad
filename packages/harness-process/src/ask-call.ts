@@ -18,7 +18,7 @@
  */
 
 import type { AskAnswer, AskRequest } from "@operad-io/engine";
-import { isRecord } from "./step.ts";
+import { isRecord } from "@operad-io/engine";
 
 /** The choice that lets the one call through. */
 export const ALLOW_ONCE = "allow_once";

@@ -8,6 +8,7 @@ import { stat } from "node:fs/promises";
 import type { AgentResultData, PluginStepResult } from "@operad-io/engine";
 import { MAX_LINE_CHARS, type AgentRunOutcome } from "./process.ts";
 import { standardUsage, type RawCounts, type UsageSource } from "./usage.ts";
+import { isRecord } from "@operad-io/engine";
 
 /** How many of the worker's last stderr lines a failure reason carries. */
 const REASON_STDERR_LINES = 5;
@@ -33,15 +34,6 @@ export interface AgentWorkerResult {
   readonly modelError?: { readonly kind: string };
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-export function paramsObject(params: unknown, at: string): Record<string, unknown> {
-  if (!isRecord(params)) throw new Error(`${at}: params: must be an object`);
-  return params;
-}
-
 export function text(value: unknown, at: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new Error(`${at}: must be a non-empty string`);
@@ -60,7 +52,7 @@ export function secs(value: unknown, at: string): number {
   return value;
 }
 
-export function stringList(value: unknown, at: string): readonly string[] {
+export function stringListParam(value: unknown, at: string): readonly string[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
     throw new Error(`${at}: must be an array of strings`);
