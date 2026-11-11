@@ -829,3 +829,13 @@ the row fields.
 |---|---|---|---|
 | T-0294-M1 | packages/dev/test/gate.test.ts | the injected load was a busy one (18 on 10 cores) again, so the rerun passes never counted | `dev/verify reruns only the failed tests > a test that reaches check.flakyTask is proposed in the flaky-tests plan, with no notice` (packages/dev/test/gate.test.ts) |
 | T-0174-M6 | packages/dev/src/flaky.ts | the proposal loop ignored which tests this check saw under load, so an older idle count could still open a task | `a flaky test proposes a task > a failure seen under load opens no task from an earlier idle count` |
+
+## T-0295-check-places-fifo — checks take places in the order they began to wait
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0295-M1 | packages/dev/src/places.ts | a check took a free place even when an earlier check still waited | `check places are served in the order checks began to wait > a, b, c take places in the order they began to wait, even when c looks first` |
+| T-0295-M2 | packages/dev/src/place-order.ts | an entry whose process is dead still counted as waiting | `check places are served in the order checks began to wait > a waiter whose process is dead is skipped and its entry removed` |
+| T-0295-M3 | packages/dev/src/places.ts | a cancelled check kept its entry until it looked again | `check places are served in the order checks began to wait > a cancelled waiter leaves the order at once` |
+| T-0295-M4 | packages/dev/src/places.ts | the ahead count passed to the task's row was always 0 | `check places are served in the order checks began to wait > a, b, c take places in the order they began to wait, even when c looks first` |
+| T-0295-M5 | packages/dev/src/places.ts | the repository's pool ignored the order | `check places are served in the order checks began to wait > the repository's own pool follows the order too` |

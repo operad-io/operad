@@ -193,7 +193,7 @@ function readLockFile(path: string): LockFile {
 }
 
 /** True while a process with this pid exists; `EPERM` means it exists too. */
-function isAlive(pid: number): boolean {
+export function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
