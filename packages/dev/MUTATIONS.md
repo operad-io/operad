@@ -628,6 +628,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0060-M7 | packages/dev/src/settings.ts | restored the removed rule that a flow's last user stage must be human, so a non-final human stage was refused | `[human, check] loads and compiles human -> check -> integrate` |
+| T-0131-M1 | packages/dev/src/gate.ts | used the flat `retrySecs` for every wait instead of `reviewWaitMs` | `dev/review hardening > each further wait of an unavailable model doubles` |
+| T-0131-M2 | packages/dev/src/timeouts.ts | removed the 30-minute cap in `reviewWaitMs` | `review waits > double from retrySecs and stop at the cap` |
+| T-0131-M3 | packages/dev/src/timeouts.ts | set `MAX_REVIEW_WAITS` back to 36 | `review waits > the give-up point is about the time it was (about 90 minutes at the default)` |
 
 ## T-0061 — choosing a flow
 

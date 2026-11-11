@@ -463,3 +463,7 @@ the row fields.
 | T-0208-M19 | packages/engine/src/store-copy/copy.ts | `useStore` did not compare the source with what the copy recorded | `store copy > use refuses a copy that is older than its source, and switching back is allowed` |
 | T-0208-M20 | packages/engine/src/log/sqlite.ts | removed the store-move check from every sqlite log write | `store copy > a sqlite store refuses writes while a move holds it` |
 | T-0208-M21 | packages/engine/src/plugin/sqlite-store.ts | removed the store-move check from the sqlite plugin store's writes | `store copy > a sqlite store refuses writes while a move holds it` |
+| T-0131-M4 | packages/engine/src/views/history.ts | dropped the retry-step half of the pair check, so an alternating pair never folded | `folded repeats in run history > 37 unavailable reviews with their waits fold into one line` |
+| T-0131-M5 | packages/engine/src/views/history.ts | left the outcome out of the fold signature, so a different outcome in between folded | `folded repeats in run history > the same step ending differently is not folded with the others` |
+| T-0131-M6 | packages/engine/src/views/history.ts | normalized every number in the detail instead of only ISO times | `folded repeats in run history > attempts whose reasons differ by more than a time are not folded` |
+| T-0131-M7 | packages/engine/src/views/history.ts | folded any two alternating steps, not only a step and its `_retry` step | `folded repeats in run history > two different steps that alternate are not a step and its retry` |

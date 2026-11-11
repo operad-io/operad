@@ -410,12 +410,13 @@ second time. A wait longer than one step run is split into pieces below the
 three-hour step timeout, so any positive `reviewer.retrySecs` is waited out and
 the review runs a model again only at `retryAt`.
 
-The waits are bounded. A round waits at most 36 times (`MAX_REVIEW_WAITS`, about
-72 minutes at the default 120 seconds); the count is the number of primary runs
+The waits are bounded. A round waits at most 6 times (`MAX_REVIEW_WAITS`); the first wait is
+`reviewer.retrySecs` and each further wait doubles, up to 30 minutes (2, 4, 8, 16,
+30, 30 minutes at the default: about 90); the count is the number of primary runs
 of the round recorded as unavailable in the task, so a crash and a restart agree
 on it. The next unavailable run waits for a person with the note `review did not
 finish (model unavailable)`. The dev flow's visit limit is finite (10 plus one
-visit of each wait step per allowed wait). One review step also has to end
+visit of each wait step per allowed work wait). One review step also has to end
 before its three-hour step timeout: a run that cannot fit in what is left is
 skipped, and the round waits for a person with the note `review did not finish
 (out of time)`. While a review waits for its model, `merge`, `reject`, `rework`
@@ -612,7 +613,7 @@ The file holds the repository's work settings:
 | `reviewer.stallSecs` | harness default | how long a review may print no new line before it is stopped |
 | `reviewer.fixLevel` | `major` | the lowest finding severity that fails the gate: `critical`, `major` or `minor` |
 | `reviewer.followups` | `true` | whether findings that did not fail a review (below `fixLevel`, or moved as pre-existing) are collected into a follow-up task |
-| `reviewer.retrySecs` | `120` | how long an unavailable review waits before the same round runs again |
+| `reviewer.retrySecs` | `120` | how long an unavailable review waits first; each further wait doubles, up to 30 minutes |
 | `reviewer.maxFileDiffBytes` | `200000` | the largest diff one file may put in the review prompt |
 | `reviewer.maxDiffBytes` | `1000000` | the largest diff the review prompt may carry; counts the prompt's text, where a rename or a deleted file is one line |
 | `autoDefault` | `"off"` | the auto level a new plan starts at: `off`, `run` or `merge` |
