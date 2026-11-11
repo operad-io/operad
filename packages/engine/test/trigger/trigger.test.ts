@@ -25,6 +25,7 @@ import {
   type GlobalFact,
   type InputOutcome,
   type InputRecord,
+  type InputsAfter,
   type JsonValue,
   type LogBackend,
   type NewFact,
@@ -283,6 +284,22 @@ class CrashLog implements LogBackend {
 
   readOutcomes(): AsyncIterable<InputOutcome> {
     return this.inner.readOutcomes();
+  }
+
+  readInputsAfter(position: number): Promise<InputsAfter> {
+    return this.inner.readInputsAfter(position);
+  }
+
+  findInput(inputId: string): Promise<InputRecord | undefined> {
+    return this.inner.findInput(inputId);
+  }
+
+  readOutcome(inputId: string, kind: string): Promise<InputOutcome | undefined> {
+    return this.inner.readOutcome(inputId, kind);
+  }
+
+  readOutcomesAfter(seq: number): Promise<InputOutcome[]> {
+    return this.inner.readOutcomesAfter(seq);
   }
 
   async close(): Promise<void> {

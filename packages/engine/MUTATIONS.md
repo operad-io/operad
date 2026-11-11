@@ -473,3 +473,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0216-M3 | packages/engine/src/plugin/registry.ts | a step's events were not given to the caller's `observe` | `a step's events > a caller that observes a step sees its events besides the destination` |
+| T-0251-M1 | packages/engine/src/trigger/kernel.ts | `recoverUnrouted` forgot its input position (reset to 0 each pass), so every pass read all inputs again | `a tick over a large history (sqlite) > reads what changed, not every input, answer and outcome ever recorded` |
+| T-0251-M2 | packages/engine/src/loop/serve.ts | the recorded-answer reader forgot its input position (reset to 0 each pass) | `a tick over a large history (sqlite) > reads what changed, not every input, answer and outcome ever recorded` |
+| T-0251-M3 | packages/engine/src/loop/serve.ts | an answer for a run that is no longer active stayed waiting and was looked at every pass | `a tick over a large history (jsonl) > reads what changed, not every input, answer and outcome ever recorded` |
+| T-0251-M4 | packages/engine/src/plugin/sqlite-store.ts | `list` re-read and re-parsed every object, ignoring the remembered copy | `listing objects of a large type > an object that did not change is not read or parsed again` |
+| T-0251-M5 | packages/engine/src/runner/ask.ts | the claimed-answer lookup used the wrong input id (run and wait swapped) | `ctx.ask > an answer claimed by a process that stopped before the fact is still delivered` |

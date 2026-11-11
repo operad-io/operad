@@ -47,6 +47,7 @@ import type {
   GlobalFact,
   InputOutcome,
   InputRecord,
+  InputsAfter,
   JsonValue,
   LogBackend,
   LogBackendFactory,
@@ -447,6 +448,34 @@ function globalFactOf(stored: StoredGlobalFact): GlobalFact {
   };
 }
 
+function inputOfLine(line: string): InputRecord | undefined {
+  if (line.length === 0) return undefined;
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Partial<StoredInput>;
+  if (
+    record.type !== "input" ||
+    typeof record.inputId !== "string" ||
+    typeof record.source !== "string" ||
+    typeof record.sourceKey !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    inputId: record.inputId,
+    runId: typeof record.runId === "string" ? record.runId : null,
+    source: record.source,
+    sourceKey: record.sourceKey,
+    payload: (record.payload ?? null) as JsonValue,
+    time: typeof record.time === "number" ? record.time : 0,
+  };
+}
+
 class JsonlLogBackend implements LogBackend {
   readonly #directory: string;
   readonly #runsDirectory: string;
@@ -593,32 +622,70 @@ class JsonlLogBackend implements LogBackend {
     if (!existsSync(this.#inputsPath)) return;
     const text = readFileSync(this.#inputsPath).toString("utf8");
     for (const line of text.split("\n")) {
-      if (line.length === 0) continue;
-      let value: unknown;
-      try {
-        value = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      if (typeof value !== "object" || value === null) continue;
-      const record = value as Partial<StoredInput>;
-      if (
-        record.type !== "input" ||
-        typeof record.inputId !== "string" ||
-        typeof record.source !== "string" ||
-        typeof record.sourceKey !== "string"
-      ) {
-        continue;
-      }
-      yield {
-        inputId: record.inputId,
-        runId: typeof record.runId === "string" ? record.runId : null,
-        source: record.source,
-        sourceKey: record.sourceKey,
-        payload: (record.payload ?? null) as JsonValue,
-        time: typeof record.time === "number" ? record.time : 0,
-      };
+      const record = inputOfLine(line);
+      if (record !== undefined) yield record;
     }
+  }
+
+  async readInputsAfter(position: number): Promise<InputsAfter> {
+    this.#assertOpen();
+    if (!existsSync(this.#inputsPath)) return { inputs: [], position: 0 };
+    const size = statSync(this.#inputsPath).size;
+    // A file shorter than the position was replaced: read it from the start.
+    const from = position > size ? 0 : position;
+    if (from === size) return { inputs: [], position: from };
+    const fd = openSync(this.#inputsPath, "r");
+    let chunk: Buffer;
+    try {
+      chunk = Buffer.allocUnsafe(size - from);
+      readAllAtSync(fd, chunk, from);
+    } finally {
+      closeSync(fd);
+    }
+    // Only whole lines count; a torn last line is read again next time.
+    const end = chunk.lastIndexOf(0x0a) + 1;
+    const inputs: InputRecord[] = [];
+    for (const line of chunk.subarray(0, end).toString("utf8").split("\n")) {
+      const record = inputOfLine(line);
+      if (record !== undefined) inputs.push(record);
+    }
+    return { inputs, position: from + end };
+  }
+
+  async findInput(inputId: string): Promise<InputRecord | undefined> {
+    this.#assertOpen();
+    if (!existsSync(this.#inputsPath)) return undefined;
+    const text = readFileSync(this.#inputsPath).toString("utf8");
+    const needle = JSON.stringify(inputId);
+    for (const line of text.split("\n")) {
+      if (!line.includes(needle)) continue;
+      const record = inputOfLine(line);
+      if (record !== undefined && record.inputId === inputId) return record;
+    }
+    return undefined;
+  }
+
+  async readOutcome(
+    inputId: string,
+    kind: string,
+  ): Promise<InputOutcome | undefined> {
+    this.#assertOpen();
+    return this.#withLock(() => {
+      this.#refreshOutcomesUnlocked();
+      const stored = this.#outcomes.get(outcomeKey(inputId, kind));
+      return stored === undefined ? undefined : this.#asOutcome(stored);
+    });
+  }
+
+  async readOutcomesAfter(seq: number): Promise<InputOutcome[]> {
+    this.#assertOpen();
+    return this.#withLock(() => {
+      this.#refreshOutcomesUnlocked();
+      return [...this.#outcomes.values()]
+        .filter((stored) => stored.seq > seq)
+        .sort((left, right) => left.seq - right.seq)
+        .map((stored) => this.#asOutcome(stored));
+    });
   }
 
   async recordOutcome(
