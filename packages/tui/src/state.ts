@@ -327,6 +327,8 @@ export interface TuiState {
   readonly childLayout: TuiChildLayout;
   /** The `?` key list is open. */
   readonly keys: boolean;
+  /** The first key list row drawn; the list scrolls when the terminal is short. */
+  readonly helpScroll: number;
   readonly quit: boolean;
   /** `r` asked for a fresh set of lists; the caller clears it after fetching. */
   readonly refreshRequested: boolean;
@@ -472,6 +474,7 @@ export function initialState(options: TuiStateOptions = {}): TuiState {
     theme: options.theme ?? "dark",
     childLayout: options.childLayout ?? "tree",
     keys: false,
+    helpScroll: 0,
     quit: false,
     refreshRequested: false,
     objectVersion: 0,
@@ -1972,12 +1975,26 @@ function handleKey(
     return { ...state, input: { kind: "palette", query: "", cursor: 0 }, settingsRequest: true };
   }
   if (key === "?" || (key === "/" && shift)) {
-    return { ...state, keys: !state.keys };
+    return { ...state, keys: !state.keys, helpScroll: 0 };
   }
   if (isKey(key, "q")) return { ...state, quit: true };
   if (state.keys) {
     // The list behind the key list is hidden, so no other key acts on it.
-    return isKey(key, "escape", "esc") ? { ...state, keys: false } : state;
+    if (isKey(key, "escape", "esc")) return { ...state, keys: false, helpScroll: 0 };
+    const page = helpViewport(state);
+    const bottom = Math.max(0, HELP_LINES - page);
+    const at = Math.min(Math.max(0, state.helpScroll), bottom);
+    const to = (row: number): TuiState => ({
+      ...state,
+      helpScroll: Math.min(bottom, Math.max(0, row)),
+    });
+    if (isKey(key, "up", "arrowup", "k")) return to(at - 1);
+    if (isKey(key, "down", "arrowdown", "j")) return to(at + 1);
+    if (isKey(key, "pageup", "page-up", "prior", "b")) return to(at - page);
+    if (isKey(key, "pagedown", "page-down", "next", "space")) return to(at + page);
+    if (isKey(key, "home")) return to(0);
+    if (isKey(key, "end")) return to(bottom);
+    return state;
   }
   if (isKey(key, "t") && (state.object?.children?.rows.length ?? 0) > 0) {
     const childLayout: TuiChildLayout = state.childLayout === "tree" ? "list" : "tree";
@@ -2763,6 +2780,14 @@ export const KEY_GROUPS: readonly (readonly (readonly [string, string])[])[] = [
 
 /** Every key the TUI reads, in the order the key list shows them. */
 export const KEY_LIST: readonly (readonly [string, string])[] = KEY_GROUPS.flat();
+
+/** The rows the full key list takes: a heading, its keys, and a blank line between groups. */
+export const HELP_LINES = KEY_LIST.length + KEY_GROUPS.length;
+
+/** The key list rows the terminal shows at once; a short terminal scrolls the rest. */
+export function helpViewport(state: TuiState): number {
+  return Math.max(1, Math.min(HELP_LINES + 4, state.height) - 4);
+}
 
 /** The lines one object takes in a list: two, and the blank line after them. */
 export const ROW_LINES = 3;

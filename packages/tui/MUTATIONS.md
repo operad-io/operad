@@ -289,3 +289,4 @@ the row fields.
 | T-0104-M7 | packages/tui/src/view/index.ts | separated the footer's hints with two spaces instead of ` · ` | `the overlays' spacing > the footer separates hints with a dot, the keys in the text colour and the hints weak` |
 | T-0104-M8 | packages/tui/src/view/index.ts | drew the footer's keys in the weak colour | `the overlays' spacing > the footer separates hints with a dot, the keys in the text colour and the hints weak` |
 | T-0104-M9 | packages/tui/src/actions.ts | listed the recent palette entries across groups instead of grouping them | `palette search: recent entries > an empty query keeps the last five used first inside each group, and lists the groups in order` |
+| T-0104-M10 | packages/tui/src/view/index.ts | drew the key list from its first row, so a short terminal could not reach its last group | `the overlays' spacing > the key list scrolls to its last group on a 24-row terminal at 80 columns` |

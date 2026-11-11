@@ -157,6 +157,17 @@ describe("the overlays' spacing", () => {
       expect(lines.filter((line) => line === "")).toHaveLength(KEY_GROUPS.length - 1);
     });
 
+    for (const height of [24, 20]) {
+      test(`the key list scrolls to its last group on a ${height}-row terminal at ${width} columns`, () => {
+        let state: TuiState = { ...paletteState(width, height), input: undefined, keys: true };
+        const before = overlayLines(state).join("\n");
+        expect(before).not.toContain("quit");
+        state = reduce(state, { type: "key", key: "pagedown" });
+        expect(overlayLines(state).join("\n")).toContain("quit");
+        expect(state.helpScroll).toBeGreaterThan(0);
+      });
+    }
+
     test(`the palette, the key list, a note and a confirmation start one column inside the frame at ${width} columns`, async () => {
       const base = paletteState(width);
       const note: TuiState = {

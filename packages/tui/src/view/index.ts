@@ -27,6 +27,7 @@ import { sanitize } from "../sanitize.ts";
 import { displayWidth, graphemes, wrapText } from "../wrap.ts";
 import {
   CHILD_ROWS,
+  HELP_LINES,
   KEY_GROUPS,
   KEY_LIST,
   ROW_INDENT,
@@ -46,6 +47,7 @@ import {
   bodyHeight,
   filterHeader,
   footerSegments,
+  helpViewport,
   noticeText,
   pageEntries,
   pagePosition,
@@ -625,16 +627,20 @@ function objectContent(state: TuiState, palette: TuiPalette): StyledText {
 function keyContent(state: TuiState, palette: TuiPalette): StyledText {
   const width = Math.max(...KEY_LIST.map(([key]) => displayWidth(key)));
   const room = Math.max(1, overlayTextWidth(state) - 2 - width - 2);
-  const chunks: TextChunk[] = [chunk("keys\n", palette.accent, TextAttributes.BOLD)];
+  const lines: TextChunk[][] = [[chunk("keys\n", palette.accent, TextAttributes.BOLD)]];
   KEY_GROUPS.forEach((group, at) => {
-    if (at > 0) chunks.push(chunk("\n"));
+    if (at > 0) lines.push([chunk("\n")]);
     for (const [key, what] of group) {
       const pad = " ".repeat(Math.max(0, width - displayWidth(key)));
-      chunks.push(chunk(`  ${key}${pad}  `, palette.accent));
-      chunks.push(chunk(`${fit(what, room)}\n`, palette.weak));
+      lines.push([
+        chunk(`  ${key}${pad}  `, palette.accent),
+        chunk(`${fit(what, room)}\n`, palette.weak),
+      ]);
     }
   });
-  return styled(chunks);
+  const rows = helpViewport(state);
+  const start = Math.min(Math.max(0, state.helpScroll), Math.max(0, lines.length - rows));
+  return styled(lines.slice(start, start + rows).flat());
 }
 
 /** One line of the palette's body: a blank, a group label, or an entry. */
@@ -919,7 +925,7 @@ export function overlayBox(state: TuiState): OverlayBox | undefined {
   const kind = state.keys ? "keys" : state.input?.kind;
   if (kind === undefined) return undefined;
   const width = Math.max(10, Math.min(OVERLAY_WIDTH, state.width - 4));
-  const lines = kind === "keys" ? KEY_LIST.length + KEY_GROUPS.length : kind === "confirm" || kind === "setting-confirm" ? 2 : inputLines(state);
+  const lines = kind === "keys" ? HELP_LINES : kind === "confirm" || kind === "setting-confirm" ? 2 : inputLines(state);
   // Border (2) and a one-cell margin of background (2) around the text.
   const wanted = lines + 4;
   const left = Math.max(0, Math.floor((state.width - width) / 2));
@@ -1089,7 +1095,7 @@ export function createTuiView(
     left: 2,
     top: 2,
     width: 60,
-    height: KEY_LIST.length + KEY_GROUPS.length + 4,
+    height: HELP_LINES + 4,
     border: true,
     borderStyle: "rounded",
     borderColor: toRgba(TUI_PALETTE.dark.rule),
