@@ -427,6 +427,13 @@ the row fields.
 | T-0206-M1 | packages/engine/src/plugin/file-store.ts | read the facts from byte 0 instead of from `this.offset`, so every refresh read the whole file | `the file plugin store > a second reader sees facts another writer appended`; `the file plugin store > refresh reads only past its offset, and a torn multi-byte line waits for its newline` |
 | T-0206-M2 | packages/engine/src/plugin/file-store.ts | treated the bytes after the last newline as complete, so a torn line was consumed before its newline landed | `the file plugin store > refresh reads only past its offset, and a torn multi-byte line waits for its newline` |
 
+## T-0210 — follow-ups from the flow-stops reviews
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0210-M7 | packages/engine/src/notify/notify.ts | the person notifier sent a notice for a wait its plugin answers automatically | `notify > a wait the plugin answers itself sends no notice and is noticed later if it stays` |
+| T-0210-M8 | packages/engine/src/views/presentation.ts | show listed a task of another repository with the same bare id in `after` as a dependent | `operad mcp > show of a task lists the tasks after it` (packages/mcp) |
+| T-0210-M11 | packages/engine/src/plugin/registry.ts | a hook that throws counted as an automatic answer | `answeredAutomatically > a hook that throws counts as no and is logged` |
 ## T-0160 — settings follow-ups
 
 | id | file | mutation | failing test |

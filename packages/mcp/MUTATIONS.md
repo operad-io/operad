@@ -73,3 +73,10 @@ the row fields.
 |---|---|---|---|
 | T-0177-M4 | packages/mcp/src/channel.ts | the `announce: false` check removed, so a person's proposed task was announced | `a proposed task > is pending and drawn waiting; one block for what the plugin opened, none for a person's` |
 | T-0175-M3 | packages/mcp/src/server.ts | the instructions kept saying owner decisions are not offered when the owner allowed actions | `operad mcp > instructions follow the configured allow lists` |
+
+## T-0210 — follow-ups from the flow-stops reviews
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0210-M9 | packages/mcp/src/server.ts | the instructions named an action that asks for confirmation and is not in `confirmActions` | `operad mcp > instructions do not promise an action that asks for confirmation and is not confirmed` |
+| T-0210-M14 | packages/mcp/src/channel.ts | a block sent for a waiting object for another reason did not read the wait's pending prompt | `the channel's sources > what the default sends > a block for a state change of a waiting object still carries the wait's prompt` |

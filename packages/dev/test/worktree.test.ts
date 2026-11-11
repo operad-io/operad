@@ -108,6 +108,16 @@ async function taskDataOf(state: Fixture) {
   return taskData(object.data);
 }
 
+async function markReviewFailed(state: Fixture) {
+  const current = await taskDataOf(state);
+  await state.store.put(
+    "task",
+    state.taskKey,
+    { ...current, reviewFailed: "- `a.ts:1` major: x" },
+    "test",
+  );
+}
+
 describe("dev/worktree", () => {
   test("creates a worktree from origin/main and records the attempt", async () => {
     const state = await fixture();
@@ -262,6 +272,21 @@ describe("dev/worktree", () => {
     expect(mergeInProgress(path)).toBe(true);
     expect(result.data?.files).toEqual(["README.md"]);
     expect((await taskDataOf(state)).attempt?.result).toBe("conflict");
+  });
+
+  test("a conflict with main resets the review-failed count; a clean merge keeps it", async () => {
+    const state = await fixture();
+    await runWorktree(state, "run-1");
+    const path = worktreeOf(state);
+    await commitIn(path, "README.md", "# branch\n", "branch changes readme");
+    await markReviewFailed(state);
+    await advanceMain(state.remote, "other.txt", "moved\n");
+    expect((await runWorktree(state, "run-2")).result).toBe("ready");
+    expect((await taskDataOf(state)).reviewFailed).toBeDefined();
+
+    await advanceMain(state.remote, "README.md", "# main\n", "main changes readme");
+    expect((await runWorktree(state, "run-3")).result).toBe("conflict");
+    expect((await taskDataOf(state)).reviewFailed).toBeUndefined();
   });
 
   test("a directory that is not a worktree is refused, not reused", async () => {
@@ -467,6 +492,21 @@ describe("dev/reverify", () => {
     expect((await taskDataOf(state)).brief).toContain(
       "reverify: main conflicts, sending to work",
     );
+  });
+
+  test("reverify keeps the review-failed count on a clean merge and resets it on a conflict", async () => {
+    const state = await fixture();
+    await runWorktree(state, "run-1");
+    const path = worktreeOf(state);
+    await commitIn(path, "README.md", "# branch\n", "branch changes readme");
+    await markReviewFailed(state);
+    await advanceMain(state.remote, "other.txt", "moved\n");
+    expect((await runReverify(state, "run-1")).result).toBe("ready");
+    expect((await taskDataOf(state)).reviewFailed).toBeDefined();
+
+    await advanceMain(state.remote, "README.md", "# main\n", "main changes readme");
+    expect((await runReverify(state, "run-1")).result).toBe("conflict");
+    expect((await taskDataOf(state)).reviewFailed).toBeUndefined();
   });
 
   test("a main that has not moved adds no merge commit", async () => {
