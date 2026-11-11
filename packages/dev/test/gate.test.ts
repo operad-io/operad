@@ -25,6 +25,7 @@ import {
   FilePluginStore,
   initialState,
   PluginRegistry,
+  type JsonValue,
   type KernelState,
   type PluginStepResult,
 } from "@operad-io/engine";
@@ -594,17 +595,35 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
   return state;
 }
 
-function verify(state: Fixture, runId = "verify-run") {
+function verify(state: Fixture, runId = "verify-run", params?: JsonValue) {
   return state.registry.runStep("dev/verify", {}, {
     runId,
     object: { type: "task", id: state.taskKey, data: {} },
+    ...(params === undefined ? {} : { params }),
   });
 }
 
-function review(state: Fixture, runId = "review-run") {
+async function nextAttempt(state: Fixture): Promise<void> {
+  const object = await state.store.get("task", state.taskKey);
+  if (object === undefined) throw new Error("task disappeared");
+  const task = taskData(object.data);
+  await state.store.put(
+    "task",
+    state.taskKey,
+    {
+      ...task,
+      attempts: 2,
+      attempt: { number: 2, run: "rework-run", worktree: task.attempt?.worktree },
+    },
+    "test:attempt",
+  );
+}
+
+function review(state: Fixture, runId = "review-run", params?: JsonValue) {
   return state.registry.runStep("dev/review", {}, {
     runId,
     object: { type: "task", id: state.taskKey, data: {} },
+    ...(params === undefined ? {} : { params }),
   });
 }
 
@@ -928,6 +947,72 @@ describe("dev/review", () => {
         trigger: "when called",
       },
     ]);
+  });
+
+  describe("stage parameters", () => {
+    test("a check stage's rerun overrides check.rerun and falls back without it", async () => {
+      const root = await tempRoot();
+      const count = join(root, "count");
+      const command = `echo x >> '${count}'; exit 1`;
+      const more = await fixture({ rerun: 0, commands: [command] });
+      await verify(more, "verify-stage", { rerun: 2 });
+      expect(readFileSync(count, "utf8").trim().split("\n")).toHaveLength(3);
+      rmSync(count);
+      const fewer = await fixture({ rerun: 2, commands: [command] });
+      await verify(fewer, "verify-stage", { rerun: 0 });
+      expect(readFileSync(count, "utf8").trim().split("\n")).toHaveLength(1);
+      rmSync(count);
+      const fallback = await fixture({ rerun: 2, commands: [command] });
+      await verify(fallback, "verify-fallback", {});
+      expect(readFileSync(count, "utf8").trim().split("\n")).toHaveLength(3);
+    });
+
+    test("a review stage's later args are used from the second round, and only then", async () => {
+      const state = await fixture({ reviewerArgs: ["none"], commit: false });
+      await commitIn(state.worktree, "one.txt", "1\n", "one");
+      const params = { args: ["none", "--first"], later: ["none", "--later"] };
+      await verify(state, "verify-1", params);
+      await review(state, "review-1", params);
+      expect(state.reviewer.calls[0]?.args).toEqual(["none", "--first"]);
+      await nextAttempt(state);
+      await commitIn(state.worktree, "two.txt", "2\n", "two");
+      await verify(state, "verify-2", params);
+      await review(state, "review-2", params);
+      expect(state.reviewer.calls[1]?.args).toEqual(["none", "--later"]);
+    });
+
+    test("a review stage without later keeps the same args in every round", async () => {
+      const state = await fixture({ reviewerArgs: ["none"], commit: false });
+      await commitIn(state.worktree, "one.txt", "1\n", "one");
+      const params = { args: ["none", "--first"] };
+      await verify(state, "verify-1", params);
+      await review(state, "review-1", params);
+      await nextAttempt(state);
+      await commitIn(state.worktree, "two.txt", "2\n", "two");
+      await verify(state, "verify-2", params);
+      await review(state, "review-2", params);
+      expect(state.reviewer.calls[1]?.args).toEqual(["none", "--first"]);
+    });
+
+    test("a review stage's grading names the review.json entry; without it the flow's own is read", async () => {
+      const state = await fixture({ reviewerArgs: ["none"] });
+      mkdirSync(join(state.remote.repository, ".operad"), { recursive: true });
+      writeFileSync(
+        join(state.remote.repository, ".operad", "review.json"),
+        JSON.stringify({
+          flows: {
+            dev: { rules: ["DEV RULE"] },
+            strict: { rules: ["STRICT RULE"] },
+          },
+        }),
+      );
+      await verify(state);
+      await review(state, "review-strict", { grading: "strict" });
+      expect(state.reviewer.calls[0]?.prompt).toContain("STRICT RULE");
+      expect(state.reviewer.calls[0]?.prompt).not.toContain("DEV RULE");
+      await review(state, "review-own", {});
+      expect(state.reviewer.calls[1]?.prompt).toContain("DEV RULE");
+    });
   });
 
   describe("review.json", () => {
@@ -3105,22 +3190,6 @@ describe("dev/review rework rounds", () => {
   }
 
   /** Starts the next attempt, as a rework does. */
-  async function nextAttempt(state: Fixture): Promise<void> {
-    const object = await state.store.get("task", state.taskKey);
-    if (object === undefined) throw new Error("task disappeared");
-    const task = taskData(object.data);
-    await state.store.put(
-      "task",
-      state.taskKey,
-      {
-        ...task,
-        attempts: 2,
-        attempt: { number: 2, run: "rework-run", worktree: task.attempt?.worktree },
-      },
-      "test:attempt",
-    );
-  }
-
   async function secondReview(round: Round, change: () => Promise<void>) {
     await nextAttempt(round.state);
     await change();

@@ -83,6 +83,15 @@ const TASK_MARKS: Readonly<Record<TaskPhase, (task: TaskData) => RowMark>> = {
 
 /** The mark of a task row. */
 export function taskMark(task: TaskData): RowMark {
+  // A step that waits for a check place is not running or checking yet.
+  const placeWait = task.attempt?.placeWait;
+  if (
+    placeWait !== undefined &&
+    placeWait !== null &&
+    (task.phase === "running" || task.phase === "review" || task.phase === "waiting")
+  ) {
+    return "blocked";
+  }
   return TASK_MARKS[task.phase](task);
 }
 

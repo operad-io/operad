@@ -748,6 +748,9 @@ function rowFromRunning(item: RunningItem): TuiRow {
       item.stepElapsedMs === null || item.stepElapsedMs === undefined
         ? ""
         : formatElapsed(item.stepElapsedMs),
+      item.queuedMs === undefined || item.queuedMs <= 0
+        ? ""
+        : `queued ${formatElapsed(item.queuedMs)}`,
       formatElapsed(item.elapsedMs),
       repositoryOf(item.object),
     ]),

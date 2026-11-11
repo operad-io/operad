@@ -700,6 +700,19 @@ the row fields.
 | T-0061-M4 | packages/dev/src/schedule.ts | rows named the flow even when the repository defines only the default one | `rows and the brief name the flow only when the repository defines more than one` |
 | T-0061-M5 | packages/dev/src/schedule.ts | the flow label was not kept for a cancelled task, so its row and Brief named no flow | `a task cancelled before any tick still names its flow` |
 
+## T-0062 — stage settings and TS flows
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0062-M1 | packages/dev/src/gate.ts | a review stage's `later` args were never used | `dev/review > stage parameters > a review stage's later args are used from the second round, and only then` |
+| T-0062-M2 | packages/dev/src/gate.ts | a check stage's `rerun` was ignored and `check.rerun` always used | `dev/review > stage parameters > a check stage's rerun overrides check.rerun and falls back without it` |
+| T-0062-M3 | packages/dev/src/steps.ts | a work stage's `brief` was not appended to the worker's prompt | `dev/work > a work stage's brief ends the prompt; a stage without one adds nothing` |
+| T-0062-M4 | packages/dev/src/gate.ts | a review stage's `grading` was ignored and the flow's own entry always read | `dev/review > stage parameters > a review stage's grading names the review.json entry; without it the flow's own is read` |
+| T-0062-M5 | packages/dev/src/project-flows.ts | a name defined in dev.json and as a TS file was accepted | `a name defined in dev.json and as a TS file is refused, and plan add says so` |
+| T-0062-M6 | packages/dev/src/project-flows.ts | a step other than integrate could lead to the end of a TS flow | `a TS flow that leads to the end from another step than integrate is refused` |
+| T-0062-M7 | packages/dev/src/schedule.ts | the scheduler did not declare the repository's TS flows | `a ready task of a plan that names a TS flow starts it` |
+| T-0062-M8 | packages/dev/src/commands.ts | `--flow default` returned before the refusal of a clashing TS default flow was read | `--flow default is refused when a TS default flow clashes with dev.json` |
+| T-0062-M9 | packages/dev/src/project-flows.ts | a TS flow's review step got no grading of the flow's name | `a TS flow's review step reads the grading of the flow's name unless it names one` |
 ## T-0224 — a result that is not the code goes to the machine's load, not to the worker
 
 | id | file | mutation | failing test |
@@ -737,3 +750,6 @@ the row fields.
 | T-0246-M1 | packages/dev/src/schedule.ts | the sweep of cancelled tasks' runs ran after the settings were read, so unreadable settings skipped it | `a run on a cancelled task is ended even when the repository's settings cannot be read` |
 | T-0122-M2 | packages/dev/src/views.ts | a plan listed a Tasks section again | `dev views > a plan loads its request and has no tasks section` |
 | T-0260-M2 | packages/dev/src/gate.ts | review accepted a report whose sha was not the checked commit | `dev/review > a report whose sha is not the checked commit is refused` |
+| T-0239-M3 | packages/dev/src/marks.ts | a task whose step waits for a check place kept the `checking` mark | `dev views > a task whose check waits for a place says so, with how many are ahead, until it takes the place` |
+| T-0239-M4 | packages/dev/src/places.ts | a check that took its place did not end its report to the kernel before the command started | `check places > a waiting check tells the kernel and the task its place group until it takes the place` |
+| T-0239-M8 | packages/dev/src/place-wait.ts | counting the waiters and saving the wait record was not one locked turn, so two checks reaching a held place together both showed 0 ahead | `dev views > a task whose check waits for a place says so, with how many are ahead, until it takes the place` |

@@ -595,7 +595,6 @@ starts each new day.
 - 22:22:02  confirm  reverify  8m
 - 22:30:02  you chose merge: via plugin, as dev
 - 22:30:04  verify  after reverify  running  2m
-<sub>run 01bb7a85-d171-4d83-81d0-8990b77dab78</sub>
 ```
 
 `operad show <id> --section history --full` keeps each detail whole.
