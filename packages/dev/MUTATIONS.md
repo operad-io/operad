@@ -829,3 +829,8 @@ the row fields.
 |---|---|---|---|
 | T-0294-M1 | packages/dev/test/gate.test.ts | the injected load was a busy one (18 on 10 cores) again, so the rerun passes never counted | `dev/verify reruns only the failed tests > a test that reaches check.flakyTask is proposed in the flaky-tests plan, with no notice` (packages/dev/test/gate.test.ts) |
 | T-0174-M6 | packages/dev/src/flaky.ts | the proposal loop ignored which tests this check saw under load, so an older idle count could still open a task | `a flaky test proposes a task > a failure seen under load opens no task from an earlier idle count` |
+## T-0290 — verify checks the branch's current head
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0290-M1 | packages/dev/src/gate.ts | the replay of a same-run result no longer compared the recorded commit with the branch head (`attempt.verified === sha` replaced by `true`) | `dev/verify > a commit that lands after a pass in the same run is checked, not replayed (T-0290)` (packages/dev/test/gate.test.ts) |
