@@ -193,14 +193,20 @@ export async function runAnnounce(
     // The task still waits for a person; a lost notice must not stop that.
     await ctx.logger.write(`could not announce: ${messageOf(error)}`);
   }
-  // The wait this step leads to is a person's: the phase says so. A failed
-  // write leaves the scheduler to repair the phase on its next tick.
-  if (context.task.phase === "running" || context.task.phase === "review") {
+  // The wait this step leads to is a person's: the phase and the wait say so.
+  // An older review wait's kind is replaced even when the phase is already
+  // waiting, so a later wait for a person takes every action it offers. A
+  // failed write leaves the scheduler to repair the phase on its next tick.
+  if (
+    context.task.phase === "running" ||
+    context.task.phase === "review" ||
+    context.task.waitKind !== "person"
+  ) {
     try {
       await saveTaskGuarded(
         ctx,
         context.taskKey,
-        { ...context.task, phase: "waiting" },
+        { ...context.task, phase: "waiting", waitKind: "person" },
         "dev:announce-waiting",
       );
     } catch (error) {

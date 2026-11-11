@@ -764,6 +764,7 @@ export async function runWorktree(
   const next: TaskData = {
     ...context.task,
     phase: "running",
+    waitKind: undefined,
     run: ctx.runId,
     // The run now names the task, so the manual start request has been met.
     startRequested: false,
@@ -846,6 +847,7 @@ export async function runReverify(
   const next: TaskData = {
     ...context.task,
     phase: "running",
+    waitKind: undefined,
     run: ctx.runId,
     attempts,
     attempt: nextAttempt,
