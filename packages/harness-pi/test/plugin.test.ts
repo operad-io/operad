@@ -13,15 +13,15 @@ import {
   type PluginStepResult,
   type TriggerView,
 } from "@operad-io/engine";
-import { EVENT_NOTE_TEMPLATE } from "@operad-io/harness-process";
-import { createPiHarnessPlugin, modelErrorOf, piToolEvent } from "../src/index.ts";
+import { EVENT_NOTE_TEMPLATE, modelErrorOf } from "@operad-io/harness-process";
+import { createPiHarnessPlugin, piToolEvent } from "../src/index.ts";
 import {
   cleanupTempRoots,
   manualClock,
   tempRoot,
   waitForFile,
   type ManualClock,
-} from "./support.ts";
+} from "@operad-io/harness-process/test-support";
 
 afterAll(cleanupTempRoots);
 

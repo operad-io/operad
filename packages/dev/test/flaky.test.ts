@@ -18,6 +18,7 @@ import {
   setPriority,
   setTaskPhase,
 } from "../src/service.ts";
+import { validateDevSettings } from "../src/settings.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
@@ -65,10 +66,15 @@ async function setup(withPlan: boolean) {
     threshold = 2,
     names: readonly string[] = [TEST],
     secrets: readonly string[] = [],
+    load: {
+      readonly startLoad?: { readonly load1: number; readonly cores: number } | undefined;
+      readonly endLoad?: { readonly load1: number; readonly cores: number } | undefined;
+      readonly loadLimit?: number | undefined;
+    } = {},
   ) => {
     const logPath = join(root, `${taskId}.log`);
     writeFileSync(logPath, log);
-    const notice = await trackFlakyTests({ store, repository, taskId, names, log: logPath, threshold, secrets, flakyPlan: options.plan });
+    const notice = await trackFlakyTests({ store, repository, taskId, names, log: logPath, threshold, secrets, flakyPlan: options.plan, ...load });
     if (notice !== undefined) notices.push(notice);
   };
   const flaky = async () =>
@@ -398,6 +404,73 @@ describe("a flaky test proposes a task", () => {
     expect(shown.split("\n")).toEqual([`2\t${TEST}\t${task}`, "1\tother"]);
     await setTaskPhase(s.store, (await s.flaky())[0]?.id ?? "", "merged");
     expect(await reruns?.run(context, [])).toBe(`2\t${TEST}\n1\tother`);
+  });
+
+  test("a failure seen above the load limit opens no task and says it was skipped", async () => {
+    const s = await setup(true);
+    // Either reading above twice the cores is enough: the start is busy, the end is not.
+    await s.track("T-0001-a", logWith(TEST), 1, [TEST], [], {
+      startLoad: { load1: 30, cores: 10 },
+      endLoad: { load1: 1, cores: 10 },
+    });
+    expect(await s.flaky()).toHaveLength(0);
+    expect(s.notices).toHaveLength(1);
+    expect(s.notices[0]).toBe(`flaky test "${TEST}" skipped: seen under load 30 on 10 cores`);
+    const record = (await listAll(s.store, "flaky-test"))[0];
+    expect((record?.data as { occurrences?: { load?: unknown }[] }).occurrences?.[0]?.load).toEqual({ load1: 30, cores: 10 });
+  });
+
+  test("a failure whose end reading is above the load limit is skipped too", async () => {
+    const s = await setup(true);
+    await s.track("T-0001-a", logWith(TEST), 1, [TEST], [], {
+      startLoad: { load1: 1, cores: 10 },
+      endLoad: { load1: 25, cores: 10 },
+    });
+    expect(await s.flaky()).toHaveLength(0);
+    expect(s.notices[0]).toContain("seen under load 25 on 10 cores");
+  });
+
+  test("a failure below the load limit opens the flaky task as before", async () => {
+    const s = await setup(true);
+    await s.track("T-0001-a", logWith(TEST), 1, [TEST], [], {
+      startLoad: { load1: 19, cores: 10 },
+      endLoad: { load1: 0, cores: 10 },
+    });
+    expect(s.notices).toEqual([]);
+    expect(await s.flaky()).toHaveLength(1);
+  });
+
+  test("check.flakyLoadLimit sets the limit; at it a failure still counts", async () => {
+    const s = await setup(true);
+    await s.track("T-0001-a", logWith(TEST), 1, [TEST], [], {
+      startLoad: { load1: 40, cores: 10 },
+      endLoad: { load1: 40, cores: 10 },
+      loadLimit: 40,
+    });
+    expect(s.notices).toEqual([]);
+    expect(await s.flaky()).toHaveLength(1);
+  });
+
+  test("check.flakyLoadLimit is read and validated", () => {
+    expect(validateDevSettings({ name: "x" }).check.flakyLoadLimit).toBeUndefined();
+    expect(validateDevSettings({ name: "x", check: { flakyLoadLimit: 6.5 } }).check.flakyLoadLimit).toBe(6.5);
+    expect(() => validateDevSettings({ name: "x", check: { flakyLoadLimit: 0 } })).toThrow(/flakyLoadLimit/);
+  });
+
+  test("a failure seen under load opens no task from an earlier idle count", async () => {
+    const s = await setup(true);
+    // One idle failure, not yet enough for its high threshold: no task is due.
+    await s.track("T-0001-a", logWith(TEST), 99);
+    // A lower threshold makes that old count due, but this failure is skipped.
+    await s.track("T-0002-b", logWith(TEST), 1, [TEST], [], {
+      startLoad: { load1: 30, cores: 10 },
+      endLoad: { load1: 30, cores: 10 },
+    });
+    expect(await s.flaky()).toHaveLength(0);
+    expect(s.notices[0]).toContain("skipped");
+    // The next idle failure still proposes exactly one task.
+    await s.track("T-0003-c", logWith(TEST), 1);
+    expect(await s.flaky()).toHaveLength(1);
   });
 
   test("a crash between the decision and the proposal still proposes exactly one task", async () => {

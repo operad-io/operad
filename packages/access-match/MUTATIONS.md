@@ -48,3 +48,52 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0240-M16 | packages/access-match/src/summary.ts | leading and trailing blank lines of a kept command were dropped | `a bash call keeps its lines when the log asks for them, still cut at 500 characters` |
+
+## T-0282 — shell expansion in bash paths
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0282-M1 | packages/access-match/src/index.ts | `expandWord` stopped replacing `$HOME` and `${HOME}`, so `cat "$HOME/.ssh/id_rsa"` read as a relative path | `denyPaths follows ~, $HOME and ${HOME} in a bash command, quoted or not` |
+
+## T-0282 — rework 1
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0282-M2 | packages/access-match/src/index.ts | `cdTarget` stopped skipping `builtin` and `command`, so `builtin cd "$HOME"` left later paths on the call's cwd | `brace expansion and positional parameters ask; builtin and command wrappers still track cd` |
+
+## T-0282 — rework 3
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0282-M3 | packages/access-match/src/index.ts | `cdTarget` skipped only a lone `-L` or `-P`, so `cd -LP "$HOME"` took `-LP` as the target | `extended globs in a directory component ask; combined cd options are not the target` |
+
+## T-0282 — rework 5
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0282-M4 | packages/access-match/src/index.ts | `pushd +1` was read as a relative directory `+1` instead of leaving the directory unknown | `pushd and popd operands: the directory stack is not tracked, so the directory becomes unknown` |
+
+## T-0282 — rework 6
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0282-M5 | packages/access-match/src/index.ts | `pushd -n` was not recognised, so its operand moved the tracked directory | `an unknown directory covers the command name; pushd -n keeps the directory; $'…' words are read` |
+
+## T-0282 — rework 8
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0282-M6 | packages/access-match/src/index.ts | a glob in a cd target was no longer asked about, so `cd /tmp/*` was read as a literal directory | `globs: a cd target with one asks; other words are refused when the pattern can reach a denied path` |
+
+## T-0282 — rework 9
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0282-M7 | packages/access-match/src/index.ts | a bracket class ended at the first `]`, so `[[:punct:]]ssh` was read as a one-letter class followed by `]ssh` | `a POSIX character class in a glob can reach a denied path` |
+
+## T-0282 — rework 11
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0282-M8 | packages/access-match/src/index.ts | a part starting with `{` was read as a plain command, so a `cd` inside a brace group kept the directory known | `the directory is unknown after anything that can change it but is not modelled: later relative paths ask` |
+| T-0282-M9 | packages/access-match/src/index.ts | `checkGlob` never refused, so a glob whose literal prefix reaches a denied entry was allowed | `a glob is judged by its literal prefix: refused when it can reach a denied path, asked when unsure` |

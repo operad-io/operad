@@ -3026,20 +3026,26 @@ describe("dev/verify reruns only the failed tests", () => {
   });
 
   test("a test that reaches check.flakyTask is proposed in the flaky-tests plan, with no notice", async () => {
-    const root = await tempRoot();
-    const state = await fixture({
-      commands: [object(failing("a > flaky"), `echo {name} >> '${join(root, "ran")}'`)],
-    });
-    const first = await verify(state);
-    expect(String(first.data?.note)).not.toContain("no task was proposed");
-    const second = await verify(state, "verify-run-2");
-    expect(second.data?.reason).toBeUndefined();
-    expect(String(second.data?.note)).not.toContain("no task was proposed");
-    const proposed = (await listAll(state.store, "task")).filter(
-      (object) => String((object.data as { title?: unknown }).title) === "Fix the flaky test: a > flaky",
-    );
-    expect(proposed).toHaveLength(1);
-    expect(String((proposed[0]?.data as { plan?: unknown } | undefined)?.plan)).toMatch(/-flaky-tests$/);
+    // A pass on a busy machine never counts, so the load is a quiet one, not the host's.
+    notCodeTestHooks.load = () => ({ load1: 0, cores: 10 });
+    try {
+      const root = await tempRoot();
+      const state = await fixture({
+        commands: [object(failing("a > flaky"), `echo {name} >> '${join(root, "ran")}'`)],
+      });
+      const first = await verify(state);
+      expect(String(first.data?.note)).not.toContain("no task was proposed");
+      const second = await verify(state, "verify-run-2");
+      expect(second.data?.reason).toBeUndefined();
+      expect(String(second.data?.note)).not.toContain("no task was proposed");
+      const proposed = (await listAll(state.store, "task")).filter(
+        (object) => String((object.data as { title?: unknown }).title) === "Fix the flaky test: a > flaky",
+      );
+      expect(proposed).toHaveLength(1);
+      expect(String((proposed[0]?.data as { plan?: unknown } | undefined)?.plan)).toMatch(/-flaky-tests$/);
+    } finally {
+      notCodeTestHooks.load = undefined;
+    }
   });
 
   test("a rerun that fails fails the check", async () => {
@@ -4033,14 +4039,23 @@ describe("dev/verify tells a result that is not the code from one that is", () =
   });
 
   test("a test that passes on rerun under load is recorded and proposes no task", async () => {
-    loads(18);
+    // Busy when each command starts, quiet when it ends: the start reading alone is enough.
+    loads(30, 1, 30, 1, 30, 1);
     const root = await tempRoot();
     const flaky = {
       run: "echo '(fail) a > flaky [1.00ms]' >&2; exit 1",
       failed: { match: MATCH, rerun: `echo {name} >> '${join(root, "ran")}'`, max: 10 },
     };
     const state = await fixture({ commands: [flaky] });
-    for (const run of ["v1", "v2", "v3"]) expect((await verify(state, run)).result).toBe("pass");
+    let last: Awaited<ReturnType<typeof verify>> | undefined;
+    for (const run of ["v1", "v2", "v3"]) {
+      last = await verify(state, run);
+      expect(last.result).toBe("pass");
+    }
+    const skipped = "flaky test \"a > flaky\" skipped: seen under load 30 on 10 cores";
+    expect(String(last?.data?.note)).toContain(skipped);
+    expect((await taskOf(state)).brief).toContain(skipped);
+    expect(readFileSync(String(last?.data?.log), "utf8")).toContain(skipped);
     const tasks = (await listAll(state.store, "task")).filter(
       (object) => String((object.data as { title?: unknown }).title).startsWith("Fix the flaky test"),
     );
@@ -4049,7 +4064,7 @@ describe("dev/verify tells a result that is not the code from one that is", () =
       | { occurrences?: { load?: { load1: number; cores: number } }[] }
       | undefined;
     expect(record?.occurrences).toHaveLength(3);
-    expect(record?.occurrences?.[0]?.load).toEqual({ load1: 18, cores: 10 });
+    expect(record?.occurrences?.[0]?.load).toEqual({ load1: 30, cores: 10 });
   });
 
   test("a test that passes on rerun on an idle machine proposes a task as before", async () => {

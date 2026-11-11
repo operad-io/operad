@@ -310,7 +310,12 @@
           "minLength": 1
         },
         "loadLimit": {
-          "description": "The 1-minute load average below which the machine is idle enough to trust a check. A check that timed out, was killed by a signal nobody in the task sent, or failed only by test timeouts waits for the load to fall below this, then runs once more by itself; a second such result waits for a person. A test that passes on rerun while the load is at or above this is recorded with the load and no task is proposed for it. When it is not set, the limit is the number of cores.",
+          "description": "The 1-minute load average below which the machine is idle enough to trust a check. A check that timed out, was killed by a signal nobody in the task sent, or failed only by test timeouts waits for the load to fall below this, then runs once more by itself; a second such result waits for a person. When it is not set, the limit is the number of cores.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "flakyLoadLimit": {
+          "description": "The 1-minute load average above which a test that failed and then passed on rerun was seen under load. The check reads the load when its command starts and when it ends; a reading above this limit marks the failure as skipped, so it never opens or updates a flaky-test task, and the check's log and history say so with the load and the core count. When it is not set, the limit is twice the number of cores.",
           "type": "number",
           "exclusiveMinimum": 0
         }
