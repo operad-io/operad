@@ -78,6 +78,7 @@ describe("dev views", () => {
       scope: "repository",
       final: false,
       mark: "proposed",
+      badge: "off",
       parent: "repo:repository",
     });
     await setTaskPhase(store, task.id, "merged");

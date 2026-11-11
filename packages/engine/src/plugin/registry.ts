@@ -21,6 +21,7 @@ import {
   type ActionRun,
   type ActionRunOptions,
   type ActionTypeDefinition,
+  type ObjectData,
   type Actor,
   type Answer,
   type CommandContext,
@@ -84,6 +85,25 @@ import {
 } from "./validate.ts";
 
 export { splitActionName };
+
+/** An action's rank for an object's data; a failing `rank` counts as 0. */
+export function rankOf(action: ActionTypeDefinition, data: ObjectData): number {
+  if (action.rank === undefined) return 0;
+  try {
+    const rank = action.rank(data);
+    return Number.isFinite(rank) ? rank : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Orders by rank, lower first; equal ranks keep their order. */
+export function sortByRank<T extends { readonly rank: number }>(items: readonly T[]): T[] {
+  return items
+    .map((item, at) => ({ item, at }))
+    .sort((a, b) => a.item.rank - b.item.rank || a.at - b.at)
+    .map(({ item }) => item);
+}
 
 /** Options for building a registry from plugin definitions. */
 export interface PluginRegistryOptions {
@@ -158,6 +178,8 @@ export interface ActionInfo {
   readonly note?: string | undefined;
   readonly noteRequired: boolean;
   readonly confirm: boolean;
+  /** The action ends the object, so a main key or button never runs it. */
+  readonly ends?: boolean | undefined;
 }
 
 /** Where a key binding came from. */
@@ -410,6 +432,7 @@ export class PluginRegistry {
           ...(note.name === undefined ? {} : { note: note.name }),
           noteRequired: note.required,
           confirm: action.confirm === true,
+          ...(action.ends === true ? { ends: true } : {}),
         });
       }
     }
@@ -1276,7 +1299,7 @@ export class PluginRegistry {
 
   /** The actions whose `when` holds for the object; a throwing `when` is logged and hidden. */
   private async actionsHolding(object: StoredObject): Promise<readonly PendingActionView[]> {
-    const actions: PendingActionView[] = [];
+    const held: { plugin: string; action: string; rank: number }[] = [];
     for (const { plugin, action } of this.actionsFor(object.type)) {
       let holds: unknown;
       try {
@@ -1287,9 +1310,11 @@ export class PluginRegistry {
         );
         continue;
       }
-      if (holds === true) actions.push({ plugin: plugin.name, action: action.name });
+      if (holds === true) {
+        held.push({ plugin: plugin.name, action: action.name, rank: rankOf(action, object.data) });
+      }
     }
-    return actions;
+    return sortByRank(held).map(({ plugin, action }) => ({ plugin, action }));
   }
 
   /**

@@ -120,7 +120,8 @@ function bareId(id: string): string {
 
 /** The first available action, the one the footer offers. */
 export function mainAction(state: TuiState): ViewAction | undefined {
-  return state.object?.actions[0];
+  // An action that ends the object is never the main one, even when it is alone.
+  return state.object?.actions.find((action) => action.ends !== true);
 }
 
 /** The key the footer shows for the main action. */
