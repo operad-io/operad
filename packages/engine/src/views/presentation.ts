@@ -209,12 +209,32 @@ export interface ActOptions {
   readonly actor: Actor;
 }
 
+/** How many hidden rows would draw each mark role. */
+export interface ViewHiddenCounts {
+  readonly done: number;
+  readonly cancelled: number;
+  readonly other: number;
+}
+
 /** One page of rows and where to continue. */
 export interface ViewListPage {
   readonly rows: readonly ViewRow[];
   readonly next?: string | undefined;
   /** How many rows of the type the filter left out; absent without a filter or on `all`. */
   readonly hidden?: number | undefined;
+  /** The hidden rows by the mark role they would draw; present with `hidden`. */
+  readonly hiddenCounts?: ViewHiddenCounts | undefined;
+}
+
+/** The mark role a hidden row adds to: done, cancelled or other. */
+function hiddenRole(row: ViewRow): keyof ViewHiddenCounts {
+  if (row.mark === "cancelled" || /(^|\.)cancelled$/i.test(row.state)) {
+    return "cancelled";
+  }
+  if (row.mark === "done" || (row.mark === undefined && /^(done|merged)$/i.test(row.state))) {
+    return "done";
+  }
+  return "other";
 }
 
 /** What a hierarchy list adds to the flat list's options. */
@@ -594,6 +614,7 @@ export class Views {
     const flags = await this.allRunFlags();
     const shown: { readonly t: number; readonly id: string; readonly row: ViewRow }[] = [];
     let hidden = 0;
+    const hiddenCounts = { done: 0, cancelled: 0, other: 0 };
     let counted = false;
     for (const [t, name] of types.entries()) {
       const owner = this.registry.viewsFor(name);
@@ -647,6 +668,7 @@ export class Views {
             shown.push({ t, id: object.id, row });
           } else {
             hidden += 1;
+            hiddenCounts[hiddenRole(row)] += 1;
           }
         }
         cursor = page.next;
@@ -679,7 +701,7 @@ export class Views {
             }),
           }
         : {}),
-      ...(counted ? { hidden } : {}),
+      ...(counted ? { hidden, hiddenCounts } : {}),
     };
   }
 
@@ -759,6 +781,7 @@ export class Views {
     const withScope = await this.scopeShown(owner.plugin, type, owner.views);
     const shown: { readonly id: string; readonly row: ViewRow }[] = [];
     let hidden = 0;
+    const hiddenCounts = { done: 0, cancelled: 0, other: 0 };
     let cursor: string | undefined;
     do {
       let page;
@@ -782,7 +805,10 @@ export class Views {
       for (const object of page.objects) {
         const row = this.listRow(owner.plugin, type, object, flags, withScope);
         if (filterShows(chosen, row.state)) shown.push({ id: object.id, row });
-        else hidden += 1;
+        else {
+          hidden += 1;
+          hiddenCounts[hiddenRole(row)] += 1;
+        }
       }
       cursor = page.next;
     } while (cursor !== undefined);
@@ -811,6 +837,7 @@ export class Views {
           }
         : {}),
       hidden,
+      hiddenCounts,
     };
   }
 

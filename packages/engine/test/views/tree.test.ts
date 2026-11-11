@@ -61,9 +61,11 @@ describe("row parent", () => {
     const page = await views.list("leaf", { parent: "group:g1" });
     expect(ids(page)).toEqual(["a"]);
     expect(page.hidden).toBe(1);
+    expect(page.hiddenCounts).toEqual({ done: 1, cancelled: 0, other: 0 });
     const done = await views.list("leaf", { parent: "group:g1", filter: "done" });
     expect(ids(done)).toEqual(["b"]);
     expect(done.hidden).toBe(1);
+    expect(done.hiddenCounts).toEqual({ done: 0, cancelled: 0, other: 1 });
     const root = await views.list("leaf", { root: true });
     expect(ids(root)).toEqual(["d"]);
     expect(root.hidden).toBe(0);

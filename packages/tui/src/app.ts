@@ -468,25 +468,36 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     };
   }
 
-  /** Every row of one level of one type, all pages, and how many the filter left out. */
+  /** Every row of one level of one type, all pages, and the hidden rows by role. */
   async function fetchLevel(
     type: string,
     level: TuiLevel,
     signal: AbortSignal,
     filter?: string,
-  ): Promise<{ readonly rows: readonly ViewRow[]; readonly hidden: number }> {
+  ): Promise<{
+    readonly rows: readonly ViewRow[];
+    readonly hidden: number;
+    readonly hiddenDone: number;
+    readonly hiddenCancelled: number;
+  }> {
     const rows: ViewRow[] = [];
     let cursor: string | undefined;
     let hidden = 0;
+    let hiddenDone = 0;
+    let hiddenCancelled = 0;
     let first = true;
     do {
       const page = await client.objects(type, cursor, signal, filter, level);
       rows.push(...page.rows);
-      if (first) hidden = page.hidden ?? 0;
+      if (first) {
+        hidden = page.hidden ?? 0;
+        hiddenDone = page.hiddenCounts?.done ?? hidden;
+        hiddenCancelled = page.hiddenCounts?.cancelled ?? 0;
+      }
       first = false;
       cursor = page.next;
     } while (cursor !== undefined);
-    return { rows, hidden };
+    return { rows, hidden, hiddenDone, hiddenCancelled };
   }
 
   /** The rows of one level across the types of a plugin, each tagged with its type. */
@@ -495,7 +506,12 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     level: TuiLevel,
     signal: AbortSignal,
     filter: string | undefined,
-  ): Promise<{ readonly entries: readonly TuiTreeEntry[]; readonly hidden: number }> {
+  ): Promise<{
+    readonly entries: readonly TuiTreeEntry[];
+    readonly hidden: number;
+    readonly hiddenDone: number;
+    readonly hiddenCancelled: number;
+  }> {
     const per = await Promise.all(
       (tab.types ?? []).map(async (info) => {
         const named = tab.filters?.some((f) => f.name === filter) === true;
@@ -503,6 +519,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         const found = await fetchLevel(info.type, level, signal, asked);
         return {
           hidden: found.hidden,
+          hiddenDone: found.hiddenDone,
+          hiddenCancelled: found.hiddenCancelled,
           entries: found.rows.map((row): TuiTreeEntry => ({ row, type: info.type })),
         };
       }),
@@ -510,6 +528,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     return {
       entries: per.flatMap((one) => one.entries),
       hidden: per.reduce((total, one) => total + one.hidden, 0),
+      hiddenDone: per.reduce((total, one) => total + one.hiddenDone, 0),
+      hiddenCancelled: per.reduce((total, one) => total + one.hiddenCancelled, 0),
     };
   }
 
@@ -571,7 +591,15 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         tab.filter,
       );
       if (signal.aborted || finished) return;
-      dispatch({ type: "children", objectId: object.id, version, entries: found.entries });
+      dispatch({
+        type: "children",
+        objectId: object.id,
+        version,
+        entries: found.entries,
+        hidden: found.hidden,
+        hiddenDone: found.hiddenDone,
+        hiddenCancelled: found.hiddenCancelled,
+      });
     } catch (error) {
       if (signal.aborted || finished) return;
       noteConnection(error);

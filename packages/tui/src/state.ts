@@ -97,6 +97,12 @@ export interface TuiChildren {
   readonly cursor: number;
   /** The keys move in this list instead of the left one. */
   readonly focused: boolean;
+  /** How many children the list's filter left out; they still call for progress. */
+  readonly hidden?: number | undefined;
+  /** How many hidden children are done. */
+  readonly hiddenDone?: number | undefined;
+  /** How many hidden children are cancelled. */
+  readonly hiddenCancelled?: number | undefined;
 }
 
 /** One section of the open object, with the content fetched so far. */
@@ -532,6 +538,12 @@ export type TuiStateEvent =
       readonly objectId: string;
       readonly version?: number | undefined;
       readonly entries: readonly TuiTreeEntry[];
+      /** How many children the list's filter left out. */
+      readonly hidden?: number | undefined;
+      /** How many hidden children are done. */
+      readonly hiddenDone?: number | undefined;
+      /** How many hidden children are cancelled. */
+      readonly hiddenCancelled?: number | undefined;
     }
   | {
       readonly type: "pending";
@@ -941,19 +953,28 @@ export interface TuiChildProgress {
   readonly entries: readonly TuiChildEntry[];
   readonly done: number;
   readonly total: number;
+  /** Children the list's filter left out. */
+  readonly hidden: number;
+  /** Hidden children that are cancelled; they keep their bar cells. */
+  readonly hiddenCancelled: number;
 }
 
 export function childProgress(
   rows: readonly TuiRow[],
   layout: TuiChildLayout,
+  hidden = 0,
+  hiddenDone = hidden,
+  hiddenCancelled = 0,
 ): TuiChildProgress {
   const shown = displayChildren(rows, layout);
   const active = shown.filter((entry) => !cancelledRow(entry.row));
   const cancelled = shown.filter((entry) => cancelledRow(entry.row));
   return {
     entries: [...active, ...cancelled],
-    done: active.filter((entry) => doneRow(entry.row)).length,
-    total: active.length,
+    done: active.filter((entry) => doneRow(entry.row)).length + hiddenDone,
+    total: shown.length + hidden - cancelled.length - hiddenCancelled,
+    hidden,
+    hiddenCancelled,
   };
 }
 
@@ -1129,8 +1150,7 @@ export function objectHeaderLines(state: TuiState): number {
   if (object === undefined) return 0;
   const width = Math.max(1, sectionWidth(state) - 2);
   const title = object.row.title === "" ? 0 : wrapText(object.row.title, width).length;
-  const count = object.children?.rows.length ?? 0;
-  const children = count === 0 ? 0 : 2 + Math.min(count, CHILD_ROWS);
+  const children = childLines(object);
   const status =
     object.error !== undefined ||
     object.row.error !== undefined ||
@@ -1787,8 +1807,9 @@ export const CHILD_ROWS = 8;
 
 /** The lines the next level takes in the page: the bar, its heading and its rows. */
 export function childLines(object: TuiObject | undefined): number {
-  const count = object?.children?.rows.length ?? 0;
-  return count === 0 ? 0 : Math.min(count, CHILD_ROWS) + 2;
+  const children = object?.children;
+  if (children === undefined || children.rows.length + (children.hidden ?? 0) === 0) return 0;
+  return Math.min(children.rows.length, CHILD_ROWS) + 2;
 }
 
 function withChildren(state: TuiState, patch: (children: TuiChildren) => TuiChildren): TuiState {
@@ -2420,6 +2441,9 @@ function applyChildren(
   objectId: string,
   version: number | undefined,
   entries: readonly TuiTreeEntry[],
+  hidden?: number | undefined,
+  hiddenDone?: number | undefined,
+  hiddenCancelled?: number | undefined,
 ): TuiState {
   const object = state.object;
   if (object === undefined || object.id !== objectId) return state;
@@ -2437,8 +2461,14 @@ function applyChildren(
     rows,
     cursor,
     focused: rows.length > 0 && old?.focused === true,
+    ...(hidden === undefined || hidden === 0 ? {} : { hidden }),
+    ...(hiddenDone === undefined ? {} : { hiddenDone }),
+    ...(hiddenCancelled === undefined || hiddenCancelled === 0 ? {} : { hiddenCancelled }),
   };
-  return withObject(state, (value) => ({ ...value, children: rows.length === 0 ? undefined : children }));
+  return withObject(state, (value) => ({
+    ...value,
+    children: rows.length === 0 && (hidden ?? 0) === 0 ? undefined : children,
+  }));
 }
 
 function applyPageError(
@@ -2512,7 +2542,15 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       return withTab(next, event.tabId, (tab) => ({ ...tab, level: event.level }));
     }
     case "children":
-      return applyChildren(state, event.objectId, event.version, event.entries);
+      return applyChildren(
+        state,
+        event.objectId,
+        event.version,
+        event.entries,
+        event.hidden,
+        event.hiddenDone,
+        event.hiddenCancelled,
+      );
     case "filter-launched":
       return state.filterRequest === undefined
         ? state
