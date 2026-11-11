@@ -16,6 +16,7 @@ import {
   type TuiView,
 } from "../src/index.ts";
 import { drawState } from "../src/view/index.ts";
+import { BUILTIN_THEMES, toRgba } from "../src/theme.ts";
 import { immediateClock } from "./support.ts";
 
 function row(id: string, title = `Title ${id}`): ViewRow {
@@ -280,9 +281,14 @@ describe("the TUI object app", () => {
       await view.until((state) => state.object?.children !== undefined);
       expect(shell.state.object?.children?.hidden).toBe(1);
       expect(shell.state.object?.children?.hiddenDone).toBe(0);
-      const text = drawState(shell.state).right.chunks.map((chunk) => chunk.text).join("");
+      const right = drawState(shell.state).right;
+      const text = right.chunks.map((chunk) => chunk.text).join("");
       expect(text).toContain("0 / 1");
-      expect(text).not.toContain("█");
+      const cells = right.chunks.filter((chunk) => /^█+$/.test(chunk.text));
+      expect(cells.length).toBe(1);
+      expect((cells[0]?.fg?.toInts() ?? []).join(",")).toBe(
+        toRgba(BUILTIN_THEMES.dark.cancelled).toInts().join(","),
+      );
     } finally {
       shell.stop();
       await shell.done;

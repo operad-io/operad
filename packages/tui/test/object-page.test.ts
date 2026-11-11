@@ -323,17 +323,17 @@ describe("the progress bar and its heading", () => {
     expect(cells.map(colour)).toEqual(Array.from({ length: 3 }, () => token("ok")));
   });
 
-  test("hidden done fills while hidden cancelled leaves both numbers", () => {
+  test("hidden done fills while hidden cancelled leaves both numbers and its cell", () => {
     const rows = [row("T-1-wait", "waiting", { mark: "waiting" })];
     const progress = childProgress(rows, "tree", 2, 1, 1);
     expect(progress.done).toBe(1);
     expect(progress.total).toBe(2);
+    expect(progress.hiddenCancelled).toBe(1);
     const state = opened(rows, 120, "tree", 2, 1, 1);
     const heading = rightLines(state).find((line) => line.includes(" / "));
     expect(heading).toContain("1 / 2");
     const cells = barChunks(state);
-    expect(cells.length).toBe(1);
-    expect(colour(cells[0] as TextChunk)).toBe(token("ok"));
+    expect(cells.map(colour)).toEqual([token("ok"), token("cancelled")]);
   });
 
   test("a waiting child beside done ones does not fill a progress cell", () => {

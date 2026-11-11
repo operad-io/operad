@@ -955,6 +955,8 @@ export interface TuiChildProgress {
   readonly total: number;
   /** Children the list's filter left out. */
   readonly hidden: number;
+  /** Hidden children that are cancelled; they keep their bar cells. */
+  readonly hiddenCancelled: number;
 }
 
 export function childProgress(
@@ -972,6 +974,7 @@ export function childProgress(
     done: active.filter((entry) => doneRow(entry.row)).length + hiddenDone,
     total: shown.length + hidden - cancelled.length - hiddenCancelled,
     hidden,
+    hiddenCancelled,
   };
 }
 

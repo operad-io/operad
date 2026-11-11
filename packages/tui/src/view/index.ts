@@ -381,7 +381,9 @@ function progressBar(
   width: number,
   palette: TuiPalette,
 ): TextChunk[] {
-  const cancelled = progress.entries.filter((entry) => cancelledRow(entry.row)).length;
+  const cancelled =
+    progress.entries.filter((entry) => cancelledRow(entry.row)).length +
+    progress.hiddenCancelled;
   const cells = progress.total + cancelled;
   if (cells === 0) return [];
   const done = Math.min(progress.done, progress.total);
