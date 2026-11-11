@@ -20,12 +20,12 @@ function fakeHarness(name: string) {
   });
 }
 
-async function rig() {
+async function rig(harnesses: readonly string[] = ['harness-radian', 'harness-pi', 'harness-claude']) {
   const root = await tempRoot();
   const remote = await makeRemote(root);
   const store = storeAt(root);
   const repository = await addRepository(store, { path: remote.repository, name: "repository" });
-  const registry = new PluginRegistry([createChatPlugin(), createDevPlugin(), createShellPlugin(), fakeHarness("harness-radian"), fakeHarness("harness-claude")], {
+  const registry = new PluginRegistry([createChatPlugin(), createDevPlugin(), createShellPlugin(), ...[...harnesses].reverse().map(fakeHarness)], {
     home: root,
     cwd: remote.repository,
     store,
@@ -38,6 +38,10 @@ async function must(store: ReturnType<typeof storeAt>, type: string, id: string)
   const object = await store.get(type, id);
   if (object === undefined) throw new Error(`no ${type} ${id}`);
   return object;
+}
+
+function rigWith(harnesses: readonly string[]) {
+  return rig(harnesses);
 }
 
 async function openChat(r: Awaited<ReturnType<typeof rig>>, args: Record<string, unknown> = {}): Promise<string> {
@@ -58,7 +62,7 @@ describe("dev:chat", () => {
     const chat = await must(r.store, CHAT_TYPE, id);
     expect(chat.data).toMatchObject({
       parent: "repo:repository",
-      harness: "harness-radian",
+      harness: "harness-claude",
       cwd: r.remote.repository,
       title: "About the build",
       skills: [],
@@ -71,20 +75,27 @@ describe("dev:chat", () => {
     expect(row?.parent).toBe("repo:repository");
   });
 
-  test("the harness is the one given, else the repository's worker harness", async () => {
+  test("the harness is the one given, else the first offered one that is loaded", async () => {
     const r = await rig();
-    const given = await openChat(r, { harness: "harness-claude" });
-    expect((await must(r.store, CHAT_TYPE, given)).data.harness).toBe("harness-claude");
+    const given = await openChat(r, { harness: "harness-pi" });
+    expect((await must(r.store, CHAT_TYPE, given)).data.harness).toBe("harness-pi");
     const second = await openChat(r);
-    expect((await must(r.store, CHAT_TYPE, second)).data.harness).toBe("harness-radian");
-    expect(second).not.toBe(given);
+    expect((await must(r.store, CHAT_TYPE, second)).data.harness).toBe("harness-claude");
   });
 
-  test("the harness must be loaded: one that is not is refused and the loaded ones are named", async () => {
+  test("harness-radian is refused with the reason, whether given or the only one loaded", async () => {
     const r = await rig();
-    await expect(openChat(r, { harness: "harness-pi" })).rejects.toThrow(
-      'harness "harness-pi" is not loaded; the loaded harnesses are harness-radian, harness-claude',
+    await expect(openChat(r, { harness: "harness-radian" })).rejects.toThrow("cannot stop a tool call before it starts");
+    const alone = await rigWith(["harness-radian"]);
+    await expect(openChat(alone)).rejects.toThrow("no harness for a repository chat is loaded");
+  });
+
+  test("a harness that is not loaded or not offered is refused and the usable ones are named", async () => {
+    const r = await rigWith(["harness-radian", "harness-pi"]);
+    await expect(openChat(r, { harness: "harness-claude" })).rejects.toThrow(
+      'harness "harness-claude" is not offered for a repository chat; the loaded ones that are: harness-pi',
     );
+    expect((await must(r.store, CHAT_TYPE, await openChat(r))).data.harness).toBe("harness-pi");
   });
 
   test("the profile keeps the agent out of the operad command", async () => {
@@ -94,10 +105,10 @@ describe("dev:chat", () => {
     expect(access.denyCommands).toContain("operad");
   });
 
-  test("the action says up front that radian's questions can only be refused once", () => {
+  test("the action says up front that radian is not offered", () => {
     const action = chatActions[0];
     expect(action?.args?.description).toContain(RADIAN_NOTE);
-    expect(action?.args?.properties?.harness?.description).toContain("only be refused once");
+    expect(action?.args?.description).toContain("harness-radian is not offered here");
     expect(action?.args?.properties?.harness?.enum).toBeUndefined();
   });
 });
@@ -130,7 +141,7 @@ describe("dev/chat_worktree", () => {
 
   test("a chat that is not about a repository is refused", async () => {
     const r = await rig();
-    const id = await createChat(r.store, { harness: "harness-radian", cwd: r.root, title: "loose" }, "test");
+    const id = await createChat(r.store, { harness: "harness-claude", cwd: r.root, title: "loose" }, "test");
     const result = await r.registry.runStep("dev/chat_worktree", {}, {
       runId: "run-1",
       object: { type: CHAT_TYPE, id, data: {} },

@@ -22,6 +22,6 @@ const toolName = typeof record.tool_name === "string" ? record.tool_name : "";
 const cwd = typeof record.cwd === "string" ? record.cwd : process.cwd();
 const why = radianRefusal(read.profile, toolName, record.tool_input, cwd);
 if (why !== undefined) {
-  process.stderr.write(`${toolName} ${why}\n`);
+  process.stderr.write(`${toolName} call ${why}\n`);
   process.exit(2);
 }

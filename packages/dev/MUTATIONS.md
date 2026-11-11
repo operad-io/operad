@@ -604,3 +604,4 @@ the row fields.
 | T-0060-M7 | packages/dev/src/settings.ts | restored the removed rule that a flow's last user stage must be human, so a non-final human stage was refused | `[human, check] loads and compiles human -> check -> integrate` |
 | T-0188-M18 | packages/dev/src/chat.ts | `dev:chat` accepted a harness that is not loaded | `dev:chat > the harness must be loaded: one that is not is refused and the loaded ones are named` |
 | T-0188-M19 | packages/dev/src/chat.ts | the chat profile did not deny the `operad` command | `dev:chat > the profile keeps the agent out of the operad command` |
+| T-0188-M28 | packages/dev/src/chat.ts | `dev:chat` no longer refused harness-radian by name | `dev:chat > harness-radian is refused with the reason, whether given or the only one loaded` |

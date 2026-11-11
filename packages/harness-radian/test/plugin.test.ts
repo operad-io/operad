@@ -415,7 +415,7 @@ describe("harness-radian/agent", () => {
     test("radianRefusal lets a reading command and a read through", () => {
       expect(radianRefusal({ readOnly: true }, "shell", { command: "git status | head" }, "/work")).toBeUndefined();
       expect(radianRefusal({ readOnly: true }, "read", { path: "src/a.ts" }, "/work")).toBeUndefined();
-      expect(radianRefusal({ readOnly: true }, "write", { path: "src/a.ts" }, "/work")).toBe("this chat is read-only here");
+      expect(radianRefusal({ readOnly: true }, "write", { path: "src/a.ts" }, "/work")).toContain("this chat is read-only here");
       expect(radianRefusal({ readOnly: true }, "operad__list", { type: "task" }, "/work")).toBeUndefined();
       expect(radianRefusal({}, "write", { path: "src/a.ts" }, "/work")).toBeUndefined();
     });

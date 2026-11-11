@@ -29,16 +29,36 @@ async function hook(profile: unknown, call: unknown): Promise<{ code: number; er
 const call = (tool_name: string, tool_input: unknown) => ({ hook_event_name: "PreToolUse", tool_name, tool_input, cwd: "/work" });
 
 test("the hook program denies with exit 2 and the reason for a write, a command that writes and a denied path", async () => {
-  expect(await hook({ readOnly: true }, call("write", { path: "a.ts", content: "x" }))).toEqual({ code: 2, err: "write this chat is read-only here\n" });
+  const refused = await hook({ readOnly: true }, call("write", { path: "a.ts", content: "x" }));
+  expect(refused.code).toBe(2);
+  expect(refused.err).toBe("write call is refused: this chat is read-only here. Do not retry it; tell the person what you want to change, and they can open a worktree for it.\n");
   expect((await hook({ readOnly: true }, call("shell", { command: "echo x &> a.ts" }))).code).toBe(2);
   expect((await hook({ readOnly: true }, call("shell", { command: "cat a | tee b" }))).code).toBe(2);
   expect((await hook({ denyPaths: ["/secrets"] }, call("read", { path: "/secrets/key" }))).code).toBe(2);
+});
+
+test("the hook program denies a patch in every form, an unknown tool and a user's MCP tool in a read-only directory", async () => {
+  const readOnly = { readOnly: true };
+  expect((await hook(readOnly, call("patch", { path: "a.ts", old: "a", new: "b" }))).code).toBe(2);
+  expect((await hook(readOnly, call("patch", { path: "a.ts", edits: [{ old: "a", new: "b" }] }))).code).toBe(2);
+  expect((await hook(readOnly, call("patch", { edits: [{ path: "src/a.ts", old: "a", new: "b" }] }))).code).toBe(2);
+  const mcp = await hook(readOnly, call("notes__add", { text: "x" }));
+  expect(mcp.code).toBe(2);
+  expect(mcp.err).toContain("only reading tools and operad's tools run");
+  expect((await hook(readOnly, call("subagent", { prompt: "edit it" }))).code).toBe(2);
+  // Outside a read-only directory every path of a patch is judged, and a patch that names none is refused.
+  const denied = { denyPaths: ["/secrets"] };
+  expect((await hook(denied, call("patch", { edits: [{ path: "ok.ts", old: "a", new: "b" }, { path: "/secrets/k", old: "a", new: "b" }] }))).code).toBe(2);
+  expect((await hook(denied, call("patch", { path: "ok.ts", edits: [{ path: "/secrets/k", old: "a", new: "b" }] }))).code).toBe(2);
+  expect((await hook(denied, call("patch", { edits: [{ old: "a", new: "b" }] }))).code).toBe(2);
+  expect((await hook(denied, call("patch", { path: "ok.ts", edits: [{ old: "a", new: "b" }] }))).code).toBe(0);
 });
 
 test("the hook program lets a read, a reading command and an operad tool through", async () => {
   expect((await hook({ readOnly: true }, call("read", { path: "a.ts" }))).code).toBe(0);
   expect((await hook({ readOnly: true }, call("shell", { command: "git log | head" }))).code).toBe(0);
   expect((await hook({ readOnly: true }, call("operad__act", { id: "task:1" }))).code).toBe(0);
+  expect((await hook({ readOnly: true }, call("grep", { pattern: "x" }))).code).toBe(0);
 });
 
 test("a hook that cannot read its profile does not let the call through", async () => {

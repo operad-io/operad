@@ -12,14 +12,20 @@ import type {
   PluginStepResult,
   StepContext,
 } from "@operad-io/engine";
-import { harnessOf } from "@operad-io/pool";
 import { DevError, DevRefusal, repositoryData } from "./model.ts";
 import { readDevSettings } from "./settings.ts";
 import { prepareWorktree, workBranch, worktreePath } from "./steps.ts";
 
-/** What a person is told before choosing radian: its questions cannot be allowed once. */
+/**
+ * The harnesses a repository chat offers, in order: the ones that can stop a
+ * tool call before it starts, so the main clone stays read-only
+ * (`operad-conversation.md` decisions 13 and 14). harness-radian is not one.
+ */
+export const CHAT_HARNESSES = ["harness-claude", "harness-pi"] as const;
+
+/** Why radian is not offered; said up front in the action's description. */
 export const RADIAN_NOTE =
-  "With harness-radian the agent's questions about a call can only be refused once; it cannot allow one call.";
+  "harness-radian is not offered here: it cannot stop a tool call before it starts and cannot continue a session in another directory, so it cannot keep the main clone read-only or move to a worktree; use it for an assistant chat.";
 
 /** The access profile of a chat in the main clone: read-only, and no secrets. */
 export const CHAT_ACCESS: Readonly<Record<string, JsonValue>> = {
@@ -44,7 +50,7 @@ const chatAction: ActionTypeDefinition = {
       harness: {
         type: "string",
         minLength: 1,
-        description: `A loaded harness plugin that answers; the repository's worker harness when left out. It cannot change later. ${RADIAN_NOTE}`,
+        description: `One of the loaded harnesses ${CHAT_HARNESSES.join(", ")}; the first loaded one when left out. It cannot change later.`,
       },
       title: {
         type: "string",
@@ -59,11 +65,15 @@ const chatAction: ActionTypeDefinition = {
   async run(ctx, args) {
     const input = args as { readonly harness?: string; readonly title?: string };
     const repository = repositoryData(ctx.object.data);
-    const harness =
-      input.harness ?? harnessOf((await readDevSettings(repository.path)).worker.use);
-    if (!ctx.harnesses.includes(harness)) {
+    const offered = CHAT_HARNESSES.filter((name) => ctx.harnesses.includes(name));
+    const harness = input.harness ?? offered[0];
+    if (harness === undefined) {
+      throw new DevRefusal(`no harness for a repository chat is loaded; load one of ${CHAT_HARNESSES.join(", ")}`);
+    }
+    if (harness === "harness-radian") throw new DevRefusal(RADIAN_NOTE);
+    if (!offered.includes(harness as (typeof CHAT_HARNESSES)[number])) {
       throw new DevRefusal(
-        `harness "${harness}" is not loaded; the loaded harnesses are ${ctx.harnesses.join(", ") || "none"}`,
+        `harness "${harness}" is not offered for a repository chat; the loaded ones that are: ${offered.join(", ") || "none"}`,
       );
     }
     const id = await createChat(

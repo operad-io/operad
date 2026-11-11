@@ -1287,13 +1287,12 @@ A chat is a long conversation with an agent. The `chat` plugin comes with
 repository:
 
 ```
-operad dev:chat --repo operad --title "The build" [--harness harness-claude]
+operad dev:chat --repo operad --title "The build" [--harness harness-pi]
 operad chat:send C-0001 --note "why does the gate fail on main?"
 operad show C-0001 --section transcript
 ```
 
-With `harness-radian` the agent's questions about a call can only be refused
-once; it cannot allow one call. `dev:chat` says so in its description.
+`dev:chat` offers `harness-claude` and `harness-pi` (the first one loaded when `--harness` is left out): they can stop a tool call before it starts, which a read-only chat needs. `harness-radian` is refused there and stays for assistant chats.
 
 `chat:send` records the message and sends an event (source `ios`, `telegram` or
 `cli`, key = the message id, about the chat). The plugin's own rule starts
@@ -1307,9 +1306,7 @@ recorded is not given twice.
 A chat on a repository works in the main clone, read-only: a shell command runs
 there only when it is on a short list of commands that only read (`git status`,
 `ls`, `cat`, `grep`, `sed -n`, `bun test`, ...); every other command, and every
-write, becomes the worktree question. `harness-radian` cannot ask, so it is given the profile as a hook that radian
-runs before every tool call; a write or a command that is not on the list is
-denied before it runs, and the agent is told why. When the agent wants
+write, becomes the worktree question. When the agent wants
 to change code it asks whether to open a worktree. On yes, `dev` opens
 `work/chat-<id>` and the chat works there from then on, once; the main clone
 stays read-only. The worktree's changes reach main only through a task that
