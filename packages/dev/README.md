@@ -226,10 +226,10 @@ last, and at least one gate.
 | `dev/worktree` | `ready`, `conflict`, `blocked`, `failed` | fetches, creates `worktreeRoot/<task id>` on `work/<task id>` from `<remote>/<mainBranch>`, and on a later attempt reuses it after merging the latest main; a start that carries a `blockedBy` dependency records the person wait instead |
 | `dev/reverify` | `ready`, `conflict`, `failed` | the first step of a reverify: fetches and merges the current main into the task branch in the existing worktree, keeping the attempt; `ready` goes to verify, `conflict` to the worker |
 | `dev/work` | `done`, `nothing`, `failed` | builds the worker prompt, runs the configured harness step in the worktree, then requires new commits, a clean tree and a pushed branch |
-| `dev/verify` | `pass`, `fail` | recreates `<worktreeRoot>/<task id>-gate` detached at the branch head, runs `gate.commands` through `shell/check`, and records the verified commit |
+| `dev/verify` | `pass`, `fail`, `not_code` | recreates `<worktreeRoot>/<task id>-gate` detached at the branch head, runs `gate.commands` through `shell/check`, and records the verified commit. A check result that says nothing about the code (see Checks that are not the code) does not go to the worker: verify waits for a quiet machine, runs the check once more, and a second such result ends `not_code`, which waits for a person |
 | `dev/review` | `pass`, `fail`, `failed`, `unavailable`, `timed_out` | runs the reviewer harness step in the gate worktree on the diff from the merge base to the verified commit; the previous review is the newest report for another commit (see Rework rounds); in every review a finding far from the task's own change and from the previous review's findings is moved out of the failing set as pre-existing, while a critical one or one without a place still fails |
 | `dev/review_due` | `ready`, `interrupted` | the wait a review enters after a model was unavailable; it lets the flow run the same review round again at the recorded time |
-| `dev/retry` | `again`, `hold`, `ask`, `give_up`, `cancelled` | runs in front of the announcement of a work, worktree or reverify step that stopped. A stop that is not the task's own work (the run stopped, a process killed by a signal nobody sent, a step that is not loaded, settings that cannot be read) runs the step once more in the same attempt, without a person and without counting toward `maxAutoRework`; a second one, or a wait that ran out, goes to a person and the waiting line names the cause (for example `pool/agent is not loaded`) |
+| `dev/retry` | `again`, `hold`, `ask`, `give_up`, `cancelled` | runs in front of the announcement of a work, worktree or reverify step that stopped. A stop that is not the task's own work (the run stopped, a process killed by a signal nobody sent, a step that is not loaded, settings that cannot be read) runs the step once more in the same attempt, without a person and without counting toward `maxAutoRework`; a work step that ended on a dropped connection to the harness or the model (the socket closed, a reset) is the same kind of stop, with the cause `model connection dropped during work`. A second stop, or a wait that ran out, goes to a person and the waiting line names the cause (for example `pool/agent is not loaded`) |
 | `dev/retry_due` | `ready`, `waiting`, `interrupted` | the wait a retry enters while a step is not loaded or the settings cannot be read; it ends when they are there, or after `retry.environmentWaitMinutes` (default 60) |
 | `dev/rework` | `again`, `ask` | appends `## Rework <n> (verify|review)` with the failed command or the counted findings and sends the task back to the worker; after `maxAutoRework` in a row, or when a review failure follows a review failure (whatever the findings; a verify failure or a conflict between them resets this), it asks a person instead, with the reason `review failed twice in a row` and both rounds' findings in the section |
 | `dev/integrate` | `merged`, `conflict`, `fail`, `failed` | fetches, builds the candidate in the gate worktree by merging the verified commit onto `<remote>/<mainBranch>`, runs `integration.keyCommands` through `shell/check`, and pushes plainly; a moved main starts again from the fetch, at most three times. Tasks of one repository integrate one at a time: a task whose merge was chosen waits for its turn first (see below) |
@@ -387,6 +387,36 @@ automatic reworks have run in a row, or a second review failure in a row; then i
 twice waits for a person. `merge` builds the candidate on main and pushes it,
 then cleanup removes the worktrees and branches. A plan is finished when every
 task is merged or cancelled.
+
+## Checks that are not the code
+
+A check result says nothing about the code when any of these holds (the rules
+are one function, `classifyCheck` in `src/notcode.ts`):
+
+- the command was stopped at the gate's time limit (`gate.commandTimeoutSecs`);
+- the command ended by a signal nobody in the task sent: the shell step's
+  `signal` reason, or an exit status of 128+n (129 to 192);
+- every failed test failed at the test timeout (the `--timeout` of the failing
+  command line, else 30 s), or later, within 5% below it, so it timed out and
+  did not assert; one quicker failure, or no failed test line, is not this;
+- every test that failed in the first run passed on its rerun (the check then
+  passes; the kind only feeds the flaky-test rule below).
+
+For the first three, dev does not send the task to the worker. It waits until
+the machine's 1-minute load average (the one `running` reports) is below
+`check.loadLimit` (default: the number of cores), for at most an hour, then runs
+the check once more by itself. A pass or an assertion failure on that run stands
+and goes the usual way. A second result of the same kind ends with the task
+waiting for a person, and the waiting line says why, for example `check timed
+out twice under load 18 on 10 cores`. An integration check that ends this way
+waits for a person the same way and does not send the task back to work. A
+real assertion failure goes to the worker as before.
+
+A test that fails and then passes on rerun is still a bug until shown
+otherwise, but only for a run on an idle machine: when the load was at or above
+`check.loadLimit` the pass is recorded with the load (`operad reruns` still
+counts it) and counts toward no task. Below it, dev proposes the task as
+`check.flakyTask` says.
 
 ## Review fallback and retry
 
@@ -601,6 +631,7 @@ The file holds the repository's work settings:
 | `gate.commandTimeoutSecs` | `1800` | the longest one gate command may run |
 | `check.rerun` | `1` | how many times a failed gate or integration check runs again before it counts as failed; `0` turns it off; a timeout is never rerun. A pass on the rerun is a pass, noted in the task's Changes and the check log holds both runs |
 | `check.flakyTask` | `2` | how many times one test may pass only on its rerun in this repository before dev proposes a task `flaky-<test>` (title "Fix the flaky test: <test>") in the flaky-test plan (see `check.flakyPlan`), with the test, the count, the tasks and times, the last two failures and the stress command in its brief; `0` turns it off. The test's file is the one whose section of the check log holds the test's own `(fail)` line, never the summary bun prints again after the last file; when the log does not give it, dev searches the repository's test files for the test's name and, if that does not find exactly one file, the brief says the file is unknown. The task's area is the package that file is in (`packages/<name>/...` gives `<name>`; `tests` when the file is unknown). The brief's stress command has `--runs <N>`; N follows the sizing rule from the repository's CLAUDE.md quoted below it. One task per test until it is merged or cancelled, then the count restarts at 0. `operad reruns` shows the task beside its test |
+| `check.loadLimit` | the number of cores | the 1-minute load average below which the machine is quiet enough to trust a check. A check that timed out, was killed by a signal nobody sent, or failed only by test timeouts waits for the load to fall below it before it runs once more (see Checks that are not the code); a test that passes on rerun at or above it is recorded with the load and proposes no flaky-test task |
 | `check.flakyPlan` | unset | the id of the plan the flaky-test tasks are proposed in. When it is unset, or that plan is finished or cancelled, dev makes a plan `flaky-tests` (title "Flaky tests") once, confirmed, with the auto level and priority of the repository's newest confirmed plan (`off` and `P3` with none), and uses it until it is finished or cancelled |
 | `reviewer.use` | `harness-radian/agent` | the harness step that reviews the diff |
 | `reviewer.args` | `[]` | the arguments every review gets |

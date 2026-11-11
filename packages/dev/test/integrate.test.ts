@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { notCodeTestHooks } from "../src/notcode.ts";
 import { IntegrationQueue } from "../src/integration-queue.ts";
 import { validateDevSettings } from "../src/settings.ts";
 import { fileURLToPath } from "node:url";
@@ -448,6 +449,34 @@ describe("dev/integrate", () => {
     );
     expect(proposed).toHaveLength(1);
     expect(String((proposed[0]?.data as { plan?: unknown } | undefined)?.plan)).toMatch(/-flaky-tests$/);
+  });
+
+  test("an integration check killed by a signal twice waits for a person, not for the worker", async () => {
+    notCodeTestHooks.load = () => ({ load1: 18, cores: 10 });
+    notCodeTestHooks.now = () => 0;
+    let now = 0;
+    notCodeTestHooks.now = () => now;
+    notCodeTestHooks.wait = async () => {
+      now += 30 * 60_000;
+      return true;
+    };
+    try {
+      const state = await fixture({ style: "merge", keyCommands: ["exit 143"] });
+      const before = remoteMain(state);
+      const result = await integrate(state);
+      expect(result.result).toBe("failed");
+      const task = await taskOf(state);
+      expect(task.phase).toBe("waiting");
+      expect(task.brief).not.toContain("## Rework");
+      expect(task.attempt?.integration?.notCode).toBe(
+        "check was killed by SIGTERM twice under load 18 on 10 cores",
+      );
+      expect(remoteMain(state)).toBe(before);
+    } finally {
+      notCodeTestHooks.load = undefined;
+      notCodeTestHooks.wait = undefined;
+      notCodeTestHooks.now = undefined;
+    }
   });
 
   test("a failing key command sends the task back to work", async () => {

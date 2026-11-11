@@ -624,3 +624,12 @@ the row fields.
 | T-0061-M3 | packages/dev/src/schedule.ts | a ready task with an undefined flow was given no reason on its row and its plan's row | `an undefined flow does not start, and the rows say why` |
 | T-0061-M4 | packages/dev/src/schedule.ts | rows named the flow even when the repository defines only the default one | `rows and the brief name the flow only when the repository defines more than one` |
 | T-0061-M5 | packages/dev/src/schedule.ts | the flow label was not kept for a cancelled task, so its row and Brief named no flow | `a task cancelled before any tick still names its flow` |
+
+## T-0224 — a result that is not the code goes to the machine's load, not to the worker
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0224-M1 | packages/dev/src/notcode.ts | a result counted as a test timeout when only one failed test (not every one) reached the timeout | `classifyCheck > one failed test that was quick: the code` |
+| T-0224-M2 | packages/dev/src/gate.ts | verify never told the flaky-test count that the machine was busy, so passes under load counted toward a task | `a test that passes on rerun under load is recorded and proposes no task` |
+| T-0224-M3 | packages/dev/src/steps.ts | a work step that ended on a dropped model connection was recorded as an ordinary harness failure | `a dropped model connection is retried once by dev/retry, not sent to a person` |
+| T-0224-M4 | packages/dev/src/integrate.ts | an integration check that was not the code twice was sent back to work as a rework | `an integration check killed by a signal twice waits for a person, not for the worker` |

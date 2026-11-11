@@ -44,6 +44,7 @@ import {
   type MainCloneOutcome,
 } from "./mainclone.ts";
 import { recordServeCode } from "./standing.ts";
+import { isLoaded, runCheckSteadily } from "./notcode.ts";
 import { runCheckCommands } from "./rerun.ts";
 import { reportFlakyTests } from "./flaky.ts";
 import { recordRerunPasses } from "./reruns.ts";
@@ -630,14 +631,21 @@ export async function runIntegrate(
       if (keyCommands.length > 0) {
         if ((await runPrepare(ctx, settings, gate)) !== undefined) return undefined;
         if (runStep === undefined) return undefined;
-        const checked = await runCheckCommands(
-          runStep,
-          { cwd: gate },
-          keyCommands,
-          stepOptions(ctx, gate),
-          settings.check.rerun,
-          checkPlaces(ctx, context.repository, settings.gate.places),
-        );
+        const steady = await runCheckSteadily({
+          run: () =>
+            runCheckCommands(
+              runStep,
+              { cwd: gate },
+              keyCommands,
+              stepOptions(ctx, gate),
+              settings.check.rerun,
+              checkPlaces(ctx, context.repository, settings.gate.places),
+            ),
+          limit: settings.check.loadLimit,
+          signal: ctx.signal,
+          log: (text) => ctx.logger.write(text),
+        });
+        const { checked } = steady;
         await recordRerunPasses(ctx.store, checked.passedOnRerun);
         if (checked.hostError !== undefined || checked.outcome?.result !== "pass") {
           return undefined;
@@ -649,6 +657,7 @@ export async function runIntegrate(
           threshold: context.settings.check.flakyTask,
           flakyPlan: context.settings.check.flakyPlan,
           check: checked,
+          ...(isLoaded(steady.load, settings.check.loadLimit) ? { load: steady.load } : {}),
         });
         checkNote =
           flakyNotice === undefined
@@ -901,14 +910,22 @@ export async function runIntegrate(
         if (runStep === undefined) {
           return fail("the kernel did not offer a way to run the integration checks");
         }
-        const checked = await runCheckCommands(
-          runStep,
-          { cwd: gate },
-          keyCommands,
-          stepOptions(ctx, gate),
-          settings.check.rerun,
-          checkPlaces(ctx, context.repository, settings.gate.places),
-        );
+        const steady = await runCheckSteadily({
+          run: () =>
+            runCheckCommands(
+              runStep,
+              { cwd: gate },
+              keyCommands,
+              stepOptions(ctx, gate),
+              settings.check.rerun,
+              checkPlaces(ctx, context.repository, settings.gate.places),
+            ),
+          limit: settings.check.loadLimit,
+          signal: ctx.signal,
+          log: (text) => ctx.logger.write(text),
+        });
+        if (steady.cancelled === true) return cancelledStep();
+        const { checked } = steady;
         await recordRerunPasses(ctx.store, checked.passedOnRerun);
         const flakyNotice = await reportFlakyTests({
           ctx,
@@ -917,6 +934,7 @@ export async function runIntegrate(
           threshold: context.settings.check.flakyTask,
           flakyPlan: context.settings.check.flakyPlan,
           check: checked,
+          ...(isLoaded(steady.load, settings.check.loadLimit) ? { load: steady.load } : {}),
         });
         const { outcome, hostError } = checked;
         checkNote =
@@ -936,6 +954,35 @@ export async function runIntegrate(
             hostError ??
             (typeof data.message === "string" ? data.message : undefined) ??
             `the integration checks failed (${outcome?.result ?? "unknown"})`;
+          if (steady.notCode !== undefined) {
+            // Not the code: no rework, a person decides, and the line says why.
+            const record: IntegrationRecord = {
+              result: "failed",
+              run: ctx.runId,
+              style: settings.integration.style,
+              verified,
+              candidate: sha,
+              base,
+              head: head ?? null,
+              headMoved,
+              ...(command === undefined ? {} : { command }),
+              ...(log === undefined ? {} : { log }),
+              ...(lineNumber === undefined ? {} : { lineNumber }),
+              message: `${steady.notCode.cause}; ${detail}`,
+              notCode: steady.notCode.cause,
+            };
+            if (
+              (await writeIntegration(ctx, context, task, attempt, record, {
+                phase: "waiting",
+              })) === undefined
+            ) {
+              return cancelledStep();
+            }
+            return {
+              result: "failed",
+              data: integrationData(record, attempt, { message: record.message }),
+            };
+          }
           const pieces = [
             command === undefined
               ? "An integration check failed."
