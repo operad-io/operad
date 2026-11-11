@@ -1,10 +1,10 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { PluginRegistry, definePlugin, type StoredObject } from "@operad-io/engine";
+import { PluginRegistry, definePlugin, type CommandContext, type StoredObject } from "@operad-io/engine";
 import { createChatPlugin, createChat, CHAT_TYPE } from "@operad-io/chat";
 import { createShellPlugin } from "@operad-io/shell";
-import { addRepository, CHAT_HARNESSES, chatActions, createDevPlugin, RADIAN_NOTE } from "../src/index.ts";
+import { addPlan, addRepository, CHAT_HARNESSES, chatActions, commands, createDevPlugin, RADIAN_NOTE, taskData } from "../src/index.ts";
 import { git, makeRemote } from "./git-support.ts";
 import { cleanupTempRoots, guardLockHandles, storeAt, tempRoot } from "./support.ts";
 
@@ -173,5 +173,49 @@ describe("dev/chat_worktree", () => {
     expect(rule).toMatchObject({ source: "operad", start: { flow: "dev:chat-worktree" }, object: "$event.object", mode: "auto" });
     expect(r.registry.flow("dev:chat-worktree")).toBeDefined();
     expect(r.registry.startProblem("dev:chat-worktree")).toBeUndefined();
+  });
+});
+
+describe("task add --chat", () => {
+  async function addFromChat(r: Awaited<ReturnType<typeof rig>>, chat: string): Promise<string> {
+    const plan = await addPlan(r.store, { repository: r.repository, slug: "plan", title: "Plan", request: "go" });
+    const task = commands.find((command) => command.name === "task");
+    const context = { store: r.store, cwd: r.remote.repository, input: "Change it.\n" } as unknown as CommandContext;
+    return String(
+      await task?.run(context, ["add", "--plan", plan.id.slice(plan.id.indexOf("/") + 1), "--slug", "t", "--title", "T", "--chat", chat]),
+    );
+  }
+
+  test("a chat that has its worktree gives the task that worktree", async () => {
+    const r = await rig();
+    const id = await openChat(r);
+    await r.registry.runStep("dev/chat_worktree", {}, { runId: "run-1", object: { type: CHAT_TYPE, id, data: {} } });
+    await addFromChat(r, id);
+    const stored = (await r.store.list("task")).objects[0];
+    expect(stored === undefined ? undefined : taskData(stored.data).worktree).toBe(`chat-${id}`);
+  });
+
+  test("the task's worktree step uses the chat's worktree and branch", async () => {
+    const r = await rig();
+    const id = await openChat(r);
+    await r.registry.runStep("dev/chat_worktree", {}, { runId: "run-1", object: { type: CHAT_TYPE, id, data: {} } });
+    await addFromChat(r, id);
+    const stored = (await r.store.list("task")).objects[0];
+    if (stored === undefined) throw new Error("no task");
+    const result = await r.registry.runStep("dev/worktree", {}, { runId: "run-2", object: { type: "task", id: stored.id, data: {} } });
+    expect(result.result).toBe("ready");
+    const attempt = taskData((await must(r.store, "task", stored.id)).data).attempt;
+    expect(attempt?.branch).toBe(`work/chat-${id}`);
+    expect(attempt?.worktree).toBe(join(r.remote.repository, ".operad-worktrees", `chat-${id}`));
+    // The task opened no worktree of its own.
+    expect(existsSync(join(r.remote.repository, ".operad-worktrees", stored.id.slice(stored.id.indexOf("/") + 1)))).toBe(false);
+  });
+
+  test("a chat without a worktree, or one that does not exist, is refused and adds no task", async () => {
+    const r = await rig();
+    const id = await openChat(r);
+    await expect(addFromChat(r, id)).rejects.toThrow(/has no worktree yet/);
+    await expect(addFromChat(r, "C-999")).rejects.toThrow(/there is no chat/);
+    expect((await r.store.list("task")).objects).toHaveLength(0);
   });
 });

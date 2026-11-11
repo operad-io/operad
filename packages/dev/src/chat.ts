@@ -9,6 +9,7 @@ import { CHAT_TYPE, chatData, createChat } from "@operad-io/chat";
 import type {
   ActionTypeDefinition,
   JsonValue,
+  ObjectStore,
   PluginStepResult,
   StepContext,
 } from "@operad-io/engine";
@@ -38,6 +39,26 @@ export const CHAT_ACCESS: Readonly<Record<string, JsonValue>> = {
 /** The directory name and branch suffix of a chat's worktree. */
 export function chatWorktreeName(chatId: string): string {
   return `chat-${chatId}`;
+}
+
+/**
+ * The worktree name a task opened from chat `chatId` works in. The chat must be
+ * about this repository and must already have been given its worktree.
+ */
+export async function chatWorktreeOf(
+  store: ObjectStore,
+  repository: string,
+  chatId: string,
+): Promise<string> {
+  const stored = await store.get(CHAT_TYPE, chatId);
+  if (stored === undefined) throw new DevError("chat", `there is no chat ${chatId}`);
+  if (stored.data.parent !== `repo:${repository}`) {
+    throw new DevError("chat", `chat ${chatId} is not a chat about repository "${repository}"`);
+  }
+  if (typeof stored.data.worktree !== "object" || stored.data.worktree === null) {
+    throw new DevError("chat", `chat ${chatId} has no worktree yet`);
+  }
+  return chatWorktreeName(chatId);
 }
 
 const chatAction: ActionTypeDefinition = {

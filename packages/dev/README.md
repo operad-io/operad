@@ -55,7 +55,9 @@ operad repo add <path> [--name <name>]
 operad repo list
 operad repo remove <name>
 operad plan add --slug <slug> --title <title> [--concurrency <n>] [--flow <name>] [--repo <name>]   # request on stdin
-operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--flow <name>] [--repo <name>]   # brief on stdin
+operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--flow <name>] [--chat <id>] [--repo <name>]   # brief on stdin
+
+`--chat <id>` opens the task on the worktree of a repository chat that already has one: the task works on `work/chat-<id>` instead of making its own worktree and branch.
 operad task edit <id>      # $EDITOR on the brief body; proposed or ready only
 operad task update <id> [--title <title>] [--after <task>]... [--area <area>] [--flow <name>]   # --area "" clears it, --after "" clears the dependencies
 operad start <task>        # start one ready task now, whatever its plan's auto level

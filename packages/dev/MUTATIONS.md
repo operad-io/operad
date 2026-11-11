@@ -870,3 +870,12 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0278-M1 | packages/dev/src/chat.ts | the harness argument dropped its `enum`, so a free-text name reached the run's refusal instead of the schema | `dev:chat > a harness outside the choice is refused by the schema before the run` |
+
+## T-0301 — a task opened from a chat works in the chat's worktree
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0301-M1 | packages/dev/src/steps.ts | the work worktree step prepared a worktree named by the task id, not the chat worktree the task names | `task add --chat > the task's worktree step uses the chat's worktree and branch` |
+| T-0301-M2 | packages/dev/src/chat.ts | `chatWorktreeOf` no longer refused a chat that has no worktree yet | `task add --chat > a chat without a worktree, or one that does not exist, is refused and adds no task` |
+
+`packages/harness-claude/acceptance/` was removed by T-0266, so the finding about it has no code left to mutate.
