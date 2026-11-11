@@ -178,6 +178,7 @@ describe("the TUI object app", () => {
               },
             ],
             hidden: 3,
+            hiddenCounts: { done: 3, cancelled: 0, other: 0 },
           });
         }
         return super.objects(_t, _c, _s, _f, level);
@@ -226,7 +227,6 @@ describe("the TUI object app", () => {
                 { name: "active", states: ["waiting"] },
                 { name: "all" },
                 { name: "done", states: ["merged"] },
-                { name: "cancelled", states: ["cancelled"] },
               ],
               defaultFilter: "active",
             },
@@ -237,22 +237,10 @@ describe("the TUI object app", () => {
         _t?: string,
         _c?: string,
         _s?: AbortSignal,
-        filter?: string,
+        _f?: string,
         level?: { readonly parent?: string | undefined },
       ): Promise<ViewListPage> {
         if (hide && level?.parent === "item:item:one") {
-          if (filter === "cancelled") {
-            return Promise.resolve({
-              rows: [
-                {
-                  ...row("gone"),
-                  state: "cancelled",
-                  mark: "cancelled" as const,
-                },
-              ],
-              hidden: 1,
-            });
-          }
           return Promise.resolve({
             rows: [
               {
@@ -263,9 +251,10 @@ describe("the TUI object app", () => {
               },
             ],
             hidden: 1,
+            hiddenCounts: { done: 0, cancelled: 1, other: 0 },
           });
         }
-        return super.objects(_t, _c, _s, filter, level);
+        return super.objects(_t, _c, _s, _f, level);
       }
     }
     const client = new HiddenCancelled();
@@ -289,10 +278,84 @@ describe("the TUI object app", () => {
       shell.key({ name: "enter" });
       await view.until((state) => state.object?.row.title === "One");
       await view.until((state) => state.object?.children !== undefined);
-      expect(shell.state.object?.children?.hidden).toBeUndefined();
+      expect(shell.state.object?.children?.hidden).toBe(1);
+      expect(shell.state.object?.children?.hiddenDone).toBe(0);
       const text = drawState(shell.state).right.chunks.map((chunk) => chunk.text).join("");
       expect(text).toContain("0 / 1");
       expect(text).not.toContain("█");
+    } finally {
+      shell.stop();
+      await shell.done;
+    }
+  });
+
+  test("the cancelled filter counts hidden waiting and merged children by role", async () => {
+    let hide = false;
+    class CancelledFilter extends Client {
+      override types() {
+        return Promise.resolve({
+          types: [
+            {
+              type: "item",
+              title: "Item",
+              filters: [
+                { name: "cancelled", states: ["cancelled"] },
+                { name: "all" },
+                { name: "active", states: ["waiting"] },
+                { name: "done", states: ["merged"] },
+              ],
+              defaultFilter: "cancelled",
+            },
+          ],
+        });
+      }
+      override objects(
+        _t?: string,
+        _c?: string,
+        _s?: AbortSignal,
+        _f?: string,
+        level?: { readonly parent?: string | undefined },
+      ): Promise<ViewListPage> {
+        if (hide && level?.parent === "item:item:one") {
+          return Promise.resolve({
+            rows: [
+              {
+                ...row("gone"),
+                state: "cancelled",
+                mark: "cancelled" as const,
+              },
+            ],
+            hidden: 2,
+            hiddenCounts: { done: 1, cancelled: 0, other: 1 },
+          });
+        }
+        return super.objects(_t, _c, _s, _f, level);
+      }
+    }
+    const client = new CancelledFilter();
+    const events = new Events();
+    const view = new View();
+    const shell = startShell({
+      client,
+      events: () => events,
+      view,
+      width: 80,
+      height: 20,
+      theme: "dark",
+      clock: immediateClock,
+    });
+    try {
+      await view.until((state) =>
+        state.tabs.find((tab) => tab.id === "plugin:item")?.list.loaded === true,
+      );
+      hide = true;
+      shell.key({ name: "3" });
+      shell.key({ name: "enter" });
+      await view.until((state) => state.object?.row.title === "One");
+      await view.until((state) => state.object?.children?.hidden === 2);
+      expect(shell.state.object?.children?.hiddenDone).toBe(1);
+      const text = drawState(shell.state).right.chunks.map((chunk) => chunk.text).join("");
+      expect(text).toContain("1 / 2");
     } finally {
       shell.stop();
       await shell.done;

@@ -598,3 +598,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0292-M2 | packages/engine/src/plugin/sqlite-store.ts | `declare` wrote without looking for the store-move lock (the `assertStoreNotMoving` call removed) | `a sqlite plugin store refuses a declaration or a write while the store is being moved` (packages/cli/test/store-copy.test.ts) |
+| T-0237-M3 | packages/engine/src/views/presentation.ts | a hidden row no longer added its count to its mark role, so `hiddenCounts` stayed zero | `object type filters > a filter keeps matching rows and counts the rest as hidden` |

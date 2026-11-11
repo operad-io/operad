@@ -50,6 +50,8 @@ function opened(
   width = 120,
   layout: TuiChildLayout = "tree",
   hidden?: number,
+  hiddenDone?: number,
+  hiddenCancelled?: number,
 ): TuiState {
   let state = initialState({ width, height: 30, theme: "dark", childLayout: layout });
   state = reduce(state, { type: "types", types: TYPES });
@@ -84,6 +86,8 @@ function opened(
     version: state.objectVersion,
     entries: children.map((child) => ({ row: child, type: "task" })),
     ...(hidden === undefined ? {} : { hidden }),
+    ...(hiddenDone === undefined ? {} : { hiddenDone }),
+    ...(hiddenCancelled === undefined ? {} : { hiddenCancelled }),
   });
   return state;
 }
@@ -317,6 +321,19 @@ describe("the progress bar and its heading", () => {
     const cells = barChunks(state);
     expect(cells.length).toBe(3);
     expect(cells.map(colour)).toEqual(Array.from({ length: 3 }, () => token("ok")));
+  });
+
+  test("hidden done fills while hidden cancelled leaves both numbers", () => {
+    const rows = [row("T-1-wait", "waiting", { mark: "waiting" })];
+    const progress = childProgress(rows, "tree", 2, 1, 1);
+    expect(progress.done).toBe(1);
+    expect(progress.total).toBe(2);
+    const state = opened(rows, 120, "tree", 2, 1, 1);
+    const heading = rightLines(state).find((line) => line.includes(" / "));
+    expect(heading).toContain("1 / 2");
+    const cells = barChunks(state);
+    expect(cells.length).toBe(1);
+    expect(colour(cells[0] as TextChunk)).toBe(token("ok"));
   });
 
   test("a waiting child beside done ones does not fill a progress cell", () => {

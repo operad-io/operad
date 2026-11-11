@@ -500,7 +500,13 @@ function childrenContent(
   if (children === undefined || children.rows.length + (children.hidden ?? 0) === 0) {
     return [];
   }
-  const progress = childProgress(children.rows, state.childLayout, children.hidden);
+  const progress = childProgress(
+    children.rows,
+    state.childLayout,
+    children.hidden,
+    children.hiddenDone,
+    children.hiddenCancelled,
+  );
   const shown = displayChildren(children.rows, state.childLayout);
   const type = shown[0]?.row.type ?? "";
   const columns = childColumns(shown, width);

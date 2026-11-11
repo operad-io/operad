@@ -314,3 +314,4 @@ the row fields.
 |---|---|---|---|
 | T-0237-M1 | packages/tui/src/state.ts | `childProgress` ignored the list's hidden count, so hidden children left done and total | `the progress bar and its heading > some children hidden as finished count in the heading and fill the bar` |
 | T-0237-M2 | packages/tui/src/app.ts | the hidden finished count kept cancelled children, so they counted as done progress | `the TUI object app > a hidden cancelled child is not counted as progress` |
+| T-0237-M4 | packages/tui/src/state.ts | progress used the whole hidden count as done and left hidden cancelled in the total | `the progress bar and its heading > hidden done fills while hidden cancelled leaves both numbers` |

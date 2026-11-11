@@ -142,9 +142,11 @@ describe("object type filters", () => {
     const active = await views.list("job", { filter: "active" });
     expect(active.rows.map((row) => row.id)).toEqual(["a", "c"]);
     expect(active.hidden).toBe(2);
+    expect(active.hiddenCounts).toEqual({ done: 1, cancelled: 1, other: 0 });
     const done = await views.list("job", { filter: "done" });
     expect(done.rows.map((row) => row.id)).toEqual(["b"]);
     expect(done.hidden).toBe(3);
+    expect(done.hiddenCounts).toEqual({ done: 0, cancelled: 1, other: 2 });
     const all = await views.list("job", { filter: "all" });
     expect(all.rows.length).toBe(4);
     expect(all.hidden).toBeUndefined();
@@ -276,9 +278,11 @@ describe("filters over HTTP", () => {
     const byDefault = await get("/v1/objects?type=job");
     expect((byDefault.body.rows as { id: string }[]).map((row) => row.id)).toEqual(["a", "c"]);
     expect(byDefault.body.hidden).toBe(1);
+    expect(byDefault.body.hiddenCounts).toEqual({ done: 1, cancelled: 0, other: 0 });
     const done = await get("/v1/objects?type=job&filter=done");
     expect((done.body.rows as { id: string }[]).map((row) => row.id)).toEqual(["b"]);
     expect(done.body.hidden).toBe(2);
+    expect(done.body.hiddenCounts).toEqual({ done: 0, cancelled: 0, other: 2 });
     const all = await get("/v1/objects?type=job&filter=all");
     expect((all.body.rows as unknown[]).length).toBe(3);
     expect(all.body.hidden).toBeUndefined();

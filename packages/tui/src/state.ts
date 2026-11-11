@@ -99,6 +99,10 @@ export interface TuiChildren {
   readonly focused: boolean;
   /** How many children the list's filter left out; they still call for progress. */
   readonly hidden?: number | undefined;
+  /** How many hidden children are done. */
+  readonly hiddenDone?: number | undefined;
+  /** How many hidden children are cancelled. */
+  readonly hiddenCancelled?: number | undefined;
 }
 
 /** One section of the open object, with the content fetched so far. */
@@ -536,6 +540,10 @@ export type TuiStateEvent =
       readonly entries: readonly TuiTreeEntry[];
       /** How many children the list's filter left out. */
       readonly hidden?: number | undefined;
+      /** How many hidden children are done. */
+      readonly hiddenDone?: number | undefined;
+      /** How many hidden children are cancelled. */
+      readonly hiddenCancelled?: number | undefined;
     }
   | {
       readonly type: "pending";
@@ -945,7 +953,7 @@ export interface TuiChildProgress {
   readonly entries: readonly TuiChildEntry[];
   readonly done: number;
   readonly total: number;
-  /** Children the list's filter left out; they count as finished. */
+  /** Children the list's filter left out. */
   readonly hidden: number;
 }
 
@@ -953,14 +961,16 @@ export function childProgress(
   rows: readonly TuiRow[],
   layout: TuiChildLayout,
   hidden = 0,
+  hiddenDone = hidden,
+  hiddenCancelled = 0,
 ): TuiChildProgress {
   const shown = displayChildren(rows, layout);
   const active = shown.filter((entry) => !cancelledRow(entry.row));
   const cancelled = shown.filter((entry) => cancelledRow(entry.row));
   return {
     entries: [...active, ...cancelled],
-    done: active.filter((entry) => doneRow(entry.row)).length + hidden,
-    total: active.length + hidden,
+    done: active.filter((entry) => doneRow(entry.row)).length + hiddenDone,
+    total: shown.length + hidden - cancelled.length - hiddenCancelled,
     hidden,
   };
 }
@@ -2429,6 +2439,8 @@ function applyChildren(
   version: number | undefined,
   entries: readonly TuiTreeEntry[],
   hidden?: number | undefined,
+  hiddenDone?: number | undefined,
+  hiddenCancelled?: number | undefined,
 ): TuiState {
   const object = state.object;
   if (object === undefined || object.id !== objectId) return state;
@@ -2447,6 +2459,8 @@ function applyChildren(
     cursor,
     focused: rows.length > 0 && old?.focused === true,
     ...(hidden === undefined || hidden === 0 ? {} : { hidden }),
+    ...(hiddenDone === undefined ? {} : { hiddenDone }),
+    ...(hiddenCancelled === undefined || hiddenCancelled === 0 ? {} : { hiddenCancelled }),
   };
   return withObject(state, (value) => ({
     ...value,
@@ -2525,7 +2539,15 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       return withTab(next, event.tabId, (tab) => ({ ...tab, level: event.level }));
     }
     case "children":
-      return applyChildren(state, event.objectId, event.version, event.entries, event.hidden);
+      return applyChildren(
+        state,
+        event.objectId,
+        event.version,
+        event.entries,
+        event.hidden,
+        event.hiddenDone,
+        event.hiddenCancelled,
+      );
     case "filter-launched":
       return state.filterRequest === undefined
         ? state
