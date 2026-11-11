@@ -1,7 +1,8 @@
 /**
  * Step `dev/announce`: the flow runs it in front of every person wait. It tells
- * the outside world that a task now needs a person, once, and changes nothing
- * on the task. The reason comes from the edge that led here and from what the
+ * the outside world that a task now needs a person, once, and says the task
+ * waits (a task still running or in review is not one a person can act on).
+ * The reason comes from the edge that led here and from what the
  * task recorded, so the gate steps stay as they are.
  */
 
@@ -12,6 +13,7 @@ import {
   cancelledStep,
   claimAllows,
   mergeInProgress,
+  saveTaskGuarded,
   taskContext,
 } from "./steps.ts";
 
@@ -190,6 +192,20 @@ export async function runAnnounce(
   } catch (error) {
     // The task still waits for a person; a lost notice must not stop that.
     await ctx.logger.write(`could not announce: ${messageOf(error)}`);
+  }
+  // The wait this step leads to is a person's: the phase says so. A failed
+  // write leaves the scheduler to repair the phase on its next tick.
+  if (context.task.phase === "running" || context.task.phase === "review") {
+    try {
+      await saveTaskGuarded(
+        ctx,
+        context.taskKey,
+        { ...context.task, phase: "waiting" },
+        "dev:announce-waiting",
+      );
+    } catch (error) {
+      await ctx.logger.write(`could not mark the task waiting: ${messageOf(error)}`);
+    }
   }
   // A stopped run keeps its result, so the wait can say which step stopped.
   return {

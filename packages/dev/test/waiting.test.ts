@@ -13,6 +13,7 @@ import {
   waitingSummary,
   type AnnounceParams,
 } from "../src/announce.ts";
+import { stepTestHooks } from "../src/steps.ts";
 import { addPlan, addRepository, addTask, getTask } from "../src/service.ts";
 import { taskData, type TaskAttempt, type TaskData } from "../src/model.ts";
 import {
@@ -297,6 +298,39 @@ describe("dev.waiting", () => {
       const out = await announce(fixture, { from: "work", result: "nothing" });
       expect(out.result).toBe("cancelled");
       expect(out.events).toEqual([]);
+    } finally {
+      await fixture.log.close();
+    }
+  });
+
+  test("a task still in review says it waits once its wait is announced", async () => {
+    const fixture = await setup();
+    try {
+      await becomeWaiting(fixture, { phase: "review", attempts: 1 });
+      await announce(fixture, { from: "review", result: "failed" });
+      const task = taskData((await getTask(fixture.store, fixture.task.id)).data);
+      expect(task.phase).toBe("waiting");
+    } finally {
+      await fixture.log.close();
+    }
+  });
+
+  test("a store error while marking the task waiting does not stop the announcement", async () => {
+    const fixture = await setup();
+    try {
+      await becomeWaiting(fixture, { phase: "review", attempts: 1 });
+      stepTestHooks.beforeGuardedWrite = async () => {
+        throw new Error("database is locked");
+      };
+      let out: Awaited<ReturnType<typeof announce>>;
+      try {
+        out = await announce(fixture, { from: "review", result: "failed" });
+      } finally {
+        stepTestHooks.beforeGuardedWrite = undefined;
+      }
+      expect(out.events).toHaveLength(1);
+      const task = taskData((await getTask(fixture.store, fixture.task.id)).data);
+      expect(task.phase).toBe("review");
     } finally {
       await fixture.log.close();
     }

@@ -124,8 +124,8 @@ export async function runRetry(
     const written = await write({
       stop: null,
       retry: { ...used, cause, state: "asked" },
-      // A recovered run keeps the phase it had; a failed step says it waits.
-      ...(edge.result === "interrupted" ? {} : { phase: "waiting" as const }),
+      // A person decides now: the task says it waits, however the step ended.
+      phase: "waiting" as const,
     });
     return written
       ? { result: "give_up", data: { reason: "retry_failed", cause } }
