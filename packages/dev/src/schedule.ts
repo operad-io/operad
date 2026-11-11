@@ -23,7 +23,6 @@ import {
   planData,
   priorityIndex,
   storeKey,
-  TASK_FINAL_STATES,
   taskData,
   type PlanData,
   type RepositoryData,
@@ -760,7 +759,6 @@ async function scheduleRepository(
   for (const object of await listAll(ctx.store, "task")) {
     const task = taskData(object.data);
     if (task.repository !== repository.name) continue;
-    if (TASK_FINAL_STATES.includes(task.phase)) continue;
     const requested = task.flow ?? plansById.get(task.plan)?.flow ?? "default";
     const missing =
       task.phase === "ready" && task.flowName === undefined && flowFor(flows, requested) === undefined;

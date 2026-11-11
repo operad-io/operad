@@ -158,3 +158,17 @@ describe("choosing a flow", () => {
     expect(taskViews.row(await getTask(single.store, lone.id)).note).not.toContain("flow:");
   });
 });
+
+describe("a finished task keeps its flow label", () => {
+  test("a task cancelled before any tick still names its flow", async () => {
+    const fixture = await setup(FLOWS);
+    const plan = await addPlan(fixture.store, { repository: fixture.repository, slug: "p", title: "p", flow: "quick" });
+    const task = await addTask(fixture.store, { plan: plan.id, slug: "a", title: "a" });
+    await setTaskPhase(fixture.store, task.id, "cancelled");
+    await fixture.registry.tick();
+    const object = await getTask(fixture.store, task.id);
+    expect(taskViews.row(object).note).toContain("flow: quick");
+    const brief = await taskViews.load({ store: fixture.store } as never, object, "brief", {} as never);
+    expect(brief.markdown).toContain("Flow: quick");
+  });
+});
