@@ -80,11 +80,19 @@ function dataOf(result: PluginStepResult): Record<string, unknown> {
   return (result.data ?? {}) as Record<string, unknown>;
 }
 
-/** Resolves true once the process is gone; the kill lands asynchronously. */
+/**
+ * Resolves true once the process is gone; the kill lands asynchronously. When
+ * it gives up it writes `ps` for the pid to stderr, so a failure says whether
+ * the worker is alive (a leak) or a zombie nobody reaped.
+ */
 async function gone(pid: number): Promise<boolean> {
   const deadline = Date.now() + 10_000;
   while (alive(pid)) {
-    if (Date.now() > deadline) return false;
+    if (Date.now() > deadline) {
+      const ps = Bun.spawnSync(["ps", "-o", "pid,ppid,pgid,stat,command", "-p", String(pid)]);
+      console.error(`worker ${pid} still there:\n${ps.stdout.toString()}${ps.stderr.toString()}`);
+      return false;
+    }
     await new Promise((r) => setTimeout(r, 5));
   }
   return true;
@@ -549,6 +557,29 @@ describe("harness-pi/agent", () => {
     expect(result.result).toBe("interrupted");
     expect(dataOf(result).reason).toBe("cancelled");
     expect(await gone(pid)).toBe(true);
+  });
+
+  test("cancel fired the moment the worker is up never leaves it running", async () => {
+    for (let i = 0; i < 40; i++) {
+      const env = await setup("cancel");
+      const controller = new AbortController();
+      const running = runAgent(
+        env,
+        { prompt: "hello", cwd: env.root, wallTimeSecs: 300, stallSecs: 300 },
+        { signal: controller.signal, runId: `run-${i}` },
+      );
+      await waitForFile(env.marker);
+      // The file exists before the worker has written its pid into it.
+      let pid = Number(readFileSync(env.marker, "utf8"));
+      while (!(pid > 0)) {
+        await new Promise((r) => setTimeout(r, 1));
+        pid = Number(readFileSync(env.marker, "utf8"));
+      }
+      controller.abort();
+      const result = await running;
+      expect(result.result).toBe("interrupted");
+      expect(await gone(pid)).toBe(true);
+    }
   });
 
   test("a cwd that does not exist fails with a clear reason", async () => {
