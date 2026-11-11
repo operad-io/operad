@@ -42,12 +42,16 @@
 
 ## 建议的顺序（未定）
 
-先做 A1、A2、A3：不改行为，现有测试通过就是检查，不需要 mutation 记录。A1 按 harness 一个一个搬，每搬一个跑它自己的测试。然后 A4。B1 等 owner 确认前提；B2 等 owner 决定是否改决定 13；B3 跟 `operad-open-framework.md`。
+先做 A1、A2、A3：不改行为，现有测试通过就是检查，不需要 mutation 记录。A1 按 harness 一个一个搬，每搬一个跑它自己的测试。然后 A4。B1 等 owner 确认前提；B2 已定（只留 `sqlite`，见“决定”）；B3 跟 `operad-open-framework.md`。
+
+## 决定（已定，2026-11-11 owner）
+
+1. **B2：只留 `sqlite`，去掉 `jsonl`。** `operad.md` 决定 13 同日改为只自带 `sqlite`；日志接口和一致性测试留着。代价是存储不再能直接读、直接 diff，接受。起因：切到 `sqlite` 之后，T-0251 为了让 `jsonl` 每个 tick 的开销不随历史增长改了十轮，而默认后台和大多数测试还在用 `jsonl`。要删的：`log/jsonl.ts`、`plugin/file-store.ts`，以及只为两种存储互相转换才有的代码（`store copy`/`store use` 的转换部分）；默认后台改为 `sqlite`；测试改用 `sqlite` 或内存实现。harness 的工作日志（`harness-process` 的 `JsonlLog`）不是存储，不在此列。还在用 `jsonl` 的家目录不考虑（待决问题 2 已答）。
 
 ## 待决问题（未定）
 
 1. B1 的前提是否成立：除了我们自己，有没有别人的家目录或仓库还在用旧格式。迁移是写一个一次性的脚本，还是手改。
-2. B2：只留哪一种后台，还是都留。留 `sqlite` 则 `jsonl` 的可读、可 diff 没有了；留 `jsonl` 则 1221 行的那份留下。
+2. （已答，2026-11-11 owner）B2 不考虑还在用 `jsonl` 的家目录：只有 owner 自己用 operad，本机已经是 `sqlite`。不留导入，不加专门的提示；`store.backend` 只认 `sqlite`，别的值按普通的配置错误报。
 3. A4 里的类型导出哪些算合约（第三方插件可以用），哪些可以删。
 4. C3：`MUTATIONS.md` 要不要归档（比如按月或按已合并的 task 挪到 `docs/` 下的存档），根目录的索引是否还需要。
 5. C1：自带主题留几套。

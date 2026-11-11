@@ -6,10 +6,7 @@
  */
 
 import type { StepLimitDefinition } from "@operad-io/engine";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+import { isRecord } from "./step.ts";
 
 /** The settings schema property both harnesses declare for `concurrency`. */
 export const CONCURRENCY_SETTING = {

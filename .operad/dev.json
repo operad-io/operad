@@ -1,7 +1,7 @@
 {
   "$schema": "../packages/dev/dev.schema.json",
   "name": "operad",
-  "concurrency": 4,
+  "concurrency": 3,
   "maxAutoRework": 4,
   "workers": {
     "claude": {
@@ -10,7 +10,7 @@
         "--model",
         "sonnet"
       ],
-      "count": 2,
+      "count": 1,
       "stallSecs": 900,
       "wallTimeSecs": 7200
     },
@@ -20,6 +20,7 @@
         "--model",
         "opencode-go/deepseek-v4.1-flash"
       ],
+      "count": 1,
       "stallSecs": 900,
       "wallTimeSecs": 7200,
       "fallback": "claude"
@@ -32,6 +33,7 @@
         "--model",
         "deepseek-v4.1-flash"
       ],
+      "count": 1,
       "stallSecs": 900,
       "wallTimeSecs": 7200,
       "fallback": "claude"

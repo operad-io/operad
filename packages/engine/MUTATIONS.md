@@ -545,6 +545,13 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0216-M3 | packages/engine/src/plugin/registry.ts | a step's events were not given to the caller's `observe` | `a step's events > a caller that observes a step sees its events besides the destination` |
+
+## T-0211 — a run ended elsewhere stops the step that is running
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0211-M1 | packages/engine/src/runner/runner.ts | the watch for the run's end did not abort the step's signal | `pause and cancel stop what the step started > pause while the check command runs ends its processes and frees the place` (packages/dev) |
+| T-0211-M2 | packages/engine/src/runner/runner.ts | a result recorded on an ended run was thrown, not dropped | `pause and cancel stop what the step started > pause while the worker step runs ends its processes` (packages/dev) |
 | T-0251-M1 | packages/engine/src/trigger/kernel.ts | `recoverUnrouted` forgot its input position (reset to 0 each pass), so every pass read all inputs again | `a tick over a large history (sqlite) > reads what changed, not every input, answer and outcome ever recorded` |
 | T-0251-M2 | packages/engine/src/loop/serve.ts | the recorded-answer reader forgot its input position (reset to 0 each pass) | `a tick over a large history (sqlite) > reads what changed, not every input, answer and outcome ever recorded` |
 | T-0251-M3 | packages/engine/src/loop/serve.ts | an answer for a run that is no longer active stayed waiting and was looked at every pass | `a tick over a large history (jsonl) > reads what changed, not every input, answer and outcome ever recorded` |
@@ -570,6 +577,7 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0242-history-no-run-id-M1 | packages/engine/src/views/presentation.ts | put `lines.push(`<sub>run ${run.runId}</sub>`)` back at the end of each run in the history section | `presentation > the history of an object with two runs shows no tag and no run id` |
+| T-0211-M3 | packages/engine/src/runner/runner.ts | the second aborted check after the object is read was removed | not covered by a test: the window is one await wide and no test can hold it open without a hook |
 | T-0244-M1 | packages/engine/src/store-copy/copy.ts | the copy did not compare what a sqlite source holds after the copy with what it held at the snapshot | `store copy > a write to a sqlite source after it was read makes the copy back fail and leaves no target` |
 
 ## T-0240 — rework: multi-line log commands and code spans

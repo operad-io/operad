@@ -572,6 +572,29 @@ the new store's files exist already (move them away first). `operad store use
 <jsonl|sqlite>` then changes `store` in `config.json` to the copy; changing it
 back is the same command. `use` refuses a copy when the store it was copied from has been written to since; remove the copy's files and copy again.
 
+A switch, step by step:
+
+1. Stop `serve` (`operad serve stop`) and wait until `operad running` lists
+   nothing.
+2. `operad store copy <kind>`, then `operad store use <kind>`.
+3. Compare a few views before and after: `operad list task`, `operad pending`
+   and the History of two or three objects should read the same.
+4. Start `serve` again with the same environment it had before.
+5. Restart every other long-running client: an MCP server
+   (`/mcp reconnect <name>` in Claude Code) or a terminal client. A client
+   started before `store use` keeps the store it opened and writes there until
+   it restarts.
+6. With `serve` running, run a few commands that write (an action on a task)
+   while tasks run, and look for `database is locked` in the serve log; there
+   should be none.
+7. Time `serve` from a client for a minute (for example one request to
+   `/v1/types` every 100 ms): no answer should take more than a fraction of a
+   second.
+
+To go back, `operad store use` the other kind and restart `serve` and the
+clients the same way; the old store's files were not changed by the copy, but
+anything written after the switch is only in the new store.
+
 ## The History section
 
 Every object has a History section (`operad show <id> --section history`, the

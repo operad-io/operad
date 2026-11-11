@@ -21,7 +21,7 @@
 7. 插件文件有历史，可回退到任一版本；引擎记录每个运行用的是哪个版本。
 8. **技能是 `SKILL.md`**：助理和 flow 用的 skill 采用 Agent Skills 的 `SKILL.md` 格式，和 pi、Claude Code 互通；operad 只把技能的文本给 agent 读，不执行技能目录里的代码；不做技能市场。
 
-9. **插件可以启用和禁用**：`config.json` 的 `plugins.<名字>.enabled`（布尔，默认 `true`）。`operad init` 默认装 `shell`、`harness-radian` 和 `dev`（`dev` 的 worker 要用 `harness-radian`）。禁用的插件不加载：它的命令、动作、视图、默认规则都不出现，已存的对象和历史留着不动，重新启用后照常可见；依赖它的插件（`requires`）一并不加载并说明原因；它的步骤还在跑的运行不能被禁用，命令说出是哪些运行。命令行 `operad plugin list`（名字、版本、启用与否）、`operad plugin enable <名字>`、`operad plugin disable <名字>`，在下一次 `operad` 命令或 `serve` 重载时生效。
+9. **插件可以启用和禁用**：`config.json` 的 `plugins.<名字>.enabled`（布尔，默认 `true`）。`operad init` 默认装 `shell`、`harness-radian` 和 `dev`（`dev` 的 worker 要用 `harness-radian`；2026-11-11 起插件名是 `radian`，见 `operad-harness.md` 决定 9）。禁用的插件不加载：它的命令、动作、视图、默认规则都不出现，已存的对象和历史留着不动，重新启用后照常可见；依赖它的插件（`requires`）一并不加载并说明原因；它的步骤还在跑的运行不能被禁用，命令说出是哪些运行。命令行 `operad plugin list`（名字、版本、启用与否）、`operad plugin enable <名字>`、`operad plugin disable <名字>`，在下一次 `operad` 命令或 `serve` 重载时生效。
 
 10. **热加载的边界**：正在跑的步骤用它启动时的代码，跑完为止；一次运行的下一个步骤用磁盘上的代码；`serve` 在自己的代码、已加载插件的代码或设置文件的 schema 改变时重载（安静一小段时间后，像 `operad serve stop` 那样停下，再原地重启）。运行进程在两个步骤之间比较代码，变了就干净地退出，由 `serve` 起一个新进程从下一步接着跑，历史里留一行交接。改成加载不了的代码（语法错、schema 不合法）不会弄垮 `serve` 或运行进程：`serve` 继续用旧代码；运行进程不再开始新的步骤（下一步要读磁盘上的代码），原地等到文件能加载或改回原样。问题显示在用户今天看加载问题的地方，文件重新能加载时再重载。设置文件改了，下一次使用时重新读取。
 
