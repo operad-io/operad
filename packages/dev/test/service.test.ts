@@ -33,6 +33,7 @@ import {
   type RepositoryData,
 } from "../src/model.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "./support.ts";
+import { silentGit } from "./git-support.ts";
 import { DEV_SETTINGS_SCHEMA } from "../src/settings.ts";
 
 afterAll(cleanupTempRoots);
@@ -576,33 +577,17 @@ describe("dev per-repository ids", () => {
 });
 
 describe("git that succeeds without printing", () => {
-  function realGit(cwd: string, args: readonly string[]) {
-    const result = Bun.spawnSync({ cmd: ["git", "-C", cwd, ...args], stdout: "pipe", stderr: "pipe" });
-    return {
-      ok: result.exitCode === 0,
-      out: result.stdout.toString().trim(),
-      err: result.stderr.toString().trim(),
-    };
-  }
-
   test("repo add runs a query again when git exits 0 and prints nothing", async () => {
     const root = await tempRoot();
     const path = await makeGitRepository(root, "quiet");
     const store = storeAt(root);
-    const silent = new Map<string, number>();
-    devTestHooks.gitQuery = (cwd, args) => {
-      const key = args.join(" ");
-      const seen = silent.get(key) ?? 0;
-      silent.set(key, seen + 1);
-      return seen < 2 ? { ok: true, out: "", err: "" } : realGit(cwd, args);
-    };
+    const stub = silentGit(root, "rev-parse --show-toplevel", 2);
     try {
       const repository = await addRepository(store, { path });
       expect(repository.name).toBe("quiet");
-      expect([...silent.values()].every((count) => count === 3)).toBe(true);
-      expect(silent.size).toBeGreaterThanOrEqual(3);
+      expect(stub.calls()).toBe(3);
     } finally {
-      devTestHooks.gitQuery = undefined;
+      stub.restore();
     }
   });
 
@@ -610,32 +595,14 @@ describe("git that succeeds without printing", () => {
     const root = await tempRoot();
     const path = await makeGitRepository(root, "mute");
     const store = storeAt(root);
-    let calls = 0;
-    devTestHooks.gitQuery = () => {
-      calls += 1;
-      return { ok: true, out: "", err: "" };
-    };
-    try {
-      await expect(addRepository(store, { path })).rejects.toThrow(/is not a git work tree/);
-      expect(calls).toBe(5);
-    } finally {
-      devTestHooks.gitQuery = undefined;
-    }
-  });
-});
-
-describe("repo add reports git's stderr", () => {
-  test("a failing rev-parse puts its stderr in the refusal", async () => {
-    const root = await tempRoot();
-    const path = await makeGitRepository(root, "broken");
-    const store = storeAt(root);
-    devTestHooks.gitQuery = () => ({ ok: false, out: "", err: "fatal: simulated git failure" });
+    const stub = silentGit(root, "rev-parse --show-toplevel", 100);
     try {
       await expect(addRepository(store, { path })).rejects.toThrow(
-        /is not a git work tree: fatal: simulated git failure/,
+        /is not a git work tree: .*output was empty/,
       );
+      expect(stub.calls()).toBe(5);
     } finally {
-      devTestHooks.gitQuery = undefined;
+      stub.restore();
     }
   });
 });

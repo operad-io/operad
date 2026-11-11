@@ -105,6 +105,18 @@ describe("remote-check.sh", () => {
     expect(spawnSync("ls", [home], { encoding: "utf8" }).stdout).not.toContain(".bundle");
   });
 
+  test("a package directory left from an earlier commit is removed, root node_modules is kept", async () => {
+    const { local, home, env } = setup();
+    const tree = join(home, "Code", "operad");
+    mkdirSync(join(tree, "packages", "gone", "node_modules", "x"), { recursive: true });
+    mkdirSync(join(tree, "node_modules", "kept"), { recursive: true });
+    const result = await run(local, env, "ls packages 2>/dev/null; echo ---; ls node_modules");
+    expect(result.code).toBe(0);
+    const [packages = "", modules = ""] = result.out.split("---");
+    expect(packages).not.toContain("gone");
+    expect(modules).toContain("kept");
+  });
+
   test("a failed copy exits 1 and names the step", async () => {
     const { local, env } = setup();
     const result = await run(local, { ...env, FAKE_SCP_FAIL: "1" }, "true");
