@@ -713,13 +713,16 @@ describe("dev views", () => {
     expect((await row(task.id)).mark).toBe("checking");
 
     // Two checks reaching the held place at the same moment still count each other.
-    await Promise.all([taskPlaceWait(ctx, task.id, "check place"), taskPlaceWait(ctx, other.id, "check place")]);
+    await Promise.all([
+      taskPlaceWait(ctx, task.id, "check place", { since: 1, ahead: 0 }),
+      taskPlaceWait(ctx, other.id, "check place", { since: 2, ahead: 1 }),
+    ]);
     const notes = [(await row(task.id)).note, (await row(other.id)).note].sort();
     expect(notes).toEqual(["$0.00 · waiting for a check place", "$0.00 · waiting for a check place, 1 ahead"]);
     await taskPlaceWait(ctx, task.id, null);
     await taskPlaceWait(ctx, other.id, null);
-    await taskPlaceWait(ctx, task.id, "check place");
-    await taskPlaceWait(ctx, other.id, "check place");
+    await taskPlaceWait(ctx, task.id, "check place", { since: 1, ahead: 0 });
+    await taskPlaceWait(ctx, other.id, "check place", { since: 2, ahead: 1 });
     expect(await row(task.id)).toMatchObject({ mark: "blocked", note: "$0.00 · waiting for a check place" });
     expect(await row(other.id)).toMatchObject({
       mark: "blocked",
@@ -728,7 +731,7 @@ describe("dev views", () => {
 
     // The first takes its place: it is checking again, and the second moves up.
     await taskPlaceWait(ctx, task.id, null);
-    await taskPlaceWait(ctx, other.id, "check place");
+    await taskPlaceWait(ctx, other.id, "check place", { since: 2, ahead: 0 });
     expect(await row(task.id)).toMatchObject({ mark: "checking", note: "$0.00" });
     expect((await row(other.id)).note).toBe("$0.00 · waiting for a check place");
     await taskPlaceWait(ctx, other.id, null);

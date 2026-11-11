@@ -71,6 +71,8 @@ type StepWorkerLimit =
       readonly concurrent: number;
       /** A wait the step reports for a place it manages itself. */
       readonly report?: boolean;
+      /** How many waiters its plugin says are ahead of a reported wait. */
+      readonly ahead?: number;
     }
   | { readonly kind: "limit-cancel"; readonly id: number }
   | { readonly kind: "limit-release"; readonly id: number };
@@ -1086,7 +1088,10 @@ export class Runner {
     waits.set(message.id, wait);
     try {
       if (message.report === true) {
-        held.set(message.id, await limiter.report({ key: message.key }));
+        held.set(message.id, await limiter.report({
+            key: message.key,
+            ...(message.ahead === undefined ? {} : { ahead: message.ahead }),
+          }));
         reply(true);
         return;
       }

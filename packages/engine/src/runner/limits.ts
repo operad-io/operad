@@ -34,6 +34,8 @@ export interface LimitEntry {
   readonly granted: boolean;
   /** True for a wait a step reports for a place it manages itself; grants skip it. */
   readonly reported: boolean;
+  /** For a reported wait: the waiters ahead of it, as its plugin counts them. */
+  readonly ahead?: number;
 }
 
 function isRecord(value: unknown): value is Record<string, JsonValue> {
@@ -83,6 +85,9 @@ async function scanRun(
         seq: fact.seq,
         granted: false,
         reported: payload.reported === true,
+        ...(payload.reported === true && typeof payload.ahead === "number"
+          ? { ahead: payload.ahead }
+          : {}),
         released: false,
       });
     } else if (existing !== undefined) {
@@ -108,6 +113,7 @@ async function scanRun(
       seq: entry.seq,
       granted: entry.granted,
       reported: entry.reported,
+      ...(entry.ahead === undefined ? {} : { ahead: entry.ahead }),
     });
   }
   return { entries, lastSeq };
@@ -150,7 +156,9 @@ export async function queuedSteps(
   const result = new Map<string, { readonly key: string; readonly ahead: number }>();
   for (const key of new Set(entries.map((entry) => entry.key))) {
     queueOf(entries, key).forEach((entry, ahead) => {
-      if (!result.has(entry.runId)) result.set(entry.runId, { key, ahead });
+      if (!result.has(entry.runId)) {
+        result.set(entry.runId, { key, ahead: entry.ahead ?? ahead });
+      }
     });
   }
   return result;
@@ -225,13 +233,16 @@ export class StepLimits {
    * does not grant): the run shows queued under `key`, with the reports
    * ahead of it counted. `release` ends the wait.
    */
-  async report(claim: Omit<LimitClaim, "concurrent">): Promise<void> {
+  async report(
+    claim: Omit<LimitClaim, "concurrent"> & { readonly ahead?: number | undefined },
+  ): Promise<void> {
     await this.appendFact(claim.runId, "step_queued", {
       step: claim.step,
       effectId: claim.effectId,
       key: claim.key,
       concurrent: 0,
       reported: true,
+      ...(claim.ahead === undefined ? {} : { ahead: claim.ahead }),
     });
   }
 
@@ -322,7 +333,13 @@ export class StepLimits {
       },
       report: async (request) => {
         next += 1;
-        const claim = { runId, effectId: `${effectId}#${next}`, step, key: request.key };
+        const claim = {
+          runId,
+          effectId: `${effectId}#${next}`,
+          step,
+          key: request.key,
+          ahead: request.ahead,
+        };
         await this.report(claim);
         return () => this.release({ ...claim, concurrent: 0 });
       },

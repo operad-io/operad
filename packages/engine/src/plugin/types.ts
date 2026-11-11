@@ -481,10 +481,15 @@ export interface StepContext extends PluginBaseContext {
   /**
    * Tells the kernel this step waits for a place the plugin manages itself
    * (not a step limit), under `key`; the running view shows it queued. Call
-   * the returned function when the wait is over. Undefined when the host has
+   * the returned function when the wait is over. `ahead` is how many
+   * waiters the plugin says are before this one in its own order; the running
+   * view shows it instead of counting reports. To change it, end the wait and
+   * report again. Undefined when the host has
    * no limiter.
    */
-  readonly queued?: ((key: string) => Promise<() => Promise<void>>) | undefined;
+  readonly queued?:
+    | ((key: string, ahead?: number) => Promise<() => Promise<void>>)
+    | undefined;
   /** Whether a plugin that declares this step is loaded now. */
   readonly stepLoaded?: ((use: string) => boolean) | undefined;
   /**
@@ -539,7 +544,10 @@ export interface StepLimiter {
    * running view shows the run queued under `key`. The returned function ends
    * the wait. The kernel grants nothing for it.
    */
-  report(request: { readonly key: string }): Promise<() => Promise<void>>;
+  report(request: {
+    readonly key: string;
+    readonly ahead?: number | undefined;
+  }): Promise<() => Promise<void>>;
 }
 
 /** Options for running a step through the registry. */

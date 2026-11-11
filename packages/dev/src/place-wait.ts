@@ -5,10 +5,7 @@
  */
 
 import type { StepContext } from "@operad-io/engine";
-import { join } from "node:path";
-import { withLockFile } from "@operad-io/engine/platform";
-import { checkPlacesDirectory } from "./places.ts";
-import { listAll, taskData, type TaskData } from "./model.ts";
+import { taskData, type TaskData } from "./model.ts";
 import { saveTaskGuarded } from "./steps.ts";
 
 /** A task's wait for a check place, as the attempt records it. */
@@ -27,28 +24,16 @@ export function placeWaitNote(task: TaskData): string | undefined {
 }
 
 /**
- * Records on the task that its step waits for `key` (with the waiters ahead of
- * it), or clears the record when `key` is null. Writes only when the record
- * changes, and only while the step still owns its claim.
+ * Records on the task that its step waits for `key` (with the checks ahead of
+ * it in the order of the place files), or clears the record when `key` is null.
+ * Writes only when the record changes, and only while the step still owns its
+ * claim.
  */
 export async function taskPlaceWait(
   ctx: StepContext,
   taskKey: string,
   key: string | null,
-): Promise<void> {
-  // Counting the waiters and saving the record is one turn, across every
-  // repository: two waiters that count at once would both see none ahead.
-  await withLockFile(
-    join(checkPlacesDirectory(ctx.home), "waiting.lock"),
-    () => recordPlaceWait(ctx, taskKey, key),
-    { label: "check place waiters", onLog: () => {} },
-  );
-}
-
-async function recordPlaceWait(
-  ctx: StepContext,
-  taskKey: string,
-  key: string | null,
+  order?: { readonly since: number; readonly ahead: number },
 ): Promise<void> {
   const object = await ctx.store.get("task", taskKey);
   if (object === undefined) return;
@@ -67,14 +52,8 @@ async function recordPlaceWait(
     );
     return;
   }
-  const since = current?.key === key ? current.since : Date.now();
-  let ahead = 0;
-  for (const other of await listAll(ctx.store, "task")) {
-    if (other.id === object.id) continue;
-    const wait = taskData(other.data).attempt?.placeWait;
-    if (wait === undefined || wait === null || wait.key !== key) continue;
-    if (wait.since < since || (wait.since === since && other.id < object.id)) ahead += 1;
-  }
+  const since = order?.since ?? (current?.key === key ? current.since : Date.now());
+  const ahead = order?.ahead ?? 0;
   if (current?.key === key && current.ahead === ahead) return;
   await saveTaskGuarded(
     ctx,

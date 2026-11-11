@@ -1,7 +1,10 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { readdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PluginStepResult } from "@operad-io/engine";
 import {
+  checkPlacesDirectory,
   checkPlacesOf,
   DEFAULT_CHECK_PLACES,
   withCheckPlace,
@@ -98,6 +101,7 @@ describe("check places", () => {
       });
 
     const first = run("a");
+    await until(() => started.length === 1);
     const second = run("b");
     await until(() => started.length === 2);
     const third = run("c");
@@ -438,5 +442,208 @@ describe("gate.places setting", () => {
         "gate.places",
       );
     }
+  });
+});
+
+describe("check places are served in the order checks began to wait", () => {
+  const waiters = (home: string): string[] =>
+    readdirSync(checkPlacesDirectory(home)).filter((name) => name.endsWith(".wait"));
+
+  /** Starts a check that began to wait at `time` and has its own bell, so a test decides who looks. */
+  function waiter(
+    home: string,
+    name: string,
+    time: number,
+    started: string[],
+    extra: Partial<CheckPlaces> = {},
+  ) {
+    const rings = bell();
+    const watcher = logWatcher();
+    const orders: { since: number; ahead: number }[] = [];
+    const gate = deferred();
+    const done = withCheckPlace(
+      {
+        home,
+        checks: 1,
+        log: watcher.log,
+        wait: rings.wait,
+        clock: () => time,
+        waiting: (key, order) => {
+          if (key !== null && order !== undefined) orders.push(order);
+          return Promise.resolve();
+        },
+        ...extra,
+      },
+      async () => {
+        started.push(name);
+        await gate.promise;
+      },
+    );
+    return { rings, watcher, orders, gate, done };
+  }
+
+  async function holdPlace(home: string): Promise<{ release: () => Promise<void> }> {
+    const hold = deferred();
+    let holding = false;
+    const holder = withCheckPlace({ home, checks: 1, log: () => {} }, () => {
+      holding = true;
+      return hold.promise;
+    });
+    await until(() => holding);
+    return {
+      release: async () => {
+        hold.resolve();
+        await holder;
+      },
+    };
+  }
+
+  test("a, b, c take places in the order they began to wait, even when c looks first", async () => {
+    const home = await osTempRoot();
+    const holder = await holdPlace(home);
+    const started: string[] = [];
+    const a = waiter(home, "a", 1, started);
+    await a.watcher.seen("waiting for a check place");
+    const b = waiter(home, "b", 2, started);
+    await b.watcher.seen("waiting for a check place");
+    const c = waiter(home, "c", 3, started);
+    await c.watcher.seen("waiting for a check place");
+    // The ahead count follows the order: a has nobody before it, c has a and b.
+    await until(() => c.orders.length > 0);
+    expect([a.orders.at(-1)?.ahead, b.orders.at(-1)?.ahead, c.orders.at(-1)?.ahead]).toEqual([0, 1, 2]);
+    expect(c.orders.at(-1)?.since).toBe(3);
+
+    await holder.release();
+    c.rings.ring();
+    b.rings.ring();
+    await c.watcher.seen("2 ahead");
+    expect(started).toEqual([]);
+    a.rings.ring();
+    await until(() => started.length === 1);
+    expect(started).toEqual(["a"]);
+
+    c.rings.ring();
+    await c.watcher.seen("1 ahead");
+    expect(started).toEqual(["a"]);
+    a.gate.resolve();
+    await a.done;
+    const looks = c.orders.length;
+    c.rings.ring();
+    await until(() => c.orders.length > looks);
+    expect(started).toEqual(["a"]);
+    b.rings.ring();
+    await until(() => started.length === 2);
+    expect(started).toEqual(["a", "b"]);
+    b.gate.resolve();
+    await b.done;
+    c.rings.ring();
+    await until(() => started.length === 3);
+    c.gate.resolve();
+    await c.done;
+    expect(started).toEqual(["a", "b", "c"]);
+    expect(waiters(home)).toEqual([]);
+  });
+
+  test("a waiting check tells the kernel how many are ahead of it in the order", async () => {
+    const home = await osTempRoot();
+    const holder = await holdPlace(home);
+    const started: string[] = [];
+    const told: { key: string; ahead: number | undefined }[] = [];
+    const queued = (key: string, ahead?: number) => {
+      told.push({ key, ahead });
+      return Promise.resolve(() => Promise.resolve());
+    };
+    // The earlier check has not reported to the kernel at all; the later one still says 1 ahead.
+    const first = waiter(home, "first", 1, started);
+    await first.watcher.seen("waiting for a check place");
+    const second = waiter(home, "second", 2, started, { queued });
+    await until(() => told.length === 1);
+    expect(told).toEqual([{ key: "check place", ahead: 1 }]);
+    // The first one leaves the order; the second says it is now first.
+    await holder.release();
+    first.rings.ring();
+    await until(() => started.length === 1);
+    first.gate.resolve();
+    await first.done;
+    second.rings.ring();
+    await until(() => started.length === 2);
+    expect(told.map((entry) => entry.ahead)).toEqual([1]);
+    second.gate.resolve();
+    await second.done;
+  });
+
+  test("a waiter whose process is dead is skipped and its entry removed", async () => {
+    const home = await osTempRoot();
+    const child = Bun.spawn({ cmd: [process.execPath, "-e", ""], stdout: "ignore", stderr: "ignore" });
+    await child.exited;
+    const directory = checkPlacesDirectory(home);
+    await Bun.write(join(directory, ".keep"), "");
+    const dead = `queue-home-${String(0).padStart(16, "0")}-${child.pid}-dead.wait`;
+    writeFileSync(join(directory, dead), "");
+    expect(waiters(home)).toEqual([dead]);
+    const started: string[] = [];
+    const only = waiter(home, "only", 5, started);
+    await until(() => started.length === 1);
+    only.gate.resolve();
+    await only.done;
+    expect(started).toEqual(["only"]);
+    expect(waiters(home)).toEqual([]);
+  });
+
+  test("a cancelled waiter leaves the order at once", async () => {
+    const home = await osTempRoot();
+    const holder = await holdPlace(home);
+    const started: string[] = [];
+    const controller = new AbortController();
+    const a = waiter(home, "a", 1, started, { signal: controller.signal });
+    await a.watcher.seen("waiting for a check place");
+    const b = waiter(home, "b", 2, started);
+    await b.watcher.seen("waiting for a check place");
+    expect(waiters(home).length).toBe(2);
+    controller.abort();
+    // Before anyone looks again: a's entry is already gone.
+    expect(waiters(home).length).toBe(1);
+    a.rings.ring();
+    await expect(a.done).rejects.toThrow("cancelled while waiting");
+    await holder.release();
+    b.rings.ring();
+    await until(() => started.length === 1);
+    expect(started).toEqual(["b"]);
+    b.gate.resolve();
+    await b.done;
+    expect(waiters(home)).toEqual([]);
+  });
+
+  test("the repository's own pool follows the order too", async () => {
+    const home = await osTempRoot();
+    const repository = { name: "ios", path: "/r/ios", places: 1 };
+    const hold = deferred();
+    let holding = false;
+    const holder = withCheckPlace({ home, checks: 3, repository, log: () => {} }, () => {
+      holding = true;
+      return hold.promise;
+    });
+    await until(() => holding);
+    const started: string[] = [];
+    const first = waiter(home, "first", 1, started, { checks: 3, repository });
+    await first.watcher.seen("check place of ios");
+    const second = waiter(home, "second", 2, started, { checks: 3, repository });
+    await second.watcher.seen("check place of ios");
+    expect(second.orders.at(-1)?.ahead).toBe(1);
+    hold.resolve();
+    await holder;
+    second.rings.ring();
+    await second.watcher.seen("1 ahead");
+    expect(started).toEqual([]);
+    first.rings.ring();
+    await until(() => started.length === 1);
+    expect(started).toEqual(["first"]);
+    first.gate.resolve();
+    await first.done;
+    second.rings.ring();
+    await until(() => started.length === 2);
+    second.gate.resolve();
+    await second.done;
+    expect(waiters(home)).toEqual([]);
   });
 });

@@ -9,6 +9,7 @@ import { join } from "node:path";
 import type { StepContext } from "@operad-io/engine";
 import { taskPlaceWait } from "./place-wait.ts";
 import { withLockFile, waitForChange } from "@operad-io/engine/platform";
+import { WaitEntry } from "./place-order.ts";
 
 /** How many checks may run at once when the home's dev settings say nothing. */
 export const DEFAULT_CHECK_PLACES = 2;
@@ -56,7 +57,11 @@ export interface CheckPlaces {
    * Says what the step waits for (the place group), or null once it does not;
    * called again at each look while it waits. The task's row shows it.
    */
-  readonly waiting?: ((key: string | null) => Promise<void>) | undefined;
+  readonly waiting?:
+    | ((key: string | null, order?: { readonly since: number; readonly ahead: number }) => Promise<void>)
+    | undefined;
+  /** The clock that stamps when a check began to wait; tests inject this. */
+  readonly clock?: (() => number) | undefined;
   /** How a waiting check waits before it looks again; tests inject this. */
   readonly wait?: ((ms: number) => Promise<void>) | undefined;
 }
@@ -74,6 +79,8 @@ class PlaceBusy extends Error {
   constructor(
     readonly pool: "home" | "repository",
     readonly inUse: number,
+    /** Checks that began to wait earlier and still wait; they take places first. */
+    readonly ahead = 0,
   ) {
     super("busy");
   }
@@ -92,8 +99,12 @@ async function takeOne<T>(
   prefix: string,
   count: number,
   pool: "home" | "repository",
+  entry: WaitEntry | undefined,
   work: () => Promise<T> | T,
 ): Promise<T> {
+  // A place is free for this check only when no earlier check still waits.
+  const ahead = entry?.ahead() ?? 0;
+  if (ahead > 0) throw new PlaceBusy(pool, 0, ahead);
   let busy = 0;
   for (let index = 1; index <= count; index += 1) {
     try {
@@ -124,12 +135,24 @@ export async function withCheckPlace<T>(
 ): Promise<T> {
   const directory = checkPlacesDirectory(places.home);
   const repository = places.repository;
+  const since = (places.clock ?? Date.now)();
+  // Where this check stands in the order of each pool it needs.
+  let homeEntry: WaitEntry | undefined;
+  const repositoryEntry =
+    repository === undefined
+      ? undefined
+      : WaitEntry.join(directory, repositoryKey(repository), since);
+  const leaveAll = (): void => {
+    homeEntry?.leave();
+    repositoryEntry?.leave();
+  };
+  places.signal?.addEventListener("abort", leaveAll, { once: true });
   let entry = "place-1.lock";
   const wait =
     places.wait ??
     ((ms: number) => waitForChange(directory, entry, ms));
   // What the kernel was told: the place group the step is queued under.
-  let reported: { key: string; end: () => Promise<void> } | undefined;
+  let reported: { key: string; ahead: number; end: () => Promise<void> } | undefined;
   const stopWaiting = async (): Promise<void> => {
     const open = reported;
     reported = undefined;
@@ -138,6 +161,7 @@ export async function withCheckPlace<T>(
     await places.waiting?.(null).catch(() => undefined);
   };
   const started = async (): Promise<T> => {
+    leaveAll();
     await stopWaiting();
     return work();
   };
@@ -150,6 +174,7 @@ export async function withCheckPlace<T>(
             repositoryKey(repository),
             repository.places,
             "repository",
+            repositoryEntry,
             started,
           );
   let said: string | undefined;
@@ -157,17 +182,31 @@ export async function withCheckPlace<T>(
     for (;;) {
       if (places.signal?.aborted === true) throw new CheckPlaceCancelled();
       try {
-        return await takeOne(directory, "place", places.checks, "home", inner);
+        // While the repository's order holds this check back, it asks for no
+        // home place, so it does not hold up the checks behind it there.
+        if (homeEntry === undefined && (repositoryEntry?.ahead() ?? 0) > 0) {
+          throw new PlaceBusy("repository", 0, repositoryEntry?.ahead() ?? 0);
+        }
+        homeEntry ??= WaitEntry.join(directory, "home", since);
+        return await takeOne(directory, "place", places.checks, "home", homeEntry, inner);
       } catch (error) {
         if (!(error instanceof PlaceBusy)) throw error;
+        if (error.pool === "repository") {
+          homeEntry?.leave();
+          homeEntry = undefined;
+        }
+        const waitEntry = error.pool === "repository" ? repositoryEntry : homeEntry;
+        const ahead = waitEntry?.ahead() ?? error.ahead;
         entry =
           error.pool === "repository" && repository !== undefined
             ? `${repositoryKey(repository)}-1.lock`
             : "place-1.lock";
+        const of =
+          error.pool === "home" || repository === undefined ? "" : ` of ${repository.name}`;
         const line =
-          error.pool === "home" || repository === undefined
-            ? `waiting for a check place: ${error.inUse} in use`
-            : `waiting for a check place of ${repository.name}: ${error.inUse} in use`;
+          error.ahead > 0
+            ? `waiting for a check place${of}: ${error.ahead} ahead`
+            : `waiting for a check place${of}: ${error.inUse} in use`;
         if (said !== line) {
           said = line;
           await places.log(line);
@@ -176,21 +215,24 @@ export async function withCheckPlace<T>(
           error.pool === "repository" && repository !== undefined
             ? placeGroupOf(repository.name)
             : placeGroupOf(undefined);
-        if (reported?.key !== key && places.queued !== undefined) {
+        // The running view shows the ahead count told here, so a change is told again.
+        if ((reported?.key !== key || reported.ahead !== ahead) && places.queued !== undefined) {
           const previous = reported;
           reported = undefined;
           await previous?.end().catch(() => undefined);
           try {
-            reported = { key, end: await places.queued(key) };
+            reported = { key, ahead, end: await places.queued(key, ahead) };
           } catch {
             reported = undefined;
           }
         }
-        await places.waiting?.(key).catch(() => undefined);
+        await places.waiting?.(key, { since, ahead }).catch(() => undefined);
       }
       await wait(RECHECK_MS);
     }
   } finally {
+    places.signal?.removeEventListener("abort", leaveAll);
+    leaveAll();
     await stopWaiting();
   }
 }
@@ -217,6 +259,6 @@ export function checkPlaces(
     log: (line) => ctx.logger.write(line),
     signal: ctx.signal,
     queued: ctx.queued,
-    ...(taskKey === undefined ? {} : { waiting: (key) => taskPlaceWait(ctx, taskKey, key) }),
+    ...(taskKey === undefined ? {} : { waiting: (key, order) => taskPlaceWait(ctx, taskKey, key, order) }),
   };
 }

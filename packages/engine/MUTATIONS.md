@@ -604,6 +604,12 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0281-M1 | packages/engine/src/plugin/action-schema.ts | a `oneOf` accepted a value only when it fitted its first branch (the check of the other branches removed) | `settings with a choice of forms > a set keeps the object form of a check command and every other value` (packages/engine/test/views/settings-schema.test.ts) |
+
+## T-0295-check-places-fifo — a reported wait shows the ahead count its plugin gives
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0295-M7 | packages/engine/src/runner/limits.ts | the running view counted ahead from the order of the reports, ignoring the `ahead` the plugin reported | `reported waits with a plugin count (memory) > a late report of the earlier waiter does not change the ahead the later one reported` |
 | T-0237-M3 | packages/engine/src/views/presentation.ts | a hidden row no longer added its count to its mark role, so `hiddenCounts` stayed zero | `object type filters > a filter keeps matching rows and counts the rest as hidden` |
 
 ## T-0297 — follow-ups from the flaky-test work

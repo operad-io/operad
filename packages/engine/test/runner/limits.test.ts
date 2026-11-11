@@ -224,6 +224,34 @@ for (const mode of ["memory", "file"] as const) {
     });
   });
 
+  describe(`reported waits with a plugin count (${mode})`, () => {
+    test("a late report of the earlier waiter does not change the ahead the later one reported", async () => {
+      const env = await setup(mode);
+      try {
+        const a = await env.create("lim-reported", "a");
+        const b = await env.create("lim-reported", "b");
+        // a began to wait before b, but b reports first: b says 1 ahead, a says 0.
+        writeFileSync(join(env.dir, "ahead-a"), "0");
+        writeFileSync(join(env.dir, "ahead-b"), "1");
+        const runs: Promise<RunnerOutcome>[] = [env.runner(b, "b").run()];
+        await fileExists(join(env.dir, "queued-b"));
+        const early = await listRunning(env.log);
+        expect(early.find((item) => item.runId === b)?.queued).toEqual({ key: "shared place", ahead: 1 });
+        runs.push(env.runner(a, "a").run());
+        await fileExists(join(env.dir, "queued-a"));
+        const waiting = await listRunning(env.log);
+        expect(waiting.find((item) => item.runId === b)?.queued).toEqual({ key: "shared place", ahead: 1 });
+        expect(waiting.find((item) => item.runId === a)?.queued).toEqual({ key: "shared place", ahead: 0 });
+        env.open("a", "b");
+        writeFileSync(join(env.dir, "place-a"), "go");
+        writeFileSync(join(env.dir, "place-b"), "go");
+        expect(await Promise.all(runs)).toEqual(["ended", "ended"]);
+      } finally {
+        await env.close();
+      }
+    });
+  });
+
   describe(`step limits (${mode})`, () => {
     test("two steps run, the third starts when one ends", async () => {
       const env = await setup(mode);
