@@ -743,6 +743,22 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0260-M1 | packages/dev/src/steps.ts | the work step kept the earlier verify result when the worker had committed past the verified commit | `work that ends with no new commit > a commit the worker makes last is verified, not answered by the verify of the commit before it` |
+## T-0240 — the Log section is readable
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0240-M1 | packages/dev/src/views.ts | a leading `cd <worktree>` was kept in a shown command | `dev views > a leading cd into the task's worktree is dropped, and its paths are relative; other cd targets stay` |
+| T-0240-M2 | packages/dev/src/views.ts | the worktree path inside a command stayed absolute | `dev views > a leading cd into the task's worktree is dropped, and its paths are relative; other cd targets stay` |
+| T-0240-M3 | packages/dev/src/views.ts | a multi-line command lost its `(+N lines)` count | `dev views > a multi-line command shows its first line and the count of lines left; a long one-liner is cut` |
+| T-0240-M4 | packages/dev/src/views.ts | a long one-line command was not cut at 160 characters | `dev views > a multi-line command shows its first line and the count of lines left; a long one-liner is cut` |
+| T-0240-M5 | packages/dev/src/views.ts | the command was not set in inline code | `dev views > a tool call is one line with what ran and how long it took` |
+| T-0240-M6 | packages/dev/src/views.ts | a turn end without agent text was shown | `dev views > a run of tool turns shows no turn end; a turn end after the agent's text and the result stay` |
+
+## T-0240 — rework: multi-line log commands and code spans
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0240-M13 | packages/dev/src/views.ts | blank lines of a command were not counted in the lines left | `dev views > a multi-line command shows its first line and the count of lines left; a long one-liner is cut` |
 ## T-0246 — a cancelled task's run ends when the settings cannot be read
 
 | id | file | mutation | failing test |
@@ -750,6 +766,14 @@ the row fields.
 | T-0246-M1 | packages/dev/src/schedule.ts | the sweep of cancelled tasks' runs ran after the settings were read, so unreadable settings skipped it | `a run on a cancelled task is ended even when the repository's settings cannot be read` |
 | T-0122-M2 | packages/dev/src/views.ts | a plan listed a Tasks section again | `dev views > a plan loads its request and has no tasks section` |
 | T-0260-M2 | packages/dev/src/gate.ts | review accepted a report whose sha was not the checked commit | `dev/review > a report whose sha is not the checked commit is refused` |
+
+## T-0240 — rework 10: turn ends and blank command lines
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0240-M14 | packages/dev/src/views.ts | a turn end with stop reason `tool_use` was shown when the agent had text | `dev views > the agent's text, a tool error's first line and a turn's end are shown; tool output is not` |
+| T-0240-M15 | packages/dev/src/views.ts | leading and trailing blank lines of a command were trimmed away before the count | `dev views > a multi-line command shows its first line and the count of lines left; a long one-liner is cut` |
+| T-0240-M17 | packages/dev/src/views.ts | the cd prefix pattern matched across line breaks (`\s*`), eating a blank line after it | `dev views > a multi-line command shows its first line and the count of lines left; a long one-liner is cut` |
 | T-0239-M3 | packages/dev/src/marks.ts | a task whose step waits for a check place kept the `checking` mark | `dev views > a task whose check waits for a place says so, with how many are ahead, until it takes the place` |
 | T-0239-M4 | packages/dev/src/places.ts | a check that took its place did not end its report to the kernel before the command started | `check places > a waiting check tells the kernel and the task its place group until it takes the place` |
 | T-0239-M8 | packages/dev/src/place-wait.ts | counting the waiters and saving the wait record was not one locked turn, so two checks reaching a held place together both showed 0 ahead | `dev views > a task whose check waits for a place says so, with how many are ahead, until it takes the place` |

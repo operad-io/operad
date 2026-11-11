@@ -880,7 +880,7 @@ test("a Bash call logs its command, its start time and its duration", async () =
     { FAKE_CLOCK_STEP: "72000" },
   );
   const { start, end } = toolLines(run);
-  expect(start[0]).toMatchObject({ toolName: "Bash", at: BASE, input: "xcodebuild test -only-testing A/B" });
+  expect(start[0]).toMatchObject({ toolName: "Bash", at: BASE, input: "xcodebuild test\n-only-testing A/B" });
   expect(end[0]).toMatchObject({ toolCallId: "b1", isError: false, durationMs: 72000 });
   expect(run.stdout).not.toContain("TOOL OUTPUT MUST NOT APPEAR");
 });

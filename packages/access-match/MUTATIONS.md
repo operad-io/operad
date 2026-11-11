@@ -30,3 +30,21 @@ and the row fields.
 | T-0188-M8 | packages/access-match/src/index.ts | readOnly no longer made writes in the working directory ask | `a read-only working directory asks about a write under it, and only a write` |
 | T-0188-M21 | packages/access-match/src/readonly.ts | a command with an output redirect (`>`, `>>`, `&>`) counted as read-only | `everything else is not read-only: redirects, tee, sed -i, cp, mv, git writes, a pipeline whose last stage writes` |
 | T-0188-M22 | packages/access-match/src/index.ts | a read-only directory no longer asked about a command that is not on the allowlist | `a read-only directory asks about a command that is not on the allowlist, and lets a reading one run` |
+
+## T-0240 — a log keeps a command's lines
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0240-M7 | packages/access-match/src/summary.ts | `keepLines` was ignored, so a command was flattened to one line | `a bash call keeps its lines when the log asks for them, still cut at 500 characters` |
+
+## T-0240 — rework: multi-line log commands and code spans
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0240-M12 | packages/access-match/src/summary.ts | blank lines of a command were dropped when its lines are kept | `a bash call keeps its lines when the log asks for them, still cut at 500 characters` |
+
+## T-0240 — rework 10: turn ends and blank command lines
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0240-M16 | packages/access-match/src/summary.ts | leading and trailing blank lines of a kept command were dropped | `a bash call keeps its lines when the log asks for them, still cut at 500 characters` |

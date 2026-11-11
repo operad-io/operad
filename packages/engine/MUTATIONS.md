@@ -579,4 +579,10 @@ the row fields.
 | T-0242-history-no-run-id-M1 | packages/engine/src/views/presentation.ts | put `lines.push(`<sub>run ${run.runId}</sub>`)` back at the end of each run in the history section | `presentation > the history of an object with two runs shows no tag and no run id` |
 | T-0211-M3 | packages/engine/src/runner/runner.ts | the second aborted check after the object is read was removed | not covered by a test: the window is one await wide and no test can hold it open without a hook |
 | T-0244-M1 | packages/engine/src/store-copy/copy.ts | the copy did not compare what a sqlite source holds after the copy with what it held at the snapshot | `store copy > a write to a sqlite source after it was read makes the copy back fail and leaves no target` |
+
+## T-0240 — rework: multi-line log commands and code spans
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0240-M11 | packages/engine/src/markdown.ts | a code span with a longer backtick fence was not read as one span | `markdown fences > inline code written with a longer backtick fence is one span` |
 | T-0259-M2 | packages/engine/src/store-copy/copy.ts | the source fingerprint counted an empty `-wal` file as different from none, so a sqlite source in rollback-journal mode failed the copy on Linux | `store copy > copying out of a sqlite home in rollback-journal mode leaves its databases in WAL` (fails on the Linux check host) |

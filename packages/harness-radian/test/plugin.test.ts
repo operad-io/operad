@@ -157,6 +157,11 @@ describe("harness-radian/agent", () => {
     expect(JSON.parse(out)).toMatchObject({ input: "curl ***" });
   });
 
+  test("a multi-line command keeps its lines in the logged summary", () => {
+    const line = JSON.stringify({ event: "ToolExecutionStarted", data: { call_id: "c1", name: "shell", arguments: { command: "python3 - <<'EOF'\nprint(1)\n\nEOF" } } });
+    expect(JSON.parse(radianLogLine(line, () => 5, new Map(), "/work")).input).toBe("python3 - <<'EOF'\nprint(1)\n\nEOF");
+  });
+
   test("a tool call the access profile refuses is only said to be denied in the log", async () => {
     const line = JSON.stringify({ type: "ToolExecutionStarted", toolCallId: "t1", toolName: "Read", input: { file_path: "/secrets/key" } });
     const out = radianLogLine(line, () => 5, new Map(), "/work", { denyPaths: ["/secrets"] });

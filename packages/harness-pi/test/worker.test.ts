@@ -872,6 +872,20 @@ function toolLines(run: Run): { start: Array<Record<string, unknown>>; end: Arra
   };
 }
 
+test("a multi-line bash command keeps its lines in the log", async () => {
+  const s = setup();
+  const run = await runFake(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command: "python3 - <<'EOF'\nprint(1)\n\nEOF" } } },
+      { text: "done" },
+    ],
+    s.input,
+    { FAKE_CLOCK_STEP: "1" },
+  );
+  expect(toolLines(run).start[0]).toMatchObject({ input: "python3 - <<'EOF'\nprint(1)\n\nEOF" });
+});
+
 test("a bash call logs its command, its start time and its duration, and no output", async () => {
   const s = setup();
   const run = await runFake(

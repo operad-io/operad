@@ -96,7 +96,7 @@ function summarizeRadianCall(
   if (!isRecord(args)) return undefined;
   const lower = toolName.toLowerCase();
   const { mapped, input } = mapRadianCall(toolName, args);
-  const summary = summarizeCall(profile, mapped, input, cwd, { secrets });
+  const summary = summarizeCall(profile, mapped, input, cwd, { secrets, keepLines: true });
   const denied = `${mapped} denied by the access profile`;
   if (summary !== undefined && summary.startsWith(denied)) return `${toolName}${summary.slice(mapped.length)}`;
   // Unknown tools keep the plain summary of their main argument.

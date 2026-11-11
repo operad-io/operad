@@ -164,3 +164,11 @@ describe("tables fit the pane", () => {
     expect(narrow[5]?.text).not.toBe(wide[5]?.text);
   });
 });
+
+describe("the TUI inline code", () => {
+  test("a command with backticks in a longer fence is drawn as one code span without its fences", () => {
+    const rows = layoutMarkdown("tool Bash 3s `` echo `date` ``", 80);
+    expect(rows[0]?.text).toBe("tool Bash 3s echo `date`");
+  });
+});
+

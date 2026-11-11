@@ -357,7 +357,7 @@ export async function runWorker(
       case "tool_execution_start": {
         const startedAt = now();
         started.set(event.toolCallId, startedAt);
-        const summary = summarizeCall(profile, event.toolName, event.args, input.cwd, { secrets: input.secretValues });
+        const summary = summarizeCall(profile, event.toolName, event.args, input.cwd, { secrets: input.secretValues, keepLines: true });
         io.line({
           type: "tool_execution_start",
           toolCallId: event.toolCallId,
