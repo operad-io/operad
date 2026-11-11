@@ -365,6 +365,31 @@ async function reportFinishedPlans(
 }
 
 /**
+ * Ends a run that is still active on a cancelled task. A cancel that could
+ * not reach its run (one made where no run control was set) left the run
+ * waiting for a person; the task is final, so no person has anything to do.
+ */
+async function endRunsOfCancelledTasks(
+  ctx: TickContext,
+  runs: NonNullable<TickContext["runLookup"]>,
+  tasks: readonly StoredObject[],
+  repository: string,
+): Promise<void> {
+  if (ctx.runs === undefined) return;
+  const cancelled = new Set(
+    tasksOf(tasks, repository)
+      .filter((object) => taskData(object.data).phase === "cancelled")
+      .map((object) => `task:${object.id}`),
+  );
+  if (cancelled.size === 0) return;
+  for (const run of await runs.active()) {
+    if (!cancelled.has(run.object)) continue;
+    await ctx.runs.cancel(run.runId);
+    writeSchedulerLine(`${run.object.slice(5)} cancelled: ended its run ${run.runId}`);
+  }
+}
+
+/**
  * Makes every task's phase follow its run. A task whose run paused for a
  * person says `waiting`; a task whose run is gone is repaired to a waiting
  * task with a pending item, never left as `running` or `waiting` with nothing
@@ -380,6 +405,7 @@ async function reconcileTaskRuns(
 ): Promise<void> {
   const runs = ctx.runLookup;
   if (runs === undefined) return;
+  await endRunsOfCancelledTasks(ctx, runs, tasks, repository);
   for (const object of tasksOf(tasks, repository)) {
     const task = taskData(object.data);
     if (task.phase !== "waiting" && task.phase !== "running") continue;

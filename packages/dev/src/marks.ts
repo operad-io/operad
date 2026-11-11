@@ -54,6 +54,8 @@ function runningMark(task: TaskData): RowMark {
   // record stays, but the step is no longer integrate.
   if (isIntegrating(task)) return "integrating";
   if (typeof attempt?.workRetryAt === "number") return "retry_wait";
+  // The work step waits for a worker another task holds.
+  if (typeof attempt?.workerWait === "string" && attempt.workerWait.length > 0) return "blocked";
   if (attempt === undefined || typeof attempt.worktree !== "string") {
     return "starting";
   }

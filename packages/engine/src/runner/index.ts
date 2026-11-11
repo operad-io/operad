@@ -5,6 +5,8 @@ export type {
   RecordAnswerOptions,
   RecordedAnswerPayload,
 } from "./answer.ts";
+export { cancelRun } from "./cancel.ts";
+export type { CancelRunOptions } from "./cancel.ts";
 export {
   acquireLock,
   assertStoreNotMoving,
