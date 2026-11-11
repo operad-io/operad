@@ -110,4 +110,73 @@ describe("the jsonl backend over a large history", () => {
       await log.close();
     }
   });
+
+  test("a quiet tick costs the same with many ended runs: directory and file calls are counted", async () => {
+    const root = await tempRoot();
+    let now = Date.now();
+    let fire: () => void = () => undefined;
+    const events: string[] = [];
+    const log = openLog({
+      backend: "jsonl",
+      path: join(root, "store"),
+      clock: () => now,
+      repeat: (_ms, callback) => {
+        fire = callback;
+        return () => undefined;
+      },
+      watch: () => () => undefined,
+    });
+    try {
+      const sub = log.subscribe;
+      if (sub === undefined) throw new Error("the jsonl backend can be subscribed to");
+      for (let index = 0; index < 300; index += 1) {
+        const run = await log.startRun("old", `job:${index}`);
+        await log.endRun(run.runId);
+      }
+      const live = await log.startRun("live", "job:live");
+      await log.recordInput(null, "manual", "x", { n: 1 });
+      now += 60_000;
+      const stop = sub.call(log, (change) => events.push(change.runId));
+      // Settle: the first call after a change lists the directory once.
+      await log.runs({ active: true });
+      fire();
+
+      const dirs = spyOn(fs, "readdirSync");
+      const stats = spyOn(fs, "statSync");
+      const exists = spyOn(fs, "existsSync");
+      try {
+        // One quiet serve tick: the active runs, the new inputs and outcomes,
+        // and the subscription poll.
+        const first = await log.readInputsAfter(0);
+        const quiet = async (): Promise<void> => {
+          await log.runs({ active: true });
+          await log.readInputsAfter(first.position);
+          await log.readOutcomesAfter(0);
+          fire();
+        };
+        await quiet();
+        const small = stats.mock.calls.length + exists.mock.calls.length;
+        expect(dirs).not.toHaveBeenCalled();
+        for (let pass = 0; pass < 5; pass += 1) await quiet();
+        expect(dirs).not.toHaveBeenCalled();
+        // Five more ticks cost five times one tick, never a call per ended run.
+        const per = (stats.mock.calls.length + exists.mock.calls.length) / 6;
+        expect(per).toBeLessThanOrEqual(small + 1);
+        expect(small).toBeLessThan(30);
+      } finally {
+        dirs.mockRestore();
+        stats.mockRestore();
+        exists.mockRestore();
+      }
+      expect(events).toEqual([]);
+
+      // A real change is still reported by the poll.
+      await log.endRun(live.runId);
+      fire();
+      expect(events).toContain(live.runId);
+      stop();
+    } finally {
+      await log.close();
+    }
+  });
 });

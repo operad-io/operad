@@ -902,11 +902,14 @@ class JsonlLogBackend implements LogBackend {
     const previous = this.#snapshot;
     this.#snapshot = next;
     if (previous === undefined) return;
+    const changed = new Set<string>();
     for (const [runId, run] of next) {
       const before = previous.get(runId);
-      if (before !== undefined && before.size === run.size && before.ended === run.ended) {
-        continue;
-      }
+      if (before === undefined || before.size !== run.size) changed.add(runId);
+    }
+    // A run that was active and no longer is has ended.
+    for (const runId of previous.keys()) if (!next.has(runId)) changed.add(runId);
+    for (const runId of changed) {
       try {
         const info = this.#runInfoUnlocked(runId);
         this.#notify({ runId, object: info.object });
@@ -916,18 +919,20 @@ class JsonlLogBackend implements LogBackend {
     }
   }
 
+  /**
+   * The size of every active run's file. Ended runs never change, so they are
+   * not looked at: the cost follows the active runs, not the history.
+   */
   #takeRunSnapshot(): Map<string, { readonly size: number; readonly ended: boolean }> {
     const snapshot = new Map<string, { readonly size: number; readonly ended: boolean }>();
-    for (const name of readdirSync(this.#runsDirectory)) {
-      if (!name.endsWith(".jsonl")) continue;
-      const runId = name.slice(0, -6);
+    for (const runId of this.#activeRunIds()) {
       try {
         snapshot.set(runId, {
-          size: statSync(join(this.#runsDirectory, name)).size,
-          ended: existsSync(this.#endPath(runId)),
+          size: statSync(this.#runPath(runId)).size,
+          ended: false,
         });
       } catch {
-        // Removed between the directory read and the stat.
+        // Removed since the directory was read.
       }
     }
     return snapshot;
@@ -1111,10 +1116,11 @@ class JsonlLogBackend implements LogBackend {
   }
 
   /**
-   * The ids of the active runs. Starting or ending a run adds a file to the
-   * runs directory, which changes its modification time; while that time is
-   * unchanged (and old enough that a later change cannot share it) the
-   * remembered ids stand and the directory is not listed again.
+   * The ids of the active runs, remembered. Starting or ending a run adds a
+   * file to the runs directory and so changes its modification time; while
+   * that time is unchanged, and old enough that a later change cannot share
+   * it, the remembered ids stand and the directory is not listed. A quiet call
+   * costs one stat; a call after a change lists the directory once.
    */
   #activeRunIds(): readonly string[] {
     const stat = statSync(this.#runsDirectory, { bigint: true });
