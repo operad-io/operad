@@ -100,12 +100,30 @@ async function runReal(
  * the working directory, standard input and environment set around it. Tests
  * in this file run one after another, so the process-wide state is safe.
  */
-async function run(
+let inProcess: Promise<unknown> = Promise.resolve();
+
+/**
+ * One command at a time: the working directory, stdin and environment belong
+ * to the process, so commands a test starts together run in turn.
+ */
+function run(
   home: string,
   cwd: string,
   args: readonly string[],
   input?: string,
   env: Record<string, string> = {},
+): Promise<RunResult> {
+  const turn = inProcess.then(() => runNow(home, cwd, args, input, env));
+  inProcess = turn.catch(() => undefined);
+  return turn;
+}
+
+async function runNow(
+  home: string,
+  cwd: string,
+  args: readonly string[],
+  input: string | undefined,
+  env: Record<string, string>,
 ): Promise<RunResult> {
   const out: string[] = [];
   const err: string[] = [];
