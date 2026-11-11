@@ -2240,15 +2240,25 @@ function replaceRow(state: TuiState, row: TuiRow): TuiState {
 /** Puts a fresh row in place of the same object's row on the open page's next level. */
 function replacePageRow(state: TuiState, row: TuiRow): TuiState {
   const children = state.object?.children;
-  if (children === undefined || !children.rows.some((old) => sameObject(old.id, row.id))) {
-    return state;
+  const old = children?.rows.find((candidate) => sameObject(candidate.id, row.id));
+  if (children === undefined || old === undefined) return state;
+  // The page's next level follows the left tab's filter, as the left list does.
+  const tab = state.object === undefined ? undefined : pluginTabOf(state, state.object.type);
+  const info = tab?.types?.find((candidate) => candidate.type === old.type);
+  const states = info?.filters?.find((f) => f.name === tab?.filter)?.states;
+  if (states !== undefined && row.state !== "error" && !states.includes(row.state)) {
+    return withChildren(state, (c) => ({
+      ...c,
+      rows: dropRow(c.rows, c.rows.indexOf(old)),
+      cursor: Math.min(c.cursor, Math.max(0, c.rows.length - 2)),
+    }));
   }
   return withChildren(state, (c) => ({
     ...c,
-    rows: c.rows.map((old) =>
-      sameObject(old.id, row.id)
-        ? { ...row, ...(old.type === undefined ? {} : { type: old.type }) }
-        : old,
+    rows: c.rows.map((candidate) =>
+      sameObject(candidate.id, row.id)
+        ? { ...row, ...(candidate.type === undefined ? {} : { type: candidate.type }) }
+        : candidate,
     ),
   }));
 }
@@ -2354,8 +2364,11 @@ function followLoaded(state: TuiState, tabId: string): TuiState {
   const tab = activeTabOf(state);
   if (tab === undefined || tab.id !== tabId) return state;
   const row = tab.list.rows[tab.list.cursor];
-  if (row === undefined) return state.followPending ? state : closeObject(state);
+  // An empty list leaves no row for the pane beside it to follow; a lone object page is kept.
+  if (row === undefined) return twoPane(state) ? closeObject({ ...state, followPending: false }) : state;
   if (row.openable === false || state.object?.source === row.id) return state;
+  // A follow already waiting keeps its debounce: restarting it on every refresh could starve it.
+  if (state.followPending) return state;
   return { ...state, moveSeq: state.moveSeq + 1, followPending: true };
 }
 

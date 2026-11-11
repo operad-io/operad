@@ -624,3 +624,4 @@ the row fields.
 | T-0299-M1 | packages/engine/src/loop/code-watch.ts | a bare plugin module name was resolved against the operad home again, so a home outside the workspace found no plugin package | `code roots > a plugin named by its package is found where the loader imports it` |
 | T-0298-M7 | packages/engine/src/http/server.ts | a refusal the views make was not logged with its status | `http server > acts with a note, refuses without one, and needs confirmed for a confirm action` |
 | T-0298-M8 | packages/engine/src/views/running.ts | runTimes read the log's runs again although the caller passed them | `the running view names the object and times the step > a run's times: ...` |
+| T-0302-M5 | packages/engine/src/views/presentation.ts | the row after check used `some` on the array itself, which skips holes | `hierarchy over HTTP > /v1/types names the plugin and /v1/objects takes root and parent` |

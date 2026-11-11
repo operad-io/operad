@@ -736,11 +736,27 @@ export async function putTaskKeepingPlanCost(
 }
 
 async function totalsOfTasks(store: ObjectStore, planKey: string): Promise<PlanCostTotals> {
+  return sumCostTotals(await tasksOfPlan(store, planKey));
+}
+
+function sumCostTotals(tasks: readonly StoredObject[]): PlanCostTotals {
   let totals = shiftCostTotals(undefined, undefined, undefined);
-  for (const object of await tasksOfPlan(store, planKey)) {
+  for (const object of tasks) {
     totals = shiftCostTotals(totals, undefined, taskData(object.data));
   }
   return totals;
+}
+
+function sameCostTotals(a: PlanCostTotals | undefined, b: PlanCostTotals): boolean {
+  return (
+    a !== undefined &&
+    a.exactMicros === b.exactMicros &&
+    a.estimatedMicros === b.estimatedMicros &&
+    a.incompleteMicros === b.incompleteMicros &&
+    a.exactTasks === b.exactTasks &&
+    a.estimatedTasks === b.estimatedTasks &&
+    a.incompleteTasks === b.incompleteTasks
+  );
 }
 
 /**
@@ -793,13 +809,15 @@ async function recountPlan(
   const waitingCount = tasks.filter((object) =>
     needsPerson(taskData(object.data)),
   ).length;
-  const costTotals = data.costTotals ?? (await totalsOfTasks(store, plan.id));
+  // Recomputed from the tasks each time: the task write and the plan's total
+  // are two writes, so a crash or a race between them is healed here.
+  const costTotals = sumCostTotals(tasks);
   const flowHeld = tasks
     .map((object) => taskData(object.data))
     .find((task) => task.phase === "ready" && task.flowHeld !== undefined)?.flowHeld;
   if (
     data.flowHeld === flowHeld &&
-    data.costTotals !== undefined &&
+    sameCostTotals(data.costTotals, costTotals) &&
     data.taskCount === taskCount &&
     data.mergedCount === mergedCount &&
     data.cancelledCount === cancelledCount &&
