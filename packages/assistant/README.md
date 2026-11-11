@@ -35,7 +35,7 @@ digits, `-` and `_`. Fields: `cwd`, `harness`, `skills`, `access`.
 Creates a `chat` with the profile as parent. The harness is the one given, else the
 profile's, else the first loaded one; it is fixed once chosen. The chat reaches
 repositories only through operad's tools (`operadTools`) and `dev`'s verbs, never by
-editing their files: its directory is not a repository and `operad` is a denied command.
+editing their files: the paths of the repositories `dev` knows are in `denyPaths` (read again at every reply, so a repository added later is covered), its directory is not a repository and `operad` is a denied command.
 
 At every reply the chat runs the step `assistant/profile`, which reads `config.json`
 again: tightening access or adding a skill applies to the next reply of the same chat.

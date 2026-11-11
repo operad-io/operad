@@ -137,6 +137,27 @@ describe("the default access profile", () => {
   });
 });
 
+describe("repositories", () => {
+  test("a chat cannot write or read a repository's files, and a repository added later is covered at the next reply", async () => {
+    const r = await rig();
+    const id = await r.open("default");
+    const repository = join(r.root, "repository");
+    await r.store.put("repo", "repository", { path: repository, name: "repository" }, "test");
+    await r.say(id, "hi");
+    await r.reply(id);
+    const access = accessOf(r.calls[0]?.access);
+    const cwd = join(r.home, "assistant");
+    const home = join(r.root, "user");
+    for (const call of [
+      { tool: "write", input: { path: join(repository, "src", "file.ts") } },
+      { tool: "bash", input: { command: `cd ${repository} && printf x > src/file` } },
+      { tool: "bash", input: { command: `printf x > ${repository}/src/file` } },
+    ]) {
+      expect(match(access, { ...call, cwd }, { home }).allow).toBe(false);
+    }
+  });
+});
+
 describe("assistant:chat", () => {
   test("opens a chat of the chat plugin with the profile as its parent", async () => {
     const r = await rig();

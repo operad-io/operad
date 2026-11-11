@@ -29,6 +29,7 @@ import {
   PROFILE_TYPE,
   ProfileError,
   readProfiles,
+  repositoryPaths,
   resolveProfile,
   type ResolvedProfile,
 } from "./profile.ts";
@@ -62,10 +63,11 @@ export async function syncProfiles(
   fallback: Readonly<Record<string, JsonValue>>,
 ): Promise<void> {
   const written = readProfiles(home, fallback);
+  const repositories = await repositoryPaths(store);
   for (const [name, settings] of Object.entries(written)) {
     let data: Record<string, JsonValue>;
     try {
-      data = { ...rowOf(resolveProfile(home, name, settings)), removed: false };
+      data = { ...rowOf(resolveProfile(home, name, settings, repositories)), removed: false };
     } catch (error) {
       if (!(error instanceof ProfileError)) throw error;
       data = { name, removed: false, problem: error.message };
@@ -103,7 +105,7 @@ export interface OpenChat {
 export async function openChat(input: OpenChat): Promise<string> {
   const written = readProfiles(input.home, input.settings)[input.profile];
   if (written === undefined) throw new ProfileError(`there is no profile "${input.profile}"`);
-  const profile = resolveProfile(input.home, input.profile, written);
+  const profile = resolveProfile(input.home, input.profile, written, await repositoryPaths(input.store));
   const harness = input.harness ?? profile.harness ?? input.harnesses[0];
   if (harness === undefined) {
     throw new ProfileError("no harness is loaded; load one to chat with the assistant");
@@ -188,7 +190,7 @@ export async function runProfile(ctx: StepContext, params: unknown): Promise<Plu
     if (written === undefined) {
       return { result: "failed", data: { message: `profile "${name}" is no longer in the settings` } };
     }
-    const profile = resolveProfile(ctx.home, name, written);
+    const profile = resolveProfile(ctx.home, name, written, await repositoryPaths(ctx.store));
     mkdirSync(profile.cwd, { recursive: true });
     return {
       result: "done",

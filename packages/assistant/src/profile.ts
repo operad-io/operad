@@ -13,6 +13,7 @@ import {
   prepareSettings,
   type ActionArgsSchema,
   type JsonValue,
+  type ObjectStore,
 } from "@operad-io/engine";
 
 /** The object type of a profile. */
@@ -221,8 +222,15 @@ function appended(base: JsonValue | undefined, extra: unknown): JsonValue[] {
 }
 
 /** The access profile of a profile: the default, tightened by what the profile adds. */
-export function accessFor(home: string, settings: ProfileSettings): Record<string, JsonValue> {
+export function accessFor(
+  home: string,
+  settings: ProfileSettings,
+  repositories: readonly string[] = [],
+): Record<string, JsonValue> {
   const access = defaultAccess(home);
+  // A repository is reached through operad's tools (dev's verbs), never by
+  // touching its files, so its path is denied to the agent.
+  access.denyPaths = appended(access.denyPaths, repositories);
   const own = settings.access ?? {};
   for (const field of ["denyPaths", "denyCommands", "askCommands", "askPaths"] as const) {
     access[field] = appended(access[field], own[field]);
@@ -265,11 +273,26 @@ export function workingDirectory(home: string, name: string, settings: ProfileSe
   return cwd;
 }
 
+/** The paths of the repositories dev knows, from the object store. */
+export async function repositoryPaths(store: ObjectStore): Promise<string[]> {
+  const found: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await store.list("repo", { ...(cursor === undefined ? {} : { cursor }) });
+    for (const object of page.objects) {
+      if (typeof object.data.path === "string" && object.data.path.length > 0) found.push(object.data.path);
+    }
+    cursor = page.next;
+  } while (cursor !== undefined);
+  return found;
+}
+
 /** One profile as a chat uses it now; the working directory is not created here. */
 export function resolveProfile(
   home: string,
   name: string,
   settings: ProfileSettings,
+  repositories: readonly string[] = [],
 ): ResolvedProfile {
   const cwd = workingDirectory(home, name, settings);
   return {
@@ -277,6 +300,6 @@ export function resolveProfile(
     cwd,
     harness: settings.harness ?? null,
     skills: skillDirectories(settings, cwd),
-    access: accessFor(home, settings),
+    access: accessFor(home, settings, repositories),
   };
 }
