@@ -864,3 +864,9 @@ the row fields.
 | T-0297-M7 | packages/dev/src/check.ts | the init check used a git runner of its own that did not ask again after an empty success | `dev init check > an empty answer from the remote query is asked again` |
 | T-0291-M1 | packages/dev/src/schedule.ts | auto merge answered a human-stage wait whose check had failed | `dev scheduling > auto merge answers the wait of a configured human stage in a flow without review` |
 | T-0291-M2 | packages/dev/src/schedule.ts | auto merge answered a wait after a later review had failed, taking it for the human stage | `dev scheduling > auto merge answers a human stage that a later review follows, until that review has run` |
+
+## T-0278 — the repository chat's harness is a choice
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0278-M1 | packages/dev/src/chat.ts | the harness argument dropped its `enum`, so a free-text name reached the run's refusal instead of the schema | `dev:chat > a harness outside the choice is refused by the schema before the run` |

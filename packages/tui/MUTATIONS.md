@@ -321,3 +321,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0297-M1 | packages/tui/src/app.ts | a live event's bare id was sent as the object request even when a listed row knew its type | `live updates in the shell > an event refetches Pending once per window and only its own row` |
+
+## T-0278 — an optional enum is a choice
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0278-M2 | packages/tui/src/args.ts | optional enums were left out of the form, so the chat's harness choices were never asked | `arguments of an action > an optional enum is a choice that starts unset; an optional text is not asked` |
+| T-0278-M3 | packages/tui/src/actions.ts | an optional pick started on its first option, so Enter sent the static first harness instead of leaving the run's first-loaded default | `arguments of an action > an optional enum is a choice that starts unset; an optional text is not asked` |

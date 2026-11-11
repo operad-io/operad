@@ -4,6 +4,7 @@ import { entryHint, paletteEntries } from "../src/actions.ts";
 import { initialState, reduce, type TuiState, type TuiStateEvent } from "../src/state.ts";
 
 const LEVEL = { type: "string", enum: ["off", "run", "merge"], description: "how far it goes alone" } as const;
+const HARNESS = { type: "string", enum: ["harness-claude", "harness-pi"] } as const;
 const COUNT = { type: "integer", minimum: 1, maximum: 16 } as const;
 const NOTE = { type: "string", role: "note" } as const;
 
@@ -29,14 +30,14 @@ const ACTIONS: readonly ViewAction[] = [
   }),
 ];
 
-function opened(state: string = "run", badge?: string): TuiState {
+function opened(state: string = "run", badge?: string, actions: readonly ViewAction[] = ACTIONS): TuiState {
   const object: ViewObject = {
     id: "item:one",
     type: "item",
     link: "x",
     row: { id: "item:one", title: "One", state, waiting: false, running: false, ...(badge === undefined ? {} : { badge }) },
     sections: [],
-    actions: ACTIONS,
+    actions,
   };
   let s = initialState({ width: 120 });
   s = reduce(s, { type: "types", types: [{ type: "item", title: "Item" }] });
@@ -73,6 +74,34 @@ describe("arguments of an action", () => {
     expect(state.input.fields[0]?.current).toBe(1);
     state = press(state, "j", "enter");
     expect(state.actionRequest).toEqual({ action: "devtest:auto", id: "item:one", args: { level: "merge" } });
+  });
+
+  test("an optional enum is a choice that starts unset; an optional text is not asked", () => {
+    const chat = action("devtest:chat", {
+      args: {
+        type: "object",
+        properties: { harness: HARNESS, title: { type: "string" } },
+        additionalProperties: false,
+      },
+    });
+    const open = (): TuiState =>
+      press(opened("run", undefined, [chat]), ":", ...typeText("devtest:chat"), "enter");
+    const state = open();
+    expect(state.input?.kind).toBe("args");
+    if (state.input?.kind !== "args") return;
+    expect(state.input.fields.map((field) => field.name)).toEqual(["harness"]);
+    expect(state.input.fields[0]?.options.map((o) => o.label)).toEqual(["harness-claude", "harness-pi"]);
+    expect(state.input.cursor).toBe(-1);
+    // Enter without a pick leaves the harness out, so the run uses the first loaded one.
+    expect(press(state, "enter").actionRequest).toEqual({
+      action: "devtest:chat",
+      id: "item:one",
+    });
+    expect(press(open(), "j", "j", "enter").actionRequest).toEqual({
+      action: "devtest:chat",
+      id: "item:one",
+      args: { harness: "harness-pi" },
+    });
   });
 
   test("a row's badge marks the current level, so a plugin that badges its level needs no client code", () => {
