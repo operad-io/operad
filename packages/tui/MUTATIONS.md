@@ -207,7 +207,7 @@ the row fields.
 | T-0127-M2 | packages/tui/src/autostart.ts | a serve of the home that never answers was reported as a start that did not answer | `ensureServer > a child that lost the home lock to a serve that never answers says that serve runs and does not answer` |
 | T-0083-M1 | packages/tui/src/actions.ts | a match at the start of a word got no bonus over a match in the middle | `palette search: query to first entry > "rec" finds ops:reconcile first` |
 | T-0083-M2 | packages/tui/src/actions.ts | the group was not searched | `palette search: query to first entry > a group word keeps only the entries of that group` |
-| T-0083-M3 | packages/tui/src/actions.ts | the recent list put the newest entry last | `palette search: recent entries > an empty query lists the last five used first, the latest first, then the group order` |
+| T-0083-M3 | packages/tui/src/actions.ts | the recent list put the newest entry last | `palette search: recent entries > an empty query keeps the last five used first inside each group, and lists the groups in order` |
 | T-0083-M4 | packages/tui/src/actions.ts | equal scores were listed in reverse order | `palette search: query to first entry > equal scores keep the order the entries were listed in` |
 | T-0083-M5 | packages/tui/src/view/index.ts | the matched characters of the name were not drawn in the accent | `palette search: highlight positions > the matched characters are drawn in the accent colour` |
 | T-0084-M1 | packages/tui/src/state.ts | moving the theme list's cursor did not change the previewed theme | `the theme command: list and keys > moving previews the theme under the cursor, and stops at the ends` |
@@ -275,3 +275,17 @@ the row fields.
 | T-0103-M11 | packages/tui/src/state.ts | an active row took its first `after` parent even when that parent was cancelled, so it hung from a cancelled row instead of drawing top-level | `the progress bar and its heading > an active child of a cancelled parent is drawn top-level before every cancelled row` |
 | T-0160-M3 | packages/tui/src/actions.ts | parsed typed text as JSON even for a string setting | `typed setting text > a string setting keeps text that reads as JSON; other types parse it` |
 | T-0160-M4 | packages/tui/src/state.ts | left the theme list cursor where it was when the list got shorter | `the theme command: list and keys > a theme file removed while the list is open keeps the cursor on a theme` |
+
+## T-0104 — the overlays' and the footer's spacing
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0104-M1 | packages/tui/src/view/index.ts | put no blank line under the palette's input | `the overlays' spacing > the palette at 80 columns has a blank line under the input, a dim group label and aligned columns` |
+| T-0104-M2 | packages/tui/src/view/index.ts | put no blank line between the palette's groups | `the overlays' spacing > the palette at 160 columns has a blank line under the input, a dim group label and aligned columns` |
+| T-0104-M3 | packages/tui/src/view/index.ts | left-aligned the palette's key instead of keeping it at the right edge | `the overlays' spacing > the palette at 80 columns has a blank line under the input, a dim group label and aligned columns` |
+| T-0104-M4 | packages/tui/src/view/index.ts | drew a palette group label in the text colour instead of the weak colour | `the overlays' spacing > the palette at 80 columns has a blank line under the input, a dim group label and aligned columns` |
+| T-0104-M5 | packages/tui/src/view/index.ts | did not pad the key column of the key list | `the overlays' spacing > the key list at 80 columns aligns every key and puts a blank line between groups` |
+| T-0104-M6 | packages/tui/src/view/index.ts | put no blank line between the key list's groups | `the overlays' spacing > the key list at 160 columns aligns every key and puts a blank line between groups` |
+| T-0104-M7 | packages/tui/src/view/index.ts | separated the footer's hints with two spaces instead of ` · ` | `the overlays' spacing > the footer separates hints with a dot, the keys in the text colour and the hints weak` |
+| T-0104-M8 | packages/tui/src/view/index.ts | drew the footer's keys in the weak colour | `the overlays' spacing > the footer separates hints with a dot, the keys in the text colour and the hints weak` |
+| T-0104-M9 | packages/tui/src/actions.ts | listed the recent palette entries across groups instead of grouping them | `palette search: recent entries > an empty query keeps the last five used first inside each group, and lists the groups in order` |

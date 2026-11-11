@@ -2662,50 +2662,107 @@ export function headerText(state: TuiState): string {
   ].join(" · ")}`;
 }
 
-/** The footer for the current screen. */
-export function footerText(state: TuiState): string {
-  let common: string;
+/** One footer hint: its key, when it has one, and what the key does. */
+export interface TuiFooterSegment {
+  readonly key?: string | undefined;
+  readonly hint: string;
+}
+
+/** The footer's hints in reading order; the keys are drawn in the text colour and the rest weak. */
+export function footerSegments(state: TuiState): readonly TuiFooterSegment[] {
+  const segments: TuiFooterSegment[] = [];
+  const add = (key: string | undefined, hint: string): void => {
+    segments.push(key === undefined ? { hint } : { key, hint });
+  };
+  const object = state.object;
+  const main = mainAction(state);
+  if (object !== undefined && main !== undefined) {
+    add(mainKey(state), main.name);
+    if (object.actions.length > 1) add(":", "more");
+  }
   const filtering = filterKeyApplies(state);
-  if (state.object === undefined) {
-    common = `j/k move  enter open  1-9 tab  g/G ends  ${filtering ? "f filter  " : ""}r refresh  ? keys  q quit`;
+  if (object === undefined) {
+    add("j/k", "move");
+    add("enter", "open");
+    add("1-9", "tab");
+    add("g/G", "ends");
+    if (filtering) add("f", "filter");
+    add("r", "refresh");
+    add("?", "keys");
+    add("q", "quit");
   } else if (twoPane(state)) {
     const section = activeSection(state);
     const capped = section !== undefined && section.capped && !section.full;
-    const pages = pagePosition(section) === undefined ? "" : "p pages  n/N page  ";
-    const toggle = state.object?.children === undefined ? "" : `t ${state.childLayout === "tree" ? "list" : "tree"}  `;
-    common = `j/k row  space/b scroll  [ ] section  ${pages}${filtering && !capped ? "f filter" : "f full"}  ${toggle}esc close  ? keys  q quit`;
+    add("j/k", "row");
+    add("space/b", "scroll");
+    add("[ ]", "section");
+    if (pagePosition(section) !== undefined) {
+      add("p", "pages");
+      add("n/N", "page");
+    }
+    add("f", filtering && !capped ? "filter" : "full");
+    if (object.children !== undefined) add("t", state.childLayout === "tree" ? "list" : "tree");
+    add("esc", "close");
+    add("?", "keys");
+    add("q", "quit");
   } else {
-    const pages = pagePosition(activeSection(state)) === undefined ? "" : "p pages  n/N page  ";
-    const toggle = state.object?.children === undefined ? "" : `t ${state.childLayout === "tree" ? "list" : "tree"}  `;
-    common = `j/k scroll  space/b page  g/G ends  [ ] section  ${pages}f full  ${toggle}esc back  ? keys  q quit`;
+    add("j/k", "scroll");
+    add("space/b", "page");
+    add("g/G", "ends");
+    add("[ ]", "section");
+    if (pagePosition(activeSection(state)) !== undefined) {
+      add("p", "pages");
+      add("n/N", "page");
+    }
+    add("f", "full");
+    if (object.children !== undefined) add("t", state.childLayout === "tree" ? "list" : "tree");
+    add("esc", "back");
+    add("?", "keys");
+    add("q", "quit");
   }
-  const main = mainAction(state);
-  const actions =
-    state.object === undefined || main === undefined
-      ? ""
-      : `${mainKey(state) === undefined ? "" : `${mainKey(state)} `}${main.name}${state.object.actions.length > 1 ? "  : more" : ""}  `;
-  return state.keys ? `${actions}${common}  ? closes the key list` : `${actions}${common}`;
+  if (state.keys) add("?", "closes the key list");
+  return segments;
 }
 
-/** Every key the TUI reads, in the order the key list shows them. */
-export const KEY_LIST: readonly (readonly [string, string])[] = [
-  ["1–9", "open that tab (closes the open object)"],
-  ["tab / shift-tab", "next or previous tab"],
-  ["↑↓ / j k", "move the row; on a narrow screen with an object open, scroll it"],
-  ["g / G", "first or last row; on a narrow screen with an object open, its top or bottom"],
-  ["enter", "open the selected row (on a narrow screen); on the open row, move into its list; there, open the row"],
-  ["PgUp PgDn / b space", "scroll the open section a page"],
-  ["Home / End", "top of the open section, or its end (follows a live one)"],
-  ["[ ] / ← →", "the previous or next section"],
-  ["p", "pick a page of the open section (when it has pages)"],
-  ["n / N", "the next or previous page of the open section"],
-  ["f", "load the whole open section when it is capped; otherwise, on a tab with filters, the next filter"],
-  ["t", "switch the child list between tree and list"],
-  ["r", "fetch the lists again"],
-  ["escape / backspace", "close the key list, leave a list inside the open object, return from a row opened there, or close the object"],
-  ["?", "show or hide this key list"],
-  ["q", "quit"],
+/** The footer for the current screen. */
+export function footerText(state: TuiState): string {
+  return footerSegments(state)
+    .map((segment) => (segment.key === undefined ? segment.hint : `${segment.key} ${segment.hint}`))
+    .join(" · ");
+}
+
+/** Groups of keys, shown with a blank line between them. */
+export const KEY_GROUPS: readonly (readonly (readonly [string, string])[])[] = [
+  [
+    ["1–9", "open that tab (closes the open object)"],
+    ["tab / shift-tab", "next or previous tab"],
+  ],
+  [
+    ["↑↓ / j k", "move the row; on a narrow screen with an object open, scroll it"],
+    ["g / G", "first or last row; on a narrow screen with an object open, its top or bottom"],
+    ["enter", "open the selected row (on a narrow screen); on the open row, move into its list; there, open the row"],
+  ],
+  [
+    ["PgUp PgDn / b space", "scroll the open section a page"],
+    ["Home / End", "top of the open section, or its end (follows a live one)"],
+    ["[ ] / ← →", "the previous or next section"],
+  ],
+  [
+    ["p", "pick a page of the open section (when it has pages)"],
+    ["n / N", "the next or previous page of the open section"],
+    ["f", "load the whole open section when it is capped; otherwise, on a tab with filters, the next filter"],
+    ["t", "switch the child list between tree and list"],
+  ],
+  [
+    ["r", "fetch the lists again"],
+    ["escape / backspace", "close the key list, leave a list inside the open object, return from a row opened there, or close the object"],
+    ["?", "show or hide this key list"],
+    ["q", "quit"],
+  ],
 ];
+
+/** Every key the TUI reads, in the order the key list shows them. */
+export const KEY_LIST: readonly (readonly [string, string])[] = KEY_GROUPS.flat();
 
 /** The lines one object takes in a list: two, and the blank line after them. */
 export const ROW_LINES = 3;
