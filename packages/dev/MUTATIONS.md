@@ -845,6 +845,9 @@ the row fields.
 | T-0295-M4 | packages/dev/src/places.ts | the ahead count passed to the task's row was always 0 | `check places are served in the order checks began to wait > a, b, c take places in the order they began to wait, even when c looks first` |
 | T-0295-M5 | packages/dev/src/places.ts | the repository's pool ignored the order | `check places are served in the order checks began to wait > the repository's own pool follows the order too` |
 | T-0295-M6 | packages/dev/src/places.ts | a waiting check reported itself to the kernel without the number of checks ahead of it in the disk order | `check places are served in the order checks began to wait > a waiting check tells the kernel how many are ahead of it in the order` |
+| T-0267-M1 | packages/dev/src/commands.ts | re-broke TK0019-M7 (`task edit`/`task update` looked a task up by its bare id) with the in-process cli tests | `operad with the dev plugin > task edit and update resolve the repository like every other command` (also three more in cli.test.ts) |
+| T-0267-M2 | packages/dev/src/model.ts | re-broke TK0011-M9 (`PLAN_ID`/`TASK_ID` rejected the old `PL`/`TK` form) | `operad with the dev plugin > show and dev:confirm take an old id, and an id is matched exactly` |
+| T-0267-M3 | packages/dev/src/views.ts | re-broke waiting-notices-M8 (`showRepository` always false) | `operad with the dev plugin > lists name the repository once more than one is registered` |
 ## T-0290 — verify checks the branch's current head
 
 | id | file | mutation | failing test |
