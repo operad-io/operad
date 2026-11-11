@@ -320,6 +320,9 @@ function fingerprint(config: OperadConfig, root: string): string {
     .map((path) => {
       try {
         const info = statSync(path);
+        // The writers' own lock opens a sqlite source, which makes an empty
+        // -wal file that is gone again once it closes: empty is the same as none.
+        if (path.endsWith("-wal") && info.size === 0) return `${path} none`;
         return `${path} ${info.size} ${info.mtimeMs}`;
       } catch {
         return `${path} none`;
