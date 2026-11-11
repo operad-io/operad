@@ -222,6 +222,38 @@ describe("the jsonl backend over a large history", () => {
       } finally {
         await reopened.close();
       }
+
+      // A crash left half a line at the end: a new handle rebuilds, and the
+      // rebuilt index is whole, so later calls read nothing of it.
+      fs.appendFileSync(indexPath, "s 00000000-torn");
+      const afterCrash = openLog({ backend: "jsonl", path: join(root, "store") });
+      try {
+        expect((await afterCrash.runs({ active: true })).map((run) => run.runId)).toEqual([live.runId]);
+        expect(fs.readFileSync(indexPath, "utf8").endsWith("\n")).toBe(true);
+        const opened = spyOn(fs, "readdirSync");
+        try {
+          expect(await afterCrash.runs({ active: true })).toHaveLength(1);
+          expect(opened).not.toHaveBeenCalled();
+        } finally {
+          opened.mockRestore();
+        }
+
+        // An index that cannot be opened is no obstacle either.
+        fs.appendFileSync(indexPath, "s 00000000-torn");
+        fs.chmodSync(indexPath, 0o000);
+        try {
+          const unreadable = openLog({ backend: "jsonl", path: join(root, "store") });
+          try {
+            expect((await unreadable.runs({ active: true })).map((run) => run.runId)).toEqual([live.runId]);
+          } finally {
+            await unreadable.close();
+          }
+        } finally {
+          fs.chmodSync(indexPath, 0o644);
+        }
+      } finally {
+        await afterCrash.close();
+      }
     } finally {
       await log.close();
     }

@@ -1154,15 +1154,23 @@ class JsonlLogBackend implements LogBackend {
     }
     const size = Number(stat.size);
     if (size === this.#indexBytes) return this.#activeIds;
-    const fd = openSync(this.#indexPath, "r");
     let chunk: Buffer;
     try {
-      chunk = Buffer.allocUnsafe(size - this.#indexBytes);
-      readAllAtSync(fd, chunk, this.#indexBytes);
-    } finally {
-      closeSync(fd);
+      const fd = openSync(this.#indexPath, "r");
+      try {
+        chunk = Buffer.allocUnsafe(size - this.#indexBytes);
+        readAllAtSync(fd, chunk, this.#indexBytes);
+      } finally {
+        closeSync(fd);
+      }
+    } catch {
+      // An index that cannot be read is built again from the directory.
+      return this.#rebuildActiveUnlocked();
     }
     const end = chunk.lastIndexOf(0x0a) + 1;
+    // Every writer holds the lock, so bytes after the last newline are what a
+    // crash left behind: the index is built again.
+    if (end !== chunk.length) return this.#rebuildActiveUnlocked();
     const lines = chunk.subarray(0, end).toString("utf8").split("\n");
     for (const line of lines) {
       if (line.length === 0) continue;
@@ -1191,12 +1199,19 @@ class JsonlLogBackend implements LogBackend {
       if (ended.has(`${runId}.end`)) lines.push(`e ${runId}\n`);
       else this.#activeIds.add(runId);
     }
-    const temporary = `${this.#indexPath}.tmp`;
-    writeFileSynced(temporary, lines.join(""));
-    renameSync(temporary, this.#indexPath);
-    const stat = statSync(this.#indexPath, { bigint: true });
-    this.#indexIno = stat.ino;
-    this.#indexBytes = Number(stat.size);
+    try {
+      const temporary = `${this.#indexPath}.tmp`;
+      writeFileSynced(temporary, lines.join(""));
+      renameSync(temporary, this.#indexPath);
+      const stat = statSync(this.#indexPath, { bigint: true });
+      this.#indexIno = stat.ino;
+      this.#indexBytes = Number(stat.size);
+    } catch {
+      // The index cannot be written: the set from the directory stands, and
+      // the next call reads the directory again.
+      this.#indexIno = undefined;
+      this.#indexBytes = 0;
+    }
     return this.#activeIds;
   }
 
