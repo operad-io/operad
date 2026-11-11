@@ -519,3 +519,10 @@ test("pushd and popd operands: the directory stack is not tracked, so the direct
   expect(bash(PATHS, "popd && cat ~/.ssh/id_rsa")).toMatchObject({ allow: false, rule: "~/.ssh" });
   expect(bash(PATHS, "pushd /tmp && cat x")).toEqual({ allow: true });
 });
+
+test("an unknown directory covers the command name; pushd -n keeps the directory; $'…' words are read", () => {
+  expect(bash(PATHS, 'pushd "$HOME" && pushd /tmp && pushd +1 && .ssh/id_rsa')).toMatchObject({ allow: false, ask: true, rule: "inline code" });
+  expect(bash({ denyPaths: [".git/config"] }, "pushd -n /tmp && cat .git/config")).toMatchObject({ allow: false, rule: ".git/config" });
+  expect(bash(PATHS, "cat $'/home/u/.ssh/id_rsa'")).toMatchObject({ allow: false, rule: "~/.ssh" });
+  expect(bash(PATHS, "cat $'/home/u/\\x2essh/id_rsa'")).toMatchObject({ allow: false, ask: true, rule: "inline code" });
+});

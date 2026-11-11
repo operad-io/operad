@@ -202,7 +202,7 @@ function expandWord(word: string, home: string): Expanded {
 }
 
 /** The leading `cd`, `pushd` or `popd` of a part and its first operand, as written; "" when it has none. */
-function cdTarget(words: readonly string[]): { readonly name: string; readonly target: string } | undefined {
+function cdTarget(words: readonly string[]): { readonly name: string; readonly target: string; readonly keeps: boolean } | undefined {
   let index = 0;
   while (index < words.length && ASSIGNMENT_WORD.test(words.at(index) ?? "")) index += 1;
   while (words.at(index) === "builtin" || words.at(index) === "command") {
@@ -212,7 +212,8 @@ function cdTarget(words: readonly string[]): { readonly name: string; readonly t
   const name = words.at(index);
   if (name !== "cd" && name !== "pushd" && name !== "popd") return undefined;
   const rest = words.slice(index + 1).filter((word) => word !== "--" && !/^-[LPe@]+$/.test(word));
-  return { name, target: rest.at(0) ?? "" };
+  // `pushd -n` and `popd -n` leave the current directory alone.
+  return { name, target: rest.find((word) => word !== "-n") ?? "", keeps: name !== "cd" && rest.includes("-n") };
 }
 
 const ASSIGNMENT_WORD = /^[A-Za-z_][A-Za-z0-9_]*=/;
@@ -239,7 +240,8 @@ function bashWords(parts: readonly { readonly words: readonly string[] }[], cwd:
     part.words.forEach((word, index) => words.push({ word, next: part.words.at(index + 1), index, dir: here }));
     const found = cdTarget(part.words);
     if (found === undefined) continue;
-    const { name, target } = found;
+    const { name, target, keeps } = found;
+    if (keeps) continue;
     // The directory stack is not tracked: popd, a bare pushd (swap) and pushd +N or -N leave the directory unknown.
     if (name === "popd" || (name === "pushd" && (target === "" || /^[+-][0-9]+$/.test(target)))) {
       dir = undefined;
@@ -266,7 +268,7 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
   const rules = (profile.denyCommands ?? [])
     .map((text) => parseRule(text))
     .filter((rule): rule is Rule => rule !== undefined);
-  const { parts, substitution, extglob } = scan(command);
+  const { parts, substitution, extglob, ansiC } = scan(command);
 
   if ((profile.denyCommands ?? []).length > 0) {
     if (substitution !== undefined) {
@@ -294,8 +296,9 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
     const { words, unresolvedCd } = bashWords(parts, denied.cwd, denied.home);
     let unresolved = unresolvedCd ? "a cd target" : substitution === undefined ? undefined : `a command substitution (${substitution})`;
     if (extglob) unresolved ??= "an extended glob";
+    if (ansiC) unresolved ??= "a $'…' word with escapes";
     for (const { word, index, dir } of words) {
-      if (dir === undefined && index > 0 && !word.startsWith("-") && !expandWord(word, denied.home).text.startsWith("/")) {
+      if (dir === undefined && (index > 0 ? !word.startsWith("-") : word.includes("/")) && !expandWord(word, denied.home).text.startsWith("/")) {
         unresolved ??= `"${word}" after a directory change it cannot follow`;
       }
       for (const reading of readings(word, denied.home)) {

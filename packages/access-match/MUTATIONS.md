@@ -72,3 +72,9 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0282-M4 | packages/access-match/src/index.ts | `pushd +1` was read as a relative directory `+1` instead of leaving the directory unknown | `pushd and popd operands: the directory stack is not tracked, so the directory becomes unknown` |
+
+## T-0282 — rework 6
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0282-M5 | packages/access-match/src/index.ts | `pushd -n` was not recognised, so its operand moved the tracked directory | `an unknown directory covers the command name; pushd -n keeps the directory; $'…' words are read` |
