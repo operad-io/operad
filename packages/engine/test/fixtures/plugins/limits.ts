@@ -77,6 +77,21 @@ export default definePlugin({
       },
     },
     {
+      // Reports that it waits for a place of its own until its place file exists.
+      name: "reported",
+      results: ["ok", "failed", "interrupted"],
+      async run(ctx) {
+        const info = infoOf(ctx.params);
+        const end = await ctx.queued?.("shared place");
+        writeFileSync(join(info.dir, `queued-${info.name}`), "1");
+        await waitForFile(join(info.dir, `place-${info.name}`));
+        await end?.();
+        writeFileSync(join(info.dir, `started-${info.name}`), String(process.pid));
+        await waitForFile(join(info.dir, `gate-${info.name}`));
+        return { result: "ok" };
+      },
+    },
+    {
       name: "outer",
       calls: ["lim/hold"],
       results: ["ok", "failed", "interrupted"],
@@ -91,6 +106,7 @@ export default definePlugin({
     flow("lim-a1", "lim/hold", { key: "a", concurrent: 1 }),
     flow("lim-a2", "lim/hold", { key: "a", concurrent: 2 }),
     flow("lim-b1", "lim/hold", { key: "b", concurrent: 1 }),
+    flow("lim-reported", "lim/reported", {}),
     flow("lim-free", "lim/hold", {}),
     flow("lim-a1-unsafe", "lim/hold", { key: "a", concurrent: 1 }, "unsafe"),
     flow("lim-nested", "lim/outer", { inner: { key: "a", concurrent: 1 } }),

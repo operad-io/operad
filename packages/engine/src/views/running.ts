@@ -19,10 +19,12 @@ export interface RunningItem {
   readonly object: string | null;
   /** The object's row title; null when there is no object or the lookup failed. */
   readonly title: string | null;
-  /** When the current step's current attempt started; null before any step. */
+  /** When the current step's current attempt started running, after any wait for a place; null before any step or while it is queued. */
   readonly stepStartedAt: number | null;
   /** How long that attempt has run; null when `stepStartedAt` is. */
   readonly stepElapsedMs: number | null;
+  /** How long the step's current attempt spent queued for a place, so far or in all; 0 when it did not. */
+  readonly queuedMs?: number;
   /** Set while the step waits for a place under a limit key. */
   readonly queued: { readonly key: string; readonly ahead: number } | null;
   /** The step in words: `queued (<key>, <n> ahead)` while it waits. */
@@ -37,18 +39,45 @@ export interface RunningItem {
 async function readRun(
   log: LogBackend,
   runId: string,
-): Promise<{ state: KernelState; stepStartedAt: number | null }> {
+): Promise<{
+  state: KernelState;
+  stepStartedAt: number | null;
+  queuedMs: number;
+  queuedSince: number | null;
+}> {
   let state = initialState();
   let stepStartedAt: number | null = null;
+  let queuedMs = 0;
+  // Open waits for a place by effect id, and when each began.
+  const queues = new Map<string, number>();
   for await (const fact of log.read(runId)) {
     state = evolve(state, fact);
     // A new step, or a new request for the step (a retry or a recovery),
     // starts the attempt over.
     if (fact.kind === "step_entered" || fact.kind === "effect_requested") {
       stepStartedAt = fact.time;
+      queuedMs = 0;
+      queues.clear();
+    }
+    const payload = fact.payload;
+    const effectId =
+      typeof payload === "object" && payload !== null && !Array.isArray(payload)
+        ? payload.effectId
+        : undefined;
+    if (typeof effectId !== "string") continue;
+    if (fact.kind === "step_queued") {
+      if (!queues.has(effectId)) queues.set(effectId, fact.time);
+    } else if (fact.kind === "step_slot" || fact.kind === "step_released") {
+      // The place was granted or the wait ended: the step runs from now.
+      const since = queues.get(effectId);
+      if (since === undefined) continue;
+      queues.delete(effectId);
+      queuedMs += Math.max(0, fact.time - since);
+      stepStartedAt = fact.time;
     }
   }
-  return { state, stepStartedAt };
+  const queuedSince = queues.size === 0 ? null : Math.min(...queues.values());
+  return { state, stepStartedAt, queuedMs, queuedSince };
 }
 
 /** A run that waits for a person or has ended is not running. */
@@ -132,17 +161,19 @@ export async function listRunning(
     run: (typeof runs)[number];
     state: KernelState;
     stepStartedAt: number | null;
+    queuedMs: number;
+    queuedSince: number | null;
   }[] = [];
 
   for (const run of runs) {
-    const { state, stepStartedAt } = await readRun(log, run.runId);
-    if (!isRunning(state)) continue;
-    live.push({ run, state, stepStartedAt });
+    const read = await readRun(log, run.runId);
+    if (!isRunning(read.state)) continue;
+    live.push({ run, ...read });
   }
 
   const rows = await rowsFor(views, live.map((item) => item.run.object));
   const items: RunningItem[] = [];
-  for (const { run, state, stepStartedAt } of live) {
+  for (const { run, state, stepStartedAt, queuedMs, queuedSince } of live) {
     const waiting = queued.get(run.runId) ?? null;
     const named = rows.get(run.object);
     items.push({
@@ -160,8 +191,15 @@ export async function listRunning(
       title: named === undefined ? null : named.title,
       note: named?.note ?? null,
       ...(named?.mark === undefined ? {} : { mark: named.mark }),
-      stepStartedAt,
-      stepElapsedMs: stepStartedAt === null ? null : Math.max(0, now - stepStartedAt),
+      // While it waits for a place the step has not started running.
+      stepStartedAt: queuedSince === null ? stepStartedAt : null,
+      stepElapsedMs:
+        queuedSince !== null
+          ? 0
+          : stepStartedAt === null
+            ? null
+            : Math.max(0, now - stepStartedAt),
+      queuedMs: queuedMs + (queuedSince === null ? 0 : Math.max(0, now - queuedSince)),
     });
   }
 

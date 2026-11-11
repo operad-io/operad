@@ -562,6 +562,14 @@ the row fields.
 | T-0251-M12 | packages/engine/src/log/jsonl.ts | a runs index cut shorter than what was read was not rebuilt from the directory | `the jsonl backend over a large history > a missing or cut runs index is rebuilt from one read of the directory` |
 | T-0251-M13 | packages/engine/src/log/jsonl.ts | a runs index ending in half a line was accepted instead of rebuilt | `the jsonl backend over a large history > a missing or cut runs index is rebuilt from one read of the directory` |
 | T-0251-M14 | packages/engine/src/log/jsonl.ts | an index that cannot be opened threw instead of falling back to the directory | `the jsonl backend over a large history > a missing or cut runs index is rebuilt from one read of the directory` |
+| T-0239-M1 | packages/engine/src/views/running.ts | the running view did not count the time a step spent queued | `reported waits (memory) > two steps that report a wait show queued with the right ahead, then running` (packages/engine/test/runner/limits.test.ts) |
+| T-0239-M2 | packages/engine/src/plugin/registry.ts | a step got no `ctx.queued`, so a plugin could not report a wait | `reported waits (file) > two steps that report a wait show queued with the right ahead, then running` (packages/engine/test/runner/limits.test.ts) |
+
+## T-0242-history-no-run-id — the History section shows no run id
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0242-history-no-run-id-M1 | packages/engine/src/views/presentation.ts | put `lines.push(`<sub>run ${run.runId}</sub>`)` back at the end of each run in the history section | `presentation > the history of an object with two runs shows no tag and no run id` |
 | T-0244-M1 | packages/engine/src/store-copy/copy.ts | the copy did not compare what a sqlite source holds after the copy with what it held at the snapshot | `store copy > a write to a sqlite source after it was read makes the copy back fail and leaves no target` |
 
 ## T-0240 — rework: multi-line log commands and code spans

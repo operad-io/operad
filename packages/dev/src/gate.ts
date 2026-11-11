@@ -353,7 +353,7 @@ export async function runVerify(
         commands,
         stepOptions(ctx, path),
         rerun,
-        checkPlaces(ctx, context.repository, context.settings.gate.places),
+        checkPlaces(ctx, context.repository, context.settings.gate.places, context.taskKey),
       ),
     limit: context.settings.check.loadLimit,
     signal: ctx.signal,
@@ -1781,7 +1781,7 @@ function stringsOf(value: unknown): readonly string[] | undefined {
 function stageReviewerOf(
   base: ReviewerSettings,
   params: unknown,
-  kind: ReviewKind,
+  laterRound: boolean,
 ): ReviewerSettings {
   const given = (params ?? {}) as {
     readonly use?: unknown;
@@ -1792,7 +1792,7 @@ function stageReviewerOf(
   const args = stringsOf(given.args);
   const later = stringsOf(given.later);
   const first = base.first;
-  return {
+  const stage: ReviewerSettings = {
     ...base,
     ...(use === undefined ? {} : { use }),
     ...(args === undefined
@@ -1805,8 +1805,12 @@ function stageReviewerOf(
     ...(first !== undefined && use !== undefined
       ? { first: { ...first, use, ...(args === undefined ? {} : { args }) } }
       : {}),
-    ...(kind !== "first" && later !== undefined ? { args: later } : {}),
   };
+  if (!laterRound || later === undefined) return stage;
+  // `later` is the task's second round on: it replaces the first-review
+  // arguments too, which a rework's first review of an attempt would keep.
+  const { firstArgs: _firstArgs, first: _first, ...rest } = stage;
+  return { ...rest, args: later };
 }
 
 /** Step `dev/review`: have the reviewer read the verified commit's diff. */
@@ -2095,7 +2099,11 @@ export async function runReview(
   // settings, even when the followed commit is missing and it reads like a first.
   used = reviewSettingsOf(
     kind === "first" && history.length > 0 ? "rework" : kind,
-    stageReviewerOf(context.settings.reviewer, ctx.params, kind),
+    stageReviewerOf(
+      context.settings.reviewer,
+      ctx.params,
+      kind !== "first" || history.length > 0,
+    ),
     reviews === 0,
   );
   // The lines the task's own change added, for the pre-existing rules.
