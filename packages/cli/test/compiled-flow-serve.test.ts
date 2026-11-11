@@ -28,6 +28,31 @@ const CLI_ENTRY = fileURLToPath(new URL("../bin/operad.ts", import.meta.url));
 const FAKE_HARNESS = fileURLToPath(new URL("./fixtures/fake-harness.ts", import.meta.url));
 const ENGINE = fileURLToPath(new URL("../../engine/src/index.ts", import.meta.url));
 
+
+function allFiles(directory: string, prefix = ""): string[] {
+  const paths: string[] = [];
+  let names: string[] = [];
+  try {
+    names = readdirSync(directory).sort();
+  } catch {
+    return paths;
+  }
+  for (const name of names) {
+    if (name === ".git") continue;
+    const path = join(directory, name);
+    const shown = prefix === "" ? name : `${prefix}/${name}`;
+    try {
+      if (readdirSync(path).length >= 0) {
+        paths.push(...allFiles(path, shown));
+        continue;
+      }
+    } catch {
+      paths.push(shown);
+    }
+  }
+  return paths;
+}
+
 interface RunResult {
   readonly code: number;
   readonly out: string;
@@ -320,7 +345,8 @@ async function runFlow(
     );
   } catch (error) {
     const seen = existsSync(output) ? readFileSync(output, "utf8") : "";
-    throw new Error(`${error instanceof Error ? error.message : String(error)}\n${seen}`);
+    const files = allFiles(prepared.root).filter((path) => path.includes("flow") || path.includes("store"));
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\n${seen}\nfiles: ${files.join(", ")}`);
   } finally {
     await stop();
   }
