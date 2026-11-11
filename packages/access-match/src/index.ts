@@ -251,7 +251,7 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
   const rules = (profile.denyCommands ?? [])
     .map((text) => parseRule(text))
     .filter((rule): rule is Rule => rule !== undefined);
-  const { parts, substitution } = scan(command);
+  const { parts, substitution, extglob } = scan(command);
 
   if ((profile.denyCommands ?? []).length > 0) {
     if (substitution !== undefined) {
@@ -278,6 +278,7 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
   if (denied !== undefined) {
     const { words, unresolvedCd } = bashWords(parts, denied.cwd, denied.home);
     let unresolved = unresolvedCd ? "a cd target" : substitution === undefined ? undefined : `a command substitution (${substitution})`;
+    if (extglob) unresolved ??= "an extended glob";
     for (const { word, dir } of words) {
       for (const reading of readings(word, denied.home)) {
         const expanded = expandWord(reading, denied.home);
