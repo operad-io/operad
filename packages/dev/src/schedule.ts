@@ -45,6 +45,7 @@ import {
   reopenTask,
   releaseTaskClaim,
 } from "./service.ts";
+import { loadProjectFlows, PROJECT_FLOWS_DIR } from "./project-flows.ts";
 import { collectFollowups } from "./followups.ts";
 import { missingPlugins } from "./standing.ts";
 import {
@@ -88,21 +89,26 @@ interface StartFlow {
 interface RepositoryFlows {
   readonly named: ReadonlyMap<string, StartFlow>;
   readonly fallback: StartFlow;
+  /** Names dev refused, each with the reason. */
+  readonly refused: ReadonlyMap<string, string>;
 }
 
 /**
  * Declares every flow the repository sets. A repository that writes no `flows`
  * runs the built-in `dev` flow, so its old runs and tests keep their ids.
  */
-function declareRepositoryFlows(
+async function declareRepositoryFlows(
   ctx: TickContext,
-  repository: string,
+  repository: RepositoryData,
   settings: DevSettings,
-): RepositoryFlows {
+): Promise<RepositoryFlows> {
   const named = new Map<string, StartFlow>();
   let fallback: StartFlow = { name: DEFAULT_FLOW_NAME };
+  const project = await loadProjectFlows(repository.path, repository.name, settings);
+  const refused = new Map(project.refused);
   for (const [flowName, spec] of Object.entries(settings.flows)) {
-    const name = flowNameFor(repository, flowName, spec);
+    if (refused.has(flowName)) continue;
+    const name = flowNameFor(repository.name, flowName, spec);
     const start = {
       name,
       graph: compileDevFlow(name, spec.stages, { gradingName: flowName }),
@@ -111,8 +117,22 @@ function declareRepositoryFlows(
     named.set(flowName, start);
     if (flowName === "default") fallback = start;
   }
+  for (const [flowName, graph] of project.flows) {
+    try {
+      ctx.declareFlow(graph);
+    } catch (error) {
+      refused.set(
+        flowName,
+        `${PROJECT_FLOWS_DIR}/${flowName}.flow.ts: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      continue;
+    }
+    const start = { name: graph.name, graph };
+    named.set(flowName, start);
+    if (flowName === "default") fallback = start;
+  }
   named.set("default", fallback);
-  return { named, fallback };
+  return { named, fallback, refused };
 }
 
 /** The repository flow a task starts with, or undefined when it names none. */
@@ -120,18 +140,26 @@ function flowFor(
   flows: RepositoryFlows,
   name: string | undefined,
 ): StartFlow | undefined {
-  return flows.named.get(name ?? "default");
+  const wanted = name ?? "default";
+  if (flows.refused.has(wanted)) return undefined;
+  return flows.named.get(wanted);
 }
 
 /** What the scheduler last said about a task whose flow name is unknown. */
 const reportedFlowProblems = new Map<string, string>();
 
 /** Says once per task and name that its flow is not in dev.json. */
-function reportFlowProblem(id: string, name: string | undefined): void {
+function reportFlowProblem(
+  id: string,
+  name: string | undefined,
+  refused?: string,
+): void {
   const wanted = name ?? "default";
   if (reportedFlowProblems.get(id) === wanted) return;
   reportedFlowProblems.set(id, wanted);
-  writeSchedulerLine(`${bareId(id)} ready -> ready (no flow "${wanted}" in dev.json)`);
+  writeSchedulerLine(
+    `${bareId(id)} ready -> ready (${refused ?? `no flow "${wanted}" in dev.json`})`,
+  );
 }
 
 /** Re-declares the graph every task started with, so a fresh process resumes it. */
@@ -436,7 +464,7 @@ async function reconcileTaskRuns(
         ? { name: task.flowName, graph: task.flowGraph }
         : flowFor(flows, requested);
     if (selected === undefined) {
-      reportFlowProblem(object.id, requested);
+      reportFlowProblem(object.id, requested, flows.refused.get(requested ?? "default"));
       continue;
     }
     if ((await reopenTask(ctx.store, object.id)) === undefined) continue;
@@ -506,7 +534,7 @@ async function scheduleRepository(
   // Compile every repository flow once; a start records its graph on the task,
   // and a graph recorded there is declared again below so a fresh process
   // resumes a running attempt on the graph it started with.
-  const flows = declareRepositoryFlows(ctx, repository.name, settings);
+  const flows = await declareRepositoryFlows(ctx, repository, settings);
   declareStoredFlows(ctx, initialTasks);
 
   // Repair a run that ended without an edge, or one whose phase was left
@@ -662,7 +690,7 @@ async function scheduleRepository(
         const requested = task.flow ?? plan.flow;
         const selected = flowFor(flows, requested);
         if (selected === undefined) {
-          reportFlowProblem(object.id, requested);
+          reportFlowProblem(object.id, requested, flows.refused.get(requested ?? "default"));
           continue;
         }
         if (
@@ -690,7 +718,7 @@ async function scheduleRepository(
         const requested = taskData(pick.data).flow ?? plan.flow;
         const selected = flowFor(flows, requested);
         if (selected === undefined) {
-          reportFlowProblem(pick.id, requested);
+          reportFlowProblem(pick.id, requested, flows.refused.get(requested ?? "default"));
           failed.add(pick.id);
           continue;
         }
@@ -813,7 +841,9 @@ async function scheduleRepository(
       task.phase === "ready" && task.flowName === undefined && flowFor(flows, requested) === undefined;
     await setFlowNote(ctx.store, object.id, {
       shown: flows.named.size > 1 ? requested : undefined,
-      held: missing ? `flow ${requested} is not defined in .operad/dev.json` : undefined,
+      held: missing
+        ? (flows.refused.get(requested) ?? `flow ${requested} is not defined in .operad/dev.json`)
+        : undefined,
     });
   }
 
