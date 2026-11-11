@@ -11,6 +11,8 @@ export interface Claim {
   readonly ownLimit: number;
   readonly home: string;
   readonly homeLimit: number | undefined;
+  /** Who takes the place, so a waiter can say who holds it (a task id). */
+  readonly holder?: string | undefined;
 }
 
 /** What `claim` answers: a place held for claim `index`, or what is full. */
@@ -20,6 +22,8 @@ export type ClaimResult =
       readonly kind: "blocked";
       /** For each claim, the count that is full. */
       readonly full: readonly ("flow" | "home")[];
+      /** For each claim, who holds the places of the count that is full. */
+      readonly holders: readonly (readonly string[])[];
       /** Pass to `changed`: a release after it wakes the waiter. */
       readonly stamp: number;
     };
@@ -37,6 +41,7 @@ export interface Places {
 
 export class PlaceBook implements Places {
   private readonly held = new Map<string, number>();
+  private readonly labels = new Map<string, string[]>();
   private version = 0;
   private readonly listeners = new Set<() => void>();
 
@@ -52,13 +57,16 @@ export class PlaceBook implements Places {
 
   claim(claims: readonly Claim[]): Promise<ClaimResult> {
     const full: ("flow" | "home")[] = [];
+    const holders: (readonly string[])[] = [];
     for (const [index, claim] of claims.entries()) {
       if (!this.hasRoom(claim.own, claim.ownLimit)) {
         full.push("flow");
+        holders.push(this.labels.get(claim.own) ?? []);
       } else if (!this.hasRoom(claim.home, claim.homeLimit)) {
         full.push("home");
+        holders.push(this.labels.get(claim.home) ?? []);
       } else {
-        const give = this.take([claim.own, claim.home]);
+        const give = this.take([claim.own, claim.home], claim.holder);
         return Promise.resolve({
           kind: "taken",
           index,
@@ -69,12 +77,15 @@ export class PlaceBook implements Places {
         });
       }
     }
-    return Promise.resolve({ kind: "blocked", full, stamp: this.version });
+    return Promise.resolve({ kind: "blocked", full, holders, stamp: this.version });
   }
 
   /** Holds one place under each key and returns the call that gives them back. */
-  take(keys: readonly string[]): () => void {
-    for (const key of keys) this.held.set(key, this.used(key) + 1);
+  take(keys: readonly string[], holder?: string): () => void {
+    for (const key of keys) {
+      this.held.set(key, this.used(key) + 1);
+      if (holder !== undefined) this.labels.set(key, [...(this.labels.get(key) ?? []), holder]);
+    }
     let released = false;
     return () => {
       if (released) return;
@@ -83,6 +94,13 @@ export class PlaceBook implements Places {
         const left = this.used(key) - 1;
         if (left <= 0) this.held.delete(key);
         else this.held.set(key, left);
+        if (holder !== undefined) {
+          const rest = [...(this.labels.get(key) ?? [])];
+          const at = rest.indexOf(holder);
+          if (at >= 0) rest.splice(at, 1);
+          if (rest.length === 0) this.labels.delete(key);
+          else this.labels.set(key, rest);
+        }
       }
       this.version += 1;
       for (const listener of [...this.listeners]) listener();

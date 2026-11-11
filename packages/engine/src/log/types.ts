@@ -35,6 +35,8 @@ export interface Fact extends NewFact {
 export interface GlobalFact extends NewFact {
   readonly seq: number;
   readonly time: number;
+  /** The key `appendGlobal` was given, when it was given one. */
+  readonly uniqueKey?: string;
 }
 
 export interface RunInfo {
@@ -79,6 +81,12 @@ export interface InputOutcome {
   readonly time: number;
 }
 
+/** Inputs read after a position, with the position that continues the read. */
+export interface InputsAfter {
+  readonly inputs: readonly InputRecord[];
+  readonly position: number;
+}
+
 export interface RecordOutcomeResult {
   readonly duplicate: boolean;
   readonly outcome: InputOutcome;
@@ -96,6 +104,11 @@ export interface RunsOptions {
 export interface LogBackendOptions extends FollowOptions {
   /** The clock every stored time comes from. Defaults to `Date.now`. */
   readonly clock?: () => number;
+  /**
+   * Makes the id of each new run. Defaults to a random UUID. A copy of a log
+   * passes the ids of the runs it copies.
+   */
+  readonly runId?: () => string;
   /**
    * How often an open subscription re-reads storage for another process's
    * write, in milliseconds. Defaults to 500. The watch is the fast path; this
@@ -179,6 +192,18 @@ export interface LogBackend extends Partial<LogSubscription> {
   readGlobal(): AsyncIterable<GlobalFact>;
   /** Stream every recorded input, oldest first. */
   readInputs(): AsyncIterable<InputRecord>;
+  /**
+   * The inputs recorded after a position, oldest first, and the position to
+   * ask from next time. Position 0 is the start. A caller that remembers the
+   * position reads only what is new, so its cost follows what changed.
+   */
+  readInputsAfter(position: number): Promise<InputsAfter>;
+  /** One input by id, or undefined. */
+  findInput(inputId: string): Promise<InputRecord | undefined>;
+  /** The outcome stored for `(inputId, kind)`, or undefined. */
+  readOutcome(inputId: string, kind: string): Promise<InputOutcome | undefined>;
+  /** The outcomes with a sequence above `seq`, in order. */
+  readOutcomesAfter(seq: number): Promise<InputOutcome[]>;
   /**
    * Record the kernel's outcome for an input. A repeated `(inputId, kind)` is
    * a duplicate: `duplicate` is true, nothing is written, and the stored

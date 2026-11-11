@@ -2,7 +2,9 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { anchoredPattern, rerunCommand } from "../../packages/dev/src/rerun.ts";
 
 const script = join(import.meta.dir, "..", "remote-check.sh");
 const roots: string[] = [];
@@ -66,8 +68,9 @@ function setup(): { root: string; local: string; home: string; env: Record<strin
   };
 }
 
-async function run(local: string, env: Record<string, string>, command: string) {
-  const child = Bun.spawn(["bash", join(local, "scripts", "remote-check.sh"), command], {
+async function run(local: string, env: Record<string, string>, command: string, ...words: string[]) {
+  const args = words.length > 0 ? ["--", command, ...words] : [command];
+  const child = Bun.spawn(["bash", join(local, "scripts", "remote-check.sh"), ...args], {
     cwd: local,
     env: { ...process.env, ...env },
     stdin: "ignore",
@@ -149,6 +152,214 @@ describe("remote-check.sh", () => {
       // line nobody reads is dropped with the fifo.
       await Bun.spawn(["sh", "-c", `exec 3<>'${release}'; echo go >&3`], { stdin: "ignore" }).exited;
       await first;
+    }
+  });
+
+  describe("slots and the integration lane", () => {
+    /** Starts a check that reports its tree, then blocks until `release` is written. */
+    function blocker(local: string, env: Record<string, string>, root: string, name: string) {
+      const started = join(root, `${name}-started`);
+      const release = join(root, `${name}-release`);
+      spawnSync("mkfifo", [started, release]);
+      const done = run(local, env, `pwd -P > '${started}'; read -r _ < '${release}'; touch '${join(root, `${name}-ended`)}'`);
+      return {
+        done,
+        started: async () => {
+          const out = Bun.spawn(["cat", started], { stdin: "ignore", stdout: "pipe" });
+          return (await new Response(out.stdout).text()).trim();
+        },
+        release: () =>
+          Bun.spawn(["sh", "-c", `exec 3<>'${release}'; echo go >&3`], { stdin: "ignore" }).exited,
+      };
+    }
+
+    test("with two slots two checks run at once in different trees and a third waits", async () => {
+      const { root, local, home, env } = setup();
+      const e = { ...env, OPERAD_CHECK_SLOTS: "2" };
+      const a = blocker(local, e, root, "a");
+      const b = blocker(local, e, root, "b");
+      try {
+        const [ta, tb] = await Promise.all([a.started(), b.started()]);
+        expect(new Set([ta, tb]).size).toBe(2);
+        expect([ta, tb].map((t) => realpathSync(t)).sort()).toEqual(
+          [join(home, "Code", "operad"), join(home, "Code", "operad-slot2")].map((t) => realpathSync(t)).sort(),
+        );
+        const seen = join(root, "third-saw");
+        // The third check records how many holders had ended when it ran.
+        const third = run(local, e, `ls '${root}' | grep -c -- '-ended$' > '${seen}'; true`);
+        await a.release();
+        expect((await third).code).toBe(0);
+        // It ran only after a holder ended, so it was waiting for a slot.
+        expect(Number(readFileSync(seen, "utf8").trim())).toBeGreaterThanOrEqual(1);
+        expect((await a.done).code).toBe(0);
+      } finally {
+        await a.release();
+        await b.release();
+        await Promise.all([a.done, b.done]);
+      }
+    });
+
+    test("with every task slot taken an integration check runs at once, in its own tree", async () => {
+      const { root, local, home, env } = setup();
+      const e = { ...env, OPERAD_CHECK_SLOTS: "2" };
+      const a = blocker(local, e, root, "a");
+      const b = blocker(local, e, root, "b");
+      try {
+        const [ta, tb] = await Promise.all([a.started(), b.started()]);
+        const result = await run(local, { ...e, OPERAD_CHECK_LANE: "integration" }, "pwd -P");
+        expect(result.code).toBe(0);
+        const tree = result.out.trim().split("\n").pop() ?? "";
+        expect(realpathSync(tree)).toBe(realpathSync(join(home, "Code", "operad-integration")));
+        expect([ta, tb]).not.toContain(realpathSync(tree));
+      } finally {
+        await a.release();
+        await b.release();
+        await Promise.all([a.done, b.done]);
+      }
+    });
+
+    test("a task check never takes the integration slot, and a second integration waits for the first", async () => {
+      const { root, local, env } = setup();
+      const lane = { ...env, OPERAD_CHECK_SLOTS: "2", OPERAD_CHECK_LANE: "integration" };
+      const first = blocker(local, lane, root, "i1");
+      try {
+        await first.started();
+        const seen = join(root, "second-saw");
+        const second = run(local, lane, `echo ran > '${seen}'`);
+        // A task check is not held back by the integration check.
+        const task = await run(local, { ...env, OPERAD_CHECK_SLOTS: "2" }, "true");
+        expect(task.code).toBe(0);
+        await first.release();
+        expect((await second).code).toBe(0);
+        expect(readFileSync(seen, "utf8").trim()).toBe("ran");
+        expect((await first.done).code).toBe(0);
+      } finally {
+        await first.release();
+        await first.done;
+      }
+    });
+
+    test("a second integration check does not start while the first runs", async () => {
+      const { root, local, env } = setup();
+      const lane = { ...env, OPERAD_CHECK_LANE: "integration" };
+      const started = join(root, "i1-started");
+      const release = join(root, "i1-release");
+      const ended = join(root, "i1-ended");
+      const seen = join(root, "i2-saw");
+      spawnSync("mkfifo", [started, release]);
+      const first = run(local, lane, `echo s > '${started}'; read -r _ < '${release}'; touch '${ended}'`);
+      try {
+        await readFifo(started);
+        const second = run(local, lane, `if [ -f '${ended}' ]; then echo after > '${seen}'; else echo during > '${seen}'; fi`);
+        await Bun.spawn(["sh", "-c", `echo go > '${release}'`], { stdin: "ignore" }).exited;
+        expect((await first).code).toBe(0);
+        expect((await second).code).toBe(0);
+        expect(readFileSync(seen, "utf8").trim()).toBe("after");
+      } finally {
+        await Bun.spawn(["sh", "-c", `exec 3<>'${release}'; echo go >&3`], { stdin: "ignore" }).exited;
+        await first;
+      }
+    });
+
+    test("the command sees OPERAD_CHECK_SLOTS on the host", async () => {
+      const { local, env } = setup();
+      const result = await run(local, { ...env, OPERAD_CHECK_SLOTS: "3" }, 'echo "slots=$OPERAD_CHECK_SLOTS"');
+      expect(result.out).toContain("slots=3");
+    });
+
+    for (const bad of ["0", "x", "-1", "1.5", "", "12x"]) {
+      test(`OPERAD_CHECK_SLOTS='${bad}' stops with a message naming the variable`, async () => {
+        const { local, env } = setup();
+        const result = await run(local, { ...env, OPERAD_CHECK_SLOTS: bad }, "echo ran");
+        expect(result.code).toBe(1);
+        expect(result.err).toContain("OPERAD_CHECK_SLOTS");
+        expect(result.out).not.toContain("ran");
+      });
+    }
+
+    test("a bad OPERAD_CHECK_LANE stops with a message naming the variable", async () => {
+      const { local, env } = setup();
+      const result = await run(local, { ...env, OPERAD_CHECK_LANE: "fast" }, "echo ran");
+      expect(result.code).toBe(1);
+      expect(result.err).toContain("OPERAD_CHECK_LANE");
+      expect(result.out).not.toContain("ran");
+    });
+
+    test("a bad OPERAD_CHECK_SLOTS or OPERAD_CHECK_LANE stops the check even with no host", async () => {
+      const { local, env } = setup();
+      for (const bad of [{ OPERAD_CHECK_SLOTS: "0" }, { OPERAD_CHECK_LANE: "fast" }]) {
+        const result = await run(local, { ...env, OPERAD_CHECK_HOST: "", ...bad }, "echo ran");
+        expect(result.code).toBe(1);
+        expect(result.err).toContain(Object.keys(bad)[0] ?? "");
+        expect(result.out).not.toContain("ran");
+      }
+    });
+
+    test("an empty OPERAD_CHECK_LANE stops with a message naming the variable", async () => {
+      const { local, env } = setup();
+      for (const host of ["fake", ""]) {
+        const result = await run(local, { ...env, OPERAD_CHECK_HOST: host, OPERAD_CHECK_LANE: "" }, "echo ran");
+        expect(result.code).toBe(1);
+        expect(result.err).toContain("OPERAD_CHECK_LANE");
+        expect(result.out).not.toContain("ran");
+      }
+    });
+  });
+});
+
+describe("remote-check.sh > the -- form", () => {
+  test("a word with quotes, backquotes, $ and a regex arrives byte for byte and is not run", async () => {
+    const { root, local, home, env } = setup();
+    const nasty = `it's "q" \`touch ${root}/pwned1\` $(touch ${root}/pwned2) $HOME ${anchoredPattern("a > b (c) [d] 'e' \`f\`")}`;
+    const got = join(root, "got");
+    const result = await run(local, env, "bash", "-c", `printf %s "$1" > '${got}'; exit 5`, "x", nasty);
+    expect(result.code).toBe(5);
+    expect(readFileSync(got, "utf8")).toBe(nasty);
+    expect(existsSync(join(root, "pwned1"))).toBe(false);
+    expect(existsSync(join(root, "pwned2"))).toBe(false);
+  });
+
+  test("without a host the words run here as they are", async () => {
+    const { root, local } = setup();
+    const got = join(root, "got-local");
+    const nasty = "a'b\"c`d`$e";
+    const result = await run(local, { OPERAD_CHECK_HOST: "" }, "bash", "-c", `printf %s "$1" > '${got}'`, "x", nasty);
+    expect(result.code).toBe(0);
+    expect(readFileSync(got, "utf8")).toBe(nasty);
+  });
+
+  test("the committed dev.json rerun goes through remote-check.sh and finds the test", async () => {
+    const { root, local, env } = setup();
+    const name = "it `works` isn't broken";
+    mkdirSync(join(local, "t"), { recursive: true });
+    writeFileSync(
+      join(local, "t", "x.test.ts"),
+      `import { test } from "bun:test";\ntest(${JSON.stringify(name)}, () => {});\n`,
+    );
+    git(local, "add", ".");
+    git(local, "commit", "-q", "-m", "test file");
+    const config = JSON.parse(readFileSync(join(import.meta.dir, "..", "..", ".operad", "dev.json"), "utf8"));
+    const templates: string[] = [
+      config.gate.commands[0].failed.rerun,
+      config.integration.keyCommands[0].failed.rerun,
+    ];
+    for (const template of templates) {
+      const command = rerunCommand(template, name);
+      const child = Bun.spawn(["bash", "-c", command], {
+        cwd: local,
+        env: { ...process.env, ...env },
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [out, err, code] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ]);
+      expect(`${out}${err}`).toContain("remote-check: checking");
+      expect(`${out}${err}`).toContain("1 pass");
+      expect(code).toBe(0);
     }
   });
 });

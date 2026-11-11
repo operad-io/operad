@@ -17,6 +17,7 @@ import {
   type ActionArgsSchema,
   type ProjectSettingsDeclaration,
   type ActionContext,
+  type ActionEvent,
   type ActionRun,
   type ActionRunOptions,
   type ActionTypeDefinition,
@@ -111,7 +112,9 @@ export interface PluginRegistryOptions {
       ) => MaybePromise<void>)
     | undefined;
   /** Cancels one run when a plugin action asks; the kernel writes the input. */
-  readonly onCancelRun?: ((runId: string) => MaybePromise<void>) | undefined;
+  readonly onCancelRun?:
+    | ((runId: string, flow?: FlowDefinition) => MaybePromise<void>)
+    | undefined;
   /** The specifier each definition was loaded from, aligned with it. */
   readonly sources?: readonly (string | undefined)[] | undefined;
   /** The raw config section of each plugin, keyed by plugin name. */
@@ -124,6 +127,11 @@ export interface PluginRegistryOptions {
   readonly validateSettings?: boolean | undefined;
   /** The routing rules, given to source plugins. */
   readonly rules?: readonly TriggerRule[] | undefined;
+  /**
+   * Called when an action sends an event with `ctx.emit`: the kernel routes it
+   * through the rules. Without it an action has no `emit`.
+   */
+  readonly onEvent?: ((event: TriggerEvent) => MaybePromise<void>) | undefined;
   /** Called when a source plugin sends an event. */
   readonly onSourceEvent?:
     | ((event: TriggerEvent, plugin: string) => MaybePromise<void>)
@@ -199,9 +207,10 @@ export class PluginRegistry {
       ) => MaybePromise<void>)
     | undefined;
   private readonly onCancelRun:
-    | ((runId: string) => MaybePromise<void>)
+    | ((runId: string, flow?: FlowDefinition) => MaybePromise<void>)
     | undefined;
   private readonly rules: readonly TriggerRule[];
+  private readonly onEvent: ((event: TriggerEvent) => MaybePromise<void>) | undefined;
   private readonly onSourceEvent:
     | ((event: TriggerEvent, plugin: string) => MaybePromise<void>)
     | undefined;
@@ -241,6 +250,7 @@ export class PluginRegistry {
     this.onCancelRun = options.onCancelRun;
     this.rules = options.rules ?? [];
     this.onSourceEvent = options.onSourceEvent;
+    this.onEvent = options.onEvent;
 
     const clock = options.clock ?? (() => Date.now());
     this.store =
@@ -814,6 +824,9 @@ export class PluginRegistry {
           `step "${use}": emit: type "${event.type}" must begin with "${found.plugin.name}."`,
         );
       }
+      // The step that started this one may watch its events; it does not
+      // replace the destination.
+      await options.observe?.(found.plugin.name, event);
       if (options.emit === undefined) {
         throw new PluginError(
           `step "${use}": emit: no event destination is configured`,
@@ -1047,6 +1060,10 @@ export class PluginRegistry {
       object: options.object,
       actor,
       answer,
+      harnesses: this.plugins.filter((item) => item.kind === "harness").map((item) => item.name),
+      ...(this.onEvent === undefined
+        ? {}
+        : { emit: this.actionEmitter(found.plugin.name) }),
       ...(this.onCancelRun === undefined
         ? {}
         : { runs: this.runControl() }),
@@ -1056,6 +1073,30 @@ export class PluginRegistry {
       plugin: found.plugin.name,
       action: found.action.name,
       value,
+    };
+  }
+
+  /** The `ctx.emit` of an action: an outside event, never one from `operad`. */
+  private actionEmitter(plugin: string): (event: ActionEvent) => Promise<void> {
+    const onEvent = this.onEvent;
+    return async (event) => {
+      if (onEvent === undefined) {
+        throw new PluginError(`plugin "${plugin}": emit: no event destination is configured`);
+      }
+      if (event.source === "operad" || event.source.trim().length === 0) {
+        throw new PluginError(
+          `plugin "${plugin}": emit: source must be a name other than "operad"`,
+        );
+      }
+      await onEvent({
+        source: event.source,
+        type: event.type,
+        key: event.key,
+        hops: 0,
+        ...(event.object === undefined ? {} : { object: event.object }),
+        ...(event.summary === undefined ? {} : { summary: event.summary }),
+        ...(event.data === undefined ? {} : { data: event.data }),
+      });
     };
   }
 
@@ -1305,6 +1346,7 @@ export class PluginRegistry {
         settings: this.settingsFor(plugin.name),
         secrets: this.secretsFor(plugin.name),
         ...(runs === undefined ? {} : { runLookup: runs }),
+        ...(this.onCancelRun === undefined ? {} : { runs: this.runControl() }),
         loaded: this.plugins.map((item) => item.name),
         start: async (flowOrRequest, objectArg, accessArg) => {
           const request: StartRunRequest =
@@ -1598,8 +1640,8 @@ export class PluginRegistry {
   private runControl(): RunControl {
     const onCancelRun = this.onCancelRun;
     return {
-      cancel: async (runId) => {
-        if (onCancelRun !== undefined) await onCancelRun(runId);
+      cancel: async (runId, flow) => {
+        if (onCancelRun !== undefined) await onCancelRun(runId, flow);
       },
     };
   }

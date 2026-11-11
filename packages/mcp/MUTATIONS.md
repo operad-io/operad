@@ -26,15 +26,13 @@ the row fields.
 | T-0028-M5 | packages/mcp/src/channel.ts | the notification content left out the row's note | `reports a phase change with its meta and stays silent for the rest` |
 | T-0028-M6 | packages/mcp/src/channel.ts | the waiting meta value was always `"false"` | `reports a phase change with its meta and stays silent for the rest` |
 | T-0028-M7 | packages/mcp/src/channel.ts | the run log subscription did not enqueue the changed object, so a wait or running flip alone was never seen | `a run log change with no object write reports the wait and the running flag`, `reports a phase change with its meta and stays silent for the rest`, `a flipped running flag is reported without an object write` |
-| T-0028-M8 | packages/mcp/src/channel.ts | hold was ignored, so notifications were sent before `notifications/initialized` | `nothing is written before notifications/initialized arrives` |
+| T-0028-M8 | packages/mcp/src/channel.ts | hold was ignored, so notifications were sent before `notifications/initialized` (also T-0028-M12) | `nothing is written before notifications/initialized arrives` |
 | T-0028-M9 | packages/mcp/src/channel.ts | a type whose seed failed reported each existing object as `new` | `a seed that fails makes the first sighting of each object a baseline` |
 | T-0028-M10 | packages/mcp/src/channel.ts | an unknown `--types` entry was accepted | `a type with no views is refused with its name`, `--types names an unknown type, and a missing value, as a usage error` |
 | T-0028-M11 | packages/mcp/src/channel.ts | a not-found object stayed in `last`, so a new object with its id was not new | `an object that is not found is forgotten, so it comes back as new` |
-| T-0028-M12 | packages/mcp/src/channel.ts | held notifications were sent at once instead of pushed to the hold list | `nothing is written before notifications/initialized arrives` |
-| T-0057-M1 | packages/mcp/src/channel.ts | a waiting flag turning on alone was not sent (state change only) | `a running flag flip alone sends nothing, and a wait turning on sends with the step`, `a wait turning on again with the state and flags of the last block sent sends nothing` |
+| T-0057-M1 | packages/mcp/src/channel.ts | a waiting flag turning on alone was not sent (state change only) (also T-0057-M4) | `a running flag flip alone sends nothing, and a wait turning on sends with the step`, `a wait turning on again with the state and flags of the last block sent sends nothing` |
 | T-0057-M2 | packages/mcp/src/channel.ts | the row equal to the last block sent was sent again | `a wait turning on again with the state and flags of the last block sent sends nothing` |
 | T-0057-M3 | packages/mcp/src/channel.ts | the `step` meta was never added | `a running flag flip alone sends nothing, and a wait turning on sends with the step` |
-| T-0057-M4 | packages/mcp/src/channel.ts | every changed row was sent, flag flips included | `a running flag flip alone sends nothing, and a wait turning on sends with the step`, `a wait turning on again with the state and flags of the last block sent sends nothing` |
 | T-0057-M5 | packages/mcp/src/channel.ts | the sent rows were not loaded at start, so a restart forgot the last block | `a restarted channel does not send the row the last block reported again` |
 | T-0057-M6 | packages/mcp/src/channel.ts | the step came from the first active run of the object, not the one with the latest fact | `the step is the one of the run with the latest fact when two flows are active on one object` |
 | T-0057-M7 | packages/mcp/src/channel.ts | runs with equal times were ordered by iteration order, not by start, last seq and run id | `the step of two active runs with equal times is chosen the same way every time` |
@@ -73,6 +71,7 @@ the row fields.
 |---|---|---|---|
 | T-0177-M4 | packages/mcp/src/channel.ts | the `announce: false` check removed, so a person's proposed task was announced | `a proposed task > is pending and drawn waiting; one block for what the plugin opened, none for a person's` |
 | T-0175-M3 | packages/mcp/src/server.ts | the instructions kept saying owner decisions are not offered when the owner allowed actions | `operad mcp > instructions follow the configured allow lists` |
+| T-0227-M2 | packages/mcp/src/server.ts | the registry got no run control, so `dev:cancel` left the task's run waiting | `cancelling a task through MCP ends the run that waits on it` |
 
 ## T-0210 — follow-ups from the flow-stops reviews
 
@@ -80,3 +79,4 @@ the row fields.
 |---|---|---|---|
 | T-0210-M9 | packages/mcp/src/server.ts | the instructions named an action that asks for confirmation and is not in `confirmActions` | `operad mcp > instructions do not promise an action that asks for confirmation and is not confirmed` |
 | T-0210-M14 | packages/mcp/src/channel.ts | a block sent for a waiting object for another reason did not read the wait's pending prompt | `the channel's sources > what the default sends > a block for a state change of a waiting object still carries the wait's prompt` |
+| T-0188-M16 | packages/mcp/src/server.ts | an unknown tool threw instead of giving an error result | `the tools opened in a harness's own process > an unknown tool and a bad argument are error results, not throws` |

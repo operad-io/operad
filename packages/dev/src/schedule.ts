@@ -38,11 +38,12 @@ import {
   listRepositories,
   recordAutoMerge,
   recordMergeReported,
+  moveTaskPhase,
   recordPlanStart,
+  recordPlanFinishedReported,
   refreshPlanCounts,
   reopenTask,
   releaseTaskClaim,
-  setTaskPhase,
 } from "./service.ts";
 import { loadProjectFlows, PROJECT_FLOWS_DIR } from "./project-flows.ts";
 import { collectFollowups } from "./followups.ts";
@@ -363,7 +364,7 @@ async function reportIntegrationResults(
     else if (result === "failed") phase = "waiting";
     else if (result === "conflict" || result === "fail") phase = "running";
     if (phase === undefined) continue;
-    await recordMergeReported(store, object.id, attempt.number);
+    if (!(await recordMergeReported(store, object.id, attempt.number))) continue;
     writeSchedulerLine(`${bareId(object.id)} integrating -> ${phase}`);
   }
 }
@@ -386,13 +387,33 @@ async function reportFinishedPlans(
       return phase === "merged" || phase === "cancelled";
     });
     if (!finished) continue;
-    await store.put(
-      "plan",
-      object.id,
-      { ...plan, finishedReported: true },
-      "dev:plan-finished",
-    );
+    if (!(await recordPlanFinishedReported(store, object.id))) continue;
     writeSchedulerLine(`${bareId(object.id)} confirmed -> finished`);
+  }
+}
+
+/**
+ * Ends a run that is still active on a cancelled task. A cancel that could
+ * not reach its run (one made where no run control was set) left the run
+ * waiting for a person; the task is final, so no person has anything to do.
+ */
+async function endRunsOfCancelledTasks(
+  ctx: TickContext,
+  runs: NonNullable<TickContext["runLookup"]>,
+  tasks: readonly StoredObject[],
+  repository: string,
+): Promise<void> {
+  if (ctx.runs === undefined) return;
+  const cancelled = new Set(
+    tasksOf(tasks, repository)
+      .filter((object) => taskData(object.data).phase === "cancelled")
+      .map((object) => `task:${object.id}`),
+  );
+  if (cancelled.size === 0) return;
+  for (const run of await runs.active()) {
+    if (!cancelled.has(run.object)) continue;
+    await ctx.runs.cancel(run.runId);
+    writeSchedulerLine(`${run.object.slice(5)} cancelled: ended its run ${run.runId}`);
   }
 }
 
@@ -412,6 +433,7 @@ async function reconcileTaskRuns(
 ): Promise<void> {
   const runs = ctx.runLookup;
   if (runs === undefined) return;
+  await endRunsOfCancelledTasks(ctx, runs, tasks, repository);
   for (const object of tasksOf(tasks, repository)) {
     const task = taskData(object.data);
     if (task.phase !== "waiting" && task.phase !== "running") continue;
@@ -421,7 +443,10 @@ async function reconcileTaskRuns(
       // A run paused for a person is the truth: the task is waiting.
       const state = await runs.state(run.runId);
       if (state?.status === "waiting_person" && task.phase === "running") {
-        await setTaskPhase(ctx.store, object.id, "waiting", { run: run.runId });
+        const moved = await moveTaskPhase(ctx.store, object.id, "running", "waiting", {
+          run: run.runId,
+        });
+        if (moved === undefined) continue;
         writeSchedulerLine(`${bareId(object.id)} running -> waiting`);
       }
       continue;
@@ -825,11 +850,50 @@ async function scheduleRepository(
   }
 }
 
+/** The pass running for a store and whether another was asked for meanwhile. */
+interface PassState {
+  running: Promise<void> | undefined;
+  /** The pass that runs once after the running one, shared by every asker. */
+  next: Promise<void> | undefined;
+}
+
+const passes = new WeakMap<object, PassState>();
+
 /**
- * One scheduler tick. Each registered repository is scheduled on its own, so a
- * slow or broken repository cannot stop another one.
+ * One scheduler tick. Passes never overlap: a pass asked for while one runs
+ * runs once after it, and every asker in between shares that one pass.
  */
-export async function runScheduler(ctx: TickContext): Promise<void> {
+export function runScheduler(ctx: TickContext): Promise<void> {
+  let state = passes.get(ctx.store);
+  if (state === undefined) {
+    state = { running: undefined, next: undefined };
+    passes.set(ctx.store, state);
+  }
+  const current = state;
+  const start = (): Promise<void> => {
+    const pass = runPass(ctx).finally(() => {
+      current.running = undefined;
+    });
+    current.running = pass;
+    return pass;
+  };
+  if (current.running === undefined) return start();
+  if (current.next === undefined) {
+    const after = (): Promise<void> => {
+      current.next = undefined;
+      return start();
+    };
+    // The running pass failing must not stop the pass that follows it.
+    current.next = current.running.then(after, after);
+  }
+  return current.next;
+}
+
+/**
+ * One pass. Each registered repository is scheduled on its own, so a slow or
+ * broken repository cannot stop another one.
+ */
+async function runPass(ctx: TickContext): Promise<void> {
   const repositories = await listRepositories(ctx.store);
   if (repositories.length === 0) return;
   const tasks = await listAll(ctx.store, "task");

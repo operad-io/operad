@@ -4,6 +4,7 @@
     { "path": "packages/engine" },
     { "path": "packages/mcp" },
     { "path": "packages/shell" },
+    { "path": "packages/chat" },
     { "path": "packages/dev" },
     { "path": "packages/harness-radian" },
     { "path": "packages/harness-process" },

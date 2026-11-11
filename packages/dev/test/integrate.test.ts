@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { notCodeTestHooks } from "../src/notcode.ts";
 import { IntegrationQueue } from "../src/integration-queue.ts";
 import { validateDevSettings } from "../src/settings.ts";
 import { fileURLToPath } from "node:url";
@@ -61,10 +62,15 @@ const CHILD = fileURLToPath(
 interface FixtureOptions {
   readonly style?: IntegrationStyle;
   readonly keyCommands?: readonly unknown[];
+  readonly check?: Readonly<Record<string, number>>;
   readonly hooks?: readonly string[];
   /** Tasks of the same repository, verified like the first, that integrate with it. */
   readonly more?: number;
   readonly batch?: number;
+  /** Files committed to main before the tasks start: their common base. */
+  readonly base?: Readonly<Record<string, string>>;
+  /** Files the first task commits next to `code.txt`. */
+  readonly taskFiles?: Readonly<Record<string, string>>;
 }
 
 interface Fixture {
@@ -123,6 +129,10 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
     path: remote.repository,
     name: "repository",
   });
+  for (const [file, text] of Object.entries(options.base ?? {})) {
+    await advanceMain(remote, file, text, `base ${file}`);
+  }
+  gitOrThrow(remote.repository, ["pull", "--ff-only", "origin", "main"]);
   const devJson = join(remote.repository, ".operad", "dev.json");
   writeDevJson(remote.repository, options);
   // The settings file is local to the clone; keep it from making the tree dirty.
@@ -171,6 +181,11 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
     }
     const worktree = join(remote.repository, ".operad-worktrees", taskId);
     await commitIn(worktree, file, "line\n", "add code");
+    if (suffix === "") {
+      for (const [name, text] of Object.entries(options.taskFiles ?? {})) {
+        await commitIn(worktree, name, text, `change ${name}`);
+      }
+    }
     // The work step pushes the branch in the real flow; cleanup deletes it.
     gitOrThrow(worktree, ["push", "origin", `HEAD:refs/heads/work/${taskId}`]);
     const verified = await registry.runStep("dev/verify", {}, {
@@ -343,6 +358,55 @@ describe("dev/integrate", () => {
     ).toBe(2);
   });
 
+  test("two branches that each append a row to a MUTATIONS.md table merge, keeping both rows", async () => {
+    const table = "# Mutations\n\n| id | mutation |\n|---|---|\n| T-1-M1 | base |\n";
+    const attributes = readFileSync(
+      join(import.meta.dir, "..", "..", "..", ".gitattributes"),
+      "utf8",
+    );
+    {
+      const state = await fixture({
+        base: { ".gitattributes": attributes, "MUTATIONS.md": table },
+        taskFiles: { "MUTATIONS.md": `${table}| T-2-M1 | task |\n` },
+      });
+      await advanceMain(
+        state.remote,
+        "MUTATIONS.md",
+        `${table}| T-3-M1 | main |\n`,
+        "main appends a row",
+      );
+      const result = await integrate(state);
+      expect(result.result).toBe("merged");
+      const merged = gitOrThrow(state.remote.origin, ["show", "main:MUTATIONS.md"]);
+      expect(merged).toContain("| T-2-M1 | task |");
+      expect(merged).toContain("| T-3-M1 | main |");
+      expect(merged).not.toContain("<<<<<<<");
+    }
+  });
+
+  test("a real conflict in another file still falls back while MUTATIONS.md merges", async () => {
+    const table = "# Mutations\n\n| id | mutation |\n|---|---|\n| T-1-M1 | base |\n";
+    const attributes = readFileSync(
+      join(import.meta.dir, "..", "..", "..", ".gitattributes"),
+      "utf8",
+    );
+    const state = await fixture({
+      base: { ".gitattributes": attributes, "MUTATIONS.md": table },
+      taskFiles: { "MUTATIONS.md": `${table}| T-2-M1 | task |\n` },
+    });
+    await advanceMain(
+      state.remote,
+      "MUTATIONS.md",
+      `${table}| T-3-M1 | main |\n`,
+    );
+    await advanceMain(state.remote, "code.txt", "main line\n");
+    const before = remoteMain(state);
+    const result = await integrate(state);
+    expect(result.result).toBe("conflict");
+    expect(result.data?.files).toEqual(["code.txt"]);
+    expect(remoteMain(state)).toBe(before);
+  });
+
   test("a conflict appends the conflict rework and leaves main alone", async () => {
     const state = await fixture({ style: "merge" });
     await advanceMain(state.remote, "code.txt", "main line\n", "main moves");
@@ -448,6 +512,105 @@ describe("dev/integrate", () => {
     );
     expect(proposed).toHaveLength(1);
     expect(String((proposed[0]?.data as { plan?: unknown } | undefined)?.plan)).toMatch(/-flaky-tests$/);
+  });
+
+  test("an integration check killed by a signal twice waits for a person, not for the worker", async () => {
+    // Busy before and after the first run and while waiting, quiet before the
+    // second run, busy again when that one ends.
+    const readings = [18, 18, 18, 18, 2, 18];
+    let reads = 0;
+    notCodeTestHooks.load = () => ({
+      load1: readings[Math.min(reads++, readings.length - 1)] ?? 18,
+      cores: 10,
+    });
+    notCodeTestHooks.wait = async () => true;
+    try {
+      const state = await fixture({ style: "merge", keyCommands: ["exit 143"] });
+      const before = remoteMain(state);
+      const result = await integrate(state);
+      expect(result.result).toBe("failed");
+      const task = await taskOf(state);
+      expect(task.phase).toBe("waiting");
+      expect(task.brief).not.toContain("## Rework");
+      expect(task.attempt?.integration?.notCode).toBe(
+        "check was killed by SIGTERM twice under load 18 on 10 cores",
+      );
+      expect(remoteMain(state)).toBe(before);
+    } finally {
+      notCodeTestHooks.load = undefined;
+      notCodeTestHooks.wait = undefined;
+    }
+  });
+
+  test("a batch check that is not the code twice waits for a person and does not fall back", async () => {
+    const root = await tempRoot();
+    const count = join(root, "count");
+    const state = await fixture({
+      more: 1,
+      batch: 2,
+      check: { rerun: 0 },
+      keyCommands: [
+        `n=$(cat '${count}' 2>/dev/null || echo 0); n=$((n+1)); echo $n > '${count}'; [ $n -le 2 ] && exit 143; exit 0`,
+      ],
+    });
+    const follower = state.others[0];
+    if (follower === undefined) throw new Error("task missing");
+    // The leader's first check waits and reruns under the same high load; the
+    // follower's later run is on a quiet machine.
+    const readings = [18, 18, 18, 18, 18, 2, 18, 18, 18, 18, 18, 2, 18];
+    let reads = 0;
+    notCodeTestHooks.load = () => ({
+      load1: readings[Math.min(reads++, readings.length - 1)] ?? 18,
+      cores: 10,
+    });
+    notCodeTestHooks.wait = async () => true;
+    const rings = bell();
+    integrateTestHooks.wait = rings.wait;
+    const queued = new Map([
+      [state.taskId, signal()],
+      [follower.taskId, signal()],
+    ]);
+    integrateTestHooks.queued = (task) => queued.get(task)?.resolve();
+    const followerTurn = signal();
+    const release = signal();
+    integrateTestHooks.turnTaken = async (task) => {
+      if (task === state.taskId) {
+        await queued.get(follower.taskId)?.promise;
+        return;
+      }
+      if (task === follower.taskId) {
+        followerTurn.resolve();
+        await release.promise;
+      }
+    };
+    try {
+      const leader = integrate(state, "integrate-run");
+      await queued.get(state.taskId)?.promise;
+      const followerRun = integrate(follower, "integrate-run-2");
+      await queued.get(follower.taskId)?.promise;
+      await rings.parked(1);
+      const result = await leader;
+      expect(result.result).toBe("failed");
+      const task = await taskOf(state);
+      expect(task.phase).toBe("waiting");
+      expect(task.attempt?.integration?.notCode).toBe(
+        "check was killed by SIGTERM twice under load 18 on 10 cores",
+      );
+      // The leader's two runs are all: it did not fall back and run again.
+      expect(readFileSync(count, "utf8").trim()).toBe("2");
+      rings.ring();
+      await followerTurn.promise;
+      expect(readFileSync(count, "utf8").trim()).toBe("2");
+      release.resolve();
+      expect((await followerRun).result).toBe("merged");
+      expect(readFileSync(count, "utf8").trim()).toBe("3");
+      expect(gitOrThrow(state.remote.origin, ["show", "main:code1.txt"])).toBe("line");
+      expect(git(state.remote.origin, ["show", "main:code.txt"]).ok).toBe(false);
+    } finally {
+      release.resolve();
+      notCodeTestHooks.load = undefined;
+      notCodeTestHooks.wait = undefined;
+    }
   });
 
   test("a failing key command sends the task back to work", async () => {

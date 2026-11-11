@@ -23,6 +23,8 @@ export interface WorkerInput {
   readonly budgetUsd?: number | undefined;
   /** The longest a Bash call may run in the foreground, in seconds; unset means `DEFAULT_BASH_TIMEOUT_SECS`. */
   readonly bashTimeoutSecs?: number | undefined;
+  /** Operad's own tools, served to claude as an MCP server of the named home. */
+  readonly operadTools?: { readonly home: string } | undefined;
   /** Secret values of the operad secret store; a log line shows `***` where one appears. */
   readonly secretValues?: readonly string[] | undefined;
 }
@@ -173,6 +175,7 @@ export const INPUT_FIELDS = [
   "maxTurns",
   "budgetUsd",
   "bashTimeoutSecs",
+  "operadTools",
   "secretValues",
 ] as const;
 
@@ -246,6 +249,11 @@ export function parseInput(value: unknown): ParsedInput {
     return { ok: false, message: "bashTimeoutSecs must be a positive integer" };
   }
 
+  const operadTools = value["operadTools"];
+  if (operadTools !== undefined && (!isRecord(operadTools) || typeof operadTools["home"] !== "string" || operadTools["home"].length === 0)) {
+    return { ok: false, message: "operadTools must be an object with a home" };
+  }
+
   const access = value["access"];
   if (access !== undefined && !isRecord(access)) {
     return { ok: false, message: "access must be an object" };
@@ -268,6 +276,7 @@ export function parseInput(value: unknown): ParsedInput {
       maxTurns,
       budgetUsd,
       bashTimeoutSecs,
+      operadTools: operadTools === undefined ? undefined : { home: String(operadTools["home"]) },
       secretValues,
     },
   };

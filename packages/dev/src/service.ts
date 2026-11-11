@@ -12,6 +12,7 @@ import {
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { ViewError } from "@operad-io/engine";
+import { isBusy } from "@operad-io/engine/platform";
 import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
 import { git } from "./git.ts";
 import { withRepositoryLock } from "./lock.ts";
@@ -65,7 +66,8 @@ import { DEFAULT_DEV_SETTINGS, DEV_SETTINGS_SCHEMA } from "./settings.ts";
 
 /** An optional way for the dev plugin to ask the kernel to cancel a run. */
 export interface DevRunControl {
-  cancel(runId: string): Promise<void> | void;
+  /** `flow` is the run's own graph, when the task stores one the loaded plugins lack. */
+  cancel(runId: string, flow?: FlowDefinition): Promise<void> | void;
 }
 
 export interface ResolveRepositoryOptions {
@@ -680,7 +682,13 @@ async function writePlan(
   cause: string,
 ): Promise<StoredObject> {
   const written = await store.put(PLAN_TYPE, id, data, cause);
-  await refreshRepositoryCounts(store, data.repository);
+  // The counts are a cache the scheduler keeps current; a busy store must not
+  // turn the plan write that already happened into a reported failure.
+  try {
+    await refreshRepositoryCounts(store, data.repository);
+  } catch (error) {
+    if (!isBusy(error)) throw error;
+  }
   return written;
 }
 
@@ -729,8 +737,37 @@ async function totalsOfTasks(store: ObjectStore, planKey: string): Promise<PlanC
   return totals;
 }
 
-/** Recomputes the counts a plan row reads, writing the plan only on a change. */
+/**
+ * Recomputes the counts a plan row reads, writing the plan only on a change.
+ *
+ * The counts are a cache the scheduler refreshes on every tick, and callers run
+ * this after the write that was the command's work. A store another process
+ * keeps busy past the wait must not turn that finished work into a reported
+ * failure (a retry would repeat it), so a busy store leaves the counts for the
+ * next tick.
+ */
 export async function refreshPlanCounts(
+  store: ObjectStore,
+  plan: StoredObject,
+): Promise<StoredObject> {
+  try {
+    return await recountPlan(store, plan);
+  } catch (error) {
+    if (isBusy(error)) return plan;
+    throw error;
+  }
+}
+
+/** `refreshPlanCounts` for a plan named by key; its read is tolerated the same way. */
+async function refreshPlanCountsOf(store: ObjectStore, key: string): Promise<void> {
+  try {
+    await refreshPlanCounts(store, await getPlan(store, key));
+  } catch (error) {
+    if (!isBusy(error)) throw error;
+  }
+}
+
+async function recountPlan(
   store: ObjectStore,
   plan: StoredObject,
 ): Promise<StoredObject> {
@@ -1194,12 +1231,17 @@ export async function updateTask(
     };
     const object = await writeTask(store, id, next, "dev:task-update");
     if (releases) {
-      const plan = await getPlan(store, storeKey(data.repository, data.plan));
-      await refreshPlanCounts(store, plan);
+      await refreshPlanCountsOf(store, storeKey(data.repository, data.plan));
     }
-    return { object, released: releases ? data.run : null };
+    return {
+      object,
+      released:
+        releases && data.run !== null
+          ? { run: data.run, flow: data.flowGraph }
+          : null,
+    };
   });
-  if (updated.released !== null) await options.runs?.cancel(updated.released);
+  if (updated.released !== null) await cancelRuns(options.runs, [updated.released]);
   return updated.object;
 }
 
@@ -1210,11 +1252,39 @@ export async function setTaskPhase(
   phase: TaskPhase,
   options: { readonly run?: string | null | undefined } = {},
 ): Promise<StoredObject> {
+  const written = await changeTaskPhase(store, id, undefined, phase, options);
+  if (written === undefined) throw new DevError("task", `no task "${bareId(id)}"`);
+  return written;
+}
+
+/**
+ * Moves a task to `to` only while it is still in phase `from`, checked under
+ * the repository lock; undefined when another pass already moved it, so only
+ * the pass that moved it reports the change.
+ */
+export async function moveTaskPhase(
+  store: ObjectStore,
+  id: string,
+  from: TaskPhase,
+  to: TaskPhase,
+  options: { readonly run?: string | null | undefined } = {},
+): Promise<StoredObject | undefined> {
+  return changeTaskPhase(store, id, from, to, options);
+}
+
+async function changeTaskPhase(
+  store: ObjectStore,
+  id: string,
+  from: TaskPhase | undefined,
+  phase: TaskPhase,
+  options: { readonly run?: string | null | undefined },
+): Promise<StoredObject | undefined> {
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
   return withRepoLock(store, data.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
+    if (from !== undefined && latest.phase !== from) return undefined;
     const run =
       options.run === undefined
         ? phase === "running" || phase === "review" || phase === "waiting"
@@ -1228,11 +1298,7 @@ export async function setTaskPhase(
       { ...latest, phase, run, brief },
       `dev:task-${phase}`,
     );
-    const plan = await getPlan(
-      store,
-      storeKey(latest.repository, latest.plan),
-    );
-    await refreshPlanCounts(store, plan);
+    await refreshPlanCountsOf(store, storeKey(latest.repository, latest.plan));
     return written;
   });
 }
@@ -1511,23 +1577,53 @@ export async function releaseTaskClaim(
   });
 }
 
-/** Records that the scheduler printed this attempt's integration result. */
+/**
+ * Claims the right to print this attempt's integration result. The mark is
+ * checked and written under the repository lock, so of two passes (in this
+ * process or another one on the same store) only one gets the claim and
+ * prints; the other gets `false`.
+ */
 export async function recordMergeReported(
   store: ObjectStore,
   id: string,
   attempt: number,
-): Promise<StoredObject> {
+): Promise<boolean> {
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
   return withRepoLock(store, data.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
-    return writeTask(
+    if (latest.mergeReportedAttempt === attempt) return false;
+    await writeTask(
       store,
       id,
       { ...latest, mergeReportedAttempt: attempt },
       "dev:task-merge-reported",
     );
+    return true;
+  });
+}
+
+/**
+ * Claims the right to say a plan finished, once. The mark is checked and
+ * written under the repository lock; a second caller gets `false`.
+ */
+export async function recordPlanFinishedReported(
+  store: ObjectStore,
+  id: string,
+): Promise<boolean> {
+  const initial = planData((await getPlan(store, id)).data);
+  return withRepoLock(store, initial.repository, async () => {
+    const current = await getPlan(store, id);
+    const latest = planData(current.data);
+    if (latest.finishedReported === true) return false;
+    await store.put(
+      "plan",
+      id,
+      { ...latest, finishedReported: true },
+      "dev:plan-finished",
+    );
+    return true;
   });
 }
 
@@ -1750,15 +1846,31 @@ export async function confirmTask(
   });
 }
 
+/** A run to cancel, with the graph its task stored when it started one. */
+interface RunToCancel {
+  readonly run: string;
+  readonly flow: FlowDefinition | undefined;
+}
+
+async function cancelRuns(
+  control: DevRunControl | undefined,
+  runs: readonly RunToCancel[],
+): Promise<void> {
+  for (const { run, flow } of runs) {
+    if (flow === undefined) await control?.cancel(run);
+    else await control?.cancel(run, flow);
+  }
+}
+
 async function cancelTasks(
   store: ObjectStore,
   tasks: readonly StoredObject[],
-): Promise<readonly string[]> {
-  const runs: string[] = [];
+): Promise<readonly RunToCancel[]> {
+  const runs: RunToCancel[] = [];
   for (const object of tasks) {
     const data = taskData(object.data);
     if (!isOpenTask(data)) continue;
-    if (data.run !== null) runs.push(data.run);
+    if (data.run !== null) runs.push({ run: data.run, flow: data.flowGraph });
     await writeTask(
       store,
       object.id,
@@ -1783,7 +1895,7 @@ export async function cancelPlan(
   store: ObjectStore,
   id: string,
   options: CancelOptions = {},
-): Promise<{ readonly plan: StoredObject; readonly runs: readonly string[] }> {
+): Promise<{ readonly plan: StoredObject; readonly runs: readonly RunToCancel[] }> {
   const initial = await getPlan(store, id);
   const initialData = planData(initial.data);
   const cancelled = await withRepoLock(
@@ -1801,9 +1913,7 @@ export async function cancelPlan(
       return { plan: written, runs };
     },
   );
-  for (const run of cancelled.runs) {
-    await options.runs?.cancel(run);
-  }
+  await cancelRuns(options.runs, cancelled.runs);
   return cancelled;
 }
 
@@ -1811,7 +1921,7 @@ export async function cancelTask(
   store: ObjectStore,
   id: string,
   options: CancelOptions = {},
-): Promise<{ readonly task: StoredObject; readonly runs: readonly string[] }> {
+): Promise<{ readonly task: StoredObject; readonly runs: readonly RunToCancel[] }> {
   const initial = await getTask(store, id);
   const initialData = taskData(initial.data);
   const cancelled = await withRepoLock(
@@ -1821,7 +1931,8 @@ export async function cancelTask(
       const task = await getTask(store, id);
       const data = taskData(task.data);
       refuseTask("cancel", data, id);
-      const runs = data.run === null ? [] : [data.run];
+      const runs: readonly RunToCancel[] =
+        data.run === null ? [] : [{ run: data.run, flow: data.flowGraph }];
       const written = await writeTask(
         store,
         id,
@@ -1834,17 +1945,11 @@ export async function cancelTask(
         },
         "dev:task-cancel",
       );
-      const plan = await getPlan(
-        store,
-        storeKey(data.repository, data.plan),
-      );
-      await refreshPlanCounts(store, plan);
+      await refreshPlanCountsOf(store, storeKey(data.repository, data.plan));
       return { task: written, runs };
     },
   );
-  for (const run of cancelled.runs) {
-    await options.runs?.cancel(run);
-  }
+  await cancelRuns(options.runs, cancelled.runs);
   return cancelled;
 }
 
@@ -1857,14 +1962,15 @@ export async function pauseTask(
   store: ObjectStore,
   id: string,
   options: CancelOptions = {},
-): Promise<{ readonly task: StoredObject; readonly runs: readonly string[] }> {
+): Promise<{ readonly task: StoredObject; readonly runs: readonly RunToCancel[] }> {
   const initial = await getTask(store, id);
   const initialData = taskData(initial.data);
   const paused = await withRepoLock(store, initialData.repository, async () => {
     const task = await getTask(store, id);
     const data = taskData(task.data);
     refuseTask("pause", data, id);
-    const runs = data.run === null ? [] : [data.run];
+    const runs: readonly RunToCancel[] =
+        data.run === null ? [] : [{ run: data.run, flow: data.flowGraph }];
     const {
       areaHeldBy: _area,
       dependencyHeld: _waits,
@@ -1884,13 +1990,10 @@ export async function pauseTask(
       },
       "dev:task-pause",
     );
-    const plan = await getPlan(store, storeKey(data.repository, data.plan));
-    await refreshPlanCounts(store, plan);
+    await refreshPlanCountsOf(store, storeKey(data.repository, data.plan));
     return { task: written, runs };
   });
-  for (const run of paused.runs) {
-    await options.runs?.cancel(run);
-  }
+  await cancelRuns(options.runs, paused.runs);
   return paused;
 }
 
@@ -1911,8 +2014,7 @@ export async function resumeTask(
       { ...data, phase: "ready", brief: appendChange(data.brief, "ready") },
       "dev:task-resume",
     );
-    const plan = await getPlan(store, storeKey(data.repository, data.plan));
-    await refreshPlanCounts(store, plan);
+    await refreshPlanCountsOf(store, storeKey(data.repository, data.plan));
     return written;
   });
 }

@@ -9,6 +9,7 @@
  * without its fact writes it, so a crash between the two loses nothing.
  */
 
+import { inputIdFor } from "../log/facts.ts";
 import { SeqConflictError } from "../log/errors.ts";
 import type { JsonValue, LogBackend } from "../log/types.ts";
 import type {
@@ -188,15 +189,15 @@ async function claimedAnswer(
   runId: string,
   waitId: string,
 ): Promise<AskedAnswer | undefined> {
-  const key = claimKey(runId, waitId);
-  for await (const input of log.readInputs()) {
-    if (input.source !== "person" || input.sourceKey !== key) continue;
-    if (!isRecord(input.payload) || input.payload.kind !== "ask_answer") {
-      continue;
-    }
-    return answerOf(input.payload);
+  // The input id is made from the source and the key, so one lookup finds it.
+  const input = await log.findInput(
+    inputIdFor("person", claimKey(runId, waitId)),
+  );
+  if (input === undefined) return undefined;
+  if (!isRecord(input.payload) || input.payload.kind !== "ask_answer") {
+    return undefined;
   }
-  return undefined;
+  return answerOf(input.payload);
 }
 
 function answeredFact(waitId: string, answer: AskedAnswer): FactSpec {

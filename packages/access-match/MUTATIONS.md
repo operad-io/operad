@@ -4,6 +4,14 @@ Rows whose mutation broke code in `packages/access-match/`, in the order they
 were recorded. The root [MUTATIONS.md](../../MUTATIONS.md) explains the format
 and the row fields.
 
+## TK0015 — pi worker
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0017-M1 | packages/access-match/src/command.ts | `\|` removed from the split operators | `split operator "\|" reaches the part after it` |
+| TK0017-M2 | packages/access-match/src/index.ts | relative paths joined to `cwd` without resolving `..` | `~ is expanded, relative paths are joined to cwd, and .. is resolved` |
+| TK0017-M4 | packages/access-match/src/command.ts | `xargs` and `eval` not seen as inline code | `inline code xargs is refused though no rule names it` |
+
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0025-M9 | `packages/access-match/src/index.ts` | a command grant covered any call that began with its value | `a grant covers the call that equals its value exactly` |
@@ -19,3 +27,6 @@ and the row fields.
 | T-0187-M1 | packages/access-match/src/index.ts | `askCommands` was checked before the deny rules, so an ask won over a deny | `deny wins over ask, and ask wins over allow` |
 | T-0187-M2 | packages/access-match/src/index.ts | inline code (`$(…)`) did not ask while `askCommands` was set | `inline code asks while askCommands is set and is allowed without it` |
 | T-0187-M12 | packages/access-match/src/index.ts | `write` and `edit` calls were not judged against `askPaths` | `a write or edit to an askPaths path asks with the path and the tool` |
+| T-0188-M8 | packages/access-match/src/index.ts | readOnly no longer made writes in the working directory ask | `a read-only working directory asks about a write under it, and only a write` |
+| T-0188-M21 | packages/access-match/src/readonly.ts | a command with an output redirect (`>`, `>>`, `&>`) counted as read-only | `everything else is not read-only: redirects, tee, sed -i, cp, mv, git writes, a pipeline whose last stage writes` |
+| T-0188-M22 | packages/access-match/src/index.ts | a read-only directory no longer asked about a command that is not on the allowlist | `a read-only directory asks about a command that is not on the allowlist, and lets a reading one run` |

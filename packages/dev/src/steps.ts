@@ -12,6 +12,7 @@ import {
   type CostQuality,
   type PluginStepResult,
   type StepContext,
+  type StepEvent,
   type StepRunOptions,
 } from "@operad-io/engine";
 import {
@@ -28,10 +29,16 @@ import {
   type TaskAttempt,
   type TaskData,
 } from "./model.ts";
-import { DEFAULT_POOL, resolvePool, type WorkerDefinition } from "@operad-io/pool";
+import {
+  ACQUIRED_EVENT,
+  DEFAULT_POOL,
+  resolvePool,
+  WAITING_EVENT,
+  type WorkerDefinition,
+} from "@operad-io/pool";
 import { git, type GitResult } from "./git.ts";
 import { runPrepare } from "./prepare.ts";
-import { classifyStop, STOP_REASONS } from "./stops.ts";
+import { classifyStop, isConnectionError, STOP_REASONS } from "./stops.ts";
 import { findRepository, putTaskKeepingPlanCost, withRepoLock } from "./service.ts";
 import {
   createOutbox,
@@ -310,7 +317,7 @@ export function changedFiles(worktree: string): readonly string[] {
   return [...new Set(files)].filter((file) => file !== PROGRESS_FILE).sort();
 }
 
-interface Prepared {
+export interface Prepared {
   readonly kind: "ready" | "conflict" | "failed";
   readonly base?: string | undefined;
   readonly message?: string | undefined;
@@ -382,7 +389,7 @@ function mergeLatest(path: string, mainRef: string): Prepared {
 }
 
 /** Fetches, creates the worktree when needed, and merges main into a reused one. */
-function prepareWorktree(
+export function prepareWorktree(
   repository: RepositoryData,
   settings: DevSettings,
   taskId: string,
@@ -733,8 +740,13 @@ export async function runWorktree(
     workWaits: 0,
     workRetryAt: null,
     // A new attempt starts with no gate results; the branch may have moved.
-    verified: null,
-    verify: null,
+    // A passing verify of the very commit the branch is at still stands.
+    ...(passedAt(context.task.attempt, prepared.base ?? null)
+      ? {
+          verified: context.task.attempt?.verified ?? null,
+          verify: context.task.attempt?.verify ?? null,
+        }
+      : { verified: null, verify: null }),
     review: null,
     reviewRuns: [],
     reviews: 0,
@@ -970,6 +982,7 @@ function poolParams(
   worker: string | undefined,
   resumeSession: string | undefined,
   inbox: unknown,
+  holder: string,
   stage?: { readonly use?: string | undefined; readonly args?: readonly string[] | undefined },
 ): Record<string, unknown> {
   const resolved = resolvePool(settings.workers, DEFAULT_POOL);
@@ -992,6 +1005,7 @@ function poolParams(
     cwd: worktree,
     inbox,
     prefix: `${repository.name}/${DEFAULT_POOL}`,
+    holder,
     workers: fallback === undefined ? workers : [...workers, fallback],
     fallbacks: resolved.fallbacks,
     ...(worker === undefined ? {} : { worker }),
@@ -1043,6 +1057,38 @@ function modelUnavailable(data: Record<string, unknown>): boolean {
   if (typeof error !== "object" || error === null) return false;
   const kind = (error as { readonly kind?: unknown }).kind;
   return kind === "unavailable" || kind === "usage_limit";
+}
+
+/** The lines of a step's `stderr` data, which may be a string or a list. */
+function stderrLines(value: unknown): readonly string[] {
+  if (typeof value === "string") return [value];
+  return Array.isArray(value)
+    ? value.filter((line): line is string => typeof line === "string")
+    : [];
+}
+
+/** True when the attempt's verify passed on exactly `head`. */
+function passedAt(attempt: TaskAttempt | undefined, head: string | null): boolean {
+  return (
+    head !== null &&
+    attempt?.verified === head &&
+    attempt.verify?.result === "pass"
+  );
+}
+
+const UNCHECKED_WORK_NOTE = "the branch already has unchecked work; checking it";
+
+/** True when the branch holds commits of its own (not a merge of main) that main lacks and `head` never passed verify. */
+function hasUncheckedWork(
+  path: string,
+  head: string,
+  attempt: TaskAttempt,
+  context: { readonly settings: { readonly remote: string; readonly mainBranch: string } },
+): boolean {
+  if (attempt.verified === head && attempt.verify?.result === "pass") return false;
+  const mainRef = `${context.settings.remote}/${context.settings.mainBranch}`;
+  const ahead = git(path, ["rev-list", "--count", "--no-merges", `${mainRef}..${head}`]);
+  return ahead.ok && Number(ahead.out) > 0;
 }
 
 export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
@@ -1276,6 +1322,45 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   let outcome: PluginStepResult | undefined;
   let hostError: string | undefined;
   let notLoaded: string | undefined;
+  // While a rework waits for the worker it asked for, the task says what it
+  // waits for and who holds it, in the row and in the step log.
+  let waitingFor: string | undefined;
+  const setWorkerWait = async (text: string | null): Promise<void> => {
+    await saveTaskGuarded(
+      ctx,
+      context.taskKey,
+      { ...task, attempt: { ...attempt, workerWait: text } },
+      "dev:work-wait",
+    );
+  };
+  const onPoolEvent = async (_plugin: string, event: StepEvent): Promise<void> => {
+    if (asked === undefined) return;
+    const data: unknown = event.data;
+    if (event.type === WAITING_EVENT) {
+      const entries = Array.isArray((data as { workers?: unknown } | undefined)?.workers)
+        ? ((data as { workers: unknown[] }).workers)
+        : [];
+      const mine = entries.find(
+        (entry): entry is { holders?: unknown } =>
+          typeof entry === "object" &&
+          entry !== null &&
+          (entry as { worker?: unknown }).worker === asked,
+      );
+      const holders = Array.isArray(mine?.holders)
+        ? mine.holders.filter((item): item is string => typeof item === "string")
+        : [];
+      const line = `waiting for worker ${asked}${
+        holders.length === 0 ? "" : `: held by ${holders.join(", ")}`
+      }`;
+      waitingFor = line;
+      await ctx.logger.write(line);
+      await setWorkerWait(line);
+    } else if (event.type === ACQUIRED_EVENT && waitingFor !== undefined) {
+      waitingFor = undefined;
+      await ctx.logger.write(`worker ${asked} is free; the work starts`);
+      await setWorkerWait(null);
+    }
+  };
   try {
     outcome = await runStep(
       "pool/agent",
@@ -1287,14 +1372,19 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
         asked,
         typeof attempt.previousSession === "string" ? attempt.previousSession : undefined,
         outbox.inbox,
+        context.taskId,
         stageParamsOf(ctx.params),
       ),
-      options,
+      { ...options, observe: onPoolEvent },
     );
   } catch (error) {
     hostError = messageOf(error);
     notLoaded = notLoadedStep(error);
   } finally {
+    if (waitingFor !== undefined) {
+      waitingFor = undefined;
+      await ctx.logger.write(`stopped waiting for worker ${String(asked)}`).catch(() => undefined);
+    }
     for (const timer of [...timers, ...runTimers]) clock.clearTimeout(timer);
     ctx.signal.removeEventListener("abort", forwardAbort);
   }
@@ -1352,7 +1442,8 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     nextAttempt = {
       ...nextAttempt,
       result,
-      workNote: typeof extra.message === "string" ? extra.message : null,
+      workNote:
+        result !== "done" && typeof extra.message === "string" ? extra.message : null,
       ...(waitsForModel ? {} : { workRetryAt: null }),
       // An attempt that left no note keeps the one before it for later attempts.
       progress: progress ?? progressOf(attempt.previousProgress) ?? null,
@@ -1443,7 +1534,12 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
 
   if (hostError !== undefined) {
     return finish("failed", {
-      reason: notLoaded === undefined ? "harness" : STOP_REASONS.stepNotLoaded,
+      reason:
+        notLoaded !== undefined
+          ? STOP_REASONS.stepNotLoaded
+          : isConnectionError(hostError)
+            ? STOP_REASONS.connection
+            : "harness",
       ...(notLoaded === undefined ? {} : { use: notLoaded }),
       message: hostError,
       ...(dirty.length === 0 ? {} : { files: dirty }),
@@ -1479,7 +1575,11 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       outcome?.result === "interrupted" &&
       (outcomeData.reason === "signal" || outcomeData.reason === "cancelled");
     return finish("failed", {
-      reason: stopped ? STOP_REASONS.stopped : "harness",
+      reason: stopped
+        ? STOP_REASONS.stopped
+        : isConnectionError(message, ...stderrLines(outcomeData.stderr))
+          ? STOP_REASONS.connection
+          : "harness",
       harnessResult: outcome?.result ?? "unknown",
       // A failed attempt still reports the files it left behind.
       message:
@@ -1500,6 +1600,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   }
 
   const head = headOf(path);
+  let note: string | undefined;
   if (
     head === undefined ||
     base === null ||
@@ -1508,7 +1609,12 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     // branch must still descend from the base before anything is pushed.
     !isAncestor(path, base, head)
   ) {
-    return finish("nothing", { head: head ?? base });
+    if (head !== undefined && head === base && hasUncheckedWork(path, head, attempt, context)) {
+      // An earlier run committed this work and stopped before verify ended.
+      note = UNCHECKED_WORK_NOTE;
+    } else {
+      return finish("nothing", { head: head ?? base });
+    }
   }
 
   const push = git(path, [
@@ -1523,5 +1629,9 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       message: `cannot push "${branch}" to "${context.settings.remote}": ${push.err || push.out}`,
     });
   }
-  return finish("done", { head, pushed: true });
+  return finish("done", {
+    head,
+    pushed: true,
+    ...(note === undefined ? {} : { message: note }),
+  });
 }
