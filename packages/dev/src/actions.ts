@@ -21,13 +21,13 @@ import {
   type TaskData,
 } from "./model.ts";
 import {
-  inReviewWait,
   planLine,
   taskLine,
   type Facts,
   type PlanActionName,
   type TaskActionName,
 } from "./refusals.ts";
+import { waitAccepts, type WaitAction } from "./waits.ts";
 import {
   cancelPlan,
   cancelTask,
@@ -128,9 +128,9 @@ const planSettled = (action: PlanActionName) =>
   };
 
 /** A task that waits for a person, as opposed to for a review model. */
-function waitsForPerson(state: Parameters<typeof taskData>[0]): boolean {
-  const task = taskData(state);
-  return task.phase === "waiting" && !inReviewWait(task);
+function offeredWhileWaiting(action: WaitAction) {
+  return (state: Parameters<typeof taskData>[0]): boolean =>
+    waitAccepts(taskData(state), action);
 }
 
 /**
@@ -272,7 +272,7 @@ const mergeTask: ActionTypeDefinition = {
   rank: TASK_RANKS.merge,
   confirm: true,
   when(state) {
-    return waitsForPerson(state);
+    return offeredWhileWaiting("merge")(state);
   },
   why: taskWhy("merge"),
   settled: taskSettled("merge"),
@@ -305,7 +305,7 @@ const rejectTaskAction: ActionTypeDefinition = {
   rank: TASK_RANKS.reject,
   args: NOTE_ARGS("What the worker should change before the next review."),
   when(state) {
-    return waitsForPerson(state);
+    return offeredWhileWaiting("reject")(state);
   },
   why: taskWhy("reject"),
   settled: taskSettled("reject"),
@@ -335,7 +335,7 @@ const reworkTaskAction: ActionTypeDefinition = {
   rank: TASK_RANKS.rework,
   args: NOTE_ARGS("What the worker should do in this rework."),
   when(state) {
-    return waitsForPerson(state);
+    return offeredWhileWaiting("rework")(state);
   },
   why: taskWhy("rework"),
   settled: taskSettled("rework"),
@@ -362,7 +362,7 @@ const reverifyTaskAction: ActionTypeDefinition = {
   on: "task",
   rank: TASK_RANKS.reverify,
   when(state) {
-    return waitsForPerson(state);
+    return offeredWhileWaiting("reverify")(state);
   },
   why: taskWhy("reverify"),
   settled: taskSettled("reverify"),

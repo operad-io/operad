@@ -2,6 +2,7 @@
 
 import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
 import type { ReviewHistoryEntry, ReviewSettingsUsed } from "./rework.ts";
+import type { WaitKind } from "./waits.ts";
 
 /**
  * Every object of a type, following the store's pages. The store returns one
@@ -449,6 +450,12 @@ export type TaskData = {
   /** What the held task waits for, as a note names it; set with `dependencyHeld`. */
   readonly dependencyHeldFor?: readonly string[] | undefined;
   readonly phase: TaskPhase;
+  /**
+   * The wait the task is in while it waits for a person. A review wait writes
+   * its own kind and an announce step writes `person`, so an older review
+   * record cannot name the wait the task is in now.
+   */
+  readonly waitKind?: WaitKind | undefined;
   readonly attempts: number;
   readonly run: string | null;
   /** The flow this task starts with; absent inherits the plan's flow. */
