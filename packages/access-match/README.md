@@ -149,3 +149,13 @@ Lexical means the file system is never asked. These pass:
 - paths in a script the agent wrote and then runs.
 
 The profile is a guard rail, not a boundary (`operad-sandbox.md` decision 7).
+
+## Shell expansion in bash paths
+
+The matcher is a guardrail: where it cannot tell, it asks, and a deny always wins over an ask.
+
+**Expansion.** `~`, `$HOME` and `${HOME}` become the matcher's home before a path word, a redirect target or a `cd` target is matched. Any other expansion in a path or `cd` target (`$OTHER`, `${…}`, `$(…)`, backticks, `<(…)`, `$((…))`, `$1`, `$@`, `~user`, a `$'…'` word with escapes) asks. Only words that look like paths (they hold a `/`, or start with `~` or `.`) are judged, so `cat $OTHER` is not.
+
+**Directory.** Only a plain top-level `cd <path>` in a chain (`&&`, `||`, `;`, `|`) moves the directory the later relative paths are read against; `<path>` is literal or starts with `~`, `$HOME` or `${HOME}`, and `-L`, `-P` and `--` are skipped. Everything else that can change the directory makes it unknown for the rest of the command, and then every later relative path (or command name with a `/`) asks: brace groups `{ }`, subshells `( )`, `if`, `for`, `while`, `until`, `case`, `select`, functions, `eval`, `source` and `.`, `exec`, the `builtin`, `command` and `env` wrappers, `time`, `trap`, `pushd` and `popd` in any form, `cd -`, `cd` with no operand, a `cd` in a pipeline or the background, a `CDPATH` word, and a `cd` target with an unresolved expansion or a glob.
+
+**Globs.** A path word with a glob character (`*`, `?`, `[`, `{`, or an extended glob such as `@(…)`) is judged by the literal text before the first one, not by evaluating the pattern: it is refused when a denied entry starts with that prefix or the prefix starts with a denied entry. A `..` after the glob asks.

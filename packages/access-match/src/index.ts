@@ -7,7 +7,7 @@ import { posix } from "node:path";
 export { isReadOnlyCommand } from "./readonly.ts";
 export { COMMAND_SUMMARY_CHARS, SUMMARY_CHARS, COMMAND_NOT_SHOWN, REFUSED_IN_LOG, summarizeCall, firstErrorLine, messageSummary, secretValuesOf, type SummaryOptions } from "./summary.ts";
 import { isReadOnlyCommand } from "./readonly.ts";
-import { findDenied, inlineFormOf, parseRule, scan, type Rule } from "./command.ts";
+import { findDenied, inlineFormOf, parseRule, scan, type Part, type Rule } from "./command.ts";
 
 /** A one-time permission for the exact call a person was asked about. */
 export interface AccessGrant {
@@ -154,11 +154,11 @@ interface Denied {
   readonly home: string;
 }
 
-function checkPath(denied: Denied, path: string): Verdict {
-  const normal = normalise(path, denied.cwd, denied.home);
+function checkPath(denied: Denied, path: string, cwd: string = denied.cwd, written: string = path): Verdict {
+  const normal = normalise(path, cwd, denied.home);
   for (const entry of denied.entries) {
     if (isUnder(normal, entry.path)) {
-      return { allow: false, reason: `path "${path}" is under denyPaths entry "${entry.written}"`, rule: entry.written };
+      return { allow: false, reason: `path "${written}" is under denyPaths entry "${entry.written}"`, rule: entry.written };
     }
   }
   return ALLOW;
@@ -172,19 +172,139 @@ function pathLike(word: string): boolean {
 }
 
 /** The readings of one word that may be a path: itself, minus a redirect, after `=`. */
-function readings(word: string): string[] {
+function readings(word: string, home: string): string[] {
   const unredirected = word.replace(REDIRECT, "");
   const found = [word, unredirected];
   const equals = unredirected.indexOf("=");
   if (equals !== -1) found.push(unredirected.slice(equals + 1));
-  return found.filter((reading, index) => reading.length > 0 && found.indexOf(reading) === index && pathLike(reading));
+  return found.filter(
+    (reading, index) => reading.length > 0 && found.indexOf(reading) === index && pathLike(expandWord(reading, home).text),
+  );
+}
+
+interface Expanded {
+  readonly text: string;
+  /** Still holds an expansion the matcher cannot resolve. */
+  readonly unresolved: boolean;
+  /** A simple glob character (`*`, `?`, `[`) in any component. */
+  readonly glob: boolean;
+  /** A simple glob character in a component before the last. */
+  readonly dirGlob: boolean;
+}
+
+const GLOB_META = /[*?[{]|[@!+]\(/;
+
+/** Expands `~`, `$HOME` and `${HOME}` to `home`; reports what else a shell would still expand. */
+function expandWord(word: string, home: string): Expanded {
+  let text = word;
+  if (text === "~") text = home;
+  else if (text.startsWith("~/")) text = `${home}${text.slice(1)}`;
+  text = text.replace(/\$\{HOME\}|\$HOME(?![A-Za-z0-9_])/g, () => home);
+  const tilde = text.startsWith("~");
+  const meta = text.search(GLOB_META);
+  // A `..` after a glob can climb out of whatever the glob matched, so the literal prefix says nothing.
+  const climbs = meta !== -1 && /(^|\/)\.\.(\/|$)/.test(text.slice(meta));
+  const unresolved = tilde || climbs || /\$[A-Za-z0-9_{(@*#?$!-]|`/.test(text);
+  return { text, unresolved, glob: meta !== -1, dirGlob: meta !== -1 };
+}
+
+/**
+ * A glob word is judged by the literal text before its first metacharacter,
+ * not by evaluating the pattern: refused when a denied entry starts with that
+ * prefix or the prefix starts with a denied entry.
+ */
+function checkGlob(denied: Denied, text: string, cwd: string, written: string): Verdict {
+  const prefix = text.slice(0, text.search(GLOB_META));
+  const absolute = posix.normalize(prefix.startsWith("/") ? prefix : `${cwd}/${prefix}`);
+  for (const entry of denied.entries) {
+    if (entry.path.startsWith(absolute) || absolute.startsWith(entry.path)) {
+      return { allow: false, reason: `path "${written}" can match a path under denyPaths entry "${entry.written}"`, rule: entry.written };
+    }
+  }
+  return ALLOW;
+}
+
+const CD_GLOB = /[*?[\]{]|[@!+]\(/;
+
+/**
+ * Words that can change the shell's directory in a way the matcher does not
+ * model: compound commands, function and script runners, wrappers and the
+ * directory stack. A part that starts with one makes the directory unknown.
+ */
+const UNMODELLED = new Set([
+  "{", "}", "if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done", "case", "esac", "select",
+  "function", "time", "coproc", "!", "[[", "eval", "source", ".", "exec", "builtin", "command", "env", "pushd", "popd", "trap",
+]);
+
+const ASSIGNMENT_WORD = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+interface BashWord {
+  readonly word: string;
+  readonly next: string | undefined;
+  /** Position in its part; 0 is the command name. */
+  readonly index: number;
+  /** The directory relative paths of this word mean; undefined once the directory is unknown. */
+  readonly dir: string | undefined;
+}
+
+/**
+ * The words of a command with the directory each is read in, and whether a
+ * `cd` target could not be resolved. Only a plain top-level `cd <path>` in a
+ * chain is modelled; anything else that can change the directory makes it
+ * unknown for the rest of the command (`README.md`).
+ */
+function bashWords(parts: readonly Part[], cwd: string, home: string): { words: BashWord[]; unresolvedCd: boolean } {
+  const words: BashWord[] = [];
+  let dir: string | undefined = cwd;
+  let unresolvedCd = false;
+  parts.forEach((part, at) => {
+    const here = dir;
+    part.words.forEach((word, index) => words.push({ word, next: part.words.at(index + 1), index, dir: here }));
+    if (dir === undefined) return;
+    if (part.sep === "(" || part.sep === ")") {
+      dir = undefined;
+      return;
+    }
+    let start = 0;
+    while (start < part.words.length && ASSIGNMENT_WORD.test(part.words.at(start) ?? "")) start += 1;
+    if (part.words.some((word) => word.startsWith("CDPATH=") || word === "CDPATH")) {
+      dir = undefined;
+      return;
+    }
+    const name = part.words.at(start) ?? "";
+    if (UNMODELLED.has(name)) {
+      dir = undefined;
+      return;
+    }
+    if (name !== "cd") return;
+    // A cd in a pipeline or in the background runs in a subshell.
+    const after = parts.at(at + 1)?.sep;
+    if (part.sep === "|" || part.sep === "|&" || part.sep === "&" || after === "|" || after === "|&" || after === "&") {
+      dir = undefined;
+      return;
+    }
+    const operands = part.words.slice(start + 1).filter((word) => word !== "--" && !/^-[LPe@]+$/.test(word));
+    const target = operands.at(0);
+    if (target === undefined || target === "-") {
+      dir = undefined;
+      return;
+    }
+    const expanded = expandWord(target, home);
+    if (expanded.unresolved || CD_GLOB.test(expanded.text)) {
+      unresolvedCd = true;
+      dir = undefined;
+      return;
+    }
+    dir = posix.resolve(dir, expanded.text);
+  });
+  return { words, unresolvedCd };
 }
 
 function checkBash(profile: AccessProfile, command: string, denied: Denied | undefined): Verdict {
   const rules = (profile.denyCommands ?? [])
     .map((text) => parseRule(text))
     .filter((rule): rule is Rule => rule !== undefined);
-  const { parts, substitution } = scan(command);
+  const { parts, substitution, extglob, ansiC } = scan(command);
 
   if ((profile.denyCommands ?? []).length > 0) {
     if (substitution !== undefined) {
@@ -209,13 +329,36 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
   }
 
   if (denied !== undefined) {
-    for (const part of parts) {
-      for (const word of part.words) {
-        for (const reading of readings(word)) {
-          const verdict = checkPath(denied, reading);
-          if (!verdict.allow) return verdict;
-        }
+    const { words, unresolvedCd } = bashWords(parts, denied.cwd, denied.home);
+    let unresolved = unresolvedCd ? "a cd target" : substitution === undefined ? undefined : `a command substitution (${substitution})`;
+    if (extglob) unresolved ??= "an extended glob";
+    if (ansiC) unresolved ??= "a $'…' word with escapes";
+    for (const { word, index, dir } of words) {
+      if (dir === undefined && (index > 0 ? !word.startsWith("-") : word.includes("/")) && !expandWord(word, denied.home).text.startsWith("/")) {
+        unresolved ??= `"${word}" after a directory change it cannot follow`;
       }
+      for (const reading of readings(word, denied.home)) {
+        const expanded = expandWord(reading, denied.home);
+        if (expanded.unresolved) {
+          unresolved ??= `"${reading}"`;
+          continue;
+        }
+        const verdict = expanded.glob
+          ? checkGlob(denied, expanded.text, dir ?? denied.cwd, reading)
+          : checkPath(denied, expanded.text, dir ?? denied.cwd, reading);
+        if (!verdict.allow) return verdict;
+      }
+    }
+    // A deny wins over this ask: it is only reached when no path was denied.
+    if (unresolved !== undefined) {
+      return {
+        allow: false,
+        ask: true,
+        reason: `command "${command}" uses ${unresolved}, which holds a shell expansion that cannot be matched against denyPaths; it asks`,
+        rule: "inline code",
+        kind: "command",
+        value: command,
+      };
     }
   }
   return ALLOW;
@@ -266,15 +409,31 @@ function askBash(profile: AccessProfile, command: string, asked: AskedPaths | un
   const ask = (reason: string, rule: string): Verdict => ({ allow: false, ask: true, reason, rule, kind: "command", value: command });
   if (asked !== undefined) {
     // Only a redirect writes by itself: a word after `>` or `>>`, or glued to it.
-    for (const part of parts) {
-      part.words.forEach((word, index) => {
-        const target = redirectTarget(word, part.words.at(index + 1));
-        if (target === undefined) return;
-        const hit = askedRule(asked, normalise(target, cwd, home));
-        if (hit !== undefined && found === undefined) found = { target, rule: hit };
-      });
+    const walked = bashWords(parts, cwd, home);
+    let unresolved: string | undefined;
+    let redirects = false;
+    for (const { word, next, dir } of walked.words) {
+      const target = redirectTarget(word, next);
+      if (target === undefined) continue;
+      redirects = true;
+      const expanded = expandWord(target, home);
+      if (expanded.unresolved || expanded.dirGlob) {
+        unresolved ??= `"${target}"`;
+        continue;
+      }
+      if (dir === undefined && !expanded.text.startsWith("/")) {
+        unresolved ??= `"${target}"`;
+        continue;
+      }
+      const hit = askedRule(asked, normalise(expanded.text, dir ?? cwd, home));
+      if (hit !== undefined && found === undefined) found = { target, rule: hit };
     }
     if (found !== undefined) return ask(`command "${command}" writes "${found.target}", which is under askPaths entry "${found.rule}"`, found.rule);
+    if (redirects && walked.unresolvedCd) unresolved ??= "a cd target";
+    if (redirects && substitution !== undefined) unresolved ??= `a command substitution (${substitution})`;
+    if (unresolved !== undefined) {
+      return ask(`command "${command}" writes to ${unresolved}, which holds a shell expansion that cannot be matched against askPaths; it asks`, "inline code");
+    }
   }
   if (texts.length === 0) return ALLOW;
   if (substitution !== undefined) {

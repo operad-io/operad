@@ -14,6 +14,10 @@ export interface Scan {
   readonly parts: readonly Part[];
   /** The first command or process substitution seen outside single quotes. */
   readonly substitution: string | undefined;
+  /** An extended glob (`@(a|b)`, `!(a)`, `+(a)`) was seen outside quotes; the shell may expand it to any path. */
+  readonly extglob: boolean;
+  /** A `$'…'` word with escapes was seen; its characters are not decoded. */
+  readonly ansiC: boolean;
 }
 
 const WHITESPACE = new Set([" ", "\t", "\r"]);
@@ -21,6 +25,8 @@ const WHITESPACE = new Set([" ", "\t", "\r"]);
 export function scan(command: string): Scan {
   const parts: Part[] = [];
   let substitution: string | undefined;
+  let extglob = false;
+  let ansiC = false;
   let words: string[] = [];
   let word: string | undefined;
   let sep = "";
@@ -45,6 +51,15 @@ export function scan(command: string): Scan {
   while (i < command.length) {
     const ch = command.charAt(i);
     const next = command.charAt(i + 1);
+    if (ch === "$" && next === "'") {
+      let end = i + 2;
+      while (end < command.length && command.charAt(end) !== "'") end += command.charAt(end) === "\\" ? 2 : 1;
+      const content = command.slice(i + 2, end);
+      if (content.includes("\\")) ansiC = true;
+      word = (word ?? "") + content;
+      i = end + 1;
+      continue;
+    }
     if (ch === "'") {
       const close = command.indexOf("'", i + 1);
       const end = close === -1 ? command.length : close;
@@ -98,6 +113,19 @@ export function scan(command: string): Scan {
       i += 1;
       continue;
     }
+    if (ch === "(" && word !== undefined && "@!+?*".includes(word.slice(-1)) && word.length > 0) {
+      let depth = 0;
+      let end = i;
+      for (; end < command.length; end += 1) {
+        const c = command.charAt(end);
+        if (c === "(") depth += 1;
+        if (c === ")" && --depth === 0) break;
+      }
+      extglob = true;
+      word += command.slice(i, end + 1);
+      i = end + 1;
+      continue;
+    }
     if (WHITESPACE.has(ch)) {
       endWord();
       i += 1;
@@ -127,7 +155,7 @@ export function scan(command: string): Scan {
     i += 1;
   }
   endPart(command.length, "", command.length);
-  return { parts, substitution };
+  return { parts, substitution, extglob, ansiC };
 }
 
 const WRAPPERS = new Set(["env", "command", "exec", "nohup", "time", "builtin", "sudo", "doas"]);
