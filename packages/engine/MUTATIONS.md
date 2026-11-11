@@ -568,3 +568,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0242-history-no-run-id-M1 | packages/engine/src/views/presentation.ts | put `lines.push(`<sub>run ${run.runId}</sub>`)` back at the end of each run in the history section | `presentation > the history of an object with two runs shows no tag and no run id` |
+| T-0244-M1 | packages/engine/src/store-copy/copy.ts | the copy did not compare what a sqlite source holds after the copy with what it held at the snapshot | `store copy > a write to a sqlite source after it was read makes the copy back fail and leaves no target` |
