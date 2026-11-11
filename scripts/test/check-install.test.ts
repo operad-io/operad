@@ -68,7 +68,8 @@ describe("scripts/check-install.ts", () => {
       const { code, err } = await run(["bun", "scripts/check-install.ts", dir], root);
       expect(code).toBe(1);
       expect(err.trim().split("\n")).toHaveLength(1);
-      expect(err).toContain("packages/harness-radian/node_modules/@operad-io/access-match");
+      // Only the first three missing links are named, and which ones come first depends on the packages there are.
+      expect(err).toMatch(/packages\/[a-z-]+\/node_modules\/@operad-io\/access-match/);
       expect(err).toContain("run bun install");
     } finally {
       rmSync(dir, { recursive: true, force: true });
