@@ -32,6 +32,8 @@ import {
   setTaskPhase,
   updateTask,
   setConcurrency,
+  recordPlanStart,
+  withRepoLock,
 } from "../src/service.ts";
 import { taskViews } from "../src/views.ts";
 import {
@@ -503,6 +505,12 @@ describe("dev scheduling", () => {
       await marked("merge", passedAttempt, async (fixture, key) => {
         const plan = await getPlan(fixture.store, key);
         fixture.store.put("plan", key, { ...plan.data, auto: "run" }, "test");
+      }),
+    ).toBe(false);
+    // Invalid settings: the scheduler returns early, so nothing answers the wait.
+    expect(
+      await marked("merge", passedAttempt, async (fixture) => {
+        writeFileSync(join(fixture.repositoryPath, ".operad/dev.json"), "{ not json");
       }),
     ).toBe(false);
     // Waits the scheduler never answers, and an integrate that was refused.
@@ -1172,6 +1180,29 @@ describe("dev scheduling", () => {
     }
   });
 
+  test("a task that waits gives up the reserved slot, so a resumed task does not hold it twice", async () => {
+    let now = 1_000;
+    changeClock.now = () => (now += 1_000);
+    try {
+      const fixture = await setup({ concurrency: 3 });
+      const high = await makePlan(fixture, { slug: "high", auto: "run", priority: "P2", concurrency: 3 });
+      const low = await makePlan(fixture, { slug: "low", auto: "run", priority: "P3", concurrency: 3 });
+      for (const slug of ["h1", "h2", "h3"]) await makeTask(fixture, high.key, slug);
+      const lowTask = await makeTask(fixture, low.key, "l1");
+      await confirm(fixture, high.key);
+      await confirm(fixture, low.key);
+      const started = (await tick(fixture)).map((request) => startedId(request));
+      for (const id of started) await putTask(fixture, id, { run: `run-${id}` });
+      expect(taskData((await getTask(fixture.store, lowTask.key)).data).oldestPlanSlot).toBe(true);
+
+      await phase(fixture, lowTask.key, "waiting", `run-${lowTask.key}`);
+      await tick(fixture);
+      expect(taskData((await getTask(fixture.store, lowTask.key)).data).oldestPlanSlot).toBeUndefined();
+    } finally {
+      changeClock.now = () => Date.now();
+    }
+  });
+
   test("once the repository is full, a freed slot goes by priority; only the reserved slot goes by turn", async () => {
     let now = 1_000;
     changeClock.now = () => (now += 1_000);
@@ -1261,6 +1292,48 @@ describe("dev scheduling", () => {
     expect(await note(fourth.id)).toBe(`$0.00 · waiting for area core (${holder}), 2 ahead`);
     expect(await note(second.id)).toBe(`$0.00 · waiting for area core (${holder})`);
     expect(await note(third.id)).toBe(`$0.00 · waiting for area core (${holder}), 1 ahead`);
+  });
+
+  test("the tasks ahead follow the order of the kept slot when it is the next start", async () => {
+    let now = 1_000;
+    changeClock.now = () => (now += 1_000);
+    try {
+      const fixture = await setup({ concurrency: 2 });
+      const urgent = await makePlan(fixture, { slug: "urgent", auto: "run", priority: "P1", concurrency: 2 });
+      const low = await makePlan(fixture, { slug: "low", auto: "run", priority: "P3", concurrency: 2 });
+      const holder = await addTask(fixture.store, { plan: urgent.key, slug: "u-one", title: "u-one", area: "core" });
+      const urgentNext = await addTask(fixture.store, { plan: urgent.key, slug: "u-two", title: "u-two", area: "core" });
+      const lowNext = await addTask(fixture.store, { plan: low.key, slug: "l-one", title: "l-one", area: "core" });
+      await confirm(fixture, urgent.key);
+      expect((await tick(fixture)).map((request) => startedId(request))).toEqual([holder.id]);
+      await confirm(fixture, low.key);
+      await tick(fixture);
+
+      // One slot is free and the low plan has waited longest: it is next, so
+      // the urgent plan's task has it ahead.
+      const note = async (id: string) => taskViews.row(await getTask(fixture.store, id)).note;
+      expect(await note(urgentNext.id)).toBe(`$0.00 · waiting for area core (${bareId(holder.id)}), 1 ahead`);
+      expect(await note(lowNext.id)).toBe(`$0.00 · waiting for area core (${bareId(holder.id)})`);
+    } finally {
+      changeClock.now = () => Date.now();
+    }
+  });
+
+  test("recording a plan start keeps a plan change made while it waits for the lock", async () => {
+    const fixture = await setup();
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run", priority: "P2" });
+    let recording: Promise<void> | undefined;
+    await withRepoLock(fixture.store, fixture.repository.name, async () => {
+      recording = recordPlanStart(fixture.store, plan.key, 5_000);
+      // Let the recording read the plan and queue for the lock, then change the plan.
+      await new Promise((resolve) => setImmediate(resolve));
+      const current = await getPlan(fixture.store, plan.key);
+      await fixture.store.put("plan", plan.key, { ...current.data, priority: "P1" }, "test");
+    });
+    await recording;
+    const stored = planData((await getPlan(fixture.store, plan.key)).data);
+    expect(stored.lastStartedAt).toBe(5_000);
+    expect(stored.priority).toBe("P1");
   });
 
   test("a task in the review phase still holds its area", async () => {

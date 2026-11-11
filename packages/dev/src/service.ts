@@ -1182,8 +1182,13 @@ export async function updateTask(
         ? {}
         : { areaAhead: data.areaAhead }),
     };
+    const object = await writeTask(store, id, next, "dev:task-update");
+    if (releases) {
+      const plan = await getPlan(store, storeKey(data.repository, data.plan));
+      await refreshPlanCounts(store, plan);
+    }
     return {
-      object: await writeTask(store, id, next, "dev:task-update"),
+      object,
       released:
         releases && data.run !== null
           ? { run: data.run, flow: data.flowGraph }
@@ -1376,6 +1381,46 @@ export async function setDependencyHold(
       },
       "dev:task-dependency-hold",
     );
+  });
+}
+
+/** Records when a plan last started a task, under the repository lock. */
+export async function recordPlanStart(
+  store: ObjectStore,
+  id: string,
+  at: number,
+): Promise<void> {
+  const initial = await getPlan(store, id);
+  await withRepoLock(store, planData(initial.data).repository, async () => {
+    const latest = await getPlan(store, id);
+    await store.put(
+      "plan",
+      id,
+      { ...planData(latest.data), lastStartedAt: at },
+      "dev:plan-start",
+    );
+  });
+}
+
+/**
+ * Drops the mark of the slot kept for the plan that went longest without a
+ * start, from a task that is no longer running: the slot was free while it
+ * waited, so a task that resumes to running does not hold it again.
+ */
+export async function clearOldestPlanSlot(
+  store: ObjectStore,
+  id: string,
+): Promise<void> {
+  const initial = await getTask(store, id);
+  const data = taskData(initial.data);
+  if (data.oldestPlanSlot !== true) return;
+  await withRepoLock(store, data.repository, async () => {
+    const current = await getTask(store, id);
+    const latest = taskData(current.data);
+    if (latest.oldestPlanSlot !== true) return;
+    if (latest.phase === "running" || latest.phase === "review") return;
+    const { oldestPlanSlot: _slot, ...rest } = latest;
+    await writeTask(store, id, rest, "dev:task-slot-release");
   });
 }
 
@@ -1837,12 +1882,15 @@ export async function resumeTask(
     const task = await getTask(store, id);
     const data = taskData(task.data);
     refuseTask("resume", data, id);
-    return writeTask(
+    const written = await writeTask(
       store,
       id,
       { ...data, phase: "ready", brief: appendChange(data.brief, "ready") },
       "dev:task-resume",
     );
+    const plan = await getPlan(store, storeKey(data.repository, data.plan));
+    await refreshPlanCounts(store, plan);
+    return written;
   });
 }
 

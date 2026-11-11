@@ -577,6 +577,8 @@ export function planData(data: Record<string, unknown>): PlanData {
 }
 
 export function taskData(data: Record<string, unknown>): TaskData {
+  // A task paused before the phase was renamed is stored as "held".
+  if (data.phase === "held") return { ...data, phase: "paused" } as unknown as TaskData;
   return data as unknown as TaskData;
 }
 

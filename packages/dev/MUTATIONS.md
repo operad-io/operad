@@ -469,6 +469,7 @@ the row fields.
 | T-0159-M1 | packages/dev/src/schedule.ts | the last free slot followed priority like the others (the oldest-plan order switched off) | `dev scheduling > the last free slot goes to the plan that waited longest, whatever its priority` |
 | T-0159-M2 | packages/dev/src/schedule.ts | plans of one priority ignored who started last (the turn tie-break removed) | `dev scheduling > plans of one priority take turns` |
 | T-0159-M3 | packages/dev/src/schedule.ts | the area queue counted no task ahead (`aheadOf` returned 0) | `dev scheduling > a waiting task counts the tasks ahead of it in its area` |
+
 ## T-0158 — a merge wait at auto merge is marked as answered automatically
 
 | id | file | mutation | failing test |
@@ -480,12 +481,12 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0163-M1 | packages/dev/src/gate.ts | the review wait bound allowed one wait too many (`> MAX_REVIEW_WAITS + 1`), which the seeded waits must still count | `dev/review hardening > an unavailable model waits at most MAX_REVIEW_WAITS times, across a restart` |
-| T-0156-M1 | packages/dev/src/steps.ts | a held task still let the step that was running write the task (the claim check ignored `held`) | `dev:pause and dev:resume > pause stops the running step, keeps the branch and commits, and frees the slot` |
-| T-0156-M2 | packages/dev/src/schedule.ts | a held dependency was treated as cancelled, so its dependent went into a person wait | `dev:pause and dev:resume > a paused ready task is not started, and its dependent stays queued` |
-| T-0156-M3 | packages/dev/src/service.ts | release left the task held instead of making it ready | `dev:pause and dev:resume > resume makes the task ready and the next run continues on its branch` |
+| T-0156-M1 | packages/dev/src/steps.ts | a paused task still let the step that was running write the task (the claim check ignored `paused`) | `dev:pause and dev:resume > pause stops the running step, keeps the branch and commits, and frees the slot` |
+| T-0156-M2 | packages/dev/src/schedule.ts | a paused dependency was treated as cancelled, so its dependent went into a person wait | `dev:pause and dev:resume > a paused ready task is not started, and its dependent stays queued` |
+| T-0156-M3 | packages/dev/src/service.ts | resume left the task paused instead of making it ready | `dev:pause and dev:resume > resume makes the task ready and the next run continues on its branch` |
 | T-0156-M4 | packages/dev/src/service.ts | task update never released a task waiting on a cancelled dependency | `dev:pause and dev:resume > task update --after releases a task waiting on a cancelled dependency` |
-| T-0156-M5 | packages/dev/src/service.ts | hold did not ask the kernel to cancel the task's run | `dev:pause and dev:resume > pause stops the running step, keeps the branch and commits, and frees the slot` |
-| T-0156-M6 | packages/dev/src/service.ts | hold dropped the task's attempt record | `dev:pause and dev:resume > pause stops the running step, keeps the branch and commits, and frees the slot` |
+| T-0156-M5 | packages/dev/src/service.ts | pause did not ask the kernel to cancel the task's run | `dev:pause and dev:resume > pause stops the running step, keeps the branch and commits, and frees the slot` |
+| T-0156-M6 | packages/dev/src/service.ts | pause dropped the task's attempt record | `dev:pause and dev:resume > pause stops the running step, keeps the branch and commits, and frees the slot` |
 
 ## T-0162 — repository row mark
 
@@ -584,6 +585,19 @@ the row fields.
 | T-0147-M1 | packages/dev/src/git.ts | the empty-output rerun loop never ran (`attempt < 1`) | `git that exits 0 and prints nothing > headOf returns the commit after empty answers` (also the `dev/work` no-worktree test and the two `repo add` tests) |
 | T-0147-M2 | packages/dev/src/git.ts | every command was treated as one that must print (`printsOnSuccess` returned true) | `git that exits 0 and prints nothing > a query allowed to print nothing is run once` |
 | T-0147-M3 | packages/dev/src/git.ts | the rerun bound was one too many (`attempt <= GIT_EMPTY_ATTEMPTS`) | `git that exits 0 and prints nothing > a query that never prints fails with git's words and says it was empty` |
+## T-0210 — follow-ups from the flow-stops reviews
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0210-M1 | packages/dev/src/steps.ts | a step of a paused and resumed run could still write the ready task (the no-claim check allowed it) | `dev:pause and dev:resume > a step of the paused run cannot write the task after it was resumed` |
+| T-0210-M2 | packages/dev/src/followups.ts | `paused` was not an open phase, so follow-ups were proposed while a task was paused | `review follow-ups > nothing is proposed while a task is open` |
+| T-0210-M3 | packages/dev/src/steps.ts | a merge conflict met by the worktree step kept the review-failed count | `dev/worktree > a conflict with main resets the review-failed count; a clean merge keeps it` |
+| T-0210-M4 | packages/dev/src/schedule.ts | a merge wait stayed marked as answered automatically when the repository's settings are invalid | `dev scheduling > a merge wait is marked as answered automatically only at auto merge` |
+| T-0210-M5 | packages/dev/src/schedule.ts | a task that left running kept the mark of the reserved slot | `dev scheduling > a task that waits gives up the reserved slot, so a resumed task does not hold it twice` |
+| T-0210-M6 | packages/dev/src/model.ts | a task stored with the old phase `held` was not read as paused | `dev:pause and dev:resume > a task stored with the old phase held reads as paused and can be resumed` |
+| T-0210-M10 | packages/dev/src/service.ts | the release in task update did not refresh the plan's cached counts | `dev:pause and dev:resume > task update --after releases a task waiting on a cancelled dependency` |
+| T-0210-M12 | packages/dev/src/service.ts | the plan start was written from the plan read before the repository lock, losing a change made while it waited | `dev scheduling > recording a plan start keeps a plan change made while it waits for the lock` |
+| T-0210-M13 | packages/dev/src/schedule.ts | the area queue always followed the turn order, ignoring the kept slot's order | `dev scheduling > the tasks ahead follow the order of the kept slot when it is the next start` |
 | T-0194-M3 | packages/dev/src/service.ts | a cross-repository `--after` change took only its own repository's lock | `--after validation under races and removed repositories > two cross-repository updates at once cannot close a cycle` (a race; it failed in 3 of 3 runs) |
 | T-0194-M4 | packages/dev/src/service.ts | a dependency's repository was no longer required to be registered | `--after validation under races and removed repositories > a task of a removed repository cannot be named` |
 
