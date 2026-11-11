@@ -11,6 +11,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readdirSync,
   watch,
   writeFileSync,
   type FSWatcher,
@@ -227,23 +228,23 @@ async function runFlow(
   const cli = (args: readonly string[], input?: string) => run(home, repository, args, input);
 
   const added = await cli(["repo", "add", "."]);
-  expect(added.code).toBe(0);
+  if (added.code !== 0) throw new Error(`repo add failed: ${added.err}`);
   const plan = await cli(
     ["plan", "add", "--slug", "flow", "--title", "Flow", "--flow", flow.name],
     "Run the whole flow once.\n",
   );
-  expect(plan.code).toBe(0);
+  if (plan.code !== 0) throw new Error(`plan add failed: ${plan.err}`);
   const planId = plan.out.trim();
   const task = await cli(
     ["task", "add", "--plan", planId, "--slug", "task", "--title", "Task"],
     "Change one file.\n",
   );
-  expect(task.code).toBe(0);
+  if (task.code !== 0) throw new Error(`task add failed: ${task.err}`);
   const taskId = task.out.trim();
   const confirmed = await cli(["dev:confirm", planId]);
-  expect(confirmed.code).toBe(0);
+  if (confirmed.code !== 0) throw new Error(`dev:confirm failed: ${confirmed.err}`);
   const auto = await cli(["dev:auto", planId, "--level", "run"]);
-  expect(auto.code).toBe(0);
+  if (auto.code !== 0) throw new Error(`dev:auto failed: ${auto.err}`);
 
   const output = join(prepared.root, "serve.out");
   const fd = openSync(output, "w");
@@ -286,12 +287,19 @@ async function runFlow(
     );
 
     const flows = await cli(["flows", "--json"]);
-    expect(flows.code).toBe(0);
-    expect(
-      (JSON.parse(flows.out) as { name: string }[]).some((entry) =>
-        flow.pattern.test(entry.name),
-      ),
-    ).toBe(true);
+    if (flows.code !== 0) throw new Error(`flows failed: ${flows.err}`);
+    const names = (JSON.parse(flows.out) as { name: string }[]).map((entry) => entry.name);
+    if (!names.some((name) => flow.pattern.test(name))) {
+      let files: string[] = [];
+      try {
+        files = readdirSync(join(storeRoot, "plugins", "flows"));
+      } catch {
+        // No stored flow directory at all.
+      }
+      throw new Error(
+        `flows did not list ${flow.pattern}: ${flows.out}\nstored flows: ${files.join(", ")}`,
+      );
+    }
 
     const merged = await cli(["dev:merge", taskId, "--yes"]);
     if (merged.code !== 0) {
