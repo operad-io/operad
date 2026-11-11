@@ -721,6 +721,11 @@ export class Runner {
     }
   }
 
+  /** Read afresh: the signal may fire during an await. */
+  private signalAborted(): boolean {
+    return this.signal?.aborted === true;
+  }
+
   /**
    * Runs a plugin step with a wall-time limit and the cancel signal. A step
    * that throws or overruns becomes a declared failure result; the data says
@@ -747,6 +752,13 @@ export class Runner {
     }
 
     const object = await this.runObject();
+    // A cancel that came while the object was read must not start the step.
+    if (this.signalAborted()) {
+      return this.failure(use, preferInterrupted, {
+        reason: "aborted",
+        message: "the step was cancelled",
+      });
+    }
     const sources =
       this.registry.store.kind === "file"
         ? allSources(this.registry.pluginSources())

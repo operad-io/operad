@@ -569,3 +569,4 @@ the row fields.
 | T-0251-M12 | packages/engine/src/log/jsonl.ts | a runs index cut shorter than what was read was not rebuilt from the directory | `the jsonl backend over a large history > a missing or cut runs index is rebuilt from one read of the directory` |
 | T-0251-M13 | packages/engine/src/log/jsonl.ts | a runs index ending in half a line was accepted instead of rebuilt | `the jsonl backend over a large history > a missing or cut runs index is rebuilt from one read of the directory` |
 | T-0251-M14 | packages/engine/src/log/jsonl.ts | an index that cannot be opened threw instead of falling back to the directory | `the jsonl backend over a large history > a missing or cut runs index is rebuilt from one read of the directory` |
+| T-0211-M3 | packages/engine/src/runner/runner.ts | the second aborted check after the object is read was removed | not covered by a test: the window is one await wide and no test can hold it open without a hook |

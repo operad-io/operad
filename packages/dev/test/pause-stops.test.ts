@@ -54,6 +54,16 @@ function alive(pid: number): boolean {
   }
 }
 
+/** The shell's pid and its child's, written by the waiting command. */
+async function pidsIn(path: string): Promise<number[]> {
+  return (await fileAppears(path)).split(/\s+/).map(Number);
+}
+
+/** Resolves when every pid is gone. */
+async function allGone(pids: readonly number[]): Promise<void> {
+  for (const pid of pids) await gone(pid);
+}
+
 /** Resolves when `pid` is gone. */
 async function gone(pid: number): Promise<void> {
   while (alive(pid)) await new Promise((done) => setTimeout(done, 20));
@@ -67,8 +77,8 @@ async function setup(options: { readonly check: boolean }) {
   const remote = await makeRemote(root);
   const store = storeAt(root);
   const pidFile = join(root, "pid");
-  const waitFile = join(root, "never");
-  const waiting = `echo $$ > '${pidFile}'; while [ ! -f '${waitFile}' ]; do sleep 1; done`;
+  // The shell and a child of it, both in the command's process group; `wait` never ends.
+  const waiting = `sleep 600 & echo "$$ $!" > '${pidFile}'; wait`;
   const gate = options.check ? { commands: [waiting], commandTimeoutSecs: 600 } : { commands: [] };
   mkdirSync(join(remote.repository, ".operad"), { recursive: true });
   writeFileSync(
@@ -144,7 +154,7 @@ async function setup(options: { readonly check: boolean }) {
     return { runId, ended };
   };
   const data = async () => taskData((await getTask(store, task.id)).data);
-  return { root, home, store, task, pidFile, waitFile, harness, control, start, data };
+  return { root, home, store, task, pidFile, harness, control, start, data };
 }
 
 describe("pause and cancel stop what the step started", () => {
@@ -152,8 +162,8 @@ describe("pause and cancel stop what the step started", () => {
     test(`${stop} while the check command runs ends its processes and frees the place`, async () => {
       const s = await setup({ check: true });
       const first = await s.start();
-      const pid = Number(await fileAppears(s.pidFile));
-      expect(alive(pid)).toBe(true);
+      const pid = await pidsIn(s.pidFile);
+      expect(pid.every(alive)).toBe(true);
 
       // A second check that wants a place waits: one of the two is the check, the other ours.
       const places = { home: s.home, checks: 2, log: () => {} };
@@ -175,7 +185,7 @@ describe("pause and cancel stop what the step started", () => {
       if (stop === "pause") await pauseTask(s.store, s.task.id, { runs: s.control });
       else await cancelTask(s.store, s.task.id, { runs: s.control });
       await first.ended;
-      await gone(pid);
+      await allGone(pid);
       await waiter;
       expect(second).toBe(true);
       release();
@@ -190,11 +200,11 @@ describe("pause and cancel stop what the step started", () => {
         rmSync(s.pidFile);
         await resumeTask(s.store, s.task.id);
         const again = await s.start();
-        const next = Number(await fileAppears(s.pidFile));
-        expect(next).not.toBe(pid);
+        const next = await pidsIn(s.pidFile);
+        expect(next).not.toEqual(pid);
         await pauseTask(s.store, s.task.id, { runs: s.control });
         await again.ended;
-        await gone(next);
+        await allGone(next);
       }
     });
   }
@@ -203,22 +213,22 @@ describe("pause and cancel stop what the step started", () => {
     test(`${stop} while the worker step runs ends its processes`, async () => {
       const s = await setup({ check: false });
       const first = await s.start();
-      const pid = Number(await fileAppears(s.pidFile));
+      const pid = await pidsIn(s.pidFile);
       if (stop === "pause") await pauseTask(s.store, s.task.id, { runs: s.control });
       else await cancelTask(s.store, s.task.id, { runs: s.control });
       await first.ended;
-      await gone(pid);
+      await allGone(pid);
       expect(s.harness.aborted).toBe(1);
       expect((await s.data()).phase).toBe(stop === "pause" ? "paused" : "cancelled");
       if (stop === "pause") {
         rmSync(s.pidFile);
         await resumeTask(s.store, s.task.id);
         const again = await s.start();
-        const next = Number(await fileAppears(s.pidFile));
-        expect(next).not.toBe(pid);
+        const next = await pidsIn(s.pidFile);
+        expect(next).not.toEqual(pid);
         await pauseTask(s.store, s.task.id, { runs: s.control });
         await again.ended;
-        await gone(next);
+        await allGone(next);
         expect(s.harness.started).toBe(2);
       }
     });
