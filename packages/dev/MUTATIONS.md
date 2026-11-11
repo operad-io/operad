@@ -624,3 +624,9 @@ the row fields.
 | T-0061-M3 | packages/dev/src/schedule.ts | a ready task with an undefined flow was given no reason on its row and its plan's row | `an undefined flow does not start, and the rows say why` |
 | T-0061-M4 | packages/dev/src/schedule.ts | rows named the flow even when the repository defines only the default one | `rows and the brief name the flow only when the repository defines more than one` |
 | T-0061-M5 | packages/dev/src/schedule.ts | the flow label was not kept for a cancelled task, so its row and Brief named no flow | `a task cancelled before any tick still names its flow` |
+
+## T-0216 — a rework's wait for its worker is shown
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0216-M2 | packages/dev/src/marks.ts | a task waiting for its worker kept the `running` mark | `dev/work with workers > a rework whose worker is busy shows the wait and the holding task until it is released` |

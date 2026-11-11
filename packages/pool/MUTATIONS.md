@@ -25,3 +25,9 @@ the row fields.
 | T-0042-M17 | packages/pool/src/shared.ts | pruned dead holders only in memory (did not write the book) | `FilePlaces leases > pruning a dead holder is written, so a waiter does not see a changed version at once` |
 | T-0042-M18 | packages/pool/src/shared.ts | built the place id from pid, time and a per-instance counter, so two instances in one millisecond got the same id | `FilePlaces > places taken in the same millisecond by separate instances have distinct ids` |
 | T-0043-M1 | packages/pool/src/index.ts | passed the requested worker's resume session on to the fallback worker | `fallback > the fallback does not receive the requested worker's resume session` |
+
+## T-0216 — a rework's wait for its worker is shown
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0216-M1 | packages/pool/src/index.ts | never announced that a place was taken after a wait | `waiting > the wait names who holds the place, and the end of the wait is announced` |

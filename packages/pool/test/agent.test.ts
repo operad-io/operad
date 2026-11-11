@@ -214,7 +214,25 @@ describe("waiting", () => {
     second.finish(done);
     (await r.calls.next()).finish(done);
     await Promise.all([one, two, three]);
-    expect(r.events.length).toBe(0);
+    // Only the two that waited say they got a place; none says it waits again.
+    expect(r.events.length).toBe(2);
+    expect((await r.events.next()).type).toBe("pool.acquired");
+    expect((await r.events.next()).type).toBe("pool.acquired");
+  });
+
+  test("the wait names who holds the place, and the end of the wait is announced", async () => {
+    const r = await rig();
+    const one = r.run({ ...params([a]), holder: "T-0001" });
+    const held = await r.calls.next();
+    expect(held.params.holder).toBeUndefined();
+    const two = r.run({ ...params([a]), holder: "T-0002" });
+    const waiting = await r.events.next();
+    expect(waiting.type).toBe("pool.waiting");
+    expect(waiting.data).toMatchObject({ workers: [{ worker: "a", holders: ["T-0001"] }] });
+    held.finish(done);
+    (await r.calls.next()).finish(done);
+    await Promise.all([one, two]);
+    expect((await r.events.next()).type).toBe("pool.acquired");
   });
 
   test("an abort while waiting ends the step as interrupted and holds nothing", async () => {

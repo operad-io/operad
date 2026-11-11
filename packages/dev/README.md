@@ -645,6 +645,12 @@ waits without a time limit until both are free, and says which it waits for:
 repository's, so two checks cannot wait for each other. The repository's places
 are lock files in the same directory, so a dead check gives both back.
 
+A rework asks for the worker that ran the attempt before. When that worker is
+busy with another task, the work step waits for it without a time limit; the
+task's row shows the `blocked` mark and `waiting for worker pi: held by T-0205`
+(in `running` and in `show`), and the step log says it when the wait starts and
+`worker pi is free; the work starts` when it ends.
+
 One integration of a repository runs at a time. A task whose wait was answered
 with `merge` joins the repository's integration queue, in the order the merges
 were chosen, and the integrate step waits for its turn without a time limit. It

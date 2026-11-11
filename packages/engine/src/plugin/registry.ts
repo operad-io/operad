@@ -814,6 +814,9 @@ export class PluginRegistry {
           `step "${use}": emit: type "${event.type}" must begin with "${found.plugin.name}."`,
         );
       }
+      // The step that started this one may watch its events; it does not
+      // replace the destination.
+      await options.observe?.(found.plugin.name, event);
       if (options.emit === undefined) {
         throw new PluginError(
           `step "${use}": emit: no event destination is configured`,
