@@ -70,7 +70,7 @@ export function createDevPlugin() {
         name: "verify",
         calls: ["shell/check"],
         timeoutSecs: STEP_TIMEOUT_SECS,
-        results: ["pass", "fail", "cancelled"],
+        results: ["pass", "fail", "not_code", "cancelled"],
         run: runVerify,
       },
       {

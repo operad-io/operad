@@ -30,6 +30,7 @@ import {
 } from "@operad-io/engine";
 import { createShellPlugin } from "@operad-io/shell";
 import { setTaskPhase } from "../src/service.ts";
+import { notCodeTestHooks } from "../src/notcode.ts";
 import type { CheckCommand } from "../src/settings.ts";
 import { listRerunCounts, recordRerunPasses } from "../src/reruns.ts";
 import { anchoredPattern, rerunCommand } from "../src/rerun.ts";
@@ -772,40 +773,61 @@ describe("dev/verify", () => {
     expect(readFileSync(count, "utf8").trim().split("\n")).toHaveLength(1);
   });
 
-  test("a timeout is not rerun", async () => {
-    const clock = manualClock();
-    const root = await tempRoot();
-    const marker = join(root, "started");
-    const count = join(root, "count");
-    const state = await fixture({
-      clock,
-      commands: [`echo x >> '${count}'; trap '' TERM; echo $$ > '${marker}'; sleep 30`],
-      commandTimeoutSecs: 5,
-    });
-    const running = verify(state);
-    await waitForFile(marker);
-    expect(clock.fireTimeouts()).toBe(1);
-    const result = await running;
-    expect(result.result).toBe("fail");
-    expect(readFileSync(count, "utf8").trim().split("\n")).toHaveLength(1);
+  test("a timeout is not rerun at once: verify waits for a quiet machine, runs it once more, and a second timeout goes to a person", async () => {
+    notCodeTestHooks.load = () => ({ load1: 1, cores: 10 });
+    try {
+      const clock = manualClock();
+      const root = await tempRoot();
+      const marker = join(root, "started");
+      const count = join(root, "count");
+      const state = await fixture({
+        clock,
+        commands: [
+          `echo x >> '${count}'; n=$(wc -l < '${count}' | tr -d ' '); trap '' TERM; echo $$ > '${marker}'$n; sleep 30`,
+        ],
+        commandTimeoutSecs: 5,
+      });
+      const running = verify(state);
+      await waitForFile(`${marker}1`);
+      expect(clock.fireTimeouts()).toBe(1);
+      await waitForFile(`${marker}2`);
+      expect(clock.fireTimeouts()).toBe(1);
+      const result = await running;
+      expect(result.result).toBe("not_code");
+      expect(readFileSync(count, "utf8").trim().split("\n")).toHaveLength(2);
+      expect((await taskOf(state)).attempt?.verify?.notCode).toBe(
+        "check timed out twice under load 1 on 10 cores",
+      );
+    } finally {
+      notCodeTestHooks.load = undefined;
+    }
   });
 
-  test("a hanging command fails with a timeout", async () => {
-    const clock = manualClock();
-    const root = await tempRoot();
-    const marker = join(root, "started");
-    const state = await fixture({
-      clock,
-      commands: [`trap '' TERM; echo $$ > '${marker}'; sleep 30`],
-      commandTimeoutSecs: 5,
-    });
-    const running = verify(state);
-    await waitForFile(marker);
-    expect(clock.fireTimeouts()).toBe(1);
-    const result = await running;
-    expect(result.result).toBe("fail");
-    expect(String(result.data?.message)).toContain("stopped after 5s");
-    expect((await taskOf(state)).attempt?.verify?.result).toBe("fail");
+  test("a hanging command is stopped at the limit, and the record says so", async () => {
+    notCodeTestHooks.load = () => ({ load1: 1, cores: 10 });
+    try {
+      const clock = manualClock();
+      const root = await tempRoot();
+      const marker = join(root, "started");
+      const count = join(root, "count");
+      const state = await fixture({
+        clock,
+        commands: [
+          `echo x >> '${count}'; n=$(wc -l < '${count}' | tr -d ' '); trap '' TERM; echo $$ > '${marker}'$n; sleep 30`,
+        ],
+        commandTimeoutSecs: 5,
+      });
+      const running = verify(state);
+      await waitForFile(`${marker}1`);
+      expect(clock.fireTimeouts()).toBe(1);
+      await waitForFile(`${marker}2`);
+      expect(clock.fireTimeouts()).toBe(1);
+      const result = await running;
+      expect(String(result.data?.message)).toContain("stopped after 5s");
+      expect((await taskOf(state)).attempt?.verify?.result).toBe("fail");
+    } finally {
+      notCodeTestHooks.load = undefined;
+    }
   });
 
   test("a replay of the same run keeps the first verified commit", async () => {
@@ -2654,6 +2676,7 @@ describe("the dev flow", () => {
     expect(nextOf("verify")).toEqual({
       pass: "review",
       fail: "rework",
+      not_code: "announce_verify_not_code",
       cancelled: "end_cancelled",
     });
     expect(nextOf("review")).toEqual({
@@ -2920,26 +2943,34 @@ describe("dev/verify reruns only the failed tests", () => {
     expect(existsSync(ran)).toBe(false);
   });
 
-  test("a timeout is not rerun", async () => {
-    const clock = manualClock();
-    const root = await tempRoot();
-    const marker = join(root, "started");
-    const ran = join(root, "ran");
-    const state = await fixture({
-      clock,
-      commands: [
-        object(
-          `echo '(fail) t [1ms]' >&2; trap '' TERM; echo $$ > '${marker}'; sleep 30`,
-          `echo {name} >> '${ran}'`,
-        ),
-      ],
-      commandTimeoutSecs: 5,
-    });
-    const running = verify(state);
-    await waitForFile(marker);
-    expect(clock.fireTimeouts()).toBe(1);
-    expect((await running).result).toBe("fail");
-    expect(existsSync(ran)).toBe(false);
+  test("a timeout does not rerun the failed tests", async () => {
+    notCodeTestHooks.load = () => ({ load1: 1, cores: 10 });
+    try {
+      const clock = manualClock();
+      const root = await tempRoot();
+      const marker = join(root, "started");
+      const count = join(root, "count");
+      const ran = join(root, "ran");
+      const state = await fixture({
+        clock,
+        commands: [
+          object(
+            `echo '(fail) t [1ms]' >&2; echo x >> '${count}'; n=$(wc -l < '${count}' | tr -d ' '); trap '' TERM; echo $$ > '${marker}'$n; sleep 30`,
+            `echo {name} >> '${ran}'`,
+          ),
+        ],
+        commandTimeoutSecs: 5,
+      });
+      const running = verify(state);
+      await waitForFile(`${marker}1`);
+      expect(clock.fireTimeouts()).toBe(1);
+      await waitForFile(`${marker}2`);
+      expect(clock.fireTimeouts()).toBe(1);
+      expect((await running).result).toBe("not_code");
+      expect(existsSync(ran)).toBe(false);
+    } finally {
+      notCodeTestHooks.load = undefined;
+    }
   });
 
   test("the whole-command rerun is not used when failed is declared", async () => {
@@ -3801,5 +3832,117 @@ describe("prepare", () => {
       const gate = gateWorktreePath(state.remote.repository, settings, state.taskId);
       expect(lstatSync(join(gate, "node_modules", "a")).isSymbolicLink()).toBe(true);
     });
+  });
+});
+
+describe("dev/verify tells a result that is not the code from one that is", () => {
+  const MATCH = "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$";
+  const slow = "echo '(fail) a > slow [30001.00ms]' >&2; exit 1";
+
+  afterEach(() => {
+    notCodeTestHooks.load = undefined;
+    notCodeTestHooks.wait = undefined;
+  });
+
+  /** A load that follows `readings`, one reading per call, then repeats the last. */
+  function loads(...readings: number[]): { waits: number } {
+    const seen = { waits: 0 };
+    let index = 0;
+    notCodeTestHooks.load = () => ({
+      load1: readings[Math.min(index++, readings.length - 1)] ?? 0,
+      cores: 10,
+    });
+    notCodeTestHooks.wait = async () => {
+      seen.waits += 1;
+      return true;
+    };
+    return seen;
+  }
+
+  test("an assertion failure still goes to the worker, with no wait", async () => {
+    const seen = loads(18);
+    const state = await fixture({ commands: ["echo '(fail) a > b [3.00ms]' >&2; exit 1"] });
+    const result = await verify(state);
+    expect(result.result).toBe("fail");
+    expect(seen.waits).toBe(0);
+  });
+
+  test("a failure at the test timeout waits for a quiet machine, runs once more, and passes", async () => {
+    const root = await tempRoot();
+    const count = join(root, "count");
+    // The first run and its rerun fail; the run after the wait passes.
+    const command = `echo x >> '${count}'; if [ $(wc -l < '${count}') -ge 3 ]; then exit 0; fi; ${slow}`;
+    // Load: before the first run, after it, while waiting (busy, then quiet).
+    const seen = loads(18, 18, 18, 3);
+    const state = await fixture({ commands: [command] });
+    const result = await verify(state);
+    expect(result.result).toBe("pass");
+    expect(seen.waits).toBe(1);
+    expect(readFileSync(count, "utf8").trim().split("\n")).toHaveLength(3);
+  });
+
+  test("the same result twice goes to a person, and the waiting line says why", async () => {
+    // Busy before and after the first run and while waiting, quiet before the
+    // second run, busy again when that one ends.
+    const seen = loads(18, 18, 18, 18, 3, 18);
+    const state = await fixture({ commands: [slow] });
+    const result = await verify(state);
+    expect(result.result).toBe("not_code");
+    expect(seen.waits).toBe(2);
+    const task = await taskOf(state);
+    expect(task.phase).toBe("waiting");
+    expect(task.attempt?.verify?.notCode).toBe("tests timed out twice under load 18 on 10 cores");
+    const announced = await state.registry.runStep(
+      "dev/announce",
+      { from: "verify", result: "not_code" },
+      { runId: "announce-run", object: { type: "task", id: state.taskKey, data: {} } },
+    );
+    expect(announced.data?.reason).toBe("tests timed out twice under load 18 on 10 cores");
+  });
+
+  test("a run killed by a signal nobody sent is treated the same way", async () => {
+    loads(18, 18, 18, 18, 3, 18);
+    const state = await fixture({ commands: ["exit 143"] });
+    const result = await verify(state);
+    expect(result.result).toBe("not_code");
+    expect((await taskOf(state)).attempt?.verify?.notCode).toBe(
+      "check was killed by SIGTERM twice under load 18 on 10 cores",
+    );
+  });
+
+  test("a test that passes on rerun under load is recorded and proposes no task", async () => {
+    loads(18);
+    const root = await tempRoot();
+    const flaky = {
+      run: "echo '(fail) a > flaky [1.00ms]' >&2; exit 1",
+      failed: { match: MATCH, rerun: `echo {name} >> '${join(root, "ran")}'`, max: 10 },
+    };
+    const state = await fixture({ commands: [flaky] });
+    for (const run of ["v1", "v2", "v3"]) expect((await verify(state, run)).result).toBe("pass");
+    const tasks = (await listAll(state.store, "task")).filter(
+      (object) => String((object.data as { title?: unknown }).title).startsWith("Fix the flaky test"),
+    );
+    expect(tasks).toHaveLength(0);
+    const record = (await listAll(state.store, "flaky-test"))[0]?.data as
+      | { occurrences?: { load?: { load1: number; cores: number } }[] }
+      | undefined;
+    expect(record?.occurrences).toHaveLength(3);
+    expect(record?.occurrences?.[0]?.load).toEqual({ load1: 18, cores: 10 });
+  });
+
+  test("a test that passes on rerun on an idle machine proposes a task as before", async () => {
+    loads(2);
+    const root = await tempRoot();
+    const flaky = {
+      run: "echo '(fail) a > flaky [1.00ms]' >&2; exit 1",
+      failed: { match: MATCH, rerun: `echo {name} >> '${join(root, "ran")}'`, max: 10 },
+    };
+    const state = await fixture({ commands: [flaky] });
+    await verify(state, "v1");
+    await verify(state, "v2");
+    const tasks = (await listAll(state.store, "task")).filter(
+      (object) => String((object.data as { title?: unknown }).title) === "Fix the flaky test: a > flaky",
+    );
+    expect(tasks).toHaveLength(1);
   });
 });
