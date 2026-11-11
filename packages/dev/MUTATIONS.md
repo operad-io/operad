@@ -343,7 +343,8 @@ the row fields.
 | T-0092-M13 | packages/dev/src/flaky.ts | the no-plan notice was not returned to the check step | `a flaky test proposes a task > a repository without a confirmed plan records a notice and proposes nothing` |
 | T-0092-M14 | packages/dev/src/flaky.ts | an open task naming the test was linked only once the threshold was reached | `a flaky test proposes a task > an open task naming the test is linked on the first pass, so its end restarts the count` |
 | T-0092-M15 | packages/dev/src/flaky.ts | any open task containing the test name as a substring counted as naming it | `a flaky test proposes a task > an unrelated open task that only contains a short test name is not its task` |
-| T-0092-M16 | packages/dev/src/flaky.ts | a brief line equal to the name inside a fenced block counted as naming the test (also T-0092-M18) | `a flaky test proposes a task > which open task names a test` |
+| T-0092-M16 | packages/dev/src/flaky.ts | a brief line equal to the name inside a fenced block counted as naming the test | `a flaky test proposes a task > which open task names a test` |
+| T-0092-M18 | packages/dev/src/flaky.ts | a brief line that merely contains the name counted as naming the test | `a flaky test proposes a task > which open task names a test` |
 | T-0092-M17 | packages/dev/src/integrate.ts | a failing integration check left out the no-plan notice | `dev/integrate > a failing integration check still says why no flaky task was proposed` |
 | T-0092-M19 | packages/dev/src/flaky.ts | the task title cut the test name at 120 characters | `a flaky test proposes a task > two long names that share their first 120 characters each get their own task with the full name` |
 | T-0087-M4 | packages/dev/src/rework.ts | a hunk in the previous diff never matched, so every hunk was new | `increment > no change since the previous review` |
