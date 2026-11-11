@@ -510,3 +510,12 @@ test("extended globs in a directory component ask; combined cd options are not t
     expect(bash(PATHS, command)).toMatchObject({ allow: false, rule: "~/.ssh" });
   }
 });
+
+test("pushd and popd operands: the directory stack is not tracked, so the directory becomes unknown", () => {
+  for (const command of ["pushd +1 && cat .ssh/id_rsa", "pushd -1 && cat x", "popd && cat x", "pushd && cat x", 'pushd "$HOME" && pushd /tmp && pushd +1 && cat .ssh/id_rsa']) {
+    expect(bash(PATHS, command)).toMatchObject({ allow: false, ask: true, rule: "inline code" });
+  }
+  expect(bash(PATHS, "pushd ~ && cat .ssh/id_rsa")).toMatchObject({ allow: false, rule: "~/.ssh" });
+  expect(bash(PATHS, "popd && cat ~/.ssh/id_rsa")).toMatchObject({ allow: false, rule: "~/.ssh" });
+  expect(bash(PATHS, "pushd /tmp && cat x")).toEqual({ allow: true });
+});

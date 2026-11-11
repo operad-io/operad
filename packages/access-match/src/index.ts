@@ -201,8 +201,8 @@ function expandWord(word: string, home: string): Expanded {
   return { text, unresolved };
 }
 
-/** The target of a leading `cd` (or `pushd`), as written; "" when it names no directory. */
-function cdTarget(words: readonly string[]): string | undefined {
+/** The leading `cd`, `pushd` or `popd` of a part and its first operand, as written; "" when it has none. */
+function cdTarget(words: readonly string[]): { readonly name: string; readonly target: string } | undefined {
   let index = 0;
   while (index < words.length && ASSIGNMENT_WORD.test(words.at(index) ?? "")) index += 1;
   while (words.at(index) === "builtin" || words.at(index) === "command") {
@@ -210,9 +210,9 @@ function cdTarget(words: readonly string[]): string | undefined {
     while ((words.at(index) ?? "").startsWith("-")) index += 1;
   }
   const name = words.at(index);
-  if (name !== "cd" && name !== "pushd") return undefined;
+  if (name !== "cd" && name !== "pushd" && name !== "popd") return undefined;
   const rest = words.slice(index + 1).filter((word) => word !== "--" && !/^-[LPe@]+$/.test(word));
-  return rest.at(0) ?? "";
+  return { name, target: rest.at(0) ?? "" };
 }
 
 const ASSIGNMENT_WORD = /^[A-Za-z_][A-Za-z0-9_]*=/;
@@ -220,8 +220,10 @@ const ASSIGNMENT_WORD = /^[A-Za-z_][A-Za-z0-9_]*=/;
 interface BashWord {
   readonly word: string;
   readonly next: string | undefined;
-  /** The directory relative paths of this word mean: the call's, or the last `cd` target. */
-  readonly dir: string;
+  /** Position in its part; 0 is the command name. */
+  readonly index: number;
+  /** The directory relative paths of this word mean: the call's, or the last `cd` target; undefined once the directory stack made it unknown. */
+  readonly dir: string | undefined;
 }
 
 /**
@@ -230,12 +232,25 @@ interface BashWord {
  */
 function bashWords(parts: readonly { readonly words: readonly string[] }[], cwd: string, home: string): { words: BashWord[]; unresolvedCd: boolean } {
   const words: BashWord[] = [];
-  let dir = cwd;
+  let dir: string | undefined = cwd;
   let unresolvedCd = false;
   for (const part of parts) {
-    part.words.forEach((word, index) => words.push({ word, next: part.words.at(index + 1), dir }));
-    const target = cdTarget(part.words);
-    if (target === undefined) continue;
+    const here = dir;
+    part.words.forEach((word, index) => words.push({ word, next: part.words.at(index + 1), index, dir: here }));
+    const found = cdTarget(part.words);
+    if (found === undefined) continue;
+    const { name, target } = found;
+    // The directory stack is not tracked: popd, a bare pushd (swap) and pushd +N or -N leave the directory unknown.
+    if (name === "popd" || (name === "pushd" && (target === "" || /^[+-][0-9]+$/.test(target)))) {
+      dir = undefined;
+      continue;
+    }
+    if (dir === undefined) {
+      if (target !== "" && !expandWord(target, home).unresolved && expandWord(target, home).text.startsWith("/")) dir = posix.resolve(expandWord(target, home).text);
+      else if (target === "") dir = home;
+      else unresolvedCd = true;
+      continue;
+    }
     if (target === "") {
       dir = home;
       continue;
@@ -279,14 +294,17 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
     const { words, unresolvedCd } = bashWords(parts, denied.cwd, denied.home);
     let unresolved = unresolvedCd ? "a cd target" : substitution === undefined ? undefined : `a command substitution (${substitution})`;
     if (extglob) unresolved ??= "an extended glob";
-    for (const { word, dir } of words) {
+    for (const { word, index, dir } of words) {
+      if (dir === undefined && index > 0 && !word.startsWith("-") && !expandWord(word, denied.home).text.startsWith("/")) {
+        unresolved ??= `"${word}" after a directory change it cannot follow`;
+      }
       for (const reading of readings(word, denied.home)) {
         const expanded = expandWord(reading, denied.home);
         if (expanded.unresolved) {
           unresolved ??= `"${reading}"`;
           continue;
         }
-        const verdict = checkPath(denied, expanded.text, dir, reading);
+        const verdict = checkPath(denied, expanded.text, dir ?? denied.cwd, reading);
         if (!verdict.allow) return verdict;
       }
     }
@@ -362,7 +380,11 @@ function askBash(profile: AccessProfile, command: string, asked: AskedPaths | un
         unresolved ??= `"${target}"`;
         continue;
       }
-      const hit = askedRule(asked, normalise(expanded.text, dir, home));
+      if (dir === undefined && !expanded.text.startsWith("/")) {
+        unresolved ??= `"${target}"`;
+        continue;
+      }
+      const hit = askedRule(asked, normalise(expanded.text, dir ?? cwd, home));
       if (hit !== undefined && found === undefined) found = { target, rule: hit };
     }
     if (found !== undefined) return ask(`command "${command}" writes "${found.target}", which is under askPaths entry "${found.rule}"`, found.rule);

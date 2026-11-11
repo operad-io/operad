@@ -66,3 +66,9 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0282-M3 | packages/access-match/src/index.ts | `cdTarget` skipped only a lone `-L` or `-P`, so `cd -LP "$HOME"` took `-LP` as the target | `extended globs in a directory component ask; combined cd options are not the target` |
+
+## T-0282 — rework 5
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0282-M4 | packages/access-match/src/index.ts | `pushd +1` was read as a relative directory `+1` instead of leaving the directory unknown | `pushd and popd operands: the directory stack is not tracked, so the directory becomes unknown` |
