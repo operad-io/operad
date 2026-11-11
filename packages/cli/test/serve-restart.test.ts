@@ -14,7 +14,7 @@ const SHELL = fileURLToPath(new URL("../../shell/src/index.ts", import.meta.url)
 const FLOW = fileURLToPath(new URL("./fixtures/check-flow.ts", import.meta.url));
 
 /** The old one-second window at the 200 ms serve interval covered about five passes. */
-const TICKS_BEFORE_RELEASE = 5;
+const PASSES_BEFORE_RELEASE = 5;
 
 /** Resolves once the serve has taken `count` turns, each one a line in `path`. */
 async function waitForTicks(path: string, count: number): Promise<void> {
@@ -194,12 +194,13 @@ describe("a serve restart while a check runs", () => {
       await serve.exited;
 
       // Forget the first serve's marks, start the new serve and wait for five
-      // turns, as the old one-second window did. The command still waits: the
-      // new serve neither signalled it nor started it again, even after a
-      // later pass could have rediscovered the active run.
+      // passes, as the old one-second window did. A tick line is written at
+      // the start of a pass, so wait for the sixth line: it proves the fifth
+      // pass, including its active-run check, finished. Releasing on the fifth
+      // line would race that check.
       rmSync(ticks, { force: true });
       serve = startServe(home, env);
-      await waitForTicks(ticks, TICKS_BEFORE_RELEASE);
+      await waitForTicks(ticks, PASSES_BEFORE_RELEASE + 1);
       expect(existsSync(signalled)).toBe(false);
       expect(existsSync(join(work, "finished"))).toBe(false);
 
