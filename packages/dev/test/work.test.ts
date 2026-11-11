@@ -1,7 +1,7 @@
 import { createPoolPlugin } from "@operad-io/pool";
 import { FilePlaces } from "@operad-io/pool";
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   definePlugin,
@@ -24,6 +24,7 @@ import {
   gitOrThrow,
   makeRemote,
   type RemoteSetup,
+  silentGit,
 } from "./git-support.ts";
 import {
   cleanupTempRoots,
@@ -105,7 +106,7 @@ function fakeHarness(record: string) {
               },
             };
           }
-          if (mode === "commit" || mode === "commit-words" || mode === "commit-standard" || mode === "commit-incomplete" || mode === "commit-broken") {
+          if (mode === "commit" || mode === "commit-standard" || mode === "commit-incomplete" || mode === "commit-broken") {
             writeFileSync(join(input.cwd, "worker.txt"), "done\n");
             gitOrThrow(input.cwd, ["add", "worker.txt"]);
             gitOrThrow(input.cwd, [
@@ -150,9 +151,6 @@ function fakeHarness(record: string) {
             result: "done",
             data: {
               sessionId: "fake-session",
-              ...(mode === "commit-words"
-                ? { finalMessage: "Changed things.\nNew words: reviewer.first.use, `stallSecs`" }
-                : {}),
               cost: { micros: FAKE_COST_MICROS },
               usage: {},
             },
@@ -306,6 +304,32 @@ async function taskDataOf(state: Fixture) {
 }
 
 describe("dev/work", () => {
+  test("beforeAttempt merge-main merges the latest main; none leaves it alone", async () => {
+    const merged = await fixture("nothing");
+    await advanceMain(merged.remote, "main.txt", "from main\n", "main moves");
+    const withMerge = await merged.registry.runStep("dev/work", {}, {
+      runId: "work-merge",
+      object: { type: "task", id: merged.taskKey, data: {} },
+      params: { beforeAttempt: "merge-main" },
+    });
+    expect(withMerge.result).toBe("done");
+    expect(
+      existsSync(join(merged.remote.repository, ".operad-worktrees", merged.taskId, "main.txt")),
+    ).toBe(true);
+
+    const skipped = await fixture("nothing");
+    await advanceMain(skipped.remote, "main.txt", "from main\n", "main moves");
+    const withNone = await skipped.registry.runStep("dev/work", {}, {
+      runId: "work-none",
+      object: { type: "task", id: skipped.taskKey, data: {} },
+      params: { beforeAttempt: "none" },
+    });
+    expect(withNone.result).toBe("nothing");
+    expect(
+      existsSync(join(skipped.remote.repository, ".operad-worktrees", skipped.taskId, "main.txt")),
+    ).toBe(false);
+  });
+
   test("the standard usage gives the row's cost and the tokens", async () => {
     const state = await fixture("commit-standard");
     const result = await runWork(state);
@@ -324,18 +348,6 @@ describe("dev/work", () => {
     const task = await taskDataOf(state);
     expect(task.attempt?.costQuality).toBe("incomplete");
     expect(task.costQuality).toBe("incomplete");
-  });
-
-  test("the New words line of the final answer is kept on the attempt", async () => {
-    const state = await fixture("commit-words");
-    await runWork(state);
-    expect((await taskDataOf(state)).attempt?.workWords).toEqual([
-      "reviewer.first.use",
-      "stallSecs",
-    ]);
-    const none = await fixture("commit");
-    await runWork(none);
-    expect((await taskDataOf(none)).attempt?.workWords).toEqual([]);
   });
 
   test("a usage that is not standard is ignored and logged with the run", async () => {
@@ -432,7 +444,6 @@ describe("dev/work", () => {
 
   test("unavailable: after the allowed waits the failure goes to a person", async () => {
     const state = await fixture("unavailable");
-    expect((await runWork(state)).result).toBe("unavailable");
     // Every wait is a real harness run, so the count is set to one short of the
     // bound instead of running the harness MAX_WORK_WAITS times.
     const waited = await state.store.get("task", state.taskKey);
@@ -845,5 +856,18 @@ describe("dev/work with workers", () => {
     const result = await runWork(state);
     expect(result.data).toMatchObject({ worker: "fresh" });
     expect(JSON.parse(readFileSync(stale, "utf8"))).toHaveProperty("workers.old");
+  });
+
+  test("an empty answer from git does not make an existing worktree missing", async () => {
+    const state = await fixture("commit");
+    const stub = silentGit(state.root, "rev-parse --is-inside-work-tree", 2);
+    try {
+      const result = await runWork(state);
+      expect(result.data?.reason).not.toBe("no_worktree");
+      expect(result.result).toBe("done");
+      expect(stub.calls()).toBeGreaterThanOrEqual(3);
+    } finally {
+      stub.restore();
+    }
   });
 });

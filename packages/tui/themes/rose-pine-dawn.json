@@ -1,6 +1,6 @@
 {
   "$schema": "../theme.schema.json",
-  "comment": "Rosé Pine Dawn. Source: https://github.com/rose-pine/palette (palette.json, dawn). Licence: MIT, Copyright (c) mvllow; the text is in LICENSE-rose-pine. Roles: text = text, weak = subtle, rule = overlay, accent = iris, run = foam, ok = pine, error = love, add = foam, remove = love, tint = surface, code = overlay, background = base. Rosé Pine has no green or blue: ok is pine and run is foam, as its own editor themes use them. No colour adjusted.",
+  "comment": "Rosé Pine Dawn. Source: https://github.com/rose-pine/palette (palette.json, dawn). Licence: MIT, Copyright (c) mvllow; the text is in LICENSE-rose-pine. Roles: text = text, weak = subtle, rule = overlay, accent = iris, run = foam, ok = pine, error = love, add = foam, remove = love, tint = iris at 15% over base (Visual), code = surface (NormalFloat), background = base. Rosé Pine has no green or blue: ok is pine and run is foam, as its own editor themes use them. The list and cursor-line highlights use overlay, but Visual blends iris 15% over base; tint takes that blend so a selected row is visible and differs from rule. No colour adjusted. cancelled = error with lightness 60% for a cancelled child's bar segment.",
   "colors": {
     "text": "#464261",
     "weak": "#797593",
@@ -9,10 +9,11 @@
     "run": "#56949f",
     "ok": "#286983",
     "error": "#b4637a",
+    "cancelled": "#713647",
     "add": "#56949f",
     "remove": "#b4637a",
-    "tint": "#fffaf3",
-    "code": "#f2e9e1",
+    "tint": "#eae2e3",
+    "code": "#fffaf3",
     "background": "#faf4ed"
   }
 }

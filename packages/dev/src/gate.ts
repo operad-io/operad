@@ -19,7 +19,6 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { checkPlaces } from "./places.ts";
-import { approvedWordsOf, cleanWords, unapprovedWords } from "./words.ts";
 import { linkWorkspacePackages, runPrepare, stepOptions } from "./prepare.ts";
 import { runCheckCommands } from "./rerun.ts";
 import { reportFlakyTests } from "./flaky.ts";
@@ -56,6 +55,7 @@ import {
 } from "./model.ts";
 import {
   assertInsideRepository,
+  type CheckCommand,
   type DevSettings,
   type FixLevel,
   type ReviewerFallback,
@@ -163,21 +163,6 @@ function mergeBase(
   const main = `${settings.remote}/${settings.mainBranch}`;
   const result = git(repositoryPath, ["merge-base", main, sha]);
   return result.ok && result.out.length > 0 ? result.out : undefined;
-}
-
-/** The text of main's user docs at a commit: README files and docs/manual.md. */
-function userDocsAt(repositoryPath: string, commit: string): string {
-  const listed = git(repositoryPath, ["ls-tree", "-r", "--name-only", commit]);
-  if (!listed.ok) return "";
-  const parts: string[] = [];
-  for (const path of listed.out.split("\n")) {
-    const name = path.slice(path.lastIndexOf("/") + 1);
-    const isDoc = /^readme.*\.md$/i.test(name) || path === "docs/manual.md";
-    if (!isDoc) continue;
-    const shown = git(repositoryPath, ["show", `${commit}:${path}`], true);
-    if (shown.ok) parts.push(shown.out);
-  }
-  return parts.join("\n").toLowerCase();
 }
 
 /** Removes whatever is at the gate path and checks a commit out detached. */
@@ -340,7 +325,16 @@ export async function runVerify(
     });
   }
 
-  const commands = context.settings.gate.commands;
+  const commands = (() => {
+    const given = ((ctx.params ?? {}) as { readonly commands?: unknown }).commands;
+    return Array.isArray(given)
+      ? (given as readonly CheckCommand[])
+      : context.settings.gate.commands;
+  })();
+  const rerun = (() => {
+    const given = ((ctx.params ?? {}) as { readonly rerun?: unknown }).rerun;
+    return typeof given === "number" ? given : context.settings.check.rerun;
+  })();
   const runStep = ctx.runStep;
   if (runStep === undefined) {
     return failed(
@@ -354,7 +348,7 @@ export async function runVerify(
     { cwd: path, timeoutSecs: context.settings.gate.commandTimeoutSecs },
     commands,
     stepOptions(ctx, path),
-    context.settings.check.rerun,
+    rerun,
     checkPlaces(ctx, context.repository, context.settings.gate.places),
   );
   await recordRerunPasses(ctx.store, checked.passedOnRerun);
@@ -791,7 +785,6 @@ function parseFinding(value: unknown): FindingShape | undefined {
 interface Report {
   readonly findings: readonly FindingShape[];
   readonly verified: readonly string[];
-  readonly words: readonly string[];
 }
 
 function parseReport(text: string): Report | undefined {
@@ -811,29 +804,24 @@ function parseReport(text: string): Report | undefined {
     if (finding === undefined) return undefined;
     findings.push(finding);
   }
-  // `words` is optional: a report without it names no new word.
-  const words =
-    Array.isArray(value.words) &&
-    value.words.every((item) => typeof item === "string")
-      ? cleanWords(value.words as readonly string[])
-      : [];
   return {
     findings,
     verified: value.verified as readonly string[],
-    words,
   };
 }
 
-/** The flow whose grading the review reads; the dev plugin has one. */
+/** The flow whose grading the review reads when a stage names none. */
 const REVIEW_FLOW = "dev";
 
 /**
  * The repository's grading for this flow. An invalid review.json fails the
- * step the way an invalid dev.json does.
+ * step the way an invalid dev.json does. A review stage may name its entry.
  */
-function gradingOf(context: TaskContext): Grading {
+function gradingOf(context: TaskContext, params: unknown): Grading {
+  const given = ((params ?? {}) as { readonly grading?: unknown }).grading;
+  const flow = typeof given === "string" && given.length > 0 ? given : REVIEW_FLOW;
   try {
-    return readReviewGrading(context.repository.path, REVIEW_FLOW);
+    return readReviewGrading(context.repository.path, flow);
   } catch (error) {
     if (error instanceof ReviewGradingError) {
       throw new DevError(
@@ -846,11 +834,14 @@ function gradingOf(context: TaskContext): Grading {
 }
 
 /** The context with review.json's fixLevel, when set, over dev.json's. */
-function gradedContext(context: TaskContext): {
+function gradedContext(
+  context: TaskContext,
+  params: unknown,
+): {
   readonly context: TaskContext;
   readonly grading: Grading;
 } {
-  const grading = gradingOf(context);
+  const grading = gradingOf(context, params);
   if (grading.fixLevel === undefined) return { context, grading };
   return {
     grading,
@@ -961,8 +952,7 @@ function reviewPrompt(
     "## What to write",
     [
       `Write a JSON object to ${resultPath} (inside the worktree you are in). The file must contain exactly:`,
-      '{ "findings": [{ "file": "<path>", "line": <number>, "severity": "critical|major|minor", "summary": "<one line>", "trigger": "<what causes it>" }], "verified": ["<what you checked>"], "words": ["<word>"] }',
-      "Check the diff for new user-visible words: command and action names, setting keys, words in command output, errors meant for users, words in user docs. List each one the change adds in `words` (an empty list when there is none), whatever the worker said. Internal names are not user-visible words.",
+      '{ "findings": [{ "file": "<path>", "line": <number>, "severity": "critical|major|minor", "summary": "<one line>", "trigger": "<what causes it>" }], "verified": ["<what you checked>"] }',
       "List every problem you find; the gate decides which of them are old, not you.",
       ...(rework === undefined
         ? []
@@ -1758,11 +1748,55 @@ function reworkPromptOf(
   };
 }
 
+/** The string list a stage parameter holds, when it holds one. */
+function stringsOf(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.every((item): item is string => typeof item === "string")
+    ? value
+    : undefined;
+}
+
+/**
+ * A reviewer overlaid with its stage's parameters. `use` and `args` apply to
+ * every review of the stage; `later` replaces the arguments after the first
+ * review of an attempt.
+ */
+function stageReviewerOf(
+  base: ReviewerSettings,
+  params: unknown,
+  kind: ReviewKind,
+): ReviewerSettings {
+  const given = (params ?? {}) as {
+    readonly use?: unknown;
+    readonly args?: unknown;
+    readonly later?: unknown;
+  };
+  const use = typeof given.use === "string" ? given.use : undefined;
+  const args = stringsOf(given.args);
+  const later = stringsOf(given.later);
+  const first = base.first;
+  return {
+    ...base,
+    ...(use === undefined ? {} : { use }),
+    ...(args === undefined
+      ? {}
+      : {
+          args,
+          firstArgs: args,
+          ...(first === undefined ? {} : { first: { ...first, args } }),
+        }),
+    ...(first !== undefined && use !== undefined
+      ? { first: { ...first, use, ...(args === undefined ? {} : { args }) } }
+      : {}),
+    ...(kind !== "first" && later !== undefined ? { args: later } : {}),
+  };
+}
+
 /** Step `dev/review`: have the reviewer read the verified commit's diff. */
 export async function runReview(
   ctx: StepContext,
 ): Promise<PluginStepResult> {
-  const { context, grading } = gradedContext(await taskContext(ctx));
+  const { context, grading } = gradedContext(await taskContext(ctx), ctx.params);
   if (!claimAllows(ctx, context.task)) return cancelledStep();
   const task = context.task;
   const attempt = attemptOf(ctx, task);
@@ -1821,19 +1855,8 @@ export async function runReview(
         sources: { ...used.sources, use: "fallback", args: "fallback" },
       };
     }
-    const withSettings: ReviewRecord =
+    const record: ReviewRecord =
       used === undefined ? recorded : { ...recorded, reviewSettings: used };
-    // A review that passed still waits for a person when the worker or the
-    // reviewer names a user-visible word nobody approved.
-    let record: ReviewRecord = withSettings;
-    if (withSettings.decision === "passed" && typeof sha === "string") {
-      const named = [...(attempt.workWords ?? []), ...(withSettings.words ?? [])];
-      const mergeBaseSha = mergeBase(context.repository.path, context.settings, sha);
-      const docs =
-        mergeBaseSha === undefined ? "" : userDocsAt(context.repository.path, mergeBaseSha);
-      const unapproved = unapprovedWords(named, approvedWordsOf(task.brief), docs);
-      if (unapproved.length > 0) record = { ...withSettings, newWords: unapproved };
-    }
     const written = await saveTaskGuarded(
       ctx,
       context.taskKey,
@@ -2055,7 +2078,7 @@ export async function runReview(
   // settings, even when the followed commit is missing and it reads like a first.
   used = reviewSettingsOf(
     kind === "first" && history.length > 0 ? "rework" : kind,
-    context.settings.reviewer,
+    stageReviewerOf(context.settings.reviewer, ctx.params, kind),
     reviews === 0,
   );
   // The lines the task's own change added, for the pre-existing rules.
@@ -2356,7 +2379,6 @@ export async function runReview(
         run: ctx.runId,
         findings,
         verified: call.report.verified,
-        words: call.report.words,
         counted,
       };
     } else {
@@ -2444,7 +2466,6 @@ export async function runReview(
       runs,
       findings,
       verified: last.verified ?? [],
-      words: last.words ?? [],
       log: resultPath,
       message,
       base,
@@ -2722,7 +2743,7 @@ export async function runRework(
 
   if (source === "review") {
     const review = attempt?.review;
-    const level = gradedContext(context).context.settings.reviewer.fixLevel;
+    const level = gradedContext(context, ctx.params).context.settings.reviewer.fixLevel;
     const findings = (review?.findings ?? []).filter(
       (finding) =>
         finding.preExisting !== true &&

@@ -33,6 +33,7 @@ import {
   type RepositoryData,
 } from "../src/model.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "./support.ts";
+import { silentGit } from "./git-support.ts";
 import { DEV_SETTINGS_SCHEMA } from "../src/settings.ts";
 
 afterAll(cleanupTempRoots);
@@ -245,7 +246,7 @@ describe("dev plans and tasks", () => {
     await expect(confirmTask(store, late.id)).rejects.toThrow(/already ready/);
   });
 
-  test("after is checked for existence, plan or merge, and cycles", async () => {
+  test("after is checked for existence and cycles", async () => {
     const { repository, store } = await setup();
     const plan = await addPlan(store, {
       repository,
@@ -262,15 +263,6 @@ describe("dev plans and tasks", () => {
       slug: "external",
       title: "External",
     });
-    await expect(
-      addTask(store, {
-        plan: plan.id,
-        slug: "bad",
-        title: "Bad",
-        after: [bareId(external.id)],
-      }),
-    ).rejects.toThrow(/not merged/);
-
     await setTaskPhase(store, external.id, "merged");
     const first = await addTask(store, {
       plan: plan.id,
@@ -288,7 +280,7 @@ describe("dev plans and tasks", () => {
       updateTask(store, first.id, { after: [bareId(second.id)] }),
     ).rejects.toThrow(/cycle/);
     expect(taskData((await getTask(store, first.id)).data).after).toEqual([
-      bareId(external.id),
+      external.id,
     ]);
   });
 
@@ -563,7 +555,7 @@ describe("dev per-repository ids", () => {
       title: "After old",
       after: ["TK0001-old"],
     });
-    expect(taskData(afterOld.data).after).toEqual(["TK0001-old"]);
+    expect(taskData(afterOld.data).after).toEqual(["repository/TK0001-old"]);
 
     const afterNew = await addTask(store, {
       plan: plan.id,
@@ -571,7 +563,7 @@ describe("dev per-repository ids", () => {
       title: "After new",
       after: [bareId(newer.id)],
     });
-    expect(taskData(afterNew.data).after).toEqual([bareId(newer.id)]);
+    expect(taskData(afterNew.data).after).toEqual([newer.id]);
 
     await expect(
       addTask(store, {
@@ -585,33 +577,17 @@ describe("dev per-repository ids", () => {
 });
 
 describe("git that succeeds without printing", () => {
-  function realGit(cwd: string, args: readonly string[]) {
-    const result = Bun.spawnSync({ cmd: ["git", "-C", cwd, ...args], stdout: "pipe", stderr: "pipe" });
-    return {
-      ok: result.exitCode === 0,
-      out: result.stdout.toString().trim(),
-      err: result.stderr.toString().trim(),
-    };
-  }
-
   test("repo add runs a query again when git exits 0 and prints nothing", async () => {
     const root = await tempRoot();
     const path = await makeGitRepository(root, "quiet");
     const store = storeAt(root);
-    const silent = new Map<string, number>();
-    devTestHooks.gitQuery = (cwd, args) => {
-      const key = args.join(" ");
-      const seen = silent.get(key) ?? 0;
-      silent.set(key, seen + 1);
-      return seen < 2 ? { ok: true, out: "", err: "" } : realGit(cwd, args);
-    };
+    const stub = silentGit(root, "rev-parse --show-toplevel", 2);
     try {
       const repository = await addRepository(store, { path });
       expect(repository.name).toBe("quiet");
-      expect([...silent.values()].every((count) => count === 3)).toBe(true);
-      expect(silent.size).toBeGreaterThanOrEqual(3);
+      expect(stub.calls()).toBe(3);
     } finally {
-      devTestHooks.gitQuery = undefined;
+      stub.restore();
     }
   });
 
@@ -619,32 +595,14 @@ describe("git that succeeds without printing", () => {
     const root = await tempRoot();
     const path = await makeGitRepository(root, "mute");
     const store = storeAt(root);
-    let calls = 0;
-    devTestHooks.gitQuery = () => {
-      calls += 1;
-      return { ok: true, out: "", err: "" };
-    };
-    try {
-      await expect(addRepository(store, { path })).rejects.toThrow(/is not a git work tree/);
-      expect(calls).toBe(5);
-    } finally {
-      devTestHooks.gitQuery = undefined;
-    }
-  });
-});
-
-describe("repo add reports git's stderr", () => {
-  test("a failing rev-parse puts its stderr in the refusal", async () => {
-    const root = await tempRoot();
-    const path = await makeGitRepository(root, "broken");
-    const store = storeAt(root);
-    devTestHooks.gitQuery = () => ({ ok: false, out: "", err: "fatal: simulated git failure" });
+    const stub = silentGit(root, "rev-parse --show-toplevel", 100);
     try {
       await expect(addRepository(store, { path })).rejects.toThrow(
-        /is not a git work tree: fatal: simulated git failure/,
+        /is not a git work tree: .*output was empty/,
       );
+      expect(stub.calls()).toBe(5);
     } finally {
-      devTestHooks.gitQuery = undefined;
+      stub.restore();
     }
   });
 });

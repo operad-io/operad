@@ -38,3 +38,4 @@ the row fields.
 | T-0063-M4 | packages/harness-radian/src/index.ts | `radianLogLine` logged the settled error of a denied call | `harness-radian/agent > a denied call's settled error is not logged` |
 | T-0063-M35 | packages/harness-radian/src/index.ts | the settled line ignored `data.result.is_error` and its content text | `radian's nested failure result logs isError and its first error line` |
 | T-0063-M36 | packages/harness-radian/src/index.ts | radian's `shell`, `patch` and `glob` were summarized under their own names, so the access profile did not judge them | `radian's own tool names are judged by the access profile: shell, patch, glob, list, other path tools` |
+| T-0172-M1 | packages/harness-radian/test/support.ts | the marker wait returned to depending on a directory watch alone, so a watch armed after the marker was written never saw it | `a marker wait survives a directory that appears after it starts` |

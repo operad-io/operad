@@ -50,6 +50,15 @@ describe("the theme command: list and keys", () => {
     expect(state.themePreview).toBe("dark");
   });
 
+  test("a theme file removed while the list is open keeps the cursor on a theme", () => {
+    const state = reduce(reduce(themeList("nord"), { type: "key", key: "down" }), {
+      type: "theme-names",
+      names: ["auto", "dark"],
+      current: "dark",
+    });
+    expect(state.input).toEqual({ kind: "themes", cursor: 1 });
+  });
+
   test("moving previews the theme under the cursor, and stops at the ends", () => {
     let state = reduce(themeList("dark"), { type: "key", key: "down" });
     expect(state.themePreview).toBe("nord");

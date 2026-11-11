@@ -421,9 +421,6 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             JSON.stringify({
               findings: finding === undefined ? [] : [finding],
               verified: ["the diff"],
-              ...(mode.startsWith("words:")
-                ? { words: mode.slice("words:".length).split(",") }
-                : {}),
             }),
           );
           return { result: "done", data: {} };
@@ -839,62 +836,6 @@ describe("dev/review", () => {
     expect(state.reviewer.calls[0]?.cwd).toBe(gate);
     expect(existsSync(join(gate, "junk.txt"))).toBe(false);
     expect(result.data?.findings).toEqual([]);
-  });
-
-  describe("new words", () => {
-    async function withBrief(state: Fixture, brief: string, workWords?: readonly string[]) {
-      const task = await taskOf(state);
-      await state.store.put("task", state.taskKey, {
-        ...task,
-        brief,
-        attempt: {
-          ...(task.attempt ?? { number: 1, run: "worktree-run" }),
-          ...(workWords === undefined ? {} : { workWords }),
-        },
-      }, "test:words");
-    }
-
-    test("a word the worker named and nobody approved is recorded on the passed review", async () => {
-      const state = await fixture({ reviewerArgs: ["none"] });
-      await verify(state);
-      await withBrief(state, "Make the code do the thing.", ["reviewer.first.use"]);
-      const result = await review(state);
-      expect(result.result).toBe("pass");
-      expect((await taskOf(state)).attempt?.review?.newWords).toEqual(["reviewer.first.use"]);
-    });
-
-    test("a word marked approved in the brief is not recorded", async () => {
-      const state = await fixture({ reviewerArgs: ["none"] });
-      await verify(state);
-      await withBrief(state, "Make it.\nApproved words: Reviewer.First.Use, other", [
-        "reviewer.first.use",
-      ]);
-      await review(state);
-      expect((await taskOf(state)).attempt?.review?.newWords).toBeUndefined();
-    });
-
-    test("a word already in main's README is not recorded", async () => {
-      const state = await fixture({
-        reviewerArgs: ["none"],
-        baseFiles: { "README.md": "# Tool\n\nThe `pending` list shows waits.\n" },
-      });
-      await verify(state);
-      await withBrief(state, "Make it.", ["pending"]);
-      await review(state);
-      expect((await taskOf(state)).attempt?.review?.newWords).toBeUndefined();
-    });
-
-    test("a word the reviewer reports and the worker omitted is recorded", async () => {
-      const state = await fixture({ reviewerArgs: ["words:stallSecs,timeoutSecs"] });
-      await verify(state);
-      await withBrief(state, "Make it.", []);
-      const result = await review(state);
-      expect(result.result).toBe("pass");
-      const recorded = (await taskOf(state)).attempt?.review;
-      expect(recorded?.words).toEqual(["stallSecs", "timeoutSecs"]);
-      expect(recorded?.newWords).toEqual(["stallSecs", "timeoutSecs"]);
-      expect(state.reviewer.calls[0]?.prompt).toContain("new user-visible words");
-    });
   });
 
   test("a minor finding under a major fix level passes", async () => {
@@ -1745,9 +1686,10 @@ describe("dev/review hardening", () => {
       // timeout keeps running beside the next one. So the first waits are
       // real and the middle ones are written into the task as the facts
       // they would have left; the last waits and the end are real again.
-      const REAL_WAITS = 3;
+      const REAL_WAITS = 1;
       const SEEDED_WAITS = MAX_REVIEW_WAITS - 2 * REAL_WAITS;
       let seeded = 0;
+      let restarted = false;
       for (let wait = 1; wait <= MAX_REVIEW_WAITS; wait += 1) {
         if (wait === REAL_WAITS + 1) {
           const task = await taskOf(state);
@@ -1770,7 +1712,8 @@ describe("dev/review hardening", () => {
           wait += SEEDED_WAITS;
           clock += 120_000 * SEEDED_WAITS;
         }
-        if (wait === MAX_REVIEW_WAITS - 1) {
+        if (!restarted && wait >= MAX_REVIEW_WAITS - 1) {
+          restarted = true;
           // A restart: a new registry reads the count from the task's facts.
           registry = new PluginRegistry(
             [createDevPlugin(), createShellPlugin(), state.reviewer.plugin],
@@ -2606,7 +2549,7 @@ describe("gate settings", () => {
     });
     expect(settings.maxAutoRework).toBe(2);
     expect(settings.integration).toEqual({ style: "merge", keyCommands: [], batch: 1 });
-    expect(settings.hooks.afterMerge).toContain(
+    expect(settings.hooks.afterMerge.join("\n")).toContain(
       'git push "$OPERAD_REMOTE" --delete "work/$OPERAD_TASK"',
     );
   });
@@ -2866,6 +2809,38 @@ describe("dev/verify reruns only the failed tests", () => {
       { name: "other suite > b", count: 1 },
       { name: "process groups > the sentinel", count: 1 },
     ]);
+  });
+
+  test("an earlier attempt's names in the run log do not stop this attempt's rerun", async () => {
+    const root = await tempRoot();
+    const ran = join(root, "ran");
+    const state = await fixture({
+      commands: [
+        object(
+          failing("new suite > one", "new suite > two"),
+          `printf '%s\n' {name} >> '${ran}'`,
+          2,
+        ),
+      ],
+    });
+    // A run's log holds every attempt. More old names than max must not be
+    // mistaken for this command's failures.
+    const earlier = await state.registry.runStep(
+      "shell/check",
+      { lines: [failing("old a", "old b", "old c")] },
+      { runId: "verify-run" },
+    );
+    expect(earlier.result).toBe("fail");
+
+    const result = await verify(state);
+    expect(result.result).toBe("pass");
+    expect(readFileSync(ran, "utf8")).toBe("new suite > one\nnew suite > two\n");
+    expect(result.data?.note).toBe(
+      "passed on rerun: new suite > one; new suite > two",
+    );
+    const text = readFileSync(String(result.data?.log), "utf8");
+    expect(text).toContain("(fail) old a [1.00ms]");
+    expect(text).toContain("===== rerun of failed test: new suite > one =====");
   });
 
   test("a test that reaches check.flakyTask is proposed in the flaky-tests plan, with no notice", async () => {

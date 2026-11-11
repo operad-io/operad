@@ -106,13 +106,53 @@ export interface CliIo {
   readLine?(prompt: string): Promise<string | undefined>;
 }
 
+/** The exit status of a command whose reader closed the pipe: 128 + SIGPIPE. */
+export const EXIT_CLOSED_PIPE = 141;
+
+let outputClosed = false;
+
+/** True once stdout or stderr reported EPIPE; later writes are dropped. */
+export function outputWasClosed(): boolean {
+  return outputClosed;
+}
+
+function isClosedPipe(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "EPIPE"
+  );
+}
+
+/**
+ * Writes to a process stream. A closed pipe (EPIPE) stops all output without a
+ * message; any other write error is thrown as before.
+ */
+function writeStream(stream: NodeJS.WriteStream, text: string): void {
+  if (outputClosed) return;
+  try {
+    stream.write(text);
+  } catch (error) {
+    if (!isClosedPipe(error)) throw error;
+    outputClosed = true;
+  }
+}
+
+// A write that fails later arrives as an error event; EPIPE ends output the
+// same way, anything else stays an unhandled error as it was.
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on("error", (error) => {
+    if (isClosedPipe(error)) {
+      outputClosed = true;
+      return;
+    }
+    throw error;
+  });
+}
+
 const STDIO: CliIo = {
-  write: (text) => {
-    process.stdout.write(text);
-  },
-  error: (text) => {
-    process.stderr.write(text);
-  },
+  write: (text) => writeStream(process.stdout, text),
+  error: (text) => writeStream(process.stderr, text),
 };
 
 /** A command line mistake; exit code 2. */
@@ -246,13 +286,26 @@ interface Context {
   readonly code: CodeSnapshot | undefined;
 }
 
+interface OpenContextOptions {
+  /** A namespace named explicitly, handed to each type's `resolve`. */
+  readonly scope?: string | undefined;
+  /** Where view ids resolve; defaults to this process's directory. */
+  readonly viewsCwd?: string | undefined;
+  /** Whether to snapshot the code this process loaded. */
+  readonly trackCode?: boolean | undefined;
+  /**
+   * Whether this process follows changes. A command that answers once and
+   * exits leaves this false; a long-lived process passes true.
+   */
+  readonly follow?: boolean | undefined;
+}
+
 async function openContext(
   home: string,
   io: CliIo,
-  scope?: string,
-  viewsCwd?: string,
-  trackCode = false,
+  options: OpenContextOptions = {},
 ): Promise<Context> {
+  const { scope, viewsCwd, trackCode = false, follow = false } = options;
   const cwd = process.cwd();
   const config = await readConfig(home);
   // Taken before anything loads: a file that changes while loading then
@@ -260,8 +313,12 @@ async function openContext(
   const code = trackCode ? takeCodeSnapshot(home, config.plugins) : undefined;
   const problems: string[] = [];
   const storeRoot = storeRootOf(config);
-  const store = openPluginStore({ backend: config.store.backend, root: storeRoot });
-  const log = openConfigLog(config);
+  const store = openPluginStore({
+    backend: config.store.backend,
+    root: storeRoot,
+    follow,
+  });
+  const log = openConfigLog(config, { follow });
   let loaded: PluginRegistry | undefined;
   const registry = await loadPluginRegistry({
     home,
@@ -328,6 +385,7 @@ async function openContext(
       store,
       log,
       cwd: viewsCwd ?? cwd,
+      follow,
       ...(scope === undefined ? {} : { scope }),
       onLog: (message) => io.error(`${message}\n`),
     }),
@@ -381,7 +439,11 @@ async function commandInit(home: string, io: CliIo): Promise<number> {
   const registry = await loadPluginRegistry({
     home,
     cwd: home,
-    store: openPluginStore({ backend: config.store.backend, root: storeRoot }),
+    store: openPluginStore({
+      backend: config.store.backend,
+      root: storeRoot,
+      follow: false,
+    }),
     kernelVerbs: KERNEL_VERBS,
     onLog: (message) => io.error(`${message}\n`),
   });
@@ -1925,12 +1987,12 @@ async function readSecretValue(io: CliIo): Promise<string> {
   });
   const muted = rl as unknown as { _writeToOutput?: (text: string) => void };
   muted._writeToOutput = () => undefined;
-  process.stderr.write("secret value: ");
+  writeStream(process.stderr, "secret value: ");
   try {
     return (await rl.question("")).replace(/\r?\n$/, "");
   } finally {
     rl.close();
-    process.stderr.write("\n");
+    writeStream(process.stderr, "\n");
   }
 }
 
@@ -2360,7 +2422,10 @@ export async function main(
     }
 
     if (command === "run-internal") {
-      const context = await openContext(home, io, undefined, undefined, true);
+      const context = await openContext(home, io, {
+        trackCode: true,
+        follow: true,
+      });
       try {
         await commandRunInternal(context, io, args.slice(1));
       } finally {
@@ -2406,7 +2471,11 @@ export async function main(
           // serve answers clients that are in no directory: a bare id must not
           // be scoped to the repository serve happened to start in, so its
           // views resolve ids from the home, outside every repository.
-          const context = await openContext(home, io, undefined, home, true);
+          const context = await openContext(home, io, {
+            viewsCwd: home,
+            trackCode: true,
+            follow: true,
+          });
           try {
             return await commandServe(context, io, args.slice(1), lock, isSupervised, retryBind);
           } finally {
@@ -2486,7 +2555,9 @@ export async function main(
       // `show` accepts `--repo <name>` to say where a bare id lives.
       const showRepo =
         command === "show" ? takeValueFlag(args.slice(1), "--repo") : undefined;
-      const context = await openContext(home, io, showRepo?.value);
+      const context = await openContext(home, io, {
+        ...(showRepo?.value === undefined ? {} : { scope: showRepo.value }),
+      });
       try {
         if (command === "pending") {
           const { args: rest, present } = splitFlag(args.slice(1), "--json");
@@ -2561,7 +2632,9 @@ export async function main(
     // An action takes `--repo <name>` to say where a bare id lives; a plugin
     // command reads its own `--repo`, so it still gets the arguments whole.
     const actionRepo = takeValueFlag(args, "--repo");
-    const context = await openContext(home, io, actionRepo.value);
+    const context = await openContext(home, io, {
+      ...(actionRepo.value === undefined ? {} : { scope: actionRepo.value }),
+    });
     try {
       const action = kernelAction(command, context.registry);
       if (action !== undefined) {

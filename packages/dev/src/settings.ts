@@ -32,6 +32,11 @@ import {
 } from "@operad-io/pool";
 import { defaultOperadHome } from "@operad-io/engine";
 import { DevError, isRecord, type AutoMode } from "./model.ts";
+import {
+  type DevFlowSpec,
+  type DevFlows,
+  type DevStage,
+} from "./flow-compiler.ts";
 
 /** Where a repository keeps its dev settings. */
 export const DEV_SETTINGS_FILE = ".operad/dev.json";
@@ -241,19 +246,23 @@ export interface DevSettings {
   /** The auto level a new plan starts at. */
   readonly autoDefault: AutoMode;
   readonly retry: RetrySettings;
+  /** The repository's own flows; an absent map runs the built-in default. */
+  readonly flows: DevFlows;
 }
 
 /**
  * The commands cleanup runs when a repository sets none. They remove the task
  * and gate worktrees, prune a worktree that was removed by hand, and delete the
  * task's local and remote branch. The step records a failure and keeps going.
+ * Each default hook does nothing when its work is already done, so cleanup run
+ * again after a kill ends as clean as the first run.
  */
 export const DEFAULT_AFTER_MERGE: readonly string[] = [
-  'git worktree remove --force "$OPERAD_WORKTREE"',
-  'git worktree remove --force "$OPERAD_WORKTREE-gate"',
+  "if [ -e \"$OPERAD_WORKTREE\" ]; then git worktree remove --force \"$OPERAD_WORKTREE\"; fi",
+  "if [ -e \"$OPERAD_WORKTREE-gate\" ]; then git worktree remove --force \"$OPERAD_WORKTREE-gate\"; fi",
   "git worktree prune",
-  'git branch -D "work/$OPERAD_TASK"',
-  'git push "$OPERAD_REMOTE" --delete "work/$OPERAD_TASK"',
+  "if git show-ref --verify --quiet \"refs/heads/work/$OPERAD_TASK\"; then git branch -D \"work/$OPERAD_TASK\"; fi",
+  "if git ls-remote --exit-code --heads \"$OPERAD_REMOTE\" \"work/$OPERAD_TASK\" >/dev/null; then git push \"$OPERAD_REMOTE\" --delete \"work/$OPERAD_TASK\"; else [ $? -eq 2 ]; fi",
 ];
 
 /**
@@ -265,7 +274,6 @@ export const DEFAULT_WORKER_BRIEF = [
   "Commit each whole piece of work as you finish it; leave the worktree clean.",
   "Before you finish, run the repository's verify command and make it pass.",
   "End with a summary of what you changed and what is left.",
-  "End your final answer with a line `New words: none` or `New words: <word>, <word>`. A new word is a user-visible one your change adds: a command or action name, a setting key, a word in command output, an error meant for users, a word in user docs. Internal names are not new words.",
 ].join("\n");
 
 export const DEFAULT_DEV_SETTINGS: DevSettings = {
@@ -308,6 +316,7 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
   maxAutoRework: 2,
   autoDefault: "off",
   retry: { environmentWaitMinutes: 60 },
+  flows: {},
 };
 
 const KNOWN_FIELDS = new Set([
@@ -335,6 +344,7 @@ const KNOWN_FIELDS = new Set([
   "maxAutoRework",
   "autoDefault",
   "retry",
+  "flows",
 ]);
 
 function nonEmptyString(value: unknown, field: string): string {
@@ -932,7 +942,145 @@ export function runningTaskCap(settings: DevSettings): number {
   return settings.concurrencySet ? Math.min(total, settings.concurrency) : total;
 }
 
-/** Validates one parsed dev.json value and fills the defaults. */
+/** The fields a stage of each kind may name. */
+const STAGE_FIELDS: Readonly<Record<DevStage["stage"], readonly string[]>> = {
+  work: ["stage", "use", "args", "brief", "beforeAttempt"],
+  check: ["stage", "commands", "rerun"],
+  review: ["stage", "use", "args", "later", "grading"],
+  human: ["stage"],
+};
+
+function stageOf(value: unknown, field: string): DevStage {
+  if (!isRecord(value)) {
+    throw new DevError(field, "must be a JSON object");
+  }
+  const kind = value.stage;
+  if (
+    kind !== "work" &&
+    kind !== "check" &&
+    kind !== "review" &&
+    kind !== "human"
+  ) {
+    throw new DevError(
+      `${field}.stage`,
+      'must be "work", "check", "review" or "human"',
+    );
+  }
+  for (const key of Object.keys(value)) {
+    if (!STAGE_FIELDS[kind].includes(key)) {
+      throw new DevError(`${field}.${key}`, "is not a stage setting");
+    }
+  }
+  const optionalString = (key: string): string | undefined =>
+    value[key] === undefined ? undefined : nonEmptyString(value[key], `${field}.${key}`);
+  const optionalList = (key: string): readonly string[] | undefined =>
+    value[key] === undefined ? undefined : stringList(value[key], `${field}.${key}`);
+  switch (kind) {
+    case "work": {
+      const use = optionalString("use");
+      const args = optionalList("args");
+      const brief = optionalString("brief");
+      const beforeAttempt = optionalString("beforeAttempt");
+      if (
+        beforeAttempt !== undefined &&
+        beforeAttempt !== "merge-main" &&
+        beforeAttempt !== "none"
+      ) {
+        throw new DevError(
+          `${field}.beforeAttempt`,
+          'must be "merge-main" or "none"',
+        );
+      }
+      return {
+        stage: "work",
+        ...(use === undefined ? {} : { use }),
+        ...(args === undefined ? {} : { args }),
+        ...(brief === undefined ? {} : { brief }),
+        ...(beforeAttempt === undefined ? {} : { beforeAttempt }),
+      };
+    }
+    case "check": {
+      const commands =
+        value.commands === undefined
+          ? undefined
+          : commandList(value.commands, `${field}.commands`);
+      const rerun =
+        value.rerun === undefined
+          ? undefined
+          : nonNegativeInteger(value.rerun, `${field}.rerun`);
+      return {
+        stage: "check",
+        ...(commands === undefined ? {} : { commands }),
+        ...(rerun === undefined ? {} : { rerun }),
+      };
+    }
+    case "review": {
+      const use = optionalString("use");
+      const args = optionalList("args");
+      const later = optionalList("later");
+      const grading = optionalString("grading");
+      return {
+        stage: "review",
+        ...(use === undefined ? {} : { use }),
+        ...(args === undefined ? {} : { args }),
+        ...(later === undefined ? {} : { later }),
+        ...(grading === undefined ? {} : { grading }),
+      };
+    }
+    case "human":
+      return { stage: "human" };
+  }
+}
+
+function flowSpecOf(value: unknown, field: string): DevFlowSpec {
+  if (!isRecord(value)) {
+    throw new DevError(field, "must be a JSON object");
+  }
+  for (const key of Object.keys(value)) {
+    if (key !== "stages") {
+      throw new DevError(`${field}.${key}`, "is not a flow setting");
+    }
+  }
+  if (!Array.isArray(value.stages)) {
+    throw new DevError(`${field}.stages`, "must be an array of stages");
+  }
+  const stages = value.stages.map((stage: unknown, index) =>
+    stageOf(stage, `${field}.stages[${index}]`),
+  );
+  return { stages };
+}
+
+/**
+ * The repository's flows, and the two hard rules: a flow needs a check, review
+ * or human stage, and its last stage is human because integrate is the step
+ * that puts a change on main.
+ */
+function flowsOf(value: unknown): DevFlows {
+  if (value === undefined) return DEFAULT_DEV_SETTINGS.flows;
+  if (!isRecord(value)) {
+    throw new DevError("flows", "must be a JSON object");
+  }
+  const flows: Record<string, DevFlowSpec> = {};
+  for (const [name, raw] of Object.entries(value)) {
+    if (name.trim().length === 0) {
+      throw new DevError("flows", "a flow needs a non-empty name");
+    }
+    const field = `flows.${name}`;
+    const flow = flowSpecOf(raw, field);
+    if (!flow.stages.some((stage) => stage.stage !== "work")) {
+      throw new DevError(
+        `${field}.stages`,
+        "needs at least one check, review or human stage",
+      );
+    }
+    flows[name] = flow;
+  }
+  return flows;
+}
+
+/**
+ * Validates one parsed dev.json value and fills the defaults.
+ */
 export function validateDevSettings(value: unknown): DevSettings {
   if (!isRecord(value)) {
     throw new DevError("dev.json", "must be a JSON object");
@@ -1009,6 +1157,7 @@ export function validateDevSettings(value: unknown): DevSettings {
       value.retry === undefined
         ? DEFAULT_DEV_SETTINGS.retry
         : retrySettings(value.retry, "retry"),
+    flows: flowsOf(value.flows),
   };
 }
 

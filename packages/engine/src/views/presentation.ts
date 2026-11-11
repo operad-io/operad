@@ -6,6 +6,10 @@
 
 import { objectLink } from "../http/link.ts";
 import type { LogBackend } from "../log/types.ts";
+import {
+  followsChanges,
+  type FollowOptions,
+} from "../platform/index.ts";
 import { runTimes } from "./running.ts";
 import type { PluginRegistry, ActionInfo } from "../plugin/registry.ts";
 import { splitActionName } from "../plugin/registry.ts";
@@ -176,7 +180,7 @@ export class ViewError extends Error {
   }
 }
 
-export interface ViewsOptions {
+export interface ViewsOptions extends FollowOptions {
   readonly registry: PluginRegistry;
   readonly store?: PluginStore | undefined;
   readonly log?: LogBackend | undefined;
@@ -442,22 +446,24 @@ export class Views {
     this.onLog = options.onLog ?? ((message) => console.error(message));
     this.home = options.home ?? options.registry.home;
 
-    if (typeof this.store.subscribe === "function") {
-      this.unsubscribe.push(
-        this.store.subscribe((object) => this.publish(object.id)),
-      );
-    }
-    if (typeof this.log?.subscribe === "function") {
-      this.unsubscribe.push(
-        this.log.subscribe((change) => {
-          const parsed = change.object === undefined
-            ? undefined
-            : splitId(change.object);
-          if (parsed === undefined) return;
-          if (parsed.type === "flow") return;
-          this.publish(parsed.id);
-        }),
-      );
+    if (followsChanges(options)) {
+      if (typeof this.store.subscribe === "function") {
+        this.unsubscribe.push(
+          this.store.subscribe((object) => this.publish(object.id)),
+        );
+      }
+      if (typeof this.log?.subscribe === "function") {
+        this.unsubscribe.push(
+          this.log.subscribe((change) => {
+            const parsed = change.object === undefined
+              ? undefined
+              : splitId(change.object);
+            if (parsed === undefined) return;
+            if (parsed.type === "flow") return;
+            this.publish(parsed.id);
+          }),
+        );
+      }
     }
   }
 
@@ -911,7 +917,8 @@ export class Views {
     return {
       ...row,
       ...(withScope && scope !== undefined ? { scope } : {}),
-      waiting: flag.waiting,
+      // A plugin's own `waiting` is an object a person must act on that has no run.
+      waiting: row.waiting || flag.waiting,
       running: flag.running,
     };
   }
@@ -954,7 +961,7 @@ export class Views {
         resolved.type,
         object,
       );
-      row = { ...guarded, ...flags };
+      row = { ...guarded, ...flags, waiting: guarded.waiting || flags.waiting };
       try {
         sections = this.sectionDirectory(owner.plugin, object);
       } catch (error) {
@@ -1754,7 +1761,7 @@ export class Views {
       ...(outcome.final === true ? { final: true } : {}),
       ...(mark === undefined ? {} : { mark }),
       ...(typeof badge === "string" ? { badge } : {}),
-      waiting: false,
+      waiting: outcome.waiting === true,
       running: false,
     };
   }

@@ -170,10 +170,13 @@ describe("the TUI view", () => {
       view.render(state);
       await setup.renderOnce();
       const lines = setup.captureCharFrame().split("\n");
-      expect(lines[3]?.indexOf("T-0031-tui-object")).toBe(44);
-      expect(lines[3]).toContain("…");
+      expect(lines[2]?.indexOf("T-0031-tui-object")).toBe(47);
+      expect(lines[2]).toContain("running · work 16m");
       for (const line of lines.slice(2, 22)) expect(line.indexOf("│")).toBe(42);
-      expect(lines[4]?.slice(44).startsWith("running · work 16m")).toBe(true);
+      // The title wraps inside the frame instead of running into its edge.
+      const title = lines.slice(4, 10).join(" ").replace(/│/g, "");
+      expect(title).toContain("very long title");
+      for (const line of lines.slice(2, 22)) expect(line.length).toBeLessThanOrEqual(100);
       view.destroy();
     } finally {
       await setup.dispose();

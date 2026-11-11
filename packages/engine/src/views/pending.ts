@@ -34,6 +34,10 @@ export interface PendingItem {
   readonly link?: string;
   /** The object's plugin answers this wait automatically; set only when asked for. */
   readonly auto?: true;
+  /** False when a channel should not announce the item; it is still pending. */
+  readonly announce?: false;
+  /** Object keys the item stands for besides its own object. */
+  readonly covers?: readonly string[];
   /**
    * The object's row, the same one the list shows; an error row when it cannot
    * be built. Absent for a candidate, and when the caller gave no views.
@@ -133,8 +137,13 @@ export async function listPending(
       step: null,
       prompt: item.prompt,
       choices: [],
-      actions: [],
+      actions: item.actions,
       kind: "standing",
+      ...(item.announce === false ? { announce: false as const } : {}),
+      ...(item.covers === undefined ? {} : { covers: item.covers }),
+      ...(item.object === undefined
+        ? {}
+        : objectFields(`${item.object.type}:${item.object.id}`)),
     });
   }
 

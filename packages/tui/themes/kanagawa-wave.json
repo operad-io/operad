@@ -1,6 +1,6 @@
 {
   "$schema": "../theme.schema.json",
-  "comment": "Kanagawa Wave. Source: https://github.com/rebelot/kanagawa.nvim (lua/kanagawa/colors.lua for the palette, lua/kanagawa/themes.lua for the roles). Licence: MIT, Copyright (c) 2021 Tommaso Laurenzi; the text is in LICENSE-kanagawa. Roles: text = fujiWhite, weak = fujiGray, rule = sumiInk5, accent = oniViolet, run = crystalBlue, ok = springGreen, error = waveRed, add = autumnGreen, remove = autumnRed, tint = waveBlue1, code = sumiInk0, background = sumiInk3. No colour adjusted.",
+  "comment": "Kanagawa Wave. Source: https://github.com/rebelot/kanagawa.nvim (lua/kanagawa/colors.lua for the palette, lua/kanagawa/themes.lua for the roles). Licence: MIT, Copyright (c) 2021 Tommaso Laurenzi; the text is in LICENSE-kanagawa. Roles: text = fujiWhite, weak = fujiGray, rule = sumiInk5, accent = oniViolet, run = crystalBlue, ok = springGreen, error = waveRed, add = autumnGreen, remove = autumnRed, tint = waveBlue1 (bg_visual), code = sumiInk0, background = sumiInk3. The iOS app uses sumiInk4 for its tint, but upstream bg_visual is waveBlue1, so the app's value is stale. No colour adjusted. cancelled = error with lightness 60% for a cancelled child's bar segment.",
   "colors": {
     "text": "#dcd7ba",
     "weak": "#727169",
@@ -9,6 +9,7 @@
     "run": "#7e9cd8",
     "ok": "#98bb6c",
     "error": "#e46876",
+    "cancelled": "#a91e2e",
     "add": "#76946a",
     "remove": "#c34043",
     "tint": "#223249",

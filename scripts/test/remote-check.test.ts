@@ -105,6 +105,18 @@ describe("remote-check.sh", () => {
     expect(spawnSync("ls", [home], { encoding: "utf8" }).stdout).not.toContain(".bundle");
   });
 
+  test("a package directory left from an earlier commit is removed, root node_modules is kept", async () => {
+    const { local, home, env } = setup();
+    const tree = join(home, "Code", "operad");
+    mkdirSync(join(tree, "packages", "gone", "node_modules", "x"), { recursive: true });
+    mkdirSync(join(tree, "node_modules", "kept"), { recursive: true });
+    const result = await run(local, env, "ls packages 2>/dev/null; echo ---; ls node_modules");
+    expect(result.code).toBe(0);
+    const [packages = "", modules = ""] = result.out.split("---");
+    expect(packages).not.toContain("gone");
+    expect(modules).toContain("kept");
+  });
+
   test("a failed copy exits 1 and names the step", async () => {
     const { local, env } = setup();
     const result = await run(local, { ...env, FAKE_SCP_FAIL: "1" }, "true");
@@ -124,11 +136,19 @@ describe("remote-check.sh", () => {
       env,
       `echo started > '${started}'; read -r _ < '${release}'; touch '${ended}'`,
     );
-    await readFifo(started);
-    const second = run(local, env, `if [ -f '${ended}' ]; then echo after > '${seen}'; else echo during > '${seen}'; fi`);
-    await Bun.spawn(["sh", "-c", `echo go > '${release}'`], { stdin: "ignore" }).exited;
-    expect((await first).code).toBe(0);
-    expect((await second).code).toBe(0);
-    expect(readFileSync(seen, "utf8").trim()).toBe("after");
+    try {
+      await readFifo(started);
+      const second = run(local, env, `if [ -f '${ended}' ]; then echo after > '${seen}'; else echo during > '${seen}'; fi`);
+      await Bun.spawn(["sh", "-c", `echo go > '${release}'`], { stdin: "ignore" }).exited;
+      expect((await first).code).toBe(0);
+      expect((await second).code).toBe(0);
+      expect(readFileSync(seen, "utf8").trim()).toBe("after");
+    } finally {
+      // A test that fails before the release must not leave the first check
+      // waiting on the fifo for ever. Opening it read-write never blocks, and a
+      // line nobody reads is dropped with the fifo.
+      await Bun.spawn(["sh", "-c", `exec 3<>'${release}'; echo go >&3`], { stdin: "ignore" }).exited;
+      await first;
+    }
   });
 });

@@ -76,3 +76,10 @@ the row fields.
 | T-0127-M5 | packages/cli/src/http-bind.ts | a supervised serve that could not release ended with code 1, so the supervisor did not start the next one | `leaveStuck > under a supervisor the process ends with the reload code and starts nothing itself` |
 | T-0148-M8 | packages/cli/src/main.ts | --page tried a label before a number again | `operad presentation commands > show --page takes a number as a position before a label` |
 | T-0148-M10 | packages/cli/src/main.ts | `--page` of the first page read it again instead of reusing the read that gave the pages list | `operad presentation commands > show --page of the first page reads it once; another page costs one more read` |
+
+## T-0205 — a wait backs a directory watch that misses the write
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0205-M5 | packages/cli/test/notify-serve.test.ts | `waitForLines` returned to waiting on the directory watch alone, with no 100 ms look | `waiting for a line another process writes > a watch that cannot see the directory is backed by the 100 ms look` (a directory that appears after the first look is never seen) |
+| T-0125-M1 | packages/cli/src/main.ts | a write to a closed pipe was not recognised as EPIPE (the catch rethrew and the error event was not handled), so a stack trace reached stderr | `a reader that closes the pipe > list with more rows than the pipe holds: the reader reads one line and closes; status 141, nothing on stderr` |

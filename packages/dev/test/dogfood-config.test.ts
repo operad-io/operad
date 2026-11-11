@@ -59,7 +59,9 @@ describe("this repository's dev.json with the pi worker", () => {
     );
     expect(registry.refusals()).toEqual([]);
     expect(registry.flow("dev")).toBeDefined();
-    // The step the switch names exists and reports what radian's step reports.
+    // The step the switch names exists and reports what radian's step reports,
+    // plus `waiting`: a question about a call that ran out of grace. radian is
+    // the degraded harness and never waits for a late answer.
     const results = registry.stepResults(settings.worker.use);
     expect(results).toBeDefined();
     const radian = (await plugin("../../harness-radian/src/index.ts")).default;
@@ -68,7 +70,7 @@ describe("this repository's dev.json with the pi worker", () => {
       cwd: root,
       store: storeAt(root),
     });
-    expect(results).toEqual(withRadian.stepResults("harness-radian/agent") ?? []);
+    expect(results).toEqual([...(withRadian.stepResults("harness-radian/agent") ?? []), "waiting"]);
   });
 
   test("without the plugin enabled the same step name does not resolve", async () => {
@@ -107,11 +109,12 @@ describe("this repository's dev.json with the claude worker", () => {
     );
     expect(registry.refusals()).toEqual([]);
     expect(registry.flow("dev")).toBeDefined();
-    // The step reports what radian's step reports.
+    // The step reports what radian's step reports, plus `waiting`.
     const radian = (await plugin("../../harness-radian/src/index.ts")).default;
     const withRadian = new PluginRegistry([radian], { home: root, cwd: root, store: storeAt(root) });
-    expect(registry.stepResults(settings.worker.use)).toEqual(
-      withRadian.stepResults("harness-radian/agent") ?? [],
-    );
+    expect(registry.stepResults(settings.worker.use)).toEqual([
+      ...(withRadian.stepResults("harness-radian/agent") ?? []),
+      "waiting",
+    ]);
   });
 });

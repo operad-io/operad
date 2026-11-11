@@ -42,3 +42,13 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0099-M3 | packages/harness-process/src/process.ts | the run did not tell the inbox its wall time when it began | `runAgent with an inbox > a message sent while the command runs is written to its stdin as a message line, and the listener is dropped at the end` |
+| T-0187-M3 | packages/harness-process/src/ask-call.ts | a timeout rejection was read as an allow | `createCallAsker > reject_once and a timeout rejection answer deny` |
+| T-0187-M4 | packages/harness-process/src/ask-call.ts | questions were asked at once instead of one at a time | `createCallAsker > questions are asked one at a time` |
+| T-0187-M6 | packages/harness-process/src/ask-call.ts | the question carried no grant under `resume` | `harness-claude: a call that must ask a person > answered later: the session resumes with the one-time permission, and any other call asks again` |
+| T-0187-M11 | packages/harness-process/src/ask-call.ts | the degraded question did not reject once after the grace | `harness-radian: a question is reject_once > a grace that passes is a refusal: the step goes on with rejected true and never ends waiting` |
+
+## T-0205 — the sentinel's host check works under dash
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0205-M1 | packages/harness-process/src/process.ts | the sentinel killed its group with `kill -KILL -- "-$$"`, which dash rejects, so a harness whose host died stayed running | `the harness process > a harness still running when its host dies is stopped with its sentinel` (Linux) |

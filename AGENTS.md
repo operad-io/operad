@@ -57,10 +57,14 @@ of adding it.
 ## Mutation records
 
 A mutation check breaks the new code once by hand, runs the tests, names the test
-that fails, and restores the code. Record each in the `MUTATIONS.md` of the
-package whose code the mutation broke (`packages/<name>/MUTATIONS.md`); the root
-`MUTATIONS.md` indexes the package files. A row's id is the arc task id followed
-by `-M` and a number starting at 1 for each task: `TK0001-M1`.
+that fails, and restores the code. One check per new or changed behaviour is
+enough: break that behaviour once and name the test that catches it. A bug fix
+needs one, showing the new test fails on the old code. A refactor or a move that
+changes no behaviour needs none; the existing tests passing is its check.
+Record each in the `MUTATIONS.md` of the package whose code the mutation broke
+(`packages/<name>/MUTATIONS.md`); the root `MUTATIONS.md` indexes the package
+files. A row's id is the arc task id followed by `-M` and a number starting at 1
+for each task: `TK0001-M1`.
 
 ## Flaky tests
 
@@ -95,7 +99,9 @@ with a stress run before you change anything.
 ## Verify
 
 Run this before you say a change is done. It must pass. A task worker runs
-`bash scripts/check-changed.sh` instead; the full suite runs before merge.
+`bunx tsc -b` and the test files it added or changed instead; the task's check
+runs `bash scripts/check-changed.sh` after it, and the full suite runs before
+merge.
 
 ```sh
 bash scripts/verify.sh

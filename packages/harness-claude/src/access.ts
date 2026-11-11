@@ -9,6 +9,9 @@
  */
 
 import { findGrant, match, type AccessProfile } from "@operad-io/access-match";
+import type { CallAnswer, CallQuestion } from "@operad-io/harness-process";
+
+export type { CallAnswer, CallQuestion };
 
 /** One tool of claude and what `access-match` calls it. */
 export interface ToolRow {
@@ -83,11 +86,21 @@ export function translate(name: string, input: Readonly<Record<string, unknown>>
   return row.required ? { kind: "missing", field: row.from } : { kind: "mapped", tool: row.tool, input: {} };
 }
 
-export type AccessDecision = { readonly allow: true } | { readonly allow: false; readonly reason: string };
+export type AccessDecision =
+  | { readonly allow: true }
+  | {
+      readonly allow: false;
+      readonly reason: string;
+      /** The wait for a person ended; the program is about to be ended and holds the call. */
+      readonly stop?: true;
+    };
 
 /**
  * Whether one call of claude may run. `useGrant` asks the host to use up a
- * one-time permission; without it no grant applies.
+ * one-time permission; without it no grant applies. `ask` asks a person about a
+ * call the profile says must ask (`askCommands`, `askPaths`); without it such a call is
+ * refused. A deny wins over an ask, so `ask` only ever sees a call no deny
+ * rule matched.
  */
 export async function decideAccess(
   profile: AccessProfile,
@@ -95,6 +108,7 @@ export async function decideAccess(
   input: Readonly<Record<string, unknown>>,
   cwd: string,
   useGrant?: (waitId: string) => Promise<boolean>,
+  ask?: (question: CallQuestion) => Promise<CallAnswer>,
 ): Promise<AccessDecision> {
   const translated = translate(name, input);
   if (translated.kind === "inert") return { allow: true };
@@ -128,6 +142,17 @@ export async function decideAccess(
       used = false;
     }
     if (used) return { allow: true };
+  }
+  if (verdict.ask === true && ask !== undefined) {
+    let answer: CallAnswer;
+    try {
+      answer = await ask({ kind: verdict.kind, value: verdict.value, ...(verdict.tool === undefined ? {} : { tool: verdict.tool }) });
+    } catch {
+      answer = { decision: "deny", reason: "the question could not be asked" };
+    }
+    if (answer.decision === "allow") return { allow: true };
+    if (answer.decision === "stop") return { allow: false, reason: "waiting for an answer", stop: true };
+    return { allow: false, reason: `${verdict.reason}; ${answer.reason ?? "a person refused it"}` };
   }
   return { allow: false, reason: verdict.reason };
 }

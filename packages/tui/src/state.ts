@@ -20,7 +20,7 @@ import type { TuiSetting, TuiTypeInfo } from "./client.ts";
 import { cachedLayout, layoutMarkdown, type LayoutLine } from "./layout.ts";
 import type { ArgField } from "./args.ts";
 import { sanitize } from "./sanitize.ts";
-import { displayWidth, graphemes } from "./wrap.ts";
+import { displayWidth, graphemes, wrapText } from "./wrap.ts";
 import {
   actionFailed,
   bindingFor,
@@ -43,6 +43,9 @@ import {
 
 /** The two terminal themes the view knows. */
 export type TuiTheme = "light" | "dark";
+
+/** How a page draws its next level: nested by `after`, or one flat list. */
+export type TuiChildLayout = "tree" | "list";
 
 /** What a tab lists. */
 export type TuiTabKind = "pending" | "running" | "plugin";
@@ -320,6 +323,8 @@ export interface TuiState {
   readonly width: number;
   readonly height: number;
   readonly theme: TuiTheme;
+  /** How the next level of the open object is drawn. */
+  readonly childLayout: TuiChildLayout;
   /** The `?` key list is open. */
   readonly keys: boolean;
   readonly quit: boolean;
@@ -357,6 +362,8 @@ export interface TuiState {
   readonly themePreview?: string | undefined;
   /** Set when the chosen theme must be kept; the caller clears it as it saves. */
   readonly themeRequest?: string | undefined;
+  /** Set when the chosen child layout must be saved; the caller clears it. */
+  readonly layoutRequest?: TuiChildLayout | undefined;
   /** The palette, note or confirmation the keys are typing into. */
   readonly input?: TuiInput | undefined;
   /** One footer line (a refusal, or "not available") until the next key. */
@@ -391,6 +398,7 @@ export interface TuiStateOptions {
   readonly width?: number | undefined;
   readonly height?: number | undefined;
   readonly theme?: TuiTheme | undefined;
+  readonly childLayout?: TuiChildLayout | undefined;
   readonly url?: string | undefined;
   readonly recent?: readonly string[] | undefined;
   readonly themeNames?: readonly string[] | undefined;
@@ -462,6 +470,7 @@ export function initialState(options: TuiStateOptions = {}): TuiState {
     width: Math.max(1, Math.trunc(options.width ?? DEFAULT_WIDTH)),
     height: Math.max(1, Math.trunc(options.height ?? DEFAULT_HEIGHT)),
     theme: options.theme ?? "dark",
+    childLayout: options.childLayout ?? "tree",
     keys: false,
     quit: false,
     refreshRequested: false,
@@ -645,6 +654,8 @@ export type TuiStateEvent =
   | { readonly type: "theme-names"; readonly names: readonly string[]; readonly current: string }
   /** The caller saved the chosen theme; it is saved once. */
   | { readonly type: "theme-launched" }
+  /** The caller saved the chosen child layout; it is saved once. */
+  | { readonly type: "layout-launched" }
   /** The action ran. */
   | { readonly type: "action-done" }
   /** The server refused the action; the message shows as the line, the status does not. */
@@ -768,6 +779,176 @@ export function rowMark(row: TuiRow): TuiMark {
   if (row.mark !== undefined) return row.mark;
   if (row.running) return "running";
   return "none";
+}
+
+/** A child the plugin marked cancelled, or whose state says so. */
+export function cancelledRow(row: TuiRow): boolean {
+  return rowMark(row) === "cancelled" || /(^|\.)cancelled$/i.test(row.state);
+}
+
+/** A child that is done: its mark says so, or a row without a mark says merged. */
+function doneRow(row: TuiRow): boolean {
+  const mark = rowMark(row);
+  return mark === "done" || (mark === "none" && /^(done|merged)$/i.test(row.state));
+}
+
+interface ChildParent {
+  readonly index: number;
+  /** The id as the row's `after` wrote it; an unknown id is left out. */
+  readonly id: string;
+}
+
+/** The rows in a child's `after` that are in the list, without itself and duplicates. */
+function childParents(
+  rows: readonly TuiRow[],
+  row: TuiRow,
+  at: number,
+): readonly ChildParent[] {
+  const seen = new Set<number>();
+  const out: ChildParent[] = [];
+  for (const id of row.after ?? []) {
+    const index = rows.findIndex((candidate, place) =>
+      place !== at && sameObject(candidate.id, id));
+    if (index < 0 || seen.has(index)) continue;
+    seen.add(index);
+    out.push({ index, id });
+  }
+  return out;
+}
+
+/** One row of the next level as the page draws it. */
+export interface TuiChildEntry {
+  readonly row: TuiRow;
+  /** 0 in the flat list and for a root in the tree. */
+  readonly depth: number;
+  /** `├─`/`└─` and their prefix in the tree; empty in the flat list. */
+  readonly connector: string;
+  /** The other parents in `after`, printed as `also after <id>`. */
+  readonly alsoAfter: readonly string[];
+}
+
+/** Cancelled rows last, keeping every other row in its place. */
+function cancelledLast(
+  indexes: readonly number[],
+  rows: readonly TuiRow[],
+): number[] {
+  return [
+    ...indexes.filter((index) => !cancelledRow(rows[index] as TuiRow)),
+    ...indexes.filter((index) => cancelledRow(rows[index] as TuiRow)),
+  ];
+}
+
+function flatChildEntries(rows: readonly TuiRow[]): TuiChildEntry[] {
+  const ordered = cancelledLast(rows.map((_, index) => index), rows);
+  return ordered.map((index) => {
+    const row = rows[index] as TuiRow;
+    return {
+      row,
+      depth: 0,
+      connector: "",
+      alsoAfter: childParents(rows, row, index).map((parent) => parent.id),
+    };
+  });
+}
+
+/** The parent the tree can use: a cancelled row hangs only under cancelled rows. */
+function treeParent(
+  rows: readonly TuiRow[],
+  row: TuiRow,
+  at: number,
+): ChildParent | undefined {
+  const cancelled = cancelledRow(row);
+  return childParents(rows, row, at).find(
+    (parent) => cancelledRow(rows[parent.index] as TuiRow) === cancelled,
+  );
+}
+
+/** A chain of tree parents that comes back to itself: the tree cannot place it. */
+function hasChildCycle(rows: readonly TuiRow[]): boolean {
+  const parents = rows.map((row, index) => treeParent(rows, row, index)?.index);
+  for (let start = 0; start < rows.length; start += 1) {
+    const seen = new Set<number>();
+    let at: number | undefined = start;
+    while (at !== undefined) {
+      if (seen.has(at)) return true;
+      seen.add(at);
+      at = parents[at];
+    }
+  }
+  return false;
+}
+
+function treeChildEntries(rows: readonly TuiRow[]): TuiChildEntry[] {
+  // A cycle has no root: the list order is the only order that shows every row.
+  if (hasChildCycle(rows)) return flatChildEntries(rows);
+  const parents = rows.map((row, index) => treeParent(rows, row, index));
+  const children = new Map<number, number[]>();
+  for (let index = 0; index < rows.length; index += 1) {
+    const parent = parents[index]?.index ?? -1;
+    const list = children.get(parent);
+    if (list === undefined) children.set(parent, [index]);
+    else list.push(index);
+  }
+
+  const out: TuiChildEntry[] = [];
+  const visited = new Set<number>();
+  const walk = (index: number, prefix: string, root: boolean, last: boolean): void => {
+    if (visited.has(index)) return;
+    visited.add(index);
+    const row = rows[index] as TuiRow;
+    const all = childParents(rows, row, index);
+    const parent = parents[index];
+    out.push({
+      row,
+      depth: root ? 0 : Math.trunc(prefix.length / 2) + 1,
+      connector: root ? "" : `${prefix}${last ? "└─" : "├─"}`,
+      alsoAfter:
+        parent === undefined
+          ? []
+          : all.filter((one) => one.index !== parent.index).map((one) => one.id),
+    });
+    const childPrefix = root ? "" : `${prefix}${last ? "  " : "│ "}`;
+    const below = children.get(index) ?? [];
+    below.forEach((child, at) => walk(child, childPrefix, false, at + 1 === below.length));
+  };
+
+  const roots = children.get(-1) ?? [];
+  // Cancelled rows are the last group, so an active child never hangs from one.
+  const active = roots.filter((index) => !cancelledRow(rows[index] as TuiRow));
+  const cancelled = roots.filter((index) => cancelledRow(rows[index] as TuiRow));
+  active.forEach((index, at) => walk(index, "", true, at + 1 === active.length));
+  cancelled.forEach((index, at) => walk(index, "", true, at + 1 === cancelled.length));
+  return out;
+}
+
+/** The next level in the order the page draws it, for the chosen layout. */
+export function displayChildren(
+  rows: readonly TuiRow[],
+  layout: TuiChildLayout,
+): readonly TuiChildEntry[] {
+  if (rows.length === 0) return [];
+  return layout === "list" ? flatChildEntries(rows) : treeChildEntries(rows);
+}
+
+/** The next level's bar cells and counts: cancelled children last and not counted. */
+export interface TuiChildProgress {
+  readonly entries: readonly TuiChildEntry[];
+  readonly done: number;
+  readonly total: number;
+}
+
+export function childProgress(
+  rows: readonly TuiRow[],
+  layout: TuiChildLayout,
+): TuiChildProgress {
+  const shown = displayChildren(rows, layout);
+  const active = shown.filter((entry) => !cancelledRow(entry.row));
+  const cancelled = shown.filter((entry) => cancelledRow(entry.row));
+  return {
+    entries: [...active, ...cancelled],
+    done: active.filter((entry) => doneRow(entry.row)).length,
+    total: active.length,
+  };
 }
 
 function clampCursor(list: TuiList): number {
@@ -912,8 +1093,11 @@ export function listWidth(state: TuiState): number {
   if (tab?.kind !== "plugin" || tab.list.rows.length === 0) return cap;
   let need = PLUGIN_LIST_MIN;
   for (const row of tab.list.rows) {
-    need = Math.max(need, ROW_INDENT + cells(rowName(row)), ROW_INDENT + cells(rowDetail(row)));
-    if (row.group !== undefined) need = Math.max(need, ROW_INDENT + cells(rowName(row.group)));
+    const indent = tab.list.rows.some((one) => one.group !== undefined) ? 2 : 0;
+    need = Math.max(need, ROW_INDENT + indent + cells(rowName(row)), ROW_INDENT + indent + cells(rowDetail(row)));
+    if (row.group !== undefined) {
+      need = Math.max(need, ROW_INDENT + cells(rowName(row.group)), ROW_INDENT + cells(rowDetail(row.group)));
+    }
   }
   return Math.min(cap, need);
 }
@@ -933,10 +1117,30 @@ export function bodyHeight(state: TuiState): number {
   return Math.max(1, state.height - 4);
 }
 
-/** How many Markdown lines fit under the object's title, state, tabs and rule. */
+/** The lines the page's framed header, next level and tabs take before its section. */
+export function objectHeaderLines(state: TuiState): number {
+  const object = state.object;
+  if (object === undefined) return 0;
+  const width = Math.max(1, sectionWidth(state) - 2);
+  const title = object.row.title === "" ? 0 : wrapText(object.row.title, width).length;
+  const count = object.children?.rows.length ?? 0;
+  const children = count === 0 ? 0 : 2 + Math.min(count, CHILD_ROWS);
+  const status =
+    object.error !== undefined ||
+    object.row.error !== undefined ||
+    object.unavailable !== undefined ||
+    pagePosition(activeSection(state)) !== undefined
+      ? 1
+      : 0;
+  // top border, a blank rail, the title, a status line, bar/heading/rows, bottom,
+  // a blank line, tabs and rule.
+  return 1 + 1 + title + status + children + 1 + 1 + 2;
+}
+
+/** How many Markdown lines fit under the object's frame and tabs. */
 export function sectionViewport(state: TuiState): number {
-  // a blank line, title, state, a blank line, the section tabs, their rule and the hint line.
-  return Math.max(1, bodyHeight(state) - 7 - childLines(state.object));
+  // The hint line stays under the content.
+  return Math.max(1, bodyHeight(state) - objectHeaderLines(state) - 1);
 }
 
 /** The columns a section's Markdown has in the object pane. */
@@ -1436,7 +1640,6 @@ export function pageEntries(state: TuiState): readonly TuiPageEntry[] {
     .map(({ label, index }) => ({ label, index }));
 }
 
-/** A key arrives while the page picker is open. */
 /** The theme list: moving shows the theme under the cursor, Enter keeps it, Esc puts the old one back. */
 function themesKey(
   state: TuiState,
@@ -1468,6 +1671,7 @@ function themesKey(
   return state;
 }
 
+/** A key arrives while the page picker is open. */
 function pagesKey(
   state: TuiState,
   input: Extract<TuiInput, { readonly kind: "pages" }>,
@@ -1575,7 +1779,7 @@ function selectedRow(state: TuiState): TuiRow | undefined {
 /** How many rows of the next level the page shows at most. */
 export const CHILD_ROWS = 8;
 
-/** The lines the next level takes in the page: a heading, its rows and a blank line. */
+/** The lines the next level takes in the page: the bar, its heading and its rows. */
 export function childLines(object: TuiObject | undefined): number {
   const count = object?.children?.rows.length ?? 0;
   return count === 0 ? 0 : Math.min(count, CHILD_ROWS) + 2;
@@ -1591,7 +1795,8 @@ function withChildren(state: TuiState, patch: (children: TuiChildren) => TuiChil
 function openChild(state: TuiState): TuiState {
   const parent = state.object;
   const children = parent?.children;
-  const row = children?.rows[children.cursor];
+  const shown = children === undefined ? [] : displayChildren(children.rows, state.childLayout);
+  const row = shown[children?.cursor ?? 0]?.row;
   if (parent === undefined || row === undefined) return state;
   const type = row.type ?? (row.id.includes(":") ? row.id.slice(0, row.id.indexOf(":")) : "");
   const requestId = type === "" || row.id.startsWith(`${type}:`) ? row.id : `${type}:${row.id}`;
@@ -1641,13 +1846,17 @@ function childKey(state: TuiState, key: string): TuiState | undefined {
     return withChildren(state, (c) => ({ ...c, cursor: Math.max(0, c.cursor - 1) }));
   }
   if (isKey(key, "down", "arrowdown", "j")) {
+    const count = displayChildren(children.rows, state.childLayout).length;
     return withChildren(state, (c) => ({
       ...c,
-      cursor: Math.min(c.rows.length - 1, c.cursor + 1),
+      cursor: Math.min(count - 1, c.cursor + 1),
     }));
   }
   if (isKey(key, "g")) return withChildren(state, (c) => ({ ...c, cursor: 0 }));
-  if (key === "G") return withChildren(state, (c) => ({ ...c, cursor: c.rows.length - 1 }));
+  if (key === "G") {
+    const count = displayChildren(children.rows, state.childLayout).length;
+    return withChildren(state, (c) => ({ ...c, cursor: count - 1 }));
+  }
   if (isKey(key, "enter", "return")) return openChild({ ...state, followPending: false });
   if (isKey(key, "escape", "esc")) return withChildren(state, (c) => ({ ...c, focused: false }));
   return undefined;
@@ -1769,6 +1978,10 @@ function handleKey(
   if (state.keys) {
     // The list behind the key list is hidden, so no other key acts on it.
     return isKey(key, "escape", "esc") ? { ...state, keys: false } : state;
+  }
+  if (isKey(key, "t") && (state.object?.children?.rows.length ?? 0) > 0) {
+    const childLayout: TuiChildLayout = state.childLayout === "tree" ? "list" : "tree";
+    return { ...state, childLayout, layoutRequest: childLayout, followPending: false };
   }
   const inChildren = childKey(state, key);
   if (inChildren !== undefined) return inChildren;
@@ -2193,9 +2406,13 @@ function applyChildren(
   if (version !== undefined && version !== object.version) return state;
   const rows = entries.map(rowOfEntry);
   const old = object.children;
-  const selected = old?.rows[old.cursor]?.id;
-  const found = selected === undefined ? -1 : rows.findIndex((row) => row.id === selected);
-  const cursor = found >= 0 ? found : Math.min(old?.cursor ?? 0, Math.max(0, rows.length - 1));
+  const selected =
+    old === undefined
+      ? undefined
+      : displayChildren(old.rows, state.childLayout)[old.cursor]?.row.id;
+  const shown = displayChildren(rows, state.childLayout);
+  const found = selected === undefined ? -1 : shown.findIndex((entry) => entry.row.id === selected);
+  const cursor = found >= 0 ? found : Math.min(old?.cursor ?? 0, Math.max(0, shown.length - 1));
   const children: TuiChildren = {
     rows,
     cursor,
@@ -2363,9 +2580,21 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       };
     }
     case "theme-names":
-      return { ...state, themeNames: event.names, themeCurrent: event.current };
+      return {
+        ...state,
+        themeNames: event.names,
+        themeCurrent: event.current,
+        // A theme file removed while the list is open must not leave the cursor past the end.
+        ...(state.input?.kind === "themes"
+          ? { input: { ...state.input, cursor: Math.min(state.input.cursor, Math.max(0, event.names.length - 1)) } }
+          : {}),
+      };
     case "theme-launched":
       return { ...state, themeRequest: undefined };
+    case "layout-launched":
+      return state.layoutRequest === undefined
+        ? state
+        : { ...state, layoutRequest: undefined };
     case "action-launched":
       return state.actionRequest === undefined
         ? state
@@ -2443,10 +2672,12 @@ export function footerText(state: TuiState): string {
     const section = activeSection(state);
     const capped = section !== undefined && section.capped && !section.full;
     const pages = pagePosition(section) === undefined ? "" : "p pages  n/N page  ";
-    common = `j/k row  space/b scroll  [ ] section  ${pages}${filtering && !capped ? "f filter" : "f full"}  esc close  ? keys  q quit`;
+    const toggle = state.object?.children === undefined ? "" : `t ${state.childLayout === "tree" ? "list" : "tree"}  `;
+    common = `j/k row  space/b scroll  [ ] section  ${pages}${filtering && !capped ? "f filter" : "f full"}  ${toggle}esc close  ? keys  q quit`;
   } else {
     const pages = pagePosition(activeSection(state)) === undefined ? "" : "p pages  n/N page  ";
-    common = `j/k scroll  space/b page  g/G ends  [ ] section  ${pages}f full  esc back  ? keys  q quit`;
+    const toggle = state.object?.children === undefined ? "" : `t ${state.childLayout === "tree" ? "list" : "tree"}  `;
+    common = `j/k scroll  space/b page  g/G ends  [ ] section  ${pages}f full  ${toggle}esc back  ? keys  q quit`;
   }
   const main = mainAction(state);
   const actions =
@@ -2469,6 +2700,7 @@ export const KEY_LIST: readonly (readonly [string, string])[] = [
   ["p", "pick a page of the open section (when it has pages)"],
   ["n / N", "the next or previous page of the open section"],
   ["f", "load the whole open section when it is capped; otherwise, on a tab with filters, the next filter"],
+  ["t", "switch the child list between tree and list"],
   ["r", "fetch the lists again"],
   ["escape / backspace", "close the key list, leave a list inside the open object, return from a row opened there, or close the object"],
   ["?", "show or hide this key list"],
@@ -2480,7 +2712,7 @@ export const ROW_LINES = 3;
 
 /** The lines one row takes; an error row shows its text elsewhere. */
 export function rowLines(row: TuiRow): number {
-  return ROW_LINES + (row.group === undefined ? 0 : 1);
+  return ROW_LINES * (row.group === undefined ? 1 : 2);
 }
 
 /**

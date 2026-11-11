@@ -99,6 +99,11 @@ export interface ObjectRow {
    * passes it through untouched; clients draw it.
    */
   readonly after?: readonly string[] | undefined;
+  /**
+   * The object waits for a person although no run does, as a proposed task
+   * does. The row is drawn waiting, like one with a run waiting.
+   */
+  readonly waiting?: boolean | undefined;
 }
 
 /** One section a detail page offers. `live` means its content still grows. */
@@ -827,6 +832,13 @@ export interface TickContext extends PluginBaseContext {
     access?: JsonValue,
   ): Promise<void>;
   /**
+   * Adds a flow this plugin generated, so `start` can name it and a later
+   * process that sees the same run gets the same graph. Declaring a name again
+   * with the same definition is a no-op; a different definition under a name
+   * already in use is refused.
+   */
+  declareFlow(flow: FlowDefinition): void;
+  /**
    * Answers the current person wait of a run this plugin owns. The kernel's
    * configured answer handler records the answer; a run that no longer waits
    * rejects with a `StateError`.
@@ -844,6 +856,15 @@ export interface StandingItem {
   readonly id: string;
   /** What the person reads. */
   readonly prompt: string;
+  /**
+   * The object the item is about. The item then carries the actions of the
+   * plugins whose `when` holds for it, and the object's row, like a waiting run.
+   */
+  readonly object?: ObjectRef | undefined;
+  /** False keeps a channel from announcing the item; it is still pending. */
+  readonly announce?: boolean | undefined;
+  /** Other objects the item stands for, such as the proposed tasks of a draft plan. */
+  readonly covers?: readonly ObjectRef[] | undefined;
 }
 
 /** The context a plugin's `standing` hook receives. */

@@ -1,7 +1,8 @@
 /** Git scratch repositories for the worktree and work tests. */
 
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 
 export interface GitResult {
   readonly ok: boolean;
@@ -88,4 +89,47 @@ export async function commitIn(
   await writeFile(join(worktree, file), text);
   gitOrThrow(worktree, ["add", file]);
   gitOrThrow(worktree, [...IDENTITY, "commit", "-qm", message]);
+}
+
+/**
+ * A `git` first on PATH that logs each call whose arguments contain `match`
+ * and answers the first `times` of them with exit 0 and no output; every other
+ * call, and the later ones, run the real git.
+ */
+export function silentGit(
+  root: string,
+  match: string,
+  times: number,
+): { calls(): number; restore(): void } {
+  const real = Bun.which("git");
+  if (real === undefined) throw new Error("git is not on PATH");
+  const bin = join(root, `silent-git-${Math.random().toString(36).slice(2)}`);
+  mkdirSync(bin, { recursive: true });
+  const log = join(bin, "log");
+  const left = join(bin, "left");
+  writeFileSync(left, String(times));
+  writeFileSync(log, "");
+  writeFileSync(
+    join(bin, "git"),
+    [
+      "#!/bin/sh",
+      `case "$*" in *'${match}'*)`,
+      `  echo x >> '${log}'`,
+      `  n=$(cat '${left}')`,
+      `  if [ "$n" -gt 0 ]; then echo $((n-1)) > '${left}'; exit 0; fi;;`,
+      "esac",
+      `exec '${real}' "$@"`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(bin, "git"), 0o755);
+  const previous = process.env.PATH;
+  process.env.PATH = `${bin}${delimiter}${previous ?? ""}`;
+  return {
+    calls: () => readFileSync(log, "utf8").split("\n").filter((line) => line !== "").length,
+    restore() {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    },
+  };
 }
