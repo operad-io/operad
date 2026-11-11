@@ -242,3 +242,23 @@ describe("one-time grants", () => {
     expect(asked).toBe(false);
   });
 });
+
+describe("operad's own tools", () => {
+  test("are not judged by the profile, though other MCP tools are refused while a deny rule is set", async () => {
+    const profile: AccessProfile = { denyPaths: ["~/.ssh"], readOnly: true };
+    expect(translate("mcp__operad__act", { id: "task:1" })).toEqual({ kind: "inert" });
+    expect(await decideAccess(profile, "mcp__operad__list", { type: "task" }, CWD)).toEqual({ allow: true });
+    const other = await decideAccess(profile, "mcp__other__list", {}, CWD);
+    expect(other.allow).toBe(false);
+  });
+
+  test("a read-only profile asks about a write in the working directory", async () => {
+    const asked: unknown[] = [];
+    const verdict = await decideAccess({ readOnly: true }, "Write", { file_path: `${CWD}/a.ts` }, CWD, undefined, async (question) => {
+      asked.push(question);
+      return { decision: "deny", reason: "no" };
+    });
+    expect(verdict.allow).toBe(false);
+    expect(asked).toEqual([{ kind: "path", value: `${CWD}/a.ts`, tool: "write" }]);
+  });
+});

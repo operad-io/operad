@@ -27,10 +27,13 @@ import {
   getTask,
   setAuto,
   setPriority,
+  cancelTask,
   claimTaskStart,
   setTaskPhase,
   updateTask,
   setConcurrency,
+  recordMergeReported,
+  recordPlanFinishedReported,
   recordPlanStart,
   withRepoLock,
 } from "../src/service.ts";
@@ -575,6 +578,41 @@ describe("dev scheduling", () => {
     // A task whose run recorded itself is never claimed again.
     await putTask(fixture, task.key, { run: "run-1" });
     expect(await tick(fixture)).toEqual([]);
+  });
+
+  test("a run still active on a cancelled task is ended by the tick", async () => {
+    const fixture = await setup({ concurrency: 1 });
+    const plan = await makePlan(fixture, { slug: "plan", auto: "off" });
+    const task = await makeTask(fixture, plan.key, "task");
+    const other = await makeTask(fixture, plan.key, "other");
+    await confirm(fixture, plan.key);
+    await setTaskPhase(fixture.store, task.key, "waiting", { run: "run-1" });
+    await setTaskPhase(fixture.store, other.key, "waiting", { run: "run-2" });
+    // The cancel reached no run control, as one made through MCP did not.
+    await cancelTask(fixture.store, task.key);
+    expect(fixture.cancelled).toEqual([]);
+
+    const info = (runId: string, object: string): RunInfo => ({
+      runId,
+      flow: "dev",
+      object,
+      active: true,
+      startedAt: 0,
+      endedAt: null,
+      lastSeq: 1,
+      startInputId: null,
+    });
+    const runs: RunLookup = {
+      active: async (object?: string) =>
+        [info("run-1", `task:${task.key}`), info("run-2", `task:${other.key}`)].filter(
+          (run) => object === undefined || run.object === object,
+        ),
+      state: async () => undefined,
+      lastStep: async () => null,
+    };
+    await fixture.registry.tick(runs);
+    // Only the cancelled task's run ends; a task that waits keeps its run.
+    expect(fixture.cancelled).toEqual(["run-1"]);
   });
 
   test("a claim whose run the kernel holds is not released before the run records itself", async () => {
@@ -1362,11 +1400,14 @@ describe("dev scheduling", () => {
     const second = await addTask(fixture.store, { plan: plan.key, slug: "a-two", title: "a-two", area: "core" });
     await confirm(fixture, plan.key);
 
+    // Another process opens its own store on the same files; passes of one
+    // store never overlap, so the race between processes needs a second one.
+    const otherStore = storeAt(fixture.root);
     const other = new PluginRegistry([plugin, poolPlugin, createShellPlugin()], {
       home: fixture.root,
       cwd: fixture.repositoryPath,
-      store: fixture.store,
-      storeRoot: fixture.store.root,
+      store: otherStore,
+      storeRoot: otherStore.root,
       onAnswer: async () => {},
       onCancelRun: () => {},
     });
@@ -1473,5 +1514,98 @@ describe("dev scheduling", () => {
     }
     await confirm(same, samePlan.key);
     expect((await tick(same)).length).toBe(1);
+  });
+});
+
+describe("a scheduler line prints once", () => {
+  async function mergedFixture() {
+    const fixture = await setup();
+    const plan = await makePlan(fixture, { slug: "plan", auto: "merge" });
+    const task = await makeTask(fixture, plan.key, "task");
+    await confirm(fixture, plan.key);
+    await phase(fixture, task.key, "waiting", "run-1");
+    await putTask(fixture, task.key, {
+      attempt: { number: 1, run: "run-1", review: { result: "pass" } },
+    });
+    await tick(fixture);
+    await putTask(fixture, task.key, {
+      phase: "merged",
+      attempt: {
+        number: 1,
+        run: "run-1",
+        review: { result: "pass" },
+        integration: { result: "merged" },
+      },
+    });
+    fixture.lines.length = 0;
+    return { fixture, plan, task };
+  }
+
+  test("two passes asked for at once print each transition once", async () => {
+    const { fixture, plan, task } = await mergedFixture();
+    await Promise.all([fixture.registry.tick(), fixture.registry.tick()]);
+    expect(fixture.lines.sort()).toEqual(
+      [`${task.id} integrating -> merged`, `${plan.id} confirmed -> finished`].sort(),
+    );
+  });
+
+  test("a pass asked for while one runs runs once after it, never beside it", async () => {
+    const fixture = await setup();
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run" });
+    const task = await makeTask(fixture, plan.key, "task");
+    await confirm(fixture, plan.key);
+    await phase(fixture, task.key, "running", "run-1");
+
+    let inside = 0;
+    let deepest = 0;
+    let entered = 0;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const runs: RunLookup = {
+      async active() {
+        entered += 1;
+        inside += 1;
+        deepest = Math.max(deepest, inside);
+        await gate;
+        inside -= 1;
+        return [];
+      },
+      async state() {
+        return undefined;
+      },
+      async lastStep() {
+        return null;
+      },
+    };
+    const first = fixture.registry.tick(runs);
+    const others = [fixture.registry.tick(runs), fixture.registry.tick(runs)];
+    release();
+    await Promise.all([first, ...others]);
+    expect(deepest).toBe(1);
+    // The first pass, and one shared pass for the two asked meanwhile.
+    expect(entered).toBeGreaterThanOrEqual(2);
+    expect(entered).toBeLessThanOrEqual(4);
+  });
+
+  test("the merge mark goes to one claimant, as when another process races a pass", async () => {
+    const { fixture, task } = await mergedFixture();
+    const claims = await Promise.all([
+      recordMergeReported(fixture.store, task.key, 1),
+      recordMergeReported(fixture.store, task.key, 1),
+    ]);
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    await tick(fixture);
+    expect(fixture.lines.filter((line) => line.includes("integrating -> merged"))).toEqual([]);
+  });
+
+  test("the finished mark goes to one claimant", async () => {
+    const { fixture, plan } = await mergedFixture();
+    const claims = await Promise.all([
+      recordPlanFinishedReported(fixture.store, plan.key),
+      recordPlanFinishedReported(fixture.store, plan.key),
+    ]);
+    expect(claims.filter(Boolean)).toHaveLength(1);
   });
 });

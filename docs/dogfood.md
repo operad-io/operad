@@ -131,12 +131,12 @@ A review whose harness reports a model error (`unavailable` or `usage_limit`),
 or whose error output says `HTTP 429`, does not lose the attempt. The same review round runs once on
 `reviewer.fallback` when `.operad/dev.json` sets one. Without a fallback, or
 when the fallback is unavailable too, the task waits `reviewer.retrySecs`
-(default 120 seconds) and then runs the review again; it does not start a worker
+(default 120 seconds; each further wait doubles, up to 30 minutes) and then runs the review again; it does not start a worker
 and does not count a rework. A round uses its fallback at most once, so a retry
 that finds the primary unavailable again waits rather than calling the fallback
 a second time. A wait longer than one step run is split into pieces below the
 step timeout, so any positive `reviewer.retrySecs` is waited out; the flow's
-visit limit is finite, and a round waits at most 36 times (about 72 minutes
+visit limit is finite, and a round waits at most 6 times (about 90 minutes
 at the default) before it waits for a person with the note `review did not
 finish (model unavailable)`; a review step that cannot fit another run in its
 three-hour step timeout does the same with `review did not finish (out of
@@ -157,6 +157,13 @@ event with one of these reasons: `ready to merge`, `review findings`,
 it as `event dev.waiting from operad: T-0001-switch waiting: <reason>`. The rule
 for it only observes; replace the `operad` / `dev.waiting` rule in `triggers.json`
 to send it to a channel.
+
+`work did nothing` means the worker added no commit and the branch has nothing
+beyond main, or its latest commit already passed verify. When the worker adds no
+commit but the branch already holds commits not on main whose latest commit has
+not passed verify (an earlier run stopped before verify ended), the task does
+not wait: history says `the branch already has unchecked work; checking it` and
+the task goes on to verify.
 
 ## When something is stuck
 

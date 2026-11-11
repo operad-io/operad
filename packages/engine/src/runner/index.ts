@@ -5,13 +5,17 @@ export type {
   RecordAnswerOptions,
   RecordedAnswerPayload,
 } from "./answer.ts";
+export { cancelRun } from "./cancel.ts";
+export type { CancelRunOptions } from "./cancel.ts";
 export {
   acquireLock,
+  assertStoreNotMoving,
   lockHeld,
   pidAlive,
   readLockPid,
   runLockPath,
   serveLockPath,
+  storeMoveLockPath,
 } from "./lock.ts";
 export type { LockHandle, LockOptions } from "./lock.ts";
 export {

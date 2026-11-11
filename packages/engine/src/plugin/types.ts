@@ -378,7 +378,7 @@ export type Answer = (choice: string, note?: string) => MaybePromise<void>;
 /** What a plugin may ask the kernel to do with a run it owns. */
 export interface RunControl {
   /** Cancels a run through the kernel; an ended run is left alone. */
-  cancel(runId: string): MaybePromise<void>;
+  cancel(runId: string, flow?: FlowDefinition): MaybePromise<void>;
 }
 
 /** The result of one plugin's optional `check`. */
@@ -545,6 +545,10 @@ export interface StepRunOptions {
   readonly trigger?: TriggerView | undefined;
   /** Sends a step event; the plugin is the one that registered the step. */
   readonly emit?:
+    | ((plugin: string, event: StepEvent) => MaybePromise<void>)
+    | undefined;
+  /** Sees each event this step sends, besides the destination; only the step it is given to. */
+  readonly observe?:
     | ((plugin: string, event: StepEvent) => MaybePromise<void>)
     | undefined;
 }
@@ -723,8 +727,25 @@ export interface ActionTypeDefinition {
   readonly run: (ctx: ActionContext, args: unknown) => MaybePromise<unknown>;
 }
 
+/** An event an action sends: the person's client is the source. */
+export interface ActionEvent {
+  /** Where it came from, such as `ios`; never `operad`. */
+  readonly source: string;
+  readonly type: string;
+  /** Makes a repeat of the same event a no-op. */
+  readonly key: string;
+  /** The object it is about, as `<type>:<id>`. */
+  readonly object?: string | undefined;
+  readonly summary?: string | undefined;
+  readonly data?: JsonValue | undefined;
+}
+
 /** The context an action receives. `runId` is set when it answers a person wait. */
 export interface ActionContext extends PluginBaseContext {
+  /** The names of the loaded plugins of kind `harness`. */
+  readonly harnesses: readonly string[];
+  /** Sends an event through the kernel's rules; set when the host can route events. */
+  readonly emit?: ((event: ActionEvent) => Promise<void>) | undefined;
   readonly runId: string | undefined;
   readonly object: RunObject;
   /** Who asked for the action: a person through a client. */
@@ -846,6 +867,8 @@ export interface TickContext extends PluginBaseContext {
   answer(runId: string, choice: string, note?: string): Promise<void>;
   /** What the kernel knows about runs, when the loop supplies it. */
   readonly runLookup?: RunLookup | undefined;
+  /** Set when the kernel can cancel a run for this plugin. */
+  readonly runs?: RunControl | undefined;
   /** The names of the plugins this process loaded. */
   readonly loaded: readonly string[];
 }

@@ -972,3 +972,61 @@ test("a write to an askPaths path asks with the path and the tool; allowed, the 
   expect(existsSync(target)).toBe(true);
   expect(last(run)).toMatchObject({ result: "done" });
 });
+
+function operadHome(s: Setup): string {
+  const home = join(s.dir, "operad-home");
+  mkdirSync(home, { recursive: true });
+  const plugin = join(import.meta.dir, "..", "..", "engine", "test", "fixtures", "plugins", "presentation.ts");
+  writeFileSync(
+    join(home, "config.json"),
+    JSON.stringify({ plugins: [plugin], store: { backend: "jsonl", path: join(s.dir, "operad-store") } }),
+  );
+  return home;
+}
+
+test("operadTools registers operad's tools with pi: the model calls one and it runs against the home", async () => {
+  const s = setup();
+  const contexts = join(s.dir, "contexts.jsonl");
+  const run = await runFake(
+    s,
+    [
+      { text: "", toolCall: { name: "operad_list", arguments: { type: "item" } } },
+      { text: "I looked" },
+    ],
+    { ...s.input, operadTools: { home: operadHome(s) } },
+    { FAKE_CONTEXT_FILE: contexts },
+  );
+  expect(run.exitCode).toBe(0);
+  const ended = run.lines.find((line) => line["type"] === "tool_execution_end");
+  expect(ended).toMatchObject({ toolName: "operad_list", isError: false });
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "I looked" });
+});
+
+test("an operad tool that refuses gives the model an error and the run goes on", async () => {
+  const s = setup();
+  const run = await runFake(
+    s,
+    [
+      { text: "", toolCall: { name: "operad_list", arguments: { type: "nosuchtype" } } },
+      { text: "it refused" },
+    ],
+    { ...s.input, operadTools: { home: operadHome(s) } },
+  );
+  expect(run.lines.find((line) => line["type"] === "tool_execution_end")).toMatchObject({ toolName: "operad_list", isError: true });
+  expect(last(run)).toMatchObject({ result: "done" });
+});
+
+test("without operadTools pi has no operad tool", async () => {
+  const s = setup();
+  const run = await runFake(s, [
+    { text: "", toolCall: { name: "operad_list", arguments: { type: "item" } } },
+    { text: "none" },
+  ]);
+  expect(run.lines.find((line) => line["type"] === "tool_execution_end")).toMatchObject({ isError: true });
+});
+
+test("parseInput takes operadTools with a home and refuses one without", () => {
+  const base = { prompt: "p", cwd: "/c", authPath: "/a", modelsPath: "/m", agentDir: "/d", sessionDir: "/s" };
+  expect(parseInput({ ...base, operadTools: { home: "/h" } }).ok).toBe(true);
+  expect(parseInput({ ...base, operadTools: {} })).toEqual({ ok: false, message: "operadTools must be an object with a home" });
+});

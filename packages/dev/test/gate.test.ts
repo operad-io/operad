@@ -1433,7 +1433,8 @@ describe("dev/review fallback and retry", () => {
         "primary",
       ]);
       expect(task.attempt?.reviews).toBe(0);
-      expect(task.attempt?.review?.retryAt).toBe(65_000);
+      // The second wait is double the first (30s, then 60s).
+      expect(task.attempt?.review?.retryAt).toBe(95_000);
     } finally {
       restoreHooks();
     }
@@ -1732,7 +1733,7 @@ describe("dev/review hardening", () => {
           }, "test:seed-waits");
           seeded = SEEDED_WAITS;
           wait += SEEDED_WAITS;
-          clock += 120_000 * SEEDED_WAITS;
+          clock += 30 * 60_000 * SEEDED_WAITS;
         }
         if (!restarted && wait >= MAX_REVIEW_WAITS - 1) {
           restarted = true;
@@ -1747,7 +1748,7 @@ describe("dev/review hardening", () => {
           object: { type: "task", id: state.taskKey, data: {} },
         });
         expect(result.result).toBe("unavailable");
-        clock += 120_000;
+        clock += 30 * 60_000;
       }
       expect(state.reviewer.calls).toHaveLength(MAX_REVIEW_WAITS - seeded);
       const last = await registry.runStep("dev/review", {}, {
@@ -1771,6 +1772,26 @@ describe("dev/review hardening", () => {
       });
       expect(replay.result).toBe("exhausted");
       expect(state.reviewer.calls).toHaveLength(MAX_REVIEW_WAITS - seeded + 1);
+    } finally {
+      restoreHooks();
+    }
+  }, 60_000);
+
+  test("each further wait of an unavailable model doubles", async () => {
+    const state = await fixture({
+      reviewerArgs: ["unavailable", "--model", "primary"],
+      retrySecs: 120,
+    });
+    await verify(state);
+    let clock = 10_000;
+    const restoreHooks = useHooks({ now: () => clock });
+    try {
+      const first = await review(state, "review-double");
+      expect(first.data?.retryAt).toBe(10_000 + 120_000);
+      clock = 130_000;
+      const second = await review(state, "review-double");
+      expect(second.result).toBe("unavailable");
+      expect(second.data?.retryAt).toBe(130_000 + 240_000);
     } finally {
       restoreHooks();
     }

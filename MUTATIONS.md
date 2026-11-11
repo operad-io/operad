@@ -841,3 +841,11 @@ The script lives in `scripts/`, which has no package of its own, so its rows are
 | id | file | mutation | failing test |
 |---|---|---|---|
 | LEAD-REMOTE-CLEAN-M1 | scripts/remote-check.sh | `git clean` kept every `node_modules` again (`-fdx -e node_modules`), so a package directory from an earlier commit stayed behind | `remote-check.sh > a package directory left from an earlier commit is removed, root node_modules is kept` |
+
+## T-0238 — remote-check.sh slots and the integration lane
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0238-M1 | scripts/remote-check.sh | a task check tried only slot 1 whatever `OPERAD_CHECK_SLOTS` said | `remote-check.sh > slots and the integration lane > with two slots two checks run at once in different trees and a third waits` |
+| T-0238-M2 | scripts/remote-check.sh | the integration lane took the task slots | `remote-check.sh > slots and the integration lane > with every task slot taken an integration check runs at once, in its own tree` |
+| T-0238-M3 | scripts/remote-check.sh | ran the command before validating `OPERAD_CHECK_SLOTS` and `OPERAD_CHECK_LANE` when no host is set | `remote-check.sh > slots and the integration lane > a bad OPERAD_CHECK_SLOTS or OPERAD_CHECK_LANE stops the check even with no host` |

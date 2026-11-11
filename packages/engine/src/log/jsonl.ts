@@ -34,6 +34,7 @@ import {
 } from "./facts.ts";
 import { assertJsonValue } from "./json-value.ts";
 import { SCHEMA_VERSION } from "./schema.ts";
+import { assertStoreNotMoving } from "../runner/lock.ts";
 import {
   linkExclusive,
   resolveSubscriptionWatch,
@@ -442,6 +443,7 @@ function globalFactOf(stored: StoredGlobalFact): GlobalFact {
     payload: stored.payload,
     cause: stored.cause,
     time: stored.time,
+    ...(stored.uniqueKey === undefined ? {} : { uniqueKey: stored.uniqueKey }),
   };
 }
 
@@ -453,6 +455,7 @@ class JsonlLogBackend implements LogBackend {
   readonly #globalFactsPath: string;
   readonly #lockPath: string;
   readonly #clock: () => number;
+  readonly #newRunId: () => string;
   readonly #subscriptionWatch: SubscriptionWatch;
   readonly #inputIds = new Set<string>();
   #inputBytes = 0;
@@ -465,7 +468,12 @@ class JsonlLogBackend implements LogBackend {
   #snapshot: Map<string, { readonly size: number; readonly ended: boolean }> | undefined;
   readonly #listeners = new Set<(change: LogChange) => void>();
 
-  constructor(directory: string, clock: () => number, subscriptionWatch: SubscriptionWatch) {
+  constructor(
+    directory: string,
+    clock: () => number,
+    newRunId: () => string,
+    subscriptionWatch: SubscriptionWatch,
+  ) {
     this.#directory = directory;
     this.#runsDirectory = join(directory, RUNS_DIR);
     this.#inputsPath = join(directory, INPUTS_FILE);
@@ -473,6 +481,7 @@ class JsonlLogBackend implements LogBackend {
     this.#globalFactsPath = join(directory, GLOBAL_FACTS_FILE);
     this.#lockPath = join(directory, LOCK_FILE);
     this.#clock = clock;
+    this.#newRunId = newRunId;
     this.#subscriptionWatch = subscriptionWatch;
   }
 
@@ -486,12 +495,14 @@ class JsonlLogBackend implements LogBackend {
     assertName(object, "object");
     if (access !== undefined) assertJsonValue(access, "run access");
     return this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       const active = this.#listRunsUnlocked(true).find(
         (run) => run.flow === flow && run.object === object,
       );
       if (active) throw new ActiveRunError(flow, object, active.runId);
 
-      const runId = randomUUID();
+      const runId = this.#newRunId();
+      assertRunId(runId);
       const startedAt = this.#clock();
       const header: RunHeader = {
         type: "run",
@@ -525,6 +536,7 @@ class JsonlLogBackend implements LogBackend {
   async endRun(runId: string): Promise<void> {
     assertRunId(runId);
     this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       const path = this.#runPath(runId);
       if (!existsSync(path)) throw new RunNotFoundError(runId);
       const endPath = this.#endPath(runId);
@@ -548,6 +560,7 @@ class JsonlLogBackend implements LogBackend {
     assertName(sourceKey, "sourceKey");
     assertJsonValue(payload, "input payload");
     return this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       if (runId !== null) {
         const info = this.#runInfoUnlocked(runId);
         if (!info.active) throw new RunEndedError(runId);
@@ -617,6 +630,7 @@ class JsonlLogBackend implements LogBackend {
     assertName(kind, "outcome kind");
     assertJsonValue(payload, "outcome payload");
     return this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       this.#refreshOutcomesUnlocked();
       const key = outcomeKey(inputId, kind);
       const existing = this.#outcomes.get(key);
@@ -661,6 +675,7 @@ class JsonlLogBackend implements LogBackend {
     for (const fact of facts) validateNewFact(fact);
 
     return this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       const path = this.#runPath(runId);
       if (!existsSync(path)) throw new RunNotFoundError(runId);
       const info = this.#runInfoUnlocked(runId);
@@ -699,6 +714,7 @@ class JsonlLogBackend implements LogBackend {
     validateNewFact(fact);
     if (uniqueKey !== undefined) assertName(uniqueKey, "uniqueKey");
     return this.#withLock(() => {
+      assertStoreNotMoving(this.#directory);
       truncateTornLine(this.#globalFactsPath);
       if (uniqueKey !== undefined) {
         const existing = this.#globalFactWithKeyUnlocked(uniqueKey);
@@ -923,13 +939,7 @@ class JsonlLogBackend implements LogBackend {
             );
           }
           expectedSeq += 1;
-          yield {
-            seq: fact.seq,
-            kind: fact.kind,
-            payload: fact.payload,
-            cause: fact.cause,
-            time: fact.time,
-          };
+          yield globalFactOf(fact);
         }
       }
     } finally {
@@ -1207,6 +1217,7 @@ export function openJsonlLogBackend(
   const backend = new JsonlLogBackend(
     directory,
     options.clock ?? Date.now,
+    options.runId ?? randomUUID,
     resolveSubscriptionWatch(options),
   );
   backend.recover();

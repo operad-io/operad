@@ -426,6 +426,18 @@ the row fields.
 |---|---|---|---|
 | T-0206-M1 | packages/engine/src/plugin/file-store.ts | read the facts from byte 0 instead of from `this.offset`, so every refresh read the whole file | `the file plugin store > a second reader sees facts another writer appended`; `the file plugin store > refresh reads only past its offset, and a torn multi-byte line waits for its newline` |
 | T-0206-M2 | packages/engine/src/plugin/file-store.ts | treated the bytes after the last newline as complete, so a torn line was consumed before its newline landed | `the file plugin store > refresh reads only past its offset, and a torn multi-byte line waits for its newline` |
+| T-0208-M1 | packages/engine/src/store-copy/copy.ts | skipped the check that the new store's files do not exist | `store copy > it refuses a target that already exists` |
+| T-0208-M2 | packages/engine/src/store-copy/copy.ts | took no home lock, so a running serve did not stop the copy | `store copy > it refuses while serve or a run has the store open, and writes nothing` |
+| T-0208-M3 | packages/engine/src/store-copy/copy.ts | did not look at the run locks | `store copy > it refuses while serve or a run has the store open, and writes nothing` |
+| T-0208-M4 | packages/engine/src/store-copy/copy.ts | wrote every plugin object version as a plain fact, never as an object | `store copy > a store with a finished, a waiting and a failed run answers the same from its copy` |
+| T-0208-M5 | packages/engine/src/store-copy/copy.ts | dropped the unique key of each global fact | `store copy > a store with a finished, a waiting and a failed run answers the same from its copy`; `store copy > jsonl to sqlite to jsonl gives equal facts` |
+| T-0208-M6 | packages/engine/src/store-copy/copy.ts | copied runs newest first, so a waiting run started before the older run of the same flow and object | `store copy > jsonl to sqlite to jsonl gives equal facts` |
+| T-0208-M7 | packages/engine/src/log/sqlite.ts | `startRun` ignored the `runId` option | `log backend: sqlite > the runId option names the runs it starts` |
+| T-0208-M8 | packages/engine/src/log/jsonl.ts | `readGlobal` left out the unique key | `log backend: jsonl > readGlobal returns the unique key a fact was written with` |
+| T-0208-M9 | packages/engine/src/store-copy/copy.ts | opened the jsonl source itself instead of a snapshot, so its recovery cut the torn tail | `store copy > a store with a finished, a waiting and a failed run answers the same from its copy` |
+| T-0208-M10 | packages/engine/src/store-copy/copy.ts | `useStore` did not look at the run locks | `store copy > use refuses while a run holds the store` |
+| T-0208-M11 | packages/engine/src/store-copy/copy.ts | the run-lock check called `lockHeld`, which removes a stale lock file from the source | `store copy > copy and use change nothing under the source directory` |
+| T-0208-M12 | packages/engine/src/store-copy/copy.ts | opened the source's plugin objects in place instead of from the snapshot, which makes `plugins/` | `store copy > copy and use change nothing under the source directory` |
 
 ## T-0210 — follow-ups from the flow-stops reviews
 
@@ -440,3 +452,24 @@ the row fields.
 |---|---|---|---|
 | T-0160-M1 | packages/engine/src/views/settings.ts | ran the read-modify-write without the lock file, so concurrent sets lost updates | `settings > sets at the same moment all land, and the file keeps its mode` |
 | T-0160-M2 | packages/engine/src/views/settings.ts | dropped the chmod of the temporary file, so the config lost its mode on rename | `settings > sets at the same moment all land, and the file keeps its mode` |
+| T-0188-M7 | packages/engine/src/plugin/registry.ts | an action could send an event whose source is operad | `ctx.emit in an action > the source operad is reserved for the kernel` |
+| T-0188-M20 | packages/engine/src/plugin/registry.ts | the action context's harness list named plugins of another kind | `ctx.harnesses in an action > names the loaded plugins of kind harness` |
+| T-0208-M13 | packages/engine/src/runner/runner.ts | a run ignored the store's move lock after taking its own lock | `store copy > a run that starts while the store is being copied is refused` |
+| T-0208-M14 | packages/engine/src/store-copy/copy.ts | left the `locks/` directory the copy made in the source store | `store copy > a copy of a store with no locks directory leaves none behind` |
+| T-0208-M15 | packages/engine/src/store-copy/copy.ts | skipped the check that the source did not change while it was copied | `store copy > a write that reaches the source after it was read makes the copy fail and leaves no target` |
+| T-0208-M16 | packages/engine/src/log/jsonl.ts | removed the store-move check from every jsonl log write | `store copy > an answer or a plugin write while the store is being moved is refused` |
+| T-0208-M17 | packages/engine/src/plugin/file-store.ts | removed the store-move check from the plugin store's append | `store copy > an answer or a plugin write while the store is being moved is refused` |
+| T-0208-M18 | packages/engine/src/store-copy/copy.ts | took the snapshot without the locks the source's writers hold | `store copy > a plugin write under way when the copy starts is in the copy` |
+| T-0208-M19 | packages/engine/src/store-copy/copy.ts | `useStore` did not compare the source with what the copy recorded | `store copy > use refuses a copy that is older than its source, and switching back is allowed` |
+| T-0208-M20 | packages/engine/src/log/sqlite.ts | removed the store-move check from every sqlite log write | `store copy > a sqlite store refuses writes while a move holds it` |
+| T-0208-M21 | packages/engine/src/plugin/sqlite-store.ts | removed the store-move check from the sqlite plugin store's writes | `store copy > a sqlite store refuses writes while a move holds it` |
+| T-0131-M4 | packages/engine/src/views/history.ts | dropped the retry-step half of the pair check, so an alternating pair never folded | `folded repeats in run history > 37 unavailable reviews with their waits fold into one line` |
+| T-0131-M5 | packages/engine/src/views/history.ts | left the outcome out of the fold signature, so a different outcome in between folded | `folded repeats in run history > the same step ending differently is not folded with the others` |
+| T-0131-M6 | packages/engine/src/views/history.ts | normalized every number in the detail instead of only ISO times | `folded repeats in run history > attempts whose reasons differ by more than a time are not folded` |
+| T-0131-M7 | packages/engine/src/views/history.ts | folded any two alternating steps, not only a step and its `_retry` step | `folded repeats in run history > two different steps that alternate are not a step and its retry` |
+
+## T-0216 — a caller may observe the events of a step it runs
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0216-M3 | packages/engine/src/plugin/registry.ts | a step's events were not given to the caller's `observe` | `a step's events > a caller that observes a step sees its events besides the destination` |

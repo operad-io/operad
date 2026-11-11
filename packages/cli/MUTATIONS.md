@@ -83,3 +83,4 @@ the row fields.
 |---|---|---|---|
 | T-0205-M5 | packages/cli/test/notify-serve.test.ts | `waitForLines` returned to waiting on the directory watch alone, with no 100 ms look | `waiting for a line another process writes > a watch that cannot see the directory is backed by the 100 ms look` (a directory that appears after the first look is never seen) |
 | T-0125-M1 | packages/cli/src/main.ts | a write to a closed pipe was not recognised as EPIPE (the catch rethrew and the error event was not handled), so a stack trace reached stderr | `a reader that closes the pipe > list with more rows than the pipe holds: the reader reads one line and closes; status 141, nothing on stderr` |
+| T-0208-M22 | packages/cli/src/main.ts | `store` accepted a missing or unknown store kind instead of a usage error | `store copy > it explains itself without internal words` |

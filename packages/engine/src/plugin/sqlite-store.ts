@@ -2,6 +2,7 @@
 
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
+import { assertStoreNotMoving } from "../runner/lock.ts";
 import { dirname, join } from "node:path";
 import {
   followsChanges,
@@ -181,25 +182,28 @@ export class SqlitePluginStore implements PluginStore {
       cause,
       at: this.clock(),
     };
-    this.db
-      .query(
-        `INSERT INTO objects (type, id, data, version, cause, at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (type, id) DO UPDATE SET
-           data = excluded.data,
-           version = excluded.version,
-           cause = excluded.cause,
-           at = excluded.at`,
-      )
-      .run(
-        type,
-        id,
-        JSON.stringify(object.data),
-        object.version,
-        cause,
-        object.at,
-      );
-    this.append({ type, object: { type, id }, data, cause });
+    this.db.transaction(() => {
+      assertStoreNotMoving(dirname(this.location.file ?? this.root));
+      this.db
+        .query(
+          `INSERT INTO objects (type, id, data, version, cause, at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (type, id) DO UPDATE SET
+             data = excluded.data,
+             version = excluded.version,
+             cause = excluded.cause,
+             at = excluded.at`,
+        )
+        .run(
+          type,
+          id,
+          JSON.stringify(object.data),
+          object.version,
+          cause,
+          object.at,
+        );
+      this.insertFact({ type, object: { type, id }, data, cause });
+    }).immediate();
     return object;
   }
 
@@ -374,6 +378,15 @@ export class SqlitePluginStore implements PluginStore {
   }
 
   append(input: StoreFactInput): PluginFact {
+    return this.db
+      .transaction(() => {
+        assertStoreNotMoving(dirname(this.location.file ?? this.root));
+        return this.insertFact(input);
+      })
+      .immediate();
+  }
+
+  private insertFact(input: StoreFactInput): PluginFact {
     requireName(input.type, "fact type");
     const cause = input.cause;
     requireName(cause, "cause");

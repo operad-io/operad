@@ -26,6 +26,8 @@ export { FilePlaces } from "./shared.ts";
 
 /** The event a waiting `pool/agent` sends. */
 export const WAITING_EVENT = "pool.waiting";
+/** The event a `pool/agent` sends when it got a place after it had waited. */
+export const ACQUIRED_EVENT = "pool.acquired";
 
 /** The settings a config.json section may set for this plugin. */
 export const POOL_SETTINGS = {
@@ -82,7 +84,7 @@ function failed(reason: string, message: string, extra: Record<string, unknown> 
 }
 
 /** The params `pool/agent` reads itself; the harness step does not get them. */
-const OWN_PARAMS = ["worker", "workers", "fallbacks", "prefix"];
+const OWN_PARAMS = ["worker", "workers", "fallbacks", "prefix", "holder"];
 
 interface Place {
   readonly worker: WorkerDefinition;
@@ -114,9 +116,11 @@ export function createPoolPlugin(options: PoolPluginOptions = {}) {
     ctx: StepContext,
     prefix: string,
     candidates: readonly WorkerDefinition[],
+    holder: string | undefined,
   ): Promise<Place | undefined> {
     const book = places(ctx);
     let announced: string | undefined;
+    let announcements = 0;
     for (;;) {
       if (ctx.signal.aborted) return undefined;
       const claims: Claim[] = candidates.map((worker) => {
@@ -126,28 +130,40 @@ export function createPoolPlugin(options: PoolPluginOptions = {}) {
           ownLimit: worker.count,
           home: `harness:${harness}`,
           homeLimit: capOf(ctx.settings, harness),
+          holder,
         };
       });
       const got = await book.claim(claims);
       if (got.kind === "taken") {
         const worker = candidates[got.index];
         if (worker === undefined) throw new Error("pool: a claim was taken for no worker");
+        if (announced !== undefined) {
+          await ctx.emit({
+            type: ACQUIRED_EVENT,
+            key: `${ctx.runId}:${prefix}:acquired`,
+            summary: `got a place in pool ${prefix}: ${worker.name}`,
+            data: { pool: prefix, worker: worker.name },
+          });
+        }
         return { worker, release: got.release };
       }
       const blocked = candidates.map((worker, index) => ({
         worker: worker.name,
         full: got.full[index] ?? "home",
+        holders: [...(got.holders[index] ?? [])],
       }));
       const full = blocked.every((item) => item.full === "flow") ? "flow" : "home";
-      if (announced !== full) {
-        announced = full;
+      const state = `${full}|${blocked.map((item) => item.holders.join(",")).join(";")}`;
+      if (announced !== state) {
+        announced = state;
+        announcements += 1;
         const what =
           full === "flow"
             ? "the flow's count of every worker is full"
             : "the home cap of a harness is full";
         await ctx.emit({
           type: WAITING_EVENT,
-          key: `${ctx.runId}:${prefix}:${full}`,
+          key: `${ctx.runId}:${prefix}:${full}:${announcements}`,
           summary: `waiting in pool ${prefix}: ${what}`,
           data: { pool: prefix, full, workers: blocked },
         });
@@ -167,7 +183,8 @@ export function createPoolPlugin(options: PoolPluginOptions = {}) {
     | { readonly kind: "aborted" }
     | (Attempt & { readonly worker: WorkerDefinition })
   > {
-    const place = await acquire(ctx, prefix, candidates);
+    const holder = typeof input.holder === "string" ? input.holder : undefined;
+    const place = await acquire(ctx, prefix, candidates, holder);
     if (place === undefined) return { kind: "aborted" };
     const { worker } = place;
     try {

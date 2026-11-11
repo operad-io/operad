@@ -4,7 +4,9 @@
 
 import { homedir } from "node:os";
 import { posix } from "node:path";
+export { isReadOnlyCommand } from "./readonly.ts";
 export { COMMAND_SUMMARY_CHARS, SUMMARY_CHARS, COMMAND_NOT_SHOWN, REFUSED_IN_LOG, summarizeCall, firstErrorLine, messageSummary, secretValuesOf, type SummaryOptions } from "./summary.ts";
+import { isReadOnlyCommand } from "./readonly.ts";
 import { findDenied, inlineFormOf, parseRule, scan, type Rule } from "./command.ts";
 
 /** A one-time permission for the exact call a person was asked about. */
@@ -27,6 +29,13 @@ export interface AccessProfile {
    * `edit` tools, and for a `bash` redirect (`>`, `>>`) to such a path.
    */
   readonly askPaths?: readonly string[] | undefined;
+  /**
+   * The working directory is read-only: a write there (the `write` and `edit`
+   * tools, a `bash` redirect) asks, as if the directory were in `askPaths`; a
+   * `bash` command asks unless `isReadOnlyCommand` says it only reads.
+   * Deny wins over it.
+   */
+  readonly readOnly?: boolean | undefined;
   /** Permissions not yet used; the caller uses one up before it lets a call through. */
   readonly grants?: readonly AccessGrant[] | undefined;
 }
@@ -83,7 +92,12 @@ export function readProfile(value: unknown): ProfileRead {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return { ok: false, message: "the access profile must be an object" };
   }
-  const found: { denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; grants?: AccessGrant[] } = {};
+  const found: { denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; readOnly?: boolean; grants?: AccessGrant[] } = {};
+  const readOnly: unknown = Reflect.get(value, "readOnly");
+  if (readOnly !== undefined) {
+    if (typeof readOnly !== "boolean") return { ok: false, message: "readOnly must be true or false" };
+    found.readOnly = readOnly;
+  }
   for (const field of ["denyPaths", "denyCommands", "askCommands", "askPaths"] as const) {
     const entry: unknown = Reflect.get(value, field);
     if (entry === undefined) continue;
@@ -282,8 +296,11 @@ function askBash(profile: AccessProfile, command: string, asked: AskedPaths | un
  * over ask and ask over allow: the deny rules and paths are checked first, and
  * `askCommands` only when nothing denied the call.
  */
-export function match(profile: AccessProfile, call: ToolCall, options: MatchOptions = {}): Verdict {
+export function match(given: AccessProfile, call: ToolCall, options: MatchOptions = {}): Verdict {
   const home = options.home ?? homedir();
+  // A read-only working directory is a directory whose writes ask.
+  const profile: AccessProfile =
+    given.readOnly === true ? { ...given, askPaths: [...(given.askPaths ?? []), call.cwd] } : given;
   const entries = (profile.denyPaths ?? [])
     .filter((written) => written.length > 0)
     .map((written) => ({ written, path: normalise(written, call.cwd, home) }));
@@ -293,7 +310,14 @@ export function match(profile: AccessProfile, call: ToolCall, options: MatchOpti
     const command: unknown = call.input["command"];
     if (typeof command !== "string") return ALLOW;
     const verdict = checkBash(profile, command, denied);
-    return verdict.allow ? askBash(profile, command, askedPaths(profile, call.cwd, home), call.cwd, home) : verdict;
+    if (!verdict.allow) return verdict;
+    const asked = askBash(profile, command, askedPaths(profile, call.cwd, home), call.cwd, home);
+    if (!asked.allow) return asked;
+    // A read-only directory runs only commands known to read.
+    if (given.readOnly === true && !isReadOnlyCommand(command)) {
+      return { allow: false, ask: true, reason: "the working directory is read-only and this command is not known to only read", rule: "readOnly", kind: "command", value: command };
+    }
+    return asked;
   }
   if (PATH_TOOLS.has(call.tool)) {
     const path: unknown = call.input["path"] ?? call.input["file_path"];
