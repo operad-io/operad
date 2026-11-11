@@ -11,7 +11,7 @@ import {
   sdkVersion,
 } from "../src/claude-install.ts";
 import { createClaudeHarnessPlugin } from "../src/index.ts";
-import { cleanupTempRoots, tempRoot } from "./support.ts";
+import { cleanupTempRoots, tempRoot } from "@operad-io/harness-process/test-support";
 
 afterAll(cleanupTempRoots);
 
