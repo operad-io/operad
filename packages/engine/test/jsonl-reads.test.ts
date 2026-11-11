@@ -9,12 +9,6 @@ afterAll(cleanupTempRoots);
 
 const HISTORY = 3000;
 
-/** Makes the runs directory look unchanged for a minute, as in a quiet home. */
-function ageRuns(root: string): void {
-  const old = new Date(Date.now() - 60_000);
-  fs.utimesSync(join(root, "store", "runs"), old, old);
-}
-
 describe("the jsonl backend over a large history", () => {
   test("a lookup or a quiet read does not read the whole files", async () => {
     const root = await tempRoot();
@@ -91,7 +85,6 @@ describe("the jsonl backend over a large history", () => {
         await log.endRun(run.runId);
       }
       const live = await log.startRun("live", "job:live");
-      ageRuns(root);
       expect((await log.runs({ active: true })).map((run) => run.runId)).toEqual([live.runId]);
 
       const listed = spyOn(fs, "readdirSync");
@@ -112,15 +105,30 @@ describe("the jsonl backend over a large history", () => {
       await log.endRun(live.runId);
       expect((await log.runs({ active: true })).map((run) => run.runId)).toEqual([second.runId]);
 
-      // Right after a change the directory is read once, not on every tick.
+      // Right after a change nothing is listed either.
       const afterChange = spyOn(fs, "readdirSync");
       try {
         for (let pass = 0; pass < 6; pass += 1) {
           expect(await log.runs({ active: true })).toHaveLength(1);
         }
-        expect(afterChange.mock.calls.length).toBeLessThanOrEqual(1);
+        expect(afterChange).not.toHaveBeenCalled();
       } finally {
         afterChange.mockRestore();
+      }
+
+      // Another handle, as another process, starts and ends a run between two
+      // looks; nothing about time or modification dates is involved.
+      const other = openLog({ backend: "jsonl", path: join(root, "store") });
+      try {
+        const quick = await other.startRun("quick", "job:quick");
+        await other.endRun(quick.runId);
+        const kept = await other.startRun("kept", "job:kept");
+        const seen = (await log.runs({ active: true })).map((run) => run.runId).sort();
+        expect(seen).toEqual([second.runId, kept.runId].sort());
+        await other.endRun(kept.runId);
+        expect((await log.runs({ active: true })).map((run) => run.runId)).toEqual([second.runId]);
+      } finally {
+        await other.close();
       }
     } finally {
       await log.close();
@@ -149,7 +157,6 @@ describe("the jsonl backend over a large history", () => {
       }
       const live = await log.startRun("live", "job:live");
       await log.recordInput(null, "manual", "x", { n: 1 });
-      ageRuns(root);
       const stop = sub.call(log, (change) => events.push(change.runId));
       // Settle: the first call after a change lists the directory once.
       await log.runs({ active: true });
@@ -189,6 +196,32 @@ describe("the jsonl backend over a large history", () => {
       fire();
       expect(events).toContain(live.runId);
       stop();
+    } finally {
+      await log.close();
+    }
+  });
+
+  test("a missing or cut runs index is rebuilt from one read of the directory", async () => {
+    const root = await tempRoot();
+    const log = openLog({ backend: "jsonl", path: join(root, "store") });
+    try {
+      for (let index = 0; index < 20; index += 1) {
+        const run = await log.startRun("old", `job:${index}`);
+        await log.endRun(run.runId);
+      }
+      const live = await log.startRun("live", "job:live");
+      const indexPath = join(root, "store", "runs.index");
+      // Cut the index in the middle of a line, then remove it altogether.
+      fs.truncateSync(indexPath, 7);
+      expect((await log.runs({ active: true })).map((run) => run.runId)).toEqual([live.runId]);
+      fs.rmSync(indexPath);
+      expect((await log.runs({ active: true })).map((run) => run.runId)).toEqual([live.runId]);
+      const reopened = openLog({ backend: "jsonl", path: join(root, "store") });
+      try {
+        expect((await reopened.runs({ active: true })).map((run) => run.runId)).toEqual([live.runId]);
+      } finally {
+        await reopened.close();
+      }
     } finally {
       await log.close();
     }

@@ -1,3 +1,4 @@
+import type { BigIntStats } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import {
@@ -11,6 +12,7 @@ import {
   readSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeSync,
@@ -62,6 +64,7 @@ import type {
 
 const SCHEMA_FILE = "schema.json";
 const LOCK_FILE = ".lock";
+const RUNS_INDEX_FILE = "runs.index";
 const INPUTS_FILE = "inputs.jsonl";
 const OUTCOMES_FILE = "outcomes.jsonl";
 const GLOBAL_FACTS_FILE = "global-facts.jsonl";
@@ -243,9 +246,6 @@ function findLastByte(fd: number, from: number, byte: number): number {
 }
 
 /** Cut off bytes after the last newline. */
-/** A directory change this recent may share its time with the next one. */
-const SETTLE_MS = 2000;
-
 function truncateTornLine(path: string): void {
   if (!existsSync(path)) return;
   const fd = openSync(path, "r+");
@@ -483,6 +483,7 @@ class JsonlLogBackend implements LogBackend {
   readonly #directory: string;
   readonly #runsDirectory: string;
   readonly #inputsPath: string;
+  readonly #indexPath: string;
   readonly #outcomesPath: string;
   readonly #globalFactsPath: string;
   readonly #lockPath: string;
@@ -495,9 +496,10 @@ class JsonlLogBackend implements LogBackend {
   readonly #outcomes = new Map<string, StoredOutcome>();
   /** The same outcomes in sequence order, so a reader can start after a cursor. */
   #outcomeList: StoredOutcome[] = [];
-  #activeCache:
-    | { readonly mtimeNs: bigint; readonly verified: boolean; readonly ids: readonly string[] }
-    | undefined;
+  /** The runs index, read up to `#indexBytes`, and the runs it says are active. */
+  #indexBytes = 0;
+  #indexIno: bigint | undefined;
+  readonly #activeIds = new Set<string>();
   #outcomeSeq = 0;
   #outcomeBytes = 0;
   #closed = false;
@@ -515,6 +517,7 @@ class JsonlLogBackend implements LogBackend {
     this.#directory = directory;
     this.#runsDirectory = join(directory, RUNS_DIR);
     this.#inputsPath = join(directory, INPUTS_FILE);
+    this.#indexPath = join(directory, RUNS_INDEX_FILE);
     this.#outcomesPath = join(directory, OUTCOMES_FILE);
     this.#globalFactsPath = join(directory, GLOBAL_FACTS_FILE);
     this.#lockPath = join(directory, LOCK_FILE);
@@ -552,10 +555,15 @@ class JsonlLogBackend implements LogBackend {
         ...(access === undefined ? {} : { access }),
         startInputId,
       };
+      // Indexed before the file exists: a crash between the two leaves an id
+      // with no run, which a listing skips; the other order would hide a run.
+      this.#syncActiveUnlocked();
+      appendLineSynced(this.#indexPath, `s ${runId}\n`);
       if (!createExclusive(this.#runPath(runId), `${JSON.stringify(header)}\n`)) {
         throw new Error(`run id ${runId} already exists`);
       }
       fsyncDirectory(this.#runsDirectory);
+      this.#syncActiveUnlocked();
       this.#notify({ runId, object });
       return {
         runId,
@@ -583,6 +591,10 @@ class JsonlLogBackend implements LogBackend {
       const marker: EndMarker = { endedAt: this.#clock() };
       writeFileSynced(endPath, `${JSON.stringify(marker)}\n`);
       fsyncDirectory(this.#runsDirectory);
+      // After the marker: a crash between the two leaves an id the listing
+      // finds ended and drops.
+      appendLineSynced(this.#indexPath, `e ${runId}\n`);
+      this.#syncActiveUnlocked();
       this.#notify({ runId, object: info.object });
     });
   }
@@ -925,7 +937,7 @@ class JsonlLogBackend implements LogBackend {
    */
   #takeRunSnapshot(): Map<string, { readonly size: number; readonly ended: boolean }> {
     const snapshot = new Map<string, { readonly size: number; readonly ended: boolean }>();
-    for (const runId of this.#activeRunIds()) {
+    for (const runId of this.#withLock(() => [...this.#syncActiveUnlocked()])) {
       try {
         snapshot.set(runId, {
           size: statSync(this.#runPath(runId)).size,
@@ -1116,36 +1128,81 @@ class JsonlLogBackend implements LogBackend {
   }
 
   /**
-   * The ids of the active runs, remembered. Starting or ending a run adds a
-   * file to the runs directory and so changes its modification time; while
-   * that time is unchanged, and old enough that a later change cannot share
-   * it, the remembered ids stand and the directory is not listed. A quiet call
-   * costs one stat; a call after a change lists the directory once.
+   * The ids of the active runs. They come from the runs index, an append-only
+   * file with a line for every run start and end, written under the same lock
+   * as the run's own file. A call reads the bytes added since the last one:
+   * none when nothing happened, so a quiet tick lists no directory and reads no
+   * file. No time or modification date is compared, so a change cannot be
+   * missed. Without an index, or with one that was cut or cannot be read, the
+   * set is built from one read of the directory and the index is written anew.
    */
-  #activeRunIds(): readonly string[] {
-    const stat = statSync(this.#runsDirectory, { bigint: true });
-    const aged = Date.now() - Number(stat.mtimeNs / 1_000_000n) > SETTLE_MS;
-    const cached = this.#activeCache;
-    if (cached !== undefined && cached.mtimeNs === stat.mtimeNs) {
-      // A change in the same instant as the one remembered would not move the
-      // time. The listing is therefore checked once more when the time has
-      // aged, and not again after that: a recent change costs one extra
-      // listing, never one per tick.
-      if (cached.verified || !aged) return cached.ids;
+  #syncActiveUnlocked(): ReadonlySet<string> {
+    let stat: BigIntStats | undefined;
+    try {
+      stat = statSync(this.#indexPath, { bigint: true });
+    } catch {
+      stat = undefined;
     }
+    if (stat === undefined) return this.#rebuildActiveUnlocked();
+    // An index shorter than what was already read was cut.
+    if (Number(stat.size) < this.#indexBytes) return this.#rebuildActiveUnlocked();
+    if (this.#indexIno !== stat.ino) {
+      // A new file under the name: read it from its start.
+      this.#activeIds.clear();
+      this.#indexBytes = 0;
+      this.#indexIno = stat.ino;
+    }
+    const size = Number(stat.size);
+    if (size === this.#indexBytes) return this.#activeIds;
+    const fd = openSync(this.#indexPath, "r");
+    let chunk: Buffer;
+    try {
+      chunk = Buffer.allocUnsafe(size - this.#indexBytes);
+      readAllAtSync(fd, chunk, this.#indexBytes);
+    } finally {
+      closeSync(fd);
+    }
+    const end = chunk.lastIndexOf(0x0a) + 1;
+    const lines = chunk.subarray(0, end).toString("utf8").split("\n");
+    for (const line of lines) {
+      if (line.length === 0) continue;
+      const kind = line.slice(0, 2);
+      const runId = line.slice(2);
+      if ((kind !== "s " && kind !== "e ") || runId.length === 0) {
+        return this.#rebuildActiveUnlocked();
+      }
+      if (kind === "s ") this.#activeIds.add(runId);
+      else this.#activeIds.delete(runId);
+    }
+    this.#indexBytes += end;
+    return this.#activeIds;
+  }
+
+  /** One read of the directory; writes the index again from what it found. */
+  #rebuildActiveUnlocked(): ReadonlySet<string> {
     const names = readdirSync(this.#runsDirectory);
     const ended = new Set(names.filter((name) => name.endsWith(".end")));
-    const ids = names
-      .filter((name) => name.endsWith(".jsonl"))
-      .map((name) => name.slice(0, -".jsonl".length))
-      .filter((runId) => !ended.has(`${runId}.end`));
-    this.#activeCache = { mtimeNs: stat.mtimeNs, verified: aged, ids };
-    return ids;
+    const lines: string[] = [];
+    this.#activeIds.clear();
+    for (const name of names) {
+      if (!name.endsWith(".jsonl")) continue;
+      const runId = name.slice(0, -".jsonl".length);
+      lines.push(`s ${runId}\n`);
+      if (ended.has(`${runId}.end`)) lines.push(`e ${runId}\n`);
+      else this.#activeIds.add(runId);
+    }
+    const temporary = `${this.#indexPath}.tmp`;
+    writeFileSynced(temporary, lines.join(""));
+    renameSync(temporary, this.#indexPath);
+    const stat = statSync(this.#indexPath, { bigint: true });
+    this.#indexIno = stat.ino;
+    this.#indexBytes = Number(stat.size);
+    return this.#activeIds;
   }
 
   #listRunsUnlocked(activeOnly: boolean): RunInfo[] {
     const runs: RunInfo[] = [];
-    const runIds = activeOnly ? this.#activeRunIds() : this.#allRunIds();
+    const runIds = activeOnly ? [...this.#syncActiveUnlocked()] : this.#allRunIds();
     for (const runId of runIds) {
       let info: RunInfo;
       try {
