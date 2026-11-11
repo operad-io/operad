@@ -178,11 +178,14 @@ describe("hierarchy over HTTP", () => {
     store.put("leaf", "z", { state: "open", parent: "group:g3", after: ["x", 7] }, "seed");
     store.put("leaf", "w", { state: "open", parent: "group:g3", after: [""] }, "seed");
     store.put("leaf", "v", { state: "open", parent: "group:g3", after: "x" }, "seed");
+    const sparse: string[] = ["x"];
+    sparse[2] = "x";
+    store.put("leaf", "s", { state: "open", parent: "group:g3", after: sparse }, "seed");
     const level = (await get("/v1/objects?type=leaf&filter=all")).body.rows as { id: string; state: string; after?: string[] }[];
     const byId = (id: string) => level.find((row) => row.id === id);
     expect(byId("y")?.after).toEqual(["x"]);
     expect(byId("x") !== undefined && "after" in (byId("x") ?? {})).toBe(false);
-    for (const bad of ["z", "w", "v"]) {
+    for (const bad of ["z", "w", "v", "s"]) {
       expect(byId(bad)?.state).toBe("error");
       expect(byId(bad)?.after).toBeUndefined();
     }

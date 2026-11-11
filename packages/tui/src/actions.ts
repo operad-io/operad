@@ -498,7 +498,7 @@ export function entryDetail(entry: TuiPaletteEntry): string {
     .join(" · ");
 }
 
-function withNotice(state: TuiState, notice: string): TuiState {
+export function withNotice(state: TuiState, notice: string): TuiState {
   return { ...state, notice: sanitize(notice) };
 }
 
@@ -794,11 +794,9 @@ export function actionFailed(state: TuiState, message: string): TuiState {
   };
 }
 
-/** The line a person reads: no status number, no leading `field: `. */
+/** The line a person reads: the server's sentence without its status number. */
 export function refusalLine(message: string): string {
-  return message
-    .replace(/^\d{3}\s+/, "")
-    .replace(/^[a-z][a-z0-9-]*: (?=\S)/, "");
+  return message.replace(/^\d{3}\s+/, "");
 }
 
 /** A key arrives while an argument is asked. */

@@ -206,7 +206,7 @@ export const PLAN_LINES: Record<PlanActionName, Record<PlanState, Line>> = {
     draft: ok,
     confirmed: done(({ id }) => `${id} is already confirmed; nothing to do`),
     paused: refuse(({ id }) => `${id} is paused; only a draft can be confirmed`),
-    finished: refuse(({ id }) => `${id} is finished; nothing can be confirmed`),
+    finished: done(({ id }) => `${id} is already confirmed; nothing to do`),
     cancelled: refuse(({ id }) => `${id} was cancelled; nothing can be confirmed`),
   },
   cancel: {

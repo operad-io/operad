@@ -153,7 +153,7 @@ function headerContent(state: TuiState, palette: TuiPalette): StyledText {
     chunk("   "),
   ];
   state.tabs.forEach((tab, index) => {
-    if (index > 0) chunks.push(chunk(" · ", palette.weak));
+    if (index > 0) chunks.push(chunk(" │ ", palette.weak));
     const active = index === state.active;
     const count = tabCount(tab);
     chunks.push(
@@ -185,10 +185,12 @@ export function dividerColour(palette: TuiPalette): string {
 }
 
 /** The dim title over the list: the page name, and a type list's filter. */
-function listTitle(tab: TuiTab | undefined, palette: TuiPalette): TextChunk[] {
+function listTitle(tab: TuiTab | undefined, palette: TuiPalette, width: number): TextChunk[] {
   if (tab === undefined) return [];
   const extra = filterHeader(tab);
-  return [chunk(`${tab.title.toUpperCase()}${extra?.filter ?? ""}`, palette.weak), chunk("\n")];
+  // Cut to the list width: a wrapped title would push the last row out of the pane.
+  const title = fit(`${tab.title.toUpperCase()}${extra?.filter ?? ""}`, Math.max(1, width));
+  return [chunk(title, palette.weak), chunk("\n")];
 }
 
 function dividerContent(state: TuiState, palette: TuiPalette): StyledText {
@@ -306,10 +308,10 @@ function listContent(
         : tab.filters !== undefined && tab.filter !== undefined
           ? `nothing ${tab.filter} in ${tab.title.toLowerCase()}`
           : `nothing in ${tab.title.toLowerCase()}`;
-    return styled([chunk("\n"), ...listTitle(tab, palette), chunk(message, palette.weak)]);
+    return styled([chunk("\n"), ...listTitle(tab, palette, listCells(state)), chunk(message, palette.weak)]);
   }
   const width = listCells(state);
-  const chunks: TextChunk[] = [chunk("\n"), ...listTitle(tab, palette)];
+  const chunks: TextChunk[] = [chunk("\n"), ...listTitle(tab, palette, width)];
   const window = listWindow(tab.list, Math.max(1, bodyHeight(state) - LIST_HEAD));
   const titles = tab.kind !== "plugin";
   const grouped = tab.list.rows.some((row) => row.group !== undefined);
@@ -598,7 +600,7 @@ function objectContent(state: TuiState, palette: TuiPalette): StyledText {
     // An openable cursor row is on the way; a row that names no object, or an empty list, asks.
     const tab = state.tabs[state.active];
     const under = tab?.list.rows[tab.list.cursor];
-    const waiting = under !== undefined && under.openable !== false;
+    const waiting = state.followPending && under !== undefined && under.openable !== false;
     return styled([
       chunk("\n"),
       chunk(waiting ? "loading…" : "select an object", palette.weak),
@@ -776,7 +778,7 @@ function paletteEntryLine(
   chunks.push(chunk(detail, palette.weak));
   if (columns.hasKey) {
     chunks.push(chunk(" ".repeat(Math.max(0, columns.detail - displayWidth(detail)) + PALETTE_GAP)));
-    const key = entry.key ?? "";
+    const key = fit(entry.key ?? "", columns.key);
     chunks.push(chunk(" ".repeat(Math.max(0, columns.key - displayWidth(key))), undefined));
     chunks.push(chunk(key, palette.text));
   }

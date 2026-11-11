@@ -630,3 +630,6 @@ the row fields.
 | T-0293-M1 | packages/engine/src/plugin/registry.ts | the registry did not load the flows an earlier process declared | `a declaration is found by a later process from the same store` (packages/engine/test/plugin/declare-flow.test.ts) |
 | T-0293-M2 | packages/engine/src/loop/serve.ts | a run whose flow was not loaded was spawned again instead of failing | `serve loop > a run whose flow is not loaded fails, names it, and is not spawned` (packages/engine/test/loop/serve.test.ts) |
 | T-0293-M3 | packages/engine/src/runner/cancel.ts | a cancel left an idle run active | `runner > cancelling a run that never started ends it, even with no flow loaded` (packages/engine/test/runner/runner.test.ts) |
+| T-0298-M7 | packages/engine/src/http/server.ts | a refusal the views make was not logged with its status | `http server > acts with a note, refuses without one, and needs confirmed for a confirm action` |
+| T-0298-M8 | packages/engine/src/views/running.ts | runTimes read the log's runs again although the caller passed them | `the running view names the object and times the step > a run's times: ...` |
+| T-0302-M5 | packages/engine/src/views/presentation.ts | the row after check used `some` on the array itself, which skips holes | `hierarchy over HTTP > /v1/types names the plugin and /v1/objects takes root and parent` |

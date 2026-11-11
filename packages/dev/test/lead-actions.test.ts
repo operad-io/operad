@@ -291,7 +291,7 @@ describe("dev:rework and dev:reverify", () => {
     await patch(fixture, { attempt: GATED, reworkStreak: 2 });
     const before = taskData((await getTask(fixture.store, fixture.task.id)).data);
 
-    await expect(run(fixture, "rework", "x")).rejects.toThrow(/T-0001-one is not waiting for an answer now|waiting/);
+    await expect(run(fixture, "rework", "x")).rejects.toThrow(/^the run is not waiting$/);
     const after = taskData((await getTask(fixture.store, fixture.task.id)).data);
     expect(after.brief).toBe(before.brief);
     expect(after.phase).toBe("waiting");

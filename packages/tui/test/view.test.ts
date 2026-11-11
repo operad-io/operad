@@ -63,7 +63,7 @@ describe("the TUI view", () => {
       await setup.renderOnce();
 
       const frame = setup.captureCharFrame();
-      expect(frame).toContain("operad   Pending 1 · Running 0 · Item 2");
+      expect(frame).toContain("operad   Pending 1 │ Running 0 │ Item 2");
       expect(frame).toContain("one  Approve?");
       expect(frame).toContain("loading…");
       expect(frame).not.toContain("select an object");
@@ -93,7 +93,7 @@ describe("the TUI view", () => {
       view.render({ ...frameState(), width: 80 });
       await setup.renderOnce();
       const frame = setup.captureCharFrame();
-      expect(frame).toContain("operad   Pending 1 · Running 0 · Item 2");
+      expect(frame).toContain("operad   Pending 1 │ Running 0 │ Item 2");
       expect(frame).not.toContain("select an object");
       view.destroy();
     } finally {

@@ -528,6 +528,52 @@ describe("dev views", () => {
     expect(rows[4]).toBe("| total | 2m | $1.25 | |");
   });
 
+  async function twoRunFixture() {
+    const root = await tempRoot();
+    const repositoryPath = await makeGitRepository(root);
+    let clock = 0;
+    const store = new FilePluginStore({ root: join(root, "store"), clock: () => clock });
+    const repository = await addRepository(store, { path: repositoryPath });
+    const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
+    const stored = taskData((await getTask(store, task.id)).data);
+    const put = async (at: number, cause: string, attempt: Record<string, unknown>, phase: string) => {
+      clock = at;
+      await store.put("task", task.id, { ...stored, phase, attempt }, cause);
+    };
+    return { store, task, put };
+  }
+
+  test("the total row shows a dash when no attempt's run can be read", async () => {
+    const { store, task, put } = await twoRunFixture();
+    await put(1_000, "dev:worktree", { number: 1, run: "gone" }, "running");
+    const text = await metrics(
+      { store, runTimes: async () => undefined } as never,
+      await getTask(store, task.id),
+      2_000_000,
+    );
+    const rows = text.split("\n");
+    expect(rows[2]).toMatch(/^\| 1 \| – \|/);
+    expect(rows[3]).toMatch(/^\| total \| – \|/);
+  });
+
+  test("a group nobody recorded in an older run is not numbered past a later attempt", async () => {
+    const { store, task, put } = await twoRunFixture();
+    await put(1_000, "dev:worktree", { number: 1, run: "run-a" }, "running");
+    await put(2_000, "dev:worktree", { number: 2, run: "run-b" }, "waiting");
+    const group = (from: number) => [
+      { step: "worktree", person: false, from, to: from + 1_000 },
+      { step: "work", person: false, from: from + 1_000, to: from + 2_000 },
+    ];
+    const runTimes = async (run: string) =>
+      run === "run-a"
+        ? { startedAt: 0, endedAt: 9_000, segments: [...group(0), { step: "worktree", person: false, from: 4_000, to: 5_000 }, { step: "work", person: false, from: 5_000, to: 6_000 }] }
+        : { startedAt: 10_000, endedAt: 12_000, segments: group(10_000) };
+    const rows = (await metrics({ store, runTimes } as never, await getTask(store, task.id), 20_000)).split("\n");
+    // Two attempts and a total: the unrecorded second group of run-a adds no row.
+    expect(rows.filter((line) => /^\| \d+ \|/.test(line)).map((line) => line.split(" | ")[0])).toEqual(["| 1", "| 2"]);
+  });
+
   test("the total row marks its weakest quality with a symbol, never a word", async () => {
     const root = await tempRoot();
     const repositoryPath = await makeGitRepository(root);
@@ -760,6 +806,21 @@ describe("dev views", () => {
     expect(await note()).toBe("0/2 · ≥$1.70 · off · P3 // 1");
     await put(second.id, 0.1, "exact");
     expect(await note()).toBe("0/2 · $1.70 · off · P3 // 1");
+  });
+
+  test("a refresh heals a plan total that drifted, and a malformed total shows no cost", async () => {
+    const { store, plan, task } = await setup();
+    const stored = taskData((await getTask(store, task.id)).data);
+    await store.put("task", task.id, { ...stored, cost: 2, costQuality: "exact" }, "test:raw");
+    const current = planData((await getPlan(store, plan.id)).data);
+    // A crash between the task write and the plan write leaves the total behind.
+    await store.put("plan", plan.id, { ...current, costTotals: { ...current.costTotals, exactMicros: 5 } }, "test:drift");
+    const { refreshPlanCounts } = await import("../src/service.ts");
+    await refreshPlanCounts(store, await getPlan(store, plan.id));
+    expect(planViews.row(await getPlan(store, plan.id)).note).toBe("0/1 · $2.00 · off · P3 // 1");
+    const broken = planData((await getPlan(store, plan.id)).data);
+    await store.put("plan", plan.id, { ...broken, costTotals: { exactTasks: 1 } }, "test:broken");
+    expect(planViews.row(await getPlan(store, plan.id)).note).toBe("0/1 · off · P3 // 1");
   });
 
   test("a plan stored without a total gets one when its tasks are refreshed", async () => {
