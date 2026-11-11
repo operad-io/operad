@@ -600,6 +600,8 @@ the row fields.
 | T-0210-M13 | packages/dev/src/schedule.ts | the area queue always followed the turn order, ignoring the kept slot's order | `dev scheduling > the tasks ahead follow the order of the kept slot when it is the next start` |
 | T-0194-M3 | packages/dev/src/service.ts | a cross-repository `--after` change took only its own repository's lock | `--after validation under races and removed repositories > two cross-repository updates at once cannot close a cycle` (a race; it failed in 3 of 3 runs) |
 | T-0194-M4 | packages/dev/src/service.ts | a dependency's repository was no longer required to be registered | `--after validation under races and removed repositories > a task of a removed repository cannot be named` |
+| T-0188-M9 | packages/dev/src/chat.ts | the worktree step moved the chat's directory again when it already had a worktree (both already-moved checks removed) | `dev/chat_worktree > opens work/chat-<id>, moves the working directory there once, and it is writable there` |
+| T-0188-M10 | packages/dev/src/chat.ts | dev:chat made the chat writable in the main clone | `dev:chat > creates a chat under the repository, in the main clone, read-only` |
 
 ## T-0060 — rework 3: named flows, beforeAttempt, the human rule
 
@@ -624,3 +626,6 @@ the row fields.
 | T-0061-M3 | packages/dev/src/schedule.ts | a ready task with an undefined flow was given no reason on its row and its plan's row | `an undefined flow does not start, and the rows say why` |
 | T-0061-M4 | packages/dev/src/schedule.ts | rows named the flow even when the repository defines only the default one | `rows and the brief name the flow only when the repository defines more than one` |
 | T-0061-M5 | packages/dev/src/schedule.ts | the flow label was not kept for a cancelled task, so its row and Brief named no flow | `a task cancelled before any tick still names its flow` |
+| T-0188-M18 | packages/dev/src/chat.ts | `dev:chat` accepted a harness that is not loaded | `dev:chat > the harness must be loaded: one that is not is refused and the loaded ones are named` |
+| T-0188-M19 | packages/dev/src/chat.ts | the chat profile did not deny the `operad` command | `dev:chat > the profile keeps the agent out of the operad command` |
+| T-0188-M28 | packages/dev/src/chat.ts | `dev:chat` no longer refused harness-radian by name | `dev:chat > harness-radian is refused with the reason, whether given or the only one loaded` |

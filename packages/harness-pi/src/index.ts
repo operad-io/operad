@@ -31,6 +31,7 @@ import {
   flagValue,
   hasGrants,
   inboxOf,
+  operadToolsOf,
   JsonlLog,
   modelLimit,
   standardUsage,
@@ -569,6 +570,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           await mkdir(sessionDir, { recursive: true });
 
           const piCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
+          const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
           const storeSecrets = await secretValuesOf(ctx.secrets);
           const stdin: Record<string, unknown> = {
             prompt: promptWithNote,
@@ -582,6 +584,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             ...(model === undefined ? {} : { model }),
             ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
             ...(bashTimeoutSecs === undefined ? {} : { bashTimeoutSecs }),
+            ...(operadTools === undefined ? {} : { operadTools }),
             ...(isRecord(ctx.access) ? { access: ctx.access } : {}),
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };

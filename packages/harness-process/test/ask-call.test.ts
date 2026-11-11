@@ -51,6 +51,8 @@ describe("canAsk", () => {
     expect(canAsk({ askPaths: ["~/.zshrc"] })).toBe(true);
     expect(canAsk({ askCommands: [], askPaths: [] })).toBe(false);
     expect(canAsk({ denyCommands: ["rm"] })).toBe(false);
+    expect(canAsk({ readOnly: true })).toBe(true);
+    expect(canAsk({ readOnly: false })).toBe(false);
     expect(canAsk(null)).toBe(false);
   });
 });
