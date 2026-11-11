@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { PluginRegistry, type StoredObject } from "@operad-io/engine";
+import { PluginRegistry, definePlugin, type StoredObject } from "@operad-io/engine";
 import { createChatPlugin, createChat, CHAT_TYPE } from "@operad-io/chat";
 import { createShellPlugin } from "@operad-io/shell";
 import { addRepository, chatActions, createDevPlugin, RADIAN_NOTE } from "../src/index.ts";
@@ -11,12 +11,21 @@ import { cleanupTempRoots, guardLockHandles, storeAt, tempRoot } from "./support
 afterAll(cleanupTempRoots);
 guardLockHandles();
 
+function fakeHarness(name: string) {
+  return definePlugin({
+    name,
+    kind: "harness",
+    version: "0.0.0",
+    steps: [{ name: "agent", results: ["done", "failed", "interrupted"], run: () => ({ result: "failed" }) }],
+  });
+}
+
 async function rig() {
   const root = await tempRoot();
   const remote = await makeRemote(root);
   const store = storeAt(root);
   const repository = await addRepository(store, { path: remote.repository, name: "repository" });
-  const registry = new PluginRegistry([createChatPlugin(), createDevPlugin(), createShellPlugin()], {
+  const registry = new PluginRegistry([createChatPlugin(), createDevPlugin(), createShellPlugin(), fakeHarness("harness-radian"), fakeHarness("harness-claude")], {
     home: root,
     cwd: remote.repository,
     store,
@@ -71,16 +80,25 @@ describe("dev:chat", () => {
     expect(second).not.toBe(given);
   });
 
-  test("the harness is one of the known harness plugins", async () => {
+  test("the harness must be loaded: one that is not is refused and the loaded ones are named", async () => {
     const r = await rig();
-    await expect(openChat(r, { harness: "harness-unknown" })).rejects.toThrow();
+    await expect(openChat(r, { harness: "harness-pi" })).rejects.toThrow(
+      'harness "harness-pi" is not loaded; the loaded harnesses are harness-radian, harness-claude',
+    );
+  });
+
+  test("the profile keeps the agent out of the operad command", async () => {
+    const r = await rig();
+    const id = await openChat(r);
+    const access = (await must(r.store, CHAT_TYPE, id)).data.access as Record<string, unknown>;
+    expect(access.denyCommands).toContain("operad");
   });
 
   test("the action says up front that radian's questions can only be refused once", () => {
     const action = chatActions[0];
     expect(action?.args?.description).toContain(RADIAN_NOTE);
     expect(action?.args?.properties?.harness?.description).toContain("only be refused once");
-    expect(action?.args?.properties?.harness?.enum).toEqual(["harness-radian", "harness-pi", "harness-claude"]);
+    expect(action?.args?.properties?.harness?.enum).toBeUndefined();
   });
 });
 

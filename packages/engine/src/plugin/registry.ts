@@ -1055,6 +1055,7 @@ export class PluginRegistry {
       object: options.object,
       actor,
       answer,
+      harnesses: this.plugins.filter((item) => item.kind === "harness").map((item) => item.name),
       ...(this.onEvent === undefined
         ? {}
         : { emit: this.actionEmitter(found.plugin.name) }),

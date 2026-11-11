@@ -163,6 +163,32 @@ describe("a read-only chat", () => {
     expect(seen).toBe("reject_once");
   });
 
+  test("a command that redirects output into a file is the worktree question too", async () => {
+    const asked: string[] = [];
+    const r = await rig(async (ctx: StepContext) => {
+      const answer = await ctx.ask({
+        prompt: "Run this command? echo x > src/a.ts",
+        choices: ["allow_once", "reject_once"],
+        resume: { session: "s", grant: { kind: "command", value: "echo x > src/a.ts", choice: "allow_once" } },
+      });
+      expect(answer.choice).toBe("reject_once");
+      return reply("done");
+    });
+    const chat = await r.chat({ access: { readOnly: true } });
+    await r.say(chat, "go");
+    const asker = {
+      async ask(request: { prompt: string }) {
+        asked.push(request.prompt);
+        return { kind: "answered" as const, answer: { choice: "no" } };
+      },
+      async useGrant() {
+        return false;
+      },
+    };
+    expect((await r.round(chat, {}, asker, () => undefined)).result).toBe("done");
+    expect(asked).toEqual([WORKTREE_QUESTION]);
+  });
+
   test("a no sends nothing, and a command question goes through unchanged", async () => {
     const asked: string[] = [];
     const r = await rig(async (ctx: StepContext) => {

@@ -738,6 +738,8 @@ export interface ActionEvent {
 
 /** The context an action receives. `runId` is set when it answers a person wait. */
 export interface ActionContext extends PluginBaseContext {
+  /** The names of the loaded plugins of kind `harness`. */
+  readonly harnesses: readonly string[];
   /** Sends an event through the kernel's rules; set when the host can route events. */
   readonly emit?: ((event: ActionEvent) => Promise<void>) | undefined;
   readonly runId: string | undefined;

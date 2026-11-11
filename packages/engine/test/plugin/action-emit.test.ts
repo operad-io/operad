@@ -63,3 +63,27 @@ describe("ctx.emit in an action", () => {
     expect(run.value).toBe("no emit");
   });
 });
+
+describe("ctx.harnesses in an action", () => {
+  test("names the loaded plugins of kind harness", async () => {
+    const probe = definePlugin({
+      name: "probe",
+      kind: "domain",
+      version: "0.0.0",
+      objects: [{ name: "room" }],
+      actions: [{ name: "look", on: "room", when: () => true, run: (ctx) => ctx.harnesses }],
+    });
+    const harness = definePlugin({
+      name: "harness-x",
+      kind: "harness",
+      version: "0.0.0",
+      steps: [{ name: "agent", results: ["done"], run: () => ({ result: "done" }) }],
+    });
+    const registry = new PluginRegistry([probe, harness], {
+      home: "/tmp/operad-test-home",
+      store: new MemoryPluginStore({ root: "/tmp/operad-test-store" }),
+      onLog: () => undefined,
+    });
+    expect((await registry.runAction("probe/look", {}, options)).value).toEqual(["harness-x"]);
+  });
+});

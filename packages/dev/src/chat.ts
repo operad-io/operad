@@ -13,12 +13,9 @@ import type {
   StepContext,
 } from "@operad-io/engine";
 import { harnessOf } from "@operad-io/pool";
-import { DevError, repositoryData } from "./model.ts";
+import { DevError, DevRefusal, repositoryData } from "./model.ts";
 import { readDevSettings } from "./settings.ts";
 import { prepareWorktree, workBranch, worktreePath } from "./steps.ts";
-
-/** The harness plugins a chat may use. */
-export const CHAT_HARNESSES = ["harness-radian", "harness-pi", "harness-claude"] as const;
 
 /** What a person is told before choosing radian: its questions cannot be allowed once. */
 export const RADIAN_NOTE =
@@ -28,6 +25,8 @@ export const RADIAN_NOTE =
 export const CHAT_ACCESS: Readonly<Record<string, JsonValue>> = {
   readOnly: true,
   denyPaths: ["~/.ssh", "~/.gnupg", "~/.aws", "~/.config/gh"],
+  // The agent reaches operad through its tools, never through a shell.
+  denyCommands: ["operad"],
 };
 
 /** The directory name and branch suffix of a chat's worktree. */
@@ -44,8 +43,8 @@ const chatAction: ActionTypeDefinition = {
     properties: {
       harness: {
         type: "string",
-        enum: CHAT_HARNESSES,
-        description: `The harness that answers; the repository's worker harness when left out. It cannot change later. ${RADIAN_NOTE}`,
+        minLength: 1,
+        description: `A loaded harness plugin that answers; the repository's worker harness when left out. It cannot change later. ${RADIAN_NOTE}`,
       },
       title: {
         type: "string",
@@ -62,6 +61,11 @@ const chatAction: ActionTypeDefinition = {
     const repository = repositoryData(ctx.object.data);
     const harness =
       input.harness ?? harnessOf((await readDevSettings(repository.path)).worker.use);
+    if (!ctx.harnesses.includes(harness)) {
+      throw new DevRefusal(
+        `harness "${harness}" is not loaded; the loaded harnesses are ${ctx.harnesses.join(", ") || "none"}`,
+      );
+    }
     const id = await createChat(
       ctx.store,
       {

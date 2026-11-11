@@ -41,16 +41,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Whether a harness question is about writing a file: the one a read-only chat turns into a worktree question. */
+/** Whether a harness question is about writing a file (a write or edit of a path, or a command with a redirect): the one a read-only chat turns into a worktree question. */
 export function isWriteQuestion(request: AskRequest): boolean {
   const resume = request.resume;
   if (!isRecord(resume)) return false;
   const grant = resume.grant;
-  return (
-    isRecord(grant) &&
-    grant.kind === "path" &&
-    (grant.tool === "write" || grant.tool === "edit")
-  );
+  if (!isRecord(grant)) return false;
+  if (grant.kind === "path") return grant.tool === "write" || grant.tool === "edit";
+  // A shell command that redirects its output writes a file too.
+  return grant.kind === "command" && typeof grant.value === "string" && /(?:^|[^>&\d])\d*>>?(?!&)/.test(grant.value);
 }
 
 function failed(reason: string, message: string): PluginStepResult {
