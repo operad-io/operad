@@ -9,7 +9,7 @@
  */
 
 import { findGrant, match, type AccessProfile } from "@operad-io/access-match";
-import type { CallAnswer, CallQuestion } from "@operad-io/harness-process";
+import { OPERAD_TOOL_PREFIX, type CallAnswer, type CallQuestion } from "@operad-io/harness-process";
 
 export type { CallAnswer, CallQuestion };
 
@@ -75,6 +75,8 @@ export type Translated =
 
 /** Claude's call in the words `access-match` takes. */
 export function translate(name: string, input: Readonly<Record<string, unknown>>): Translated {
+  // Operad's own tools run under the owner's MCP allow lists, not the profile.
+  if (name.startsWith(OPERAD_TOOL_PREFIX)) return { kind: "inert" };
   const row = TOOL_TABLE.find((candidate) => candidate.claude === name);
   if (row === undefined) {
     return INERT_TOOLS.includes(name) ? { kind: "inert" } : { kind: "unmapped" };

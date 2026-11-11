@@ -46,6 +46,7 @@ the table is refused, not ignored.
 | `model` | string, non-empty | no | model name for claude (`--model`); absent means claude's own default |
 | `effort` | `low`, `medium`, `high`, `xhigh` or `max` | no | reasoning effort; absent means claude's default |
 | `bashTimeoutSecs` | positive integer | no | the longest one Bash call may run in the foreground, in seconds; absent means 1800. Sets claude's `BASH_DEFAULT_TIMEOUT_MS` and `BASH_MAX_TIMEOUT_MS` |
+| `operadTools` | object `{ home }` | no | operad's own tools: claude is given an MCP server (`@operad-io/mcp`'s `stdio.ts`, run by Bun with `--home`) named `operad`; its tools are not judged by the access profile, they run under the owner's MCP allow lists. Absent: claude gets no MCP server |
 | `secretValues` | array of strings | no | the values of the plugin's operad secrets; a log line shows `***` where one appears. Never written anywhere |
 | `access` | object | no | the access profile; `denyPaths` and `denyCommands` are enforced in `canUseTool` by `@operad-io/access-match`, `grants` are one-time permissions, other fields are ignored; absent means nothing is denied |
 | `maxTurns` | positive integer | no | SDK `maxTurns`; absent means no limit |

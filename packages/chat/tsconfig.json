@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": ".", "outDir": "../../.tsbuild/chat" },
+  "include": ["src", "test"],
+  "references": [{ "path": "../engine" }]
+}

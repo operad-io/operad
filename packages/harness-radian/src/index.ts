@@ -5,8 +5,12 @@
  * used; the kernel never knows how radian is started.
  */
 
-import { stat } from "node:fs/promises";
-import { firstErrorLine, readProfile, secretValuesOf, summarizeCall, type AccessProfile } from "@operad-io/access-match";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { mapRadianCall } from "./refusal.ts";
+export { radianRefusal } from "./refusal.ts";
+import { firstErrorLine, match, readProfile, secretValuesOf, summarizeCall, type AccessProfile } from "@operad-io/access-match";
 import {
   defineFlow,
   definePlugin,
@@ -22,6 +26,9 @@ import {
   flagValue,
   JsonlLog,
   MAX_LINE_CHARS,
+  OPERAD_SERVER,
+  operadToolsOf,
+  serverCommand,
   standardUsage,
   type RawCost,
   type RawCounts,
@@ -88,18 +95,7 @@ function summarizeRadianCall(
 ): string | undefined {
   if (!isRecord(args)) return undefined;
   const lower = toolName.toLowerCase();
-  let mapped = lower;
-  let input: Record<string, unknown> = args;
-  if (lower === "shell") mapped = "bash";
-  else if (lower === "patch") mapped = "edit";
-  else if (lower === "glob") {
-    mapped = "find";
-    const where = typeof args.path === "string" && args.path.length > 0 ? args.path : args.pattern;
-    input = typeof where === "string" ? { ...args, path: where } : args;
-  } else if (lower === "list") mapped = "ls";
-  else if (!["bash", "read", "write", "edit", "grep", "find", "ls"].includes(lower) && typeof args.path === "string") {
-    mapped = "read";
-  }
+  const { mapped, input } = mapRadianCall(toolName, args);
   const summary = summarizeCall(profile, mapped, input, cwd, { secrets });
   const denied = `${mapped} denied by the access profile`;
   if (summary !== undefined && summary.startsWith(denied)) return `${toolName}${summary.slice(mapped.length)}`;
@@ -360,15 +356,65 @@ function agentData(
   };
 }
 
+/** Whether the profile has a rule radian's calls must be judged by. */
+function hasProfileRules(profile: AccessProfile): boolean {
+  return (
+    profile.readOnly === true ||
+    [profile.denyPaths, profile.denyCommands, profile.askCommands, profile.askPaths].some((rules) => (rules?.length ?? 0) > 0)
+  );
+}
+
+const HOOK_PATH = fileURLToPath(new URL("./hook.ts", import.meta.url));
+
+function quoted(text: string): string {
+  return `'${text.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Writes the profile and a radian config that runs the hook before every tool
+ * call; returns the config's path. The user's own radian config (`RADIAN_CONFIG`
+ * or the default file) is kept, because `--config` replaces it.
+ */
+async function writeHookConfig(base: string, profile: AccessProfile): Promise<string> {
+  const profileFile = `${base}.profile.json`;
+  const configFile = `${base}.config.toml`;
+  await mkdir(dirname(configFile), { recursive: true });
+  await writeFile(profileFile, JSON.stringify(profile));
+  const own = process.env.RADIAN_CONFIG ?? `${process.env.HOME ?? ""}/.radian/config/config.toml`;
+  let existing = "";
+  try {
+    existing = await readFile(own, "utf8");
+  } catch {
+    existing = "";
+  }
+  const command = `${quoted(process.execPath)} ${quoted(HOOK_PATH)} ${quoted(profileFile)}`;
+  const hook = [
+    "",
+    "[[hooks.PreToolUse]]",
+    'matcher = "*"',
+    "[[hooks.PreToolUse.hooks]]",
+    'type = "command"',
+    `command = ${JSON.stringify(command)}`,
+    "timeout = 30",
+    "",
+  ].join("\n");
+  await writeFile(configFile, existing + hook);
+  return configFile;
+}
+
 /** Builds the argv radian receives; the prompt itself may travel on stdin. */
 function radianArgs(
   cwd: string,
   args: readonly string[],
   prompt: string,
   resumeSession: string | undefined,
+  mcpConfig?: string | undefined,
+  config?: string | undefined,
 ): { readonly args: string[]; readonly stdin: string | undefined } {
   const argv = ["exec", "--workspace", cwd, "--output", "jsonl"];
   if (resumeSession !== undefined) argv.push("--resume", resumeSession);
+  if (mcpConfig !== undefined) argv.push("--mcp-config", mcpConfig);
+  if (config !== undefined) argv.push("--config", config);
   argv.push(...args);
 
   const stdin =
@@ -609,7 +655,32 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             };
           }
 
-          const command = radianArgs(cwd, args, promptWithNote, resumeSession);
+          // Operad's tools: radian starts the server named in this file.
+          const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
+          let mcpConfig: string | undefined;
+          if (operadTools !== undefined) {
+            const server = serverCommand(operadTools);
+            mcpConfig = `${ctx.logger.path}.mcp.json`;
+            await mkdir(dirname(mcpConfig), { recursive: true });
+            await writeFile(
+              mcpConfig,
+              JSON.stringify({
+                mcpServers: {
+                  [OPERAD_SERVER]: {
+                    command: server.command,
+                    args: server.args,
+                    env: { OPERAD_HOME: operadTools.home },
+                  },
+                },
+              }),
+            );
+          }
+          // radian runs its own tools and has no way to ask, so the profile's
+          // rules are given to it as a hook it runs before each call.
+          const hookConfig = hasProfileRules(logProfile)
+            ? await writeHookConfig(`${ctx.logger.path}.hook`, logProfile)
+            : undefined;
+          const command = radianArgs(cwd, args, promptWithNote, resumeSession, mcpConfig, hookConfig);
           const started = Date.now();
           const jsonl = new JsonlLog(ctx.logger);
           let result: ParsedResult | undefined;

@@ -492,6 +492,15 @@ repository. The task is blocked until every task it follows is merged, wherever 
 and its note says what it waits for (`waiting for operad/T-0188` for another repository).
 The named task must exist, and a task cannot follow itself or close a cycle.
 
+`operad plan add` and `operad task add` take `--flow <name>`, one of the flows the
+repository's `.operad/dev.json` defines. A task without `--flow` takes its plan's flow,
+and a plan without one takes `default`. `operad task update <id> --flow <name>` changes
+a task's flow only before its first attempt; after that the command refuses. A task
+whose flow dev.json does not define stays ready, and its row and its plan's row say
+`flow <name> is not defined in .operad/dev.json`. When the repository defines more than
+one flow, the task row's note and the Brief section name the task's flow, and History
+names the flow at the start of each run.
+
 `badge` is a short text the client shows as it is, after the state: one line of
 at most 16 characters, or the row is an error row. The `dev` plugin sets a
 task's badge to `#<attempt>` (`#0` before the first attempt) and marks its tasks
@@ -1279,6 +1288,42 @@ curl -s \
 
 with `"command": "sh ~/.operad/notify.sh"`. A topic name is a password for
 anyone who guesses it; pick a long random one or use a self-hosted server.
+
+## Chats
+
+A chat is a long conversation with an agent. The `chat` plugin comes with
+`operad init`; a chat belongs to the plugin that opens it. `dev` opens one on a
+repository:
+
+```
+operad dev:chat --repo operad --title "The build" [--harness harness-pi]
+operad chat:send C-0001 --note "why does the gate fail on main?"
+operad show C-0001 --section transcript
+```
+
+`dev:chat` offers `harness-claude` and `harness-pi` (the first one loaded when `--harness` is left out): they can stop a tool call before it starts, which a read-only chat needs. `harness-radian` is refused there and stays for assistant chats.
+
+`chat:send` records the message and sends an event (source `ios`, `telegram` or
+`cli`, key = the message id, about the chat). The plugin's own rule starts
+`chat:reply` for each of the three sources, automatically; a rule of yours in
+`triggers.json` with the same source and type replaces it. The reply reads the
+messages no reply answers yet from the chat's own record, continues the harness
+session, records the reply, and goes round again while new messages came in
+meanwhile (at most 20 rounds). After a restart a reply that was already
+recorded is not given twice.
+
+A chat on a repository works in the main clone, read-only: a shell command runs
+there only when it is on a short list of commands that only read (`git status`,
+`ls`, `cat`, `grep`, `sed -n`, `bun test`, ...); every other command, and every
+write, becomes the worktree question. When the agent wants
+to change code it asks whether to open a worktree. On yes, `dev` opens
+`work/chat-<id>` and the chat works there from then on, once; the main clone
+stays read-only. The worktree's changes reach main only through a task that
+points at it, through the normal gate and integrate.
+
+The agent reaches operad through its tools (`list`, `show`, `section`, `pending`,
+`running`, `history`, `command`, `act`, under the same allow lists as
+`operad mcp`), never by running `operad` in a shell.
 
 ## MCP server
 

@@ -21,6 +21,7 @@ import {
 import {
   createRadianHarnessPlugin,
   radianModel,
+  radianRefusal,
   EVENT_NOTE_TEMPLATE,
   type RadianHarnessSettings,
 } from "../src/index.ts";
@@ -307,6 +308,37 @@ describe("harness-radian/agent", () => {
     expect(record.argv[record.argv.indexOf("--resume") + 1]).toBe("session-7");
   });
 
+  test("operad's tools are given to radian as an MCP config that starts the tools program with the home", async () => {
+    const env = await setup("done");
+    const result = await runAgent(env, {
+      prompt: "hello",
+      cwd: env.root,
+      operadTools: { home: "/operad/home" },
+    });
+    expect(result.result).toBe("done");
+    const record = JSON.parse(readFileSync(env.record, "utf8")) as {
+      readonly argv: readonly string[];
+    };
+    const file = record.argv[record.argv.indexOf("--mcp-config") + 1];
+    expect(file).toBeDefined();
+    const config = JSON.parse(readFileSync(String(file), "utf8")) as {
+      mcpServers: Record<string, { command: string; args: string[]; env: Record<string, string> }>;
+    };
+    const server = config.mcpServers["operad"];
+    expect(server?.args.slice(-2)).toEqual(["--home", "/operad/home"]);
+    expect(server?.args[0]).toMatch(/mcp\/src\/stdio\.ts$/);
+    expect(server?.env["OPERAD_HOME"]).toBe("/operad/home");
+  });
+
+  test("without operadTools radian gets no MCP config", async () => {
+    const env = await setup("done");
+    await runAgent(env, { prompt: "hello", cwd: env.root });
+    const record = JSON.parse(readFileSync(env.record, "utf8")) as {
+      readonly argv: readonly string[];
+    };
+    expect(record.argv).not.toContain("--mcp-config");
+  });
+
   test("a step that continues after a question passes the session and adds the paragraph", async () => {
     const env = await setup("done");
     const result = await runAgent(env, {
@@ -353,6 +385,40 @@ describe("harness-radian/agent", () => {
     expect(dataOf(result).reason).toBe("grant_unsupported");
     expect(String(dataOf(result).message)).toContain("radian cannot enforce a one-time permission");
     expect(existsSync(env.record)).toBe(false);
+  });
+
+  describe("a profile with rules", () => {
+    async function configOf(access: Record<string, JsonValue> | undefined) {
+      const env = await setup("done");
+      await env.registry.runStep(
+        "harness-radian/agent",
+        { prompt: "hi", cwd: env.root },
+        { runId: "run-ro", ...(access === undefined ? {} : { access }) },
+      );
+      const record = JSON.parse(readFileSync(env.record, "utf8")) as { readonly argv: readonly string[] };
+      const at = record.argv.indexOf("--config");
+      return at < 0 ? undefined : readFileSync(String(record.argv[at + 1]), "utf8");
+    }
+
+    test("radian is given a config that runs the profile's hook before every tool call", async () => {
+      const text = await configOf({ readOnly: true });
+      expect(text).toContain("[[hooks.PreToolUse]]");
+      expect(text).toContain('matcher = "*"');
+      expect(text).toMatch(/hook\.ts/);
+    });
+
+    test("a profile with no rules, and no profile, change nothing", async () => {
+      expect(await configOf({})).toBeUndefined();
+      expect(await configOf(undefined)).toBeUndefined();
+    });
+
+    test("radianRefusal lets a reading command and a read through", () => {
+      expect(radianRefusal({ readOnly: true }, "shell", { command: "git status | head" }, "/work")).toBeUndefined();
+      expect(radianRefusal({ readOnly: true }, "read", { path: "src/a.ts" }, "/work")).toBeUndefined();
+      expect(radianRefusal({ readOnly: true }, "write", { path: "src/a.ts" }, "/work")).toContain("this chat is read-only here");
+      expect(radianRefusal({ readOnly: true }, "operad__list", { type: "task" }, "/work")).toBeUndefined();
+      expect(radianRefusal({}, "write", { path: "src/a.ts" }, "/work")).toBeUndefined();
+    });
   });
 
   test("a non-zero exit is a failure that says so", async () => {

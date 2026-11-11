@@ -1,7 +1,7 @@
 {
   "$schema": "../packages/dev/dev.schema.json",
   "name": "operad",
-  "concurrency": 3,
+  "concurrency": 4,
   "maxAutoRework": 4,
   "workers": {
     "claude": {
@@ -10,6 +10,7 @@
         "--model",
         "sonnet"
       ],
+      "count": 2,
       "stallSecs": 900,
       "wallTimeSecs": 7200
     },
