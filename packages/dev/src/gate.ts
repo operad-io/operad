@@ -55,6 +55,7 @@ import {
 } from "./model.ts";
 import {
   assertInsideRepository,
+  type CheckCommand,
   type DevSettings,
   type FixLevel,
   type ReviewerFallback,
@@ -324,7 +325,16 @@ export async function runVerify(
     });
   }
 
-  const commands = context.settings.gate.commands;
+  const commands = (() => {
+    const given = ((ctx.params ?? {}) as { readonly commands?: unknown }).commands;
+    return Array.isArray(given)
+      ? (given as readonly CheckCommand[])
+      : context.settings.gate.commands;
+  })();
+  const rerun = (() => {
+    const given = ((ctx.params ?? {}) as { readonly rerun?: unknown }).rerun;
+    return typeof given === "number" ? given : context.settings.check.rerun;
+  })();
   const runStep = ctx.runStep;
   if (runStep === undefined) {
     return failed(
@@ -338,7 +348,7 @@ export async function runVerify(
     { cwd: path, timeoutSecs: context.settings.gate.commandTimeoutSecs },
     commands,
     stepOptions(ctx, path),
-    context.settings.check.rerun,
+    rerun,
     checkPlaces(ctx, context.repository, context.settings.gate.places),
   );
   await recordRerunPasses(ctx.store, checked.passedOnRerun);
@@ -800,16 +810,18 @@ function parseReport(text: string): Report | undefined {
   };
 }
 
-/** The flow whose grading the review reads; the dev plugin has one. */
+/** The flow whose grading the review reads when a stage names none. */
 const REVIEW_FLOW = "dev";
 
 /**
  * The repository's grading for this flow. An invalid review.json fails the
- * step the way an invalid dev.json does.
+ * step the way an invalid dev.json does. A review stage may name its entry.
  */
-function gradingOf(context: TaskContext): Grading {
+function gradingOf(context: TaskContext, params: unknown): Grading {
+  const given = ((params ?? {}) as { readonly grading?: unknown }).grading;
+  const flow = typeof given === "string" && given.length > 0 ? given : REVIEW_FLOW;
   try {
-    return readReviewGrading(context.repository.path, REVIEW_FLOW);
+    return readReviewGrading(context.repository.path, flow);
   } catch (error) {
     if (error instanceof ReviewGradingError) {
       throw new DevError(
@@ -822,11 +834,14 @@ function gradingOf(context: TaskContext): Grading {
 }
 
 /** The context with review.json's fixLevel, when set, over dev.json's. */
-function gradedContext(context: TaskContext): {
+function gradedContext(
+  context: TaskContext,
+  params: unknown,
+): {
   readonly context: TaskContext;
   readonly grading: Grading;
 } {
-  const grading = gradingOf(context);
+  const grading = gradingOf(context, params);
   if (grading.fixLevel === undefined) return { context, grading };
   return {
     grading,
@@ -1733,11 +1748,55 @@ function reworkPromptOf(
   };
 }
 
+/** The string list a stage parameter holds, when it holds one. */
+function stringsOf(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.every((item): item is string => typeof item === "string")
+    ? value
+    : undefined;
+}
+
+/**
+ * A reviewer overlaid with its stage's parameters. `use` and `args` apply to
+ * every review of the stage; `later` replaces the arguments after the first
+ * review of an attempt.
+ */
+function stageReviewerOf(
+  base: ReviewerSettings,
+  params: unknown,
+  kind: ReviewKind,
+): ReviewerSettings {
+  const given = (params ?? {}) as {
+    readonly use?: unknown;
+    readonly args?: unknown;
+    readonly later?: unknown;
+  };
+  const use = typeof given.use === "string" ? given.use : undefined;
+  const args = stringsOf(given.args);
+  const later = stringsOf(given.later);
+  const first = base.first;
+  return {
+    ...base,
+    ...(use === undefined ? {} : { use }),
+    ...(args === undefined
+      ? {}
+      : {
+          args,
+          firstArgs: args,
+          ...(first === undefined ? {} : { first: { ...first, args } }),
+        }),
+    ...(first !== undefined && use !== undefined
+      ? { first: { ...first, use, ...(args === undefined ? {} : { args }) } }
+      : {}),
+    ...(kind !== "first" && later !== undefined ? { args: later } : {}),
+  };
+}
+
 /** Step `dev/review`: have the reviewer read the verified commit's diff. */
 export async function runReview(
   ctx: StepContext,
 ): Promise<PluginStepResult> {
-  const { context, grading } = gradedContext(await taskContext(ctx));
+  const { context, grading } = gradedContext(await taskContext(ctx), ctx.params);
   if (!claimAllows(ctx, context.task)) return cancelledStep();
   const task = context.task;
   const attempt = attemptOf(ctx, task);
@@ -2019,7 +2078,7 @@ export async function runReview(
   // settings, even when the followed commit is missing and it reads like a first.
   used = reviewSettingsOf(
     kind === "first" && history.length > 0 ? "rework" : kind,
-    context.settings.reviewer,
+    stageReviewerOf(context.settings.reviewer, ctx.params, kind),
     reviews === 0,
   );
   // The lines the task's own change added, for the pre-existing rules.
@@ -2684,7 +2743,7 @@ export async function runRework(
 
   if (source === "review") {
     const review = attempt?.review;
-    const level = gradedContext(context).context.settings.reviewer.fixLevel;
+    const level = gradedContext(context, ctx.params).context.settings.reviewer.fixLevel;
     const findings = (review?.findings ?? []).filter(
       (finding) =>
         finding.preExisting !== true &&

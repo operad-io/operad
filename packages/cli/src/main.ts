@@ -106,13 +106,53 @@ export interface CliIo {
   readLine?(prompt: string): Promise<string | undefined>;
 }
 
+/** The exit status of a command whose reader closed the pipe: 128 + SIGPIPE. */
+export const EXIT_CLOSED_PIPE = 141;
+
+let outputClosed = false;
+
+/** True once stdout or stderr reported EPIPE; later writes are dropped. */
+export function outputWasClosed(): boolean {
+  return outputClosed;
+}
+
+function isClosedPipe(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "EPIPE"
+  );
+}
+
+/**
+ * Writes to a process stream. A closed pipe (EPIPE) stops all output without a
+ * message; any other write error is thrown as before.
+ */
+function writeStream(stream: NodeJS.WriteStream, text: string): void {
+  if (outputClosed) return;
+  try {
+    stream.write(text);
+  } catch (error) {
+    if (!isClosedPipe(error)) throw error;
+    outputClosed = true;
+  }
+}
+
+// A write that fails later arrives as an error event; EPIPE ends output the
+// same way, anything else stays an unhandled error as it was.
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on("error", (error) => {
+    if (isClosedPipe(error)) {
+      outputClosed = true;
+      return;
+    }
+    throw error;
+  });
+}
+
 const STDIO: CliIo = {
-  write: (text) => {
-    process.stdout.write(text);
-  },
-  error: (text) => {
-    process.stderr.write(text);
-  },
+  write: (text) => writeStream(process.stdout, text),
+  error: (text) => writeStream(process.stderr, text),
 };
 
 /** A command line mistake; exit code 2. */
@@ -1964,12 +2004,12 @@ async function readSecretValue(io: CliIo): Promise<string> {
   });
   const muted = rl as unknown as { _writeToOutput?: (text: string) => void };
   muted._writeToOutput = () => undefined;
-  process.stderr.write("secret value: ");
+  writeStream(process.stderr, "secret value: ");
   try {
     return (await rl.question("")).replace(/\r?\n$/, "");
   } finally {
     rl.close();
-    process.stderr.write("\n");
+    writeStream(process.stderr, "\n");
   }
 }
 
