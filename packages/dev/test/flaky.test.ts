@@ -457,6 +457,22 @@ describe("a flaky test proposes a task", () => {
     expect(() => validateDevSettings({ name: "x", check: { flakyLoadLimit: 0 } })).toThrow(/flakyLoadLimit/);
   });
 
+  test("a failure seen under load opens no task from an earlier idle count", async () => {
+    const s = await setup(true);
+    // One idle failure, not yet enough for its high threshold: no task is due.
+    await s.track("T-0001-a", logWith(TEST), 99);
+    // A lower threshold makes that old count due, but this failure is skipped.
+    await s.track("T-0002-b", logWith(TEST), 1, [TEST], [], {
+      startLoad: { load1: 30, cores: 10 },
+      endLoad: { load1: 30, cores: 10 },
+    });
+    expect(await s.flaky()).toHaveLength(0);
+    expect(s.notices[0]).toContain("skipped");
+    // The next idle failure still proposes exactly one task.
+    await s.track("T-0003-c", logWith(TEST), 1);
+    expect(await s.flaky()).toHaveLength(1);
+  });
+
   test("a crash between the decision and the proposal still proposes exactly one task", async () => {
     const s = await setup(true);
     const logPath = join(s.root, "child.log");

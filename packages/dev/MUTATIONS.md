@@ -799,3 +799,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0116-M3 | packages/tui/src/actions.ts | the main action was the first action again (the skip of ending actions removed) | `the main key skips an action that ends the object, and says none is available when only it is left` (packages/tui/test/actions.test.ts) |
+| T-0174-M6 | packages/dev/src/flaky.ts | the proposal loop ignored which tests this check saw under load, so an older idle count could still open a task | `a flaky test proposes a task > a failure seen under load opens no task from an earlier idle count` |

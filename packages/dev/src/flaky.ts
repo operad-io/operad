@@ -494,6 +494,9 @@ export async function trackFlakyTests(input: FlakyInput): Promise<string | undef
   const log = readLog(input.log);
   const at = changeClock.now();
   const busy = busyLoad(input);
+  // A test seen under load this time is skipped, even when an earlier idle
+  // count already reached the threshold: that failure is not the trigger.
+  const skippedNames = busy === undefined ? new Set<string>() : new Set(input.names);
   await withRepoLock(store, repository.name, async (fresh) => {
     for (const name of input.names) {
       const key = recordKey(fresh.name, name);
@@ -539,6 +542,7 @@ export async function trackFlakyTests(input: FlakyInput): Promise<string | undef
       if (keyRepository(object.id) !== fresh.name) continue;
       const record = recordOf(object.data);
       if (record === undefined || record.task !== undefined) continue;
+      if (skippedNames.has(record.name)) continue;
       if (countedOf(record).length < input.threshold) continue;
       const notice = await propose(input, fresh, object.id, record);
       if (notice !== undefined) notices.push(notice);
