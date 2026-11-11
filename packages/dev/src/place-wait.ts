@@ -5,6 +5,9 @@
  */
 
 import type { StepContext } from "@operad-io/engine";
+import { join } from "node:path";
+import { withLockFile } from "@operad-io/engine/platform";
+import { checkPlacesDirectory } from "./places.ts";
 import { listAll, taskData, type TaskData } from "./model.ts";
 import { saveTaskGuarded } from "./steps.ts";
 
@@ -29,6 +32,20 @@ export function placeWaitNote(task: TaskData): string | undefined {
  * changes, and only while the step still owns its claim.
  */
 export async function taskPlaceWait(
+  ctx: StepContext,
+  taskKey: string,
+  key: string | null,
+): Promise<void> {
+  // Counting the waiters and saving the record is one turn, across every
+  // repository: two waiters that count at once would both see none ahead.
+  await withLockFile(
+    join(checkPlacesDirectory(ctx.home), "waiting.lock"),
+    () => recordPlaceWait(ctx, taskKey, key),
+    { label: "check place waiters", onLog: () => {} },
+  );
+}
+
+async function recordPlaceWait(
   ctx: StepContext,
   taskKey: string,
   key: string | null,

@@ -703,10 +703,16 @@ describe("dev views", () => {
       const stored = taskData((await getTask(store, id)).data);
       await store.put("task", id, { ...stored, phase: "running", attempt: running }, "test:a");
     }
-    const ctx = { store, runId: "r", params: null } as unknown as StepContext;
+    const ctx = { store, runId: "r", params: null, home: await tempRoot() } as unknown as StepContext;
     const row = async (id: string) => taskViews.row(await getTask(store, id));
     expect((await row(task.id)).mark).toBe("checking");
 
+    // Two checks reaching the held place at the same moment still count each other.
+    await Promise.all([taskPlaceWait(ctx, task.id, "check place"), taskPlaceWait(ctx, other.id, "check place")]);
+    const notes = [(await row(task.id)).note, (await row(other.id)).note].sort();
+    expect(notes).toEqual(["$0.00 · waiting for a check place", "$0.00 · waiting for a check place, 1 ahead"]);
+    await taskPlaceWait(ctx, task.id, null);
+    await taskPlaceWait(ctx, other.id, null);
     await taskPlaceWait(ctx, task.id, "check place");
     await taskPlaceWait(ctx, other.id, "check place");
     expect(await row(task.id)).toMatchObject({ mark: "blocked", note: "$0.00 · waiting for a check place" });
