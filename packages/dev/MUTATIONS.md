@@ -539,6 +539,18 @@ the row fields.
 | T-0164-M6 | packages/dev/src/integrate.ts, packages/dev/src/integration-queue.ts | a dead leader's pending result was never taken as landed and the subject lookup was off (`landed` returns `false`, `alreadyOnMain` ignored) | `a batch leader killed after the push > merge: the leader and the tasks queued behind it each end merged once, on a fast-forwarded main clone` (and the squash one) |
 | T-0175-M2 | packages/dev/src/commands.ts | a task edit with an empty command input opened the editor instead of refusing | `operad mcp > task edit takes the new brief as command input and refuses an empty one` (packages/mcp/test/server.test.ts; the run hangs on the editor and times out) |
 
+## T-0176 — repository throughput
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0176-M1 | packages/dev/src/throughput.ts | the percentile took the floor of the rank instead of the ceiling | `repository metrics > percentiles use the nearest rank` |
+| T-0176-M2 | packages/dev/src/throughput.ts | the time waiting for a turn was not taken out of the integrate time | `repository metrics > counts per hour and per day, cost per merge, and step times` |
+| T-0176-M3 | packages/dev/src/throughput.ts | a task merged before the window but written again inside it was counted | `repository metrics > counts per hour and per day, cost per merge, and step times` |
+| T-0176-M4 | packages/dev/src/throughput.ts | every write of a waiting task counted as a new stop (the check for an already waiting task removed) | `repository metrics > counts per hour and per day, cost per merge, and step times` |
+| T-0176-M5 | packages/dev/src/throughput.ts | the last-24-hours count began 23 hours back instead of 24 | `repository metrics > counts per hour and per day, cost per merge, and step times` |
+| T-0176-M6 | packages/dev/src/throughput.ts | the cost per merge used the task's last cost and not the sum of its attempts | `repository metrics > a reworked task costs every attempt, and a stop keeps the reason dev recorded` |
+| T-0176-M7 | packages/dev/src/throughput.ts | a spent retry was reported as `retry` instead of its recorded cause | `repository metrics > a reworked task costs every attempt, and a stop keeps the reason dev recorded` |
+| T-0176-M8 | packages/dev/src/throughput.ts | the hourly buckets went back to including their start and not their end, so a merge at `now` was in the summary and in no row | `repository metrics > the last-24-hours count is the sum of the hourly rows at both ends of the window` |
 ## T-0194 — `--after` across plans and repositories
 
 | id | file | mutation | failing test |
