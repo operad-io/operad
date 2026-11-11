@@ -223,10 +223,18 @@ async function fixture(options: {
   git(seed, ["push", "-q", "-u", "origin", "main"]);
   git(root, ["clone", "-q", origin, repository]);
   const seedSettings = readFileSync(join(seed, ".operad", "dev.json"), "utf8");
+  const tree = git(seed, ["ls-tree", "-r", "--name-only", "HEAD"]);
+  const show = git(seed, ["show", "HEAD:.operad/dev.json"]);
+  const status = git(seed, ["status", "--porcelain"]);
+  if (!tree.split("\n").includes(".operad/dev.json") || show !== seedSettings) {
+    throw new Error(
+      `seed commit lost its settings: flows=${JSON.stringify(options.flows)}\nseed: ${seedSettings}\nshow: ${show}\ntree: ${tree}\nstatus: ${status}`,
+    );
+  }
   const clonedSettings = readFileSync(join(repository, ".operad", "dev.json"), "utf8");
   if (seedSettings !== clonedSettings) {
     throw new Error(
-      `clone settings differ: flows=${JSON.stringify(options.flows)}\nseed: ${seedSettings}\nclone: ${clonedSettings}\nseed tree: ${git(seed, ["ls-tree", "-r", "--name-only", "HEAD"])}`,
+      `clone settings differ: flows=${JSON.stringify(options.flows)}\nseed: ${seedSettings}\nclone: ${clonedSettings}\nseed tree: ${tree}`,
     );
   }
 
