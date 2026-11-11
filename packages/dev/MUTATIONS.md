@@ -629,3 +629,6 @@ the row fields.
 | T-0188-M18 | packages/dev/src/chat.ts | `dev:chat` accepted a harness that is not loaded | `dev:chat > the harness must be loaded: one that is not is refused and the loaded ones are named` |
 | T-0188-M19 | packages/dev/src/chat.ts | the chat profile did not deny the `operad` command | `dev:chat > the profile keeps the agent out of the operad command` |
 | T-0188-M28 | packages/dev/src/chat.ts | `dev:chat` no longer refused harness-radian by name | `dev:chat > harness-radian is refused with the reason, whether given or the only one loaded` |
+| T-0152-M1 | packages/dev/src/service.ts | `recordMergeReported` stopped checking the mark under the lock, so every caller claimed it | `a scheduler line prints once > the merge mark goes to one claimant, as when another process races a pass` |
+| T-0152-M2 | packages/dev/src/service.ts | `recordPlanFinishedReported` stopped checking the mark under the lock | `a scheduler line prints once > the finished mark goes to one claimant` |
+| T-0152-M3 | packages/dev/src/schedule.ts | `runScheduler` ran every asked pass at once instead of one after another | `a scheduler line prints once > a pass asked for while one runs runs once after it, never beside it` |

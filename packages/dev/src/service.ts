@@ -1210,11 +1210,39 @@ export async function setTaskPhase(
   phase: TaskPhase,
   options: { readonly run?: string | null | undefined } = {},
 ): Promise<StoredObject> {
+  const written = await changeTaskPhase(store, id, undefined, phase, options);
+  if (written === undefined) throw new DevError("task", `no task "${bareId(id)}"`);
+  return written;
+}
+
+/**
+ * Moves a task to `to` only while it is still in phase `from`, checked under
+ * the repository lock; undefined when another pass already moved it, so only
+ * the pass that moved it reports the change.
+ */
+export async function moveTaskPhase(
+  store: ObjectStore,
+  id: string,
+  from: TaskPhase,
+  to: TaskPhase,
+  options: { readonly run?: string | null | undefined } = {},
+): Promise<StoredObject | undefined> {
+  return changeTaskPhase(store, id, from, to, options);
+}
+
+async function changeTaskPhase(
+  store: ObjectStore,
+  id: string,
+  from: TaskPhase | undefined,
+  phase: TaskPhase,
+  options: { readonly run?: string | null | undefined },
+): Promise<StoredObject | undefined> {
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
   return withRepoLock(store, data.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
+    if (from !== undefined && latest.phase !== from) return undefined;
     const run =
       options.run === undefined
         ? phase === "running" || phase === "review" || phase === "waiting"
@@ -1511,23 +1539,53 @@ export async function releaseTaskClaim(
   });
 }
 
-/** Records that the scheduler printed this attempt's integration result. */
+/**
+ * Claims the right to print this attempt's integration result. The mark is
+ * checked and written under the repository lock, so of two passes (in this
+ * process or another one on the same store) only one gets the claim and
+ * prints; the other gets `false`.
+ */
 export async function recordMergeReported(
   store: ObjectStore,
   id: string,
   attempt: number,
-): Promise<StoredObject> {
+): Promise<boolean> {
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
   return withRepoLock(store, data.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
-    return writeTask(
+    if (latest.mergeReportedAttempt === attempt) return false;
+    await writeTask(
       store,
       id,
       { ...latest, mergeReportedAttempt: attempt },
       "dev:task-merge-reported",
     );
+    return true;
+  });
+}
+
+/**
+ * Claims the right to say a plan finished, once. The mark is checked and
+ * written under the repository lock; a second caller gets `false`.
+ */
+export async function recordPlanFinishedReported(
+  store: ObjectStore,
+  id: string,
+): Promise<boolean> {
+  const initial = planData((await getPlan(store, id)).data);
+  return withRepoLock(store, initial.repository, async () => {
+    const current = await getPlan(store, id);
+    const latest = planData(current.data);
+    if (latest.finishedReported === true) return false;
+    await store.put(
+      "plan",
+      id,
+      { ...latest, finishedReported: true },
+      "dev:plan-finished",
+    );
+    return true;
   });
 }
 
