@@ -320,7 +320,8 @@ describe("store copy", () => {
     }
     renameSync(join(root, "plugins", "facts.jsonl"), join(aside, "plugins", "facts.jsonl"));
 
-    expect((await run(home, ["store", "copy", "jsonl"])).code).toBe(0);
+    const copied = await run(home, ["store", "copy", "jsonl"]);
+    expect({ code: copied.code, err: copied.err }).toEqual({ code: 0, err: "" });
     expect((await run(home, ["store", "use", "jsonl"])).code).toBe(0);
 
     const second = openLog({ backend: "jsonl", path: root });
@@ -468,6 +469,38 @@ describe("store copy", () => {
     }
     // Once the move is over the same answer goes through.
     expect((await run(home, ["cards:approve", "card:2"])).code).toBe(0);
+  });
+
+  test("a write to a sqlite source after it was read makes the copy back fail and leaves no target", async () => {
+    const { home, root } = await seededHome();
+    expect((await run(home, ["store", "copy", "sqlite"])).code).toBe(0);
+    expect((await run(home, ["store", "use", "sqlite"])).code).toBe(0);
+    const config = await readConfig(home);
+    const aside = join(root, "..", "aside");
+    mkdirSync(join(aside, "plugins"), { recursive: true });
+    for (const name of ["runs", "inputs.jsonl", "outcomes.jsonl", "global-facts.jsonl", "schema.json", ".lock"]) {
+      renameSync(join(root, name), join(aside, name));
+    }
+    renameSync(join(root, "plugins", "facts.jsonl"), join(aside, "plugins", "facts.jsonl"));
+    await expect(
+      copyStore({
+        home,
+        config,
+        to: "jsonl",
+        afterSnapshot: () => {
+          // A writer that began before the copy took its lock: a raw commit, no checks.
+          const late = new Database(join(root, "plugins.sqlite"));
+          try {
+            late
+              .query("INSERT INTO facts (type, object_type, object_id, cause, at, data) VALUES (?, ?, ?, ?, ?, ?)")
+              .run("note", null, null, "late", 1, "{}");
+          } finally {
+            late.close();
+          }
+        },
+      }),
+    ).rejects.toThrow("changed while it was being copied");
+    expect(existsSync(join(root, "runs"))).toBe(false);
   });
 
   test("a write that reaches the source after it was read makes the copy fail and leaves no target", async () => {
