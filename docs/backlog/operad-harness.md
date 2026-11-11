@@ -23,6 +23,7 @@ hub 的会话路由只认 radian 的 journal 和 control port，worker 只有 `r
 6. 权限请求（ACP 的 `request_permission`、SDK 的 `canUseTool`）由引擎按 graph 给的 access 档回答，或转给手机上的人；harness 碰不到权限决定。每个 harness 一张机械禁用表（Claude 是 `disallowedTools`，radian 是 tier，Codex 是 sandbox 策略加 execpolicy），owner 批准只对该运行解锁一次。
 7. **radian 在 operad 里只当 agent 用。** `harness-radian` 只调用 `radian exec` 和 `radian acp`；operad 不调用、不启动、不依赖 `radian hub` 和 `radian arc`，`dev` 插件不读也不写仓库里的 `.radian/arc/`。编排（计划、任务、门禁、合并、推送）只在 operad 里。目前这是 operad 一侧的约定，radian 二进制里仍带着这两个子命令；以后 radian 会去掉编排功能，operad 不需要为此改动。
 8. **harness 本体不随 operad 装，用用户装的那份。** radian 本来就是 PATH 上的命令；pi 从 PATH 上的 `pi` 找到它的库再 `import()`；Claude 从 PATH 上的 `claude` 起进程，operad 只带 Agent SDK 的客户端代码，八个平台二进制包用 `overrides` 换成空包。理由：登录态、自动更新、配额都属于用户装的那份，operad 不替用户再下一份几百 MB 的二进制，也不替用户登录。`sdk` 接法的版本耦合由此定形：operad 带的客户端库不钉版本，`package.json` 写范围，lock 记当下测过的那一版，`bun update` 往前挪；本体有版本下限；`operad plugin check` 报两边版本，只有本体太旧或没登录才拒绝。落实见 `operad-harness-pi.md` 决定 9 和 `operad-harness-claude.md` 决定 2、10。
+9. **harness 的名字就是它接的 agent 的名字（2026-11-11 owner 定）。** 插件名是 `claude`、`pi`、`radian`：`config.json` 的 `plugins.<名字>`、步骤 `claude/agent`、流程 `claude:prompt`、`dev.json` 的 `worker.use`、chat 存的 harness 都用这个名字，界面上也只显示它；`harness-claude` 一类的写法只是 npm 包名（`@operad-io/harness-claude`，不变），用户看不到。包放在 `packages/harness/` 下：`claude`、`pi`、`radian`、`process`。旧名字不再认，不留别名：用过它们的只有 owner 的家目录和三个仓库，改名时一次迁好。下面各项和 `operad-harness-pi.md`、`operad-harness-claude.md`、`operad-plugins.md` 里写的 `harness-*` 插件名、步骤名按此读。
 
 ## 待决问题（未定）
 
