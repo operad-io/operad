@@ -109,13 +109,13 @@ async function main(request: StepWorkerRequest): Promise<void> {
   /** Asks the run's process, which owns the log, for a place under a key, or to show a wait. */
   const limits: StepLimiter = {
     report: (request) =>
-      hold({ use: "", key: request.key, concurrent: 0 }, true, request.since),
+      hold({ use: "", key: request.key, concurrent: 0 }, true, request.ahead),
     acquire: (request) => hold(request, false),
   };
   function hold(
     request: StepLimitRequest,
     report: boolean,
-    since?: number,
+    ahead?: number,
   ): Promise<() => Promise<void>> {
     const port = parentPort;
     if (port === null) return Promise.reject(new Error("no limiter"));
@@ -131,7 +131,7 @@ async function main(request: StepWorkerRequest): Promise<void> {
           key: request.key,
           concurrent: request.concurrent,
           ...(report ? { report: true } : {}),
-          ...(since === undefined ? {} : { since }),
+          ...(ahead === undefined ? {} : { ahead }),
         });
       });
       const cancel = (): void => port.postMessage({ kind: "limit-cancel", id });

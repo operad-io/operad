@@ -152,7 +152,7 @@ export async function withCheckPlace<T>(
     places.wait ??
     ((ms: number) => waitForChange(directory, entry, ms));
   // What the kernel was told: the place group the step is queued under.
-  let reported: { key: string; end: () => Promise<void> } | undefined;
+  let reported: { key: string; ahead: number; end: () => Promise<void> } | undefined;
   const stopWaiting = async (): Promise<void> => {
     const open = reported;
     reported = undefined;
@@ -215,12 +215,13 @@ export async function withCheckPlace<T>(
           error.pool === "repository" && repository !== undefined
             ? placeGroupOf(repository.name)
             : placeGroupOf(undefined);
-        if (reported?.key !== key && places.queued !== undefined) {
+        // The running view shows the ahead count told here, so a change is told again.
+        if ((reported?.key !== key || reported.ahead !== ahead) && places.queued !== undefined) {
           const previous = reported;
           reported = undefined;
           await previous?.end().catch(() => undefined);
           try {
-            reported = { key, end: await places.queued(key, since) };
+            reported = { key, ahead, end: await places.queued(key, ahead) };
           } catch {
             reported = undefined;
           }

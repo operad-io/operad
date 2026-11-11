@@ -82,10 +82,10 @@ export default definePlugin({
       results: ["ok", "failed", "interrupted"],
       async run(ctx) {
         const info = infoOf(ctx.params);
-        // A test may say when the wait began, which can differ from when it was reported.
-        const sincePath = join(info.dir, `since-${info.name}`);
-        const since = existsSync(sincePath) ? Number(readFileSync(sincePath, "utf8")) : undefined;
-        const end = await ctx.queued?.("shared place", since);
+        // A test may say how many are ahead, which can differ from the order of the reports.
+        const aheadPath = join(info.dir, `ahead-${info.name}`);
+        const ahead = existsSync(aheadPath) ? Number(readFileSync(aheadPath, "utf8")) : undefined;
+        const end = await ctx.queued?.("shared place", ahead);
         writeFileSync(join(info.dir, `queued-${info.name}`), "1");
         await waitForFile(join(info.dir, `place-${info.name}`));
         await end?.();

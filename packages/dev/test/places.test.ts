@@ -544,24 +544,32 @@ describe("check places are served in the order checks began to wait", () => {
     expect(waiters(home)).toEqual([]);
   });
 
-  test("a waiting check tells the kernel when it began to wait, so the running view orders by it", async () => {
+  test("a waiting check tells the kernel how many are ahead of it in the order", async () => {
     const home = await osTempRoot();
     const holder = await holdPlace(home);
     const started: string[] = [];
-    const told: { key: string; since: number | undefined }[] = [];
-    const w = waiter(home, "w", 42, started, {
-      queued: (key, since) => {
-        told.push({ key, since });
-        return Promise.resolve(() => Promise.resolve());
-      },
-    });
+    const told: { key: string; ahead: number | undefined }[] = [];
+    const queued = (key: string, ahead?: number) => {
+      told.push({ key, ahead });
+      return Promise.resolve(() => Promise.resolve());
+    };
+    // The earlier check has not reported to the kernel at all; the later one still says 1 ahead.
+    const first = waiter(home, "first", 1, started);
+    await first.watcher.seen("waiting for a check place");
+    const second = waiter(home, "second", 2, started, { queued });
     await until(() => told.length === 1);
-    expect(told).toEqual([{ key: "check place", since: 42 }]);
+    expect(told).toEqual([{ key: "check place", ahead: 1 }]);
+    // The first one leaves the order; the second says it is now first.
     await holder.release();
-    w.rings.ring();
+    first.rings.ring();
     await until(() => started.length === 1);
-    w.gate.resolve();
-    await w.done;
+    first.gate.resolve();
+    await first.done;
+    second.rings.ring();
+    await until(() => started.length === 2);
+    expect(told.map((entry) => entry.ahead)).toEqual([1]);
+    second.gate.resolve();
+    await second.done;
   });
 
   test("a waiter whose process is dead is skipped and its entry removed", async () => {

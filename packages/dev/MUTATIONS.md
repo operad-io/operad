@@ -844,7 +844,7 @@ the row fields.
 | T-0295-M3 | packages/dev/src/places.ts | a cancelled check kept its entry until it looked again | `check places are served in the order checks began to wait > a cancelled waiter leaves the order at once` |
 | T-0295-M4 | packages/dev/src/places.ts | the ahead count passed to the task's row was always 0 | `check places are served in the order checks began to wait > a, b, c take places in the order they began to wait, even when c looks first` |
 | T-0295-M5 | packages/dev/src/places.ts | the repository's pool ignored the order | `check places are served in the order checks began to wait > the repository's own pool follows the order too` |
-| T-0295-M6 | packages/dev/src/places.ts | a waiting check reported itself to the kernel without the time it began to wait | `check places are served in the order checks began to wait > a waiting check tells the kernel when it began to wait, so the running view orders by it` |
+| T-0295-M6 | packages/dev/src/places.ts | a waiting check reported itself to the kernel without the number of checks ahead of it in the disk order | `check places are served in the order checks began to wait > a waiting check tells the kernel how many are ahead of it in the order` |
 ## T-0290 — verify checks the branch's current head
 
 | id | file | mutation | failing test |
