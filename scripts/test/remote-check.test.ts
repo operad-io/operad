@@ -264,7 +264,7 @@ describe("remote-check.sh", () => {
       expect(result.out).toContain("slots=3");
     });
 
-    for (const bad of ["0", "x", "-1", "1.5", ""]) {
+    for (const bad of ["0", "x", "-1", "1.5", "", "12x"]) {
       test(`OPERAD_CHECK_SLOTS='${bad}' stops with a message naming the variable`, async () => {
         const { local, env } = setup();
         const result = await run(local, { ...env, OPERAD_CHECK_SLOTS: bad }, "echo ran");
@@ -288,6 +288,16 @@ describe("remote-check.sh", () => {
         const result = await run(local, { ...env, OPERAD_CHECK_HOST: "", ...bad }, "echo ran");
         expect(result.code).toBe(1);
         expect(result.err).toContain(Object.keys(bad)[0] ?? "");
+        expect(result.out).not.toContain("ran");
+      }
+    });
+
+    test("an empty OPERAD_CHECK_LANE stops with a message naming the variable", async () => {
+      const { local, env } = setup();
+      for (const host of ["fake", ""]) {
+        const result = await run(local, { ...env, OPERAD_CHECK_HOST: host, OPERAD_CHECK_LANE: "" }, "echo ran");
+        expect(result.code).toBe(1);
+        expect(result.err).toContain("OPERAD_CHECK_LANE");
         expect(result.out).not.toContain("ran");
       }
     });

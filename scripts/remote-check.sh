@@ -32,15 +32,14 @@ fail() {
 }
 
 slots=${OPERAD_CHECK_SLOTS-1}
-case "$slots" in
-  [1-9] | [1-9][0-9]*) ;;
-  *) fail "OPERAD_CHECK_SLOTS must be a whole number of 1 or more, not '$slots'" ;;
-esac
-lane=${OPERAD_CHECK_LANE:-}
-case "$lane" in
-  "" | integration) ;;
-  *) fail "OPERAD_CHECK_LANE must be 'integration' or unset, not '$lane'" ;;
-esac
+if ! [[ "$slots" =~ ^[1-9][0-9]*$ ]]; then
+  fail "OPERAD_CHECK_SLOTS must be a whole number of 1 or more, not '$slots'"
+fi
+lane=
+if [ -n "${OPERAD_CHECK_LANE+set}" ]; then
+  [ "$OPERAD_CHECK_LANE" = integration ] || fail "OPERAD_CHECK_LANE must be 'integration' or unset, not '$OPERAD_CHECK_LANE'"
+  lane=integration
+fi
 
 host=${OPERAD_CHECK_HOST:-}
 if [ -z "$host" ]; then
