@@ -125,7 +125,7 @@ describe("the object page's child list", () => {
     ]);
     expect(shown[0]?.connector).toBe("");
     expect(shown[1]?.connector).toBe("└─");
-    expect(shown[2]?.connector).toBe("  └─");
+    expect(shown[2]?.connector).toBe("   └─");
     const text = rightText(opened(rows));
     expect(text).toContain("└─");
     expect(text).toContain("T-0002-b");
@@ -419,5 +419,50 @@ describe("the cancelled token", () => {
       expect(palette.cancelled).not.toBe(palette.error);
       expect(palette.cancelled).not.toBe(palette.weak);
     }
+  });
+});
+
+describe("the tree's drawn connectors", () => {
+  function drawn(rows: readonly ViewRow[]): string[] {
+    const lines = rightLines(opened(rows)).map((line) => line.trimEnd());
+    const start = lines.findIndex((line) => line.startsWith("│ TASK")) + 1;
+    return lines.slice(start, lines.findIndex((line) => line.startsWith("╰")));
+  }
+
+  test("a chain hangs each connector under its parent's glyph", () => {
+    expect(
+      drawn([
+        row("T-0060-a"),
+        row("T-0061-b", "todo", { after: ["T-0060-a"] }),
+        row("T-0062-c", "todo", { after: ["T-0061-b"] }),
+      ]),
+    ).toEqual([
+      "│   ○ T-0060-a       todo",
+      "│   └─ ○ T-0061-b    todo",
+      "│      └─ ○ T-0062-c todo",
+    ]);
+  });
+
+  test("a first child with a child draws ├─ and a │ under the root's glyph", () => {
+    expect(
+      drawn([
+        row("T-0001-a"),
+        row("T-0002-b", "todo", { after: ["T-0001-a"] }),
+        row("T-0003-c", "todo", { after: ["T-0002-b"] }),
+        row("T-0004-d", "todo", { after: ["T-0001-a"] }),
+      ]),
+    ).toEqual([
+      "│   ○ T-0001-a       todo",
+      "│   ├─ ○ T-0002-b    todo",
+      "│   │  └─ ○ T-0003-c todo",
+      "│   └─ ○ T-0004-d    todo",
+    ]);
+  });
+
+  test("two roots have no connector and no padding", () => {
+    expect(drawn([row("T-0001-a"), row("T-0002-b")])).toEqual([
+      "│   ○ T-0001-a todo",
+      "│   ○ T-0002-b todo",
+    ]);
   });
 });

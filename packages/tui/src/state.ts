@@ -906,14 +906,14 @@ function treeChildEntries(rows: readonly TuiRow[]): TuiChildEntry[] {
     const parent = parents[index];
     out.push({
       row,
-      depth: root ? 0 : Math.trunc(prefix.length / 2) + 1,
+      depth: root ? 0 : Math.trunc(prefix.length / 3) + 1,
       connector: root ? "" : `${prefix}${last ? "└─" : "├─"}`,
       alsoAfter:
         parent === undefined
           ? []
           : all.filter((one) => one.index !== parent.index).map((one) => one.id),
     });
-    const childPrefix = root ? "" : `${prefix}${last ? "  " : "│ "}`;
+    const childPrefix = root ? "" : `${prefix}${last ? "   " : "│  "}`;
     const below = children.get(index) ?? [];
     below.forEach((child, at) => walk(child, childPrefix, false, at + 1 === below.length));
   };
