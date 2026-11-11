@@ -44,7 +44,7 @@ import {
   type MainCloneOutcome,
 } from "./mainclone.ts";
 import { recordServeCode } from "./standing.ts";
-import { isLoaded, runCheckSteadily } from "./notcode.ts";
+import { runCheckSteadily } from "./notcode.ts";
 import { runCheckCommands } from "./rerun.ts";
 import { reportFlakyTests } from "./flaky.ts";
 import { recordRerunPasses } from "./reruns.ts";
@@ -702,7 +702,8 @@ export async function runIntegrate(
           threshold: context.settings.check.flakyTask,
           flakyPlan: context.settings.check.flakyPlan,
           check: checked,
-          ...(isLoaded(steady.load, settings.check.loadLimit) ? { load: steady.load } : {}),
+          loads: steady.loads,
+          loadLimit: settings.check.flakyLoadLimit,
         });
         checkNote =
           flakyNotice === undefined
@@ -982,7 +983,8 @@ export async function runIntegrate(
           threshold: context.settings.check.flakyTask,
           flakyPlan: context.settings.check.flakyPlan,
           check: checked,
-          ...(isLoaded(steady.load, settings.check.loadLimit) ? { load: steady.load } : {}),
+          loads: steady.loads,
+          loadLimit: settings.check.flakyLoadLimit,
         });
         const { outcome, hostError } = checked;
         checkNote =

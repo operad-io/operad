@@ -77,6 +77,8 @@ export interface StepFlagSpec<Level extends string> {
   readonly modelHint: string;
   /** An error for a model value this harness does not take; undefined when it takes it. */
   readonly modelProblem?: (value: string) => string | undefined;
+  /** True when a value may start with `-`, so the model check names it; otherwise a flag after a flag is "no value". */
+  readonly dashValues?: boolean;
 }
 
 /**
@@ -97,7 +99,7 @@ export function parseStepFlags<Level extends string>(
     }
     const value = args[index + 1];
     // A flag that follows is not a value: `--model --effort high` has none.
-    if (value === undefined || value.startsWith("-")) return `args: "${entry}" has no value`;
+    if (value === undefined || (spec.dashValues !== true && value.startsWith("-"))) return `args: "${entry}" has no value`;
     index += 1;
     if (entry === "--model") {
       if (model !== undefined) return `args: "--model" is given twice`;

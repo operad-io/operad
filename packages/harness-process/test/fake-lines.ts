@@ -29,6 +29,22 @@ export interface FakeLinesProgram {
   hang(): Promise<never>;
 }
 
+/** Resolves when `path` exists; a look every 100 ms backs the directory watch. */
+export function waitForRelease(path: string | undefined): Promise<void> {
+  if (path === undefined || existsSync(path)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const check = (): void => {
+      if (!existsSync(path)) return;
+      watcher.close();
+      clearInterval(timer);
+      resolve();
+    };
+    const watcher = watch(dirname(path), check);
+    const timer = setInterval(check, 100);
+    check();
+  });
+}
+
 export async function startFakeLines(prefix: string): Promise<FakeLinesProgram> {
   const mode = process.env[`${prefix}_MODE`] ?? "done";
   const recordPath = process.env[`${prefix}_RECORD`];
@@ -70,21 +86,7 @@ export async function startFakeLines(prefix: string): Promise<FakeLinesProgram> 
     mark() {
       if (marker !== undefined) writeFileSync(marker, String(process.pid));
     },
-    released() {
-      if (release === undefined || existsSync(release)) return Promise.resolve();
-      const path = release;
-      return new Promise((resolve) => {
-        const check = (): void => {
-          if (!existsSync(path)) return;
-          watcher.close();
-          clearInterval(timer);
-          resolve();
-        };
-        const watcher = watch(dirname(path), check);
-        const timer = setInterval(check, 100);
-        check();
-      });
-    },
+    released: () => waitForRelease(release),
     hang: () => new Promise<never>(() => {}),
   };
 }

@@ -3,49 +3,17 @@
  * stdin object, records it, and acts by `FAKE_PI_MODE`. It never imports pi and
  * never touches a credential file.
  *
- * Environment: `FAKE_PI_MODE`, `FAKE_PI_RECORD` (the stdin object is written
- * there), `FAKE_PI_MARKER` (the pid is written there once the program is
- * running), `FAKE_PI_RELEASE` (a path the program waits for), `FAKE_PI_COMMIT`
- * (a file name the `commit` mode creates and commits in the input's `cwd`).
+ * Environment: see `startFakeLines` in harness-process's test support, with the
+ * prefix `FAKE_PI`, and `FAKE_PI_COMMIT` (a file name the `commit` mode creates
+ * and commits in the input's `cwd`).
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, watch, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { startFakeLines } from "@operad-io/harness-process/test-fake-lines";
 
-const mode = process.env["FAKE_PI_MODE"] ?? "done";
-const recordPath = process.env["FAKE_PI_RECORD"];
-const marker = process.env["FAKE_PI_MARKER"];
-const release = process.env["FAKE_PI_RELEASE"];
-
-const reader = Bun.stdin.stream().getReader();
-let buffered = "";
-const decoder = new TextDecoder();
-/** The next stdin line; stdin stays open so the host can answer later. */
-async function stdinLine(): Promise<string> {
-  for (;;) {
-    const newline = buffered.indexOf("\n");
-    if (newline !== -1) {
-      const found = buffered.slice(0, newline);
-      buffered = buffered.slice(newline + 1);
-      return found;
-    }
-    const chunk = await reader.read();
-    if (chunk.done) {
-      const rest = buffered;
-      buffered = "";
-      return rest;
-    }
-    buffered += decoder.decode(chunk.value, { stream: true });
-  }
-}
-
-const input = JSON.parse(await stdinLine()) as { cwd: string };
-if (recordPath !== undefined) writeFileSync(recordPath, JSON.stringify(input));
-
-function line(value: unknown): void {
-  process.stdout.write(`${JSON.stringify(value)}\n`);
-}
+const { mode, recordPath, input, stdinLine, line, mark, released, hang } = await startFakeLines("FAKE_PI");
 
 function result(extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -62,32 +30,6 @@ function result(extra: Record<string, unknown> = {}): Record<string, unknown> {
 function failed(reason: string, message: string): Record<string, unknown> {
   return result({ result: "failed", reason, message });
 }
-
-function mark(): void {
-  if (marker !== undefined) writeFileSync(marker, String(process.pid));
-}
-
-/**
- * Resolves when the release file exists. The directory watch wakes it at once;
- * a watch can miss an event under load, so a look every 100 ms backs it.
- */
-function released(): Promise<void> {
-  if (release === undefined || existsSync(release)) return Promise.resolve();
-  const path = release;
-  return new Promise((resolve) => {
-    const check = (): void => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      clearInterval(timer);
-      resolve();
-    };
-    const watcher = watch(dirname(path), check);
-    const timer = setInterval(check, 100);
-    check();
-  });
-}
-
-const hang = (): Promise<never> => new Promise(() => {});
 
 switch (mode) {
   case "done":
