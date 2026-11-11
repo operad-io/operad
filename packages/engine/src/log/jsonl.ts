@@ -1134,7 +1134,7 @@ class JsonlLogBackend implements LogBackend {
       .filter((name) => name.endsWith(".jsonl"))
       .map((name) => name.slice(0, -".jsonl".length))
       .filter((runId) => !ended.has(`${runId}.end`));
-    const settled = this.#clock() - Number(stat.mtimeNs / 1_000_000n) > SETTLE_MS;
+    const settled = Date.now() - Number(stat.mtimeNs / 1_000_000n) > SETTLE_MS;
     this.#activeCache = { mtimeNs: stat.mtimeNs, settled, ids };
     return ids;
   }

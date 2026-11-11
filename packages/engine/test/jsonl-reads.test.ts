@@ -9,6 +9,12 @@ afterAll(cleanupTempRoots);
 
 const HISTORY = 3000;
 
+/** Makes the runs directory look unchanged for a minute, as in a quiet home. */
+function ageRuns(root: string): void {
+  const old = new Date(Date.now() - 60_000);
+  fs.utimesSync(join(root, "store", "runs"), old, old);
+}
+
 describe("the jsonl backend over a large history", () => {
   test("a lookup or a quiet read does not read the whole files", async () => {
     const root = await tempRoot();
@@ -78,15 +84,14 @@ describe("the jsonl backend over a large history", () => {
 
   test("a quiet listing of the active runs does not list the runs directory", async () => {
     const root = await tempRoot();
-    let now = Date.now();
-    const log = openLog({ backend: "jsonl", path: join(root, "store"), clock: () => now });
+    const log = openLog({ backend: "jsonl", path: join(root, "store") });
     try {
       for (let index = 0; index < 100; index += 1) {
         const run = await log.startRun("old", `job:${index}`);
         await log.endRun(run.runId);
       }
       const live = await log.startRun("live", "job:live");
-      now += 60_000;
+      ageRuns(root);
       expect((await log.runs({ active: true })).map((run) => run.runId)).toEqual([live.runId]);
 
       const listed = spyOn(fs, "readdirSync");
@@ -113,13 +118,11 @@ describe("the jsonl backend over a large history", () => {
 
   test("a quiet tick costs the same with many ended runs: directory and file calls are counted", async () => {
     const root = await tempRoot();
-    let now = Date.now();
     let fire: () => void = () => undefined;
     const events: string[] = [];
     const log = openLog({
       backend: "jsonl",
       path: join(root, "store"),
-      clock: () => now,
       repeat: (_ms, callback) => {
         fire = callback;
         return () => undefined;
@@ -135,7 +138,7 @@ describe("the jsonl backend over a large history", () => {
       }
       const live = await log.startRun("live", "job:live");
       await log.recordInput(null, "manual", "x", { n: 1 });
-      now += 60_000;
+      ageRuns(root);
       const stop = sub.call(log, (change) => events.push(change.runId));
       // Settle: the first call after a change lists the directory once.
       await log.runs({ active: true });
