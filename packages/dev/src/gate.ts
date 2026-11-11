@@ -802,6 +802,8 @@ function parseFinding(value: unknown): FindingShape | undefined {
 interface Report {
   readonly findings: readonly FindingShape[];
   readonly verified: readonly string[];
+  /** The commit the reviewer says it read; absent when it did not say, which dev refuses. */
+  readonly sha?: string;
 }
 
 function parseReport(text: string): Report | undefined {
@@ -821,9 +823,11 @@ function parseReport(text: string): Report | undefined {
     if (finding === undefined) return undefined;
     findings.push(finding);
   }
+  if (value.sha !== undefined && typeof value.sha !== "string") return undefined;
   return {
     findings,
     verified: value.verified as readonly string[],
+    ...(typeof value.sha === "string" ? { sha: value.sha } : {}),
   };
 }
 
@@ -968,8 +972,8 @@ function reviewPrompt(
     ].join("\n"),
     "## What to write",
     [
-      `Write a JSON object to ${resultPath} (inside the worktree you are in). The file must contain exactly:`,
-      '{ "findings": [{ "file": "<path>", "line": <number>, "severity": "critical|major|minor", "summary": "<one line>", "trigger": "<what causes it>" }], "verified": ["<what you checked>"] }',
+      `Write a JSON object to ${resultPath} (inside the worktree you are in). The file must contain exactly (\`sha\` is the commit you reviewed, ${sha}):`,
+      `{ "findings": [{ "file": "<path>", "line": <number>, "severity": "critical|major|minor", "summary": "<one line>", "trigger": "<what causes it>" }], "verified": ["<what you checked>"], "sha": "${sha}" }`,
       "List every problem you find; the gate decides which of them are old, not you.",
       ...(rework === undefined
         ? []
@@ -1844,7 +1848,16 @@ export async function runReview(
       previous.decision === "timed_out" ||
       previous.reason === "exhausted" ||
       previous.reason === "out_of_time";
-    if (finished && (previous.round === round || previous.run === ctx.runId)) {
+    // A round recorded for another commit is not this commit's review.
+    const sameCommit =
+      typeof previous.sha !== "string" ||
+      typeof attempt.verified !== "string" ||
+      previous.sha === attempt.verified;
+    if (
+      finished &&
+      sameCommit &&
+      (previous.round === round || previous.run === ctx.runId)
+    ) {
       return replayReview(previous, attempt);
     }
     if (previous.round === round && previous.decision === "unavailable") {
@@ -1876,8 +1889,26 @@ export async function runReview(
         sources: { ...used.sources, use: "fallback", args: "fallback" },
       };
     }
+    // The report names the commit it reviewed; one that is not the checked
+    // commit is refused, not recorded as a review of it.
+    if (
+      typeof sha === "string" &&
+      typeof recorded.sha === "string" &&
+      recorded.sha !== sha
+    ) {
+      const message = `the review report is for ${recorded.sha}, not the checked commit ${sha}`;
+      return finish(
+        { result: "failed", run: ctx.runId, sha, round, reason: "wrong_commit", message },
+        "failed",
+        { reason: "wrong_commit", message },
+      );
+    }
+    const stamped: ReviewRecord =
+      typeof sha === "string" && recorded.sha === undefined
+        ? { ...recorded, sha }
+        : recorded;
     const record: ReviewRecord =
-      used === undefined ? recorded : { ...recorded, reviewSettings: used };
+      used === undefined ? stamped : { ...stamped, reviewSettings: used };
     const written = await saveTaskGuarded(
       ctx,
       context.taskKey,
@@ -2363,6 +2394,18 @@ export async function runReview(
     }
     reviewTestHooks.afterCall?.({ role: action.role, reason: action.reason });
     let runRecord: ReviewRunRecord;
+    // A report for another commit is refused, not recorded as this commit's.
+    if (call.outcome === "report" && call.report?.sha !== sha) {
+      const message =
+        call.report?.sha === undefined
+          ? `the review report does not name the commit it reviewed; the checked commit is ${sha}`
+          : `the review report is for ${call.report.sha}, not the checked commit ${sha}`;
+      return finish(
+        { result: "failed", run: ctx.runId, sha, round, reason: "wrong_commit", message },
+        "failed",
+        { reason: "wrong_commit", message },
+      );
+    }
     if (call.outcome === "report" && call.report !== undefined) {
       // Dev decides what is pre-existing; a mark the model wrote is dropped.
       const findings: ReviewFinding[] = call.report.findings.map((reported) => {

@@ -738,12 +738,19 @@ the row fields.
 | T-0250-M2 | packages/dev/src/service.ts | `refreshPlanCounts` rethrew SQLITE_BUSY after the task was already written | `a task that was written is not reported as failed when the plan counts hit a busy store` |
 | T-0250-M5 | packages/dev/src/service.ts | `writePlan` rethrew SQLITE_BUSY from the repository-count refresh after the plan was written | `a plan that was confirmed is not reported as failed when the repository counts hit a busy store` |
 
+## T-0260 — a verify and a review run on the worker's last commit
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0260-M1 | packages/dev/src/steps.ts | the work step kept the earlier verify result when the worker had committed past the verified commit | `work that ends with no new commit > a commit the worker makes last is verified, not answered by the verify of the commit before it` |
 ## T-0246 — a cancelled task's run ends when the settings cannot be read
 
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0246-M1 | packages/dev/src/schedule.ts | the sweep of cancelled tasks' runs ran after the settings were read, so unreadable settings skipped it | `a run on a cancelled task is ended even when the repository's settings cannot be read` |
 | T-0122-M2 | packages/dev/src/views.ts | a plan listed a Tasks section again | `dev views > a plan loads its request and has no tasks section` |
+| T-0260-M2 | packages/dev/src/gate.ts | review accepted a report whose sha was not the checked commit | `dev/review > a report whose sha is not the checked commit is refused` |
 | T-0239-M3 | packages/dev/src/marks.ts | a task whose step waits for a check place kept the `checking` mark | `dev views > a task whose check waits for a place says so, with how many are ahead, until it takes the place` |
 | T-0239-M4 | packages/dev/src/places.ts | a check that took its place did not end its report to the kernel before the command started | `check places > a waiting check tells the kernel and the task its place group until it takes the place` |
 | T-0239-M8 | packages/dev/src/place-wait.ts | counting the waiters and saving the wait record was not one locked turn, so two checks reaching a held place together both showed 0 ahead | `dev views > a task whose check waits for a place says so, with how many are ahead, until it takes the place` |
+| T-0260-M3 | packages/dev/src/gate.ts | review accepted a report that named no commit | `dev/review > a report that names no commit is refused` |

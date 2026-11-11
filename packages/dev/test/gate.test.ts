@@ -15,7 +15,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -163,7 +163,28 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
       {
         name: "agent",
         results: ["done", "failed", "interrupted"],
-        async run(_ctx, params): Promise<PluginStepResult> {
+        async run(ctx, params): Promise<PluginStepResult> {
+          const outcome = await runMode(ctx, params);
+          const given = params as { readonly cwd: string; readonly resultPath: string; readonly args?: readonly string[] };
+          const mode = given.args?.[0] ?? "none";
+          // A reviewer names the commit it read; two modes leave it out or get it wrong.
+          if (mode !== "no-sha" && mode !== "stale-sha" && existsSync(given.resultPath) && statSync(given.resultPath).isFile()) {
+            try {
+              const written: unknown = JSON.parse(readFileSync(given.resultPath, "utf8"));
+              if (typeof written === "object" && written !== null && !("sha" in written)) {
+                const head = Bun.spawnSync({ cmd: ["git", "rev-parse", "HEAD"], cwd: given.cwd }).stdout.toString().trim();
+                writeFileSync(given.resultPath, JSON.stringify({ ...written, sha: head }));
+              }
+            } catch {
+              // An invalid report stays as the test wrote it.
+            }
+          }
+          return outcome;
+        },
+      },
+    ],
+  });
+  async function runMode(_ctx: unknown, params: unknown): Promise<PluginStepResult> {
           count += 1;
           const input = params as {
             readonly prompt: string;
@@ -381,6 +402,14 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             writeFileSync(input.resultPath, "this is not JSON\n");
             return { result: "done", data: {} };
           }
+          if (mode === "stale-sha") {
+            // A report for a commit that is not the checked one.
+            writeFileSync(
+              input.resultPath,
+              JSON.stringify({ findings: [], verified: ["the diff"], sha: "0".repeat(40) }),
+            );
+            return { result: "done", data: {} };
+          }
           if (mode.startsWith("file:")) {
             // The findings come from a file, so a test can change them per round.
             writeFileSync(
@@ -426,10 +455,7 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             }),
           );
           return { result: "done", data: {} };
-        },
-      },
-    ],
-  });
+  }
   return { plugin, calls };
 }
 
@@ -903,6 +929,24 @@ describe("dev/review", () => {
         findings: [expect.objectContaining({ severity: "minor", summary: "a minor thing" })],
       },
     ]);
+  });
+
+  test("a report that names no commit is refused", async () => {
+    const state = await fixture({ reviewerArgs: ["no-sha"] });
+    await verify(state);
+    const result = await review(state);
+    expect(result.result).toBe("failed");
+    expect(result.data?.reason).toBe("wrong_commit");
+    expect(String(result.data?.message)).toContain("does not name the commit");
+  });
+
+  test("a report whose sha is not the checked commit is refused", async () => {
+    const state = await fixture({ reviewerArgs: ["stale-sha"] });
+    const verified = await verify(state);
+    const result = await review(state);
+    expect(result.result).toBe("failed");
+    expect(result.data?.reason).toBe("wrong_commit");
+    expect((await taskOf(state)).attempt?.review?.sha).toBe(verified.data?.verified as string);
   });
 
   test("a finding that failed the round is not a note", async () => {
@@ -2134,6 +2178,7 @@ describe("dev/review crash before the store copy", () => {
     expect(JSON.parse(readFileSync(stored, "utf8"))).toEqual({
       findings: [],
       verified: ["the diff"],
+      sha: (await taskOf(state)).attempt?.verified,
     });
   });
 });
@@ -2469,7 +2514,10 @@ describe("dev/review report in the workspace", () => {
       `${state.taskId}-attempt-1-review-1.json`,
     );
     mkdirSync(dirname(stored), { recursive: true });
-    writeFileSync(stored, JSON.stringify({ findings: [], verified: ["old"] }));
+    writeFileSync(
+      stored,
+      JSON.stringify({ findings: [], verified: ["old"], sha: task.attempt?.verified }),
+    );
     await state.store.put("task", state.taskKey, {
       ...task,
       attempt: {
