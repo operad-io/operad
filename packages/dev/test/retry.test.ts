@@ -403,7 +403,9 @@ describe("a step that is not loaded, for several tasks", () => {
     // Each task waits for a reason of its own (the fake worker changed
     // nothing), not because the step was missing.
     expect(waitingByTask(w)).toEqual(
-      [...w.tasks].sort().map((task) => ({ task, reason: "work did nothing" })),
+      w.tasks
+        .map((key) => ({ task: key.slice(key.indexOf("/") + 1), reason: "work did nothing" }))
+        .sort((a, b) => a.task.localeCompare(b.task)),
     );
   });
 });
