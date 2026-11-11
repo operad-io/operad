@@ -1,4 +1,4 @@
-import { closeSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -129,12 +129,26 @@ function isClosedPipe(error: unknown): boolean {
 
 /**
  * Writes to a process stream. A closed pipe (EPIPE) stops all output without a
- * message; any other write error is thrown as before.
+ * message; any other write error is thrown as before. The write is synchronous
+ * on the descriptor: Bun reports a write queued behind a full pipe as done and
+ * drops it at exit, so a reader that closes meanwhile went unseen and the
+ * status was 0.
  */
 function writeStream(stream: NodeJS.WriteStream, text: string): void {
   if (outputClosed) return;
+  const fd = stream === process.stderr ? 2 : 1;
   try {
-    stream.write(text);
+    const bytes = Buffer.from(text);
+    let offset = 0;
+    while (offset < bytes.length) {
+      try {
+        offset += writeSync(fd, bytes, offset);
+      } catch (error) {
+        if ((error as { code?: unknown }).code !== "EAGAIN") throw error;
+        // A non-blocking pipe is full: wait for the reader to take some.
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+      }
+    }
   } catch (error) {
     if (!isClosedPipe(error)) throw error;
     outputClosed = true;
