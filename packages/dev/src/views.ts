@@ -359,7 +359,7 @@ function shownCommand(command: string, worktree: string | undefined): string {
   if (worktree !== undefined && worktree.length > 0) {
     const root = worktree.replace(/\/+$/, "");
     const path = escapeRegExp(root);
-    text = text.replace(new RegExp(`^\\s*cd\\s+(?:"${path}"|'${path}'|${path})/?\\s*(?:;|&&)\\s*`), "");
+    text = text.replace(new RegExp(`^[ \\t]*cd[ \\t]+(?:"${path}"|'${path}'|${path})/?[ \\t]*(?:;|&&)[ \\t]*`), "");
     text = text.replace(new RegExp(`${path}/`, "g"), "");
     text = text.replace(new RegExp(`${path}(?![\\w./-])`, "g"), ".");
   }
