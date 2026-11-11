@@ -29,6 +29,9 @@ interface Run {
   readonly whys: readonly string[];
   readonly verified: unknown;
   readonly head: string;
+  readonly replayed: readonly boolean[];
+  /** The commit each review call found checked out. */
+  readonly reviewed: readonly string[];
 }
 
 /** Runs the dev flow once; the branch has `commits` made before the run and the worker commits nothing. */
@@ -36,6 +39,10 @@ async function run(options: {
   readonly commits: number;
   /** An earlier verify of the branch head, recorded in the task before the run. */
   readonly verify?: "pass" | "fail";
+  /** Record that verify as made by the run itself, as in a rework round of one run. */
+  readonly sameRun?: boolean;
+  /** Commits the worker makes in its worktree before it ends. */
+  readonly workerCommits?: number;
 }): Promise<Run> {
   const root = await tempRoot();
   const remote = await makeRemote(root);
@@ -49,6 +56,15 @@ async function run(options: {
       mainBranch: "main",
       worktreeRoot: ".operad-worktrees",
       worker: { use: "fake-harness/agent", args: [] },
+      gate: { commands: ["true"], commandTimeoutSecs: 60 },
+      reviewer: {
+        use: "fake-reviewer/agent",
+        args: [],
+        fixLevel: "major",
+        retrySecs: 120,
+        maxFileDiffBytes: 200_000,
+        maxDiffBytes: 1_000_000,
+      },
     }),
   );
   const plan = await addPlan(store, { repository, slug: "plan", title: "Plan", request: "do it" });
@@ -64,7 +80,8 @@ async function run(options: {
     }
     gitOrThrow(remote.repository, ["worktree", "remove", "--force", path]);
   }
-  if (options.verify !== undefined) {
+  const seed = async (runId: string): Promise<void> => {
+    if (options.verify === undefined) return;
     const head = gitOrThrow(remote.repository, ["rev-parse", `work/${taskId}`]);
     const stored = await store.get("task", task.id);
     if (stored === undefined) throw new Error("task disappeared");
@@ -77,14 +94,15 @@ async function run(options: {
         attempt: {
           ...current.attempt,
           number: 1,
-          run: "earlier-run",
+          run: runId,
           verified: head,
-          verify: { result: options.verify, run: "earlier-run" },
+          verify: { result: options.verify, run: runId },
         },
       },
       "test:verified",
     );
-  }
+  };
+  if (options.sameRun !== true) await seed("earlier-run");
   const worker = definePlugin({
     name: "fake-harness",
     kind: "harness",
@@ -93,18 +111,49 @@ async function run(options: {
       {
         name: "agent",
         results: ["done", "failed", "interrupted"],
-        run: (): PluginStepResult => ({ result: "done", data: {} }),
+        run: async (): Promise<PluginStepResult> => {
+          for (let index = 0; index < (options.workerCommits ?? 0); index += 1) {
+            const stored = await store.get("task", task.id);
+            const path = stored === undefined ? undefined : taskData(stored.data).attempt?.worktree;
+            if (typeof path !== "string") throw new Error("the worker has no worktree");
+            await commitIn(path, `w${index}.txt`, "y\n", `worker commit ${index}`);
+          }
+          return { result: "done", data: {} };
+        },
+      },
+    ],
+  });
+  const reviewed: string[] = [];
+  const reviewer = definePlugin({
+    name: "fake-reviewer",
+    kind: "harness",
+    version: "0.0.0",
+    steps: [
+      {
+        name: "agent",
+        results: ["done", "failed", "interrupted"],
+        run: (_ctx, params): PluginStepResult => {
+          const input = params as { readonly cwd: string; readonly resultPath: string };
+          const seen = gitOrThrow(input.cwd, ["rev-parse", "HEAD"]);
+          reviewed.push(seen);
+          writeFileSync(
+            input.resultPath,
+            JSON.stringify({ findings: [], verified: ["the diff"], sha: seen }),
+          );
+          return { result: "done", data: {} };
+        },
       },
     ],
   });
   const registry = new PluginRegistry(
-    [createDevPlugin(), createPoolPlugin(), createShellPlugin(), worker] as never,
+    [createDevPlugin(), createPoolPlugin(), createShellPlugin(), worker, reviewer] as never,
     { home: root, cwd: remote.repository, store },
   );
   const log = openLog({ backend: "jsonl", path: join(root, "log") });
   const found = registry.flow("dev");
   if (found === undefined) throw new Error("the dev flow is missing");
   const { runId } = await log.startRun("dev", `task:${task.id}`);
+  if (options.sameRun === true) await seed(runId);
   const events: StepEvent[] = [];
   const object = parseObjectKey(`task:${task.id}`);
   const outcome = await new Runner({
@@ -119,9 +168,13 @@ async function run(options: {
   }).run();
   const steps: string[] = [];
   const whys: string[] = [];
+  const replayed: boolean[] = [];
   for await (const fact of log.read(runId)) {
     const payload = fact.payload as { step?: string; data?: { message?: unknown } };
     if (fact.kind === "step_entered" && typeof payload.step === "string") steps.push(payload.step);
+    if (fact.kind === "step_result" && payload.step === "verify") {
+      replayed.push((payload.data as { replayed?: unknown } | undefined)?.replayed === true);
+    }
     if (fact.kind === "step_result" && payload.step === "work") {
       whys.push(String(payload.data?.message ?? ""));
     }
@@ -137,6 +190,8 @@ async function run(options: {
       .map((event) => String((event.data as { reason?: unknown } | undefined)?.reason)),
     steps,
     whys,
+    replayed,
+    reviewed,
     verified: data.attempt?.verified ?? null,
     head: path === "" ? "" : gitOrThrow(path, ["rev-parse", "HEAD"]),
   };
@@ -169,5 +224,14 @@ describe("work that ends with no new commit", () => {
     expect(result.steps.indexOf("verify")).toBeGreaterThan(result.steps.indexOf("work"));
     expect(result.whys).toEqual([NOTE]);
     expect(result.reasons).not.toContain("work did nothing");
+  });
+
+  test("a worker that commits twice, the second just before it ends, gets that commit verified and reviewed", async () => {
+    const result = await run({ commits: 1, verify: "pass", sameRun: true, workerCommits: 2 });
+    expect(result.steps.indexOf("verify")).toBeGreaterThan(result.steps.indexOf("work"));
+    expect(result.steps.indexOf("review")).toBeGreaterThan(result.steps.indexOf("verify"));
+    expect(result.replayed).toEqual([false]);
+    expect(result.verified).toBe(result.head);
+    expect(result.reviewed).toEqual([result.head]);
   });
 });

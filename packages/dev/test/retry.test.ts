@@ -302,6 +302,24 @@ describe("an environment failure of the work step", () => {
     expect(task.phase).toBe("waiting");
   });
 
+  test("a dropped model connection is retried once by dev/retry, not sent to a person", async () => {
+    const worker = scripted((call) =>
+      call === 1
+        ? { result: "failed", data: { message: "The socket connection was closed unexpectedly" } }
+        : DONE,
+    );
+    const w = await world(1);
+    const registry = registryOf(w, [createDevPlugin(), createPoolPlugin(), worker.plugin]);
+    const runs = new Map<string, string>();
+    await drive(w, registry, runs);
+    const runId = runs.get(w.tasks[0] as string) as string;
+    expect(worker.state.calls).toBe(2);
+    expect(await visits(w, runId, "retry_work_failed")).toBe(1);
+    const task = await taskOf(w, w.tasks[0] as string);
+    expect(task.retry?.cause).toBe("model connection dropped during work");
+    expect(waitingReasons(w)).toEqual(["work did nothing"]);
+  });
+
   test("a failure of the task's own work is not retried", async () => {
     const worker = scripted(() => ({
       result: "failed",

@@ -478,6 +478,13 @@ export interface StepContext extends PluginBaseContext {
    * used. Call it before the call the permission covers.
    */
   useGrant(waitId: string): Promise<boolean>;
+  /**
+   * Tells the kernel this step waits for a place the plugin manages itself
+   * (not a step limit), under `key`; the running view shows it queued. Call
+   * the returned function when the wait is over. Undefined when the host has
+   * no limiter.
+   */
+  readonly queued?: ((key: string) => Promise<() => Promise<void>>) | undefined;
   /** Whether a plugin that declares this step is loaded now. */
   readonly stepLoaded?: ((use: string) => boolean) | undefined;
   /**
@@ -527,6 +534,12 @@ export interface StepLimitRequest {
 /** Hands out places under limit keys to steps a step starts with `runStep`. */
 export interface StepLimiter {
   acquire(request: StepLimitRequest): Promise<() => Promise<void>>;
+  /**
+   * Records that the step waits for a place that it manages itself, so the
+   * running view shows the run queued under `key`. The returned function ends
+   * the wait. The kernel grants nothing for it.
+   */
+  report(request: { readonly key: string }): Promise<() => Promise<void>>;
 }
 
 /** Options for running a step through the registry. */

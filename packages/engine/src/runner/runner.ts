@@ -2,7 +2,7 @@
 
 import type { FlowDefinition } from "../flow/types.ts";
 import type { Input, KernelState, StartInput } from "../kernel/types.ts";
-import { SeqConflictError } from "../log/errors.ts";
+import { RunEndedError, SeqConflictError } from "../log/errors.ts";
 import type { JsonValue, LogBackend } from "../log/types.ts";
 import type {
   AskRequest,
@@ -69,6 +69,8 @@ type StepWorkerLimit =
       readonly use: string;
       readonly key: string;
       readonly concurrent: number;
+      /** A wait the step reports for a place it manages itself. */
+      readonly report?: boolean;
     }
   | { readonly kind: "limit-cancel"; readonly id: number }
   | { readonly kind: "limit-release"; readonly id: number };
@@ -299,7 +301,8 @@ export class Runner {
   /** The wall time of the step that is running now. */
   private activeTimeout: StepTimeout | undefined;
   private readonly cwd: string | undefined;
-  private readonly signal: AbortSignal | undefined;
+  /** The caller's signal; while `run` drives the run it also fires when the run is ended elsewhere. */
+  private signal: AbortSignal | undefined;
   private readonly lockRoot: string | undefined;
   private readonly object: ObjectRef | undefined;
   private readonly trigger: TriggerView | undefined;
@@ -368,6 +371,9 @@ export class Runner {
         );
       }
     }
+    const given = this.signal;
+    const watch = this.watchForEnd();
+    this.signal = given === undefined ? watch.signal : AbortSignal.any([given, watch.signal]);
     try {
       let state = await readState(this.log, this.runId);
       if (state.status === "ended") {
@@ -418,8 +424,36 @@ export class Runner {
       }
       return outcome;
     } finally {
+      watch.stop();
+      this.signal = given;
       lock?.release();
     }
+  }
+
+  /**
+   * Fires the returned signal when another process ends the run (a cancel)
+   * while this one is inside a step, so the step stops what it started. The
+   * run's own end does the same, after the loop has nothing left to do.
+   */
+  private watchForEnd(): { readonly signal: AbortSignal; readonly stop: () => void } {
+    const controller = new AbortController();
+    const unsubscribe = this.log.subscribe?.((change) => {
+      if (change.runId !== this.runId || controller.signal.aborted) return;
+      void readState(this.log, this.runId).then(
+        (state) => {
+          if (state.status === "ended") controller.abort();
+        },
+        () => {
+          // The next change reads again.
+        },
+      );
+    });
+    return {
+      signal: controller.signal,
+      stop: () => {
+        unsubscribe?.();
+      },
+    };
   }
 
   /**
@@ -670,17 +704,28 @@ export class Runner {
             result,
             data: data as unknown as JsonValue,
           };
-    await applyInput(
-      this.log,
-      this.flow,
-      this.runId,
-      state,
-      input,
-      this.clock(),
-      "runner",
-      `result:${effectId}`,
-      this.hooks(),
-    );
+    try {
+      await applyInput(
+        this.log,
+        this.flow,
+        this.runId,
+        state,
+        input,
+        this.clock(),
+        "runner",
+        `result:${effectId}`,
+        this.hooks(),
+      );
+    } catch (error) {
+      // The run was cancelled while the step ran; its result has nowhere to go.
+      if (error instanceof RunEndedError) return;
+      throw error;
+    }
+  }
+
+  /** Read afresh: the signal may fire during an await. */
+  private signalAborted(): boolean {
+    return this.signal?.aborted === true;
   }
 
   /**
@@ -709,6 +754,13 @@ export class Runner {
     }
 
     const object = await this.runObject();
+    // A cancel that came while the object was read must not start the step.
+    if (this.signalAborted()) {
+      return this.failure(use, preferInterrupted, {
+        reason: "aborted",
+        message: "the step was cancelled",
+      });
+    }
     const sources =
       this.registry.store.kind === "file"
         ? allSources(this.registry.pluginSources())
@@ -1033,6 +1085,11 @@ export class Runner {
     const wait = new AbortController();
     waits.set(message.id, wait);
     try {
+      if (message.report === true) {
+        held.set(message.id, await limiter.report({ key: message.key }));
+        reply(true);
+        return;
+      }
       const release = await limiter.acquire({
         use: message.use,
         key: message.key,

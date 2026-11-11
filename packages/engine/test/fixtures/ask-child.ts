@@ -72,6 +72,10 @@ const dying: LogBackend = {
   readInputs: () => log.readInputs(),
   recordOutcome: (inputId, kind, payload) => log.recordOutcome(inputId, kind, payload),
   readOutcomes: () => log.readOutcomes(),
+  readInputsAfter: (position) => log.readInputsAfter(position),
+  findInput: (inputId) => log.findInput(inputId),
+  readOutcome: (inputId, kind) => log.readOutcome(inputId, kind),
+  readOutcomesAfter: (seq) => log.readOutcomesAfter(seq),
   subscribe: (listener) => log.subscribe?.(listener) ?? (() => undefined),
   close: () => log.close(),
 };

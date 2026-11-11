@@ -7,6 +7,7 @@
 
 import { join } from "node:path";
 import type { StepContext } from "@operad-io/engine";
+import { taskPlaceWait } from "./place-wait.ts";
 import { withLockFile, waitForChange } from "@operad-io/engine/platform";
 
 /** How many checks may run at once when the home's dev settings say nothing. */
@@ -49,6 +50,13 @@ export interface CheckPlaces {
   /** Writes a line to the step's log. */
   readonly log: (line: string) => Promise<unknown> | unknown;
   readonly signal?: AbortSignal | undefined;
+  /** Tells the kernel the step waits for a place, so the running view shows it queued. */
+  readonly queued?: StepContext["queued"];
+  /**
+   * Says what the step waits for (the place group), or null once it does not;
+   * called again at each look while it waits. The task's row shows it.
+   */
+  readonly waiting?: ((key: string | null) => Promise<void>) | undefined;
   /** How a waiting check waits before it looks again; tests inject this. */
   readonly wait?: ((ms: number) => Promise<void>) | undefined;
 }
@@ -120,39 +128,76 @@ export async function withCheckPlace<T>(
   const wait =
     places.wait ??
     ((ms: number) => waitForChange(directory, entry, ms));
+  // What the kernel was told: the place group the step is queued under.
+  let reported: { key: string; end: () => Promise<void> } | undefined;
+  const stopWaiting = async (): Promise<void> => {
+    const open = reported;
+    reported = undefined;
+    // Neither the running view nor the row may fail the check.
+    await open?.end().catch(() => undefined);
+    await places.waiting?.(null).catch(() => undefined);
+  };
+  const started = async (): Promise<T> => {
+    await stopWaiting();
+    return work();
+  };
   const inner =
     repository === undefined
-      ? work
+      ? started
       : () =>
           takeOne(
             directory,
             repositoryKey(repository),
             repository.places,
             "repository",
-            work,
+            started,
           );
   let said: string | undefined;
-  for (;;) {
-    if (places.signal?.aborted === true) throw new CheckPlaceCancelled();
-    try {
-      return await takeOne(directory, "place", places.checks, "home", inner);
-    } catch (error) {
-      if (!(error instanceof PlaceBusy)) throw error;
-      entry =
-        error.pool === "repository" && repository !== undefined
-          ? `${repositoryKey(repository)}-1.lock`
-          : "place-1.lock";
-      const line =
-        error.pool === "home" || repository === undefined
-          ? `waiting for a check place: ${error.inUse} in use`
-          : `waiting for a check place of ${repository.name}: ${error.inUse} in use`;
-      if (said !== line) {
-        said = line;
-        await places.log(line);
+  try {
+    for (;;) {
+      if (places.signal?.aborted === true) throw new CheckPlaceCancelled();
+      try {
+        return await takeOne(directory, "place", places.checks, "home", inner);
+      } catch (error) {
+        if (!(error instanceof PlaceBusy)) throw error;
+        entry =
+          error.pool === "repository" && repository !== undefined
+            ? `${repositoryKey(repository)}-1.lock`
+            : "place-1.lock";
+        const line =
+          error.pool === "home" || repository === undefined
+            ? `waiting for a check place: ${error.inUse} in use`
+            : `waiting for a check place of ${repository.name}: ${error.inUse} in use`;
+        if (said !== line) {
+          said = line;
+          await places.log(line);
+        }
+        const key =
+          error.pool === "repository" && repository !== undefined
+            ? placeGroupOf(repository.name)
+            : placeGroupOf(undefined);
+        if (reported?.key !== key && places.queued !== undefined) {
+          const previous = reported;
+          reported = undefined;
+          await previous?.end().catch(() => undefined);
+          try {
+            reported = { key, end: await places.queued(key) };
+          } catch {
+            reported = undefined;
+          }
+        }
+        await places.waiting?.(key).catch(() => undefined);
       }
+      await wait(RECHECK_MS);
     }
-    await wait(RECHECK_MS);
+  } finally {
+    await stopWaiting();
   }
+}
+
+/** The place group a waiting check is queued under: the words its log line uses. */
+export function placeGroupOf(repository: string | undefined): string {
+  return repository === undefined ? "check place" : `check place of ${repository}`;
 }
 
 /** The places a step's checks take: the home's limit, the repository's, the step's own log. */
@@ -160,6 +205,7 @@ export function checkPlaces(
   ctx: StepContext,
   repository?: { readonly name: string; readonly path: string },
   repositoryLimit?: number,
+  taskKey?: string,
 ): CheckPlaces {
   return {
     home: ctx.home,
@@ -170,5 +216,7 @@ export function checkPlaces(
         : { name: repository.name, path: repository.path, places: repositoryLimit },
     log: (line) => ctx.logger.write(line),
     signal: ctx.signal,
+    queued: ctx.queued,
+    ...(taskKey === undefined ? {} : { waiting: (key) => taskPlaceWait(ctx, taskKey, key) }),
   };
 }

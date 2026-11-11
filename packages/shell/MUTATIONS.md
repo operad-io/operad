@@ -4,6 +4,12 @@ Rows whose mutation broke code in `packages/shell/`, in the order they were
 recorded. The root [MUTATIONS.md](../../MUTATIONS.md) explains the format and
 the row fields.
 
+## T-0019-http-api — rework 2: the cancel test waits on no real timer
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0019-http-api-M9 | packages/shell/src/process.ts | the stop skipped its grace SIGKILL, so a line that ignores SIGTERM kept the group alive | `shell/command > cancel stops the process group and reports interrupted` (timed out after 5000ms) (removed) |
+
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0017-M1 | packages/shell/src/index.ts | reported a non-zero exit as a pass | `shell/command > a non-zero exit is a failure with its code and output path` |

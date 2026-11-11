@@ -28,4 +28,10 @@ describe("operad running line", () => {
       "196b344b  review  3m 10s  run 4h 09m",
     );
   });
+
+  test("a step that waited for a place shows its queued time after the step time", () => {
+    expect(runningLine({ ...base, queuedMs: 9 * 60 * 1000 })).toBe(
+      "operad/T-0048-type-filters  review  3m 10s  queued 9m 00s  Object type filters  run 4h 09m",
+    );
+  });
 });

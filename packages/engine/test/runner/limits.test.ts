@@ -182,6 +182,48 @@ async function setup(mode: "memory" | "file"): Promise<Env> {
 }
 
 for (const mode of ["memory", "file"] as const) {
+  describe(`reported waits (${mode})`, () => {
+    test("two steps that report a wait show queued with the right ahead, then running", async () => {
+      const env = await setup(mode);
+      try {
+        const a = await env.create("lim-reported", "a");
+        const b = await env.create("lim-reported", "b");
+        const runs: Promise<RunnerOutcome>[] = [env.runner(a, "a").run()];
+        await fileExists(join(env.dir, "queued-a"));
+        runs.push(env.runner(b, "b").run());
+        await fileExists(join(env.dir, "queued-b"));
+
+        const waiting = await listRunning(env.log);
+        const first = waiting.find((item) => item.runId === a);
+        const second = waiting.find((item) => item.runId === b);
+        expect(first?.queued).toEqual({ key: "shared place", ahead: 0 });
+        expect(second?.queued).toEqual({ key: "shared place", ahead: 1 });
+        expect(second?.stepLabel).toBe("work queued (shared place, 1 ahead)");
+        // A step that waits has not started running.
+        expect(second?.stepStartedAt).toBeNull();
+        expect(second?.stepElapsedMs).toBe(0);
+
+        // The place is taken: the row is running again and the wait counts as queued time.
+        writeFileSync(join(env.dir, "place-a"), "go");
+        await env.started("a");
+        const after = await listRunning(env.log);
+        const taken = after.find((item) => item.runId === a);
+        const behind = after.find((item) => item.runId === b);
+        expect(taken?.queued).toBeNull();
+        expect(taken?.stepLabel).toBe("work");
+        expect(taken?.stepStartedAt).not.toBeNull();
+        expect(taken?.queuedMs).toBeGreaterThan(0);
+        expect(behind?.queued).toEqual({ key: "shared place", ahead: 0 });
+
+        env.open("a", "b");
+        writeFileSync(join(env.dir, "place-b"), "go");
+        expect(await Promise.all(runs)).toEqual(["ended", "ended"]);
+      } finally {
+        await env.close();
+      }
+    });
+  });
+
   describe(`step limits (${mode})`, () => {
     test("two steps run, the third starts when one ends", async () => {
       const env = await setup(mode);

@@ -18,6 +18,7 @@
  */
 
 import type { AskAnswer, AskRequest } from "@operad-io/engine";
+import { isRecord } from "./step.ts";
 
 /** The choice that lets the one call through. */
 export const ALLOW_ONCE = "allow_once";
@@ -37,10 +38,6 @@ export interface AskCall {
   readonly shown: string;
   /** The session to continue after a late answer; null when the program has none. */
   readonly session: string | null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** The `ask_call` line, if this is one. */

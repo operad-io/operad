@@ -35,6 +35,7 @@ import {
   type TaskAttempt,
   type TaskData,
 } from "./model.ts";
+import { placeWaitNote } from "./place-wait.ts";
 import { planMark, repositoryMark, taskBadge, taskMark } from "./marks.ts";
 import { git, workBranch } from "./steps.ts";
 import { repositoryMetrics } from "./throughput.ts";
@@ -57,6 +58,8 @@ function costNote(cost: unknown, quality?: unknown): string | undefined {
  * sees it next to the task before deciding what to do.
  */
 function waitNote(task: TaskData): string | undefined {
+  const place = TASK_FINAL_STATES.includes(task.phase) ? undefined : placeWaitNote(task);
+  if (place !== undefined) return place;
   const turn = task.attempt?.integrationWait;
   // A task that ended (cancelled while it waited) is not waiting any more.
   if (
@@ -104,24 +107,6 @@ function workerNote(task: TaskData): string | undefined {
 
 function cell(text: string): string {
   return text.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
-}
-
-function tasksTable(
-  tasks: readonly StoredObject[],
-): string {
-  if (tasks.length === 0) return "_No tasks._";
-  const lines = [
-    "| id | title | phase | after |",
-    "| --- | --- | --- | --- |",
-  ];
-  for (const object of tasks) {
-    const data = taskData(object.data);
-    const after = data.after.length === 0 ? "-" : data.after.join(", ");
-    lines.push(
-      `| ${cell(bareId(object.id))} | ${cell(data.title)} | ${cell(data.phase)} | ${cell(after)} |`,
-    );
-  }
-  return lines.join("\n");
 }
 
 /** A list names each row's repository once more than one is registered. */
@@ -202,7 +187,6 @@ export const planViews: ObjectViews = {
   sections(): readonly ViewSection[] {
     return [
       { id: "request", title: "Request" },
-      { id: "tasks", title: "Tasks" },
     ];
   },
 
@@ -210,20 +194,6 @@ export const planViews: ObjectViews = {
     const plan = planData(object.data);
     if (sectionId === "request") {
       return { markdown: plan.request };
-    }
-    if (sectionId === "tasks") {
-      const tasks = (await listAll(ctx.store, "task"))
-        .filter((candidate) => {
-          const task = taskData(candidate.data);
-          return (
-            task.repository === plan.repository &&
-            task.plan === bareId(object.id)
-          );
-        })
-        .sort((left, right) =>
-          bareId(left.id).localeCompare(bareId(right.id)),
-        );
-      return { markdown: tasksTable(tasks) };
     }
     return { markdown: "" };
   },

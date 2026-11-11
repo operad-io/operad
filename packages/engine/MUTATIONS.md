@@ -4,6 +4,77 @@ Rows whose mutation broke code in `packages/engine/`, in the order they were
 recorded. The root [MUTATIONS.md](../../MUTATIONS.md) explains the format and
 the row fields.
 
+## TK0012 — rework 2: wait for the writer without polling
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0012-M9 | `packages/engine/src/platform/sqlite-open.ts` | `enableWal` rethrew `SQLITE_BUSY` instead of waiting for the other writer through the busy handler | `switching to WAL waits while another process holds the database` (TK0008 replaced the 100 ms hold with a release the test sends once the opener reports SQLITE_BUSY; the old name was `opening waits while another process holds the store`) |
+
+## TK0016 — rework 4: a failure is never recorded as a success result
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0016-M18 | packages/engine/src/runner/runner.ts | removed the `preferInterrupted` early return from `chooseFailure`, so a failed check was named "failed", which a wait step does not accept; the failure was never recorded and the run stayed blocked (re-recorded in TK0008: it does not report a success result) | `runner > a check that throws is not recorded as ready` |
+
+## TK0017 — rework 3: bounded cleanup and injected time
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0017-M12 | packages/engine/src/platform/process-group.ts | sent the grace SIGKILL without checking `sentinelExited()` (the check replaced the removed `groupExists` one; re-recorded in TK0008, with the test it never had) | `process groups > nothing is signaled after the sentinel exits` |
+
+## T-0019-http-api — the HTTP interface of serve
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0019-http-api-M1 | packages/engine/src/http/token.ts | `tokensEqual` returned true without comparing | `http server > refuses a missing, a wrong and a rotated token` |
+| T-0019-http-api-M2 | packages/engine/src/http/token.ts | `rotateHttpToken` kept the current token instead of generating a new one | `http server > refuses a missing, a wrong and a rotated token` |
+| T-0019-http-api-M3 | packages/engine/src/http/address.ts | accepted every `172.x` address as RFC 1918 instead of `172.16.0.0/12` | `http server > classifies every listen address class and refuses a wildcard` |
+| T-0019-http-api-M4 | packages/engine/src/http/server.ts | mapped a section timeout to `400` instead of `504` | `http server > lists types and objects, gets one object, and pages a section` |
+| T-0019-http-api-M5 | packages/engine/src/http/server.ts | recorded the token itself as the HTTP actor id | `http server > acts with a note, refuses without one, and needs confirmed for a confirm action`; `http server > never writes the token to the store, its facts or history` |
+| T-0019-http-api-M6 | packages/engine/src/http/server.ts | ignored `Last-Event-ID`, so a reconnect replayed nothing | `http server > streams changes, resumes from Last-Event-ID and resets an old id` |
+| T-0019-http-api-M7 | packages/engine/src/config/config.ts | ignored `http.enabled` and always kept the interface off | `operad config > reads http options and applies their defaults` |
+| T-0019-http-api-M8 | packages/engine/src/http/server.ts | skipped the listen-address check before binding | `operad serve http > refuses a wildcard at start and names the entry` |
+
+## T-0019-http-api — rework 3: SSE ids, stream limits, rotation and the HTTP confirm hint
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0019-http-api-M10 | packages/engine/src/http/server.ts | the resume check ignored the boot id, so an id from an earlier serve looked current | `http server > a Last-Event-ID from an earlier serve gets one reset` |
+| T-0019-http-api-M11 | packages/engine/src/http/server.ts | `push` accepted every event, so a client that stopped reading kept an unbounded queue | `http server > ends a client that stops reading instead of growing without bound` |
+| T-0019-http-api-M12 | packages/engine/src/http/server.ts | the token watcher noticed a rotation but did not end the open streams | `http server > rotating the token ends the event streams opened with the old one` |
+| T-0019-http-api-M13 | packages/engine/src/http/server.ts | `Bun.serve` got a body limit eight times the protocol's | `http server > refuses a request body larger than one mebibyte` |
+| T-0019-http-api-M14 | packages/engine/src/views/presentation.ts | the confirm refusal always said `pass --yes`, also over HTTP | `http server > acts with a note, refuses without one, and needs confirmed for a confirm action` |
+
+## T-0019-http-api — rework 5: the act body's optional id
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0019-http-api-M16 | packages/engine/src/http/server.ts | made `POST /v1/act` require an id again, so the handler answered `400` before the views could name the missing object | `http server > accepts an act body without an id and lets the views name the missing object` |
+
+## T-0020 — pairing, links and the notification hook
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0020-M1 | packages/engine/src/notify/notify.ts | dropped the `recorded.has(key)` skip, so every pass notified again | `notify > a restart of serve does not notify again for the same wait` |
+| T-0020-M2 | packages/engine/src/notify/notify.ts | the notification key left out the wait id | `notify > a new wait on the same run notifies again` |
+| T-0020-M3 | packages/engine/src/notify/notify.ts | a cancelled command was recorded as sent | `notify > stopping serve cancels a running command and records nothing` |
+| T-0020-M4 | packages/engine/src/http/link.ts | `objectLink` stopped URL-encoding the id | `http server > an object carries its link, URL-encoded, and so does its pending item` |
+| T-0020-M8 | packages/engine/src/notify/notify.ts | `OPERAD_LINK` left out of the command's environment | `notify > a waiting task runs the command once with the four variables` |
+| T-0020-M9 | packages/engine/src/config/config.ts | `notify.on` accepted any value | `operad config > rejects a malformed notify section` |
+| TK0008-M2 | `packages/engine/src/platform/sqlite-open.ts` | `enableWal` returned whatever mode SQLite answered instead of failing when it is not wal | `a database that cannot be WAL is an error, not a loop` |
+| TK0008-M3 | `packages/engine/src/flow/validate.ts` | wrote a step's `next` edges with `next[result] = target`, which drops a result named `__proto__` | `validateFlow > accepts a result named __proto__` |
+| TK0008-M4 | `packages/engine/src/log/jsonl.ts` | `parseFact` stopped checking that a fact line carries a JSON payload | `a fact line without a payload is a corrupt log, not a fact with no payload` |
+| TK0008-M5 | `packages/engine/src/plugin/registry.ts` | accepted a plugin command named like a kernel verb | `plugin registry validation > refuses a plugin command that shares a name with a kernel verb` |
+| TK0008-M6 | `packages/engine/src/plugin/registry.ts` | `pending` skipped a waiting run whose object is missing from the store | `plugin registry validation > pending keeps a waiting run whose object is missing from the store` |
+| TK0008-M7 | `packages/engine/src/runner/service.ts` | `parseObjectKey` read `flow:<plugin>/<flow>` as a real object | `serve loop > a run started without an object has no object` |
+| TK0008-M8 | `packages/engine/src/config/config.ts` | `init` no longer added the default plugins to a config that names none | `operad config > init adds the default plugins to a config that names none` |
+| TK0008-M9 | `packages/engine/src/config/config.ts` | an older config's moved module name was not mapped | `operad config > an older config's moved module name still loads` |
+| TK0008-M11 | `packages/engine/src/views/presentation.ts` | the named repository was not handed to a type's resolver | `operad with the dev plugin > show and an action take --repo for a bare id from outside any repository` |
+| TK0008-M12 | `packages/engine/src/trigger/kernel.ts` | `realizeStart` dropped the access profile when it created the run | `run access profile > a run a plugin starts on tick records the profile in the log` |
+| TK0008-M13 | `packages/engine/src/kernel/decide.ts` | the poll_check effect left out the wait's params | `decide: tick > a poll_check effect carries the wait's check params` |
+| TK0008-M14 | `packages/engine/src/kernel/decide.ts` | an unexpected result dropped what the step said | `decide: step_result > an undeclared result keeps what the step said` |
+| TK0008-M15 | `packages/engine/src/runner/runner.ts` | `WORKER_ABORT_GRACE_MS` back to 1000 ms, not above two process-group graces | `runner > an aborted worker gets longer than the slowest process-group stop` |
+
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0013-M1 | packages/engine/src/flow/validate.ts | inverted the missing-edge check (`!hasOwn` → `hasOwn`) | `validateFlow > names a result with no edge` |
@@ -57,9 +128,8 @@ the row fields.
 | TK0016-M11 | packages/engine/src/config/config.ts | installed no default plugin | `operad command > init creates the home and prints each plugin check` |
 | TK0016-M12 | packages/engine/src/loop/serve.ts | stopped listening for the abort while sleeping | `serve loop > a sleeping loop ends as soon as the signal aborts` |
 | TK0016-M15 | packages/engine/src/plugin/file-store.ts | stopped refreshing a reader from the file | `the file plugin store > a second reader sees facts another writer appended` |
-| TK0016-M16 | packages/engine/src/plugin/builtin/shell.ts | reported a non-zero exit as success | `the base shell plugin > a command that exits non-zero is a failed result` |
+| TK0016-M16 | packages/engine/src/plugin/builtin/shell.ts | reported a non-zero exit as success | `the base shell plugin > a command that exits non-zero is a failed result` (removed) |
 | TK0016-M17 | packages/engine/src/runner/runner.ts | made `chooseFailure` fall back to the step's first declared result instead of naming the failure | `runner > a step that throws is not recorded as its success result` |
-| TK0016-M18 | packages/engine/src/runner/runner.ts | removed the `preferInterrupted` early return, so a failed check reported its declared success result | `runner > a check that throws is not recorded as ready` |
 | TK0026-M1 | packages/engine/src/trigger/kernel.ts | ignored the stored result of a duplicate event and routed it again | `the kernel start entry > the same event twice records one input and starts one run` |
 | TK0026-M2 | packages/engine/src/trigger/kernel.ts | stopped writing the event into the active run's history | `the kernel start entry > an event for an object with an active run goes into that run's history` |
 | TK0026-M3 | packages/engine/src/trigger/kernel.ts | used the literal `$event.object` instead of the event's object | `the kernel start entry > a rule takes the event's object and its params reach the flow` |
@@ -104,7 +174,7 @@ the row fields.
 | TK0019-M4 | packages/engine/src/plugin/registry.ts | made the action name alone its identity, so plan and task actions clashed | `dev actions > confirm is one name on a plan and on a task` |
 | TK0019-M6 | packages/engine/src/config/config.ts | installed only the shell plugin by default | `operad config > the default plugins are the shell plugin and dev` |
 | TK0019-M14 | packages/engine/src/platform/file-lock.ts | release deleted the renamed lock before checking whose nonce it held | `the lock file > release never deletes another process's lock` |
-| TK0019-M15 | packages/engine/src/platform/file-lock.ts | takeover deleted the renamed lock without comparing its nonce with the dead record's | `the lock file > a newer live lock renamed during a takeover is put back` |
+| TK0019-M15 | packages/engine/src/platform/file-lock.ts | takeover deleted the renamed lock without comparing its nonce with the dead record's (also T-0065-M4) | `the lock file > a newer live lock renamed during a takeover is put back` |
 | TK0019-M16 | packages/engine/src/platform/file-lock.ts | wrote the record to `dev.lock` before the link, so a crash between the two left a lock | `the lock file > a crash between the tmp write and the link leaves no lock` |
 | TK0019-M17 | packages/engine/src/views/presentation.ts | skipped the plugin's `resolve` hook before the suffix lookup | `operad with the dev plugin > a bare id resolves in the repository of the current directory` |
 | TK0019-M18 | packages/engine/src/platform/file-lock.ts | treated an unreadable lock as dead immediately instead of after 30 s | `the lock file > an unparsable lock is live until its mtime is 30 seconds old` |
@@ -166,7 +236,7 @@ the row fields.
 | TK0005-M1 | packages/engine/src/platform/sqlite-open.ts | `setBusyTimeout` installed no busy timeout | `the busy timeout is installed on the connection` |
 | TK0005-M3 | packages/engine/src/platform/file-lock.ts | `linkExclusive` reported success when the target already existed | `the lock file > a live holder blocks until the deadline and names its pid` (and six more in that file) |
 | TK0005-M4 | packages/engine/src/platform/process-group.ts | the shared stop never sent the grace SIGKILL | `process groups` and the harness-radian tests (timed out) |
-| TK0005-M5 | packages/engine/src/platform/sqlite-open.ts | `enableWal` rethrew `SQLITE_BUSY` instead of waiting | `switching to WAL waits while another process holds the database` |
+| TK0005-M5 | packages/engine/src/platform/sqlite-open.ts | `enableWal` rethrew `SQLITE_BUSY` instead of waiting (also TK0008-M1) | `switching to WAL waits while another process holds the database` |
 | TK0005-M6 | packages/engine/src/platform/watch.ts | `resolveSubscriptionWatch` ignored an injected watch | `the injected watch, timer and period replace the defaults` |
 | TK0005-M7 | packages/engine/test/platform/no-copies.test.ts | dropped the `process.kill(-` pattern from the scan | `the platform module is the only copy > the scan finds each forbidden call outside platform/` |
 | TK0009-M1 | packages/engine/src/platform/process-group.ts | the drain grace used `globalThis.setTimeout` instead of the injected clock | `shell/command > a child that leaves the group cannot hold the command open` (timed out) |
@@ -273,7 +343,6 @@ the row fields.
 | T-0065-M2 | packages/engine/src/platform/process-group.ts | the stop that gave up on `ready` sent its SIGKILL once and did not look for a missed child | `process groups > a stop that gave up on ready also kills a straggler again`, `a stop before ready waits for the sentinel's trap` |
 | T-0065-M3 | packages/engine/src/platform/process-group.ts | the look for a straggler found it and did not signal the group again | `process groups > a straggler that missed the SIGKILL is killed again while the group exists`, `a stop that gave up on ready also kills a straggler again` |
 | T-0065-M5 | packages/engine/src/platform/process-group.ts | the sweep signalled the group id after the sentinel was reaped, when an unrelated group could own it | `process groups > no signal goes to the group id once the sentinel is reaped` |
-| T-0065-M4 | packages/engine/src/platform/file-lock.ts | a lock takeover removed the lock file without checking, under the guard, that it was still the dead record | `the lock file > a newer live lock renamed during a takeover is put back` |
 | T-0065-M6 | packages/engine/src/platform/process-group.ts | the sweep ran although the first SIGKILL reported the group already gone, when an unrelated group could own the id | `process groups > a SIGKILL that finds no group starts no sweep` |
 
 ## T-0064 — mcp.channel config
@@ -282,6 +351,7 @@ the row fields.
 |---|---|---|---|
 | T-0064-M8 | packages/engine/src/config/config.ts | an unknown mcp.channel.notify entry was accepted | `operad config > rejects a malformed mcp section and keeps it when written` |
 | T-0064-M6 | packages/engine/src/views/presentation.ts | the list row dropped the plugin's final flag | `the channel's sources > what the default sends > a plan-like object reaching its final state sends with reason ended` |
+
 ## T-0089 — fences per CommonMark
 
 | id | file | mutation | failing test |
@@ -321,9 +391,6 @@ the row fields.
 | T-0079-M1 | packages/engine/src/markdown.ts | number columns were shrinkable like text columns | `table fit > squeezed hard, text columns give way and number columns keep their width` |
 | T-0079-M2 | packages/engine/src/markdown.ts | numbers, durations and money were left-aligned | `table fit > numbers, durations and money are right-aligned` |
 | T-0079-M3 | packages/engine/src/markdown.ts | the column gap was three spaces instead of two | `table fit > a table narrower than the width keeps its content, without pipes` |
-| T-0075-M20 | packages/engine/src/views/running.ts | a run waiting for a person counted as running, so a plugin view saw a current step | `the running view names the object and times the step > the current step of a run is what the running view reports, and nothing once it waits or ends` |
-| T-0075-M24 | packages/engine/src/views/running.ts | an ended run reported the step it ended in even when it was waiting for a person | `the running view names the object and times the step > an ended run reports the step it was in, but not a person wait` |
-| T-0075-M25 | packages/engine/src/views/running.ts | an ended run was read after its end, so no step was in flight | `the running view names the object and times the step > an ended run reports the step it was in, but not a person wait` |
 | T-0079-M6 | packages/engine/src/markdown.ts | cell widths were counted in code points, not display columns | `table fit > wide characters are measured in columns, so a CJK title fits` |
 | T-0106-M1 | packages/engine/test/fixtures/plugins/testing-isolation.ts | `resetCalls` did nothing, so the in-process count kept growing across reruns | `isolation > in process, module state is shared: faster, not isolated` (fails on rerun 2 of `--rerun-each`) |
 | T-0098-M1 | packages/engine/src/loop/code-watch.ts | `diffFingerprints` ignored a removed file | `code fingerprints > a changed, added or removed file differs; the same text written again does not` |
@@ -386,6 +453,7 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0060-M3 | packages/engine/src/plugin/registry.ts | a second declaration of a name replaced the graph instead of keeping the first | `a name already used keeps the graph it got first` |
+
 ## T-0177 — a standing item carries the actions of its object
 
 | id | file | mutation | failing test |
@@ -401,6 +469,7 @@ the row fields.
 | T-0207-M2 | packages/engine/src/plugin/sqlite-store.ts | `ensurePolling` started the timer even when the store was opened without following | `store lifecycle and concurrency > a sqlite store opened for one-shot use starts no timer` |
 | T-0207-M3 | packages/engine/src/platform/watch.ts | `followsChanges` returned true for every caller | `a log opened for a one-shot command starts no watch or timer` |
 | T-0207-M4 | packages/engine/src/views/presentation.ts | a view subscribed to its store and log even when it was opened for a one-shot command | `object type prepare > a one-shot view adds no change listener` |
+
 ## T-0205 — process groups and code fingerprints on Linux
 
 | id | file | mutation | failing test |
@@ -408,6 +477,7 @@ the row fields.
 | T-0205-M2 | packages/engine/src/platform/process-group.ts | the sentinel killed its group with `kill -KILL -- "-$$"`, which dash rejects, so a line whose host died stayed running | `the sentinel's host > a line still running when its host dies is stopped with its sentinel` (Linux) |
 | T-0205-M3 | packages/engine/src/loop/code-watch.ts | `hashFile` trusted a size and mtime cache key again, even for a file written within the millisecond | `a code watch > the timer finds a change no event reported` (Linux; the same stale hash made the other watch tests miss a same-size rewrite in some runs) |
 | T-0205-M4 | packages/engine/src/loop/code-watch.ts | the cache trusted a hash whenever the key matched and the stamp was old, including a hash read while the stamp was still fresh | `code fingerprints > a hash read while its stamps were fresh is read again after they are old` |
+
 ## T-0165 — a queued step is not failed by a slow grant
 
 | id | file | mutation | failing test |
@@ -420,6 +490,7 @@ the row fields.
 |---|---|---|---|
 | T-0165-M2 | packages/engine/test/platform/step-reap.test.ts | the pid-file wait used the directory watch alone, with no timer look | `what a step leaves behind > a system shell that starts the marked process again is stopped with it` (timed out at 30 s in the check; 0 of 200 stressed runs at `--load 2`; not deterministic) |
 | T-0207-M5 | packages/engine/src/plugin/file-store.ts | `ensureWatch` stopped before starting the shared watch even for a following store | `the file plugin store > a following store watches and polls once for all its listeners` |
+
 ## T-0206 — the plugin store reads only past its offset
 
 | id | file | mutation | failing test |
@@ -446,6 +517,7 @@ the row fields.
 | T-0210-M7 | packages/engine/src/notify/notify.ts | the person notifier sent a notice for a wait its plugin answers automatically | `notify > a wait the plugin answers itself sends no notice and is noticed later if it stays` |
 | T-0210-M8 | packages/engine/src/views/presentation.ts | show listed a task of another repository with the same bare id in `after` as a dependent | `operad mcp > show of a task lists the tasks after it` (packages/mcp) |
 | T-0210-M11 | packages/engine/src/plugin/registry.ts | a hook that throws counted as an automatic answer | `answeredAutomatically > a hook that throws counts as no and is logged` |
+
 ## T-0160 — settings follow-ups
 
 | id | file | mutation | failing test |
@@ -473,3 +545,38 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0216-M3 | packages/engine/src/plugin/registry.ts | a step's events were not given to the caller's `observe` | `a step's events > a caller that observes a step sees its events besides the destination` |
+
+## T-0211 — a run ended elsewhere stops the step that is running
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0211-M1 | packages/engine/src/runner/runner.ts | the watch for the run's end did not abort the step's signal | `pause and cancel stop what the step started > pause while the check command runs ends its processes and frees the place` (packages/dev) |
+| T-0211-M2 | packages/engine/src/runner/runner.ts | a result recorded on an ended run was thrown, not dropped | `pause and cancel stop what the step started > pause while the worker step runs ends its processes` (packages/dev) |
+| T-0251-M1 | packages/engine/src/trigger/kernel.ts | `recoverUnrouted` forgot its input position (reset to 0 each pass), so every pass read all inputs again | `a tick over a large history (sqlite) > reads what changed, not every input, answer and outcome ever recorded` |
+| T-0251-M2 | packages/engine/src/loop/serve.ts | the recorded-answer reader forgot its input position (reset to 0 each pass) | `a tick over a large history (sqlite) > reads what changed, not every input, answer and outcome ever recorded` |
+| T-0251-M3 | packages/engine/src/loop/serve.ts | an answer for a run that is no longer active stayed waiting and was looked at every pass | `a tick over a large history (jsonl) > reads what changed, not every input, answer and outcome ever recorded` |
+| T-0251-M4 | packages/engine/src/plugin/sqlite-store.ts | `list` re-read and re-parsed every object, ignoring the remembered copy | `listing objects of a large type > an object that did not change is not read or parsed again` |
+| T-0251-M5 | packages/engine/src/runner/ask.ts | the claimed-answer lookup used the wrong input id (run and wait swapped) | `ctx.ask > an answer claimed by a process that stopped before the fact is still delivered` |
+| T-0251-M6 | packages/engine/src/log/jsonl.ts | `findInput` read the line at the wrong offset (start + 1) | `reading by position and by id (jsonl) > inputs after a position, one input by id, and outcomes after a sequence` |
+| T-0251-M7 | packages/engine/src/log/jsonl.ts | `readOutcomesAfter` filtered every remembered outcome instead of bisecting the sequence-ordered list | `the jsonl backend over a large history > a lookup or a quiet read does not read the whole files` |
+| T-0251-M8 | packages/engine/src/log/jsonl.ts | `findInput` read the whole inputs file besides using its remembered place | `the jsonl backend over a large history > a lookup or a quiet read does not read the whole files` |
+| T-0251-M9 | packages/engine/src/log/jsonl.ts | the active-only run listing opened every ended run again | `the jsonl backend over a large history > listing the active runs does not open the logs of ended runs` |
+| T-0251-M11 | packages/engine/src/log/jsonl.ts | the subscription poll listed the runs directory and statted every run, ended ones too | `the jsonl backend over a large history > a quiet tick costs the same with many ended runs: directory and file calls are counted` |
+| T-0250-M1 | packages/engine/src/plugin/sqlite-store.ts | the constructor skipped `setBusyTimeout`, so a write met SQLITE_BUSY at once | `a write waits for another process's write transaction and succeeds after it commits` |
+| T-0250-M3 | packages/engine/src/plugin/sqlite-store.ts | the constructor set `PRAGMA busy_timeout = 0` instead of the platform timeout | `the store's own connection has the platform busy timeout and WAL` (and `a write waits for another process's write transaction and succeeds after it commits`) |
+| T-0250-M4 | packages/engine/src/store-copy/copy.ts | the copy's writer-hold opener skipped `enableWal` | `store copy > copying out of a sqlite home in rollback-journal mode leaves its databases in WAL` (packages/cli/test/store-copy.test.ts) |
+| T-0251-M10 | packages/engine/src/log/jsonl.ts | `startRun` did not append its line to the runs index, so another handle never saw the run | `the jsonl backend over a large history > a quiet listing of the active runs does not list the runs directory` |
+| T-0251-M12 | packages/engine/src/log/jsonl.ts | a runs index cut shorter than what was read was not rebuilt from the directory | `the jsonl backend over a large history > a missing or cut runs index is rebuilt from one read of the directory` |
+| T-0251-M13 | packages/engine/src/log/jsonl.ts | a runs index ending in half a line was accepted instead of rebuilt | `the jsonl backend over a large history > a missing or cut runs index is rebuilt from one read of the directory` |
+| T-0251-M14 | packages/engine/src/log/jsonl.ts | an index that cannot be opened threw instead of falling back to the directory | `the jsonl backend over a large history > a missing or cut runs index is rebuilt from one read of the directory` |
+| T-0239-M1 | packages/engine/src/views/running.ts | the running view did not count the time a step spent queued | `reported waits (memory) > two steps that report a wait show queued with the right ahead, then running` (packages/engine/test/runner/limits.test.ts) |
+| T-0239-M2 | packages/engine/src/plugin/registry.ts | a step got no `ctx.queued`, so a plugin could not report a wait | `reported waits (file) > two steps that report a wait show queued with the right ahead, then running` (packages/engine/test/runner/limits.test.ts) |
+
+## T-0242-history-no-run-id — the History section shows no run id
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0242-history-no-run-id-M1 | packages/engine/src/views/presentation.ts | put `lines.push(`<sub>run ${run.runId}</sub>`)` back at the end of each run in the history section | `presentation > the history of an object with two runs shows no tag and no run id` |
+| T-0211-M3 | packages/engine/src/runner/runner.ts | the second aborted check after the object is read was removed | not covered by a test: the window is one await wide and no test can hold it open without a hook |
+| T-0244-M1 | packages/engine/src/store-copy/copy.ts | the copy did not compare what a sqlite source holds after the copy with what it held at the snapshot | `store copy > a write to a sqlite source after it was read makes the copy back fail and leaves no target` |
+| T-0259-M2 | packages/engine/src/store-copy/copy.ts | the source fingerprint counted an empty `-wal` file as different from none, so a sqlite source in rollback-journal mode failed the copy on Linux | `store copy > copying out of a sqlite home in rollback-journal mode leaves its databases in WAL` (fails on the Linux check host) |

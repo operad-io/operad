@@ -15,6 +15,7 @@ import type {
   RunObject,
   StepAsker,
   StepLimiter,
+  StepLimitRequest,
 } from "../plugin/types.ts";
 import type { JsonValue } from "../log/types.ts";
 import { SqlitePluginStore } from "../plugin/sqlite-store.ts";
@@ -105,11 +106,18 @@ async function main(request: StepWorkerRequest): Promise<void> {
   >();
   let nextLimitId = 1;
 
-  /** Asks the run's process, which owns the log, for a place under a key. */
+  /** Asks the run's process, which owns the log, for a place under a key, or to show a wait. */
   const limits: StepLimiter = {
-    acquire: (request) => {
-      const port = parentPort;
-      if (port === null) return Promise.reject(new Error("no limiter"));
+    report: (request) => hold({ use: "", key: request.key, concurrent: 0 }, true),
+    acquire: (request) => hold(request, false),
+  };
+  function hold(
+    request: StepLimitRequest,
+    report: boolean,
+  ): Promise<() => Promise<void>> {
+    const port = parentPort;
+    if (port === null) return Promise.reject(new Error("no limiter"));
+    {
       const id = nextLimitId;
       nextLimitId += 1;
       const ask = new Promise<void>((resolve, reject) => {
@@ -120,6 +128,7 @@ async function main(request: StepWorkerRequest): Promise<void> {
           use: request.use,
           key: request.key,
           concurrent: request.concurrent,
+          ...(report ? { report: true } : {}),
         });
       });
       const cancel = (): void => port.postMessage({ kind: "limit-cancel", id });
@@ -138,8 +147,8 @@ async function main(request: StepWorkerRequest): Promise<void> {
           throw error;
         },
       );
-    },
-  };
+    }
+  }
 
   const pendingAsks = new Map<
     number,

@@ -70,7 +70,7 @@ export function createDevPlugin() {
         name: "verify",
         calls: ["shell/check"],
         timeoutSecs: STEP_TIMEOUT_SECS,
-        results: ["pass", "fail", "cancelled"],
+        results: ["pass", "fail", "not_code", "cancelled"],
         run: runVerify,
       },
       {
@@ -212,6 +212,7 @@ export * from "./gate.ts";
 export * from "./integrate.ts";
 export * from "./model.ts";
 export * from "./flow-compiler.ts";
+export * from "./project-flows.ts";
 export * from "./schedule.ts";
 export * from "./service.ts";
 export * from "./places.ts";

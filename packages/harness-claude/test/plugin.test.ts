@@ -14,8 +14,8 @@ import {
   type TriggerView,
 } from "@operad-io/engine";
 import { EVENT_NOTE_TEMPLATE } from "@operad-io/harness-process";
-import { claudeToolEvent, createClaudeHarnessPlugin, modelErrorOf } from "../src/index.ts";
-import { alive, cleanupTempRoots, manualClock, tempRoot, waitForFile, waitForGone, waitForPid, type ManualClock } from "./support.ts";
+import { claudeToolEvent, createClaudeHarnessPlugin } from "../src/index.ts";
+import { alive, cleanupTempRoots, manualClock, tempRoot, waitForFile, waitForGone, waitForPid, type ManualClock } from "@operad-io/harness-process/test-support";
 
 afterAll(cleanupTempRoots);
 
@@ -381,12 +381,6 @@ describe("harness-claude/agent", () => {
     const env = await setup("model-error-other");
     const result = await runAgent(env, { prompt: "hello", cwd: env.root });
     expect((dataOf(result).modelError as Record<string, unknown>).kind).toBe("protocol");
-  });
-
-  test("modelErrorOf: a usage-limit text wins over a 429 in the same text", () => {
-    expect(modelErrorOf("429 usage limit reached").kind).toBe("usage_limit");
-    expect(modelErrorOf("provider is overloaded").kind).toBe("unavailable");
-    expect(modelErrorOf("a 4290 tokens message").kind).toBe("protocol");
   });
 
   test("silence without an open tool call is a stall", async () => {

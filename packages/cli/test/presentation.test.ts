@@ -810,4 +810,34 @@ describe("operad list hierarchy", () => {
     expect(await main(["show", "leaf:d"], { home, io: topShown.io })).toBe(0);
     expect(topShown.text()).not.toContain("parent:");
   });
+
+  test("show prints an object's children as rows between the row and the sections", async () => {
+    const { root, home } = await makeHome();
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({
+        plugins: [treePath],
+        store: { backend: "jsonl", path: join(root, "store") },
+      }),
+    );
+    const store = freshStore(home);
+    store.put("group", "g1", { title: "G1" }, "seed");
+    store.put("group", "g2", { title: "G2" }, "seed");
+    store.put("leaf", "a", { state: "open", title: "Alpha", parent: "group:g1" }, "seed");
+    store.put("leaf", "b", { state: "merged", title: "Beta", parent: "group:g1" }, "seed");
+
+    const withKids = capture();
+    expect(await main(["show", "group:g1"], { home, io: withKids.io })).toBe(0);
+    const lines = withKids.text().split("\n");
+    const first = lines.findIndex((line) => line.startsWith("a  open  Alpha"));
+    const sections = lines.findIndex((line) => line.startsWith("sections:"));
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(sections);
+    expect(withKids.text()).toContain("1 hidden");
+
+    const leaf = capture();
+    expect(await main(["show", "group:g2"], { home, io: leaf.io })).toBe(0);
+    expect(leaf.text()).not.toContain("Alpha");
+    expect(leaf.text()).not.toContain("hidden");
+  });
 });
