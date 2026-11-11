@@ -108,7 +108,7 @@ function codeGlyphs(text: string, language: string): WrapGlyph<LayoutStyle>[] {
   if (DIFF_HEADER.test(body)) return make("accent");
   const stat = STAT_LINE.exec(body);
   if (stat !== null) {
-    const head = 1 + (stat[1]?.length ?? 0);
+    const head = 1 + graphemes(stat[1] ?? "").length;
     return graphemes(plain).map((char, index): WrapGlyph<LayoutStyle> => ({
       char,
       value: {

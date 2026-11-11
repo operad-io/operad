@@ -105,3 +105,28 @@ describe("a wrapped code row", () => {
     expect(rows.map((row) => row.text.trim()).join("")).toBe("+abcdefghijklmnop");
   });
 });
+
+describe("code rows at narrow widths and with astral characters", () => {
+  test("every wrapped row keeps its left padding, at several widths and with indentation", () => {
+    for (const width of [3, 5, 8, 11]) {
+      for (const source of ["+abcdefghijklmnop", "    abcdefghijklmnop", "abcdefghij klmnopqrstu"]) {
+        const rows = layoutMarkdown(`\`\`\`diff\n${source}\n\`\`\``, width);
+        expect(rows.length).toBeGreaterThan(1);
+        for (const row of rows) {
+          expect(row.text.startsWith(" ")).toBe(true);
+          expect(Bun.stringWidth(row.text)).toBe(width);
+        }
+      }
+    }
+  });
+
+  test("colours the first + of a --stat line whose file name has an astral character", () => {
+    const rows = layoutMarkdown("```diff\n 💩.ts | 3 ++-\n```", 40);
+    const runs = rows[0]?.runs.map((run) => [run.style.role, run.text.trim()]);
+    expect(runs?.slice(0, 3)).toEqual([
+      [undefined, "💩.ts | 3"],
+      ["add", "++"],
+      ["remove", "-"],
+    ]);
+  });
+});

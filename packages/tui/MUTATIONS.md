@@ -302,3 +302,4 @@ the row fields.
 | T-0105-M4 | packages/tui/src/layout.ts | drew the whole --stat line in one colour | `a diff block > colours the + and - runs of a --stat line` |
 | T-0105-M5 | packages/tui/src/theme.ts | set the dark theme's weak colour to #5a5a66 | `theme contrast > dark: text and weak read on the background and the code background` |
 | T-0105-M6 | packages/tui/src/layout.ts | wrapped code rows without re-adding the left padding to continuation rows | `a wrapped code row > keeps the block's left padding and its width on every row` |
+| T-0105-M7 | packages/tui/src/layout.ts | counted the --stat head in UTF-16 units instead of graphemes | `code rows at narrow widths and with astral characters > colours the first + of a --stat line whose file name has an astral character` |
