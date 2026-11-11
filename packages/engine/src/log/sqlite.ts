@@ -45,6 +45,7 @@ import type {
   GlobalFact,
   InputRecord,
   InputOutcome,
+  InputsAfter,
   JsonValue,
   LogBackend,
   LogBackendFactory,
@@ -167,6 +168,17 @@ function globalFactOfRow(row: GlobalFactRow): GlobalFact {
     cause: JSON.parse(row.cause) as FactCause,
     time: row.time,
     ...(row.unique_key === null ? {} : { uniqueKey: row.unique_key }),
+  };
+}
+
+function inputOfRow(row: InputRow): InputRecord {
+  return {
+    inputId: row.input_id,
+    runId: row.run_id,
+    source: row.source,
+    sourceKey: row.source_key,
+    payload: JSON.parse(row.payload) as JsonValue,
+    time: row.time,
   };
 }
 
@@ -625,19 +637,56 @@ class SqliteLogBackend implements LogBackend {
         "FROM inputs ORDER BY time, input_id",
     );
     try {
-      for (const row of statement.iterate()) {
-        yield {
-          inputId: row.input_id,
-          runId: row.run_id,
-          source: row.source,
-          sourceKey: row.source_key,
-          payload: JSON.parse(row.payload) as JsonValue,
-          time: row.time,
-        };
-      }
+      for (const row of statement.iterate()) yield inputOfRow(row);
     } finally {
       statement.finalize();
     }
+  }
+
+  async readInputsAfter(position: number): Promise<InputsAfter> {
+    this.#assertOpen();
+    const rows = this.#database
+      .query<InputRow & { pos: number }, [number]>(
+        "SELECT rowid AS pos, input_id, run_id, source, source_key, payload, time " +
+          "FROM inputs WHERE rowid > ? ORDER BY rowid",
+      )
+      .all(position);
+    const last = rows[rows.length - 1];
+    return {
+      inputs: rows.map(inputOfRow),
+      position: last === undefined ? position : last.pos,
+    };
+  }
+
+  async findInput(inputId: string): Promise<InputRecord | undefined> {
+    this.#assertOpen();
+    const row = this.#database
+      .query<InputRow, [string]>(
+        "SELECT input_id, run_id, source, source_key, payload, time " +
+          "FROM inputs WHERE input_id = ?",
+      )
+      .get(inputId);
+    return row === null || row === undefined ? undefined : inputOfRow(row);
+  }
+
+  async readOutcome(
+    inputId: string,
+    kind: string,
+  ): Promise<InputOutcome | undefined> {
+    this.#assertOpen();
+    const row = this.#outcomeRow(inputId, kind);
+    return row === undefined ? undefined : outcomeOfRow(row);
+  }
+
+  async readOutcomesAfter(seq: number): Promise<InputOutcome[]> {
+    this.#assertOpen();
+    return this.#database
+      .query<OutcomeRow, [number]>(
+        "SELECT input_id, kind, payload, seq, time FROM outcomes " +
+          "WHERE seq > ? ORDER BY seq",
+      )
+      .all(seq)
+      .map(outcomeOfRow);
   }
 
   async recordOutcome(

@@ -123,6 +123,14 @@ function requireName(value: string, field: string): void {
   }
 }
 
+function deepFreeze<T>(value: T): T {
+  if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const inner of Object.values(value)) deepFreeze(inner);
+  }
+  return value;
+}
+
 function parseData(text: string): ObjectData {
   try {
     const value: unknown = JSON.parse(text);
@@ -146,6 +154,8 @@ export class SqlitePluginStore implements PluginStore {
   /** The last sequence any subscription has been told about. */
   private polledSequence = 0;
   private stopPoll: (() => void) | undefined;
+  /** The objects `list` last read, by type and id; frozen, so sharing is safe. */
+  private readonly listed = new Map<string, Map<string, StoredObject>>();
 
   constructor(options: SqlitePluginStoreOptions) {
     this.root = options.root;
@@ -247,17 +257,39 @@ export class SqlitePluginStore implements PluginStore {
       after = cursor.after;
     }
 
-    const rows = this.db
-      .query("SELECT type, id, data, version, cause, at FROM objects WHERE type = ? ORDER BY id")
-      .all(type) as ObjectRow[];
+    // Read from the cursor on and stop once a page and one more are found. The
+    // scan reads each row's version, not its data: an object whose version,
+    // time and cause match the remembered copy is not read or parsed again, so
+    // a page costs what changed in it, not what it holds.
+    const statement = this.db.prepare(
+      "SELECT type, id, version, cause, at FROM objects WHERE type = ? AND id > ? ORDER BY id",
+    );
     const limit = pageLimit(options.limit);
     const objects: StoredObject[] = [];
-    for (const row of rows) {
-      if (after !== undefined && row.id <= after) continue;
-      const object = this.objectOf(row);
-      if (!matchesWhere(object.data, options.where)) continue;
-      objects.push(object);
-      if (objects.length > limit) break;
+    const remembered = this.listed.get(type) ?? new Map<string, StoredObject>();
+    this.listed.set(type, remembered);
+    try {
+      for (const row of statement.iterate(type, after ?? "") as IterableIterator<
+        Omit<ObjectRow, "data">
+      >) {
+        let object = remembered.get(row.id);
+        if (
+          object === undefined ||
+          object.version !== row.version ||
+          object.at !== row.at ||
+          object.cause !== row.cause
+        ) {
+          const full = this.get(type, row.id);
+          if (full === undefined) continue;
+          object = deepFreeze(full);
+          remembered.set(row.id, object);
+        }
+        if (!matchesWhere(object.data, options.where)) continue;
+        objects.push(object);
+        if (objects.length > limit) break;
+      }
+    } finally {
+      statement.finalize();
     }
     const more = objects.length > limit;
     if (more) objects.length = limit;

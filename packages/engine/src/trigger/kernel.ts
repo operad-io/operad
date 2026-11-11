@@ -173,6 +173,12 @@ export class Kernel {
   }[] = [];
   /** One in-flight route per input, so same-process callers share a decision. */
   private readonly routing = new Map<string, Promise<TriggerResult>>();
+  /** Where `recoverUnrouted` has read the inputs and the outcomes up to. */
+  private inputPosition = 0;
+  private outcomeSeq = 0;
+  /** Events and started candidates whose side effect is not finished yet. */
+  private readonly unrouted = new Map<string, InputRecord>();
+  private readonly unstarted = new Map<string, InputOutcome>();
 
   constructor(options: KernelOptions) {
     this.log = options.log;
@@ -324,13 +330,14 @@ export class Kernel {
   private async route(
     inputId: string,
     duplicate: boolean,
+    known?: InputRecord,
   ): Promise<TriggerResult> {
     const inflight = this.routing.get(inputId);
     if (inflight !== undefined) {
       const result = await inflight;
       return duplicate ? { ...result, duplicate: true } : result;
     }
-    const work = this.routeOnce(inputId);
+    const work = this.routeOnce(inputId, known);
     this.routing.set(inputId, work);
     try {
       const result = await work;
@@ -341,8 +348,11 @@ export class Kernel {
   }
 
   /** The work behind one route, shared by concurrent callers. */
-  private async routeOnce(inputId: string): Promise<TriggerResult> {
-    const input = await this.findInput(inputId);
+  private async routeOnce(
+    inputId: string,
+    known?: InputRecord,
+  ): Promise<TriggerResult> {
+    const input = known ?? (await this.findInput(inputId));
     if (input === undefined) {
       throw new Error(`input "${inputId}" is not recorded`);
     }
@@ -730,26 +740,46 @@ export class Kernel {
    * never double a run or a fact.
    */
   async recoverUnrouted(): Promise<void> {
-    for await (const input of this.log.readInputs()) {
+    // Only what was recorded since the last pass is read; an event whose
+    // routing failed stays in `unrouted` and is tried again each pass.
+    const fresh = await this.log.readInputsAfter(this.inputPosition);
+    for (const input of fresh.inputs) {
       if (input.runId !== null) continue;
       if (eventFromPayload(input.payload) === undefined) continue;
+      this.unrouted.set(input.inputId, input);
+    }
+    for (const [inputId, input] of [...this.unrouted]) {
       try {
-        await this.route(input.inputId, true);
+        await this.route(inputId, true, input);
+        this.unrouted.delete(inputId);
       } catch (error) {
         this.onLog(
-          `trigger ${input.inputId}: event routing failed: ${messageOf(error)}`,
+          `trigger ${inputId}: event routing failed: ${messageOf(error)}`,
         );
       }
     }
+    this.inputPosition = fresh.position;
 
     // A candidate a person started, whose run the process never created.
-    for await (const outcome of this.log.readOutcomes()) {
-      if (outcome.kind !== RESOLVE || valueOf(outcome) !== "started") continue;
-      const route = await this.outcome(outcome.inputId, ROUTE);
-      if (route === undefined || valueOf(route) !== "candidate") continue;
-      const input = await this.findInput(outcome.inputId);
+    const resolves = await this.log.readOutcomesAfter(this.outcomeSeq);
+    for (const outcome of resolves) {
+      this.outcomeSeq = Math.max(this.outcomeSeq, outcome.seq);
+      if (outcome.kind === RESOLVE && valueOf(outcome) === "started") {
+        this.unstarted.set(outcome.inputId, outcome);
+      }
+    }
+    for (const [inputId, outcome] of [...this.unstarted]) {
+      const route = await this.outcome(inputId, ROUTE);
+      if (route === undefined || valueOf(route) !== "candidate") {
+        this.unstarted.delete(inputId);
+        continue;
+      }
+      const input = await this.findInput(inputId);
       const candidate = this.candidateFrom(route, input);
-      if (candidate === undefined) continue;
+      if (candidate === undefined) {
+        this.unstarted.delete(inputId);
+        continue;
+      }
       try {
         await this.realizeStart(
           outcome.inputId,
@@ -758,6 +788,7 @@ export class Kernel {
           candidate.object,
           input,
         );
+        this.unstarted.delete(inputId);
       } catch (error) {
         this.onLog(
           `trigger ${outcome.inputId}: candidate start failed: ${messageOf(error)}`,
@@ -953,20 +984,14 @@ export class Kernel {
   }
 
   private async findInput(inputId: string): Promise<InputRecord | undefined> {
-    for await (const input of this.log.readInputs()) {
-      if (input.inputId === inputId) return input;
-    }
-    return undefined;
+    return this.log.findInput(inputId);
   }
 
   private async outcome(
     inputId: string,
     kind: string,
   ): Promise<InputOutcome | undefined> {
-    for await (const outcome of this.log.readOutcomes()) {
-      if (outcome.inputId === inputId && outcome.kind === kind) return outcome;
-    }
-    return undefined;
+    return this.log.readOutcome(inputId, kind);
   }
 
   /** A result for an input whose route decision is already claimed. */
