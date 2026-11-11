@@ -301,3 +301,9 @@ the row fields.
 | T-0105-M6 | packages/tui/src/layout.ts | wrapped code rows without re-adding the left padding to continuation rows | `a wrapped code row > keeps the block's left padding and its width on every row` |
 | T-0105-M7 | packages/tui/src/layout.ts | counted the --stat head in UTF-16 units instead of graphemes | `code rows at narrow widths and with astral characters > colours the first + of a --stat line whose file name has an astral character` |
 | T-0239-M5 | packages/tui/src/state.ts | a running row did not show the time a step spent queued | `two-line rows > a run queued for a check place says so, and how long it waited once it runs` |
+
+## T-0229 — tree connectors under the parent's glyph
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0229-M1 | packages/tui/src/state.ts | indented a child's prefix by two cells instead of three, so connectors fell left of the parent's glyph | `the tree's drawn connectors > a chain hangs each connector under its parent's glyph` |

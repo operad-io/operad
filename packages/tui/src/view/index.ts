@@ -415,22 +415,27 @@ function childId(row: TuiRow): string {
 }
 
 interface ChildColumns {
-  readonly lead: number;
-  readonly id: number;
+  /** Where the id column ends, counted from the connector's first cell. */
+  readonly end: number;
   readonly state: number;
   readonly badge: number;
 }
 
+/** Cells before the id: the connector and its space, then the glyph and its space. */
+function leadWidth(entry: TuiChildEntry): number {
+  const connector = displayWidth(entry.connector);
+  return (connector === 0 ? 0 : connector + 1) + 2;
+}
+
 /** The fixed column widths of one child list, so every state starts in one place. */
 function childColumns(entries: readonly TuiChildEntry[], width: number): ChildColumns {
-  const lead = Math.max(0, ...entries.map((entry) => displayWidth(entry.connector)));
-  const names = Math.max(0, ...entries.map((entry) => displayWidth(childId(entry.row))));
+  const end = Math.max(0, ...entries.map((entry) => leadWidth(entry) + displayWidth(childId(entry.row))));
+  const lead = Math.max(0, ...entries.map(leadWidth));
   const state = Math.max(0, ...entries.map((entry) => displayWidth(entry.row.state)));
   const badge = Math.max(0, ...entries.map((entry) => displayWidth(entry.row.badge ?? "")));
-  // cursor, connector, glyph, id, state and badge, with one space between columns.
-  const fixed = 2 + lead + (lead === 0 ? 0 : 1) + 2 + 1 + state + (badge === 0 ? 0 : badge + 1);
-  const id = Math.min(names, Math.max(4, width - fixed));
-  return { lead, id, state, badge };
+  // cursor, the lead, id, state and badge, with one space between columns.
+  const fixed = 2 + 1 + state + (badge === 0 ? 0 : badge + 1);
+  return { end: Math.min(end, Math.max(lead + 4, width - fixed)), state, badge };
 }
 
 function padTo(text: string, width: number): string {
@@ -462,11 +467,11 @@ function childRow(
     .filter((part) => part !== "");
   const chunks: TextChunk[] = [
     chunk(selected ? "❯ " : "  ", palette.accent, undefined, tint),
-    ...(columns.lead === 0
+    ...(entry.connector === ""
       ? []
-      : [chunk(padTo(entry.connector, columns.lead) + " ", palette.rule, undefined, tint)]),
+      : [chunk(entry.connector + " ", palette.rule, undefined, tint)]),
     chunk(`${glyph} `, colour, undefined, tint),
-    chunk(padTo(childId(row), columns.id), selected ? palette.accent : palette.text, undefined, tint),
+    chunk(padTo(childId(row), Math.max(0, columns.end - leadWidth(entry))), selected ? palette.accent : palette.text, undefined, tint),
     chunk(" ", undefined, undefined, tint),
     chunk(state, colour, undefined, tint),
     ...(columns.badge === 0
