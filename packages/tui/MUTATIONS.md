@@ -18,15 +18,14 @@ the row fields.
 | TK0029-M10 | packages/tui/src/events.ts | a refused stream pushed no `error` event | `TuiEvents > 404 and 409 end the stream; 500 is retried with backoff` |
 | TK0029-M11 | packages/tui/src/events.ts | a reconnect with no id to resume from sent no `reset` | `TuiEvents > a reconnect with no id to resume from sends one reset` |
 | TK0029-M12 | packages/tui/src/events.ts | an event's id was not kept for the next request | `TuiEvents > the same instance reconnects with the last id and gets the missed event` |
-| TK0029-M13 | packages/tui/src/client.ts | the abort signal was not passed to `fetch` | `TuiClient > an aborted request rejects with the abort, not an unreachable server` |
-| TK0029-M14 | packages/tui/src/client.ts | an aborted request was reported as an unreachable server | `TuiClient > an aborted request rejects with the abort, not an unreachable server` |
+| TK0029-M13 | packages/tui/src/client.ts | the abort signal was not passed to `fetch` (also TK0029-M14) | `TuiClient > an aborted request rejects with the abort, not an unreachable server` |
 | T-0030-M1 | packages/tui/src/state.ts | a cursor move near the end never asked for the next page | `the TUI reducer > moving past the end asks for the next page once and appends it once` |
 | T-0030-M2 | packages/tui/src/state.ts | the two-pane threshold became `>` instead of `>=`, so 100 columns stayed one pane | `the TUI reducer > resize crosses 100 columns and carries the theme` |
 | T-0030-M3 | packages/tui/src/state.ts | a Pending row lost its waiting flag | `the TUI reducer > each list maps its own flags to a row mark` |
 | T-0030-M4 | packages/tui/src/state.ts | an appended page kept `loading` true | `the TUI reducer > moving past the end asks for the next page once and appends it once` |
 | T-0030-M5 | packages/tui/src/view/index.ts | the waiting marker used the weak gray instead of the accent | `the TUI view > two panes show the header, a waiting marker and the footer` |
 | T-0030-M6 | packages/tui/src/view/index.ts | the view always drew both panes, ignoring the width | `the TUI view > below 100 columns the right pane is gone` |
-| T-0030-M7 | packages/tui/src/state.ts/app.ts | the shell no longer cleared a page request as it launched it, so every key fetched the page again | `the TUI app > keys, resizes and refreshes while a page is in flight fetch it once` |
+| T-0030-M7 | packages/tui/src/state.ts/app.ts | the shell no longer cleared a page request as it launched it, so every key fetched the page again | `the TUI app > keys, resizes and refreshes while a page is in flight fetch it once` (removed) |
 | T-0030-M8 | packages/tui/src/state.ts | an appended page for an older list version was no longer dropped | `the TUI app > a page that lands after a refresh's replace is dropped` |
 | T-0030-M9 | packages/tui/src/app.ts | a new refresh no longer aborted the previous refresh's requests | `the TUI app > the previous refresh is aborted and its late answer is dropped` |
 | T-0030-M10 | packages/tui/src/state.ts | a replace no longer bumped the list version | `the TUI app > a page that lands after a refresh's replace is dropped` |
@@ -64,8 +63,7 @@ the row fields.
 | tui-autostart-M7 | packages/tui/src/autostart.ts | an early exit of the child was not noticed | `ensureServer > a child that exits at once is an error naming the log and showing its tail` |
 | tui-autostart-M8 | packages/tui/src/autostart.ts | the `starting operad serve` line was not printed | `ensureServer > a fresh home with no config starts serve, waits for it and returns the address` |
 | tui-autostart-M9 | packages/tui/src/autostart.ts | the child was not detached from the TUI's process group | `a real serve > a fresh home on a free port: tui starts serve, connects, and the child is stopped after` |
-| tui-autostart-M10 | packages/tui/src/app.ts | `--url` no longer skipped the start check | `runTui and the flags > --url and --no-start never start or check a serve; neither does nothing at all` |
-| tui-autostart-M11 | packages/tui/src/app.ts | `--no-start` no longer skipped the start check | `runTui and the flags > --url and --no-start never start or check a serve; neither does nothing at all` |
+| tui-autostart-M10 | packages/tui/src/app.ts | `--url` no longer skipped the start check (also tui-autostart-M11) | `runTui and the flags > --url and --no-start never start or check a serve; neither does nothing at all` |
 | tui-autostart-M13 | packages/tui/src/autostart.ts | a `200` reply without a `types` list counted as operad | `probeServer > tells operad, a silent address and another service apart` |
 | tui-autostart-M16 | packages/tui/src/autostart.ts | an early exit of the child always failed, even when another serve held the lock | `ensureServer: races and bounds > two tui starting at once both end connected to the one serve` |
 | tui-autostart-M17 | packages/tui/src/discover.ts | `http.port` 0 no longer failed before a start | `ensureServer: races and bounds > port 0 or an empty listen fails before anything is spawned` |
@@ -87,8 +85,7 @@ the row fields.
 | T-0035-M5 | packages/tui/src/view/index.ts | the footer ignored the selected row's `error` | `the TUI view > the selected row's error shows in the footer` |
 | T-0032-M1 | packages/tui/src/actions.ts | an empty required note was sent | `actions in the reducer > a note action refuses to send while a required note is empty` |
 | T-0032-M2 | packages/tui/src/state.ts | the person's key binding no longer came before the built-in keys | `actions in the reducer > a bound key runs its action; a user binding beats the plugin's and the built-in keys` |
-| T-0032-M3 | packages/tui/src/actions.ts | `y` sent `confirmed: false` | `actions in the reducer > a confirm action asks and only y sends, with confirmed` |
-| T-0032-M4 | packages/tui/src/actions.ts | any key answered the confirmation as yes | `actions in the reducer > a confirm action asks and only y sends, with confirmed` |
+| T-0032-M3 | packages/tui/src/actions.ts | `y` sent `confirmed: false` (also T-0032-M4) | `actions in the reducer > a confirm action asks and only y sends, with confirmed` |
 | T-0032-M5 | packages/tui/src/actions.ts | a refusal dropped the server's status from the footer line | `actions in the reducer > a refusal shows the server's status and message until the next key` |
 | T-0032-M6 | packages/tui/src/state.ts | `:` opened no palette | `actions in the reducer > the palette filters by fuzzy match and shows key, note and confirm` |
 | T-0032-M7 | packages/tui/src/state.ts | the `:`, `?` and `q` built-ins came before the person's key bindings | `actions in the reducer > reserved keys are dropped from the bindings, announced once, and keep their built-in use` |
@@ -137,6 +134,7 @@ the row fields.
 | T-0070-M3 | packages/tui/src/theme.ts | the terminal theme's accent was an RGB hex, not an ANSI index | `the theme tokens > the terminal theme draws ANSI indexes, not RGB` |
 | T-0070-M4 | packages/tui/src/app.ts | `runTui` skipped the config check and took the flag unchecked | `choosing the theme > the app does not start on an unknown theme or a broken file` |
 | T-0070-M5 | packages/tui/src/view/index.ts | the selected row lost its tint background | `the theme tokens > the selected row has the tint as its background` |
+
 ## T-0049 — the filter key
 
 | id | file | mutation | failing test |
@@ -216,8 +214,7 @@ the row fields.
 | T-0084-M4 | packages/tui/src/app.ts | Enter kept the theme for the session but did not write tui.json | `the theme command in the running app > enter keeps the theme, writes tui.json, and a new start uses it` |
 | T-0084-M5 | packages/tui/src/app.ts | the view ignored the preview and always drew the theme in force | `the theme command in the running app > moving the selection changes the drawn colours; escape puts them back` |
 | T-0129-M2 | packages/tui/src/state.ts | opening a type-tab row asked for the bare id instead of `<type>:<id>` | `the TUI object app > a row opens by its typed id; a server that refuses bare ids is never asked for one` |
-| T-0112-M10 | packages/tui/src/actions.ts | a status number in front of a refusal was kept | `a refusal line > drops a status number and a field prefix, and keeps the sentence` |
-| T-0112-M11 | packages/tui/src/actions.ts | a `field: ` prefix in front of a refusal was kept | `a refusal line > drops a status number and a field prefix, and keeps the sentence` |
+| T-0112-M10 | packages/tui/src/actions.ts | a status number in front of a refusal was kept (also T-0112-M11) | `a refusal line > drops a status number and a field prefix, and keeps the sentence` |
 | T-0117-M2 | packages/tui/src/args.ts | a boolean argument was not recognised, so no yes/no list was asked | `arguments of an action > a boolean is a yes/no list that starts on its default` |
 | T-0129-M3 | packages/tui/src/app.ts | the section request sent the answer's bare id instead of `<type>:<id>` | `the TUI object app > a row opens by its typed id; a server that refuses bare ids is never asked for one` |
 | T-0102-M1 | packages/tui/src/state.ts | a list that loaded did not ask the object pane to show the cursor row | `the object pane follows the cursor > a list that loads under the open tab shows its first row` |

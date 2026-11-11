@@ -4,6 +4,15 @@ Rows whose mutation broke code in `packages/cli/`, in the order they were
 recorded. The root [MUTATIONS.md](../../MUTATIONS.md) explains the format and
 the row fields.
 
+## T-0020 — pairing, links and the notification hook
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0020-M5 | packages/cli/src/qr.ts | the format bits lost their `0x5412` mask | `qr encoder > the format bits for level M match the standard's table` |
+| T-0020-M6 | packages/cli/src/qr.ts | version 8's block layout became four equal blocks | `qr encoder > every version round-trips at its capacity, and the next byte needs the next version` |
+| T-0020-M7 | packages/cli/src/main.ts | `pair` stopped refusing a non-terminal without `--show-token` | `operad pair > refuses without a terminal and prints nothing of the token` |
+| TK0008-M10 | `packages/cli/src/main.ts` | a typed history id resolved an object type no plugin declares | `operad command > history does not resolve an object type no plugin declares` |
+
 | id | file | mutation | failing test |
 |---|---|---|---|
 | TK0016-M13 | packages/cli/src/main.ts | dropped the ambiguity check for an untyped object id | `operad command > history resolves a plugin object without mixing object types` |
@@ -45,9 +54,8 @@ the row fields.
 | T-0048-M9 | packages/cli/src/main.ts | the printed `next:` command dropped the `--where` predicates | `operad presentation commands > list filters on indexed fields and pages with --limit and --cursor` |
 | T-0048-M10 | packages/cli/src/main.ts | the printed `next:` command left the `--repo` value unquoted | `operad presentation commands > the printed next: command shell-quotes the repo value` |
 | serve-views-home-M1 | packages/cli/src/main.ts | serve opened its views in the directory it started in, so a bare id was scoped to that repository | `operad serve http > serve resolves ids from no directory: a bare id is not scoped to where serve started` |
-| T-0052-M9 | packages/cli/src/main.ts | `list --root` was not passed to the views | `operad list hierarchy > --root and --parent list one level; show prints the parent` |
+| T-0052-M9 | packages/cli/src/main.ts | `list --root` was not passed to the views (also T-0052-M11) | `operad list hierarchy > --root and --parent list one level; show prints the parent` |
 | T-0052-M10 | packages/cli/src/main.ts | `show` did not print the parent line | `operad list hierarchy > --root and --parent list one level; show prints the parent` |
-| T-0052-M11 | packages/cli/src/main.ts | `list --parent` was not passed to the views | `operad list hierarchy > --root and --parent list one level; show prints the parent` |
 | T-0077-M1 | packages/cli/src/main.ts | serve killed every run process it had started (SIGKILL) when it stopped, so the sentinel of the running check stopped its line | `a serve restart while a check runs > the check's command is not signalled and finishes with its exit code` |
 | T-0096-M8 | packages/cli/src/main.ts | `operad flows` left the reason off the flow line | `operad command > flows shows a flow that cannot start, and why, on its line` |
 | T-0079-M4 | packages/cli/src/main.ts | `show` passed the terminal width even when stdout was a pipe | `operad presentation commands > show lays a table out for the terminal's width; a pipe keeps the old output` |

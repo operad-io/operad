@@ -4,11 +4,39 @@ Rows whose mutation broke code in `packages/harness-pi/`, in the order they were
 recorded. The root [MUTATIONS.md](../../MUTATIONS.md) explains the format and
 the row fields.
 
+## TK0015 — pi worker
+
 | id | file | mutation | failing test |
 |---|---|---|---|
-| TK0013-M1 | packages/harness-pi/spike/fake-provider.ts | dropped the tool call from the fake assistant message | `a tool call to read runs` |
+| TK0015-M1 | packages/harness-pi/src/worker.ts | a message with no cost object counted as price 0 instead of unpriced | `a model with no price has cost.micros null` |
+| TK0015-M2 | packages/harness-pi/src/worker.ts | `cache_read` taken from `cacheWrite` | `a prompt that ends writes the lines in order and a Result with usage, cost and sessionId` |
+| TK0015-M3 | packages/harness-pi/src/worker.ts | the `agent_settled` line not written | `a prompt that ends writes the lines in order and a Result with usage, cost and sessionId` |
+| TK0015-M4 | packages/harness-pi/src/worker.ts | cancelled run returned exit code 0 instead of 143 | `SIGTERM during a slow fake stream writes a cancelled Result and exits 143` |
+| TK0015-M5 | packages/harness-pi/src/worker.ts | resource loader discovery on, `agentDir` set to `$HOME/.pi/agent` | `nothing under the fake HOME .pi is read or created` |
+| TK0015-M6 | packages/harness-pi/src/worker.ts | `resumeSession` ignored (always a new session) | `resume: the second run sees the first answer in the context the fake model receives` |
+| TK0017-M3 | packages/harness-pi/src/worker.ts | the `tool_call` hook returns `undefined` instead of `{ block: true, reason }` | `a denied bash call is blocked, a blocked line is written, the model gets the reason and the run ends done` |
+
+## TK0016 — harness-pi agent step
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0016-M1 | packages/harness-pi/src/index.ts | `piToolEvent` returned `undefined` for `tool_execution_start`, so no tool call opened | `harness-pi/agent > silence with an open tool call is not a stall` |
+| TK0016-M2 | packages/harness-pi/src/index.ts | a missing Result line after a signal was `failed` instead of `interrupted` | `harness-pi/agent > a worker killed with SIGKILL ends interrupted and leaves the test alive` |
+| TK0016-M3 | packages/harness-pi/src/index.ts | `resumeSession` was left out of the worker's stdin | `harness-pi/agent > resumeSession is passed through to the worker's stdin` |
+| TK0016-M4 | packages/harness-pi/src/index.ts | a usage-limit error text was never `usage_limit` | `harness-pi/agent > a model_error failure about a usage limit is usage_limit` |
+| TK0016-M5 | packages/harness-pi/src/index.ts | the step stopped declaring `denyCommands` in `enforces` | `harness-pi/agent > the step declares the deny fields it enforces and a timeout above its wall time` |
+
+## TK0018 — pi dogfood
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0018-M1 | packages/harness-pi/src/index.ts | the step's declared results named `cancelled` instead of `interrupted`, so they differed from radian's | `this repository's dev.json with the pi worker > worker.use harness-pi/agent validates and the dev flow resolves it` |
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0013-M1 | packages/harness-pi/spike/fake-provider.ts | dropped the tool call from the fake assistant message | `a tool call to read runs` (removed) |
 | TK0013-M2 | packages/harness-pi/spike/pi-session.ts | `createSpikeSession` ignored the supplied session manager and used an in-memory one | `a session file reopens and a second prompt sees the first message` |
-| TK0013-M3 | packages/harness-pi/spike/fake-provider.ts | set `usage.totalTokens` to 0 in the fake assistant message | `a prompt ends with the fixed answer and message_end carries usage` |
+| TK0013-M3 | packages/harness-pi/spike/fake-provider.ts | set `usage.totalTokens` to 0 in the fake assistant message | `a prompt ends with the fixed answer and message_end carries usage` (removed) |
 | TK0013-M4 | packages/harness-pi/spike/auth-writer.ts | `hold` mode wrote its credential without taking the lock | `auth.json locking blocks a second writer until the lock is released` |
 | TK0013-M5 | packages/harness-pi/spike/auth-writer.ts | `unlocked-read` read the file after the gate instead of snapshotting it before | `the same read-modify-write without the lock loses a credential` |
 | pi-step-model-M1 | packages/harness-pi/src/index.ts | the setting won over the `--model` flag | `--model and --thinking in args reach the worker and win over the settings` |
@@ -22,9 +50,8 @@ the row fields.
 | T-0036-M1 | packages/harness-pi/src/pi-install.ts | the walk up accepted a `package.json` of any name | `findPi > a package.json with another name all the way up is refused (and the wrapper test)` |
 | T-0036-M2 | packages/harness-pi/src/pi-install.ts | the version floor was not enforced | `findPi > a version below the floor is refused naming both versions` |
 | T-0036-M3 | packages/harness-pi/src/pi-install.ts | a prerelease compared equal to its release | `findPi > a prerelease of the floor is below it; a prerelease above it is accepted` |
-| T-0036-M4 | packages/harness-pi/src/pi-install.ts | `exports["."]` conditions were not read (only `types`) | `findPi > finds a bun global install and an npm global install` |
+| T-0036-M4 | packages/harness-pi/src/pi-install.ts | `exports["."]` conditions were not read (only `types`) (also T-0036-M6) | `findPi > finds a bun global install and an npm global install` |
 | T-0036-M5 | packages/harness-pi/src/pi-install.ts | the command was not resolved to its real path (symlinks not followed) | `findPi > finds a bun global install and an npm global install` |
-| T-0036-M6 | packages/harness-pi/src/pi-install.ts | `exports["."]` was not looked up | `findPi > finds a bun global install and an npm global install` |
 | T-0036-M7 | packages/harness-pi/src/worker.ts | the worker did not log the pi version it loaded | `the worker logs the pi version it loaded and where from` |
 | T-0036-M8 | packages/harness-pi/src/worker.ts | the worker ignored `piCommand` and always looked up `pi` | `without a pi the worker fails with the model_error reason and says what is missing` |
 | T-0036-M9 | packages/harness-pi/src/index.ts | the `command` setting was not passed to the worker | `harness-pi:prompt > the command setting reaches the worker as piCommand; unset it is pi` |
