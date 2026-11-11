@@ -338,3 +338,9 @@ the row fields.
 | T-0302-M1 | packages/tui/src/view/index.ts | the list title was not cut to the list width | `spacing follow-ups > a long list title is cut to the list width` |
 | T-0302-M2 | packages/tui/src/state.ts | a list refresh restarted a follow that was already waiting (moveSeq bumped again) | `spacing follow-ups > a refresh does not restart a follow that is already waiting` |
 | T-0302-M3 | packages/tui/src/state.ts | an empty list left the object open while a follow waited | `spacing follow-ups > an empty list closes the object beside it, even while a follow waits` |
+
+## T-0304 — a narrower plugin list
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0304-M1 | packages/tui/src/state.ts | a plugin tab's column used the Pending and Running share again instead of its 26% share and 38-column cap | `one tab per plugin > at 120 and 200 a long dev note gives a column 30–40% narrower than before` |
