@@ -67,6 +67,10 @@ interface FixtureOptions {
   /** Tasks of the same repository, verified like the first, that integrate with it. */
   readonly more?: number;
   readonly batch?: number;
+  /** Files committed to main before the tasks start: their common base. */
+  readonly base?: Readonly<Record<string, string>>;
+  /** Files the first task commits next to `code.txt`. */
+  readonly taskFiles?: Readonly<Record<string, string>>;
 }
 
 interface Fixture {
@@ -125,6 +129,10 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
     path: remote.repository,
     name: "repository",
   });
+  for (const [file, text] of Object.entries(options.base ?? {})) {
+    await advanceMain(remote, file, text, `base ${file}`);
+  }
+  gitOrThrow(remote.repository, ["pull", "--ff-only", "origin", "main"]);
   const devJson = join(remote.repository, ".operad", "dev.json");
   writeDevJson(remote.repository, options);
   // The settings file is local to the clone; keep it from making the tree dirty.
@@ -173,6 +181,11 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
     }
     const worktree = join(remote.repository, ".operad-worktrees", taskId);
     await commitIn(worktree, file, "line\n", "add code");
+    if (suffix === "") {
+      for (const [name, text] of Object.entries(options.taskFiles ?? {})) {
+        await commitIn(worktree, name, text, `change ${name}`);
+      }
+    }
     // The work step pushes the branch in the real flow; cleanup deletes it.
     gitOrThrow(worktree, ["push", "origin", `HEAD:refs/heads/work/${taskId}`]);
     const verified = await registry.runStep("dev/verify", {}, {
@@ -343,6 +356,55 @@ describe("dev/integrate", () => {
       gitOrThrow(state.remote.origin, ["rev-list", "--parents", "-1", "main"])
         .split(" ").length,
     ).toBe(2);
+  });
+
+  test("two branches that each append a row to a MUTATIONS.md table merge, keeping both rows", async () => {
+    const table = "# Mutations\n\n| id | mutation |\n|---|---|\n| T-1-M1 | base |\n";
+    const attributes = readFileSync(
+      join(import.meta.dir, "..", "..", "..", ".gitattributes"),
+      "utf8",
+    );
+    {
+      const state = await fixture({
+        base: { ".gitattributes": attributes, "MUTATIONS.md": table },
+        taskFiles: { "MUTATIONS.md": `${table}| T-2-M1 | task |\n` },
+      });
+      await advanceMain(
+        state.remote,
+        "MUTATIONS.md",
+        `${table}| T-3-M1 | main |\n`,
+        "main appends a row",
+      );
+      const result = await integrate(state);
+      expect(result.result).toBe("merged");
+      const merged = gitOrThrow(state.remote.origin, ["show", "main:MUTATIONS.md"]);
+      expect(merged).toContain("| T-2-M1 | task |");
+      expect(merged).toContain("| T-3-M1 | main |");
+      expect(merged).not.toContain("<<<<<<<");
+    }
+  });
+
+  test("a real conflict in another file still falls back while MUTATIONS.md merges", async () => {
+    const table = "# Mutations\n\n| id | mutation |\n|---|---|\n| T-1-M1 | base |\n";
+    const attributes = readFileSync(
+      join(import.meta.dir, "..", "..", "..", ".gitattributes"),
+      "utf8",
+    );
+    const state = await fixture({
+      base: { ".gitattributes": attributes, "MUTATIONS.md": table },
+      taskFiles: { "MUTATIONS.md": `${table}| T-2-M1 | task |\n` },
+    });
+    await advanceMain(
+      state.remote,
+      "MUTATIONS.md",
+      `${table}| T-3-M1 | main |\n`,
+    );
+    await advanceMain(state.remote, "code.txt", "main line\n");
+    const before = remoteMain(state);
+    const result = await integrate(state);
+    expect(result.result).toBe("conflict");
+    expect(result.data?.files).toEqual(["code.txt"]);
+    expect(remoteMain(state)).toBe(before);
   });
 
   test("a conflict appends the conflict rework and leaves main alone", async () => {
