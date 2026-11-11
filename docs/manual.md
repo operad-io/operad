@@ -59,6 +59,8 @@ own; `show` lists them separately so the lead can tell the owner what to run.
 
 `dev:reverify` merges the current main into the task branch first, then runs verify and review again with no worker. A clean merge goes straight to verify; a conflicting main sends the task to the worker.
 
+When the worker adds no commit, the task waits with `work did nothing` if the branch has nothing beyond main or its latest commit already passed verify. If the branch already holds commits not on main and its latest commit has not passed verify (an earlier run stopped before verify ended), the task does not wait: history says `the branch already has unchecked work; checking it` and the task goes on to verify.
+
 ### Where the reviewer writes its report
 
 The reviewer runs in the task's gate worktree, and some agents (radian, for one)

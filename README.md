@@ -8,3 +8,5 @@ In development. The direction and the open questions are in `docs/backlog/`.
 
 The commands and `config.json` keys are in `docs/manual.md`; a complete
 workflow is in `docs/dogfood.md`.
+
+When the worker adds no commit, the task waits with `work did nothing` if the branch has nothing beyond main or its latest commit already passed verify. If the branch already holds commits not on main and its latest commit has not passed verify (an earlier run stopped before verify ended), the task does not wait: history says `the branch already has unchecked work; checking it` and the task goes on to verify.

@@ -733,8 +733,13 @@ export async function runWorktree(
     workWaits: 0,
     workRetryAt: null,
     // A new attempt starts with no gate results; the branch may have moved.
-    verified: null,
-    verify: null,
+    // A passing verify of the very commit the branch is at still stands.
+    ...(passedAt(context.task.attempt, prepared.base ?? null)
+      ? {
+          verified: context.task.attempt?.verified ?? null,
+          verify: context.task.attempt?.verify ?? null,
+        }
+      : { verified: null, verify: null }),
     review: null,
     reviewRuns: [],
     reviews: 0,
@@ -1045,6 +1050,15 @@ function modelUnavailable(data: Record<string, unknown>): boolean {
   return kind === "unavailable" || kind === "usage_limit";
 }
 
+/** True when the attempt's verify passed on exactly `head`. */
+function passedAt(attempt: TaskAttempt | undefined, head: string | null): boolean {
+  return (
+    head !== null &&
+    attempt?.verified === head &&
+    attempt.verify?.result === "pass"
+  );
+}
+
 const UNCHECKED_WORK_NOTE = "the branch already has unchecked work; checking it";
 
 /** True when the branch holds commits of its own (not a merge of main) that main lacks and `head` never passed verify. */
@@ -1054,7 +1068,7 @@ function hasUncheckedWork(
   attempt: TaskAttempt,
   context: { readonly settings: { readonly remote: string; readonly mainBranch: string } },
 ): boolean {
-  if (attempt.verified === head) return false;
+  if (attempt.verified === head && attempt.verify?.result === "pass") return false;
   const mainRef = `${context.settings.remote}/${context.settings.mainBranch}`;
   const ahead = git(path, ["rev-list", "--count", "--no-merges", `${mainRef}..${head}`]);
   return ahead.ok && Number(ahead.out) > 0;
