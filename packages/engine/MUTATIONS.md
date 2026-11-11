@@ -442,3 +442,5 @@ the row fields.
 | T-0160-M2 | packages/engine/src/views/settings.ts | dropped the chmod of the temporary file, so the config lost its mode on rename | `settings > sets at the same moment all land, and the file keeps its mode` |
 | T-0131-M4 | packages/engine/src/views/history.ts | dropped the retry-step half of the pair check, so an alternating pair never folded | `folded repeats in run history > 37 unavailable reviews with their waits fold into one line` |
 | T-0131-M5 | packages/engine/src/views/history.ts | left the outcome out of the fold signature, so a different outcome in between folded | `folded repeats in run history > the same step ending differently is not folded with the others` |
+| T-0131-M6 | packages/engine/src/views/history.ts | normalized every number in the detail instead of only ISO times | `folded repeats in run history > attempts whose reasons differ by more than a time are not folded` |
+| T-0131-M7 | packages/engine/src/views/history.ts | folded any two alternating steps, not only a step and its `_retry` step | `folded repeats in run history > two different steps that alternate are not a step and its retry` |

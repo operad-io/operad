@@ -410,9 +410,11 @@ function isFolded(item: Item): item is Folded {
 
 /**
  * What two attempts must share to fold: the step, how it started and how it
- * ended. Time and attempt number do not count, and neither do the digits of
- * the detail (a retry time, a count).
+ * ended. Time and attempt number do not count, and neither do the times
+ * written into the detail (a retry time); any other difference keeps them apart.
  */
+const ISO_TIME = /\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d(?:\.\d+)?)?Z?/g;
+
 function signature(item: Item): string | undefined {
   if (!isAttempt(item) || item.outcome === undefined || item.outcome === "waiting") {
     return undefined;
@@ -421,7 +423,7 @@ function signature(item: Item): string | undefined {
     item.step,
     item.reason,
     item.outcome,
-    item.detail.replace(/\d+/g, "#"),
+    item.detail.replace(ISO_TIME, "#"),
   ]);
 }
 
@@ -449,7 +451,14 @@ function foldRepeats(items: readonly Item[]): Item[] {
     if (count < 2) {
       // A step that alternates with another one.
       const secondSig = signatureAt(items, index + 1);
-      if (secondSig !== undefined && secondSig !== firstSig) {
+      const second = items[index + 1];
+      if (
+        secondSig !== undefined &&
+        secondSig !== firstSig &&
+        second !== undefined &&
+        isAttempt(second) &&
+        second.step === `${first.step}_retry`
+      ) {
         let cursor = index;
         count = 0;
         while (

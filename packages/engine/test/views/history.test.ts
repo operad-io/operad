@@ -228,7 +228,7 @@ describe("readable run history", () => {
 describe("folded repeats in run history", () => {
   const MIN = 60_000;
   const start = at(8, 20, 47, 0);
-  const U = { reason: "unavailable", message: "the model is unavailable; it runs again at X" };
+  const U = { reason: "unavailable", message: "the model is unavailable; it runs again at 2026-11-08T20:49:00.000Z" };
 
   function attempt(step: string, visit: number, result: string, time: number, data: object = {}): Fact[] {
     return [
@@ -243,7 +243,7 @@ describe("folded repeats in run history", () => {
     const out: Fact[] = [];
     for (let n = 0; n < count; n += 1) {
       const time = start + n * 2 * MIN;
-      out.push(...attempt("review", n + 1, "unavailable", time, { ...U, message: `${U.message} ${n}` }));
+      out.push(...attempt("review", n + 1, "unavailable", time, { ...U, message: U.message.replace("20:49", `20:${n % 60}`.padEnd(5, "0")) }));
       if (n < count - 1) out.push(...attempt("review_retry", n + 1, "ready", time + 1500));
     }
     return out;
@@ -254,7 +254,7 @@ describe("folded repeats in run history", () => {
     const lines = runHistoryLines(facts, { now: at(8, 23, 0, 0), full: false });
     expect(lines).toHaveLength(2);
     expect(lines[1]).toStartWith("review  unavailable ×37  20:47–");
-    expect(lines[1]).toContain("the model is unavailable; it runs again at X 36");
+    expect(lines[1]).toContain("the model is unavailable; it runs again at");
   });
 
   test("a step repeating alone folds too", () => {
@@ -289,6 +289,27 @@ describe("folded repeats in run history", () => {
     const lines = runHistoryLines(facts, { now: start + 9 * MIN, full: false });
     expect(lines[2]).toBe("poll  after again  again ×2  20:48–20:49");
     expect(lines[3]).toStartWith("20:50:00  poll  attempt 4  after again  failed");
+  });
+
+  test("attempts whose reasons differ by more than a time are not folded", () => {
+    const facts = [
+      ...attempt("review", 1, "unavailable", start, { message: "HTTP 429" }),
+      ...attempt("review", 2, "unavailable", start + MIN, { message: "HTTP 500" }),
+    ];
+    const lines = runHistoryLines(facts, { now: start + 9 * MIN, full: false });
+    expect(lines).toHaveLength(3);
+    expect(lines.join("\n")).not.toContain("×");
+  });
+
+  test("two different steps that alternate are not a step and its retry", () => {
+    const facts = [
+      ...attempt("fetch", 1, "ok", start),
+      ...attempt("validate", 1, "ok", start + MIN),
+      ...attempt("fetch", 2, "ok", start + 2 * MIN),
+    ];
+    const lines = runHistoryLines(facts, { now: start + 9 * MIN, full: false });
+    expect(lines.filter((line) => line.includes("  validate  "))).toHaveLength(1);
+    expect(lines.join("\n")).not.toContain("×");
   });
 
   test("a lone attempt is not folded", () => {
