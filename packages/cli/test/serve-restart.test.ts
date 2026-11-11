@@ -1,7 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { waitForChange } from "../../engine/src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 import { SUPERVISED_ENV } from "../src/code-reload.ts";
 import { waitForFile, waitForPid } from "../../shell/test/support.ts";
@@ -11,6 +12,23 @@ afterAll(cleanupTempRoots);
 const CLI_ENTRY = fileURLToPath(new URL("../bin/operad.ts", import.meta.url));
 const SHELL = fileURLToPath(new URL("../../shell/src/index.ts", import.meta.url));
 const FLOW = fileURLToPath(new URL("./fixtures/check-flow.ts", import.meta.url));
+
+/** The old one-second window at the 200 ms serve interval covered about five passes. */
+const TICKS_BEFORE_RELEASE = 5;
+
+/** Resolves once the serve has taken `count` turns, each one a line in `path`. */
+async function waitForTicks(path: string, count: number): Promise<void> {
+  for (;;) {
+    let turns = 0;
+    try {
+      turns = readFileSync(path, "utf8").split("\n").filter((line) => line.trim() !== "").length;
+    } catch {
+      // Not there yet.
+    }
+    if (turns >= count) return;
+    await waitForChange(dirname(path), basename(path), 100);
+  }
+}
 
 interface Finished {
   readonly code: number;
@@ -175,12 +193,13 @@ describe("a serve restart while a check runs", () => {
       });
       await serve.exited;
 
-      // Forget the first serve's mark, start the new serve and wait for its
-      // first turn. The command still waits: the new serve neither signalled
-      // it nor started it again.
+      // Forget the first serve's marks, start the new serve and wait for five
+      // turns, as the old one-second window did. The command still waits: the
+      // new serve neither signalled it nor started it again, even after a
+      // later pass could have rediscovered the active run.
       rmSync(ticks, { force: true });
       serve = startServe(home, env);
-      await waitForPid(ticks);
+      await waitForTicks(ticks, TICKS_BEFORE_RELEASE);
       expect(existsSync(signalled)).toBe(false);
       expect(existsSync(join(work, "finished"))).toBe(false);
 
