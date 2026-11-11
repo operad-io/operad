@@ -1128,3 +1128,25 @@ test("a Write to an askPaths path asks with the path and the tool, and runs once
   expect(call).toMatchObject({ type: "ask_call", kind: "path", value: "~/.zshrc", tool: "write", session: SESSION });
   expect(answerOf(run)["behavior"]).toBe("allow");
 });
+
+test("operad's tools are given to claude as an MCP server that runs from the program, with the home", async () => {
+  const s = setup();
+  s.input["operadTools"] = { home: "/operad/home" };
+  const run = await runFake(s, { steps: done });
+  expect(run.exitCode).toBe(0);
+  const args = (run.record.find((entry) => "spawn" in entry)?.["spawn"] as { args: string[] }).args;
+  const config = JSON.parse(flagValue(args, "--mcp-config") ?? "{}") as {
+    mcpServers?: Record<string, { type: string; command: string; args: string[]; env: Record<string, string> }>;
+  };
+  const server = config.mcpServers?.["operad"];
+  expect(server?.type).toBe("stdio");
+  expect(server?.args.slice(-2)).toEqual(["--home", "/operad/home"]);
+  expect(server?.args[0]).toMatch(/mcp\/src\/stdio\.ts$/);
+  expect(server?.env["OPERAD_HOME"]).toBe("/operad/home");
+});
+
+test("without operadTools claude is given no MCP server", async () => {
+  const run = await runFake(setup(), { steps: done });
+  const args = (run.record.find((entry) => "spawn" in entry)?.["spawn"] as { args: string[] }).args;
+  expect(flagValue(args, "--mcp-config")).toBeUndefined();
+});

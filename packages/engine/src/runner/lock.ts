@@ -138,3 +138,27 @@ export function runLockPath(lockRoot: string, runId: string): string {
 export function serveLockPath(home: string): string {
   return join(home, "serve.lock");
 }
+
+/**
+ * Held while a store is being copied or switched. A run takes its own lock
+ * first and then looks for this one, and the copy takes this one first and then
+ * looks for run locks, so one of them always sees the other.
+ */
+export function storeMoveLockPath(root: string): string {
+  return join(root, "locks", "store-move.lock");
+}
+
+/**
+ * Refuses a write while another process moves the store: the copy has read, or
+ * is reading, what this write would change. Reads are not refused.
+ */
+export function assertStoreNotMoving(root: string): void {
+  const path = storeMoveLockPath(root);
+  const pid = readLockPid(path);
+  if (pid !== undefined && pidAlive(pid)) {
+    throw new LockHeldError(
+      path,
+      "a store move is in progress; try again after it finishes",
+    );
+  }
+}

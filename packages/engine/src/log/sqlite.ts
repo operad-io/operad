@@ -31,6 +31,7 @@ import {
 } from "./facts.ts";
 import { assertJsonValue } from "./json-value.ts";
 import { SCHEMA_VERSION } from "./schema.ts";
+import { assertStoreNotMoving } from "../runner/lock.ts";
 import {
   enableWal,
   resolveSubscriptionWatch,
@@ -155,6 +156,7 @@ interface GlobalFactRow {
   readonly payload: string;
   readonly cause: string;
   readonly time: number;
+  readonly unique_key: string | null;
 }
 
 function globalFactOfRow(row: GlobalFactRow): GlobalFact {
@@ -164,6 +166,7 @@ function globalFactOfRow(row: GlobalFactRow): GlobalFact {
     payload: JSON.parse(row.payload) as JsonValue,
     cause: JSON.parse(row.cause) as FactCause,
     time: row.time,
+    ...(row.unique_key === null ? {} : { uniqueKey: row.unique_key }),
   };
 }
 
@@ -368,6 +371,7 @@ function migrateSchema(database: Database, path: string, from: number): number {
 class SqliteLogBackend implements LogBackend {
   readonly #database: Database;
   readonly #clock: () => number;
+  readonly #newRunId: () => string;
   readonly #path: string;
   readonly #subscriptionWatch: SubscriptionWatch;
   readonly #listeners = new Set<(change: LogChange) => void>();
@@ -380,11 +384,13 @@ class SqliteLogBackend implements LogBackend {
   constructor(
     database: Database,
     clock: () => number,
+    newRunId: () => string,
     path: string,
     subscriptionWatch: SubscriptionWatch,
   ) {
     this.#database = database;
     this.#clock = clock;
+    this.#newRunId = newRunId;
     this.#path = path;
     this.#subscriptionWatch = subscriptionWatch;
   }
@@ -400,6 +406,7 @@ class SqliteLogBackend implements LogBackend {
     if (access !== undefined) assertJsonValue(access, "run access");
     this.#assertOpen();
     return this.#database.transaction(() => {
+      assertStoreNotMoving(dirname(this.#path));
       const active = this.#database
         .query<{ run_id: string }, [string, string]>(
           "SELECT run_id FROM runs WHERE flow = ? AND object = ? AND ended_at IS NULL",
@@ -407,7 +414,8 @@ class SqliteLogBackend implements LogBackend {
         .get(flow, object);
       if (active) throw new ActiveRunError(flow, object, active.run_id);
 
-      const runId = randomUUID();
+      const runId = this.#newRunId();
+      assertRunId(runId);
       const startedAt = this.#clock();
       this.#database.run(
         "INSERT INTO runs (run_id, flow, object, started_at, ended_at, start_input_id, access) " +
@@ -440,6 +448,7 @@ class SqliteLogBackend implements LogBackend {
     assertRunId(runId);
     this.#assertOpen();
     this.#database.transaction(() => {
+      assertStoreNotMoving(dirname(this.#path));
       const row = this.#runRow(runId);
       if (!row) throw new RunNotFoundError(runId);
       if (row.ended_at !== null) return;
@@ -463,6 +472,7 @@ class SqliteLogBackend implements LogBackend {
     assertJsonValue(payload, "input payload");
     this.#assertOpen();
     return this.#database.transaction(() => {
+      assertStoreNotMoving(dirname(this.#path));
       if (runId !== null) {
         const row = this.#runRow(runId);
         if (!row) throw new RunNotFoundError(runId);
@@ -490,6 +500,7 @@ class SqliteLogBackend implements LogBackend {
     this.#assertOpen();
 
     return this.#database.transaction(() => {
+      assertStoreNotMoving(dirname(this.#path));
       const row = this.#runRow(runId);
       if (!row) throw new RunNotFoundError(runId);
       if (row.ended_at !== null) throw new RunEndedError(runId);
@@ -565,10 +576,11 @@ class SqliteLogBackend implements LogBackend {
     if (uniqueKey !== undefined) assertName(uniqueKey, "uniqueKey");
     this.#assertOpen();
     return this.#database.transaction(() => {
+      assertStoreNotMoving(dirname(this.#path));
       if (uniqueKey !== undefined) {
         const existing = this.#database
           .query<GlobalFactRow, [string]>(
-            "SELECT seq, kind, payload, cause, time FROM global_facts " +
+            "SELECT seq, kind, payload, cause, time, unique_key FROM global_facts " +
               "WHERE unique_key = ?",
           )
           .get(uniqueKey) ?? undefined;
@@ -597,6 +609,7 @@ class SqliteLogBackend implements LogBackend {
         payload: fact.payload,
         cause: fact.cause,
         time,
+        ...(uniqueKey === undefined ? {} : { uniqueKey }),
       };
     }).immediate();
   }
@@ -637,6 +650,7 @@ class SqliteLogBackend implements LogBackend {
     assertJsonValue(payload, "outcome payload");
     this.#assertOpen();
     return this.#database.transaction(() => {
+      assertStoreNotMoving(dirname(this.#path));
       const existing = this.#outcomeRow(inputId, kind);
       if (existing !== undefined) {
         return { duplicate: true, outcome: outcomeOfRow(existing) };
@@ -684,19 +698,12 @@ class SqliteLogBackend implements LogBackend {
 
   async *#readGlobal(): AsyncGenerator<GlobalFact> {
     this.#assertOpen();
-    const statement = this.#database.prepare<
-      { seq: number; kind: string; payload: string; cause: string; time: number },
-      []
-    >("SELECT seq, kind, payload, cause, time FROM global_facts ORDER BY seq");
+    const statement = this.#database.prepare<GlobalFactRow, []>(
+      "SELECT seq, kind, payload, cause, time, unique_key FROM global_facts ORDER BY seq",
+    );
     try {
       for (const row of statement.iterate()) {
-        yield {
-          seq: row.seq,
-          kind: row.kind,
-          payload: JSON.parse(row.payload) as JsonValue,
-          cause: JSON.parse(row.cause) as FactCause,
-          time: row.time,
-        };
+        yield globalFactOfRow(row);
       }
     } finally {
       statement.finalize();
@@ -907,6 +914,7 @@ export function openSqliteLogBackend(
   return new SqliteLogBackend(
     database,
     options.clock ?? Date.now,
+    options.runId ?? randomUUID,
     path,
     resolveSubscriptionWatch(options),
   );

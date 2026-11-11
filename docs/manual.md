@@ -36,7 +36,8 @@ this manual prints a secret.
   also be an array of module names.
 - `store`: where the objects and their history live. `backend` is `jsonl` or
   `sqlite`; `path` is a directory for `jsonl` and a file for `sqlite`. A
-  relative path resolves against the home.
+  relative path resolves against the home. Changing `backend` alone starts from
+  an empty store; to keep what you have, see [Moving the store](#moving-the-store).
 - `http`: the interface `operad serve` exposes to clients. It is off unless
   `enabled` is true; no other command opens the port.
 - `ask`: how long `ctx.ask` waits for an answer by default; see
@@ -555,6 +556,19 @@ Every error body is:
 | `422` | The action's plugin refused it; `message` is the plugin's own message. |
 | `504` | A section did not load in time. |
 | `500` | Anything else; the body carries no stack trace. |
+
+## Moving the store
+
+`operad store copy <jsonl|sqlite>` copies the store the config names into a new
+store of the other kind, beside it in the same directory (`log.sqlite` and
+`plugins.sqlite` for `sqlite`; `runs/`, `inputs.jsonl`, `outcomes.jsonl`,
+`plugins/facts.jsonl` and `schema.json` for `jsonl`). It keeps every step, its
+time and cause, every run and what each object held. The current store is not
+changed, and `triggers/`, `logs/` and the plugins' directories stay where they
+are, shared by both. It refuses while `operad serve` or a run is going, and when
+the new store's files exist already (move them away first). `operad store use
+<jsonl|sqlite>` then changes `store` in `config.json` to the copy; changing it
+back is the same command. `use` refuses a copy when the store it was copied from has been written to since; remove the copy's files and copy again.
 
 ## The History section
 
@@ -1288,6 +1302,42 @@ curl -s \
 
 with `"command": "sh ~/.operad/notify.sh"`. A topic name is a password for
 anyone who guesses it; pick a long random one or use a self-hosted server.
+
+## Chats
+
+A chat is a long conversation with an agent. The `chat` plugin comes with
+`operad init`; a chat belongs to the plugin that opens it. `dev` opens one on a
+repository:
+
+```
+operad dev:chat --repo operad --title "The build" [--harness harness-pi]
+operad chat:send C-0001 --note "why does the gate fail on main?"
+operad show C-0001 --section transcript
+```
+
+`dev:chat` offers `harness-claude` and `harness-pi` (the first one loaded when `--harness` is left out): they can stop a tool call before it starts, which a read-only chat needs. `harness-radian` is refused there and stays for assistant chats.
+
+`chat:send` records the message and sends an event (source `ios`, `telegram` or
+`cli`, key = the message id, about the chat). The plugin's own rule starts
+`chat:reply` for each of the three sources, automatically; a rule of yours in
+`triggers.json` with the same source and type replaces it. The reply reads the
+messages no reply answers yet from the chat's own record, continues the harness
+session, records the reply, and goes round again while new messages came in
+meanwhile (at most 20 rounds). After a restart a reply that was already
+recorded is not given twice.
+
+A chat on a repository works in the main clone, read-only: a shell command runs
+there only when it is on a short list of commands that only read (`git status`,
+`ls`, `cat`, `grep`, `sed -n`, `bun test`, ...); every other command, and every
+write, becomes the worktree question. When the agent wants
+to change code it asks whether to open a worktree. On yes, `dev` opens
+`work/chat-<id>` and the chat works there from then on, once; the main clone
+stays read-only. The worktree's changes reach main only through a task that
+points at it, through the normal gate and integrate.
+
+The agent reaches operad through its tools (`list`, `show`, `section`, `pending`,
+`running`, `history`, `command`, `act`, under the same allow lists as
+`operad mcp`), never by running `operad` in a shell.
 
 ## MCP server
 

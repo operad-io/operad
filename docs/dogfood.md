@@ -131,12 +131,12 @@ A review whose harness reports a model error (`unavailable` or `usage_limit`),
 or whose error output says `HTTP 429`, does not lose the attempt. The same review round runs once on
 `reviewer.fallback` when `.operad/dev.json` sets one. Without a fallback, or
 when the fallback is unavailable too, the task waits `reviewer.retrySecs`
-(default 120 seconds) and then runs the review again; it does not start a worker
+(default 120 seconds; each further wait doubles, up to 30 minutes) and then runs the review again; it does not start a worker
 and does not count a rework. A round uses its fallback at most once, so a retry
 that finds the primary unavailable again waits rather than calling the fallback
 a second time. A wait longer than one step run is split into pieces below the
 step timeout, so any positive `reviewer.retrySecs` is waited out; the flow's
-visit limit is finite, and a round waits at most 36 times (about 72 minutes
+visit limit is finite, and a round waits at most 6 times (about 90 minutes
 at the default) before it waits for a person with the note `review did not
 finish (model unavailable)`; a review step that cannot fit another run in its
 three-hour step timeout does the same with `review did not finish (out of
