@@ -205,6 +205,8 @@ export interface TuiCommand {
   /** Prints a line before the full screen opens. */
   readonly write?: ((line: string) => void) | undefined;
   readonly onError?: ((message: string) => void) | undefined;
+  /** What the app logged while the screen was open. */
+  readonly onLog?: ((message: string) => void) | undefined;
 }
 
 export type TuiRunner = (command: TuiCommand) => Promise<number>;
@@ -2351,6 +2353,7 @@ async function commandTui(
     onError: (message) => {
       io.error(`operad: ${message}\n`);
     },
+    onLog: (message) => io.error(`${message}\n`),
   });
 }
 

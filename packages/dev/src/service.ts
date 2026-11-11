@@ -633,24 +633,30 @@ async function tasksOfPlan(
   });
 }
 
-/** Throws the table's line when a task action cannot run on this task now. */
+/**
+ * Throws the table's line when a task action cannot run on this task now.
+ * Returns true when the result is already true (another action won a race):
+ * the caller then succeeds and writes nothing.
+ */
 function refuseTask(
   action: TaskActionName,
   task: TaskData,
   key: string,
   plan?: { readonly id: string; readonly state: PlanState },
-): void {
+): boolean {
   if (action === "confirm" && task.phase === "proposed" && plan?.state === "confirmed") {
-    return;
+    return false;
   }
   const said = taskLine(action, task, { id: bareId(key), plan });
-  if (said !== undefined) throw new DevRefusal(said.text);
+  if (said?.kind === "refuse") throw new DevRefusal(said.text);
+  return said !== undefined;
 }
 
-/** Throws the table's line when a plan action cannot run on this plan now. */
-function refusePlan(action: PlanActionName, plan: PlanData, key: string): void {
+/** As `refuseTask`, for a plan action. */
+function refusePlan(action: PlanActionName, plan: PlanData, key: string): boolean {
   const said = planLine(action, plan, { id: bareId(key) });
-  if (said !== undefined) throw new DevRefusal(said.text);
+  if (said?.kind === "refuse") throw new DevRefusal(said.text);
+  return said !== undefined;
 }
 
 export async function getPlan(
@@ -1802,7 +1808,7 @@ export async function confirmPlan(
   return withRepoLock(store, planData(initial.data).repository, async () => {
     const plan = await getPlan(store, id);
     const data = planData(plan.data);
-    refusePlan("confirm", data, id);
+    if (refusePlan("confirm", data, id)) return plan;
     const tasks = await tasksOfPlan(store, id);
     if (tasks.length === 0) {
       refusePlan("confirm", { ...data, taskCount: 0 }, id);
@@ -1840,10 +1846,11 @@ export async function confirmTask(
       store,
       storeKey(data.repository, data.plan),
     );
-    refuseTask("confirm", data, id, {
+    const settled = refuseTask("confirm", data, id, {
       id: data.plan,
       state: planState(planData(plan.data)),
     });
+    if (settled) return task;
     const written = await writeTask(
       store,
       id,
@@ -1913,7 +1920,7 @@ export async function cancelPlan(
     async () => {
       const plan = await getPlan(store, id);
       const data = planData(plan.data);
-      refusePlan("cancel", data, id);
+      if (refusePlan("cancel", data, id)) return { plan, runs: [] };
       const tasks = await tasksOfPlan(store, id);
       const runs = await cancelTasks(store, tasks);
       const next: PlanData = { ...data, status: "cancelled" };
@@ -1939,7 +1946,7 @@ export async function cancelTask(
     async () => {
       const task = await getTask(store, id);
       const data = taskData(task.data);
-      refuseTask("cancel", data, id);
+      if (refuseTask("cancel", data, id)) return { task, runs: [] };
       const runs: readonly RunToCancel[] =
         data.run === null ? [] : [{ run: data.run, flow: data.flowGraph }];
       const written = await writeTask(
@@ -1977,7 +1984,7 @@ export async function pauseTask(
   const paused = await withRepoLock(store, initialData.repository, async () => {
     const task = await getTask(store, id);
     const data = taskData(task.data);
-    refuseTask("pause", data, id);
+    if (refuseTask("pause", data, id)) return { task, runs: [] };
     const runs: readonly RunToCancel[] =
         data.run === null ? [] : [{ run: data.run, flow: data.flowGraph }];
     const {
@@ -2016,7 +2023,7 @@ export async function resumeTask(
   return withRepoLock(store, initialData.repository, async () => {
     const task = await getTask(store, id);
     const data = taskData(task.data);
-    refuseTask("resume", data, id);
+    if (refuseTask("resume", data, id)) return task;
     const written = await writeTask(
       store,
       id,

@@ -870,3 +870,7 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0278-M1 | packages/dev/src/chat.ts | the harness argument dropped its `enum`, so a free-text name reached the run's refusal instead of the schema | `dev:chat > a harness outside the choice is refused by the schema before the run` |
+| T-0298-M1 | packages/dev/src/service.ts | cancelTask threw on a result that was already true instead of succeeding | `dev plans and tasks > a task added to a confirmed plan waits for its own confirm` |
+| T-0298-M2 | packages/dev/src/views.ts | an older run's unrecorded group became a phantom attempt numbered past the later ones | `dev views > a group nobody recorded in an older run is not numbered past a later attempt` |
+| T-0298-M3 | packages/dev/src/views.ts | the total row showed `0s` when no attempt's run could be read | `dev views > the total row shows a dash when no attempt's run can be read` |
+| T-0298-M4 | packages/dev/src/refusals.ts | confirming a finished plan was refused instead of already true | `a finished plan > is a confirmed plan: confirming it again is already true, not a refusal` |

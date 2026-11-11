@@ -1867,6 +1867,8 @@ export class Views {
 
   private viewContext(plugin: string, signal: AbortSignal): ViewContext {
     const log = this.log;
+    // One read of the log's runs serves every run this view asks about.
+    let runs: ReturnType<LogBackend["runs"]> | undefined;
     return {
       plugin,
       home: this.registry.home,
@@ -1880,7 +1882,10 @@ export class Views {
       ...(log === undefined
         ? {}
         : {
-            runTimes: (runId: string) => runTimes(log, runId),
+            runTimes: (runId: string) => {
+              runs ??= log.runs();
+              return runTimes(log, runId, runs);
+            },
           }),
     };
   }

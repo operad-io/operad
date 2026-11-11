@@ -193,6 +193,19 @@ describe("the running view names the object and times the step", () => {
     expect(await runTimes(e.log, "no-such-run")).toBeUndefined();
     now = 1_000_000;
     const run = await e.log.startRun("flow", "item:one");
+    // Runs the caller already read are not read again.
+    let reads = 0;
+    const counting = new Proxy(e.log, {
+      get: (target, key) => {
+        if (key === "runs") return () => { reads += 1; return target.runs(); };
+        const value: unknown = Reflect.get(target, key);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const known = e.log.runs();
+    await runTimes(counting, run.runId, known);
+    await runTimes(counting, run.runId, known);
+    expect(reads).toBe(0);
     now = 1_010_000;
     await add(e.log, run.runId, [enter("a"), request("a", "a:1")]);
     expect(await runTimes(e.log, run.runId)).toEqual({

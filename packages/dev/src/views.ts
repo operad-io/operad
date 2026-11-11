@@ -933,7 +933,9 @@ export async function metrics(
     // A group the run has begun whose attempt the task has not recorded yet
     // (the worktree of a rework is being prepared): the next attempt, already
     // running or cancelled in it.
-    while (owners.length < cycles.length) {
+    // An older run's group nobody recorded is no attempt to number: it would
+    // pass the newer ones and take their result.
+    while (runId === runIds[runIds.length - 1] && owners.length < cycles.length) {
       const pending: AttemptMetrics = {
         number: (entries[entries.length - 1]?.number ?? 0) + 1,
         runs: [runId],
@@ -981,12 +983,14 @@ export async function metrics(
   const newest = entries[entries.length - 1]?.number;
   const lines = ["| # | time | cost | result |", "| --- | --- | --- | --- |"];
   let totalMs = 0;
+  let anyTimed = false;
   let totalCost = 0;
   let costed = false;
   let quality = "";
   for (const entry of entries) {
     const last = entry.last;
     totalMs += entry.ms;
+    if (entry.timed) anyTimed = true;
     if (typeof last?.cost === "number" && Number.isFinite(last.cost)) {
       totalCost += last.cost;
       costed = true;
@@ -999,7 +1003,7 @@ export async function metrics(
     );
   }
   lines.push(
-    `| total | ${wallTime(totalMs)} | ${costed ? costNote(totalCost, quality) : "–"} | |`,
+    `| total | ${anyTimed ? wallTime(totalMs) : "–"} | ${costed ? costNote(totalCost, quality) : "–"} | |`,
   );
   const perAttempt = [...entries].reverse().map((entry) => {
     const mark = " (running)";

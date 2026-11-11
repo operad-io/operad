@@ -617,6 +617,8 @@ describe("http server", () => {
       });
       expect(unknown.status).toBe(404);
       expect((await json(unknown)).error).toMatchObject({ kind: "action" });
+      // A refusal the views make is logged with its status too.
+      expect(h.logs.some((line) => line.includes("(404)") && line.includes("nobody:nothing"))).toBe(true);
 
       const badJson = await api(h, "/v1/act", {
         method: "POST",
