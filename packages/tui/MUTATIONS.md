@@ -333,3 +333,5 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0296-M1 | packages/tui/src/app.ts | the grouped list needed every top-level object to have a next level (`every` for `some`), so one empty repository dropped the list back to the roots | `one tab per plugin > a repository with no plans is still a group row among the grouped plans` |
+| T-0298-M5 | packages/tui/src/state.ts | a settled result's line was dropped from the notice | `a refusal line > a result that was already true shows its line and ends the wait` |
+| T-0298-M6 | packages/tui/src/actions.ts | refusalLine stripped a leading `word: ` from the sentence again | `a refusal line > drops a status number and keeps the sentence, even one that starts like a field` |

@@ -56,8 +56,10 @@ describe("actions against the in-process server", () => {
       },
     });
     const view = new View();
+    const logs: string[] = [];
     const shell = startShell({
       client,
+      onLog: (message) => logs.push(message),
       events: () => new Quiet(),
       view,
       width: 120,
@@ -111,6 +113,8 @@ describe("actions against the in-process server", () => {
       shell.key({ name: "enter" });
       await view.until((state) => state.notice !== undefined && !state.acting);
       expect(view.last?.notice).toBe("the plugin refused");
+      // The status stays in the log, not on the page.
+      expect(logs).toEqual(["action tuitest:fail one: 422 the plugin refused"]);
       shell.key({ name: "j" });
       expect(view.last?.notice).toBeUndefined();
     } finally {

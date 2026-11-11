@@ -86,9 +86,10 @@ describe("dev actions", () => {
     });
     await registry.runAction("dev/confirm", {}, { object: await getPlan(store, plan.id), actor: ACTOR });
     await setTaskPhase(store, task.id, "ready");
-    await expect(
-      registry.runAction("dev/confirm", {}, { object: await getTask(store, task.id), actor: ACTOR }),
-    ).rejects.toThrow("T-0001-one is already ready; nothing to do");
+    // Already true: the action succeeds and changes nothing.
+    const before = (await getTask(store, task.id)).version;
+    await registry.runAction("dev/confirm", {}, { object: await getTask(store, task.id), actor: ACTOR });
+    expect((await getTask(store, task.id)).version).toBe(before);
   });
 
   test("pending offers the plan's available actions with the default keys", async () => {

@@ -221,9 +221,10 @@ describe("dev plans and tasks", () => {
     );
     expect(taskData((await getTask(store, first.id)).data).phase).toBe("ready");
     expect(taskData((await getTask(store, second.id)).data).phase).toBe("ready");
-    await expect(confirmPlan(store, plan.id)).rejects.toThrow(
-      /already confirmed/,
-    );
+    // A result that is already true succeeds and writes nothing (a race's loser).
+    const planVersion = (await getPlan(store, plan.id)).version;
+    await confirmPlan(store, plan.id);
+    expect((await getPlan(store, plan.id)).version).toBe(planVersion);
   });
 
   test("a task added to a confirmed plan waits for its own confirm", async () => {
@@ -243,7 +244,14 @@ describe("dev plans and tasks", () => {
     expect(taskData(late.data).phase).toBe("proposed");
     await confirmTask(store, late.id);
     expect(taskData((await getTask(store, late.id)).data).phase).toBe("ready");
-    await expect(confirmTask(store, late.id)).rejects.toThrow(/already ready/);
+    const taskVersion = (await getTask(store, late.id)).version;
+    await confirmTask(store, late.id);
+    expect((await getTask(store, late.id)).version).toBe(taskVersion);
+    // Two cancels at once: the second finds the result true and succeeds.
+    await cancelTask(store, late.id);
+    const cancelledVersion = (await getTask(store, late.id)).version;
+    expect((await cancelTask(store, late.id)).runs).toEqual([]);
+    expect((await getTask(store, late.id)).version).toBe(cancelledVersion);
   });
 
   test("after is checked for existence and cycles", async () => {
