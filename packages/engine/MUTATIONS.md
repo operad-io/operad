@@ -611,3 +611,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0297-M1 | packages/engine/src/http/server.ts | a failed start ignored the addresses its own cleanup could not release and rethrew the original bind error | `a start that fails after binding reports an address it could not release` |
+## T-0299 — a loaded plugin's package reloads serve
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0299-M1 | packages/engine/src/loop/code-watch.ts | a bare plugin module name was resolved against the operad home again, so a home outside the workspace found no plugin package | `code roots > a plugin named by its package is found where the loader imports it` |
