@@ -7,6 +7,7 @@
  */
 
 import { fileURLToPath } from "node:url";
+import { isRecord } from "./step.ts";
 
 /** The name the tools go by in a harness: the server's name, and the prefix claude gives its tools. */
 export const OPERAD_SERVER = "operad";
@@ -18,10 +19,6 @@ export const OPERAD_TOOL_PREFIX = `mcp__${OPERAD_SERVER}__`;
 export interface OperadTools {
   /** The operad home the tools read and write. */
   readonly home: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** The tools a step's params ask for, or undefined when they ask for none. */

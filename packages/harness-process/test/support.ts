@@ -17,7 +17,7 @@ const roots: string[] = [];
 export async function tempRoot(): Promise<string> {
   const base = join(process.cwd(), ".radian", "tmp");
   await mkdir(base, { recursive: true });
-  const root = await mkdtemp(join(base, "harness-claude-test-"));
+  const root = await mkdtemp(join(base, "harness-test-"));
   roots.push(root);
   return root;
 }

@@ -13,5 +13,6 @@ export * from "./inbox.ts";
 export * from "./jsonl-log.ts";
 export * from "./operad-tools.ts";
 export * from "./process.ts";
+export * from "./step.ts";
 export * from "./limit.ts";
 export * from "./usage.ts";
