@@ -730,3 +730,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0246-M1 | packages/dev/src/schedule.ts | the sweep of cancelled tasks' runs ran after the settings were read, so unreadable settings skipped it | `a run on a cancelled task is ended even when the repository's settings cannot be read` |
+| T-0122-M2 | packages/dev/src/views.ts | a plan listed a Tasks section again | `dev views > a plan loads its request and has no tasks section` |

@@ -130,6 +130,15 @@ describe("operad with the dev plugin", () => {
     expect(listed.code).toBe(0);
     expect(listed.out).toContain(`${taskId}  proposed  First task`);
 
+    const planShown = await run(home, repository, ["show", planId]);
+    expect(planShown.code).toBe(0);
+    const planLines = planShown.out.split("\n");
+    const rowAt = planLines.findIndex((line) => line.includes(`${taskId}  proposed  First task`));
+    const sectionsAt = planLines.findIndex((line) => line.startsWith("sections:"));
+    expect(rowAt).toBeGreaterThan(0);
+    expect(rowAt).toBeLessThan(sectionsAt);
+    expect(planLines[sectionsAt]).not.toContain("Tasks");
+
     const brief = await run(home, repository, [
       "show",
       taskId,
