@@ -440,3 +440,9 @@ the row fields.
 |---|---|---|---|
 | T-0160-M1 | packages/engine/src/views/settings.ts | ran the read-modify-write without the lock file, so concurrent sets lost updates | `settings > sets at the same moment all land, and the file keeps its mode` |
 | T-0160-M2 | packages/engine/src/views/settings.ts | dropped the chmod of the temporary file, so the config lost its mode on rename | `settings > sets at the same moment all land, and the file keeps its mode` |
+
+## T-0216 — a caller may observe the events of a step it runs
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0216-M3 | packages/engine/src/plugin/registry.ts | a step's events were not given to the caller's `observe` | `a step's events > a caller that observes a step sees its events besides the destination` |
