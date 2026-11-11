@@ -22,6 +22,15 @@ import {
   type PlanState,
   type TaskData,
 } from "./model.ts";
+import {
+  flowHasReverify,
+  inReviewWait,
+  waitChoices,
+  waitKindOf,
+  type WaitAction,
+} from "./waits.ts";
+
+export { inReviewWait } from "./waits.ts";
 
 /** What a line may mention besides the object's own id. */
 export interface Facts {
@@ -223,22 +232,6 @@ export function needsPerson(task: TaskData): boolean {
   return task.phase === "proposed" || (task.phase === "waiting" && !inReviewWait(task));
 }
 
-/**
- * True while a review waits for its model to come back. The flow is not asking
- * a person anything then, so merge, reject, rework and reverify are not offered.
- */
-export function inReviewWait(task: TaskData): boolean {
-  const review = task.attempt?.review;
-  return (
-    typeof task.retryAt === "number" &&
-    review !== undefined &&
-    review !== null &&
-    review.decision === "unavailable" &&
-    review.reason !== "exhausted" &&
-    review.reason !== "out_of_time"
-  );
-}
-
 /** What a line says for a value that is set again, or `undefined`. */
 export interface Said {
   readonly kind: "done" | "refuse";
@@ -254,12 +247,58 @@ function sayLine(line: Line, facts: Facts, sameValue: boolean): Said | undefined
   return { kind: line.kind, text: line.say(facts) };
 }
 
+function isWaitAction(action: TaskActionName): action is WaitAction {
+  return (
+    action === "merge" ||
+    action === "reject" ||
+    action === "rework" ||
+    action === "reverify"
+  );
+}
+
+/** What a wait action can do, and what it does, in the wait's own words. */
+const WAIT_WORDS: Readonly<
+  Record<WaitAction, { readonly cannot: string; readonly can: string }>
+> = {
+  merge: { cannot: "cannot be merged", can: "merged" },
+  reject: { cannot: "cannot be rejected", can: "rejected" },
+  rework: { cannot: "cannot be reworked", can: "reworked" },
+  reverify: { cannot: "cannot be verified again", can: "verified again" },
+};
+
+/** A list as a person says it: `a`, `a or b`, `a, b or c`. */
+function orList(words: readonly string[]): string {
+  if (words.length <= 1) return words[0] ?? "";
+  return `${words.slice(0, -1).join(", ")} or ${words[words.length - 1]}`;
+}
+
+/** The line an action gets when the task's wait does not take it. */
+function waitLine(
+  action: WaitAction,
+  task: TaskData,
+  id: string,
+): Said | undefined {
+  const wait = waitKindOf(task);
+  if (wait === undefined) return undefined;
+  const choices = waitChoices(wait, flowHasReverify(task));
+  if (choices.includes(action)) return undefined;
+  const can = choices.map((choice) => WAIT_WORDS[choice].can);
+  return {
+    kind: "refuse",
+    text: `${id} ${WAIT_WORDS[action].cannot} now; it can be ${orList(can)}`,
+  };
+}
+
 /** A task action's line for a task's state; undefined when it works. */
 export function taskLine(
   action: TaskActionName,
   task: TaskData,
   facts: Facts,
 ): Said | undefined {
+  if (isWaitAction(action)) {
+    const refused = waitLine(action, task, facts.id);
+    if (refused !== undefined) return refused;
+  }
   return sayLine(TASK_LINES[action][taskStateOf(task)], facts, false);
 }
 
