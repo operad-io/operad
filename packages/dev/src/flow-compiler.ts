@@ -274,6 +274,7 @@ function defaultSteps(
     plugin("verify", "dev/verify", checkParams(check), {
       pass: "review",
       fail: "rework",
+      not_code: "announce_verify_not_code",
       cancelled: "end_cancelled",
     }),
     plugin("review", "dev/review", reviewParams(review, gradingName), {
@@ -415,6 +416,7 @@ function defaultSteps(
     announce("announce_nothing", "work", "nothing", "wait"),
     announce("announce_work_failed", "work", "failed", "wait"),
     announce("announce_work_stopped", "work", "interrupted", "wait"),
+    announce("announce_verify_not_code", "verify", "not_code", "wait"),
     announce("announce_ready", "review", "pass", "wait"),
     announce("announce_review_failed", "review", "failed", "wait"),
     announce("announce_rework", "rework", "ask", "wait"),
@@ -656,8 +658,10 @@ function generatedSteps(
             plugin(id, "dev/verify", checkParams(item.stage), {
               pass: next,
               fail: `rework_${id}`,
+              not_code: `announce_${id}_not_code`,
               cancelled: "end_cancelled",
             }),
+            announce(`announce_${id}_not_code`, id, "not_code", waitId),
             plugin(`rework_${id}`, "dev/rework", {}, {
               again: target,
               ask: `announce_rework_${id}`,
@@ -670,8 +674,10 @@ function generatedSteps(
             plugin(id, "dev/verify", checkParams(item.stage), {
               pass: next,
               fail: waitId,
+              not_code: `announce_${id}_not_code`,
               cancelled: "end_cancelled",
             }),
+            announce(`announce_${id}_not_code`, id, "not_code", waitId),
           );
         }
         break;

@@ -137,6 +137,11 @@ export interface CheckSettings {
    * plan is finished or cancelled, dev uses its own plan `flaky-tests`.
    */
   readonly flakyPlan?: string | undefined;
+  /**
+   * The 1-minute load average below which a machine counts as idle enough to
+   * trust a check. Unset: the number of cores.
+   */
+  readonly loadLimit?: number | undefined;
 }
 
 /** What a task does when its step failed for a reason outside its own work. */
@@ -415,6 +420,13 @@ function autoMode(value: unknown, field: string): AutoMode {
   return value;
 }
 
+function positiveNumber(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw new DevError(field, "must be a positive number");
+  }
+  return value;
+}
+
 function positiveSeconds(value: unknown, field: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     throw new DevError(field, "must be a positive number of seconds");
@@ -606,7 +618,10 @@ function checkSettings(value: unknown, field: string): CheckSettings {
     throw new DevError(field, "must be an object");
   }
   for (const key of Object.keys(value)) {
-    if (key !== "rerun" && key !== "flakyTask" && key !== "flakyPlan") {
+    if (key !== "rerun" &&
+      key !== "flakyTask" &&
+      key !== "flakyPlan" &&
+      key !== "loadLimit") {
       throw new DevError(`${field}.${key}`, "is not a check setting");
     }
   }
@@ -622,6 +637,9 @@ function checkSettings(value: unknown, field: string): CheckSettings {
     ...(value.flakyPlan === undefined
       ? {}
       : { flakyPlan: flakyPlanId(value.flakyPlan, `${field}.flakyPlan`) }),
+    ...(value.loadLimit === undefined
+      ? {}
+      : { loadLimit: positiveNumber(value.loadLimit, `${field}.loadLimit`) }),
   };
 }
 

@@ -36,9 +36,38 @@ export const STOP_REASONS = {
   stepNotLoaded: "step_not_loaded",
   settingsUnreadable: "settings_unreadable",
   stopped: "stopped",
+  /** A harness or model connection that dropped: the socket closed, a reset, a failed fetch. */
+  connection: "connection_error",
   /** A repair run that only puts a task whose run ended in front of a person. */
   runEnded: "run_ended",
 } as const;
+
+const CONNECTION_ERROR = new RegExp(
+  [
+    "socket connection was closed unexpectedly",
+    "socket hang up",
+    "ECONNRESET",
+    "ECONNREFUSED",
+    "ETIMEDOUT",
+    "EAI_AGAIN",
+    "ENOTFOUND",
+    "EPIPE",
+    "fetch failed",
+    "network error",
+    "connection (?:error|reset|closed|lost)",
+    "unable to connect",
+  ].join("|"),
+  "i",
+);
+
+/**
+ * True when text a harness or the host printed for a failed step says the
+ * connection to the model dropped. This reads the error the host gave, never
+ * what an agent wrote in its answer.
+ */
+export function isConnectionError(...texts: readonly (string | undefined)[]): boolean {
+  return texts.some((text) => text !== undefined && CONNECTION_ERROR.test(text));
+}
 
 const TASK: StopVerdict = { kind: "task" };
 
@@ -64,6 +93,8 @@ export function classifyStop(facts: StopFacts): StopVerdict {
         cause: "settings could not be read",
         waitFor: "settings",
       };
+    case STOP_REASONS.connection:
+      return { kind: "environment", cause: `model connection dropped during ${facts.step}` };
     case STOP_REASONS.stopped:
       return { kind: "environment", cause: `run stopped during ${facts.step}` };
     default:
