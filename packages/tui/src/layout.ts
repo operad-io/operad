@@ -120,6 +120,31 @@ function codeGlyphs(text: string, language: string): WrapGlyph<LayoutStyle>[] {
   return make(undefined);
 }
 
+/**
+ * Cuts a code row into rows of `width` columns at any column, keeping its
+ * indentation, and gives every row the block's one column of left padding.
+ */
+function cutCode(glyphs: readonly WrapGlyph<LayoutStyle>[], width: number): WrapGlyph<LayoutStyle>[][] {
+  const [pad, ...body] = glyphs;
+  if (pad === undefined) return [[]];
+  const limit = Math.max(1, Math.trunc(width) - 1);
+  const rows: WrapGlyph<LayoutStyle>[][] = [];
+  let row: WrapGlyph<LayoutStyle>[] = [pad];
+  let used = 0;
+  for (const glyph of body) {
+    const size = Bun.stringWidth(glyph.char);
+    if (used > 0 && used + size > limit) {
+      rows.push(row);
+      row = [pad];
+      used = 0;
+    }
+    row.push(glyph);
+    used += size;
+  }
+  rows.push(row);
+  return rows;
+}
+
 function sameStyle(left: LayoutStyle, right: LayoutStyle): boolean {
   return left.role === right.role && left.attributes === right.attributes;
 }
@@ -164,7 +189,12 @@ export function layoutMarkdown(
     const glyphs = line.code
       ? codeGlyphs(line.text, line.language ?? "")
       : glyphsFor(line.text);
-    const wrapped = width === undefined ? [glyphs] : wrapGlyphs(glyphs, width);
+    const wrapped =
+      width === undefined
+        ? [glyphs]
+        : line.code
+          ? cutCode(glyphs, width)
+          : wrapGlyphs(glyphs, width);
     for (const row of wrapped) {
       if (line.code && width !== undefined) {
         // One rectangle: every row of the block is as wide as the pane.

@@ -93,3 +93,15 @@ describe("theme contrast", () => {
     }
   });
 });
+
+describe("a wrapped code row", () => {
+  test("keeps the block's left padding and its width on every row", () => {
+    const rows = layoutMarkdown("```diff\n+abcdefghijklmnop\n```", 8);
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) {
+      expect(row.text.startsWith(" ")).toBe(true);
+      expect(Bun.stringWidth(row.text)).toBe(8);
+    }
+    expect(rows.map((row) => row.text.trim()).join("")).toBe("+abcdefghijklmnop");
+  });
+});
