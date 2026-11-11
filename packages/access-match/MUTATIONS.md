@@ -84,3 +84,9 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0282-M6 | packages/access-match/src/index.ts | a glob in a cd target was no longer asked about, so `cd /tmp/*` was read as a literal directory | `globs: a cd target with one asks; other words are refused when the pattern can reach a denied path` |
+
+## T-0282 — rework 9
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0282-M7 | packages/access-match/src/index.ts | a bracket class ended at the first `]`, so `[[:punct:]]ssh` was read as a one-letter class followed by `]ssh` | `a POSIX character class in a glob can reach a denied path` |

@@ -543,3 +543,10 @@ test("globs: a cd target with one asks; other words are refused when the pattern
   expect(bash(PATHS, "cat ~/docs/*/x /home/*")).toEqual({ allow: true });
   expect(bash(PATHS, "cat ~/**/id")).toMatchObject({ allow: false, ask: true });
 });
+
+test("a POSIX character class in a glob can reach a denied path", () => {
+  for (const command of ["cat /home/u/[[:punct:]]ssh/id_rsa", "cat /home/u/[^[:alpha:]]ssh/id", "cat /home/u/[]x.]ssh/id", "cat /home/u/[!x]ssh/id"]) {
+    expect(bash(PATHS, command)).toMatchObject({ allow: false, rule: "~/.ssh" });
+  }
+  expect(bash(PATHS, "cat /home/u/[[:digit:]]x/id")).toEqual({ allow: true });
+});

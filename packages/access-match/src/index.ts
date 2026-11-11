@@ -215,14 +215,29 @@ function componentPattern(component: string): RegExp {
     if (ch === "*") source += "[^/]*";
     else if (ch === "?") source += "[^/]";
     else if (ch === "[") {
-      const close = component.indexOf("]", i + 2);
-      if (close === -1) {
+      // Find the closing `]`: a `]` right after `[`, `[!` or `[^` is a member, and `[:class:]` nests.
+      let end = i + 1;
+      if (component.charAt(end) === "!" || component.charAt(end) === "^") end += 1;
+      if (component.charAt(end) === "]") end += 1;
+      let nested = false;
+      while (end < component.length && component.charAt(end) !== "]") {
+        const kind = component.charAt(end + 1);
+        if (component.charAt(end) === "[" && (kind === ":" || kind === "." || kind === "=")) {
+          const close = component.indexOf(`${kind}]`, end + 2);
+          nested = true;
+          end = close === -1 ? component.length : close + 2;
+        } else end += 1;
+      }
+      if (end >= component.length) {
         source += "\\[";
         continue;
       }
-      const body = component.slice(i + 1, close).replace(/\\/g, "\\\\");
-      source += body.startsWith("!") ? `[^${body.slice(1)}]` : `[${body}]`;
-      i = close;
+      if (nested) source += "[^/]"; // a class such as [:punct:] can match any one character; be conservative
+      else {
+        const body = component.slice(i + 1, end).replace(/[\\\]]/g, "\\$&");
+        source += body.startsWith("!") || body.startsWith("^") ? `[^${body.slice(1)}]` : `[${body}]`;
+      }
+      i = end;
     } else source += ch.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
   }
   return new RegExp(`^${source}$`);
