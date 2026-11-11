@@ -328,3 +328,8 @@ the row fields.
 |---|---|---|---|
 | T-0278-M2 | packages/tui/src/args.ts | optional enums were left out of the form, so the chat's harness choices were never asked | `arguments of an action > an optional enum is a choice that starts unset; an optional text is not asked` |
 | T-0278-M3 | packages/tui/src/actions.ts | an optional pick started on its first option, so Enter sent the static first harness instead of leaving the run's first-loaded default | `arguments of an action > an optional enum is a choice that starts unset; an optional text is not asked` |
+## T-0296 — a repository with no plans stays a group row
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0296-M1 | packages/tui/src/app.ts | the grouped list needed every top-level object to have a next level (`every` for `some`), so one empty repository dropped the list back to the roots | `one tab per plugin > a repository with no plans is still a group row among the grouped plans` |

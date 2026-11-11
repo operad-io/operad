@@ -89,6 +89,8 @@ export interface TuiRow {
   readonly parent?: string | undefined;
   /** On the first row of a group: the top-level object the group is named for. */
   readonly group?: TuiRow | undefined;
+  /** The row is a top-level object with nothing under it, shown as its own group row. */
+  readonly bare?: boolean | undefined;
 }
 
 /** The next level under the open object: its rows and where the cursor is in them. */
@@ -510,6 +512,8 @@ export interface TuiTreeEntry {
   readonly parent?: string | undefined;
   /** Set on the first row of a group: the top-level object's own row and type. */
   readonly heading?: { readonly row: ViewRow; readonly type: string } | undefined;
+  /** A top-level object with nothing under it: its row is its own group row. */
+  readonly bare?: boolean | undefined;
 }
 
 /** What the reducer accepts. */
@@ -1120,7 +1124,7 @@ export function listWidth(state: TuiState): number {
   if (tab?.kind !== "plugin" || tab.list.rows.length === 0) return cap;
   let need = PLUGIN_LIST_MIN;
   for (const row of tab.list.rows) {
-    const indent = tab.list.rows.some((one) => one.group !== undefined) ? 2 : 0;
+    const indent = row.bare !== true && tab.list.rows.some((one) => one.group !== undefined) ? 2 : 0;
     need = Math.max(need, ROW_INDENT + indent + cells(rowName(row)), ROW_INDENT + indent + cells(rowDetail(row)));
     if (row.group !== undefined) {
       need = Math.max(need, ROW_INDENT + cells(rowName(row.group)), ROW_INDENT + cells(rowDetail(row.group)));
@@ -2283,6 +2287,7 @@ function replaceListRow(state: TuiState, row: TuiRow): TuiState {
         ...(old.type === undefined ? {} : { type: old.type }),
         ...(old.parent === undefined ? {} : { parent: old.parent }),
         ...(old.group === undefined ? {} : { group: old.group }),
+        ...(old.bare === true ? { bare: true } : {}),
       };
     });
     return changed && rows.some((r, i) => r !== tab.list.rows[i])
@@ -2428,6 +2433,7 @@ function firstType(state: TuiState, tabId: string): string | undefined {
 function rowOfEntry(entry: TuiTreeEntry): TuiRow {
   return {
     ...rowFromView(entry.row, entry.type),
+    ...(entry.bare === true ? { bare: true } : {}),
     ...(entry.parent === undefined ? {} : { parent: sanitize(entry.parent) }),
     ...(entry.heading === undefined
       ? {}
