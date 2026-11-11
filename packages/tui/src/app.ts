@@ -840,7 +840,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       (parent === page.id || parent === `${page.type}:${page.id}`);
     if (known || onPage) {
       dispatch({ type: "row", row: result.value.row });
-      if (known || !underPage) return;
+      // The row is held already: its change needs no refetch of the lists.
+      return;
     }
     if (underPage && page !== undefined && !onPage) {
       await loadChildren(

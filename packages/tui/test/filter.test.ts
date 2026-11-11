@@ -245,11 +245,11 @@ describe("filters: view", () => {
 
   test("the filter shows only on the current tab; a type without filters has no suffix", () => {
     let state = onTasks();
-    expect(headerOf(state)).toBe(" operad   Pending 0 · Running 0 · Task 3 · active · 4 hidden · Note");
+    expect(headerOf(state)).toBe(" operad   Pending 0 │ Running 0 │ Task 3 · active · 4 hidden │ Note");
     state = key(state, "4");
-    expect(headerOf(state)).toBe(" operad   Pending 0 · Running 0 · Task 3 · Note");
+    expect(headerOf(state)).toBe(" operad   Pending 0 │ Running 0 │ Task 3 │ Note");
     state = key(state, "1");
-    expect(headerOf(state)).toBe(" operad   Pending 0 · Running 0 · Task 3 · Note");
+    expect(headerOf(state)).toBe(" operad   Pending 0 │ Running 0 │ Task 3 │ Note");
   });
 
   test("the list title names the page and a type list's filter, in the weak colour", () => {

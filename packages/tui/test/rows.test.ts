@@ -112,23 +112,24 @@ describe("two-line rows", () => {
 
   test("a Pending row: the waiting reason, then the repository", () => {
     const pending = (width: number, prompt: string, title: string): TuiState => {
-    let state = initialState({ width, height: 24, theme: "dark" });
-    state = reduce(state, {
-      type: "pending",
-      items: [
-        {
-          runId: "r1",
-          flow: "dev",
-          step: "merge",
-          prompt,
-          choices: [],
-          actions: [],
-          object: "task:operad/T-0093-flaky-survey",
-          row: { id: "T-0093-flaky-survey", title, state: "waiting", waiting: true, running: false },
-        },
-      ],
-    });
-    return state;
+      let state = initialState({ width, height: 24, theme: "dark" });
+      state = reduce(state, {
+        type: "pending",
+        items: [
+          {
+            runId: "r1",
+            flow: "dev",
+            step: "merge",
+            prompt,
+            choices: [],
+            actions: [],
+            object: "task:operad/T-0093-flaky-survey",
+            row: { id: "T-0093-flaky-survey", title, state: "waiting", waiting: true, running: false },
+          },
+        ],
+      });
+      return state;
+
     };
     const lines = drawnLines(pending(120, "Ready to merge", "Survey the flaky tests"));
     expect(textOf(lines[2]).trimEnd()).toBe("❯ ● T-0093 flaky-survey  Survey the flaky tests");
