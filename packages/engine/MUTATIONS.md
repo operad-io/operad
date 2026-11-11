@@ -562,3 +562,9 @@ the row fields.
 | T-0251-M12 | packages/engine/src/log/jsonl.ts | a runs index cut shorter than what was read was not rebuilt from the directory | `the jsonl backend over a large history > a missing or cut runs index is rebuilt from one read of the directory` |
 | T-0251-M13 | packages/engine/src/log/jsonl.ts | a runs index ending in half a line was accepted instead of rebuilt | `the jsonl backend over a large history > a missing or cut runs index is rebuilt from one read of the directory` |
 | T-0251-M14 | packages/engine/src/log/jsonl.ts | an index that cannot be opened threw instead of falling back to the directory | `the jsonl backend over a large history > a missing or cut runs index is rebuilt from one read of the directory` |
+
+## T-0242-history-no-run-id — the History section shows no run id
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0242-history-no-run-id-M1 | packages/engine/src/views/presentation.ts | put `lines.push(`<sub>run ${run.runId}</sub>`)` back at the end of each run in the history section | `presentation > the history of an object with two runs shows no tag and no run id` |
