@@ -21,6 +21,13 @@ import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts"
 
 afterAll(cleanupTempRoots);
 
+/** A test run from inside a supervised serve must not start a supervised child. */
+function testEnv(): Record<string, string> {
+  const env = { ...(process.env as Record<string, string>) };
+  delete env.OPERAD_SERVE_SUPERVISED;
+  return env;
+}
+
 const CLI_ENTRY = fileURLToPath(
   new URL("../../cli/bin/operad.ts", import.meta.url),
 );
@@ -290,7 +297,7 @@ function start(
   const child = Bun.spawn({
     cmd: [process.execPath, CLI_ENTRY, "mcp", ...extra],
     cwd,
-    env: { ...(process.env as Record<string, string>), OPERAD_HOME: home },
+    env: { ...testEnv(), OPERAD_HOME: home },
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",

@@ -55,34 +55,9 @@ export async function waitForPid(path: string): Promise<number> {
   }
 }
 
-/** True while `kill -0` finds the pid: a zombie its parent has not reaped still counts. */
-export function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Resolves when the pid is gone. The stop path signals the group and returns;
- * the kernel takes the processes down, and a parent reaps them, a moment later.
- * On a bounded timeout it throws with `ps -o stat,ppid` of the pid, so a
- * zombie (stat Z, not yet reaped) is told from a live process (a product race).
- */
-export async function waitForGone(pid: number, timeoutMs = 5000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (alive(pid)) {
-    if (Date.now() >= deadline) {
-      const ps = Bun.spawnSync(["ps", "-o", "stat,ppid", "-p", String(pid)]);
-      throw new Error(
-        `pid ${pid} still present after ${timeoutMs} ms; ps -o stat,ppid: ${ps.stdout.toString().trim()}`,
-      );
-    }
-    await new Promise((resolve) => globalThis.setTimeout(resolve, 10));
-  }
-}
+// The pid waits are shared with the engine's plugin tests: one implementation,
+// not a copy in every package that needs it.
+export { alive, waitForGone } from "../../engine/test/plugin/support.ts";
 
 export interface ManualClock extends Clock {
   /** Fires every timeout still scheduled; returns how many there were. */
