@@ -50,14 +50,10 @@ export const TEST_TIMEOUT_MARGIN = 0.05;
 /** How often the wait for a quiet machine looks at the load again. */
 export const LOAD_POLL_MS = 30_000;
 
-/** The longest the wait for a quiet machine lasts; the check then runs anyway. */
-export const LOAD_WAIT_MAX_MS = 60 * 60_000;
-
-/** Test-only: a load reader, a wait and a clock in place of the real ones. */
+/** Test-only: a load reader and a wait in place of the real ones. */
 export const notCodeTestHooks: {
   load?: (() => MachineLoad) | undefined;
   wait?: ((ms: number, signal: AbortSignal | undefined) => Promise<boolean>) | undefined;
-  now?: (() => number) | undefined;
 } = {};
 
 export function currentLoad(): MachineLoad {
@@ -197,15 +193,12 @@ async function waitForQuiet(
   signal: AbortSignal | undefined,
   onLog: (text: string) => Promise<unknown> | unknown,
 ): Promise<boolean> {
-  const now = notCodeTestHooks.now ?? Date.now;
   const wait = notCodeTestHooks.wait ?? waitFor;
-  const deadline = now() + LOAD_WAIT_MAX_MS;
   let said = false;
   for (;;) {
     if (signal?.aborted === true) return false;
     const load = currentLoad();
     if (!isLoaded(load, limit)) return true;
-    if (now() >= deadline) return true;
     if (!said) {
       said = true;
       try {
@@ -216,7 +209,7 @@ async function waitForQuiet(
         // A note that could not be written does not change the wait.
       }
     }
-    if (!(await wait(Math.min(LOAD_POLL_MS, Math.max(0, deadline - now())), signal))) return false;
+    if (!(await wait(LOAD_POLL_MS, signal))) return false;
   }
 }
 

@@ -645,8 +645,53 @@ export async function runIntegrate(
           signal: ctx.signal,
           log: (text) => ctx.logger.write(text),
         });
+        if (steady.cancelled === true) return cancelledStep();
         const { checked } = steady;
         await recordRerunPasses(ctx.store, checked.passedOnRerun);
+        if (steady.notCode !== undefined) {
+          // The batch's candidate was not accepted: the leader waits for a
+          // person, and the tasks it claimed integrate alone.
+          const data =
+            checked.outcome !== undefined && isRecord(checked.outcome.data)
+              ? checked.outcome.data
+              : {};
+          const command = typeof data.line === "string" ? data.line : undefined;
+          const log = typeof data.log === "string" ? data.log : undefined;
+          const lineNumber =
+            typeof data.lineNumber === "number" ? data.lineNumber : undefined;
+          const detail =
+            checked.hostError ??
+            (typeof data.message === "string"
+              ? data.message
+              : "the integration checks failed");
+          const record: IntegrationRecord = {
+            result: "failed",
+            run: ctx.runId,
+            style: settings.integration.style,
+            verified,
+            candidate: own.sha,
+            base,
+            head: head ?? null,
+            headMoved,
+            ...(command === undefined ? {} : { command }),
+            ...(log === undefined ? {} : { log }),
+            ...(lineNumber === undefined ? {} : { lineNumber }),
+            message: `${steady.notCode.cause}; ${detail}`,
+            notCode: steady.notCode.cause,
+          };
+          queue.fallBack(followers);
+          if (
+            (await writeIntegration(ctx, context, task, attempt, record, {
+              phase: "waiting",
+            })) === undefined
+          ) {
+            return cancelledStep();
+          }
+          return {
+            result: "failed",
+            data: integrationData(record, attempt, { message: record.message }),
+          };
+        }
         if (checked.hostError !== undefined || checked.outcome?.result !== "pass") {
           return undefined;
         }

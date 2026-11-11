@@ -404,13 +404,13 @@ are one function, `classifyCheck` in `src/notcode.ts`):
 
 For the first three, dev does not send the task to the worker. It waits until
 the machine's 1-minute load average (the one `running` reports) is below
-`check.loadLimit` (default: the number of cores), for at most an hour, then runs
-the check once more by itself. A pass or an assertion failure on that run stands
-and goes the usual way. A second result of the same kind ends with the task
-waiting for a person, and the waiting line says why, for example `check timed
-out twice under load 18 on 10 cores`. An integration check that ends this way
-waits for a person the same way and does not send the task back to work. A
-real assertion failure goes to the worker as before.
+`check.loadLimit` (default: the number of cores), then runs the check once more
+by itself. A pass or an assertion failure on that run stands and goes the usual
+way. A second result of the same kind ends with the task waiting for a person,
+and the waiting line says why, for example `check timed out twice under load 18
+on 10 cores`. An integration check that ends this way waits for a person the
+same way and does not send the task back to work; in a batch, the other tasks
+integrate alone. A real assertion failure goes to the worker as before.
 
 A test that fails and then passes on rerun is still a bug until shown
 otherwise, but only for a run on an idle machine: when the load was at or above

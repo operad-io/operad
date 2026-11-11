@@ -62,6 +62,7 @@ const CHILD = fileURLToPath(
 interface FixtureOptions {
   readonly style?: IntegrationStyle;
   readonly keyCommands?: readonly unknown[];
+  readonly check?: Readonly<Record<string, number>>;
   readonly hooks?: readonly string[];
   /** Tasks of the same repository, verified like the first, that integrate with it. */
   readonly more?: number;
@@ -452,14 +453,15 @@ describe("dev/integrate", () => {
   });
 
   test("an integration check killed by a signal twice waits for a person, not for the worker", async () => {
-    notCodeTestHooks.load = () => ({ load1: 18, cores: 10 });
-    notCodeTestHooks.now = () => 0;
-    let now = 0;
-    notCodeTestHooks.now = () => now;
-    notCodeTestHooks.wait = async () => {
-      now += 30 * 60_000;
-      return true;
-    };
+    // Busy before and after the first run and while waiting, quiet before the
+    // second run, busy again when that one ends.
+    const readings = [18, 18, 18, 18, 2, 18];
+    let reads = 0;
+    notCodeTestHooks.load = () => ({
+      load1: readings[Math.min(reads++, readings.length - 1)] ?? 18,
+      cores: 10,
+    });
+    notCodeTestHooks.wait = async () => true;
     try {
       const state = await fixture({ style: "merge", keyCommands: ["exit 143"] });
       const before = remoteMain(state);
@@ -475,7 +477,77 @@ describe("dev/integrate", () => {
     } finally {
       notCodeTestHooks.load = undefined;
       notCodeTestHooks.wait = undefined;
-      notCodeTestHooks.now = undefined;
+    }
+  });
+
+  test("a batch check that is not the code twice waits for a person and does not fall back", async () => {
+    const root = await tempRoot();
+    const count = join(root, "count");
+    const state = await fixture({
+      more: 1,
+      batch: 2,
+      check: { rerun: 0 },
+      keyCommands: [
+        `n=$(cat '${count}' 2>/dev/null || echo 0); n=$((n+1)); echo $n > '${count}'; [ $n -le 2 ] && exit 143; exit 0`,
+      ],
+    });
+    const follower = state.others[0];
+    if (follower === undefined) throw new Error("task missing");
+    // The leader's first check waits and reruns under the same high load; the
+    // follower's later run is on a quiet machine.
+    const readings = [18, 18, 18, 18, 18, 2, 18, 18, 18, 18, 18, 2, 18];
+    let reads = 0;
+    notCodeTestHooks.load = () => ({
+      load1: readings[Math.min(reads++, readings.length - 1)] ?? 18,
+      cores: 10,
+    });
+    notCodeTestHooks.wait = async () => true;
+    const rings = bell();
+    integrateTestHooks.wait = rings.wait;
+    const queued = new Map([
+      [state.taskId, signal()],
+      [follower.taskId, signal()],
+    ]);
+    integrateTestHooks.queued = (task) => queued.get(task)?.resolve();
+    const followerTurn = signal();
+    const release = signal();
+    integrateTestHooks.turnTaken = async (task) => {
+      if (task === state.taskId) {
+        await queued.get(follower.taskId)?.promise;
+        return;
+      }
+      if (task === follower.taskId) {
+        followerTurn.resolve();
+        await release.promise;
+      }
+    };
+    try {
+      const leader = integrate(state, "integrate-run");
+      await queued.get(state.taskId)?.promise;
+      const followerRun = integrate(follower, "integrate-run-2");
+      await queued.get(follower.taskId)?.promise;
+      await rings.parked(1);
+      const result = await leader;
+      expect(result.result).toBe("failed");
+      const task = await taskOf(state);
+      expect(task.phase).toBe("waiting");
+      expect(task.attempt?.integration?.notCode).toBe(
+        "check was killed by SIGTERM twice under load 18 on 10 cores",
+      );
+      // The leader's two runs are all: it did not fall back and run again.
+      expect(readFileSync(count, "utf8").trim()).toBe("2");
+      rings.ring();
+      await followerTurn.promise;
+      expect(readFileSync(count, "utf8").trim()).toBe("2");
+      release.resolve();
+      expect((await followerRun).result).toBe("merged");
+      expect(readFileSync(count, "utf8").trim()).toBe("3");
+      expect(gitOrThrow(state.remote.origin, ["show", "main:code1.txt"])).toBe("line");
+      expect(git(state.remote.origin, ["show", "main:code.txt"]).ok).toBe(false);
+    } finally {
+      release.resolve();
+      notCodeTestHooks.load = undefined;
+      notCodeTestHooks.wait = undefined;
     }
   });
 

@@ -3838,27 +3838,22 @@ describe("prepare", () => {
 describe("dev/verify tells a result that is not the code from one that is", () => {
   const MATCH = "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$";
   const slow = "echo '(fail) a > slow [30001.00ms]' >&2; exit 1";
-  const MINUTES = 60_000;
 
   afterEach(() => {
     notCodeTestHooks.load = undefined;
     notCodeTestHooks.wait = undefined;
-    notCodeTestHooks.now = undefined;
   });
 
-  /** A load that follows `loads`, one reading per call, then repeats the last. */
+  /** A load that follows `readings`, one reading per call, then repeats the last. */
   function loads(...readings: number[]): { waits: number } {
     const seen = { waits: 0 };
     let index = 0;
-    let clock = 1_000_000;
     notCodeTestHooks.load = () => ({
       load1: readings[Math.min(index++, readings.length - 1)] ?? 0,
       cores: 10,
     });
-    notCodeTestHooks.now = () => clock;
     notCodeTestHooks.wait = async () => {
       seen.waits += 1;
-      clock += 20 * MINUTES;
       return true;
     };
     return seen;
@@ -3887,11 +3882,13 @@ describe("dev/verify tells a result that is not the code from one that is", () =
   });
 
   test("the same result twice goes to a person, and the waiting line says why", async () => {
-    const seen = loads(18);
+    // Busy before and after the first run and while waiting, quiet before the
+    // second run, busy again when that one ends.
+    const seen = loads(18, 18, 18, 18, 3, 18);
     const state = await fixture({ commands: [slow] });
     const result = await verify(state);
     expect(result.result).toBe("not_code");
-    expect(seen.waits).toBeGreaterThan(0);
+    expect(seen.waits).toBe(2);
     const task = await taskOf(state);
     expect(task.phase).toBe("waiting");
     expect(task.attempt?.verify?.notCode).toBe("tests timed out twice under load 18 on 10 cores");
@@ -3904,7 +3901,7 @@ describe("dev/verify tells a result that is not the code from one that is", () =
   });
 
   test("a run killed by a signal nobody sent is treated the same way", async () => {
-    loads(18);
+    loads(18, 18, 18, 18, 3, 18);
     const state = await fixture({ commands: ["exit 143"] });
     const result = await verify(state);
     expect(result.result).toBe("not_code");

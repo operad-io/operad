@@ -16,7 +16,6 @@ import { validateDevSettings } from "../src/settings.ts";
 afterEach(() => {
   notCodeTestHooks.load = undefined;
   notCodeTestHooks.wait = undefined;
-  notCodeTestHooks.now = undefined;
 });
 
 const fail = (extra: Partial<CheckFacts>): CheckFacts => ({ result: "fail", reason: "exit", log: "", ...extra });
@@ -72,7 +71,6 @@ describe("runCheckSteadily", () => {
   test("a timeout waits for a quiet machine, runs once more, and the second result stands", async () => {
     let load = 18;
     notCodeTestHooks.load = () => ({ load1: load, cores: 10 });
-    notCodeTestHooks.now = () => 0;
     let waits = 0;
     notCodeTestHooks.wait = async () => {
       waits += 1;
@@ -88,16 +86,27 @@ describe("runCheckSteadily", () => {
     expect(steady.notCode).toBeUndefined();
   });
 
-  test("a second timeout goes to a person, with the load in the cause", async () => {
-    notCodeTestHooks.load = () => ({ load1: 18.4, cores: 10 });
-    let now = 0;
-    notCodeTestHooks.now = () => now;
+  test("a second timeout goes to a person, after the load stayed high past an hour", async () => {
+    let load = 18.4;
+    notCodeTestHooks.load = () => ({ load1: load, cores: 10 });
+    let waits = 0;
     notCodeTestHooks.wait = async () => {
-      now += 30 * 60_000;
+      waits += 1;
+      // The check may not run while the load is high, however long that lasts.
+      if (waits === 3) load = 2;
       return true;
     };
     let calls = 0;
-    const steady = await runCheckSteadily({ run: async () => (calls++, run({ reason: "timeout" })), limit: undefined });
+    const steady = await runCheckSteadily({
+      run: async () => {
+        calls += 1;
+        // The second run sees the same high load the waiting line names.
+        if (calls === 2) load = 18;
+        return run({ reason: "timeout" });
+      },
+      limit: undefined,
+    });
+    expect(waits).toBe(3);
     expect(calls).toBe(2);
     expect(steady.notCode?.cause).toBe("check timed out twice under load 18 on 10 cores");
   });
@@ -118,7 +127,6 @@ describe("runCheckSteadily", () => {
 
   test("a cancel while waiting stops without a second run", async () => {
     notCodeTestHooks.load = () => ({ load1: 18, cores: 10 });
-    notCodeTestHooks.now = () => 0;
     notCodeTestHooks.wait = async () => false;
     let calls = 0;
     const steady = await runCheckSteadily({ run: async () => (calls++, run({ reason: "timeout" })), limit: undefined });

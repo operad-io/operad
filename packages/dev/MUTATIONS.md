@@ -661,6 +661,8 @@ the row fields.
 | T-0224-M2 | packages/dev/src/gate.ts | verify never told the flaky-test count that the machine was busy, so passes under load counted toward a task | `a test that passes on rerun under load is recorded and proposes no task` |
 | T-0224-M3 | packages/dev/src/steps.ts | a work step that ended on a dropped model connection was recorded as an ordinary harness failure | `a dropped model connection is retried once by dev/retry, not sent to a person` |
 | T-0224-M4 | packages/dev/src/integrate.ts | an integration check that was not the code twice was sent back to work as a rework | `an integration check killed by a signal twice waits for a person, not for the worker` |
+| T-0224-M5 | packages/dev/src/notcode.ts | let the wait for a quiet machine end while the load was still high | `runCheckSteadily > a second timeout goes to a person, after the load stayed high past an hour` |
+| T-0224-M6 | packages/dev/src/integrate.ts | a batch check that was not the code twice fell back to the one-by-one path instead of waiting for a person | `dev/integrate > a batch check that is not the code twice waits for a person and does not fall back` |
 | T-0188-M18 | packages/dev/src/chat.ts | `dev:chat` accepted a harness that is not loaded | `dev:chat > the harness must be loaded: one that is not is refused and the loaded ones are named` |
 | T-0188-M19 | packages/dev/src/chat.ts | the chat profile did not deny the `operad` command | `dev:chat > the profile keeps the agent out of the operad command` |
 | T-0188-M28 | packages/dev/src/chat.ts | `dev:chat` no longer refused harness-radian by name | `dev:chat > harness-radian is refused with the reason, whether given or the only one loaded` |
