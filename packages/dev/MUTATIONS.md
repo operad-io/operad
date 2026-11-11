@@ -820,3 +820,6 @@ the row fields.
 |---|---|---|---|
 | T-0294-M1 | packages/dev/test/gate.test.ts | the injected load was a busy one (18 on 10 cores) again, so the rerun passes never counted | `dev/verify reruns only the failed tests > a test that reaches check.flakyTask is proposed in the flaky-tests plan, with no notice` (packages/dev/test/gate.test.ts) |
 | T-0174-M6 | packages/dev/src/flaky.ts | the proposal loop ignored which tests this check saw under load, so an older idle count could still open a task | `a flaky test proposes a task > a failure seen under load opens no task from an earlier idle count` |
+| T-0267-M1 | packages/dev/src/commands.ts | re-broke TK0019-M7 (`task edit`/`task update` looked a task up by its bare id) with the in-process cli tests | `operad with the dev plugin > task edit and update resolve the repository like every other command` (also three more in cli.test.ts) |
+| T-0267-M2 | packages/dev/src/model.ts | re-broke TK0011-M9 (`PLAN_ID`/`TASK_ID` rejected the old `PL`/`TK` form) | `operad with the dev plugin > show and dev:confirm take an old id, and an id is matched exactly` |
+| T-0267-M3 | packages/dev/src/views.ts | re-broke waiting-notices-M8 (`showRepository` always false) | `operad with the dev plugin > lists name the repository once more than one is registered` |

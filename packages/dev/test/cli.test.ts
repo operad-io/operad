@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { Readable } from "node:stream";
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,6 +27,19 @@ const CLI_ENTRY = fileURLToPath(new URL("../../cli/bin/operad.ts", import.meta.u
 const PLUGIN = fileURLToPath(new URL("../src/index.ts", import.meta.url));
 const POOL = fileURLToPath(new URL("../../pool/src/index.ts", import.meta.url));
 const SHELL = fileURLToPath(new URL("../../shell/src/index.ts", import.meta.url));
+
+/** The CLI's own entry point, loaded by path: the dev package does not build against the cli package. */
+interface CliMain {
+  main(
+    args: readonly string[],
+    options: {
+      home: string;
+      io: { write(text: string): void; error(text: string): void };
+      isTTY: boolean;
+    },
+  ): Promise<number>;
+}
+const CLI_MAIN = fileURLToPath(new URL("../../cli/src/main.ts", import.meta.url));
 
 interface RunResult {
   readonly code: number;
@@ -56,7 +70,7 @@ async function setup(): Promise<{
   return { root, home, repository };
 }
 
-async function run(
+async function runReal(
   home: string,
   cwd: string,
   args: readonly string[],
@@ -81,11 +95,54 @@ async function run(
   return { out, err, code };
 }
 
+/**
+ * Runs a command in this process: the CLI's own `main` with collected output,
+ * the working directory, standard input and environment set around it. Tests
+ * in this file run one after another, so the process-wide state is safe.
+ */
+async function run(
+  home: string,
+  cwd: string,
+  args: readonly string[],
+  input?: string,
+  env: Record<string, string> = {},
+): Promise<RunResult> {
+  const out: string[] = [];
+  const err: string[] = [];
+  const previousCwd = process.cwd();
+  const previousEnv = { ...process.env };
+  const stdinDescriptor = Object.getOwnPropertyDescriptor(process, "stdin");
+  process.chdir(cwd);
+  Object.assign(process.env, { OPERAD_HOME: home }, env);
+  Object.defineProperty(process, "stdin", {
+    configurable: true,
+    value: Readable.from(input === undefined ? [] : [Buffer.from(input)]),
+  });
+  try {
+    const { main } = (await import(CLI_MAIN)) as CliMain;
+    const code = await main([...args], {
+      home,
+      io: { write: (text) => out.push(text), error: (text) => err.push(text) },
+      isTTY: false,
+    });
+    return { code, out: out.join(""), err: err.join("") };
+  } finally {
+    if (stdinDescriptor !== undefined) {
+      Object.defineProperty(process, "stdin", stdinDescriptor);
+    }
+    for (const key of Object.keys(process.env)) {
+      if (!(key in previousEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, previousEnv);
+    process.chdir(previousCwd);
+  }
+}
+
 describe("operad with the dev plugin", () => {
   test("the real binary registers, plans, lists, shows and confirms", async () => {
     const { root, home, repository } = await setup();
 
-    const added = await run(home, repository, ["repo", "add", "."]);
+    const added = await runReal(home, repository, ["repo", "add", "."]);
     expect(added.code).toBe(0);
     expect(added.out).toContain(`added ${repository.split("/").pop()}`);
     expect(
@@ -97,7 +154,7 @@ describe("operad with the dev plugin", () => {
       readFileSync(join(repository, ".git", "info", "exclude"), "utf8"),
     ).toContain(".operad-worktrees/");
 
-    const plan = await run(
+    const plan = await runReal(
       home,
       repository,
       ["plan", "add", "--slug", "alpha", "--title", "Alpha"],
@@ -107,7 +164,7 @@ describe("operad with the dev plugin", () => {
     const planId = plan.out.trim();
     expect(planId).toBe("P-0001-alpha");
 
-    const task = await run(
+    const task = await runReal(
       home,
       repository,
       [
@@ -126,11 +183,11 @@ describe("operad with the dev plugin", () => {
     const taskId = task.out.trim();
     expect(taskId).toBe("T-0001-first");
 
-    const listed = await run(home, repository, ["list", "task"]);
+    const listed = await runReal(home, repository, ["list", "task"]);
     expect(listed.code).toBe(0);
     expect(listed.out).toContain(`${taskId}  proposed  First task`);
 
-    const planShown = await run(home, repository, ["show", planId]);
+    const planShown = await runReal(home, repository, ["show", planId]);
     expect(planShown.code).toBe(0);
     const planLines = planShown.out.split("\n");
     const rowAt = planLines.findIndex((line) => line.includes(`${taskId}  proposed  First task`));
@@ -139,7 +196,7 @@ describe("operad with the dev plugin", () => {
     expect(rowAt).toBeLessThan(sectionsAt);
     expect(planLines[sectionsAt]).not.toContain("Tasks");
 
-    const brief = await run(home, repository, [
+    const brief = await runReal(home, repository, [
       "show",
       taskId,
       "--section",
@@ -149,16 +206,16 @@ describe("operad with the dev plugin", () => {
     expect(brief.out).toContain("Use the store.");
     expect(brief.out).not.toContain("## Changes");
 
-    const confirmed = await run(home, repository, ["dev:confirm", planId]);
+    const confirmed = await runReal(home, repository, ["dev:confirm", planId]);
     expect(confirmed.code).toBe(0);
-    const ready = await run(home, repository, ["list", "task"]);
+    const ready = await runReal(home, repository, ["list", "task"]);
     expect(ready.out).toContain(`${taskId}  ready  First task`);
 
-    const second = await run(home, repository, ["dev:confirm", planId]);
+    const second = await runReal(home, repository, ["dev:confirm", planId]);
     expect(second.code).toBe(0);
     expect(second.out).toContain(`${planId} is already confirmed; nothing to do`);
 
-    const changes = await run(home, repository, [
+    const changes = await runReal(home, repository, [
       "show",
       taskId,
       "--section",
@@ -445,13 +502,13 @@ describe("operad with the dev plugin", () => {
     const planId = plan.out.trim();
 
     const [first, second] = await Promise.all([
-      run(
+      runReal(
         home,
         repository,
         ["task", "add", "--plan", planId, "--slug", "same", "--title", "One"],
         "first brief\n",
       ),
-      run(
+      runReal(
         home,
         repository,
         ["task", "add", "--plan", planId, "--slug", "same", "--title", "Two"],
@@ -601,7 +658,7 @@ describe("operad with the dev plugin", () => {
       "Old body\n",
     );
     const id = task.out.trim();
-    const edited = await run(home, repository, ["task", "edit", id], "Piped body\n", {
+    const edited = await runReal(home, repository, ["task", "edit", id], "Piped body\n", {
       EDITOR: "false",
     });
     expect(edited.code).toBe(0);
