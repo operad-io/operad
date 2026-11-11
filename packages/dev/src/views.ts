@@ -72,6 +72,7 @@ function waitNote(task: TaskData): string | undefined {
   ) {
     return `waiting for ${(task.dependencyHeldFor ?? []).join(", ")}`;
   }
+  if (task.phase === "ready" && task.flowHeld !== undefined) return task.flowHeld;
   if (task.phase !== "waiting") return undefined;
   const integration = task.attempt?.integration;
   if (integration === undefined || integration === null) return undefined;
@@ -235,6 +236,7 @@ export const taskViews: ObjectViews = {
       costNote(task.cost, task.costQuality) ?? "$0.00",
       workerNote(task),
       areaNote,
+      task.flowShown === undefined ? undefined : `flow: ${task.flowShown}`,
       waitNote(task),
     ]
       .filter((part): part is string => part !== undefined)
@@ -278,11 +280,12 @@ export const taskViews: ObjectViews = {
     const task = taskData(object.data);
     const parts = splitBrief(task.brief);
     if (sectionId === "brief") {
+      const header = [
+        ...(task.area === undefined ? [] : [`Area: ${task.area}`]),
+        ...(task.flowShown === undefined ? [] : [`Flow: ${task.flowShown}`]),
+      ];
       return {
-        markdown:
-          task.area === undefined
-            ? parts.body
-            : `Area: ${task.area}\n\n${parts.body}`,
+        markdown: header.length === 0 ? parts.body : `${header.join("\n\n")}\n\n${parts.body}`,
       };
     }
     if (sectionId === "rework") return { markdown: parts.reworks };

@@ -125,6 +125,8 @@ export type PlanData = {
   readonly lastStartedAt?: number | undefined;
   /** The flow the plan's tasks start with; absent means `default`. */
   readonly flow?: string | undefined;
+  /** Why a ready task of this plan cannot start for its flow; the scheduler keeps it current. */
+  readonly flowHeld?: string | undefined;
 };
 
 /** What the verify step found when it ran the gate commands. */
@@ -447,6 +449,10 @@ export type TaskData = {
   readonly run: string | null;
   /** The flow this task starts with; absent inherits the plan's flow. */
   readonly flow?: string | undefined;
+  /** The flow a row and the brief name, set only while the repository defines more than one. */
+  readonly flowShown?: string | undefined;
+  /** Why this ready task does not start: its flow is not defined in the repository's dev.json. */
+  readonly flowHeld?: string | undefined;
   /** The flow this attempt runs; absent for a run that started before flows had names. */
   readonly flowName?: string | undefined;
   /** The compiled graph this attempt started with, so a later config cannot change it midway. */
@@ -1087,6 +1093,7 @@ export function planNote(plan: PlanData): string {
     ...(cost === undefined ? [] : [cost]),
     plan.auto,
     plan.priority,
+    ...(plan.flowHeld === undefined ? [] : [plan.flowHeld]),
   ];
   return `${parts.join(" · ")} // ${plan.concurrency}`;
 }

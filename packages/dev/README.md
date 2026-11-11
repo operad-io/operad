@@ -165,7 +165,11 @@ cleanup at the end, so a repository writes neither.
 A repository that writes no `flows` runs the built-in `default` flow: work,
 check, review, human. A flow named `default` is the one a task starts with; a
 plan or task may choose another with `--flow <name>`, and once a task's first
-attempt starts it keeps that flow. Every flow needs at least one `check`,
+attempt starts it keeps that flow (`task update --flow` refuses after it). A task
+without `--flow` takes its plan's flow, and a plan without one takes `default`. A task whose
+flow dev.json does not define stays ready, and its row and its plan's row say `flow <name>
+is not defined in .operad/dev.json`. When a repository defines more than one flow, the task
+row and the Brief name the task's flow, and history names it on each run start. Every flow needs at least one `check`,
 `review` or `human` stage. A `human` stage asks a person; when it is the last
 stage, its merge answer goes to integrate, and when it is not, that answer
 continues with the next stage. A flow whose last stage is not `human` goes
