@@ -2717,9 +2717,9 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
 
 /** True when the terminal is wide enough for the list and the object pane. */
 export function twoPane(state: TuiState): boolean {
-  // The terminal's share of the list decides, not the narrower column a plugin
-  // tab may use: below 100 columns there is one pane, whatever the rows are.
-  const right = LIST_X + listWidthFor(state.width) + 3;
+  // The list's own width decides: a plugin tab's narrower column leaves room
+  // for the object pane sooner than the Pending and Running tabs' wider one.
+  const right = LIST_X + listWidth(state) + 3;
   return state.width - right - 1 >= MIN_OBJECT_WIDTH;
 }
 

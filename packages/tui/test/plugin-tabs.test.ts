@@ -22,6 +22,7 @@ import {
   PLUGIN_LIST_MAX_WIDTH,
   PLUGIN_LIST_MIN,
   reduce,
+  twoPane,
 } from "../src/state.ts";
 import { drawState } from "../src/view/index.ts";
 import { immediateClock } from "./support.ts";
@@ -354,6 +355,28 @@ describe("one tab per plugin", () => {
       for (const line of lines) expect(line.length).toBeLessThanOrEqual(now);
       shell.stop();
     }
+  });
+
+  test("at 99 columns a long plugin row gets the narrow column beside the object pane", async () => {
+    const note = "confirmed merge · 5/6 · ~$6.57 · merge · P3 // 1 ".repeat(4);
+    const long = new TreeClient([
+      ...DATA,
+      entry("plan", `ops/P-0009-${"a-long-plan-slug-".repeat(4)}`, "Long", "repo:ops", note),
+    ]);
+    const { view, shell } = open(long, 99);
+    await view.until((state) => tabOf(state, "plugin:dev")?.list.loaded === true);
+    shell.key({ name: "3" });
+    expect(twoPane(shell.state)).toBe(true);
+    expect(listWidth(shell.state)).toBe(25);
+    const drawn = drawState(shell.state);
+    expect(text(drawn.divider)).toContain("│");
+    const lines = text(drawn.list).split("\n");
+    const head = lines.findIndex((line) => line.includes("P-0009"));
+    expect(head).toBeGreaterThanOrEqual(0);
+    expect(lines[head]?.trimEnd()).toEndWith("…");
+    expect(lines[head + 1]?.trimEnd()).toEndWith("…");
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(25);
+    shell.stop();
   });
 
   test("a refresh of the left list leaves a child's page open", () => {

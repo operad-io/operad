@@ -344,3 +344,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0304-M1 | packages/tui/src/state.ts | a plugin tab's column used the Pending and Running share again instead of its 26% share and 38-column cap | `one tab per plugin > at 120 and 200 a long dev note gives a column 30–40% narrower than before` |
+| T-0304-M2 | packages/tui/src/state.ts | `twoPane` kept using the Pending and Running share, so a plugin tab stayed one pane from 84 through 99 columns | `one tab per plugin > at 99 columns a long plugin row gets the narrow column beside the object pane` |
