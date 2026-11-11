@@ -346,7 +346,21 @@ async function runFlow(
   } catch (error) {
     const seen = existsSync(output) ? readFileSync(output, "utf8") : "";
     const files = allFiles(prepared.root).filter((path) => path.includes("flow") || path.includes("store"));
-    throw new Error(`${error instanceof Error ? error.message : String(error)}\n${seen}\nfiles: ${files.join(", ")}`);
+    let settings = "";
+    try {
+      settings = readFileSync(join(repository, ".operad", "dev.json"), "utf8");
+    } catch {
+      settings = "no dev.json";
+    }
+    let run = "";
+    try {
+      const runs = join(storeRoot, "runs");
+      const name = readdirSync(runs).find((item) => item.endsWith(".jsonl"));
+      run = name === undefined ? "no run file" : readFileSync(join(runs, name), "utf8");
+    } catch {
+      run = "no run dir";
+    }
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\n${seen}\nfiles: ${files.join(", ")}\ndev.json: ${settings}\nrun: ${run}`);
   } finally {
     await stop();
   }
