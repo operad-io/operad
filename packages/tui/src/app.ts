@@ -571,7 +571,13 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         tab.filter,
       );
       if (signal.aborted || finished) return;
-      dispatch({ type: "children", objectId: object.id, version, entries: found.entries });
+      dispatch({
+        type: "children",
+        objectId: object.id,
+        version,
+        entries: found.entries,
+        hidden: found.hidden,
+      });
     } catch (error) {
       if (signal.aborted || finished) return;
       noteConnection(error);

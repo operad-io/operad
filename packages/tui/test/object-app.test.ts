@@ -15,6 +15,7 @@ import {
   type TuiState,
   type TuiView,
 } from "../src/index.ts";
+import { drawState } from "../src/view/index.ts";
 import { immediateClock } from "./support.ts";
 
 function row(id: string, title = `Title ${id}`): ViewRow {
@@ -154,6 +155,64 @@ describe("the TUI object app", () => {
       await shell.done;
     }
   });
+  test("the object page counts the children the list leaves out", async () => {
+    let hide = false;
+    class Hidden extends Client {
+      override objects(
+        _t?: string,
+        _c?: string,
+        _s?: AbortSignal,
+        _f?: string,
+        level?: { readonly parent?: string | undefined },
+      ): Promise<ViewListPage> {
+        if (hide && level?.parent === "item:item:one") {
+          return Promise.resolve({
+            rows: [
+              {
+                id: "two",
+                title: "Waiting task",
+                state: "waiting",
+                waiting: true,
+                running: false,
+                mark: "waiting",
+              },
+            ],
+            hidden: 3,
+          });
+        }
+        return super.objects(_t, _c, _s, _f, level);
+      }
+    }
+    const client = new Hidden();
+    const events = new Events();
+    const view = new View();
+    const shell = startShell({
+      client,
+      events: () => events,
+      view,
+      width: 80,
+      height: 20,
+      theme: "dark",
+      clock: immediateClock,
+    });
+    try {
+      await view.until((state) =>
+        state.tabs.find((tab) => tab.id === "plugin:item")?.list.loaded === true,
+      );
+      hide = true;
+      shell.key({ name: "3" });
+      shell.key({ name: "enter" });
+      await view.until((state) => state.object?.row.title === "One");
+      await view.until((state) => state.object?.children?.hidden === 3);
+      const lines = drawState(shell.state).right.chunks.map((chunk) => chunk.text).join("").split("\n");
+      expect(lines.find((line) => line.includes(" / "))).toContain("3 / 4");
+      expect(shell.state.object?.children?.rows.map((row) => row.id)).toEqual(["two"]);
+    } finally {
+      shell.stop();
+      await shell.done;
+    }
+  });
+
   test("a row opens by its typed id; a server that refuses bare ids is never asked for one", async () => {
     class Strict extends Client {
       override object(id: string): Promise<ViewObject> {

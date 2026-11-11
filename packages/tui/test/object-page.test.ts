@@ -49,6 +49,7 @@ function opened(
   children: readonly ViewRow[],
   width = 120,
   layout: TuiChildLayout = "tree",
+  hidden?: number,
 ): TuiState {
   let state = initialState({ width, height: 30, theme: "dark", childLayout: layout });
   state = reduce(state, { type: "types", types: TYPES });
@@ -82,6 +83,7 @@ function opened(
     objectId: "P-0001-alpha",
     version: state.objectVersion,
     entries: children.map((child) => ({ row: child, type: "task" })),
+    ...(hidden === undefined ? {} : { hidden }),
   });
   return state;
 }
@@ -210,7 +212,7 @@ describe("the object page's frame and columns", () => {
       expect(text).toContain("TASK");
       expect(text).toContain("0 / 2");
       expect(text).toContain("Info · History");
-      expect(pieces(withChildren).filter((chunk) => /^█+$/.test(chunk.text)).length).toBe(2);
+      expect(pieces(withChildren).filter((chunk) => /^█+$/.test(chunk.text))).toEqual([]);
       for (const line of rightLines(withChildren)) {
         expect(line.length).toBeLessThanOrEqual(sectionWidth(withChildren));
       }
@@ -257,7 +259,7 @@ describe("the object page's frame and columns", () => {
 });
 
 describe("the progress bar and its heading", () => {
-  test("the bar takes its colours from each mark; cancelled is dark red and comes last", () => {
+  test("the bar fills done children only; cancelled is dark red and comes last", () => {
     const rows = [
       row("T-1-done", "merged", { mark: "done" }),
       row("T-2-run", "running", { mark: "running" }),
@@ -268,14 +270,7 @@ describe("the progress bar and its heading", () => {
     ];
     const state = opened(rows);
     const cells = barChunks(state);
-    expect(cells.map(colour)).toEqual([
-      token("ok"),
-      token("run"),
-      token("accent"),
-      token("error"),
-      token("weak"),
-      token("cancelled"),
-    ]);
+    expect(cells.map(colour)).toEqual([token("ok"), token("cancelled")]);
     expect(token("cancelled")).not.toBe(token("error"));
     expect(token("cancelled")).not.toBe(token("weak"));
   });
@@ -301,9 +296,54 @@ describe("the progress bar and its heading", () => {
     expect(heading).not.toContain("merged");
     expect(heading).not.toContain("done");
     const cells = barChunks(state);
-    expect(cells.length).toBe(12);
-    expect(cells.slice(-5).map(colour)).toEqual(Array.from({ length: 5 }, () => token("cancelled")));
-    expect(cells.slice(0, -5).every((chunk) => colour(chunk) !== token("cancelled"))).toBe(true);
+    expect(cells.length).toBe(6);
+    expect(cells[0]).toBeDefined();
+    expect(colour(cells[0] as TextChunk)).toBe(token("ok"));
+    expect(cells.slice(1).map(colour)).toEqual(Array.from({ length: 5 }, () => token("cancelled")));
+  });
+
+  test("some children hidden as finished count in the heading and fill the bar", () => {
+    const rows = [
+      row("T-1-open", "new", { mark: "todo" }),
+      row("T-2-run", "running", { mark: "running" }),
+      row("T-3-wait", "waiting", { mark: "waiting" }),
+    ];
+    const progress = childProgress(rows, "tree", 3);
+    expect(progress.done).toBe(3);
+    expect(progress.total).toBe(6);
+    const state = opened(rows, 120, "tree", 3);
+    const heading = rightLines(state).find((line) => line.includes(" / "));
+    expect(heading).toContain("3 / 6");
+    const cells = barChunks(state);
+    expect(cells.length).toBe(3);
+    expect(cells.map(colour)).toEqual(Array.from({ length: 3 }, () => token("ok")));
+  });
+
+  test("a waiting child beside done ones does not fill a progress cell", () => {
+    const rows = [
+      row("T-1-done", "merged", { mark: "done" }),
+      row("T-2-wait", "waiting", { mark: "waiting" }),
+    ];
+    const state = opened(rows);
+    const heading = rightLines(state).find((line) => line.includes(" / "));
+    expect(heading).toContain("1 / 2");
+    const cells = barChunks(state);
+    expect(cells.length).toBe(1);
+    expect(colour(cells[0] as TextChunk)).toBe(token("ok"));
+  });
+
+  test("with every child shown, the bar fills only the done ones", () => {
+    const rows = [
+      row("T-1-done", "merged", { mark: "done" }),
+      row("T-2-wait", "waiting", { mark: "waiting" }),
+      row("T-3-done", "finished", { mark: "done" }),
+    ];
+    const state = opened(rows);
+    const heading = rightLines(state).find((line) => line.includes(" / "));
+    expect(heading).toContain("2 / 3");
+    const cells = barChunks(state);
+    expect(cells.length).toBe(2);
+    expect(cells.map(colour)).toEqual([token("ok"), token("ok")]);
   });
 
   test("the child list puts cancelled rows last", () => {

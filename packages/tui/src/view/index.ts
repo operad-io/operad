@@ -371,25 +371,30 @@ function markColour(row: TuiRow, palette: TuiPalette): string {
   return palette[MARK_GLYPHS[mark].colour];
 }
 
-/** The colour of one bar cell: a cancelled child is dark red, after every other cell. */
-function barColour(row: TuiRow, palette: TuiPalette): string {
-  return cancelledRow(row) ? palette.cancelled : markColour(row, palette);
-}
-
-/** The bar's cells as chunks across `width`: each child's own colour, cancelled last. */
+/**
+ * The bar's cells as chunks across `width`: only the done share is filled, the
+ * rest of the track stays empty and cancelled children keep their dark red
+ * cells last, outside the done / total count.
+ */
 function progressBar(
-  entries: readonly { readonly row: TuiRow }[],
+  progress: ReturnType<typeof childProgress>,
   width: number,
   palette: TuiPalette,
 ): TextChunk[] {
-  if (entries.length === 0) return [];
-  const base = Math.floor(width / entries.length);
-  const extra = width % entries.length;
+  const cancelled = progress.entries.filter((entry) => cancelledRow(entry.row)).length;
+  const cells = progress.total + cancelled;
+  if (cells === 0) return [];
+  const done = Math.min(progress.done, progress.total);
+  const base = Math.floor(width / cells);
+  const extra = width % cells;
   const chunks: TextChunk[] = [];
-  entries.forEach((entry, at) => {
-    const cells = base + (at < extra ? 1 : 0);
-    if (cells > 0) chunks.push(chunk("█".repeat(cells), barColour(entry.row, palette)));
-  });
+  for (let at = 0; at < cells; at += 1) {
+    const count = base + (at < extra ? 1 : 0);
+    if (count === 0) continue;
+    if (at < done) chunks.push(chunk("█".repeat(count), palette.ok));
+    else if (at < progress.total) chunks.push(chunk(" ".repeat(count)));
+    else chunks.push(chunk("█".repeat(count), palette.cancelled));
+  }
   return chunks;
 }
 
@@ -492,13 +497,15 @@ function childrenContent(
   width: number,
 ): TextChunk[] {
   const children = object.children;
-  if (children === undefined || children.rows.length === 0) return [];
-  const progress = childProgress(children.rows, state.childLayout);
+  if (children === undefined || children.rows.length + (children.hidden ?? 0) === 0) {
+    return [];
+  }
+  const progress = childProgress(children.rows, state.childLayout, children.hidden);
   const shown = displayChildren(children.rows, state.childLayout);
   const type = shown[0]?.row.type ?? "";
   const columns = childColumns(shown, width);
   const chunks: TextChunk[] = [
-    ...rail(progressBar(progress.entries, width, palette), palette),
+    ...rail(progressBar(progress, width, palette), palette),
     ...rail(childHeading(type, progress.done, progress.total, width, palette), palette),
   ];
   const start = children.cursor >= CHILD_ROWS ? children.cursor - CHILD_ROWS + 1 : 0;

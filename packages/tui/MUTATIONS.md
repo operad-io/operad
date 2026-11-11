@@ -307,3 +307,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0229-M1 | packages/tui/src/state.ts | indented a child's prefix by two cells instead of three, so connectors fell left of the parent's glyph | `the tree's drawn connectors > a chain hangs each connector under its parent's glyph` |
+
+## T-0237 — progress counts every child
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0237-M1 | packages/tui/src/state.ts | `childProgress` ignored the list's hidden count, so hidden children left done and total | `the progress bar and its heading > some children hidden as finished count in the heading and fill the bar` |
