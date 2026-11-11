@@ -1840,7 +1840,16 @@ export async function runReview(
       previous.decision === "timed_out" ||
       previous.reason === "exhausted" ||
       previous.reason === "out_of_time";
-    if (finished && (previous.round === round || previous.run === ctx.runId)) {
+    // A round recorded for another commit is not this commit's review.
+    const sameCommit =
+      typeof previous.sha !== "string" ||
+      typeof attempt.verified !== "string" ||
+      previous.sha === attempt.verified;
+    if (
+      finished &&
+      sameCommit &&
+      (previous.round === round || previous.run === ctx.runId)
+    ) {
       return replayReview(previous, attempt);
     }
     if (previous.round === round && previous.decision === "unavailable") {
@@ -1872,8 +1881,26 @@ export async function runReview(
         sources: { ...used.sources, use: "fallback", args: "fallback" },
       };
     }
+    // The report names the commit it reviewed; one that is not the checked
+    // commit is refused, not recorded as a review of it.
+    if (
+      typeof sha === "string" &&
+      typeof recorded.sha === "string" &&
+      recorded.sha !== sha
+    ) {
+      const message = `the review report is for ${recorded.sha}, not the checked commit ${sha}`;
+      return finish(
+        { result: "failed", run: ctx.runId, sha, round, reason: "wrong_commit", message },
+        "failed",
+        { reason: "wrong_commit", message },
+      );
+    }
+    const stamped: ReviewRecord =
+      typeof sha === "string" && recorded.sha === undefined
+        ? { ...recorded, sha }
+        : recorded;
     const record: ReviewRecord =
-      used === undefined ? recorded : { ...recorded, reviewSettings: used };
+      used === undefined ? stamped : { ...stamped, reviewSettings: used };
     const written = await saveTaskGuarded(
       ctx,
       context.taskKey,

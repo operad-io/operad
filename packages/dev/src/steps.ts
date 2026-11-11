@@ -1448,6 +1448,11 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       // An attempt that left no note keeps the one before it for later attempts.
       progress: progress ?? progressOf(attempt.previousProgress) ?? null,
       workTimedOut: timedOutRun,
+      // A commit the worker made after the last verify has no result yet; the
+      // verify before it must not stand for it, not even in the same run.
+      ...(typeof extra.head === "string" && attempt.verified !== extra.head
+        ? { verified: null, verify: null, review: null }
+        : {}),
     };
     const reason = typeof extra.reason === "string" ? extra.reason : "";
     const stop: StopRecord | null =
