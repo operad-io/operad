@@ -222,6 +222,13 @@ async function fixture(options: {
   git(seed, ["remote", "add", "origin", origin]);
   git(seed, ["push", "-q", "-u", "origin", "main"]);
   git(root, ["clone", "-q", origin, repository]);
+  const seedSettings = readFileSync(join(seed, ".operad", "dev.json"), "utf8");
+  const clonedSettings = readFileSync(join(repository, ".operad", "dev.json"), "utf8");
+  if (seedSettings !== clonedSettings) {
+    throw new Error(
+      `clone settings differ: flows=${JSON.stringify(options.flows)}\nseed: ${seedSettings}\nclone: ${clonedSettings}\nseed tree: ${git(seed, ["ls-tree", "-r", "--name-only", "HEAD"])}`,
+    );
+  }
 
   const home = join(root, "home");
   mkdirSync(home, { recursive: true });
