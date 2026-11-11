@@ -664,3 +664,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0216-M2 | packages/dev/src/marks.ts | a task waiting for its worker kept the `running` mark | `dev/work with workers > a rework whose worker is busy shows the wait and the holding task until it is released` |
+
+## T-0246 — a cancelled task's run ends when the settings cannot be read
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0246-M1 | packages/dev/src/schedule.ts | the sweep of cancelled tasks' runs ran after the settings were read, so unreadable settings skipped it | `a run on a cancelled task is ended even when the repository's settings cannot be read` |
