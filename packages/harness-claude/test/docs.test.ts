@@ -19,7 +19,6 @@ function read(path: string): string {
 
 const README = read("../README.md");
 const DOGFOOD = read("../../../docs/dogfood.md");
-const ACCEPTANCE = read("../acceptance.md");
 const MANUAL = read("../../../docs/manual.md");
 
 /** The dogfood section for claude, from its heading to the end. */
@@ -140,28 +139,6 @@ describe("the environment and the login", () => {
   test("the harness is called claude, not by the product's other name", () => {
     expect(SECTION).not.toContain("Claude Code");
     expect(README).not.toContain("Claude Code");
-    expect(ACCEPTANCE).not.toContain("Claude Code");
-  });
-});
-
-describe("the acceptance script", () => {
-  test("it lists every point of the backlog's acceptance", () => {
-    for (const heading of [
-      "## 1. No platform binary after a frozen install",
-      "## 2. `operad plugin check` reports both versions and the login",
-      "## 4. One real step: usage, an estimated cost and a session id",
-      "## 5. A second step resumes the same session",
-      "## 6. A denied `Bash` call",
-      "## 8. `askCommands` is refused when a run starts",
-      "## 9. A dogfood task to `review` with claude as the worker",
-      "## 10. `kill -9` on the worker",
-    ]) {
-      expect(ACCEPTANCE).toContain(heading);
-    }
-  });
-
-  test("it does not touch this repository's dev.json", () => {
-    expect(ACCEPTANCE).toContain("Nothing here changes this\nrepository's `.operad/dev.json`");
   });
 });
 

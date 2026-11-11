@@ -534,8 +534,9 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   }
 
   /**
-   * A plugin tab's list: its top-level objects, or, when every one of them has
-   * a next level, that level, grouped under the top-level objects.
+   * A plugin tab's list: its top-level objects, or, when at least one of them
+   * has a next level, that level grouped under the top-level objects (one with
+   * nothing under it stays as its own group row).
    */
   async function fetchPluginRows(
     tab: TuiTab,
@@ -552,13 +553,15 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         fetchTypes(tab, { parent: `${root.type}:${rowFromView(root.row).id}` }, signal, filter),
       ),
     );
-    const every =
-      roots.entries.length > 0 &&
-      under.every((one) => one.entries.length + one.hidden > 0);
-    if (!every) return { level: "roots", entries: roots.entries, hidden: roots.hidden };
+    const some = under.some((one) => one.entries.length + one.hidden > 0);
+    if (!some) return { level: "roots", entries: roots.entries, hidden: roots.hidden };
     const entries: TuiTreeEntry[] = [];
     roots.entries.forEach((root, index) => {
       const rows = under[index]?.entries ?? [];
+      if (rows.length === 0) {
+        entries.push({ row: root.row, type: root.type, bare: true });
+        return;
+      }
       const parent = rowFromView(root.row).id;
       rows.forEach((entry, at) => {
         entries.push({

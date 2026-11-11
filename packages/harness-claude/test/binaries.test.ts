@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { findClaude, ClaudeNotFoundError } from "../spike/probe.ts";
+import { findClaude, ClaudeNotFoundError } from "../src/claude-install.ts";
 
 const ROOT = join(import.meta.dir, "..", "..", "..");
 
@@ -85,9 +85,9 @@ describe("the Claude Code binary is the user's, not a dependency", () => {
   });
 });
 
-describe("the probe", () => {
+describe("the claude command", () => {
   test("with no claude on PATH it fails with a message that says what to do", () => {
-    expect(() => findClaude("")).toThrow(ClaudeNotFoundError);
-    expect(() => findClaude("/nonexistent-dir")).toThrow(/install claude/);
+    expect(() => findClaude(undefined, "")).toThrow(ClaudeNotFoundError);
+    expect(() => findClaude(undefined, "/nonexistent-dir")).toThrow(/install claude/);
   });
 });

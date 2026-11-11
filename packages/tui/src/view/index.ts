@@ -321,7 +321,8 @@ function listContent(
     }
     chunks.push(
       ...drawRow(row, window.start + offset === tab.list.cursor, palette, width, titles, {
-        indent: grouped ? GROUP_INDENT : 0,
+        indent: grouped && row.bare !== true ? GROUP_INDENT : 0,
+        ...(row.bare === true ? { folder: true } : {}),
       }),
     );
   });

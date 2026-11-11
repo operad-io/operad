@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "rootDir": ".", "outDir": "../../.tsbuild/harness-pi" },
-  "include": ["src", "test", "spike"],
+  "include": ["src", "test"],
   "references": [{ "path": "../access-match" }, { "path": "../engine" }, { "path": "../harness-process" }, { "path": "../mcp" }]
 }
