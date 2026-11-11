@@ -7,7 +7,7 @@ import { posix } from "node:path";
 export { isReadOnlyCommand } from "./readonly.ts";
 export { COMMAND_SUMMARY_CHARS, SUMMARY_CHARS, COMMAND_NOT_SHOWN, REFUSED_IN_LOG, summarizeCall, firstErrorLine, messageSummary, secretValuesOf, type SummaryOptions } from "./summary.ts";
 import { isReadOnlyCommand } from "./readonly.ts";
-import { findDenied, inlineFormOf, parseRule, scan, type Rule } from "./command.ts";
+import { findDenied, inlineFormOf, parseRule, scan, type Part, type Rule } from "./command.ts";
 
 /** A one-time permission for the exact call a person was asked about. */
 export interface AccessGrant {
@@ -192,6 +192,8 @@ interface Expanded {
   readonly dirGlob: boolean;
 }
 
+const GLOB_META = /[*?[{]|[@!+]\(/;
+
 /** Expands `~`, `$HOME` and `${HOME}` to `home`; reports what else a shell would still expand. */
 function expandWord(word: string, home: string): Expanded {
   let text = word;
@@ -199,57 +201,23 @@ function expandWord(word: string, home: string): Expanded {
   else if (text.startsWith("~/")) text = `${home}${text.slice(1)}`;
   text = text.replace(/\$\{HOME\}|\$HOME(?![A-Za-z0-9_])/g, () => home);
   const tilde = text.startsWith("~");
-  const components = text.split("/");
-  const simple = /[*?[]/;
-  const glob = components.some((component) => simple.test(component));
-  const dirGlob = components.slice(0, -1).some((component) => simple.test(component));
-  // `**` may span directories; the matcher cannot tell where it ends.
-  const unresolved = tilde || components.includes("**") || /\$[A-Za-z0-9_{(@*#?$!-]|`|\{[^{}]*(?:,|\.\.)[^{}]*\}/.test(text);
-  return { text, unresolved, glob, dirGlob };
+  const meta = text.search(GLOB_META);
+  // A `..` after a glob can climb out of whatever the glob matched, so the literal prefix says nothing.
+  const climbs = meta !== -1 && /(^|\/)\.\.(\/|$)/.test(text.slice(meta));
+  const unresolved = tilde || climbs || /\$[A-Za-z0-9_{(@*#?$!-]|`/.test(text);
+  return { text, unresolved, glob: meta !== -1, dirGlob: meta !== -1 };
 }
 
-function componentPattern(component: string): RegExp {
-  let source = "";
-  for (let i = 0; i < component.length; i += 1) {
-    const ch = component.charAt(i);
-    if (ch === "*") source += "[^/]*";
-    else if (ch === "?") source += "[^/]";
-    else if (ch === "[") {
-      // Find the closing `]`: a `]` right after `[`, `[!` or `[^` is a member, and `[:class:]` nests.
-      let end = i + 1;
-      if (component.charAt(end) === "!" || component.charAt(end) === "^") end += 1;
-      if (component.charAt(end) === "]") end += 1;
-      let nested = false;
-      while (end < component.length && component.charAt(end) !== "]") {
-        const kind = component.charAt(end + 1);
-        if (component.charAt(end) === "[" && (kind === ":" || kind === "." || kind === "=")) {
-          const close = component.indexOf(`${kind}]`, end + 2);
-          nested = true;
-          end = close === -1 ? component.length : close + 2;
-        } else end += 1;
-      }
-      if (end >= component.length) {
-        source += "\\[";
-        continue;
-      }
-      if (nested) source += "[^/]"; // a class such as [:punct:] can match any one character; be conservative
-      else {
-        const body = component.slice(i + 1, end).replace(/[\\\]]/g, "\\$&");
-        source += body.startsWith("!") || body.startsWith("^") ? `[^${body.slice(1)}]` : `[${body}]`;
-      }
-      i = end;
-    } else source += ch.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
-  }
-  return new RegExp(`^${source}$`);
-}
-
-/** Refuses a glob word whose pattern can name a denied path or one under it; an ancestor of an entry is not under it. */
+/**
+ * A glob word is judged by the literal text before its first metacharacter,
+ * not by evaluating the pattern: refused when a denied entry starts with that
+ * prefix or the prefix starts with a denied entry.
+ */
 function checkGlob(denied: Denied, text: string, cwd: string, written: string): Verdict {
-  const pattern = posix.resolve(cwd, text).split("/").filter((piece) => piece.length > 0);
+  const prefix = text.slice(0, text.search(GLOB_META));
+  const absolute = posix.normalize(prefix.startsWith("/") ? prefix : `${cwd}/${prefix}`);
   for (const entry of denied.entries) {
-    const names = entry.path.split("/").filter((piece) => piece.length > 0);
-    if (pattern.length < names.length) continue;
-    if (names.every((name, index) => componentPattern(pattern.at(index) ?? "").test(name))) {
+    if (entry.path.startsWith(absolute) || absolute.startsWith(entry.path)) {
       return { allow: false, reason: `path "${written}" can match a path under denyPaths entry "${entry.written}"`, rule: entry.written };
     }
   }
@@ -258,20 +226,15 @@ function checkGlob(denied: Denied, text: string, cwd: string, written: string): 
 
 const CD_GLOB = /[*?[\]{]|[@!+]\(/;
 
-/** The leading `cd`, `pushd` or `popd` of a part and its first operand, as written; "" when it has none. */
-function cdTarget(words: readonly string[]): { readonly name: string; readonly target: string; readonly keeps: boolean } | undefined {
-  let index = 0;
-  while (index < words.length && ASSIGNMENT_WORD.test(words.at(index) ?? "")) index += 1;
-  while (words.at(index) === "builtin" || words.at(index) === "command") {
-    index += 1;
-    while ((words.at(index) ?? "").startsWith("-")) index += 1;
-  }
-  const name = words.at(index);
-  if (name !== "cd" && name !== "pushd" && name !== "popd") return undefined;
-  const rest = words.slice(index + 1).filter((word) => word !== "--" && !/^-[LPe@]+$/.test(word));
-  // `pushd -n` and `popd -n` leave the current directory alone.
-  return { name, target: rest.find((word) => word !== "-n") ?? "", keeps: name !== "cd" && rest.includes("-n") };
-}
+/**
+ * Words that can change the shell's directory in a way the matcher does not
+ * model: compound commands, function and script runners, wrappers and the
+ * directory stack. A part that starts with one makes the directory unknown.
+ */
+const UNMODELLED = new Set([
+  "{", "}", "if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done", "case", "esac", "select",
+  "function", "time", "coproc", "!", "[[", "eval", "source", ".", "exec", "builtin", "command", "env", "pushd", "popd", "trap",
+]);
 
 const ASSIGNMENT_WORD = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
@@ -280,44 +243,60 @@ interface BashWord {
   readonly next: string | undefined;
   /** Position in its part; 0 is the command name. */
   readonly index: number;
-  /** The directory relative paths of this word mean: the call's, or the last `cd` target; undefined once the directory stack made it unknown. */
+  /** The directory relative paths of this word mean; undefined once the directory is unknown. */
   readonly dir: string | undefined;
 }
 
 /**
  * The words of a command with the directory each is read in, and whether a
- * `cd` target could not be resolved. Every segment of a chain is covered.
+ * `cd` target could not be resolved. Only a plain top-level `cd <path>` in a
+ * chain is modelled; anything else that can change the directory makes it
+ * unknown for the rest of the command (`README.md`).
  */
-function bashWords(parts: readonly { readonly words: readonly string[] }[], cwd: string, home: string): { words: BashWord[]; unresolvedCd: boolean } {
+function bashWords(parts: readonly Part[], cwd: string, home: string): { words: BashWord[]; unresolvedCd: boolean } {
   const words: BashWord[] = [];
   let dir: string | undefined = cwd;
   let unresolvedCd = false;
-  for (const part of parts) {
+  parts.forEach((part, at) => {
     const here = dir;
     part.words.forEach((word, index) => words.push({ word, next: part.words.at(index + 1), index, dir: here }));
-    const found = cdTarget(part.words);
-    if (found === undefined) continue;
-    const { name, target, keeps } = found;
-    if (keeps) continue;
-    // The directory stack is not tracked: popd, a bare pushd (swap) and pushd +N or -N leave the directory unknown.
-    if (name === "popd" || (name === "pushd" && (target === "" || /^[+-][0-9]+$/.test(target)))) {
+    if (dir === undefined) return;
+    if (part.sep === "(" || part.sep === ")") {
       dir = undefined;
-      continue;
+      return;
     }
-    if (dir === undefined) {
-      if (target !== "" && !expandWord(target, home).unresolved && !CD_GLOB.test(target) && expandWord(target, home).text.startsWith("/")) dir = posix.resolve(expandWord(target, home).text);
-      else if (target === "") dir = home;
-      else unresolvedCd = true;
-      continue;
+    let start = 0;
+    while (start < part.words.length && ASSIGNMENT_WORD.test(part.words.at(start) ?? "")) start += 1;
+    if (part.words.some((word) => word.startsWith("CDPATH=") || word === "CDPATH")) {
+      dir = undefined;
+      return;
     }
-    if (target === "") {
-      dir = home;
-      continue;
+    const name = part.words.at(start) ?? "";
+    if (UNMODELLED.has(name)) {
+      dir = undefined;
+      return;
+    }
+    if (name !== "cd") return;
+    // A cd in a pipeline or in the background runs in a subshell.
+    const after = parts.at(at + 1)?.sep;
+    if (part.sep === "|" || part.sep === "|&" || part.sep === "&" || after === "|" || after === "|&" || after === "&") {
+      dir = undefined;
+      return;
+    }
+    const operands = part.words.slice(start + 1).filter((word) => word !== "--" && !/^-[LPe@]+$/.test(word));
+    const target = operands.at(0);
+    if (target === undefined || target === "-") {
+      dir = undefined;
+      return;
     }
     const expanded = expandWord(target, home);
-    if (expanded.unresolved || CD_GLOB.test(expanded.text) || target === "-") unresolvedCd = true;
-    else dir = posix.resolve(dir, expanded.text);
-  }
+    if (expanded.unresolved || CD_GLOB.test(expanded.text)) {
+      unresolvedCd = true;
+      dir = undefined;
+      return;
+    }
+    dir = posix.resolve(dir, expanded.text);
+  });
   return { words, unresolvedCd };
 }
 

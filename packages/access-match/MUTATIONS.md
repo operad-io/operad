@@ -90,3 +90,10 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0282-M7 | packages/access-match/src/index.ts | a bracket class ended at the first `]`, so `[[:punct:]]ssh` was read as a one-letter class followed by `]ssh` | `a POSIX character class in a glob can reach a denied path` |
+
+## T-0282 — rework 11
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0282-M8 | packages/access-match/src/index.ts | a part starting with `{` was read as a plain command, so a `cd` inside a brace group kept the directory known | `the directory is unknown after anything that can change it but is not modelled: later relative paths ask` |
+| T-0282-M9 | packages/access-match/src/index.ts | `checkGlob` never refused, so a glob whose literal prefix reaches a denied entry was allowed | `a glob is judged by its literal prefix: refused when it can reach a denied path, asked when unsure` |
