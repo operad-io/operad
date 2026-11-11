@@ -571,6 +571,11 @@ the row fields.
 |---|---|---|---|
 | T-0173-M1 | packages/dev/src/service.ts | the one-time pass left a repository without `activeTasks` uncounted (the `undefined` check replaced by `false`) | `the repo type > a repository stored without a running-task count shows running for a task already running` |
 
+## T-0181 — MUTATIONS.md merges as a union
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0181-M1 | .gitattributes | the `merge=union` lines emptied out | `dev/integrate > two branches that each append a row to a MUTATIONS.md table merge, keeping both rows` |
 ## T-0164 rework 3 — the batch result is left before the push
 
 | id | file | mutation | failing test |
