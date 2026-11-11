@@ -133,6 +133,48 @@ function waitsForPerson(state: Parameters<typeof taskData>[0]): boolean {
   return task.phase === "waiting" && !inReviewWait(task);
 }
 
+/**
+ * True when a person can merge the task as it stands: its head is verified and
+ * the wait is not the question of a rework that the automatic limit ended in.
+ */
+function readyToMerge(state: Parameters<typeof taskData>[0]): boolean {
+  const task = taskData(state);
+  const verified = task.attempt?.verified;
+  return (
+    typeof verified === "string" &&
+    verified.length > 0 &&
+    task.attempt?.rework?.result !== "ask"
+  );
+}
+
+/**
+ * The order of a task's actions: what a person most likely wants next first,
+ * what ends the task last. Lower comes first; `merge` and `rework` swap places
+ * by what the wait asks.
+ */
+export const TASK_RANKS: Record<TaskActionName, (state: Parameters<typeof taskData>[0]) => number> = {
+  confirm: () => 0,
+  resume: () => 1,
+  merge: (state) => (readyToMerge(state) ? 1 : 4),
+  rework: (state) => (readyToMerge(state) ? 4 : 1),
+  reverify: () => 5,
+  reject: () => 6,
+  pause: () => 7,
+  cancel: () => 9,
+};
+
+/**
+ * The order of a plan's actions. With auto off the next step is to turn it on;
+ * with auto on it is the priority, since the level is already chosen.
+ */
+export const PLAN_RANKS: Record<PlanActionName, (state: Parameters<typeof planData>[0]) => number> = {
+  confirm: () => 0,
+  auto: (state) => (planData(state).auto === "off" ? 1 : 2),
+  priority: (state) => (planData(state).auto === "off" ? 2 : 1),
+  concurrency: () => 3,
+  cancel: () => 9,
+};
+
 /** Reads a required enum argument; the kernel checks it first, this is for types. */
 function enumArgument<T extends string>(
   args: unknown,
@@ -227,6 +269,7 @@ async function claimAndAnswer(
 const mergeTask: ActionTypeDefinition = {
   name: "merge",
   on: "task",
+  rank: TASK_RANKS.merge,
   confirm: true,
   when(state) {
     return waitsForPerson(state);
@@ -259,6 +302,7 @@ const NOTE_ARGS = (description: string) =>
 const rejectTaskAction: ActionTypeDefinition = {
   name: "reject",
   on: "task",
+  rank: TASK_RANKS.reject,
   args: NOTE_ARGS("What the worker should change before the next review."),
   when(state) {
     return waitsForPerson(state);
@@ -288,6 +332,7 @@ const rejectTaskAction: ActionTypeDefinition = {
 const reworkTaskAction: ActionTypeDefinition = {
   name: "rework",
   on: "task",
+  rank: TASK_RANKS.rework,
   args: NOTE_ARGS("What the worker should do in this rework."),
   when(state) {
     return waitsForPerson(state);
@@ -315,6 +360,7 @@ const reworkTaskAction: ActionTypeDefinition = {
 const reverifyTaskAction: ActionTypeDefinition = {
   name: "reverify",
   on: "task",
+  rank: TASK_RANKS.reverify,
   when(state) {
     return waitsForPerson(state);
   },
@@ -356,6 +402,7 @@ export const actions: readonly ActionTypeDefinition[] = [
   {
     name: "confirm",
     on: "plan",
+    rank: PLAN_RANKS.confirm,
     when(state) {
       const plan = planData(state);
       return plan.status === "draft" && plan.taskCount > 0;
@@ -369,6 +416,7 @@ export const actions: readonly ActionTypeDefinition[] = [
   {
     name: "confirm",
     on: "task",
+    rank: TASK_RANKS.confirm,
     async when(state, env) {
       const task = taskData(state);
       if (task.phase !== "proposed") return false;
@@ -385,6 +433,8 @@ export const actions: readonly ActionTypeDefinition[] = [
   {
     name: "cancel",
     on: "plan",
+    ends: true,
+    rank: PLAN_RANKS.cancel,
     confirm: true,
     when(state) {
       return planData(state).status !== "cancelled";
@@ -398,6 +448,8 @@ export const actions: readonly ActionTypeDefinition[] = [
   {
     name: "cancel",
     on: "task",
+    ends: true,
+    rank: TASK_RANKS.cancel,
     confirm: true,
     when(state) {
       const phase = taskData(state).phase;
@@ -412,6 +464,7 @@ export const actions: readonly ActionTypeDefinition[] = [
   {
     name: "pause",
     on: "task",
+    rank: TASK_RANKS.pause,
     confirm: true,
     when(state) {
       const phase = taskData(state).phase;
@@ -426,6 +479,7 @@ export const actions: readonly ActionTypeDefinition[] = [
   {
     name: "resume",
     on: "task",
+    rank: TASK_RANKS.resume,
     confirm: true,
     when(state) {
       return taskData(state).phase === "paused";
@@ -439,6 +493,7 @@ export const actions: readonly ActionTypeDefinition[] = [
   {
     name: "auto",
     on: "plan",
+    rank: PLAN_RANKS.auto,
     args: {
       type: "object",
       properties: {
@@ -468,6 +523,7 @@ export const actions: readonly ActionTypeDefinition[] = [
   {
     name: "priority",
     on: "plan",
+    rank: PLAN_RANKS.priority,
     args: {
       type: "object",
       properties: {
@@ -498,6 +554,7 @@ export const actions: readonly ActionTypeDefinition[] = [
   {
     name: "concurrency",
     on: "plan",
+    rank: PLAN_RANKS.concurrency,
     args: {
       type: "object",
       properties: {

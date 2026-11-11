@@ -265,6 +265,24 @@ describe("actions in the reducer", () => {
     expect(press(state, "a").input).toMatchObject({ kind: "confirm", action: "tuitest:drop" });
   });
 
+  test("the main key never runs a confirm action, one that ends the object included, without its [y/N]", () => {
+    const ends = action("tuitest:end", { confirm: true });
+    const state = press(opened([ends, action("other:ship")]), "a");
+    expect(state.actionRequest).toBeUndefined();
+    expect(state.input).toMatchObject({ kind: "confirm", action: "tuitest:end" });
+    expect(press(state, "n").actionRequest).toBeUndefined();
+    expect(press(state, "y").actionRequest).toMatchObject({ action: "tuitest:end", confirmed: true });
+  });
+
+  test("the main key skips an action that ends the object, and says none is available when only it is left", () => {
+    const ends = action("tuitest:end", { confirm: true, ends: true });
+    const first = press(opened([ends, action("other:ship")]), "a");
+    expect(first.actionRequest).toMatchObject({ action: "other:ship" });
+    const alone = press(opened([ends]), "a");
+    expect(alone.actionRequest).toBeUndefined();
+    expect(alone.input).toBeUndefined();
+  });
+
   test("Ctrl and Meta chords are dropped as reserved", () => {
     const state = opened(ACTIONS, [
       { key: "ctrl-x", action: "other:ship", source: "user" },

@@ -945,7 +945,7 @@ describe("dev scheduling", () => {
       expect(item.choices).toEqual(["merge", "reject", "rework", "reverify"]);
       expect(
         item.actions.map((action) => `${action.plugin}:${action.action}`),
-      ).toEqual(["dev:cancel", "dev:merge", "dev:reject", "dev:rework", "dev:reverify"]);
+      ).toEqual(["dev:rework", "dev:merge", "dev:reverify", "dev:reject", "dev:cancel"]);
 
       // The normal task action reaches the run: the wait has an answer handler.
       const answers: string[] = [];
