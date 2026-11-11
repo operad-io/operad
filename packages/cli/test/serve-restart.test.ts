@@ -1,10 +1,10 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 import { SUPERVISED_ENV } from "../src/code-reload.ts";
-import { waitForFile } from "../../shell/test/support.ts";
+import { waitForFile, waitForPid } from "../../shell/test/support.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -152,19 +152,20 @@ describe("a serve restart while a check runs", () => {
     const started = join(work, "started");
     const release = join(work, "release");
     const signalled = join(work, "signalled");
+    const ticks = join(work, "ticks");
     // The command records any TERM or INT it receives, then waits for the
     // release file and exits 0, leaving a mark that it ended by itself.
     const line =
       `sh -c 'trap "echo term > ${signalled}" TERM INT HUP; ` +
       `echo $$ >> ${started}; while [ ! -e ${release} ]; do sleep 0.05; done; ` +
       `echo $$ > ${join(work, "finished")}'`;
-    const env = { CHECK_LINE: line };
+    const env = { CHECK_LINE: line, CHECK_TICKS: ticks };
 
     let serve = startServe(home, env);
     try {
       const runId = await trigger(home, env);
       expect(runId).not.toBe("");
-      await waitForFile(started);
+      await waitForPid(started);
 
       const stopped = await operad(home, env, ["serve", "stop"]);
       expect({ code: stopped.code, out: stopped.out, err: stopped.err }).toEqual({
@@ -174,24 +175,22 @@ describe("a serve restart while a check runs", () => {
       });
       await serve.exited;
 
+      // Forget the first serve's mark, start the new serve and wait for its
+      // first turn. The command still waits: the new serve neither signalled
+      // it nor started it again.
+      rmSync(ticks, { force: true });
       serve = startServe(home, env);
-      // Let the new serve take its turns while the command still waits.
-      await Bun.sleep(1_000);
+      await waitForPid(ticks);
       expect(existsSync(signalled)).toBe(false);
       expect(existsSync(join(work, "finished"))).toBe(false);
 
       writeFileSync(release, "go\n");
-      await waitForFile(join(work, "finished"));
+      await waitForPid(join(work, "finished"));
       expect(existsSync(signalled)).toBe(false);
 
       // The run ends done: the check passed with exit 0.
-      const deadline = Date.now() + 20_000;
-      let history = "";
-      while (Date.now() < deadline) {
-        history = (await operad(home, env, ["history", runId])).out;
-        if (history.includes("run done")) break;
-        await Bun.sleep(200);
-      }
+      await waitForFile(join(root, "store", "runs", `${runId}.end`));
+      const history = (await operad(home, env, ["history", runId])).out;
       expect(history).toContain("run done");
       // The log path is not the run's words: a checkout path may contain "fail".
       expect(history.replace(/log at \S+/g, "")).not.toMatch(/fail|interrupt/i);

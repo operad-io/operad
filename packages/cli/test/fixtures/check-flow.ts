@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import { defineFlow, definePlugin } from "../../../engine/src/index.ts";
 
 /**
@@ -28,4 +29,9 @@ export default definePlugin({
   version: "0.0.1",
   objects: [{ name: "job" }],
   flows: [check],
+  /** The pid of the serve that took a turn: a test waits for the next serve to write it. */
+  onTick() {
+    const ticks = process.env.CHECK_TICKS;
+    if (ticks !== undefined) writeFileSync(ticks, `${process.pid}\n`);
+  },
 });
