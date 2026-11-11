@@ -4,6 +4,14 @@ Rows whose mutation broke code in `packages/access-match/`, in the order they
 were recorded. The root [MUTATIONS.md](../../MUTATIONS.md) explains the format
 and the row fields.
 
+## TK0015 — pi worker
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| TK0017-M1 | packages/access-match/src/command.ts | `\|` removed from the split operators | `split operator "\|" reaches the part after it` |
+| TK0017-M2 | packages/access-match/src/index.ts | relative paths joined to `cwd` without resolving `..` | `~ is expanded, relative paths are joined to cwd, and .. is resolved` |
+| TK0017-M4 | packages/access-match/src/command.ts | `xargs` and `eval` not seen as inline code | `inline code xargs is refused though no rule names it` |
+
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0025-M9 | `packages/access-match/src/index.ts` | a command grant covered any call that began with its value | `a grant covers the call that equals its value exactly` |
