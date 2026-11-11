@@ -486,7 +486,8 @@ class JsonlLogBackend implements LogBackend {
   readonly #clock: () => number;
   readonly #newRunId: () => string;
   readonly #subscriptionWatch: SubscriptionWatch;
-  readonly #inputIds = new Set<string>();
+  /** Where each input's line lies in the inputs file, by input id. */
+  readonly #inputIds = new Map<string, { readonly start: number; readonly length: number }>();
   #inputBytes = 0;
   readonly #outcomes = new Map<string, StoredOutcome>();
   #outcomeSeq = 0;
@@ -610,8 +611,10 @@ class JsonlLogBackend implements LogBackend {
         payload,
         time: this.#clock(),
       };
-      appendLineSynced(this.#inputsPath, `${JSON.stringify(record)}\n`);
-      this.#inputIds.add(inputId);
+      const line = `${JSON.stringify(record)}\n`;
+      const start = this.#inputBytes;
+      appendLineSynced(this.#inputsPath, line);
+      this.#inputIds.set(inputId, { start, length: Buffer.byteLength(line) });
       this.#inputBytes = statSync(this.#inputsPath).size;
       return { duplicate: false, inputId };
     });
@@ -654,15 +657,20 @@ class JsonlLogBackend implements LogBackend {
 
   async findInput(inputId: string): Promise<InputRecord | undefined> {
     this.#assertOpen();
-    if (!existsSync(this.#inputsPath)) return undefined;
-    const text = readFileSync(this.#inputsPath).toString("utf8");
-    const needle = JSON.stringify(inputId);
-    for (const line of text.split("\n")) {
-      if (!line.includes(needle)) continue;
-      const record = inputOfLine(line);
-      if (record !== undefined && record.inputId === inputId) return record;
-    }
-    return undefined;
+    // The remembered place of the line is read, not the whole history.
+    return this.#withLock(() => {
+      this.#refreshInputsUnlocked();
+      const place = this.#inputIds.get(inputId);
+      if (place === undefined) return undefined;
+      const fd = openSync(this.#inputsPath, "r");
+      try {
+        const buffer = Buffer.allocUnsafe(place.length);
+        readAllAtSync(fd, buffer, place.start);
+        return inputOfLine(buffer.toString("utf8").trimEnd());
+      } finally {
+        closeSync(fd);
+      }
+    });
   }
 
   async readOutcome(
@@ -1114,15 +1122,18 @@ class JsonlLogBackend implements LogBackend {
     try {
       const buffer = Buffer.allocUnsafe(size - this.#inputBytes);
       readAllAtSync(fd, buffer, this.#inputBytes);
-      this.#consumeInputLines(buffer.toString("utf8"));
+      this.#consumeInputLines(buffer.toString("utf8"), this.#inputBytes);
     } finally {
       closeSync(fd);
     }
     this.#inputBytes = size;
   }
 
-  #consumeInputLines(text: string): void {
+  #consumeInputLines(text: string, base: number): void {
+    let offset = base;
     for (const line of text.split("\n")) {
+      const start = offset;
+      offset += Buffer.byteLength(line) + 1;
       if (line.length === 0) continue;
       let value: unknown;
       try {
@@ -1134,7 +1145,10 @@ class JsonlLogBackend implements LogBackend {
       if (record.type !== "input" || typeof record.inputId !== "string") {
         throw new CorruptLogError("inputs", "an input line has no input id");
       }
-      this.#inputIds.add(record.inputId);
+      this.#inputIds.set(record.inputId, {
+        start,
+        length: Buffer.byteLength(line) + 1,
+      });
     }
   }
 
@@ -1147,7 +1161,7 @@ class JsonlLogBackend implements LogBackend {
     // Count the bytes actually consumed, not a later stat: an append between a
     // read and a stat must stay visible to the next refresh.
     const buffer = readFileSync(this.#inputsPath);
-    this.#consumeInputLines(buffer.toString("utf8"));
+    this.#consumeInputLines(buffer.toString("utf8"), 0);
     this.#inputBytes = buffer.length;
   }
 

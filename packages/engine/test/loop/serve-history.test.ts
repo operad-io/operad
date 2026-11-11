@@ -259,6 +259,21 @@ for (const backend of ["jsonl", "sqlite"] as const) {
         expect((await log.findInput(inputIdFor("manual", "b")))?.payload).toEqual({ n: 2 });
         expect(await log.findInput(inputIdFor("manual", "zzz"))).toBeUndefined();
 
+        // Lines of different byte lengths, and an input another handle wrote.
+        await log.recordInput(null, "manual", "wide-é-ü", { text: "é".repeat(50) });
+        const other = openLog({
+          backend,
+          path: backend === "jsonl" ? join(root, "store") : join(root, "store", "log.sqlite"),
+        });
+        try {
+          await other.recordInput(null, "manual", "from-other", { n: 9 });
+          expect((await log.findInput(inputIdFor("manual", "from-other")))?.payload).toEqual({ n: 9 });
+          expect((await log.findInput(inputIdFor("manual", "wide-é-ü")))?.payload).toEqual({ text: "é".repeat(50) });
+          expect((await log.findInput(inputIdFor("manual", "c")))?.payload).toEqual({ n: 3 });
+        } finally {
+          await other.close();
+        }
+
         const one = await log.recordOutcome(inputIdFor("manual", "a"), "route", { value: "none" });
         await log.recordOutcome(inputIdFor("manual", "b"), "route", { value: "none" });
         expect((await log.readOutcome(inputIdFor("manual", "a"), "route"))?.seq).toBe(one.outcome.seq);

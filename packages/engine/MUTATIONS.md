@@ -478,3 +478,4 @@ the row fields.
 | T-0251-M3 | packages/engine/src/loop/serve.ts | an answer for a run that is no longer active stayed waiting and was looked at every pass | `a tick over a large history (jsonl) > reads what changed, not every input, answer and outcome ever recorded` |
 | T-0251-M4 | packages/engine/src/plugin/sqlite-store.ts | `list` re-read and re-parsed every object, ignoring the remembered copy | `listing objects of a large type > an object that did not change is not read or parsed again` |
 | T-0251-M5 | packages/engine/src/runner/ask.ts | the claimed-answer lookup used the wrong input id (run and wait swapped) | `ctx.ask > an answer claimed by a process that stopped before the fact is still delivered` |
+| T-0251-M6 | packages/engine/src/log/jsonl.ts | `findInput` read the line at the wrong offset (start + 1) | `reading by position and by id (jsonl) > inputs after a position, one input by id, and outcomes after a sequence` |
