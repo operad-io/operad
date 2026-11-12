@@ -48,7 +48,7 @@ describe("a bot proposes a skill", () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.actions).toEqual([
       { plugin: "bot", action: "review" },
-      { plugin: "bot", action: "confirm" },
+      { plugin: "bot", action: "approve" },
       { plugin: "bot", action: "reject" },
     ]);
     const id = items[0]?.object?.id;
@@ -82,7 +82,7 @@ describe("a bot proposes a skill", () => {
     expect(r.calls[0]?.params.skills).toBeUndefined();
     expect(existsSync(join(target, "SKILL.md"))).toBe(false);
 
-    await r.act(PROPOSAL_TYPE, id, "bot/confirm");
+    await r.act(PROPOSAL_TYPE, id, "bot/approve");
     expect(readFileSync(join(target, "SKILL.md"), "utf8")).toContain("Write notes.");
     expect(readFileSync(join(target, "scripts", "save.sh"), "utf8")).toBe("echo saved\n");
     expect(JSON.stringify(botConfig(r.home).default)).toContain(target);
@@ -151,7 +151,7 @@ describe("a bot proposes a skill", () => {
 });
 
 describe("a bot proposes settings", () => {
-  test("the item shows before and after; confirm applies them at the next reply; reject leaves them", async () => {
+  test("the item shows before and after; approve applies them at the next reply; reject leaves them", async () => {
     const r = await rig();
     await r.command(
       "bot",
@@ -178,7 +178,7 @@ describe("a bot proposes settings", () => {
     await r.reply(chat);
     expect(accessOf(r.calls[0]?.access).denyPaths).not.toContain("~/private");
 
-    await r.act(PROPOSAL_TYPE, id, "bot/confirm");
+    await r.act(PROPOSAL_TYPE, id, "bot/approve");
     expect((botConfig(r.home).default as { speaker?: string; access?: { denyPaths?: string[] } }).speaker).toBe("Nova");
     expect((await r.store.get(CHAT_TYPE, chat))?.data.speaker).toBeUndefined();
     await r.say(chat, "two");

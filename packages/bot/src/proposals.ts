@@ -1,7 +1,7 @@
 /**
  * Changes a bot proposes to itself: a new or changed skill, or a change to its
  * settings. A proposal is a stored object, shown as one pending item on its
- * bot. Nothing on disk changes until a person confirms it; rejecting it leaves
+ * bot. Nothing on disk changes until a person approves it; rejecting it leaves
  * every file and setting as it was.
  */
 
@@ -655,7 +655,7 @@ export async function applyProposal(
     PROPOSAL_TYPE,
     id,
     { ...data, state: "applied", appliedAt: Date.now() } as unknown as Record<string, JsonValue>,
-    "action:bot/confirm",
+    "action:bot/approve",
   );
   return `applied proposal ${id}`;
 }
@@ -775,7 +775,7 @@ export const proposalActions: readonly ActionTypeDefinition[] = [
     },
   },
   {
-    name: "confirm",
+    name: "approve",
     on: PROPOSAL_TYPE,
     when: (state) => state.state === "pending",
     async run(ctx) {

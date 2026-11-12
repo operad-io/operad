@@ -64,7 +64,7 @@ tools calls the `command` tool:
 `bot skill <bot> <name> [--from <dir>]` proposes a new or changed skill. Without
 `--from`, its stdin is JSON with `skill_md` and an optional `files` map; with
 `--from`, it reads that directory. A changed skill is the one the bot already
-mounts under that name; a new one goes to `<cwd>/skills/<name>` when confirmed.
+mounts under that name; a new one goes to `<cwd>/skills/<name>` when approved.
 Files under `scripts/`, and executable files, are listed as scripts.
 
 `bot setting <bot>` proposes a change to the bot's settings. Its stdin is a JSON
@@ -73,17 +73,17 @@ so on); the fields it does not name keep their value. The kernel validates the
 result against `bot.schema.json` before the proposal exists.
 
 Each proposal is one pending item of its bot, with the actions `Review`,
-`confirm` and `reject`. `Review` shows the change: the full `SKILL.md`, the file
+`approve` and `reject`. `Review` shows the change: the full `SKILL.md`, the file
 list with scripts apart and, for a changed skill, the diff; a settings proposal
-shows the settings before and after. `confirm` applies the change and `reject`
+shows the settings before and after. `approve` applies the change and `reject`
 leaves every file and setting as it was. Nothing changes until the person acts,
 and an unanswered proposal neither changes anything nor blocks the chat.
 
-An approved skill is on disk before the confirmation returns, so the bot's next
+An approved skill is on disk before the approval returns, so the bot's next
 reply reads it (`bot/settings` already reads `config.json` again at every
 reply). A settings proposal is written to `config.json` the same way. A run
 nobody started on the spot, such as a scheduled or event-started run, can make
-the same proposals; it still cannot confirm one.
+the same proposals; it still cannot approve one.
 
 ## Telegram
 
