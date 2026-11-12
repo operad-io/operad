@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { match, readProfile, type AccessProfile } from "@operad-io/access-match";
 import { CHAT_TYPE, allMessages, chatData } from "@operad-io/chat";
-import { createViews, type TriggerEvent } from "@operad-io/engine";
+import { createViews, Views, type TriggerEvent } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
   DEFAULT_BOT,
@@ -233,7 +233,40 @@ describe("bot:chat", () => {
     expect(await harnessOf(await r.open("default"))).toBe("claude");
     expect(await harnessOf(await r.open("pi"))).toBe("pi");
     expect(await harnessOf(await r.open("pi", { harness: "claude" }))).toBe("claude");
-    await expect(r.open("default", { harness: "radian" })).rejects.toThrow('harness "radian" is not loaded');
+    await expect(r.open("default", { harness: "radian" })).rejects.toThrow("claude");
+  });
+
+  test("the harness argument is a choice of the loaded harnesses, defaulting to the bot's own, else the first", async () => {
+    const r = await rig({ pi: { harness: "pi" } }, ["claude", "radian", "pi"]);
+    await syncBots(r.store, r.home, r.registry.settingsFor("bot"));
+    const views = new Views({ registry: r.registry, store: r.store, onLog: () => undefined });
+    const harness = async (bot: string) => {
+      const chat = (await views.get(`bot:${bot}`)).actions.find((a) => a.name === "bot:chat");
+      return chat?.args?.properties?.harness;
+    };
+    expect(await harness("default")).toMatchObject({ enum: ["claude", "radian", "pi"], default: "claude" });
+    expect(await harness("pi")).toMatchObject({ enum: ["claude", "radian", "pi"], default: "pi" });
+    const fewer = await rig({}, ["radian"]);
+    await syncBots(fewer.store, fewer.home, {});
+    const other = new Views({ registry: fewer.registry, store: fewer.store, onLog: () => undefined });
+    const only = (await other.get("bot:default")).actions.find((a) => a.name === "bot:chat")?.args?.properties?.harness;
+    expect(only).toMatchObject({ enum: ["radian"], default: "radian" });
+  });
+
+  test("with no harness loaded the chat is not offered, and says why", async () => {
+    const r = await rig({}, []);
+    await syncBots(r.store, r.home, {});
+    const views = new Views({ registry: r.registry, store: r.store, onLog: () => undefined });
+    expect((await views.get("bot:default")).actions.map((a) => a.name)).not.toContain("bot:chat");
+    await expect(views.act("bot:chat", "bot:default", { surface: "cli", actor: { via: "cli", id: "me" } })).rejects.toThrow(
+      "no harness is loaded",
+    );
+  });
+
+  test("a harness outside the loaded ones is refused with the list", async () => {
+    const r = await rig({}, ["claude", "pi"]);
+    await syncBots(r.store, r.home, {});
+    await expect(r.open("default", { harness: "grok" })).rejects.toThrow('"claude", "pi"');
   });
 
   test("the harness stays what it was when the bot's default changes", async () => {

@@ -231,7 +231,11 @@ describe("operad with the dev plugin", () => {
     expect(rowAt).toBeLessThan(sectionsAt);
     expect(planLines[sectionsAt]).not.toContain("Tasks");
 
-    const brief = await runReal(home, repository, [
+    // The real binary has now registered, planned, listed and shown. The
+    // remaining reads and the second confirm run in this process: ten starts
+    // of the binary came too close to the 30s timeout on a check host that
+    // runs another test file at the same time.
+    const brief = await run(home, repository, [
       "show",
       taskId,
       "--section",
@@ -243,14 +247,14 @@ describe("operad with the dev plugin", () => {
 
     const confirmed = await runReal(home, repository, ["dev:confirm", planId]);
     expect(confirmed.code).toBe(0);
-    const ready = await runReal(home, repository, ["list", "task"]);
+    const ready = await run(home, repository, ["list", "task"]);
     expect(ready.out).toContain(`${taskId}  ready  #0  First task`);
 
-    const second = await runReal(home, repository, ["dev:confirm", planId]);
+    const second = await run(home, repository, ["dev:confirm", planId]);
     expect(second.code).toBe(0);
     expect(second.out).toContain(`${planId} is already confirmed; nothing to do`);
 
-    const changes = await runReal(home, repository, [
+    const changes = await run(home, repository, [
       "show",
       taskId,
       "--section",

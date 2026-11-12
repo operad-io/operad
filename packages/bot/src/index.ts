@@ -11,7 +11,7 @@
 
 import { mkdirSync } from "node:fs";
 import { CHAT_TYPE, chatData, createChat, sendMessage, titleFromMessage } from "@operad-io/chat";
-import { definePlugin, isRecord, type ActionTypeDefinition, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
+import { definePlugin, isRecord, type ActionArgsSchema, type ActionTypeDefinition, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
   DEFAULT_BOT,
@@ -125,19 +125,19 @@ export async function openChat(input: OpenChat): Promise<string> {
   );
 }
 
-const chatAction: ActionTypeDefinition = {
-  name: "chat",
-  on: BOT_TYPE,
-  creates: "chat",
-  args: {
+/** The `chat` arguments with the harnesses loaded now as the choice. */
+function chatArgs(harnesses: readonly string[], botHarness: unknown): ActionArgsSchema {
+  const first = harnesses[0];
+  const fallback = typeof botHarness === "string" && harnesses.includes(botHarness) ? botHarness : first;
+  return {
     type: "object",
     description: "Opens a chat with the bot.",
     properties: {
       harness: {
         type: "string",
-        minLength: 1,
-        description:
-          "One of the loaded harness plugins; the bot's default harness when left out. It cannot change later.",
+        ...(harnesses.length === 0 ? {} : { enum: [...harnesses] }),
+        ...(fallback === undefined ? {} : { default: fallback }),
+        description: "One of the loaded harness plugins. It cannot change later.",
       },
       title: { type: "string", minLength: 1, maxLength: 120, description: "What the chat is called." },
       message: {
@@ -149,11 +149,20 @@ const chatAction: ActionTypeDefinition = {
       },
     },
     additionalProperties: false,
-  },
-  when: (state) => state.removed !== true && typeof state.problem !== "string",
-  async why(object) {
+  };
+}
+
+const chatAction: ActionTypeDefinition = {
+  name: "chat",
+  on: BOT_TYPE,
+  creates: "chat",
+  args: chatArgs([], undefined),
+  argsFor: (object, env) => chatArgs(env.harnesses ?? [], object.data.harness),
+  when: (state, env) => state.removed !== true && typeof state.problem !== "string" && (env.harnesses ?? []).length > 0,
+  async why(object, env) {
     if (object.data.removed === true) return `bot ${object.id} is no longer in the settings`;
     if (typeof object.data.problem === "string") return `bot ${object.id}: ${object.data.problem}`;
+    if ((env.harnesses ?? []).length === 0) return `bot ${object.id}: no harness is loaded; load one to chat with it`;
     return undefined;
   },
   async run(ctx, args) {

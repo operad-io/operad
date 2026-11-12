@@ -21,7 +21,7 @@ operad 和 `dev` 要做成开放框架：别的项目、别的技术栈拿来就
    - `packageOf` 用 `packages/<name>/` 推出任务的 area，是本仓库的目录布局。
    - `failureExcerpt` 按 bun 的 `(fail) name [` 和 `N tests failed:` 解析日志；而 `gate.commands[].failed.match` 是可配置的，两边不一致。
 2. **合并后更新主 clone**（`packages/dev/src/mainclone.ts`）：`bun.lock` 变了就跑 `bun install --frozen-lockfile`，写死。
-3. **`linkWorkspacePackages`**（`packages/dev/src/prepare.ts`，`gate.ts` 调用）：仓库没配 `prepare` 时，按 `package.json` 的 workspaces 和 `packages/*` 往 `node_modules` 里建软链。只对 Bun workspace 有意义。
+3. **`linkWorkspacePackages`**（已删除，T-0272）：原先仓库没配 `prepare` 时，`dev` 按 `package.json` 的 workspaces 和 `packages/*` 往检出的 `node_modules` 里建软链，只对 Bun workspace 有意义。现在没配 `prepare` 的仓库得到一份普通检出，`dev` 自己不安装也不建链接。
 4. **“serve 在跑旧代码”的提醒**（`packages/dev/src/standing.ts`，`integrate.ts` 调用 `recordServeCode`）：只在被开发的仓库就是 operad 自己的代码根时生效，认 `@operad-io/` 前缀和 `packages/<name>/`。是自举功能，放在通用的 `dev` 里。
 5. **零散的**
    - `service.ts` 的排除列表里有 `.radian-sandbox/`：`dev` 知道了某个 harness 的目录。
@@ -39,7 +39,7 @@ operad 和 `dev` 要做成开放框架：别的项目、别的技术栈拿来就
 
 1. **A1**：flaky 的规则文本、复现命令、area 的推导都由仓库在 `dev.json` 里给；`dev` 自带的默认只留一句和工具无关的话（“失败后重跑通过的测试是 bug；不要加超时或重试让它通过”），没给复现命令时 brief 不写命令。日志摘录改用该命令自己的 `failed.match` 找失败行，不认 bun 的格式。本仓库把今天的文字和命令搬进 `.operad/dev.json`。
 2. **A2**：主 clone 快进之后跑仓库配置的命令（复用 `prepare`，或新加一个只在主 clone 跑的 hook），不认 `bun.lock`。本仓库在配置里写 `bun install --frozen-lockfile`。
-3. **A3**：删掉 `linkWorkspacePackages`；需要的仓库写 `prepare`。先确认本仓库和 radian-ios 都已经有 `prepare`。
+3. **A3**（已做，T-0272）：删掉 `linkWorkspacePackages`；需要的仓库写 `prepare`。本仓库已有 `bun install --frozen-lockfile`；anylut 和 radian-ios 不是 Bun workspace，不需要 `prepare`，普通检出就够。
 4. **A4**：从 `dev` 里拿出去。候选：一个只给自举用的小插件；或由内核的 code-watch 提供（它已经知道 serve 加载了哪些代码）。
 5. **A5**：排除列表由各 harness 自己声明或由仓库配置；分支名前缀和合并信息做成设置，默认值不变；`pool` 和默认 worker 留着，属于 `dev` 的合理依赖，只在文档里写明。
 6. **B1、B2**：默认插件和默认 MCP 动作挪到 CLI 的 `init`（发行版的默认），engine 的默认是空。MCP 可用的动作更合适由插件自己声明“哪些动作可以交给 lead”，内核只合并。

@@ -936,6 +936,12 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0317-M1 | packages/dev/src/steps.ts | the work step no longer copied the harness's `finalMessage` onto the attempt | `dev/work > the worker's final message is kept whole on the attempt (T-0317)` |
+
+## T-0272 — dev links no workspace packages itself
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0272-M1 | packages/dev/src/gate.ts | a checkout made with no `prepare` was given `node_modules` links to its workspace packages again | `a change spanning two packages > no prepare: the review checkout is a plain checkout with no links of its own` |
 | T-0318-M1 | packages/dev/src/views.ts | the task row's `wait` field left out (the wait text only in the note) | `dev views > the wait reason is its own field, whole, and a row that waits for nothing has none (T-0318)` and the integrate wait test |
 ## T-0274 — dev's finished rows carry a mark
 
@@ -950,3 +956,8 @@ the row fields.
 | T-0341-M1 | packages/dev/src/commands.ts | `task edit` read an open standard input without its deadline, as before | `operad with the dev plugin > task edit uses $EDITOR when stdin stays open past its wait` (the test timed out after 30 s on the old code) |
 | T-0341-M2 | packages/dev/src/commands.ts | a bounded read that timed out and had no editor fell through to the editor error instead of naming the standard-input wait | `operad with the dev plugin > task edit with an open stdin and no editor fails naming the wait` |
 | T-0341-M3 | packages/dev/src/lock.ts | the repository lock error no longer said how long it waited before giving up | `the repository lock > a live holder past the deadline is a dev lock error naming its pid` |
+## T-0340 — the real-binary CLI test stays under its timeout
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0340-M1 | packages/dev/src/refusals.ts | the plan's second confirm said "nothing more to do", so the in-process confirm check no longer matched | `operad with the dev plugin > the real binary registers, plans, lists, shows and confirms` |
