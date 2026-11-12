@@ -5,6 +5,7 @@ import {
   MemoryPluginStore,
   PluginRegistry,
   definePlugin,
+  type JsonValue,
   type PluginStepResult,
   type StepContext,
   type StepEvent,
@@ -29,7 +30,13 @@ export type Script = (ctx: StepContext, call: Call) => Promise<PluginStepResult>
 type Levels = { readonly list: readonly string[]; readonly default: string | null };
 
 /** A harness plugin whose answers the test writes. */
-export function fakeHarness(name: string, script: Script, calls: Call[], models?: Levels, efforts?: Levels & { readonly flag?: string }) {
+export function fakeHarness(
+  name: string,
+  script: Script,
+  calls: Call[],
+  models?: Levels,
+  efforts?: Levels & { readonly flag?: string },
+) {
   return definePlugin({
     name,
     kind: "harness",
@@ -64,13 +71,13 @@ export interface Rig {
   readonly events: TriggerEvent[];
   /** A chat that uses the fake harness. */
   chat(extra?: {
-    readonly access?: Record<string, never> | Record<string, boolean>;
+    readonly access?: Record<string, JsonValue>;
     readonly model?: string;
     readonly effort?: string;
     readonly effortDefault?: string;
   }): Promise<string>;
   /** A person's message as a fact, without the event. */
-  say(chat: string, text: string): Promise<string>;
+  say(chat: string, text: string, attachments?: readonly unknown[]): Promise<string>;
   /** Runs one round of the reply step. */
   round(
     chat: string,
@@ -80,17 +87,24 @@ export interface Rig {
   ): Promise<PluginStepResult>;
 }
 
+/**
+ * The harness the test uses is either `levelOrHarness` (a name) or `harness`;
+ * the efforts are `efforts`, or `levelOrHarness` when it is an object.
+ */
 export async function rig(
   script: Script,
   models?: Levels,
-  efforts?: Levels & { readonly flag?: string },
+  levelOrHarness?: (Levels & { readonly flag?: string }) | string,
+  harness = "fake",
 ): Promise<Rig> {
+  const efforts = typeof levelOrHarness === "string" ? undefined : levelOrHarness;
+  const name = typeof levelOrHarness === "string" ? levelOrHarness : harness;
   const root = await mkdtemp(join(tmpdir(), "chat-test-"));
   roots.push(root);
   const calls: Call[] = [];
   const events: TriggerEvent[] = [];
   const store = new MemoryPluginStore({ root: join(root, "store") });
-  const registry = new PluginRegistry([createChatPlugin(), fakeHarness("fake", script, calls, models, efforts)], {
+  const registry = new PluginRegistry([createChatPlugin(), fakeHarness(name, script, calls, models, efforts)], {
     home: join(root, "home"),
     cwd: root,
     store,
@@ -110,7 +124,7 @@ export async function rig(
       return createChat(
         store,
         {
-          harness: "fake",
+          harness: name,
           cwd: root,
           title: "Test",
           ...(extra?.access === undefined ? {} : { access: extra.access }),
@@ -121,7 +135,7 @@ export async function rig(
         "test",
       );
     },
-    async say(chat, text) {
+    async say(chat, text, attachments = []) {
       const id = newMessageId();
       await store.append({
         type: MESSAGE_FACT,
@@ -132,7 +146,7 @@ export async function rig(
           role: "user",
           from: { via: "cli", id: "tester" },
           text,
-          attachments: [],
+          attachments,
           source: { kind: "cli", ref: null },
         },
       });

@@ -21,6 +21,10 @@ import {
   readHttpToken,
   rotateHttpToken,
   startHttpServer,
+  attachmentUrl,
+  storedType,
+  UploadMissingError,
+  Uploads,
   storeRootOf,
   validateListenAddresses,
   type HttpServerHandle,
@@ -1271,5 +1275,183 @@ describe("http server", () => {
     } finally {
       await h.close();
     }
+  });
+
+  describe("file arguments", () => {
+    function upload(h: Harness, name: string, body: Bun.BodyInit, type = "text/plain"): Promise<Response> {
+      return api(h, `/v1/uploads?name=${encodeURIComponent(name)}`, {
+        method: "POST",
+        headers: { "content-type": type },
+        body,
+      });
+    }
+
+    function attach(h: Harness, id: string, args: Record<string, unknown>): Promise<Response> {
+      return api(h, "/v1/act", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "webtest:attach", id: `item:${id}`, args }),
+      });
+    }
+
+    test("an upload needs the token", async () => {
+      const h = await makeHarness();
+      try {
+        const res = await fetch(`${h.base}/v1/uploads?name=a.txt`, { method: "POST", body: "x" });
+        expect(res.status).toBe(401);
+      } finally {
+        await h.close();
+      }
+    });
+
+    test("an upload above the limit is refused with a message and leaves nothing", async () => {
+      const h = await makeHarness();
+      try {
+        const fits = await upload(h, "ok.bin", new Uint8Array(20 * 1024 * 1024));
+        expect(fits.status).toBe(201);
+        const res = await upload(h, "big.bin", new Uint8Array(20 * 1024 * 1024 + 1));
+        expect(res.status).toBe(413);
+        const body = await json(res);
+        expect((body.error as { message: string }).message).toBe("the file is larger than the 20 MB limit");
+        const left = (() => {
+          try {
+            return readdirSync(join(h.home, "uploads"));
+          } catch {
+            return [];
+          }
+        })();
+        expect(left.length).toBe(1);
+      } finally {
+        await h.close();
+      }
+    });
+
+    test("a streamed upload above the limit is cut off while it is read", async () => {
+      const h = await makeHarness();
+      try {
+        const chunk = new Uint8Array(1024 * 1024);
+        let sent = 0;
+        const stream = new ReadableStream<Uint8Array>({
+          pull(controller) {
+            if (sent >= 25) {
+              controller.close();
+              return;
+            }
+            sent += 1;
+            controller.enqueue(chunk);
+          },
+        });
+        const res = await upload(h, "stream.bin", stream);
+        expect(res.status).toBe(413);
+      } finally {
+        await h.close();
+      }
+    });
+
+    test("an action gets the stored path under the object's attachment directory", async () => {
+      const h = await makeHarness();
+      try {
+        seed(h, "one", { title: "First", state: "new" });
+        const up = await json(await upload(h, "../notes.txt", "hello", "text/plain"));
+        expect(up.name).toBe("notes.txt");
+        expect(up.size).toBe(5);
+        const res = await attach(h, "one", { file: up.ref });
+        expect(res.status).toBe(200);
+        const run = await json(res);
+        const value = run.value as { file: string };
+        expect(value.file).toBe(join(h.home, "attachments", "item", "one", String(up.ref), "notes.txt"));
+        expect(readFileSync(value.file, "utf8")).toBe("hello");
+        expect(readdirSync(join(h.home, "uploads"))).toEqual([]);
+      } finally {
+        await h.close();
+      }
+    });
+
+    test("a reference works once; a second use is refused with the reason", async () => {
+      const h = await makeHarness();
+      try {
+        seed(h, "one", { title: "First", state: "new" });
+        seed(h, "two", { title: "Second", state: "new" });
+        const up = await json(await upload(h, "a.txt", "hello"));
+        expect((await attach(h, "one", { file: up.ref })).status).toBe(200);
+        const again = await attach(h, "two", { file: up.ref });
+        expect(again.status).toBe(400);
+        expect(((await json(again)).error as { message: string }).message).toContain("already used");
+        const made = await attach(h, "one", { file: "up-00000000-0000-0000-0000-000000000000" });
+        expect(made.status).toBe(400);
+        const path = await attach(h, "one", { file: "/etc/passwd" });
+        expect(path.status).toBe(400);
+      } finally {
+        await h.close();
+      }
+    });
+
+    test("a list of files is stored one by one", async () => {
+      const h = await makeHarness();
+      try {
+        seed(h, "one", { title: "First", state: "new" });
+        const a = await json(await upload(h, "a.txt", "a"));
+        const b = await json(await upload(h, "b.txt", "b"));
+        const run = await json(await attach(h, "one", { file: a.ref, more: [b.ref] }));
+        const value = run.value as { more: string[] };
+        expect(value.more.length).toBe(1);
+        expect(readFileSync(value.more[0] ?? "", "utf8")).toBe("b");
+      } finally {
+        await h.close();
+      }
+    });
+
+    test("an upload no action used is removed once it is old enough", async () => {
+      let now = 1_000_000;
+      const uploads = new Uploads({ home: await tempRoot(), clock: () => now, ttlMs: 1000 });
+      const info = await uploads.save(new Response("x").body, "a.txt", "text/plain");
+      now += 999;
+      expect(await uploads.sweep()).toBe(0);
+      now += 2;
+      expect(await uploads.sweep()).toBe(1);
+      await expect(uploads.take(info.ref, await tempRoot())).rejects.toBeInstanceOf(UploadMissingError);
+    });
+
+    test("a stored file is served to a client with the type its upload gave, behind the token", async () => {
+      const h = await makeHarness();
+      try {
+        seed(h, "one", { title: "First", state: "new" });
+        const up = await json(await upload(h, "camera", "PNGDATA", "image/png; charset=binary"));
+        expect(up.type).toBe("image/png");
+        const run = await json(await attach(h, "one", { file: up.ref }));
+        const stored = (run.value as { file: string }).file;
+        expect(storedType(stored)).toBe("image/png");
+        const url = attachmentUrl(h.home, stored) ?? "";
+        expect(url).toBe(`/v1/attachments/item/one/${String(up.ref)}/camera`);
+        const got = await api(h, url);
+        expect(got.status).toBe(200);
+        expect(got.headers.get("content-type")).toBe("image/png");
+        expect(await got.text()).toBe("PNGDATA");
+        expect((await fetch(`${h.base}${url}`)).status).toBe(401);
+        for (const bad of [
+          `/v1/attachments/item/one/${String(up.ref)}/.meta.json`,
+          `/v1/attachments/item/one/%2e%2e/%2e%2e/config.json`,
+          `/v1/attachments/item/one/${String(up.ref)}/nothing`,
+        ]) {
+          expect((await api(h, bad)).status).toBe(404);
+        }
+      } finally {
+        await h.close();
+      }
+    });
+
+    test("a json body above its limit is refused with a message", async () => {
+      const h = await makeHarness();
+      try {
+        const res = await api(h, "/v1/act", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "webtest:approve", id: "item:x", note: "n".repeat(2 * 1024 * 1024) }),
+        });
+        expect(res.status).toBe(413);
+      } finally {
+        await h.close();
+      }
+    });
   });
 });

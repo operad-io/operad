@@ -685,6 +685,14 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0352-M1 | packages/engine/src/plugin/sqlite-store.ts | `declare` wrote the declaration on every call again (the old code), so a command that only reads waited out the busy timeout while another process held the write lock and failed with "database is locked" | `operad list --json while another process holds the store's write lock > prints the whole page with code 0 instead of failing with 'database is locked'` (packages/cli/test/list-json-locked.test.ts, through `main`; also `declaring an object type > a declaration the store already holds takes no write lock`) |
+| T-0339-M1 | packages/engine/src/views/uploads.ts | `save` took a file of any size | `http server > file arguments > a streamed upload above the limit is cut off while it is read` |
+| T-0339-M2 | packages/engine/src/views/uploads.ts | `take` copied the upload instead of moving it, so a reference worked again | `http server > file arguments > a reference works once; a second use is refused with the reason` |
+| T-0339-M3 | packages/engine/src/views/presentation.ts | `takeFiles` left the upload reference in the action's args instead of the stored path | `http server > file arguments > an action gets the stored path under the object's attachment directory` |
+| T-0339-M4 | packages/engine/src/views/uploads.ts | `sweep` removed no upload however old | `http server > file arguments > an upload no action used is removed once it is old enough` |
+| T-0339-M5 | packages/engine/src/http/server.ts | a JSON body was held to a limit a thousand times larger | `http server > file arguments > a json body above its limit is refused with a message` |
+| T-0339-M6 | packages/engine/src/plugin/action-schema.ts | `fileProperties` ignored a list of files | `an action declares a file argument as a string, or a list of strings, with format file` |
+| T-0339-M23 | packages/engine/src/views/uploads.ts | the attachment route served the type file kept beside a stored file | `http server > file arguments > a stored file is served to a client with the type its upload gave, behind the token` |
+| T-0339-M26 | packages/engine/src/views/uploads.ts | `take` kept no type beside the stored file | `http server > file arguments > a stored file is served to a client with the type its upload gave, behind the token` |
 | T-0347-M1 | packages/engine/src/plugin/registry.ts | a plugin command named like a kernel verb threw at startup again instead of losing only its short form | `plugin commands named like kernel verbs or each other > the CLI starts, the kernel verb runs and the plugin command runs through its plugin` |
 
 

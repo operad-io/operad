@@ -1,8 +1,10 @@
 /** The shape of a chat and its messages, and how a chat is read from its facts. */
 
 import { randomUUID } from "node:crypto";
+import { statSync } from "node:fs";
+import { basename, extname } from "node:path";
 import type { JsonValue, ObjectRef, ObjectStore, PluginFact } from "@operad-io/engine";
-import { isRecord, stringList } from "@operad-io/engine";
+import { isRecord, storedType, stringList } from "@operad-io/engine";
 
 /** The object type of a chat. */
 export const CHAT_TYPE = "chat";
@@ -101,6 +103,75 @@ export interface NewChat {
   readonly refresh?: string | undefined;
 }
 
+/** One file attached to a message: where it is stored, and what a client shows of it. */
+export interface Attachment {
+  readonly [key: string]: unknown;
+  readonly path: string;
+  readonly name: string;
+  readonly type: string;
+  readonly size: number;
+}
+
+/** The image types claude and pi take as image input. */
+export const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
+
+const MEDIA_TYPES: Readonly<Record<string, string>> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".heic": "image/heic",
+  ".pdf": "application/pdf",
+  ".txt": "text/plain",
+  ".md": "text/markdown",
+  ".json": "application/json",
+  ".csv": "text/csv",
+  ".mp4": "video/mp4",
+  ".mov": "video/quicktime",
+  ".m4a": "audio/mp4",
+  ".mp3": "audio/mpeg",
+  ".zip": "application/zip",
+};
+
+/** The media type a file name's extension says; `application/octet-stream` when it says none. */
+export function mediaTypeOf(name: string): string {
+  return MEDIA_TYPES[extname(name).toLowerCase()] ?? "application/octet-stream";
+}
+
+/** The attachment record of a stored file; throws when the file is not there. */
+export function attachmentOf(path: string): Attachment {
+  let size: number;
+  try {
+    size = statSync(path).size;
+  } catch {
+    throw new Error(`the attachment ${path} is not there`);
+  }
+  const name = basename(path);
+  // The type the upload came with wins over a guess from the extension.
+  return { path, name, type: storedType(path) ?? mediaTypeOf(name), size };
+}
+
+/** The attachments of a message fact; an older fact that holds bare paths reads as records. */
+export function attachmentsOf(value: unknown): readonly Attachment[] {
+  if (!Array.isArray(value)) return [];
+  const found: Attachment[] = [];
+  for (const item of value) {
+    if (typeof item === "string") {
+      found.push({ path: item, name: basename(item), type: mediaTypeOf(item), size: 0 });
+    } else if (isRecord(item) && typeof item.path === "string" && item.path.length > 0) {
+      const name = typeof item.name === "string" ? item.name : basename(item.path);
+      found.push({
+        path: item.path,
+        name,
+        type: typeof item.type === "string" ? item.type : mediaTypeOf(name),
+        size: typeof item.size === "number" ? item.size : 0,
+      });
+    }
+  }
+  return found;
+}
+
 /** What a model-change fact holds. */
 export interface ModelChangedData {
   readonly [key: string]: unknown;
@@ -172,7 +243,8 @@ export interface MessageData {
   readonly role: MessageRole;
   readonly from: { readonly via: string; readonly id: string };
   readonly text: string;
-  readonly attachments: readonly string[];
+  /** The files sent with it; their paths are under the chat's attachment directory. */
+  readonly attachments: readonly Attachment[];
   /** Where it came from, and its id there (a Telegram message id), when it has one. */
   readonly source: { readonly kind: string; readonly ref: string | null };
   /** An assistant message: the ids of the messages it answers. */
@@ -375,7 +447,7 @@ function messageOfFact(fact: PluginFact): Message | undefined {
       id: typeof from.id === "string" ? from.id : "",
     },
     text: data.text,
-    attachments: stringList(data.attachments),
+    attachments: attachmentsOf(data.attachments),
     source: {
       kind: typeof source.kind === "string" ? source.kind : "",
       ref: typeof source.ref === "string" ? source.ref : null,
@@ -450,8 +522,29 @@ export function currentSession(
   return typeof chat.session === "string" && chat.session.length > 0 ? chat.session : undefined;
 }
 
-/** The prompt for the messages to answer, built from facts alone. */
-export function promptFor(pending: readonly Message[]): string {
-  if (pending.length === 1) return pending[0]?.text ?? "";
-  return pending.map((message) => message.text).join("\n\n");
+function sizeText(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** The lines that give a message's files to an agent as paths; `shown` marks those it also gets as images. */
+function attachmentLines(message: Message, shown: ReadonlySet<string>): string {
+  if (message.attachments.length === 0) return "";
+  const lines = message.attachments.map(
+    (file) =>
+      `- ${file.path} (${file.name}, ${file.type}, ${sizeText(file.size)}${shown.has(file.path) ? "; also given to you as an image" : ""})`,
+  );
+  return `Attached files:\n${lines.join("\n")}`;
+}
+
+/**
+ * The prompt for the messages to answer, built from facts alone. A message's
+ * files follow its text as paths; `images` are the paths also given as image input.
+ */
+export function promptFor(pending: readonly Message[], images: ReadonlySet<string> = new Set()): string {
+  const parts = pending.map((message) =>
+    [message.text, attachmentLines(message, images)].filter((part) => part.length > 0).join("\n\n"),
+  );
+  return parts.join("\n\n");
 }

@@ -1,5 +1,6 @@
 /** How a chat shows in a list and on its page: a row and a transcript. */
 
+import { attachmentUrl } from "@operad-io/engine";
 import type {
   ObjectRow,
   ObjectViews,
@@ -9,7 +10,7 @@ import type {
   ViewContext,
   ViewSection,
 } from "@operad-io/engine";
-import { agentLine, chatData, chatRef, MESSAGE_FACT, modelAndCost, type Message } from "./model.ts";
+import { agentLine, attachmentsOf, chatData, chatRef, IMAGE_TYPES, MESSAGE_FACT, modelAndCost, type Attachment, type Message } from "./model.ts";
 
 /** How many facts of a chat one page of the transcript reads. */
 export const TRANSCRIPT_PAGE = 50;
@@ -40,13 +41,29 @@ function minute(at: number): string {
   return new Date(at).toISOString().slice(0, 16).replace("T", " ");
 }
 
+/** A path as a Markdown link destination: spaces and parentheses are escaped. */
+function destination(path: string, home: string | undefined): string {
+  // A client fetches the file from the server, so the link is the server's attachment address.
+  const url = home === undefined ? undefined : attachmentUrl(home, path);
+  return (url ?? encodeURI(path)).replace(/\(/g, "%28").replace(/\)/g, "%29");
+}
+
+/** One attachment as a line: an image is shown as an image, another file as a link. */
+function attachmentMarkdown(file: Attachment, home: string | undefined): string {
+  const target = destination(file.path, home);
+  if ((IMAGE_TYPES as readonly string[]).includes(file.type)) return `![${file.name}](${target})`;
+  return `Attachment: [${file.name}](${target})`;
+}
+
 /** One message as Markdown: who, when and where from, then the text. */
-export function messageMarkdown(message: Message, speaker: string = DEFAULT_SPEAKER): string {
+export function messageMarkdown(message: Message, speaker: string = DEFAULT_SPEAKER, home?: string): string {
   const who = message.role === "assistant" ? speaker : "you";
   const via = message.role === "user" && message.source.kind.length > 0 ? ` via ${message.source.kind}` : "";
+  const head = `**${who}**${via} · ${minute(message.at)}`;
   const used = message.role === "assistant" ? modelAndCost(message.model, message.costMicros, message.costQuality) : [];
-  const under = used.length > 0 ? `\n\n*${used.join(" · ")}*` : "";
-  return `**${who}**${via} · ${minute(message.at)}\n\n${message.text}${under}`;
+  const under = used.length > 0 ? `*${used.join(" · ")}*` : "";
+  const body = [message.text, ...message.attachments.map((file) => attachmentMarkdown(file, home)), under].filter((part) => part.length > 0);
+  return [head, ...body].join("\n\n");
 }
 
 /**
@@ -88,7 +105,7 @@ function messageFrom(fact: {
     role: data.role,
     from: { via: "", id: "" },
     text: data.text,
-    attachments: [],
+    attachments: attachmentsOf(data.attachments),
     source: {
       kind: typeof source.kind === "string" ? source.kind : "",
       ref: typeof source.ref === "string" ? source.ref : null,
@@ -120,7 +137,7 @@ async function load(
   for (const fact of page.facts) {
     if (fact.type !== MESSAGE_FACT) continue;
     const message = messageFrom(fact);
-    if (message !== undefined) blocks.push(messageMarkdown(message, speaker));
+    if (message !== undefined) blocks.push(messageMarkdown(message, speaker, ctx.home));
   }
   const body = blocks.length === 0 && options.cursor === undefined ? "No messages yet." : blocks.join("\n\n---\n\n");
   // Every page says which agent answers, as the row does.

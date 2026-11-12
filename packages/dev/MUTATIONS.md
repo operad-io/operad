@@ -991,3 +991,4 @@ the row fields.
 |---|---|---|---|
 | T-0342-M19 | packages/dev/src/chat.ts | `dev:chat` ignored the effort asked for | `dev:chat and the effort > a new chat starts with the agent's default effort, or the one asked for from that agent's list` |
 | T-0342-M20 | packages/dev/src/chat.ts | `dev:chat` dropped the effort enum of the offered agents | `dev:chat and the effort > the effort argument is an enum of the offered agents' efforts` |
+| T-0349-M2 | packages/dev/src/steps.ts | the work step did not wait for a worker-status note still being written before its final save, so the note could overwrite the step's result | `a work step that holds a worker's place and does not start it (T-0349) > a note still being written when the step ends does not overwrite the step's result` |

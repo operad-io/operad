@@ -494,7 +494,7 @@ describe("claude access", () => {
   test("the step declares the deny and ask fields it enforces", async () => {
     const env = await setup("done");
     const type = env.registry.stepTypes().find((item) => item.name === "claude/agent");
-    expect(type?.enforces).toEqual(["denyPaths", "denyCommands", "askCommands", "askPaths"]);
+    expect(type?.enforces).toEqual(["denyPaths", "denyCommands", "askCommands", "askPaths", "readPaths"]);
   });
 
   test("a profile with askCommands is accepted: the step enforces it", async () => {

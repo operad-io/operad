@@ -13,6 +13,7 @@ import type {
   Views,
 } from "@operad-io/engine";
 import {
+  fileProperties,
   HISTORY_SECTION,
   listPending,
   listRunning,
@@ -273,7 +274,8 @@ export const TOOLS = [
   },
   {
     name: "act",
-    description: "Run an action the MCP server is allowed to run for a lead.",
+    description:
+      "Run an action the MCP server is allowed to run for a lead. An action's file arguments cannot be passed here: a client uploads files.",
     inputSchema: {
       type: "object",
       required: ["action"],
@@ -585,6 +587,14 @@ export async function runTool(
         args.args !== undefined && typeof args.args === "object" && args.args !== null
           ? (args.args as Readonly<Record<string, unknown>>)
           : {};
+      // A file argument is a file a client uploaded. This server has no upload,
+      // and a path the agent names is not a file the person chose to send.
+      const given = fileProperties(info.args).filter((file) => actionArgs[file.name] !== undefined);
+      if (given.length > 0) {
+        return toolError(
+          `action "${info.name}" takes a file (${given.map((file) => file.name).join(", ")}); a file is sent by a client that uploads it, not through these tools`,
+        );
+      }
       const actor: Actor = { via: "mcp", id: "lead" };
       try {
         const run = await context.views.act(info.name, args.id === undefined ? undefined : String(args.id), {

@@ -118,3 +118,4 @@ setup it depends on, in the order they were recorded. The root
 |---|---|---|---|
 | T-0342-M5 | packages/harness/claude/src/index.ts | the plugin stopped declaring its efforts | `the efforts claude declares > its effort levels, a default among them, and its own flag` |
 | T-0342-M6 | packages/harness/claude/src/index.ts | the step ignored the `effort` param a chat passes | `claude/agent > an effort from a chat reaches the worker as claude's effort` |
+| T-0339-M18 | packages/harness/claude/src/worker.ts | claude's prompt went as text only, dropping the images | `images are sent with the prompt as image blocks of the one user message` |

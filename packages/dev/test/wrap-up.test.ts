@@ -1,4 +1,4 @@
-import { createPoolPlugin } from "@operad-io/pool";
+import { createPoolPlugin, FilePlaces } from "@operad-io/pool";
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -15,7 +15,7 @@ import {
   taskData,
 } from "../src/index.ts";
 import { PROGRESS_FILE, WIP_MESSAGE } from "../src/progress.ts";
-import { stepTestHooks } from "../src/steps.ts";
+import { stepTestHooks, WORKER_START_GRACE_MS } from "../src/steps.ts";
 import { STEP_TIMEOUT_SECS } from "../src/timeouts.ts";
 import { validateDevSettings } from "../src/settings.ts";
 import { waitingReason } from "../src/announce.ts";
@@ -26,6 +26,9 @@ afterAll(cleanupTempRoots);
 guardLockHandles();
 afterEach(() => {
   stepTestHooks.workClock = undefined;
+  stepTestHooks.workerStartClock = undefined;
+  stepTestHooks.afterWorkerWait = undefined;
+  stepTestHooks.beforeGuardedWrite = undefined;
 });
 
 const LIMIT_MS = STEP_TIMEOUT_SECS * 1000;
@@ -54,7 +57,7 @@ class ManualClock {
   }
 }
 
-type Mode = "wrap-up" | "ignore" | "deaf" | "plain" | "wall" | "commits-note";
+type Mode = "wrap-up" | "ignore" | "deaf" | "plain" | "wall" | "commits-note" | "never-starts" | "late";
 
 interface Seen {
   prompts: string[];
@@ -103,6 +106,19 @@ function fakeHarness(modes: Mode[], seen: Seen[], runMs?: number) {
           const aborted = new Promise<void>((resolve) =>
             ctx.signal.addEventListener("abort", () => resolve(), { once: true }),
           );
+          if (mode === "never-starts") {
+            // Has its place, and nothing ever runs: no begin, no program.
+            record.start();
+            await aborted;
+            return { result: "interrupted", data: { reason: "cancelled" } };
+          }
+          if (mode === "late") {
+            // Slow to start; when stopped it still hands in work, so the claim stays.
+            record.start();
+            await aborted;
+            commitFile(input.cwd, "late.txt", "late work");
+            return { result: "done", data: {} };
+          }
           if (mode === "plain") {
             commitFile(input.cwd, "plain.txt", "plain work");
             return { result: "done", data: {} };
@@ -179,14 +195,14 @@ async function fixture(modes: Mode[], extra: Record<string, unknown> = {}, runMs
     if (result.result !== "ready") throw new Error(JSON.stringify(result));
   };
   const work = (): ReturnType<typeof registry.runStep> =>
-    registry.runStep("dev/work", {}, { runId: `work-${visits}`, object });
+    registry.runStep("dev/work", {}, { runId: `work-${visits}`, object, emit: () => undefined });
   const attempt = async () => {
     const stored = await store.get("task", task.id);
     if (stored === undefined) throw new Error("task disappeared");
     return taskData(stored.data);
   };
   await worktree();
-  return { seen, worktree, work, attempt, path: join(remote.repository, ".operad-worktrees", task.id.slice(task.id.indexOf("/") + 1)) };
+  return { seen, root, worktree, work, attempt, path: join(remote.repository, ".operad-worktrees", task.id.slice(task.id.indexOf("/") + 1)) };
 }
 
 describe("a work step that runs out of time", () => {
@@ -410,5 +426,129 @@ describe("the reason a timed-out task waits", () => {
     const found = waitingReason({ from: "work", result: "failed" }, await state.attempt(), 2, false);
     expect(found.reason).toBe("work timed out");
     expect(found.detail).toContain("work in progress");
+  });
+});
+
+/** A promise for the next time the work step records one of its waits, and the way to read what it recorded. */
+function watchWaits(): { readonly next: (match: (text: string | null) => boolean) => Promise<string | null>; readonly seen: (string | null)[] } {
+  const seen: (string | null)[] = [];
+  const waiters: { match: (text: string | null) => boolean; resolve: (text: string | null) => void }[] = [];
+  stepTestHooks.afterWorkerWait = (text) => {
+    seen.push(text);
+    for (const waiter of [...waiters]) {
+      if (!waiter.match(text)) continue;
+      waiters.splice(waiters.indexOf(waiter), 1);
+      waiter.resolve(text);
+    }
+  };
+  return {
+    seen,
+    next: (match) =>
+      new Promise((resolve) => {
+        const found = seen.find(match);
+        if (found !== undefined) resolve(found);
+        else waiters.push({ match, resolve });
+      }),
+  };
+}
+
+describe("a work step that holds a worker's place and does not start it (T-0349)", () => {
+  test("the task says the worker has not started, and says when it has", async () => {
+    const limit = new ManualClock();
+    const start = new ManualClock();
+    stepTestHooks.workClock = limit;
+    stepTestHooks.workerStartClock = start;
+    const waits = watchWaits();
+    const state = await fixture(["never-starts"]);
+    const running = state.work();
+    const seen = await waitFor(state.seen, 0);
+    await seen.started;
+    start.advanceTo(WORKER_START_GRACE_MS - 1);
+    expect(waits.seen).toEqual([]);
+    start.advanceTo(WORKER_START_GRACE_MS);
+    const line = await waits.next((text) => text !== null);
+    expect(line).toBe("worker fake-harness has had its place for 2 minutes and has not started");
+    expect((await state.attempt()).attempt?.workerWait).toBe(line);
+    limit.advanceTo(HARD_MS);
+    await running;
+    expect((await state.attempt()).attempt?.workerWait ?? null).toBeNull();
+  });
+
+  test("a note still being written when the step ends does not overwrite the step's result", async () => {
+    const limit = new ManualClock();
+    const start = new ManualClock();
+    stepTestHooks.workClock = limit;
+    stepTestHooks.workerStartClock = start;
+    const state = await fixture(["late"]);
+    const running = state.work();
+    const seen = await waitFor(state.seen, 0);
+    await seen.started;
+    // The note's save is held at the door while the step ends.
+    let reached: () => void = () => undefined;
+    const atDoor = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    let open: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    let first = true;
+    stepTestHooks.beforeGuardedWrite = async () => {
+      if (!first) return;
+      first = false;
+      reached();
+      await gate;
+    };
+    const wrote = new Promise<void>((resolve) => {
+      stepTestHooks.afterWorkerWait = () => resolve();
+    });
+    start.advanceTo(WORKER_START_GRACE_MS);
+    await atDoor;
+    limit.advanceTo(HARD_MS);
+    // Release the note's save only after the step's own result is saved, if the
+    // step lets that happen; a step that waits for the note gets it released
+    // after a bounded number of turns (the loop is long enough for the step's git work).
+    for (let turn = 0; turn < 200_000; turn += 1) {
+      if ((await state.attempt()).attempt?.worked === true) break;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    open();
+    await running;
+    // Wherever the note's save lands, it has landed before the task is read.
+    await wrote;
+    const attempt = (await state.attempt()).attempt;
+    expect(attempt?.worked).toBe(true);
+    expect(attempt?.workerWait ?? null).toBeNull();
+  });
+
+  test("a worker that starts in time says nothing", async () => {
+    const start = new ManualClock();
+    stepTestHooks.workerStartClock = start;
+    const waits = watchWaits();
+    const state = await fixture(["plain"]);
+    await state.work();
+    start.advanceTo(WORKER_START_GRACE_MS * 10);
+    expect(waits.seen).toEqual([]);
+  });
+
+  test("a first attempt that waits for a worker says so, with who holds it", async () => {
+    const waits = watchWaits();
+    const state = await fixture(["plain"]);
+    const places = new FilePlaces(join(state.root, "pool"));
+    const held = await places.claim([
+      {
+        own: "count:repository/default/fake-harness",
+        ownLimit: 1,
+        home: "harness:fake-harness",
+        homeLimit: undefined,
+        holder: "T-0205",
+      },
+    ]);
+    if (held.kind !== "taken") throw new Error("the place was not free");
+    const running = state.work();
+    expect(await waits.next((text) => text !== null)).toBe("waiting for worker fake-harness: held by T-0205");
+    await held.release();
+    expect((await running).result).toBe("done");
+    expect(await waits.next((text) => text === null)).toBeNull();
   });
 });

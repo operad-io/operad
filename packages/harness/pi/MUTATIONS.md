@@ -89,3 +89,4 @@ the row fields.
 |---|---|---|---|
 | T-0342-M7 | packages/harness/pi/src/index.ts | the plugin stopped declaring its efforts | `the efforts pi declares > its thinking levels under the same setting, a default, and the thinking flag` |
 | T-0342-M8 | packages/harness/pi/src/index.ts | the step ignored the `effort` param a chat passes | `pi/agent > an effort from a chat reaches the worker as pi's thinking level` |
+| T-0339-M19 | packages/harness/pi/src/worker.ts | pi's prompt went without its images | `images are given to pi with the prompt: the model's context holds the image` |
