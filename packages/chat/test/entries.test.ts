@@ -124,6 +124,27 @@ describe("chat entries", () => {
     expect(await Bun.file(path).text()).toBe(output);
   });
 
+  test("tool output the harness sends in more than one line is kept whole in the file", async () => {
+    const half = "y".repeat(50 * 1024);
+    const output = `${half}${half}`;
+    const r = await rig((ctx) => {
+      const line = send(ctx);
+      line(start("t1", "Bash", "cat many.txt"));
+      line({ type: "tool_output", toolCallId: "t1", text: half });
+      line({ type: "tool_output", toolCallId: "t1", text: half });
+      line(end("t1", "Bash"));
+      return reply("done");
+    });
+    const chat = await r.chat();
+    await r.say(chat, "hello");
+    await r.round(chat);
+    const entry = allEntries(r.store, chat)[0];
+    expect(new TextEncoder().encode(entry?.output ?? "").length).toBe(4 * 1024);
+    const path = entry?.outputPath;
+    if (path === undefined) throw new Error("no output file");
+    expect(await Bun.file(path).text()).toBe(output);
+  });
+
   test("secret values are masked before a text, thinking, tool or file fact is written", async () => {
     const secret = "s3cr3t-value";
     const output = `${secret} `.repeat(2_000);
@@ -134,6 +155,7 @@ describe("chat entries", () => {
       line(start("t1", "Bash", `echo ${secret}`));
       line({ type: "tool_output", toolCallId: "t1", text: output });
       line(end("t1", "Bash", { isError: true, error: `bad ${secret}\nmore` }));
+      line({ type: "text_end", text: `final ${secret}` });
       return reply(`final ${secret}`);
     });
     mkdirSync(join(r.root, "home", "secrets"), { recursive: true });
@@ -145,6 +167,8 @@ describe("chat entries", () => {
     const entries = allEntries(r.store, chat);
     expect(JSON.stringify(entries)).not.toContain(secret);
     expect(JSON.stringify(allMessages(r.store, chat))).not.toContain(secret);
+    // The masked final text is the reply's, not an intermediate entry too.
+    expect(entries.some((entry) => entry.kind === "text" && entry.text === "final ***")).toBe(false);
     const tool = entries.find((entry) => entry.kind === "tool");
     expect(tool?.input).toBe("echo ***");
     expect(tool?.error).toBe("bad ***");

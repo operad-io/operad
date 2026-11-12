@@ -90,3 +90,9 @@ the row fields.
 |---|---|---|---|
 | T-0366-M9 | packages/chat/src/index.ts | the question wait no longer offered `allow_always` | `the reply flow > the question wait offers allow_always and sends either allow answer back to the reply` |
 | T-0366-M13 | packages/chat/src/index.ts | the question wait stopped declaring `allow_always` as the late choice a person's question hands over | `the reply flow > the question wait offers allow_always and sends either allow answer back to the reply` |
+
+## T-0362 — rework: the final text after masking
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0362-M14 | packages/chat/src/reply.ts | the final text was compared with the entry before masking it, so a secret-bearing reply stayed as an entry too | `chat entries > secret values are masked before a text, thinking, tool or file fact is written` |

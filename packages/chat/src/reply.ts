@@ -369,6 +369,7 @@ async function secretValues(ctx: StepContext): Promise<readonly string[]> {
 function entriesToRecord(
   folded: FoldState,
   options: { readonly finalText?: string | undefined; readonly stopped: boolean },
+  secrets: readonly string[],
 ): readonly (FoldEntry | { readonly kind: "stopped"; readonly text: string })[] {
   const entries: (FoldEntry | { readonly kind: "stopped"; readonly text: string })[] = [...folded.entries];
   // What is still only an increment is not an entry. A stopped run keeps the
@@ -379,7 +380,8 @@ function entriesToRecord(
     const final = options.finalText.trim();
     for (let index = entries.length - 1; index >= 0; index -= 1) {
       const entry = entries[index];
-      if (entry?.kind === "text" && entry.text.trim() === final) {
+      // `finalText` is already masked, so compare the entry after masking too.
+      if (entry?.kind === "text" && maskSecrets(entry.text, secrets).trim() === final) {
         entries.splice(index, 1);
         break;
       }
@@ -438,9 +440,9 @@ async function recordEntries(
   folded: FoldState,
   options: { readonly finalText?: string | undefined; readonly stopped: boolean },
 ): Promise<void> {
-  const wanted = entriesToRecord(folded, options);
-  if (wanted.length === 0) return;
   const secrets = await secretValues(ctx);
+  const wanted = entriesToRecord(folded, options, secrets);
+  if (wanted.length === 0) return;
   const existing = allEntries(ctx.store, chat);
   const lastReply = new Map<string, number>();
   for (const message of allMessages(ctx.store, chat)) {
