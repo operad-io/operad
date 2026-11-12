@@ -592,7 +592,11 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     };
   }
 
-  /** The next level of an open object, from the plugin's other types. */
+  /**
+   * The next level of an open object, from the plugin's other types. It is
+   * asked for under the type's `all` filter, never the tab's: every child of
+   * the open object is listed, whatever the left list shows (T-0305).
+   */
   async function loadChildren(
     object: ViewObject,
     version: number,
@@ -605,7 +609,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         tab,
         { parent: `${object.type}:${object.id}` },
         signal,
-        tab.filter,
+        "all",
       );
       if (signal.aborted || finished) return;
       dispatch({

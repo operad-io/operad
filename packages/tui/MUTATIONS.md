@@ -345,3 +345,9 @@ the row fields.
 |---|---|---|---|
 | T-0304-M1 | packages/tui/src/state.ts | a plugin tab's column used the Pending and Running share again instead of its 26% share and 38-column cap | `one tab per plugin > at 120 and 200 a long dev note gives a column 30–40% narrower than before` |
 | T-0304-M2 | packages/tui/src/state.ts | `twoPane` kept using the Pending and Running share, so a plugin tab stayed one pane from 84 through 99 columns | `one tab per plugin > at 99 columns a long plugin row gets the narrow column beside the object pane` |
+
+## T-0305 — an open plan's next level is every task
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0305-M1 | packages/tui/src/app.ts | `loadChildren` asked for the tab's filter instead of `all`, so a plan's merged and cancelled tasks stayed hidden | `an open plan's next level is every one of its tasks > all tasks show under the tab's active filter, the counts match, and f keeps them` |
