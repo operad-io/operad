@@ -85,7 +85,21 @@ describe("the worker", () => {
     });
   }
 
-  for (const type of ["session", "message_end", "tool_execution_start", "tool_execution_end", "blocked", "rate_limit", "grant_use", "result"]) {
+  for (const type of [
+    "session",
+    "message_end",
+    "text_delta",
+    "thinking_delta",
+    "text_end",
+    "thinking_end",
+    "tool_execution_start",
+    "tool_execution_end",
+    "tool_output",
+    "blocked",
+    "rate_limit",
+    "grant_use",
+    "result",
+  ]) {
     test(`stdout line ${type} is in the README table`, () => {
       expect(row(README, type)).toBeDefined();
     });
