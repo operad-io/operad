@@ -25,12 +25,12 @@ import {
 } from "@operad-io/access-match";
 import { decideAccess, hasRules, translate, type CallAnswer } from "./access.ts";
 import {
-  capToolOutput,
   maskSecrets,
   messageText,
   OPERAD_SERVER,
   readImage,
   serverCommand,
+  toolOutputLines,
 } from "@operad-io/harness-process";
 import { findClaude } from "./claude-install.ts";
 import {
@@ -406,13 +406,9 @@ export async function runWorker(
     open.delete(id);
     const text = isError ? undefined : toolOutputText(output);
     if (text !== undefined && text.length > 0) {
-      const capped = capToolOutput(maskSecrets(text, secrets));
-      writeLine({
-        type: "tool_output",
-        toolCallId: id,
-        text: capped.text,
-        ...(capped.truncated ? { truncated: true as const } : {}),
-      });
+      for (const part of toolOutputLines(text, secrets)) {
+        writeLine({ type: "tool_output", toolCallId: id, text: part.text });
+      }
     }
     const firstLine = isError ? firstErrorLine(error, { secrets: input.secretValues }) : undefined;
     writeLine({

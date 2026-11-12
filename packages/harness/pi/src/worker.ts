@@ -23,10 +23,10 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { openMcpTools, type McpTools } from "@operad-io/mcp";
 import {
-  capToolOutput,
   maskSecrets,
   messageText,
   readImage,
+  toolOutputLines,
   type CallAnswer,
 } from "@operad-io/harness-process";
 import { findPi, loadPi } from "./pi-install.ts";
@@ -205,18 +205,6 @@ function splitSecretPrefix(
   }
   if (held === 0) return { emit: text, held: "" };
   return { emit: text.slice(0, text.length - held), held: text.slice(text.length - held) };
-}
-
-/**
- * A `tool_output` line's payload: the text secrets masked, cut to the shared
- * cap, and `truncated` when it was cut.
- */
-export function toolOutputOf(
-  text: string,
-  secrets: readonly string[],
-): { readonly text: string; readonly truncated?: true } {
-  const capped = capToolOutput(maskSecrets(text, secrets));
-  return { text: capped.text, ...(capped.truncated ? { truncated: true as const } : {}) };
 }
 
 /**
@@ -550,11 +538,9 @@ export async function runWorker(
         if (!blocked) {
           const output = textOf(content, "");
           if (output.length > 0) {
-            io.line({
-              type: "tool_output",
-              toolCallId: event.toolCallId,
-              ...toolOutputOf(output, input.secretValues ?? []),
-            });
+            for (const part of toolOutputLines(output, input.secretValues ?? [])) {
+              io.line({ type: "tool_output", toolCallId: event.toolCallId, text: part.text });
+            }
           }
         }
         const firstLine = blocked

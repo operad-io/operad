@@ -1,18 +1,20 @@
 /** How a chat shows in a list and on its page: a row and a transcript. */
 
-import { attachmentUrl } from "@operad-io/engine";
+import { attachmentUrl, decodeCursor, encodeCursor } from "@operad-io/engine";
 import type {
+  ObjectRef,
   ObjectRow,
   ObjectViews,
+  PluginFact,
   SectionContent,
   SectionPage,
   StoredObject,
   ViewContext,
   ViewSection,
 } from "@operad-io/engine";
-import { agentLine, attachmentsOf, chatData, chatRef, IMAGE_TYPES, MESSAGE_FACT, modelAndCost, type Attachment, type Message } from "./model.ts";
+import { agentLine, attachmentsOf, chatData, chatRef, ENTRY_FACT, entryOfFact, IMAGE_TYPES, MESSAGE_FACT, modelAndCost, type Attachment, type Entry, type Message } from "./model.ts";
 
-/** How many facts of a chat one page of the transcript reads. */
+/** How many messages of a chat one page of the transcript holds. */
 export const TRANSCRIPT_PAGE = 50;
 
 /** How a transcript labels the model's messages when nothing sets a speaker. */
@@ -110,6 +112,7 @@ function messageFrom(fact: {
       kind: typeof source.kind === "string" ? source.kind : "",
       ref: typeof source.ref === "string" ? source.ref : null,
     },
+    ...(typeof data.runId === "string" && data.runId.length > 0 ? { runId: data.runId } : {}),
     ...(typeof data.model === "string" && data.model.length > 0 ? { model: data.model } : {}),
     ...(typeof data.costMicros === "number" && Number.isFinite(data.costMicros) ? { costMicros: data.costMicros } : {}),
     ...(data.costQuality === "exact" || data.costQuality === "estimated" || data.costQuality === "incomplete"
@@ -120,6 +123,205 @@ function messageFrom(fact: {
   };
 }
 
+function seconds(ms: number): string {
+  if (ms < 1000) return "<1s";
+  const total = Math.round(ms / 1000);
+  const minutes = Math.floor(total / 60);
+  return minutes === 0 ? `${total}s` : `${minutes}m${String(total % 60).padStart(2, "0")}s`;
+}
+
+function flat(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function inlineCode(text: string): string {
+  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = "`".repeat(longest + 1);
+  return longest > 0 ? `${fence} ${text} ${fence}` : `${fence}${text}${fence}`;
+}
+
+function firstLine(text: string | null | undefined): string | undefined {
+  const line = text?.split("\n")[0]?.trim();
+  return line === undefined || line.length === 0 ? undefined : line;
+}
+
+/** One tool call as a log line: what ran, how long it took and how it ended. */
+function toolMarkdown(entry: Entry): string {
+  const name = entry.toolName ?? "tool";
+  const took = entry.durationMs === undefined ? "" : ` ${seconds(entry.durationMs)}`;
+  const input = entry.input === undefined || entry.input === null ? "" : flat(entry.input);
+  const what = input.length === 0 ? "" : ` ${inlineCode(input.length <= 160 ? input : `${input.slice(0, 159)}…`)}`;
+  const head = `tool ${name}${took}${what}`;
+  if (entry.result === "failed") {
+    const error = firstLine(entry.error);
+    return error === undefined ? `${head} failed` : `${head} failed: ${error}`;
+  }
+  if (entry.result === "blocked") {
+    const reason = firstLine(entry.error);
+    return reason === undefined ? `${head} blocked` : `${head} blocked: ${reason}`;
+  }
+  if (entry.result === "denied") return `${head} denied`;
+  return head;
+}
+
+/** One finished part of an answer as Markdown lines; tool output is never shown. */
+function entryMarkdown(entry: Entry, speaker: string, harness: string): string | undefined {
+  // Radian gives no text or thinking increments; its chats show the tool lines only.
+  if (entry.kind !== "tool" && harness === "radian") return undefined;
+  if (entry.kind === "tool") return toolMarkdown(entry);
+  if (entry.text === undefined) return undefined;
+  if (entry.kind === "thinking") {
+    return entry.text
+      .split(/\r?\n/)
+      .map((line) => `> ${line}`)
+      .join("\n");
+  }
+  const said = flat(entry.text);
+  return said.length === 0 ? undefined : `**${speaker}:** ${said}`;
+}
+
+function allFacts(ctx: ViewContext, ref: ObjectRef): readonly PluginFact[] {
+  const facts: PluginFact[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = ctx.store.facts(ref, {
+      ...(cursor === undefined ? {} : { cursor }),
+      limit: 500,
+    });
+    facts.push(...page.facts);
+    cursor = page.next;
+  } while (cursor !== undefined);
+  return facts;
+}
+
+interface Chunk {
+  readonly facts: readonly PluginFact[];
+  /** How many messages, not entries, the chunk holds. */
+  readonly messages: number;
+  readonly last: number;
+}
+
+function chunkOf(facts: readonly PluginFact[]): Chunk {
+  return {
+    facts,
+    messages: facts.filter((fact) => fact.type === MESSAGE_FACT).length,
+    last: facts.at(-1)?.sequence ?? 0,
+  };
+}
+
+/** A turn is the entries of a run and the reply they led to, so a page never splits them. */
+function chunksOf(facts: readonly PluginFact[]): readonly Chunk[] {
+  const replies = new Map<string, number[]>();
+  const indexes = new Map<number, number>();
+  facts.forEach((fact, index) => {
+    indexes.set(fact.sequence, index);
+    if (fact.type !== MESSAGE_FACT || fact.data.role !== "assistant" || typeof fact.data.runId !== "string") return;
+    const list = replies.get(fact.data.runId) ?? [];
+    list.push(fact.sequence);
+    replies.set(fact.data.runId, list);
+  });
+  const nextReply = (runId: string, after: number): number | undefined =>
+    replies.get(runId)?.find((sequence) => sequence > after);
+  const chunks: Chunk[] = [];
+  let index = 0;
+  while (index < facts.length) {
+    const fact = facts[index];
+    if (fact === undefined) break;
+    if (fact.type === ENTRY_FACT) {
+      const runId = typeof fact.data.runId === "string" ? fact.data.runId : undefined;
+      const reply = runId === undefined ? undefined : nextReply(runId, fact.sequence);
+      if (reply !== undefined) {
+        const end = indexes.get(reply) ?? facts.length - 1;
+        chunks.push(chunkOf(facts.slice(index, end + 1)));
+        index = end + 1;
+        continue;
+      }
+      let end = index + 1;
+      while (
+        end < facts.length &&
+        facts[end]?.type === ENTRY_FACT &&
+        (runId === undefined || facts[end]?.data.runId === runId)
+      ) {
+        end += 1;
+      }
+      chunks.push(chunkOf(facts.slice(index, end)));
+      index = end;
+      continue;
+    }
+    if (fact.type === MESSAGE_FACT) chunks.push(chunkOf([fact]));
+    index += 1;
+  }
+  return chunks;
+}
+
+interface Page {
+  readonly chunks: readonly Chunk[];
+  readonly after: number | undefined;
+  readonly cursor: string | undefined;
+}
+
+function factsCursor(ref: ObjectRef, after: number): string {
+  return encodeCursor({ kind: "facts", type: ref.type, id: ref.id, after });
+}
+
+/** Pages count messages; a turn is one item, so its entries stay with its reply. */
+function pagesOf(ref: ObjectRef, chunks: readonly Chunk[]): readonly Page[] {
+  const pages: Page[] = [];
+  let index = 0;
+  let after: number | undefined;
+  while (index < chunks.length) {
+    const pageChunks: Chunk[] = [];
+    let messages = 0;
+    while (index < chunks.length) {
+      const chunk = chunks[index];
+      if (chunk === undefined) break;
+      if (pageChunks.length > 0 && messages + chunk.messages > TRANSCRIPT_PAGE) break;
+      pageChunks.push(chunk);
+      messages += chunk.messages;
+      index += 1;
+      if (messages >= TRANSCRIPT_PAGE) break;
+    }
+    const last = pageChunks.at(-1);
+    if (last === undefined) break;
+    pages.push({
+      chunks: pageChunks,
+      after,
+      cursor: after === undefined ? undefined : factsCursor(ref, after),
+    });
+    after = last.last;
+  }
+  if (pages.length === 0) pages.push({ chunks: [], after: undefined, cursor: undefined });
+  return pages;
+}
+
+function cursorAfter(cursor: string): number | undefined {
+  const value = decodeCursor(cursor, "chat transcript");
+  return value.kind === "facts" && typeof value.after === "number" ? value.after : undefined;
+}
+
+function rendered(chunk: Chunk, speaker: string, home: string | undefined, harness: string): readonly string[] {
+  const blocks: string[] = [];
+  let lines: string[] = [];
+  const flush = (): void => {
+    if (lines.length > 0) blocks.push(lines.join("\n"));
+    lines = [];
+  };
+  for (const fact of chunk.facts) {
+    if (fact.type === ENTRY_FACT) {
+      const entry = entryOfFact(fact);
+      const markdown = entry === undefined ? undefined : entryMarkdown(entry, speaker, harness);
+      if (markdown !== undefined) lines.push(...markdown.split("\n"));
+      continue;
+    }
+    if (fact.type !== MESSAGE_FACT) continue;
+    flush();
+    const message = messageFrom(fact);
+    if (message !== undefined) blocks.push(messageMarkdown(message, speaker, home));
+  }
+  flush();
+  return blocks;
+}
+
 async function load(
   ctx: ViewContext,
   object: StoredObject,
@@ -128,35 +330,30 @@ async function load(
 ): Promise<SectionContent> {
   if (sectionId !== TRANSCRIPT) return { markdown: "" };
   const ref = chatRef(object.id);
-  const page = ctx.store.facts(ref, {
-    ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
-    limit: TRANSCRIPT_PAGE,
-  });
+  const chat = chatData(object.data);
   const speaker = await speakerOf(ctx, object);
-  const blocks: string[] = [];
-  for (const fact of page.facts) {
-    if (fact.type !== MESSAGE_FACT) continue;
-    const message = messageFrom(fact);
-    if (message !== undefined) blocks.push(messageMarkdown(message, speaker, ctx.home));
-  }
+  const pages = pagesOf(ref, chunksOf(allFacts(ctx, ref)));
+  const after = options.cursor === undefined ? undefined : cursorAfter(options.cursor);
+  const index = pages.findIndex((page) => page.after === after);
+  const selected = pages[index < 0 ? 0 : index] ?? pages[0];
+  const blocks = (selected?.chunks ?? []).flatMap((chunk) => rendered(chunk, speaker, ctx.home, chat.harness));
   const body = blocks.length === 0 && options.cursor === undefined ? "No messages yet." : blocks.join("\n\n---\n\n");
   // Every page says which agent answers, as the row does.
-  const chat = chatData(object.data);
   const markdown = chat.harness.length > 0
     ? `Agent: ${agentLine(chat)}\n\n${body}`
     : body;
+  const nextPage = index < 0 ? undefined : pages[index + 1];
 
   // The table of contents: the cursor each page starts at, the first one without.
-  const pages: SectionPage[] = [{ label: "Page 1" }];
-  let cursor = ctx.store.facts(ref, { limit: TRANSCRIPT_PAGE }).next;
-  while (cursor !== undefined) {
-    pages.push({ label: `Page ${pages.length + 1}`, cursor });
-    cursor = ctx.store.facts(ref, { cursor, limit: TRANSCRIPT_PAGE }).next;
-  }
+  const toc: SectionPage[] = pages.map((page, at) =>
+    at === 0 || page.cursor === undefined
+      ? { label: `Page ${at + 1}` }
+      : { label: `Page ${at + 1}`, cursor: page.cursor },
+  );
   return {
     markdown,
-    ...(page.next === undefined ? {} : { next: page.next }),
-    ...(pages.length > 1 ? { pages } : {}),
+    ...(nextPage?.cursor === undefined ? {} : { next: nextPage.cursor }),
+    ...(toc.length > 1 ? { pages: toc } : {}),
   };
 }
 

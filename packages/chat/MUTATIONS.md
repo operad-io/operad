@@ -67,9 +67,32 @@ the row fields.
 | T-0342-M17 | packages/chat/src/model.ts | `startingEffort` accepted a level the agent does not list | `startingEffort > asked, else preferred, else the default; an unlisted one is refused` |
 | T-0342-M18 | packages/chat/src/model.ts | `createChat` dropped the effort it was given | `chat:effort > the next reply uses the changed effort, and the history says who changed it and to what` |
 
+## T-0362 — what the agent did, in the transcript
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0362-M1 | packages/chat/src/reply.ts | the receiver folded no line, so the run recorded no entries | `chat entries > a run records its text, thinking and tool calls with its run id, and leaves the final reply as the message` |
+| T-0362-M2 | packages/chat/src/reply.ts | text and thinking entries were written without the run id | `chat entries > a run records its text, thinking and tool calls with its run id, and leaves the final reply as the message` |
+| T-0362-M3 | packages/chat/src/reply.ts | the output cap was 64 KB instead of 4 KB, so a 4 KB output stayed in the fact | `chat entries > tool output longer than 4 KB keeps its head in the fact and the whole output in a file under the chat` |
+| T-0362-M4 | packages/chat/src/reply.ts | the chat's secret values were not read, so no text, output or file was masked | `chat entries > secret values are masked before a text, thinking, tool or file fact is written` |
+| T-0362-M5 | packages/chat/src/reply.ts | an already recorded tool call id was recorded again on a rerun | `chat entries > a step that runs again does not record the same entries twice` |
+| T-0362-M6 | packages/chat/src/reply.ts | an interrupted run returned without recording its half-written reply | `chat entries > a stopped run keeps its half-written reply` |
+| T-0362-M7 | packages/chat/src/views.ts | the transcript skipped the entry facts | `chat entries > the transcript shows done, failed, blocked and denied tool calls, and thinking as an unlabeled quote` |
+| T-0362-M8 | packages/chat/src/reply.ts | the final reply's text was also recorded as an intermediate text entry | `chat entries > a run records its text, thinking and tool calls with its run id, and leaves the final reply as the message` |
+| T-0362-M9 | packages/chat/src/views.ts | every fact was its own page item, so a page split a turn's entries from its reply | `chat entries > a page counts messages and keeps a turn's entries with its reply` |
+| T-0362-M10 | packages/chat/src/views.ts | a radian chat showed its text and thinking entries | `chat entries > a radian chat shows the tool lines only` |
+| T-0362-M11 | packages/chat/src/views.ts | a tool line showed the call's output | `chat entries > the transcript shows done, failed, blocked and denied tool calls, and thinking as an unlabeled quote` |
+| T-0362-M12 | packages/chat/src/views.ts | thinking was shown with a label in front of it | `chat entries > the transcript shows done, failed, blocked and denied tool calls, and thinking as an unlabeled quote` |
+| T-0362-M13 | packages/chat/src/reply.ts | text and thinking increments with no end were stored as entries | `chat entries > increments with no end are not stored as entries` |
 ## T-0366 — allow_always
 
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0366-M9 | packages/chat/src/index.ts | the question wait no longer offered `allow_always` | `the reply flow > the question wait offers allow_always and sends either allow answer back to the reply` |
 | T-0366-M13 | packages/chat/src/index.ts | the question wait stopped declaring `allow_always` as the late choice a person's question hands over | `the reply flow > the question wait offers allow_always and sends either allow answer back to the reply` |
+
+## T-0362 — rework: the final text after masking
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0362-M14 | packages/chat/src/reply.ts | the final text was compared with the entry before masking it, so a secret-bearing reply stayed as an entry too | `chat entries > secret values are masked before a text, thinking, tool or file fact is written` |

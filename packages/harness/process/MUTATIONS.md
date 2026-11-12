@@ -87,3 +87,9 @@ and the row fields.
 | T-0366-M4 | packages/harness/process/src/always-allow.ts | an invalid user layer was read as empty without its readable problem | `readAlwaysAllow > an invalid file is empty with a readable message naming the file` |
 | T-0366-M5 | packages/harness/process/src/always-allow.ts | `personStarted` took every trigger for a person's message, so a background run consulted the user layer | `pi: a call that must ask a person > a background run ignores the user layer and is not offered allow_always` |
 | T-0366-M10 | packages/harness/process/src/ask-call.ts | a later identical call ignored the entry `allow_always` had just written and asked again | `createCallAsker > a later identical call after allow_always is let through without asking again` |
+
+## T-0362 — a long tool output in lines that join back whole
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0362-M15 | packages/harness/process/src/lines.ts | `toolOutputLines` cut a long output to its first line instead of splitting it | `toolOutputLines > a long output is split at the cap, joins back whole and masks secrets first` |

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { capToolOutput, emptyFold, foldLines, maskSecrets, TOOL_OUTPUT_CAP_BYTES, type FoldState } from "../src/index.ts";
+import { capToolOutput, emptyFold, foldLines, maskSecrets, toolOutputLines, TOOL_OUTPUT_CAP_BYTES, type FoldState } from "../src/index.ts";
 
 const start = (id: string, name = "Bash", input?: string, at = 100): unknown => ({
   type: "tool_execution_start",
@@ -179,3 +179,24 @@ describe("maskSecrets", () => {
     expect(maskSecrets("nothing", ["", "x9"])).toBe("nothing");
   });
 });
+
+describe("toolOutputLines", () => {
+  test("a short output is one line", () => {
+    expect(toolOutputLines("short", [])).toEqual([{ text: "short" }]);
+  });
+
+  test("a long output is split at the cap, joins back whole and masks secrets first", () => {
+    const secret = "long-secret";
+    const text = `${"é".repeat(TOOL_OUTPUT_CAP_BYTES)}${secret}tail`;
+    const lines = toolOutputLines(text, [secret]);
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines.map((line) => line.text).join("")).toBe(
+      `${"é".repeat(TOOL_OUTPUT_CAP_BYTES)}***tail`,
+    );
+    for (const line of lines) {
+      expect(new TextEncoder().encode(line.text).length).toBeLessThanOrEqual(TOOL_OUTPUT_CAP_BYTES);
+      expect(line.text).not.toContain(secret);
+    }
+  });
+});
+
