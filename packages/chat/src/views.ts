@@ -56,12 +56,17 @@ async function speakerOf(ctx: ViewContext, object: StoredObject): Promise<string
   if (parent !== undefined) {
     const at = parent.indexOf(":");
     if (at > 0 && at < parent.length - 1) {
-      const owner = await ctx.store.get(parent.slice(0, at), parent.slice(at + 1));
+      const owner = ctx.refreshedObject === undefined
+        ? await ctx.store.get(parent.slice(0, at), parent.slice(at + 1))
+        : await ctx.refreshedObject(parent.slice(0, at), parent.slice(at + 1));
       const speaker = owner?.data.speaker;
       if (typeof speaker === "string" && speaker.length > 0) return speaker;
     }
   }
-  const speaker = ctx.settings.speaker;
+  const settings = ctx.settingsInForce === undefined
+    ? ctx.settings
+    : ctx.settingsInForce(ctx.plugin);
+  const speaker = settings.speaker;
   return typeof speaker === "string" && speaker.length > 0 ? speaker : DEFAULT_SPEAKER;
 }
 

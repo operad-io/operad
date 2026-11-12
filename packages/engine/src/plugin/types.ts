@@ -155,6 +155,22 @@ export interface ViewContext extends PluginBaseContext {
         | undefined
       >)
     | undefined;
+  /**
+   * A plugin's settings as they are in `config.json` now, with defaults
+   * filled; the registry's settings when the file cannot be read. For a view
+   * that must follow an edit without a restart.
+   */
+  readonly settingsInForce?:
+    | ((plugin: string) => Readonly<Record<string, JsonValue>>)
+    | undefined;
+  /**
+   * An object after its type's `prepare` has run with the settings in force
+   * now, so a view can see a change without a restart. Undefined when the
+   * object is gone.
+   */
+  readonly refreshedObject?:
+    | ((type: string, id: string) => Promise<StoredObject | undefined>)
+    | undefined;
 }
 
 /**

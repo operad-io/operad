@@ -276,6 +276,24 @@ describe("a reply reads the bot again", () => {
     expect(r.calls).toHaveLength(0);
   });
 
+  test("a bot's speaker is read again when a transcript is drawn", async () => {
+    const r = await rig({ reader: {} });
+    await syncBots(r.store, r.home, {});
+    const id = await r.open("reader");
+    await r.say(id, "hi");
+    await r.reply(id);
+    const views = createViews({ registry: r.registry, store: r.store, onLog: () => undefined });
+    try {
+      const first = await views.section(`chat:${id}`, "transcript", undefined, {});
+      expect(first.markdown).toContain("**Operad Bot**");
+      writeConfig(r.home, { reader: { speaker: "Nova" } });
+      const second = await views.section(`chat:${id}`, "transcript", undefined, {});
+      expect(second.markdown).toContain("**Nova**");
+    } finally {
+      views.close();
+    }
+  });
+
   test("the agent gets operad's tools and works in the bot's directory, not a repository", async () => {
     const r = await rig();
     await syncBots(r.store, r.home, {});

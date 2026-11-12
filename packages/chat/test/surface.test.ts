@@ -1,5 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import type { JsonValue, StepContext, ViewContext } from "@operad-io/engine";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { createViews, type JsonValue, type StepContext, type ViewContext } from "@operad-io/engine";
 import {
   allMessages,
   chatViews,
@@ -165,6 +167,31 @@ describe("the chat's views", () => {
     const markdown = (await chatViews.load(viewContext(r, { speaker: "Ops" }), object, "transcript", {})).markdown;
     expect(markdown).toContain("**Ops**");
     expect(markdown).not.toContain("**Operad Bot**");
+  });
+
+  test("the chat plugin's speaker setting is read again at every draw", async () => {
+    const r = await rig(() => reply("x"));
+    const chat = await r.chat();
+    await modelSay(r, chat, "hello back");
+    const home = join(r.root, "home");
+    const writeSpeaker = (speaker: string) => {
+      mkdirSync(home, { recursive: true });
+      writeFileSync(
+        join(home, "config.json"),
+        JSON.stringify({ plugins: { chat: { settings: { speaker } } } }),
+      );
+    };
+    writeSpeaker("Ops");
+    const views = createViews({ registry: r.registry, store: r.store, onLog: () => undefined });
+    try {
+      const first = await views.section(`chat:${chat}`, "transcript", undefined, {});
+      expect(first.markdown).toContain("**Ops**");
+      writeSpeaker("Ada");
+      const second = await views.section(`chat:${chat}`, "transcript", undefined, {});
+      expect(second.markdown).toContain("**Ada**");
+    } finally {
+      views.close();
+    }
   });
 
   test("a bot's own speaker labels its chats, and a changed name shows on old messages", async () => {
