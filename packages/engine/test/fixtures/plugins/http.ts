@@ -131,6 +131,24 @@ export default definePlugin({
       },
     },
     {
+      name: "attach",
+      on: "item",
+      args: {
+        type: "object",
+        properties: {
+          file: { type: "string", format: "file", description: "The file." },
+          more: { type: "array", items: { type: "string", format: "file" } },
+        },
+        required: ["file"],
+        additionalProperties: false,
+      },
+      when: () => true,
+      run(_ctx, args) {
+        const { file, more } = args as { readonly file: string; readonly more?: readonly string[] };
+        return { text: "attached", file, more: more ?? [] };
+      },
+    },
+    {
       name: "fail",
       on: "item",
       when: () => true,

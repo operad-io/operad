@@ -4,6 +4,7 @@
  */
 
 import { readProfile } from "@operad-io/access-match";
+import { parseImageInputs, type ImageInput } from "@operad-io/harness-process";
 import { isRecord } from "@operad-io/engine";
 
 /** The longest one bash call may run when the settings do not say, in seconds. */
@@ -32,6 +33,8 @@ export interface WorkerInput {
   readonly operadTools?: { readonly home: string } | undefined;
   /** Secret values of the operad secret store; a log line shows `***` where one appears. */
   readonly secretValues?: readonly string[] | undefined;
+  /** Images given to pi with the prompt, read from these files. */
+  readonly images?: readonly ImageInput[] | undefined;
 }
 
 export interface WorkerUsage {
@@ -198,6 +201,9 @@ export function parseInput(value: unknown): ParsedInput {
     return { ok: false, message: "secretValues must be an array of strings" };
   }
 
+  const images = parseImageInputs(value["images"]);
+  if (typeof images === "string") return { ok: false, message: images };
+
   const access = value["access"];
   if (access !== undefined && !isRecord(access)) {
     return { ok: false, message: "access must be an object" };
@@ -224,6 +230,7 @@ export function parseInput(value: unknown): ParsedInput {
       bashTimeoutSecs,
       operadTools: operadTools === undefined ? undefined : { home: String(operadTools["home"]) },
       secretValues,
+      images: images.length === 0 ? undefined : images,
     },
   };
 }

@@ -6,8 +6,10 @@
  */
 
 import { AskTimeoutError, isRecord, messageOf, type AskOutcome, type AskRequest, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext } from "@operad-io/engine";
+import { attachmentDir } from "@operad-io/engine";
 import {
   allMessages,
+  IMAGE_TYPES,
   chatData,
   type ChatData,
   type CostQuality,
@@ -20,6 +22,7 @@ import {
   usageOf,
   worseQuality,
   CHAT_TYPE,
+  type Message,
   type MessageData,
 } from "./model.ts";
 
@@ -231,6 +234,37 @@ function answeredQuestion(
   return { prompt, choice, ...(typeof note === "string" ? { note } : {}) };
 }
 
+/** The harnesses that take an image as input; any other gets every file as a path. */
+export const IMAGE_HARNESSES = ["claude", "pi"] as const;
+
+/** The largest image given as image input; a bigger one goes as a path only. */
+export const IMAGE_INPUT_MAX_BYTES = 5 * 1024 * 1024;
+
+/** An image given to a harness: where it is, and its media type. */
+export interface ImageInput {
+  readonly path: string;
+  readonly mediaType: string;
+}
+
+/**
+ * The images of the messages to answer that the harness takes as input. Only a
+ * file under this chat's attachment directory counts: a path a message names
+ * from elsewhere is never read.
+ */
+export function imagesOf(pending: readonly Message[], harness: string, directory: string): readonly ImageInput[] {
+  if (!(IMAGE_HARNESSES as readonly string[]).includes(harness)) return [];
+  const images: ImageInput[] = [];
+  for (const message of pending) {
+    for (const file of message.attachments) {
+      if (!(IMAGE_TYPES as readonly string[]).includes(file.type)) continue;
+      if (!file.path.startsWith(`${directory}/`) || file.path.includes("/../")) continue;
+      if (file.size > IMAGE_INPUT_MAX_BYTES) continue;
+      images.push({ path: file.path, mediaType: file.type });
+    }
+  }
+  return images;
+}
+
 /** What a chat's `refresh` step gives back. */
 interface Live {
   readonly cwd: string;
@@ -272,6 +306,19 @@ async function liveSettings(
     access: data.access as Record<string, JsonValue>,
     skills: data.skills.filter((item): item is string => typeof item === "string"),
   };
+}
+
+/**
+ * The profile with the chat's attachment directory readable and nothing else
+ * added: the access profile's `readPaths` lets reads through a deny of the
+ * operad home, and a write there still asks.
+ */
+export function withAttachmentReads(
+  access: Readonly<Record<string, JsonValue>>,
+  directory: string,
+): Readonly<Record<string, JsonValue>> {
+  const own = Array.isArray(access.readPaths) ? access.readPaths : [];
+  return { ...access, readPaths: [...own, directory] };
 }
 
 /** Runs one round of an answer; see the file's comment. */
@@ -343,12 +390,21 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
         }
       : resumed.askAnswer;
 
+  // The files sent with a message: images as input where the harness takes
+  // them, every file as a path, and the chat's own attachment directory open to reads.
+  const directory = attachmentDir(ctx.home, CHAT_TYPE, object.id);
+  const images = imagesOf(pending, chat.harness, directory);
+  const access = messages.some((message) => message.attachments.length > 0)
+    ? withAttachmentReads(live.access, directory)
+    : live.access;
+
   let outcome: PluginStepResult;
   try {
     outcome = await runStep(
       use,
       {
-        prompt: promptFor(pending),
+        prompt: promptFor(pending, new Set(images.map((image) => image.path))),
+        ...(images.length === 0 ? {} : { images }),
         cwd: live.cwd,
         ...(chat.model === undefined ? {} : { args: ["--model", chat.model] }),
         ...(live.skills.length === 0 ? {} : { skills: live.skills }),
@@ -362,7 +418,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
         cwd: live.cwd,
         object,
         params: ctx.params,
-        access: live.access,
+        access,
         ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
         signal: ctx.signal,
         ...(asker === undefined ? {} : { asker }),

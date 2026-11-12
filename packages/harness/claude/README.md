@@ -49,6 +49,7 @@ the table is refused, not ignored.
 | `bashTimeoutSecs` | positive integer | no | the longest one Bash call may run in the foreground, in seconds; absent means 1800. Sets claude's `BASH_DEFAULT_TIMEOUT_MS` and `BASH_MAX_TIMEOUT_MS` |
 | `operadTools` | object `{ home }` | no | operad's own tools: claude is given an MCP server (`@operad-io/mcp`'s `stdio.ts`, run by Bun with `--home`) named `operad`; its tools are not judged by the access profile, they run under the owner's MCP allow lists. Absent: claude gets no MCP server |
 | `secretValues` | array of strings | no | the values of the plugin's operad secrets; a log line shows `***` where one appears. Never written anywhere |
+| `images` | array of `{ path, mediaType }` | no | image files (`image/png`, `image/jpeg`, `image/gif`, `image/webp`) sent with the prompt as image blocks of the one user message. Absent: the prompt goes as text |
 | `access` | object | no | the access profile; `denyPaths` and `denyCommands` are enforced in `canUseTool` by `@operad-io/access-match`, `grants` are one-time permissions, other fields are ignored; absent means nothing is denied |
 | `maxTurns` | positive integer | no | SDK `maxTurns`; absent means no limit |
 | `budgetUsd` | positive number | no | SDK `maxBudgetUsd`; absent means none |

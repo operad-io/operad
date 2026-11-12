@@ -38,6 +38,7 @@ import {
   secs,
   stringListParam,
   text,
+  imageInputsOf,
   operadToolsOf,
   JsonlLog,
   modelLimit,
@@ -215,7 +216,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
         // `waiting`: a question about a call was not answered within the grace.
         results: ["done", "failed", "interrupted", "waiting"],
         // The deny and ask fields are applied in the worker's canUseTool.
-        enforces: ["denyPaths", "denyCommands", "askCommands", "askPaths"],
+        enforces: ["denyPaths", "denyCommands", "askCommands", "askPaths", "readPaths"],
         timeoutSecs: STEP_TIMEOUT_SECS,
         // The model the step uses: its `--model` argument, else the setting.
         limit: modelLimit(HARNESS, (params, settings) => {
@@ -295,6 +296,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
           if (cwdProblem !== undefined) return refuse("cwd", cwdProblem);
 
           const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
+          const images = imageInputsOf(input.images ?? flow.images);
           const claudeCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
           const storeSecrets = await secretValuesOf(ctx.secrets);
           const stdin: Record<string, unknown> = {
@@ -308,6 +310,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             ...(budgetUsd === undefined ? {} : { budgetUsd }),
             ...(bashTimeoutSecs === undefined ? {} : { bashTimeoutSecs }),
             ...(operadTools === undefined ? {} : { operadTools }),
+            ...(images.length === 0 ? {} : { images }),
             ...(isRecord(ctx.access) ? { access: ctx.access } : {}),
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };

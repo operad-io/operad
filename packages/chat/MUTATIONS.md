@@ -27,6 +27,17 @@ the row fields.
 | T-0329-M1 | packages/chat/src/index.ts | `sendMessage` no longer appended the message fact, so `dev:chat` with a first message created the chat and sent nothing | `dev:chat with a first message > creates the chat and sends the message, so the reply starts, and opens the chat` |
 | T-0335-M1 | packages/chat/src/reply.ts | the worktree question left the call out and asked only about changing code | `a read-only chat > a command that redirects output into a file is named in the worktree question too` |
 | T-0335-M3 | packages/chat/src/reply.ts | the worktree question dropped a no-session call's reject-on-timeout, so the live agent waited instead of going on | `a read-only chat > a call with no session to continue is named from its own words and still refuses once` |
+| T-0339-M10 | packages/chat/src/index.ts | the message fact recorded no attachments | `chat:send with attachments > the message fact records each path with its name, type and size` |
+| T-0339-M11 | packages/chat/src/views.ts | the transcript showed an image as a link | `chat:send with attachments > the transcript shows an image as an image and another file as a link, each with its name` |
+| T-0339-M12 | packages/chat/src/reply.ts | the reply gave no image input to the harness | `chat/reply with attachments > an image reaches the claude harness as image input, and as a path in the prompt` |
+| T-0339-M13 | packages/chat/src/reply.ts | the profile opened the parent of the chat's attachment directory too | `chat/reply with attachments > the access profile gains read access to the chat's attachment directory and nothing more` |
+| T-0339-M14 | packages/chat/src/reply.ts | an image outside the chat's attachment directory was given as input | `chat/reply with attachments > a path outside the chat's attachment directory is never given as an image` |
+| T-0339-M15 | packages/chat/src/model.ts | the prompt left the attached files' paths out | `chat/reply with attachments > a harness that takes no images gets the image as a path only` |
+| T-0339-M16 | packages/chat/src/reply.ts | a harness that takes no image was given image input | `chat/reply with attachments > a harness that takes no images gets the image as a path only` |
+| T-0339-M17 | packages/chat/src/index.ts | a message with neither text nor a file was accepted | `chat:send with attachments > a message may be only a file, but never nothing` |
+| T-0339-M24 | packages/chat/src/model.ts | `attachmentOf` guessed the type from the extension, ignoring the upload's | `an upload's own type > a file with no extension keeps the type its upload gave, so it is an image to the agent` |
+| T-0339-M25 | packages/chat/src/views.ts | the transcript linked the server-local path instead of the attachment address | `chat:send with attachments > the transcript shows an image as an image and another file as a link, each with its name` |
+| T-0339-M27 | packages/chat/src/index.ts | the note kept `minLength: 1`, so an empty note beside an attachment was refused by the schema | `chat:send with attachments > an empty note beside an attachment is an attachment-only message; an empty note alone is refused` |
 
 ## T-0337 — the chat row says the agent
 

@@ -22,7 +22,7 @@ import type {
   ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
 import { openMcpTools, type McpTools } from "@operad-io/mcp";
-import { messageText, type CallAnswer } from "@operad-io/harness-process";
+import { messageText, readImage, type CallAnswer } from "@operad-io/harness-process";
 import { findPi, loadPi } from "./pi-install.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
@@ -424,7 +424,13 @@ export async function runWorker(
   try {
     if (!cancelled) {
       try {
-        await session.prompt(input.prompt);
+        const images = await Promise.all((input.images ?? []).map((image) => readImage(image)));
+        await session.prompt(
+          input.prompt,
+          images.length === 0
+            ? undefined
+            : { images: images.map((image) => ({ type: "image" as const, data: image.data, mimeType: image.mediaType })) },
+        );
       } catch (error) {
         if (!cancelled) {
           io.line({

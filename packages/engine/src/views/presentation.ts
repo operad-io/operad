@@ -28,7 +28,8 @@ import {
   WhereError,
 } from "../plugin/paging.ts";
 import { ALL_FILTER, filterShows, typeFilters, type TypeFilter } from "../plugin/filters.ts";
-import { ActionArgsError, noteProperty, validateActionArgs } from "../plugin/action-schema.ts";
+import { ActionArgsError, fileProperties, noteProperty, validateActionArgs } from "../plugin/action-schema.ts";
+import { attachmentDir, UploadMissingError, Uploads } from "./uploads.ts";
 import type {
   ActionTypeDefinition,
   Actor,
@@ -470,6 +471,7 @@ export class Views {
   private readonly maxEventIds: number;
   private readonly onLog: (message: string) => void;
   private readonly home: string;
+  private readonly uploads: Uploads;
   private readonly eventListeners = new Set<(id: string) => void>();
   private readonly unsubscribe: (() => void)[] = [];
   private preparing: Promise<void> | undefined;
@@ -488,6 +490,7 @@ export class Views {
     this.maxEventIds = options.maxEventIds ?? DEFAULT_MAX_EVENT_IDS;
     this.onLog = options.onLog ?? ((message) => console.error(message));
     this.home = options.home ?? options.registry.home;
+    this.uploads = new Uploads({ home: this.home, clock: this.clock });
 
     if (followsChanges(options)) {
       if (typeof this.store.subscribe === "function") {
@@ -1443,10 +1446,20 @@ export class Views {
       );
     }
 
+    // An uploaded file is taken only now that nothing else can refuse the call;
+    // the action gets the stored path where the client sent the reference.
+    const stored = await this.takeFiles(
+      target.action.argsFor?.(object, env) ?? target.action.args,
+      personArgs,
+      resolved.type,
+      resolved.id,
+      target.info.name,
+    );
+
     const runId = await this.waitingRunId(resolved.type, resolved.id);
     const result = await this.registry.runAction(
       `${target.plugin}/${target.action.name}`,
-      personArgs,
+      stored,
       {
         object,
         ...(runId === undefined ? {} : { runId }),
@@ -1462,6 +1475,38 @@ export class Views {
       value: result.value,
       ...(opens === undefined ? {} : { opens }),
     };
+  }
+
+  /** Replaces each file argument's upload reference with the path the file is stored at. */
+  private async takeFiles(
+    schema: Parameters<typeof fileProperties>[0],
+    args: Record<string, unknown>,
+    type: string,
+    id: string,
+    label: string,
+  ): Promise<Record<string, unknown>> {
+    const files = fileProperties(schema);
+    if (files.every((file) => args[file.name] === undefined)) return args;
+    const dir = attachmentDir(this.home, type, id);
+    const next: Record<string, unknown> = { ...args };
+    for (const file of files) {
+      const value = args[file.name];
+      if (value === undefined) continue;
+      const refs = Array.isArray(value) ? value : [value];
+      const paths: string[] = [];
+      for (const ref of refs) {
+        try {
+          paths.push((await this.uploads.take(String(ref), dir)).path);
+        } catch (error) {
+          if (error instanceof UploadMissingError) {
+            throw new ViewError("args", `action "${label}": args.${file.name}: ${error.message}`, { cause: error });
+          }
+          throw error;
+        }
+      }
+      next[file.name] = file.many ? paths : paths[0];
+    }
+    return next;
   }
 
   /** `opens` when it names an object that exists; otherwise the log says why. */

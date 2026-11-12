@@ -97,3 +97,5 @@ and the row fields.
 |---|---|---|---|
 | T-0282-M8 | packages/access-match/src/index.ts | a part starting with `{` was read as a plain command, so a `cd` inside a brace group kept the directory known | `the directory is unknown after anything that can change it but is not modelled: later relative paths ask` |
 | T-0282-M9 | packages/access-match/src/index.ts | `checkGlob` never refused, so a glob whose literal prefix reaches a denied entry was allowed | `a glob is judged by its literal prefix: refused when it can reach a denied path, asked when unsure` |
+| T-0339-M8 | packages/access-match/src/index.ts | `readPaths` let no read through a deny | `readPaths lets a read through a deny of its ancestor and nothing else` |
+| T-0339-M9 | packages/access-match/src/index.ts | a write under `readPaths` no longer asked | `a write under readPaths asks, where no deny covers it; a write elsewhere is as before` |

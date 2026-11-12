@@ -1059,6 +1059,35 @@ describe("operad mcp", () => {
     }
   });
 
+  test("act says why a file argument cannot be passed, and still runs the action without one", async () => {
+    const { home } = await makeHome({
+      plugins: [fileURLToPath(new URL("./fixtures/attach.ts", import.meta.url))],
+      mcp: { actions: ["filer:attach"], confirmActions: [] },
+    });
+    putObject(home, "thing", "a", {});
+    const child = openSession(home);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      child.notify("notifications/initialized");
+      const refused = await child.request(2, "tools/call", {
+        name: "act",
+        arguments: { action: "filer:attach", id: "thing:a", args: { file: "/etc/passwd" } },
+      });
+      expect(resultOf(refused).isError).toBe(true);
+      expect(textOf(refused)).toContain("takes a file (file)");
+      expect(textOf(refused)).toContain("a client that uploads it");
+      const plain = await child.request(3, "tools/call", {
+        name: "act",
+        arguments: { action: "filer:attach", id: "thing:a", args: { label: "x" } },
+      });
+      expect(resultOf(plain).isError).toBeUndefined();
+      expect(textOf(plain)).toContain('got {"label":"x"}');
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
   test("instructions follow the configured allow lists", () => {
     const none = { channel: { notify: [], loopAfter: 3 }, actions: [], confirmActions: [] };
     expect(instructionsFor(none)).toBe(INSTRUCTIONS);
