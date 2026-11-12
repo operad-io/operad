@@ -13,26 +13,13 @@ function tempDirectory(label: string): string {
   return directory;
 }
 
-test("openLog opens the jsonl backend on a directory", async () => {
-  const directory = tempDirectory("open-log-jsonl");
-  const backend = openLog({ backend: "jsonl", path: directory });
-  try {
-    const run = await backend.startRun("flow", "object");
-    expect(run.active).toBe(true);
-    expect(existsSync(join(directory, "runs", `${run.runId}.jsonl`))).toBe(true);
-  } finally {
-    await backend.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
 test("a log opened for a one-shot command starts no watch or timer", async () => {
   const directory = tempDirectory("open-log-one-shot");
   let watches = 0;
   let repeats = 0;
   const backend = openLog({
-    backend: "jsonl",
-    path: directory,
+    backend: "sqlite",
+    path: join(directory, "log.sqlite"),
     follow: false,
     watch: () => {
       watches += 1;

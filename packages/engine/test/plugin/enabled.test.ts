@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  FilePluginStore,
+  SqlitePluginStore,
   loadConfiguredPlugins,
   loadPluginRegistry,
   setPluginEnabled,
@@ -26,7 +26,7 @@ async function homeWith(
     join(home, "config.json"),
     JSON.stringify({
       plugins,
-      store: { backend: "jsonl", path: join(root, "store") },
+      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
     }),
   );
   return { home, storeRoot: join(root, "store") };
@@ -37,7 +37,7 @@ describe("plugin enable and disable", () => {
     const { home, storeRoot } = await homeWith({
       notes: { module: notesPath, enabled: false },
     });
-    const store = new FilePluginStore({ root: join(storeRoot, "plugins") });
+    const store = new SqlitePluginStore({ root: storeRoot });
     await store.put("note", "1", { text: "kept" }, "seed");
 
     const disabled = await loadPluginRegistry({ home, store, onLog: () => undefined });

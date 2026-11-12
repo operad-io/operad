@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { FilePluginStore, openConfigLog, readConfig } from "@operad-io/engine";
+import { SqlitePluginStore, openConfigLog, readConfig } from "@operad-io/engine";
 import { main, type CliIo } from "../src/main.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 
@@ -35,10 +35,10 @@ async function waitingHome(
     join(home, "config.json"),
     JSON.stringify({
       plugins: [pluginPath],
-      store: { backend: "jsonl", path: join(root, "store") },
+      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
     }),
   );
-  const store = new FilePluginStore({ root: join(root, "store", "plugins") });
+  const store = new SqlitePluginStore({ root: join(root, "store") });
   store.put("item", "one", { title: "First item", state: "open" }, "seed");
   const log = openConfigLog(await readConfig(home));
   try {

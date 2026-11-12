@@ -740,8 +740,8 @@ describe("radian:prompt", () => {
     const found = env.registry.flow("radian:prompt");
     if (found === undefined) throw new Error("the prompt flow is not loaded");
     const log = openLog({
-      backend: "jsonl",
-      path: join(env.root, "log"),
+      backend: "sqlite",
+      path: join(env.root, "log", "log.sqlite"),
     });
     const info = await log.startRun(found.flow.name, "prompt:1");
     const runner = new Runner({

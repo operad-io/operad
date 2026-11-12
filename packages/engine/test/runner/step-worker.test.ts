@@ -119,26 +119,14 @@ describe("step worker in this process", () => {
     const configured = openPluginStore({ backend: "sqlite", root: sqlite });
     expect((await configured.get("thing", "1"))?.data.wrote).toBe(true);
     expect(existsSync(join(sqlite, "plugins.sqlite"))).toBe(true);
-    expect(existsSync(join(sqlite, "facts.jsonl"))).toBe(false);
   });
 
-  test("opens the run's store root or a configured JSONL store", async () => {
+  test("without a configured location it opens the run's store root", async () => {
     const root = await tempRoot();
-    const plain = join(root, "plain");
-    const jsonl = join(root, "jsonl");
-
-    const runs: readonly [string, Readonly<Record<string, unknown>>][] = [
-      [plain, {}],
-      [jsonl, { store: { backend: "jsonl", root: jsonl } }],
-    ];
-    for (const [requestRoot, extra] of runs) {
-      const port = new FakePort();
-      const run = runStepWorker(request(requestRoot, "worker/write", {}, extra), port);
-      expect(await resultOf(port, run)).toMatchObject({ ok: true });
-    }
-
-    expect(existsSync(join(plain, "store", "facts.jsonl"))).toBe(true);
-    expect(existsSync(join(jsonl, "facts.jsonl"))).toBe(true);
+    const port = new FakePort();
+    const run = runStepWorker(request(root, "worker/write"), port);
+    expect(await resultOf(port, run)).toMatchObject({ ok: true });
+    expect(existsSync(join(root, "store", "plugins.sqlite"))).toBe(true);
   });
 
   test("sends an emitted event and waits for the parent's answer", async () => {

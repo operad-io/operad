@@ -39,7 +39,7 @@ async function setup() {
   });
   const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
   const storeRoot = store.root;
-  const log = openLog({ backend: "jsonl", path: join(storeRoot, "log") });
+  const log = openLog({ backend: "sqlite", path: join(storeRoot, "log", "log.sqlite") });
   const registry = new PluginRegistry([plugin], {
     home: root,
     cwd: repositoryPath,

@@ -10,12 +10,13 @@ import {
   type LogBackendName,
   type LogBackendOptions,
 } from "../log/index.ts";
+import { SQLITE_FILE_NAME } from "../log/sqlite.ts";
 import { isRecord } from "../util.ts";
 
 /** The storage backend the log uses. */
 export type StoreBackend = LogBackendName;
 
-/** Where the log lives: a directory for `jsonl`, a file for `sqlite`. */
+/** Where the log lives: the sqlite file. */
 export interface StoreConfig {
   readonly backend: StoreBackend;
   readonly path: string;
@@ -157,7 +158,7 @@ export function configPath(home: string): string {
   return join(home, "config.json");
 }
 
-/** The default config for a home: jsonl at `<home>/store` and the base plugins. */
+/** The default config for a home: sqlite at `<home>/store/log.sqlite` and the base plugins. */
 export function defaultConfig(home: string): OperadConfig {
   return {
     plugins: DEFAULT_PLUGINS.map((name) => ({
@@ -166,7 +167,7 @@ export function defaultConfig(home: string): OperadConfig {
       enabled: true,
       settings: {},
     })),
-    store: { backend: "jsonl", path: join(home, "store") },
+    store: { backend: "sqlite", path: join(home, "store", SQLITE_FILE_NAME) },
     http: DEFAULT_HTTP,
     notify: DEFAULT_NOTIFY,
     mcp: DEFAULT_MCP,
@@ -176,9 +177,7 @@ export function defaultConfig(home: string): OperadConfig {
 
 /** The directory a backend keeps its files in. */
 export function storeRootOf(config: OperadConfig): string {
-  return config.store.backend === "jsonl"
-    ? config.store.path
-    : dirname(config.store.path);
+  return dirname(config.store.path);
 }
 
 /** Module names an older version wrote that moved; a config keeps working. */
@@ -403,10 +402,8 @@ function readStore(value: unknown, file: string, home: string): StoreConfig {
   }
 
   const backend = value.backend;
-  if (backend !== undefined && backend !== "jsonl" && backend !== "sqlite") {
-    throw new ConfigError(
-      `${file}: store.backend: must be "jsonl" or "sqlite"`,
-    );
+  if (backend !== undefined && backend !== "sqlite") {
+    throw new ConfigError(`${file}: store.backend: must be "sqlite"`);
   }
 
   const path = value.path;
@@ -417,12 +414,10 @@ function readStore(value: unknown, file: string, home: string): StoreConfig {
     throw new ConfigError(`${file}: store.path: must be a non-empty string`);
   }
 
-  const selected: StoreBackend = backend === "sqlite" ? "sqlite" : "jsonl";
-  const defaultPath =
-    selected === "sqlite"
-      ? join(home, "store", "log.sqlite")
-      : join(home, "store");
-  return { backend: selected, path: path ?? defaultPath };
+  return {
+    backend: "sqlite",
+    path: path ?? join(home, "store", SQLITE_FILE_NAME),
+  };
 }
 
 /**

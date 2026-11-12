@@ -86,12 +86,12 @@ async function setup(): Promise<Setup> {
     join(home, "config.json"),
     JSON.stringify({
       plugins: [channelPluginPath],
-      store: { backend: "jsonl", path: join(root, "store") },
+      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
     }),
   );
   const config = await readConfig(home);
   const store = openPluginStore({
-    backend: "jsonl",
+    backend: "sqlite",
     root: join(root, "store"),
   });
   const log = openConfigLog(config);

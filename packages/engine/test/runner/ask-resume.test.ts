@@ -60,9 +60,9 @@ async function setup(mode: "memory" | "file") {
   const storeRoot = join(root, "store");
   await Bun.write(
     join(home, "config.json"),
-    JSON.stringify({ plugins: [pluginPath], store: { backend: "jsonl", path: storeRoot } }),
+    JSON.stringify({ plugins: [pluginPath], store: { backend: "sqlite", path: join(storeRoot, "log.sqlite") } }),
   );
-  const log = openLog({ backend: "jsonl", path: storeRoot });
+  const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
   const registry =
     mode === "memory"
       ? new PluginRegistry([plugin], {
@@ -73,7 +73,7 @@ async function setup(mode: "memory" | "file") {
       : await loadPluginRegistry({
           home,
           cwd: home,
-          store: openPluginStore({ backend: "jsonl", root: storeRoot }),
+          store: openPluginStore({ backend: "sqlite", root: storeRoot }),
         });
   const flowOf = (name: string) => {
     const found = registry.flow(name);

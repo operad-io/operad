@@ -993,7 +993,7 @@ function operadHome(s: Setup): string {
   const plugin = join(import.meta.dir, "..", "..", "..", "engine", "test", "fixtures", "plugins", "presentation.ts");
   writeFileSync(
     join(home, "config.json"),
-    JSON.stringify({ plugins: [plugin], store: { backend: "jsonl", path: join(s.dir, "operad-store") } }),
+    JSON.stringify({ plugins: [plugin], store: { backend: "sqlite", path: join(s.dir, "operad-store", "log.sqlite") } }),
   );
   return home;
 }

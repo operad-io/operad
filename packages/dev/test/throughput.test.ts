@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { FilePluginStore, type ViewContext } from "@operad-io/engine";
+import { SqlitePluginStore, type ViewContext } from "@operad-io/engine";
 import { addPlan, addRepository, addTask, findRepository, getTask } from "../src/service.ts";
 import { taskData, type TaskData } from "../src/model.ts";
 import { percentile, repositoryMetrics } from "../src/throughput.ts";
@@ -20,7 +20,7 @@ async function world() {
   const root = await tempRoot();
   const path = await makeGitRepository(root);
   let clock = NOW - 8 * DAY;
-  const store = new FilePluginStore({ root: join(root, "store"), clock: () => clock });
+  const store = new SqlitePluginStore({ root: join(root, "store"), clock: () => clock });
   const repository = await addRepository(store, { path });
   const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
   const runs = new Map<string, Segments>();

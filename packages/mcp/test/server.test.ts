@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  FilePluginStore,
+  SqlitePluginStore,
   type ActionInfo,
   openConfigLog,
   readConfig,
@@ -67,7 +67,7 @@ async function makeHome(extra: Record<string, unknown> = {}): Promise<Home> {
     join(home, "config.json"),
     JSON.stringify({
       plugins: [pluginPath],
-      store: { backend: "jsonl", path: join(root, "store") },
+      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       ...extra,
     }),
   );
@@ -114,7 +114,7 @@ async function makeDevHome(
     join(home, "config.json"),
     JSON.stringify({
       plugins: [devPluginPath],
-      store: { backend: "jsonl", path: join(root, "store") },
+      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       ...extra,
     }),
   );
@@ -122,7 +122,7 @@ async function makeDevHome(
 }
 
 function pluginStoreRoot(home: string): string {
-  return join(home, "..", "store", "plugins");
+  return join(home, "..", "store");
 }
 
 function taskKey(id: string): string {
@@ -134,7 +134,7 @@ function patchTask(
   id: string,
   change: Record<string, unknown>,
 ): void {
-  const store = new FilePluginStore({ root: pluginStoreRoot(home) });
+  const store = new SqlitePluginStore({ root: pluginStoreRoot(home) });
   const key = taskKey(id);
   const current = store.get("task", key);
   if (current === undefined) throw new Error(`no task "${key}"`);
@@ -142,15 +142,15 @@ function patchTask(
 }
 
 function taskData(home: string, id: string): Record<string, unknown> {
-  const store = new FilePluginStore({ root: pluginStoreRoot(home) });
+  const store = new SqlitePluginStore({ root: pluginStoreRoot(home) });
   const task = store.get("task", taskKey(id));
   if (task === undefined) throw new Error(`no task "${taskKey(id)}"`);
   return task.data;
 }
 
 function seed(home: string, id: string, data: Record<string, unknown>): void {
-  const root = join(home, "..", "store", "plugins");
-  new FilePluginStore({ root }).put("item", id, data, "seed");
+  const root = join(home, "..", "store");
+  new SqlitePluginStore({ root }).put("item", id, data, "seed");
 }
 
 function putObject(
@@ -159,8 +159,8 @@ function putObject(
   id: string,
   data: Record<string, unknown>,
 ): void {
-  const root = join(home, "..", "store", "plugins");
-  new FilePluginStore({ root }).put(type, id, data, "test");
+  const root = join(home, "..", "store");
+  new SqlitePluginStore({ root }).put(type, id, data, "test");
 }
 
 async function addRun(
@@ -963,7 +963,7 @@ describe("operad mcp", () => {
     const after = taskData(home, "T-0001-first");
     expect(after.phase).toBe("running");
     expect(String(after.brief)).toContain("cover the empty case");
-    const store = new FilePluginStore({ root: pluginStoreRoot(home) });
+    const store = new SqlitePluginStore({ root: pluginStoreRoot(home) });
     const invoked = store.facts().find((fact) => fact.type === "action_invoked");
     expect(invoked?.data.actor).toEqual({ via: "mcp", id: "lead" });
   });
@@ -1034,7 +1034,7 @@ describe("operad mcp", () => {
       await call(5, "task", [...base, "--slug", "second", "--title", "Second", "--after", "T-0001-first"], "b\n");
       await call(6, "task", [...base, "--slug", "third", "--title", "Third", "--after", "T-0001-first"], "c\n");
       // A task of another repository that names the same bare id is not a dependent.
-      const store = new FilePluginStore({ root: pluginStoreRoot(home) });
+      const store = new SqlitePluginStore({ root: pluginStoreRoot(home) });
       const source = store.get("task", taskKey("T-0002-second"));
       if (source === undefined) throw new Error("no second task");
       store.put(

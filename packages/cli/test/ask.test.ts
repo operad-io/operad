@@ -34,7 +34,7 @@ describe("ask.graceSecs in config.json", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: [pluginPath],
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
         ask: { graceSecs: 0 },
       }),
     );

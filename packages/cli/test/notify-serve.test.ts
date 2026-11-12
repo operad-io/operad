@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  FilePluginStore,
+  SqlitePluginStore,
   NOTIFIED_FACT,
   ensureHttpToken,
   openConfigLog,
@@ -33,7 +33,7 @@ async function makeHome(command: string): Promise<Home> {
     join(home, "config.json"),
     JSON.stringify({
       plugins: [pluginPath],
-      store: { backend: "jsonl", path: join(root, "store") },
+      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       http: { enabled: false },
       notify: { command },
     }),
@@ -42,7 +42,7 @@ async function makeHome(command: string): Promise<Home> {
 }
 
 function seed(root: string, id: string, title: string): void {
-  new FilePluginStore({ root: join(root, "store", "plugins") }).put(
+  new SqlitePluginStore({ root: join(root, "store") }).put(
     "item",
     id,
     { title, state: "new" },
@@ -104,12 +104,21 @@ function startServe(home: string): Bun.Subprocess<"ignore", "pipe", "pipe"> {
 }
 
 /** Resolves once `count` notices are recorded as facts: only then is a stop clean. */
-function waitForRecorded(root: string, count: number): Promise<string[]> {
-  return waitForLines(
-    join(root, "store", "global-facts.jsonl"),
-    count,
-    (line) => line.includes(`"${NOTIFIED_FACT}"`),
-  );
+async function waitForRecorded(home: string, count: number, timeoutMs = 20_000): Promise<void> {
+  const config = await readConfig(home);
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const log = openConfigLog(config, { follow: false });
+    let recorded = 0;
+    try {
+      for await (const fact of log.readGlobal()) if (fact.kind === NOTIFIED_FACT) recorded += 1;
+    } finally {
+      await log.close();
+    }
+    if (recorded >= count) return;
+    if (Date.now() > deadline) throw new Error(`${count} notices were never recorded`);
+    await waitForChange(dirname(config.store.path), basename(config.store.path), 100);
+  }
 }
 
 async function stop(child: Bun.Subprocess<"ignore", "pipe", "pipe">): Promise<string> {
@@ -122,7 +131,7 @@ describe("waiting for a line another process writes", () => {
   test("a watch that cannot see the directory is backed by the 100 ms look", async () => {
     const root = await tempRoot();
     const directory = join(root, "store");
-    const file = join(directory, "global-facts.jsonl");
+    const file = join(directory, "lines.txt");
     // The directory does not exist when the wait starts, so there is nothing
     // to watch. The file appears before the fallback look; only that look can
     // find it.
@@ -147,7 +156,7 @@ describe("operad serve notify", () => {
     const first = startServe(home);
     let lines: string[];
     try {
-      await waitForRecorded(root, 1);
+      await waitForRecorded(home, 1);
     } finally {
       await stop(first);
     }
@@ -162,7 +171,7 @@ describe("operad serve notify", () => {
     await wait(home, "item:two", "ask:1", "Approve the second?");
     const second = startServe(home);
     try {
-      await waitForRecorded(root, 2);
+      await waitForRecorded(home, 2);
     } finally {
       await stop(second);
     }
@@ -191,7 +200,7 @@ describe("operad serve notify", () => {
     const child = startServe(home);
     let errors: string;
     try {
-      await waitForRecorded(root, 2);
+      await waitForRecorded(home, 2);
     } finally {
       errors = await stop(child);
     }

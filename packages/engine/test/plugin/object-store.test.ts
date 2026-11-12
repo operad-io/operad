@@ -1,9 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   CursorError,
-  FilePluginStore,
   type ListOptions,
   openPluginStore,
   SqlitePluginStore,
@@ -23,7 +22,7 @@ const APPEND_CHILD = join(
   "append-facts-child.ts",
 );
 
-const BACKENDS: readonly PluginStoreBackend[] = ["jsonl", "sqlite"];
+const BACKENDS: readonly PluginStoreBackend[] = ["sqlite"];
 
 async function open(backend: PluginStoreBackend): Promise<PluginStore> {
   const root = await tempRoot();
@@ -139,12 +138,12 @@ describe("object list", () => {
 });
 
 describe("store lifecycle and concurrency", () => {
-  test("stops the watcher when the last fact subscription ends", async () => {
+  test("stops the poll timer when the last fact subscription ends", async () => {
     const root = await tempRoot();
     let stops = 0;
-    const store = new FilePluginStore({
+    const store = new SqlitePluginStore({
       root: join(root, "store"),
-      watch: () => () => {
+      repeat: () => () => {
         stops += 1;
       },
     });
@@ -166,11 +165,19 @@ describe("store lifecycle and concurrency", () => {
     expect(stops).toBe(2);
   });
 
-  test("refuses any filter when the type declares an empty index (jsonl)", async () => {
-    const store = await open("jsonl");
-    store.declare?.("note", []);
-    store.put("note", "a", { title: "One" }, "seed");
-    expect(() => store.list("note", { where: { title: "One" } })).toThrow(WhereError);
+  test("a poll after the store's directory was removed does nothing", async () => {
+    const root = await tempRoot();
+    let tick: () => void = () => undefined;
+    const store = new SqlitePluginStore({
+      root: join(root, "store"),
+      repeat: (_ms, callback) => {
+        tick = callback;
+        return () => undefined;
+      },
+    });
+    store.subscribe(() => undefined);
+    rmSync(join(root, "store"), { recursive: true, force: true });
+    expect(() => tick()).not.toThrow();
   });
 
   test("refuses any filter when the type declares an empty index (sqlite)", async () => {
@@ -235,7 +242,7 @@ describe("store lifecycle and concurrency", () => {
     }
   });
 
-  test("two jsonl writers assign unique, contiguous sequences", async () => {
+  test("two writer processes assign unique, contiguous sequences", async () => {
     const root = join(await tempRoot(), "store");
     mkdirSync(root, { recursive: true });
     const children = ["a", "b"].map((name) =>
@@ -253,7 +260,7 @@ describe("store lifecycle and concurrency", () => {
     const exits = await Promise.all(children.map((child) => child.exited));
     expect(exits).toEqual([0, 0]);
 
-    const store = new FilePluginStore({ root });
+    const store = new SqlitePluginStore({ root });
     const sequences = store
       .facts()
       .map((fact) => fact.sequence)

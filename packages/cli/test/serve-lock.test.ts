@@ -50,7 +50,7 @@ describe("a second operad serve", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: [],
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
         http: { enabled: true, port, listen: ["127.0.0.1"] },
       }),
     );

@@ -116,7 +116,7 @@ async function setup() {
     cwd: root,
     store: new MemoryPluginStore({ root: join(root, "store") }),
   });
-  const log = openLog({ backend: "jsonl", path: join(root, "log") });
+  const log = openLog({ backend: "sqlite", path: join(root, "log", "log.sqlite") });
   const found = registry.flow("claude:prompt");
   if (found === undefined) throw new Error("the prompt flow is not loaded");
   const info = await log.startRun(found.flow.name, OBJECT);

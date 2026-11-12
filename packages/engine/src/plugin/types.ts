@@ -328,7 +328,7 @@ export interface StoreFactInput extends FactInput {
 
 /** How a worker reopens the store its run uses. */
 export interface PluginStoreLocation {
-  readonly backend: "jsonl" | "sqlite";
+  readonly backend: "sqlite";
   readonly root: string;
   /** The SQLite file, when the backend keeps one file. */
   readonly file?: string | undefined;

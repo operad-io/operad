@@ -1,7 +1,7 @@
 /** A plugin store backed by one SQLite file, in the same home as the log. */
 
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { enableWal, setBusyTimeout } from "../platform/index.ts";
 import { assertStoreNotMoving } from "../runner/lock.ts";
 import { dirname, join } from "node:path";
@@ -105,7 +105,7 @@ const SCHEMA = `
   );
 `;
 
-const SCHEMA_FILE = "plugin.sqlite";
+const SCHEMA_FILE = "plugins.sqlite";
 
 function deepFreeze<T>(value: T): T {
   if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
@@ -476,6 +476,8 @@ export class SqlitePluginStore implements PluginStore {
   }
 
   private pollFacts(): void {
+    // A removed database has nothing left to deliver; its timer outlives it.
+    if (!existsSync(this.location.file ?? this.root)) return;
     const rows = this.db
       .query(
         `SELECT sequence, type, object_type, object_id, cause, at, data

@@ -113,13 +113,13 @@ async function setup(mode: "memory" | "file"): Promise<Env> {
   const storeRoot = join(root, "store");
   await Bun.write(
     join(home, "config.json"),
-    JSON.stringify({ plugins: [pluginPath], store: { backend: "jsonl", path: storeRoot } }),
+    JSON.stringify({ plugins: [pluginPath], store: { backend: "sqlite", path: join(storeRoot, "log.sqlite") } }),
   );
   // Every fact gets a later time than the one before it, so queue order is exact.
   let tick = 0;
   const log = openLog({
-    backend: "jsonl",
-    path: storeRoot,
+    backend: "sqlite",
+    path: join(storeRoot, "log.sqlite"),
     clock: () => {
       tick = Math.max(Date.now(), tick + 1);
       return tick;
@@ -135,7 +135,7 @@ async function setup(mode: "memory" | "file"): Promise<Env> {
       : await loadPluginRegistry({
           home,
           cwd: home,
-          store: openPluginStore({ backend: "jsonl", root: storeRoot }),
+          store: openPluginStore({ backend: "sqlite", root: storeRoot }),
         });
   const flows = new Map<string, string>();
   const env: Env = {

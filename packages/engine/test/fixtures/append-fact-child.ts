@@ -5,24 +5,19 @@
  * its own reader open, so the event it observes comes from another process.
  */
 import { join } from "node:path";
-import { openLog, type LogBackendName } from "../../src/index.ts";
+import { openLog } from "../../src/index.ts";
 
 function fail(message: string): never {
   process.stderr.write(`${message}\n`);
   process.exit(2);
 }
 
-const backend = process.argv[2];
-if (backend !== "sqlite" && backend !== "jsonl") {
-  fail(`unknown backend ${String(backend)}`);
-}
-const directory = process.argv[3];
+const directory = process.argv[2];
 if (directory === undefined || directory.length === 0) {
   fail("missing store directory");
 }
 
-const path = backend === "sqlite" ? join(directory, "log.sqlite") : directory;
-const log = openLog({ backend: backend as LogBackendName, path });
+const log = openLog({ backend: "sqlite", path: join(directory, "log.sqlite") });
 try {
   const info = await log.startRun("demo-flow", "item:one");
   await log.append(info.runId, 0, [

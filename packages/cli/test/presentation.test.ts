@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  FilePluginStore,
+  SqlitePluginStore,
   openConfigLog,
   openPluginStore,
   readConfig,
@@ -55,7 +55,7 @@ async function makeHome(): Promise<{
     join(home, "config.json"),
     JSON.stringify({
       plugins: [pluginPath],
-      store: { backend: "jsonl", path: join(root, "store") },
+      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
     }),
   );
   const config = await readConfig(home);
@@ -63,7 +63,7 @@ async function makeHome(): Promise<{
 }
 
 function seed(home: string, data: Record<string, unknown>, id = "one"): void {
-  const store = new FilePluginStore({ root: join(storeRootSync(home), "plugins") });
+  const store = new SqlitePluginStore({ root: storeRootSync(home) });
   store.put("item", id, data, "seed");
 }
 
@@ -72,8 +72,8 @@ function storeRootSync(home: string): string {
   return join(home, "..", "store");
 }
 
-function freshStore(home: string): FilePluginStore {
-  return new FilePluginStore({ root: join(storeRootSync(home), "plugins") });
+function freshStore(home: string): SqlitePluginStore {
+  return new SqlitePluginStore({ root: storeRootSync(home) });
 }
 
 async function addWaitingRun(home: string, object: string): Promise<void> {
@@ -339,7 +339,7 @@ describe("operad presentation commands", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: [],
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       }),
     );
 
@@ -694,7 +694,7 @@ describe("operad presentation commands", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: [filteredPath],
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       }),
     );
     const store = freshStore(home);
@@ -742,7 +742,7 @@ describe("operad presentation commands", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: [filteredPath],
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       }),
     );
     const store = freshStore(home);
@@ -769,7 +769,7 @@ describe("operad list hierarchy", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: [treePath],
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       }),
     );
     const store = freshStore(home);
@@ -817,7 +817,7 @@ describe("operad list hierarchy", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: [treePath],
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       }),
     );
     const store = freshStore(home);

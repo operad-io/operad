@@ -23,8 +23,6 @@ export { prepareSettings } from "./settings.ts";
 export { isRangeSyntax, satisfiesRange } from "./semver.ts";
 export { MemoryPluginStore } from "./store.ts";
 export type { MemoryPluginStoreOptions } from "./store.ts";
-export { FilePluginStore } from "./file-store.ts";
-export type { FilePluginStoreOptions } from "./file-store.ts";
 export { SqlitePluginStore } from "./sqlite-store.ts";
 export type { SqlitePluginStoreOptions } from "./sqlite-store.ts";
 export { openPluginStore } from "./open-store.ts";

@@ -52,7 +52,7 @@ const plugin = definePlugin({
  */
 async function main(root: string): Promise<void> {
   const storeRoot = join(root, "store");
-  const log = openLog({ backend: "jsonl", path: storeRoot });
+  const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
   const registry = new PluginRegistry([plugin], {
     home: root,
     storeRoot,

@@ -3,7 +3,7 @@ import { testEnv } from "./env.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { FilePluginStore } from "@operad-io/engine";
+import { SqlitePluginStore } from "@operad-io/engine";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 
 afterAll(cleanupTempRoots);
@@ -22,13 +22,13 @@ describe("a reader that closes the pipe", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: [pluginPath],
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       }),
     );
     // One page of rows must be well past what a pipe buffers (64 KiB, and
     // more on some systems): a child whose whole output fits in the pipe
     // finishes before the reader closes, and exits 0 rightly.
-    const store = new FilePluginStore({ root: join(root, "store", "plugins") });
+    const store = new SqlitePluginStore({ root: join(root, "store") });
     for (let index = 0; index < 4000; index += 1) {
       store.put(
         "item",
