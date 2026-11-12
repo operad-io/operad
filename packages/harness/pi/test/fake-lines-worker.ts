@@ -75,6 +75,19 @@ switch (mode) {
     process.exit(0);
     break;
   }
+  case "always": {
+    // The real worker's access check lets an exact user-layer command through
+    // without asking. This mode proves the entry reached the worker.
+    const access = (input as {
+      access?: { alwaysAllow?: Array<{ kind?: unknown; value?: unknown; cwd?: unknown }> };
+    }).access;
+    const found = (access?.alwaysAllow ?? []).some(
+      (entry) => entry.kind === "command" && entry.value === "git push origin main" && entry.cwd === input.cwd,
+    );
+    line(found ? result() : failed("missing_always", "the user access entry did not reach the worker"));
+    process.exit(found ? 0 : 1);
+    break;
+  }
   case "message": {
     // Waits for a message from the host and records it.
     mark();

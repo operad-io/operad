@@ -1,6 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import type { AskAnswer, AskRequest } from "@operad-io/engine";
+import { readAlwaysAllow } from "../src/always-allow.ts";
+import { cleanupTempRoots, tempRoot } from "./support.ts";
 import {
+  ALLOW_ALWAYS,
   ALLOW_ONCE,
   askCall,
   askRequest,
@@ -10,6 +13,8 @@ import {
   degradedAskRequest,
   REJECT_ONCE,
 } from "../src/ask-call.ts";
+
+afterAll(cleanupTempRoots);
 
 const LINE = JSON.stringify({
   type: "ask_call",
@@ -74,6 +79,26 @@ describe("askRequest", () => {
     });
   });
 
+  test("allowAlways offers allow_always and lets either approving answer give the late permission", () => {
+    expect(askRequest(call, true)).toEqual({
+      prompt: "Run this command? git push origin main",
+      choices: [ALLOW_ONCE, ALLOW_ALWAYS, REJECT_ONCE],
+      resume: {
+        session: "s-1",
+        grant: {
+          kind: "command",
+          value: "git push origin main",
+          choice: ALLOW_ONCE,
+          choices: [ALLOW_ONCE, ALLOW_ALWAYS],
+        },
+      },
+    });
+  });
+
+  test("without allowAlways the user layer is neither consulted nor offered", () => {
+    expect(askRequest(call, false).choices).toEqual([ALLOW_ONCE, REJECT_ONCE]);
+  });
+
   test("a path question names the tool in the grant", () => {
     const path = askCall(JSON.stringify({ type: "ask_call", id: 1, kind: "path", value: "/w/a", tool: "write", shown: "/w/a", session: "s" }));
     if (path === undefined) throw new Error("the line must parse");
@@ -92,7 +117,11 @@ describe("askRequest", () => {
 });
 
 describe("createCallAsker", () => {
-  function setup(answer: (request: AskRequest) => Promise<AskAnswer>, secrets: readonly string[] = []) {
+  function setup(
+    answer: (request: AskRequest) => Promise<AskAnswer>,
+    secrets: readonly string[] = [],
+    alwaysAllow?: { readonly home: string; readonly cwd: string },
+  ) {
     const sent: Array<Record<string, unknown>> = [];
     const asked: AskRequest[] = [];
     let stops = 0;
@@ -105,6 +134,7 @@ describe("createCallAsker", () => {
         stops += 1;
       },
       secrets,
+      ...(alwaysAllow === undefined ? {} : { alwaysAllow }),
     });
     const reply = (text: string): void => {
       sent.push(JSON.parse(text) as Record<string, unknown>);
@@ -117,6 +147,46 @@ describe("createCallAsker", () => {
     await env.asker.handle(LINE, env.reply);
     expect(env.sent).toEqual([{ type: "ask_ack", id: 4, decision: "allow" }]);
     expect(env.asker.stopped()).toBeUndefined();
+  });
+
+  test("allow_always answers allow and writes the exact call to the user layer", async () => {
+    const home = await tempRoot();
+    const env = setup(async () => ({ choice: ALLOW_ALWAYS }), [], { home, cwd: "/work/project" });
+    await env.asker.handle(LINE, env.reply);
+    expect(env.sent).toEqual([{ type: "ask_ack", id: 4, decision: "allow" }]);
+    expect(await readAlwaysAllow(home)).toEqual({
+      entries: [{ kind: "command", value: "git push origin main", cwd: "/work/project" }],
+    });
+  });
+
+  test("allow_always from an asked MCP tool writes its exact command entry", async () => {
+    const home = await tempRoot();
+    const line = JSON.stringify({
+      type: "ask_call",
+      id: 8,
+      kind: "command",
+      value: "mcp notes.wipe",
+      shown: "mcp notes.wipe",
+      session: "s",
+    });
+    const env = setup(async () => ({ choice: ALLOW_ALWAYS }), [], { home, cwd: "/work/project" });
+    await env.asker.handle(line, env.reply);
+    expect(env.sent).toEqual([{ type: "ask_ack", id: 8, decision: "allow" }]);
+    expect(await readAlwaysAllow(home)).toEqual({
+      entries: [{ kind: "command", value: "mcp notes.wipe", cwd: "/work/project" }],
+    });
+  });
+
+  test("a later identical call after allow_always is let through without asking again", async () => {
+    const home = await tempRoot();
+    const env = setup(async () => ({ choice: ALLOW_ALWAYS }), [], { home, cwd: "/work/project" });
+    await env.asker.handle(LINE, env.reply);
+    await env.asker.handle(LINE.replace('"id":4', '"id":5'), env.reply);
+    expect(env.asked).toHaveLength(1);
+    expect(env.sent).toEqual([
+      { type: "ask_ack", id: 4, decision: "allow" },
+      { type: "ask_ack", id: 5, decision: "allow" },
+    ]);
   });
 
   test("reject_once and a timeout rejection answer deny", async () => {

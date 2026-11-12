@@ -2045,14 +2045,22 @@ export class Views {
       return this.errorRow(object.id, `no loaded plugin shows objects of type "${type}"`);
     }
 
-    const started = this.clock();
+    // A row is synchronous, so the clock cannot tell its own time from time
+    // the process lost to the machine: a process descheduled between the two
+    // reads makes a fast row look slow. A row over the limit is measured once
+    // more, and is an error only when both times are over.
     let outcome: unknown;
-    try {
-      outcome = views.row(object);
-    } catch (error) {
-      return this.failRow(plugin, object, error);
+    let elapsed = 0;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const started = this.clock();
+      try {
+        outcome = views.row(object);
+      } catch (error) {
+        return this.failRow(plugin, object, error);
+      }
+      elapsed = this.clock() - started;
+      if (elapsed <= this.rowTimeoutMs || isThenable(outcome)) break;
     }
-    const elapsed = this.clock() - started;
 
     if (isThenable(outcome)) {
       Promise.resolve(outcome).catch(() => undefined);

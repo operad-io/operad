@@ -84,3 +84,9 @@ the row fields.
 | T-0362-M11 | packages/chat/src/views.ts | a tool line showed the call's output | `chat entries > the transcript shows done, failed, blocked and denied tool calls, and thinking as an unlabeled quote` |
 | T-0362-M12 | packages/chat/src/views.ts | thinking was shown with a label in front of it | `chat entries > the transcript shows done, failed, blocked and denied tool calls, and thinking as an unlabeled quote` |
 | T-0362-M13 | packages/chat/src/reply.ts | text and thinking increments with no end were stored as entries | `chat entries > increments with no end are not stored as entries` |
+## T-0366 — allow_always
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0366-M9 | packages/chat/src/index.ts | the question wait no longer offered `allow_always` | `the reply flow > the question wait offers allow_always and sends either allow answer back to the reply` |
+| T-0366-M13 | packages/chat/src/index.ts | the question wait stopped declaring `allow_always` as the late choice a person's question hands over | `the reply flow > the question wait offers allow_always and sends either allow answer back to the reply` |

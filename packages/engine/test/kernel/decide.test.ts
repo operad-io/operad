@@ -718,6 +718,90 @@ describe("decide: an answered question returns to the step", () => {
     ]);
   });
 
+  test("a timed-out question offers its own choices, and a late choice only when the step hands one over", () => {
+    function lateFlow(): FlowDefinition {
+      return validateFlow(
+        {
+          name: "late",
+          entry: "agent",
+          steps: [
+            {
+              id: "agent",
+              kind: "plugin",
+              params: { use: "x/agent", params: {} },
+              replay: "safe",
+              next: { done: "end", waiting: "person", failed: "end", interrupted: "end" },
+            },
+            {
+              id: "person",
+              kind: "wait_person",
+              params: {
+                prompt: "Waiting?",
+                choices: ["allow_once", "reject_once"],
+                lateChoices: ["allow_always"],
+              },
+              replay: "safe",
+              next: {
+                allow_once: "agent",
+                allow_always: "agent",
+                reject_once: "end",
+                interrupted: "end",
+              },
+            },
+          ],
+        },
+        asking,
+      );
+    }
+    const timed = (choices: string[]) => {
+      const runner = new Runner(lateFlow());
+      runner.apply({ kind: "start" });
+      runner.apply({
+        kind: "step_result",
+        effectId: "agent:1",
+        result: "waiting",
+        data: { waitId: "w1", prompt: "Run it?", choices, resume: null } as never,
+      });
+      return runner.state;
+    };
+    expect(timed(["allow_once", "reject_once"]).wait?.choices).toEqual(["allow_once", "reject_once"]);
+    expect(timed(["allow_once", "allow_always", "reject_once"]).wait?.choices).toEqual([
+      "allow_once",
+      "allow_always",
+      "reject_once",
+    ]);
+  });
+
+  test("a grant that lists approving choices gives the permission for either answer", () => {
+    const runner = waiting({
+      session: "s1",
+      grant: {
+        kind: "command",
+        value: "rm -rf build",
+        choice: "no",
+        choices: ["yes"],
+      },
+    });
+    runner.apply({ kind: "person_answer", waitId: "w1", choice: "yes", actor: ACTOR });
+    expect(runner.state.effect?.grants).toEqual([
+      { waitId: "w1", kind: "command", value: "rm -rf build" },
+    ]);
+  });
+
+  test("a grant that lists approving choices still gives none for another answer", () => {
+    const runner = waiting({
+      session: "s1",
+      grant: {
+        kind: "command",
+        value: "rm -rf build",
+        choice: "no",
+        choices: ["no"],
+      },
+    });
+    runner.apply({ kind: "person_answer", waitId: "w1", choice: "yes", actor: ACTOR });
+    expect(runner.state.effect?.grants).toBeUndefined();
+  });
+
   test("a string resume is the session; no grant is given without one", () => {
     const runner = waiting("/s/one.jsonl");
     runner.apply({ kind: "person_answer", waitId: "w1", choice: "yes", actor: ACTOR });

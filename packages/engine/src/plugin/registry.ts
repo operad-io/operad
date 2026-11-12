@@ -1077,7 +1077,9 @@ export class PluginRegistry {
   loadedModels(): Readonly<Record<string, HarnessModels>> {
     const found: Record<string, HarnessModels> = {};
     for (const item of this.plugins) {
-      if (item.kind === "harness" && item.models !== undefined) found[item.name] = item.models;
+      if (item.kind !== "harness" || item.models === undefined) continue;
+      found[item.name] =
+        typeof item.models === "function" ? item.models(this.settingsFor(item.name)) : item.models;
     }
     return found;
   }

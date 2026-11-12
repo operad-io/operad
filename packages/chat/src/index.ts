@@ -53,10 +53,12 @@ export const replyFlow = defineFlow({
       params: {
         prompt: "The agent asked a question.",
         choices: ["allow_once", "reject_once", "yes", "no"],
+          lateChoices: ["allow_always"],
       },
       replay: "safe",
       next: {
         allow_once: "reply",
+        allow_always: "reply",
         reject_once: "reply",
         yes: "reply",
         no: "reply",
