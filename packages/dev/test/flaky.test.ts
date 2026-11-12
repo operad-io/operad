@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CommandContext } from "@operad-io/engine";
 import { commands } from "../src/commands.ts";
-import { recordRerunPasses } from "../src/reruns.ts";
+import { listRerunCounts, recordRerunPasses } from "../src/reruns.ts";
 import { failureExcerpt, flakyTasksByName, flakyTestHooks, namesTest, trackFlakyTests } from "../src/flaky.ts";
 import { appendChange, bareId, changeClock, listAll, planData, repositoryData, taskData, type RepositoryData } from "../src/model.ts";
 import {
@@ -522,5 +522,19 @@ describe("a flaky test proposes a task", () => {
     expect(tasks).toHaveLength(1);
     expect(taskData(tasks[0]?.data ?? {}).brief).toContain("T-0001-child");
     expect(repositoryData(s.repository)).toBeDefined();
+  });
+});
+
+describe("rerun counts", () => {
+  test("the count accumulates across calls, most frequent first, then by name", async () => {
+    const store = storeAt(await tempRoot());
+    await recordRerunPasses(store, ["a", "b"]);
+    await recordRerunPasses(store, ["b"]);
+    await recordRerunPasses(store, ["b", "c"]);
+    expect(await listRerunCounts(store)).toEqual([
+      { name: "b", count: 3 },
+      { name: "a", count: 1 },
+      { name: "c", count: 1 },
+    ]);
   });
 });
