@@ -1,6 +1,6 @@
 # operad-conversation：chat，从仓库或 bot 发起的长对话
 
-- 状态：decided（方向与形状；2026-11-09 owner 定了两种 chat、harness 冻结、新建入口、MCP 工具、名词 chat；流式未定；2026-11-12 定了附件和模型）
+- 状态：decided（方向与形状；2026-11-09 owner 定了两种 chat、harness 冻结、新建入口、MCP 工具、名词 chat；2026-11-12 定了附件和模型，定了过程的记录和逐字显示（决定 23 到 25），thinking 的标签词待批）
 - 涉及 ADR：0024、0018、0022、0049
 - 涉及：`operad.md` 决定 12–17；`operad-presentation.md`；`operad-channels.md` 决定 7–15；`operad-harness.md`；`operad-sandbox.md`；`operad-bot.md`；`operad-dev-flows.md` 决定 4
 - 来源：owner 的使用场景；OpenClaw（聊天优先的个人助理）；2026-11-09 的讨论
@@ -38,6 +38,21 @@ OpenClaw 是聊天优先，operad 到现在是流程优先。第一个要满足�
 20. **chat 显示用的是哪个 agent，模型可以随时换**（2026-11-12 owner 定）：chat 的行和页面写明 agent（claude、pi、radian），知道时也写模型和累计费用。模型是 chat 的一个设置：新建时默认用这个 agent 配好的模型，聊天中途可以换，下一次回复生效；agent 选定后不换（决定 13），模型不受这个限制。可选的模型由各 harness 插件列出，客户端不写死。用户看到的词是 model（owner 同日同意这个提议）。
 21. **附件**（2026-11-12 owner 定，回答待决 2）：照片、相机、文件经客户端 API 上传到 operad，存在这个 chat 自己的附件目录里（operad 家目录下，不在仓库或 bot 的工作目录里），单个文件上限 20 MB；消息的事实记下附件的路径（决定 1 本来就有附件路径）。回复时交给 agent：claude 和 pi 能直接看的图片作为图片给，其他文件给路径让 agent 自己读；agent 的访问档只多放开这个 chat 的附件目录，只读。上传是客户端 API 的通用能力（一个动作的参数可以是上传的文件），不是 chat 专用的接口。
 22. **chat 的 effort 可以选，和模型一样**（2026-11-12 owner 定）：effort 是 chat 的一个设置，档位由各 harness 插件列出（claude 的 effort 档位，pi 的 thinking level 映射过来；radian 不支持就不列），新建时用这个 agent 的默认值，中途可换，下一次回复生效。用户看到的词是 effort（不用 thinking）。
+23. **chat 的过程也记在 operad 里，按完成的条目记**（2026-11-12 owner 定，回答 `operad-harness.md` 待决 1；调研见 2026-11-12 对 OpenClaw、OpenCode、Hermes、acpx、Toad、Zed 的比较）：
+    - 一轮回复里完成的条目（工具调用、中间的回复文本）记成 chat 上的事实，进 store，所有 harness 一个形状。给人看的记录不依赖 agent 自己的会话文件（claude 的默认 30 天清理，压缩后读到的也不是原样）。
+    - 大的工具输出放文件，事实里只留开头一段和路径，和附件的做法一致。
+    - 逐字的增量不落盘，只走 live 通道；断线重连时，当前这一轮已经写出的文本由 serve 一并给出。
+    - 模型的上下文仍归 agent：续接照旧用 `resumeSession`，operad 不拿自己的记录去重建上下文。
+24. **过程第一版用 Markdown 行显示，thinking 也显示**（2026-11-12 owner 定）：`transcript` 段把工具调用渲染成 Markdown 行（照 `dev` 的 worker 活动），客户端不用改；可折叠的工具卡片需要显示接口有一种结构化的块，以后另议。agent 的 thinking 记成条目并显示，harness 不给的（radian）就没有。它在界面上的标签是一个新的用户词，待 owner 批（提议 `Thinking`；决定 22 说的是 effort 这个设置不叫 thinking，和这里的标签是两件事）。
+
+25. **逐字显示走段的增量读法，不另开一条流**（2026-11-12 owner 定；显示接口的改动是 `operad-presentation.md` 决定 15）。以后觉得不够顺再加一条推送的流，存的东西不用变。同日按提议定下的细节：
+    - **条目四种**：中间文本、thinking、工具调用、被停下的半截回复。工具调用的字段：调用 id、工具名、输入摘要、结果（`done`、`failed`、`blocked`、`denied`）、开始时间、耗时、输出开头一段、全文路径、错误首行。每条带运行 id，和最终回复的 `chat.message` 归到同一轮。计划、可用命令、模式变更不做。
+    - **谁写**：`chat` 插件不认识 harness 的日志行。harness 写给日志的行提成 `harness-process` 里的一份共享类型，加上文本增量、thinking 增量和工具输出；harness 步骤经 `runStep` 的选项收一个接收器（和 `asker` 同一个位置），`chat:reply` 给的接收器把完成的条目记成事实。`dev` 的 worker 活动以后改用同一份归并代码。
+    - **各 harness**：claude 开 `includePartialMessages` 并取工具结果；pi 取消息增量和工具结果；radian 只有工具的开始和结束，没有增量和 thinking，照实降级。
+    - **还没写完的内容经步骤日志到 serve**：运行不在 serve 进程里，`transcript` 段的 `tail` 从这个 chat 正在跑的那一步的日志里读出来。
+    - **上限**：工具输出在事实里留开头 4 KB，全文放在这个 chat 的目录下的文件里（附件目录旁边）。`tail` 只带当前还没完成的条目，完成的已经是事实。
+    - **密钥**：工具输出、文本和 thinking 进事实和 `tail` 之前按 `secretValues` 遮掉，和日志行一样。
+    - **重跑不重复**：serve 重启后重跑的步骤再产出的条目按调用 id 去重；最终回复仍按决定 3 先记事实。
 
 ## 顺序
 
@@ -45,7 +60,7 @@ HTTP 接口（决定 10）和 app 换后端（决定 11）已完成。剩下按�
 
 ## 待决问题（未定）
 
-1. 逐 token 流：harness 的事件流（ACP `session/update`、SDK `includePartialMessages`）由 `operad serve` 转成带游标的 live 段，还是另开一条流。
+1. （已定，见决定 23 到 25。）逐 token 流。还剩一项：工具输出的全文文件留多久，和待决 3 一起定。
 2. （已定，见决定 21。）附件（图片、文件）怎么进消息、存哪、怎么给 harness。
 3. chat 的归档和删除；记录保留多久。
 4. 仓库 chat 开出的 worktree 怎么变成 task：task 的第一次尝试直接用这个 worktree，还是 task 新开 worktree 再 cherry-pick；worktree 没变成 task 就被遗忘时谁清理。

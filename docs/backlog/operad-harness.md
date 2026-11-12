@@ -27,7 +27,7 @@ hub 的会话路由只认 radian 的 journal 和 control port，worker 只有 `r
 
 ## 待决问题（未定）
 
-1. 会话记录归谁：引擎自己把每个会话的事件流落盘，所有 harness 一个形状；或者每个接法负责历史（`session/load` 的重放、SDK 的 `resume`）。
+1. （chat 一侧已定，见 `operad-conversation.md` 决定 23：operad 自己记一份给人看的条目记录，所有 harness 一个形状；agent 的会话文件只用于续接。任务一侧的 worker 记录仍在步骤日志里，未定。）会话记录归谁：引擎自己把每个会话的事件流落盘，所有 harness 一个形状；或者每个接法负责历史（`session/load` 的重放、SDK 的 `resume`）。
 2. 会话续接：引擎重启、手机离线、机器睡眠后各 harness 怎么接回；`session/load` 哪些真支持（ACP v2 草案才有带重放的 `session/resume`）。
 3. 契约里每项的来源（续接、用量、对话视图、取消、工具集限制、权限模式）对 Codex、Gemini CLI、opencode、Cursor 逐个核实；不通过的项在该 harness 上降级，iOS 显示随之变少，要写明。Claude 和 pi 的清单已核（`research/2026-11-06-harness-sdks.md`）。
 

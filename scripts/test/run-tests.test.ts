@@ -34,12 +34,15 @@ test("is quick", () => { expect(1).toBe(${failing ? 2 : 1}); });
   return { root, times: join(root, "times") };
 }
 
+const parallel = "3";
+
 function run(
   root: string,
   times: string,
   args: string[],
   env: Record<string, string> = {},
 ): { code: number; out: string } {
+  // The parallel counts are set here, not taken from the caller: a check runs with its own.
   const inherited = { ...process.env };
   delete inherited.OPERAD_TEST_PARALLEL;
   delete inherited.OPERAD_TEST_HEAVY_PARALLEL;
@@ -47,7 +50,7 @@ function run(
     cwd: root,
     env: {
       ...inherited,
-      OPERAD_TEST_PARALLEL: "2",
+      OPERAD_TEST_PARALLEL: parallel,
       OPERAD_TEST_HEAVY_PARALLEL: "2",
       OPERAD_TEST_TIMES: times,
       ...env,
@@ -82,7 +85,7 @@ describe("run-tests.sh", () => {
     const lines = readFileSync(times, "utf8").trim().split("\n");
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatch(
-      /^date=\d{4}-\d\d-\d\dT[\d:]+Z commit=\S+ tests=3 together=\d+ total=\d+ parallel=2 result=pass$/,
+      new RegExp(String.raw`^date=\d{4}-\d\d-\d\dT[\d:]+Z commit=\S+ tests=3 together=\d+ total=\d+ parallel=${parallel} result=pass$`),
     );
   });
 
@@ -101,7 +104,9 @@ describe("run-tests.sh", () => {
     expect(code).toBe(0);
     expect(out).toContain("heavy takes a while");
     expect(readFileSync(times, "utf8").trim()).toMatch(
-      /^date=\d{4}-\d\d-\d\dT[\d:]+Z commit=\S+ tests=4 together=\d+ heavy=\d+ total=\d+ parallel=2 heavyParallel=2 result=pass$/,
+      new RegExp(
+        String.raw`^date=\d{4}-\d\d-\d\dT[\d:]+Z commit=\S+ tests=4 together=\d+ heavy=\d+ total=\d+ parallel=${parallel} heavyParallel=2 result=pass$`,
+      ),
     );
   });
 
@@ -110,7 +115,7 @@ describe("run-tests.sh", () => {
     heavyTest(root);
     const { code } = run(root, times, [], { OPERAD_TEST_HEAVY_PARALLEL: "3" });
     expect(code).toBe(0);
-    expect(readFileSync(times, "utf8")).toContain("parallel=2 heavyParallel=3 result=pass");
+    expect(readFileSync(times, "utf8")).toContain(`parallel=${parallel} heavyParallel=3 result=pass`);
   });
 
   test("a named package runs its own heavy tests and leaves another package's alone", () => {
