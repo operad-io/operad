@@ -1004,3 +1004,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0356-M1 | packages/dev/src/stdin.ts | a read that finished before its deadline left the wait running instead of stopping it | `a standard-input read with a deadline > a read that finishes first stops the deadline's wait` |
+
+## T-0359 — a task's log ignores the chat's live increment lines
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0359-M10 | packages/dev/src/views.ts | the live increment and tool output line types were no longer skipped, so they appeared in a task's Log | `the agent's text, a tool error's first line and a turn's end are shown; tool output is not` |
