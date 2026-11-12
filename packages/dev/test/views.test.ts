@@ -336,7 +336,7 @@ describe("dev views", () => {
       workLog,
       `${JSON.stringify({ type: "tool_execution_start", toolCallId: "w", toolName: "Bash", at: 1, input: "make" })}\n`,
     );
-    const reviewDir = join(store.root, "logs", "harness-pi", "runs", "run-9");
+    const reviewDir = join(store.root, "logs", "pi", "runs", "run-9");
     mkdirSync(reviewDir, { recursive: true });
     writeFileSync(
       join(reviewDir, "agent.log"),
@@ -352,7 +352,7 @@ describe("dev views", () => {
           number: 2,
           workLog,
           reviewRuns: [
-            { round: 1, role: "primary", use: "harness-pi/agent", args: [], model: "gpt", reason: "initial", outcome: "report", run: "run-9" },
+            { round: 1, role: "primary", use: "pi/agent", args: [], model: "gpt", reason: "initial", outcome: "report", run: "run-9" },
           ],
         },
       },
@@ -739,11 +739,11 @@ describe("dev views", () => {
         cost: 1.5,
         costQuality: "exact",
         area: "app-core",
-        attempt: { number: 1, worker: "harness-claude", integration: { result: "failed", message: "push refused" } },
+        attempt: { number: 1, worker: "claude", integration: { result: "failed", message: "push refused" } },
       },
       "test:a",
     );
-    expect(await row()).toBe("$1.50 · harness-claude · area: app-core · push refused");
+    expect(await row()).toBe("$1.50 · claude · area: app-core · push refused");
   });
 
   test("a task whose check waits for a place says so, with how many are ahead, until it takes the place", async () => {

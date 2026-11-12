@@ -293,8 +293,8 @@ describe("dev scheduling", () => {
 
   test("the running-task cap is the sum of the default pool's counts", async () => {
     const workers = {
-      claude: { use: "harness-claude/agent", count: 2 },
-      pi: { use: "harness-pi/agent", count: 1 },
+      claude: { use: "claude/agent", count: 2 },
+      pi: { use: "pi/agent", count: 1 },
       codex: { use: "harness-codex/agent", count: 5 },
     };
     const fixture = await setup({
@@ -312,8 +312,8 @@ describe("dev scheduling", () => {
       concurrency: 2,
       devJson: {
         workers: {
-          claude: { use: "harness-claude/agent", count: 2 },
-          pi: { use: "harness-pi/agent", count: 2 },
+          claude: { use: "claude/agent", count: 2 },
+          pi: { use: "pi/agent", count: 2 },
         },
       },
     });

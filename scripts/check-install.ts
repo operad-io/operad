@@ -29,7 +29,15 @@ export function missingLinks(root: string): string[] {
   const dirs = [root];
   try {
     for (const entry of readdirSync(join(root, "packages"), { withFileTypes: true })) {
-      if (entry.isDirectory()) dirs.push(join(root, "packages", entry.name));
+      if (!entry.isDirectory()) continue;
+      const path = join(root, "packages", entry.name);
+      dirs.push(path);
+      // A group directory (packages/harness/) holds packages one level down.
+      if (manifest(path) === undefined) {
+        for (const child of readdirSync(path, { withFileTypes: true })) {
+          if (child.isDirectory()) dirs.push(join(path, child.name));
+        }
+      }
     }
   } catch {
     // no packages directory: only the root is checked

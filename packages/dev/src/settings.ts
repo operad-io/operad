@@ -48,7 +48,7 @@ export const DEV_SETTINGS_SCHEMA = "https://operad.io/schemas/dev.schema.json";
 export const WORKER_BRIEF_FILE = ".operad/worker-brief.md";
 
 /** The harness step a repository uses when it names none. */
-export const DEFAULT_WORKER_USE = "harness-radian/agent";
+export const DEFAULT_WORKER_USE = "radian/agent";
 
 /** How long a review waits before it runs again after a model was unavailable. */
 export const DEFAULT_REVIEWER_RETRY_SECS = 120;

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # run-tests.sh [package...]: runs the test suite, or the tests of the named
-# packages (directory names under packages/). With no name it runs every
+# packages (directory names under packages/, such as tui or harness/claude). With no name it runs every
 # package and scripts/.
 #
 # Test files run in OPERAD_TEST_PARALLEL worker processes (bun test
@@ -19,8 +19,8 @@ if ! [[ "$parallel" =~ ^[1-9][0-9]*$ ]]; then
 fi
 if [ $# -eq 0 ]; then
   names=()
-  for dir in packages/*/; do
-    dir=${dir%/}
+  for manifest in packages/*/package.json packages/*/*/package.json; do
+    dir=${manifest%/package.json}
     names+=("${dir#packages/}")
   done
   extra=("./scripts/")

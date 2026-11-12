@@ -1730,7 +1730,7 @@ describe("dev/review fallback and retry", () => {
  */
 async function loadRadianHarness(): Promise<ReturnType<typeof definePlugin>> {
   const path = fileURLToPath(
-    new URL("../../harness-radian/src/index.ts", import.meta.url),
+    new URL("../../harness/radian/src/index.ts", import.meta.url),
   );
   const loaded: unknown = await import(path);
   const make =
@@ -1807,7 +1807,7 @@ describe("dev/review hardening", () => {
     const settings = JSON.parse(readFileSync(path, "utf8")) as {
       reviewer: Record<string, unknown>;
     };
-    settings.reviewer.use = "harness-radian/agent";
+    settings.reviewer.use = "radian/agent";
     writeFileSync(path, JSON.stringify(settings));
     const registry = new PluginRegistry(
       [
@@ -2759,7 +2759,7 @@ describe("gate settings", () => {
     const settings = validateDevSettings({});
     expect(settings.gate).toEqual({ commands: [], commandTimeoutSecs: 1800 });
     expect(settings.reviewer).toEqual({
-      use: "harness-radian/agent",
+      use: "radian/agent",
       args: [],
       timeoutSecs: 600,
       fixLevel: "major",

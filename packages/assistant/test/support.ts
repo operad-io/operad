@@ -53,7 +53,7 @@ export function writeConfig(home: string, profiles: Record<string, unknown>): vo
   );
 }
 
-export async function rig(profiles: Record<string, unknown> = {}, harnesses = ["harness-claude", "harness-pi"]) {
+export async function rig(profiles: Record<string, unknown> = {}, harnesses = ["claude", "pi"]) {
   const root = await mkdtemp(join(tmpdir(), "assistant-test-"));
   roots.push(root);
   const home = join(root, "home");

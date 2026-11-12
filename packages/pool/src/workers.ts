@@ -103,7 +103,7 @@ export function readWorker(name: string, value: unknown, at: string): WorkerDefi
   if (typeof use !== "string" || !isStepName(use)) {
     throw new WorkerDefinitionError(
       `${at}.use`,
-      "must be a step name such as harness-claude/agent",
+      "must be a step name such as claude/agent",
     );
   }
   let args: readonly string[] = [];

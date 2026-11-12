@@ -173,23 +173,23 @@ describe("assistant:chat", () => {
   });
 
   test("the harness is the one given, else the profile's, else the first loaded; an unloaded one is refused", async () => {
-    const r = await rig({ pi: { harness: "harness-pi" } });
+    const r = await rig({ pi: { harness: "pi" } });
     await syncProfiles(r.store, r.home, r.registry.settingsFor("assistant"));
     const harnessOf = async (id: string) => (await r.store.get(CHAT_TYPE, id))?.data.harness;
-    expect(await harnessOf(await r.open("default"))).toBe("harness-claude");
-    expect(await harnessOf(await r.open("pi"))).toBe("harness-pi");
-    expect(await harnessOf(await r.open("pi", { harness: "harness-claude" }))).toBe("harness-claude");
-    await expect(r.open("default", { harness: "harness-radian" })).rejects.toThrow('harness "harness-radian" is not loaded');
+    expect(await harnessOf(await r.open("default"))).toBe("claude");
+    expect(await harnessOf(await r.open("pi"))).toBe("pi");
+    expect(await harnessOf(await r.open("pi", { harness: "claude" }))).toBe("claude");
+    await expect(r.open("default", { harness: "radian" })).rejects.toThrow('harness "radian" is not loaded');
   });
 
   test("the harness stays what it was when the profile's default changes", async () => {
-    const r = await rig({ reader: { harness: "harness-pi" } });
+    const r = await rig({ reader: { harness: "pi" } });
     await syncProfiles(r.store, r.home, {});
     const id = await r.open("reader");
-    writeConfig(r.home, { reader: { harness: "harness-claude" } });
+    writeConfig(r.home, { reader: { harness: "claude" } });
     await r.say(id, "hi");
     await r.reply(id);
-    expect((await r.store.get(CHAT_TYPE, id))?.data.harness).toBe("harness-pi");
+    expect((await r.store.get(CHAT_TYPE, id))?.data.harness).toBe("pi");
     expect(r.calls).toHaveLength(1);
   });
 

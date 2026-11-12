@@ -78,7 +78,7 @@
       "name": "@operad-io/engine",
       "version": "0.0.0",
     },
-    "packages/harness-claude": {
+    "packages/harness/claude": {
       "name": "@operad-io/harness-claude",
       "version": "0.0.0",
       "dependencies": {
@@ -88,7 +88,7 @@
         "@operad-io/harness-process": "workspace:*",
       },
     },
-    "packages/harness-pi": {
+    "packages/harness/pi": {
       "name": "@operad-io/harness-pi",
       "version": "0.0.0",
       "dependencies": {
@@ -101,7 +101,7 @@
         "@earendil-works/pi-coding-agent": "1.5.0",
       },
     },
-    "packages/harness-process": {
+    "packages/harness/process": {
       "name": "@operad-io/harness-process",
       "version": "0.0.0",
       "dependencies": {
@@ -109,7 +109,7 @@
         "@operad-io/mcp": "workspace:*",
       },
     },
-    "packages/harness-radian": {
+    "packages/harness/radian": {
       "name": "@operad-io/harness-radian",
       "version": "0.0.0",
       "dependencies": {
@@ -284,13 +284,13 @@
 
     "@operad-io/engine": ["@operad-io/engine@workspace:packages/engine"],
 
-    "@operad-io/harness-claude": ["@operad-io/harness-claude@workspace:packages/harness-claude"],
+    "@operad-io/harness-claude": ["@operad-io/harness-claude@workspace:packages/harness/claude"],
 
-    "@operad-io/harness-pi": ["@operad-io/harness-pi@workspace:packages/harness-pi"],
+    "@operad-io/harness-pi": ["@operad-io/harness-pi@workspace:packages/harness/pi"],
 
-    "@operad-io/harness-process": ["@operad-io/harness-process@workspace:packages/harness-process"],
+    "@operad-io/harness-process": ["@operad-io/harness-process@workspace:packages/harness/process"],
 
-    "@operad-io/harness-radian": ["@operad-io/harness-radian@workspace:packages/harness-radian"],
+    "@operad-io/harness-radian": ["@operad-io/harness-radian@workspace:packages/harness/radian"],
 
     "@operad-io/mcp": ["@operad-io/mcp@workspace:packages/mcp"],
 
