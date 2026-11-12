@@ -1192,6 +1192,42 @@ test("a secret value is masked in every new line", async () => {
   }
 });
 
+test("a secret split across grouped increments is not exposed by joining the deltas", async () => {
+  const secret = "store-secret-9";
+  const text = `xx${secret}`;
+  const thinking = `yy${secret}`;
+  const message = assistant("m1", text);
+  const inner = message["message"] as Record<string, unknown>;
+  inner["content"] = [
+    { type: "thinking", thinking },
+    { type: "text", text },
+  ];
+  const s = setup();
+  s.input["secretValues"] = [secret];
+  const run = await runFake(
+    s,
+    {
+      steps: [
+        { say: systemInit() },
+        ...streamBlock("text", text, 0),
+        ...streamBlock("thinking", thinking, 1),
+        { say: message },
+        { say: result() },
+      ],
+    },
+    // A 50 ms clock puts the secret's halves in different groups.
+    { FAKE_CLOCK_STEP: String(STREAM_GROUP_MS / 2) },
+  );
+
+  for (const type of ["text_delta", "thinking_delta"]) {
+    const lines = run.lines.filter((line) => line["type"] === type);
+    const joined = lines.map((line) => String(line["text"])).join("");
+    expect(lines.length).toBeGreaterThan(1);
+    expect(joined).not.toContain(secret);
+    expect(joined).toContain("***");
+  }
+});
+
 test("claude asks for partial messages so the increments can be written", async () => {
   const run = await runFake(setup(), { steps: done });
   const args = (run.record.find((entry) => "spawn" in entry)?.["spawn"] as { args: string[] }).args;

@@ -69,6 +69,26 @@ function numberOf(value: unknown): number | undefined {
 }
 
 /**
+ * The length of the longest suffix of `text` that is a proper prefix of a
+ * secret. A delta line may not end in such a suffix: the next line would
+ * complete the secret, and masking each line alone would leave both parts
+ * readable when a live reader joins them.
+ */
+function secretPrefixLength(text: string, secrets: readonly string[]): number {
+  let held = 0;
+  for (const secret of secrets) {
+    const longest = Math.min(secret.length - 1, text.length);
+    for (let length = longest; length > held; length -= 1) {
+      if (text.endsWith(secret.slice(0, length))) {
+        held = length;
+        break;
+      }
+    }
+  }
+  return held;
+}
+
+/**
  * The text a tool printed, from the shapes claude's tools return: a string, a
  * text block, Bash's stdout and stderr, a file's content, or a list of names.
  * Undefined when the response holds no output; the program never invents one.
@@ -251,20 +271,27 @@ export async function runWorker(
   let deltaKind: StreamKind | undefined;
   let deltaText = "";
   let deltaAt = 0;
-  const flushDelta = (): void => {
+  // `complete` says this stream has ended: a held secret prefix cannot be
+  // completed, so it is dropped from the increments (the full end line has
+  // the whole text) rather than written as a part that a later stream could
+  // join to the rest of the secret.
+  const flushDelta = (complete: boolean): void => {
     if (deltaKind === undefined || deltaText.length === 0) {
       deltaKind = undefined;
       deltaText = "";
       return;
     }
     const kind = deltaKind;
-    const text = deltaText;
-    deltaKind = undefined;
-    deltaText = "";
-    io.line({ type: kind === "text" ? "text_delta" : "thinking_delta", text: maskSecrets(text, secrets) });
+    const held = secretPrefixLength(deltaText, secrets);
+    const text = held === 0 ? deltaText : deltaText.slice(0, -held);
+    deltaText = complete || held === 0 ? "" : deltaText.slice(-held);
+    deltaKind = deltaText.length === 0 ? undefined : kind;
+    if (text.length > 0) {
+      io.line({ type: kind === "text" ? "text_delta" : "thinking_delta", text: maskSecrets(text, secrets) });
+    }
   };
   const writeLine = (line: WorkerLine): void => {
-    flushDelta();
+    flushDelta(false);
     io.line(line);
   };
   const addDelta = (kind: StreamKind, text: string): void => {
@@ -274,9 +301,11 @@ export async function runWorker(
       deltaText += text;
       return;
     }
-    flushDelta();
+    // A different kind ends the previous stream; the same kind just starts a
+    // new group after its open part has been written.
+    flushDelta(deltaKind !== kind);
     deltaKind = kind;
-    deltaText = text;
+    deltaText += text;
     deltaAt = at;
   };
 
@@ -323,7 +352,7 @@ export async function runWorker(
       }
     } else if (type === "content_block_stop") {
       const index = numberOf(event["index"]);
-      if (index !== undefined && streamBlocks.delete(index)) flushDelta();
+      if (index !== undefined && streamBlocks.delete(index)) flushDelta(true);
     }
   };
   const writeEnd = (kind: StreamKind, text: string): void => {
@@ -574,7 +603,7 @@ export async function runWorker(
           break;
         }
         case "assistant": {
-          flushDelta();
+          flushDelta(true);
           const texts: string[] = [];
           for (const block of message.message.content) {
             if (block.type === "text") texts.push(block.text);

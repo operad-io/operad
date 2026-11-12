@@ -136,3 +136,4 @@ setup it depends on, in the order they were recorded. The root
 | T-0359-M7 | packages/harness/claude/src/worker.ts | the tool output was not cut at the shared cap and never said `truncated` | `tool output is written with its call id, cut at the shared cap` |
 | T-0359-M8 | packages/harness/claude/src/worker.ts | the new lines were written without masking `secretValues` | `a secret value is masked in every new line` |
 | T-0359-M9 | packages/harness/claude/src/worker.ts | `includePartialMessages` was not set, so claude sent no increments | `claude asks for partial messages so the increments can be written` |
+| T-0359-M11 | packages/harness/claude/src/worker.ts | an increment line no longer held back a suffix that is a prefix of a secret, so joining the grouped deltas exposed the secret | `a secret split across grouped increments is not exposed by joining the deltas` |
