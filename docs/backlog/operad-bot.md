@@ -34,6 +34,7 @@
 18. **bot 扩展自己一律先问**：加一个 MCP 服务、改自己的设置（称呼、harness、访问档、技能列表）都是待处理项，没人答就不做。照 NanoClaw，不学 Grok Bot（bot 能自己装应用、加 MCP 服务，基本不设卡）。
 19. **一个 bot 挂哪些 MCP 服务写在它的设置里**，只有列出的才挂进它的 chat；工具调用的许可按 `operad-sandbox.md` 决定 9，密钥按决定 10。先不做工具的按需加载，装多了再说。登记一个服务时人看到什么、怎么钉版本、浏览器怎么接，见 `operad-bot-mcp.md`。
 20. **chat 和 bot 的用户词**（2026-11-11 owner 批，来自 iOS 设计稿 `radian-ios/docs/design/operad/operad-ios-2026-11-11.html`）：`Allow once`、`Always allow`、`Deny`（工具调用和命令的许可，`operad-sandbox.md` 决定 9；`Always allow` 的范围是发起它的 bot 或 repo）；`Continue`（费用上限到了以后继续，决定 12）、`Stop`（停下当前运行）；`I logged in`、`Log in again`（站点登录，`operad-bot-mcp.md` 决定 13、14；`I logged in` 只是提醒 bot 去看，不代替登录）；`Review`（技能和 MCP 服务的导入或更新，决定 15、17、18，在列表上不能直接加，都要先 Review）；`repo`（chat 父对象类型的标签，和 `bot` 并列）；`period`（费用上限的周期）。说话人不是新词：harness 名（claude、pi、radian）只决定用哪个 agent，对话里显示的是决定 14 的称呼。
+21. **bot 页是这个 bot 的设置页**（2026-11-12 owner 定）：上面是称呼、harness、模型、工作目录、本期花费和上限、技能、MCP 服务、登录过的站点；能直接改的项走设置接口（`operad-presentation.md` 决定 11），技能和 MCP 服务的增加和更新走 `Review`（决定 15、17–19）。bot 页上没有 Chat 按钮，新建 chat 只从 chat 的入口进（`operad-conversation.md` 决定 18）。`bot` 不占自己的 tab，bot 列在设置下面（`operad-presentation.md` 决定 14）。
 
 ## 顺序
 

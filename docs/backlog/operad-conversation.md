@@ -33,6 +33,7 @@ OpenClaw 是聊天优先，operad 到现在是流程优先。第一个要满足�
 15. **chat 通过 operad 的 MCP 工具调用插件**，不在 shell 里敲 `operad` 命令：`operad mcp` 的读工具、插件动词和允许列表里的动作挂进 harness（claude 和 radian 用 stdio MCP（`mcpServers`、`--mcp-config`），pi `customTools`，见 `operad-harness.md` 决定 3、4；claude 不用 `createSdkMcpServer` 的原因见那里，2026-11-10）。bot chat 看任务、开 task、问一个 task 为什么卡住，都走它，不自己改仓库文件；仓库 chat 同样。T-0175（lead 用 MCP 能做 shell 里能做的事）是前置。
 16. **第一版不导入 operad 之外开的会话**（终端里的 Claude Code、pi 的会话）。以后做时是 `chat` 插件加一个 `external: true` 的对象类型（`operad-contract.md` 决定 3），内核不动。
 17. **chat 可以关闭**（2026-11-11 owner 定）：chat 上的动作 `chat:close`（先确认）把一条 `chat.closed` 事实记进历史，行显示 `closed`，之后 `chat:send` 被拒并说 chat 已关闭，其他动作也不再出现；transcript 仍可读。chat 的列表过滤器是 `open`（默认）和 `closed`（内核在 `open` 后加 `all`），所以列表默认不显示已关闭的 chat。
+18. **第一次发送才建 chat，新建只从 chat 的入口进**（2026-11-12 owner 定，照 iOS 设计稿 2026-11-11）：客户端的新建先选父对象（bot 或 repo）和 harness，进一个还没有 chat 的空聊天页；第一条消息发出时才建 chat，所以只点开不说话不会留下空 chat。新建 chat 的动作（`dev:chat`、`bot:chat`）因此可以带上第一条消息，一个动作里建 chat 并发出这条消息；标题没给时取第一条消息的开头。这类动作声明它新建的是 chat（`operad-presentation.md` 决定 13），客户端只把它放在 chat 的新建入口里，repo 页和 bot 页上不再有 Chat 按钮。命令行照旧可以 `dev:chat` 不带消息。
 
 ## 顺序
 
