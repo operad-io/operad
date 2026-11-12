@@ -11,7 +11,7 @@
 
 import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { CHAT_TYPE, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
+import { CHAT_TYPE, agentConditionals, type AgentChoices, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
 import { definePlugin, isRecord, type ActionArgsSchema, type ActionTypeDefinition, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
@@ -42,6 +42,8 @@ function rowOf(bot: ResolvedBot): Record<string, JsonValue> {
     name: bot.name,
     cwd: bot.cwd,
     harness: bot.harness,
+    model: bot.model,
+    effort: bot.effort,
     skills: [...bot.skills],
     speaker: bot.speaker,
     access: bot.access,
@@ -161,6 +163,7 @@ function chatArgs(
   botHarness: unknown,
   models: readonly string[] = [],
   efforts: readonly string[] = [],
+  agents: readonly AgentChoices[] = [],
 ): ActionArgsSchema {
   const first = harnesses[0];
   const fallback = typeof botHarness === "string" && harnesses.includes(botHarness) ? botHarness : first;
@@ -195,6 +198,7 @@ function chatArgs(
           "The first message; the chat is created and the message sent in one step. The title is taken from its start when none is given.",
       },
     },
+    ...(agents.length === 0 ? {} : { allOf: agentConditionals(agents) }),
     additionalProperties: false,
   };
 }
@@ -210,6 +214,13 @@ const chatAction: ActionTypeDefinition = {
       object.data.harness,
       [...new Set((env.harnesses ?? []).flatMap((name) => env.models?.[name]?.list ?? []))],
       [...new Set((env.harnesses ?? []).flatMap((name) => env.efforts?.[name]?.list ?? []))],
+      (env.harnesses ?? []).map((name) => ({
+        name,
+        models: env.models?.[name],
+        efforts: env.efforts?.[name],
+        preferredModel: typeof object.data.model === "string" ? object.data.model : null,
+        preferredEffort: typeof object.data.effort === "string" ? object.data.effort : null,
+      })),
     ),
   when: (state, env) => state.removed !== true && typeof state.problem !== "string" && (env.harnesses ?? []).length > 0,
   async why(object, env) {

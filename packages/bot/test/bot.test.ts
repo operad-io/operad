@@ -247,6 +247,31 @@ describe("bot:chat and the model", () => {
   });
 });
 
+describe("bot:chat per-agent conditionals", () => {
+  test("one if/then per agent carries its lists and defaults; a bot's model is the default only of the agent that lists it", async () => {
+    const r = await rig({ tuned: { harness: "pi", model: "pi-b", effort: "pi-high" } }, ["claude", "pi", "radian"]);
+    await syncBots(r.store, r.home, r.registry.settingsFor("bot"));
+    const views = new Views({ registry: r.registry, store: r.store, onLog: () => undefined });
+    const chat = (await views.get("bot:tuned")).actions.find((a) => a.name === "bot:chat");
+    const all = chat?.args?.allOf ?? [];
+    expect(all.map((c) => c.if?.properties?.agent?.const)).toEqual(["claude", "pi", "radian"]);
+    const then = (i: number) => all[i]?.then?.properties;
+    expect(then(0)?.model).toEqual({ type: "string", enum: ["claude-a", "claude-b"], default: "claude-a" });
+    expect(then(0)?.effort).toEqual({ type: "string", enum: ["claude-low", "claude-high"], default: "claude-low" });
+    expect(then(1)?.model?.default).toBe("pi-b");
+    expect(then(1)?.effort?.default).toBe("pi-high");
+    expect(then(2)?.model).toBeUndefined();
+    expect(then(2)?.effort).toBeUndefined();
+    expect(chat?.args?.properties?.model?.enum).toContain("pi-a");
+  });
+
+  test("claude with a pi model is refused by name", async () => {
+    const r = await rig({}, ["claude", "pi"]);
+    await syncBots(r.store, r.home, {});
+    await expect(r.open("default", { agent: "claude", model: "pi-a" })).rejects.toThrow("pi-a");
+  });
+});
+
 describe("bot:chat and the effort", () => {
   const effortOf = async (r: Awaited<ReturnType<typeof rig>>, id: string) => (await r.store.get(CHAT_TYPE, id))?.data.effort;
 

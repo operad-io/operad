@@ -47,3 +47,10 @@ changes for bots, in the order they were recorded. The root
 | T-0342-M21 | packages/bot/src/index.ts | `bot:chat` ignored the effort asked for | `bot:chat and the effort > a chat starts with the agent's default effort, the bot's configured one, or the one asked for` |
 | T-0342-M22 | packages/bot/src/index.ts | `bot:chat` ignored the bot's configured effort | `bot:chat and the effort > a chat starts with the agent's default effort, the bot's configured one, or the one asked for` |
 | T-0342-M23 | packages/bot/src/index.ts | `bot:chat` dropped the effort enum of the loaded agents | `bot:chat and the effort > the effort argument is an enum of the loaded agents' efforts` |
+
+## T-0369 — the new-chat form narrows model and effort by agent
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0369-M3 | packages/bot/src/index.ts | `bot:chat` left the `allOf` conditionals out of its schema | `bot:chat per-agent conditionals > one if/then per agent carries its lists and defaults; a bot's model is the default only of the agent that lists it` |
+| T-0369-M4 | packages/bot/src/index.ts | the bot's configured model and effort were not passed as the agents' preferred ones | `bot:chat per-agent conditionals > one if/then per agent carries its lists and defaults; a bot's model is the default only of the agent that lists it` |

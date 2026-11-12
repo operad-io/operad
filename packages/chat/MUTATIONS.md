@@ -96,3 +96,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0362-M14 | packages/chat/src/reply.ts | the final text was compared with the entry before masking it, so a secret-bearing reply stayed as an entry too | `chat entries > secret values are masked before a text, thinking, tool or file fact is written` |
+## T-0369 — the new-chat form narrows model and effort by agent
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0369-M1 | packages/chat/src/model.ts | a configured model was the default of every agent, not only the one that lists it | `bot:chat per-agent conditionals > one if/then per agent carries its lists and defaults; a bot's model is the default only of the agent that lists it` |
+| T-0369-M2 | packages/chat/src/model.ts | an agent that lists nothing still got a `model`/`effort` in its `then` | `bot:chat per-agent conditionals > one if/then per agent carries its lists and defaults; a bot's model is the default only of the agent that lists it` |
