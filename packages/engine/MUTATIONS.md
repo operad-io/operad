@@ -640,3 +640,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0310-M2 | packages/engine/src/plugin/file-store.ts | a missing facts file was rethrown from `refresh` instead of read as nothing | `the file plugin store > a facts file removed while the store refreshes reads nothing` |
+
+## T-0313 — a project file named after its plugin omits the repeated name
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0313-M1 | packages/engine/src/views/settings.ts | the prefix always added the file name again, so a plugin-named file was `demo.demo` and no longer met another file's names | `settings > a project file named after its plugin uses the plugin name alone`; `settings > a name two project files would claim is refused instead of picking one` |

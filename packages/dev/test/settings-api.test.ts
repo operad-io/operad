@@ -63,19 +63,25 @@ describe("dev settings through operad settings", () => {
       default?: unknown;
     }[];
     const byName = new Map(items.map((item) => [item.name, item]));
-    expect(byName.get("dev.dev.concurrency")).toMatchObject({ editable: true, confirm: false });
-    expect(byName.get("dev.dev.reviewer.use")?.description).toContain("reviews a task");
-    expect(byName.get("dev.dev.reviewer.timeoutSecs")?.editable).toBe(true);
-    expect(byName.get("dev.dev.gate.commandTimeoutSecs")?.editable).toBe(true);
-    expect(byName.get("dev.dev.gate.commands")?.editable).toBe(true);
-    expect(byName.get("dev.dev.reviewer.fixLevel")).toMatchObject({ editable: true, confirm: true });
+    expect(byName.get("dev.concurrency")).toMatchObject({ editable: true, confirm: false });
+    expect(byName.get("dev.reviewer.use")?.description).toContain("reviews a task");
+    expect(byName.get("dev.reviewer.timeoutSecs")?.editable).toBe(true);
+    expect(byName.get("dev.gate.commandTimeoutSecs")?.editable).toBe(true);
+    expect(byName.get("dev.gate.commands")?.editable).toBe(true);
+    expect(byName.get("dev.reviewer.fixLevel")).toMatchObject({ editable: true, confirm: true });
     expect(byName.get("dev.review.default.fixLevel")).toMatchObject({ editable: true, confirm: true });
-    expect(byName.get("dev.dev.autoDefault")).toMatchObject({ editable: true, confirm: true, default: "off" });
-    expect(byName.get("dev.dev.concurrency")?.default).toBeUndefined();
+    expect(byName.get("dev.autoDefault")).toMatchObject({ editable: true, confirm: true, default: "off" });
+    expect(byName.get("dev.concurrency")?.default).toBeUndefined();
+    expect(project.out).not.toContain("dev.dev.");
     for (const item of items) {
       expect(item.description).toBeTruthy();
       expect(item.editable).toBe(true);
     }
+    const old = await run(home, repository, [
+      "settings", "set", "dev.dev.concurrency", "2", "--repo", name,
+    ]);
+    expect(old.code).toBe(1);
+    expect(old.err).toContain('no setting "dev.dev.concurrency"');
   });
 
   test("an invalid review.json level is refused and nothing is written; a valid one needs --yes", async () => {
@@ -107,13 +113,13 @@ describe("dev settings through operad settings", () => {
     const before = readFileSync(file, "utf8");
     for (const bad of ["[1]", '[""]']) {
       const result = await run(home, repository, [
-        "settings", "set", "dev.dev.gate.commands", bad, "--repo", name,
+        "settings", "set", "dev.gate.commands", bad, "--repo", name,
       ]);
       expect(result.code).toBe(2);
     }
     expect(readFileSync(file, "utf8")).toBe(before);
     const good = await run(home, repository, [
-      "settings", "set", "dev.dev.gate.commands", '["bun test"]', "--repo", name,
+      "settings", "set", "dev.gate.commands", '["bun test"]', "--repo", name,
     ]);
     expect(good.code).toBe(0);
   });
@@ -121,11 +127,11 @@ describe("dev settings through operad settings", () => {
   test("a new plan starts at the auto level the repository sets", async () => {
     const { home, repository, name } = await setup();
     const set = await run(home, repository, [
-      "settings", "set", "dev.dev.autoDefault", "run", "--repo", name, "--yes",
+      "settings", "set", "dev.autoDefault", "run", "--repo", name, "--yes",
     ]);
     expect(set.code).toBe(0);
     const bad = await run(home, repository, [
-      "settings", "set", "dev.dev.autoDefault", "always", "--repo", name, "--yes",
+      "settings", "set", "dev.autoDefault", "always", "--repo", name, "--yes",
     ]);
     expect(bad.code).toBe(2);
     const plan = await run(home, repository, ["plan", "add", "--slug", "alpha", "--title", "Alpha"]);

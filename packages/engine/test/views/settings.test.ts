@@ -6,6 +6,7 @@ import {
   MemoryPluginStore,
   PluginRegistry,
   ViewError,
+  type ProjectSettingsFile,
   type Views,
 } from "../../src/index.ts";
 import { cleanupTempRoots, def, tempRoot } from "../plugin/support.ts";
@@ -21,7 +22,10 @@ interface Setup {
   readonly config: () => string;
 }
 
-async function setup(configText?: string): Promise<Setup> {
+async function setup(
+  configText?: string,
+  projectFiles?: readonly ProjectSettingsFile[],
+): Promise<Setup> {
   const root = await tempRoot();
   const home = join(root, "home");
   const repo = join(root, "alpha");
@@ -64,7 +68,7 @@ async function setup(configText?: string): Promise<Setup> {
         },
         projectSettings: {
           repositories: () => [{ name: "alpha", path: repo }],
-          files: [
+          files: projectFiles ?? [
             {
               name: "review",
               path: "review.json",
@@ -189,6 +193,99 @@ describe("settings", () => {
     // the global name does not exist in the repository's scope
     const wrong = await views.set("demo.limit", 5, { scope: "alpha" }).catch((e: unknown) => e);
     expect((wrong as ViewError).kind).toBe("not-found");
+  });
+
+  test("a project file named after its plugin uses the plugin name alone", async () => {
+    const { views } = await setup(undefined, [
+      {
+        name: "demo",
+        path: "demo.json",
+        schema: {
+          type: "object",
+          properties: {
+            level: { type: "string", default: "low", editable: true },
+          },
+        },
+      },
+    ]);
+    expect((await views.settings("alpha")).map((item) => item.name)).toEqual(["demo.level"]);
+    await views.set("demo.level", "high", { scope: "alpha" });
+    expect((await views.settings("alpha"))[0]?.value).toBe("high");
+    const doubled = await views.set("demo.demo.level", "high", { scope: "alpha" }).catch((e: unknown) => e);
+    expect((doubled as ViewError).kind).toBe("not-found");
+  });
+
+  test("a name two project files would claim is refused instead of picking one", async () => {
+    const { views } = await setup(undefined, [
+      {
+        name: "demo",
+        path: "demo.json",
+        schema: {
+          type: "object",
+          properties: {
+            review: {
+              type: "object",
+              properties: { level: { type: "string", editable: true } },
+            },
+          },
+        },
+      },
+      {
+        name: "review",
+        path: "review.json",
+        schema: {
+          type: "object",
+          properties: { level: { type: "string", editable: true } },
+        },
+      },
+    ]);
+    const listed = await views.settings("alpha").catch((e: unknown) => e);
+    expect(listed).toBeInstanceOf(ViewError);
+    expect((listed as ViewError).kind).toBe("ambiguous");
+    expect((listed as ViewError).message).toContain('setting "demo.review.level"');
+    expect((listed as ViewError).message).toContain("repository \"alpha\"");
+    const set = await views
+      .set("demo.review.level", "high", { scope: "alpha" })
+      .catch((e: unknown) => e);
+    expect((set as ViewError).kind).toBe("ambiguous");
+  });
+
+  test("a global name two plugins would claim is refused instead of picking one", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(join(home, "config.json"), "{}\n");
+    const store = new MemoryPluginStore({ root });
+    const registry = new PluginRegistry(
+      [
+        def({
+          name: "demo",
+          settings: {
+            type: "object",
+            properties: {
+              review: {
+                type: "object",
+                properties: { level: { type: "string", editable: true } },
+              },
+            },
+          },
+        }),
+        def({
+          name: "demo.review",
+          settings: {
+            type: "object",
+            properties: { level: { type: "string", editable: true } },
+          },
+        }),
+      ],
+      { home, store, settings: {} },
+    );
+    const views = createViews({ registry, store });
+    const listed = await views.settings("global").catch((e: unknown) => e);
+    expect(listed).toBeInstanceOf(ViewError);
+    expect((listed as ViewError).kind).toBe("ambiguous");
+    expect((listed as ViewError).message).toContain('setting "demo.review.level"');
+    expect((listed as ViewError).message).toContain("global scope");
   });
 
   test("sets at the same moment all land, and the file keeps its mode", async () => {
