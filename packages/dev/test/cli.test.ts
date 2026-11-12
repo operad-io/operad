@@ -15,6 +15,7 @@ import {
   serve,
   storeRootOf,
 } from "@operad-io/engine";
+import { commandTestHooks } from "../src/commands.ts";
 import { withRepositoryLock } from "../src/lock.ts";
 import { bareId, listAll } from "../src/model.ts";
 import { addPlan, addRepository, addTask, setTaskPhase } from "../src/service.ts";
@@ -118,11 +119,24 @@ function run(
   return turn;
 }
 
+/** Runs a command with a stdin stream of the test's choosing, in its turn. */
+function runWithStdin(
+  home: string,
+  cwd: string,
+  args: readonly string[],
+  stdin: Readable,
+  env: Record<string, string> = {},
+): Promise<RunResult> {
+  const turn = inProcess.then(() => runNow(home, cwd, args, stdin, env));
+  inProcess = turn.catch(() => undefined);
+  return turn;
+}
+
 async function runNow(
   home: string,
   cwd: string,
   args: readonly string[],
-  input: string | undefined,
+  input: string | Readable | undefined,
   env: Record<string, string>,
 ): Promise<RunResult> {
   const out: string[] = [];
@@ -134,7 +148,10 @@ async function runNow(
   Object.assign(process.env, { OPERAD_HOME: home }, env);
   Object.defineProperty(process, "stdin", {
     configurable: true,
-    value: Readable.from(input === undefined ? [] : [Buffer.from(input)]),
+    value:
+      input instanceof Readable
+        ? input
+        : Readable.from(input === undefined ? [] : [Buffer.from(input)]),
   });
   try {
     const { main } = (await import(CLI_MAIN)) as CliMain;
@@ -663,6 +680,123 @@ describe("operad with the dev plugin", () => {
     ]);
     expect(brief.out).toContain("New body");
     expect(brief.out).not.toContain("Old body");
+  });
+
+  test("task edit uses $EDITOR when stdin stays open past its wait", async () => {
+    const { root, home, repository } = await setup();
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const plan = await run(
+      home,
+      repository,
+      ["plan", "add", "--slug", "open", "--title", "Open"],
+      "request\n",
+    );
+    const task = await run(
+      home,
+      repository,
+      [
+        "task",
+        "add",
+        "--plan",
+        plan.out.trim(),
+        "--slug",
+        "open",
+        "--title",
+        "Open",
+      ],
+      "Old body\n",
+    );
+    const editor = join(root, "editor-open-stdin.sh");
+    writeFileSync(
+      editor,
+      "#!/bin/sh\nprintf '# Edited\\n\\nFrom editor\\n' > \"$1\"\n",
+      "utf8",
+    );
+    chmodSync(editor, 0o755);
+
+    let tick = 0;
+    const open = new Readable({ read() {} });
+    commandTestHooks.stdin = {
+      stream: open,
+      clock: () => (tick === 0 ? 0 : 1_001),
+      wait: async () => {
+        tick = 1;
+      },
+    };
+    let edited: RunResult;
+    try {
+      edited = await runWithStdin(
+        home,
+        repository,
+        ["task", "edit", task.out.trim()],
+        open,
+        { EDITOR: editor, VISUAL: "" },
+      );
+    } finally {
+      commandTestHooks.stdin = undefined;
+      open.destroy();
+    }
+    expect(edited.code).toBe(0);
+    const brief = await run(home, repository, [
+      "show",
+      task.out.trim(),
+      "--section",
+      "brief",
+    ]);
+    expect(brief.out).toContain("From editor");
+    expect(brief.out).not.toContain("Old body");
+  });
+
+  test("task edit with an open stdin and no editor fails naming the wait", async () => {
+    const { home, repository } = await setup();
+    expect((await run(home, repository, ["repo", "add", "."])).code).toBe(0);
+    const plan = await run(
+      home,
+      repository,
+      ["plan", "add", "--slug", "open", "--title", "Open"],
+      "request\n",
+    );
+    const task = await run(
+      home,
+      repository,
+      [
+        "task",
+        "add",
+        "--plan",
+        plan.out.trim(),
+        "--slug",
+        "open",
+        "--title",
+        "Open",
+      ],
+      "Old body\n",
+    );
+    let tick = 0;
+    const open = new Readable({ read() {} });
+    commandTestHooks.stdin = {
+      stream: open,
+      clock: () => (tick === 0 ? 0 : 1_001),
+      wait: async () => {
+        tick = 1;
+      },
+    };
+    let refused: RunResult;
+    try {
+      refused = await runWithStdin(
+        home,
+        repository,
+        ["task", "edit", task.out.trim()],
+        open,
+        { EDITOR: "", VISUAL: "" },
+      );
+    } finally {
+      commandTestHooks.stdin = undefined;
+      open.destroy();
+    }
+    expect(refused.code).not.toBe(0);
+    expect(refused.err).toContain("waited 1s");
+    expect(refused.err).toContain("standard input");
+    expect(refused.err).toContain("no editor is set");
   });
 
   test("task edit takes the new brief from piped stdin without an editor", async () => {

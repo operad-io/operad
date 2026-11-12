@@ -28,6 +28,7 @@ describe("the repository lock", () => {
     expect(failure).toBeInstanceOf(DevError);
     expect((failure as DevError).message).toContain(`pid ${process.pid}`);
     expect((failure as DevError).message).toContain("another dev command holds");
+    expect((failure as DevError).message).toContain("gave up after 10s");
   });
 
   test("the lock lives at .operad/dev.lock and is gone afterwards", async () => {

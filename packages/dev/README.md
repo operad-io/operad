@@ -64,6 +64,8 @@ operad reruns              # how often each test passed only on its own rerun, m
 
 `--chat <id>` opens the task on the worktree of a repository chat that already has one: the task works on `work/chat-<id>` instead of making its own worktree and branch.
 
+`task edit` takes the new brief from standard input when it is piped and not empty; otherwise it opens `$EDITOR` (or `$VISUAL`) on the brief body. For the non-interactive form, set `$EDITOR` to a command that writes the file it is given, for example `EDITOR="cp /path/brief.md" operad task edit T-0001-example`: the command receives that file as `$1`. When standard input is not a terminal, `task edit` waits one second for a piped brief before it uses the editor, so an open stdin that never delivers one cannot hang the command. A repository lock another dev command holds is named, and the command gives up after 10 seconds.
+
 ### Where a command runs, and ids
 
 A command that looks up a plan or a task (`start`, `task edit`, `task update`,
