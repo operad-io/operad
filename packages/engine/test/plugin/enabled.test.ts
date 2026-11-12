@@ -82,3 +82,14 @@ describe("plugin enable and disable", () => {
     expect(logs.join("\n")).toContain('"notes" is disabled');
   });
 });
+
+describe("a plugin key the module does not provide", () => {
+  test("is an unknown-plugin error, not a name mismatch", async () => {
+    const { home } = await homeWith({ "old-notes": notesPath });
+    const configured = await loadConfiguredPlugins({ home });
+    expect(configured.loaded).toEqual([]);
+    expect(configured.errors).toEqual([
+      `plugin "old-notes": unknown plugin; the module "${notesPath}" provides "notes"`,
+    ]);
+  });
+});

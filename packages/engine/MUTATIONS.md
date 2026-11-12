@@ -653,3 +653,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0313-M1 | packages/engine/src/views/settings.ts | the prefix always added the file name again, so a plugin-named file was `demo.demo` and no longer met another file's names | `settings > a project file named after its plugin uses the plugin name alone`; `settings > a name two project files would claim is refused instead of picking one` |
+## T-0331 — code slimming follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0331-M1 | packages/engine/src/plugin/load.ts | the error for a key the module does not provide went back to "the module declares the name" | `a plugin key the module does not provide > is an unknown-plugin error, not a name mismatch` |
