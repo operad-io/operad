@@ -718,6 +718,36 @@ describe("decide: an answered question returns to the step", () => {
     ]);
   });
 
+  test("a grant that lists approving choices gives the permission for either answer", () => {
+    const runner = waiting({
+      session: "s1",
+      grant: {
+        kind: "command",
+        value: "rm -rf build",
+        choice: "no",
+        choices: ["yes"],
+      },
+    });
+    runner.apply({ kind: "person_answer", waitId: "w1", choice: "yes", actor: ACTOR });
+    expect(runner.state.effect?.grants).toEqual([
+      { waitId: "w1", kind: "command", value: "rm -rf build" },
+    ]);
+  });
+
+  test("a grant that lists approving choices still gives none for another answer", () => {
+    const runner = waiting({
+      session: "s1",
+      grant: {
+        kind: "command",
+        value: "rm -rf build",
+        choice: "no",
+        choices: ["no"],
+      },
+    });
+    runner.apply({ kind: "person_answer", waitId: "w1", choice: "yes", actor: ACTOR });
+    expect(runner.state.effect?.grants).toBeUndefined();
+  });
+
   test("a string resume is the session; no grant is given without one", () => {
     const runner = waiting("/s/one.jsonl");
     runner.apply({ kind: "person_answer", waitId: "w1", choice: "yes", actor: ACTOR });

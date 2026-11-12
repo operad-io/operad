@@ -91,3 +91,10 @@ the row fields.
 | T-0342-M8 | packages/harness/pi/src/index.ts | the step ignored the `effort` param a chat passes | `pi/agent > an effort from a chat reaches the worker as pi's thinking level` |
 | T-0339-M19 | packages/harness/pi/src/worker.ts | pi's prompt went without its images | `images are given to pi with the prompt: the model's context holds the image` |
 | T-0358-M10 | packages/harness/pi/src/index.ts | the step did not hand its lines to the receiver | `pi/agent > a receiver gets each line the step writes to its log; without one the log is the same` |
+
+## T-0366 — allow_always
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0366-M6 | packages/harness/pi/src/index.ts | the step did not merge the user layer into the profile it passed to the worker | `pi: a call that must ask a person > answered allow_always writes the user layer, and the next identical call does not ask` |
+| T-0366-M11 | packages/harness/pi/src/index.ts | a late `allow_always` did not write the user layer before the resumed step ran | `pi: a call that must ask a person > a late allow_always writes the user layer and the resumed call does not ask` |

@@ -616,3 +616,70 @@ test("a write under readPaths asks, where no deny covers it; a write elsewhere i
   expect(write("/work/project/a.txt")).toEqual({ allow: true });
   expect(bash(profile, "echo x > /home/u/.operad/attachments/chat/C-0001/m/a.txt")).toMatchObject({ allow: false, ask: true });
 });
+
+// -- always allowed ----------------------------------------------------------
+
+const USER_LAYER: AccessProfile = {
+  askCommands: ["git push"],
+  askPaths: ["~/.zshrc"],
+  alwaysAllow: [
+    { kind: "command", value: "git push origin main", cwd: CWD },
+    { kind: "path", value: "~/.zshrc", tool: "write", cwd: CWD },
+  ],
+};
+
+test("an always-allowed command lets the exact command and cwd through without asking", () => {
+  expect(bash(USER_LAYER, "git push origin main")).toEqual({ allow: true });
+  // The same command in another working directory is a new question.
+  expect(match(USER_LAYER, { tool: "bash", input: { command: "git push origin main" }, cwd: "/work/other" }, { home: HOME })).toMatchObject({
+    allow: false,
+    ask: true,
+    rule: "git push",
+  });
+  // Another command text asks, though the same entry is present.
+  expect(bash(USER_LAYER, "git push origin other")).toMatchObject({ allow: false, ask: true, rule: "git push" });
+});
+
+test("an always-allowed path lets the exact tool, path and cwd through without asking", () => {
+  expect(write(USER_LAYER, "~/.zshrc", "write")).toEqual({ allow: true });
+  expect(write(USER_LAYER, "~/.zshrc", "edit")).toMatchObject({ allow: false, ask: true });
+  expect(write(USER_LAYER, "/home/u/.zshrc", "write")).toMatchObject({ allow: false, ask: true });
+  expect(match(USER_LAYER, { tool: "write", input: { path: "~/.zshrc" }, cwd: "/work/other" }, { home: HOME })).toMatchObject({
+    allow: false,
+    ask: true,
+  });
+});
+
+test("an always-allowed entry never lifts a deny", () => {
+  const profile: AccessProfile = {
+    ...USER_LAYER,
+    denyCommands: ["git push --force*"],
+    denyPaths: ["~/.zshrc"],
+  };
+  const command = bash(profile, "git push --force origin main");
+  expect(command.allow).toBe(false);
+  expect(command.ask).toBeUndefined();
+  const path = write(profile, "~/.zshrc", "write");
+  expect(path.allow).toBe(false);
+  expect(path.ask).toBeUndefined();
+});
+
+test("readProfile reads alwaysAllow entries and names a malformed one", () => {
+  expect(readProfile({ alwaysAllow: [{ kind: "command", value: "ls", cwd: CWD }] })).toEqual({
+    ok: true,
+    profile: { alwaysAllow: [{ kind: "command", value: "ls", cwd: CWD }] },
+  });
+  expect(readProfile({ alwaysAllow: [{ kind: "path", value: "/x", cwd: CWD, tool: "write" }] })).toEqual({
+    ok: true,
+    profile: { alwaysAllow: [{ kind: "path", value: "/x", cwd: CWD, tool: "write" }] },
+  });
+  for (const bad of [
+    { alwaysAllow: "x" },
+    { alwaysAllow: [1] },
+    { alwaysAllow: [{ kind: "url", value: "x", cwd: CWD }] },
+    { alwaysAllow: [{ kind: "command", value: "ls" }] },
+    { alwaysAllow: [{ kind: "path", value: "/x", cwd: CWD }] },
+  ]) {
+    expect(readProfile(bad).ok).toBe(false);
+  }
+});

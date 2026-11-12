@@ -122,11 +122,18 @@ function grantsFrom(answered: AnsweredAsk): readonly Grant[] | undefined {
   ) {
     return undefined;
   }
-  // Only the choice that approves gives the permission: the one the step
-  // named, or "approve" when it named none (`ctx.ask` refuses a question with
-  // choices that names none).
-  const approves = typeof grant.choice === "string" ? grant.choice : "approve";
-  if (answered.choice !== approves) return undefined;
+  // Only a choice that approves gives the permission: the one the step named,
+  // every choice in its `choices` list, or "approve" when it named none
+  // (`ctx.ask` refuses a question with choices that names none).
+  const approves = new Set<string>();
+  if (typeof grant.choice === "string") approves.add(grant.choice);
+  if (Array.isArray(grant.choices)) {
+    for (const choice of grant.choices) {
+      if (typeof choice === "string") approves.add(choice);
+    }
+  }
+  if (approves.size === 0) approves.add("approve");
+  if (!approves.has(answered.choice)) return undefined;
   return [
     {
       waitId: answered.waitId,
