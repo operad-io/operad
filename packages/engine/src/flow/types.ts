@@ -55,6 +55,12 @@ export interface WaitPersonStep extends StepBase {
     readonly prompt: string;
     readonly choices: readonly string[];
     /**
+     * Answers a timed-out step may hand over that this wait does not offer by
+     * itself. They need an edge in `next`, and are shown only when the step
+     * that asked hands one over.
+     */
+    readonly lateChoices?: readonly string[];
+    /**
      * Shown when the step that led here was interrupted. `{step}` names that
      * step, so one wait can explain what stopped.
      */

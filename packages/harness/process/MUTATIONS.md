@@ -77,3 +77,13 @@ and the row fields.
 | T-0358-M8 | packages/harness/process/src/lines.ts | a receiver that threw stopped the step | `claude/agent > a receiver that throws does not stop the step` |
 | T-0358-M13 | packages/harness/process/src/lines.ts | `capToolOutput` dropped a trailing U+FFFD even when it was a real character | `capToolOutput at the cap > a valid U+FFFD that ends exactly at the cap is kept` |
 | T-0358-M14 | packages/harness/process/src/lines.ts | `deliverLine` handed the line over without masking secrets | `maskSecrets > masks a value as written, and as JSON text writes it` (unit) and the three `a receiver gets a line ... masked` step tests |
+
+## T-0366 — allow_always and its user layer
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0366-M2 | packages/harness/process/src/ask-call.ts | a question that offered `allow_always` did not let either approving answer give the late permission | `askRequest > allowAlways offers allow_always and lets either approving answer give the late permission` |
+| T-0366-M3 | packages/harness/process/src/ask-call.ts | `allow_always` allowed the call but did not write the user layer | `createCallAsker > allow_always answers allow and writes the exact call to the user layer` |
+| T-0366-M4 | packages/harness/process/src/always-allow.ts | an invalid user layer was read as empty without its readable problem | `readAlwaysAllow > an invalid file is empty with a readable message naming the file` |
+| T-0366-M5 | packages/harness/process/src/always-allow.ts | `personStarted` took every trigger for a person's message, so a background run consulted the user layer | `pi: a call that must ask a person > a background run ignores the user layer and is not offered allow_always` |
+| T-0366-M10 | packages/harness/process/src/ask-call.ts | a later identical call ignored the entry `allow_always` had just written and asked again | `createCallAsker > a later identical call after allow_always is let through without asking again` |

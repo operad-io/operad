@@ -106,3 +106,10 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0355-M2 | packages/access-match/src/index.ts | an absent `allowMcp` was read as an empty list, so MCP calls were put under the profile and asked | `an MCP tool is not under the profile when allowMcp is absent` |
+
+## T-0366 — allow_always in the access profile
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0366-M1 | packages/access-match/src/index.ts | `match` ignored the `alwaysAllow` entry for an asked command | `an always-allowed command lets the exact command and cwd through without asking` |
+| T-0366-M14 | packages/access-match/src/index.ts | the early MCP return ignored an `alwaysAllow` command entry, so an unlisted MCP tool asked again | `an always-allowed command entry lets the exact MCP tool in the same cwd through` |

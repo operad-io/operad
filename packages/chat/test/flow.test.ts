@@ -9,6 +9,7 @@ import {
   MESSAGE_FACT,
   newMessageId,
   REPLY_MAX_VISITS,
+  replyFlow,
   unanswered,
 } from "../src/index.ts";
 
@@ -64,6 +65,14 @@ function withAgent(onCall: (call: number) => Promise<void> | void) {
 }
 
 describe("the reply flow", () => {
+  test("the question wait offers allow_always and sends either allow answer back to the reply", () => {
+    const step = replyFlow.steps.find((candidate) => candidate.id === "person");
+    if (step === undefined || step.kind !== "wait_person") throw new Error("the person wait is missing");
+    expect(step.params.choices).not.toContain("allow_always");
+    expect(step.params.lateChoices).toContain("allow_always");
+    expect(step.next["allow_always"]).toBe("reply");
+  });
+
   test("a message event from ios starts chat:reply by the plugin's own rule, and the run answers it", async () => {
     const store = memoryStore();
     const { plugin } = withAgent(() => undefined);

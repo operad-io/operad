@@ -113,13 +113,17 @@ function checkStep(
       if (!isStringArray(choices)) {
         throw new FlowError(at("params.choices: must be an array of strings"));
       }
+      const lateChoices = params.lateChoices ?? [];
+      if (!isStringArray(lateChoices)) {
+        throw new FlowError(at("params.lateChoices: must be an array of strings"));
+      }
       if (
         params.note !== undefined &&
         (typeof params.note !== "string" || params.note.length === 0)
       ) {
         throw new FlowError(at("params.note: must be a non-empty string"));
       }
-      results = [...new Set([...choices, "interrupted"])];
+      results = [...new Set([...choices, ...lateChoices, "interrupted"])];
       break;
     }
     case "wait": {

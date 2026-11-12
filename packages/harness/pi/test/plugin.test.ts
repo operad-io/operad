@@ -661,7 +661,7 @@ describe("pi/agent", () => {
   test("the step declares the deny and ask fields it enforces and a timeout above its wall time", async () => {
     const env = await setup("done");
     const type = env.registry.stepTypes().find((item) => item.name === "pi/agent");
-    expect(type?.enforces).toEqual(["denyPaths", "denyCommands", "askCommands", "askPaths", "readPaths"]);
+    expect(type?.enforces).toEqual(["denyPaths", "denyCommands", "askCommands", "askPaths", "readPaths", "alwaysAllow"]);
     expect(type?.timeoutSecs).toBeGreaterThan(3600);
   });
 

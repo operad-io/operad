@@ -3,6 +3,13 @@ import type { FlowDefinition, StepShape } from "./types.ts";
 /** The keys a step's `next` map declares. */
 type NextKeys<T> = T extends { readonly next: infer N } ? keyof N : never;
 
+/** The extra answers a wait_person may accept from a timed-out step. */
+type LateChoices<T> = T extends { readonly params: { readonly lateChoices?: infer L } }
+  ? L extends readonly (infer K extends string)[]
+    ? K
+    : never
+  : never;
+
 /**
  * The steps `defineFlow` accepts are checked here, after their literals are
  * inferred, so a wrong result name in `next` is a compile error. A missing
@@ -15,9 +22,9 @@ export type CheckStep<T> = T extends { readonly id: string; readonly replay: "sa
           readonly kind: "wait_person";
           readonly params: { readonly prompt: string; readonly choices: infer C extends readonly string[] };
         }
-      ? Exclude<NextKeys<T>, C[number] | "interrupted"> extends never
+      ? Exclude<NextKeys<T>, C[number] | LateChoices<T> | "interrupted"> extends never
         ? T
-        : { readonly error: `wait_person: not a result: ${string & Exclude<NextKeys<T>, C[number] | "interrupted">}` }
+        : { readonly error: `wait_person: not a result: ${string & Exclude<NextKeys<T>, C[number] | LateChoices<T> | "interrupted">}` }
       : T extends {
             readonly kind: "wait";
             readonly params: { readonly afterSecs: number } | { readonly check: string; readonly params?: unknown };

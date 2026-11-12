@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://operad.io/schemas/access-user.schema.json",
+  "title": "operad access user layer",
+  "description": "The always-allowed calls in $OPERAD_HOME/access-user.json: each binds an exact command and working directory, or a tool, path and working directory. A person adds them by answering allow_always, and can remove one by deleting its line.",
+  "type": "array",
+  "items": {
+    "oneOf": [
+      {
+        "type": "object",
+        "properties": {
+          "kind": { "const": "command" },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The command text, exactly as the person allowed it; for an MCP tool, `mcp <server>.<tool>`."
+          },
+          "cwd": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The working directory the command was allowed in."
+          }
+        },
+        "required": ["kind", "value", "cwd"],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "kind": { "const": "path" },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The path, as the call wrote it."
+          },
+          "cwd": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The working directory the path was allowed in."
+          },
+          "tool": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The tool the person allowed on that path, such as write or edit."
+          }
+        },
+        "required": ["kind", "value", "cwd", "tool"],
+        "additionalProperties": false
+      }
+    ]
+  }
+}

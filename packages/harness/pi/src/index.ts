@@ -22,6 +22,10 @@ import {
   type StepContext,
 } from "@operad-io/engine";
 import {
+  ALLOW_ALWAYS,
+  accessWithAlwaysAllow,
+  alwaysAllowFromGrant,
+  appendAlwaysAllow,
   answerGrant,
   askToolEvent,
   canAsk,
@@ -43,6 +47,8 @@ import {
   optionalText,
   parseResult,
   parseStepFlags,
+  personStarted,
+  readAlwaysAllow,
   resultFor,
   secs,
   stringListParam,
@@ -226,9 +232,18 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
         // back to the agent, which continues the session with it.
         id: "person",
         kind: "wait_person",
-        params: { prompt: "The agent asked about a call.", choices: ["allow_once", "reject_once"] },
+        params: {
+          prompt: "The agent asked about a call.",
+          choices: ["allow_once", "reject_once"],
+          lateChoices: ["allow_always"],
+        },
         replay: "safe",
-        next: { allow_once: "agent", reject_once: "agent", interrupted: "cancelled" },
+        next: {
+          allow_once: "agent",
+          allow_always: "agent",
+          reject_once: "agent",
+          interrupted: "cancelled",
+        },
       },
       { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
       { id: "failed", kind: "end", params: { status: "failed" }, replay: "safe" },
@@ -251,7 +266,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
         // `waiting`: a question about a call was not answered within the grace.
         results: ["done", "failed", "interrupted", "waiting"],
         // The deny and ask fields are applied in the worker's tool_call hook.
-        enforces: ["denyPaths", "denyCommands", "askCommands", "askPaths", "readPaths"],
+        enforces: ["denyPaths", "denyCommands", "askCommands", "askPaths", "readPaths", "alwaysAllow"],
         timeoutSecs: STEP_TIMEOUT_SECS,
         // The model the step uses: its `--model` argument, else the setting.
         limit: modelLimit("pi", (params, settings) => {
@@ -268,7 +283,8 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
 
           const prompt = text(input.prompt ?? flow.prompt, `${at}: params.prompt`);
           const note = eventNote(ctx.trigger);
-          const answerNote = askNote(input.askAnswer ?? flow.askAnswer);
+          const rawAskAnswer = input.askAnswer ?? flow.askAnswer;
+          const answerNote = askNote(rawAskAnswer);
           const promptWithNote = [prompt, note, answerNote]
             .filter((part): part is string => part !== undefined)
             .join("\n\n");
@@ -363,6 +379,25 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           const piCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
           const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
           const storeSecrets = await secretValuesOf(ctx.secrets);
+          const allowAlways = personStarted(ctx.trigger);
+          if (allowAlways && isRecord(rawAskAnswer) && rawAskAnswer["choice"] === ALLOW_ALWAYS) {
+            const entry = alwaysAllowFromGrant(ctx.access, cwd);
+            if (entry !== undefined) {
+              try {
+                await appendAlwaysAllow(ctx.home, entry);
+              } catch (error) {
+                await ctx.logger.write(
+                  `allow_always could not be written to the user access file: ${String(error)}; this call runs once`,
+                );
+              }
+            }
+          }
+          let runAccess = accessWithAlwaysAllow(ctx.access, [], false);
+          if (allowAlways) {
+            const user = await readAlwaysAllow(ctx.home);
+            if (user.problem !== undefined) await ctx.logger.write(user.problem);
+            runAccess = accessWithAlwaysAllow(ctx.access, user.entries, true);
+          }
           const stdin: Record<string, unknown> = {
             prompt: promptWithNote,
             cwd,
@@ -379,7 +414,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             ...(imageInputsOf(input.images ?? flow.images).length === 0
               ? {}
               : { images: imageInputsOf(input.images ?? flow.images) }),
-            ...(isRecord(ctx.access) ? { access: ctx.access } : {}),
+            ...(runAccess === undefined ? {} : { access: runAccess }),
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };
 
@@ -393,6 +428,10 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             ask: (request) => ctx.ask(request),
             onStop: () => stopper.abort(),
             secrets: storeSecrets,
+            ...(allowAlways ? { alwaysAllow: { home: ctx.home, cwd } } : {}),
+            onLog: (message) => {
+              void ctx.logger.write(message);
+            },
           });
 
           const outcome = await runAgent({
