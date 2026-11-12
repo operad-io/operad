@@ -53,7 +53,6 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | T-0297-M2 | scripts/stress.sh | `STRESS_CPUS=0` was accepted and capped `--load` at 0 | `scripts/stress.sh > STRESS_CPUS=0 is refused instead of starting no helper` |
 | T-0297-M3 | scripts/stress.sh | no watcher stopped the `bun test` child when the script itself was SIGKILLed | `scripts/stress.sh > SIGKILL of the script stops the test runner it started` |
 | T-0297-M4 | scripts/stress.sh | the default lock path was under `TMPDIR` again | `scripts/stress.sh > the machine-wide lock > two runs with different TMPDIR values still share the lock` |
-|---|---|---|---|
 | T-0322-M1 | scripts/test/steady.fixture.ts | defined `testWorld` again outside `@operad-io/engine/testing` | `test helpers > a test helper named like one of @operad-io/engine/testing is defined only there` |
 | T-0322-M2 | scripts/run-tests.sh | dropped the call that prints the slowest tests | `run-tests.sh > a run ends with the slowest tests and a full run appends one line to the times file` |
 | T-0322-M3 | scripts/test-times.ts | counted failed runs in the median | `test times > a failed run and a line that is not a run are left out` |
