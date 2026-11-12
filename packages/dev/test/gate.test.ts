@@ -1143,6 +1143,15 @@ describe("dev/review", () => {
       expect(result.result).toBe("pass");
     });
 
+    test("a flow with no level of its own never reviews with a weaker one (T-0315)", async () => {
+      const state = await fixture({ reviewerArgs: ["major"], fixLevel: "critical" });
+      grading(state, JSON.stringify({ flows: { dev: { fixLevel: "major" } } }));
+      await verify(state);
+      const result = await review(state, "review-1", { grading: "default" });
+      expect(result.result).toBe("fail");
+      expect(result.data?.counted).toBe(1);
+    });
+
     test("an invalid file fails the review step naming the file", async () => {
       const state = await fixture({ reviewerArgs: ["none"] });
       grading(state, JSON.stringify({ default: { fixLevel: "huge" } }));
@@ -1204,22 +1213,22 @@ describe("dev/review", () => {
     }
   });
 
-  test("a finding on a file the change did not touch is pre-existing and does not count", async () => {
+  test("a finding on a file the change did not touch still counts in a first review (T-0315)", async () => {
     const state = await fixture({
       reviewerArgs: ["pre-existing"],
       fixLevel: "major",
     });
     await verify(state);
     const result = await review(state);
-    expect(result.result).toBe("pass");
-    expect(result.data?.preExisting).toBe(1);
-    expect(result.data?.counted).toBe(0);
+    expect(result.result).toBe("fail");
+    expect(result.data?.preExisting).toBe(0);
+    expect(result.data?.counted).toBe(1);
     const findings = result.data?.findings as readonly {
       readonly preExisting?: boolean;
       readonly pre_existing?: boolean;
     }[];
-    expect(findings[0]?.preExisting).toBe(true);
-    expect(findings[0]?.pre_existing).toBe(true);
+    expect(findings[0]?.preExisting).toBeUndefined();
+    expect(findings[0]?.pre_existing).toBeUndefined();
   });
 
   test("the reviewer sees the verified commit and not a branch that moved", async () => {
@@ -3485,7 +3494,7 @@ describe("dev/review rework rounds", () => {
     );
   });
 
-  test("a far critical finding still fails; a far major one in an untouched file is moved", async () => {
+  test("a far critical finding and a far major one in a first review both fail", async () => {
     const dir = await tempRoot();
     const findingsFile = join(dir, "findings.json");
     writeFindings(findingsFile, [
@@ -3499,14 +3508,14 @@ describe("dev/review rework rounds", () => {
     await verify(state);
     const result = await review(state);
     expect(result.result).toBe("fail");
-    expect(result.data?.counted).toBe(1);
-    expect(result.data?.moved).toBe(1);
+    expect(result.data?.counted).toBe(2);
+    expect(result.data?.moved).toBe(0);
     const found = result.data?.findings as readonly {
       readonly severity: string;
       readonly pre_existing?: boolean;
     }[];
     expect(found[0]?.pre_existing).toBeUndefined();
-    expect(found[1]).toMatchObject({ severity: "major", pre_existing: true });
+    expect(found[1]?.pre_existing).toBeUndefined();
   });
 
   test("a previous sha that is not a commit in the checkout makes a first review", async () => {
@@ -3700,7 +3709,7 @@ describe("dev/review rework rounds", () => {
     }[] = [
       {
         name: "first review",
-        moved: [false, false, true, false],
+        moved: [false, false, false, false],
         run: async (setup) => (await setup()).first,
       },
       {
@@ -3735,6 +3744,14 @@ describe("dev/review rework rounds", () => {
         expect(found.map((item) => item.preExisting === true)).toEqual([...kind.moved]);
       });
     }
+  });
+
+  test("a major finding in a file the change does not touch fails the first review (T-0315)", async () => {
+    const round = await afterFirstReview([finding("other.txt", 3)]);
+    expect(round.first.result).toBe("fail");
+    expect(round.first.data?.decision).toBe("findings");
+    expect(round.first.data?.counted).toBe(1);
+    expect(round.first.data?.moved).toBe(0);
   });
 
   test("a main change near the task's change is not in the increment", async () => {

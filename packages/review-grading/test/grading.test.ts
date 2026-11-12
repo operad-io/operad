@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ReviewGradingError, readReviewGrading } from "../src/index.ts";
+import { ReviewGradingError, readReviewGrading, strictestFixLevel } from "../src/index.ts";
 
 const roots: string[] = [];
 function repo(content?: string): string {
@@ -88,5 +88,22 @@ describe("readReviewGrading", () => {
     const message = (caught as Error).message;
     expect(message).toContain("review.json");
     expect(message).toContain(detail);
+  });
+});
+
+describe("strictestFixLevel", () => {
+  test("no file or no level gives undefined", () => {
+    expect(strictestFixLevel(repo())).toBeUndefined();
+    expect(strictestFixLevel(repo(JSON.stringify({ flows: { dev: {} } })))).toBeUndefined();
+  });
+
+  test("the lowest threshold in the default or any flow wins", () => {
+    const root = repo(
+      JSON.stringify({
+        default: { fixLevel: "critical" },
+        flows: { dev: { fixLevel: "major" }, other: { fixLevel: "critical" } },
+      }),
+    );
+    expect(strictestFixLevel(root)).toBe("major");
   });
 });

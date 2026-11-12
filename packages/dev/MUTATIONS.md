@@ -918,3 +918,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0311-M1 | packages/dev/src/model.ts | `planNote` put `plan.auto` back in the note, so a plan row showed the level twice | `dev views > the plan note leaves the auto level to the badge, and the total leaves cancelled tasks out` |
+
+## T-0315 — a review does not pass with a major finding
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0315-M1 | packages/dev/src/rework.ts | a first review moved a non-critical finding in an untouched file out of the failing set again (the per-file rule back) | `dev/review rework rounds > a major finding in a file the change does not touch fails the first review (T-0315)` and four more |
+| T-0315-M2 | packages/dev/src/gate.ts | a flow whose grading sets no fixLevel kept dev.json's level instead of the strictest the repository configures (`strictestElsewhere` removed) | `dev/review > review.json > a flow with no level of its own never reviews with a weaker one (T-0315)` |
