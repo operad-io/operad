@@ -28,7 +28,6 @@ import {
   isOpenTask,
   keyRepository,
   listAll,
-  lowerPriority,
   nextId,
   parseId,
   planData,
@@ -39,7 +38,6 @@ import {
   PLAN_FINAL_STATES,
   TASK_FINAL_STATES,
   PRIORITIES,
-  priorityIndex,
   repositoryData,
   storeKey,
   taskData,
@@ -1774,32 +1772,6 @@ export async function releaseWaitingClaim(
   });
 }
 
-/** Appends the owner's rework section and leaves the task for the flow. */
-export async function rejectTask(
-  store: ObjectStore,
-  id: string,
-  note: string,
-): Promise<StoredObject> {
-  const initial = await getTask(store, id);
-  const data = taskData(initial.data);
-  refuseTask("reject", data, id);
-  const text = note.trim();
-  if (text.length === 0) {
-    throw new DevError("note", "must be a non-empty string");
-  }
-  return withRepoLock(store, data.repository, async () => {
-    const current = await getTask(store, id);
-    const latest = taskData(current.data);
-    refuseTask("reject", latest, id);
-    return writeTask(
-      store,
-      id,
-      { ...latest, brief: appendRework(latest.brief, "owner", text) },
-      "dev:task-reject",
-    );
-  });
-}
-
 /** Appends a rework section and records it. */
 export async function addRework(
   store: ObjectStore,
@@ -2123,32 +2095,6 @@ export async function setConcurrency(
   });
 }
 
-export async function raisePriority(
-  store: ObjectStore,
-  id: string,
-): Promise<StoredObject> {
-  const plan = await getPlan(store, id);
-  const data = planData(plan.data);
-  const next = PRIORITIES[priorityIndex(data.priority) - 1];
-  if (next === undefined) {
-    throw new DevError("priority", `plan "${bareId(id)}" is already P0`);
-  }
-  return setPriority(store, id, next);
-}
-
-export async function lowerPriorityOf(
-  store: ObjectStore,
-  id: string,
-): Promise<StoredObject> {
-  const plan = await getPlan(store, id);
-  const data = planData(plan.data);
-  const next = lowerPriority(data.priority);
-  if (next === undefined) {
-    throw new DevError("priority", `plan "${bareId(id)}" is already P5`);
-  }
-  return setPriority(store, id, next);
-}
-
 /* ---------------------------------------------------------------------------
  * History
  * ------------------------------------------------------------------------- */
@@ -2181,10 +2127,4 @@ export async function liveObjects(
     }
   }
   return objects;
-}
-
-/** A helper later tasks use to check an id belongs to the expected plan. */
-export function taskBelongsTo(object: StoredObject, plan: string): boolean {
-  const data = taskData(object.data);
-  return data.plan === plan;
 }

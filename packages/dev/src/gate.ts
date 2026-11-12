@@ -2899,11 +2899,3 @@ export function taskHead(path: string): string | undefined {
   return headOf(path);
 }
 
-/** The worktree path the gate uses, for tests and views. */
-export function taskGatePath(context: TaskContext): string {
-  return gateWorktreePath(
-    context.repository.path,
-    context.settings,
-    context.taskId,
-  );
-}
