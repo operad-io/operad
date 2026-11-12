@@ -77,3 +77,5 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0342-M9 | packages/harness/radian/src/index.ts | the plugin stopped declaring the empty effort list | `the efforts radian declares > none: it cannot honour an effort a chat picks` |
+| T-0327-M12 | packages/harness/radian/src/refusal.ts | radian let an unlisted MCP tool run | `radian/agent > radian refuses another server's tool unless the profile lists it: it cannot ask` |
+| T-0327-M13 | packages/harness/radian/src/index.ts | radian was not given a bot's MCP servers | `radian/agent > a bot's servers are written to radian's MCP config by name, with operad's server kept` |

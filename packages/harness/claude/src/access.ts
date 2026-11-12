@@ -8,7 +8,7 @@
  * place that maps the two.
  */
 
-import { findGrant, match, type AccessProfile } from "@operad-io/access-match";
+import { findGrant, match, MCP_TOOL, type AccessProfile } from "@operad-io/access-match";
 import { OPERAD_TOOL_PREFIX, type CallAnswer, type CallQuestion } from "@operad-io/harness-process";
 
 export type { CallAnswer, CallQuestion };
@@ -68,15 +68,23 @@ export function hasRules(profile: AccessProfile): boolean {
 }
 
 export type Translated =
-  | { readonly kind: "mapped"; readonly tool: ToolRow["tool"]; readonly input: Record<string, unknown> }
+  | { readonly kind: "mapped"; readonly tool: ToolRow["tool"] | typeof MCP_TOOL; readonly input: Record<string, unknown> }
   | { readonly kind: "missing"; readonly field: string }
   | { readonly kind: "inert" }
   | { readonly kind: "unmapped" };
 
 /** Claude's call in the words `access-match` takes. */
-export function translate(name: string, input: Readonly<Record<string, unknown>>): Translated {
+export function translate(name: string, input: Readonly<Record<string, unknown>>, mcpUnderProfile = false): Translated {
   // Operad's own tools run under the owner's MCP allow lists, not the profile.
   if (name.startsWith(OPERAD_TOOL_PREFIX)) return { kind: "inert" };
+  // With `allowMcp` in the profile, a tool of another MCP server (`mcp__<server>__<tool>`) is judged by server and tool.
+  if (mcpUnderProfile && name.startsWith("mcp__")) {
+    const rest = name.slice("mcp__".length);
+    const at = rest.indexOf("__");
+    if (at > 0 && at + 2 < rest.length) {
+      return { kind: "mapped", tool: MCP_TOOL, input: { server: rest.slice(0, at), tool: rest.slice(at + 2) } };
+    }
+  }
   const row = TOOL_TABLE.find((candidate) => candidate.claude === name);
   if (row === undefined) {
     return INERT_TOOLS.includes(name) ? { kind: "inert" } : { kind: "unmapped" };
@@ -112,7 +120,7 @@ export async function decideAccess(
   useGrant?: (waitId: string) => Promise<boolean>,
   ask?: (question: CallQuestion) => Promise<CallAnswer>,
 ): Promise<AccessDecision> {
-  const translated = translate(name, input);
+  const translated = translate(name, input, profile.allowMcp !== undefined);
   if (translated.kind === "inert") return { allow: true };
   if (translated.kind === "unmapped") {
     if (!hasRules(profile)) return { allow: true };
