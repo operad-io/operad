@@ -110,5 +110,3 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0240-M8 | packages/harness/claude/src/worker.ts | the logged Bash command no longer kept its line breaks (`keepLines` removed) | `a Bash call logs its command, its start time and its duration` |
-| T-0327-M11 | packages/harness/claude/src/access.ts | claude did not judge another server's tool by server and tool | `operad's own tools > another server's tool is judged by server and tool when the profile has allowMcp: a listed one runs, any other asks` |
-| T-0327-M14 | packages/harness/claude/src/worker.ts | claude was not given a bot's MCP servers | `a bot's servers are given to claude beside operad's, by name, as the commands the input names` |

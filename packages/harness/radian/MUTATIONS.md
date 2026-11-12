@@ -70,5 +70,3 @@ the row fields.
 |---|---|---|---|
 | T-0300-M1 | packages/harness/radian/test/plugin.test.ts | the wall test read the marker with `Number(readFileSync(...))` instead of `waitForPid`, so a read between the file's creation and its write took pid 0, which `kill -0` always finds | `radian/agent > wallTimeSecs stops a run that never ends` (the wait after the run throws after 2 s); on macOS the directory watch coalesces the create and the write, so this needs the marker created empty and filled later, as Linux's inotify does |
 | T-0300-M2 | packages/harness/radian/test/support.ts | `waitForJson` parsed the marker once, so an empty file threw instead of being read again | `a marker wait reads JSON only once the file holds it` |
-| T-0327-M12 | packages/harness/radian/src/refusal.ts | radian let an unlisted MCP tool run | `radian/agent > radian refuses another server's tool unless the profile lists it: it cannot ask` |
-| T-0327-M13 | packages/harness/radian/src/index.ts | radian was not given a bot's MCP servers | `radian/agent > a bot's servers are written to radian's MCP config by name, with operad's server kept` |

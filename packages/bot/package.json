@@ -8,7 +8,9 @@
   },
   "dependencies": {
     "@operad-io/chat": "workspace:*",
-    "@operad-io/engine": "workspace:*",
+    "@operad-io/engine": "workspace:*"
+  },
+  "devDependencies": {
     "@operad-io/access-match": "workspace:*"
   }
 }

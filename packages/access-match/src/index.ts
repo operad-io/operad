@@ -36,12 +36,6 @@ export interface AccessProfile {
    * Deny wins over it.
    */
   readonly readOnly?: boolean | undefined;
-  /**
-   * The MCP tools that run without asking, as `<server>.<tool>` or `<server>.*`.
-   * Having the field at all (even empty) puts MCP tools under the profile: a tool
-   * not listed counts as a write and asks (`operad-sandbox.md` decision 9).
-   */
-  readonly allowMcp?: readonly string[] | undefined;
   /** Permissions not yet used; the caller uses one up before it lets a call through. */
   readonly grants?: readonly AccessGrant[] | undefined;
 }
@@ -98,13 +92,13 @@ export function readProfile(value: unknown): ProfileRead {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return { ok: false, message: "the access profile must be an object" };
   }
-  const found: { denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; allowMcp?: string[]; readOnly?: boolean; grants?: AccessGrant[] } = {};
+  const found: { denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; readOnly?: boolean; grants?: AccessGrant[] } = {};
   const readOnly: unknown = Reflect.get(value, "readOnly");
   if (readOnly !== undefined) {
     if (typeof readOnly !== "boolean") return { ok: false, message: "readOnly must be true or false" };
     found.readOnly = readOnly;
   }
-  for (const field of ["denyPaths", "denyCommands", "askCommands", "askPaths", "allowMcp"] as const) {
+  for (const field of ["denyPaths", "denyCommands", "askCommands", "askPaths"] as const) {
     const entry: unknown = Reflect.get(value, field);
     if (entry === undefined) continue;
     if (!Array.isArray(entry) || !entry.every((item): item is string => typeof item === "string")) {
@@ -456,32 +450,6 @@ function askBash(profile: AccessProfile, command: string, asked: AskedPaths | un
   return ALLOW;
 }
 
-/** The tool name of a call to an MCP server's tool; its input has `server` and `tool`. */
-export const MCP_TOOL = "mcp";
-
-/** The words a person is asked about, and a one-time permission covers, for an MCP tool. */
-export function mcpCallValue(server: string, tool: string): string {
-  return `mcp ${server}.${tool}`;
-}
-
-function matchMcp(profile: AccessProfile, call: ToolCall): Verdict {
-  const server: unknown = call.input["server"];
-  const tool: unknown = call.input["tool"];
-  if (typeof server !== "string" || typeof tool !== "string") {
-    return { allow: false, reason: "an MCP call that names no server and tool cannot be checked" };
-  }
-  const allowed = profile.allowMcp ?? [];
-  if (allowed.includes(`${server}.${tool}`) || allowed.includes(`${server}.*`)) return ALLOW;
-  return {
-    allow: false,
-    ask: true,
-    reason: `MCP tool "${server}.${tool}" is not on the allowed list; a tool nobody listed counts as a write and asks`,
-    rule: "unknown MCP tool",
-    kind: "command",
-    value: mcpCallValue(server, tool),
-  };
-}
-
 /**
  * Whether one tool call may run under the profile. Pure and lexical. Deny wins
  * over ask and ask over allow: the deny rules and paths are checked first, and
@@ -510,7 +478,6 @@ export function match(given: AccessProfile, call: ToolCall, options: MatchOption
     }
     return asked;
   }
-  if (call.tool === MCP_TOOL) return matchMcp(profile, call);
   if (PATH_TOOLS.has(call.tool)) {
     const path: unknown = call.input["path"] ?? call.input["file_path"];
     if (typeof path === "string" && path.length > 0) {
@@ -540,7 +507,6 @@ export function findGrant(profile: AccessProfile, call: ToolCall, options: Match
   for (const grant of profile.grants ?? []) {
     if (grant.kind === "command") {
       if (call.tool === "bash" && call.input["command"] === grant.value) return grant;
-      if (call.tool === MCP_TOOL && mcpCallValue(String(call.input["server"]), String(call.input["tool"])) === grant.value) return grant;
       continue;
     }
     // A path grant covers the tool the person approved and no other.

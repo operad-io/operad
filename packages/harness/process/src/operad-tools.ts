@@ -33,25 +33,3 @@ export function serverCommand(tools: OperadTools): { readonly command: string; r
   const script = fileURLToPath(import.meta.resolve("@operad-io/mcp/stdio"));
   return { command: process.execPath, args: [script, "--home", tools.home] };
 }
-
-/** A server a bot's settings list, started as this command; its name is the one its tools go by. */
-export interface MountedServer {
-  readonly command: string;
-  readonly args: readonly string[];
-}
-
-/**
- * The `mcpServers` param of an `agent` step: other MCP servers to start for
- * the agent, by name. The name of operad's own server is not available.
- */
-export function mountedServersOf(value: unknown): Readonly<Record<string, MountedServer>> | undefined {
-  if (!isRecord(value)) return undefined;
-  const found: Record<string, MountedServer> = {};
-  for (const [name, entry] of Object.entries(value)) {
-    if (name === OPERAD_SERVER || name.length === 0 || name.includes("__")) continue;
-    if (!isRecord(entry) || typeof entry.command !== "string" || entry.command.length === 0) continue;
-    const args = Array.isArray(entry.args) ? entry.args.filter((item): item is string => typeof item === "string") : [];
-    found[name] = { command: entry.command, args };
-  }
-  return Object.keys(found).length === 0 ? undefined : found;
-}

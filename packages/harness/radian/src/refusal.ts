@@ -1,4 +1,4 @@
-import { match, MCP_TOOL, type AccessProfile } from "@operad-io/access-match";
+import { match, type AccessProfile } from "@operad-io/access-match";
 import { isRecord } from "@operad-io/engine";
 
 /** One radian tool call as the access-match call it stands for. */
@@ -82,12 +82,6 @@ export function radianRefusal(profile: AccessProfile, toolName: string, args: un
     return undefined;
   }
   if (lower.startsWith(OPERAD_TOOL_PREFIX)) return undefined;
-  // A tool of another MCP server is `<server>__<tool>`; it is judged by server and tool.
-  const split = toolName.indexOf("__");
-  if (profile.allowMcp !== undefined && split > 0 && split + 2 < toolName.length) {
-    const verdict = match(profile, { tool: MCP_TOOL, input: { server: toolName.slice(0, split), tool: toolName.slice(split + 2) }, cwd });
-    return verdict.allow ? undefined : describe(profile, verdict);
-  }
   const { mapped, input } = mapRadianCall(toolName, record);
   const verdict = match(profile, { tool: mapped, input, cwd });
   return verdict.allow ? undefined : describe(profile, verdict);

@@ -59,4 +59,3 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0297-M1 | packages/harness/process/test/support.ts | `pidValue` accepted 0 and 1 as pids | `test support > a pid must be a finite integer above 1` |
-| T-0327-M10 | packages/harness/process/src/ask-call.ts | `canAsk` ignored `allowMcp`, so a bot's unlisted MCP tool could not ask a person | `canAsk > is true for a profile that puts MCP tools under it, even with none listed` |

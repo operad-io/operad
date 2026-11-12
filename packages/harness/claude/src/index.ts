@@ -39,7 +39,6 @@ import {
   stringListParam,
   text,
   operadToolsOf,
-  mountedServersOf,
   JsonlLog,
   modelLimit,
   standardUsage,
@@ -289,7 +288,6 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
           if (cwdProblem !== undefined) return refuse("cwd", cwdProblem);
 
           const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
-          const mcpServers = mountedServersOf(input.mcpServers ?? flow.mcpServers);
           const claudeCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
           const storeSecrets = await secretValuesOf(ctx.secrets);
           const stdin: Record<string, unknown> = {
@@ -303,7 +301,6 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             ...(budgetUsd === undefined ? {} : { budgetUsd }),
             ...(bashTimeoutSecs === undefined ? {} : { bashTimeoutSecs }),
             ...(operadTools === undefined ? {} : { operadTools }),
-            ...(mcpServers === undefined ? {} : { mcpServers }),
             ...(isRecord(ctx.access) ? { access: ctx.access } : {}),
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };

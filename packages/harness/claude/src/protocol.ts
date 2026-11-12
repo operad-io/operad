@@ -5,7 +5,6 @@
 
 import { readProfile } from "@operad-io/access-match";
 import { isRecord } from "@operad-io/engine";
-import { mountedServersOf } from "@operad-io/harness-process";
 
 export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type WorkerEffort = (typeof EFFORT_LEVELS)[number];
@@ -27,8 +26,6 @@ export interface WorkerInput {
   readonly bashTimeoutSecs?: number | undefined;
   /** Operad's own tools, served to claude as an MCP server of the named home. */
   readonly operadTools?: { readonly home: string } | undefined;
-  /** Other MCP servers to start for the agent, by name (a bot's servers, behind its guard). */
-  readonly mcpServers?: Readonly<Record<string, { readonly command: string; readonly args: readonly string[] }>> | undefined;
   /** Secret values of the operad secret store; a log line shows `***` where one appears. */
   readonly secretValues?: readonly string[] | undefined;
 }
@@ -180,7 +177,6 @@ export const INPUT_FIELDS = [
   "budgetUsd",
   "bashTimeoutSecs",
   "operadTools",
-  "mcpServers",
   "secretValues",
 ] as const;
 
@@ -255,11 +251,6 @@ export function parseInput(value: unknown): ParsedInput {
     return { ok: false, message: "operadTools must be an object with a home" };
   }
 
-  const mcpServers = mountedServersOf(value["mcpServers"]);
-  if (value["mcpServers"] !== undefined && (!isRecord(value["mcpServers"]) || (Object.keys(value["mcpServers"]).length > 0 && mcpServers === undefined))) {
-    return { ok: false, message: "mcpServers must be an object of servers, each with a command" };
-  }
-
   const access = value["access"];
   if (access !== undefined && !isRecord(access)) {
     return { ok: false, message: "access must be an object" };
@@ -283,7 +274,6 @@ export function parseInput(value: unknown): ParsedInput {
       budgetUsd,
       bashTimeoutSecs,
       operadTools: operadTools === undefined ? undefined : { home: String(operadTools["home"]) },
-      mcpServers,
       secretValues,
     },
   };
