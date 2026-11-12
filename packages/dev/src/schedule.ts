@@ -895,7 +895,9 @@ async function scheduleRepository(
     const task = taskData(object.data);
     if (task.phase !== "ready" || started.has(object.id)) continue;
     let note: string | undefined;
-    if (queuedIds.has(object.id)) {
+    if (plansById.get(task.plan)?.status === "paused") {
+      note = "waiting for the plan to resume";
+    } else if (queuedIds.has(object.id)) {
       const plan = plansById.get(task.plan);
       const holders = activeIds(task.plan);
       const all = activeIds(undefined);

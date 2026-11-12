@@ -65,7 +65,7 @@ async function plan(fixture: Fixture, slug: string, concurrency: number, tasks: 
     keys.push((await addTask(fixture.store, { plan: made.id, slug: task, title: task })).id);
   }
   await confirmPlan(fixture.store, made.id);
-  return keys;
+  return Object.assign(keys, { planKey: made.id });
 }
 
 async function note(fixture: Fixture, key: string): Promise<string> {
@@ -113,6 +113,17 @@ describe("a ready task says what holds it back", () => {
       `$0.00 · waiting for the repository's slot (${bareId(holder)})`,
     );
     expect(await note(fixture, holder)).not.toContain("slot");
+  });
+
+  test("a ready task of a paused plan says the plan is paused", async () => {
+    const fixture = await setup(2);
+    const keys = await plan(fixture, "p", 2, ["a"]);
+    const task = keys[0];
+    if (task === undefined) throw new Error("tasks");
+    const stored = await getPlan(fixture.store, keys.planKey);
+    await fixture.store.put("plan", stored.id, { ...planData(stored.data), status: "paused" }, "test");
+    await fixture.registry.tick();
+    expect(await note(fixture, task)).toBe("$0.00 · waiting for the plan to resume");
   });
 
   test("a missing plugin is named", async () => {
