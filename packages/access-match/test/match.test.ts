@@ -584,3 +584,12 @@ test("readPaths lets a read through a deny of its ancestor and nothing else", ()
   expect(readProfile({ readPaths: ["/x"] })).toEqual({ ok: true, profile: { readPaths: ["/x"] } });
   expect(readProfile({ readPaths: "/x" }).ok).toBe(false);
 });
+
+test("a write under readPaths asks, where no deny covers it; a write elsewhere is as before", () => {
+  const profile: AccessProfile = { readPaths: ["/home/u/.operad/attachments/chat/C-0001"] };
+  const write = (path: string): ReturnType<typeof match> =>
+    match(profile, { tool: "write", input: { path }, cwd: CWD }, { home: HOME });
+  expect(write("/home/u/.operad/attachments/chat/C-0001/m/a.txt")).toMatchObject({ allow: false, ask: true });
+  expect(write("/work/project/a.txt")).toEqual({ allow: true });
+  expect(bash(profile, "echo x > /home/u/.operad/attachments/chat/C-0001/m/a.txt")).toMatchObject({ allow: false, ask: true });
+});

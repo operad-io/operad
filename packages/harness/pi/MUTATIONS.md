@@ -81,3 +81,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0240-M9 | packages/harness/pi/src/worker.ts | the logged bash command no longer kept its line breaks (`keepLines` removed) | `a multi-line bash command keeps its lines in the log` |
+| T-0339-M19 | packages/harness/pi/src/worker.ts | pi's prompt went without its images | `images are given to pi with the prompt: the model's context holds the image` |
