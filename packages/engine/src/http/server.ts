@@ -604,6 +604,10 @@ function createHandler(
       if (note !== undefined && typeof note !== "string") {
         return errorResponse(400, "args", "note must be a string");
       }
+      const confirmed = body.confirmed;
+      if (confirmed !== undefined && typeof confirmed !== "boolean") {
+        return errorResponse(400, "args", "confirmed must be a boolean");
+      }
       const actor: Actor = { via: clientName(request.headers.get(CLIENT_HEADER)), id: token.label };
       try {
         await options.views.answer({
@@ -611,6 +615,8 @@ function createHandler(
           waitId,
           choice,
           ...(note === undefined ? {} : { note }),
+          ...(confirmed === true ? { confirmed: true } : {}),
+          surface: "http",
           actor,
         });
         return json({ runId, waitId, choice });

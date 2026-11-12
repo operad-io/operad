@@ -194,6 +194,11 @@ export const TOOLS = [
           type: "string",
           description: "The note, when the question asks for one.",
         },
+        confirmed: {
+          type: "boolean",
+          description:
+            "Set when the answer is a choice whose action asks to confirm.",
+        },
       },
     },
   },
@@ -443,7 +448,7 @@ export async function runTool(
           const run = await context.views.act(info.name, item.object, {
             args: {},
             ...(note === undefined ? {} : { note }),
-            yes: info.confirm,
+            yes: args.confirmed === true,
             actor,
           });
           return {
@@ -466,6 +471,7 @@ export async function runTool(
           waitId,
           choice,
           ...(note === undefined ? {} : { note }),
+          ...(args.confirmed === true ? { confirmed: true } : {}),
           actor,
         });
         return {

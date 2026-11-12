@@ -226,6 +226,10 @@ export interface AnswerViewOptions {
   readonly waitId: string;
   readonly choice: string;
   readonly note?: string | undefined;
+  /** Confirms an action-backed choice whose action asks to confirm. */
+  readonly confirmed?: boolean | undefined;
+  /** Where the person asked: the command line or the HTTP interface. */
+  readonly surface?: "cli" | "http" | undefined;
   /** Who answered. */
   readonly actor: Actor;
 }
@@ -1299,7 +1303,8 @@ export class Views {
       }
       await this.act(info.name, item.object, {
         ...(options.note === undefined ? {} : { note: options.note }),
-        yes: false,
+        ...(options.surface === undefined ? {} : { surface: options.surface }),
+        yes: options.confirmed === true,
         actor: options.actor,
       });
       return;

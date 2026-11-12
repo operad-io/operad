@@ -261,6 +261,7 @@ export interface TuiAnswerRequest {
   readonly waitId: string;
   readonly choice: string;
   readonly note?: string | undefined;
+  readonly confirmed?: boolean | undefined;
 }
 
 /** A setting change the reducer wants the caller to send with `POST /v1/settings`. */

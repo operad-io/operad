@@ -266,7 +266,8 @@ Input:
     "runId": { "type": "string", "minLength": 1, "description": "The pending item's runId." },
     "waitId": { "type": "string", "minLength": 1, "description": "The pending item's waitId." },
     "choice": { "type": "string", "minLength": 1, "description": "One of the item's choices." },
-    "note": { "type": "string", "description": "The note, when the question asks for one." }
+    "note": { "type": "string", "description": "The note, when the question asks for one." },
+    "confirmed": { "type": "boolean", "description": "Set when the answer is a choice whose action asks to confirm." }
   }
 }
 ```
@@ -276,7 +277,8 @@ records the actor `{ "via": "mcp", "id": "lead" }`. A question that is already
 closed, or a choice the question does not offer, is a tool error with the
 view's message. When every choice is also an action on the item's object (a
 `dev` wait), the choice runs through that action, so its confirmation and the
-`mcp.actions` allow list still apply, and the result is the action record.
+`mcp.actions` allow list still apply, and the result is the action record. A
+confirmed action needs `"confirmed": true`.
 
 ### `running`
 

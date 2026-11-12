@@ -104,6 +104,7 @@ export interface TuiAnswerInput {
   readonly waitId: string;
   readonly choice: string;
   readonly note?: string | undefined;
+  readonly confirmed?: boolean | undefined;
   /** Cancels the request; it then rejects. */
   readonly signal?: AbortSignal | undefined;
 }
@@ -395,6 +396,7 @@ export class TuiClient {
         waitId: input.waitId,
         choice: input.choice,
         ...(input.note === undefined ? {} : { note: input.note }),
+        ...(input.confirmed === true ? { confirmed: true } : {}),
       },
     });
   }
