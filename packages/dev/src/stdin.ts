@@ -10,7 +10,8 @@ export interface StdinReadOptions {
   /** How long to wait before giving up; unset waits for the end of input. */
   readonly timeoutMs?: number | undefined;
   readonly clock?: (() => number) | undefined;
-  readonly wait?: ((ms: number) => Promise<void>) | undefined;
+  /** Waits `ms` unless `signal` aborts first; the default clears its timer on abort. */
+  readonly wait?: ((ms: number, signal: AbortSignal) => Promise<void>) | undefined;
   /** The stream to read; defaults to the process's standard input. */
   readonly stream?: StdinStream | undefined;
 }
@@ -31,10 +32,26 @@ async function collect(stream: StdinStream): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+/** Waits `ms`, or until `signal` aborts; either way the timer is gone. */
+function timerWait(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
+}
+
 /**
  * Reads standard input with a deadline. A stream that never ends is stopped
  * when the deadline passes, so the caller gets an answer instead of waiting
- * forever. The clock and wait are injectable; production uses real time.
+ * forever. A read that finishes first stops the deadline's wait as well. The
+ * clock and wait are injectable; production uses real time.
  */
 export async function readStdinWithin(
   input: string | undefined,
@@ -52,13 +69,12 @@ export async function readStdinWithin(
   }
 
   const clock = options.clock ?? (() => Date.now());
-  const wait =
-    options.wait ??
-    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const wait = options.wait ?? timerWait;
   const deadline = clock() + options.timeoutMs;
+  const stop = new AbortController();
   const timeout = (async (): Promise<"timedOut"> => {
-    while (clock() < deadline) {
-      await wait(Math.max(1, deadline - clock()));
+    while (!stop.signal.aborted && clock() < deadline) {
+      await wait(Math.max(1, deadline - clock()), stop.signal);
     }
     return "timedOut";
   })();
@@ -75,6 +91,9 @@ export async function readStdinWithin(
       // The stream already ended.
     }
     void reading.catch(() => undefined);
+  } else {
+    // Nothing is waiting for the deadline any more, so drop its timer.
+    stop.abort();
   }
   return outcome;
 }

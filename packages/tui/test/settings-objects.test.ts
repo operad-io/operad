@@ -80,6 +80,22 @@ describe("objects under settings", () => {
     expect(entries.some((entry) => entry.groupTitle === "Bot proposal")).toBe(false);
   });
 
+  test("a settings object is found by the group title a person sees, not its type", () => {
+    let state = reduce(initialState({ width: 120, height: 24 }), {
+      type: "types",
+      types: [{ type: "bot", title: "Agent", plugin: "bot", settings: true }],
+    });
+    state = reduce(state, {
+      type: "settings-objects",
+      entries: [{ row: row("default", "default"), type: "bot" }],
+    });
+    const entries = paletteEntries({
+      ...state,
+      input: { kind: "palette", query: "Agent", cursor: 0 },
+    });
+    expect(entries.map((entry) => entry.name)).toEqual(["default"]);
+  });
+
   test("Enter opens the bot's page; the chat entry can start a chat on it", () => {
     let state = reduce(stateWithBots(), { type: "key", key: ":", text: ":" });
     state = {
