@@ -667,6 +667,11 @@ the row fields.
 |---|---|---|---|
 | T-0331-M1 | packages/engine/src/plugin/load.ts | the error for a key the module does not provide went back to "the module declares the name" | `a plugin key the module does not provide > is an unknown-plugin error, not a name mismatch` |
 
+## T-0350 — a plugin-store writer is not starved into SQLITE_BUSY
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0350-M1 | packages/engine/src/platform/sqlite-open.ts | `writeImmediate` rethrew every SQLITE_BUSY instead of retrying while another connection committed | `store lifecycle and concurrency > a writer waits out a busy store while another process keeps committing, and fails when none does` |
 ## T-0336 — a pending question is answered by its wait id
 
 | id | file | mutation | failing test |
