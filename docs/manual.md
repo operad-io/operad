@@ -357,7 +357,10 @@ Every theme defines the same tokens: `text`, `weak` (secondary text), `rule`
 `operad tui` uses the terminal size: at 100 columns or wider the list and the
 object pane sit side by side, and below 100 columns the list fills the screen
 and an open object replaces it until `escape`. The header counts Pending and
-Running and then names every object type from `/v1/types`. The right pane says
+Running and then names every plugin that has a tab. A plugin whose objects
+belong under settings gets no tab: its objects are listed in the `:` palette's
+settings area, one group per type, and open from there as from Pending,
+Running or a group heading in another tab. The right pane says
 `select an object` until a row is opened. `enter` opens the selected row with
 `GET /v1/objects/<id>`: the pane starts with that row (id, title, state, note
 badge and mark), then the section tabs in the server's order (History last), then the
@@ -402,7 +405,7 @@ loads the section. Every key the app reads is below.
 | `r` | key | none | Fetch every list again, and the open object with its live sections. When the open section failed to load, it asks for that section again too. |
 | `a` | key | none | Run the open object's main action, the first one the object offers now (the footer names it with its key). A key bound to an action (below) wins over `a`. On Pending, when the selected item's choices are not actions on its object, `a` opens those choices and answers the question. With no action, one footer line says so. |
 | a bound key | key | `GET /v1/keys` | Run that action on the open object. A user binding in `keys.json` beats a plugin default on the same key. Reserved keys cannot be bound: `enter`, `return`, `escape`, `esc`, `tab`, the arrows (`up`, `down`, `left`, `right`), `pageup`, `pagedown`, `home`, `end`, `space`, `[`, `]`, `:`, `?`, `/`, `b`, `f`, `g`, `j`, `k`, `q`, `r` (letters in either case) and `1`–`9`, as well as Ctrl-C and any Ctrl or Meta chord. A plugin default or `keys.json` entry on a reserved key is dropped; at start one footer line names each dropped key with its action and source. The action stays reachable from the `:` palette, with no key shown. If the object does not offer the action now, one footer line says it is not available. |
-| `:` | key | none | Open the palette: type to fuzzy match the `plugin:action` names the open object offers, each with its key and "needs a note" or "asks to confirm". `↑` / `↓` (or Ctrl-P / Ctrl-N) move, `enter` runs, `escape` closes. With no object open it lists nothing but "no object is selected". |
+| `:` | key | none | Open the palette: type to fuzzy match the `plugin:action` names the open object offers, each with its key and "needs a note" or "asks to confirm", the TUI's own commands and the settings. A plugin whose objects belong under settings lists them here in a group named after each type; `enter` opens that object's page. `↑` / `↓` (or Ctrl-P / Ctrl-N) move, `enter` runs, `escape` closes. With no object open it lists nothing but "no object is selected". |
 | note input | key | none | An action with a note field opens a text input. Typing adds text, `backspace` deletes, `shift-enter` or `Ctrl-J` adds a line, `enter` sends and `escape` cancels. A required note cannot be sent empty. |
 | confirmation | key | none | An action that asks to confirm shows `<action> <id>? [y/N]` in red. `y` sends it with `confirmed: true`; any other key cancels. |
 | `?` | key | none | Show or hide the key list. |
@@ -445,7 +448,7 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 
 | Method and path | What it returns |
 |---|---|
-| `GET /v1/types` | `{ "types": [{ "type": "task", "title": "Task", "plugin": "dev" }] }`: the object types with views, their display names and the name of the plugin each belongs to (a client groups types by it). A type that declares filters also carries `"filters"`, in display order (`[{ "name": "active", "states": ["proposed", ...] }, { "name": "all" }, ...]`), and `"defaultFilter"`. A type without filters carries neither. |
+| `GET /v1/types` | `{ "types": [{ "type": "task", "title": "Task", "plugin": "dev" }] }`: the object types with views, their display names and the name of the plugin each belongs to (a client groups types by it). A type that declares filters also carries `"filters"`, in display order (`[{ "name": "active", "states": ["proposed", ...] }, { "name": "all" }, ...]`), and `"defaultFilter"`. A type without filters carries neither. Every type of a plugin that declares `objectsUnderSettings` also carries `"settings": true`: such a plugin gets no tab of its own, and its top-level objects belong under settings. |
 | `GET /v1/keys` | `{ "keys": [{ "key": "m", "action": "dev:merge", "source": "plugin" }] }`: the key bindings in force, the plugins' defaults with the person's `keys.json` overrides applied; `source` is `user` for an override. |
 | `GET /v1/objects?type=<type>&filter=<name>&cursor=<c>` (also `root` and `parent=<id>`, see [Levels](#levels)) | `{ "rows": [...], "next": "<c>", "hidden": 3 }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, `wait`, `mark` and `badge` (see [Row marks](#row-marks)), plus `waiting` and `running`; an error row also carries `error`. `filter` keeps the rows the named filter shows, and `hidden` counts the rows of the type it left out (the whole type, not only this page). Without `filter` the type's default filter applies when it has filters; a type without filters lists every row and has no `hidden`. `filter=all` lists every row and has no `hidden`. An unknown name is a `400` that names the allowed ones. `next` pages within the filtered list. |
 | `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. A question carries `waitId`, the id an answer quotes. A wait that its plugin is about to answer automatically (dev: a passed review of a task in a plan at auto merge) is not listed, so the count does not flicker; it is listed if the automatic answer does not come. An item a plugin raises without a run waiting (`kind` `standing`, no actions, `runId` `<plugin>:<id>`) is in the list too, and goes when the plugin stops reporting it. An item that is about an object also carries `object` (`<type>:<id>`), its `link` and its `row`: the same row `GET /v1/objects?type=…` returns for that object (`id`, `title`, `state`, optional `note`, `mark`, `badge`, `waiting`, `running`), so a client does not read each object. When the row cannot be built (the object is gone, no loaded plugin shows its type, or the plugin's row fails) the item carries the error row the list shows for a bad row, with `state` `error` and an `error` message; the list itself never fails for one object. A candidate has no object and no `row`. `operad pending` prints the row's title under each line that has one. |
@@ -1351,18 +1354,18 @@ A chat is a long conversation with an agent. The `chat` plugin comes with
 repository:
 
 ```
-operad dev:chat --repo operad --title "The build" [--harness pi]
+operad dev:chat --repo operad --title "The build" [--agent pi]
 operad chat:send C-0001 --note "why does the gate fail on main?"
 operad show C-0001 --section transcript
 ```
 
-`dev:chat` offers `claude` and `pi` (the first one loaded when `--harness` is left out): they can stop a tool call before it starts, which a read-only chat needs. `radian` is refused there and stays for bot chats.
+`dev:chat` offers `claude` and `pi` as agents (the first one loaded when `--agent` is left out): they can stop a tool call before it starts, which a read-only chat needs. `radian` is refused there as an agent and stays for bot chats.
 
 `chat:send` records the message and sends an event (source `ios`, `telegram` or
 `cli`, key = the message id, about the chat). The plugin's own rule starts
 `chat:reply` for each of the three sources, automatically; a rule of yours in
 `triggers.json` with the same source and type replaces it. The reply reads the
-messages no reply answers yet from the chat's own record, continues the harness
+messages no reply answers yet from the chat's own record, continues the agent
 session, records the reply, and goes round again while new messages came in
 meanwhile (at most 20 rounds). After a restart a reply that was already
 recorded is not given twice.

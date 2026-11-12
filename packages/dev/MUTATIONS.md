@@ -978,3 +978,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0343-M2 | packages/dev/src/places.ts | a verify no longer read the integration's last place grant, so it missed the passed-over line when the integration left the wait order first | `check places are served in the order checks began to wait > a verify says it was passed over when the integration leaves the wait order before the next look` |
+## T-0333 — a chat's choice is called an agent
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0333-M1 | packages/dev/src/chat.ts | `dev:chat` still read its argument under the old `harness` name, so `--agent pi` was ignored and the first loaded agent was used | `dev:chat > the agent is the one given, else the first offered one that is loaded` |

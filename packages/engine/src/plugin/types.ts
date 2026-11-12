@@ -1072,6 +1072,13 @@ export interface PluginShape {
     | undefined;
   /** The JSON Schema of this plugin's `config.json` settings section. */
   readonly settings?: ActionArgsSchema | undefined;
+  /**
+   * True when the plugin's objects belong under a client's settings view
+   * instead of a tab of their own (a bot: its page is a bot's settings). A
+   * client gives such a plugin no tab; the types listing marks each of its
+   * types `settings: true`.
+   */
+  readonly objectsUnderSettings?: boolean | undefined;
   /** Settings files this plugin keeps under a registered repository's `.operad/`. */
   readonly projectSettings?: ProjectSettingsDeclaration | undefined;
   /** Access profile fields this plugin's steps apply. */

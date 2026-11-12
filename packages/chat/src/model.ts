@@ -238,7 +238,7 @@ export async function createChat(
   input: NewChat,
   cause: string,
 ): Promise<string> {
-  if (input.harness.trim().length === 0) throw new Error("a chat needs a harness");
+  if (input.harness.trim().length === 0) throw new Error("a chat needs an agent");
   if (input.cwd.trim().length === 0) throw new Error("a chat needs a working directory");
   if (input.title.trim().length === 0) throw new Error("a chat needs a title");
   const data: ChatData = {

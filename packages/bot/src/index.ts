@@ -102,11 +102,11 @@ export async function openChat(input: OpenChat): Promise<string> {
   const bot = resolveBot(input.home, input.bot, written, await repositoryPaths(input.store));
   const harness = input.harness ?? bot.harness ?? input.harnesses[0];
   if (harness === undefined) {
-    throw new BotError("no harness is loaded; load one to chat with the bot");
+    throw new BotError("no agent is loaded; load one to chat with the bot");
   }
   if (!input.harnesses.includes(harness)) {
     throw new BotError(
-      `harness "${harness}" is not loaded; the loaded ones are: ${input.harnesses.join(", ") || "none"}`,
+      `agent "${harness}" is not loaded; the loaded ones are: ${input.harnesses.join(", ") || "none"}`,
     );
   }
   mkdirSync(bot.cwd, { recursive: true });
@@ -125,7 +125,7 @@ export async function openChat(input: OpenChat): Promise<string> {
   );
 }
 
-/** The `chat` arguments with the harnesses loaded now as the choice. */
+/** The `chat` arguments with the harness plugins loaded now as the choice. */
 function chatArgs(harnesses: readonly string[], botHarness: unknown): ActionArgsSchema {
   const first = harnesses[0];
   const fallback = typeof botHarness === "string" && harnesses.includes(botHarness) ? botHarness : first;
@@ -133,11 +133,11 @@ function chatArgs(harnesses: readonly string[], botHarness: unknown): ActionArgs
     type: "object",
     description: "Opens a chat with the bot.",
     properties: {
-      harness: {
+      agent: {
         type: "string",
         ...(harnesses.length === 0 ? {} : { enum: [...harnesses] }),
         ...(fallback === undefined ? {} : { default: fallback }),
-        description: "One of the loaded harness plugins. It cannot change later.",
+        description: "Which agent answers in this chat; it cannot change later.",
       },
       title: { type: "string", minLength: 1, maxLength: 120, description: "What the chat is called." },
       message: {
@@ -162,18 +162,18 @@ const chatAction: ActionTypeDefinition = {
   async why(object, env) {
     if (object.data.removed === true) return `bot ${object.id} is no longer in the settings`;
     if (typeof object.data.problem === "string") return `bot ${object.id}: ${object.data.problem}`;
-    if ((env.harnesses ?? []).length === 0) return `bot ${object.id}: no harness is loaded; load one to chat with it`;
+    if ((env.harnesses ?? []).length === 0) return `bot ${object.id}: no agent is loaded; load one to chat with it`;
     return undefined;
   },
   async run(ctx, args) {
-    const input = args as { readonly harness?: string; readonly title?: string; readonly message?: string };
+    const input = args as { readonly agent?: string; readonly title?: string; readonly message?: string };
     const id = await openChat({
       store: ctx.store,
       home: ctx.home,
       settings: ctx.settings,
       harnesses: ctx.harnesses,
       bot: ctx.object.id,
-      harness: input.harness,
+      harness: input.agent,
       title: input.title ?? (input.message === undefined ? undefined : titleFromMessage(input.message)),
       cause: "action:bot/chat",
     });
@@ -218,7 +218,7 @@ function botMarkdown(object: StoredObject): string {
   const lines = [`**${object.id}**`];
   if (typeof data.problem === "string") lines.push(`Cannot be used: ${data.problem}`);
   if (typeof data.cwd === "string") lines.push(`Working directory: ${data.cwd}`);
-  if (typeof data.harness === "string") lines.push(`Default harness: ${data.harness}`);
+  if (typeof data.harness === "string") lines.push(`Default agent: ${data.harness}`);
   if (typeof data.speaker === "string") lines.push(`Speaker: ${data.speaker}`);
   const skills = Array.isArray(data.skills) ? data.skills : [];
   lines.push(skills.length === 0 ? "No skills." : `Skills: ${skills.join(", ")}`);
@@ -244,6 +244,8 @@ export function createBotPlugin() {
     version: "0.0.0",
     requires: { plugins: { chat: "^0.0.0" } },
     settings: BOT_SETTINGS,
+    // A bot page is that bot's settings page; bots live under settings, not in a tab.
+    objectsUnderSettings: true,
     objects: [
       {
         name: BOT_TYPE,

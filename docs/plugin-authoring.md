@@ -330,6 +330,26 @@ types by plugin, list the top level with `root`, and open one level down with
 "Levels" section for the exact behaviour, including the order of a list across
 types and what an unknown parent returns.
 
+## Putting objects under settings
+
+A plugin whose top-level objects are really settings (a bot's page is that bot's
+settings) declares `objectsUnderSettings: true`. No client gives such a plugin a
+tab of its own: its top-level objects are listed in the settings view, one group
+per type, and open from there as they do from Pending, Running or a group
+heading in another tab. Every type of the plugin carries `"settings": true` in
+`GET /v1/types` and in the MCP `types` tool, so a client needs no plugin name.
+
+```typescript
+export default definePlugin({
+  name: "bot",
+  kind: "domain",
+  version: "0.1.0",
+  objects: [{ name: "bot" }],
+  objectsUnderSettings: true,
+  // ...
+});
+```
+
 ## What an action returns
 
 An action's `run` returns the line of text a person reads, or nothing. An action

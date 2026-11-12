@@ -50,6 +50,9 @@ const kernelNamePluginPath = fileURLToPath(
 const channelPluginPath = fileURLToPath(
   new URL("./fixtures/channel.ts", import.meta.url),
 );
+const settingsPluginPath = fileURLToPath(
+  new URL("./fixtures/settings.ts", import.meta.url),
+);
 const refusedPluginPath = fileURLToPath(
   new URL("./fixtures/refused.ts", import.meta.url),
 );
@@ -402,6 +405,31 @@ describe("operad mcp", () => {
 
   test("offers no tool to read or change settings: owner decisions are not offered here", () => {
     expect(TOOLS.map((tool) => tool.name).filter((name) => /set/i.test(name))).toEqual([]);
+  });
+
+  test("the types tool lists every type and marks the ones a plugin puts under settings", async () => {
+    const { home } = await makeHome({ plugins: [settingsPluginPath] });
+    const child = openSession(home);
+    try {
+      const listed = await child.request(1, "tools/call", {
+        name: "types",
+        arguments: {},
+      });
+      const types = structuredOf(listed).types as {
+        type: string;
+        title: string;
+        plugin: string;
+        settings?: boolean;
+      }[];
+      expect(types).toEqual([
+        { type: "book", title: "Book", plugin: "shelf", settings: true },
+      ]);
+      const textBlock = (resultOf(listed).content as { text: string }[])[0]?.text ?? "";
+      expect(textBlock).toContain("| book | Book | shelf | yes |");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
   });
 
   test("initializes, lists the table and reads every tool on fixture objects", async () => {
