@@ -383,9 +383,7 @@ function progressBar(
   width: number,
   palette: TuiPalette,
 ): TextChunk[] {
-  const cancelled =
-    progress.entries.filter((entry) => cancelledRow(entry.row)).length +
-    progress.hiddenCancelled;
+  const cancelled = progress.entries.filter((entry) => cancelledRow(entry.row)).length;
   const cells = progress.total + cancelled;
   if (cells === 0) return [];
   const done = Math.min(progress.done, progress.total);
@@ -496,16 +494,10 @@ function childrenContent(
   width: number,
 ): TextChunk[] {
   const children = object.children;
-  if (children === undefined || children.rows.length + (children.hidden ?? 0) === 0) {
+  if (children === undefined || children.rows.length === 0) {
     return [];
   }
-  const progress = childProgress(
-    children.rows,
-    state.childLayout,
-    children.hidden,
-    children.hiddenDone,
-    children.hiddenCancelled,
-  );
+  const progress = childProgress(children.rows, state.childLayout);
   const shown = displayChildren(children.rows, state.childLayout);
   const type = shown[0]?.row.type ?? "";
   const columns = childColumns(shown, width);

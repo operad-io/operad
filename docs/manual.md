@@ -375,8 +375,10 @@ the tab and, unless the filter is `all`, ` · N hidden`. The selection stays on
 the same object when the new filter still shows it, and moves to the first row
 otherwise. An object that leaves the filter through a live update leaves the
 list. Beside an open object, `f` loads the whole section when it is capped and
-cycles the filter otherwise; on a narrow screen with an object open it only
-loads the section. Every key the app reads is below.
+cycles the filter otherwise; the open object's next level follows that filter
+too, so its progress bar and numbers count only the rows the list shows. On a
+narrow screen with an object open it only loads the section. Every key the app
+reads is below.
 
 | Input | Type | Default | Allowed values |
 |---|---|---|---|

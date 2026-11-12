@@ -100,7 +100,7 @@ export interface TuiChildren {
   readonly cursor: number;
   /** The keys move in this list instead of the left one. */
   readonly focused: boolean;
-  /** How many children the list's filter left out; they still call for progress. */
+  /** How many children the list's filter left out. */
   readonly hidden?: number | undefined;
   /** How many hidden children are done. */
   readonly hiddenDone?: number | undefined;
@@ -556,6 +556,10 @@ export type TuiStateEvent =
       readonly hiddenDone?: number | undefined;
       /** How many hidden children are cancelled. */
       readonly hiddenCancelled?: number | undefined;
+      /** The filter the children were asked under; another filter's answer is dropped. */
+      readonly filter?: string | undefined;
+      /** The filter-cycle count they were asked under; an older one is dropped. */
+      readonly filterSeq?: number | undefined;
     }
   | {
       readonly type: "pending";
@@ -964,28 +968,19 @@ export interface TuiChildProgress {
   readonly entries: readonly TuiChildEntry[];
   readonly done: number;
   readonly total: number;
-  /** Children the list's filter left out. */
-  readonly hidden: number;
-  /** Hidden children that are cancelled; they keep their bar cells. */
-  readonly hiddenCancelled: number;
 }
 
 export function childProgress(
   rows: readonly TuiRow[],
   layout: TuiChildLayout,
-  hidden = 0,
-  hiddenDone = hidden,
-  hiddenCancelled = 0,
 ): TuiChildProgress {
   const shown = displayChildren(rows, layout);
   const active = shown.filter((entry) => !cancelledRow(entry.row));
   const cancelled = shown.filter((entry) => cancelledRow(entry.row));
   return {
     entries: [...active, ...cancelled],
-    done: active.filter((entry) => doneRow(entry.row)).length + hiddenDone,
-    total: shown.length + hidden - cancelled.length - hiddenCancelled,
-    hidden,
-    hiddenCancelled,
+    done: active.filter((entry) => doneRow(entry.row)).length,
+    total: active.length,
   };
 }
 
@@ -1831,7 +1826,7 @@ export const CHILD_ROWS = 8;
 /** The lines the next level takes in the page: the bar, its heading and its rows. */
 export function childLines(object: TuiObject | undefined): number {
   const children = object?.children;
-  if (children === undefined || children.rows.length + (children.hidden ?? 0) === 0) return 0;
+  if (children === undefined || children.rows.length === 0) return 0;
   return Math.min(children.rows.length, CHILD_ROWS) + 2;
 }
 
@@ -2258,20 +2253,53 @@ function replaceRow(state: TuiState, row: TuiRow): TuiState {
 
 /** Puts a fresh row in place of the same object's row on the open page's next level. */
 function replacePageRow(state: TuiState, row: TuiRow): TuiState {
-  const children = state.object?.children;
-  if (children === undefined || !children.rows.some((old) => sameObject(old.id, row.id))) {
-    return state;
+  const object = state.object;
+  const children = object?.children;
+  if (object === undefined || children === undefined) return state;
+  const at = children.rows.findIndex((old) => sameObject(old.id, row.id));
+  if (at < 0) return state;
+  const old = children.rows[at] as TuiRow;
+  const next = {
+    ...row,
+    ...(old.type === undefined ? {} : { type: old.type }),
+    ...(old.parent === undefined ? {} : { parent: old.parent }),
+    ...(old.group === undefined ? {} : { group: old.group }),
+    ...(old.bare === true ? { bare: true } : {}),
+  };
+  // The page's next level follows the tab's filter, so a child that no longer
+  // matches leaves the list like the left one does.
+  const tab = pluginTabOf(state, object.type);
+  const states = tab?.types
+    ?.find((info) => info.type === (old.type ?? next.type))
+    ?.filters?.find((filter) => filter.name === tab.filter)?.states;
+  if (states === undefined || next.state === "error" || states.includes(next.state)) {
+    return withChildren(state, (c) => ({
+      ...c,
+      rows: c.rows.map((candidate) => (sameObject(candidate.id, row.id) ? next : candidate)),
+    }));
   }
-  // The page's next level is fetched under `all`, so it never follows the tab's
-  // filter: a child that becomes finished or cancelled stays where it is (T-0305).
-  return withChildren(state, (c) => ({
-    ...c,
-    rows: c.rows.map((candidate) =>
-      sameObject(candidate.id, row.id)
-        ? { ...row, ...(candidate.type === undefined ? {} : { type: candidate.type }) }
-        : candidate,
-    ),
-  }));
+  const selected = displayChildren(children.rows, state.childLayout)[children.cursor]?.row.id;
+  const rows = dropRow(children.rows, at);
+  const shown = displayChildren(rows, state.childLayout);
+  const found = selected === undefined ? -1 : shown.findIndex((entry) => entry.row.id === selected);
+  return withObject(state, (value) =>
+    value.children === undefined
+      ? value
+      : {
+          ...value,
+          children: {
+            ...children,
+            rows,
+            cursor: found >= 0 ? found : Math.min(children.cursor, Math.max(0, shown.length - 1)),
+            focused: rows.length > 0 && children.focused,
+            hidden: (children.hidden ?? 0) + 1,
+            ...(doneRow(next) ? { hiddenDone: (children.hiddenDone ?? 0) + 1 } : {}),
+            ...(cancelledRow(next)
+              ? { hiddenCancelled: (children.hiddenCancelled ?? 0) + 1 }
+              : {}),
+          },
+        },
+  );
 }
 
 function replaceListRow(state: TuiState, row: TuiRow): TuiState {
@@ -2438,8 +2466,8 @@ function appendPage(
     };
   });
   const cleared = clearRequest(state, updated, tabId);
-  // `f` changes the left list only: the open object stays, even when the new
-  // filter hides its row or leaves no row at all (T-0305).
+  // `f` keeps the open object even when the new filter hides its row or leaves
+  // no row at all; its next level follows the new filter.
   if (wasSwitching || !replace) return cleared;
   return followLoaded(cleared, tabId);
 }
@@ -2475,10 +2503,15 @@ function applyChildren(
   hidden?: number | undefined,
   hiddenDone?: number | undefined,
   hiddenCancelled?: number | undefined,
+  filter?: string | undefined,
+  filterSeq?: number | undefined,
 ): TuiState {
   const object = state.object;
   if (object === undefined || object.id !== objectId) return state;
   if (version !== undefined && version !== object.version) return state;
+  const tab = pluginTabOf(state, object.type);
+  if (filterSeq !== undefined && filterSeq !== (tab?.filterSeq ?? 0)) return state;
+  if (filter !== undefined && tab?.filter !== undefined && filter !== tab.filter) return state;
   const rows = entries.map(rowOfEntry);
   const old = object.children;
   const selected =
@@ -2581,6 +2614,8 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
         event.hidden,
         event.hiddenDone,
         event.hiddenCancelled,
+        event.filter,
+        event.filterSeq,
       );
     case "filter-launched":
       return state.filterRequest === undefined
