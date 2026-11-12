@@ -41,13 +41,14 @@ function colourFor(
   }
 }
 
-/** One laid-out row in the palette's colours. */
+/** One laid-out row in the palette's colours; `weak` draws every run in the weak colour. */
 export function chunksOfLine(
   line: LayoutLine,
   palette: MarkdownPalette,
+  weak = false,
 ): TextChunk[] {
   return line.runs.map((run) => {
-    const colour = colourFor(run.style.role, palette);
+    const colour = weak ? palette.weak : colourFor(run.style.role, palette);
     return {
       __isChunk: true,
       text: run.text,

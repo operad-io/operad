@@ -52,6 +52,7 @@ import {
   pageEntries,
   pagePosition,
   sectionLayout,
+  sectionTailLayout,
   sectionWidth,
   listWindow,
   sectionViewport,
@@ -573,14 +574,15 @@ function sectionContent(
     return [chunk(section.loading ? "loading…" : "not loaded", palette.weak)];
   }
   const viewport = sectionViewport(state);
-  const lines = sectionLayout(state, section);
-  const start = Math.min(
-    Math.max(0, section.scroll),
-    Math.max(0, lines.length - 1),
-  );
+  const content = sectionLayout(state, section);
+  const tail = sectionTailLayout(state, section);
+  const total = content.length + tail.length;
+  const start = Math.min(Math.max(0, section.scroll), Math.max(0, total - 1));
   const chunks: TextChunk[] = [];
-  for (const line of lines.slice(start, start + viewport)) {
-    chunks.push(...chunksOfLine(line, palette), chunk("\n"));
+  for (let at = start; at < Math.min(start + viewport, total); at += 1) {
+    const line = at < content.length ? content[at] : tail[at - content.length];
+    if (line === undefined) continue;
+    chunks.push(...chunksOfLine(line, palette, at >= content.length), chunk("\n"));
   }
   return chunks;
 }

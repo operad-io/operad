@@ -153,6 +153,7 @@ export interface TuiShellClient {
     section: string,
     options?: {
       readonly cursor?: string | undefined;
+      readonly after?: string | undefined;
       readonly full?: boolean | undefined;
       readonly signal?: AbortSignal | undefined;
     },
@@ -462,6 +463,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     let next: string | undefined;
     let cursor: string | undefined = start.cursor;
     let read = 0;
+    let mark: string | undefined;
+    let tail: string | undefined;
     const marks: number[] = [];
     do {
       const content = await load.call(client, wire(id), sectionId, {
@@ -473,10 +476,19 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       markdown = read === 0 ? content.markdown : joinMarkdown(markdown, content.markdown);
       next = content.next;
       cursor = next;
+      // The last page read holds where the finished content ends and what is
+      // still changing; a later refresh continues from there.
+      mark = content.mark;
+      tail = content.tail;
       read += 1;
     } while (next !== undefined && read < Math.max(1, pages));
     return {
-      content: next === undefined ? { markdown } : { markdown, next },
+      content: {
+        markdown,
+        ...(next === undefined ? {} : { next }),
+        ...(mark === undefined ? {} : { mark }),
+        ...(tail === undefined ? {} : { tail }),
+      },
       pages: read,
       marks,
     };
@@ -890,7 +902,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       work.push(refreshRow(id, signal, fail));
     }
     if (targets.object) {
-      work.push(refreshObjectPane(signal, state.object, fail));
+      work.push(refreshObjectPane(signal, state.object, fail, false));
     }
     await Promise.all(work);
   }
@@ -1025,6 +1037,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     signal: AbortSignal,
     objectAtStart: TuiObject | undefined,
     fail: (error: unknown) => void,
+    whole = true,
   ): Promise<void> {
   const open = state.object;
   if (
@@ -1057,11 +1070,58 @@ export function startShell(deps: TuiShellDeps): TuiShell {
             current?.sections.filter(
               (section) => section.live && section.loaded && !section.loading,
             ) ?? [];
-          if (client.section !== undefined) {
+          const load = client.section;
+          if (load !== undefined) {
+            const lost = (
+              error: unknown,
+              objectId: string,
+              sectionId: string,
+              sectionVersion: number,
+              objectVersion: number,
+            ): void => {
+              if (!noteConnection(error)) {
+                dispatch({
+                  type: "section-error",
+                  objectId,
+                  sectionId,
+                  message: messageOf(error),
+                  version: sectionVersion,
+                  objectVersion,
+                });
+              }
+            };
             await Promise.all(
               live.map(async (section) => {
                 const objectId = current?.id ?? id;
                 const objectVersion = current?.version ?? version;
+                // A live section whose last read gave a mark reads only what
+                // follows it; a whole refresh (after `r` or a reconnect) reads
+                // it again from the start.
+                if (!whole && section.mark !== undefined) {
+                  const read = await settle(
+                    load.call(client, wire(objectId), section.id, {
+                      after: section.mark,
+                      ...(section.full ? { full: true } : {}),
+                      signal: scoped.signal,
+                    }),
+                  );
+                  if (scoped.signal.aborted || finished) return;
+                  if (!read.ok) {
+                    lost(read.error, objectId, section.id, section.version, objectVersion);
+                    return;
+                  }
+                  dispatch({
+                    type: "section",
+                    objectId,
+                    sectionId: section.id,
+                    content: read.value,
+                    full: section.full,
+                    version: section.version,
+                    objectVersion,
+                    after: true,
+                  });
+                  return;
+                }
                 const fetched = await settle(
                   fetchSectionDepth(
                     objectId,
@@ -1074,16 +1134,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
                 );
                 if (scoped.signal.aborted || finished) return;
                 if (!fetched.ok) {
-                  if (!noteConnection(fetched.error)) {
-                    dispatch({
-                      type: "section-error",
-                      objectId,
-                      sectionId: section.id,
-                      message: messageOf(fetched.error),
-                      version: section.version,
-                      objectVersion,
-                    });
-                  }
+                  lost(fetched.error, objectId, section.id, section.version, objectVersion);
                   return;
                 }
                 if (fetched.value === undefined) return;

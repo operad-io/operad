@@ -426,3 +426,16 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0361-M9 | packages/tui/src/client.ts | a section read left `after` out of the query | `TuiClient > a section read passes after and keeps mark, tail and delta` |
+
+## T-0364 — the TUI reads a live section after its mark and draws the tail
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0364-M1 | packages/tui/src/app.ts | a change read the live section whole instead of asking with its mark | `a live section reads after its mark > a change asks with after, appends the delta and replaces the tail` |
+| T-0364-M2 | packages/tui/src/app.ts | the answer to an after read was dispatched without its after flag, so it was shown as a page | `a live section reads after its mark > a change asks with after, appends the delta and replaces the tail` |
+| T-0364-M3 | packages/tui/src/state.ts | an after read appended even when the answer said it was a whole page | `a live section reads after its mark > a whole page that ignored after replaces the content instead of appending` |
+| T-0364-M4 | packages/tui/src/view/index.ts | the tail was drawn in its own Markdown roles instead of the weak colour | `the tail is drawn after the content > it is drawn as Markdown in the weak colour, and nothing stays once it is gone` |
+| T-0364-M5 | packages/tui/src/state.ts | a read that gave no tail kept the old one on screen | `the tail is drawn after the content > it is drawn as Markdown in the weak colour, and nothing stays once it is gone` |
+| T-0364-M6 | packages/tui/src/state.ts | the bottom counted only the content, so a growing tail was not followed | `a live section follows its end as content and tail grow > at the bottom it stays there; scrolled up it stays where it is` |
+| T-0364-M7 | packages/tui/src/app.ts | a whole refresh (after `r` or a reconnect) also read after the mark instead of reading the section whole once | `a live section reads after its mark > after a reconnect the section is read whole once, then continues from its new mark` |
+| T-0364-M8 | packages/tui/src/app.ts | a section that gave no mark asked with an empty `after` instead of being read whole | `a live section reads after its mark > a section that gives no mark is fetched as before` |
