@@ -14,6 +14,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import type { FlowDefinition } from "../flow/types.ts";
+import { isRecord } from "../util.ts";
 
 /** One flow a plugin declared, with the plugin that made it. */
 export interface StoredDeclaredFlow {
@@ -22,10 +23,6 @@ export interface StoredDeclaredFlow {
 }
 
 const DIRECTORY = "flows";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function directoryOf(root: string): string {
   return join(root, DIRECTORY);
