@@ -94,6 +94,12 @@ export interface ClaudeHarnessOptions {
   readonly args?: readonly string[] | undefined;
 }
 
+/** The models a chat may pick with this agent, and the one used when none is set. */
+export const CLAUDE_MODELS = {
+  list: ["opus", "sonnet", "haiku"],
+  default: "sonnet",
+} as const;
+
 /** The settings a config.json section may set for this plugin. */
 export const PLUGIN_SETTINGS = {
   type: "object" as const,
@@ -199,6 +205,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
     name: HARNESS,
     kind: "harness",
     version: "0.0.0",
+    models: CLAUDE_MODELS,
     settings: PLUGIN_SETTINGS,
     steps: [
       {

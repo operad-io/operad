@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { PluginRegistry, definePlugin, type CommandContext, type StoredObject, type TriggerEvent } from "@operad-io/engine";
+import { PluginRegistry, Views, definePlugin, type CommandContext, type StoredObject, type TriggerEvent } from "@operad-io/engine";
 import { createChatPlugin, createChat, allMessages, CHAT_TYPE, titleFromMessage } from "@operad-io/chat";
 import { createShellPlugin } from "@operad-io/shell";
 import { addPlan, addRepository, CHAT_HARNESSES, chatActions, commands, createDevPlugin, RADIAN_NOTE, taskData } from "../src/index.ts";
@@ -16,6 +16,7 @@ function fakeHarness(name: string) {
     name,
     kind: "harness",
     version: "0.0.0",
+    models: name === "radian" ? { list: [], default: null } : { list: [`${name}-a`, `${name}-b`], default: `${name}-a` },
     steps: [{ name: "agent", results: ["done", "failed", "interrupted"], run: () => ({ result: "failed" }) }],
   });
 }
@@ -97,6 +98,27 @@ describe("dev:chat with a first message", () => {
     const r = await rig();
     expect(chatActions[0]?.creates).toBe("chat");
     expect(r.registry.actions().find((info) => info.name === "dev:chat")?.creates).toBe("chat");
+  });
+});
+
+describe("dev:chat and the model", () => {
+  test("a new chat starts with the agent's default model, or the one asked for from that agent's list", async () => {
+    const r = await rig();
+    expect((await must(r.store, CHAT_TYPE, await openChat(r))).data.model).toBe("claude-a");
+    expect((await must(r.store, CHAT_TYPE, await openChat(r, { agent: "pi" }))).data.model).toBe("pi-a");
+    expect((await must(r.store, CHAT_TYPE, await openChat(r, { agent: "pi", model: "pi-b" }))).data.model).toBe("pi-b");
+  });
+
+  test("a model another agent lists is refused by name", async () => {
+    const r = await rig();
+    await expect(openChat(r, { agent: "pi", model: "claude-a" })).rejects.toThrow(/claude-a/);
+  });
+
+  test("the model argument is an enum of the offered agents' models", async () => {
+    const r = await rig();
+    const views = new Views({ registry: r.registry, store: r.store, onLog: () => undefined });
+    const chat = (await views.get("repo:repository")).actions.find((a) => a.name === "dev:chat");
+    expect(chat?.args?.properties?.model?.enum).toEqual(["claude-a", "claude-b", "pi-a", "pi-b"]);
   });
 });
 

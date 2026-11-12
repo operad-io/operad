@@ -159,15 +159,34 @@ export class SqlitePluginStore implements PluginStore {
     }
   }
 
+  /**
+   * Record the type and its index fields. Every command loads the plugins and
+   * so calls this, `list` among them: it writes only when the stored
+   * declaration differs, so a command that only reads never waits for the
+   * write lock a running `serve` keeps taking (and never fails with "database
+   * is locked" when serve holds it past the busy timeout). A change is one
+   * transaction, so a reader never sees the index half replaced.
+   */
   declare(type: string, index: readonly string[]): void {
-    this.db
-      .query("INSERT OR IGNORE INTO declared_types (type) VALUES (?)")
-      .run(type);
-    this.db.query("DELETE FROM declared_index WHERE type = ?").run(type);
-    const insert = this.db.query(
-      "INSERT OR IGNORE INTO declared_index (type, field) VALUES (?, ?)",
-    );
-    for (const field of index) insert.run(type, field);
+    const fields = [...new Set(index)].sort();
+    const stored = this.declaredIndex(type);
+    if (
+      stored !== undefined &&
+      stored.length === fields.length &&
+      stored.every((field, position) => field === fields[position])
+    ) {
+      return;
+    }
+    writeImmediate(this.db, () => {
+      this.db
+        .query("INSERT OR IGNORE INTO declared_types (type) VALUES (?)")
+        .run(type);
+      this.db.query("DELETE FROM declared_index WHERE type = ?").run(type);
+      const insert = this.db.query(
+        "INSERT OR IGNORE INTO declared_index (type, field) VALUES (?, ?)",
+      );
+      for (const field of fields) insert.run(type, field);
+    });
   }
 
   put(type: string, id: string, data: ObjectData, cause: string): StoredObject {

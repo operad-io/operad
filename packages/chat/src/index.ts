@@ -1,6 +1,6 @@
 /** The chat plugin: a long conversation with an agent, and how a message is answered. */
 
-import { defineFlow, definePlugin, type ActionContext, type ActionTypeDefinition } from "@operad-io/engine";
+import { defineFlow, definePlugin, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition } from "@operad-io/engine";
 import {
   CHAT_FILTERS,
   CHAT_SOURCES,
@@ -11,8 +11,10 @@ import {
   CLOSED_FACT,
   MESSAGE_EVENT,
   MESSAGE_FACT,
+  MODEL_FACT,
   newMessageId,
   type ClosedData,
+  type ModelChangedData,
   type MessageData,
 } from "./model.ts";
 import { runReply } from "./reply.ts";
@@ -134,6 +136,69 @@ const sendAction: ActionTypeDefinition = {
   },
 };
 
+/** The models the chat's agent lists, as the enum of `chat:model`. */
+function modelArgs(models: readonly string[]): ActionArgsSchema {
+  return {
+    type: "object",
+    properties: {
+      model: {
+        type: "string",
+        ...(models.length === 0 ? {} : { enum: [...models] }),
+        description: "The model the next reply uses.",
+      },
+    },
+    required: ["model"],
+    additionalProperties: false,
+  };
+}
+
+const modelAction: ActionTypeDefinition = {
+  name: "model",
+  on: CHAT_TYPE,
+  args: modelArgs([]),
+  argsFor: (object, env) => modelArgs(env.models?.[chatData(object.data).harness]?.list ?? []),
+  when: (state, env) =>
+    !chatData(state).closed && (env.models?.[chatData(state).harness]?.list.length ?? 0) > 0,
+  why: (object, env) => {
+    const chat = chatData(object.data);
+    if (chat.closed) return `${object.id} is closed; its model cannot change`;
+    if ((env.models?.[chat.harness]?.list.length ?? 0) === 0) {
+      return `the agent "${chat.harness}" offers no model to pick`;
+    }
+    return undefined;
+  },
+  async run(ctx, args) {
+    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+    const chat = chatData(stored.data);
+    if (chat.closed) throw new Error(`chat ${ctx.object.id} is closed; its model cannot change`);
+    const model = (args as { readonly model: string }).model;
+    const offered = ctx.models[chat.harness]?.list ?? [];
+    if (!offered.includes(model)) {
+      throw new Error(
+        `the agent "${chat.harness}" cannot use the model "${model}"; it offers: ${offered.join(", ") || "none"}`,
+      );
+    }
+    if (chat.model === model) return `chat ${ctx.object.id} already uses ${model}`;
+    const changed: ModelChangedData = {
+      by: { via: ctx.actor.via, id: ctx.actor.id },
+      from: chat.model ?? null,
+      to: model,
+    };
+    await ctx.facts.append({
+      type: MODEL_FACT,
+      object: chatRef(ctx.object.id),
+      data: changed,
+    });
+    // Read again: a reply may have moved the session while the fact was written.
+    const fresh = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+    if (fresh !== undefined) {
+      await ctx.store.put(CHAT_TYPE, ctx.object.id, { ...fresh.data, model }, "action:chat/model");
+    }
+    return `chat ${ctx.object.id} now uses ${model}; the next reply uses it`;
+  },
+};
+
 const closeAction: ActionTypeDefinition = {
   name: "close",
   on: CHAT_TYPE,
@@ -203,7 +268,7 @@ export function createChatPlugin() {
       object: "$event.object",
       mode: "auto" as const,
     })),
-    actions: [sendAction, closeAction],
+    actions: [sendAction, modelAction, closeAction],
     views: { [CHAT_TYPE]: chatViews },
   });
 }
