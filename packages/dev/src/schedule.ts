@@ -34,6 +34,7 @@ import {
   setAreaHold,
   setDependencyHold,
   setFlowNote,
+  setSlotHold,
   clearOldestPlanSlot,
   listRepositories,
   recordAutoMerge,
@@ -873,9 +874,46 @@ async function scheduleRepository(
     );
   }
 
+  const plansById = new Map(plans.map((object) => [bareId(object.id), planData(object.data)]));
+
+  // Say why a ready task that could otherwise start does not: the plan's or
+  // the repository's slots are full, or a plugin dev needs is not loaded.
+  const heldBy = (holders: readonly string[]): string => {
+    const [first = "", ...more] = holders;
+    return more.length === 0 ? first : `${first} and ${more.length} more`;
+  };
+  const activeIds = (inPlan: string | undefined): readonly string[] =>
+    current
+      .filter((object) => {
+        const task = taskData(object.data);
+        return (isActive(task) || started.has(object.id)) && (inPlan === undefined || task.plan === inPlan);
+      })
+      .map((object) => bareId(object.id))
+      .sort();
+  const missing = missingPlugins(ctx.loaded).map((plugin) => plugin.name);
+  for (const object of current) {
+    const task = taskData(object.data);
+    if (task.phase !== "ready" || started.has(object.id)) continue;
+    let note: string | undefined;
+    if (queuedIds.has(object.id)) {
+      const plan = plansById.get(task.plan);
+      const holders = activeIds(task.plan);
+      const all = activeIds(undefined);
+      if (missing.length > 0) {
+        note = `waiting for plugin ${missing.join(", ")}`;
+      } else if (task.area !== undefined && areaActive.has(task.area)) {
+        note = undefined;
+      } else if (plan !== undefined && holders.length >= planConcurrency(plan)) {
+        note = `waiting for the plan's slot (${heldBy(holders)})`;
+      } else if (all.length >= repositoryConcurrency(settings)) {
+        note = `waiting for the repository's slot (${heldBy(all)})`;
+      }
+    }
+    await setSlotHold(ctx.store, object.id, note);
+  }
+
   // Name each open task's flow when the repository defines more than one, and
   // say why a ready task whose flow is not defined does not start.
-  const plansById = new Map(plans.map((object) => [bareId(object.id), planData(object.data)]));
   for (const object of await listAll(ctx.store, "task")) {
     const task = taskData(object.data);
     if (task.repository !== repository.name) continue;

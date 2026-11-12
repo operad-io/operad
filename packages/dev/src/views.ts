@@ -82,6 +82,7 @@ function waitNote(task: TaskData): string | undefined {
   ) {
     return `waiting for ${(task.dependencyHeldFor ?? []).join(", ")}`;
   }
+  if (task.phase === "ready" && task.slotHeld !== undefined) return task.slotHeld;
   if (
     (task.phase === "ready" || (task.phase === "waiting" && task.run === null)) &&
     task.flowHeld !== undefined
