@@ -2,12 +2,16 @@
 
 import { defineFlow, definePlugin, type ActionTypeDefinition } from "@operad-io/engine";
 import {
+  CHAT_FILTERS,
   CHAT_SOURCES,
   CHAT_TYPE,
+  chatData,
   chatRef,
+  CLOSED_FACT,
   MESSAGE_EVENT,
   MESSAGE_FACT,
   newMessageId,
+  type ClosedData,
   type MessageData,
 } from "./model.ts";
 import { runReply } from "./reply.ts";
@@ -80,8 +84,15 @@ const sendAction: ActionTypeDefinition = {
     required: ["note"],
     additionalProperties: false,
   },
-  when: () => true,
+  when: (state) => !chatData(state).closed,
+  why: (object) =>
+    chatData(object.data).closed ? `${object.id} is closed; it takes no messages` : undefined,
   async run(ctx, args) {
+    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+    if (chatData(stored.data).closed) {
+      throw new Error(`chat ${ctx.object.id} is closed; it takes no messages`);
+    }
     const input = args as { readonly note: string; readonly ref?: string };
     const via = ctx.actor.via;
     const source = CHAT_SOURCES.find((name) => name === via) ?? "cli";
@@ -107,13 +118,38 @@ const sendAction: ActionTypeDefinition = {
   },
 };
 
+const closeAction: ActionTypeDefinition = {
+  name: "close",
+  on: CHAT_TYPE,
+  confirm: true,
+  ends: true,
+  when: (state) => !chatData(state).closed,
+  why: (object) =>
+    chatData(object.data).closed ? `${object.id} is closed; nothing to close` : undefined,
+  async run(ctx) {
+    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+    if (chatData(stored.data).closed) return `chat ${ctx.object.id} is closed; nothing to close`;
+    const closed: ClosedData = {
+      by: { via: ctx.actor.via, id: ctx.actor.id },
+    };
+    await ctx.facts.append({ type: CLOSED_FACT, object: chatRef(ctx.object.id), data: closed });
+    // Read again: a reply may have moved the session while the fact was written.
+    const fresh = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+    if (fresh !== undefined && !chatData(fresh.data).closed) {
+      await ctx.store.put(CHAT_TYPE, ctx.object.id, { ...fresh.data, closed: true }, "action:chat/close");
+    }
+    return `closed ${ctx.object.id}`;
+  },
+};
+
 /** Builds the chat plugin. */
 export function createChatPlugin() {
   return definePlugin({
     name: "chat",
     kind: "domain",
     version: "0.0.0",
-    objects: [{ name: CHAT_TYPE, index: ["parent"] }],
+    objects: [{ name: CHAT_TYPE, index: ["parent"], filters: CHAT_FILTERS }],
     steps: [
       {
         name: "reply",
@@ -137,7 +173,7 @@ export function createChatPlugin() {
       object: "$event.object",
       mode: "auto" as const,
     })),
-    actions: [sendAction],
+    actions: [sendAction, closeAction],
     views: { [CHAT_TYPE]: chatViews },
   });
 }
