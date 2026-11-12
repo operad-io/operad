@@ -18,6 +18,7 @@ import { join } from "node:path";
 import {
   bareId,
   hasRework,
+  isIntegrating,
   listAll,
   PLAN_FINAL_STATES,
   TASK_FINAL_STATES,
@@ -81,7 +82,12 @@ function waitNote(task: TaskData): string | undefined {
   ) {
     return `waiting for ${(task.dependencyHeldFor ?? []).join(", ")}`;
   }
-  if (task.phase === "ready" && task.flowHeld !== undefined) return task.flowHeld;
+  if (
+    (task.phase === "ready" || (task.phase === "waiting" && task.run === null)) &&
+    task.flowHeld !== undefined
+  ) {
+    return task.flowHeld;
+  }
   if (task.phase !== "waiting") return undefined;
   const integration = task.attempt?.integration;
   if (integration === undefined || integration === null) return undefined;
@@ -226,7 +232,7 @@ export const taskViews: ObjectViews = {
     return {
       id: bareId(object.id),
       title: task.title,
-      state: task.phase,
+      state: isIntegrating(task) ? "integrating" : task.phase,
       note,
       scope: task.repository,
       final: TASK_FINAL_STATES.includes(task.phase),

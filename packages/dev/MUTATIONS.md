@@ -884,8 +884,26 @@ the row fields.
 | T-0301-M4 | packages/dev/src/integrate.ts | cleanup exported the chat worktree as the task's worktree, so the after-merge hook removed it | `task add --chat > cleanup after the merge leaves the chat's worktree and branch` |
 
 `packages/harness-claude/acceptance/` was removed by T-0266, so the finding about it has no code left to mutate.
+## T-0293 — a task whose run is gone and flow is missing waits
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0293-M4 | packages/dev/src/schedule.ts | a task whose run was gone and whose flow was not defined stayed running | `dev scheduling > a task in review follows its run > a run that is gone and a flow that is not defined leave it waiting for a person` (packages/dev/test/schedule.test.ts) |
+| T-0293-M6 | packages/dev/src/views.ts | the waiting task's row showed only the ready task's flow hold, so a waiting task with no run lost the note that names its missing flow | `dev scheduling > a task in review follows its run > a run that is gone and a flow that is not defined leave it waiting for a person` (packages/dev/test/schedule.test.ts) |
 | T-0298-M1 | packages/dev/src/service.ts | cancelTask threw on a result that was already true instead of succeeding | `dev plans and tasks > a task added to a confirmed plan waits for its own confirm` |
 | T-0298-M2 | packages/dev/src/views.ts | an older run's unrecorded group became a phantom attempt numbered past the later ones | `dev views > a group nobody recorded in an older run is not numbered past a later attempt` |
 | T-0298-M3 | packages/dev/src/views.ts | the total row showed `0s` when no attempt's run could be read | `dev views > the total row shows a dash when no attempt's run can be read` |
 | T-0298-M4 | packages/dev/src/refusals.ts | confirming a finished plan was refused instead of already true | `a finished plan > is a confirmed plan: confirming it again is already true, not a refusal` |
+
+## T-0268 — no incident replays
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0268-M1 | packages/dev/src/retry.ts | a retry that waits for a step to be loaded set the task's phase to waiting, as if a person were asked | `a step that is not loaded, for several tasks > within the bound every task stays running and nothing waits for a person; once loaded each continues` |
 | T-0302-M4 | packages/dev/src/service.ts | a recount kept the stored cost total instead of recomputing it from the tasks | `dev views > a refresh heals a plan total that drifted, and a malformed total shows no cost` |
+
+## T-0306 — a task whose integrate step works shows integrating and offers only cancel
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0306-M1 | packages/dev/src/model.ts | `isIntegrating` no longer read the attempt's integrate mark, so the row state stayed `waiting` and the four wait actions stayed offered | `a task while its integrate step works > shows integrating and offers only cancel, then waits for answer again when the mark clears` |

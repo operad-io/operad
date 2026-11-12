@@ -21,6 +21,7 @@ export type { LockHandle, LockOptions } from "./lock.ts";
 export {
   appendInput,
   applyInput,
+  endRunDirectly,
   objectKey,
   parseObjectKey,
   readState,

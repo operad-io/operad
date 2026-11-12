@@ -25,7 +25,7 @@ import type {
 } from "../plugin/types.ts";
 import type { StepEvent, TriggerView } from "../trigger/types.ts";
 
-interface StepWorkerRequest {
+export interface StepWorkerRequest {
   readonly sources: readonly string[];
   readonly home: string;
   readonly cwd: string;
@@ -41,6 +41,12 @@ interface StepWorkerRequest {
   readonly trigger?: TriggerView | undefined;
   readonly runId: string;
   readonly object?: RunObject | undefined;
+}
+
+/** What a worker posts to and listens to: `MessagePort` in the process entry. */
+export interface StepWorkerPort {
+  on(event: "message", listener: (message: unknown) => void): void;
+  postMessage(message: unknown): void;
 }
 
 type StepWorkerReply =
@@ -89,7 +95,10 @@ function openWorkerStore(request: StepWorkerRequest): PluginStore {
   return new FilePluginStore({ root: request.storeRoot });
 }
 
-async function main(request: StepWorkerRequest): Promise<void> {
+export async function runStepWorker(
+  request: StepWorkerRequest,
+  parent: StepWorkerPort,
+): Promise<void> {
   const definitions: unknown[] = [];
   for (const source of request.sources) {
     definitions.push(await loadPlugin(source, request.home));
@@ -117,40 +126,36 @@ async function main(request: StepWorkerRequest): Promise<void> {
     report: boolean,
     ahead?: number,
   ): Promise<() => Promise<void>> {
-    const port = parentPort;
-    if (port === null) return Promise.reject(new Error("no limiter"));
-    {
-      const id = nextLimitId;
-      nextLimitId += 1;
-      const ask = new Promise<void>((resolve, reject) => {
-        pendingLimits.set(id, { resolve, reject });
-        port.postMessage({
-          kind: "limit",
-          id,
-          use: request.use,
-          key: request.key,
-          concurrent: request.concurrent,
-          ...(report ? { report: true } : {}),
-          ...(ahead === undefined ? {} : { ahead }),
-        });
+    const id = nextLimitId;
+    nextLimitId += 1;
+    const ask = new Promise<void>((resolve, reject) => {
+      pendingLimits.set(id, { resolve, reject });
+      parent.postMessage({
+        kind: "limit",
+        id,
+        use: request.use,
+        key: request.key,
+        concurrent: request.concurrent,
+        ...(report ? { report: true } : {}),
+        ...(ahead === undefined ? {} : { ahead }),
       });
-      const cancel = (): void => port.postMessage({ kind: "limit-cancel", id });
-      request.signal?.addEventListener("abort", cancel, { once: true });
-      return ask.then(
-        () => {
-          request.signal?.removeEventListener("abort", cancel);
-          return () =>
-            new Promise<void>((resolve, reject) => {
-              pendingLimits.set(id, { resolve, reject });
-              port.postMessage({ kind: "limit-release", id });
-            });
-        },
-        (error: unknown) => {
-          request.signal?.removeEventListener("abort", cancel);
-          throw error;
-        },
-      );
-    }
+    });
+    const cancel = (): void => parent.postMessage({ kind: "limit-cancel", id });
+    request.signal?.addEventListener("abort", cancel, { once: true });
+    return ask.then(
+      () => {
+        request.signal?.removeEventListener("abort", cancel);
+        return () =>
+          new Promise<void>((resolve, reject) => {
+            pendingLimits.set(id, { resolve, reject });
+            parent.postMessage({ kind: "limit-release", id });
+          });
+      },
+      (error: unknown) => {
+        request.signal?.removeEventListener("abort", cancel);
+        throw error;
+      },
+    );
   }
 
   const pendingAsks = new Map<
@@ -168,22 +173,18 @@ async function main(request: StepWorkerRequest): Promise<void> {
 
   const asker: StepAsker = {
     useGrant: (waitId) => {
-      const port = parentPort;
-      if (port === null) return Promise.reject(new Error("no one takes grants"));
       const id = nextGrantId;
       nextGrantId += 1;
       return new Promise<boolean>((resolve, reject) => {
         pendingGrants.set(id, { resolve, reject });
-        port.postMessage({ kind: "grant", id, waitId });
+        parent.postMessage({ kind: "grant", id, waitId });
       });
     },
     ask: (question, signal) => {
-      const port = parentPort;
-      if (port === null) return Promise.reject(new Error("no one takes questions"));
       const id = nextAskId;
       nextAskId += 1;
       return new Promise<AskOutcome>((resolve, reject) => {
-        const cancel = (): void => port.postMessage({ kind: "ask-cancel", id });
+        const cancel = (): void => parent.postMessage({ kind: "ask-cancel", id });
         pendingAsks.set(id, {
           resolve: (outcome) => {
             signal?.removeEventListener("abort", cancel);
@@ -195,7 +196,7 @@ async function main(request: StepWorkerRequest): Promise<void> {
           },
         });
         signal?.addEventListener("abort", cancel, { once: true });
-        port.postMessage({
+        parent.postMessage({
           kind: "ask",
           id,
           request: {
@@ -212,7 +213,7 @@ async function main(request: StepWorkerRequest): Promise<void> {
     },
   };
 
-  parentPort?.on("message", (message: unknown) => {
+  parent.on("message", (message: unknown) => {
     if (typeof message !== "object" || message === null) return;
     if ((message as { kind?: unknown }).kind === "grant-result") {
       const ack = message as GrantAck;
@@ -252,13 +253,11 @@ async function main(request: StepWorkerRequest): Promise<void> {
   });
 
   const emit = (plugin: string, event: StepEvent): Promise<void> => {
-    const port = parentPort;
-    if (port === null) return Promise.reject(new Error("no event destination"));
     const id = nextEmitId;
     nextEmitId += 1;
     return new Promise<void>((resolve, reject) => {
       pendingAcks.set(id, { resolve, reject });
-      port.postMessage({ kind: "emit", id, plugin, event });
+      parent.postMessage({ kind: "emit", id, plugin, event });
     });
   };
 
@@ -271,7 +270,7 @@ async function main(request: StepWorkerRequest): Promise<void> {
   });
 
   const controller = new AbortController();
-  parentPort?.on("message", (message: unknown) => {
+  parent.on("message", (message: unknown) => {
     if (message === "abort") controller.abort();
   });
 
@@ -287,14 +286,22 @@ async function main(request: StepWorkerRequest): Promise<void> {
     asker,
     signal: controller.signal,
   });
-  parentPort?.postMessage({ kind: "result", ok: true, result } satisfies StepWorkerReply);
+  parent.postMessage({ kind: "result", ok: true, result } satisfies StepWorkerReply);
 }
 
-const request = workerData as StepWorkerRequest;
-main(request).catch((error: unknown) => {
-  parentPort?.postMessage({
-    kind: "result",
-    ok: false,
-    error: messageOf(error),
-  } satisfies StepWorkerReply);
-});
+/** The process entry: one step run, with any failure reported to the parent. */
+export function startStepWorker(
+  request: StepWorkerRequest,
+  port: StepWorkerPort,
+): void {
+  void runStepWorker(request, port).catch((error: unknown) => {
+    port.postMessage({
+      kind: "result",
+      ok: false,
+      error: messageOf(error),
+    } satisfies StepWorkerReply);
+  });
+}
+
+const port = parentPort;
+if (port !== null) startStepWorker(workerData as StepWorkerRequest, port);

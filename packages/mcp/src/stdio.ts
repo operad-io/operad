@@ -7,8 +7,16 @@
 import { defaultOperadHome } from "@operad-io/engine";
 import { runMcpServer } from "./server.ts";
 
-const args = process.argv.slice(2);
-const at = args.indexOf("--home");
-const home = at >= 0 ? args[at + 1] : undefined;
+/** The home `--home` names, or the configured default. */
+export function homeFromArgs(args: readonly string[]): string {
+  const at = args.indexOf("--home");
+  if (at < 0) return defaultOperadHome();
+  return args[at + 1] ?? defaultOperadHome();
+}
 
-await runMcpServer({ home: home ?? defaultOperadHome(), cwd: process.cwd() });
+if (import.meta.main) {
+  await runMcpServer({
+    home: homeFromArgs(process.argv.slice(2)),
+    cwd: process.cwd(),
+  });
+}

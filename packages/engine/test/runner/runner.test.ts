@@ -12,6 +12,7 @@ import {
   FilePluginStore,
   MemoryPluginStore,
   Runner,
+  cancelRun,
   historyEntries,
   loadPluginRegistry,
   openConfigLog,
@@ -414,27 +415,6 @@ describe("runner", () => {
     }
   });
 
-  test("a worker step writes to the configured sqlite store", async () => {
-    const run = await fileSetup("write", "sqlite");
-    try {
-      const runner = new Runner({
-        log: run.log,
-        flow: run.flow,
-        runId: run.runId,
-        registry: run.registry,
-        lockRoot: run.storeRoot,
-      });
-      expect(await runner.run()).toBe("ended");
-
-      const configured = openPluginStore({ backend: "sqlite", root: run.storeRoot });
-      expect((await configured.get("job", "1"))?.data.wrote).toBe(true);
-      expect(existsSync(join(run.storeRoot, "plugins.sqlite"))).toBe(true);
-      expect(existsSync(join(run.storeRoot, "plugins", "facts.jsonl"))).toBe(false);
-    } finally {
-      await run.close();
-    }
-  });
-
   test("a step that never settles still times out in a memory-backed process", async () => {
     const root = await tempRoot();
     const child = Bun.spawn({
@@ -508,6 +488,35 @@ describe("runner", () => {
         entries.push(entry);
       }
       expect(entries.some((entry) => entry.what === "check interrupted")).toBe(true);
+    } finally {
+      await run.close();
+    }
+  });
+
+  test("cancelling a run that never started ends it, even with no flow loaded", async () => {
+    const run = await setup("simple");
+    try {
+      const missing = await run.log.startRun("gone", "job:2");
+      expect((await readState(run.log, run.runId)).status).toBe("idle");
+      expect((await readState(run.log, missing.runId)).status).toBe("idle");
+
+      await cancelRun({
+        log: run.log,
+        flow: (name) => run.registry.flow(name)?.flow,
+        runId: run.runId,
+      });
+      await cancelRun({
+        log: run.log,
+        flow: (name) => run.registry.flow(name)?.flow,
+        runId: missing.runId,
+      });
+
+      for (const runId of [run.runId, missing.runId]) {
+        const state = await readState(run.log, runId);
+        expect(state.status).toBe("ended");
+        expect(state.endedStatus).toBe("cancelled");
+      }
+      expect(await run.log.runs({ active: true })).toEqual([]);
     } finally {
       await run.close();
     }

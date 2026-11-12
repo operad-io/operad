@@ -1058,7 +1058,7 @@ export function sectionLayout(
 
 /** The layout's fixed columns (0-based): the list, its divider, the object pane. */
 export const LIST_X = 1;
-/** The list takes about 40% of the terminal, between these two widths. */
+/** The Pending and Running tabs' list takes about 40% of the terminal, between these two widths. */
 export const LIST_MIN_WIDTH = 40;
 export const LIST_MAX_WIDTH = 60;
 /** The object pane needs at least this many columns for the two panes to show. */
@@ -1073,6 +1073,17 @@ export function listWidthFor(width: number): number {
 
 /** The narrowest a plugin tab's list gets, however short its rows are. */
 export const PLUGIN_LIST_MIN = 24;
+/** A plugin tab's list takes about 26% of the terminal, and no more than 38 columns. */
+export const PLUGIN_LIST_SHARE = 0.26;
+export const PLUGIN_LIST_MAX_WIDTH = 38;
+
+/** The most a plugin tab's list may take for a terminal `width` wide. */
+function pluginListWidthFor(width: number): number {
+  return Math.min(
+    PLUGIN_LIST_MAX_WIDTH,
+    Math.max(PLUGIN_LIST_MIN, Math.floor(width * PLUGIN_LIST_SHARE)),
+  );
+}
 
 /** The columns before a row's text: marker, glyph and their spaces. */
 export const ROW_INDENT = 4;
@@ -1117,12 +1128,13 @@ export function rowDetail(row: TuiRow): string {
 
 /**
  * The columns of the list's text. A plugin tab's rows are a name and a note, so
- * its column is as wide as the longest of them, never past the terminal's share.
+ * its column is as wide as the longest of them, never past its narrower share.
  */
 export function listWidth(state: TuiState): number {
-  const cap = listWidthFor(state.width);
   const tab = activeTabOf(state);
-  if (tab?.kind !== "plugin" || tab.list.rows.length === 0) return cap;
+  if (tab?.kind !== "plugin") return listWidthFor(state.width);
+  const cap = pluginListWidthFor(state.width);
+  if (tab.list.rows.length === 0) return cap;
   let need = PLUGIN_LIST_MIN;
   for (const row of tab.list.rows) {
     const indent = row.bare !== true && tab.list.rows.some((one) => one.group !== undefined) ? 2 : 0;
@@ -2705,9 +2717,9 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
 
 /** True when the terminal is wide enough for the list and the object pane. */
 export function twoPane(state: TuiState): boolean {
-  // The terminal's share of the list decides, not the narrower column a plugin
-  // tab may use: below 100 columns there is one pane, whatever the rows are.
-  const right = LIST_X + listWidthFor(state.width) + 3;
+  // The list's own width decides: a plugin tab's narrower column leaves room
+  // for the object pane sooner than the Pending and Running tabs' wider one.
+  const right = LIST_X + listWidth(state) + 3;
   return state.width - right - 1 >= MIN_OBJECT_WIDTH;
 }
 

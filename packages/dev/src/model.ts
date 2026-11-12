@@ -465,7 +465,7 @@ export type TaskData = {
   readonly worktree?: string | undefined;
   /** The flow a row and the brief name, set only while the repository defines more than one. */
   readonly flowShown?: string | undefined;
-  /** Why this ready task does not start: its flow is not defined in the repository's dev.json. */
+  /** Why this ready task does not start, or why this waiting task lost its run: its flow is not defined in the repository's dev.json. */
   readonly flowHeld?: string | undefined;
   /** The flow this attempt runs; absent for a run that started before flows had names. */
   readonly flowName?: string | undefined;
@@ -1137,4 +1137,10 @@ export function lowerPriority(priority: Priority): Priority | undefined {
 /** A task is open until it merged or was cancelled. */
 export function isOpenTask(task: TaskData): boolean {
   return task.phase !== "merged" && task.phase !== "cancelled";
+}
+
+/** The integrate step is working: it marks the attempt until it writes a result. */
+export function isIntegrating(task: TaskData): boolean {
+  const run = task.attempt?.integrating;
+  return typeof run === "string" && run.length > 0;
 }

@@ -14,7 +14,7 @@ import type {
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { SourceHandle } from "../plugin/types.ts";
 import { messageOf, StartRefusedError } from "../plugin/errors.ts";
-import { readState } from "../runner/service.ts";
+import { endRunDirectly, readState } from "../runner/service.ts";
 import { TriggerStore } from "./store.ts";
 import {
   MAX_TRIGGER_HOPS,
@@ -688,6 +688,13 @@ export class Kernel {
       runId: realized.runId,
       duplicate: recorded.duplicate,
     };
+  }
+
+  /** Ends a run whose flow cannot be found, with a reason that names it. */
+  async failRun(runId: string, reason: string): Promise<void> {
+    const ended = await endRunDirectly(this.log, runId, "failed", reason);
+    if (ended === undefined || ended.status !== "ended") return;
+    await this.emitRunEnd(runId, ended);
   }
 
   /** Emits the event that ends a run, once per run id. */

@@ -6,7 +6,7 @@
  * drift apart.
  */
 
-import type { ReviewRecord, TaskData } from "./model.ts";
+import { isIntegrating, type ReviewRecord, type TaskData } from "./model.ts";
 
 /** The actions a person wait answers. */
 export const WAIT_ACTIONS = ["merge", "reject", "rework", "reverify"] as const;
@@ -70,7 +70,10 @@ export function reviewWaitKind(review: ReviewRecord): WaitKind | undefined {
 
 /** The wait a task is in, or undefined when it is not waiting for a person. */
 export function waitKindOf(task: TaskData): WaitKind | undefined {
-  if (task.phase !== "waiting" || inReviewWait(task)) return undefined;
+  // While integrate works the task is not asking a person anything.
+  if (task.phase !== "waiting" || isIntegrating(task) || inReviewWait(task)) {
+    return undefined;
+  }
   if (task.waitKind !== undefined) return task.waitKind;
   // A task from before the kind was written: the review record is the best it
   // has, though a later ordinary wait may still carry that older record. An

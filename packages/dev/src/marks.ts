@@ -6,6 +6,7 @@
 
 import type { RowMark } from "@operad-io/engine";
 import {
+  isIntegrating,
   planState,
   type PlanData,
   type PlanState,
@@ -22,12 +23,6 @@ function reviewPassed(task: TaskData): boolean {
     review?.result === "pass" ||
     review?.result === "passed"
   );
-}
-
-/** The integrate step is working: it marks the attempt until it writes a result. */
-function isIntegrating(task: TaskData): boolean {
-  const run = task.attempt?.integrating;
-  return typeof run === "string" && run.length > 0;
 }
 
 /** A task that waits: for a merge, a rework answer, or something else. */

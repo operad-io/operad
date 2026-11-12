@@ -238,6 +238,17 @@ function waitingReasons(w: World): readonly string[] {
     .map((event) => String((event.data as { reason?: unknown } | undefined)?.reason));
 }
 
+/** Each waiting announcement with the task it belongs to, sorted by task. */
+function waitingByTask(w: World): readonly { readonly task: string; readonly reason: string }[] {
+  return w.events
+    .filter((event) => event.type === "dev.waiting")
+    .map((event) => {
+      const data = event.data as { task?: unknown; reason?: unknown } | undefined;
+      return { task: String(data?.task), reason: String(data?.reason) };
+    })
+    .sort((a, b) => a.task.localeCompare(b.task));
+}
+
 /** A clock the test moves by hand; every wait returns at once. */
 function manualClock(start = 1_000_000_000): { advance(ms: number): void } {
   let now = start;
@@ -373,28 +384,29 @@ describe("an environment failure of the work step", () => {
   });
 });
 
-describe("the night of 2026-11-08 at 08:01", () => {
-  test("nine tasks start while pool is disabled; when it is enabled every task continues by itself", async () => {
+describe("a step that is not loaded, for several tasks", () => {
+  test("within the bound every task stays running and nothing waits for a person; once loaded each continues", async () => {
     const clock = manualClock();
     const worker = scripted(() => DONE);
-    const w = await world(9);
-    const disabled = registryOf(w, [createDevPlugin(), worker.plugin]);
+    const w = await world(2);
+    const without = registryOf(w, [createDevPlugin(), worker.plugin]);
     const runs = new Map<string, string>();
-    expect(await drive(w, disabled, runs)).toEqual(Array(9).fill("blocked"));
+    expect(await drive(w, without, runs)).toEqual(["blocked", "blocked"]);
     clock.advance(30 * MINUTE);
-    expect(await drive(w, disabled, runs)).toEqual(Array(9).fill("blocked"));
-    expect(w.events.filter((event) => event.type === "dev.waiting")).toEqual([]);
-    for (const key of w.tasks) {
-      expect((await taskOf(w, key)).phase).toBe("running");
-    }
+    expect(await drive(w, without, runs)).toEqual(["blocked", "blocked"]);
+    expect(waitingReasons(w)).toEqual([]);
+    for (const key of w.tasks) expect((await taskOf(w, key)).phase).toBe("running");
 
-    // The restart: a new process with the plugin enabled.
-    const enabled = registryOf(w, [createDevPlugin(), createPoolPlugin(), worker.plugin]);
-    expect(await drive(w, enabled, runs)).toEqual(Array(9).fill("waiting"));
-    expect(worker.state.calls).toBe(9);
-    // Every task now waits for a reason of its own (the fake worker changed
-    // nothing); none waits because of the incident.
-    expect(waitingReasons(w)).toEqual(Array(9).fill("work did nothing"));
+    const withPool = registryOf(w, [createDevPlugin(), createPoolPlugin(), worker.plugin]);
+    expect(await drive(w, withPool, runs)).toEqual(["waiting", "waiting"]);
+    expect(worker.state.calls).toBe(2);
+    // Each task waits for a reason of its own (the fake worker changed
+    // nothing), not because the step was missing.
+    expect(waitingByTask(w)).toEqual(
+      w.tasks
+        .map((key) => ({ task: key.slice(key.indexOf("/") + 1), reason: "work did nothing" }))
+        .sort((a, b) => a.task.localeCompare(b.task)),
+    );
   });
 });
 

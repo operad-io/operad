@@ -86,7 +86,7 @@ describe("the TUI view", () => {
     }
   });
 
-  test("below 100 columns the right pane is gone", async () => {
+  test("at 80 columns the right pane is gone", async () => {
     const setup = await createTestRenderer({ width: 80, height: 20 });
     try {
       const view = createTuiView(setup.renderer);
@@ -129,13 +129,12 @@ describe("the TUI view", () => {
       }
     };
     // A plugin tab's column is as wide as its rows need (24 at least), so the
-    // divider is where the narrow column ends at every width; the terminal's
-    // share (40, 48 and 60 columns) is only the upper bound.
+    // divider is where the narrow column ends at every width; the narrower
+    // plugin share leaves room for the object pane at 99 columns too.
+    expect(new Set(await dividerAt(99))).toEqual(new Set([26]));
     expect(new Set(await dividerAt(100))).toEqual(new Set([26]));
     expect(new Set(await dividerAt(120))).toEqual(new Set([26]));
     expect(new Set(await dividerAt(200))).toEqual(new Set([26]));
-    // 99 columns: the list only, no divider.
-    expect((await dividerAt(99)).every((x) => x === -1)).toBe(true);
   });
 
   test("the object pane text starts one padding column and one cell after the divider and a long title never pushes the rule", async () => {
