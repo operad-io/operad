@@ -367,3 +367,12 @@ the row fields.
 | T-0314-M1 | packages/tui/src/app.ts | a plugin tab with no child of its own returned its roots and dropped every object whose parent belongs to another plugin | `one tab per plugin > objects whose parent belongs to another plugin are grouped by that parent, newest first` |
 | T-0314-M2 | packages/tui/src/app.ts | the grouped list counted every hidden object of the tab's types, including descendants the sidebar never lists | `an open plan's next level is every one of its tasks > all tasks show under the tab's active filter, the counts match, and f keeps them` |
 | T-0314-M3 | packages/tui/src/app.ts | a tab-owned object under another tab-owned object did not follow its ancestor into the ancestor's foreign group | `one tab per plugin > a chat under a chat that is already in a foreign group joins that group` |
+
+## T-0274 — the TUI finishes a row by its mark only
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0274-M1 | packages/tui/src/state.ts | `doneRow` counted a row without a mark as done when its state said `merged` again | `the object page's child list > a finished child is drawn finished by its mark; a state word alone is not` |
+| T-0274-M2 | packages/tui/src/view/index.ts | the list glyph fell back to the state word `merged` for a row without a mark again | `the TUI view > each mark draws its own single-cell character; waiting beats a mark; running without a mark draws running` |
+| T-0274-M3 | packages/tui/src/view/index.ts | `markColour` dimmed a row whose state said `merged` even when its mark was not done again | `the object page's child list > a finished child is drawn finished by its mark; a state word alone is not` |
+| T-0274-M4 | packages/tui/src/view/index.ts | the child list glyph fell back to the state word `merged` for a row without a mark again | `the object page's child list > a finished child is drawn finished by its mark; a state word alone is not` |
