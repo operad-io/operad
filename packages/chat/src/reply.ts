@@ -20,15 +20,99 @@ import {
   type MessageData,
 } from "./model.ts";
 
-/** The question a read-only chat asks when its agent wants to change code. */
+/** The question a read-only chat asks when the call is not known. */
 export const WORKTREE_QUESTION =
   "The agent wants to change code, and this chat is read-only. Open a worktree for it?";
 
-/** The answers to {@link WORKTREE_QUESTION}. */
+/** How the worktree question starts and ends; what is between names the call. */
+const WORKTREE_QUESTION_START = "The agent wants to ";
+const WORKTREE_QUESTION_END = " in this read-only chat. Open a worktree for it?";
+
+/** The longest call the question shows; the ask keeps the whole call. */
+export const WORKTREE_CALL_LIMIT = 120;
+
+/** What a read-only chat tells its agent after it refused a call. */
+export const READ_ONLY_REFUSAL =
+  "The call was refused because this chat is read-only. Answer in the chat or use read-only commands.";
+
+/** The answers to the worktree question. */
 export const WORKTREE_CHOICES = ["yes", "no"] as const;
 
 /** The event a "yes" sends; the plugin that owns the working directory acts on it. */
 export const WORKTREE_EVENT = "chat.worktree";
+
+/** The call a harness question asks about. */
+export interface WorktreeCall {
+  readonly kind: "command" | "path";
+  readonly value: string;
+  readonly tool?: string;
+}
+
+/** The call behind a write question: its grant, or the words of a question with no session. */
+function worktreeCall(request: AskRequest): WorktreeCall | undefined {
+  const resume = request.resume;
+  if (isRecord(resume) && isRecord(resume.grant)) {
+    const grant = resume.grant;
+    if ((grant.kind === "command" || grant.kind === "path") && typeof grant.value === "string" && grant.value.length > 0) {
+      return {
+        kind: grant.kind,
+        value: grant.value,
+        ...(typeof grant.tool === "string" ? { tool: grant.tool } : {}),
+      };
+    }
+  }
+  const command = /^Run this command\? ([\s\S]+)$/.exec(request.prompt);
+  if (command?.[1] !== undefined && command[1].trim().length > 0) {
+    return { kind: "command", value: command[1] };
+  }
+  const path = /^Let (write|edit) use this path\? ([\s\S]+)$/.exec(request.prompt);
+  if (path?.[1] !== undefined && path[2] !== undefined && path[2].trim().length > 0) {
+    return { kind: "path", value: path[2], tool: path[1] };
+  }
+  return undefined;
+}
+
+/** One line, cut to what a question can show. */
+function cutCall(value: string): string {
+  const oneLine = value.replace(/\s+/g, " ").trim();
+  return oneLine.length <= WORKTREE_CALL_LIMIT
+    ? oneLine
+    : `${oneLine.slice(0, WORKTREE_CALL_LIMIT - 1)}…`;
+}
+
+/** The worktree question for one call. */
+export function worktreeQuestion(call: WorktreeCall): string {
+  const what =
+    call.kind === "command"
+      ? `run \`${cutCall(call.value)}\``
+      : `${call.tool === "edit" ? "edit" : "write"} \`${cutCall(call.value)}\``;
+  return `${WORKTREE_QUESTION_START}${what}${WORKTREE_QUESTION_END}`;
+}
+
+/** Whether a prompt is a worktree question, including the older one without a call. */
+export function isWorktreeQuestion(prompt: string): boolean {
+  return (
+    prompt === WORKTREE_QUESTION ||
+    (prompt.startsWith(WORKTREE_QUESTION_START) && prompt.endsWith(WORKTREE_QUESTION_END))
+  );
+}
+
+/** The session and the full call a late answer needs; the full call stays in the history. */
+function worktreeResume(request: AskRequest, call: WorktreeCall | undefined): JsonValue {
+  const session = sessionOnly(request.resume);
+  return {
+    ...(session === null ? {} : session),
+    ...(call === undefined
+      ? {}
+      : {
+          call: {
+            kind: call.kind,
+            value: call.value,
+            ...(call.tool === undefined ? {} : { tool: call.tool }),
+          },
+        }),
+  };
+}
 
 /**
  * Whether a harness question is about a call in the working directory: a
@@ -59,11 +143,13 @@ function failed(reason: string, message: string): PluginStepResult {
 function readOnlyAsker(ctx: StepContext, onYes: () => Promise<void>): StepAsker {
   return {
     async ask(request): Promise<AskOutcome> {
-      const shaped: AskRequest = isWriteQuestion(request)
+      const write = isWriteQuestion(request);
+      const call = write ? worktreeCall(request) : undefined;
+      const shaped: AskRequest = write
         ? {
-            prompt: WORKTREE_QUESTION,
+            prompt: call === undefined ? WORKTREE_QUESTION : worktreeQuestion(call),
             choices: [...WORKTREE_CHOICES],
-            ...(request.resume === undefined ? {} : { resume: sessionOnly(request.resume) }),
+            resume: worktreeResume(request, call),
             ...(request.graceSecs === undefined ? {} : { graceSecs: request.graceSecs }),
           }
         : request;
@@ -71,8 +157,15 @@ function readOnlyAsker(ctx: StepContext, onYes: () => Promise<void>): StepAsker 
         const answer = await ctx.ask(shaped);
         if (shaped === request) return { kind: "answered", answer };
         if (answer.choice === "yes") await onYes();
-        // The call itself is never let through in the main clone.
-        return { kind: "answered", answer: { choice: "reject_once", ...(answer.actor === undefined ? {} : { actor: answer.actor }) } };
+        // The call itself is never let through in the main clone. A no says why.
+        return {
+          kind: "answered",
+          answer: {
+            choice: "reject_once",
+            ...(answer.choice === "yes" ? {} : { note: READ_ONLY_REFUSAL }),
+            ...(answer.actor === undefined ? {} : { actor: answer.actor }),
+          },
+        };
       } catch (error) {
         if (error instanceof AskTimeoutError) {
           return {
@@ -98,10 +191,13 @@ function sessionOnly(resume: unknown): { readonly session: string } | null {
 }
 
 /** The params of the step the kernel gives back after a question was answered. */
-function answeredQuestion(params: unknown): { readonly prompt: string; readonly choice: string } | undefined {
+function answeredQuestion(
+  params: unknown,
+): { readonly prompt: string; readonly choice: string; readonly note?: string } | undefined {
   if (!isRecord(params) || !isRecord(params.askAnswer)) return undefined;
-  const { prompt, choice } = params.askAnswer;
-  return typeof prompt === "string" && typeof choice === "string" ? { prompt, choice } : undefined;
+  const { prompt, choice, note } = params.askAnswer;
+  if (typeof prompt !== "string" || typeof choice !== "string") return undefined;
+  return { prompt, choice, ...(typeof note === "string" ? { note } : {}) };
 }
 
 /** What a chat's `refresh` step gives back. */
@@ -188,15 +284,24 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     : undefined;
 
   // A "yes" that came back after the wait (the grace had passed) is the same
-  // answer as one given live.
+  // answer as one given live. A "no" carries the same refusal a live answer gets.
   const late = answeredQuestion(params);
-  if (readOnly && late !== undefined && late.prompt === WORKTREE_QUESTION && late.choice === "yes") {
+  const lateWorktree = readOnly && late !== undefined && isWorktreeQuestion(late.prompt);
+  if (lateWorktree && late.choice === "yes") {
     await ctx.emit({
       type: WORKTREE_EVENT,
       key: `${ctx.runId}:late`,
       object: `${CHAT_TYPE}:${object.id}`,
     });
   }
+  const askAnswer =
+    lateWorktree && late.choice !== "yes"
+      ? {
+          prompt: late.prompt,
+          choice: late.choice,
+          note: late.note === undefined ? READ_ONLY_REFUSAL : `${READ_ONLY_REFUSAL}\n${late.note}`,
+        }
+      : resumed.askAnswer;
 
   let outcome: PluginStepResult;
   try {
@@ -209,7 +314,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
         // Operad's own tools, so the agent never runs the `operad` command.
         operadTools: { home: ctx.home },
         ...(session === undefined ? {} : { resumeSession: session }),
-        ...(resumed.askAnswer === undefined ? {} : { askAnswer: resumed.askAnswer }),
+        ...(askAnswer === undefined ? {} : { askAnswer }),
       },
       {
         runId: ctx.runId,
