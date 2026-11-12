@@ -234,7 +234,8 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
         kind: "wait_person",
         params: {
           prompt: "The agent asked about a call.",
-          choices: ["allow_once", "allow_always", "reject_once"],
+          choices: ["allow_once", "reject_once"],
+          lateChoices: ["allow_always"],
         },
         replay: "safe",
         next: {

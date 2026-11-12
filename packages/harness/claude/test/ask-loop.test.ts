@@ -259,6 +259,31 @@ describe("claude: a call that must ask a person", () => {
     }
   }, 30_000);
 
+  test("a background run that times out does not offer allow_always on its person wait", async () => {
+    const env = await setup();
+    try {
+      const timer = new FakeTimer();
+      const run = new Runner({
+        log: env.log,
+        flow: env.flow,
+        runId: env.runId,
+        registry: env.registry,
+        params: { prompt: "push it", cwd: env.root },
+        access: ACCESS,
+        askTimer: timer.timer,
+        trigger: { source: "cron", type: "tick", key: "t1", hops: 0 },
+      }).run();
+      await env.opened(1);
+      await timer.armed();
+      timer.fire();
+      expect(await run).toBe("waiting");
+      const pending = await listPending(env.log, env.registry);
+      expect(pending[0]?.choices).toEqual(["allow_once", "reject_once"]);
+    } finally {
+      await env.log.close();
+    }
+  }, 30_000);
+
   test("a late allow_always writes the user layer and the resumed call does not ask", async () => {
     const env = await setup();
     try {

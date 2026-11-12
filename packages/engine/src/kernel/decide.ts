@@ -343,10 +343,11 @@ export function decide(
         const asked = via?.ask;
         const waitId = asked?.waitId ?? `${step.id}:${visit}`;
         const own = [...step.params.choices];
+        const allowed = new Set([...own, ...(step.params.lateChoices ?? [])]);
         const choices =
           asked !== undefined &&
           asked.choices.length > 0 &&
-          asked.choices.every((choice) => own.includes(choice))
+          asked.choices.every((choice) => allowed.has(choice))
             ? [...asked.choices]
             : own;
         const prompt = asked?.prompt ?? waitPrompt(step.params, via);

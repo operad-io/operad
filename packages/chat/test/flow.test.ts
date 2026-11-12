@@ -68,7 +68,8 @@ describe("the reply flow", () => {
   test("the question wait offers allow_always and sends either allow answer back to the reply", () => {
     const step = replyFlow.steps.find((candidate) => candidate.id === "person");
     if (step === undefined || step.kind !== "wait_person") throw new Error("the person wait is missing");
-    expect(step.params.choices).toContain("allow_always");
+    expect(step.params.choices).not.toContain("allow_always");
+    expect(step.params.lateChoices).toContain("allow_always");
     expect(step.next["allow_always"]).toBe("reply");
   });
 

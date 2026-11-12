@@ -734,3 +734,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0366-M8 | packages/engine/src/kernel/decide.ts | a grant's `choices` list was ignored, so a second approving answer gave no permission | `decide: an answered question returns to the step > a grant that lists approving choices gives the permission for either answer` |
+| T-0366-M12 | packages/engine/src/kernel/decide.ts | a person wait ignored the timed-out question's choices and always added its late choices, so a background run offered `allow_always` | `decide: an answered question returns to the step > a timed-out question offers its own choices, and a late choice only when the step hands one over` |

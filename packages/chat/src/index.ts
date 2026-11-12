@@ -52,7 +52,8 @@ export const replyFlow = defineFlow({
       kind: "wait_person",
       params: {
         prompt: "The agent asked a question.",
-        choices: ["allow_once", "allow_always", "reject_once", "yes", "no"],
+        choices: ["allow_once", "reject_once", "yes", "no"],
+          lateChoices: ["allow_always"],
       },
       replay: "safe",
       next: {
