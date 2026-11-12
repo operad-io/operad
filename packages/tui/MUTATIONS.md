@@ -367,3 +367,9 @@ the row fields.
 | T-0314-M1 | packages/tui/src/app.ts | a plugin tab with no child of its own returned its roots and dropped every object whose parent belongs to another plugin | `one tab per plugin > objects whose parent belongs to another plugin are grouped by that parent, newest first` |
 | T-0314-M2 | packages/tui/src/app.ts | the grouped list counted every hidden object of the tab's types, including descendants the sidebar never lists | `an open plan's next level is every one of its tasks > all tasks show under the tab's active filter, the counts match, and f keeps them` |
 | T-0314-M3 | packages/tui/src/app.ts | a tab-owned object under another tab-owned object did not follow its ancestor into the ancestor's foreign group | `one tab per plugin > a chat under a chat that is already in a foreign group joins that group` |
+
+## T-0319 — one list width for every tab
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0319-M1 | packages/tui/src/state.ts | Pending and Running took a wider fixed column again instead of every tab's 26% list, so the divider moved when switching tabs | `the frame follows the terminal > every tab puts the divider in the same column at 80, 120 and 200` |

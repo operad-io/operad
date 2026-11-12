@@ -20,7 +20,7 @@ import type { TuiSetting, TuiTypeInfo } from "./client.ts";
 import { cachedLayout, layoutMarkdown, type LayoutLine } from "./layout.ts";
 import type { ArgField } from "./args.ts";
 import { sanitize } from "./sanitize.ts";
-import { displayWidth, graphemes, wrapText } from "./wrap.ts";
+import { wrapText } from "./wrap.ts";
 import {
   actionFailed,
   bindingFor,
@@ -1065,9 +1065,10 @@ export function sectionLayout(
 
 /** The layout's fixed columns (0-based): the list, its divider, the object pane. */
 export const LIST_X = 1;
-/** The Pending and Running tabs' list takes about 40% of the terminal, between these two widths. */
-export const LIST_MIN_WIDTH = 40;
-export const LIST_MAX_WIDTH = 60;
+/** The list takes about 26% of the terminal, between these two widths, on every tab. */
+export const LIST_MIN_WIDTH = 24;
+export const LIST_MAX_WIDTH = 38;
+export const LIST_SHARE = 0.26;
 /** The object pane needs at least this many columns for the two panes to show. */
 export const MIN_OBJECT_WIDTH = 55;
 /** The lines above the first row of a list: a blank line and the dim title. */
@@ -1075,32 +1076,11 @@ export const LIST_HEAD = 2;
 
 /** The columns of the list's text for a terminal `width` wide. */
 export function listWidthFor(width: number): number {
-  return Math.min(LIST_MAX_WIDTH, Math.max(LIST_MIN_WIDTH, Math.round(width * 0.4)));
-}
-
-/** The narrowest a plugin tab's list gets, however short its rows are. */
-export const PLUGIN_LIST_MIN = 24;
-/** A plugin tab's list takes about 26% of the terminal, and no more than 38 columns. */
-export const PLUGIN_LIST_SHARE = 0.26;
-export const PLUGIN_LIST_MAX_WIDTH = 38;
-
-/** The most a plugin tab's list may take for a terminal `width` wide. */
-function pluginListWidthFor(width: number): number {
-  return Math.min(
-    PLUGIN_LIST_MAX_WIDTH,
-    Math.max(PLUGIN_LIST_MIN, Math.floor(width * PLUGIN_LIST_SHARE)),
-  );
+  return Math.min(LIST_MAX_WIDTH, Math.max(LIST_MIN_WIDTH, Math.floor(width * LIST_SHARE)));
 }
 
 /** The columns before a row's text: marker, glyph and their spaces. */
 export const ROW_INDENT = 4;
-
-/** The columns a text takes. */
-function cells(text: string): number {
-  let total = 0;
-  for (const char of graphemes(sanitize(text).replace(/\n/g, " "))) total += displayWidth(char);
-  return total;
-}
 
 /** The row id without its type: `item:T-1-x` is `T-1-x`. */
 export function bareId(id: string): string {
@@ -1135,23 +1115,11 @@ export function rowDetail(row: TuiRow): string {
 }
 
 /**
- * The columns of the list's text. A plugin tab's rows are a name and a note, so
- * its column is as wide as the longest of them, never past its narrower share.
+ * The columns of the list's text. Every tab uses one rule, so the divider stays
+ * in the same column when the person switches tabs at the same terminal width.
  */
 export function listWidth(state: TuiState): number {
-  const tab = activeTabOf(state);
-  if (tab?.kind !== "plugin") return listWidthFor(state.width);
-  const cap = pluginListWidthFor(state.width);
-  if (tab.list.rows.length === 0) return cap;
-  let need = PLUGIN_LIST_MIN;
-  for (const row of tab.list.rows) {
-    const indent = row.bare !== true && tab.list.rows.some((one) => one.group !== undefined) ? 2 : 0;
-    need = Math.max(need, ROW_INDENT + indent + cells(rowName(row)), ROW_INDENT + indent + cells(rowDetail(row)));
-    if (row.group !== undefined) {
-      need = Math.max(need, ROW_INDENT + cells(rowName(row.group)), ROW_INDENT + cells(rowDetail(row.group)));
-    }
-  }
-  return Math.min(cap, need);
+  return listWidthFor(state.width);
 }
 
 /** The divider's column: the list, then one column of padding. */
@@ -2718,8 +2686,8 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
 
 /** True when the terminal is wide enough for the list and the object pane. */
 export function twoPane(state: TuiState): boolean {
-  // The list's own width decides: a plugin tab's narrower column leaves room
-  // for the object pane sooner than the Pending and Running tabs' wider one.
+  // The list's width decides: the narrow column leaves room for the object
+  // pane sooner than the terminal's former wider list did.
   const right = LIST_X + listWidth(state) + 3;
   return state.width - right - 1 >= MIN_OBJECT_WIDTH;
 }

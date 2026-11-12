@@ -94,14 +94,30 @@ describe("two-line rows", () => {
   });
 
   test("the Running row: step, step time, run time, repository", () => {
-    const lines = drawnLines(running(120, [run(1)]));
-    expect(textOf(lines[2]).trimEnd()).toBe("❯ ◐ T-0091 flaky-survey  Survey the flaky tests");
+    const lines = drawnLines(running(200, [run(1)]));
+    // The narrower list cuts the title with …; the dim line still holds every field.
+    expect(textOf(lines[2]).trimEnd()).toBe("❯ ◐ T-0091 flaky-survey  Survey the f…");
     expect(textOf(lines[3]).trimEnd()).toBe("    work · 2.5s · 1m 1s · operad");
     // Empty parts are left out: no step time, no repository.
     const bare = drawnLines(
       running(120, [run(1, { stepElapsedMs: null, stepStartedAt: null, object: "T-0091-x" })]),
     );
     expect(textOf(bare[3]).trimEnd()).toBe("    work · 1m 1s");
+  });
+
+  test("a long Running row ends in an ellipsis in the narrower list", () => {
+    const lines = drawnLines(
+      running(120, [
+        run(1, {
+          object: `operad/T-0091-${"long-slug-".repeat(8)}`,
+          title: "A very long title ".repeat(9),
+          stepLabel: `queued (${"key-".repeat(30)}, 3 ahead)`,
+        }),
+      ]),
+    );
+    expect(textOf(lines[2]).trimEnd()).toEndWith("…");
+    expect(textOf(lines[3]).trimEnd()).toEndWith("…");
+    for (const line of lines) expect(textOf(line).length).toBeLessThanOrEqual(31);
   });
 
   test("a Running row that names no object shows the flow alone on its first line", () => {
@@ -132,7 +148,7 @@ describe("two-line rows", () => {
 
     };
     const lines = drawnLines(pending(120, "Ready to merge", "Survey the flaky tests"));
-    expect(textOf(lines[2]).trimEnd()).toBe("❯ ● T-0093 flaky-survey  Survey the flaky tests");
+    expect(textOf(lines[2]).trimEnd()).toBe("❯ ● T-0093 flaky-survey  Surve…");
     expect(textOf(lines[3]).trimEnd()).toBe("    Ready to merge · operad");
     // One pane: both lines cut with … at the pane edge, nothing wraps.
     const narrow = drawnLines(pending(60, "Ready to merge ".repeat(8), "A very long title ".repeat(9)));
@@ -178,7 +194,8 @@ describe("two-line rows", () => {
       mark: "blocked",
     });
     const waiting = drawnLines(running(240, [queued]));
-    expect(textOf(waiting[3])).toContain("verify queued (check place, 1 ahead) · 0ms · queued 9m");
+    expect(textOf(waiting[3])).toStartWith("    verify queued (check place");
+    expect(textOf(waiting[3]).trimEnd()).toEndWith("…");
     const taken = drawnLines(
       running(240, [run(1, { stepLabel: "verify", stepElapsedMs: 5_000, queuedMs: 540_000 })]),
     );
@@ -195,8 +212,8 @@ describe("two-line rows", () => {
 
   test("the selection tint covers both lines to the pane edge and not the blank line", () => {
     const lines = drawnLines(typeList(120, 3));
-    // The column is as wide as the longest line needs: the id and slug, or the note line.
-    const width = 25;
+    // Every tab's column is 26% of the terminal: 31 columns at this width.
+    const width = 31;
     for (const at of [2, 3]) {
       expect(textOf(lines[at]).length).toBe(width);
       expect((lines[at] ?? []).every((piece) => sameColour(piece.bg, TINT))).toBe(true);

@@ -20,8 +20,6 @@ import {
   initialState,
   listWidth,
   listWidthFor,
-  PLUGIN_LIST_MAX_WIDTH,
-  PLUGIN_LIST_MIN,
   reduce,
   twoPane,
 } from "../src/state.ts";
@@ -437,24 +435,24 @@ describe("one tab per plugin", () => {
     shell.stop();
   });
 
-  test("Pending and Running keep their own rows and the terminal's share of width", async () => {
+  test("Pending and Running use the same narrower share as a plugin tab", async () => {
     const { view, shell } = open();
     await view.until((state) => tabOf(state, "plugin:dev")?.list.loaded === true);
     expect(shell.state.tabs[0]?.title).toBe("Pending");
     expect(shell.state.tabs[1]?.title).toBe("Running");
-    expect(listWidth(shell.state)).toBe(listWidthFor(120));
+    expect(listWidthFor(120)).toBe(31);
+    expect(listWidth(shell.state)).toBe(31);
     shell.stop();
   });
 
-  test("a plugin column is as wide as its rows, never wider than its own narrower share", async () => {
+  test("a plugin column keeps the narrower share however short its rows are", async () => {
     const { view, shell } = open(new TreeClient(), 200);
     await view.until((state) => tabOf(state, "plugin:dev")?.list.loaded === true);
     shell.key({ name: "3" });
-    // The rows need only the floor, not the terminal's old share.
-    expect(listWidth(shell.state)).toBe(PLUGIN_LIST_MIN);
-    expect(listWidth(shell.state)).toBeLessThan(listWidthFor(200));
+    // Short rows keep the same column as every other tab, not a column cut to them.
+    expect(listWidth(shell.state)).toBe(38);
     const shortLines = text(drawState(shell.state).list).split("\n");
-    expect(Math.max(...shortLines.map((line) => line.length))).toBe(PLUGIN_LIST_MIN);
+    expect(Math.max(...shortLines.map((line) => line.length))).toBe(38);
     shell.stop();
     const long = new TreeClient([
       ...DATA,
@@ -463,11 +461,11 @@ describe("one tab per plugin", () => {
     const wide = open(long, 200);
     await wide.view.until((state) => tabOf(state, "plugin:dev")?.list.loaded === true);
     wide.shell.key({ name: "3" });
-    expect(listWidth(wide.shell.state)).toBe(PLUGIN_LIST_MAX_WIDTH);
+    expect(listWidth(wide.shell.state)).toBe(38);
     wide.shell.stop();
   });
 
-  test("at 120 and 200 a long dev note gives a column 30–40% narrower than before", async () => {
+  test("at 120 and 200 a long dev note gives a column 30–40% narrower than the former 40%", async () => {
     const note = "confirmed merge · 5/6 · ~$6.57 · merge · P3 // 1 ".repeat(4);
     const long = new TreeClient([
       ...DATA,
@@ -477,7 +475,8 @@ describe("one tab per plugin", () => {
       const { view, shell } = open(long, width);
       await view.until((state) => tabOf(state, "plugin:dev")?.list.loaded === true);
       shell.key({ name: "3" });
-      const before = listWidthFor(width);
+      // The old Pending and Running rule: 40% of the terminal, 40 to 60 columns.
+      const before = Math.min(60, Math.max(40, Math.round(width * 0.4)));
       const now = listWidth(shell.state);
       expect(now / before).toBeLessThanOrEqual(0.65);
       expect(1 - now / before).toBeGreaterThanOrEqual(0.3);
