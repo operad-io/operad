@@ -670,7 +670,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             onLine(line) {
               const logged = radianLogLine(line, defaults.now, openTools, cwd, logProfile, logSecrets);
               const writing = jsonl.push(logged);
-              deliverLine(ctx.receiver, logged);
+              deliverLine(ctx.receiver, logged, logSecrets);
               const parsed = parseResult(line);
               if (parsed !== undefined) result = parsed;
               return writing;

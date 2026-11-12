@@ -75,3 +75,5 @@ and the row fields.
 | T-0358-M6 | packages/harness/process/src/fold-lines.ts | a call that ended stayed in the unfinished calls | `foldLines > a tool call with an end is an entry with its facts` |
 | T-0358-M7 | packages/harness/process/src/lines.ts | `capToolOutput` never cut | `capToolOutput > keeps short text and cuts long text at the cap without splitting a character` |
 | T-0358-M8 | packages/harness/process/src/lines.ts | a receiver that threw stopped the step | `claude/agent > a receiver that throws does not stop the step` |
+| T-0358-M13 | packages/harness/process/src/lines.ts | `capToolOutput` dropped a trailing U+FFFD even when it was a real character | `capToolOutput at the cap > a valid U+FFFD that ends exactly at the cap is kept` |
+| T-0358-M14 | packages/harness/process/src/lines.ts | `deliverLine` handed the line over without masking secrets | `maskSecrets > masks a value as written, and as JSON text writes it` (unit) and the three `a receiver gets a line ... masked` step tests |

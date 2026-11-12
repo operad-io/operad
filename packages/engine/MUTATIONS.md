@@ -712,3 +712,4 @@ the row fields.
 | T-0342-M2 | packages/engine/src/plugin/validate.ts | an `efforts.default` outside the list was accepted | `a harness plugin's efforts > a default outside the list is refused` |
 | T-0342-M3 | packages/engine/src/plugin/validate.ts | an empty `efforts.flag` was accepted | `a harness plugin's efforts > a flag that is not a non-empty string is refused` |
 | T-0342-M4 | packages/engine/src/plugin/validate.ts | a domain plugin could declare `efforts` | `a harness plugin's efforts > only a harness declares them` |
+| T-0358-M12 | packages/engine/src/plugin/registry.ts | the step context did not carry the caller's receiver | `a step's line receiver > the receiver a caller gives reaches the step, and a call without one has none` |

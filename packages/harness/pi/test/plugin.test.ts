@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  FileSecretStore,
   MemoryPluginStore,
   PluginRegistry,
   Runner,
@@ -142,6 +143,18 @@ describe("pi/agent", () => {
     expect(without.result).toBe("done");
     const again = (await Bun.file(String(dataOf(without).log)).text()).split("\n").filter((l) => l.length > 0);
     expect(again).toEqual(logged);
+  });
+
+  test("a receiver gets a line with the operad secrets masked", async () => {
+    const env = await setup("secret-line");
+    await new FileSecretStore({ home: env.root, plugin: "pi" }).set("token", "store-secret-9");
+    const got: string[] = [];
+    await env.registry.runStep("pi/agent", { prompt: "hello", cwd: env.root }, {
+      runId: "run-1",
+      receiver: (line) => got.push(line),
+    });
+    expect(got.join("\n")).toContain("the key is ***");
+    expect(got.join("\n")).not.toContain("store-secret-9");
   });
 
   test("a receiver that throws does not stop the step", async () => {

@@ -5,6 +5,7 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import {
   AccessError,
+  FileSecretStore,
   MemoryPluginStore,
   PluginError,
   PluginRegistry,
@@ -133,6 +134,18 @@ describe("radian/agent", () => {
     expect(got).toEqual(logged);
     expect(got.some((l) => l.includes('"tool_execution_start"') && l.includes('"input":"token=*** make test"'))).toBe(true);
     expect(got.join("\n")).not.toContain("supersecret");
+  });
+
+  test("a receiver gets a journal line other than a tool line with the operad secrets masked", async () => {
+    const env = await setup("secret-line");
+    await new FileSecretStore({ home: env.root, plugin: "radian" }).set("token", "store-secret-9");
+    const got: string[] = [];
+    await env.registry.runStep("radian/agent", { prompt: "hello", cwd: env.root }, {
+      runId: "run-1",
+      receiver: (line) => got.push(line),
+    });
+    expect(got.join("\n")).toContain("the key is ***");
+    expect(got.join("\n")).not.toContain("store-secret-9");
   });
 
   test("a receiver that throws does not stop the step", async () => {

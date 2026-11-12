@@ -39,6 +39,11 @@ switch (mode) {
     line(result());
     process.exit(0);
     break;
+  case "secret-line":
+    line({ type: "message_end", role: "assistant", stopReason: "stop", text: "the key is store-secret-9" });
+    line(result());
+    process.exit(0);
+    break;
   case "done":
     line({ type: "message_end", role: "assistant", stopReason: "stop" });
     line(result());

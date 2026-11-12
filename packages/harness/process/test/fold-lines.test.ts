@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { capToolOutput, emptyFold, foldLines, TOOL_OUTPUT_CAP_BYTES, type FoldState } from "../src/index.ts";
+import { capToolOutput, emptyFold, foldLines, maskSecrets, TOOL_OUTPUT_CAP_BYTES, type FoldState } from "../src/index.ts";
 
 const start = (id: string, name = "Bash", input?: string, at = 100): unknown => ({
   type: "tool_execution_start",
@@ -160,5 +160,22 @@ describe("capToolOutput", () => {
     expect(cut.truncated).toBe(true);
     expect(new TextEncoder().encode(cut.text).length).toBeLessThanOrEqual(TOOL_OUTPUT_CAP_BYTES);
     expect(cut.text).not.toContain("�");
+  });
+});
+
+describe("capToolOutput at the cap", () => {
+  test("a valid U+FFFD that ends exactly at the cap is kept", () => {
+    const text = `${"a".repeat(TOOL_OUTPUT_CAP_BYTES - 3)}�b`;
+    const cut = capToolOutput(text);
+    expect(cut.truncated).toBe(true);
+    expect(cut.text).toBe(`${"a".repeat(TOOL_OUTPUT_CAP_BYTES - 3)}�`);
+  });
+});
+
+describe("maskSecrets", () => {
+  test("masks a value as written, and as JSON text writes it", () => {
+    expect(maskSecrets("a s3cr\"et b", ["s3cr\"et"])).toBe("a *** b");
+    expect(maskSecrets('{"t":"s3cr\\"et"}', ["s3cr\"et"])).toBe('{"t":"***"}');
+    expect(maskSecrets("nothing", ["", "x9"])).toBe("nothing");
   });
 });

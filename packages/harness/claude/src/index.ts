@@ -359,7 +359,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
               await answerGrant(line, (waitId) => ctx.useGrant(waitId), reply);
               await asker.handle(line, reply);
               const writing = jsonl.push(line);
-              deliverLine(ctx.receiver, line);
+              deliverLine(ctx.receiver, line, storeSecrets);
               const parsed = parseResult<WorkerResult>(line);
               if (parsed !== undefined) result = parsed;
               return writing;

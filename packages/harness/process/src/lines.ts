@@ -74,20 +74,38 @@ export type SharedLine =
 export function capToolOutput(text: string): { readonly text: string; readonly truncated: boolean } {
   const bytes = new TextEncoder().encode(text);
   if (bytes.length <= TOOL_OUTPUT_CAP_BYTES) return { text, truncated: false };
-  let cut = new TextDecoder("utf-8", { fatal: false }).decode(bytes.subarray(0, TOOL_OUTPUT_CAP_BYTES));
-  // A character split by the cut decodes to U+FFFD at the end.
-  if (cut.endsWith("�")) cut = cut.slice(0, -1);
+  // Back off to the start of a character: a continuation byte is 10xxxxxx.
+  let end = TOOL_OUTPUT_CAP_BYTES;
+  while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) end -= 1;
+  const cut = new TextDecoder().decode(bytes.subarray(0, end));
   return { text: cut, truncated: true };
 }
 
+/** Replaces every secret value in a log line, also as it is written inside JSON text, with `***`. */
+export function maskSecrets(line: string, secrets: readonly string[]): string {
+  let masked = line;
+  for (const secret of [...secrets].sort((x, y) => y.length - x.length)) {
+    if (secret.length === 0) continue;
+    masked = masked.split(secret).join("***");
+    const escaped = JSON.stringify(secret).slice(1, -1);
+    if (escaped !== secret) masked = masked.split(escaped).join("***");
+  }
+  return masked;
+}
+
 /**
- * Hands a line that was written to the log to the caller's receiver. A
- * receiver that throws does not stop the step: the log has the line.
+ * Hands a line that was written to the log to the caller's receiver, with the
+ * secret values masked. A receiver that throws does not stop the step: the log
+ * has the line.
  */
-export function deliverLine(receiver: ((line: string) => void) | undefined, line: string): void {
+export function deliverLine(
+  receiver: ((line: string) => void) | undefined,
+  line: string,
+  secrets: readonly string[],
+): void {
   if (receiver === undefined) return;
   try {
-    receiver(line);
+    receiver(maskSecrets(line, secrets));
   } catch {
     // the log is the record; the caller's trouble stays the caller's
   }
