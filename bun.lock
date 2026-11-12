@@ -5,6 +5,7 @@
     "": {
       "name": "operad-workspace",
       "dependencies": {
+        "@operad-io/bot": "workspace:*",
         "@operad-io/engine": "workspace:*",
         "@operad-io/harness-claude": "workspace:*",
         "@operad-io/harness-pi": "workspace:*",
