@@ -83,3 +83,9 @@ the row fields.
 | T-0239-M6 | packages/mcp/src/format.ts | the running list did not show the queued time | `the running list > a step queued for a check place shows queued, and its queued time once it runs` |
 | T-0318-M2 | packages/mcp/src/format.ts | the list table's wait column dropped (the wait only in `show`) | `mcp format > writes one row per object with its scope, flags and escaped cells` |
 | T-0339-M21 | packages/mcp/src/tools.ts | `act` passed a file argument through instead of saying why not | `operad mcp > act says why a file argument cannot be passed, and still runs the action without one` |
+
+## T-0361 — a live section reads what follows a mark, with a tail
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0361-M8 | packages/mcp/src/tools.ts | the `section` tool dropped its `after` argument instead of passing it on | `operad mcp > initializes, lists the table and reads every tool on fixture objects` |

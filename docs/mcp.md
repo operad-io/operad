@@ -236,14 +236,24 @@ Input:
     "id": { "type": "string", "minLength": 1, "description": "A bare id or type:id." },
     "section": { "type": "string", "minLength": 1, "description": "A section id from show." },
     "cursor": { "type": "string", "description": "The next cursor from an earlier read." },
+    "after": { "type": "string", "description": "A mark from an earlier read: return only the finished content after it. The answer says in `delta` whether it is that part alone or a whole page." },
     "full": { "type": "boolean", "description": "Return the whole section without the size cap." }
   }
 }
 ```
 
-Result: `{ "markdown": "...", "next": "<cursor>" }`. The text block is the
+Result: `{ "markdown": "...", "next": "<cursor>", "mark": "<mark>", "tail": "..." }`.
+`mark` is an opaque position the finished content goes to, and `tail` is the
+Markdown of the part still changing; a plugin that does not use them sends
+neither. With `after=<mark>` from an earlier read, `markdown` holds only the
+finished content after that mark, and `delta` says whether it is that part alone
+(true) or a whole page the client must replace (false). The size cap covers
+`markdown` and `tail` together but never cuts `tail`: when both do not fit,
+`markdown` is shortened first; when even the tail and the truncation note do not
+fit, the call is refused with an over-cap message naming `--full`. The text block is the
 Markdown, with a final line naming `next` when the section is paged. An unknown
-id or section is a tool error with the view's message.
+id or section, or a mark from another section or object, is a tool error with
+the view's message.
 
 ### `pending`
 
