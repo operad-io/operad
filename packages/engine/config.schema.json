@@ -159,7 +159,8 @@
             "dev:reverify",
             "dev:reject",
             "dev:priority",
-            "dev:concurrency"
+            "dev:concurrency",
+            "chat:close"
           ],
           "description": "The plugin actions named <plugin>:<action> that operad mcp may run. Every other action is refused for the owner to run. Takes effect at the next operad mcp start."
         },
@@ -169,7 +170,9 @@
             "type": "string",
             "minLength": 1
           },
-          "default": [],
+          "default": [
+            "chat:close"
+          ],
           "description": "Allowed actions that also carry confirm: true. An action listed here runs through MCP; one that is only in actions is refused. Takes effect at the next operad mcp start."
         }
       },

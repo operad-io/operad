@@ -139,7 +139,11 @@ describe("the default access profile", () => {
       access: { denyPaths: ["~/notes"], readOnly: true, denyCommands: [] },
     }).access;
     const base = defaultAccess(r.home);
-    expect(tightened.denyPaths).toEqual([...(base.denyPaths as string[]), "~/notes"]);
+    expect(tightened.denyPaths).toEqual([
+      ...(base.denyPaths as string[]),
+      join(r.home, "bot", "reader", "skills"),
+      "~/notes",
+    ]);
     expect(tightened.denyCommands).toEqual(base.denyCommands);
     expect(tightened.readOnly).toBe(true);
     expect(resolveBot(r.home, "plain", { access: { readOnly: false } }).access.readOnly).toBeUndefined();

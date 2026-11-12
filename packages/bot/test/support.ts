@@ -114,5 +114,22 @@ export async function rig(bots: Record<string, unknown> = {}, harnesses = ["clau
         params: null,
       });
     },
+    async command(plugin: string, verb: string, args: readonly string[], input = ""): Promise<unknown> {
+      const run = await registry.runCommand([plugin, verb, ...args], {
+        cwd: root,
+        input,
+      });
+      if (run === undefined) throw new Error(`no command ${plugin} ${verb}`);
+      return run.value;
+    },
+    async act(type: string, id: string, name: string, args: Record<string, unknown> = {}): Promise<unknown> {
+      const object = await store.get(type, id);
+      if (object === undefined) throw new Error(`no ${type} ${id}`);
+      const run = await registry.runAction(name, args, {
+        object: { type, id, data: object.data },
+        actor: { via: "cli", id: "me" },
+      });
+      return run.value;
+    },
   };
 }
