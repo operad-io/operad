@@ -15,6 +15,7 @@ import {
 } from "@operad-io/engine";
 import { EVENT_NOTE_TEMPLATE } from "@operad-io/harness-process";
 import { claudeToolEvent, createClaudeHarnessPlugin } from "../src/index.ts";
+import { FLUSH_MS } from "@operad-io/harness-process";
 import { alive, cleanupTempRoots, manualClock, tempRoot, waitForFile, waitForGone, waitForPid, type ManualClock } from "@operad-io/harness-process/test-support";
 
 afterAll(cleanupTempRoots);
@@ -87,6 +88,38 @@ function runAgent(
 }
 
 describe("claude/agent", () => {
+  test("a receiver gets each line the step writes to its log; without one the log is the same", async () => {
+    const env = await setup("tools");
+    const got: string[] = [];
+    const withReceiver = await env.registry.runStep("claude/agent", { prompt: "hello", cwd: env.root }, {
+      runId: "run-1",
+      receiver: (line) => got.push(line),
+    });
+    const logged = (await Bun.file(String(dataOf(withReceiver).log)).text()).split("\n").filter((l) => l.length > 0);
+    expect(got).toEqual(logged);
+    expect(got.map((l) => (JSON.parse(l) as { type: string }).type)).toEqual([
+      "tool_execution_start",
+      "tool_execution_end",
+      "message_end",
+      "result",
+    ]);
+    const without = await runAgent(env, { prompt: "hello", cwd: env.root }, { runId: "run-2" });
+    expect(without.result).toBe("done");
+    const again = (await Bun.file(String(dataOf(without).log)).text()).split("\n").filter((l) => l.length > 0);
+    expect(again).toEqual(logged);
+  });
+
+  test("a receiver that throws does not stop the step", async () => {
+    const env = await setup("tools");
+    const result = await env.registry.runStep("claude/agent", { prompt: "hello", cwd: env.root }, {
+      runId: "run-1",
+      receiver: () => {
+        throw new Error("receiver broke");
+      },
+    });
+    expect(result.result).toBe("done");
+  });
+
   test("a done run has the facts of pi/agent: session, final message, usage, log", async () => {
     const env = await setup("done");
     const result = await runAgent(env, { prompt: "hello", cwd: env.root });
@@ -409,7 +442,8 @@ describe("claude/agent", () => {
     await waitForFile(env.marker);
     await env.clock.when(() => env.clock.clears > 0);
     // Twice the stall limit passes with no line and no stop: the tool is open.
-    expect(env.clock.fireUpTo(2_000)).toBe(0);
+    // A log's flush timer is shorter than any stall limit and may be pending.
+    expect(env.clock.fireBetween(FLUSH_MS, 2_000)).toBe(0);
 
     writeFileSync(env.release, "settle");
     const result = await running;

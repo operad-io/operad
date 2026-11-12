@@ -62,3 +62,16 @@ and the row fields.
 | T-0335-M2 | packages/harness/process/src/ask-call.ts | a refusal's note was dropped, so the program got the generic reason | `createCallAsker > a refusal's note is the reason the program gets` |
 | T-0327-M10 | packages/harness/process/src/ask-call.ts | `canAsk` ignored `allowMcp`, so a bot's unlisted MCP tool could not ask a person | `canAsk > is true for a profile that puts MCP tools under it, even with none listed` |
 | T-0339-M20 | packages/harness/process/src/images.ts | `parseImageInputs` took any media type | `parseInput refuses an image that is not a path with an image media type` (claude) |
+
+## T-0358 — agent lines, the fold and the receiver
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0358-M1 | packages/harness/process/src/jsonl-log.ts | the flush timer waited twice FLUSH_MS | `jsonl log flush timing > a line is written when its 250 ms are up, without more lines` |
+| T-0358-M2 | packages/harness/process/src/jsonl-log.ts | a flush did not cancel the pending timer | `jsonl log flush timing > a full buffer and end cancel the timer` |
+| T-0358-M3 | packages/harness/process/src/fold-lines.ts | a call with a `blocked` line settled as `failed` | `foldLines > a blocked call is blocked, with the reason as its error` |
+| T-0358-M4 | packages/harness/process/src/fold-lines.ts | a text increment replaced the text so far instead of adding to it | `foldLines > increments add up to the finished text, and a finished message wins over the increments` |
+| T-0358-M5 | packages/harness/process/src/fold-lines.ts | `message_end` text was added even when the message's text had come as lines | `foldLines > today's message_end text is an entry only when no text came before it` |
+| T-0358-M6 | packages/harness/process/src/fold-lines.ts | a call that ended stayed in the unfinished calls | `foldLines > a tool call with an end is an entry with its facts` |
+| T-0358-M7 | packages/harness/process/src/lines.ts | `capToolOutput` never cut | `capToolOutput > keeps short text and cuts long text at the cap without splitting a character` |
+| T-0358-M8 | packages/harness/process/src/lines.ts | a receiver that threw stopped the step | `claude/agent > a receiver that throws does not stop the step` |

@@ -37,6 +37,7 @@ import {
   waitForJson,
   waitUntil,
 } from "./support.ts";
+import { FLUSH_MS } from "@operad-io/harness-process";
 import { alive, manualClock, waitForFile, waitForPid, type ManualClock } from "@operad-io/harness-process/test-support";
 
 afterAll(cleanupTempRoots);
@@ -120,6 +121,31 @@ function runAgent(
 }
 
 describe("radian/agent", () => {
+  test("a receiver gets each line the step writes to its log, as it is logged", async () => {
+    const times = [1_000, 73_000];
+    const env = await setup("tool-detail", { now: () => times.shift() ?? 0 });
+    const got: string[] = [];
+    const result = await env.registry.runStep("radian/agent", { prompt: "hello", cwd: env.root }, {
+      runId: "run-1",
+      receiver: (line) => got.push(line),
+    });
+    const logged = (await Bun.file(String(dataOf(result).log)).text()).split("\n").filter((l) => l.length > 0);
+    expect(got).toEqual(logged);
+    expect(got.some((l) => l.includes('"tool_execution_start"') && l.includes('"input":"token=*** make test"'))).toBe(true);
+    expect(got.join("\n")).not.toContain("supersecret");
+  });
+
+  test("a receiver that throws does not stop the step", async () => {
+    const env = await setup("done");
+    const result = await env.registry.runStep("radian/agent", { prompt: "hello", cwd: env.root }, {
+      runId: "run-1",
+      receiver: () => {
+        throw new Error("receiver broke");
+      },
+    });
+    expect(result.result).toBe("done");
+  });
+
   test("tool lines carry the command summary, the duration and an error's first line", async () => {
     const times = [1_000, 73_000];
     const env = await setup("tool-detail", { now: () => times.shift() ?? 0 });
@@ -512,7 +538,8 @@ describe("radian/agent", () => {
     await waitForFile(env.marker);
     await env.clock.when(() => env.clock.clears > 0);
     // Twice the stall limit passes with no line and no stop: the tool is open.
-    expect(env.clock.fireUpTo(2_000)).toBe(0);
+    // A log's flush timer is shorter than any stall limit and may be pending.
+    expect(env.clock.fireBetween(FLUSH_MS, 2_000)).toBe(0);
 
     writeFileSync(env.release, "settle");
     const result = await running;
@@ -576,7 +603,8 @@ describe("radian/agent", () => {
     );
 
     await waitForFile(env.marker);
-    expect(env.clock.fireUpTo(2_000)).toBe(0);
+    // A log's flush timer is shorter than any stall limit and may be pending.
+    expect(env.clock.fireBetween(FLUSH_MS, 2_000)).toBe(0);
     controller.abort();
     expect((await running).result).toBe("interrupted");
   });

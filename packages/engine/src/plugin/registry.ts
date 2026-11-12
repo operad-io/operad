@@ -969,6 +969,7 @@ export class PluginRegistry {
     };
     const ctx: StepContext = {
       useGrant,
+      ...(options.receiver === undefined ? {} : { receiver: options.receiver }),
       plugin: found.plugin.name,
       home: this.home,
       cwd: options.cwd ?? this.cwd,

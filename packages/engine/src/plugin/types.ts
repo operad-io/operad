@@ -499,6 +499,8 @@ export interface StepContext extends PluginBaseContext {
    * used. Call it before the call the permission covers.
    */
   useGrant(waitId: string): Promise<boolean>;
+  /** The caller's receiver of log lines, when it gave one; see `StepRunOptions.receiver`. */
+  readonly receiver?: StepLineReceiver | undefined;
   /**
    * Tells the kernel this step waits for a place the plugin manages itself
    * (not a step limit), under `key`; the running view shows it queued. Call
@@ -575,6 +577,9 @@ export interface StepLimiter {
   }): Promise<() => Promise<void>>;
 }
 
+/** Takes one log line of a step as it is written. */
+export type StepLineReceiver = (line: string) => void;
+
 /** Options for running a step through the registry. */
 export interface StepRunOptions {
   readonly runId: string;
@@ -582,6 +587,12 @@ export interface StepRunOptions {
   readonly limits?: StepLimiter | undefined;
   /** Takes the questions the step asks with `ctx.ask`. */
   readonly asker?: StepAsker | undefined;
+  /**
+   * Takes each line a harness step writes to its log, as the text of the line.
+   * Opaque to the kernel: only a harness step calls it, and only for the step
+   * it is given to (a nested step does not inherit it).
+   */
+  readonly receiver?: StepLineReceiver | undefined;
   readonly object?: RunObject | undefined;
   readonly cwd?: string | undefined;
   readonly signal?: AbortSignal | undefined;

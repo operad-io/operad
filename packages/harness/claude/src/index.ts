@@ -42,6 +42,7 @@ import {
   operadToolsOf,
   mountedServersOf,
   JsonlLog,
+  deliverLine,
   modelLimit,
   standardUsage,
   type UsageSource,
@@ -331,7 +332,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
 
           const inbox = inboxOf(params);
           const started = Date.now();
-          const jsonl = new JsonlLog(ctx.logger);
+          const jsonl = new JsonlLog(ctx.logger, clock);
           let result: WorkerResult | undefined;
           // Ends the program when a question about a call runs out of grace.
           const stopper = new AbortController();
@@ -358,6 +359,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
               await answerGrant(line, (waitId) => ctx.useGrant(waitId), reply);
               await asker.handle(line, reply);
               const writing = jsonl.push(line);
+              deliverLine(ctx.receiver, line);
               const parsed = parseResult<WorkerResult>(line);
               if (parsed !== undefined) result = parsed;
               return writing;

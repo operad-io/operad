@@ -30,6 +30,13 @@ function failed(reason: string, message: string, extra: Record<string, unknown> 
 }
 
 switch (mode) {
+  case "tools":
+    line({ type: "tool_execution_start", toolCallId: "t1", toolName: "Bash", at: 5, input: "make test" });
+    line({ type: "tool_execution_end", toolCallId: "t1", toolName: "Bash", isError: false, durationMs: 7 });
+    line({ type: "message_end", role: "assistant", stopReason: "end_turn", text: "all done" });
+    line(result());
+    process.exit(0);
+    break;
   case "done":
     line({ type: "message_end", role: "assistant", stopReason: "end_turn" });
     line(result());
