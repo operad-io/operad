@@ -275,6 +275,9 @@ async function runFlow(
 
   const taskRow = async (): Promise<{ state?: string } | undefined> => {
     const listed = await cli(["list", "task", "--filter", "all", "--json"]);
+    if (listed.code !== 0 || listed.out.length === 0) {
+      throw new Error(`list task failed (code ${listed.code}): ${listed.err}`);
+    }
     const page = JSON.parse(listed.out) as { rows: { id: string; state: string }[] };
     return page.rows.find((row) => row.id === taskId);
   };
@@ -314,6 +317,9 @@ async function runFlow(
       storeRoot,
       async () => {
         const running = await cli(["running", "--json"]);
+        if (running.code !== 0 || running.out.length === 0) {
+          throw new Error(`running failed (code ${running.code}): ${running.err}`);
+        }
         return (JSON.parse(running.out) as unknown[]).length === 0;
       },
       "the run to finish cleanup",
