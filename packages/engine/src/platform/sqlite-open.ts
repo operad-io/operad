@@ -70,3 +70,35 @@ function currentJournalMode(database: Database): string | undefined {
     .query<{ journal_mode: string }, []>("PRAGMA journal_mode")
     .get()?.journal_mode;
 }
+
+/** The two calls `writeImmediate` makes; a `Database` has both. */
+export interface ImmediateWriter {
+  transaction<T>(work: () => T): { immediate(): T };
+  query(sql: string): { get(): unknown };
+}
+
+function dataVersion(database: ImmediateWriter): number | undefined {
+  const row = database.query("PRAGMA data_version").get();
+  if (typeof row !== "object" || row === null) return undefined;
+  const version = (row as { data_version?: unknown }).data_version;
+  return typeof version === "number" ? version : undefined;
+}
+
+/**
+ * Run `work` in an immediate transaction, waiting for other writers for as long
+ * as they make progress. The busy handler gives up after BUSY_TIMEOUT_MS, but a
+ * writer that commits again the moment it releases the lock can keep another
+ * connection waiting longer than that on a slow disk, with nothing stuck. So
+ * SQLITE_BUSY is final only when no other connection committed while this one
+ * waited: a holder that never commits is stuck, and the error says so.
+ */
+export function writeImmediate<T>(database: ImmediateWriter, work: () => T): T {
+  for (;;) {
+    const before = dataVersion(database);
+    try {
+      return database.transaction(work).immediate();
+    } catch (error) {
+      if (!isBusy(error) || dataVersion(database) === before) throw error;
+    }
+  }
+}

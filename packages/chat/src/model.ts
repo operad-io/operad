@@ -61,7 +61,16 @@ export interface ChatData {
    * above are then what the chat started with.
    */
   readonly refresh?: string | undefined;
+  /** The model that gave the last reply, when its harness reported one. */
+  readonly lastModel?: string | undefined;
+  /** What the replies cost so far, in millionths of a dollar; absent while no reply reported a cost. */
+  readonly costMicros?: number | undefined;
+  /** How far to trust `costMicros`: the least exact of the replies counted. */
+  readonly costQuality?: CostQuality | undefined;
 }
+
+/** How far to trust a cost: the harness's own words. */
+export type CostQuality = "exact" | "estimated" | "incomplete";
 
 /** What a plugin gives to create a chat. */
 export interface NewChat {
@@ -160,6 +169,11 @@ export interface MessageData {
   readonly replyTo?: readonly string[] | undefined;
   /** An assistant message: the harness session after it. */
   readonly session?: string | undefined;
+  /** An assistant message: the model that answered, when the harness reported it. */
+  readonly model?: string | undefined;
+  /** An assistant message: what it cost in millionths of a dollar, when reported. */
+  readonly costMicros?: number | undefined;
+  readonly costQuality?: CostQuality | undefined;
 }
 
 /** One message with when it was recorded. */
@@ -186,7 +200,64 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
     closed: data.closed === true,
     channels: stringList(data.channels),
     ...(typeof data.refresh === "string" && data.refresh.length > 0 ? { refresh: data.refresh } : {}),
+    ...(typeof data.lastModel === "string" && data.lastModel.length > 0 ? { lastModel: data.lastModel } : {}),
+    ...(typeof data.costMicros === "number" && Number.isFinite(data.costMicros) ? { costMicros: data.costMicros } : {}),
+    ...(isCostQuality(data.costQuality) ? { costQuality: data.costQuality } : {}),
   };
+}
+
+function isCostQuality(value: unknown): value is CostQuality {
+  return value === "exact" || value === "estimated" || value === "incomplete";
+}
+
+/** A cost as text: `$0.12`, `~$0.12` when estimated, `≥$0.12` when only part was priced. */
+export function costText(micros: number, quality: CostQuality | undefined): string {
+  const symbol = quality === "estimated" ? "~" : quality === "incomplete" ? "≥" : "";
+  return `${symbol}$${(micros / 1e6).toFixed(2)}`;
+}
+
+/** The model and cost parts of a line, as far as they are known. */
+export function modelAndCost(
+  model: string | undefined,
+  micros: number | undefined,
+  quality: CostQuality | undefined,
+): readonly string[] {
+  return [
+    ...(model === undefined || model.length === 0 ? [] : [model]),
+    ...(micros === undefined ? [] : [costText(micros, quality)]),
+  ];
+}
+
+/** What a chat uses, for its row and its page: `claude · sonnet · $0.12`. */
+export function agentLine(chat: ChatData): string {
+  return [chat.harness, ...modelAndCost(chat.lastModel, chat.costMicros, chat.costQuality)]
+    .filter((part) => part.length > 0)
+    .join(" · ");
+}
+
+/** The model, cost and quality a harness's `usage` reports; each only when it did. */
+export function usageOf(value: unknown): {
+  readonly model?: string;
+  readonly costMicros?: number;
+  readonly costQuality?: CostQuality;
+} {
+  if (!isRecord(value)) return {};
+  const micros = value.costMicros;
+  const known = typeof micros === "number" && Number.isFinite(micros);
+  return {
+    ...(typeof value.model === "string" && value.model.length > 0 ? { model: value.model } : {}),
+    ...(known ? { costMicros: micros } : {}),
+    ...(known ? { costQuality: isCostQuality(value.costQuality) ? value.costQuality : "estimated" } : {}),
+  };
+}
+
+const QUALITY_ORDER: readonly CostQuality[] = ["exact", "estimated", "incomplete"];
+
+/** The less exact of two qualities; an absent one counts for the other. */
+export function worseQuality(a: CostQuality | undefined, b: CostQuality | undefined): CostQuality | undefined {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return QUALITY_ORDER.indexOf(a) >= QUALITY_ORDER.indexOf(b) ? a : b;
 }
 
 /** The longest title taken from a first message. */
@@ -287,6 +358,9 @@ function messageOfFact(fact: PluginFact): Message | undefined {
     },
     ...(Array.isArray(data.replyTo) ? { replyTo: stringList(data.replyTo) } : {}),
     ...(typeof data.session === "string" ? { session: data.session } : {}),
+    ...(typeof data.model === "string" && data.model.length > 0 ? { model: data.model } : {}),
+    ...(typeof data.costMicros === "number" && Number.isFinite(data.costMicros) ? { costMicros: data.costMicros } : {}),
+    ...(isCostQuality(data.costQuality) ? { costQuality: data.costQuality } : {}),
     at: fact.at,
     sequence: fact.sequence,
   };

@@ -38,3 +38,9 @@ the row fields.
 | T-0339-M24 | packages/chat/src/model.ts | `attachmentOf` guessed the type from the extension, ignoring the upload's | `an upload's own type > a file with no extension keeps the type its upload gave, so it is an image to the agent` |
 | T-0339-M25 | packages/chat/src/views.ts | the transcript linked the server-local path instead of the attachment address | `chat:send with attachments > the transcript shows an image as an image and another file as a link, each with its name` |
 | T-0339-M27 | packages/chat/src/index.ts | the note kept `minLength: 1`, so an empty note beside an attachment was refused by the schema | `chat:send with attachments > an empty note beside an attachment is an attachment-only message; an empty note alone is refused` |
+
+## T-0337 — the chat row says the agent
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0337-M1 | packages/chat/src/model.ts | the row note dropped the agent | `the chat row says the agent > a chat with no reply yet shows the agent alone` |

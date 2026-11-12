@@ -684,22 +684,26 @@ export function startShell(deps: TuiShellDeps): TuiShell {
 
   /**
    * The next level of an open object, from the plugin's other types. It is
-   * asked for under the type's `all` filter, never the tab's: every child of
-   * the open object is listed, whatever the left list shows (T-0305).
+   * asked for under the tab's filter, the same one the left list shows, so the
+   * page lists and counts only the children that filter shows.
    */
   async function loadChildren(
     object: ViewObject,
     version: number,
     signal: AbortSignal,
+    filter?: string | undefined,
+    filterSeq?: number | undefined,
   ): Promise<void> {
     const tab = pluginTabOf(state, object.type);
     if (tab === undefined) return;
+    const chosen = filter ?? tab.filter;
+    const seq = filterSeq ?? tab.filterSeq ?? 0;
     try {
       const found = await fetchTypes(
         tab,
         { parent: `${object.type}:${object.id}` },
         signal,
-        "all",
+        chosen,
       );
       if (signal.aborted || finished) return;
       dispatch({
@@ -710,6 +714,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         hidden: found.hidden,
         hiddenDone: found.hiddenDone,
         hiddenCancelled: found.hiddenCancelled,
+        ...(chosen === undefined ? {} : { filter: chosen }),
+        filterSeq: seq,
       });
     } catch (error) {
       if (signal.aborted || finished) return;
@@ -734,6 +740,17 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         filter: request.filter,
         filterSeq: request.seq,
       });
+      // The open object's next level uses the same filter as the left list.
+      const current = state.tabs.find((candidate) => candidate.id === request.tabId);
+      const object = state.object;
+      if (
+        current?.filter === request.filter &&
+        (current.filterSeq ?? 0) === request.seq &&
+        object !== undefined &&
+        pluginTabOf(state, object.type)?.id === request.tabId
+      ) {
+        await loadChildren(object, object.version, abort.signal, request.filter, request.seq);
+      }
     } catch (error) {
       if (abort.signal.aborted) return;
       noteConnection(error);

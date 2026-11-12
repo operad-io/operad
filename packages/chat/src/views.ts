@@ -10,7 +10,7 @@ import type {
   ViewContext,
   ViewSection,
 } from "@operad-io/engine";
-import { attachmentsOf, chatData, chatRef, IMAGE_TYPES, MESSAGE_FACT, type Attachment, type Message } from "./model.ts";
+import { agentLine, attachmentsOf, chatData, chatRef, IMAGE_TYPES, MESSAGE_FACT, modelAndCost, type Attachment, type Message } from "./model.ts";
 
 /** How many facts of a chat one page of the transcript reads. */
 export const TRANSCRIPT_PAGE = 50;
@@ -27,6 +27,7 @@ function row(object: StoredObject): ObjectRow {
     id: object.id,
     title: chat.title.length > 0 ? chat.title : object.id,
     state: chat.closed ? "closed" : "open",
+    ...(chat.harness.length > 0 ? { note: agentLine(chat) } : {}),
     ...(chat.closed ? { final: true } : {}),
     ...(typeof chat.parent === "string" && chat.parent.length > 0 ? { parent: chat.parent } : {}),
   };
@@ -59,7 +60,9 @@ export function messageMarkdown(message: Message, speaker: string = DEFAULT_SPEA
   const who = message.role === "assistant" ? speaker : "you";
   const via = message.role === "user" && message.source.kind.length > 0 ? ` via ${message.source.kind}` : "";
   const head = `**${who}**${via} · ${minute(message.at)}`;
-  const body = [message.text, ...message.attachments.map((file) => attachmentMarkdown(file, home))].filter((part) => part.length > 0);
+  const used = message.role === "assistant" ? modelAndCost(message.model, message.costMicros, message.costQuality) : [];
+  const under = used.length > 0 ? `*${used.join(" · ")}*` : "";
+  const body = [message.text, ...message.attachments.map((file) => attachmentMarkdown(file, home)), under].filter((part) => part.length > 0);
   return [head, ...body].join("\n\n");
 }
 
@@ -107,6 +110,11 @@ function messageFrom(fact: {
       kind: typeof source.kind === "string" ? source.kind : "",
       ref: typeof source.ref === "string" ? source.ref : null,
     },
+    ...(typeof data.model === "string" && data.model.length > 0 ? { model: data.model } : {}),
+    ...(typeof data.costMicros === "number" && Number.isFinite(data.costMicros) ? { costMicros: data.costMicros } : {}),
+    ...(data.costQuality === "exact" || data.costQuality === "estimated" || data.costQuality === "incomplete"
+      ? { costQuality: data.costQuality }
+      : {}),
     at: fact.at,
     sequence: fact.sequence,
   };
@@ -131,7 +139,12 @@ async function load(
     const message = messageFrom(fact);
     if (message !== undefined) blocks.push(messageMarkdown(message, speaker, ctx.home));
   }
-  const markdown = blocks.length === 0 && options.cursor === undefined ? "No messages yet." : blocks.join("\n\n---\n\n");
+  const body = blocks.length === 0 && options.cursor === undefined ? "No messages yet." : blocks.join("\n\n---\n\n");
+  // Every page says which agent answers, as the row does.
+  const chat = chatData(object.data);
+  const markdown = chat.harness.length > 0
+    ? `Agent: ${agentLine(chat)}\n\n${body}`
+    : body;
 
   // The table of contents: the cursor each page starts at, the first one without.
   const pages: SectionPage[] = [{ label: "Page 1" }];

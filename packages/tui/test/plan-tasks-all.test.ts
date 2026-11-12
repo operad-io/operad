@@ -203,8 +203,8 @@ const rightText = (state: TuiState): string =>
 const colour = (name: keyof typeof BUILTIN_THEMES.dark): string =>
   toRgba(BUILTIN_THEMES.dark[name]).toInts().join(",");
 
-describe("an open plan's next level is every one of its tasks", () => {
-  test("all tasks show under the tab's active filter, the counts match, and f keeps them", async () => {
+describe("an open plan's next level follows the tab's filter", () => {
+  test("the default filter lists only its rows and f makes the bar count every task", async () => {
     const client = new Client();
     const view = new View();
     const shell = startShell({
@@ -225,61 +225,59 @@ describe("an open plan's next level is every one of its tasks", () => {
         (state) => state.object?.id === "p1" && state.object.children !== undefined,
       );
 
-      // Every task, in the child list's order: the cancelled one last.
-      expect(childIds(shell.state)).toEqual(["t-active", "t-merged", "t-cancelled"]);
-      const right = rightText(shell.state);
-      expect(right).toContain("t-active");
-      expect(right).toContain("t-merged");
-      expect(right).toContain("t-cancelled");
+      // The default `active` filter leaves the merged and cancelled tasks out.
+      expect(childIds(shell.state)).toEqual(["t-active"]);
+      const active = rightText(shell.state);
+      expect(active).toContain("t-active");
+      expect(active).not.toContain("t-merged");
+      expect(active).not.toContain("t-cancelled");
+      const activeHeading = active.split("\n").find((line) => line.includes(" / "));
+      expect(activeHeading?.trimEnd()).toEndWith("0 / 1");
+      expect(shell.state.object?.children?.hidden).toBe(2);
+      expect(shell.state.object?.children?.hiddenDone).toBe(1);
+      expect(shell.state.object?.children?.hiddenCancelled).toBe(1);
+      expect(drawState(shell.state).right.chunks.filter((chunk) => /^█+$/.test(chunk.text))).toEqual([]);
+      const before = client.asked.filter((one) => one.parent === "plan:p1");
+      expect(before.length).toBeGreaterThan(0);
+      expect(before.every((one) => one.filter === "active")).toBe(true);
 
-      // One merged of two counted children; the cancelled one is outside total.
-      const heading = right.split("\n").find((line) => line.includes(" / "));
+      // `f` changes the left list and the open plan's next level together.
+      const version = tabOf(shell.state)?.list.version ?? 0;
+      shell.key({ name: "f" });
+      await view.until((state) => {
+        const tab = tabOf(state);
+        return (
+          tab?.filter === "all" &&
+          tab.list.switching !== true &&
+          (tab.list.version ?? 0) > version &&
+          childIds(state).length === 3
+        );
+      });
+      expect(childIds(shell.state)).toEqual(["t-active", "t-merged", "t-cancelled"]);
+      const every = rightText(shell.state);
+      const heading = every.split("\n").find((line) => line.includes(" / "));
       expect(heading?.trimEnd()).toEndWith("1 / 2");
       expect(shell.state.object?.children?.hidden).toBeUndefined();
       const cells = drawState(shell.state).right.chunks.filter((chunk) => /^█+$/.test(chunk.text));
       expect(cells.length).toBe(2);
       expect(cells[0]?.fg?.toInts().join(",")).toBe(colour("ok"));
       expect(cells[1]?.fg?.toInts().join(",")).toBe(colour("cancelled"));
-
-      // The next level was fetched under `all`, never under the tab's filter.
-      const children = client.asked.filter((one) => one.parent === "plan:p1");
-      expect(children.length).toBeGreaterThan(0);
-      expect(children.every((one) => one.filter === "all")).toBe(true);
-
-      // `f` cycles the left list only: the open plan and its tasks stay as they are.
-      const version = tabOf(shell.state)?.list.version ?? 0;
-      const before = client.asked.filter((one) => one.parent === "plan:p1").length;
-      shell.key({ name: "f" });
-      await client.when((one) => one.type === "repo" && one.filter === "all" && one.parent === undefined);
-      await view.until((state) => {
-        const tab = tabOf(state);
-        return (
-          tab?.filter === "all" &&
-          tab.list.switching !== true &&
-          (tab.list.version ?? 0) > version
-        );
-      });
-      expect(tabOf(shell.state)?.filter).toBe("all");
       expect(
-        client.asked.some(
-          (one) => one.type === "repo" && one.filter === "all" && one.parent === undefined,
-        ),
+        client.asked.some((one) => one.parent === "plan:p1" && one.filter === "all"),
       ).toBe(true);
-      expect(shell.state.object?.id).toBe("p1");
-      expect(childIds(shell.state)).toEqual(["t-active", "t-merged", "t-cancelled"]);
-      expect(client.asked.filter((one) => one.parent === "plan:p1").length).toBe(before);
     } finally {
       shell.stop();
       await shell.done;
     }
   });
 
-  test("a task that becomes merged stays in the open plan's tasks", () => {
+  test("a task that becomes merged leaves the active list and joins the hidden count", () => {
     let state = initialState({ width: 120, height: 30, theme: "dark" });
     state = reduce(state, { type: "types", types: TYPES });
     state = reduce(state, { type: "key", key: "3" });
     const plan = DATA.find((one) => one.row.id === "p1");
-    if (plan === undefined) throw new Error("no plan in the data");
+    const active = DATA.find((one) => one.row.id === "t-active");
+    if (plan === undefined || active === undefined) throw new Error("the fixture is incomplete");
     state = reduce(state, {
       type: "tree",
       tabId: `plugin:${PLUGIN}`,
@@ -307,18 +305,22 @@ describe("an open plan's next level is every one of its tasks", () => {
       type: "children",
       objectId: "p1",
       version,
-      entries: DATA.filter((one) => one.parent === "plan:p1").map((one) => ({
-        row: one.row,
-        type: one.type,
-      })),
+      entries: [{ row: active.row, type: active.type }],
+      hidden: 2,
+      hiddenDone: 1,
+      hiddenCancelled: 1,
+      filter: "active",
+      filterSeq: 0,
     });
-    expect(childIds(state)).toEqual(["t-active", "t-merged", "t-cancelled"]);
+    expect(childIds(state)).toEqual(["t-active"]);
 
-    // The tab's filter has no merged state, but the open plan's list does not filter.
     state = reduce(state, {
       type: "row",
       row: entry("task", "t-active", "merged", "plan:p1", { mark: "done" }).row,
     });
-    expect(childIds(state)).toEqual(["t-active", "t-merged", "t-cancelled"]);
+    expect(childIds(state)).toEqual([]);
+    expect(state.object?.children?.hidden).toBe(3);
+    expect(state.object?.children?.hiddenDone).toBe(2);
+    expect(state.object?.children?.hiddenCancelled).toBe(1);
   });
 });
