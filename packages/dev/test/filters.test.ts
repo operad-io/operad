@@ -1,17 +1,22 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { typeFilters } from "@operad-io/engine";
+import { filterShows, typeFilters, type StoredObject } from "@operad-io/engine";
 import { createDevPlugin } from "../src/index.ts";
 import {
   PLAN_FILTERS,
   PLAN_STATES,
   REPO_FILTERS,
   TASK_FILTERS,
+  TASK_FINAL_STATES,
   TASK_PHASES,
+  TASK_ROW_STATES,
   planState,
   type PlanData,
+  type TaskData,
+  type TaskPhase,
 } from "../src/model.ts";
+import { taskViews } from "../src/views.ts";
 import { guardLockHandles } from "./support.ts";
 
 guardLockHandles();
@@ -21,7 +26,14 @@ function declared(type: string) {
   return typeFilters(found);
 }
 
-test("the task filters come from the phase list", () => {
+/** The declared task filters that show a row in this state. */
+function taskFilterOwners(state: string) {
+  return TASK_FILTERS.filter((filter) =>
+    (filter.states as readonly string[]).includes(state),
+  );
+}
+
+test("the task filters come from the row state list", () => {
   const filters = declared("task");
   expect(filters?.default).toBe("active");
   expect(filters?.filters.map((filter) => filter.name)).toEqual([
@@ -34,14 +46,58 @@ test("the task filters come from the phase list", () => {
   expect(states("done")).toEqual(["merged"]);
   expect(states("cancelled")).toEqual(["cancelled"]);
   expect(states("active")).toEqual(
-    TASK_PHASES.filter((phase) => phase !== "merged" && phase !== "cancelled"),
+    TASK_ROW_STATES.filter((state) => !TASK_FINAL_STATES.includes(state)),
   );
-  // Every phase is shown by exactly one filter.
-  for (const phase of TASK_PHASES) {
-    const owners = TASK_FILTERS.filter((filter) =>
-      (filter.states as readonly string[]).includes(phase),
-    );
-    expect(owners).toHaveLength(1);
+  // Every row state is shown by exactly one filter.
+  for (const state of TASK_ROW_STATES) {
+    expect(taskFilterOwners(state)).toHaveLength(1);
+  }
+});
+
+/** A task object whose row has the given state, without a store. */
+function taskObject(phase: TaskPhase, integrating = false): StoredObject {
+  const data: TaskData = {
+    repository: "repository",
+    plan: "P-0001-plan",
+    title: "One",
+    brief: "b",
+    after: [],
+    phase,
+    attempts: 0,
+    run: null,
+    ...(integrating
+      ? { attempt: { number: 1, integrating: "run-1" } }
+      : {}),
+  };
+  return {
+    type: "task",
+    id: "repository/T-0001-one",
+    data,
+    version: 1,
+    cause: "test",
+    at: 0,
+  };
+}
+
+test("every state a task row can show is in exactly one declared task filter", () => {
+  const states = [
+    ...TASK_PHASES.map((phase) => taskViews.row(taskObject(phase)).state),
+    // The integrate mark makes the row integrating, whatever the phase.
+    taskViews.row(taskObject("waiting", true)).state,
+  ];
+  expect(new Set(states)).toEqual(new Set(TASK_ROW_STATES));
+  for (const state of states) {
+    const owners = taskFilterOwners(state);
+    const expected: ("active" | "done" | "cancelled")[] =
+      state === "merged"
+        ? ["done"]
+        : state === "cancelled"
+          ? ["cancelled"]
+          : ["active"];
+    expect(owners.map((filter) => filter.name)).toEqual(expected);
+    for (const filter of TASK_FILTERS) {
+      expect(filterShows(filter, state)).toBe(filter.name === expected[0]);
+    }
   }
 });
 

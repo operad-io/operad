@@ -131,6 +131,9 @@ describe("dev settings through operad settings", () => {
     const plan = await run(home, repository, ["plan", "add", "--slug", "alpha", "--title", "Alpha"]);
     expect(plan.code).toBe(0);
     const listed = await run(home, repository, ["list", "plan"]);
-    expect(listed.out).toContain(" · run · ");
+    const line = listed.out.split("\n")[0] ?? "";
+    expect(line).toContain("  run  ");
+    expect(line.match(/run/g)).toHaveLength(1);
+    expect(line).not.toContain(" · run · ");
   });
 });

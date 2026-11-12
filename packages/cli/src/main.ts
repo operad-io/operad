@@ -294,6 +294,15 @@ function paintState(row: ViewRow, text: string, tty: boolean): string {
   return text;
 }
 
+/** One row's line: name, state, badge when it has one, title, then the note. */
+function rowLine(row: ViewRow, tty: boolean): string {
+  const state = paintState(row, row.state, tty);
+  const badge = row.badge === undefined ? "" : `  ${row.badge}`;
+  const note = row.note === undefined ? "" : `  ${row.note}`;
+  const name = row.scope === undefined ? row.id : `${row.scope}/${row.id}`;
+  return `${name}  ${state}${badge}  ${row.title}${note}`;
+}
+
 interface Context {
   readonly home: string;
   readonly cwd: string;
@@ -660,10 +669,7 @@ async function commandList(
     io.write(`no objects of type "${type}"\n`);
   } else {
     for (const row of page.rows) {
-      const state = paintState(row, row.state, tty);
-      const note = row.note === undefined ? "" : `  ${row.note}`;
-      const name = row.scope === undefined ? row.id : `${row.scope}/${row.id}`;
-      io.write(`${name}  ${state}  ${row.title}${note}\n`);
+      io.write(`${rowLine(row, tty)}\n`);
     }
   }
   if (page.next !== undefined) {
@@ -697,10 +703,7 @@ async function writeChildren(
       ...(cursor === undefined ? {} : { cursor }),
     });
     for (const row of page.rows) {
-      const state = paintState(row, row.state, tty);
-      const note = row.note === undefined ? "" : `  ${row.note}`;
-      const name = row.scope === undefined ? row.id : `${row.scope}/${row.id}`;
-      io.write(`${name}  ${state}  ${row.title}${note}\n`);
+      io.write(`${rowLine(row, tty)}\n`);
     }
     hidden = page.hidden ?? hidden;
     if (page.next === undefined) break;
@@ -860,9 +863,7 @@ async function commandShow(
     return;
   }
 
-  const state = paintState(object.row, object.row.state, tty);
-  const note = object.row.note === undefined ? "" : `  ${object.row.note}`;
-  io.write(`${object.row.id}  ${state}  ${object.row.title}${note}\n`);
+  io.write(`${rowLine(object.row, tty)}\n`);
   if (object.row.parent !== undefined) io.write(`parent: ${object.row.parent}\n`);
   if (object.dependents !== undefined) {
     io.write(`after this one: ${object.dependents.join(", ")}\n`);

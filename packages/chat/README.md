@@ -8,18 +8,27 @@ the plugin that opens a chat gives every field (`createChat`).
 
 A chat has a parent (a full object id), a harness (a harness plugin name, fixed
 once the chat exists), a working directory, an access profile, skills, a title,
-the harness's own session reference (never shown) and bound channels. Its ids
-are `C-0001` upward. Messages are not fields: each is a `chat.message` fact on
-the chat (who, when, text, attachment paths, the source and its reference). An
-assistant message also names the messages it answers (`replyTo`) and the session
-after it.
+the harness's own session reference (never shown), bound channels, and whether
+it is closed. Its ids are `C-0001` upward. Messages are not fields: each is a
+`chat.message` fact on the chat (who, when, text, attachment paths, the source
+and its reference). An assistant message also names the messages it answers
+(`replyTo`) and the session after it. Closing a chat appends a `chat.closed`
+fact and marks the object closed; the messages stay in its transcript.
 
 ## `chat:send <chat> --note <text>`
 
 Records the message and sends the event `message` from the source named by the
 client (`ios`, `telegram`, `cli`; any other client counts as `cli`), keyed by the
 message id and about the chat. Three default rules start `chat:reply` with `auto`
-on that event.
+on that event. A closed chat refuses the action and adds no message.
+
+## `chat:close <chat>`
+
+Asks for confirmation and records a `chat.closed` fact naming who closed it. A
+closed chat's row reads `closed` and is final; it offers no actions, and a
+message is refused with a short line saying the chat is closed. The transcript
+stays readable. Chats have the filters `open` (the default) and `closed`, with
+the kernel's `all` after `open`, so lists hide closed chats unless asked.
 
 ## `chat:reply`
 

@@ -508,7 +508,8 @@ names the flow at the start of each run.
 at most 16 characters, or the row is an error row. The `dev` plugin sets a
 task's badge to `#<attempt>` (`#0` before the first attempt) and marks its tasks
 and plans from their phase, the step the attempt has reached and the holds the
-scheduler records; `operad list` keeps its columns and does not show them.
+scheduler records. `operad list` and the first lines of `operad show` print a
+row's badge after its state; a row without one prints as it did without badges.
 
 ### Links
 
@@ -689,7 +690,7 @@ The `dev` plugin declares these filters (`all` follows `active`):
 
 | Type | Filter | States |
 |---|---|---|
-| task | `active` (default) | proposed, ready, running, review, waiting, paused |
+| task | `active` (default) | proposed, ready, running, review, integrating, waiting, paused |
 | task | `done` | merged |
 | task | `cancelled` | cancelled |
 | plan | `active` (default) | draft, confirmed, paused |
@@ -697,6 +698,8 @@ The `dev` plugin declares these filters (`all` follows `active`):
 | plan | `cancelled` | cancelled |
 | repo | `active` (default) | active |
 | repo | `removed` | removed |
+
+The `chat` plugin declares `open` (default) and `closed`; `all` follows `open`.
 
 ## Where `dev` commands run
 
@@ -1175,11 +1178,11 @@ field.
 `$0.31` is exact, `~$0.31` is estimated and `≥$0.31` is incomplete (at least
 that much).
 
-A plan's row note reads `1/8 · ~$4.20 · merge · P2 // 2`: merged tasks over
-tasks (cancelled ones are not counted), the total cost of the plan's tasks at
-the weakest quality among them (left out while no task has a cost), the auto
-level, the priority, and after `//` how many of the plan's tasks may run at
-once. A task's note reads `$0.31 · claude · area: app-core`: the cost
+A plan's row note reads `1/8 · ~$4.20 · P2 // 2`: merged tasks over tasks
+(cancelled ones are not counted), the total cost of the plan's tasks at the
+weakest quality among them (left out while no task has a cost), the priority,
+and after `//` how many of the plan's tasks may run at once. The plan's badge
+carries its auto level. A task's note reads `$0.31 · claude · area: app-core`: the cost
 (`$0.00` before there is one), the worker, the area (or `waiting for area
 app-core (T-0023-action-numbers)`), and last a refused push's message. A
 repository's note reads `plans: 1 · tasks: 4`, counting open ones.
@@ -1369,6 +1372,11 @@ messages no reply answers yet from the chat's own record, continues the harness
 session, records the reply, and goes round again while new messages came in
 meanwhile (at most 20 rounds). After a restart a reply that was already
 recorded is not given twice.
+
+`chat:close C-0001` asks for confirmation and records a `chat.closed` fact. A
+closed chat keeps its transcript, refuses `chat:send` with a short message and
+offers no actions. Chats have the filters `open` (the default) and `closed`; the
+kernel adds `all`, so `operad list chat --filter all` still shows closed chats.
 
 A chat on a repository works in the main clone, read-only: a shell command runs
 there only when it is on a short list of commands that only read (`git status`,
