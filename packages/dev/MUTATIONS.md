@@ -930,3 +930,9 @@ the row fields.
 |---|---|---|---|
 | T-0315-M1 | packages/dev/src/rework.ts | a first review moved a non-critical finding in an untouched file out of the failing set again (the per-file rule back) | `dev/review rework rounds > a major finding in a file the change does not touch fails the first review (T-0315)` and four more |
 | T-0315-M2 | packages/dev/src/gate.ts | a flow whose grading sets no fixLevel kept dev.json's level instead of the strictest the repository configures (`strictestElsewhere` removed) | `dev/review > review.json > a flow with no level of its own never reviews with a weaker one (T-0315)` |
+
+## T-0274 — dev's finished rows carry a mark
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0274-M5 | packages/dev/src/marks.ts | a removed repository returned `todo` instead of `cancelled`, so a finished row had no finished mark | `task badge > every finished row carries the mark that says how it ended` |
