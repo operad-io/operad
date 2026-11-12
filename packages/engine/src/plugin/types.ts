@@ -1034,7 +1034,10 @@ export interface PluginShape {
 
 /** One settings file under a repository's `.operad/`, with its schema. */
 export interface ProjectSettingsFile {
-  /** The file's name in a setting's qualified name: `<plugin>.<name>.<path>`. */
+  /**
+   * The file's name in a setting's qualified name: `<plugin>.<name>.<path>`,
+   * or `<plugin>.<path>` when the name equals the plugin's name.
+   */
   readonly name: string;
   /** Where the file is, relative to the repository's `.operad/`. */
   readonly path: string;

@@ -720,9 +720,10 @@ refused when the file is read and again before a worktree is created.
 
 `operad settings` lists what a person may tune and `operad settings set <name>
 <value>` changes it (add `--repo <name>` for a repository's files). The home's
-`checks` is `dev.checks`. A repository's `.operad/dev.json` is `dev.dev.*`
+`checks` is `dev.checks`. A repository's `.operad/dev.json` is `dev.*`
 (`autoDefault`, `concurrency`, `gate.commands`, `gate.commandTimeoutSecs`, `reviewer.use`,
-`reviewer.args`, `reviewer.timeoutSecs`, `reviewer.fixLevel`) and its
+`reviewer.args`, `reviewer.timeoutSecs`, `reviewer.fixLevel`): its file name is
+the plugin's name, so the name appears once. Another file adds its name, so
 `.operad/review.json` is `dev.review.default.*` (`levels`, `rules`,
 `fixLevel`). Changing what merges (`autoDefault`, `fixLevel`, the levels and rules)
 asks for `--yes`, because it changes what merges. Other settings can be read

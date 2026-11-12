@@ -62,6 +62,19 @@ own; `show` lists them separately so the lead can tell the owner what to run.
 
 When the worker adds no commit, the task waits with `work did nothing` if the branch has nothing beyond main or its latest commit already passed verify. If the branch already holds commits not on main and its latest commit has not passed verify (an earlier run stopped before verify ended), the task does not wait: history says `the branch already has unchecked work; checking it` and the task goes on to verify.
 
+### Settings from a client
+
+`operad settings` lists the settings a person may tune and `operad settings set
+<name> <value>` changes one; `--repo <name>` names a registered repository. A
+global setting is `<plugin>.<path>`. A project file whose name equals its
+plugin's name takes the plugin name alone, so `.operad/dev.json` is
+`dev.concurrency`, `dev.autoDefault`, `dev.gate.commands`,
+`dev.gate.commandTimeoutSecs`, `dev.reviewer.use`, `dev.reviewer.args`,
+`dev.reviewer.timeoutSecs` and `dev.reviewer.fixLevel`. Another file adds its
+name: `.operad/review.json` is `dev.review.default.levels`,
+`dev.review.default.rules` and `dev.review.default.fixLevel`. Changing what
+merges (`autoDefault`, a `fixLevel`, the levels and rules) asks for `--yes`.
+
 ### Where the reviewer writes its report
 
 The reviewer runs in the task's gate worktree, and some agents (radian, for one)

@@ -24,7 +24,10 @@ export const GLOBAL_SCOPE = "global";
 
 /** One setting, as a client lists it. */
 export interface SettingInfo {
-  /** `<plugin>.<path>`; a project file adds its name: `<plugin>.<file>.<path>`. */
+  /**
+   * `<plugin>.<path>`; a project file whose name differs from its plugin adds
+   * that name: `<plugin>.<file>.<path>`.
+   */
   readonly name: string;
   /** `global`, or the name of the repository the file is in. */
   readonly scope: string;
@@ -42,7 +45,8 @@ export type SettingsErrorKind =
   | "not-found"
   | "args"
   | "not-available"
-  | "confirm";
+  | "confirm"
+  | "ambiguous";
 
 /** A settings call refused; nothing was written. */
 export class SettingsError extends Error {
@@ -240,7 +244,10 @@ async function places(
       });
     }
   }
-  if (scope === GLOBAL_SCOPE) return found;
+  if (scope === GLOBAL_SCOPE) {
+    checkAmbiguous(found);
+    return found;
+  }
 
   let named = false;
   const known: string[] = [];
@@ -255,7 +262,10 @@ async function places(
       for (const file of project.files) {
         found.push({
           scope: repository.name,
-          prefix: `${declaration.plugin}.${file.name}`,
+          prefix:
+            file.name === declaration.plugin
+              ? declaration.plugin
+              : `${declaration.plugin}.${file.name}`,
           schema: file.schema,
           file: join(repository.path, ".operad", file.path),
           inside: [],
@@ -272,7 +282,41 @@ async function places(
         : `no registered repository "${scope}"; registered: ${known.join(", ")}`,
     );
   }
+  checkAmbiguous(found);
   return found;
+}
+
+function declaredAt(place: Place): string {
+  return place.scope === GLOBAL_SCOPE
+    ? `the global settings of "${place.prefix}"`
+    : `"${place.file}" (${place.prefix})`;
+}
+
+/** Refuses names two places in one scope would both claim, before either wins. */
+function checkAmbiguous(places: readonly Place[]): void {
+  const byScope = new Map<string, Map<string, Place>>();
+  for (const place of places) {
+    let names = byScope.get(place.scope);
+    if (names === undefined) {
+      names = new Map();
+      byScope.set(place.scope, names);
+    }
+    for (const leaf of leaves(place.schema)) {
+      const name = `${place.prefix}.${leaf.path.join(".")}`;
+      const earlier = names.get(name);
+      if (earlier !== undefined) {
+        throw new SettingsError(
+          "ambiguous",
+          `setting "${name}" is declared twice in ${
+            place.scope === GLOBAL_SCOPE
+              ? "the global scope"
+              : `repository "${place.scope}"`
+          }: ${declaredAt(earlier)} and ${declaredAt(place)}`,
+        );
+      }
+      names.set(name, place);
+    }
+  }
 }
 
 function infoOf(place: Place, leaf: Leaf, section: unknown): SettingInfo {
