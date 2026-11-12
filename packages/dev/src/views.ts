@@ -212,21 +212,24 @@ export const planViews: ObjectViews = {
 export const taskViews: ObjectViews = {
   row(object: StoredObject): ObjectRow {
     const task = taskData(object.data);
-    const areaNote =
+    const areaWait =
       task.phase === "ready" && task.areaHeldBy !== undefined
         ? `waiting for area ${task.area ?? ""} (${task.areaHeldBy})${
             (task.areaAhead ?? 0) > 0 ? `, ${task.areaAhead} ahead` : ""
           }`
-        : task.area === undefined
-          ? undefined
-          : `area: ${task.area}`;
+        : undefined;
+    const areaNote =
+      areaWait ?? (task.area === undefined ? undefined : `area: ${task.area}`);
+    // The wait reason, whole, also goes in its own field for clients.
+    const heldWait = waitNote(task);
+    const wait = areaWait ?? heldWait;
     // The cost is always first, so the app's split at the first ` · ` keeps it.
     const note = [
       costNote(task.cost, task.costQuality) ?? "$0.00",
       workerNote(task),
       areaNote,
       task.flowShown === undefined ? undefined : `flow: ${task.flowShown}`,
-      waitNote(task),
+      heldWait,
     ]
       .filter((part): part is string => part !== undefined)
       .join(" · ");
@@ -235,6 +238,7 @@ export const taskViews: ObjectViews = {
       title: task.title,
       state: taskRowState(task),
       note,
+      ...(wait === undefined ? {} : { wait }),
       scope: task.repository,
       final: TASK_FINAL_STATES.includes(task.phase),
       mark: taskMark(task),

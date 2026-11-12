@@ -82,6 +82,7 @@ export default definePlugin({
           ...(object.data.after === undefined
             ? {}
             : { after: object.data.after as readonly string[] }),
+          ...(object.data.wait === undefined ? {} : { wait: object.data.wait as string }),
           ...(object.data.badge === undefined
             ? {}
             : { badge: object.data.badge as string }),

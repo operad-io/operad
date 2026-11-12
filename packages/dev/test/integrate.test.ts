@@ -1312,6 +1312,7 @@ describe("integration queue", () => {
     expect(taskViews.row(object).note).toBe(
       `$0.00 · waiting to integrate: ${state.taskId} is integrating`,
     );
+    expect(taskViews.row(object).wait).toBe(`waiting to integrate: ${state.taskId} is integrating`);
     // A task cancelled while it waited no longer says it is waiting.
     const cancelled = { ...object, data: { ...object.data, phase: "cancelled" } };
     expect(taskViews.row(cancelled).note ?? "").not.toContain("waiting to integrate");
