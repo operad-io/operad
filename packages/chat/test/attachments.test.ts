@@ -57,6 +57,14 @@ describe("chat:send with attachments", () => {
     await expect(send(r, chat, {})).rejects.toThrow("needs text or an attachment");
   });
 
+  test("an empty note beside an attachment is an attachment-only message; an empty note alone is refused", async () => {
+    const r = await rig(() => reply("x"));
+    const chat = await r.chat();
+    await send(r, chat, { note: "", attachments: [stored(r, chat, "a.txt", "a")] });
+    expect(allMessages(r.store, chat)).toHaveLength(1);
+    await expect(send(r, chat, { note: "" })).rejects.toThrow("needs text or an attachment");
+  });
+
   test("the transcript shows an image as an image and another file as a link, each with its name", async () => {
     const r = await rig(() => reply("x"));
     const chat = await r.chat();
