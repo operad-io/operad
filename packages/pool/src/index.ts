@@ -6,6 +6,7 @@
  */
 
 import { definePlugin, isRecord, type PluginStepResult, type StepContext, type StepRunOptions } from "@operad-io/engine";
+import { reportWorkerPlaced } from "@operad-io/engine/platform";
 import { join } from "node:path";
 import { PlaceBook, type Claim, type Places } from "./places.ts";
 import { FilePlaces } from "./shared.ts";
@@ -174,6 +175,7 @@ export function createPoolPlugin(options: PoolPluginOptions = {}) {
     const place = await acquire(ctx, prefix, candidates, holder);
     if (place === undefined) return { kind: "aborted" };
     const { worker } = place;
+    reportWorkerPlaced(worker.name);
     try {
       const runStep = ctx.runStep;
       if (runStep === undefined) {

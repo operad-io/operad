@@ -4,6 +4,7 @@
  * The kernel never runs git or a harness itself; both live here in `dev`.
  */
 
+import { withWorkerReports } from "@operad-io/engine/platform";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
@@ -543,6 +544,10 @@ export const stepTestHooks: {
     | undefined;
   /** Replaces the timers of a work step's wrap-up and time limit. */
   workClock?: WorkClock | undefined;
+  /** Replaces the timer that says a worker with a place has not started. */
+  workerStartClock?: WorkClock | undefined;
+  /** Called once the task has recorded what the work step waits for (null: nothing). */
+  afterWorkerWait?: ((text: string | null) => void) | undefined;
 } = {};
 
 /** The timers a work step uses for its wrap-up message and its time limit. */
@@ -555,6 +560,13 @@ const realWorkClock: WorkClock = {
   setTimeout: (handler, ms) => setTimeout(handler, ms),
   clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
+
+/**
+ * How long a worker may hold its place without its program running before the
+ * task says so. Starting a worker takes seconds; two minutes is a worker that
+ * is not starting.
+ */
+export const WORKER_START_GRACE_MS = 120_000;
 
 /** How long before the limit the step stops the worker itself, so it can still commit. */
 function limitMarginMs(limitMs: number): number {
@@ -1318,6 +1330,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   ];
   let runTimers: unknown[] = [];
   const outbox = createOutbox((runMs) => {
+    workerStarted();
     for (const timer of runTimers) clock.clearTimeout(timer);
     limitMs = runMs;
     const hardMs = runMs - limitMarginMs(runMs);
@@ -1333,8 +1346,9 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   let outcome: PluginStepResult | undefined;
   let hostError: string | undefined;
   let notLoaded: string | undefined;
-  // While a rework waits for the worker it asked for, the task says what it
-  // waits for and who holds it, in the row and in the step log.
+  // While the step waits for a worker, the task says what it waits for and who
+  // holds it, in the row and in the step log. A rework waits for the worker it
+  // asked for; any other attempt waits for the workers of the pool.
   let waitingFor: string | undefined;
   const setWorkerWait = async (text: string | null): Promise<void> => {
     await saveTaskGuarded(
@@ -1343,24 +1357,33 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       { ...task, attempt: { ...attempt, workerWait: text } },
       "dev:work-wait",
     );
+    stepTestHooks.afterWorkerWait?.(text);
   };
   const onPoolEvent = async (_plugin: string, event: StepEvent): Promise<void> => {
-    if (asked === undefined) return;
     const data: unknown = event.data;
     if (event.type === WAITING_EVENT) {
       const entries = Array.isArray((data as { workers?: unknown } | undefined)?.workers)
         ? ((data as { workers: unknown[] }).workers)
         : [];
-      const mine = entries.find(
-        (entry): entry is { holders?: unknown } =>
+      const mine = entries.filter(
+        (entry): entry is { worker?: unknown; holders?: unknown } =>
           typeof entry === "object" &&
           entry !== null &&
-          (entry as { worker?: unknown }).worker === asked,
+          (asked === undefined || (entry as { worker?: unknown }).worker === asked),
       );
-      const holders = Array.isArray(mine?.holders)
-        ? mine.holders.filter((item): item is string => typeof item === "string")
-        : [];
-      const line = `waiting for worker ${asked}${
+      const names = mine.flatMap((entry) =>
+        typeof entry.worker === "string" ? [entry.worker] : [],
+      );
+      const holders = [
+        ...new Set(
+          mine.flatMap((entry) =>
+            Array.isArray(entry.holders)
+              ? entry.holders.filter((item): item is string => typeof item === "string")
+              : [],
+          ),
+        ),
+      ];
+      const line = `waiting for worker ${asked ?? names.join(" or ")}${
         holders.length === 0 ? "" : `: held by ${holders.join(", ")}`
       }`;
       waitingFor = line;
@@ -1368,33 +1391,73 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       await setWorkerWait(line);
     } else if (event.type === ACQUIRED_EVENT && waitingFor !== undefined) {
       waitingFor = undefined;
-      await ctx.logger.write(`worker ${asked} is free; the work starts`);
+      const worker = (data as { worker?: unknown } | undefined)?.worker;
+      const name = asked ?? (typeof worker === "string" ? worker : undefined);
+      await ctx.logger.write(
+        `${name === undefined ? "a worker" : `worker ${name}`} is free; the work starts`,
+      );
       await setWorkerWait(null);
     }
   };
+  // A worker that has its place holds it against every other task that needs
+  // that worker. When its program is not running a little after the place was
+  // given, the task says so rather than looking like it works.
+  const startClock = stepTestHooks.workerStartClock ?? realWorkClock;
+  let startTimer: unknown;
+  let started = false;
+  let notStarted: string | undefined;
+  const say = (line: string, wait: string | null): void => {
+    void (async () => {
+      await ctx.logger.write(line);
+      await setWorkerWait(wait);
+    })().catch(() => undefined);
+  };
+  const workerPlaced = (name: string): void => {
+    if (started) return;
+    startTimer = startClock.setTimeout(() => {
+      if (started) return;
+      const line = `worker ${name} has had its place for ${Math.round(WORKER_START_GRACE_MS / 60_000)} minutes and has not started`;
+      notStarted = line;
+      say(line, line);
+    }, WORKER_START_GRACE_MS);
+  };
+  const workerStarted = (): void => {
+    if (started) return;
+    started = true;
+    if (startTimer !== undefined) startClock.clearTimeout(startTimer);
+    if (notStarted !== undefined) {
+      notStarted = undefined;
+      say("the worker started", null);
+    }
+  };
   try {
-    outcome = await runStep(
-      "pool/agent",
-      poolParams(
-        finalPrompt,
-        path,
-        context.repository,
-        context.settings,
-        asked,
-        typeof attempt.previousSession === "string" ? attempt.previousSession : undefined,
-        outbox.inbox,
-        context.taskId,
-        stageParamsOf(ctx.params),
-      ),
-      { ...options, observe: onPoolEvent },
+    outcome = await withWorkerReports(
+      { placed: workerPlaced, started: workerStarted },
+      () =>
+        runStep(
+          "pool/agent",
+          poolParams(
+            finalPrompt,
+            path,
+            context.repository,
+            context.settings,
+            asked,
+            typeof attempt.previousSession === "string" ? attempt.previousSession : undefined,
+            outbox.inbox,
+            context.taskId,
+            stageParamsOf(ctx.params),
+          ),
+          { ...options, observe: onPoolEvent },
+        ),
     );
   } catch (error) {
     hostError = messageOf(error);
     notLoaded = notLoadedStep(error);
   } finally {
+    if (startTimer !== undefined) startClock.clearTimeout(startTimer);
     if (waitingFor !== undefined) {
       waitingFor = undefined;
-      await ctx.logger.write(`stopped waiting for worker ${String(asked)}`).catch(() => undefined);
+      await ctx.logger.write(`stopped waiting for ${asked === undefined ? "a worker" : `worker ${asked}`}`).catch(() => undefined);
     }
     for (const timer of [...timers, ...runTimers]) clock.clearTimeout(timer);
     ctx.signal.removeEventListener("abort", forwardAbort);
