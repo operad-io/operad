@@ -346,34 +346,34 @@ describe("the progress bar and its heading", () => {
     expect(cells.slice(1).map(colour)).toEqual(Array.from({ length: 5 }, () => token("cancelled")));
   });
 
-  test("some children hidden as finished count in the heading and fill the bar", () => {
+  test("children the filter hid stay out of the heading and the bar", () => {
     const rows = [
       row("T-1-open", "new", { mark: "todo" }),
       row("T-2-run", "running", { mark: "running" }),
       row("T-3-wait", "waiting", { mark: "waiting" }),
     ];
-    const progress = childProgress(rows, "tree", 3);
-    expect(progress.done).toBe(3);
-    expect(progress.total).toBe(6);
+    const progress = childProgress(rows, "tree");
+    expect(progress.done).toBe(0);
+    expect(progress.total).toBe(3);
     const state = opened(rows, 120, "tree", 3);
     const heading = rightLines(state).find((line) => line.includes(" / "));
-    expect(heading).toContain("3 / 6");
-    const cells = barChunks(state);
-    expect(cells.length).toBe(3);
-    expect(cells.map(colour)).toEqual(Array.from({ length: 3 }, () => token("ok")));
+    expect(heading).toContain("0 / 3");
+    expect(barChunks(state)).toEqual([]);
+    expect(state.object?.children?.hidden).toBe(3);
   });
 
-  test("hidden done fills while hidden cancelled leaves both numbers and its cell", () => {
+  test("a hidden done or cancelled child draws no cell of its own", () => {
     const rows = [row("T-1-wait", "waiting", { mark: "waiting" })];
-    const progress = childProgress(rows, "tree", 2, 1, 1);
-    expect(progress.done).toBe(1);
-    expect(progress.total).toBe(2);
-    expect(progress.hiddenCancelled).toBe(1);
+    const progress = childProgress(rows, "tree");
+    expect(progress.done).toBe(0);
+    expect(progress.total).toBe(1);
     const state = opened(rows, 120, "tree", 2, 1, 1);
     const heading = rightLines(state).find((line) => line.includes(" / "));
-    expect(heading).toContain("1 / 2");
-    const cells = barChunks(state);
-    expect(cells.map(colour)).toEqual([token("ok"), token("cancelled")]);
+    expect(heading).toContain("0 / 1");
+    expect(barChunks(state)).toEqual([]);
+    expect(state.object?.children?.hidden).toBe(2);
+    expect(state.object?.children?.hiddenDone).toBe(1);
+    expect(state.object?.children?.hiddenCancelled).toBe(1);
   });
 
   test("a waiting child beside done ones does not fill a progress cell", () => {
