@@ -43,10 +43,14 @@ step `waiting`; the answer comes back with the session.
 The harness gets `operadTools: { home }`, so the agent calls operad through MCP
 tools and never through a shell.
 
-In a chat whose access profile is `readOnly`, a harness question about writing a
-file becomes the worktree question (`yes`/`no`) and never a one-time
-permission. A `yes` sends the event `chat.worktree`; the plugin that owns the
-working directory acts on it (`dev` opens `work/chat-<id>`).
+In a chat whose access profile is `readOnly`, a harness question about a
+command, a write or an edit becomes the worktree question (`yes`/`no`) and
+never a one-time permission. The question names the call: the command, or the
+path and whether it is a write or an edit; a long command is cut, and the ask
+keeps the whole call. A `yes` sends the event `chat.worktree`; the plugin that
+owns the working directory acts on it (`dev` opens `work/chat-<id>`). A `no`
+tells the agent the call was refused because the chat is read-only, and that it
+should answer in the chat or use read-only commands.
 
 ## The `transcript` section
 

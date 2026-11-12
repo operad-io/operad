@@ -123,6 +123,13 @@ describe("createCallAsker", () => {
     expect(silent.sent[0]).toMatchObject({ decision: "deny", reason: "nobody answered in time" });
   });
 
+  test("a refusal's note is the reason the program gets", async () => {
+    const note = "The call was refused because this chat is read-only. Answer in the chat or use read-only commands.";
+    const refused = setup(async () => ({ choice: REJECT_ONCE, note }));
+    await refused.asker.handle(LINE, refused.reply);
+    expect(refused.sent).toEqual([{ type: "ask_ack", id: 4, decision: "deny", reason: note }]);
+  });
+
   test("a question that ends the wait answers stop, ends the program once and keeps the error", async () => {
     const timeout = new Error("grace passed");
     const env = setup(() => Promise.reject(timeout));
