@@ -961,3 +961,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0340-M1 | packages/dev/src/refusals.ts | the plan's second confirm said "nothing more to do", so the in-process confirm check no longer matched | `operad with the dev plugin > the real binary registers, plans, lists, shows and confirms` |
+
+## T-0343 — integration checks take a freed place before verify checks
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0343-M1 | packages/dev/src/place-order.ts | the kind was ignored in the wait order, so an integration queued behind a verify again | `check places are served in the order checks began to wait > integration checks take a freed place before verify checks, each first come first served` |

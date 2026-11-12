@@ -3,13 +3,17 @@
  * every repository, plan and process. Each place is a lock file made by the
  * platform's `withLockFile`, so a holder that dies gives its place back the way
  * every platform lock does: the next taker sees the dead pid and takes over.
+ * Integration checks go before verify checks, and the wait order lives next to
+ * the lock files so separate processes agree on it.
  */
 
 import { join } from "node:path";
 import type { StepContext } from "@operad-io/engine";
 import { taskPlaceWait } from "./place-wait.ts";
 import { withLockFile, waitForChange } from "@operad-io/engine/platform";
-import { WaitEntry } from "./place-order.ts";
+import { WaitEntry, type CheckKind } from "./place-order.ts";
+
+export { VERIFY_STARVATION_MS, type CheckKind } from "./place-order.ts";
 
 /** How many checks may run at once when the home's dev settings say nothing. */
 export const DEFAULT_CHECK_PLACES = 2;
@@ -60,6 +64,8 @@ export interface CheckPlaces {
   readonly waiting?:
     | ((key: string | null, order?: { readonly since: number; readonly ahead: number }) => Promise<void>)
     | undefined;
+  /** What this check is for; integration checks go first. */
+  readonly kind?: CheckKind | undefined;
   /** The clock that stamps when a check began to wait; tests inject this. */
   readonly clock?: (() => number) | undefined;
   /** How a waiting check waits before it looks again; tests inject this. */
@@ -71,6 +77,16 @@ export class CheckPlaceCancelled extends Error {
   constructor() {
     super("cancelled while waiting for a check place");
     this.name = "CheckPlaceCancelled";
+  }
+}
+
+/** A check that found an earlier one still ahead after it took a lock. */
+class PlaceAhead extends Error {
+  constructor(
+    readonly pool: "home" | "repository",
+    readonly ahead: number,
+  ) {
+    super("ahead");
   }
 }
 
@@ -100,21 +116,35 @@ async function takeOne<T>(
   count: number,
   pool: "home" | "repository",
   entry: WaitEntry | undefined,
+  now: number,
   work: () => Promise<T> | T,
 ): Promise<T> {
   // A place is free for this check only when no earlier check still waits.
-  const ahead = entry?.ahead() ?? 0;
+  const ahead = entry?.ahead(now) ?? 0;
   if (ahead > 0) throw new PlaceBusy(pool, 0, ahead);
   let busy = 0;
   for (let index = 1; index <= count; index += 1) {
     try {
       // A live holder makes the lock wait; waiting here means "taken".
-      return await withLockFile(join(directory, `${prefix}-${index}.lock`), work, {
-        label: "check place",
-        onLog: () => {},
-        wait: () => Promise.reject(new PlaceBusy(pool, 0)),
-      });
+      return await withLockFile(
+        join(directory, `${prefix}-${index}.lock`),
+        () => {
+          // An earlier check may have joined between the look above and this
+          // lock. Give the place back instead of passing that check over.
+          const late = entry?.ahead(now) ?? 0;
+          if (late > 0) throw new PlaceAhead(pool, late);
+          return work();
+        },
+        {
+          label: "check place",
+          onLog: () => {},
+          wait: () => Promise.reject(new PlaceBusy(pool, 0)),
+        },
+      );
     } catch (error) {
+      if (error instanceof PlaceAhead) {
+        throw new PlaceBusy(error.pool, 0, error.ahead);
+      }
       if (!(error instanceof PlaceBusy) || error.pool !== pool) throw error;
       busy += 1;
     }
@@ -135,13 +165,15 @@ export async function withCheckPlace<T>(
 ): Promise<T> {
   const directory = checkPlacesDirectory(places.home);
   const repository = places.repository;
-  const since = (places.clock ?? Date.now)();
+  const kind = places.kind ?? "verify";
+  const clock = places.clock ?? Date.now;
+  const since = clock();
   // Where this check stands in the order of each pool it needs.
   let homeEntry: WaitEntry | undefined;
   const repositoryEntry =
     repository === undefined
       ? undefined
-      : WaitEntry.join(directory, repositoryKey(repository), since);
+      : WaitEntry.join(directory, repositoryKey(repository), since, kind);
   const leaveAll = (): void => {
     homeEntry?.leave();
     repositoryEntry?.leave();
@@ -175,20 +207,22 @@ export async function withCheckPlace<T>(
             repository.places,
             "repository",
             repositoryEntry,
+            clock(),
             started,
           );
   let said: string | undefined;
   try {
     for (;;) {
       if (places.signal?.aborted === true) throw new CheckPlaceCancelled();
+      const now = clock();
       try {
         // While the repository's order holds this check back, it asks for no
         // home place, so it does not hold up the checks behind it there.
-        if (homeEntry === undefined && (repositoryEntry?.ahead() ?? 0) > 0) {
-          throw new PlaceBusy("repository", 0, repositoryEntry?.ahead() ?? 0);
+        if (homeEntry === undefined && (repositoryEntry?.ahead(now) ?? 0) > 0) {
+          throw new PlaceBusy("repository", 0, repositoryEntry?.ahead(now) ?? 0);
         }
-        homeEntry ??= WaitEntry.join(directory, "home", since);
-        return await takeOne(directory, "place", places.checks, "home", homeEntry, inner);
+        homeEntry ??= WaitEntry.join(directory, "home", since, kind);
+        return await takeOne(directory, "place", places.checks, "home", homeEntry, now, inner);
       } catch (error) {
         if (!(error instanceof PlaceBusy)) throw error;
         if (error.pool === "repository") {
@@ -196,15 +230,18 @@ export async function withCheckPlace<T>(
           homeEntry = undefined;
         }
         const waitEntry = error.pool === "repository" ? repositoryEntry : homeEntry;
-        const ahead = waitEntry?.ahead() ?? error.ahead;
+        const ahead = waitEntry?.ahead(now) ?? error.ahead;
         entry =
           error.pool === "repository" && repository !== undefined
             ? `${repositoryKey(repository)}-1.lock`
             : "place-1.lock";
         const of =
           error.pool === "home" || repository === undefined ? "" : ` of ${repository.name}`;
-        const line =
-          error.ahead > 0
+        const passedOver =
+          kind === "verify" && (waitEntry?.integrationsAhead(now) ?? 0) > 0;
+        const line = passedOver
+          ? `waiting for a check place${of}: passed over for an integration check`
+          : error.ahead > 0
             ? `waiting for a check place${of}: ${error.ahead} ahead`
             : `waiting for a check place${of}: ${error.inUse} in use`;
         if (said !== line) {
@@ -248,10 +285,12 @@ export function checkPlaces(
   repository?: { readonly name: string; readonly path: string },
   repositoryLimit?: number,
   taskKey?: string,
+  kind: CheckKind = "verify",
 ): CheckPlaces {
   return {
     home: ctx.home,
     checks: checkPlacesOf(ctx.settings),
+    kind,
     repository:
       repository === undefined || repositoryLimit === undefined
         ? undefined

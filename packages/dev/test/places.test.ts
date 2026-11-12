@@ -7,6 +7,7 @@ import {
   checkPlacesDirectory,
   checkPlacesOf,
   DEFAULT_CHECK_PLACES,
+  VERIFY_STARVATION_MS,
   withCheckPlace,
   type CheckPlaces,
 } from "../src/places.ts";
@@ -611,6 +612,94 @@ describe("check places are served in the order checks began to wait", () => {
     expect(started).toEqual(["b"]);
     b.gate.resolve();
     await b.done;
+    expect(waiters(home)).toEqual([]);
+  });
+
+  test("integration checks take a freed place before verify checks, each first come first served", async () => {
+    const home = await osTempRoot();
+    const holder = await holdPlace(home);
+    const started: string[] = [];
+    const firstVerify = waiter(home, "v1", 1, started);
+    await firstVerify.watcher.seen("waiting for a check place");
+    const firstIntegration = waiter(home, "i1", 2, started, { kind: "integration" });
+    await firstIntegration.watcher.seen("waiting for a check place");
+    const secondVerify = waiter(home, "v2", 3, started);
+    await secondVerify.watcher.seen("waiting for a check place");
+    const secondIntegration = waiter(home, "i2", 4, started, { kind: "integration" });
+    await secondIntegration.watcher.seen("waiting for a check place");
+
+    await until(() => secondIntegration.orders.length > 0);
+    expect(firstIntegration.orders.at(-1)?.ahead).toBe(0);
+    // Both integrations are ahead of both verifies.
+    expect(secondIntegration.orders.at(-1)?.ahead).toBe(1);
+
+    await holder.release();
+    secondIntegration.rings.ring();
+    firstIntegration.rings.ring();
+    secondVerify.rings.ring();
+    firstVerify.rings.ring();
+    await until(() => started.length === 1);
+    expect(started).toEqual(["i1"]);
+    // The verify waited first, but the integration took the place.
+    await firstVerify.watcher.seen("passed over for an integration check");
+    firstIntegration.gate.resolve();
+    await firstIntegration.done;
+    secondIntegration.rings.ring();
+    await until(() => started.length === 2);
+    expect(started).toEqual(["i1", "i2"]);
+    secondIntegration.gate.resolve();
+    await secondIntegration.done;
+
+    // With no integration left, the verifies run in the order they began to wait.
+    secondVerify.rings.ring();
+    firstVerify.rings.ring();
+    await until(() => started.length === 3);
+    expect(started).toEqual(["i1", "i2", "v1"]);
+    firstVerify.gate.resolve();
+    await firstVerify.done;
+    secondVerify.rings.ring();
+    await until(() => started.length === 4);
+    expect(started).toEqual(["i1", "i2", "v1", "v2"]);
+    secondVerify.gate.resolve();
+    await secondVerify.done;
+    expect(waiters(home)).toEqual([]);
+  });
+
+  test("a verify that has waited longer than the limit takes the next place before an integration", async () => {
+    const home = await osTempRoot();
+    const now = { value: 1_000_000 };
+    const holder = await holdPlace(home);
+    const started: string[] = [];
+    const verify = waiter(home, "verify", now.value, started, { clock: () => now.value });
+    await verify.watcher.seen("waiting for a check place");
+    now.value += 2_000;
+    const integration = waiter(home, "integration", now.value, started, {
+      kind: "integration",
+      clock: () => now.value,
+    });
+    await integration.watcher.seen("waiting for a check place");
+    await until(() => integration.orders.length > 0);
+    // The verify has not reached the limit yet: the integration is first.
+    expect(integration.orders.at(-1)?.ahead).toBe(0);
+
+    now.value = 1_000_000 + VERIFY_STARVATION_MS + 1;
+    integration.rings.ring();
+    await until(() => integration.orders.at(-1)?.ahead === 1);
+
+    await holder.release();
+    // The integration looks first, but the starved verify takes the free place.
+    integration.rings.ring();
+    verify.rings.ring();
+    await until(() => started.length === 1);
+    expect(started).toEqual(["verify"]);
+    verify.gate.resolve();
+    await verify.done;
+
+    integration.rings.ring();
+    await until(() => started.length === 2);
+    expect(started).toEqual(["verify", "integration"]);
+    integration.gate.resolve();
+    await integration.done;
     expect(waiters(home)).toEqual([]);
   });
 
