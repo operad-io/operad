@@ -942,3 +942,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0274-M5 | packages/dev/src/marks.ts | a removed repository returned `todo` instead of `cancelled`, so a finished row had no finished mark | `task badge > every finished row carries the mark that says how it ended` |
+
+## T-0340 — the real-binary CLI test stays under its timeout
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0340-M1 | packages/dev/src/refusals.ts | the plan's second confirm said "nothing more to do", so the in-process confirm check no longer matched | `operad with the dev plugin > the real binary registers, plans, lists, shows and confirms` |
