@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -10,6 +11,7 @@ import {
   type PluginStore,
   type PluginStoreBackend,
 } from "../../src/index.ts";
+import { writeImmediate } from "../../src/platform/index.ts";
 import { waitForFile } from "../wait-for-file.ts";
 import { cleanupTempRoots, tempRoot } from "./support.ts";
 
@@ -271,6 +273,55 @@ describe("store lifecycle and concurrency", () => {
     expect(sequences).toEqual(
       Array.from({ length: 200 }, (_value, index) => index + 1),
     );
+  });
+
+  test("a writer waits out a busy store while another process keeps committing, and fails when none does", async () => {
+    const root = join(await tempRoot(), "store");
+    mkdirSync(root, { recursive: true });
+    const file = join(root, "plugins.sqlite");
+    const store = new SqlitePluginStore({ root, follow: false });
+    try {
+      // A holder that never commits: the wait ends in SQLITE_BUSY.
+      const holder = new Database(file);
+      holder.run("PRAGMA busy_timeout = 1");
+      holder.run("BEGIN IMMEDIATE");
+      const quick = new Database(file);
+      quick.run("PRAGMA busy_timeout = 1");
+      expect(() => writeImmediate(quick, () => undefined)).toThrow(
+        /database is locked/,
+      );
+      holder.run("ROLLBACK");
+      holder.close();
+      quick.close();
+    } finally {
+      store.close();
+    }
+
+    // A busy handler that gives up at once, against a process that commits
+    // in a tight loop: every append still lands.
+    const child = Bun.spawn(
+      [process.execPath, APPEND_CHILD, root, "w", "1000"],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    await waitForFile(join(root, "ready-w"));
+    const impatient = new Database(file);
+    impatient.run("PRAGMA busy_timeout = 0");
+    writeFileSync(join(root, "go"), "");
+    for (let index = 0; index < 500; index += 1) {
+      writeImmediate(impatient, () => {
+        impatient
+          .query(
+            "INSERT INTO facts (type, cause, at, data) VALUES ('test.local', 'impatient', 0, '{}')",
+          )
+          .run();
+      });
+    }
+    expect(await child.exited).toBe(0);
+    const total = impatient
+      .query<{ n: number }, []>("SELECT COUNT(*) AS n FROM facts")
+      .get()?.n;
+    impatient.close();
+    expect(total).toBe(1500);
   });
 });
 
