@@ -254,6 +254,7 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
   private async connect(): Promise<boolean> {
     const headers: Record<string, string> = {
       authorization: `Bearer ${this.token}`,
+      "x-operad-client": "tui",
       accept: "text/event-stream",
     };
     if (this.lastId !== undefined) headers["last-event-id"] = this.lastId;

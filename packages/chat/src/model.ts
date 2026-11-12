@@ -10,7 +10,7 @@ export const CHAT_TYPE = "chat";
 /** The fact type of one message on a chat; a person's and the assistant's alike. */
 export const MESSAGE_FACT = "chat.message";
 
-/** The event type a new message is: its source is `ios`, `telegram` or `cli`. */
+/** The event type a new message is: its source is `ios`, `telegram`, `cli`, `tui` or `other`. */
 export const MESSAGE_EVENT = "message";
 
 /** The fact type of a chat that was closed. */
@@ -23,7 +23,10 @@ export const CHAT_FILTERS = [
 ] as const;
 
 /** Where a message can come from. */
-export const CHAT_SOURCES = ["ios", "telegram", "cli"] as const;
+export const CHAT_SOURCES = ["ios", "telegram", "cli", "tui"] as const;
+
+/** The event source of a message from a client the chat does not know by name. */
+export const OTHER_SOURCE = "other";
 
 export type ChatSource = (typeof CHAT_SOURCES)[number];
 

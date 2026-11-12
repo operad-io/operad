@@ -115,6 +115,11 @@ not current, gets `401`. `operad http token rotate` replaces the token at once:
 a running `serve` refuses the old one from the moment the command returns and
 ends the event streams opened with it. No endpoint shows the token.
 
+A client names itself in the `X-Operad-Client` header, a lowercase word of at most 32 letters,
+digits, `-` or `_` (`ios`, `tui`). A message it sends in a chat is recorded and shown as
+"via" that name. A request without the header, or with a value that is not such a word, is
+recorded as `http`; it is never recorded as `cli`.
+
 `serve` prints one line per address it listens on:
 
 ```text

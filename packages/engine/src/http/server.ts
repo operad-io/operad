@@ -32,6 +32,15 @@ import { isRecord } from "../util.ts";
 /** How long an idle event stream waits before a keep-alive comment. */
 export const DEFAULT_KEEP_ALIVE_MS = 15_000;
 
+/** The header a client names itself in; the name becomes the actor's `via`. */
+export const CLIENT_HEADER = "x-operad-client";
+
+/** The client's name when it is a short lowercase word; `http` when missing or not one. */
+export function clientName(header: string | null): string {
+  const name = header?.trim() ?? "";
+  return /^[a-z][a-z0-9_-]{0,31}$/.test(name) ? name : "http";
+}
+
 /** How often a running server checks whether `http token rotate` replaced the token. */
 export const DEFAULT_TOKEN_CHECK_MS = 1_000;
 
@@ -592,7 +601,7 @@ function createHandler(
       if (confirmed !== undefined && typeof confirmed !== "boolean") {
         return errorResponse(400, "args", "confirmed must be a boolean");
       }
-      const actor: Actor = { via: "http", id: token.label };
+      const actor: Actor = { via: clientName(request.headers.get(CLIENT_HEADER)), id: token.label };
       try {
         const result = await options.views.act(action, id, {
           args,

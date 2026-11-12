@@ -308,6 +308,21 @@ describe("TuiEvents", () => {
     }
   });
 
+  test("the event stream says it is the tui", async () => {
+    const names: (string | null)[] = [];
+    const fetchImpl: FetchLike = async (_input, init) => {
+      names.push(new Headers(init?.headers).get("x-operad-client"));
+      return new Response(new ReadableStream({ start: (c) => c.close() }), { status: 200 });
+    };
+    const events = new TuiEvents({ url: "http://127.0.0.1:1", token: "t", fetch: fetchImpl, wait: async () => undefined });
+    try {
+      await events.next();
+      expect(names).toEqual(["tui"]);
+    } finally {
+      events.stop();
+    }
+  });
+
   test("a reconnect with no id to resume from sends one reset", async () => {
     const encoder = new TextEncoder();
     let attempts = 0;
