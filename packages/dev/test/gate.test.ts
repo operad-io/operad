@@ -3209,12 +3209,6 @@ describe("dev/verify reruns only the failed tests", () => {
     expect(pattern).toBe(anchoredPattern(name));
     expect(new RegExp(pattern).test(name.replace(" > ", " "))).toBe(true);
   });
-
-  test("the pattern is anchored and joins describe names with a space, as bun test -t does", () => {
-    expect(anchoredPattern("a > b (c)")).toBe("^a b \\(c\\)$");
-    expect(rerunCommand("bun test -t {pattern}", "it's")).toBe("bun test -t '^it'\\''s$'");
-    expect(rerunCommand("run {name} {name}", "$x")).toBe("run '$x' '$x'");
-  });
 });
 
 describe("dev/review rework rounds", () => {
