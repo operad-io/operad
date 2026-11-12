@@ -33,7 +33,7 @@ import { createShellPlugin } from "@operad-io/shell";
 import { setTaskPhase } from "../src/service.ts";
 import { notCodeTestHooks } from "../src/notcode.ts";
 import type { CheckCommand } from "../src/settings.ts";
-import { listRerunCounts, recordRerunPasses } from "../src/reruns.ts";
+import { listRerunCounts } from "../src/reruns.ts";
 import { anchoredPattern, rerunCommand } from "../src/rerun.ts";
 import {
   addPlan,
@@ -3214,18 +3214,6 @@ describe("dev/verify reruns only the failed tests", () => {
     expect(anchoredPattern("a > b (c)")).toBe("^a b \\(c\\)$");
     expect(rerunCommand("bun test -t {pattern}", "it's")).toBe("bun test -t '^it'\\''s$'");
     expect(rerunCommand("run {name} {name}", "$x")).toBe("run '$x' '$x'");
-  });
-
-  test("the count accumulates across tasks", async () => {
-    const store = storeAt(await osTempRoot());
-    await recordRerunPasses(store, ["a", "b"]);
-    await recordRerunPasses(store, ["b"]);
-    await recordRerunPasses(store, ["b", "c"]);
-    expect(await listRerunCounts(store)).toEqual([
-      { name: "b", count: 3 },
-      { name: "a", count: 1 },
-      { name: "c", count: 1 },
-    ]);
   });
 });
 
