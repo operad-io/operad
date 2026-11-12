@@ -27,6 +27,7 @@ import { recordRerunPasses } from "./reruns.ts";
 import {
   ReviewGradingError,
   readReviewGrading,
+  strictestFixLevel,
   type Grading,
 } from "@operad-io/review-grading";
 import { isRecord, messageOf, type PluginStepResult, type StepContext, type StepRunOptions } from "@operad-io/engine";
@@ -806,6 +807,27 @@ function gradingOf(context: TaskContext, params: unknown): Grading {
   }
 }
 
+/**
+ * When this flow's grading sets no fixLevel, the strictest of dev.json's and
+ * every level review.json sets for any flow, so a run never reviews with a
+ * weaker level than the repository configures anywhere. Undefined when
+ * review.json sets none, which leaves dev.json's.
+ */
+function strictestElsewhere(context: TaskContext): FixLevel | undefined {
+  try {
+    const other = strictestFixLevel(context.repository.path);
+    if (other === undefined) return undefined;
+    return levelRank(other) < levelRank(context.settings.reviewer.fixLevel)
+      ? other
+      : context.settings.reviewer.fixLevel;
+  } catch (error) {
+    if (error instanceof ReviewGradingError) {
+      throw new DevError("review.json", error.message.slice("review.json: ".length));
+    }
+    throw error;
+  }
+}
+
 /** The context with review.json's fixLevel, when set, over dev.json's. */
 function gradedContext(
   context: TaskContext,
@@ -815,14 +837,15 @@ function gradedContext(
   readonly grading: Grading;
 } {
   const grading = gradingOf(context, params);
-  if (grading.fixLevel === undefined) return { context, grading };
+  const fixLevel = grading.fixLevel ?? strictestElsewhere(context);
+  if (fixLevel === undefined) return { context, grading };
   return {
     grading,
     context: {
       ...context,
       settings: {
         ...context.settings,
-        reviewer: { ...context.settings.reviewer, fixLevel: grading.fixLevel },
+        reviewer: { ...context.settings.reviewer, fixLevel },
       },
     },
   };

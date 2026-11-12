@@ -924,3 +924,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0316-M1 | packages/dev/src/views.ts | `waitNote` no longer returned the task's `slotHeld`, so a ready task held by its plan's slot showed no reason | `a ready task says what holds it back > the plan's slot names the running task and then how many more` |
+## T-0315 — a review does not pass with a major finding
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0315-M1 | packages/dev/src/rework.ts | a first review moved a non-critical finding in an untouched file out of the failing set again (the per-file rule back) | `dev/review rework rounds > a major finding in a file the change does not touch fails the first review (T-0315)` and four more |
+| T-0315-M2 | packages/dev/src/gate.ts | a flow whose grading sets no fixLevel kept dev.json's level instead of the strictest the repository configures (`strictestElsewhere` removed) | `dev/review > review.json > a flow with no level of its own never reviews with a weaker one (T-0315)` |
