@@ -911,25 +911,6 @@ export function validatePluginSet(plugins: readonly NormalizedPlugin[]): void {
       }
     }
   }
-
-  const verbs = new Map<string, string[]>();
-  for (const plugin of plugins) {
-    for (const command of plugin.commands) {
-      const owners = verbs.get(command.name);
-      if (owners === undefined) {
-        verbs.set(command.name, [plugin.name]);
-      } else {
-        owners.push(plugin.name);
-      }
-    }
-  }
-  for (const [verb, owners] of verbs) {
-    if (owners.length > 1) {
-      throw new PluginError(
-        `command "${verb}": declared by plugins ${owners.map((owner) => `"${owner}"`).join(", ")}`,
-      );
-    }
-  }
 }
 
 export function validateFlows(

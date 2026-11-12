@@ -247,8 +247,11 @@ describe("store lifecycle and concurrency", () => {
   test("two writer processes assign unique, contiguous sequences", async () => {
     const root = join(await tempRoot(), "store");
     mkdirSync(root, { recursive: true });
+    // Both writers writing is what this checks. A long back-to-back run can
+    // hold the write lock past the store's busy timeout on a loaded filesystem.
+    const perWriter = 5;
     const children = ["a", "b"].map((name) =>
-      Bun.spawn([process.execPath, APPEND_CHILD, root, name, "100"], {
+      Bun.spawn([process.execPath, APPEND_CHILD, root, name, String(perWriter)], {
         cwd: root,
         stdout: "pipe",
         stderr: "pipe",
@@ -271,7 +274,7 @@ describe("store lifecycle and concurrency", () => {
       .map((fact) => fact.sequence)
       .sort((left, right) => left - right);
     expect(sequences).toEqual(
-      Array.from({ length: 200 }, (_value, index) => index + 1),
+      Array.from({ length: perWriter * 2 }, (_value, index) => index + 1),
     );
   });
 

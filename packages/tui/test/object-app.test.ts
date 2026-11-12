@@ -156,7 +156,7 @@ describe("the TUI object app", () => {
       await shell.done;
     }
   });
-  test("the object page counts the children the list leaves out", async () => {
+  test("the object page keeps the hidden count but counts only the children it shows", async () => {
     let hide = false;
     class Hidden extends Client {
       override objects(
@@ -207,15 +207,17 @@ describe("the TUI object app", () => {
       await view.until((state) => state.object?.row.title === "One");
       await view.until((state) => state.object?.children?.hidden === 3);
       const lines = drawState(shell.state).right.chunks.map((chunk) => chunk.text).join("").split("\n");
-      expect(lines.find((line) => line.includes(" / "))).toContain("3 / 4");
+      expect(lines.find((line) => line.includes(" / "))).toContain("0 / 1");
       expect(shell.state.object?.children?.rows.map((row) => row.id)).toEqual(["two"]);
+      expect(shell.state.object?.children?.hidden).toBe(3);
+      expect(shell.state.object?.children?.hiddenDone).toBe(3);
     } finally {
       shell.stop();
       await shell.done;
     }
   });
 
-  test("a hidden cancelled child is not counted as progress", async () => {
+  test("a hidden cancelled child draws no cell", async () => {
     let hide = false;
     class HiddenCancelled extends Client {
       override types() {
@@ -281,21 +283,18 @@ describe("the TUI object app", () => {
       await view.until((state) => state.object?.children !== undefined);
       expect(shell.state.object?.children?.hidden).toBe(1);
       expect(shell.state.object?.children?.hiddenDone).toBe(0);
+      expect(shell.state.object?.children?.hiddenCancelled).toBe(1);
       const right = drawState(shell.state).right;
       const text = right.chunks.map((chunk) => chunk.text).join("");
       expect(text).toContain("0 / 1");
-      const cells = right.chunks.filter((chunk) => /^█+$/.test(chunk.text));
-      expect(cells.length).toBe(1);
-      expect((cells[0]?.fg?.toInts() ?? []).join(",")).toBe(
-        toRgba(BUILTIN_THEMES.dark.cancelled).toInts().join(","),
-      );
+      expect(right.chunks.filter((chunk) => /^█+$/.test(chunk.text))).toEqual([]);
     } finally {
       shell.stop();
       await shell.done;
     }
   });
 
-  test("the cancelled filter counts hidden waiting and merged children by role", async () => {
+  test("hidden roles stay in the state while the bar shows the cancelled row alone", async () => {
     let hide = false;
     class CancelledFilter extends Client {
       override types() {
@@ -360,8 +359,13 @@ describe("the TUI object app", () => {
       await view.until((state) => state.object?.row.title === "One");
       await view.until((state) => state.object?.children?.hidden === 2);
       expect(shell.state.object?.children?.hiddenDone).toBe(1);
-      const text = drawState(shell.state).right.chunks.map((chunk) => chunk.text).join("");
-      expect(text).toContain("1 / 2");
+      const right = drawState(shell.state).right;
+      const text = right.chunks.map((chunk) => chunk.text).join("");
+      expect(text).toContain("0 / 0");
+      const cells = right.chunks.filter((chunk) => /^█+$/.test(chunk.text));
+      expect(cells.map((chunk) => (chunk.fg?.toInts() ?? []).join(","))).toEqual([
+        toRgba(BUILTIN_THEMES.dark.cancelled).toInts().join(","),
+      ]);
     } finally {
       shell.stop();
       await shell.done;

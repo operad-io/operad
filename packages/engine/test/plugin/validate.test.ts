@@ -126,17 +126,20 @@ describe("plugin registry validation", () => {
     expect(error.message).toContain('duplicate command "run"');
   });
 
-  test("rejects two plugins that declare the same short command", () => {
-    const error = errorOf(
-      () =>
-        new PluginRegistry([
-          def({ name: "a", commands: [command] }),
-          def({ name: "b", commands: [command] }),
-        ]),
+  test("two plugins that declare the same command load; each is reached through its plugin and the short form is not offered", async () => {
+    const logs: string[] = [];
+    const registry = new PluginRegistry(
+      [
+        def({ name: "a", commands: [{ ...command, run: () => "from a" }] }),
+        def({ name: "b", commands: [{ ...command, run: () => "from b" }] }),
+      ],
+      { onLog: (line) => logs.push(line) },
     );
-    expect(error.message).toContain('command "run"');
-    expect(error.message).toContain('"a"');
-    expect(error.message).toContain('"b"');
+    expect((await registry.runCommand(["a", "run"]))?.value).toBe("from a");
+    expect((await registry.runCommand(["b", "run"]))?.value).toBe("from b");
+    expect(registry.resolveCommand(["run"])).toBeUndefined();
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain('command "run"');
   });
 
   test("rejects a plugin flow that uses a step of a plugin that is not loaded", () => {
@@ -407,13 +410,16 @@ describe("plugin registry validation", () => {
     expect(logs[0]).toContain("kaboom");
   });
 
-  test("refuses a plugin command that shares a name with a kernel verb", () => {
-    expect(
-      () =>
-        new PluginRegistry([def({ name: "a", commands: [command] })], {
-          kernelVerbs: ["run"],
-        }),
-    ).toThrow(/plugin "a".*command "run".*kernel verb "run"/);
+  test("a plugin command that shares a name with a kernel verb loads without a short form", async () => {
+    const logs: string[] = [];
+    const registry = new PluginRegistry(
+      [def({ name: "a", commands: [{ ...command, run: () => "from a" }] })],
+      { kernelVerbs: ["run"], onLog: (line) => logs.push(line) },
+    );
+    expect(registry.resolveCommand(["run"])).toBeUndefined();
+    expect((await registry.runCommand(["a", "run"]))?.value).toBe("from a");
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain("kernel verb");
   });
 
   test("pending keeps a waiting run whose object is missing from the store", async () => {

@@ -376,6 +376,15 @@ the row fields.
 | T-0274-M2 | packages/tui/src/view/index.ts | the list glyph fell back to the state word `merged` for a row without a mark again | `the TUI view > each mark draws its own single-cell character; waiting beats a mark; running without a mark draws running` |
 | T-0274-M3 | packages/tui/src/view/index.ts | `markColour` dimmed a row whose state said `merged` even when its mark was not done again | `the object page's child list > a finished child is drawn finished by its mark; a state word alone is not` |
 | T-0274-M4 | packages/tui/src/view/index.ts | the child list glyph fell back to the state word `merged` for a row without a mark again | `the object page's child list > a finished child is drawn finished by its mark; a state word alone is not` |
+
+## T-0344 — an object page's bar counts the rows its list shows
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0344-M1 | packages/tui/src/app.ts | `loadChildren` asked for the type's `all` filter instead of the tab's filter again | `an open plan's next level follows the tab's filter > the default filter lists only its rows and f makes the bar count every task` |
+| T-0344-M2 | packages/tui/src/app.ts | a filter change reloaded the left list but not the open object's next level | `an open plan's next level follows the tab's filter > the default filter lists only its rows and f makes the bar count every task` |
+| T-0344-M3 | packages/tui/src/state.ts | `replacePageRow` kept a child whose new state left the tab's filter | `an open plan's next level follows the tab's filter > a task that becomes merged leaves the active list and joins the hidden count` |
+| T-0344-M4 | packages/tui/src/view/index.ts | the child heading added the filter's hidden children to its numbers again | `the progress bar and its heading > children the filter hid stay out of the heading and the bar` |
 ## T-0319 — one list width for every tab
 
 | id | file | mutation | failing test |
