@@ -1405,7 +1405,7 @@ export class Views {
       this.onLog(`action "${action}": opens "${opens}" names no existing object; not passed on`);
       return undefined;
     }
-    return `${found.type}:${found.id}`;
+    return opens;
   }
 
   private finishSection(

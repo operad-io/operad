@@ -676,6 +676,10 @@ describe("http server", () => {
       expect(named.value).toBe("made it");
       expect(named.opens).toBe("item:two");
 
+      // A bare id that resolves is passed on as the plugin wrote it.
+      const bare = await make({ opens: "item:two" });
+      expect(bare.opens).toBe("item:two");
+
       const missing = await make({ opens: "item:nope" });
       expect(missing.value).toBe("made it");
       expect("opens" in missing).toBe(false);
