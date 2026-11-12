@@ -684,5 +684,5 @@ the row fields.
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0352-M1 | packages/engine/src/plugin/sqlite-store.ts | `declare` wrote the declaration on every call again (the old code), so a command that only reads waited out the busy timeout while another process held the write lock and failed with "database is locked" | `declaring an object type > a declaration the store already holds takes no write lock` |
+| T-0352-M1 | packages/engine/src/plugin/sqlite-store.ts | `declare` wrote the declaration on every call again (the old code), so a command that only reads waited out the busy timeout while another process held the write lock and failed with "database is locked" | `operad list --json while another process holds the store's write lock > prints the whole page with code 0 instead of failing with 'database is locked'` (packages/cli/test/list-json-locked.test.ts, through `main`; also `declaring an object type > a declaration the store already holds takes no write lock`) |
 | T-0347-M1 | packages/engine/src/plugin/registry.ts | a plugin command named like a kernel verb threw at startup again instead of losing only its short form | `plugin commands named like kernel verbs or each other > the CLI starts, the kernel verb runs and the plugin command runs through its plugin` |
