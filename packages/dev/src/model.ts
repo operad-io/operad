@@ -1153,8 +1153,13 @@ export function isOpenTask(task: TaskData): boolean {
   return task.phase !== "merged" && task.phase !== "cancelled";
 }
 
-/** The integrate step is working: it marks the attempt until it writes a result. */
+/**
+ * The integrate step is working: it marks the attempt until it writes a result.
+ * A task that ended (cancelled while it queued or checked) is not integrating,
+ * whatever mark its attempt still carries.
+ */
 export function isIntegrating(task: TaskData): boolean {
+  if (!isOpenTask(task)) return false;
   const run = task.attempt?.integrating;
   return typeof run === "string" && run.length > 0;
 }
