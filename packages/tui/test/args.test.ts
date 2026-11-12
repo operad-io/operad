@@ -104,6 +104,36 @@ describe("arguments of an action", () => {
     });
   });
 
+  test("the model list narrows to the chosen agent, with that agent's default preselected", () => {
+    const chat = action("devtest:chat", {
+      args: {
+        type: "object",
+        properties: {
+          agent: HARNESS,
+          model: { type: "string", enum: ["c-a", "c-b", "p-a", "p-b"] },
+        },
+        allOf: [
+          { if: { properties: { agent: { const: "claude" } }, required: ["agent"] }, then: { properties: { model: { enum: ["c-a", "c-b"], default: "c-a" } } } },
+          { if: { properties: { agent: { const: "pi" } }, required: ["agent"] }, then: { properties: { model: { enum: ["p-a", "p-b"], default: "p-b" } } } },
+        ],
+        additionalProperties: false,
+      },
+    });
+    const start = (): TuiState => press(opened("run", undefined, [chat]), ":", ...typeText("devtest:chat"), "enter");
+    // claude chosen: only claude's models.
+    let state = press(start(), "j", "enter");
+    expect(state.input?.kind === "args" && state.input.fields[1]?.options.map((o) => o.label)).toEqual(["c-a", "c-b"]);
+    expect(state.input?.kind === "args" && state.input.cursor).toBe(0);
+    // pi chosen: only pi's, its default preselected, and the pick is sent.
+    state = press(start(), "j", "j", "enter");
+    expect(state.input?.kind === "args" && state.input.fields[1]?.options.map((o) => o.label)).toEqual(["p-a", "p-b"]);
+    expect(state.input?.kind === "args" && state.input.cursor).toBe(1);
+    expect(press(state, "enter").actionRequest?.args).toEqual({ agent: "pi", model: "p-b" });
+    // no agent chosen: the union stays.
+    state = press(start(), "enter");
+    expect(state.input?.kind === "args" && state.input.fields[1]?.options.length).toBe(4);
+  });
+
   test("a row's badge marks the current level, so a plugin that badges its level needs no client code", () => {
     const state = press(opened("confirmed", "merge"), ":", ...typeText("auto"), "enter");
     expect(state.input?.kind === "args" && state.input.cursor).toBe(2);

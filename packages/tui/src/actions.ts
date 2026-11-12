@@ -5,7 +5,7 @@
  */
 
 import type { ViewAction, ViewRow } from "@operad-io/engine";
-import { argFields, parseArg, type ArgField } from "./args.ts";
+import { argFields, narrowField, parseArg, type ArgField } from "./args.ts";
 import type { TuiSetting, TuiTypeInfo } from "./client.ts";
 import { sanitize } from "./sanitize.ts";
 import type { TuiAnswer, TuiBinding, TuiInput, TuiState } from "./state.ts";
@@ -741,12 +741,13 @@ function argsInput(
   note: ArgsInput["note"],
   confirm: boolean,
 ): ArgsInput {
-  const field = fields[at];
+  const asked = fields[at];
+  const field = asked === undefined ? undefined : narrowField(asked, values);
   return {
     kind: "args",
     action,
     id,
-    fields,
+    fields: field === undefined ? fields : fields.map((one, index) => (index === at ? field : one)),
     at,
     values,
     cursor: field?.optional === true && field.current === undefined ? -1 : (field?.current ?? 0),
