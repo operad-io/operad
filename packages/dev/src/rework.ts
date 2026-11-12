@@ -244,10 +244,11 @@ export type ReviewKind = "first" | "reverify" | "rework";
 
 /**
  * Whether a finding moves as pre-existing in a review of this kind.
- * A first review keeps only the per-file rule: a finding in a file the task's
- * change does not touch does not block (critical, and a finding without file
- * or line, never move). A reverify of the same commit moves nothing. A rework
- * round applies the line rules of `movesAsPreExisting`.
+ * A first review moves nothing: a finding in a file the change does not touch
+ * can still be a defect the change causes (T-0315; before it, the per-file rule
+ * let majors in untouched files pass a review). A reverify of the same commit
+ * moves nothing. Only a rework round applies the line rules of
+ * `movesAsPreExisting`.
  */
 export function movesIn(
   kind: ReviewKind,
@@ -256,18 +257,9 @@ export function movesIn(
   previous: readonly PreviousFinding[],
   normalize: (path: string) => string,
 ): boolean {
-  if (kind === "reverify") return false;
-  if (kind === "rework") return movesAsPreExisting(finding, own, previous, normalize);
-  if (finding.severity === "critical") return false;
-  if (
-    finding.file === undefined ||
-    finding.file.length === 0 ||
-    finding.line === undefined ||
-    !Number.isFinite(finding.line)
-  ) {
-    return false;
-  }
-  return !own.has(normalize(finding.file));
+  return kind === "rework"
+    ? movesAsPreExisting(finding, own, previous, normalize)
+    : false;
 }
 
 /** How many previous findings have no blocking finding of this review near them. */

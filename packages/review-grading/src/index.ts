@@ -173,3 +173,24 @@ export function readReviewGrading(
   const own = Object.hasOwn(file.flows, flowName) ? file.flows[flowName] : undefined;
   return mergeGrading(file.default, own ?? {});
 }
+
+/**
+ * The strictest fix level the file sets anywhere: in `default` or in any
+ * flow's entry. A caller whose flow has no level of its own uses this one
+ * rather than a weaker level or none. Undefined when the file sets none.
+ */
+export function strictestFixLevel(repositoryPath: string): Level | undefined {
+  const path = join(repositoryPath, REVIEW_GRADING_FILE);
+  if (!existsSync(path)) return undefined;
+  let file;
+  try {
+    file = validateReviewGrading(JSON.parse(readFileSync(path, "utf8")));
+  } catch (error) {
+    throw new ReviewGradingError(`invalid ${path}: ${String(error)}`);
+  }
+  const set = [file.default, ...Object.values(file.flows)]
+    .map((grading) => grading.fixLevel)
+    .filter((level): level is Level => level !== undefined);
+  // LEVELS runs from critical to minor; the lowest threshold is the strictest.
+  return set.sort((a, b) => LEVELS.indexOf(b) - LEVELS.indexOf(a))[0];
+}
