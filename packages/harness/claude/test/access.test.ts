@@ -252,6 +252,24 @@ describe("operad's own tools", () => {
     expect(other.allow).toBe(false);
   });
 
+  test("another server's tool is judged by server and tool when the profile has allowMcp: a listed one runs, any other asks", async () => {
+    const profile: AccessProfile = { denyPaths: ["~/.ssh"], allowMcp: ["notes.echo"] };
+    expect(translate("mcp__notes__echo", {}, true)).toEqual({ kind: "mapped", tool: "mcp", input: { server: "notes", tool: "echo" } });
+    expect(translate("mcp__notes__echo", {})).toEqual({ kind: "unmapped" });
+    expect(await decideAccess(profile, "mcp__notes__echo", {}, CWD)).toEqual({ allow: true });
+    const refused = await decideAccess(profile, "mcp__notes__wipe", {}, CWD);
+    expect(refused.allow).toBe(false);
+    const asked: unknown[] = [];
+    const allowed = await decideAccess(profile, "mcp__notes__wipe", {}, CWD, undefined, async (question) => {
+      asked.push(question);
+      return { decision: "allow" };
+    });
+    expect(allowed).toEqual({ allow: true });
+    expect(asked).toEqual([{ kind: "command", value: "mcp notes.wipe" }]);
+    // Operad's own tools stay outside the profile.
+    expect(await decideAccess(profile, "mcp__operad__list", {}, CWD)).toEqual({ allow: true });
+  });
+
   test("a read-only profile asks about a write in the working directory", async () => {
     const asked: unknown[] = [];
     const verdict = await decideAccess({ readOnly: true }, "Write", { file_path: `${CWD}/a.ts` }, CWD, undefined, async (question) => {

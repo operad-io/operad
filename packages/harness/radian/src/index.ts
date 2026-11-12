@@ -31,6 +31,7 @@ import {
   MAX_LINE_CHARS,
   OPERAD_SERVER,
   operadToolsOf,
+  mountedServersOf,
   optionalText,
   secs,
   serverCommand,
@@ -616,23 +617,25 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
 
           // Operad's tools: radian starts the server named in this file.
           const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
+          // A bot's servers: each is started behind its guard, which holds the secrets.
+          const mounted = mountedServersOf(input.mcpServers ?? flow.mcpServers);
           let mcpConfig: string | undefined;
-          if (operadTools !== undefined) {
-            const server = serverCommand(operadTools);
+          if (operadTools !== undefined || mounted !== undefined) {
+            const servers: Record<string, unknown> = {};
+            if (operadTools !== undefined) {
+              const server = serverCommand(operadTools);
+              servers[OPERAD_SERVER] = {
+                command: server.command,
+                args: server.args,
+                env: { OPERAD_HOME: operadTools.home },
+              };
+            }
+            for (const [name, server] of Object.entries(mounted ?? {})) {
+              servers[name] = { command: server.command, args: server.args };
+            }
             mcpConfig = `${ctx.logger.path}.mcp.json`;
             await mkdir(dirname(mcpConfig), { recursive: true });
-            await writeFile(
-              mcpConfig,
-              JSON.stringify({
-                mcpServers: {
-                  [OPERAD_SERVER]: {
-                    command: server.command,
-                    args: server.args,
-                    env: { OPERAD_HOME: operadTools.home },
-                  },
-                },
-              }),
-            );
+            await writeFile(mcpConfig, JSON.stringify({ mcpServers: servers }));
           }
           // radian runs its own tools and has no way to ask, so the profile's
           // rules are given to it as a hook it runs before each call.

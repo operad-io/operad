@@ -109,6 +109,8 @@ interface Live {
   readonly cwd: string;
   readonly access: Readonly<Record<string, JsonValue>>;
   readonly skills: readonly string[];
+  /** Servers the harness starts for the agent, by name, each as a command. */
+  readonly mcpServers: Readonly<Record<string, JsonValue>>;
 }
 
 /**
@@ -122,7 +124,7 @@ async function liveSettings(
   object: RunObject,
   runStep: NonNullable<StepContext["runStep"]>,
 ): Promise<Live | PluginStepResult> {
-  const own: Live = { cwd: chat.cwd, access: chat.access, skills: chat.skills };
+  const own: Live = { cwd: chat.cwd, access: chat.access, skills: chat.skills, mcpServers: {} };
   if (chat.refresh === undefined) return own;
   if (ctx.stepLoaded !== undefined && !ctx.stepLoaded(chat.refresh)) {
     return failed("settings", `"${chat.refresh}", which gives this chat's settings, is not loaded`);
@@ -144,6 +146,7 @@ async function liveSettings(
     cwd: data.cwd,
     access: data.access as Record<string, JsonValue>,
     skills: data.skills.filter((item): item is string => typeof item === "string"),
+    mcpServers: isRecord(data.mcpServers) ? (data.mcpServers as Record<string, JsonValue>) : {},
   };
 }
 
@@ -208,6 +211,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
         ...(live.skills.length === 0 ? {} : { skills: live.skills }),
         // Operad's own tools, so the agent never runs the `operad` command.
         operadTools: { home: ctx.home },
+        ...(Object.keys(live.mcpServers).length === 0 ? {} : { mcpServers: live.mcpServers }),
         ...(session === undefined ? {} : { resumeSession: session }),
         ...(resumed.askAnswer === undefined ? {} : { askAnswer: resumed.askAnswer }),
       },

@@ -319,7 +319,20 @@ export async function runWorker(
       for (const text of data.split("\n")) if (text.trim().length > 0) stderrTail.push(text.trim());
       if (stderrTail.length > 5) stderrTail.splice(0, stderrTail.length - 5);
     },
-    ...(operadServer === undefined ? {} : { mcpServers: { [OPERAD_SERVER]: operadServer } }),
+    ...(operadServer === undefined && input.mcpServers === undefined
+      ? {}
+      : {
+          mcpServers: {
+            ...(operadServer === undefined ? {} : { [OPERAD_SERVER]: operadServer }),
+            // A bot's servers: each is started behind its guard, which holds the secrets.
+            ...Object.fromEntries(
+              Object.entries(input.mcpServers ?? {}).map(([name, server]) => [
+                name,
+                { type: "stdio" as const, command: server.command, args: [...server.args] },
+              ]),
+            ),
+          },
+        }),
     ...(input.resumeSession !== undefined ? { resume: input.resumeSession } : {}),
     ...(input.model !== undefined ? { model: input.model } : {}),
     ...(input.effort !== undefined ? { effort: input.effort } : {}),

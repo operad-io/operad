@@ -55,6 +55,11 @@ describe("canAsk", () => {
     expect(canAsk({ readOnly: false })).toBe(false);
     expect(canAsk(null)).toBe(false);
   });
+
+  test("is true for a profile that puts MCP tools under it, even with none listed", () => {
+    expect(canAsk({ allowMcp: [] })).toBe(true);
+    expect(canAsk({ allowMcp: ["notes.echo"] })).toBe(true);
+  });
 });
 
 describe("askRequest", () => {
