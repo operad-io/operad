@@ -36,7 +36,7 @@ async function setup() {
     join(home, "config.json"),
     JSON.stringify({
       plugins: { dev: PLUGIN, pool: POOL, shell: SHELL },
-      store: { backend: "jsonl", path: join(root, "store") },
+      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
     }),
   );
   const repository = await makeGitRepository(root);

@@ -11,8 +11,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FlowDefinition } from "../flow/types.ts";
 import { openLog } from "../log/open-log.ts";
+import { SQLITE_FILE_NAME } from "../log/sqlite.ts";
 import type { Fact, JsonValue, LogBackend } from "../log/types.ts";
-import { FilePluginStore } from "../plugin/file-store.ts";
+import { SqlitePluginStore } from "../plugin/sqlite-store.ts";
 import { loadPlugin } from "../plugin/load.ts";
 import { PluginRegistry } from "../plugin/registry.ts";
 import { FileSecretStore } from "../plugin/secrets.ts";
@@ -92,11 +93,11 @@ async function createWorld(
     const store: PluginStore =
       options.inProcess === true
         ? (options.store ?? memoryStore())
-        : new FilePluginStore({ root: storeRoot });
+        : new SqlitePluginStore({ root: storeRoot });
     for (const [name, value] of Object.entries(options.secrets ?? {})) {
       await new FileSecretStore({ home, plugin: definition.name }).set(name, value);
     }
-    log = openLog({ backend: "jsonl", path: storeRoot });
+    log = openLog({ backend: "sqlite", path: join(storeRoot, SQLITE_FILE_NAME) });
     const onLog = (message: string): void => {
       console.error(message);
     };

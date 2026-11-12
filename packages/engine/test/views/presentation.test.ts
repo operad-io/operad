@@ -4,7 +4,7 @@ import {
   createViews,
   defineFlow,
   definePlugin,
-  FilePluginStore,
+  SqlitePluginStore,
   MemoryPluginStore,
   openLog,
   openSqliteLogBackend,
@@ -48,11 +48,8 @@ const APPEND_CHILD = join(
  * to exit. A broken fixture fails here with its stderr instead of making the
  * event read time out.
  */
-async function appendInChild(
-  backend: "sqlite" | "jsonl",
-  directory: string,
-): Promise<void> {
-  const child = Bun.spawn([process.execPath, APPEND_CHILD, backend, directory], {
+async function appendInChild(directory: string): Promise<void> {
+  const child = Bun.spawn([process.execPath, APPEND_CHILD, directory], {
     cwd: directory,
     stdout: "pipe",
     stderr: "pipe",
@@ -88,7 +85,7 @@ async function fixture(): Promise<Fixture> {
     store,
     onLog: (message) => logs.push(message),
   });
-  const log = openLog({ backend: "jsonl", path: join(root, "store") });
+  const log = openLog({ backend: "sqlite", path: join(root, "store", "log.sqlite") });
   return { root, store, registry, log, logs };
 }
 
@@ -724,8 +721,8 @@ describe("presentation views", () => {
   test("events reach a reader when another store writes the object", async () => {
     const root = await tempRoot();
     const directory = join(root, "plugins");
-    const reader = new FilePluginStore({ root: directory });
-    const writer = new FilePluginStore({ root: directory });
+    const reader = new SqlitePluginStore({ root: directory });
+    const writer = new SqlitePluginStore({ root: directory });
     const registry = new PluginRegistry([demo], { store: reader });
     const views = trackedViews({ registry, store: reader });
     const stream = views.events()[Symbol.asyncIterator]();
@@ -741,28 +738,6 @@ describe("presentation views", () => {
     }
   });
 
-  test("events reach a reader when another jsonl log appends", async () => {
-    const root = await tempRoot();
-    const directory = join(root, "store");
-    const reader = openLog({ backend: "jsonl", path: directory });
-    const store = new MemoryPluginStore({ root: join(root, "plugins") });
-    store.put("item", "one", { title: "One" }, "seed");
-    const registry = new PluginRegistry([demo], { store });
-    const views = trackedViews({ registry, store, log: reader });
-    const stream = views.events()[Symbol.asyncIterator]();
-    try {
-      const pending = stream.next();
-      await appendInChild("jsonl", directory);
-      const event = await within(pending);
-      expect(event.done).toBe(false);
-      if (!event.done) expect(event.value).toEqual({ id: "one" });
-    } finally {
-      await stream.return?.();
-      views.close();
-      await reader.close();
-    }
-  });
-
   test("events reach a reader when another sqlite log appends", async () => {
     const root = await tempRoot();
     const directory = join(root, "store");
@@ -775,7 +750,7 @@ describe("presentation views", () => {
     const stream = views.events()[Symbol.asyncIterator]();
     try {
       const pending = stream.next();
-      await appendInChild("sqlite", directory);
+      await appendInChild(directory);
       const event = await within(pending);
       expect(event.done).toBe(false);
       if (!event.done) expect(event.value).toEqual({ id: "one" });

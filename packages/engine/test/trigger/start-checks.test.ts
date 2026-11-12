@@ -73,7 +73,7 @@ async function env(
 ) {
   const root = options.root ?? (await tempRoot());
   const storeRoot = join(root, "store");
-  const log = openLog({ backend: "jsonl", path: storeRoot });
+  const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
   const logs: string[] = [];
   const registry = new PluginRegistry(plugins, {
     home: root,
@@ -213,7 +213,7 @@ describe("a candidate started while its plugin is disabled", () => {
     const candidateRule: TriggerRule = { ...RULE, mode: "candidate" };
     const make = async (plugins: readonly PluginDefinition[], disabled: readonly string[]) => {
       const storeRoot = join(root, "store");
-      const log = openLog({ backend: "jsonl", path: storeRoot });
+      const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
       const registry = new PluginRegistry(plugins, {
         home: root,
         storeRoot,
@@ -246,7 +246,7 @@ describe("a candidate started while its plugin is disabled", () => {
   test("a choice recorded before the refusal is listed with the reason", async () => {
     const root = await tempRoot();
     const storeRoot = join(root, "store");
-    const open = () => openLog({ backend: "jsonl", path: storeRoot });
+    const open = () => openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
     const build = (plugins: readonly PluginDefinition[], disabled: readonly string[], log: ReturnType<typeof open>) => {
       const registry = new PluginRegistry(plugins, {
         home: root,

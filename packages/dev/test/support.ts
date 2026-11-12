@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FilePluginStore } from "@operad-io/engine";
+import { SqlitePluginStore } from "@operad-io/engine";
 import { openWaitHandleCount as openLockHandleCount } from "@operad-io/engine/platform";
 
 const roots: string[] = [];
@@ -67,8 +67,8 @@ export async function makeGitRepository(
   return path;
 }
 
-export function storeAt(path: string): FilePluginStore {
-  return new FilePluginStore({ root: join(path, "store") });
+export function storeAt(path: string): SqlitePluginStore {
+  return new SqlitePluginStore({ root: join(path, "store") });
 }
 
 /**

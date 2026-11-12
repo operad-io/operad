@@ -8,7 +8,7 @@
  * being the fifth argument.
  */
 
-import { FilePluginStore, PluginRegistry } from "@operad-io/engine";
+import { SqlitePluginStore, PluginRegistry } from "@operad-io/engine";
 import { createShellPlugin } from "@operad-io/shell";
 import { createDevPlugin, integrateTestHooks } from "../../src/index.ts";
 
@@ -48,7 +48,7 @@ if (point === "push") {
   };
 }
 
-const store = new FilePluginStore({ root: storeRoot });
+const store = new SqlitePluginStore({ root: storeRoot });
 const registry = new PluginRegistry([createDevPlugin(), createShellPlugin()], {
   home: process.env.OPERAD_TEST_HOME ?? storeRoot,
   cwd: repository,

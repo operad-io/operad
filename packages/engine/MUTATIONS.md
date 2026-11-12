@@ -635,6 +635,13 @@ the row fields.
 | T-0298-M8 | packages/engine/src/views/running.ts | runTimes read the log's runs again although the caller passed them | `the running view names the object and times the step > a run's times: ...` |
 | T-0302-M5 | packages/engine/src/views/presentation.ts | the row after check used `some` on the array itself, which skips holes | `hierarchy over HTTP > /v1/types names the plugin and /v1/objects takes root and parent` |
 
+## T-0275 — sqlite is the only store
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0275-M1 | packages/engine/src/config/config.ts | the default config (and a `store` without a path) named `<home>/store` instead of `<home>/store/log.sqlite` | `operad config > a missing config means sqlite at <home>/store/log.sqlite` and `a config with no store gets sqlite at <home>/store/log.sqlite` |
+| T-0275-M2 | packages/engine/src/config/config.ts | `readStore` stopped refusing a `store.backend` other than `"sqlite"` | `operad config > any backend but sqlite is a config error naming the field and the one value` |
+| T-0275-M3 | packages/engine/src/plugin/sqlite-store.ts | `pollFacts` queried a database whose directory was removed | `store lifecycle and concurrency > a poll after the store's directory was removed does nothing` |
 ## T-0310 — a removed facts file is not a refresh error
 
 | id | file | mutation | failing test |

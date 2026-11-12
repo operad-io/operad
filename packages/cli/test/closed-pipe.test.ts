@@ -1,9 +1,10 @@
+import { Database } from "bun:sqlite";
 import { afterAll, describe, expect, test } from "bun:test";
 import { testEnv } from "./env.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { FilePluginStore } from "@operad-io/engine";
+import { SqlitePluginStore } from "@operad-io/engine";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 
 afterAll(cleanupTempRoots);
@@ -22,20 +23,35 @@ describe("a reader that closes the pipe", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: [pluginPath],
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       }),
     );
     // One page of rows must be well past what a pipe buffers (64 KiB, and
     // more on some systems): a child whose whole output fits in the pipe
     // finishes before the reader closes, and exits 0 rightly.
-    const store = new FilePluginStore({ root: join(root, "store", "plugins") });
-    for (let index = 0; index < 4000; index += 1) {
-      store.put(
-        "item",
-        `row-${index}`,
-        { title: `${"A title long enough to fill the pipe. ".repeat(10)}row ${index}`, state: "new" },
-        "seed",
+    // Open the store once so its schema exists, then write the rows in one
+    // transaction (one commit, not 4000) and close both before the child opens
+    // the file. `list` reads the objects table only.
+    new SqlitePluginStore({ root: join(root, "store") }).close();
+    const database = new Database(join(root, "store", "plugins.sqlite"));
+    try {
+      const insert = database.query(
+        "INSERT INTO objects (type, id, data, version, cause, at) VALUES (?, ?, ?, 1, 'seed', 0)",
       );
+      database.transaction(() => {
+        for (let index = 0; index < 4000; index += 1) {
+          insert.run(
+            "item",
+            `row-${index}`,
+            JSON.stringify({
+              title: `${"A title long enough to fill the pipe. ".repeat(10)}row ${index}`,
+              state: "new",
+            }),
+          );
+        }
+      }).immediate();
+    } finally {
+      database.close();
     }
 
     // A real shell pipe to a reader that takes one line and exits. Bun drains

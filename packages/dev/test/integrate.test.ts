@@ -14,7 +14,7 @@ import { notCodeTestHooks } from "../src/notcode.ts";
 import { IntegrationQueue } from "../src/integration-queue.ts";
 import { validateDevSettings } from "../src/settings.ts";
 import { fileURLToPath } from "node:url";
-import { FilePluginStore, PluginRegistry } from "@operad-io/engine";
+import { SqlitePluginStore, PluginRegistry } from "@operad-io/engine";
 import { createShellPlugin } from "@operad-io/shell";
 import {
   addPlan,
@@ -763,7 +763,7 @@ describe("dev/integrate", () => {
 
     // Recover in a fresh registry: the step reads the candidate it saved and
     // asks the remote instead of pushing the same commit again.
-    const store = new FilePluginStore({ root: state.store.root });
+    const store = new SqlitePluginStore({ root: state.store.root });
     const registry = new PluginRegistry([createDevPlugin()], {
       home: state.root,
       cwd: state.remote.repository,
@@ -812,7 +812,7 @@ function freshRegistry(state: Fixture): PluginRegistry {
   return new PluginRegistry([createDevPlugin(), createShellPlugin()], {
     home: state.root,
     cwd: state.remote.repository,
-    store: new FilePluginStore({ root: state.store.root }),
+    store: new SqlitePluginStore({ root: state.store.root }),
   });
 }
 

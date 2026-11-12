@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import {
-  FilePluginStore,
+  SqlitePluginStore,
   Runner,
   loadPluginRegistry,
   openConfigLog,
@@ -21,7 +21,7 @@ const storeRoot = storeRootOf(config);
 const registry = await loadPluginRegistry({
   home,
   cwd: home,
-  store: new FilePluginStore({ root: join(storeRoot, "plugins") }),
+  store: new SqlitePluginStore({ root: storeRoot }),
 });
 const log = openConfigLog(config);
 const runs = await log.runs();

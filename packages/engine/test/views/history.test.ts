@@ -92,7 +92,7 @@ describe("history view", () => {
 
   test("streams 10 000 steps without joining the log into one string", async () => {
     const root = await tempRoot();
-    const log = openLog({ backend: "jsonl", path: join(root, "store") });
+    const log = openLog({ backend: "sqlite", path: join(root, "store", "log.sqlite") });
     try {
       const info = await log.startRun("big", "job:1");
       const batch: NewFact[] = [

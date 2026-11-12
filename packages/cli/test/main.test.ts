@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  FilePluginStore,
+  SqlitePluginStore,
   Runner,
   answerRun,
   loadPluginRegistry,
@@ -86,7 +86,7 @@ async function makeHome(): Promise<{
     join(home, "config.json"),
     JSON.stringify({
       plugins: [pluginPath],
-      store: { backend: "jsonl", path: join(root, "store") },
+      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
     }),
   );
   return { root, home };
@@ -97,7 +97,7 @@ async function startRun(home: string, flowName: string, object: string) {
   const config = await readConfig(home);
   const storeRoot = storeRootOf(config);
   const log = openConfigLog(config);
-  const store = new FilePluginStore({ root: join(storeRoot, "plugins") });
+  const store = new SqlitePluginStore({ root: storeRoot });
   const registry = await loadPluginRegistry({ home, store });
   const found = registry.flow(flowName);
   if (found === undefined) throw new Error(`missing flow ${flowName}`);
@@ -119,7 +119,7 @@ async function endRun(home: string, runId: string, choice: string): Promise<void
   const log = openConfigLog(config);
   const registry = await loadPluginRegistry({
     home,
-    store: new FilePluginStore({ root: join(storeRoot, "plugins") }),
+    store: new SqlitePluginStore({ root: storeRoot }),
   });
   const found = registry.flow("ask");
   if (found === undefined) throw new Error("missing ask flow");
@@ -138,7 +138,7 @@ async function makeNamedHome(plugins: Record<string, unknown>): Promise<{
     join(home, "config.json"),
     JSON.stringify({
       plugins,
-      store: { backend: "jsonl", path: join(root, "store") },
+      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
     }),
   );
   return { root, home };
@@ -173,7 +173,7 @@ describe("operad command", () => {
       const config = JSON.parse(
         readFileSync(join(fresh, "config.json"), "utf8"),
       ) as unknown;
-      expect(config).toMatchObject({ store: { backend: "jsonl" } });
+      expect(config).toMatchObject({ store: { backend: "sqlite" } });
 
       const second = capture();
       expect(await main(["init"], { home, io: second.io })).toBe(0);
@@ -193,7 +193,7 @@ describe("operad command", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: { dev: { module: devPluginPath } },
-        store: { backend: "jsonl", path: storeRoot },
+        store: { backend: "sqlite", path: join(storeRoot, "log.sqlite") },
       }),
     );
 
@@ -215,7 +215,7 @@ describe("operad command", () => {
     runGit(repository, ["remote", "add", "origin", remote]);
     runGit(repository, ["push", "-q", "-u", "origin", "main"]);
 
-    const store = new FilePluginStore({ root: join(storeRoot, "plugins") });
+    const store = new SqlitePluginStore({ root: storeRoot });
     await addRepository(store, { path: repository });
     runGit(repository, [
       "remote",
@@ -256,7 +256,7 @@ describe("operad command", () => {
       store: { backend: string };
     };
     expect(config.plugins["radian"]?.enabled).toBe(true);
-    expect(config.store.backend).toBe("jsonl");
+    expect(config.store.backend).toBe("sqlite");
 
     const list = capture();
     expect(await main(["repo", "list"], { home, io: list.io })).toBe(0);
@@ -318,7 +318,7 @@ describe("operad command", () => {
     const { home } = await makeHome();
     const config = await readConfig(home);
     const storeRoot = storeRootOf(config);
-    new FilePluginStore({ root: join(storeRoot, "plugins") }).put(
+    new SqlitePluginStore({ root: storeRoot }).put(
       "job",
       "1",
       { title: "Fix the gate" },
@@ -396,7 +396,7 @@ describe("operad command", () => {
     const { home } = await makeHome();
     const config = await readConfig(home);
     const storeRoot = storeRootOf(config);
-    new FilePluginStore({ root: join(storeRoot, "plugins") }).put(
+    new SqlitePluginStore({ root: storeRoot }).put(
       "job",
       "1",
       { title: "Fix the gate" },
@@ -414,7 +414,7 @@ describe("operad command", () => {
     const log = openConfigLog(config);
     const applyRegistry = await loadPluginRegistry({
       home,
-      store: new FilePluginStore({ root: join(storeRoot, "plugins") }),
+      store: new SqlitePluginStore({ root: storeRoot }),
     });
     await serveOnce({
       log,
@@ -424,7 +424,7 @@ describe("operad command", () => {
     });
     await log.close();
 
-    const store = new FilePluginStore({ root: join(storeRoot, "plugins") });
+    const store = new SqlitePluginStore({ root: storeRoot });
     const actionFact = store
       .facts()
       .find((fact) => fact.type === "action_invoked");
@@ -641,7 +641,7 @@ describe("operad command", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: { lazy: { module: modulePath, enabled: false } },
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       }),
     );
 

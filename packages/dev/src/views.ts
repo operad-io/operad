@@ -259,6 +259,9 @@ export const taskViews: ObjectViews = {
       sections.push({ id: "rework", title: "Rework" });
     }
     sections.push({ id: "changes", title: "Changes" });
+    if (typeof task.attempt?.finalMessage === "string" || (task.attempt?.number ?? 1) > 1) {
+      sections.push({ id: "answer", title: "Answer" });
+    }
     sections.push({ id: "log", title: "Log", live: true });
     sections.push({ id: "diff", title: "Diff" });
     sections.push({ id: "metrics", title: "Metrics" });
@@ -279,6 +282,7 @@ export const taskViews: ObjectViews = {
     }
     if (sectionId === "rework") return { markdown: parts.reworks };
     if (sectionId === "changes") return { markdown: renderChanges(parts.changes) };
+    if (sectionId === "answer") return answerSection(ctx, object, options.cursor);
     if (sectionId === "log") return { markdown: await workerLog(ctx, task) };
     if (sectionId === "diff") return diffSection(ctx, object, options.cursor);
     if (sectionId === "metrics") return { markdown: await metrics(ctx, object) };
@@ -671,6 +675,61 @@ async function workerLog(ctx: ViewContext, task: TaskData): Promise<string> {
       return [`**${block.label}**`, ...block.lines.slice(-keep)].join("\n\n");
     })
     .join("\n\n---\n\n");
+}
+
+/* ---------------------------------------------------------------------------
+ * Answer: the worker's last message of each attempt, in full, newest first.
+ * ------------------------------------------------------------------------- */
+
+async function answerSection(
+  ctx: ViewContext,
+  object: StoredObject,
+  cursor: string | undefined,
+): Promise<{
+  readonly markdown: string;
+  readonly next?: string;
+  readonly pages?: readonly { readonly label: string; readonly cursor?: string }[];
+}> {
+  const byAttempt = new Map<number, string>();
+  let page: string | undefined;
+  for (;;) {
+    const facts = await ctx.store.facts(
+      { type: object.type, id: object.id },
+      page === undefined ? {} : { cursor: page },
+    );
+    for (const fact of facts.facts) {
+      if (fact.type !== "task") continue;
+      const attempt = taskData(fact.data).attempt;
+      if (attempt === undefined) continue;
+      if (typeof attempt.finalMessage === "string" && attempt.finalMessage.length > 0) {
+        byAttempt.set(attempt.number, attempt.finalMessage);
+      } else if (attempt.finalMessage === null) {
+        byAttempt.delete(attempt.number);
+      }
+    }
+    if (facts.next === undefined) break;
+    page = facts.next;
+  }
+  const numbers = [...byAttempt.keys()].sort((a, b) => b - a);
+  if (numbers.length === 0) return { markdown: "_No answer yet._" };
+  const index = cursor === undefined ? 0 : Number(cursor);
+  const number = Number.isInteger(index) ? numbers[index] : undefined;
+  const text = number === undefined ? undefined : byAttempt.get(number);
+  if (number === undefined || text === undefined) {
+    return { markdown: "_That page of the answers does not exist._" };
+  }
+  return {
+    markdown: text,
+    ...(numbers.length > 1
+      ? {
+          pages: numbers.map((n, at) => ({
+            label: `attempt ${n}`,
+            ...(at === 0 ? {} : { cursor: String(at) }),
+          })),
+        }
+      : {}),
+    ...(index + 1 < numbers.length ? { next: String(index + 1) } : {}),
+  };
 }
 
 /* ---------------------------------------------------------------------------

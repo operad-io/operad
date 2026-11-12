@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import {
   DEFAULT_HTTP_TOKEN_LABEL,
   DEFAULT_KEEP_ALIVE_MS,
-  FilePluginStore,
+  SqlitePluginStore,
   MemoryPluginStore,
   createViews,
   listenAddressKind,
@@ -45,7 +45,7 @@ interface Harness {
   readonly root: string;
   readonly home: string;
   readonly storeRoot: string;
-  readonly store: MemoryPluginStore | FilePluginStore;
+  readonly store: MemoryPluginStore | SqlitePluginStore;
   readonly log: LogBackend;
   readonly registry: PluginRegistry;
   readonly views: Views;
@@ -99,7 +99,7 @@ async function makeHarness(options: HarnessOptions = {}): Promise<Harness> {
     join(home, "config.json"),
     JSON.stringify({
       plugins: [pluginPath],
-      store: { backend: "jsonl", path: join(root, "store") },
+      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       http: { enabled: true, port: 0, listen: ["127.0.0.1"] },
     }),
   );
@@ -110,7 +110,7 @@ async function makeHarness(options: HarnessOptions = {}): Promise<Harness> {
   const storeRoot = storeRootOf(config);
   const store =
     options.memory === false
-      ? new FilePluginStore({ root: join(storeRoot, "plugins") })
+      ? new SqlitePluginStore({ root: storeRoot })
       : new MemoryPluginStore({ root: storeRoot });
   const log = openConfigLog(config);
   const registry = await loadPluginRegistry({ home, store });

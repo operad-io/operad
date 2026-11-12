@@ -56,7 +56,7 @@ async function makeHome(): Promise<Home> {
     join(home, "config.json"),
     JSON.stringify({
       plugins: [pluginPath],
-      store: { backend: "jsonl", path: join(root, "store") },
+      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
     }),
   );
   const config = await readConfig(home);

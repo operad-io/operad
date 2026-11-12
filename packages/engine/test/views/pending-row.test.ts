@@ -65,7 +65,7 @@ async function env(): Promise<Env> {
     store,
     onLog: (message) => logs.push(message),
   });
-  const log = openLog({ backend: "jsonl", path: join(root, "store") });
+  const log = openLog({ backend: "sqlite", path: join(root, "store", "log.sqlite") });
   const views = createViews({ registry, store, log });
   opened.push(views);
   calls.rows = 0;

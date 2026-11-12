@@ -4,7 +4,7 @@ import {
   runTimes,
   decide,
   evolve,
-  FilePluginStore,
+  SqlitePluginStore,
   initialState,
   openLog,
   PluginRegistry,
@@ -35,7 +35,7 @@ async function world() {
   const root = await tempRoot();
   const repositoryPath = await makeGitRepository(root);
   let now = T0;
-  const store = new FilePluginStore({ root: join(root, "store"), clock: () => now });
+  const store = new SqlitePluginStore({ root: join(root, "store"), clock: () => now });
   const repository = await addRepository(store, { path: repositoryPath });
   const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
   const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
@@ -49,7 +49,7 @@ async function world() {
   const found = registry.flow("dev");
   if (found === undefined) throw new Error("the dev flow is missing");
   const flow = found.flow;
-  const log: LogBackend = openLog({ backend: "jsonl", path: join(store.root, "log"), clock: () => now });
+  const log: LogBackend = openLog({ backend: "sqlite", path: join(store.root, "log", "log.sqlite"), clock: () => now });
   const info = await log.startRun("dev", `task:${task.id}`);
   const runId = info.runId;
   let state: KernelState = initialState();

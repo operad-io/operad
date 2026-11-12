@@ -31,7 +31,6 @@ import {
 } from "./facts.ts";
 import { assertJsonValue } from "./json-value.ts";
 import { SCHEMA_VERSION } from "./schema.ts";
-import { assertStoreNotMoving } from "../runner/lock.ts";
 import {
   enableWal,
   resolveSubscriptionWatch,
@@ -418,7 +417,6 @@ class SqliteLogBackend implements LogBackend {
     if (access !== undefined) assertJsonValue(access, "run access");
     this.#assertOpen();
     return this.#database.transaction(() => {
-      assertStoreNotMoving(dirname(this.#path));
       const active = this.#database
         .query<{ run_id: string }, [string, string]>(
           "SELECT run_id FROM runs WHERE flow = ? AND object = ? AND ended_at IS NULL",
@@ -460,7 +458,6 @@ class SqliteLogBackend implements LogBackend {
     assertRunId(runId);
     this.#assertOpen();
     this.#database.transaction(() => {
-      assertStoreNotMoving(dirname(this.#path));
       const row = this.#runRow(runId);
       if (!row) throw new RunNotFoundError(runId);
       if (row.ended_at !== null) return;
@@ -484,7 +481,6 @@ class SqliteLogBackend implements LogBackend {
     assertJsonValue(payload, "input payload");
     this.#assertOpen();
     return this.#database.transaction(() => {
-      assertStoreNotMoving(dirname(this.#path));
       if (runId !== null) {
         const row = this.#runRow(runId);
         if (!row) throw new RunNotFoundError(runId);
@@ -512,7 +508,6 @@ class SqliteLogBackend implements LogBackend {
     this.#assertOpen();
 
     return this.#database.transaction(() => {
-      assertStoreNotMoving(dirname(this.#path));
       const row = this.#runRow(runId);
       if (!row) throw new RunNotFoundError(runId);
       if (row.ended_at !== null) throw new RunEndedError(runId);
@@ -588,7 +583,6 @@ class SqliteLogBackend implements LogBackend {
     if (uniqueKey !== undefined) assertName(uniqueKey, "uniqueKey");
     this.#assertOpen();
     return this.#database.transaction(() => {
-      assertStoreNotMoving(dirname(this.#path));
       if (uniqueKey !== undefined) {
         const existing = this.#database
           .query<GlobalFactRow, [string]>(
@@ -699,7 +693,6 @@ class SqliteLogBackend implements LogBackend {
     assertJsonValue(payload, "outcome payload");
     this.#assertOpen();
     return this.#database.transaction(() => {
-      assertStoreNotMoving(dirname(this.#path));
       const existing = this.#outcomeRow(inputId, kind);
       if (existing !== undefined) {
         return { duplicate: true, outcome: outcomeOfRow(existing) };

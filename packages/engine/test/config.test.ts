@@ -36,13 +36,13 @@ describe("operad config", () => {
     });
   });
 
-  test("a missing config means jsonl at <home>/store", async () => {
+  test("a missing config means sqlite at <home>/store/log.sqlite", async () => {
     const root = await tempRoot();
     const home = join(root, "home");
     const config = await readConfig(home);
     expect(config).toEqual({
       plugins: defaultConfig(home).plugins,
-      store: { backend: "jsonl", path: join(home, "store") },
+      store: { backend: "sqlite", path: join(home, "store", "log.sqlite") },
       http: { enabled: true, port: 7480, listen: ["127.0.0.1"] },
       notify: { command: null, on: ["waiting"] },
       mcp: { ...DEFAULT_MCP, actions: [...DEFAULT_MCP.actions] },
@@ -146,15 +146,39 @@ describe("operad config", () => {
     expect(JSON.parse(text)).toEqual(configJson(defaultConfig(home)));
   });
 
-  test("rejects an unknown backend", async () => {
+  test("a config with no store gets sqlite at <home>/store/log.sqlite", async () => {
     const root = await tempRoot();
     const home = join(root, "home");
-    await ensureConfig(home);
-    await Bun.write(
-      join(home, "config.json"),
-      JSON.stringify({ store: { backend: "postgres", path: "x" } }),
-    );
-    await expect(readConfig(home)).rejects.toBeInstanceOf(ConfigError);
+    await Bun.write(join(home, "config.json"), JSON.stringify({ plugins: {} }));
+    const config = await readConfig(home);
+    expect(config.store).toEqual({
+      backend: "sqlite",
+      path: join(home, "store", "log.sqlite"),
+    });
+    await Bun.write(join(home, "config.json"), JSON.stringify({ store: { path: "x.sqlite" } }));
+    expect((await readConfig(home)).store).toEqual({
+      backend: "sqlite",
+      path: join(home, "x.sqlite"),
+    });
+    await Bun.write(join(home, "config.json"), JSON.stringify({ store: {} }));
+    expect((await readConfig(home)).store).toEqual({
+      backend: "sqlite",
+      path: join(home, "store", "log.sqlite"),
+    });
+  });
+
+  test("any backend but sqlite is a config error naming the field and the one value", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    for (const backend of ["jsonl", "postgres", 1]) {
+      await Bun.write(
+        join(home, "config.json"),
+        JSON.stringify({ store: { backend, path: "x" } }),
+      );
+      const error = await readConfig(home).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ConfigError);
+      expect((error as Error).message).toContain('store.backend: must be "sqlite"');
+    }
   });
 
   test("rejects a plugins value that is not a list or an object", async () => {
