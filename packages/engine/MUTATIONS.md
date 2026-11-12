@@ -712,4 +712,19 @@ the row fields.
 | T-0342-M2 | packages/engine/src/plugin/validate.ts | an `efforts.default` outside the list was accepted | `a harness plugin's efforts > a default outside the list is refused` |
 | T-0342-M3 | packages/engine/src/plugin/validate.ts | an empty `efforts.flag` was accepted | `a harness plugin's efforts > a flag that is not a non-empty string is refused` |
 | T-0342-M4 | packages/engine/src/plugin/validate.ts | a domain plugin could declare `efforts` | `a harness plugin's efforts > only a harness declares them` |
+
+## T-0361 — a live section reads what follows a mark, with a tail
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0361-M1 | packages/engine/src/views/presentation.ts | `finishSection` dropped the section's `mark` and `tail` from the answer | `presentation views > a read carries mark and tail, and after returns only what follows (T-0361)` |
+| T-0361-M2 | packages/engine/src/views/presentation.ts | the `load` call no longer passed `after` to the plugin | `presentation views > a read carries mark and tail, and after returns only what follows (T-0361)` |
+| T-0361-M3 | packages/engine/src/views/presentation.ts | every read with `after` was reported as a delta, even when the plugin sent the whole page | `presentation views > a plugin that ignores after is reported as a whole page (T-0361)` |
+| T-0361-M4 | packages/engine/src/views/presentation.ts | a mark was not checked against the section and object it was made for | `presentation views > a mark from another section or object is refused (T-0361)` |
+| T-0361-M5 | packages/engine/src/views/presentation.ts | the size cap counted only `markdown`, not `tail` | `presentation views > the section cap counts the tail too (T-0361)` |
+| T-0361-M6 | packages/engine/src/views/presentation.ts | growth was announced on every run change instead of once per 250 ms | `presentation views > a growing section announces an object at most once per 250 ms (T-0361)` |
+| T-0361-M7 | packages/engine/src/http/server.ts | the section call ignored `after=` in the query | `http server > lists types and objects, gets one object, and pages a section` |
+| T-0361-M10 | packages/engine/src/views/presentation.ts | a growth held back by the rate window was dropped instead of announced when the window ended | `presentation views > a held-back growth is announced when the window ends (T-0361)` |
+| T-0361-M11 | packages/engine/src/views/presentation.ts | the size cap cut the tail instead of shortening the finished page | `presentation views > a tail larger than the cap stays whole (T-0361)` |
+| T-0361-M12 | packages/engine/src/views/presentation.ts | the cap counted neither the note nor a tail that no longer fits with it, so the answer went over the cap | `presentation views > the cap refuses when even the tail and the note do not fit (T-0361)` |
 | T-0358-M12 | packages/engine/src/plugin/registry.ts | the step context did not carry the caller's receiver | `a step's line receiver > the receiver a caller gives reaches the step, and a call without one has none` |

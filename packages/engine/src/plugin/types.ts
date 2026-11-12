@@ -118,9 +118,15 @@ export interface ViewSection {
   readonly live?: boolean | undefined;
 }
 
-/** Where a section read starts; the plugin owns the meaning of the value. */
+/** Where a section read starts; the plugin owns the meaning of the values. */
 export interface SectionReadOptions {
   readonly cursor?: string | undefined;
+  /**
+   * Return only the finished content after this mark, a position an earlier
+   * read returned. The plugin owns the meaning of the value; a plugin that
+   * does not implement it answers with the whole section and leaves `delta` out.
+   */
+  readonly after?: string | undefined;
 }
 
 /** The Markdown of one section, and where to continue when it is paged. */
@@ -129,6 +135,22 @@ export interface SectionContent {
   readonly next?: string | undefined;
   /** A table of contents: one entry per page; the first page's cursor is absent. */
   readonly pages?: readonly SectionPage[] | undefined;
+  /**
+   * An opaque position the finished content goes to; a client passes it back
+   * as `after`. The plugin owns its meaning.
+   */
+  readonly mark?: string | undefined;
+  /**
+   * The part that is still changing, as Markdown: always its whole current
+   * text, not only what changed since the last read.
+   */
+  readonly tail?: string | undefined;
+  /**
+   * `markdown` holds only what follows the requested `after`. Omit, or set
+   * false, when the answer is a whole page; the kernel then tells the client
+   * to replace instead of appending.
+   */
+  readonly delta?: boolean | undefined;
 }
 
 /** One page of a long section, as the section API takes it. */
