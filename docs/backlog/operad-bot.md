@@ -1,6 +1,6 @@
 # operad-bot：个人助理，替掉自己的 OpenClaw 场景
 
-- 状态：decided（场景与形状；2026-11-09 owner 定了插件、profile 和主工作目录；2026-11-11 owner 把插件和用户可见的词从 assistant（助理）改名为 bot；2026-11-12 owner 去掉 profile 这个词，对象直接叫 bot；第三方来源的接入细节未定）
+- 状态：decided（场景与形状；2026-11-09 owner 定了插件、profile 和主工作目录；2026-11-11 owner 把插件和用户可见的词从 assistant（助理）改名为 bot；2026-11-11 owner 去掉 profile 这个词，对象直接叫 bot；第三方来源的接入细节未定）
 - 涉及 ADR：0021、0025
 - 涉及：`operad-conversation.md`；`operad-sandbox.md`；`operad-channels.md`；`operad-plugins.md`
 - 来源：`operad.md`；owner 的使用场景；`research/2026-11-04-agent-autoloop.md`「拿来即用的场景模板」；`research/2026-11-05-noop.md`「决定、门禁、自治」
@@ -22,12 +22,12 @@
 6. **通道只做四个**，顺序按 `operad-channels.md` 决定 17：Telegram、WhatsApp、Slack、iMessage。这三个场景的卡和消息走 Telegram 和 iOS。
 7. **技能格式**：bot 和这些 flow 的 skill 用 Agent Skills 的 `SKILL.md` 格式，和 pi、Claude Code 的技能互通，只读文本、不跑技能里的代码；不做技能市场（`operad-plugins.md` 决定 8）。
 8. **不做**：语音、Canvas、摄像头和屏幕一类设备动作、暴露在公网的网关、影子 judge 之外任何"模型替人决定"。
-9. **bot 是一个插件 `bot`，它的对象就叫 bot**（2026-11-09 owner 定；2026-11-11 owner 改名：原来叫 `assistant`、助理，插件名、配置段、动作、目录和用户可见的词一律改成 bot，不留别名；2026-11-12 owner 定：去掉 profile 这个用户词，对象直接叫 bot，原待决问题 6）。用户可见的新词只有 bot。一个 bot 是一套人格和权限：主工作目录、默认 harness、挂载的 skills（`SKILL.md` 目录，contract 决定 13）、访问档（`operad-sandbox.md` 决定 1）、称呼。默认只有一个 bot，叫 `default`；要几个就配几个（比如一个只读的、一个能动知识库的），`bot:chat <bot>` 在其中一个上开对话。bot 写在 `config.json` 的 `bot` 段的 `bots` 下（`bots.default`；contract 决定 10 的插件 `settings`，带 JSON Schema，T-0080 的设置接口能看能改），每个 bot 在列表里是一行，是 bot chat 的父对象。
+9. **bot 是一个插件 `bot`，它的对象就叫 bot**（2026-11-09 owner 定；2026-11-11 owner 改名：原来叫 `assistant`、助理，插件名、配置段、动作、目录和用户可见的词一律改成 bot，不留别名；2026-11-11 owner 定：去掉 profile 这个用户词，对象直接叫 bot，原待决问题 6）。用户可见的新词只有 bot。一个 bot 是一套人格和权限：主工作目录、默认 harness、挂载的 skills（`SKILL.md` 目录，contract 决定 13）、访问档（`operad-sandbox.md` 决定 1）、称呼。默认只有一个 bot，叫 `default`；要几个就配几个（比如一个只读的、一个能动知识库的），`bot:chat <bot>` 在其中一个上开对话。bot 写在 `config.json` 的 `bot` 段的 `bots` 下（`bots.default`；contract 决定 10 的插件 `settings`，带 JSON Schema，T-0080 的设置接口能看能改），每个 bot 在列表里是一行，是 bot chat 的父对象。
 10. **主工作目录是 `~/.operad/bot/`**，默认 bot 直接用它，别的 bot 各有自己的目录（不写时是 `~/.operad/bot/<名字>`）。知识库和 bot 的记忆以后也住这里。`~/.operad` 的其余部分（事实日志、`secrets`、token）仍在默认访问档的 `denyPaths` 里：bot 的 cwd 是 operad 家目录的一个子目录，不是家目录本身。
 11. **bot chat 是 `chat` 基础插件的对象**（`operad-conversation.md` 决定 12）：`bot:chat` 在一个 bot 上新建，harness 当时选、之后不换；skills 和访问档每次回复时从 bot 现读，收紧权限或加一个 skill 不用新建 chat。bot 要碰仓库时通过 operad 的 MCP 工具调 `dev`（看任务、开 task），不自己改仓库文件（`operad-conversation.md` 决定 15）。Telegram 绑进来的 chat 用 `default` bot，以后规则里可以指定。
 12. **每个 bot 有一个费用上限，到了就停**（2026-11-11 owner 定，`research/2026-11-11-grok-bot.md`）：bot 上设一个周期预算；这个 bot 的 chat 和定时 flow 的用量（harness 记下的费用事实）加起来到了上限，运行停在当前步骤，成为一个待处理项，人答了才继续或结束。是当场停下，不是事后提醒：Grok Bot 的月上限不在运行中途停，用户抱怨最多的就是这个。
 13. **不是人当场发起的运行更严**：bot 的定时 flow 和由事件发起的运行按 `operad-sandbox.md` 决定 8，对外写的动作先问或只存草稿。
-14. **对话里回答方的称呼默认是 Operad Bot，可以改**（2026-11-12 owner 定）：transcript 给模型的消息标的是一个称呼，不是 assistant 也不是 bot。`chat` 插件的设置里有一个默认称呼（默认 `Operad Bot`），repo chat 用它；bot chat 用它的 bot 的称呼，没写时用默认值。存下的消息角色仍是 `assistant`（模型在事实和 harness 协议里的角色），只是不显示。
+14. **对话里回答方的称呼默认是 Operad Bot，可以改**（2026-11-11 owner 定）：transcript 给模型的消息标的是一个称呼，不是 assistant 也不是 bot。`chat` 插件的设置里有一个默认称呼（默认 `Operad Bot`），repo chat 用它；bot chat 用它的 bot 的称呼，没写时用默认值。存下的消息角色仍是 `assistant`（模型在事实和 harness 协议里的角色），只是不显示。
 15. **技能可以从一个 git 地址导入，导入和更新都要人确认**（2026-11-11 owner 定，`research/2026-11-11-grok-bot.md`「技能和 MCP」）：不做市场（决定 7），但别家市场里的技能大多是同一种 `SKILL.md` 目录，用户拿地址来就能导入。导入是一个待处理项，展示 `SKILL.md` 全文和文件清单（脚本单独列出），人确认后才进这个 bot 的技能目录；导入的版本钉在一个提交上，不自动更新，更新也是一个待处理项，展示差异。operad 不做搜索和推荐，也不采信市场的扫描结果。`SKILL.md` 头部里别家的私有字段忽略。别家的插件包（技能加 MCP 服务、钩子、子 agent）只导入技能，里面的 MCP 服务按决定 18 单独问，钩子和子 agent 不导入；OpenClaw、Hermes 那种进程内代码的插件不兼容。
 16. **技能里的脚本保留，operad 自己永远不执行**：bot 在自己的 shell 里跑它，和跑任何命令一样过访问档。导入来的脚本第一次跑要问（`operad-sandbox.md` 决定 4 的精确 argv 加工作目录，再加脚本内容的摘要：内容变了重新问）；不是人当场发起的运行按 `operad-sandbox.md` 决定 8。不学 Rakazo 导入时丢掉脚本：说明文字本身就能让 bot 去下载并执行代码，防线是访问档，丢脚本挡不住什么，却废掉依赖脚本的技能。壳（`operad-sandbox.md` 决定 7）做出来之前，批准一个带脚本的技能等于信任这段代码，确认页要把这一点和脚本清单写明。
 17. **bot 自己写的技能先是待处理项**：bot 写或改一个技能（包括"把刚才的做法存成技能"），人确认后才生效。Rakazo 和 OpenBot 是这样；Hermes 默认直接生效，Grok Bot 的个人 bot 不设卡。
