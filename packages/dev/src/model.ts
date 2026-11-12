@@ -52,6 +52,22 @@ export const TASK_PHASES = [
 export type TaskPhase = (typeof TASK_PHASES)[number];
 
 /**
+ * Every state a task row shows: its phase, or `integrating` while its
+ * integrate step works. The views and the filters read this one list, so a
+ * state a row can show cannot be missing from a filter.
+ */
+export type TaskRowState = TaskPhase | "integrating";
+
+export const TASK_ROW_STATES: readonly TaskRowState[] = TASK_PHASES.flatMap(
+  (phase) => (phase === "review" ? [phase, "integrating" as const] : [phase]),
+);
+
+/** The state a task row shows. */
+export function taskRowState(task: TaskData): TaskRowState {
+  return isIntegrating(task) ? "integrating" : task.phase;
+}
+
+/**
  * The list filters of plans and tasks. The declaration and the tests read
  * these; no state name is copied anywhere else.
  */
@@ -65,7 +81,9 @@ export const TASK_FILTERS = [
   {
     name: "active",
     default: true,
-    states: TASK_PHASES.filter((phase) => phase !== "merged" && phase !== "cancelled"),
+    states: TASK_ROW_STATES.filter(
+      (state) => !TASK_FINAL_STATES.includes(state),
+    ),
   },
   { name: "done", states: ["merged"] },
   { name: "cancelled", states: ["cancelled"] },

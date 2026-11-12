@@ -18,7 +18,6 @@ import { join } from "node:path";
 import {
   bareId,
   hasRework,
-  isIntegrating,
   listAll,
   PLAN_FINAL_STATES,
   TASK_FINAL_STATES,
@@ -32,6 +31,7 @@ import {
   splitBrief,
   storeKey,
   taskData,
+  taskRowState,
   type ReviewRecord,
   type TaskAttempt,
   type TaskData,
@@ -231,7 +231,7 @@ export const taskViews: ObjectViews = {
     return {
       id: bareId(object.id),
       title: task.title,
-      state: isIntegrating(task) ? "integrating" : task.phase,
+      state: taskRowState(task),
       note,
       scope: task.repository,
       final: TASK_FINAL_STATES.includes(task.phase),
