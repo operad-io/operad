@@ -420,22 +420,26 @@ describe("an action that creates another type", () => {
     expect(named(only)).toEqual([]);
   });
 
-  test("c on a chat row opens its parent and starts the creating action there", () => {
+  test("c on a chat tab with no chat yet offers every parent, and choosing one starts the creating action", () => {
     let state = initialState({ width: 120 });
-    state = reduce(state, { type: "types", types: [{ type: "chat", title: "Chat" }] });
     state = reduce(state, {
-      type: "tree",
-      tabId: "plugin:chat",
-      level: "children",
-      entries: [
-        {
-          type: "chat",
-          parent: "repo:ops",
-          row: { id: "C-0001", title: "One", state: "open", waiting: false, running: false },
-        },
+      type: "types",
+      types: [
+        { type: "repo", title: "Repository", plugin: "dev" },
+        { type: "chat", title: "Chat", plugin: "chat", parents: ["repo", "bot"] },
       ],
     });
-    state = press(state, "3", "c");
+    state = reduce(state, {
+      type: "rows",
+      tabId: "plugin:dev",
+      rows: [{ id: "repo:ops", title: "ops", state: "", waiting: false, running: false }],
+    });
+    const chatTab = state.tabs.findIndex((tab) => tab.id === "plugin:chat");
+    state = press(state, String(chatTab + 1), "c");
+    expect(state.input).toMatchObject({ kind: "palette", query: "new chat" });
+    const offered = paletteEntries(state).filter((entry) => entry.command?.kind === "create");
+    expect(offered.map((entry) => entry.title)).toEqual(["start a new chat in repo:ops"]);
+    state = press(state, "enter");
     expect(state.object?.id).toBe("repo:ops");
     expect(state.objectRequest?.id).toBe("repo:ops");
     state = reduce(state, {
@@ -452,4 +456,5 @@ describe("an action that creates another type", () => {
     expect(state.creating).toBeUndefined();
     expect(state.input?.kind).toBe("note");
   });
+
 });

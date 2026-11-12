@@ -39,6 +39,8 @@ export interface TuiTypeInfo {
   readonly filters?: readonly { readonly name: string; readonly states?: readonly string[] }[] | undefined;
   /** The filter a list opens on; present with `filters`. */
   readonly defaultFilter?: string | undefined;
+  /** The object types an action that creates this type works on; absent when none does. */
+  readonly parents?: readonly string[] | undefined;
 }
 
 /** One entry of `GET /v1/keys`. */

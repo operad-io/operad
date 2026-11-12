@@ -282,7 +282,26 @@ export function matchPositions(query: string, entry: TuiPaletteEntry): readonly 
 /** What a TUI command does; each is what a key does. */
 export type TuiCommand =
   | { readonly kind: "help" | "refresh" | "back" | "quit" | "themes" }
-  | { readonly kind: "go"; readonly tabId: string };
+  | { readonly kind: "go"; readonly tabId: string }
+  | { readonly kind: "create"; readonly parent: string; readonly type: string };
+
+/** The objects a new `type` can be made under: every loaded row, or group, of a type that creating it works on. */
+export function creationParents(
+  state: TuiState,
+  type: string,
+  parents: readonly string[],
+): readonly string[] {
+  const ids = new Set<string>();
+  for (const tab of state.tabs) {
+    for (const row of tab.list.rows) {
+      for (const candidate of [row, row.group]) {
+        if (candidate?.type === undefined || !parents.includes(candidate.type)) continue;
+        ids.add(candidate.id.includes(":") ? candidate.id : `${candidate.type}:${candidate.id}`);
+      }
+    }
+  }
+  return [...ids];
+}
 
 /** The scopes the palette lists settings of: global, and the open object's repository. */
 export function settingScopes(state: TuiState): readonly string[] {
@@ -388,8 +407,21 @@ function commandEntries(state: TuiState): readonly TuiPaletteEntry[] {
         tabId: item.tab.id,
       }),
     );
+  const creating = tabs
+    .filter((item) => item.tab.kind === "plugin")
+    .flatMap((item) => item.tab.types ?? [])
+    .flatMap((info) =>
+      creationParents(state, info.type, info.parents ?? []).map((parent) =>
+        make(`new ${info.type}`, `start a new ${info.type} in ${parent}`, undefined, {
+          kind: "create",
+          parent,
+          type: info.type,
+        }),
+      ),
+    );
   return [
     make("help", "show or hide the key list", "?", { kind: "help" }),
+    ...creating,
     make("refresh", "load the lists again", "r", { kind: "refresh" }),
     ...[go("pending"), go("running")].filter((entry): entry is TuiPaletteEntry => entry !== undefined),
     ...types,

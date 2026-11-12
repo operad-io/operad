@@ -1459,16 +1459,15 @@ function applyObject(
   return updated;
 }
 
-/** `c` on a tab of one object type: start the action that creates one, under the selected row's parent. */
+/** `c` on a tab of one object type: the palette, listing where a new one can be made. */
 function createHere(state: TuiState): TuiState {
-  const row = selectedRow(state);
-  const type = row?.type;
-  const parent = row?.parent;
-  if (row === undefined || type === undefined || parent === undefined) {
-    return withNotice(state, "select a row first; a new one is made under the same parent");
-  }
-  const opened = openNamed({ ...state, followPending: false }, parent);
-  return opened === state ? state : { ...opened, creating: { parent, type } };
+  const info = state.tabs[state.active]?.types?.find((one) => one.parents !== undefined);
+  if (info === undefined) return withNotice(state, "nothing is made from this tab");
+  return {
+    ...state,
+    input: { kind: "palette", query: `new ${info.type}`, cursor: 0 },
+    settingsRequest: true,
+  };
 }
 
 function applyObjectError(
@@ -2005,6 +2004,12 @@ function runCommand(state: TuiState, command: TuiCommand): TuiState {
         input: { kind: "themes", cursor },
         themePreview: state.themeNames[cursor],
       };
+    }
+    case "create": {
+      const opened = openNamed({ ...state, followPending: false }, command.parent);
+      return opened === state
+        ? state
+        : { ...opened, creating: { parent: command.parent, type: command.type } };
     }
     case "go":
       return activate(state, state.tabs.findIndex((tab) => tab.id === command.tabId));
@@ -2877,7 +2882,7 @@ export const KEY_GROUPS: readonly (readonly (readonly [string, string])[])[] = [
     ["t", "switch the child list between tree and list"],
   ],
   [
-    ["c", "on a tab of chats: start a new one under the selected row's parent"],
+    ["c", "on a tab of chats: start a new one; the palette lists where (a repository or a bot)"],
     ["r", "fetch the lists again"],
     ["escape / backspace", "close the key list, leave a list inside the open object, return from a row opened there, or close the object"],
     ["?", "show or hide this key list"],
