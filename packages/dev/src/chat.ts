@@ -113,7 +113,7 @@ const chatAction: ActionTypeDefinition = {
       },
       "action:dev/chat",
     );
-    return `opened chat ${id}`;
+    return { text: `opened chat ${id}`, opens: `chat:${id}` };
   },
 };
 

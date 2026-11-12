@@ -329,3 +329,13 @@ types by plugin, list the top level with `root`, and open one level down with
 `parent=<id>`. A type's filters apply inside the level. See the manual's
 "Levels" section for the exact behaviour, including the order of a list across
 types and what an unknown parent returns.
+
+## What an action returns
+
+An action's `run` returns the line of text a person reads, or nothing. An action
+that creates an object returns `{ text, opens }` instead, where `opens` is the
+new object as `type:id` (for example `chat:C-0015`). The kernel passes `opens`
+on unchanged through the client API, `POST /v1/act` and the MCP `act` tool, and
+a client may open that object's page; the command line prints only `text`. A
+value of `opens` that names no existing object is not passed on, and the log
+says why. Returning only text still works.
