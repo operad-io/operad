@@ -152,6 +152,30 @@ describe("TuiClient", () => {
     }
   });
 
+  test("a section read passes after and keeps mark, tail and delta", async () => {
+    const urls: string[] = [];
+    const fetchImpl: FetchLike = async (input) => {
+      urls.push(String(input));
+      return new Response(
+        JSON.stringify({ markdown: "delta", mark: "m2", tail: "t2", delta: true }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+    const c = new TuiClient({
+      url: "http://127.0.0.1:1",
+      token: "t",
+      fetch: fetchImpl,
+    });
+    const content = await c.section("item:a", "log", { after: "m1" });
+    expect(urls[0]).toContain("after=m1");
+    expect(content).toMatchObject({
+      markdown: "delta",
+      mark: "m2",
+      tail: "t2",
+      delta: true,
+    });
+  });
+
   test("lists pending and running runs", async () => {
     const h = await makeHarness();
     try {

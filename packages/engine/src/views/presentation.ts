@@ -82,6 +82,12 @@ export const DEFAULT_ROW_TIMEOUT_MS = 50;
 /** The default number of ids an event consumer remembers. */
 export const DEFAULT_MAX_EVENT_IDS = 1024;
 
+/**
+ * How often the kernel announces one object whose live section grows. A
+ * section that grows faster than this is announced at most once per window.
+ */
+export const GROWTH_EVENT_INTERVAL_MS = 250;
+
 /** A row as a client sees it: the plugin's row plus the kernel's two flags. */
 export interface ViewRow {
   readonly id: string;
@@ -144,6 +150,19 @@ export interface ViewSectionContent {
   readonly next?: string | undefined;
   /** The section's table of contents, passed through from the plugin. */
   readonly pages?: readonly ViewSectionPage[] | undefined;
+  /**
+   * An opaque position the finished content goes to. Pass it back as `after`
+   * to read only what follows it. The plugin owns its meaning.
+   */
+  readonly mark?: string | undefined;
+  /** The part that is still changing, always its whole current text. */
+  readonly tail?: string | undefined;
+  /**
+   * Present on a read that asked with `after`: true when `markdown` holds only
+   * what follows the mark, false when the plugin answered with a whole page
+   * and the client must replace its content instead of appending.
+   */
+  readonly delta?: boolean | undefined;
 }
 
 /** One entry of a section's table of contents. */
@@ -288,6 +307,8 @@ export interface ViewActionRun {
 export interface SectionOptions {
   /** Return the whole section, without the size cap. */
   readonly full?: boolean | undefined;
+  /** Return only the finished content after this mark from an earlier read. */
+  readonly after?: string | undefined;
 }
 
 function isThenable(value: unknown): boolean {
@@ -340,6 +361,70 @@ function capBytes(markdown: string, limit: number): string {
 
 function truncationNote(id: string, sectionId: string): string {
   return `\n\n[Truncated. See all of it with \`operad show ${id} --section ${sectionId} --full\`.]\n`;
+}
+
+/** The envelope a section mark carries, so a mark is used only where it was made. */
+const SECTION_MARK_KIND = "section-mark";
+
+function encodeSectionMark(
+  type: string,
+  id: string,
+  section: string,
+  mark: string,
+): string {
+  return encodeCursor({ kind: SECTION_MARK_KIND, type, id, section, mark });
+}
+
+/**
+ * The plugin's own mark inside an opaque one this section gave, or a refusal a
+ * person can read when the mark names another section or object.
+ */
+function decodeSectionMark(
+  value: string,
+  type: string,
+  id: string,
+  section: string,
+): string {
+  const label = `section "${section}" of "${id}"`;
+  let decoded: Record<string, unknown>;
+  try {
+    decoded = decodeCursor(value, label);
+  } catch {
+    throw new ViewError(
+      "cursor",
+      `${label}: "after" is not a mark this section gave; read the section once without "after" first`,
+    );
+  }
+  if (decoded.kind !== SECTION_MARK_KIND) {
+    throw new ViewError(
+      "cursor",
+      `${label}: "after" is not a mark this section gave; read the section once without "after" first`,
+    );
+  }
+  if (
+    decoded.type !== type ||
+    decoded.id !== id ||
+    decoded.section !== section
+  ) {
+    const madeFor =
+      typeof decoded.section === "string" &&
+      typeof decoded.type === "string" &&
+      typeof decoded.id === "string"
+        ? `the mark was made for section "${decoded.section}" of "${decoded.type}:${decoded.id}"`
+        : "the mark was made for another section or object";
+    throw new ViewError(
+      "cursor",
+      `${label}: ${madeFor}; read this section without "after" first`,
+    );
+  }
+  const mark = decoded.mark;
+  if (typeof mark !== "string") {
+    throw new ViewError(
+      "cursor",
+      `${label}: "after" is not a mark this section gave; read the section once without "after" first`,
+    );
+  }
+  return mark;
 }
 
 interface ResolvedObject {
@@ -473,6 +558,8 @@ export class Views {
   private readonly home: string;
   private readonly uploads: Uploads;
   private readonly eventListeners = new Set<(id: string) => void>();
+  /** When each object's live growth was last announced, for the rate limit. */
+  private readonly growthAnnouncedAt = new Map<string, number>();
   private readonly unsubscribe: (() => void)[] = [];
   private preparing: Promise<void> | undefined;
 
@@ -506,7 +593,7 @@ export class Views {
               : splitId(change.object);
             if (parsed === undefined) return;
             if (parsed.type === "flow") return;
-            this.publish(parsed.id);
+            this.publish(parsed.id, true);
           }),
         );
       }
@@ -585,6 +672,7 @@ export class Views {
   /** Closes the change listeners this view opened. */
   close(): void {
     for (const unsubscribe of this.unsubscribe.splice(0)) unsubscribe();
+    this.growthAnnouncedAt.clear();
   }
 
   /** The filter a list of this type uses when the caller names none. */
@@ -1142,6 +1230,10 @@ export class Views {
     options: SectionOptions = {},
   ): Promise<ViewSectionContent> {
     const resolved = await this.resolve(id);
+    const after =
+      options.after === undefined
+        ? undefined
+        : decodeSectionMark(options.after, resolved.type, resolved.id, sectionId);
     if (sectionId === HISTORY_SECTION) {
       const markdown = await this.historyMarkdown(
         resolved.type,
@@ -1151,10 +1243,12 @@ export class Views {
       return this.finishSection(
         id,
         sectionId,
-        "History",
         markdown,
         undefined,
+        undefined,
+        undefined,
         options.full === true,
+        after === undefined ? undefined : false,
       );
     }
 
@@ -1199,12 +1293,10 @@ export class Views {
     try {
       const ctx = this.viewContext(owner.plugin, controller.signal);
       const work = Promise.resolve().then(() =>
-        owner.views.load(
-          ctx,
-          object,
-          sectionId,
-          cursor === undefined ? {} : { cursor },
-        ),
+        owner.views.load(ctx, object, sectionId, {
+          ...(cursor === undefined ? {} : { cursor }),
+          ...(after === undefined ? {} : { after }),
+        }),
       );
       content = await Promise.race([work, timeout]);
     } catch (error) {
@@ -1227,13 +1319,25 @@ export class Views {
     }
     const next = isRecord(content) ? textOf(content.next) : undefined;
     const pages = isRecord(content) ? pagesOf(content.pages) : undefined;
+    const rawMark = isRecord(content) ? textOf(content.mark) : undefined;
+    const tail = isRecord(content) ? textOf(content.tail) : undefined;
+    // A plugin that ignored `after` answers with a whole page; only one that
+    // says its answer is the delta may be appended to by a client.
+    const honoured =
+      isRecord(content) && content.delta === true && after !== undefined;
+    const mark =
+      rawMark === undefined
+        ? undefined
+        : encodeSectionMark(resolved.type, resolved.id, section.id, rawMark);
     const finished = this.finishSection(
       id,
       section.id,
-      section.title,
       markdown,
       next,
+      mark,
+      tail,
       options.full === true,
+      after === undefined ? undefined : honoured,
     );
     return pages === undefined ? finished : { ...finished, pages };
   }
@@ -1534,31 +1638,46 @@ export class Views {
   private finishSection(
     id: string,
     sectionId: string,
-    _title: string,
     markdown: string,
     next: string | undefined,
+    mark: string | undefined,
+    tail: string | undefined,
     full: boolean,
+    delta: boolean | undefined,
   ): ViewSectionContent {
-    if (full) {
-      return {
-        markdown,
-        ...(next === undefined ? {} : { next }),
-      };
-    }
+    const result = (
+      shownMarkdown: string,
+      shownTail: string | undefined,
+    ): ViewSectionContent => ({
+      markdown: shownMarkdown,
+      ...(next === undefined ? {} : { next }),
+      ...(mark === undefined ? {} : { mark }),
+      ...(shownTail === undefined ? {} : { tail: shownTail }),
+      ...(delta === undefined ? {} : { delta }),
+    });
+    if (full) return result(markdown, tail);
+
     const suffix = truncationNote(id, sectionId);
     const limit = this.sectionCapBytes;
-    if (Buffer.byteLength(markdown, "utf8") <= limit) {
-      return {
-        markdown,
-        ...(next === undefined ? {} : { next }),
-      };
-    }
+    const markdownBytes = Buffer.byteLength(markdown, "utf8");
+    const tailBytes = tail === undefined ? 0 : Buffer.byteLength(tail, "utf8");
+    if (markdownBytes + tailBytes <= limit) return result(markdown, tail);
+
+    // The cap covers the finished page and the changing tail together. Keep
+    // the tail whole when it fits, and give the finished page what is left.
     const suffixBytes = Buffer.byteLength(suffix, "utf8");
-    const body = capBytes(markdown, Math.max(0, limit - suffixBytes));
-    return {
-      markdown: `${body}${suffix}`,
-      ...(next === undefined ? {} : { next }),
-    };
+    const tailRoom = Math.max(0, limit - suffixBytes);
+    const shownTail =
+      tail === undefined || tailBytes <= tailRoom
+        ? tail
+        : capBytes(tail, tailRoom);
+    const shownTailBytes =
+      shownTail === undefined ? 0 : Buffer.byteLength(shownTail, "utf8");
+    const body = capBytes(
+      markdown,
+      Math.max(0, limit - suffixBytes - shownTailBytes),
+    );
+    return result(`${body}${suffix}`, shownTail);
   }
 
   private resolveActionInfo(name: string): ActionInfo {
@@ -2326,7 +2445,18 @@ export class Views {
     }
   }
 
-  private publish(id: string): void {
+  /**
+   * Announces an object. A run's growth can arrive far faster than a client
+   * can read it, so growth is announced at most once per object per window;
+   * an object's own stored change is always announced.
+   */
+  private publish(id: string, growth = false): void {
+    if (growth) {
+      const now = this.clock();
+      const last = this.growthAnnouncedAt.get(id);
+      if (last !== undefined && now - last < GROWTH_EVENT_INTERVAL_MS) return;
+      this.growthAnnouncedAt.set(id, now);
+    }
     for (const listener of this.eventListeners) listener(id);
   }
 }

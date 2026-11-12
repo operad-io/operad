@@ -87,6 +87,8 @@ export interface TuiTypes {
 /** What `GET /v1/objects/<id>/sections/<section>` accepts. */
 export interface TuiSectionOptions {
   readonly cursor?: string | undefined;
+  /** Return only the finished content after a mark from an earlier read. */
+  readonly after?: string | undefined;
   readonly full?: boolean | undefined;
   /** Cancels the request; it then rejects. */
   readonly signal?: AbortSignal | undefined;
@@ -367,6 +369,7 @@ export class TuiClient {
       {
         query: {
           cursor: options.cursor,
+          after: options.after,
           full: options.full === true ? "true" : undefined,
         },
         signal: options.signal,

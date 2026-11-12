@@ -282,6 +282,7 @@ describe("operad presentation commands", () => {
     expect(text).toContain("mermaid");
     expect(text).toContain("flowchart TD");
     expect(text).toContain("A --> B");
+    expect(text).not.toContain("unfinished");
     expect(output.errors()).toBe("");
     assertUserWords(text);
 
@@ -294,6 +295,7 @@ describe("operad presentation commands", () => {
     ).toBe(0);
     expect(raw.text()).toContain("```diff");
     expect(raw.text()).toContain("```mermaid");
+    expect(raw.text()).not.toContain("unfinished");
     assertUserWords(raw.text());
   });
 

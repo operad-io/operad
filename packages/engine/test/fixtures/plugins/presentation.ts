@@ -9,6 +9,15 @@ let digitReads = 0;
 export function resetLogReads(): void {
   logReads = 0;
 }
+
+/** Lines `from` to `to` inclusive, as one Markdown page; empty when none. */
+function linesBetween(from: number, to: number): string {
+  if (to < from) return "";
+  return Array.from(
+    { length: to - from + 1 },
+    (_value, index) => `line ${from + index}`,
+  ).join("\n");
+}
 const waiting = new Promise<never>(() => undefined);
 
 /**
@@ -98,17 +107,28 @@ export default definePlugin({
           { id: "big", title: "Big" },
         ];
       },
-      async load(_ctx, object, sectionId, { cursor }) {
+      async load(_ctx, object, sectionId, { cursor, after }) {
         if (sectionId === "info") {
-          return { markdown: INFO };
+          // A section written before decision 15: it carries a mark and a tail
+          // but answers every read with the whole page.
+          return { markdown: INFO, mark: "info-1", tail: "unfinished" };
         }
         if (sectionId === "log") {
-          logReads += 1;
+          const from = after === undefined ? undefined : Number(after);
+          if (from === undefined) {
+            logReads += 1;
+            return {
+              markdown: linesBetween(1, logReads),
+              mark: String(logReads),
+              tail: `tail ${logReads}`,
+            };
+          }
+          const start = Number.isInteger(from) && from >= 0 ? from : logReads;
           return {
-            markdown: Array.from(
-              { length: logReads },
-              (_value, index) => `line ${index + 1}`,
-            ).join("\n"),
+            markdown: linesBetween(start + 1, logReads),
+            mark: String(logReads),
+            tail: `tail ${logReads}`,
+            delta: true,
           };
         }
         if (sectionId === "pages") {

@@ -386,6 +386,135 @@ describe("presentation views", () => {
     await log.close();
   });
 
+  test("a read carries mark and tail, and after returns only what follows (T-0361)", async () => {
+    const { store, registry, log } = await fixture();
+    const views = trackedViews({ registry, store, log });
+
+    const info = await views.section("item:one", "info");
+    expect(info.tail).toBe("unfinished");
+    expect(info.mark).toBeString();
+    expect(info.delta).toBeUndefined();
+    expect(info.markdown).toContain("# Demo item");
+
+    const first = await views.section("item:one", "log");
+    expect(first.markdown).toBe("line 1");
+    expect(first.tail).toBe("tail 1");
+    expect(first.mark).toBeString();
+    const second = await views.section("item:one", "log");
+    expect(second.markdown).toBe("line 1\nline 2");
+    expect(second.mark).toBeString();
+    if (first.mark === undefined) throw new Error("the log read carried no mark");
+    if (second.mark === undefined) throw new Error("the log read carried no mark");
+
+    const delta = await views.section("item:one", "log", undefined, {
+      after: first.mark,
+    });
+    expect(delta.markdown).toBe("line 2");
+    expect(delta.tail).toBe("tail 2");
+    expect(delta.mark).toBe(second.mark);
+    expect(delta.delta).toBe(true);
+
+    views.close();
+    await log.close();
+  });
+
+  test("a plugin that ignores after is reported as a whole page (T-0361)", async () => {
+    const { store, registry, log } = await fixture();
+    const views = trackedViews({ registry, store, log });
+    const first = await views.section("item:one", "info");
+    if (first.mark === undefined) throw new Error("the info read carried no mark");
+
+    const again = await views.section("item:one", "info", undefined, {
+      after: first.mark,
+    });
+    expect(again.markdown).toBe(first.markdown);
+    expect(again.tail).toBe("unfinished");
+    expect(again.delta).toBe(false);
+
+    views.close();
+    await log.close();
+  });
+
+  test("a mark from another section or object is refused (T-0361)", async () => {
+    const { store, registry, log } = await fixture();
+    const views = trackedViews({ registry, store, log });
+    const logRead = await views.section("item:one", "log");
+    if (logRead.mark === undefined) throw new Error("the log read carried no mark");
+
+    await expect(
+      views.section("item:one", "info", undefined, { after: logRead.mark }),
+    ).rejects.toThrow(/section "log" of "item:one"; read this section without "after" first/);
+    await expect(
+      views.section("item:two", "log", undefined, { after: logRead.mark }),
+    ).rejects.toThrow(/section "log" of "item:one"; read this section without "after" first/);
+    await expect(
+      views.section("item:one", "log", undefined, { after: "not a mark" }),
+    ).rejects.toThrow(/not a mark this section gave/);
+
+    views.close();
+    await log.close();
+  });
+
+  test("the section cap counts the tail too (T-0361)", async () => {
+    const { store, registry, log } = await fixture();
+    const probe = await trackedViews({ registry, store, log }).section(
+      "item:one",
+      "info",
+    );
+    const combined =
+      Buffer.byteLength(probe.markdown, "utf8") +
+      Buffer.byteLength(probe.tail ?? "", "utf8");
+    const views = trackedViews({
+      registry,
+      store,
+      log,
+      sectionCapBytes: combined - 1,
+    });
+    const capped = await views.section("item:one", "info");
+    const kept =
+      Buffer.byteLength(capped.markdown, "utf8") +
+      Buffer.byteLength(capped.tail ?? "", "utf8");
+    expect(kept).toBeLessThanOrEqual(combined - 1);
+    expect(capped.markdown).toContain("[Truncated.");
+    expect(capped.tail).toBeDefined();
+
+    views.close();
+    await log.close();
+  });
+
+  test("a growing section announces an object at most once per 250 ms (T-0361)", async () => {
+    const { store, registry, log } = await fixture();
+    let now = 0;
+    const views = trackedViews({ registry, store, log, clock: () => now });
+    const stream = views.events()[Symbol.asyncIterator]();
+
+    const run = await log.startRun("demo-flow", "item:one");
+    expect((await stream.next()).value).toEqual({ id: "one" });
+
+    now = 100;
+    await log.append(run.runId, 0, [
+      { kind: "run_started", payload: { flow: "demo-flow" }, cause: "test" },
+    ]);
+    now = 249;
+    await log.append(run.runId, 1, [
+      { kind: "run_started", payload: { flow: "demo-flow" }, cause: "test" },
+    ]);
+
+    // A different object at 249 proves the two changes above announced nothing.
+    await log.startRun("other", "item:two");
+    expect((await stream.next()).value).toEqual({ id: "two" });
+
+    now = 250;
+    await log.append(run.runId, 2, [
+      { kind: "run_started", payload: { flow: "demo-flow" }, cause: "test" },
+    ]);
+    expect((await stream.next()).value).toEqual({ id: "one" });
+
+    await stream.return?.();
+    views.close();
+    await log.close();
+  });
+
   test("a section over the timeout and over the cap is reported", async () => {
     const { store, registry, log } = await fixture();
     const views = trackedViews({
