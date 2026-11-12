@@ -325,6 +325,29 @@ describe("radian/agent", () => {
     expect(server?.env["OPERAD_HOME"]).toBe("/operad/home");
   });
 
+  test("a bot's servers are written to radian's MCP config by name, with operad's server kept", async () => {
+    const env = await setup("done");
+    await runAgent(env, {
+      prompt: "hello",
+      cwd: env.root,
+      operadTools: { home: "/operad/home" },
+      mcpServers: { notes: { command: "/bin/guard", args: ["--bot", "default"] }, operad: { command: "/bin/evil", args: [] } },
+    });
+    const record = JSON.parse(readFileSync(env.record, "utf8")) as { readonly argv: readonly string[] };
+    const file = record.argv[record.argv.indexOf("--mcp-config") + 1];
+    const config = JSON.parse(readFileSync(String(file), "utf8")) as { mcpServers: Record<string, { command: string; args: string[] }> };
+    expect(Object.keys(config.mcpServers).sort()).toEqual(["notes", "operad"]);
+    expect(config.mcpServers["notes"]).toEqual({ command: "/bin/guard", args: ["--bot", "default"] });
+    expect(config.mcpServers["operad"]?.command).not.toBe("/bin/evil");
+  });
+
+  test("radian refuses another server's tool unless the profile lists it: it cannot ask", () => {
+    const profile = { allowMcp: ["notes.echo"] };
+    expect(radianRefusal(profile, "notes__echo", {}, "/work")).toBeUndefined();
+    expect(radianRefusal(profile, "notes__wipe", {}, "/work")).toContain("refused");
+    expect(radianRefusal(profile, "operad__list", {}, "/work")).toBeUndefined();
+  });
+
   test("without operadTools radian gets no MCP config", async () => {
     const env = await setup("done");
     await runAgent(env, { prompt: "hello", cwd: env.root });
