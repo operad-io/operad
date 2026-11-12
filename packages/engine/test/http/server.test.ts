@@ -676,9 +676,11 @@ describe("http server", () => {
       expect(named.value).toBe("made it");
       expect(named.opens).toBe("item:two");
 
-      // A bare id that resolves is passed on as the plugin wrote it.
-      const bare = await make({ opens: "item:two" });
-      expect(bare.opens).toBe("item:two");
+      // A short id that resolves to a scoped object (`item:repo/scoped`) is passed
+      // on as the plugin wrote it, not rewritten to the stored id.
+      seed(h, "repo/scoped", { title: "Scoped", state: "new" });
+      const bare = await make({ opens: "item:scoped" });
+      expect(bare.opens).toBe("item:scoped");
 
       const missing = await make({ opens: "item:nope" });
       expect(missing.value).toBe("made it");
