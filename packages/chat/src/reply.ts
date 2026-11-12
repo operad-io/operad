@@ -5,9 +5,12 @@
  * goes round again while there are some. The kernel keeps no prompt text.
  */
 
-import { AskTimeoutError, isRecord, messageOf, type AskOutcome, type AskRequest, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext } from "@operad-io/engine";
-import { attachmentDir } from "@operad-io/engine";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { AskTimeoutError, attachmentDir, isRecord, messageOf, safeFileName, type AskOutcome, type AskRequest, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext } from "@operad-io/engine";
+import { emptyFold, foldLines, maskSecrets, type FoldEntry, type FoldState } from "@operad-io/harness-process";
 import {
+  allEntries,
   allMessages,
   IMAGE_TYPES,
   chatData,
@@ -15,6 +18,7 @@ import {
   type CostQuality,
   chatRef,
   currentSession,
+  ENTRY_FACT,
   MESSAGE_FACT,
   newMessageId,
   promptFor,
@@ -22,6 +26,7 @@ import {
   usageOf,
   worseQuality,
   CHAT_TYPE,
+  type EntryData,
   type Message,
   type MessageData,
 } from "./model.ts";
@@ -324,6 +329,155 @@ export function withAttachmentReads(
   return { ...access, readPaths: [...own, directory] };
 }
 
+/** How much of a tool call's output a fact keeps; the rest goes to a file. */
+export const TOOL_OUTPUT_FACT_BYTES = 4 * 1024;
+
+/** Cuts text to a byte count without splitting a character. */
+function cutUtf8(text: string, maxBytes: number): string {
+  const bytes = new TextEncoder().encode(text);
+  if (bytes.length <= maxBytes) return text;
+  let end = maxBytes;
+  while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) end -= 1;
+  return new TextDecoder().decode(bytes.subarray(0, end));
+}
+
+/** The file that holds a tool call's whole output, under the chat's own directory. */
+export function toolOutputPath(home: string, chat: string, runId: string, callId: string): string {
+  return join(
+    attachmentDir(home, CHAT_TYPE, chat),
+    "tool-output",
+    safeFileName(runId),
+    `${safeFileName(callId)}.txt`,
+  );
+}
+
+/** The chat's own secret values, so nothing recorded or written can carry one. */
+async function secretValues(ctx: StepContext): Promise<readonly string[]> {
+  try {
+    const values: string[] = [];
+    for (const name of await ctx.secrets.names()) {
+      const secret = await ctx.secrets.get(name);
+      if (secret !== undefined) values.push(secret.reveal());
+    }
+    return values;
+  } catch {
+    return [];
+  }
+}
+
+/** The entries to record: what finished, and the reply a stopped run got only half way through. */
+function entriesToRecord(
+  folded: FoldState,
+  options: { readonly finalText?: string | undefined; readonly stopped: boolean },
+): readonly (FoldEntry | { readonly kind: "stopped"; readonly text: string })[] {
+  const entries: (FoldEntry | { readonly kind: "stopped"; readonly text: string })[] = [...folded.entries];
+  if (folded.thinking.length > 0) entries.push({ kind: "thinking", text: folded.thinking });
+  if (folded.text.length > 0) {
+    entries.push(options.stopped ? { kind: "stopped", text: folded.text } : { kind: "text", text: folded.text });
+  }
+  // The final reply is a chat.message of its own; its text is not an entry too.
+  if (options.finalText !== undefined) {
+    const final = options.finalText.trim();
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const entry = entries[index];
+      if (entry?.kind === "text" && entry.text.trim() === final) {
+        entries.splice(index, 1);
+        break;
+      }
+    }
+  }
+  return entries;
+}
+
+/** One folded entry as a fact's data, with secrets masked and a long output written to a file. */
+async function entryData(
+  ctx: StepContext,
+  chat: string,
+  runId: string,
+  entry: FoldEntry | { readonly kind: "stopped"; readonly text: string },
+  secrets: readonly string[],
+): Promise<EntryData> {
+  if (entry.kind !== "tool") {
+    return { runId, kind: entry.kind, text: maskSecrets(entry.text, secrets) };
+  }
+  const output = entry.output === null ? null : maskSecrets(entry.output, secrets);
+  const data: EntryData = {
+    runId,
+    kind: "tool",
+    callId: maskSecrets(entry.callId, secrets),
+    toolName: maskSecrets(entry.toolName, secrets),
+    input: entry.input === null ? null : maskSecrets(entry.input, secrets),
+    result: entry.result,
+    startedAt: entry.at,
+    durationMs: entry.durationMs,
+    output,
+    error: entry.error === null ? null : maskSecrets(entry.error, secrets),
+    ...(entry.outputTruncated ? { outputTruncated: true } : {}),
+  };
+  if (output === null || new TextEncoder().encode(output).length <= TOOL_OUTPUT_FACT_BYTES) return data;
+  const path = toolOutputPath(ctx.home, chat, runId, entry.callId);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, output, "utf8");
+  return { ...data, output: cutUtf8(output, TOOL_OUTPUT_FACT_BYTES), outputPath: path };
+}
+
+/** The key that tells a repeated entry from a new one. A tool call is its call id. */
+function entryKey(entry: EntryData): string {
+  return entry.kind === "tool" ? `tool:${entry.callId ?? ""}` : `${entry.kind}:${entry.text ?? ""}`;
+}
+
+/**
+ * Records the finished entries on the chat. A step that runs again after a
+ * restart emits the same tool calls again: a call id already recorded is
+ * skipped, and text that an unanswered attempt already left is not added twice.
+ */
+async function recordEntries(
+  ctx: StepContext,
+  chat: string,
+  folded: FoldState,
+  options: { readonly finalText?: string | undefined; readonly stopped: boolean },
+): Promise<void> {
+  const wanted = entriesToRecord(folded, options);
+  if (wanted.length === 0) return;
+  const secrets = await secretValues(ctx);
+  const existing = allEntries(ctx.store, chat);
+  const lastReply = new Map<string, number>();
+  for (const message of allMessages(ctx.store, chat)) {
+    if (message.role !== "assistant" || message.runId === undefined) continue;
+    lastReply.set(message.runId, Math.max(lastReply.get(message.runId) ?? 0, message.sequence));
+  }
+  // An entry with no reply after it belongs to an attempt that never finished.
+  const unansweredEntries = existing.filter((entry) => {
+    const reply = lastReply.get(entry.runId);
+    return reply === undefined || reply < entry.sequence;
+  });
+  const counts = new Map<string, number>();
+  for (const entry of unansweredEntries) {
+    const key = entryKey(entry);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const callIds = new Set(
+    existing
+      .filter((entry) => entry.kind === "tool" && entry.callId !== undefined)
+      .map((entry) => entry.callId as string),
+  );
+  for (const entry of wanted) {
+    if (entry.kind === "tool" && callIds.has(entry.callId)) continue;
+    const data = await entryData(ctx, chat, ctx.runId, entry, secrets);
+    if (data.kind === "tool") {
+      if (data.callId !== undefined) callIds.add(data.callId);
+    } else {
+      const key = entryKey(data);
+      const seen = counts.get(key) ?? 0;
+      if (seen > 0) {
+        counts.set(key, seen - 1);
+        continue;
+      }
+    }
+    await ctx.facts.append({ type: ENTRY_FACT, object: chatRef(chat), data });
+  }
+}
+
 /** Runs one round of an answer; see the file's comment. */
 export async function runReply(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
   const object = ctx.object;
@@ -407,6 +561,20 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     ? withAttachmentReads(live.access, directory)
     : live.access;
 
+  // The harness hands each log line over as it writes it; the fold keeps what
+  // is finished and what is still being written. None of this is stored until
+  // the harness returns, so the final reply can be left out of the entries.
+  let folded = emptyFold;
+  const receiver = (line: string): void => {
+    let value: unknown;
+    try {
+      value = JSON.parse(line);
+    } catch {
+      return;
+    }
+    folded = foldLines([value], folded);
+  };
+
   let outcome: PluginStepResult;
   try {
     outcome = await runStep(
@@ -439,21 +607,31 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
         access,
         ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
         signal: ctx.signal,
+        receiver,
         ...(asker === undefined ? {} : { asker }),
       },
     );
   } catch (error) {
+    await recordEntries(ctx, object.id, folded, { stopped: true });
     return failed("harness", messageOf(error));
   }
 
   if (outcome.result === "waiting") {
+    await recordEntries(ctx, object.id, folded, { stopped: true });
     return { result: "waiting", ...(outcome.data === undefined ? {} : { data: outcome.data }) };
   }
   const data = isRecord(outcome.data) ? outcome.data : {};
+  // A harness that stopped may name the part it wrote in its result instead of
+  // sending finished increments; either way the half reply is kept.
+  if (outcome.result !== "done" && folded.text.length === 0 && typeof data.finalMessage === "string" && data.finalMessage.trim().length > 0) {
+    folded = { ...folded, text: data.finalMessage.trim() };
+  }
   if (outcome.result === "interrupted") {
+    await recordEntries(ctx, object.id, folded, { stopped: true });
     return { result: "interrupted", data };
   }
   if (outcome.result !== "done") {
+    await recordEntries(ctx, object.id, folded, { stopped: true });
     return {
       result: "failed",
       data: {
@@ -462,11 +640,17 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
       },
     };
   }
-  const text = typeof data.finalMessage === "string" ? data.finalMessage.trim() : "";
-  if (text.length === 0) return failed("empty", "the agent gave no reply");
+  const said = typeof data.finalMessage === "string" ? data.finalMessage.trim() : "";
+  const text = maskSecrets(said, await secretValues(ctx));
+  if (text.length === 0) {
+    await recordEntries(ctx, object.id, folded, { stopped: true });
+    return failed("empty", "the agent gave no reply");
+  }
   const sessionId = typeof data.sessionId === "string" && data.sessionId.length > 0 ? data.sessionId : undefined;
 
   const usage = usageOf(data.usage);
+
+  await recordEntries(ctx, object.id, folded, { finalText: text, stopped: false });
 
   // The reply is a fact before the step counts as done: a rerun reads it and
   // does not answer the same messages twice.
@@ -478,6 +662,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     attachments: [],
     source: { kind: chat.harness, ref: null },
     replyTo: pending.map((message) => message.id),
+    runId: ctx.runId,
     ...(sessionId === undefined ? {} : { session: sessionId }),
     ...usage,
   };

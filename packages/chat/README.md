@@ -12,8 +12,19 @@ title, the agent's own session reference (never shown), bound channels, and
 whether it is closed. Its ids are `C-0001` upward. Messages are not fields: each
 is a `chat.message` fact on the chat (who, when, text, attachment paths, the
 source and its reference). An assistant message also names the messages it answers
-(`replyTo`) and the session after it. Closing a chat appends a `chat.closed`
-fact and marks the object closed; the messages stay in its transcript.
+(`replyTo`), the run it belongs to (`runId`) and the session after it. Closing a
+chat appends a `chat.closed` fact and marks the object closed; the messages stay
+in its transcript.
+
+What the agent did during an answer is recorded too, as `chat.entry` facts with
+the same `runId` as the reply: intermediate text, thinking, a tool call (its call
+id, name, input summary, result, start, duration, the first 4 KB of its output,
+the file holding the whole output and the first line of an error) and the
+half-written reply of a run that was stopped. Increments are not stored. Output
+longer than 4 KB goes to a file under the chat's own directory (under
+`attachments/chat/<id>/tool-output/`), and secret values are masked before a
+fact or a file is written. A rerun skips a tool call whose id was already recorded and does not add
+the same unfinished text again.
 
 ## `chat:send <chat> --note <text>`
 
@@ -62,8 +73,13 @@ should answer in the chat or use read-only commands.
 
 ## The `transcript` section
 
-A live section that pages over the message facts, so the command line, the TUI
-and the app show a chat with no client change.
+A live section that pages over the message and entry facts, so the command line,
+the TUI and the app show a chat with no client change. A turn's entries show
+before its reply: one line per tool call with what ran and how long it took, how
+a failed, blocked or denied call ended, the agent's text with its speaker, and
+thinking as a block quote. Tool output is not shown. Radian chats show the tool
+lines only. Pages count messages, and a turn's entries stay on the page of its
+reply.
 
 ## The speaker
 
