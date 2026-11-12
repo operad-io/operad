@@ -880,7 +880,7 @@ export function appendChange(
 ): string {
   const text = brief.replace(/\r\n/g, "\n").trimEnd();
   const { changes } = briefHeadings(text);
-  const why = reason === undefined ? "" : oneLine(reason, REASON_LIMIT);
+  const why = reason === undefined ? "" : oneLine(reason, REASON_LIMIT, true);
   const said = oneLine(line);
   const at = new Date(changeClock.now()).toISOString();
   const entry = `- [${at}] ${said}${why.length === 0 ? "" : ` — ${why}`}`;
@@ -981,7 +981,7 @@ export function appendRework(
   const asked = ASKER[cleanSource] ?? cleanSource;
   const firstLine =
     body.split("\n").find((line) => line.trim().length > 0) ?? "";
-  const why = oneLine(reason ?? firstLine.replace(/^\s*[-*]\s+/, ""), REASON_LIMIT);
+  const why = oneLine(reason ?? firstLine.replace(/^\s*[-*]\s+/, ""), REASON_LIMIT, true);
   const next = appendChange(
     withRework,
     `rework ${number} — ${asked}${why.length === 0 ? "" : `: ${why}`}`,

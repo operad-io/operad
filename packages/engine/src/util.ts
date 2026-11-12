@@ -25,10 +25,19 @@ export function requireName(value: string, field: string): void {
   }
 }
 
-/** One line: whitespace collapsed, and cut with an ellipsis when a limit is given. */
-export function oneLine(text: string, limit: number = Number.POSITIVE_INFINITY): string {
+/**
+ * One line: whitespace collapsed, and cut with an ellipsis when a limit is given.
+ * The cut keeps a space at its edge unless `trimCut` is set.
+ */
+export function oneLine(
+  text: string,
+  limit: number = Number.POSITIVE_INFINITY,
+  trimCut = false,
+): string {
   const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length <= limit ? flat : `${flat.slice(0, limit - 1).trimEnd()}…`;
+  if (flat.length <= limit) return flat;
+  const cut = flat.slice(0, limit - 1);
+  return `${trimCut ? cut.trimEnd() : cut}…`;
 }
 
 /** Calls back every `ms` until the returned function is called; it never keeps the process alive. */
