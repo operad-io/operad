@@ -1263,6 +1263,55 @@ test("a block ending in a secret prefix writes that held suffix as its last incr
   }
 });
 
+test("a cancelled stream releases text held back as a possible secret", async () => {
+  const s = setup();
+  s.input["secretValues"] = ["store-secret-9"];
+  const child = start(s, {
+    steps: [
+      { say: systemInit() },
+      // The block is left open, so "store" is still a possible secret prefix and
+      // is held back until the run ends.
+      ...streamBlock("text", "store").slice(0, -1),
+      // A line after the deltas: once it is written, the held text is in place.
+      { say: rateLimit({ status: "allowed" }) },
+      { hang: true },
+    ],
+  });
+  await child.untilLine("rate_limit");
+  child.signal("SIGTERM");
+  const run = await child.finish();
+
+  const increments = run.lines.filter((line) => line["type"] === "text_delta").map((line) => String(line["text"]));
+  expect(increments.at(-1)).toBe("store");
+  expect(increments.join("")).not.toContain("store-secret-9");
+  expect(last(run)).toMatchObject({ type: "result", result: "cancelled" });
+  expect(run.lines.findIndex((line) => line["type"] === "text_delta")).toBeLessThan(
+    run.lines.findIndex((line) => line["type"] === "result"),
+  );
+});
+
+test("a stream that ends with an error releases text held back as a possible secret", async () => {
+  const s = setup();
+  s.input["secretValues"] = ["store-secret-9"];
+  const run = await runFake(s, {
+    steps: [
+      { say: systemInit() },
+      // Left open, as above, then the stream ends without an assistant message.
+      ...streamBlock("text", "store").slice(0, -1),
+      { say: rateLimit({ status: "allowed" }) },
+      { exit: 1 },
+    ],
+  });
+
+  const increments = run.lines.filter((line) => line["type"] === "text_delta").map((line) => String(line["text"]));
+  expect(increments.at(-1)).toBe("store");
+  expect(increments.join("")).not.toContain("store-secret-9");
+  expect(last(run)).toMatchObject({ type: "result", result: "failed", reason: "model_error" });
+  expect(run.lines.findIndex((line) => line["type"] === "text_delta")).toBeLessThan(
+    run.lines.findIndex((line) => line["type"] === "result"),
+  );
+});
+
 test("claude asks for partial messages so the increments can be written", async () => {
   const run = await runFake(setup(), { steps: done });
   const args = (run.record.find((entry) => "spawn" in entry)?.["spawn"] as { args: string[] }).args;
