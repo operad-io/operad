@@ -381,3 +381,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0319-M1 | packages/tui/src/state.ts | Pending and Running took a wider fixed column again instead of every tab's 26% list, so the divider moved when switching tabs | `the frame follows the terminal > every tab puts the divider in the same column at 80, 120 and 200` |
+## T-0320 — a running row that names an object opens it
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0320-M1 | packages/tui/src/state.ts | a running row was built with `openable: false` again, named or not | `the TUI reducer > a running row that names an object opens it on enter; one without stays closed` |
