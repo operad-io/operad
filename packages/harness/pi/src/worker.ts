@@ -283,6 +283,24 @@ class Increments {
     // a block the run stopped in, and the increments are all it has.
     if (this.#thinking.length > 0) this.#writeThinking(this.now());
   }
+
+  /**
+   * The stream is ending and no later text can complete a held prefix: write
+   * it now, masked when it holds a whole secret. Every end path calls this
+   * before its Result, so a stopped reply keeps what it had reached.
+   */
+  release(): void {
+    if (this.#text.length > 0) {
+      this.io.line({ type: "text_delta", text: maskSecrets(this.#text, this.secrets) });
+      this.#text = "";
+      this.#textAt = undefined;
+    }
+    if (this.#thinking.length > 0) {
+      this.io.line({ type: "thinking_delta", text: maskSecrets(this.#thinking, this.secrets) });
+      this.#thinking = "";
+      this.#thinkingAt = undefined;
+    }
+  }
 }
 
 function failure(reason: FailureReason, message: string): WorkerResult {
@@ -564,6 +582,14 @@ export async function runWorker(
     finalMessage: session.getLastAssistantText() ?? null,
   });
 
+  // Every way this run ends writes its Result here: text still held back as a
+  // possible secret prefix is released first.
+  const finish = (line: WorkerResult, code: number): number => {
+    increments.release();
+    io.line(line);
+    return code;
+  };
+
   // A message the host sends mid-run steers the agent: pi delivers it after
   // the tool call that is running.
   io.onMessage?.((text) => {
@@ -592,34 +618,36 @@ export async function runWorker(
         );
       } catch (error) {
         if (!cancelled) {
-          io.line({
-            ...failure("model_error", error instanceof Error ? error.message : String(error)),
-            sessionId: session.sessionFile ?? null,
-            usage: tally.usage,
-            cost: tally.cost,
-          });
-          return EXIT_FAILED;
+          return finish(
+            {
+              ...failure("model_error", error instanceof Error ? error.message : String(error)),
+              sessionId: session.sessionFile ?? null,
+              usage: tally.usage,
+              cost: tally.cost,
+            },
+            EXIT_FAILED,
+          );
         }
       }
       if (!cancelled) await settled;
     }
     if (cancelled) {
       await session.abort();
-      io.line(result("cancelled"));
-      return EXIT_CANCELLED;
+      return finish(result("cancelled"), EXIT_CANCELLED);
     }
     if (tally.lastError !== undefined) {
-      io.line({
-        ...failure("model_error", tally.lastError),
-        sessionId: session.sessionFile ?? null,
-        usage: tally.usage,
-        cost: tally.cost,
-        finalMessage: session.getLastAssistantText() ?? null,
-      });
-      return EXIT_FAILED;
+      return finish(
+        {
+          ...failure("model_error", tally.lastError),
+          sessionId: session.sessionFile ?? null,
+          usage: tally.usage,
+          cost: tally.cost,
+          finalMessage: session.getLastAssistantText() ?? null,
+        },
+        EXIT_FAILED,
+      );
     }
-    io.line(result("done"));
-    return 0;
+    return finish(result("done"), 0);
   } finally {
     cancel.removeEventListener("abort", onCancel);
     session.dispose();

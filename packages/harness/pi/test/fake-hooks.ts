@@ -58,6 +58,7 @@ export function fakeHooks(
     }
     log("fake-stream-started\n");
   };
+  provider.onEndless = () => log("fake-stream-endless\n");
 
   const step = Number(env["FAKE_CLOCK_STEP"] ?? "0");
   let reading = 1_700_000_000_000;

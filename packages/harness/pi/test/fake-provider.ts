@@ -53,7 +53,20 @@ function chunks(text: string): string[] {
 class FakeEventStream implements AsyncIterable<PiStreamEvent> {
   readonly #queue: PiStreamEvent[] = [];
   readonly #waiters: Array<(result: IteratorResult<PiStreamEvent>) => void> = [];
+  readonly #drained: Promise<void>;
+  #markDrained: (() => void) | undefined;
   #closed = false;
+
+  constructor() {
+    this.#drained = new Promise<void>((resolve) => {
+      this.#markDrained = resolve;
+    });
+  }
+
+  /** Resolves when the consumer has taken every queued event and waits for more. */
+  drained(): Promise<void> {
+    return this.#drained;
+  }
 
   push(event: PiStreamEvent): void {
     if (this.#closed) return;
@@ -80,6 +93,8 @@ class FakeEventStream implements AsyncIterable<PiStreamEvent> {
         continue;
       }
       if (this.#closed) return;
+      this.#markDrained?.();
+      this.#markDrained = undefined;
       const next = await new Promise<IteratorResult<PiStreamEvent>>((resolve) => {
         this.#waiters.push(resolve);
       });
@@ -124,6 +139,9 @@ export class FakeProvider {
   readonly #started: Promise<void>;
   #markStarted: (() => void) | undefined;
   #startCount = 0;
+
+  /** Called when an endless stream has handed every event to the consumer. */
+  onEndless: (() => void) | undefined;
 
   constructor(providerId = "fake", modelId = "fake-model") {
     this.providerId = providerId;
@@ -326,6 +344,19 @@ export class FakeProvider {
 
     const reason = message.stopReason === "toolUse" ? "toolUse" : "stop";
     if (response.endless === true) {
+      const drained = await waitFor(stream.drained(), options?.signal);
+      if (drained === "aborted") {
+        const aborted: AssistantMessage = {
+          ...message,
+          content: [],
+          stopReason: "aborted",
+          errorMessage: "Request was aborted",
+        };
+        stream.push({ type: "error", reason: "aborted", error: aborted });
+        stream.end();
+        return;
+      }
+      this.onEndless?.();
       const outcome = await waitFor(new Promise<void>(() => {}), options?.signal);
       if (outcome === "aborted") {
         const aborted: AssistantMessage = {

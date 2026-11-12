@@ -1169,6 +1169,41 @@ test("a secret split across increment lines is held back, so no line carries a p
   expect(thinking.lines.find((line) => line["type"] === "thinking_end")?.["text"]).toBe("AAAA***BBBB");
 });
 
+test("a cancelled stream releases text held back as a possible secret", async () => {
+  const s = setup();
+  s.input["secretValues"] = ["store-secret-9"];
+
+  const text = new Child({ FAKE_SCRIPT: JSON.stringify([{ text: "AAAAstore", endless: true }]) });
+  text.sendLine(JSON.stringify(s.input));
+  await text.stderrHas("fake-stream-endless");
+  text.signal("SIGTERM");
+  const textRun = await text.finish();
+  const saidText = textRun.lines
+    .filter((line) => line["type"] === "text_delta")
+    .map((line) => String(line["text"]))
+    .join("");
+  expect(saidText).toBe("AAAAstore");
+  expect(saidText).not.toContain("store-secret-9");
+  expect(last(textRun)).toMatchObject({ type: "result", result: "cancelled" });
+
+  const thinking = new Child({ FAKE_SCRIPT: JSON.stringify([{ thinking: "AAAAstore", text: "", endless: true }]) });
+  thinking.sendLine(JSON.stringify(s.input));
+  await thinking.stderrHas("fake-stream-endless");
+  thinking.signal("SIGTERM");
+  const thinkingRun = await thinking.finish();
+  const saidThinking = thinkingRun.lines
+    .filter((line) => line["type"] === "thinking_delta")
+    .map((line) => String(line["text"]))
+    .join("");
+  expect(saidThinking).toBe("AAAA");
+  // pi ends the stopped block with its full text, which carries the held part.
+  expect(String(thinkingRun.lines.find((line) => line["type"] === "thinking_end")?.["text"]).endsWith("store")).toBe(
+    true,
+  );
+  expect(JSON.stringify(thinkingRun.lines)).not.toContain("store-secret-9");
+  expect(last(thinkingRun)).toMatchObject({ type: "result", result: "cancelled" });
+});
+
 test("a secret of the operad store sent as secretValues is masked in the logged command", async () => {
   const s = setup();
   s.input["secretValues"] = ["store-secret-9"];
