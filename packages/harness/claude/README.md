@@ -188,9 +188,9 @@ but the login kind is read or printed: no e-mail, organisation or token.
 
 ### Access profile
 
-The step declares `enforces: ["denyPaths", "denyCommands"]` and passes the run's
-profile to the worker. A profile that sets `askCommands` is refused when the run
-starts, with `askCommands` named.
+The step declares `enforces: ["denyPaths", "denyCommands", "askCommands", "askPaths"]`
+and passes the run's profile to the worker. A profile that sets `askCommands` is
+accepted: a call it matches asks a person first (see "Asking about a call").
 
 The worker judges every call in `canUseTool` (`src/access.ts`). `access-match`
 knows lower-case tool names and the fields `command` and `path`, so one table
