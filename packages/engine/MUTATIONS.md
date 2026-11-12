@@ -687,3 +687,4 @@ the row fields.
 | T-0339-M6 | packages/engine/src/plugin/action-schema.ts | `fileProperties` ignored a list of files | `an action declares a file argument as a string, or a list of strings, with format file` |
 | T-0339-M23 | packages/engine/src/views/uploads.ts | the attachment route served the type file kept beside a stored file | `http server > file arguments > a stored file is served to a client with the type its upload gave, behind the token` |
 | T-0339-M26 | packages/engine/src/views/uploads.ts | `take` kept no type beside the stored file | `http server > file arguments > a stored file is served to a client with the type its upload gave, behind the token` |
+| T-0347-M1 | packages/engine/src/plugin/registry.ts | a plugin command named like a kernel verb threw at startup again instead of losing only its short form | `plugin commands named like kernel verbs or each other > the CLI starts, the kernel verb runs and the plugin command runs through its plugin` |

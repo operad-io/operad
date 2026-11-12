@@ -104,6 +104,12 @@ export interface PiHarnessOptions {
   readonly args?: readonly string[] | undefined;
 }
 
+/** The models a chat may pick with this agent, and the one used when none is set. */
+export const PI_MODELS = {
+  list: ["anthropic/claude-sonnet-5-5", "anthropic/claude-opus-5-5", "anthropic/claude-haiku-5-5"],
+  default: "anthropic/claude-sonnet-5-5",
+} as const;
+
 /** The settings a config.json section may set for this plugin. */
 const PLUGIN_SETTINGS = {
   type: "object" as const,
@@ -226,6 +232,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     name: "pi",
     kind: "harness",
     version: "0.0.0",
+    models: PI_MODELS,
     settings: PLUGIN_SETTINGS,
     steps: [
       {

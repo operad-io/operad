@@ -345,6 +345,11 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     return failed("harness", `the agent "${chat.harness}" is not loaded`);
   }
 
+  // A model the agent cannot take fails the reply by name; it never falls back.
+  if (chat.model !== undefined && ctx.harnessModels?.(chat.harness)?.list.includes(chat.model) !== true) {
+    return failed("model", `the agent "${chat.harness}" cannot use the model "${chat.model}"`);
+  }
+
   const settled = await liveSettings(ctx, chat, object, runStep);
   if ("result" in settled) return settled;
   const live = settled;
@@ -401,6 +406,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
         prompt: promptFor(pending, new Set(images.map((image) => image.path))),
         ...(images.length === 0 ? {} : { images }),
         cwd: live.cwd,
+        ...(chat.model === undefined ? {} : { args: ["--model", chat.model] }),
         ...(live.skills.length === 0 ? {} : { skills: live.skills }),
         // Operad's own tools, so the agent never runs the `operad` command.
         operadTools: { home: ctx.home },

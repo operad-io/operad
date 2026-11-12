@@ -44,3 +44,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0337-M1 | packages/chat/src/model.ts | the row note dropped the agent | `the chat row says the agent > a chat with no reply yet shows the agent alone` |
+
+## T-0338 — a chat's model
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0338-M1 | packages/chat/src/reply.ts | the reply no longer passed the chat's model to the harness, so a model change was ignored by the next reply | `chat:model > the next reply uses the changed model, and the history says who changed it and to what` |
+| T-0338-M2 | packages/chat/src/index.ts | `chat:model` dropped the enum of the agent's models from its argument | `chat:model > the argument is an enum of the agent's models` |

@@ -28,11 +28,12 @@ export interface Call {
 export type Script = (ctx: StepContext, call: Call) => Promise<PluginStepResult> | PluginStepResult;
 
 /** A harness plugin whose answers the test writes. */
-export function fakeHarness(name: string, script: Script, calls: Call[]) {
+export function fakeHarness(name: string, script: Script, calls: Call[], models?: { readonly list: readonly string[]; readonly default: string | null }) {
   return definePlugin({
     name,
     kind: "harness",
     version: "0.0.0",
+    ...(models === undefined ? {} : { models }),
     steps: [
       {
         name: "agent",
@@ -60,7 +61,7 @@ export interface Rig {
   readonly calls: Call[];
   readonly events: TriggerEvent[];
   /** A chat that uses the fake harness. */
-  chat(extra?: { readonly access?: Record<string, JsonValue> }): Promise<string>;
+  chat(extra?: { readonly access?: Record<string, JsonValue>; readonly model?: string }): Promise<string>;
   /** A person's message as a fact, without the event. */
   say(chat: string, text: string, attachments?: readonly unknown[]): Promise<string>;
   /** Runs one round of the reply step. */
@@ -72,13 +73,17 @@ export interface Rig {
   ): Promise<PluginStepResult>;
 }
 
-export async function rig(script: Script, harness = "fake"): Promise<Rig> {
+export async function rig(
+  script: Script,
+  models?: { readonly list: readonly string[]; readonly default: string | null },
+  harness = "fake",
+): Promise<Rig> {
   const root = await mkdtemp(join(tmpdir(), "chat-test-"));
   roots.push(root);
   const calls: Call[] = [];
   const events: TriggerEvent[] = [];
   const store = new MemoryPluginStore({ root: join(root, "store") });
-  const registry = new PluginRegistry([createChatPlugin(), fakeHarness(harness, script, calls)], {
+  const registry = new PluginRegistry([createChatPlugin(), fakeHarness(harness, script, calls, models)], {
     home: join(root, "home"),
     cwd: root,
     store,
@@ -97,7 +102,7 @@ export async function rig(script: Script, harness = "fake"): Promise<Rig> {
     async chat(extra) {
       return createChat(
         store,
-        { harness, cwd: root, title: "Test", ...(extra?.access === undefined ? {} : { access: extra.access }) },
+        { harness, cwd: root, title: "Test", ...(extra?.access === undefined ? {} : { access: extra.access }), ...(extra?.model === undefined ? {} : { model: extra.model }) },
         "test",
       );
     },

@@ -513,6 +513,8 @@ export interface StepContext extends PluginBaseContext {
     | undefined;
   /** Whether a plugin that declares this step is loaded now. */
   readonly stepLoaded?: ((use: string) => boolean) | undefined;
+  /** The models a loaded harness plugin declares; undefined when it is not loaded or declares none. */
+  readonly harnessModels?: ((harness: string) => HarnessModels | undefined) | undefined;
   /**
    * Runs another loaded step in this run. The kernel offers it when a plugin
    * step delegates to a harness or another plugin; a direct call to a step's
@@ -767,6 +769,14 @@ export interface ActionEnv {
   readonly store: ObjectStore;
   /** The harness plugins loaded now; the kernel always sets it. */
   readonly harnesses?: readonly string[] | undefined;
+  /** The models each loaded harness plugin declares, by plugin name. */
+  readonly models?: Readonly<Record<string, HarnessModels>> | undefined;
+}
+
+/** The models a harness plugin declares: those a chat may pick, and the one used when none is set. */
+export interface HarnessModels {
+  readonly list: readonly string[];
+  readonly default: string | null;
 }
 
 /** An action a plugin offers on an object type. */
@@ -868,6 +878,8 @@ export interface ActionEvent {
 export interface ActionContext extends PluginBaseContext {
   /** The names of the loaded plugins of kind `harness`. */
   readonly harnesses: readonly string[];
+  /** The models each loaded harness plugin declares, by plugin name. */
+  readonly models: Readonly<Record<string, HarnessModels>>;
   /** Sends an event through the kernel's rules; set when the host can route events. */
   readonly emit?: ((event: ActionEvent) => Promise<void>) | undefined;
   readonly runId: string | undefined;
@@ -1081,6 +1093,8 @@ export interface PluginShape {
   readonly objectsUnderSettings?: boolean | undefined;
   /** Settings files this plugin keeps under a registered repository's `.operad/`. */
   readonly projectSettings?: ProjectSettingsDeclaration | undefined;
+  /** A harness plugin: the models a chat may pick (empty list: none can be chosen). */
+  readonly models?: HarnessModels | undefined;
   /** Access profile fields this plugin's steps apply. */
   readonly enforces?: readonly string[] | undefined;
   /** What this plugin needs loaded before it can be used. */

@@ -19,6 +19,7 @@ import {
   type ProjectSettingsDeclaration,
   type ActionContext,
   type ActionEnv,
+  type HarnessModels,
   type ActionEvent,
   type ActionRun,
   isActionOutcome,
@@ -208,6 +209,10 @@ export class PluginRegistry {
   /** Runs whose missing object was already logged, so a poll does not repeat it. */
   private readonly reportedMissing = new Set<string>();
   private readonly kernelVerbs: ReadonlySet<string>;
+  private shortCommands: ReadonlyMap<
+    string,
+    { readonly plugin: LoadedPlugin; readonly command: CommandDefinition }
+  > = new Map();
   private readonly onLog: (message: string) => void;
   private readonly onStartRun:
     | ((request: StartRunRequest) => MaybePromise<void>)
@@ -382,15 +387,6 @@ export class PluginRegistry {
     this.settingsByPlugin = settingsByPlugin;
     const kept = normalized.filter((plugin) => !refused.has(plugin.name));
     validatePluginSet(kept);
-    for (const plugin of kept) {
-      for (const command of plugin.commands) {
-        if (this.kernelVerbs.has(command.name)) {
-          throw new PluginError(
-            `plugin "${plugin.name}": command "${command.name}" clashes with the kernel verb "${command.name}"`,
-          );
-        }
-      }
-    }
     if (typeof this.store.declare === "function") {
       for (const plugin of kept) {
         for (const object of plugin.objects) {
@@ -403,6 +399,7 @@ export class PluginRegistry {
     validateRuleFlows(this.plugins);
 
     this.byName = new Map(this.plugins.map((plugin) => [plugin.name, plugin]));
+    this.shortCommands = this.resolveShortCommands();
 
     const viewByType = new Map<
       string,
@@ -999,6 +996,7 @@ export class PluginRegistry {
           : (key, ahead) =>
             limiter.report({ key, ...(ahead === undefined ? {} : { ahead }) }),
       stepLoaded: (name) => this.stepIndex.has(name),
+      harnessModels: (name) => this.loadedModels()[name],
       runStep: (nestedUse, nestedParams, nestedOptions) => {
         // Declarations must not drift: tests fail on a call the step did not
         // declare; production still runs it.
@@ -1072,9 +1070,18 @@ export class PluginRegistry {
     return this.plugins.filter((item) => item.kind === "harness").map((item) => item.name);
   }
 
+  /** The models the loaded harness plugins declare, by plugin name. */
+  loadedModels(): Readonly<Record<string, HarnessModels>> {
+    const found: Record<string, HarnessModels> = {};
+    for (const item of this.plugins) {
+      if (item.kind === "harness" && item.models !== undefined) found[item.name] = item.models;
+    }
+    return found;
+  }
+
   /** What an action's checks may read. */
   actionEnv(): ActionEnv {
-    return { store: this.store, harnesses: this.loadedHarnesses() };
+    return { store: this.store, harnesses: this.loadedHarnesses(), models: this.loadedModels() };
   }
 
   /** Runs an action on an object, by `plugin/action` or a unique plain name. */
@@ -1131,6 +1138,7 @@ export class PluginRegistry {
       actor,
       answer,
       harnesses: this.loadedHarnesses(),
+      models: this.loadedModels(),
       ...(this.onEvent === undefined
         ? {}
         : { emit: this.actionEmitter(found.plugin.name) }),
@@ -1213,9 +1221,47 @@ export class PluginRegistry {
   }
 
   /**
+   * The short form `<command>`: offered only when exactly one plugin declares
+   * the name and it is not a kernel verb. One log line names each command
+   * left without a short form; `<plugin> <command>` still reaches it.
+   */
+  private resolveShortCommands(): ReadonlyMap<
+    string,
+    { readonly plugin: LoadedPlugin; readonly command: CommandDefinition }
+  > {
+    const owners = new Map<string, LoadedPlugin[]>();
+    for (const plugin of this.plugins) {
+      for (const command of plugin.commands) {
+        const list = owners.get(command.name);
+        if (list === undefined) owners.set(command.name, [plugin]);
+        else list.push(plugin);
+      }
+    }
+    const result = new Map<
+      string,
+      { readonly plugin: LoadedPlugin; readonly command: CommandDefinition }
+    >();
+    for (const [name, list] of owners) {
+      const [only] = list;
+      if (this.kernelVerbs.has(name)) {
+        this.log(
+          `command "${name}": plugin ${list.map((p) => `"${p.name}"`).join(", ")} declares it, but "${name}" is a kernel verb; use "<plugin> ${name}"`,
+        );
+      } else if (list.length > 1 || only === undefined) {
+        this.log(
+          `command "${name}": declared by plugins ${list.map((p) => `"${p.name}"`).join(", ")}; use "<plugin> ${name}"`,
+        );
+      } else {
+        const command = only.commands.find((item) => item.name === name);
+        if (command !== undefined) result.set(name, { plugin: only, command });
+      }
+    }
+    return result;
+  }
+
+  /**
    * Resolves a CLI verb. `<plugin> <verb>` always wins; `<verb>` works when
-   * exactly one plugin declares the name (a plugin command that shares a name
-   * with a kernel verb is refused when the registry is built).
+   * exactly one plugin declares the name and it is not a kernel verb.
    */
   resolveCommand(argv: readonly string[]): ResolvedCommand | undefined {
     const first = argv[0];
@@ -1234,20 +1280,7 @@ export class PluginRegistry {
       }
     }
 
-    let owner:
-      | { readonly plugin: LoadedPlugin; readonly command: CommandDefinition }
-      | undefined;
-    for (const plugin of this.plugins) {
-      for (const command of plugin.commands) {
-        if (command.name !== first) continue;
-        if (owner !== undefined) {
-          throw new PluginError(
-            `command "${first}": declared by plugins "${owner.plugin.name}" and "${plugin.name}"`,
-          );
-        }
-        owner = { plugin, command };
-      }
-    }
+    const owner = this.shortCommands.get(first);
     if (owner === undefined) return undefined;
     return {
       plugin: owner.plugin.name,

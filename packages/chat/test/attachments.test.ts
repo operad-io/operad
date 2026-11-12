@@ -89,7 +89,7 @@ describe("chat:send with attachments", () => {
 
 describe("an upload's own type", () => {
   test("a file with no extension keeps the type its upload gave, so it is an image to the agent", async () => {
-    const r = await rig(() => reply("seen"), "claude");
+    const r = await rig(() => reply("seen"), undefined, "claude");
     const chat = await r.chat();
     const photo = stored(r, chat, "camera", "12345");
     writeFileSync(join(dirname(photo), ".meta.json"), JSON.stringify({ name: "camera", type: "image/png", size: 5 }));
@@ -102,7 +102,7 @@ describe("an upload's own type", () => {
 
 describe("chat/reply with attachments", () => {
   test("an image reaches the claude harness as image input, and as a path in the prompt", async () => {
-    const r = await rig(() => reply("seen"), "claude");
+    const r = await rig(() => reply("seen"), undefined, "claude");
     const chat = await r.chat();
     const photo = stored(r, chat, "photo.png", "12345");
     const doc = stored(r, chat, "notes.pdf", "abc");
@@ -117,7 +117,7 @@ describe("chat/reply with attachments", () => {
   });
 
   test("a harness that takes no images gets the image as a path only", async () => {
-    const r = await rig(() => reply("seen"), "radian");
+    const r = await rig(() => reply("seen"), undefined, "radian");
     const chat = await r.chat();
     const photo = stored(r, chat, "photo.png", "12345");
     await send(r, chat, { note: "look", attachments: [photo] });
@@ -127,7 +127,7 @@ describe("chat/reply with attachments", () => {
   });
 
   test("a path outside the chat's attachment directory is never given as an image", async () => {
-    const r = await rig(() => reply("x"), "claude");
+    const r = await rig(() => reply("x"), undefined, "claude");
     const chat = await r.chat();
     const elsewhere = join(r.root, "secret.png");
     writeFileSync(elsewhere, "x");
@@ -145,6 +145,7 @@ describe("chat/reply with attachments", () => {
         seen.push(ctx.access);
         return reply("x");
       },
+      undefined,
       "claude",
     );
     const seen: unknown[] = [];
@@ -164,7 +165,7 @@ describe("chat/reply with attachments", () => {
     const r = await rig((ctx: StepContext) => {
       seen.push(ctx.access);
       return reply("x");
-    }, "claude");
+    }, undefined, "claude");
     const chat = await r.chat({ access: { denyPaths: ["/x"] } });
     await r.say(chat, "plain");
     await r.round(chat);
