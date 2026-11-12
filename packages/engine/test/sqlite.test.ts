@@ -36,6 +36,16 @@ function withDatabase<T>(directory: string, fn: (database: Database) => T): T {
   }
 }
 
+function hasObject(directory: string, type: "table" | "index", name: string): boolean {
+  return withDatabase(directory, (database) =>
+    database
+      .query<{ name: string }, [string, string]>(
+        "SELECT name FROM sqlite_master WHERE type = ? AND name = ?",
+      )
+      .get(type, name) !== null,
+  );
+}
+
 function open(directory: string, options?: LogBackendOptions) {
   return openSqliteLogBackend(dbPath(directory), options);
 }
@@ -218,6 +228,37 @@ test("opens a schema_version 1 store and adds the access column", async () => {
     expect(stored?.access).toEqual({ network: "all" });
   } finally {
     await backend.close();
+  }
+});
+
+test("a current store missing a base table or index is repaired on open", async () => {
+  const missing = [
+    { label: "facts", statement: "DROP TABLE facts", type: "table", name: "facts" },
+    { label: "inputs", statement: "DROP TABLE inputs", type: "table", name: "inputs" },
+    {
+      label: "runs-one-active",
+      statement: "DROP INDEX runs_one_active",
+      type: "index",
+      name: "runs_one_active",
+    },
+  ] as const;
+
+  for (const item of missing) {
+    const directory = tracked(`repair-${item.label}`);
+    const first = await open(directory);
+    await first.close();
+    withDatabase(directory, (database) => database.exec(item.statement));
+
+    const backend = await open(directory);
+    try {
+      const run = await backend.startRun("flow", "object");
+      await backend.append(run.runId, 0, [{ kind: "seed", payload: {}, cause: 1 }]);
+      await backend.recordInput(run.runId, "source", "key", {});
+      expect(await backend.runs()).toHaveLength(1);
+    } finally {
+      await backend.close();
+    }
+    expect(hasObject(directory, item.type, item.name)).toBe(true);
   }
 });
 

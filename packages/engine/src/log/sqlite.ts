@@ -308,9 +308,13 @@ function readSchemaVersion(database: Database): number | undefined {
  */
 function schemaNeedsWork(database: Database): boolean {
   return (
-    inputsNeedMigration(database) ||
+    !hasTable(database, "runs") ||
+    !hasTable(database, "facts") ||
+    !hasTable(database, "inputs") ||
     !hasTable(database, "global_facts") ||
     !hasTable(database, "outcomes") ||
+    !hasIndex(database, "runs_one_active") ||
+    inputsNeedMigration(database) ||
     !tableColumns(database, "runs").some((item) => item.name === "start_input_id") ||
     !tableColumns(database, "global_facts").some((item) => item.name === "unique_key") ||
     !hasIndex(database, "global_facts_unique_key")
@@ -355,10 +359,10 @@ function ensureSchema(database: Database, path: string): void {
   // A current store needs none of it, so opening it stays read-only.
   if (!schemaNeedsWork(database)) return;
   database.transaction(() => {
+    // Recreate any base table or index a store lost; every statement is
+    // `IF NOT EXISTS`, so an existing object is left as it is.
+    database.exec(SCHEMA);
     if (inputsNeedMigration(database)) migrateInputs(database);
-    if (!hasTable(database, "global_facts") || !hasTable(database, "outcomes")) {
-      database.exec(SCHEMA);
-    }
     const runsHaveStartInput = tableColumns(database, "runs").some(
       (item) => item.name === "start_input_id",
     );
