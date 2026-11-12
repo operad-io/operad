@@ -118,6 +118,7 @@ export default definePlugin({
     {
       name: "make",
       on: "item",
+      creates: "item",
       args: {
         type: "object",
         properties: { opens: { type: "string" } },

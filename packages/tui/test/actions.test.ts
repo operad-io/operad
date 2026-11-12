@@ -404,3 +404,90 @@ describe("a refusal line", () => {
     expect(noticeText(done)).toBe("T-0001-one is already cancelled; nothing to do");
   });
 });
+
+describe("an action that creates another type", () => {
+  const CREATING = action("dev:chat", { on: "repo", creates: "chat", note: "message" });
+
+  test("it is not on its parent's page: not the main action, not in the footer, not in the palette", () => {
+    const state = opened([CREATING, action("tuitest:approve")]);
+    expect(footerText(state).startsWith("a tuitest:approve · j/k")).toBe(true);
+    expect(footerText(state)).not.toContain("dev:chat");
+    const named = (from: TuiState) =>
+      paletteEntries(press(from, ":")).filter((entry) => entry.group === "actions").map((entry) => entry.name);
+    expect(named(state)).toEqual(["tuitest:approve"]);
+    const only = opened([CREATING]);
+    expect(footerText(only)).not.toContain("dev:chat");
+    expect(named(only)).toEqual([]);
+  });
+
+  test("a repository's page and its palette list no creating action, even though the chat tab does", () => {
+    let state = initialState({ width: 120 });
+    state = reduce(state, {
+      type: "types",
+      types: [
+        { type: "repo", title: "Repository", plugin: "dev" },
+        { type: "chat", title: "Chat", plugin: "chat", parents: ["repo"] },
+      ],
+    });
+    state = reduce(state, {
+      type: "rows",
+      tabId: "plugin:dev",
+      rows: [{ id: "repo:ops", title: "ops", state: "", waiting: false, running: false }],
+    });
+    state = press(state, String(state.tabs.findIndex((tab) => tab.id === "plugin:dev") + 1), "enter");
+    state = reduce(state, {
+      type: "object",
+      object: {
+        id: "repo:ops",
+        type: "repo",
+        link: "x",
+        row: { id: "repo:ops", title: "ops", state: "", waiting: false, running: false },
+        sections: [],
+        actions: [CREATING, action("dev:plan", { on: "repo" })],
+      },
+    });
+    state = press(state, ":");
+    const names = paletteEntries(state).map((entry) => entry.name);
+    expect(names).toContain("dev:plan");
+    expect(names).not.toContain("dev:chat");
+    expect(names).not.toContain("new chat");
+  });
+
+  test("c on a chat tab with no chat yet offers every parent, and choosing one starts the creating action", () => {
+    let state = initialState({ width: 120 });
+    state = reduce(state, {
+      type: "types",
+      types: [
+        { type: "repo", title: "Repository", plugin: "dev" },
+        { type: "chat", title: "Chat", plugin: "chat", parents: ["repo", "bot"] },
+      ],
+    });
+    state = reduce(state, {
+      type: "rows",
+      tabId: "plugin:dev",
+      rows: [{ id: "repo:ops", title: "ops", state: "", waiting: false, running: false }],
+    });
+    const chatTab = state.tabs.findIndex((tab) => tab.id === "plugin:chat");
+    state = press(state, String(chatTab + 1), "c");
+    expect(state.input).toMatchObject({ kind: "palette", query: "new chat" });
+    const offered = paletteEntries(state).filter((entry) => entry.command?.kind === "create");
+    expect(offered.map((entry) => entry.title)).toEqual(["start a new chat in repo:ops"]);
+    state = press(state, "enter");
+    expect(state.object?.id).toBe("repo:ops");
+    expect(state.objectRequest?.id).toBe("repo:ops");
+    state = reduce(state, {
+      type: "object",
+      object: {
+        id: "repo:ops",
+        type: "repo",
+        link: "x",
+        row: { id: "repo:ops", title: "ops", state: "", waiting: false, running: false },
+        sections: [],
+        actions: [CREATING],
+      },
+    });
+    expect(state.creating).toBeUndefined();
+    expect(state.input?.kind).toBe("note");
+  });
+
+});

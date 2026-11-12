@@ -10,6 +10,7 @@ import {
   type JsonValue,
   type PluginStepResult,
   type StepContext,
+  type TriggerEvent,
 } from "@operad-io/engine";
 import { createBotPlugin, syncBots } from "../src/index.ts";
 
@@ -53,7 +54,7 @@ export function writeConfig(home: string, bots: Record<string, unknown>): void {
   );
 }
 
-export async function rig(bots: Record<string, unknown> = {}, harnesses = ["claude", "pi"]) {
+export async function rig(bots: Record<string, unknown> = {}, harnesses = ["claude", "pi"], onEvent?: (event: TriggerEvent) => void) {
   const root = await mkdtemp(join(tmpdir(), "bot-test-"));
   roots.push(root);
   const home = join(root, "home");
@@ -68,6 +69,7 @@ export async function rig(bots: Record<string, unknown> = {}, harnesses = ["clau
       store,
       settings: { bot: { bots } },
       onLog: () => undefined,
+      ...(onEvent === undefined ? {} : { onEvent }),
     },
   );
   await syncBots(store, home, { bots: bots as Record<string, JsonValue> });

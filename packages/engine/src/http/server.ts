@@ -466,13 +466,24 @@ function createHandler(
         plugin: string;
         filters?: readonly { name: string; states?: readonly string[] | undefined }[];
         defaultFilter?: string;
+        parents?: readonly string[];
       }[] = [];
       for (const entry of options.registry.objectTypes()) {
         if (seen.has(entry.type)) continue;
         if (options.registry.viewsFor(entry.type) === undefined) continue;
         seen.add(entry.type);
         const filters = typeFilters(entry.definition);
+        // The types an action that creates this one works on: where a client offers a new one.
+        const parents = [
+          ...new Set(
+            options.registry
+              .actions()
+              .filter((action) => action.creates === entry.type)
+              .map((action) => action.on),
+          ),
+        ];
         types.push({
+          ...(parents.length === 0 ? {} : { parents }),
           type: entry.type,
           title: displayNameOf(entry.type),
           plugin: entry.plugin,

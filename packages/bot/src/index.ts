@@ -10,7 +10,7 @@
  */
 
 import { mkdirSync } from "node:fs";
-import { CHAT_TYPE, chatData, createChat } from "@operad-io/chat";
+import { CHAT_TYPE, chatData, createChat, sendMessage, titleFromMessage } from "@operad-io/chat";
 import { definePlugin, isRecord, type ActionArgsSchema, type ActionTypeDefinition, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
@@ -140,6 +140,13 @@ function chatArgs(harnesses: readonly string[], botHarness: unknown): ActionArgs
         description: "One of the loaded harness plugins. It cannot change later.",
       },
       title: { type: "string", minLength: 1, maxLength: 120, description: "What the chat is called." },
+      message: {
+        type: "string",
+        role: "note",
+        minLength: 1,
+        description:
+          "The first message; the chat is created and the message sent in one step. The title is taken from its start when none is given.",
+      },
     },
     additionalProperties: false,
   };
@@ -148,6 +155,7 @@ function chatArgs(harnesses: readonly string[], botHarness: unknown): ActionArgs
 const chatAction: ActionTypeDefinition = {
   name: "chat",
   on: BOT_TYPE,
+  creates: "chat",
   args: chatArgs([], undefined),
   argsFor: (object, env) => chatArgs(env.harnesses ?? [], object.data.harness),
   when: (state, env) => state.removed !== true && typeof state.problem !== "string" && (env.harnesses ?? []).length > 0,
@@ -158,7 +166,7 @@ const chatAction: ActionTypeDefinition = {
     return undefined;
   },
   async run(ctx, args) {
-    const input = args as { readonly harness?: string; readonly title?: string };
+    const input = args as { readonly harness?: string; readonly title?: string; readonly message?: string };
     const id = await openChat({
       store: ctx.store,
       home: ctx.home,
@@ -166,10 +174,11 @@ const chatAction: ActionTypeDefinition = {
       harnesses: ctx.harnesses,
       bot: ctx.object.id,
       harness: input.harness,
-      title: input.title,
+      title: input.title ?? (input.message === undefined ? undefined : titleFromMessage(input.message)),
       cause: "action:bot/chat",
     });
-    return { text: `opened chat ${id}`, opens: `chat:${id}` };
+    const sent = input.message === undefined ? undefined : await sendMessage(ctx, id, input.message);
+    return { text: `opened chat ${id}${sent === undefined ? "" : `; ${sent}`}`, opens: `chat:${id}` };
   },
 };
 
