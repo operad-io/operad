@@ -110,7 +110,6 @@ const sendAction: ActionTypeDefinition = {
       note: {
         type: "string",
         role: "note",
-        minLength: 1,
         description: "The message. Optional when files are sent.",
       },
       attachments: {
