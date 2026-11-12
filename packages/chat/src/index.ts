@@ -4,6 +4,7 @@ import { defineFlow, definePlugin, type ActionTypeDefinition } from "@operad-io/
 import {
   CHAT_FILTERS,
   CHAT_SOURCES,
+  OTHER_SOURCE,
   CHAT_TYPE,
   chatData,
   chatRef,
@@ -95,7 +96,10 @@ const sendAction: ActionTypeDefinition = {
     }
     const input = args as { readonly note: string; readonly ref?: string };
     const via = ctx.actor.via;
-    const source = CHAT_SOURCES.find((name) => name === via) ?? "cli";
+    // The message records who sent it as it is; the event uses a known source, or
+    // `other` for a client this plugin does not know, so it is still answered.
+    const known = CHAT_SOURCES.find((name) => name === via);
+    const source = known ?? OTHER_SOURCE;
     const id = newMessageId();
     const message: MessageData = {
       id,
@@ -103,7 +107,7 @@ const sendAction: ActionTypeDefinition = {
       from: { via: ctx.actor.via, id: ctx.actor.id },
       text: input.note,
       attachments: [],
-      source: { kind: source, ref: input.ref ?? null },
+      source: { kind: via, ref: input.ref ?? null },
     };
     // The message is a fact first; the event is what starts the answer.
     await ctx.facts.append({ type: MESSAGE_FACT, object: chatRef(ctx.object.id), data: message });
@@ -180,7 +184,7 @@ export function createChatPlugin() {
     flows: [replyFlow],
     // A message from a client or a channel is answered without anyone starting
     // the answer; a user rule for the same source and type replaces these.
-    rules: CHAT_SOURCES.map((source) => ({
+    rules: [...CHAT_SOURCES, OTHER_SOURCE].map((source) => ({
       source,
       type: MESSAGE_EVENT,
       start: { flow: "chat:reply" },

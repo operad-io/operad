@@ -385,3 +385,13 @@ the row fields.
 | T-0344-M2 | packages/tui/src/app.ts | a filter change reloaded the left list but not the open object's next level | `an open plan's next level follows the tab's filter > the default filter lists only its rows and f makes the bar count every task` |
 | T-0344-M3 | packages/tui/src/state.ts | `replacePageRow` kept a child whose new state left the tab's filter | `an open plan's next level follows the tab's filter > a task that becomes merged leaves the active list and joins the hidden count` |
 | T-0344-M4 | packages/tui/src/view/index.ts | the child heading added the filter's hidden children to its numbers again | `the progress bar and its heading > children the filter hid stay out of the heading and the bar` |
+## T-0319 — one list width for every tab
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0319-M1 | packages/tui/src/state.ts | Pending and Running took a wider fixed column again instead of every tab's 26% list, so the divider moved when switching tabs | `the frame follows the terminal > every tab puts the divider in the same column at 80, 120 and 200` |
+## T-0320 — a running row that names an object opens it
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0320-M1 | packages/tui/src/state.ts | a running row was built with `openable: false` again, named or not | `the TUI reducer > a running row that names an object opens it on enter; one without stays closed` |

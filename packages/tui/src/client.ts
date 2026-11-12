@@ -403,6 +403,7 @@ export class TuiClient {
     }
     const headers: Record<string, string> = {
       authorization: `Bearer ${this.token}`,
+      "x-operad-client": "tui",
       accept: "application/json",
     };
     if (options.body !== undefined) {

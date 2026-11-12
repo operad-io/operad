@@ -47,17 +47,30 @@ describe("chat:send", () => {
     });
   });
 
-  test("a client that is not a known source counts as the command line", async () => {
-    const r = await rig(() => reply("x"));
-    const chat = await r.chat();
-    await send(r, chat, "tui", "hi");
-    expect(r.events[0]?.source).toBe("cli");
+  test("a message from each known client is recorded and shown with that client", async () => {
+    for (const via of ["ios", "tui", "cli"]) {
+      const r = await rig(() => reply("x"));
+      const chat = await r.chat();
+      await send(r, chat, via, "hi");
+      expect(allMessages(r.store, chat)[0]?.source.kind).toBe(via);
+      expect(r.events[0]?.source).toBe(via);
+    }
+  });
+
+  test("a client this plugin does not know is recorded as it is, never as cli, and is still answered", async () => {
+    for (const via of ["http", "watch"]) {
+      const r = await rig(() => reply("x"));
+      const chat = await r.chat();
+      await send(r, chat, via, "hi");
+      expect(allMessages(r.store, chat)[0]?.source.kind).toBe(via);
+      expect(r.events[0]?.source).toBe("other");
+    }
   });
 
   test("the plugin's rules start chat:reply, automatically, for each source", async () => {
     const r = await rig(() => reply("x"));
     const rules = r.registry.triggerRules().map((entry) => entry.rule);
-    expect(rules.map((rule) => rule.source).sort()).toEqual(["cli", "ios", "telegram"]);
+    expect(rules.map((rule) => rule.source).sort()).toEqual(["cli", "ios", "other", "telegram", "tui"]);
     for (const rule of rules) {
       expect(rule).toMatchObject({ type: "message", start: { flow: "chat:reply" }, mode: "auto", object: "$event.object" });
     }

@@ -157,13 +157,13 @@ describe("the TUI reducer", () => {
     });
   });
 
-  test("resize crosses 100 columns and carries the theme", () => {
+  test("resize crosses 84 columns and carries the theme", () => {
     let state = initialState({ width: 120, height: 30, theme: "dark" });
     expect(twoPane(state)).toBe(true);
-    state = reduce(state, { type: "resize", width: 99, height: 24 });
+    state = reduce(state, { type: "resize", width: 83, height: 24 });
     expect(twoPane(state)).toBe(false);
     expect(state.height).toBe(24);
-    state = reduce(state, { type: "resize", width: 100, height: 20, theme: "light" });
+    state = reduce(state, { type: "resize", width: 84, height: 20, theme: "light" });
     expect(twoPane(state)).toBe(true);
     expect(state.theme).toBe("light");
     state = reduce(state, { type: "theme", theme: "dark" });
@@ -209,6 +209,32 @@ describe("the TUI reducer", () => {
       state: "flow",
       note: "ask",
     });
+  });
+
+  test("a running row that names an object opens it on enter; one without stays closed", () => {
+    let state = withTypes(initialState({ width: 120 }));
+    state = reduce(state, { type: "key", key: "2" });
+    state = reduce(state, { type: "running", items: [{ ...running, object: "dev/T-1", title: "A" }] });
+    expect(activeTab(state)?.list.rows[0]?.openable).not.toBe(false);
+    // the cursor already rests on it: a follow of the cursor is on the way
+    expect(state.followPending).toBe(true);
+    state = reduce(state, { type: "key", key: "enter" });
+    expect(state.objectRequest?.id).toBe("dev/T-1");
+
+    let bare = withTypes(initialState({ width: 120 }));
+    bare = reduce(bare, { type: "key", key: "2" });
+    bare = reduce(bare, { type: "running", items: [running] });
+    expect(activeTab(bare)?.list.rows[0]?.openable).toBe(false);
+    expect(bare.followPending).toBe(false);
+    bare = reduce(bare, { type: "key", key: "enter" });
+    expect(bare.objectRequest).toBeUndefined();
+  });
+
+  test("the palette opens with : on the Running tab", () => {
+    let state = withTypes(initialState({ width: 120 }));
+    state = reduce(state, { type: "key", key: "2" });
+    state = reduce(state, { type: "key", key: ":" });
+    expect(state.input?.kind).toBe("palette");
   });
 
   test("each list maps its own flags to a row mark", () => {
