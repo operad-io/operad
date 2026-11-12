@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { EFFORT_LEVELS, parseInput } from "../src/protocol.ts";
 import { serveWorker } from "../src/worker.ts";
 import { fakeHooks } from "./fake-hooks.ts";
@@ -1250,4 +1250,25 @@ test("without operadTools claude is given no MCP server", async () => {
   const run = await runFake(setup(), { steps: done });
   const args = (run.record.find((entry) => "spawn" in entry)?.["spawn"] as { args: string[] }).args;
   expect(flagValue(args, "--mcp-config")).toBeUndefined();
+});
+
+test("images are sent with the prompt as image blocks of the one user message", async () => {
+  const s = setup();
+  const photo = join(dirname(s.recordFile), "photo.png");
+  writeFileSync(photo, "PNGDATA");
+  s.input["images"] = [{ path: photo, mediaType: "image/png" }];
+  const run = await runFake(s, { steps: done });
+  expect(run.exitCode).toBe(0);
+  const user = run.record.find((entry) => "user" in entry)?.["user"] as { content: unknown };
+  expect(user.content).toEqual([
+    { type: "text", text: s.input["prompt"] },
+    { type: "image", source: { type: "base64", media_type: "image/png", data: Buffer.from("PNGDATA").toString("base64") } },
+  ]);
+});
+
+test("parseInput refuses an image that is not a path with an image media type", () => {
+  const base = { prompt: "p", cwd: "/c" };
+  expect(parseInput({ ...base, images: [{ path: "/a.png", mediaType: "image/png" }] }).ok).toBe(true);
+  expect(parseInput({ ...base, images: [{ path: "/a.pdf", mediaType: "application/pdf" }] }).ok).toBe(false);
+  expect(parseInput({ ...base, images: "x" }).ok).toBe(false);
 });

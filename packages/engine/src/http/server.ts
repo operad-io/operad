@@ -20,6 +20,7 @@ import {
   type Views,
 } from "../views/presentation.ts";
 import { listRunning } from "../views/running.ts";
+import { Uploads, UploadTooLargeError, MAX_UPLOAD_BYTES } from "../views/uploads.ts";
 import { validateListenAddresses } from "./address.ts";
 import {
   ensureHttpToken,
@@ -44,8 +45,11 @@ export function clientName(header: string | null): string {
 /** How often a running server checks whether `http token rotate` replaced the token. */
 export const DEFAULT_TOKEN_CHECK_MS = 1_000;
 
-/** The largest request body `serve` accepts, in bytes. */
+/** The largest JSON request body `serve` accepts, in bytes. */
 export const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+
+/** How often a running server removes the uploads no action used. */
+export const DEFAULT_UPLOAD_SWEEP_MS = 10 * 60 * 1000;
 
 export interface HttpServerOptions {
   readonly home: string;
@@ -60,6 +64,11 @@ export interface HttpServerOptions {
   readonly maxEventIds?: number | undefined;
   readonly keepAliveMs?: number | undefined;
   readonly tokenCheckMs?: number | undefined;
+  /** How long an upload no action used stays; default one hour. */
+  readonly uploadTtlMs?: number | undefined;
+  readonly uploadSweepMs?: number | undefined;
+  /** The largest upload in bytes; default 20 MB. */
+  readonly uploadLimitBytes?: number | undefined;
   readonly clock?: (() => number) | undefined;
   /** How long `stop` waits for the addresses to release; default 5 seconds. */
   readonly stopTimeoutMs?: number | undefined;
@@ -421,16 +430,42 @@ export function eventResponse(
   return new Response(stream, { headers: SSE_HEADERS });
 }
 
+/** A request body over the limit: the status line is 413. */
+class BodyTooLarge extends Error {}
+
 async function readBody(request: Request): Promise<unknown> {
+  // The listener takes bodies as large as an upload, so a JSON body is held to its own limit here.
+  const declared = Number(request.headers.get("content-length") ?? "0");
+  if (declared > MAX_REQUEST_BODY_BYTES) throw new BodyTooLarge();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  if (request.body !== null) {
+    const reader = request.body.getReader();
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      size += chunk.value.byteLength;
+      if (size > MAX_REQUEST_BODY_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new BodyTooLarge();
+      }
+      chunks.push(chunk.value);
+    }
+  }
   try {
-    return await request.json();
+    return JSON.parse(new TextDecoder().decode(Buffer.concat(chunks)));
   } catch {
     throw new ViewError("args", "the request body is not valid JSON");
   }
 }
 
+function megabytes(bytes: number): string {
+  return `${Math.floor(bytes / (1024 * 1024))} MB`;
+}
+
 function createHandler(
   options: HttpServerOptions,
+  uploads: Uploads,
   hub: EventHub,
   streams: StreamRegistry,
   onLog: (message: string) => void,
@@ -585,6 +620,44 @@ function createHandler(
       );
     }
 
+    if (path === "/v1/uploads") {
+      if (method !== "POST") {
+        return errorResponse(405, "method", "this endpoint takes POST");
+      }
+      // The body is the file itself, streamed to disk; the name and the type travel beside it.
+      const name = url.searchParams.get("name") ?? "";
+      if (name.trim().length === 0) {
+        return errorResponse(400, "args", "the request needs a name query for the file");
+      }
+      const limit = uploads.limit;
+      const declared = Number(request.headers.get("content-length") ?? "0");
+      if (declared > limit) {
+        // The body is never read; the connection ends so its leftover bytes
+        // are not taken for the next request.
+        const refused = errorResponse(
+          413,
+          "too-large",
+          `the file is larger than the ${megabytes(limit)} limit`,
+        );
+        refused.headers.set("connection", "close");
+        return refused;
+      }
+      try {
+        const info = await uploads.save(
+          request.body,
+          name,
+          request.headers.get("content-type") ?? "",
+        );
+        void uploads.sweep().catch(() => undefined);
+        return json(info, 201);
+      } catch (error) {
+        if (error instanceof UploadTooLargeError) {
+          return errorResponse(413, "too-large", error.message);
+        }
+        throw error;
+      }
+    }
+
     if (method === "POST" && path === "/v1/answer") {
       const body = await readBody(request);
       if (!isRecord(body)) {
@@ -727,6 +800,13 @@ function createHandler(
       }
       return await handle(request, token);
     } catch (error) {
+      if (error instanceof BodyTooLarge) {
+        return errorResponse(
+          413,
+          "too-large",
+          `the request body is larger than the ${megabytes(MAX_REQUEST_BODY_BYTES)} limit`,
+        );
+      }
       if (error instanceof ViewError) return viewErrorResponse(error);
       onLog(`http: ${messageOf(error)}`);
       return errorResponse(500, "internal", "the request failed");
@@ -748,7 +828,18 @@ export async function startHttpServer(
     onLog,
   );
   const streams = new StreamRegistry();
-  const handler = createHandler(options, hub, streams, onLog);
+  const uploads = new Uploads({
+    home: options.home,
+    ...(options.clock === undefined ? {} : { clock: options.clock }),
+    ...(options.uploadTtlMs === undefined ? {} : { ttlMs: options.uploadTtlMs }),
+    ...(options.uploadLimitBytes === undefined ? {} : { limit: options.uploadLimitBytes }),
+  });
+  void uploads.sweep().catch(() => undefined);
+  const uploadSweep = setInterval(() => {
+    void uploads.sweep().catch(() => undefined);
+  }, options.uploadSweepMs ?? DEFAULT_UPLOAD_SWEEP_MS);
+  (uploadSweep as { unref?: () => void }).unref?.();
+  const handler = createHandler(options, uploads, hub, streams, onLog);
   const servers: { readonly address: string; readonly server: ReturnType<typeof Bun.serve> }[] = [];
   const listener = options.listener ?? Bun.serve;
   const wait =
@@ -804,7 +895,8 @@ export async function startHttpServer(
         // An event stream is quiet by design; the 15-second comment keeps it
         // below this idle limit.
         idleTimeout: 30,
-        maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
+        // Room for an upload plus its framing; a JSON body is held to its own limit in `readBody`.
+        maxRequestBodySize: Math.max(MAX_UPLOAD_BYTES, options.uploadLimitBytes ?? 0) * 2,
         fetch: handler,
         error: (error) => {
           onLog(`http: ${messageOf(error)}`);
@@ -815,6 +907,7 @@ export async function startHttpServer(
     }
   } catch (error) {
     clearInterval(tokenCheck);
+    clearInterval(uploadSweep);
     hub.stop();
     streams.closeAll();
     // An address this start already bound and could not release is still held
@@ -835,6 +928,7 @@ export async function startHttpServer(
     port: firstPort,
     async stop() {
       clearInterval(tokenCheck);
+      clearInterval(uploadSweep);
       hub.stop();
       streams.closeAll();
       const unreleased = await stopAll();

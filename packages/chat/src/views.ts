@@ -9,7 +9,7 @@ import type {
   ViewContext,
   ViewSection,
 } from "@operad-io/engine";
-import { chatData, chatRef, MESSAGE_FACT, type Message } from "./model.ts";
+import { attachmentsOf, chatData, chatRef, IMAGE_TYPES, MESSAGE_FACT, type Attachment, type Message } from "./model.ts";
 
 /** How many facts of a chat one page of the transcript reads. */
 export const TRANSCRIPT_PAGE = 50;
@@ -39,11 +39,25 @@ function minute(at: number): string {
   return new Date(at).toISOString().slice(0, 16).replace("T", " ");
 }
 
+/** A path as a Markdown link destination: spaces and parentheses are escaped. */
+function destination(path: string): string {
+  return encodeURI(path).replace(/\(/g, "%28").replace(/\)/g, "%29");
+}
+
+/** One attachment as a line: an image is shown as an image, another file as a link. */
+function attachmentMarkdown(file: Attachment): string {
+  const target = destination(file.path);
+  if ((IMAGE_TYPES as readonly string[]).includes(file.type)) return `![${file.name}](${target})`;
+  return `Attachment: [${file.name}](${target})`;
+}
+
 /** One message as Markdown: who, when and where from, then the text. */
 export function messageMarkdown(message: Message, speaker: string = DEFAULT_SPEAKER): string {
   const who = message.role === "assistant" ? speaker : "you";
   const via = message.role === "user" && message.source.kind.length > 0 ? ` via ${message.source.kind}` : "";
-  return `**${who}**${via} · ${minute(message.at)}\n\n${message.text}`;
+  const head = `**${who}**${via} · ${minute(message.at)}`;
+  const body = [message.text, ...message.attachments.map(attachmentMarkdown)].filter((part) => part.length > 0);
+  return [head, ...body].join("\n\n");
 }
 
 /**
@@ -85,7 +99,7 @@ function messageFrom(fact: {
     role: data.role,
     from: { via: "", id: "" },
     text: data.text,
-    attachments: [],
+    attachments: attachmentsOf(data.attachments),
     source: {
       kind: typeof source.kind === "string" ? source.kind : "",
       ref: typeof source.ref === "string" ? source.ref : null,

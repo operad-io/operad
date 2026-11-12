@@ -1100,3 +1100,33 @@ test("parseInput takes operadTools with a home and refuses one without", () => {
   expect(parseInput({ ...base, operadTools: { home: "/h" } }).ok).toBe(true);
   expect(parseInput({ ...base, operadTools: {} })).toEqual({ ok: false, message: "operadTools must be an object with a home" });
 });
+
+test("images are given to pi with the prompt: the model's context holds the image", async () => {
+  const s = setup();
+  const photo = join(s.dir, "photo.png");
+  // A 1x1 PNG: pi resizes an image before it keeps it, so the bytes must be a real one.
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  writeFileSync(photo, png);
+  const contexts = join(s.dir, "contexts.jsonl");
+  const run = await runFake(
+    s,
+    [{ text: "I see it" }],
+    { ...s.input, images: [{ path: photo, mediaType: "image/png" }] },
+    { FAKE_CONTEXT_FILE: contexts },
+  );
+  expect(run.exitCode).toBe(0);
+  const first = JSON.parse(readFileSync(contexts, "utf-8").split("\n")[0] ?? "[]") as { role: string; content: unknown }[];
+  const user = first.find((message) => message.role === "user");
+  const content = user?.content as { type: string; mimeType?: string }[];
+  expect(content.map((part) => part.type)).toEqual(["text", "image"]);
+  expect(content[1]?.mimeType).toBe("image/png");
+});
+
+test("parseInput refuses an image that is not a path with an image media type", () => {
+  const base = { prompt: "p", cwd: "/c", authPath: "/a", modelsPath: "/m", agentDir: "/d", sessionDir: "/s" };
+  expect(parseInput({ ...base, images: [{ path: "/a.png", mediaType: "image/png" }] }).ok).toBe(true);
+  expect(parseInput({ ...base, images: [{ path: "/a.pdf", mediaType: "application/pdf" }] }).ok).toBe(false);
+});

@@ -559,3 +559,28 @@ test("a glob is judged by its literal prefix: refused when it can reach a denied
   expect(bash(PATHS, "cat /tmp/{a,b}/x")).toEqual({ allow: true });
   expect(bash(PATHS, "cat /tmp/[[:digit:]]x/id")).toEqual({ allow: true });
 });
+
+test("readPaths lets a read through a deny of its ancestor and nothing else", () => {
+  const profile: AccessProfile = {
+    denyPaths: ["/home/u/.operad/attachments", "/home/u/.operad/store"],
+    readPaths: ["/home/u/.operad/attachments/chat/C-0001"],
+  };
+  const read = (path: string, tool = "read"): ReturnType<typeof match> =>
+    match(profile, { tool, input: { path }, cwd: CWD }, { home: HOME });
+  expect(read("/home/u/.operad/attachments/chat/C-0001/m/a.png")).toEqual({ allow: true });
+  expect(read("/home/u/.operad/attachments/chat/C-0001", "ls")).toEqual({ allow: true });
+  // Another chat's directory, a path that climbs out, and the rest of the home stay denied.
+  expect(read("/home/u/.operad/attachments/chat/C-0002/m/a.png").allow).toBe(false);
+  expect(read("/home/u/.operad/attachments/chat/C-0001/../C-0002/a.png").allow).toBe(false);
+  expect(read("/home/u/.operad/store/log.sqlite").allow).toBe(false);
+  // A write there asks; it does not go through.
+  const write = read("/home/u/.operad/attachments/chat/C-0001/m/a.png", "write");
+  expect(write.allow).toBe(false);
+  // A command that only reads may use it; one that writes or reads elsewhere may not.
+  expect(bash(profile, "cat /home/u/.operad/attachments/chat/C-0001/m/a.txt")).toEqual({ allow: true });
+  expect(bash(profile, "cat /home/u/.operad/attachments/chat/C-0002/m/a.txt").allow).toBe(false);
+  expect(bash(profile, "cat /home/u/.operad/attachments/chat/C-0001/m/a.txt /home/u/.operad/store/x").allow).toBe(false);
+  expect(bash(profile, "rm /home/u/.operad/attachments/chat/C-0001/m/a.txt").allow).toBe(false);
+  expect(readProfile({ readPaths: ["/x"] })).toEqual({ ok: true, profile: { readPaths: ["/x"] } });
+  expect(readProfile({ readPaths: "/x" }).ok).toBe(false);
+});

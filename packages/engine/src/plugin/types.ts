@@ -746,6 +746,11 @@ export interface ActionArgSchema {
   readonly description?: string | undefined;
   /** A note is prompted for in a terminal and accepted as `--note`. */
   readonly role?: "note" | undefined;
+  /**
+   * `"file"`: the value is a file a client uploaded; the client passes the
+   * upload's reference and the action runs with the stored path.
+   */
+  readonly format?: "file" | undefined;
   /** In a settings schema: a client may change this setting. */
   readonly editable?: boolean | undefined;
   /** In a settings schema: changing it needs the person's confirmation. */

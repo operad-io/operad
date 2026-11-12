@@ -36,6 +36,13 @@ export interface AccessProfile {
    * Deny wins over it.
    */
   readonly readOnly?: boolean | undefined;
+  /**
+   * Directories the agent may read although `denyPaths` covers them (an
+   * ancestor of one is denied): a read tool (`read`, `grep`, `find`, `ls`) or a
+   * `bash` command that only reads may touch a path under one. Writes there ask,
+   * and every other denied path stays denied.
+   */
+  readonly readPaths?: readonly string[] | undefined;
   /** Permissions not yet used; the caller uses one up before it lets a call through. */
   readonly grants?: readonly AccessGrant[] | undefined;
 }
@@ -92,13 +99,13 @@ export function readProfile(value: unknown): ProfileRead {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return { ok: false, message: "the access profile must be an object" };
   }
-  const found: { denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; readOnly?: boolean; grants?: AccessGrant[] } = {};
+  const found: { denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; readPaths?: string[]; readOnly?: boolean; grants?: AccessGrant[] } = {};
   const readOnly: unknown = Reflect.get(value, "readOnly");
   if (readOnly !== undefined) {
     if (typeof readOnly !== "boolean") return { ok: false, message: "readOnly must be true or false" };
     found.readOnly = readOnly;
   }
-  for (const field of ["denyPaths", "denyCommands", "askCommands", "askPaths"] as const) {
+  for (const field of ["denyPaths", "denyCommands", "askCommands", "askPaths", "readPaths"] as const) {
     const entry: unknown = Reflect.get(value, field);
     if (entry === undefined) continue;
     if (!Array.isArray(entry) || !entry.every((item): item is string => typeof item === "string")) {
@@ -152,10 +159,13 @@ interface Denied {
   readonly entries: ReadonlyArray<{ readonly written: string; readonly path: string }>;
   readonly cwd: string;
   readonly home: string;
+  /** Normalised directories this call may read through a deny (`readPaths`). */
+  readonly readable: readonly string[];
 }
 
 function checkPath(denied: Denied, path: string, cwd: string = denied.cwd, written: string = path): Verdict {
   const normal = normalise(path, cwd, denied.home);
+  if (denied.readable.some((entry) => isUnder(normal, entry))) return ALLOW;
   for (const entry of denied.entries) {
     if (isUnder(normal, entry.path)) {
       return { allow: false, reason: `path "${written}" is under denyPaths entry "${entry.written}"`, rule: entry.written };
@@ -216,6 +226,7 @@ function expandWord(word: string, home: string): Expanded {
 function checkGlob(denied: Denied, text: string, cwd: string, written: string): Verdict {
   const prefix = text.slice(0, text.search(GLOB_META));
   const absolute = posix.normalize(prefix.startsWith("/") ? prefix : `${cwd}/${prefix}`);
+  if (denied.readable.some((entry) => isUnder(absolute, entry))) return ALLOW;
   for (const entry of denied.entries) {
     if (entry.path.startsWith(absolute) || absolute.startsWith(entry.path)) {
       return { allow: false, reason: `path "${written}" can match a path under denyPaths entry "${entry.written}"`, rule: entry.written };
@@ -458,12 +469,21 @@ function askBash(profile: AccessProfile, command: string, asked: AskedPaths | un
 export function match(given: AccessProfile, call: ToolCall, options: MatchOptions = {}): Verdict {
   const home = options.home ?? homedir();
   // A read-only working directory is a directory whose writes ask.
+  // A directory that may be read is one whose writes ask.
+  const readPaths = (given.readPaths ?? []).filter((written) => written.length > 0);
+  const asking = [...(given.readOnly === true ? [call.cwd] : []), ...readPaths];
   const profile: AccessProfile =
-    given.readOnly === true ? { ...given, askPaths: [...(given.askPaths ?? []), call.cwd] } : given;
+    asking.length > 0 ? { ...given, askPaths: [...(given.askPaths ?? []), ...asking] } : given;
   const entries = (profile.denyPaths ?? [])
     .filter((written) => written.length > 0)
     .map((written) => ({ written, path: normalise(written, call.cwd, home) }));
-  const denied: Denied | undefined = entries.length > 0 ? { entries, cwd: call.cwd, home } : undefined;
+  // Only a call that reads may go through a deny by way of `readPaths`.
+  const reads =
+    call.tool === "bash"
+      ? typeof call.input["command"] === "string" && isReadOnlyCommand(call.input["command"])
+      : call.tool === "read" || call.tool === "grep" || call.tool === "find" || call.tool === "ls";
+  const readable = reads ? readPaths.map((written) => normalise(written, call.cwd, home)) : [];
+  const denied: Denied | undefined = entries.length > 0 ? { entries, cwd: call.cwd, home, readable } : undefined;
 
   if (call.tool === "bash") {
     const command: unknown = call.input["command"];

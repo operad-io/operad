@@ -11,6 +11,7 @@ import {
   CLOSED_FACT,
   MESSAGE_EVENT,
   MESSAGE_FACT,
+  attachmentOf,
   newMessageId,
   type ClosedData,
   type MessageData,
@@ -77,6 +78,7 @@ export async function sendMessage(
   chatId: string,
   note: string,
   ref?: string,
+  files: readonly string[] = [],
 ): Promise<string> {
   const via = ctx.actor.via;
   // The message records who sent it as it is; the event uses a known source, or
@@ -89,7 +91,7 @@ export async function sendMessage(
     role: "user",
     from: { via: ctx.actor.via, id: ctx.actor.id },
     text: note,
-    attachments: [],
+    attachments: files.map((path) => attachmentOf(path)),
     source: { kind: via, ref: ref ?? null },
   };
   // The message is a fact first; the event is what starts the answer.
@@ -109,7 +111,12 @@ const sendAction: ActionTypeDefinition = {
         type: "string",
         role: "note",
         minLength: 1,
-        description: "The message.",
+        description: "The message. Optional when files are sent.",
+      },
+      attachments: {
+        type: "array",
+        items: { type: "string", format: "file" },
+        description: "Files sent with the message, as uploaded by the client.",
       },
       ref: {
         type: "string",
@@ -117,7 +124,6 @@ const sendAction: ActionTypeDefinition = {
         description: "The message's id where it came from, such as a Telegram message id.",
       },
     },
-    required: ["note"],
     additionalProperties: false,
   },
   when: (state) => !chatData(state).closed,
@@ -129,8 +135,16 @@ const sendAction: ActionTypeDefinition = {
     if (chatData(stored.data).closed) {
       throw new Error(`chat ${ctx.object.id} is closed; it takes no messages`);
     }
-    const input = args as { readonly note: string; readonly ref?: string };
-    return sendMessage(ctx, ctx.object.id, input.note, input.ref);
+    const input = args as {
+      readonly note?: string;
+      readonly ref?: string;
+      readonly attachments?: readonly string[];
+    };
+    const files = input.attachments ?? [];
+    if ((input.note ?? "").trim().length === 0 && files.length === 0) {
+      throw new Error("a message needs text or an attachment; pass --note <text>");
+    }
+    return sendMessage(ctx, ctx.object.id, input.note ?? "", input.ref, files);
   },
 };
 

@@ -32,6 +32,7 @@ import {
   flagValue,
   hasGrants,
   inboxOf,
+  imageInputsOf,
   operadToolsOf,
   JsonlLog,
   modelLimit,
@@ -234,7 +235,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
         // `waiting`: a question about a call was not answered within the grace.
         results: ["done", "failed", "interrupted", "waiting"],
         // The deny and ask fields are applied in the worker's tool_call hook.
-        enforces: ["denyPaths", "denyCommands", "askCommands", "askPaths"],
+        enforces: ["denyPaths", "denyCommands", "askCommands", "askPaths", "readPaths"],
         timeoutSecs: STEP_TIMEOUT_SECS,
         // The model the step uses: its `--model` argument, else the setting.
         limit: modelLimit("pi", (params, settings) => {
@@ -358,6 +359,9 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
             ...(bashTimeoutSecs === undefined ? {} : { bashTimeoutSecs }),
             ...(operadTools === undefined ? {} : { operadTools }),
+            ...(imageInputsOf(input.images ?? flow.images).length === 0
+              ? {}
+              : { images: imageInputsOf(input.images ?? flow.images) }),
             ...(isRecord(ctx.access) ? { access: ctx.access } : {}),
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };

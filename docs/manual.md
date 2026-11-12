@@ -452,7 +452,8 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 | `GET /v1/running` | The same list as `operad running`. Each item has `runId`, `flow`, `step`, `stepLabel`, `queued`, `startedAt` and `elapsedMs` (the run's age), and: `object`, the object's id as rows and `operad show` name it (for example `operad/T-0048-type-filters`), or `null` for a run with no object; `title`, that object's row title, or `null` when there is no object or the lookup failed (a failed lookup never fails the list); `stepStartedAt` and `stepElapsedMs`, when the current step's current attempt started and how long it has run (`null` before the first step); `mark`, the object's row mark (one of the [row marks](#row-marks)), left out when the row has none or cannot be built. The step time starts again when the step changes and on a new attempt. |
 | `GET /v1/objects/<id>` | `{ "id", "type", "link", "row", "sections", "actions" }`: the link that opens the object, the row, the section directory, and the actions available now with their `args` schema, `note` field and `confirm` flag. |
 | `GET /v1/objects/<id>/sections/<section>?cursor=<c>&full=<bool>` | `{ "markdown": "...", "next": "<c>" }`. `full=true` skips the size cap. |
-| `POST /v1/act` | Runs one action. The body is `{ "action": "plugin:action", "id": "<id>", "args": {...}, "note": "...", "confirmed": true }`; only `action` is always required, and an action that targets an object also needs `id`. An action with `confirm: true` needs `"confirmed": true`. The body is at most 1 MiB; a larger one gets `413`. |
+| `POST /v1/act` | Runs one action. The body is `{ "action": "plugin:action", "id": "<id>", "args": {...}, "note": "...", "confirmed": true }`; only `action` is always required, and an action that targets an object also needs `id`. An action with `confirm: true` needs `"confirmed": true`. The body is at most 1 MiB; a larger one gets `413`. An argument the action's schema declares with `"format": "file"` (a string, or a list of strings) takes the `ref` of an upload; the action runs with the path the file is stored at. |
+| `POST /v1/uploads?name=<file name>` | Uploads a file for an action's file argument. The body is the file itself, streamed; its `content-type` header is kept as the file's type. The answer is `201` and `{ "ref", "name", "type", "size" }`. A file larger than 20 MB gets `413` and a message naming the limit. The `ref` works once: the action that takes it moves the file into the target object's attachment directory under the operad home (`attachments/<type>/<id>/`), and a second use is refused with `400`. An upload no action took within an hour is removed. |
 | `POST /v1/answer` | Answers an open question of a pending item. The body is `{ "runId": "<item runId>", "waitId": "<item waitId>", "choice": "<one of the item's choices>", "note": "...", "confirmed": true }`; `runId`, `waitId` and `choice` are required, and `note` and `confirmed` are optional. When every choice is also an action on the item's object (a `dev` wait), it runs that action, so the action's note and confirmation apply; a confirmed action needs `"confirmed": true` just as it does for `/v1/act`. An answer to a question that is already closed gets `409` and is not applied. |
 | `GET /v1/events` | An SSE stream of changes. |
 
@@ -1365,6 +1366,15 @@ messages no reply answers yet from the chat's own record, continues the harness
 session, records the reply, and goes round again while new messages came in
 meanwhile (at most 20 rounds). After a restart a reply that was already
 recorded is not given twice.
+
+`chat:send` takes `attachments`: files a client uploaded (`POST /v1/uploads`),
+which are stored under the chat's attachment directory in the operad home. A
+message may be only files. The transcript shows each as a line with its name
+(an image as an image, another file as an `Attachment:` link). The reply gives
+an image to `claude` and `pi` as image input (up to 5 MB each) and every file to
+the agent as a path in the prompt; the chat's access profile gains read access
+to that chat's attachment directory (`readPaths`) and nothing else. The MCP tools
+cannot pass a file; a client uploads it.
 
 `chat:close C-0001` asks for confirmation and records a `chat.closed` fact. A
 closed chat keeps its transcript, refuses `chat:send` with a short message and
