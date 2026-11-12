@@ -1142,8 +1142,15 @@ export interface PluginShape {
   readonly objectsUnderSettings?: boolean | undefined;
   /** Settings files this plugin keeps under a registered repository's `.operad/`. */
   readonly projectSettings?: ProjectSettingsDeclaration | undefined;
-  /** A harness plugin: the models a chat may pick (empty list: none can be chosen). */
-  readonly models?: HarnessModels | undefined;
+  /**
+   * A harness plugin: the models a chat may pick (empty list: none can be
+   * chosen). A function is called with the plugin's settings each time the
+   * list is read, so a harness can ask the agent itself.
+   */
+  readonly models?:
+    | HarnessModels
+    | ((settings: Readonly<Record<string, JsonValue>>) => HarnessModels)
+    | undefined;
   /** A harness plugin: the efforts a chat may pick (empty list: none can be chosen). */
   readonly efforts?: HarnessEfforts | undefined;
   /** Access profile fields this plugin's steps apply. */

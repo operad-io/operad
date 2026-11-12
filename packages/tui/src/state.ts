@@ -151,6 +151,10 @@ export interface TuiSection {
   readonly scroll: number;
   /** A live section keeps its end in view. */
   readonly following: boolean;
+  /** The opaque position the finished content has reached; a refresh reads after it. */
+  readonly mark?: string | undefined;
+  /** The part that is still changing: drawn after the content, in the weak colour. */
+  readonly tail?: string | undefined;
   /** Grows with each content change; an older answer is dropped. */
   readonly version: number;
 }
@@ -679,6 +683,8 @@ export type TuiStateEvent =
       readonly marks?: readonly number[] | undefined;
       /** For a replace: the table-of-contents index of the first page, kept from before. */
       readonly start?: number | undefined;
+      /** The read asked with the last mark; the answer appends when it is a delta. */
+      readonly after?: boolean | undefined;
     }
   | {
       readonly type: "section-error";
@@ -1136,6 +1142,25 @@ export function sectionLayout(
   );
 }
 
+/**
+ * The rows of a section's changing tail, laid out as Markdown at the pane's
+ * width. The view draws them weak and after the content.
+ */
+export function sectionTailLayout(
+  state: TuiState,
+  section: TuiSection,
+): readonly LayoutLine[] {
+  if (section.tail === undefined || section.tail === "") return [];
+  const object = state.object;
+  const key = `${object?.version ?? 0}\u0000${object?.id ?? ""}\u0000${section.id}\u0000tail`;
+  return cachedLayout(key, section.version, section.tail, sectionWidth(state));
+}
+
+/** The rows a section takes on screen: its content, then its changing tail. */
+export function sectionLineCount(state: TuiState, section: TuiSection): number {
+  return sectionLayout(state, section).length + sectionTailLayout(state, section).length;
+}
+
 /** The layout's fixed columns (0-based): the list, its divider, the object pane. */
 export const LIST_X = 1;
 /** The list takes about 26% of the terminal, between these two widths, on every tab. */
@@ -1289,7 +1314,7 @@ function withSection(
 }
 
 function bottomScroll(state: TuiState, section: TuiSection): number {
-  return Math.max(0, sectionLayout(state, section).length - sectionViewport(state));
+  return Math.max(0, sectionLineCount(state, section) - sectionViewport(state));
 }
 
 /** Asks for a section's first page or its next one, once. */
@@ -1591,6 +1616,7 @@ function applySection(
   jump: number | undefined,
   marks: readonly number[] | undefined,
   start: number | undefined,
+  after: boolean,
 ): TuiState {
   const object = state.object;
   if (object === undefined || object.id !== objectId) return state;
@@ -1599,11 +1625,14 @@ function applySection(
   if (version !== undefined && version !== section.version) return state;
   // A page asked for before the object was closed and opened again.
   if (objectVersion !== undefined && objectVersion !== object.version) return state;
-  const appended = cursor !== undefined && jump === undefined;
-  const markdown =
-    !appended
-      ? content.markdown
-      : joinMarkdown(section.markdown, content.markdown);
+  // A page read appends one page; a read after the mark appends what follows it
+  // only when the plugin says its answer is the delta. Anything else replaces.
+  const pageAppend = cursor !== undefined && jump === undefined;
+  const afterAppend = after && content.delta === true;
+  const appended = pageAppend || afterAppend;
+  const markdown = appended
+    ? joinMarkdown(section.markdown, content.markdown)
+    : content.markdown;
   const capped = !full && isTruncated(markdown);
   const updated = withSection(state, sectionId, (value) => {
     const next: TuiSection = {
@@ -1614,11 +1643,19 @@ function applySection(
       loading: false,
       full: full || value.full,
       capped,
-      pages: appended ? value.pages + 1 : (pages ?? 1),
-      pageStart: jump ?? (appended ? value.pageStart : (start ?? 0)),
-      pageMarks: appended
+      pages: pageAppend ? value.pages + 1 : appended ? value.pages : (pages ?? 1),
+      pageStart: jump ?? (pageAppend ? value.pageStart : (start ?? 0)),
+      pageMarks: pageAppend
         ? [...value.pageMarks, markPage(section.markdown, content.markdown)]
-        : (marks ?? []),
+        : appended
+          ? value.pageMarks
+          : (marks ?? []),
+      // The answer's mark is the section's position now; a read that gives none
+      // makes the next refresh read the section whole, as before.
+      mark: content.mark,
+      // The answer's tail is the whole current tail; a page read that leaves it
+      // out keeps the one shown.
+      tail: pageAppend && content.tail === undefined ? value.tail : content.tail,
       ...(content.pages === undefined ? {} : { toc: content.pages }),
       error: undefined,
       version: value.version + 1,
@@ -2835,6 +2872,7 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
         event.jump,
         event.marks,
         event.start,
+        event.after === true,
       );
     case "section-error":
       return applySectionError(

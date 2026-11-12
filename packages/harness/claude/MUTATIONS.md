@@ -123,6 +123,11 @@ setup it depends on, in the order they were recorded. The root
 | T-0339-M18 | packages/harness/claude/src/worker.ts | claude's prompt went as text only, dropping the images | `images are sent with the prompt as image blocks of the one user message` |
 | T-0358-M9 | packages/harness/claude/src/index.ts | the step did not hand its lines to the receiver | `claude/agent > a receiver gets each line the step writes to its log; without one the log is the same` |
 
+## T-0366 — allow_always
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0366-M7 | packages/harness/claude/src/index.ts | the step did not merge the user layer into the profile it passed to the worker | `claude: a call that must ask a person > answered allow_always writes the user layer, and the next identical call does not ask` |
 ## T-0359 — the live increment lines, full ends and tool output
 
 | id | file | mutation | failing test |
@@ -138,3 +143,10 @@ setup it depends on, in the order they were recorded. The root
 | T-0359-M9 | packages/harness/claude/src/worker.ts | `includePartialMessages` was not set, so claude sent no increments | `claude asks for partial messages so the increments can be written` |
 | T-0359-M11 | packages/harness/claude/src/worker.ts | an increment line no longer held back a suffix that is a prefix of a secret, so joining the grouped deltas exposed the secret | `a secret split across grouped increments is not exposed by joining the deltas` |
 | T-0359-M12 | packages/harness/claude/src/worker.ts | `flushDelta(true)` dropped a held suffix that only resembled a secret prefix instead of writing it as the last increment | `a block ending in a secret prefix writes that held suffix as its last increment` |
+
+## T-0367 — releasing held text on every end path
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0367-M1 | packages/harness/claude/src/worker.ts | `finish` wrote the Result without releasing the text held back as a possible secret prefix | `a cancelled stream releases text held back as a possible secret` |
+

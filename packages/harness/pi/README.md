@@ -65,10 +65,22 @@ types appear, in the order the run produces them:
 |---|---|---|
 | `message_end` | `role` (`"assistant"`), `text` (optional: the first 300 characters of the message's text as one paragraph; thinking and tool calls left out), `stopReason` (string), `usage` (`{input, output, cache_read, cache_write}`, numbers), `cost` (`{total}` in USD, or `null` when pi gave no price) | an assistant message finished; only assistant messages are written |
 | `tool_execution_start` | `toolCallId`, `toolName`, `at`, `input` (optional) | a tool call began. `at` is the start time in epoch milliseconds. `input` says what ran: for `Bash` the command (one line, first 500 characters), for `Read`, `Edit` and `Write` the path, for another tool its main argument (path, pattern, query, URL or description) when it has one; absent otherwise. Never file contents or tool output. A command shows the values of leading environment assignments (`NAME=value`) as `NAME=***`, masks any value of the operad secret store or of a secret-named environment variable (`KEY`, `TOKEN`, `SECRET`, `PASS`, `PASSWORD`, `AUTH`, `CREDENTIAL`; 6 characters or more) as `***`, and shows `<command not shown: could not read it safely>` for a command it cannot read (an open quote, or a command or process substitution, heredoc or arithmetic in a leading assignment). A call the access profile denies shows `<tool> denied by the access profile`, never its arguments |
-| `tool_execution_end` | `toolCallId`, `toolName`, `isError`, `durationMs`, `error` (optional) | a tool call ended. `durationMs` is how long the call took, measured from its start line. `error` is the first line of the error (at most 300 characters) when `isError` is true; the rest of the error and every successful result stay out of the log |
+| `tool_execution_end` | `toolCallId`, `toolName`, `isError`, `durationMs`, `error` (optional) | a tool call ended. `durationMs` is how long the call took, measured from its start line. `error` is the first line of the error (at most 300 characters) when `isError` is true; the rest of the error stays out of this line. A refused call writes no `tool_output` |
+| `tool_output` | `toolCallId`, `text`, `truncated` (optional `true`) | what a tool call printed, as text cut to 64 KiB of UTF-8; `truncated` is true when it was cut. Written before the call's `tool_execution_end` |
+| `text_delta` | `text` | new assistant text only, not the text so far; at most one line per 100 ms, the rest grouped |
+| `thinking_delta` | `text` | new thinking only, not the thinking so far; at most one line per 100 ms, the rest grouped |
+| `text_end` | `text` | the full text of a finished assistant message, after its increments |
+| `thinking_end` | `text` | the full text of a finished thinking block, after its increments |
 | `blocked` | `toolName`, `reason` | the access matcher refused a tool call; the call does not run: its `tool_execution_end` has `isError: true` and the model gets `reason` as the tool result. The run continues |
 | `agent_settled` | `aborted` (boolean) | pi has stopped for good (not `agent_end`, after which pi may continue) |
 | `result` | see below | always the last line |
+
+Every `text_delta`, `thinking_delta`, `text_end`, `thinking_end` and
+`tool_output` line replaces each value of `secretValues` with `***`, as the
+tool call input does. An increment that would end inside a secret value, or
+inside its JSON-escaped spelling, holds the rest of it back for the next
+increment, so a receiver that joins the increments never sees the value whole;
+when the run stops, what is still held is written before the Result.
 
 ### Result
 
@@ -159,6 +171,7 @@ param (`wallTimeSecs`, `stallSecs`) overrides the setting of the same name.
 | setting | type | default | meaning |
 |---|---|---|---|
 | `model` | string `provider/id` | unset | the model; unset uses pi's own default model |
+| `models` | list of `provider/id` | unset | the models a chat may pick; unset offers every model `pi --list-models` prints |
 | `thinkingLevel` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` | unset | the reasoning level; unset uses pi's default |
 | `command` | string | `pi` | the pi command: a name on PATH or a path; it must lead into an installed `@earendil-works/pi-coding-agent` at the floor version or newer |
 | `authPath` | string | `~/.pi/agent/auth.json` | pi's credentials file; the plugin passes the path and never reads the file |
@@ -233,24 +246,33 @@ call finds the grant used and is checked against the profile as usual.
 A call the profile's `askCommands` matches (and that no deny rule matched: deny
 wins over ask) asks a person instead of running. The step keeps the worker's
 stdin open. The worker writes `{"type":"ask_call","id":n,"kind":"command","value":"<the whole command>","shown":"...","session":"<session>"|null}`
-and holds the call; the host asks with `ctx.ask` (choices `allow_once` and
-`reject_once`, the grace period of the kernel: 10 minutes by default, set by
-`ask.graceSecs`, `askGraceSecs` of the step or the question) and answers on
+and holds the call; the host asks with `ctx.ask` (choices `allow_once`,
+`allow_always` and `reject_once`, the grace period of the kernel: 10 minutes by
+default, set by `ask.graceSecs`, `askGraceSecs` of the step or the question) and
+answers on
 stdin `{"type":"ask_ack","id":n,"decision":"allow"|"deny"|"stop","reason"?}`,
 after which the worker writes `{"type":"ask_resolved","id":n}`. Questions go
 one at a time. A command that holds a value of the operad secret store is
 refused and never asked about, so no fact holds a secret.
 
 - Answered within the grace period (`allow`): the same step goes on and this one
-  call runs; nothing is kept for another call. `reject_once` is `deny`.
+  call runs. `allow_once` keeps nothing for another call; `allow_always` also
+  appends the exact command or tool, path and working directory to
+  `$OPERAD_HOME/access-user.json`, so later runs read it from the profile's
+  `alwaysAllow` entries. `reject_once` is `deny`.
 - Not answered in time (`stop`): the worker holds the call, the host ends the
   program, and the step ends `waiting` (the result is declared). The one pending
   item stays, with the run's object. The flow's `waiting` route goes to a wait
   for a person and back to the step.
 - Answered later: the step runs again with `resumeSession`, `askAnswer` and
-  `grants: [{ waitId, kind, value }]` for `allow_once`. The worker uses the grant
-  for the one call it covers (`grant_use`, above); any other call asks again.
-  After `reject_once` no grant arrives and the model is told so in the prompt.
+  `grants: [{ waitId, kind, value }]` for `allow_once` or `allow_always`. The
+  worker uses the grant for the one call it covers (`grant_use`, above); an
+  `allow_always` answer also writes its entry to the user layer first. Any other
+  call asks again. After `reject_once` no grant arrives and the model is told so
+  in the prompt.
+- A run no person's message started (a schedule, a webhook or another event)
+  neither reads the user layer nor offers `allow_always` (`operad-sandbox.md`
+  decision 8).
 
 The host's half (`createCallAsker`, `askCall`, `askRequest`) is in
 `@operad-io/harness-process`. `askCommands` is in the step's `enforces`.

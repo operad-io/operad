@@ -12,8 +12,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { TOOL_OUTPUT_CAP_BYTES } from "@operad-io/harness-process";
 import { parseInput, THINKING_LEVELS } from "../../src/protocol.ts";
-import { boundedTimeout, serveWorker } from "../../src/worker.ts";
+import { boundedTimeout, serveWorker, toolOutputOf } from "../../src/worker.ts";
 import { fakeHooks } from "../fake-hooks.ts";
 
 const FAKE_WORKER = join(import.meta.dir, "..", "fake-worker.ts");
@@ -270,8 +271,12 @@ test("a prompt that ends writes the lines in order and a Result with usage, cost
   const run = await runFake(s, [{ text: "ANSWER", cost: 0.0015 }]);
 
   expect(run.exitCode).toBe(0);
-  expect(kinds(run)).toEqual(["message_end", "agent_settled", "result"]);
-  expect(run.lines[0]).toEqual({
+  expect(kinds(run)).toEqual(["text_delta", "text_end", "message_end", "agent_settled", "result"]);
+  expect(run.lines[0]).toEqual({ type: "text_delta", text: "ANSW" });
+  // The increment that was still grouped when the message ended is left to the
+  // full text, so the two are the message's text.
+  expect(run.lines[1]).toEqual({ type: "text_end", text: "ANSWER" });
+  expect(run.lines[2]).toEqual({
     type: "message_end",
     role: "assistant",
     text: "ANSWER",
@@ -279,7 +284,7 @@ test("a prompt that ends writes the lines in order and a Result with usage, cost
     usage: { input: 12, output: 6, cache_read: 3, cache_write: 2 },
     cost: { total: 0.0015 },
   });
-  expect(run.lines[1]).toEqual({ type: "agent_settled", aborted: false });
+  expect(run.lines[3]).toEqual({ type: "agent_settled", aborted: false });
 
   const result = last(run);
   expect(result["result"]).toBe("done");
@@ -305,13 +310,20 @@ test("usage and cost are summed over every message_end, with a tool call between
   expect(kinds(run)).toEqual([
     "message_end",
     "tool_execution_start",
+    "tool_output",
     "tool_execution_end",
+    "text_delta",
+    "text_end",
     "message_end",
     "agent_settled",
     "result",
   ]);
-  expect(run.lines[1]).toMatchObject({ toolName: "read" });
-  expect(run.lines[2]).toMatchObject({ toolName: "read", isError: false });
+  const start = run.lines.find((line) => line["type"] === "tool_execution_start");
+  const end = run.lines.find((line) => line["type"] === "tool_execution_end");
+  expect(start).toMatchObject({ toolName: "read" });
+  expect(end).toMatchObject({ toolName: "read", isError: false });
+  const output = run.lines.find((line) => line["type"] === "tool_output");
+  expect(output).toMatchObject({ toolCallId: start?.["toolCallId"], text: "x\n" });
   const result = last(run);
   expect(result["usage"]).toEqual({ input: 24, output: 16, cache_read: 6, cache_write: 4 });
   expect(result["cost"]).toEqual({ micros: 3 });
@@ -401,7 +413,7 @@ test("a model with no price has cost.micros null", async () => {
   const run = await runFake(s, [{ text: "ANSWER", noPrice: true }]);
 
   expect(run.exitCode).toBe(0);
-  expect(run.lines[0]).toMatchObject({ type: "message_end", cost: null });
+  expect(run.lines.find((line) => line["type"] === "message_end")).toMatchObject({ type: "message_end", cost: null });
   expect(last(run)).toMatchObject({ result: "done", cost: null, finalMessage: "ANSWER" });
 });
 
@@ -586,6 +598,28 @@ test("SIGTERM during a slow fake stream writes a cancelled Result and exits 143"
   expect(typeof last(run)["sessionId"]).toBe("string");
   expect(kinds(run).filter((kind) => kind === "result").length).toBe(1);
   expect(kinds(run).at(-1)).toBe("result");
+});
+
+test("a run stopped mid-message writes the text it had not grouped yet", async () => {
+  const s = setup();
+  const child = new Child({ FAKE_SCRIPT: JSON.stringify([{ text: "0123456789ABCDEF", endless: true }]) });
+  const first = new Promise<void>((resolve) => {
+    child.onLine((line) => {
+      if (line["type"] === "text_delta") resolve();
+    });
+  });
+  child.sendLine(JSON.stringify(s.input));
+  await first;
+  child.signal("SIGTERM");
+  const run = await child.finish();
+
+  expect(run.exitCode).toBe(143);
+  const said = run.lines
+    .filter((line) => line["type"] === "text_delta")
+    .map((line) => String(line["text"]))
+    .join("");
+  expect(said).toBe("0123456789ABCDEF");
+  expect(last(run)).toMatchObject({ type: "result", result: "cancelled" });
 });
 
 test("a real worker process reads and creates nothing under HOME .pi, and its shell does not read BASH_ENV", async () => {
@@ -956,7 +990,9 @@ test("a bash call logs its command, its start time and its duration, and no outp
   const { start, end } = toolLines(run);
   expect(start[0]).toMatchObject({ toolName: "bash", at: BASE, input: "echo OUTPUT-MARKER-$((1+1))" });
   expect(end[0]).toMatchObject({ isError: false, durationMs: 72000 });
-  expect(run.raw.join("\n")).not.toContain("OUTPUT-MARKER-2");
+  const output = run.lines.find((line) => line["type"] === "tool_output");
+  expect(output).toMatchObject({ toolCallId: start[0]?.["toolCallId"], text: "OUTPUT-MARKER-2\n" });
+  expect(output?.["truncated"]).toBeUndefined();
 });
 
 test("a long command is cut at 500 characters", async () => {
@@ -968,13 +1004,13 @@ test("a long command is cut at 500 characters", async () => {
   expect(String(toolLines(run).start[0]?.["input"]).length).toBe(500);
 });
 
-test("a read logs its path and not the file", async () => {
+test("a read logs its path as its input and its content as its output", async () => {
   const s = setup();
   const note = join(s.dir, "note.txt");
   writeFileSync(note, "FILE-BODY-MARKER\n");
   const run = await runFake(s, [{ text: "", toolCall: { name: "read", arguments: { path: note } } }, { text: "ok" }]);
   expect(toolLines(run).start[0]?.["input"]).toBe(note);
-  expect(run.raw.join("\n")).not.toContain("FILE-BODY-MARKER");
+  expect(run.lines.find((line) => line["type"] === "tool_output")).toMatchObject({ text: "FILE-BODY-MARKER\n" });
 });
 
 test("a failed tool logs the first line of its error", async () => {
@@ -1008,6 +1044,180 @@ test("an assistant message logs at most 300 characters of its text", async () =>
   const line = run.lines.find((l) => l["type"] === "message_end");
   expect(String(line?.["text"]).length).toBe(300);
   expect(String(line?.["text"]).startsWith("line one line two zzz")).toBe(true);
+});
+
+/* ---- the shared process lines (T-0360) ---- */
+
+test("thinking streams as increments and ends with the full block, which message_end leaves out", async () => {
+  const s = setup();
+  const run = await runFake(s, [{ thinking: "THINKING", text: "" }]);
+
+  expect(run.exitCode).toBe(0);
+  expect(kinds(run)).toEqual(["thinking_delta", "thinking_end", "message_end", "agent_settled", "result"]);
+  expect(run.lines[0]).toEqual({ type: "thinking_delta", text: "THIN" });
+  expect(run.lines[1]).toEqual({ type: "thinking_end", text: "THINKING" });
+  const ended = run.lines.find((line) => line["type"] === "message_end");
+  expect(ended).toMatchObject({ type: "message_end", role: "assistant" });
+  expect(ended?.["text"]).toBeUndefined();
+});
+
+test("increments are grouped to one line per stream per 100 ms, with an injected clock", async () => {
+  const s = setup();
+  const text = await runFake(
+    s,
+    [{ text: "0123456789ABCDEF" }],
+    s.input,
+    { FAKE_CLOCK_STEP: "60" },
+  );
+  // Four chunks of four characters; the first goes out at once and the next
+  // two are grouped when 100 ms have passed. The last is left to text_end.
+  expect(text.lines.filter((line) => line["type"] === "text_delta").map((line) => line["text"])).toEqual([
+    "0123",
+    "456789AB",
+  ]);
+  expect(text.lines.find((line) => line["type"] === "text_end")?.["text"]).toBe("0123456789ABCDEF");
+
+  const thinking = await runFake(
+    s,
+    [{ thinking: "0123456789ABCDEF", text: "" }],
+    s.input,
+    { FAKE_CLOCK_STEP: "60" },
+  );
+  expect(thinking.lines.filter((line) => line["type"] === "thinking_delta").map((line) => line["text"])).toEqual([
+    "0123",
+    "456789AB",
+  ]);
+  expect(thinking.lines.find((line) => line["type"] === "thinking_end")?.["text"]).toBe("0123456789ABCDEF");
+});
+
+test("a tool call's output is written with its call id, and a refused call writes none", async () => {
+  const s = setup();
+  const run = await runFake(s, [
+    { text: "", toolCall: { name: "bash", arguments: { command: "echo OUTPUT-MARKER" } } },
+    { text: "done" },
+  ]);
+  const start = toolLines(run).start[0];
+  const output = run.lines.find((line) => line["type"] === "tool_output");
+  expect(output).toEqual({
+    type: "tool_output",
+    toolCallId: start?.["toolCallId"],
+    text: "OUTPUT-MARKER\n",
+  });
+
+  const secrets = join(s.dir, "secrets");
+  const blocked = await runFake(
+    s,
+    [
+      { text: "", toolCall: { name: "read", arguments: { path: join(secrets, "key") } } },
+      { text: "done" },
+    ],
+    { ...s.input, access: { denyPaths: [secrets] } },
+  );
+  expect(blocked.lines.some((line) => line["type"] === "tool_output")).toBe(false);
+});
+
+test("tool output is cut to the shared cap and marked truncated", () => {
+  const capped = toolOutputOf("x".repeat(TOOL_OUTPUT_CAP_BYTES + 10), []);
+  expect(capped.text.length).toBe(TOOL_OUTPUT_CAP_BYTES);
+  expect(capped.truncated).toBe(true);
+  expect(toolOutputOf("short", []).truncated).toBeUndefined();
+});
+
+test("secret values are masked in the new text, thinking and tool output lines", async () => {
+  const s = setup();
+  s.input["secretValues"] = ["store-secret-9"];
+  const run = await runFake(s, [
+    {
+      thinking: "weigh store-secret-9",
+      text: "the key is store-secret-9",
+      toolCall: { name: "bash", arguments: { command: "echo store-secret-9" } },
+    },
+    { text: "done" },
+  ]);
+
+  expect(run.lines.find((line) => line["type"] === "thinking_end")?.["text"]).toBe("weigh ***");
+  expect(
+    run.lines.find((line) => line["type"] === "text_end" && String(line["text"]).includes("key"))?.["text"],
+  ).toBe("the key is ***");
+  expect(run.lines.find((line) => line["type"] === "tool_output")?.["text"]).toBe("***\n");
+  const added = run.lines.filter((line) =>
+    ["text_delta", "thinking_delta", "text_end", "thinking_end", "tool_output"].includes(String(line["type"])),
+  );
+  expect(JSON.stringify(added)).not.toContain("store-secret-9");
+});
+
+test("a secret split across increment lines is held back, so no line carries a piece of it", async () => {
+  const s = setup();
+  s.input["secretValues"] = ["store-secret-9"];
+  const text = "AAAAstore-secret-9BBBB";
+
+  const run = await runFake(s, [{ text }], s.input, { FAKE_CLOCK_STEP: "60" });
+  const deltas = run.lines
+    .filter((line) => line["type"] === "text_delta")
+    .map((line) => String(line["text"]));
+  // The batch that would have ended inside the secret waits for it to finish.
+  expect(deltas).toEqual(["AAAA", "***BB"]);
+  expect(deltas.join("")).not.toContain("store");
+  expect(run.lines.find((line) => line["type"] === "text_end")?.["text"]).toBe("AAAA***BBBB");
+
+  const thinking = await runFake(s, [{ thinking: text, text: "" }], s.input, { FAKE_CLOCK_STEP: "60" });
+  const pieces = thinking.lines
+    .filter((line) => line["type"] === "thinking_delta")
+    .map((line) => String(line["text"]));
+  expect(pieces).toEqual(["AAAA", "***BB"]);
+  expect(pieces.join("")).not.toContain("store");
+  expect(thinking.lines.find((line) => line["type"] === "thinking_end")?.["text"]).toBe("AAAA***BBBB");
+});
+
+test("a JSON-escaped secret split across increment lines is held back too", async () => {
+  const s = setup();
+  s.input["secretValues"] = ['a"b'];
+  // The escaped spelling `a\"b`, with a flush between its `a\"` and its `b`.
+  const text = 'AAAAAa\\"bBBBB';
+
+  const run = await runFake(s, [{ text }], s.input, { FAKE_CLOCK_STEP: "110" });
+  const said = run.lines
+    .filter((line) => line["type"] === "text_delta")
+    .map((line) => String(line["text"]))
+    .join("");
+  expect(said).not.toContain('a\\"b');
+  expect(said).toContain("***");
+  expect(run.lines.find((line) => line["type"] === "text_end")?.["text"]).toBe("AAAAA***BBBB");
+});
+
+test("a cancelled stream releases text held back as a possible secret", async () => {
+  const s = setup();
+  s.input["secretValues"] = ["store-secret-9"];
+
+  const text = new Child({ FAKE_SCRIPT: JSON.stringify([{ text: "AAAAstore", endless: true }]) });
+  text.sendLine(JSON.stringify(s.input));
+  await text.stderrHas("fake-stream-endless");
+  text.signal("SIGTERM");
+  const textRun = await text.finish();
+  const saidText = textRun.lines
+    .filter((line) => line["type"] === "text_delta")
+    .map((line) => String(line["text"]))
+    .join("");
+  expect(saidText).toBe("AAAAstore");
+  expect(saidText).not.toContain("store-secret-9");
+  expect(last(textRun)).toMatchObject({ type: "result", result: "cancelled" });
+
+  const thinking = new Child({ FAKE_SCRIPT: JSON.stringify([{ thinking: "AAAAstore", text: "", endless: true }]) });
+  thinking.sendLine(JSON.stringify(s.input));
+  await thinking.stderrHas("fake-stream-endless");
+  thinking.signal("SIGTERM");
+  const thinkingRun = await thinking.finish();
+  const saidThinking = thinkingRun.lines
+    .filter((line) => line["type"] === "thinking_delta")
+    .map((line) => String(line["text"]))
+    .join("");
+  expect(saidThinking).toBe("AAAA");
+  // pi ends the stopped block with its full text, which carries the held part.
+  expect(String(thinkingRun.lines.find((line) => line["type"] === "thinking_end")?.["text"]).endsWith("store")).toBe(
+    true,
+  );
+  expect(JSON.stringify(thinkingRun.lines)).not.toContain("store-secret-9");
+  expect(last(thinkingRun)).toMatchObject({ type: "result", result: "cancelled" });
 });
 
 test("a secret of the operad store sent as secretValues is masked in the logged command", async () => {

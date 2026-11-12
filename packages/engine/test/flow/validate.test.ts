@@ -121,6 +121,53 @@ describe("validateFlow", () => {
     expect(error.message).toContain("not a result");
   });
 
+  test("accepts an edge for a late answer a timed-out step may hand over", () => {
+    const flow = validateFlow({
+      name: "late",
+      entry: "ask",
+      steps: [
+        {
+          id: "ask",
+          kind: "wait_person",
+          params: {
+            prompt: "Continue?",
+            choices: ["allow_once", "reject_once"],
+            lateChoices: ["allow_always"],
+          },
+          replay: "safe",
+          next: {
+            allow_once: "done",
+            allow_always: "done",
+            reject_once: "done",
+            interrupted: "done",
+          },
+        },
+        endStep("done"),
+      ],
+    });
+    expect(flow.steps[0]?.kind).toBe("wait_person");
+  });
+
+  test("names a lateChoices field that is not an array of strings", () => {
+    const error = errorOf(() =>
+      validateFlow({
+        name: "late",
+        entry: "ask",
+        steps: [
+          {
+            id: "ask",
+            kind: "wait_person",
+            params: { prompt: "Continue?", choices: ["yes"], lateChoices: "late" },
+            replay: "safe",
+            next: { yes: "done", interrupted: "done" },
+          },
+          endStep("done"),
+        ],
+      }),
+    );
+    expect(error.message).toContain("params.lateChoices");
+  });
+
   test("names an unknown plugin step type", () => {
     const error = errorOf(() =>
       validateFlow({

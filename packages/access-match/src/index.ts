@@ -18,6 +18,20 @@ export interface AccessGrant {
   readonly tool?: string;
 }
 
+/**
+ * A call a person allowed always, from the access profile's user layer. A
+ * command entry is the exact command text and its working directory; a path
+ * entry is the tool, the path and the working directory
+ * (`operad-sandbox.md` decisions 4 and 11).
+ */
+export interface AlwaysAllowEntry {
+  readonly kind: "command" | "path";
+  readonly value: string;
+  readonly cwd: string;
+  /** The tool a path entry names; absent for a command entry. */
+  readonly tool?: string;
+}
+
 export interface AccessProfile {
   readonly denyPaths?: readonly string[] | undefined;
   readonly denyCommands?: readonly string[] | undefined;
@@ -51,6 +65,12 @@ export interface AccessProfile {
   readonly allowMcp?: readonly string[] | undefined;
   /** Permissions not yet used; the caller uses one up before it lets a call through. */
   readonly grants?: readonly AccessGrant[] | undefined;
+  /**
+   * Calls a person answered `allow_always` for: they run without asking, and
+   * only after every deny passed. The harness leaves them out in a background
+   * run (`operad-sandbox.md` decisions 8 and 11).
+   */
+  readonly alwaysAllow?: readonly AlwaysAllowEntry[] | undefined;
 }
 
 export interface ToolCall {
@@ -105,7 +125,7 @@ export function readProfile(value: unknown): ProfileRead {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return { ok: false, message: "the access profile must be an object" };
   }
-  const found: { denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; readPaths?: string[]; allowMcp?: string[]; readOnly?: boolean; grants?: AccessGrant[] } = {};
+  const found: { denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; readPaths?: string[]; allowMcp?: string[]; readOnly?: boolean; grants?: AccessGrant[]; alwaysAllow?: AlwaysAllowEntry[] } = {};
   const readOnly: unknown = Reflect.get(value, "readOnly");
   if (readOnly !== undefined) {
     if (typeof readOnly !== "boolean") return { ok: false, message: "readOnly must be true or false" };
@@ -118,6 +138,36 @@ export function readProfile(value: unknown): ProfileRead {
       return { ok: false, message: `${field} must be an array of strings` };
     }
     found[field] = entry;
+  }
+  const alwaysAllow: unknown = Reflect.get(value, "alwaysAllow");
+  if (alwaysAllow !== undefined) {
+    if (!Array.isArray(alwaysAllow)) return { ok: false, message: "alwaysAllow must be an array" };
+    const read: AlwaysAllowEntry[] = [];
+    for (const entry of alwaysAllow) {
+      if (typeof entry !== "object" || entry === null) {
+        return { ok: false, message: "each alwaysAllow entry must be an object" };
+      }
+      const kind: unknown = Reflect.get(entry, "kind");
+      const text: unknown = Reflect.get(entry, "value");
+      const cwd: unknown = Reflect.get(entry, "cwd");
+      const tool: unknown = Reflect.get(entry, "tool");
+      if ((kind !== "command" && kind !== "path") || typeof text !== "string" || text.length === 0) {
+        return { ok: false, message: "each alwaysAllow entry needs a kind (command or path) and a value" };
+      }
+      if (typeof cwd !== "string" || cwd.length === 0) {
+        return { ok: false, message: "each alwaysAllow entry needs the working directory it was allowed in" };
+      }
+      if (kind === "path" && (typeof tool !== "string" || tool.length === 0)) {
+        return { ok: false, message: "an alwaysAllow path entry needs the tool it was allowed for" };
+      }
+      read.push({
+        kind,
+        value: text,
+        cwd,
+        ...(kind === "path" ? { tool: tool as string } : {}),
+      });
+    }
+    found.alwaysAllow = read;
   }
   const grants: unknown = Reflect.get(value, "grants");
   if (grants !== undefined) {
@@ -159,6 +209,28 @@ function normalise(path: string, cwd: string, home: string): string {
 
 function isUnder(path: string, entry: string): boolean {
   return path === entry || path.startsWith(entry === "/" ? "/" : `${entry}/`);
+}
+
+/** Whether a person allowed this exact call always; never a deny, and never another cwd. */
+function alwaysAllowed(profile: AccessProfile, call: ToolCall): boolean {
+  for (const entry of profile.alwaysAllow ?? []) {
+    if (entry.cwd !== call.cwd) continue;
+    if (entry.kind === "command") {
+      if (call.tool === "bash" && call.input["command"] === entry.value) return true;
+      if (call.tool === MCP_TOOL) {
+        const server: unknown = call.input["server"];
+        const tool: unknown = call.input["tool"];
+        if (typeof server === "string" && typeof tool === "string" && mcpCallValue(server, tool) === entry.value) {
+          return true;
+        }
+      }
+      continue;
+    }
+    if (call.tool !== entry.tool) continue;
+    const path: unknown = call.input["path"] ?? call.input["file_path"];
+    if (typeof path === "string" && path === entry.value) return true;
+  }
+  return false;
 }
 
 interface Denied {
@@ -523,6 +595,9 @@ export function match(given: AccessProfile, call: ToolCall, options: MatchOption
     const command: unknown = call.input["command"];
     if (typeof command !== "string") return ALLOW;
     const verdict = checkBash(profile, command, denied);
+    // A deny stays a deny; only an ask can be lifted by an always-allowed entry.
+    if (!verdict.allow && verdict.ask !== true) return verdict;
+    if (alwaysAllowed(profile, call)) return ALLOW;
     if (!verdict.allow) return verdict;
     const asked = askBash(profile, command, askedPaths(profile, call.cwd, home), call.cwd, home);
     if (!asked.allow) return asked;
@@ -532,7 +607,11 @@ export function match(given: AccessProfile, call: ToolCall, options: MatchOption
     }
     return asked;
   }
-  if (call.tool === MCP_TOOL) return matchMcp(profile, call);
+  if (call.tool === MCP_TOOL) {
+    // An allow_always answer to an unlisted tool is its exact command entry.
+    if (alwaysAllowed(profile, call)) return ALLOW;
+    return matchMcp(profile, call);
+  }
   if (PATH_TOOLS.has(call.tool)) {
     const path: unknown = call.input["path"] ?? call.input["file_path"];
     if (typeof path === "string" && path.length > 0) {
@@ -540,6 +619,8 @@ export function match(given: AccessProfile, call: ToolCall, options: MatchOption
         const verdict = checkPath(denied, path);
         if (!verdict.allow) return verdict;
       }
+      // An always-allowed entry lifts the ask, never a deny.
+      if (alwaysAllowed(profile, call)) return ALLOW;
       // Ask comes after deny: a write to a path that is asked about asks.
       const asked = call.tool === "write" || call.tool === "edit" ? askedPaths(profile, call.cwd, home) : undefined;
       const hit = asked === undefined ? undefined : askedRule(asked, normalise(path, call.cwd, home));

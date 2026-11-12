@@ -156,7 +156,7 @@ describe("claude: a call that must ask a person", () => {
       const pending = await listPending(env.log, env.registry);
       expect(pending).toHaveLength(1);
       expect(pending[0]?.object).toBe(OBJECT);
-      expect(pending[0]?.choices).toEqual(["allow_once", "reject_once"]);
+      expect(pending[0]?.choices).toEqual(["allow_once", "allow_always", "reject_once"]);
       expect(pending[0]?.prompt).toContain("git push");
 
       await recordAnswer({ log: env.log, runId: env.runId, choice: "allow_once", actor: ACTOR });
@@ -210,7 +210,7 @@ describe("claude: a call that must ask a person", () => {
       const pending = await listPending(env.log, env.registry);
       expect(pending).toHaveLength(1);
       expect(pending[0]?.object).toBe(OBJECT);
-      expect(pending[0]?.choices).toEqual(["allow_once", "reject_once"]);
+      expect(pending[0]?.choices).toEqual(["allow_once", "allow_always", "reject_once"]);
       expect(pending[0]?.prompt).toContain("git push");
       const result = (await facts(env.log, env.runId)).find((fact) => fact.kind === "step_result");
       expect(result?.payload).toMatchObject({
@@ -222,6 +222,85 @@ describe("claude: a call that must ask a person", () => {
           },
         },
       });
+    } finally {
+      await env.log.close();
+    }
+  }, 30_000);
+
+  test("answered allow_always writes the user layer, and the next identical call does not ask", async () => {
+    const env = await setup();
+    try {
+      const run = env.runner(new FakeTimer()).run();
+      await env.opened(1);
+      await recordAnswer({ log: env.log, runId: env.runId, choice: "allow_always", actor: ACTOR });
+      expect(await run).toBe("ended");
+      expect(env.ack()).toEqual({ type: "ask_ack", id: 7, decision: "allow" });
+      const path = join(env.root, "access-user.json");
+      expect(JSON.parse(readFileSync(path, "utf8"))).toEqual([
+        { kind: "command", value: "git push origin main", cwd: env.root },
+      ]);
+
+      setEnv("FAKE_CLAUDE_MODE", "always");
+      const next = await env.log.startRun(env.flow.name, OBJECT);
+      const again = new Runner({
+        log: env.log,
+        flow: env.flow,
+        runId: next.runId,
+        registry: env.registry,
+        params: { prompt: "push it", cwd: env.root },
+        access: ACCESS,
+        askTimer: new FakeTimer().timer,
+      }).run();
+      expect(await again).toBe("ended");
+      const result = (await facts(env.log, next.runId)).find((fact) => fact.kind === "step_result");
+      expect(result?.payload).toMatchObject({ result: "done" });
+    } finally {
+      await env.log.close();
+    }
+  }, 30_000);
+
+  test("a background run that times out does not offer allow_always on its person wait", async () => {
+    const env = await setup();
+    try {
+      const timer = new FakeTimer();
+      const run = new Runner({
+        log: env.log,
+        flow: env.flow,
+        runId: env.runId,
+        registry: env.registry,
+        params: { prompt: "push it", cwd: env.root },
+        access: ACCESS,
+        askTimer: timer.timer,
+        trigger: { source: "cron", type: "tick", key: "t1", hops: 0 },
+      }).run();
+      await env.opened(1);
+      await timer.armed();
+      timer.fire();
+      expect(await run).toBe("waiting");
+      const pending = await listPending(env.log, env.registry);
+      expect(pending[0]?.choices).toEqual(["allow_once", "reject_once"]);
+    } finally {
+      await env.log.close();
+    }
+  }, 30_000);
+
+  test("a late allow_always writes the user layer and the resumed call does not ask", async () => {
+    const env = await setup();
+    try {
+      const first = new FakeTimer();
+      const run = env.runner(first).run();
+      await env.opened(1);
+      await first.armed();
+      first.fire();
+      expect(await run).toBe("waiting");
+
+      await answerRun({ log: env.log, flow: env.flow, runId: env.runId, choice: "allow_always", actor: ACTOR });
+      setEnv("FAKE_CLAUDE_MODE", "always");
+      expect(await env.runner(new FakeTimer()).run()).toBe("ended");
+      expect(count(await facts(env.log, env.runId), "ask_opened")).toBe(1);
+      expect(JSON.parse(readFileSync(join(env.root, "access-user.json"), "utf8"))).toEqual([
+        { kind: "command", value: "git push origin main", cwd: env.root },
+      ]);
     } finally {
       await env.log.close();
     }

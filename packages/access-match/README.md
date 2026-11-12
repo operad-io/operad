@@ -16,7 +16,8 @@ match(profile, { tool, input, cwd }):
 Precedence: **deny wins over ask, and ask wins over allow.** A call that matches
 `denyCommands` or `denyPaths` anywhere is refused, whatever `askCommands` says,
 and nobody is asked; a call that matches only `askCommands` asks; any other call
-is allowed. A caller that does not know `ask` sees `allow: false` and refuses,
+is allowed. An `alwaysAllow` entry lifts an ask for its exact call and cwd; it
+never lifts a deny. A caller that does not know `ask` sees `allow: false` and refuses,
 never passes.
 
 The matcher is pure and synchronous and keeps no state between calls. It never
@@ -35,6 +36,8 @@ the `home` option). `test/match.test.ts` follows the tables below.
 | `readPaths` | array of paths, optional | directories the agent may read although `denyPaths` covers an ancestor: a read tool (`read`, `grep`, `find`, `ls`) or a `bash` command that only reads may touch a path under one. A write there asks (the entries count as `askPaths`); every other denied path stays denied |
 | `allowMcp` | string[], optional | MCP tools that run without asking, as `<server>.<tool>` or `<server>.*`. The field's presence (even empty) puts MCP tools under the profile: a call with `tool: "mcp"` and `input: { server, tool }` that is not listed counts as a write and asks (`kind: "command"`, value `mcp <server>.<tool>`), per `operad-sandbox.md` decision 9. When the field is absent, MCP tools are not under the profile and are allowed |
 | `askCommands` | string[], optional | rules in the shape of `denyCommands`; a `bash` command part that matches one of these asks a person (`operad-sandbox.md` decisions 1 and 3). Writes to shell profiles are `askPaths` |
+
+| `alwaysAllow` | `{ kind: "command" \| "path", value, cwd, tool? }[]`, optional | calls a person answered `allow_always` for. A command entry is the exact command text and cwd; a path entry is the tool, the path and cwd. Such a call is allowed when it would otherwise ask. A deny still wins, and a harness leaves the entries out of a run no person's message started (`operad-sandbox.md` decisions 4, 5, 8 and 11) |
 
 | `grants` | `{ waitId, kind: "command" \| "path", value, tool? }[]`, optional | one-time permissions not yet used; see `findGrant` |
 
