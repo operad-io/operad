@@ -244,6 +244,8 @@ export function createBotPlugin() {
     version: "0.0.0",
     requires: { plugins: { chat: "^0.0.0" } },
     settings: BOT_SETTINGS,
+    // A bot page is that bot's settings page; bots live under settings, not in a tab.
+    objectsUnderSettings: true,
     objects: [
       {
         name: BOT_TYPE,

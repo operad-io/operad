@@ -41,6 +41,11 @@ export interface TuiTypeInfo {
   readonly defaultFilter?: string | undefined;
   /** The object types an action that creates this type works on; absent when none does. */
   readonly parents?: readonly string[] | undefined;
+  /**
+   * The plugin's objects belong under the settings view instead of a tab of
+   * their own; a client gives that plugin no top-bar tab.
+   */
+  readonly settings?: boolean | undefined;
 }
 
 /** One entry of `GET /v1/keys`. */

@@ -60,6 +60,8 @@ export interface NormalizedPlugin {
     | ((ctx: PluginBaseContext) => MaybePromise<string | void>)
     | undefined;
   readonly settingsSchema: ActionArgsSchema | undefined;
+  /** The plugin's objects belong under a client's settings view. */
+  readonly objectsUnderSettings: boolean;
   readonly projectSettings: ProjectSettingsDeclaration | undefined;
   readonly enforces: readonly string[];
   readonly requires: PluginRequires | undefined;
@@ -724,6 +726,13 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     throw new PluginError(messageOf(error), { cause: error });
   }
 
+  if (
+    raw.objectsUnderSettings !== undefined &&
+    typeof raw.objectsUnderSettings !== "boolean"
+  ) {
+    throw new PluginError(`${at}: objectsUnderSettings: must be a boolean`);
+  }
+
   const projectSettings = normalizeProjectSettings(
     raw.projectSettings,
     `${at}: projectSettings`,
@@ -750,6 +759,7 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     start,
     check,
     settingsSchema,
+    objectsUnderSettings: raw.objectsUnderSettings === true,
     projectSettings,
     enforces: normalizeEnforces(raw.enforces, `${at}: enforces`) ?? [],
     requires: normalizeRequires(raw.requires, at),

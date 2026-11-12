@@ -503,6 +503,11 @@ export class PluginRegistry {
     return this.plugins.map((plugin) => plugin.name);
   }
 
+  /** True when the plugin's objects belong under a client's settings view. */
+  objectsUnderSettings(plugin: string): boolean {
+    return this.byName.get(plugin)?.objectsUnderSettings === true;
+  }
+
   /** The trigger rules plugins ship, in load order, with their plugin. */
   triggerRules(): readonly {
     readonly plugin: string;
