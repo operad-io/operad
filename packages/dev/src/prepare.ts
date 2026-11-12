@@ -1,18 +1,9 @@
 /**
  * The `prepare` commands of dev.json: run in a checkout after it is created or
- * moved to a new commit, before a step uses it. A checkout without them can
- * still resolve its own workspace packages (`linkWorkspacePackages`).
+ * moved to a new commit, before a step uses it. A checkout without them is a
+ * plain checkout: dev installs and links nothing itself.
  */
 
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  symlinkSync,
-} from "node:fs";
-import { join, relative } from "node:path";
 import { isRecord, messageOf, type StepContext, type StepRunOptions } from "@operad-io/engine";
 
 import type { DevSettings } from "./settings.ts";
@@ -81,80 +72,4 @@ export async function runPrepare(
       message: `${PREPARE_FAILED}: ${messageOf(error)}`,
     };
   }
-}
-
-/** The workspace package directories of a checkout, from its `packages/*` folders. */
-function workspacePackages(root: string): { name: string; dir: string }[] {
-  const found: { name: string; dir: string }[] = [];
-  let hasWorkspaces = false;
-  try {
-    const rootJson: unknown = JSON.parse(
-      readFileSync(join(root, "package.json"), "utf8"),
-    );
-    hasWorkspaces = isRecord(rootJson) && rootJson.workspaces !== undefined;
-  } catch {
-    return found;
-  }
-  if (!hasWorkspaces) return found;
-  let entries: string[] = [];
-  try {
-    entries = readdirSync(join(root, "packages"));
-  } catch {
-    return found;
-  }
-  const add = (dir: string): boolean => {
-    try {
-      const json: unknown = JSON.parse(
-        readFileSync(join(dir, "package.json"), "utf8"),
-      );
-      if (isRecord(json) && typeof json.name === "string") {
-        found.push({ name: json.name, dir });
-        return true;
-      }
-    } catch {
-      // Not a package.
-    }
-    return false;
-  };
-  for (const entry of entries) {
-    const dir = join(root, "packages", entry);
-    if (add(dir)) continue;
-    // A group directory (packages/harness/) holds packages one level down.
-    try {
-      for (const child of readdirSync(dir)) add(join(dir, child));
-    } catch {
-      // Not a directory.
-    }
-  }
-  return found;
-}
-
-/**
- * Makes a checkout resolve its own workspace packages when no `prepare`
- * command installs them: one symlink per package in the checkout's own
- * `node_modules`, so Bun stops walking up to the main clone's packages. It is
- * cheap (a few symlinks, no network) and never replaces an existing entry.
- * Returns the names it linked.
- */
-export function linkWorkspacePackages(path: string): string[] {
-  const linked: string[] = [];
-  for (const { name, dir } of workspacePackages(path)) {
-    const link = join(path, "node_modules", name);
-    try {
-      lstatSync(link);
-      continue;
-    } catch {
-      // Absent: link it.
-    }
-    try {
-      mkdirSync(join(link, ".."), { recursive: true });
-      if (!existsSync(link)) {
-        symlinkSync(relative(join(link, ".."), dir), link, "dir");
-        linked.push(name);
-      }
-    } catch {
-      // A package that cannot be linked resolves as it did before.
-    }
-  }
-  return linked;
 }

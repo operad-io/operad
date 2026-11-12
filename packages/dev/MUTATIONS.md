@@ -936,6 +936,12 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0317-M1 | packages/dev/src/steps.ts | the work step no longer copied the harness's `finalMessage` onto the attempt | `dev/work > the worker's final message is kept whole on the attempt (T-0317)` |
+
+## T-0272 — dev links no workspace packages itself
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0272-M1 | packages/dev/src/gate.ts | a checkout made with no `prepare` was given `node_modules` links to its workspace packages again | `a change spanning two packages > no prepare: the review checkout is a plain checkout with no links of its own` |
 | T-0318-M1 | packages/dev/src/views.ts | the task row's `wait` field left out (the wait text only in the note) | `dev views > the wait reason is its own field, whole, and a row that waits for nothing has none (T-0318)` and the integrate wait test |
 ## T-0274 — dev's finished rows carry a mark
 
