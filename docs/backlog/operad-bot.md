@@ -25,7 +25,7 @@
 9. **bot 是一个插件 `bot`，它的对象就叫 bot**（2026-11-09 owner 定；2026-11-11 owner 改名：原来叫 `assistant`、助理，插件名、配置段、动作、目录和用户可见的词一律改成 bot，不留别名；2026-11-11 owner 定：去掉 profile 这个用户词，对象直接叫 bot，原待决问题 6）。用户可见的新词只有 bot。一个 bot 是一套人格和权限：主工作目录、默认 harness、挂载的 skills（`SKILL.md` 目录，contract 决定 13）、访问档（`operad-sandbox.md` 决定 1）、称呼。默认只有一个 bot，叫 `default`；要几个就配几个（比如一个只读的、一个能动知识库的），`bot:chat <bot>` 在其中一个上开对话。bot 写在 `config.json` 的 `bot` 段的 `bots` 下（`bots.default`；contract 决定 10 的插件 `settings`，带 JSON Schema，T-0080 的设置接口能看能改），每个 bot 在列表里是一行，是 bot chat 的父对象。
 10. **主工作目录是 `~/.operad/bot/`**，默认 bot 直接用它，别的 bot 各有自己的目录（不写时是 `~/.operad/bot/<名字>`）。知识库和 bot 的记忆以后也住这里。`~/.operad` 的其余部分（事实日志、`secrets`、token）仍在默认访问档的 `denyPaths` 里：bot 的 cwd 是 operad 家目录的一个子目录，不是家目录本身。
 11. **bot chat 是 `chat` 基础插件的对象**（`operad-conversation.md` 决定 12）：`bot:chat` 在一个 bot 上新建，harness 当时选、之后不换；skills 和访问档每次回复时从 bot 现读，收紧权限或加一个 skill 不用新建 chat。bot 要碰仓库时通过 operad 的 MCP 工具调 `dev`（看任务、开 task），不自己改仓库文件（`operad-conversation.md` 决定 15）。Telegram 绑进来的 chat 用 `default` bot，以后规则里可以指定。
-12. **每个 bot 有一个费用上限，到了就停**（2026-11-11 owner 定，`research/2026-11-11-grok-bot.md`）：bot 上设一个周期预算；这个 bot 的 chat 和定时 flow 的用量（harness 记下的费用事实）加起来到了上限，运行停在当前步骤，成为一个待处理项，人答了才继续或结束。是当场停下，不是事后提醒：Grok Bot 的月上限不在运行中途停，用户抱怨最多的就是这个。
+12. **费用只做软提示，不硬停**（2026-11-12 owner 定，改 2026-11-11 的“到了就停”：费用多是估算，订阅登录时尤其如此，按估算硬停不合适）。bot 页显示这个 bot 本期（`period`）的花费，注明是估算；bot 的设置里可以写一个提示线，可不写。本期花费过了提示线，bot 页和这个 bot 的 chat 页显示一行提示，运行照常继续，不成为待处理项，不停下。原来的理由（Grok Bot 不在中途停）记在 `research/2026-11-11-grok-bot.md`，以后有了准确的费用再议。
 13. **不是人当场发起的运行更严**：bot 的定时 flow 和由事件发起的运行按 `operad-sandbox.md` 决定 8，对外写的动作先问或只存草稿。
 14. **对话里回答方的称呼默认是 Operad Bot，可以改**（2026-11-11 owner 定）：transcript 给模型的消息标的是一个称呼，不是 assistant 也不是 bot。`chat` 插件的设置里有一个默认称呼（默认 `Operad Bot`），repo chat 用它；bot chat 用它的 bot 的称呼，没写时用默认值。存下的消息角色仍是 `assistant`（模型在事实和 harness 协议里的角色），只是不显示。
 15. **技能可以从一个 git 地址导入，导入和更新都要人确认**（2026-11-11 owner 定，`research/2026-11-11-grok-bot.md`「技能和 MCP」）：不做市场（决定 7），但别家市场里的技能大多是同一种 `SKILL.md` 目录，用户拿地址来就能导入。导入是一个待处理项，展示 `SKILL.md` 全文和文件清单（脚本单独列出），人确认后才进这个 bot 的技能目录；导入的版本钉在一个提交上，不自动更新，更新也是一个待处理项，展示差异。operad 不做搜索和推荐，也不采信市场的扫描结果。`SKILL.md` 头部里别家的私有字段忽略。别家的插件包（技能加 MCP 服务、钩子、子 agent）只导入技能，里面的 MCP 服务按决定 18 单独问，钩子和子 agent 不导入；OpenClaw、Hermes 那种进程内代码的插件不兼容。
@@ -33,7 +33,8 @@
 17. **bot 自己写的技能先是待处理项**：bot 写或改一个技能（包括"把刚才的做法存成技能"），人确认后才生效。Rakazo 和 OpenBot 是这样；Hermes 默认直接生效，Grok Bot 的个人 bot 不设卡。
 18. **bot 扩展自己一律先问**：加一个 MCP 服务、改自己的设置（称呼、harness、访问档、技能列表）都是待处理项，没人答就不做。照 NanoClaw，不学 Grok Bot（bot 能自己装应用、加 MCP 服务，基本不设卡）。
 19. **一个 bot 挂哪些 MCP 服务写在它的设置里**，只有列出的才挂进它的 chat；工具调用的许可按 `operad-sandbox.md` 决定 9，密钥按决定 10。先不做工具的按需加载，装多了再说。登记一个服务时人看到什么、怎么钉版本、浏览器怎么接，见 `operad-bot-mcp.md`。
-20. **chat 和 bot 的用户词**（2026-11-11 owner 批，来自 iOS 设计稿 `radian-ios/docs/design/operad/operad-ios-2026-11-11.html`）：`Allow once`、`Always allow`、`Deny`（工具调用和命令的许可，`operad-sandbox.md` 决定 9；`Always allow` 的范围是发起它的 bot 或 repo）；`Continue`（费用上限到了以后继续，决定 12）、`Stop`（停下当前运行）；`I logged in`、`Log in again`（站点登录，`operad-bot-mcp.md` 决定 13、14；`I logged in` 只是提醒 bot 去看，不代替登录）；`Review`（技能和 MCP 服务的导入或更新，决定 15、17、18，在列表上不能直接加，都要先 Review）；`repo`（chat 父对象类型的标签，和 `bot` 并列）；`period`（费用上限的周期）。说话人不是新词：harness 名（claude、pi、radian）只决定用哪个 agent，对话里显示的是决定 14 的称呼。
+20. **chat 和 bot 的用户词**（2026-11-11 owner 批，来自 iOS 设计稿 `radian-ios/docs/design/operad/operad-ios-2026-11-11.html`）：`Allow once`、`Always allow`、`Deny`（工具调用和命令的许可，`operad-sandbox.md` 决定 9；`Always allow` 的范围是发起它的 bot 或 repo）；`Continue`（原为费用上限到了以后继续；决定 12 改成软提示后不再用于费用）、`Stop`（停下当前运行）；`I logged in`、`Log in again`（站点登录，`operad-bot-mcp.md` 决定 13、14；`I logged in` 只是提醒 bot 去看，不代替登录）；`Review`（技能和 MCP 服务的导入或更新，决定 15、17、18，在列表上不能直接加，都要先 Review）；`repo`（chat 父对象类型的标签，和 `bot` 并列）；`period`（费用的统计周期）。说话人不是新词：harness 名（claude、pi、radian）只决定用哪个 agent，对话里显示的是决定 14 的称呼。
+21. **bot 页是这个 bot 的设置页**（2026-11-12 owner 定）：上面是称呼、harness、模型、工作目录、本期花费和上限、技能、MCP 服务、登录过的站点；能直接改的项走设置接口（`operad-presentation.md` 决定 11），技能和 MCP 服务的增加和更新走 `Review`（决定 15、17–19）。bot 页上没有 Chat 按钮，新建 chat 只从 chat 的入口进（`operad-conversation.md` 决定 18）。`bot` 不占自己的 tab，bot 列在设置下面（`operad-presentation.md` 决定 14）。
 
 ## 顺序
 
@@ -46,7 +47,7 @@
 3. 知识库的自动提交要不要推远端；推的话凭据怎么给（走 `askCommands` 的 `git push`，还是单独授权）。
 4. 影子 judge 保留为以后的想法，不在这三个场景里做。
 5. （bot 自己写的技能要人确认，见决定 17。）一个 bot 的 skills 目录由谁写：随 operad 装一份默认的 bot `SKILL.md`，还是第一次用时由 bot 自己按用户的描述写出来（`operad.md` 决定 1 的第六个要求）。
-6. 费用上限（决定 12）的周期、默认值和设置里的字段名；费用是估算（订阅登录）时上限怎么算。
+6. 费用提示（决定 12）的周期和默认的提示线（建议：按月，默认不设提示线，只显示花费）；设置里的字段名。
 7. 导入技能（决定 15）的命令和确认页长什么样；技能存在 bot 的目录里还是可以几个 bot 共用一份。
 
 ## 验收
