@@ -794,7 +794,8 @@ also gets a one-time permission for that call in `access.grants`
 (`{ waitId, kind, value, tool? }`). Only the choice that approves gives it:
 `grant.choice`, which is required when the question has choices and must be one
 of them (`ctx.ask` refuses the question before anyone is asked otherwise). A
-question without choices gives the permission only for the answer `approve`.
+`grant.choices` list names more than one approving answer. A question without
+choices gives the permission only for the answer `approve`.
 A path grant also names the `tool` the person approved (`write` is not `read`);
 `ctx.ask` refuses a path grant without one. A harness lets a call that
 equals `value` exactly through once: it uses the permission up (recorded in
