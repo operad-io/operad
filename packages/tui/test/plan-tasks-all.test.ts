@@ -14,7 +14,7 @@ import {
   type TuiState,
   type TuiView,
 } from "../src/index.ts";
-import { displayChildren } from "../src/state.ts";
+import { displayChildren, initialState, reduce } from "../src/state.ts";
 import { BUILTIN_THEMES, toRgba } from "../src/theme.ts";
 import { drawState } from "../src/view/index.ts";
 import { immediateClock } from "./support.ts";
@@ -258,5 +258,53 @@ describe("an open plan's next level is every one of its tasks", () => {
       shell.stop();
       await shell.done;
     }
+  });
+
+  test("a task that becomes merged stays in the open plan's tasks", () => {
+    let state = initialState({ width: 120, height: 30, theme: "dark" });
+    state = reduce(state, { type: "types", types: TYPES });
+    state = reduce(state, { type: "key", key: "3" });
+    const plan = DATA.find((one) => one.row.id === "p1");
+    if (plan === undefined) throw new Error("no plan in the data");
+    state = reduce(state, {
+      type: "tree",
+      tabId: `plugin:${PLUGIN}`,
+      level: "children",
+      entries: [{ row: plan.row, type: plan.type }],
+      hidden: 0,
+      filter: "active",
+      filterSeq: 0,
+    });
+    state = reduce(state, { type: "key", key: "enter" });
+    const version = state.objectVersion;
+    state = reduce(state, {
+      type: "object",
+      object: {
+        id: "p1",
+        type: "plan",
+        link: "",
+        row: plan.row,
+        sections: [],
+        actions: [],
+      },
+      version,
+    });
+    state = reduce(state, {
+      type: "children",
+      objectId: "p1",
+      version,
+      entries: DATA.filter((one) => one.parent === "plan:p1").map((one) => ({
+        row: one.row,
+        type: one.type,
+      })),
+    });
+    expect(childIds(state)).toEqual(["t-active", "t-merged", "t-cancelled"]);
+
+    // The tab's filter has no merged state, but the open plan's list does not filter.
+    state = reduce(state, {
+      type: "row",
+      row: entry("task", "t-active", "merged", "plan:p1", { mark: "done" }).row,
+    });
+    expect(childIds(state)).toEqual(["t-active", "t-merged", "t-cancelled"]);
   });
 });

@@ -114,24 +114,30 @@ describe("filters: state", () => {
     expect(state.moveSeq).toBe(moves);
   });
 
-  test("a selection the new filter hides moves to the first row and the pane follows", () => {
+  test("a selection the new filter hides moves to the first row and leaves the object alone", () => {
     let state = onTasks();
-    state = key(state, "j");
+    state = key(state, "j"); // b
+    state = key(state, "enter");
+    expect(state.object?.source).toBe("b");
     state = key(state, "f");
     const moves = state.moveSeq;
+    const object = state.object;
     state = load(state, [row("m", "merged"), row("n", "merged")], undefined, "all");
     expect(task(state)?.list.cursor).toBe(0);
-    expect(state.moveSeq).toBe(moves + 1);
-    expect(state.followPending).toBe(true);
+    expect(state.moveSeq).toBe(moves);
+    expect(state.followPending).toBe(false);
+    expect(state.object).toBe(object);
+    expect(state.object?.source).toBe("b");
   });
 
-  test("an empty list under the new filter closes the object pane", () => {
+  test("an empty list under the new filter leaves the object pane open", () => {
     let state = onTasks();
     state = key(state, "enter");
-    expect(state.object).toBeDefined();
+    expect(state.object?.source).toBe("a");
     state = key(state, "f");
     state = load(state, [], 0, "all");
-    expect(state.object).toBeUndefined();
+    expect(state.object?.source).toBe("a");
+    expect(state.followPending).toBe(false);
   });
 
   test("a page of an older filter is dropped, whatever order the answers come in", () => {

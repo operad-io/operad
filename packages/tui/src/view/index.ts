@@ -368,9 +368,10 @@ function rail(chunks: readonly TextChunk[], palette: TuiPalette): TextChunk[] {
 function markColour(row: TuiRow, palette: TuiPalette): string {
   if (row.error !== undefined) return palette.error;
   const mark = rowMark(row);
-  if (mark === "none") {
-    return /^(done|merged)$/i.test(row.state) ? palette.ok : palette.weak;
-  }
+  // A finished child is weak: the progress bar already says it is done, and its
+  // row should not draw the eye away from the work left (T-0305).
+  if (mark === "done" || /^(done|merged)$/i.test(row.state)) return palette.weak;
+  if (mark === "none") return palette.weak;
   return palette[MARK_GLYPHS[mark].colour];
 }
 

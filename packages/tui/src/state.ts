@@ -2252,19 +2252,11 @@ function replaceRow(state: TuiState, row: TuiRow): TuiState {
 /** Puts a fresh row in place of the same object's row on the open page's next level. */
 function replacePageRow(state: TuiState, row: TuiRow): TuiState {
   const children = state.object?.children;
-  const old = children?.rows.find((candidate) => sameObject(candidate.id, row.id));
-  if (children === undefined || old === undefined) return state;
-  // The page's next level follows the left tab's filter, as the left list does.
-  const tab = state.object === undefined ? undefined : pluginTabOf(state, state.object.type);
-  const info = tab?.types?.find((candidate) => candidate.type === old.type);
-  const states = info?.filters?.find((f) => f.name === tab?.filter)?.states;
-  if (states !== undefined && row.state !== "error" && !states.includes(row.state)) {
-    return withChildren(state, (c) => ({
-      ...c,
-      rows: dropRow(c.rows, c.rows.indexOf(old)),
-      cursor: Math.min(c.cursor, Math.max(0, c.rows.length - 2)),
-    }));
+  if (children === undefined || !children.rows.some((old) => sameObject(old.id, row.id))) {
+    return state;
   }
+  // The page's next level is fetched under `all`, so it never follows the tab's
+  // filter: a child that becomes merged or cancelled stays where it is (T-0305).
   return withChildren(state, (c) => ({
     ...c,
     rows: c.rows.map((candidate) =>
@@ -2422,7 +2414,6 @@ function appendPage(
     return state;
   }
   const wasSwitching = replace && tab.list.switching === true;
-  const selected = tab.list.rows[tab.list.cursor]?.id;
   const updated = withTab(state, tabId, (current) => {
     if (replace) return { ...replaceRows(current, rows, next), hidden };
     const list: TuiList = {
@@ -2440,15 +2431,10 @@ function appendPage(
     };
   });
   const cleared = clearRequest(state, updated, tabId);
-  if (!wasSwitching) return replace ? followLoaded(cleared, tabId) : cleared;
-  // The new filter moved the selection: the object pane follows it.
-  const after = cleared.tabs.find((candidate) => candidate.id === tabId);
-  if (after === undefined || after.list.rows[after.list.cursor]?.id === selected) {
-    return cleared;
-  }
-  if (cleared.tabs[cleared.active]?.id !== tabId) return cleared;
-  if (after.list.rows.length === 0) return closeObject(cleared);
-  return { ...cleared, moveSeq: cleared.moveSeq + 1, followPending: true };
+  // `f` changes the left list only: the open object stays, even when the new
+  // filter hides its row or leaves no row at all (T-0305).
+  if (wasSwitching || !replace) return cleared;
+  return followLoaded(cleared, tabId);
 }
 
 /** The type a page of a tab's rows is of: the tab's first. */

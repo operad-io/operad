@@ -197,6 +197,21 @@ describe("the object page's child list", () => {
     for (const entry of shown) expect(entry.connector).toBe("");
     expect(shown[2]?.alsoAfter).toEqual(["T-0001-a", "T-0002-b"]);
   });
+
+  test("a merged child's glyph and state are weak while the bar still fills done", () => {
+    const state = opened([
+      row("T-0001-open", "running", { mark: "running" }),
+      row("T-0002-done", "merged", { mark: "done" }),
+    ]);
+    const chunks = pieces(state);
+    const marker = chunks.find((part) => part.text === "✓ ");
+    const merged = chunks.find((part) => part.text.trim() === "merged");
+    expect(marker).toBeDefined();
+    expect(merged).toBeDefined();
+    expect(colour(marker as TextChunk)).toBe(token("weak"));
+    expect(colour(merged as TextChunk)).toBe(token("weak"));
+    expect(barChunks(state).map(colour)).toEqual([token("ok")]);
+  });
 });
 
 describe("the object page's frame and columns", () => {
