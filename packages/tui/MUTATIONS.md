@@ -376,3 +376,8 @@ the row fields.
 | T-0274-M2 | packages/tui/src/view/index.ts | the list glyph fell back to the state word `merged` for a row without a mark again | `the TUI view > each mark draws its own single-cell character; waiting beats a mark; running without a mark draws running` |
 | T-0274-M3 | packages/tui/src/view/index.ts | `markColour` dimmed a row whose state said `merged` even when its mark was not done again | `the object page's child list > a finished child is drawn finished by its mark; a state word alone is not` |
 | T-0274-M4 | packages/tui/src/view/index.ts | the child list glyph fell back to the state word `merged` for a row without a mark again | `the object page's child list > a finished child is drawn finished by its mark; a state word alone is not` |
+## T-0319 — one list width for every tab
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0319-M1 | packages/tui/src/state.ts | Pending and Running took a wider fixed column again instead of every tab's 26% list, so the divider moved when switching tabs | `the frame follows the terminal > every tab puts the divider in the same column at 80, 120 and 200` |

@@ -157,13 +157,13 @@ describe("the TUI reducer", () => {
     });
   });
 
-  test("resize crosses 100 columns and carries the theme", () => {
+  test("resize crosses 84 columns and carries the theme", () => {
     let state = initialState({ width: 120, height: 30, theme: "dark" });
     expect(twoPane(state)).toBe(true);
-    state = reduce(state, { type: "resize", width: 99, height: 24 });
+    state = reduce(state, { type: "resize", width: 83, height: 24 });
     expect(twoPane(state)).toBe(false);
     expect(state.height).toBe(24);
-    state = reduce(state, { type: "resize", width: 100, height: 20, theme: "light" });
+    state = reduce(state, { type: "resize", width: 84, height: 20, theme: "light" });
     expect(twoPane(state)).toBe(true);
     expect(state.theme).toBe("light");
     state = reduce(state, { type: "theme", theme: "dark" });
