@@ -25,6 +25,11 @@ export interface PendingItem {
   readonly step: string | null;
   readonly prompt: string;
   readonly choices: readonly string[];
+  /**
+   * The question's wait id, which an answer quotes. Absent when the item asks
+   * nothing (a candidate or a standing item).
+   */
+  readonly waitId?: string;
   readonly actions: readonly PendingActionView[];
   readonly kind?: "run" | "candidate" | "refused" | "standing";
   readonly pendingId?: string;
@@ -71,6 +76,7 @@ export async function listPending(
           step: state.step,
           prompt: open.prompt,
           choices: open.choices,
+          waitId: open.waitId,
           actions: await actionsFor(registry, log, run),
           kind: "run",
           ...objectFields(run.object),
@@ -92,6 +98,7 @@ export async function listPending(
       step: state.step,
       prompt: state.wait.prompt,
       choices: state.wait.choices,
+      waitId: state.wait.id,
       actions,
       kind: "run",
       ...(auto ? { auto: true as const } : {}),

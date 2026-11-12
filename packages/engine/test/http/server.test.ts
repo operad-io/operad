@@ -1137,6 +1137,7 @@ describe("http server", () => {
       expect(pending.status).toBe(200);
       const pendingItems = (await pending.json()) as {
         runId: string;
+        waitId?: string;
         prompt: string;
         choices: string[];
         actions: { plugin: string; action: string }[];
@@ -1147,6 +1148,7 @@ describe("http server", () => {
         object: "item:one",
         link: "operad://objects/item%3Aone",
       });
+      expect(pendingItems[0]?.waitId).toBe("wait:1");
       expect(pendingItems[0]?.prompt).toBe("Approve?");
       expect(pendingItems[0]?.choices).toEqual(["yes"]);
       expect(pendingItems[0]?.actions).toContainEqual({

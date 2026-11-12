@@ -158,4 +158,83 @@ describe("actions against the in-process server", () => {
       await h.close();
     }
   });
+
+  test("a pending question whose choices are not actions offers them and answers", async () => {
+    const h = await makeHarness();
+    const bodies: Record<string, unknown>[] = [];
+    const client = new TuiClient({
+      url: h.base,
+      token: h.token,
+      fetch: (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/v1/answer") && typeof init?.body === "string") {
+          bodies.push(JSON.parse(init.body) as Record<string, unknown>);
+        }
+        return fetch(input, init);
+      },
+    });
+    const view = new View();
+    const shell = startShell({
+      client,
+      events: () => new Quiet(),
+      view,
+      width: 120,
+      height: 30,
+      theme: "dark",
+      clock: immediateClock,
+    });
+    try {
+      h.store.put("item", "one", { title: "One", state: "waiting" }, "seed");
+      const run = await h.log.startRun("demo-flow", "item:one");
+      await h.log.append(run.runId, 0, [
+        {
+          kind: "waiting_for_person",
+          payload: {
+            waitId: "wait:1",
+            step: "ask",
+            prompt: "Open a worktree?",
+            choices: ["yes", "no"],
+            waitKind: "step",
+            effectId: null,
+          },
+          cause: "test",
+        },
+      ]);
+      shell.key({ name: "r" });
+      await view.until(
+        (state) =>
+          state.tabs.find((tab) => tab.id === "pending")?.list.rows.length === 1,
+      );
+      const row = view.last?.tabs.find((tab) => tab.id === "pending")?.list.rows[0];
+      expect(row?.answer).toEqual({
+        runId: run.runId,
+        waitId: "wait:1",
+        prompt: "Open a worktree?",
+        choices: ["yes", "no"],
+      });
+      expect(row?.detail).toContain("choices: yes, no");
+
+      shell.key({ name: "a" });
+      expect(view.last?.input?.kind).toBe("answer");
+      shell.key({ name: "down" });
+      shell.key({ name: "enter" });
+      await view.until((state) => !state.acting && state.answerRequest === undefined);
+      expect(bodies).toEqual([
+        { runId: run.runId, waitId: "wait:1", choice: "no" },
+      ]);
+      const inputs = [];
+      for await (const input of h.log.readInputs()) inputs.push(input);
+      expect(inputs.find((input) => input.runId === run.runId)?.payload).toMatchObject({
+        kind: "person_answer",
+        waitId: "wait:1",
+        choice: "no",
+        actor: { via: "tui" },
+      });
+    } finally {
+      shell.stop();
+      await shell.done;
+      await h.close();
+    }
+  });
+
 });

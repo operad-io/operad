@@ -51,6 +51,8 @@ import {
   type HistoryFact,
 } from "./history.ts";
 import { readState } from "../runner/service.ts";
+import { recordAnswer } from "../runner/answer.ts";
+import { StateError } from "../runner/errors.ts";
 import {
   listSettings,
   setSetting,
@@ -213,6 +215,17 @@ export interface ActOptions {
   /** Where the person asked: the command line or the HTTP interface. */
   readonly surface?: "cli" | "http" | undefined;
   /** Who asked; the CLI passes `{ via: "cli", id: <user> }`. */
+  readonly actor: Actor;
+}
+
+/** What answers one open question of a pending item. */
+export interface AnswerViewOptions {
+  readonly runId: string;
+  /** The wait id the pending item named. */
+  readonly waitId: string;
+  readonly choice: string;
+  readonly note?: string | undefined;
+  /** Who answered. */
   readonly actor: Actor;
 }
 
@@ -1246,6 +1259,34 @@ export class Views {
 
   private settingsOptions(): SettingsOptions {
     return { registry: this.registry, store: this.store, home: this.home };
+  }
+
+  /**
+   * Answers one question of a pending item by the wait id it named. A closed
+   * question is refused, as it is for the command line and a plugin action.
+   */
+  async answer(options: AnswerViewOptions): Promise<void> {
+    if (this.log === undefined) {
+      throw new ViewError(
+        "not-available",
+        "this server has no run log, so it cannot answer a question",
+      );
+    }
+    try {
+      await recordAnswer({
+        log: this.log,
+        runId: options.runId,
+        waitId: options.waitId,
+        choice: options.choice,
+        ...(options.note === undefined ? {} : { note: options.note }),
+        actor: options.actor,
+      });
+    } catch (error) {
+      if (error instanceof StateError) {
+        throw new ViewError("not-available", error.message, { cause: error });
+      }
+      throw error;
+    }
   }
 
   /** Runs one action by `<plugin>:<action>`, honouring note and confirm. */

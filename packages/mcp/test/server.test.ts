@@ -519,6 +519,38 @@ describe("operad mcp", () => {
         "demo:approve",
       );
 
+      const answered = await child.request(60, "tools/call", {
+        name: "answer",
+        arguments: {
+          runId: waitingRun,
+          waitId: "wait:1",
+          choice: "yes",
+          note: "go ahead",
+        },
+      });
+      expect(structuredOf(answered)).toMatchObject({
+        runId: waitingRun,
+        waitId: "wait:1",
+        choice: "yes",
+        note: "go ahead",
+      });
+      const answeredLog = openConfigLog(await readConfig(home));
+      const inputs = [];
+      try {
+        for await (const input of answeredLog.readInputs()) inputs.push(input);
+      } finally {
+        await answeredLog.close();
+      }
+      expect(
+        inputs.find((input) => input.runId === waitingRun)?.payload,
+      ).toMatchObject({
+        kind: "person_answer",
+        waitId: "wait:1",
+        choice: "yes",
+        note: "go ahead",
+        actor: { via: "mcp", id: "lead" },
+      });
+
       const running = await child.request(7, "tools/call", {
         name: "running",
         arguments: {},
