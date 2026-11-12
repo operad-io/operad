@@ -919,6 +919,11 @@ the row fields.
 |---|---|---|---|
 | T-0311-M1 | packages/dev/src/model.ts | `planNote` put `plan.auto` back in the note, so a plan row showed the level twice | `dev views > the plan note leaves the auto level to the badge, and the total leaves cancelled tasks out` |
 
+## T-0316 — a ready task held by a slot limit says what holds it
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0316-M1 | packages/dev/src/views.ts | `waitNote` no longer returned the task's `slotHeld`, so a ready task held by its plan's slot showed no reason | `a ready task says what holds it back > the plan's slot names the running task and then how many more` |
 ## T-0315 — a review does not pass with a major finding
 
 | id | file | mutation | failing test |

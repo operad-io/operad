@@ -468,6 +468,8 @@ export type TaskData = {
   readonly dependencyHeld?: boolean | undefined;
   /** What the held task waits for, as a note names it; set with `dependencyHeld`. */
   readonly dependencyHeldFor?: readonly string[] | undefined;
+  /** The note a ready task shows when a slot limit or a missing plugin holds it back; the scheduler sets it. */
+  readonly slotHeld?: string | undefined;
   readonly phase: TaskPhase;
   /**
    * The wait the task is in while it waits for a person. A review wait writes

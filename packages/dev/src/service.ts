@@ -1235,6 +1235,7 @@ export async function updateTask(
       areaAhead: _ahead,
       dependencyHeld: _waits,
       dependencyHeldFor: _waitsFor,
+      slotHeld: _slot,
       ...kept
     } = data;
     const nextArea = options.area === undefined ? data.area : area;
@@ -1363,6 +1364,7 @@ export async function claimTaskStart(
       areaAhead: _ahead,
       dependencyHeld: _waits,
       dependencyHeldFor: _waitsFor,
+      slotHeld: _slot,
       oldestPlanSlot: _oldest,
       ...rest
     } = latest;
@@ -1475,6 +1477,33 @@ export async function setDependencyHold(
           : {}),
       },
       "dev:task-dependency-hold",
+    );
+  });
+}
+
+/**
+ * Records why a ready task whose dependencies and area are free does not
+ * start (a limit on running tasks, or a missing plugin), or clears the note.
+ * Writes only on a change.
+ */
+export async function setSlotHold(
+  store: ObjectStore,
+  id: string,
+  note: string | undefined,
+): Promise<void> {
+  const initial = await getTask(store, id);
+  const data = taskData(initial.data);
+  if (data.slotHeld === note) return;
+  await withRepoLock(store, data.repository, async () => {
+    const current = await getTask(store, id);
+    const latest = taskData(current.data);
+    if (latest.phase !== "ready" || latest.slotHeld === note) return;
+    const { slotHeld: _slot, ...rest } = latest;
+    await writeTask(
+      store,
+      id,
+      { ...rest, ...(note === undefined ? {} : { slotHeld: note }) },
+      "dev:task-slot-hold",
     );
   });
 }
@@ -1984,6 +2013,7 @@ export async function pauseTask(
       areaHeldBy: _area,
       dependencyHeld: _waits,
       dependencyHeldFor: _waitsFor,
+      slotHeld: _slot,
       ...rest
     } = data;
     const written = await writeTask(
