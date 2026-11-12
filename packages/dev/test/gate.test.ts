@@ -139,6 +139,40 @@ interface ReviewCall {
   readonly wallTimeSecs: number | undefined;
 }
 
+/**
+ * The shell plugin with one shortcut: a check whose lines are all `true` passes
+ * at once, as the real step does, without starting a shell. Starting one costs
+ * 0.3 s and, in about half the runs, a further 1 s wait for the output pipe to
+ * close, for a command no test here looks at. Any other line runs for real.
+ */
+function shellWithTrueShortcut(options: Parameters<typeof createShellPlugin>[0]) {
+  const real = createShellPlugin(options);
+  return {
+    ...real,
+    steps: real.steps.map((step) =>
+      step.name !== "check"
+        ? step
+        : {
+            ...step,
+            async run(ctx: Parameters<typeof step.run>[0], params: Parameters<typeof step.run>[1]) {
+              const lines = (params as { readonly lines?: unknown } | null)?.lines;
+              if (
+                Array.isArray(lines) &&
+                lines.length > 0 &&
+                lines.every((line) => line === "true") &&
+                !ctx.signal.aborted
+              ) {
+                const start = existsSync(ctx.logger.path) ? statSync(ctx.logger.path).size : 0;
+                const log = await ctx.logger.write("");
+                return { result: "pass", data: { lines: lines.length, log, logStart: start, tail: [] } };
+              }
+              return step.run(ctx, params);
+            },
+          },
+    ),
+  };
+}
+
 interface FakeReviewer {
   readonly plugin: ReturnType<typeof definePlugin>;
   readonly calls: ReviewCall[];
@@ -576,7 +610,7 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
   const registry = new PluginRegistry(
     [
       createDevPlugin(),
-      createShellPlugin(
+      shellWithTrueShortcut(
         options.clock === undefined ? {} : { clock: options.clock },
       ),
       reviewer.plugin,
