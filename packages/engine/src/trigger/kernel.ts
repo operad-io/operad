@@ -28,6 +28,7 @@ import {
   type TriggerRule,
   type TriggerView,
 } from "./types.ts";
+import { isRecord } from "../util.ts";
 
 /** One decision per input: what the event would do. */
 const ROUTE = "route";
@@ -43,10 +44,6 @@ export interface KernelOptions {
   readonly rules?: readonly TriggerRule[] | undefined;
   readonly clock?: (() => number) | undefined;
   readonly onLog?: ((message: string) => void) | undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function objectOf(event: TriggerEvent): string | undefined {

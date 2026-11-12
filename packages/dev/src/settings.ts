@@ -30,8 +30,8 @@ import {
   type ParsedWorkers,
   type WorkerDefinition,
 } from "@operad-io/pool";
-import { defaultOperadHome } from "@operad-io/engine";
-import { DevError, isRecord, type AutoMode } from "./model.ts";
+import { defaultOperadHome, isRecord } from "@operad-io/engine";
+import { DevError, type AutoMode } from "./model.ts";
 import {
   type DevFlowSpec,
   type DevFlows,
@@ -48,7 +48,7 @@ export const DEV_SETTINGS_SCHEMA = "https://operad.io/schemas/dev.schema.json";
 export const WORKER_BRIEF_FILE = ".operad/worker-brief.md";
 
 /** The harness step a repository uses when it names none. */
-export const DEFAULT_WORKER_USE = "harness-radian/agent";
+export const DEFAULT_WORKER_USE = "radian/agent";
 
 /** How long a review waits before it runs again after a model was unavailable. */
 export const DEFAULT_REVIEWER_RETRY_SECS = 120;
@@ -439,7 +439,7 @@ function positiveSeconds(value: unknown, field: string): number {
   return value;
 }
 
-function stringList(value: unknown, field: string): readonly string[] {
+function settingsStringList(value: unknown, field: string): readonly string[] {
   if (!Array.isArray(value)) {
     throw new DevError(field, "must be an array of strings");
   }
@@ -467,7 +467,7 @@ function workerSettings(value: unknown, field: string): WorkerSettings {
   const args =
     value.args === undefined
       ? []
-      : stringList(value.args, `${field}.args`);
+      : settingsStringList(value.args, `${field}.args`);
   const wallTimeSecs =
     value.wallTimeSecs === undefined
       ? undefined
@@ -509,7 +509,7 @@ function nonNegativeInteger(value: unknown, field: string): number {
 }
 
 function lineList(value: unknown, field: string): readonly string[] {
-  const lines = stringList(value, field);
+  const lines = settingsStringList(value, field);
   lines.forEach((line, index) => {
     if (line.trim().length === 0) {
       throw new DevError(`${field}[${index}]`, "must be a non-empty string");
@@ -712,7 +712,7 @@ function reviewerFallback(value: unknown, field: string): ReviewerFallback {
   return {
     use: nonEmptyString(value.use, `${field}.use`),
     args:
-      value.args === undefined ? [] : stringList(value.args, `${field}.args`),
+      value.args === undefined ? [] : settingsStringList(value.args, `${field}.args`),
   };
 }
 
@@ -739,7 +739,7 @@ function reviewerFirst(value: unknown, field: string): ReviewerFirst {
       : { use: nonEmptyString(value.use, `${field}.use`) }),
     ...(value.args === undefined
       ? {}
-      : { args: stringList(value.args, `${field}.args`) }),
+      : { args: settingsStringList(value.args, `${field}.args`) }),
     ...(value.timeoutSecs === undefined
       ? {}
       : { timeoutSecs: positiveSeconds(value.timeoutSecs, `${field}.timeoutSecs`) }),
@@ -774,7 +774,7 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
   const firstArgs =
     value.firstArgs === undefined
       ? undefined
-      : stringList(value.firstArgs, `${field}.firstArgs`);
+      : settingsStringList(value.firstArgs, `${field}.firstArgs`);
   const first =
     value.first === undefined
       ? undefined
@@ -791,7 +791,7 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
     args:
       value.args === undefined
         ? []
-        : stringList(value.args, `${field}.args`),
+        : settingsStringList(value.args, `${field}.args`),
     ...(firstArgs === undefined ? {} : { firstArgs }),
     ...(first === undefined ? {} : { first }),
     ...(fallback === undefined ? {} : { fallback }),
@@ -1001,7 +1001,7 @@ function stageOf(value: unknown, field: string): DevStage {
   const optionalString = (key: string): string | undefined =>
     value[key] === undefined ? undefined : nonEmptyString(value[key], `${field}.${key}`);
   const optionalList = (key: string): readonly string[] | undefined =>
-    value[key] === undefined ? undefined : stringList(value[key], `${field}.${key}`);
+    value[key] === undefined ? undefined : settingsStringList(value[key], `${field}.${key}`);
   switch (kind) {
     case "work": {
       const use = optionalString("use");

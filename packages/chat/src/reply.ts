@@ -5,17 +5,7 @@
  * goes round again while there are some. The kernel keeps no prompt text.
  */
 
-import {
-  AskTimeoutError,
-  type JsonValue,
-  type RunObject,
-  messageOf,
-  type AskOutcome,
-  type AskRequest,
-  type PluginStepResult,
-  type StepAsker,
-  type StepContext,
-} from "@operad-io/engine";
+import { AskTimeoutError, isRecord, messageOf, type AskOutcome, type AskRequest, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext } from "@operad-io/engine";
 import {
   allMessages,
   chatData,
@@ -39,10 +29,6 @@ export const WORKTREE_CHOICES = ["yes", "no"] as const;
 
 /** The event a "yes" sends; the plugin that owns the working directory acts on it. */
 export const WORKTREE_EVENT = "chat.worktree";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /**
  * Whether a harness question is about a call in the working directory: a

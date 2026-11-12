@@ -4,7 +4,7 @@ import { entryHint, paletteEntries } from "../src/actions.ts";
 import { initialState, reduce, type TuiState, type TuiStateEvent } from "../src/state.ts";
 
 const LEVEL = { type: "string", enum: ["off", "run", "merge"], description: "how far it goes alone" } as const;
-const HARNESS = { type: "string", enum: ["harness-claude", "harness-pi"] } as const;
+const HARNESS = { type: "string", enum: ["claude", "pi"] } as const;
 const COUNT = { type: "integer", minimum: 1, maximum: 16 } as const;
 const NOTE = { type: "string", role: "note" } as const;
 
@@ -90,7 +90,7 @@ describe("arguments of an action", () => {
     expect(state.input?.kind).toBe("args");
     if (state.input?.kind !== "args") return;
     expect(state.input.fields.map((field) => field.name)).toEqual(["harness"]);
-    expect(state.input.fields[0]?.options.map((o) => o.label)).toEqual(["harness-claude", "harness-pi"]);
+    expect(state.input.fields[0]?.options.map((o) => o.label)).toEqual(["claude", "pi"]);
     expect(state.input.cursor).toBe(-1);
     // Enter without a pick leaves the harness out, so the run uses the first loaded one.
     expect(press(state, "enter").actionRequest).toEqual({
@@ -100,7 +100,7 @@ describe("arguments of an action", () => {
     expect(press(open(), "j", "j", "enter").actionRequest).toEqual({
       action: "devtest:chat",
       id: "item:one",
-      args: { harness: "harness-pi" },
+      args: { harness: "pi" },
     });
   });
 

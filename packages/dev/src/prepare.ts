@@ -13,12 +13,8 @@ import {
   symlinkSync,
 } from "node:fs";
 import { join, relative } from "node:path";
-import {
-  messageOf,
-  type StepContext,
-  type StepRunOptions,
-} from "@operad-io/engine";
-import { isRecord } from "./model.ts";
+import { isRecord, messageOf, type StepContext, type StepRunOptions } from "@operad-io/engine";
+
 import type { DevSettings } from "./settings.ts";
 
 /** The reason a step reports when a prepare command failed. */
@@ -106,17 +102,28 @@ function workspacePackages(root: string): { name: string; dir: string }[] {
   } catch {
     return found;
   }
-  for (const entry of entries) {
-    const dir = join(root, "packages", entry);
+  const add = (dir: string): boolean => {
     try {
       const json: unknown = JSON.parse(
         readFileSync(join(dir, "package.json"), "utf8"),
       );
       if (isRecord(json) && typeof json.name === "string") {
         found.push({ name: json.name, dir });
+        return true;
       }
     } catch {
       // Not a package.
+    }
+    return false;
+  };
+  for (const entry of entries) {
+    const dir = join(root, "packages", entry);
+    if (add(dir)) continue;
+    // A group directory (packages/harness/) holds packages one level down.
+    try {
+      for (const child of readdirSync(dir)) add(join(dir, child));
+    } catch {
+      // Not a directory.
     }
   }
   return found;

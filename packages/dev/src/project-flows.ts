@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { FlowDefinition, StepShape } from "@operad-io/engine";
 import type { DevSettings } from "./settings.ts";
+import { isRecord } from "@operad-io/engine";
 
 const FLOW_SUFFIX = ".flow.ts";
 
@@ -23,10 +24,6 @@ export interface ProjectFlows {
   readonly flows: ReadonlyMap<string, FlowDefinition>;
   /** Why a name is refused; the name starts no task. */
   readonly refused: ReadonlyMap<string, string>;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function useOf(step: Record<string, unknown>): string | undefined {

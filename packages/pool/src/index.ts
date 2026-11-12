@@ -5,12 +5,7 @@
  * its own `count` in the repository and the home-wide cap on its harness.
  */
 
-import {
-  definePlugin,
-  type PluginStepResult,
-  type StepContext,
-  type StepRunOptions,
-} from "@operad-io/engine";
+import { definePlugin, isRecord, type PluginStepResult, type StepContext, type StepRunOptions } from "@operad-io/engine";
 import { join } from "node:path";
 import { PlaceBook, type Claim, type Places } from "./places.ts";
 import { FilePlaces } from "./shared.ts";
@@ -49,10 +44,6 @@ export const POOL_SETTINGS = {
 /** The settings keys, for the docs test. */
 export const POOL_SETTING_NAMES: readonly string[] = Object.keys(POOL_SETTINGS.properties);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function capOf(
   settings: Readonly<Record<string, unknown>>,
   harness: string,
@@ -73,10 +64,6 @@ export function modelUnavailable(data: Readonly<Record<string, unknown>> | undef
   const error = data?.modelError;
   if (!isRecord(error)) return false;
   return error.kind === "unavailable" || error.kind === "usage_limit";
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function failed(reason: string, message: string, extra: Record<string, unknown> = {}): PluginStepResult {

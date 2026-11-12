@@ -17,6 +17,7 @@ import type {
   ActionArgsSchema,
   ObjectStore,
 } from "../plugin/types.ts";
+import { isRecord } from "../util.ts";
 
 /** The scope of a setting in `config.json`. */
 export const GLOBAL_SCOPE = "global";
@@ -64,10 +65,6 @@ export interface SettingsOptions {
 export interface AtomicWriteHooks {
   /** Called once the temporary file is complete, before it replaces the target. */
   readonly beforeRename?: (() => Promise<void> | void) | undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isMissing(error: unknown): boolean {

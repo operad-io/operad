@@ -1,6 +1,7 @@
 /** Checking a tool call's arguments against the small JSON Schema it declares. */
 
 import type { InputPropertySchema, InputSchema } from "./tools.ts";
+import { isRecord } from "@operad-io/engine";
 
 /** The arguments do not match the tool's input schema. */
 export class InvalidToolArguments extends Error {
@@ -8,10 +9,6 @@ export class InvalidToolArguments extends Error {
     super(message);
     this.name = "InvalidToolArguments";
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function checkOne(

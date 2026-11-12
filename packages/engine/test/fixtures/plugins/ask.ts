@@ -2,10 +2,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { defineFlow, definePlugin } from "../../../src/index.ts";
 import { waitForChange } from "../../../src/platform/index.ts";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+import { isRecord } from "../../../src/util.ts";
 
 /** Resolves when the file exists: a directory watch, re-checked on a timer. */
 async function waitForFile(path: string): Promise<void> {

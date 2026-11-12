@@ -378,7 +378,7 @@ export function shortDuration(milliseconds: number): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
-function oneLine(value: string, full: boolean): string {
+function detailLine(value: string, full: boolean): string {
   const flat = value.replace(/\s*\n\s*/g, " ").replace(/[ \t]+/g, " ").trim();
   if (full || flat.length <= SHORT_DETAIL) return flat;
   return `${flat.slice(0, SHORT_DETAIL - 1).trimEnd()}…`;
@@ -567,7 +567,7 @@ export function runHistoryLines(
           open.detail = text(payload.prompt) ?? "";
         } else if (open === undefined) {
           const entry = historyEntry(fact);
-          items.push({ time: fact.time, text: `${entry.what}: ${oneLine(entry.why, options.full)}` });
+          items.push({ time: fact.time, text: `${entry.what}: ${detailLine(entry.why, options.full)}` });
         }
         break;
       case "edge_taken": {
@@ -592,7 +592,7 @@ export function runHistoryLines(
         const entry = historyEntry(fact);
         items.push({
           time: fact.time,
-          text: `${entry.what}${entry.why.length > 0 ? `: ${oneLine(entry.why, options.full)}` : ""}`,
+          text: `${entry.what}${entry.why.length > 0 ? `: ${detailLine(entry.why, options.full)}` : ""}`,
         });
       }
     }
@@ -613,7 +613,7 @@ export function runHistoryLines(
         `${item.last.outcome ?? ""} ×${item.count}`,
         `${localMinute(item.time)}–${localMinute(item.lastTime)}`,
       );
-      if (item.last.detail.length > 0) parts.push(oneLine(item.last.detail, options.full));
+      if (item.last.detail.length > 0) parts.push(detailLine(item.last.detail, options.full));
       lines.push(parts.join("  "));
       continue;
     }
@@ -627,7 +627,7 @@ export function runHistoryLines(
     if (item.attempt > 1) parts.push(`attempt ${item.attempt}`);
     if (item.reason.length > 0) parts.push(item.reason);
     parts.push(outcome, shortDuration(end - item.time));
-    if (item.detail.length > 0) parts.push(oneLine(item.detail, options.full));
+    if (item.detail.length > 0) parts.push(detailLine(item.detail, options.full));
     lines.push(parts.join("  "));
   }
   return lines;

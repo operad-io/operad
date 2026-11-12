@@ -6,6 +6,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { isRecord } from "@operad-io/engine";
 
 /** Where a repository keeps its review grading. */
 export const REVIEW_GRADING_FILE = ".operad/review.json";
@@ -28,10 +29,6 @@ export class ReviewGradingError extends Error {
     super(`review.json: ${message}`);
     this.name = "ReviewGradingError";
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function noExtra(

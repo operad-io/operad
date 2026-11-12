@@ -2,14 +2,11 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs
 import { basename, dirname, join } from "node:path";
 import { defineFlow, definePlugin } from "../../../src/index.ts";
 import { waitForChange } from "../../../src/platform/index.ts";
+import { isRecord } from "../../../src/util.ts";
 
 interface Info {
   readonly name: string;
   readonly dir: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function infoOf(params: unknown): Info {

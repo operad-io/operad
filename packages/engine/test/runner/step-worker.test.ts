@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openPluginStore } from "../../src/index.ts";
+import { isRecord, openPluginStore } from "../../src/index.ts";
 import { waitForChange } from "../../src/platform/index.ts";
 import {
   runStepWorker,
@@ -17,10 +17,6 @@ afterAll(cleanupTempRoots);
 const pluginPath = fileURLToPath(
   new URL("../fixtures/plugins/step-worker.ts", import.meta.url),
 );
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /** Stands in for the run's process while the worker function runs in this one. */
 class FakePort implements StepWorkerPort {

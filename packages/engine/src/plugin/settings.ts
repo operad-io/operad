@@ -6,10 +6,7 @@
 import type { JsonValue } from "../log/types.ts";
 import { ActionArgsError, validateSchemaValue } from "./action-schema.ts";
 import type { ActionArgSchema, ActionArgsSchema } from "./types.ts";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+import { isRecord } from "../util.ts";
 
 function cloneJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map((item) => cloneJson(item));

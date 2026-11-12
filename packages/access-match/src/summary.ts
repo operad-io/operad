@@ -5,6 +5,7 @@
  */
 
 import { match, type AccessProfile } from "./index.ts";
+import { isRecord, oneLine } from "@operad-io/engine";
 
 /** A command is cut at this many characters. */
 export const COMMAND_SUMMARY_CHARS = 500;
@@ -36,11 +37,6 @@ export interface SummaryOptions {
 
 /** Keys that hold the main argument of a tool, in the order they are tried. */
 const MAIN_KEYS = ["file_path", "path", "notebook_path", "pattern", "query", "url", "command", "description"] as const;
-
-function oneLine(text: string, limit: number): string {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length <= limit ? flat : `${flat.slice(0, limit - 1)}…`;
-}
 
 /** Starts of the shell constructs the reader does not understand. */
 const NOT_UNDERSTOOD = ["$(", "`", "<(", ">(", "<<", "$[", "$(("];
@@ -130,10 +126,6 @@ function withoutSecretValues(text: string, options: SummaryOptions): string {
   let out = text;
   for (const value of [...values].sort((x, y) => y.length - x.length)) out = out.split(value).join(MASK);
   return out;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** The lines of a command, each with its spaces collapsed, blank lines kept so a count of them is true, cut at the limit. */

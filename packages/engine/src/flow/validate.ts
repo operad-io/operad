@@ -6,6 +6,7 @@ import {
   type StepType,
   type StepTypeRegistry,
 } from "./types.ts";
+import { isRecord } from "../util.ts";
 
 /** A flow is not usable; the message names the flow, step and field. */
 export class FlowError extends Error {
@@ -13,10 +14,6 @@ export class FlowError extends Error {
     super(message, options);
     this.name = "FlowError";
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isStringArray(value: unknown): value is string[] {

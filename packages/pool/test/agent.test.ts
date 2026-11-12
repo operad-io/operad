@@ -484,15 +484,15 @@ describe("settings", () => {
 
   test("harnesses defaults to {} and accepts counts", async () => {
     expect((await load({})).registry.names()).toEqual(["pool"]);
-    expect((await load({ harnesses: { "harness-pi": 2 } })).registry.names()).toEqual(["pool"]);
+    expect((await load({ harnesses: { "pi": 2 } })).registry.names()).toEqual(["pool"]);
   });
 
   for (const bad of [0, -1, 1.5, "2", null]) {
     test(`refuses ${JSON.stringify(bad)} with the field path`, async () => {
-      const loaded = await load({ harnesses: { "harness-pi": bad } });
+      const loaded = await load({ harnesses: { "pi": bad } });
       expect(loaded.registry.names()).toEqual([]);
       expect(loaded.logs).toContain("settings.harnesses");
-      expect(loaded.logs).toContain("harness-pi");
+      expect(loaded.logs).toContain("pi");
     });
   }
 

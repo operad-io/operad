@@ -11,18 +11,7 @@
 
 import { mkdirSync } from "node:fs";
 import { CHAT_TYPE, chatData, createChat } from "@operad-io/chat";
-import {
-  definePlugin,
-  type ActionTypeDefinition,
-  type JsonValue,
-  type ObjectRow,
-  type ObjectStore,
-  type ObjectViews,
-  type SectionContent,
-  type StoredObject,
-  type PluginStepResult,
-  type StepContext,
-} from "@operad-io/engine";
+import { definePlugin, isRecord, type ActionTypeDefinition, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
 import {
   ASSISTANT_SETTINGS,
   DEFAULT_PROFILE,
@@ -36,10 +25,6 @@ import {
 
 /** The step a chat calls at every reply to read its profile. */
 export const PROFILE_STEP = "assistant/profile";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /** The profile as the row of a list shows it. */
 function rowOf(profile: ResolvedProfile): Record<string, JsonValue> {

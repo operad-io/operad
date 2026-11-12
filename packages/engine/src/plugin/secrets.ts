@@ -9,6 +9,7 @@ import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promi
 import { join } from "node:path";
 import { Secret } from "../log/secret.ts";
 import type { SecretStore } from "./types.ts";
+import { isRecord } from "../util.ts";
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -27,10 +28,6 @@ function assertName(value: string, kind: string): string {
     throw new Error(`${kind} "${value}": must be letters, digits, dot, dash or underscore`);
   }
   return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** One plugin's secrets. A missing file means the plugin has none. */

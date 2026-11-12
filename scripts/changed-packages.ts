@@ -2,7 +2,7 @@
  * Which workspace packages a task's check tests: every package with a changed
  * file, and every package whose files refer to one of those, directly or
  * through others. A package refers to another when its code imports it
- * (`@operad-io/<name>`, or a relative path into `packages/<name>/`). Code that
+ * (`@operad-io/<name>`, or a relative path into `packages/<name>/`, `packages/<group>/<name>/`). Code that
  * imports changed code is changed code too, transitively; a package whose
  * tests (and not its code) load changed code has its tests run, and that goes
  * no further.
@@ -22,13 +22,37 @@ export type Selection =
   | { readonly kind: "all"; readonly reason: string }
   | { readonly kind: "some"; readonly packages: readonly string[] };
 
-/** The package directory names under `packages/` that have a package.json. */
+/**
+ * The package directories under `packages/` that have a package.json, as paths
+ * relative to `packages/`. A directory without a package.json is a group (such
+ * as `harness/`): the packages one level below it are listed as `group/name`.
+ */
 export function workspacePackages(root: string): string[] {
   const dir = join(root, "packages");
   if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((name) => existsSync(join(dir, name, "package.json")))
-    .sort();
+  const found: string[] = [];
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    if (!statSync(path).isDirectory()) continue;
+    if (existsSync(join(path, "package.json"))) {
+      found.push(name);
+      continue;
+    }
+    for (const child of readdirSync(path)) {
+      if (existsSync(join(path, child, "package.json"))) found.push(`${name}/${child}`);
+    }
+  }
+  return found.sort();
+}
+
+/** The package directory that holds `path` (relative to `packages/`), if any. */
+function owner(dirs: ReadonlySet<string>, path: string): string | undefined {
+  const parts = path.split("/");
+  for (const length of [2, 1]) {
+    const head = parts.slice(0, length).join("/");
+    if (dirs.has(head)) return head;
+  }
+  return undefined;
 }
 
 function packageName(root: string, dir: string): string | undefined {
@@ -60,6 +84,7 @@ function loads(
 ): Set<string> {
   const refs = new Set<string>();
   const packagesDir = resolve(root, "packages");
+  const known = new Set(byName.values());
   for (const file of files) {
     const text = readFileSync(file, "utf8");
     for (const match of text.matchAll(SPECIFIER)) {
@@ -69,7 +94,7 @@ function loads(
         dir = byName.get(spec.split("/").slice(0, 2).join("/"));
       } else if (spec.startsWith(".")) {
         const target = relative(packagesDir, resolve(dirname(file), spec));
-        if (!target.startsWith("..")) dir = target.split(sep)[0];
+        if (!target.startsWith("..")) dir = owner(known, target.split(sep).join("/"));
       }
       if (dir !== undefined && dir !== self) refs.add(dir);
     }
@@ -108,11 +133,9 @@ export function selectPackages(root: string, changed: readonly string[]): Select
   const dirs = new Set(workspacePackages(root));
   const touched = new Set<string>();
   for (const path of changed) {
-    const match = /^packages\/([^/]+)\//.exec(path);
-    if (match === null || !dirs.has(match[1] ?? "")) {
-      return { kind: "all", reason: path };
-    }
-    touched.add(match[1] ?? "");
+    const dir = path.startsWith("packages/") ? owner(dirs, path.slice("packages/".length)) : undefined;
+    if (dir === undefined) return { kind: "all", reason: path };
+    touched.add(dir);
   }
   const refs = references(root);
   // Code that changed, and code that loads changed code, transitively.

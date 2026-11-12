@@ -14,13 +14,8 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import {
-  messageOf,
-  type PluginStepResult,
-  type StepContext,
-  type StepRunOptions,
-} from "@operad-io/engine";
-import { isRecord } from "./model.ts";
+import { isRecord, messageOf, type PluginStepResult, type StepContext, type StepRunOptions } from "@operad-io/engine";
+
 import type { CheckCommand, FailedRerun } from "./settings.ts";
 import {
   CheckPlaceCancelled,

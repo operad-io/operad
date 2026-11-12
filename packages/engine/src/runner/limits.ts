@@ -17,6 +17,7 @@ import type { JsonValue, LogBackend } from "../log/types.ts";
 import type { StepLimiter, StepLimitRequest } from "../plugin/types.ts";
 import { withLockFile } from "../platform/index.ts";
 import { join } from "node:path";
+import { isRecord } from "../util.ts";
 
 /** How often a waiting step looks again when no change was announced. */
 const RECHECK_MS = 1000;
@@ -36,10 +37,6 @@ export interface LimitEntry {
   readonly reported: boolean;
   /** For a reported wait: the waiters ahead of it, as its plugin counts them. */
   readonly ahead?: number;
-}
-
-function isRecord(value: unknown): value is Record<string, JsonValue> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** The effect id of the step that a nested effect id belongs to. */

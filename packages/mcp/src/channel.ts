@@ -154,7 +154,7 @@ function sameRow(left: SeenRow, right: SeenRow): boolean {
   );
 }
 
-function oneLine(value: string): string {
+function flattenNewlines(value: string): string {
   return value.replace(/[\r\n]+/g, " ");
 }
 
@@ -168,8 +168,8 @@ function contentOf(
       ? row.note
       : fallback;
   const note =
-    text !== undefined && text.trim().length > 0 ? `: ${oneLine(text)}` : "";
-  return `${oneLine(row.id)} ${previous} -> ${oneLine(row.state)}${note}`;
+    text !== undefined && text.trim().length > 0 ? `: ${flattenNewlines(text)}` : "";
+  return `${flattenNewlines(row.id)} ${previous} -> ${flattenNewlines(row.state)}${note}`;
 }
 
 function notificationOf(
@@ -183,14 +183,14 @@ function notificationOf(
   return {
     content: contentOf(row, previous, fallback),
     meta: {
-      id: oneLine(row.id),
+      id: flattenNewlines(row.id),
       type,
-      state: oneLine(row.state),
-      previous: oneLine(previous),
+      state: flattenNewlines(row.state),
+      previous: flattenNewlines(previous),
       waiting: row.waiting ? "true" : "false",
       running: row.running ? "true" : "false",
       reason,
-      ...(step === undefined ? {} : { step: oneLine(step) }),
+      ...(step === undefined ? {} : { step: flattenNewlines(step) }),
     },
   };
 }

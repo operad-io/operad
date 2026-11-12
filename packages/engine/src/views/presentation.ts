@@ -57,6 +57,7 @@ import {
   type SettingInfo,
   type SettingsOptions,
 } from "./settings.ts";
+import { isRecord } from "../util.ts";
 
 /** The final section the kernel adds to every object. */
 export const HISTORY_SECTION = "history";
@@ -260,10 +261,6 @@ export interface ViewActionRun {
 export interface SectionOptions {
   /** Return the whole section, without the size cap. */
   readonly full?: boolean | undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isThenable(value: unknown): boolean {

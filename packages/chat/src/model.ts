@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { JsonValue, ObjectRef, ObjectStore, PluginFact } from "@operad-io/engine";
+import { isRecord, stringList } from "@operad-io/engine";
 
 /** The object type of a chat. */
 export const CHAT_TYPE = "chat";
@@ -25,7 +26,7 @@ export interface ChatData {
   readonly [key: string]: unknown;
   /** The object one level up (a repository, a profile); a full object id. */
   readonly parent?: string | undefined;
-  /** The harness plugin that answers, such as `harness-claude`; fixed once the chat exists. */
+  /** The harness plugin that answers, such as `claude`; fixed once the chat exists. */
   readonly harness: string;
   /** Where the harness works. */
   readonly cwd: string;
@@ -79,16 +80,6 @@ export interface MessageData {
 export interface Message extends MessageData {
   readonly at: number;
   readonly sequence: number;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function stringList(value: unknown): readonly string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
 }
 
 /** The chat fields of a stored object, with the lists defaulted. */
@@ -161,7 +152,7 @@ export async function createChat(
   throw new Error("cannot find a free chat id");
 }
 
-function messageOf(fact: PluginFact): Message | undefined {
+function messageOfFact(fact: PluginFact): Message | undefined {
   if (fact.type !== MESSAGE_FACT) return undefined;
   const data = fact.data;
   if (typeof data.id !== "string" || typeof data.text !== "string") return undefined;
@@ -203,7 +194,7 @@ export function messagePage(
       limit,
     });
     for (const fact of page.facts) {
-      const message = messageOf(fact);
+      const message = messageOfFact(fact);
       if (message !== undefined) messages.push(message);
     }
     if (page.next === undefined || messages.length >= limit) {

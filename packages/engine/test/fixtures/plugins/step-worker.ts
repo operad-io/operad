@@ -1,10 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { definePlugin } from "../../../src/index.ts";
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+import { definePlugin, messageOf } from "../../../src/index.ts";
 
 /** The steps the step-worker tests drive through a fake parent port. */
 export default definePlugin({

@@ -21,13 +21,13 @@ import { isRegistered, prepareWorktree, workBranch, worktreePath } from "./steps
 /**
  * The harnesses a repository chat offers, in order: the ones that can stop a
  * tool call before it starts, so the main clone stays read-only
- * (`operad-conversation.md` decisions 13 and 14). harness-radian is not one.
+ * (`operad-conversation.md` decisions 13 and 14). radian is not one.
  */
-export const CHAT_HARNESSES = ["harness-claude", "harness-pi"] as const;
+export const CHAT_HARNESSES = ["claude", "pi"] as const;
 
 /** Why radian is not offered; said up front in the action's description. */
 export const RADIAN_NOTE =
-  "harness-radian is not offered here: it cannot stop a tool call before it starts and cannot continue a session in another directory, so it cannot keep the main clone read-only or move to a worktree; use it for an assistant chat.";
+  "radian is not offered here: it cannot stop a tool call before it starts and cannot continue a session in another directory, so it cannot keep the main clone read-only or move to a worktree; use it for an assistant chat.";
 
 /** The access profile of a chat in the main clone: read-only, and no secrets. */
 export const CHAT_ACCESS: Readonly<Record<string, JsonValue>> = {
@@ -96,7 +96,7 @@ const chatAction: ActionTypeDefinition = {
     if (harness === undefined) {
       throw new DevRefusal(`no harness for a repository chat is loaded; load one of ${CHAT_HARNESSES.join(", ")}`);
     }
-    if (harness === "harness-radian") throw new DevRefusal(RADIAN_NOTE);
+    if (harness === "radian") throw new DevRefusal(RADIAN_NOTE);
     if (!offered.includes(harness as (typeof CHAT_HARNESSES)[number])) {
       throw new DevRefusal(
         `harness "${harness}" is not offered for a repository chat; the loaded ones that are: ${offered.join(", ") || "none"}`,

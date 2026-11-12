@@ -1,10 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { defineFlow, definePlugin } from "../../../src/index.ts";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+import { isRecord } from "../../../src/util.ts";
 
 function dirOf(params: unknown): string {
   if (!isRecord(params) || typeof params.dir !== "string") {

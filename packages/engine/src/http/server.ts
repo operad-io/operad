@@ -27,6 +27,7 @@ import {
   tokensEqual,
   type HttpToken,
 } from "./token.ts";
+import { isRecord } from "../util.ts";
 
 /** How long an idle event stream waits before a keep-alive comment. */
 export const DEFAULT_KEEP_ALIVE_MS = 15_000;
@@ -211,10 +212,6 @@ class StreamRegistry {
       stream.close();
     }
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 const JSON_HEADERS = {

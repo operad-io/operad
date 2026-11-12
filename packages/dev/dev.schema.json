@@ -55,7 +55,7 @@
           "type": "object",
           "properties": {
             "stage": { "const": "work" },
-            "use": { "description": "The harness step, such as harness-radian/agent; unset uses the repository's worker.", "type": "string", "minLength": 1 },
+            "use": { "description": "The harness step, such as radian/agent; unset uses the repository's worker.", "type": "string", "minLength": 1 },
             "args": { "description": "Arguments for the harness step; unset uses the worker's own.", "type": "array", "items": { "type": "string" } },
             "brief": { "description": "Extra instructions appended to the worker's prompt.", "type": "string", "minLength": 1 },
             "beforeAttempt": { "description": "The preparation before the attempt: merge-main (fetch and merge the latest main) or none. Unset leaves the worktree step's merge in force.", "type": "string", "enum": ["merge-main", "none"] }
@@ -158,10 +158,10 @@
       "type": "object",
       "properties": {
         "use": {
-          "description": "The harness step, such as harness-radian/agent.",
+          "description": "The harness step, such as radian/agent.",
           "type": "string",
           "minLength": 1,
-          "default": "harness-radian/agent"
+          "default": "radian/agent"
         },
         "args": {
           "description": "Extra arguments the harness step passes to its command.",
@@ -184,7 +184,7 @@
       },
       "additionalProperties": false,
       "default": {
-        "use": "harness-radian/agent",
+        "use": "radian/agent",
         "args": []
       }
     },
@@ -196,7 +196,7 @@
         "type": "object",
         "properties": {
           "use": {
-            "description": "The harness step, as plugin/step, such as harness-claude/agent.",
+            "description": "The harness step, as plugin/step, such as claude/agent.",
             "type": "string",
             "pattern": "^[^/\\s]+/[^/\\s]+$"
           },
@@ -348,10 +348,10 @@
       "type": "object",
       "properties": {
         "use": {
-          "description": "The harness step, such as harness-radian/agent.",
+          "description": "The harness step, such as radian/agent.",
           "type": "string",
           "minLength": 1,
-          "default": "harness-radian/agent"
+          "default": "radian/agent"
         },
         "args": {
           "description": "Extra arguments the harness step passes to its command.",
@@ -467,7 +467,7 @@
       },
       "additionalProperties": false,
       "default": {
-        "use": "harness-radian/agent",
+        "use": "radian/agent",
         "args": [],
         "timeoutSecs": 600,
         "fixLevel": "major",

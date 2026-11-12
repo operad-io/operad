@@ -7,8 +7,8 @@ whose flow reviews calls
 readReviewGrading(repositoryPath, flowName): Grading
 ```
 
-and puts the result in its review prompt. The package has no runtime
-dependency. `review.schema.json` is the file's JSON Schema.
+and puts the result in its review prompt. The package depends only on `@operad-io/engine`, for its
+shared helpers. `review.schema.json` is the file's JSON Schema.
 
 ```json
 {

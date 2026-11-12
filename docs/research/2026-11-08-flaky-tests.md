@@ -2,11 +2,11 @@
 
 T-0065 (cancel-hang) is merged (`d5c87c2` on origin/main). Method, per the rework
 brief: `bash scripts/stress.sh --runs 10 --load 2 <tests>` (10 reruns, not 20), in
-the order engine, shell, dev, harness-claude, cli. dev, harness-claude and cli
+the order engine, shell, dev, claude, cli. dev, claude and cli
 were run file by file, because a whole-package dev run exceeded the 20-minute tool
 limit and was discarded. Time ran out after those five packages. No code or test
 is changed by this task. Machine: macOS, 10 CPUs. Other sessions' stress runs
-(T-0091) were active on the same machine throughout, and harness-claude and cli
+(T-0091) were active on the same machine throughout, and claude and cli
 overlapped the end of the dev run, so the load was higher than `--load 2`. Real
 failure rates are probably lower on a quiet machine.
 
@@ -17,7 +17,7 @@ failure rates are probably lower on a quiet machine.
 | engine | 5640 | 18 | `isolation > in process, module state is shared: faster, not isolated` 9; `presentation views > reads sections, pages with next and grows a live section` 9 | 8m56s |
 | shell | 290 | 0 | none | 1m29s |
 | dev | 10 reruns of every test, per file | 30 | `dev/review hardening > a radian Result with a model_error makes the real harness report unavailable` 10; `dogfood-config` (2 tests) 20 | about 53m (`gate.test.ts` alone 30m50s); see the whole-package run below |
-| harness-claude | 10 reruns of every test, per file | 1 | `harness-claude/agent > silence without an open tool call is a stall` 1 | about 4m |
+| claude | 10 reruns of every test, per file | 1 | `claude/agent > silence without an open tool call is a stall` 1 | about 4m |
 | cli | 10 reruns of every test, per file | 21 | `operad command > init creates the home and prints each plugin check` 10; `init reports a missing radian and leaves a complete config` 10; `a serve restart while a check runs > the check's command is not signalled and finishes with its exit code` 1 | about 3m |
 
 The whole-package dev run that I called discarded did finish (log
@@ -45,11 +45,11 @@ answer. In that run the dogfood failures had a different message (`Export named
 stale-install environment issue as below. A new proposed task (6) covered the two
 repository failures.
 
-Not run (out of time): access-match, harness-pi, harness-process, harness-radian,
+Not run (out of time): access-match, pi, harness-process, radian,
 mcp, pool, review-grading, source-cron, tui. The full-suite "0 of 200" bar is not
 established for any package; this survey used 10 reruns.
 
-Tests named in the brief that did **not** fail in 10 reruns: harness-claude cancel
+Tests named in the brief that did **not** fail in 10 reruns: claude cancel
 and wall-limit tests (consistent with T-0065), dev/review crash recovery (two
 tests), dev/verify "a timeout is not rerun" and "a hanging command fails with a
 timeout", dev:rework "rework racing merge in two processes", "switching to WAL
@@ -63,10 +63,10 @@ need more than 10 reruns to show; absence here is weak evidence.
 
 `gate.test.ts` "a radian Result with a model_error ..." (10 of 10), `dogfood-config`
 (20 of 20) and cli `main.test.ts` "init ..." (20 of 20) failed every rerun, with
-`Cannot find module '@operad-io/access-match' from packages/harness-radian/src/index.ts`
+`Cannot find module '@operad-io/access-match' from packages/harness/radian/src/index.ts`
 (seen in the gate and dogfood logs; the cli log was not read, same pattern). This
 worktree's `node_modules/@operad-io` has no `access-match` link (only dev, engine,
-harness-claude, harness-pi, harness-radian, pool, shell, source-cron), dated before
+claude, pi, radian, pool, shell, source-cron), dated before
 that package was needed. After `bun install --frozen-lockfile` ("no changes") the
 three files passed when run alone, which I cannot explain; the link is still absent.
 Classification: **environment / unexplained**, not a flaky test. `scripts/verify.sh`
@@ -85,9 +85,9 @@ cannot judge them.
   fixture (my grep found none in `test/views`), so the cause is inferred from the
   growth pattern: unclassified beyond "state shared across reruns".
 
-### Test bug, likely: instant liveness check after a kill (harness-claude, 1 failure; shell, 0 here)
+### Test bug, likely: instant liveness check after a kill (claude, 1 failure; shell, 0 here)
 
-`packages/harness-claude/test/plugin.test.ts:385`, "silence without an open tool call
+`packages/harness/claude/test/plugin.test.ts:385`, "silence without an open tool call
 is a stall": the result was already `failed`/`stall` (lines 383-384 passed), then
 `expect(alive(pid)).toBe(false)` got `true` (1 of 10, 626 ms). `alive` is
 `process.kill(pid, 0)` (`plugin.test.ts:75-82`) checked immediately. A killed process
@@ -133,13 +133,13 @@ Each ends with: the stress command must reach 0 failures of 200 runs.
    other uses, `shell.test.ts:~680`) with a wait on the event "pid is gone" with a
    bounded timeout; on timeout record `ps -o stat,ppid` so a zombie is told from a
    live process. If a live process remains, that is a product race in the stop path
-   (`process-group.ts`) and becomes its own bug. Check: `bash scripts/stress.sh --runs 200 --load 2 packages/harness-claude/test/plugin.test.ts` and `bash scripts/stress.sh --runs 200 --load 2 packages/shell/test/shell.test.ts` must each report 0 failures (whole files, so every test in them runs 200 times).
+   (`process-group.ts`) and becomes its own bug. Check: `bash scripts/stress.sh --runs 200 --load 2 packages/harness/claude/test/plugin.test.ts` and `bash scripts/stress.sh --runs 200 --load 2 packages/shell/test/shell.test.ts` must each report 0 failures (whole files, so every test in them runs 200 times).
 3. **Say why `serve stop` exited 3, then fix it** (area: cli). Make the serve-restart
    test print stop's stderr on failure, reproduce with
    `bash scripts/stress.sh --runs 20 --load 2 packages/cli/test/serve-restart.test.ts`
    (a first reproduction only), read the stop path, and classify before fixing.
    Check: `bash scripts/stress.sh --runs 200 --load 2 packages/cli/test/serve-restart.test.ts` reports 0 failures.
-4. **Do not let tests depend on a stale install** (area: tooling). `harness-radian`
+4. **Do not let tests depend on a stale install** (area: tooling). `radian`
    imports `@operad-io/access-match`, and a worktree with an old install fails
    `dogfood-config`, `gate` and cli `main` tests with "Cannot find module". Either the
    stress script/tests fail fast with "run bun install", or the tests resolve the
@@ -163,11 +163,11 @@ Each ends with: the stress command must reach 0 failures of 200 runs.
 
 The link that mattered was never the root one. `node_modules/@operad-io` at the
 repository root links only what the root `package.json` depends on (dev, engine,
-harness-claude, harness-pi, harness-radian, pool, shell, source-cron);
-`@operad-io/access-match` is a dependency of harness-claude, harness-pi and
-harness-radian, so bun links it under each of those packages
-(`packages/harness-radian/node_modules/@operad-io/access-match`), and
-`packages/harness-radian/src/index.ts` resolves it from there, never from the root.
+claude, pi, radian, pool, shell, source-cron);
+`@operad-io/access-match` is a dependency of claude, pi and
+radian, so bun links it under each of those packages
+(`packages/harness/radian/node_modules/@operad-io/access-match`), and
+`packages/harness/radian/src/index.ts` resolves it from there, never from the root.
 So the root link was absent before and after `bun install --frozen-lockfile`, and
 should be. The stale install was the per-package link: the old worktree lacked it,
 and the install, though it printed "no changes" for the lockfile, created it
@@ -197,10 +197,10 @@ are not kept in the repository.
 |---|---|---|---|
 | access-match | match.test.ts | 470 | 0 |
 | access-match | summary.test.ts | 300 | 0 |
-| harness-pi | pi-install.test.ts | 140 | 0 |
-| harness-pi | plugin.test.ts | 540 | 0 |
-| harness-pi | spike.test.ts | 60 | 0 |
-| harness-pi | worker.test.ts | 440 | 0 |
+| pi | pi-install.test.ts | 140 | 0 |
+| pi | plugin.test.ts | 540 | 0 |
+| pi | spike.test.ts | 60 | 0 |
+| pi | worker.test.ts | 440 | 0 |
 | harness-process | ask-note.test.ts | 50 | 0 |
 | harness-process | descriptor-owner.test.ts | 10 | 0 |
 | harness-process | grants.test.ts | 60 | 0 |
@@ -209,7 +209,7 @@ are not kept in the repository.
 | harness-process | process.test.ts | 60 | 0 |
 | harness-process | stdio-guard.test.ts | 20 | 0 |
 | harness-process | tool-events.test.ts | 10 | 0 |
-| harness-radian | plugin.test.ts | 430 | 0 |
+| radian | plugin.test.ts | 430 | 0 |
 | mcp | channel.test.ts | 190 | 0 |
 | mcp | entry.test.ts | 10 | 0 |
 | mcp | server.test.ts | 170 | 0 |
@@ -250,7 +250,7 @@ New failures at 10 reruns (the skipped packages): one test, below.
 Other sessions' stress runs (`dev/cli.test.ts` and `dev/service.test.ts` at 200
 runs, started 00:23 and 00:34) were running on the machine the whole time, so the
 load was higher than `--load 2`; this was not a quiet machine. "Runs" counts test
-executions. engine, cli, shell, harness-claude and the new packages finished all
+executions. engine, cli, shell, claude and the new packages finished all
 files; dev did not (see "gate.test.ts alone, and what is left").
 
 | Package | Files done | Runs | Failures | Failing tests |
@@ -259,10 +259,10 @@ files; dev did not (see "gate.test.ts alone, and what is left").
 | cli | 17 | 2180 | 0 | none |
 | dev | 1 | 440 | 0 | none |
 | engine | 56 | 12040 | 3 | 2 x store lifecycle and concurrency > two jsonl writers assign unique, contiguous sequences; 1 x step limits survive a crash > while the step runs: the slot is held and recovery follows replay |
-| harness-claude | 6 | 3680 | 1 | 1 x harness-claude/agent > silence with an open tool call is not a stall |
-| harness-pi | 4 | 2360 | 1 | 1 x harness-pi/agent > cancel stops the worker and reports interrupted |
+| claude | 6 | 3680 | 1 | 1 x claude/agent > silence with an open tool call is not a stall |
+| pi | 4 | 2360 | 1 | 1 x pi/agent > cancel stops the worker and reports interrupted |
 | harness-process | 8 | 580 | 0 | none |
-| harness-radian | 1 | 860 | 1 | 1 x harness-radian/agent > a zero exit without a Result record is a failure that says so |
+| radian | 1 | 860 | 1 | 1 x radian/agent > a zero exit without a Result record is a failure that says so |
 | mcp | 3 | 740 | 0 | none |
 | pool | 4 | 1800 | 0 | none |
 | review-grading | 1 | 220 | 0 | none |
@@ -271,7 +271,7 @@ files; dev did not (see "gate.test.ts alone, and what is left").
 | tui | 19 | 4580 | 2 | 2 x file themes > the real directory watch reports an edit |
 
 `packages/cli/test/e2e.test.ts` runs 0 tests: its tests are `test.skip` unless
-`OPERAD_TEST_E2E=1` (line 199). `harness-radian` also skips 20 of 880 test runs.
+`OPERAD_TEST_E2E=1` (line 199). `radian` also skips 20 of 880 test runs.
 Not an issue, but those tests are not covered by any stress run.
 
 ### New failures, classified
@@ -297,22 +297,22 @@ to 3 failures in 20 reruns, so they are rare; no failure repeated in the same ru
    handshake through `ready-*`/`go` files with the same `watch` + `existsSync`
    helper; a missed directory event is a hang with no retry. Same family as 1;
    unconfirmed. Proposed task 7.
-3. **harness-claude `silence with an open tool call is not a stall`: unclassified.** 1 of 20 (run 2), 30 s timeout. The test waits for the marker
+3. **claude `silence with an open tool call is not a stall`: unclassified.** 1 of 20 (run 2), 30 s timeout. The test waits for the marker
    file (`waitForFile`, a watch) and then `env.clock.when(clears > 0)`; I did not
    find which wait hung. Candidate: the same missed watch event (family of 1 and 2),
    or the injected clock never seeing a timer armed. Proposed task 7.
-4. **harness-radian `a zero exit without a Result record is a failure that says
+4. **radian `a zero exit without a Result record is a failure that says
    so`: unclassified.** 1 of 20 (run 1 of the file): the test itself passed;
    its `afterEach` hook (`stopTestProcesses`, `support.ts:99-108`) hit the 50 s
    timeout, i.e. `waitForGone` never saw the test's processes leave. Either a
    process matching the temp path survived the group signal or the process listing
    stalled under load. Unclassified; could be a product leak (a process outliving
    its run) or the test helper. Proposed task 8.
-5. **harness-pi `cancel stops the worker and reports interrupted`: unclassified,
+5. **pi `cancel stops the worker and reports interrupted`: unclassified,
    with a product race suspected.** 1 of 20 (run 8 of 20, 10 s): `result` was `interrupted` /
    `cancelled` (lines 550-551 passed) but `gone(pid)` still saw the worker alive after
    polling for 10 s (`plugin.test.ts:85-92`, `kill -0` every 5 ms). Not the instant
-   check of the harness-claude finding: 10 s is long enough for a reap, so either the
+   check of the claude finding: 10 s is long enough for a reap, so either the
    worker was left running (the abort arrived right after the marker file but
    before the process group was registered) or it was a zombie nobody reaped. No
    `ps` was taken. Related to proposed task 2. Proposed task 9.
@@ -338,16 +338,16 @@ Each ends with: the stress command must reach 0 failures of 200 runs.
    fallback. Check, each 0 failures of 200:
    `bash scripts/stress.sh --runs 200 --load 2 packages/tui/test/theme.test.ts`,
    `... packages/engine/test/plugin/object-store.test.ts`,
-   `... packages/harness-claude/test/plugin.test.ts`.
-8. **Find why `stopTestProcesses` did not finish in harness-radian** (area:
-   harness-radian tests). Failure 4. Print the surviving `ps -o pid,ppid,stat,command`
+   `... packages/harness/claude/test/plugin.test.ts`.
+8. **Find why `stopTestProcesses` did not finish in radian** (area:
+   radian tests). Failure 4. Print the surviving `ps -o pid,ppid,stat,command`
    when `waitForGone` times out; classify as leak or listing stall before fixing.
-   Check: `bash scripts/stress.sh --runs 200 --load 2 packages/harness-radian/test/plugin.test.ts`.
-9. **A cancelled pi worker still alive 10 s later** (area: harness-pi). Failure 5.
+   Check: `bash scripts/stress.sh --runs 200 --load 2 packages/harness/radian/test/plugin.test.ts`.
+9. **A cancelled pi worker still alive 10 s later** (area: pi). Failure 5.
    Record `ps -o stat,ppid` for the pid when `gone` gives up; test cancel fired
    immediately after the marker appears; if the process is live, it is a race
    between abort and process-group registration in the plugin. Check:
-   `bash scripts/stress.sh --runs 200 --load 2 packages/harness-pi/test/plugin.test.ts`.
+   `bash scripts/stress.sh --runs 200 --load 2 packages/harness/pi/test/plugin.test.ts`.
 10. **Crash-recovery order record short by one** (area: engine). Failure 6. Make the
     test print `env.order()` source lines and the child exits on failure, then decide
     test bug or replay bug. Check:
@@ -375,6 +375,6 @@ Left, not run in this task:
 ## Commit history (follow-up)
 
 The commits of the completion pass were grouped: `c1fcb5e` recorded access-match,
-harness-pi and harness-process, and `84c6e23` recorded harness-radian, mcp, pool,
+pi and harness-process, and `84c6e23` recorded radian, mcp, pool,
 review-grading, source-cron and tui. The brief asked for one commit per package.
 That history is before this follow-up and is not rewritten.

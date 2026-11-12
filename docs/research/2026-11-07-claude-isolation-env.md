@@ -1,6 +1,6 @@
 # Claude Code isolation environment variables (2026-11-07)
 
-Research note for `operad-harness-claude.md` decision 4: besides
+Research note for the claude harness item in `docs/backlog/`, decision 4: besides
 `settingSources: []`, which environment variables keep Claude Code quiet? The
 table below was in the package's spike notes, which T-0266 deleted; this
 note keeps the observation.
@@ -50,4 +50,4 @@ exist as options or settings keys in 0.3.319.
 opencode's own list was not available here, so a variable that opencode sets and
 is not in the table above was not looked up. The worker's current set, and the
 reason auto compaction and tool search are left on, are in
-`packages/harness-claude/README.md`.
+`packages/harness/claude/README.md`.

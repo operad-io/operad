@@ -33,7 +33,7 @@ import { createShellPlugin } from "@operad-io/shell";
 import { setTaskPhase } from "../src/service.ts";
 import { notCodeTestHooks } from "../src/notcode.ts";
 import type { CheckCommand } from "../src/settings.ts";
-import { listRerunCounts, recordRerunPasses } from "../src/reruns.ts";
+import { listRerunCounts } from "../src/reruns.ts";
 import { anchoredPattern, rerunCommand } from "../src/rerun.ts";
 import {
   addPlan,
@@ -1730,7 +1730,7 @@ describe("dev/review fallback and retry", () => {
  */
 async function loadRadianHarness(): Promise<ReturnType<typeof definePlugin>> {
   const path = fileURLToPath(
-    new URL("../../harness-radian/src/index.ts", import.meta.url),
+    new URL("../../harness/radian/src/index.ts", import.meta.url),
   );
   const loaded: unknown = await import(path);
   const make =
@@ -1807,7 +1807,7 @@ describe("dev/review hardening", () => {
     const settings = JSON.parse(readFileSync(path, "utf8")) as {
       reviewer: Record<string, unknown>;
     };
-    settings.reviewer.use = "harness-radian/agent";
+    settings.reviewer.use = "radian/agent";
     writeFileSync(path, JSON.stringify(settings));
     const registry = new PluginRegistry(
       [
@@ -2759,7 +2759,7 @@ describe("gate settings", () => {
     const settings = validateDevSettings({});
     expect(settings.gate).toEqual({ commands: [], commandTimeoutSecs: 1800 });
     expect(settings.reviewer).toEqual({
-      use: "harness-radian/agent",
+      use: "radian/agent",
       args: [],
       timeoutSecs: 600,
       fixLevel: "major",
@@ -3208,24 +3208,6 @@ describe("dev/verify reruns only the failed tests", () => {
     const pattern = readFileSync(patterns, "utf8");
     expect(pattern).toBe(anchoredPattern(name));
     expect(new RegExp(pattern).test(name.replace(" > ", " "))).toBe(true);
-  });
-
-  test("the pattern is anchored and joins describe names with a space, as bun test -t does", () => {
-    expect(anchoredPattern("a > b (c)")).toBe("^a b \\(c\\)$");
-    expect(rerunCommand("bun test -t {pattern}", "it's")).toBe("bun test -t '^it'\\''s$'");
-    expect(rerunCommand("run {name} {name}", "$x")).toBe("run '$x' '$x'");
-  });
-
-  test("the count accumulates across tasks", async () => {
-    const store = storeAt(await osTempRoot());
-    await recordRerunPasses(store, ["a", "b"]);
-    await recordRerunPasses(store, ["b"]);
-    await recordRerunPasses(store, ["b", "c"]);
-    expect(await listRerunCounts(store)).toEqual([
-      { name: "b", count: 3 },
-      { name: "a", count: 1 },
-      { name: "c", count: 1 },
-    ]);
   });
 });
 

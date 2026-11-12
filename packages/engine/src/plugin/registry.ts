@@ -69,21 +69,8 @@ import type {
   TriggerEvent,
   TriggerRule,
 } from "../trigger/types.ts";
-import {
-  askGraceOf,
-  collectStepTypes,
-  grantRequestProblem,
-  isRecord,
-  narrowerOf,
-  noteInfo,
-  normalizePlugin,
-  parseObjectKeyMaybe,
-  splitActionName,
-  validateFlows,
-  validatePluginSet,
-  validateRuleFlows,
-  type LoadedPlugin,
-} from "./validate.ts";
+import { askGraceOf, collectStepTypes, grantRequestProblem, narrowerOf, noteInfo, normalizePlugin, parseObjectKeyMaybe, splitActionName, validateFlows, validatePluginSet, validateRuleFlows, type LoadedPlugin } from "./validate.ts";
+import { isRecord } from "../util.ts";
 
 export { splitActionName };
 

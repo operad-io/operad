@@ -15,7 +15,7 @@ import {
 import { addRepository } from "../../dev/src/service.ts";
 import { main, type CliIo } from "../src/main.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
-import { fakeRadian } from "../../harness-radian/test/support.ts";
+import { fakeRadian } from "../../harness/radian/test/support.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -156,14 +156,14 @@ describe("operad command", () => {
       expect(await main(["init"], { home: fresh, io: first.io })).toBe(0);
       expect(first.text()).toContain("created");
       expect(first.text()).toContain("shell: ready");
-      expect(first.text()).toContain("harness-radian: radian is available");
+      expect(first.text()).toContain("radian: radian is available");
       expect(first.text()).toContain("dev: no repositories registered");
       expect(
         JSON.parse(readFileSync(join(fresh, "config.json"), "utf8")),
       ).toMatchObject({
         plugins: {
           shell: { module: "@operad-io/shell", enabled: true },
-          "harness-radian": {
+          "radian": {
             module: "@operad-io/harness-radian",
             enabled: true,
           },
@@ -241,7 +241,7 @@ describe("operad command", () => {
       const output = capture();
       expect(await main(["init"], { home, io: output.io })).toBe(1);
       expect(output.text()).toContain(
-        "harness-radian: radian was not found on PATH",
+        "radian: radian was not found on PATH",
       );
     } finally {
       if (previous === undefined) delete process.env.PATH;
@@ -255,7 +255,7 @@ describe("operad command", () => {
       plugins: Record<string, { enabled: boolean }>;
       store: { backend: string };
     };
-    expect(config.plugins["harness-radian"]?.enabled).toBe(true);
+    expect(config.plugins["radian"]?.enabled).toBe(true);
     expect(config.store.backend).toBe("jsonl");
 
     const list = capture();
@@ -587,16 +587,16 @@ describe("operad command", () => {
   test("plugin enable adds a shipped plugin the default config leaves out", async () => {
     const { home } = await makeNamedHome({});
     const enabled = capture();
-    expect(await main(["plugin", "enable", "harness-pi"], { home, io: enabled.io })).toBe(0);
-    expect(enabled.text()).toContain("harness-pi: enabled");
+    expect(await main(["plugin", "enable", "pi"], { home, io: enabled.io })).toBe(0);
+    expect(enabled.text()).toContain("pi: enabled");
 
     const listed = capture();
     expect(await main(["plugin", "list"], { home, io: listed.io })).toBe(0);
-    expect(listed.text()).toContain("harness-pi  0.0.0  enabled");
+    expect(listed.text()).toContain("pi  0.0.0  enabled");
 
     const claude = capture();
-    expect(await main(["plugin", "enable", "harness-claude"], { home, io: claude.io })).toBe(0);
-    expect(claude.text()).toContain("harness-claude: enabled");
+    expect(await main(["plugin", "enable", "claude"], { home, io: claude.io })).toBe(0);
+    expect(claude.text()).toContain("claude: enabled");
 
     const pool = capture();
     expect(await main(["plugin", "enable", "pool"], { home, io: pool.io })).toBe(0);

@@ -88,10 +88,10 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
               use: {
                 type: "string",
                 minLength: 1,
-                default: "harness-radian/agent",
+                default: "radian/agent",
                 editable: true,
                 description:
-                  "Which agent reviews a task's changes, as plugin/step, such as harness-claude/agent.",
+                  "Which agent reviews a task's changes, as plugin/step, such as claude/agent.",
               },
               args: {
                 type: "array",

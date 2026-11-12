@@ -12,6 +12,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { watchDirectory, withLockFile } from "@operad-io/engine/platform";
 import type { Claim, ClaimResult, Places } from "./places.ts";
+import { isRecord } from "@operad-io/engine";
 
 /** How often a waiter looks again when no change was announced. */
 const RECHECK_MS = 1000;
@@ -39,10 +40,6 @@ interface Held {
 interface Book {
   readonly version: number;
   readonly held: readonly Held[];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseBook(text: string): Book {

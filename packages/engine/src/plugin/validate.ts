@@ -35,6 +35,7 @@ import {
   type StepTypeDefinition,
   type TickContext,
 } from "./types.ts";
+import { isRecord } from "../util.ts";
 
 export interface NormalizedPlugin {
   readonly name: string;
@@ -108,10 +109,6 @@ export function narrowerOf(...values: readonly unknown[]): number | undefined {
     result = result === undefined ? value : Math.min(result, value);
   }
   return result;
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function parseObjectKeyMaybe(key: string): { readonly type: string; readonly id: string } {
@@ -256,7 +253,7 @@ function normalizeRules(
   }
 }
 
-function requireName(value: unknown, at: string): string {
+function requireNameText(value: unknown, at: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new PluginError(`${at}: must be a non-empty string`);
   }
@@ -285,7 +282,7 @@ function normalizeFilters(
   value.forEach((raw: unknown, index: number) => {
     const here = `${at}[${index}]`;
     if (!isRecord(raw)) throw new PluginError(`${here}: must be an object`);
-    const name = requireName(raw.name, `${here}: name`);
+    const name = requireNameText(raw.name, `${here}: name`);
     if (name === ALL_FILTER) {
       throw new PluginError(`${here}: name: "${ALL_FILTER}" is added by the kernel`);
     }
@@ -329,7 +326,7 @@ function normalizeObjects(
     if (!isRecord(entry)) {
       throw new PluginError(`${at}[${index}]: must be an object`);
     }
-    const name = requireName(entry.name, `${at}[${index}]: name`);
+    const name = requireNameText(entry.name, `${at}[${index}]: name`);
     if (names.has(name)) {
       throw new PluginError(`${at}: duplicate object type "${name}"`);
     }
@@ -485,7 +482,7 @@ function normalizeSteps(
     if (!isRecord(entry)) {
       throw new PluginError(`${at}[${index}]: must be an object`);
     }
-    const name = requireName(entry.name, `${at}[${index}]: name`);
+    const name = requireNameText(entry.name, `${at}[${index}]: name`);
     if (names.has(name)) {
       throw new PluginError(`${at}: duplicate step "${name}"`);
     }
@@ -562,8 +559,8 @@ function normalizeActions(
     if (!isRecord(entry)) {
       throw new PluginError(`${at}[${index}]: must be an object`);
     }
-    const name = requireName(entry.name, `${at}[${index}]: name`);
-    const on = requireName(entry.on, `${at}[${index}]: on`);
+    const name = requireNameText(entry.name, `${at}[${index}]: name`);
+    const on = requireNameText(entry.on, `${at}[${index}]: on`);
     const key = `${name}\u0000${on}`;
     if (names.has(key)) {
       throw new PluginError(
@@ -629,7 +626,7 @@ function normalizeCommands(
     if (!isRecord(entry)) {
       throw new PluginError(`${at}[${index}]: must be an object`);
     }
-    const name = requireName(entry.name, `${at}[${index}]: name`);
+    const name = requireNameText(entry.name, `${at}[${index}]: name`);
     if (names.has(name)) {
       throw new PluginError(`${at}: duplicate command "${name}"`);
     }
@@ -654,7 +651,7 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
   if (!isRecord(raw)) {
     throw new PluginError(`plugin[${index}]: must be an object`);
   }
-  const name = requireName(raw.name, `plugin[${index}]: name`);
+  const name = requireNameText(raw.name, `plugin[${index}]: name`);
   const at = `plugin "${name}"`;
 
   if (raw.operadPlugin !== OPERAD_PLUGIN_VERSION) {
@@ -670,7 +667,7 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     );
   }
 
-  const version = requireName(raw.version, `${at}: version`);
+  const version = requireNameText(raw.version, `${at}: version`);
 
   let onTick: ((ctx: TickContext) => MaybePromise<void>) | undefined;
   if (raw.onTick !== undefined) {

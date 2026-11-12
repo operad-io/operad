@@ -10,6 +10,7 @@ import {
   type LogBackendName,
   type LogBackendOptions,
 } from "../log/index.ts";
+import { isRecord } from "../util.ts";
 
 /** The storage backend the log uses. */
 export type StoreBackend = LogBackendName;
@@ -133,7 +134,7 @@ export class ConfigError extends Error {
 /** The plugins `operad init` installs, in load order. */
 export const DEFAULT_PLUGINS: readonly string[] = [
   "shell",
-  "harness-radian",
+  "radian",
   "chat",
   "dev",
 ];
@@ -142,11 +143,14 @@ export const DEFAULT_PLUGINS: readonly string[] = [
  * Plugins shipped with operad that `operad init` does not install. They are
  * not in the default config; `plugin enable <name>` adds them.
  */
-export const OPTIONAL_PLUGINS: readonly string[] = ["harness-pi", "harness-claude", "pool", "assistant"];
+export const OPTIONAL_PLUGINS: readonly string[] = ["pi", "claude", "pool", "assistant"];
+
+/** Harness plugins are named after their agent; their npm packages are `harness-<agent>`. */
+const HARNESS_PLUGINS: readonly string[] = ["claude", "pi", "radian"];
 
 /** The package name of a plugin shipped with operad. */
 export function defaultPluginModule(name: string): string {
-  return `@operad-io/${name}`;
+  return HARNESS_PLUGINS.includes(name) ? `@operad-io/harness-${name}` : `@operad-io/${name}`;
 }
 
 export function configPath(home: string): string {
@@ -175,10 +179,6 @@ export function storeRootOf(config: OperadConfig): string {
   return config.store.backend === "jsonl"
     ? config.store.path
     : dirname(config.store.path);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** Module names an older version wrote that moved; a config keeps working. */

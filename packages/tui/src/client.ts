@@ -12,6 +12,7 @@ import type {
   ViewObject,
   ViewSectionContent,
 } from "@operad-io/engine";
+import { isRecord, messageOf } from "@operad-io/engine";
 
 /** The fetch shape this package calls; tests pass a wrapper around the real one. */
 export type FetchLike = (
@@ -187,14 +188,6 @@ export class TuiUrlError extends TuiError {
     super(message, { kind: "url" });
     this.name = "TuiUrlError";
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /**

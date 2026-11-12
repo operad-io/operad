@@ -8,10 +8,7 @@
 import { SeqConflictError } from "../log/errors.ts";
 import type { JsonValue, LogBackend } from "../log/types.ts";
 import type { Grant } from "../kernel/types.ts";
-
-function isRecord(value: unknown): value is Record<string, JsonValue> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+import { isRecord } from "../util.ts";
 
 /** The wait ids whose permission the run has used. */
 export async function usedGrants(

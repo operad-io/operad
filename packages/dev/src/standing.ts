@@ -16,9 +16,10 @@ import {
 } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { StandingContext, StandingItem } from "@operad-io/engine";
-import { bareId, isRecord, listAll, planData, storeKey, taskData } from "./model.ts";
+import { bareId, listAll, planData, storeKey, taskData } from "./model.ts";
 import { listRepositories } from "./service.ts";
 import { hasValidSettings, settingsProblem } from "./settings.ts";
+import { isRecord } from "@operad-io/engine";
 
 /** A plugin dev starts steps of, so it cannot start work without it. */
 export interface RequiredPlugin {
@@ -65,12 +66,54 @@ interface ServeCodeRecord {
   readonly files: readonly string[];
 }
 
-/** Workspace packages whose code a serve of this home loads. */
+/**
+ * The workspace package directories of a code root, relative to `packages/`
+ * (`engine`, `harness/claude`), by the package's npm name. A directory without
+ * a manifest is a group whose children are packages.
+ */
+function packageDirsByName(codeRoot: string): Map<string, string> {
+  const found = new Map<string, string>();
+  const base = join(codeRoot, "packages");
+  const read = (dir: string): string | undefined => {
+    try {
+      const raw: unknown = JSON.parse(readFileSync(join(base, dir, "package.json"), "utf8"));
+      return isRecord(raw) && typeof raw.name === "string" ? raw.name : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  let entries: string[] = [];
+  try {
+    entries = readdirSync(base);
+  } catch {
+    return found;
+  }
+  for (const entry of entries) {
+    const name = read(entry);
+    if (name !== undefined) {
+      found.set(name, entry);
+      continue;
+    }
+    try {
+      for (const child of readdirSync(join(base, entry))) {
+        const childName = read(`${entry}/${child}`);
+        if (childName !== undefined) found.set(childName, `${entry}/${child}`);
+      }
+    } catch {
+      // Not a group directory.
+    }
+  }
+  return found;
+}
+
+/** Workspace packages whose code a serve of this home loads (directories under `packages/`). */
 export function loadedPackages(home: string, codeRoot: string): ReadonlySet<string> {
   // The kernel's own dependencies are not expanded: cli lists clients it
   // imports only for their own commands.
   const kernel = ["engine", "cli"];
   const names = new Set<string>(kernel);
+  const dirs = packageDirsByName(codeRoot);
+  const dirOf = (npmName: string): string => dirs.get(npmName) ?? npmName.slice("@operad-io/".length);
   try {
     const raw: unknown = JSON.parse(readFileSync(join(home, "config.json"), "utf8"));
     const configured = isRecord(raw) ? raw.plugins : undefined;
@@ -89,11 +132,14 @@ export function loadedPackages(home: string, codeRoot: string): ReadonlySet<stri
     }
     for (const module of modules) {
       if (module.startsWith("@operad-io/")) {
-        names.add(module.slice("@operad-io/".length));
+        names.add(dirOf(module.split("/").slice(0, 2).join("/")));
       } else if (module.startsWith(".") || isAbsolute(module)) {
         // A module given as a path counts when it lies in a package of the code root.
         const inside = relative(join(codeRoot, "packages"), resolve(home, module));
-        const name = inside.split(sep)[0];
+        const parts = inside.split(sep);
+        const name = [parts.slice(0, 2).join("/"), parts[0] ?? ""].find((dir) =>
+          [...dirs.values()].includes(dir),
+        ) ?? parts[0];
         if (name !== undefined && name.length > 0 && name !== ".." && !isAbsolute(inside)) {
           names.add(name);
         }
@@ -118,7 +164,7 @@ export function loadedPackages(home: string, codeRoot: string): ReadonlySet<stri
         isRecord(raw) && isRecord(raw.dependencies) ? Object.keys(raw.dependencies) : [];
       for (const dependency of dependencies) {
         if (!dependency.startsWith("@operad-io/")) continue;
-        const short = dependency.slice("@operad-io/".length);
+        const short = dirOf(dependency);
         if (!names.has(short)) {
           names.add(short);
           queue.push(short);
@@ -139,10 +185,11 @@ export function loadedPackages(home: string, codeRoot: string): ReadonlySet<stri
 export function isServeCode(file: string, packages: ReadonlySet<string>): boolean {
   const parts = file.split("/");
   if (parts[0] !== "packages" || parts.length < 3) return false;
-  const name = parts[1];
+  const grouped = packages.has(`${parts[1]}/${parts[2]}`);
+  const name = grouped ? `${parts[1]}/${parts[2]}` : parts[1];
   if (name === undefined || !packages.has(name)) return false;
   if (file.endsWith(".md")) return false;
-  return !parts.slice(2, -1).some((part) => part === "test" || part === "fixtures");
+  return !parts.slice(grouped ? 3 : 2, -1).some((part) => part === "test" || part === "fixtures");
 }
 
 export interface ServeCodeMerge {

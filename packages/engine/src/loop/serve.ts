@@ -14,6 +14,7 @@ import type { LockHandle } from "../runner/lock.ts";
 import { StepLimits } from "../runner/limits.ts";
 import { applyInput, objectKey, parseObjectKey, readState } from "../runner/service.ts";
 import { reapStale } from "../platform/step-reap.ts";
+import { isRecord } from "../util.ts";
 
 export interface SpawnRunOptions {
   /** The previous process died mid-step; recover before doing anything else. */
@@ -54,10 +55,6 @@ export interface ServePassResult {
 function startObjectKey(request: StartRunRequest): string {
   const key = objectKey(request.object);
   return key === "flow" ? `flow:${request.plugin}/${request.flow}` : key;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** The answer a recorded input carries, or undefined for another input. */

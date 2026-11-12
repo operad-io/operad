@@ -11,6 +11,7 @@ import {
   type FetchLike,
   type TuiError,
 } from "./client.ts";
+import { isRecord } from "@operad-io/engine";
 
 /** The first delay before a reconnect. */
 export const DEFAULT_RETRY_MIN_MS = 250;
@@ -92,10 +93,6 @@ export function waitForRetry(ms: number, signal: AbortSignal): Promise<void> {
     const timer = setTimeout(done, ms);
     signal.addEventListener("abort", done, { once: true });
   });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 interface SseBlock {

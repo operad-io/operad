@@ -29,31 +29,8 @@ import {
   readReviewGrading,
   type Grading,
 } from "@operad-io/review-grading";
-import {
-  messageOf,
-  type PluginStepResult,
-  type StepContext,
-  type StepRunOptions,
-} from "@operad-io/engine";
-import {
-  appendRework,
-  DevError,
-  isRecord,
-  type PendingReviewRun,
-  type ReviewFinding,
-  type ReviewNote,
-  type ReviewNotes,
-  type ReviewRecord,
-  type ReviewResult,
-  type ReviewRunRecord,
-  type ReviewRunReason,
-  type ReviewRunRole,
-  type ReworkRecord,
-  type TaskAttempt,
-  type TaskData,
-  type VerifyRecord,
-  type VerifyResult,
-} from "./model.ts";
+import { isRecord, messageOf, type PluginStepResult, type StepContext, type StepRunOptions } from "@operad-io/engine";
+import { appendRework, DevError, type PendingReviewRun, type ReviewFinding, type ReviewNote, type ReviewNotes, type ReviewRecord, type ReviewResult, type ReviewRunRecord, type ReviewRunReason, type ReviewRunRole, type ReworkRecord, type TaskAttempt, type TaskData, type VerifyRecord, type VerifyResult } from "./model.ts";
 import {
   assertInsideRepository,
   type CheckCommand,
@@ -2899,11 +2876,3 @@ export function taskHead(path: string): string | undefined {
   return headOf(path);
 }
 
-/** The worktree path the gate uses, for tests and views. */
-export function taskGatePath(context: TaskContext): string {
-  return gateWorktreePath(
-    context.repository.path,
-    context.settings,
-    context.taskId,
-  );
-}

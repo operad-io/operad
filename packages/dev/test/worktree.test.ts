@@ -424,7 +424,7 @@ describe("dev/worktree", () => {
     expect(settings.remote).toBe("origin");
     expect(settings.mainBranch).toBe("main");
     expect(settings.worktreeRoot).toBe(".operad-worktrees");
-    expect(settings.worker.use).toBe("harness-radian/agent");
+    expect(settings.worker.use).toBe("radian/agent");
   });
 });
 

@@ -1,0 +1,6 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": ".", "outDir": "../../../.tsbuild/harness-process" },
+  "include": ["src", "test"],
+  "references": [{ "path": "../../engine" }, { "path": "../../mcp" }]
+}

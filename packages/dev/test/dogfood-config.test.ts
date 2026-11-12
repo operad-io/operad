@@ -1,6 +1,6 @@
 /**
  * This repository's committed `.operad/dev.json` with `worker.use` switched to
- * `harness-pi/agent`, as `docs/dogfood.md` describes. The committed file is not
+ * `pi/agent`, as `docs/dogfood.md` describes. The committed file is not
  * changed. No model is called and no pi login is read.
  */
 
@@ -41,19 +41,19 @@ async function plugin(path: string): Promise<{ readonly default: unknown }> {
 }
 
 describe("this repository's dev.json with the pi worker", () => {
-  test("worker.use harness-pi/agent validates and the dev flow resolves it", async () => {
+  test("worker.use pi/agent validates and the dev flow resolves it", async () => {
     const settings = validateDevSettings({
       ...committed(),
-      worker: { use: "harness-pi/agent", args: [] },
+      worker: { use: "pi/agent", args: [] },
     });
-    expect(settings.worker.use).toBe("harness-pi/agent");
+    expect(settings.worker.use).toBe("pi/agent");
 
     const root = await tempRoot();
     const registry = new PluginRegistry(
       [
         createDevPlugin(),
         createShellPlugin(),
-        (await plugin("../../harness-pi/src/index.ts")).default,
+        (await plugin("../../harness/pi/src/index.ts")).default,
       ],
       { home: root, cwd: root, store: storeAt(root) },
     );
@@ -64,13 +64,13 @@ describe("this repository's dev.json with the pi worker", () => {
     // the degraded harness and never waits for a late answer.
     const results = registry.stepResults(settings.worker.use);
     expect(results).toBeDefined();
-    const radian = (await plugin("../../harness-radian/src/index.ts")).default;
+    const radian = (await plugin("../../harness/radian/src/index.ts")).default;
     const withRadian = new PluginRegistry([radian], {
       home: root,
       cwd: root,
       store: storeAt(root),
     });
-    expect(results).toEqual([...(withRadian.stepResults("harness-radian/agent") ?? []), "waiting"]);
+    expect(results).toEqual([...(withRadian.stepResults("radian/agent") ?? []), "waiting"]);
   });
 
   test("without the plugin enabled the same step name does not resolve", async () => {
@@ -80,40 +80,40 @@ describe("this repository's dev.json with the pi worker", () => {
       cwd: root,
       store: storeAt(root),
     });
-    expect(registry.stepResults("harness-pi/agent")).toBeUndefined();
+    expect(registry.stepResults("pi/agent")).toBeUndefined();
   });
 });
 
 describe("this repository's dev.json with the claude worker", () => {
-  test("worker.use harness-claude/agent with --model and --effort validates and the dev flow resolves it", async () => {
+  test("worker.use claude/agent with --model and --effort validates and the dev flow resolves it", async () => {
     const settings = validateDevSettings({
       ...committed(),
-      worker: { use: "harness-claude/agent", args: ["--model", "sonnet"] },
+      worker: { use: "claude/agent", args: ["--model", "sonnet"] },
       reviewer: {
         ...(committed().reviewer as Record<string, unknown>),
-        use: "harness-claude/agent",
+        use: "claude/agent",
         args: ["--model", "opus", "--effort", "medium"],
       },
     });
-    expect(settings.worker.use).toBe("harness-claude/agent");
-    expect(settings.reviewer.use).toBe("harness-claude/agent");
+    expect(settings.worker.use).toBe("claude/agent");
+    expect(settings.reviewer.use).toBe("claude/agent");
 
     const root = await tempRoot();
     const registry = new PluginRegistry(
       [
         createDevPlugin(),
         createShellPlugin(),
-        (await plugin("../../harness-claude/src/index.ts")).default,
+        (await plugin("../../harness/claude/src/index.ts")).default,
       ],
       { home: root, cwd: root, store: storeAt(root) },
     );
     expect(registry.refusals()).toEqual([]);
     expect(registry.flow("dev")).toBeDefined();
     // The step reports what radian's step reports, plus `waiting`.
-    const radian = (await plugin("../../harness-radian/src/index.ts")).default;
+    const radian = (await plugin("../../harness/radian/src/index.ts")).default;
     const withRadian = new PluginRegistry([radian], { home: root, cwd: root, store: storeAt(root) });
     expect(registry.stepResults(settings.worker.use)).toEqual([
-      ...(withRadian.stepResults("harness-radian/agent") ?? []),
+      ...(withRadian.stepResults("radian/agent") ?? []),
       "waiting",
     ]);
   });
