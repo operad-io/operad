@@ -20,6 +20,7 @@ import {
   addPlan,
   addRepository,
   addTask,
+  cancelTask,
   confirmPlan,
   createDevPlugin,
   getPlan,
@@ -30,6 +31,7 @@ import {
   setAuto,
   setTaskPhase,
   taskData,
+  taskRowState,
   taskViews,
   type IntegrationStyle,
   type TaskData,
@@ -45,6 +47,7 @@ import {
 import {
   cleanupTempRoots,
   guardLockHandles,
+  osTempRoot,
   storeAt,
   tempRoot,
 } from "./support.ts";
@@ -1637,5 +1640,74 @@ describe("integration.batch setting", () => {
         validateDevSettings({ name: "r", integration: { batch: bad } }),
       ).toThrow("integration.batch");
     }
+  });
+});
+
+describe("a task cancelled in the integrate step", () => {
+  async function planCounts(state: Fixture) {
+    const plan = planData((await getPlan(state.store, state.planKey)).data);
+    return { merged: plan.mergedCount, cancelled: plan.cancelledCount };
+  }
+
+  test("cancelled while queued behind another integration ends cancelled and merges nothing", async () => {
+    const state = await fixture({ more: 1 });
+    const second = state.others[0];
+    if (second === undefined) throw new Error("no second task");
+    const rings = bell();
+    integrateTestHooks.wait = rings.wait;
+    const queued = new Map([
+      [state.taskId, signal()],
+      [second.taskId, signal()],
+    ]);
+    integrateTestHooks.queued = (task) => queued.get(task)?.resolve();
+    integrateTestHooks.turnTaken = async (task) => {
+      if (task === state.taskId) await queued.get(second.taskId)?.promise;
+    };
+    const first = integrate(state, "integrate-run");
+    await queued.get(state.taskId)?.promise;
+    const later = integrate(second, "integrate-run-2");
+    await rings.parked(1);
+    expect(taskRowState(await taskOf(second))).toBe("integrating");
+
+    await cancelTask(state.store, second.taskKey);
+    expect(taskRowState(await taskOf(second))).toBe("cancelled");
+    expect(await planCounts(state)).toMatchObject({ cancelled: 1 });
+
+    expect((await first).result).toBe("merged");
+    rings.ring();
+    expect((await later).result).toBe("cancelled");
+    expect(taskRowState(await taskOf(second))).toBe("cancelled");
+    expect(await planCounts(state)).toEqual({ merged: 1, cancelled: 1 });
+    const subjects = firstParentSubjects(state);
+    expect(subjects).toHaveLength(2);
+    expect(subjects.some((subject) => subject.includes(second.taskId))).toBe(false);
+  });
+
+  test("cancelled while its integration check runs ends cancelled and merges nothing", async () => {
+    const dir = await osTempRoot();
+    const started = join(dir, "started");
+    const release = join(dir, "release");
+    for (const fifo of [started, release]) {
+      const made = Bun.spawnSync(["mkfifo", fifo]);
+      if (made.exitCode !== 0) throw new Error("mkfifo failed");
+    }
+    const state = await fixture({
+      keyCommands: [`echo go > '${started}'; cat '${release}' > /dev/null`],
+    });
+    const before = remoteMain(state);
+    const running = integrate(state);
+    // The check says it started by writing the first pipe.
+    await Bun.spawn(["cat", started], { stdout: "ignore" }).exited;
+    expect(taskRowState(await taskOf(state))).toBe("integrating");
+
+    await cancelTask(state.store, state.taskKey);
+    expect(taskRowState(await taskOf(state))).toBe("cancelled");
+    expect(await planCounts(state)).toEqual({ merged: 0, cancelled: 1 });
+
+    await Bun.spawn(["sh", "-c", `echo done > '${release}'`]).exited;
+    expect((await running).result).toBe("cancelled");
+    expect(taskRowState(await taskOf(state))).toBe("cancelled");
+    expect(await planCounts(state)).toEqual({ merged: 0, cancelled: 1 });
+    expect(remoteMain(state)).toBe(before);
   });
 });
