@@ -283,6 +283,8 @@ describe("the TUI view", () => {
       { id: "w2", title: "w", state: "w", mark: "ready_to_merge" as const, waiting: true, running: false },
       { id: "r1", title: "r", state: "r", running: true, waiting: false },
       { id: "r2", title: "r", state: "r", mark: "done" as const, running: true, waiting: false },
+      { id: "s1", title: "s", state: "merged", waiting: false, running: false },
+      { id: "s2", title: "s", state: "merged", mark: "done" as const, waiting: false, running: false },
     ];
     let state = initialState({ width, height: 80, theme: "dark" });
     state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
@@ -303,6 +305,9 @@ describe("the TUI view", () => {
       expect(glyphOf("w2")).toBe(MARK_GLYPHS.ready_to_merge.char);
       expect(glyphOf("r1")).toBe(MARK_GLYPHS.running.char);
       expect(glyphOf("r2")).toBe(MARK_GLYPHS.done.char);
+      // A state word alone finishes nothing; the mark decides.
+      expect(glyphOf("s1")).toBe("○");
+      expect(glyphOf("s2")).toBe(MARK_GLYPHS.done.char);
       view.destroy();
     } finally {
       await setup.dispose();

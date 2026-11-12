@@ -234,7 +234,6 @@ function glyph(row: TuiRow, palette: TuiPalette, tint?: string): TextChunk {
   // A mark this client does not know (a newer server) draws as plain.
   const shown = mark === "none" ? undefined : MARK_GLYPHS[mark];
   if (shown !== undefined) return chunk(shown.char, palette[shown.colour], undefined, tint);
-  if (/^(done|merged)$/i.test(row.state)) return chunk("✓", palette.ok, undefined, tint);
   return chunk("○", palette.weak, undefined, tint);
 }
 
@@ -370,8 +369,7 @@ function markColour(row: TuiRow, palette: TuiPalette): string {
   const mark = rowMark(row);
   // A finished child is weak: the progress bar already says it is done, and its
   // row should not draw the eye away from the work left (T-0305).
-  if (mark === "done" || /^(done|merged)$/i.test(row.state)) return palette.weak;
-  if (mark === "none") return palette.weak;
+  if (mark === "done" || mark === "none") return palette.weak;
   return palette[MARK_GLYPHS[mark].colour];
 }
 
@@ -466,12 +464,7 @@ function childRow(
   const tint = selected ? palette.tint : undefined;
   const colour = markColour(row, palette);
   const mark = rowMark(row);
-  const glyph =
-    mark === "none"
-      ? /^(done|merged)$/i.test(row.state)
-        ? "✓"
-        : "○"
-      : MARK_GLYPHS[mark].char;
+  const glyph = mark === "none" ? "○" : MARK_GLYPHS[mark].char;
   const state = padTo(row.state, columns.state);
   const badge = columns.badge === 0 ? "" : padTo(row.badge ?? "", columns.badge);
   const notes = [row.note ?? "", entry.alsoAfter.length === 0 ? "" : `also after ${entry.alsoAfter.join(", ")}`]

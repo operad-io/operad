@@ -37,6 +37,7 @@ OpenClaw 是聊天优先，operad 到现在是流程优先。第一个要满足�
 19. **用户看到的是 agent，不是 harness**（2026-11-12 owner 定，起因是 iOS 新建 chat 表单上的 HARNESS 一栏）：新建 chat 时选的那一项对用户叫 agent：`dev:chat`、`bot:chat` 的参数名是 `agent`（命令行 `--agent`），说明文字也说 agent；可选值仍是 harness 插件的名字（claude、pi、radian）。harness 留作内部和插件作者的词（插件类型、`.operad/dev.json` 的 worker 配置、代码），不出现在 chat 的界面上。`agent` 是 owner 批准的用户词。
 20. **chat 显示用的是哪个 agent，模型可以随时换**（2026-11-12 owner 定）：chat 的行和页面写明 agent（claude、pi、radian），知道时也写模型和累计费用。模型是 chat 的一个设置：新建时默认用这个 agent 配好的模型，聊天中途可以换，下一次回复生效；agent 选定后不换（决定 13），模型不受这个限制。可选的模型由各 harness 插件列出，客户端不写死。用户看到的词是 model（owner 同日同意这个提议）。
 21. **附件**（2026-11-12 owner 定，回答待决 2）：照片、相机、文件经客户端 API 上传到 operad，存在这个 chat 自己的附件目录里（operad 家目录下，不在仓库或 bot 的工作目录里），单个文件上限 20 MB；消息的事实记下附件的路径（决定 1 本来就有附件路径）。回复时交给 agent：claude 和 pi 能直接看的图片作为图片给，其他文件给路径让 agent 自己读；agent 的访问档只多放开这个 chat 的附件目录，只读。上传是客户端 API 的通用能力（一个动作的参数可以是上传的文件），不是 chat 专用的接口。
+22. **chat 的 effort 可以选，和模型一样**（2026-11-12 owner 定）：effort 是 chat 的一个设置，档位由各 harness 插件列出（claude 的 effort 档位，pi 的 thinking level 映射过来；radian 不支持就不列），新建时用这个 agent 的默认值，中途可换，下一次回复生效。用户看到的词是 effort（不用 thinking）。
 
 ## 顺序
 

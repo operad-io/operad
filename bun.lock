@@ -52,6 +52,7 @@
         "operad": "bin/operad.ts",
       },
       "dependencies": {
+        "@operad-io/bot": "workspace:*",
         "@operad-io/chat": "workspace:*",
         "@operad-io/dev": "workspace:*",
         "@operad-io/engine": "workspace:*",

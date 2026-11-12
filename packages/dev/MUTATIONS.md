@@ -937,3 +937,8 @@ the row fields.
 |---|---|---|---|
 | T-0317-M1 | packages/dev/src/steps.ts | the work step no longer copied the harness's `finalMessage` onto the attempt | `dev/work > the worker's final message is kept whole on the attempt (T-0317)` |
 | T-0318-M1 | packages/dev/src/views.ts | the task row's `wait` field left out (the wait text only in the note) | `dev views > the wait reason is its own field, whole, and a row that waits for nothing has none (T-0318)` and the integrate wait test |
+## T-0274 — dev's finished rows carry a mark
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0274-M5 | packages/dev/src/marks.ts | a removed repository returned `todo` instead of `cancelled`, so a finished row had no finished mark | `task badge > every finished row carries the mark that says how it ended` |

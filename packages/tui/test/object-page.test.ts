@@ -212,6 +212,31 @@ describe("the object page's child list", () => {
     expect(colour(merged as TextChunk)).toBe(token("weak"));
     expect(barChunks(state).map(colour)).toEqual([token("ok")]);
   });
+
+  test("a finished child is drawn finished by its mark; a state word alone is not", () => {
+    const rows = [
+      row("T-1-word", "merged"),
+      row("T-2-mark", "settled", { mark: "done" }),
+      row("T-3-run", "merged", { mark: "running" }),
+    ];
+    const progress = childProgress(rows, "tree");
+    expect(progress.done).toBe(1);
+    const state = opened(rows);
+    const lines = rightLines(state);
+    const lineOf = (id: string): string => {
+      const found = lines.find((line) => line.includes(id));
+      if (found === undefined) throw new Error(`no drawn line for ${id}`);
+      return found;
+    };
+    expect(lineOf("T-1-word")).toContain("○");
+    expect(lineOf("T-1-word")).not.toContain("✓");
+    expect(lineOf("T-2-mark")).toContain("✓");
+    // The mark also picks the colour: the state word merged is not dimmed.
+    expect(pieces(state).filter((part) => part.text.trim() === "merged").map(colour)).toEqual([
+      token("weak"),
+      token("run"),
+    ]);
+  });
 });
 
 describe("the object page's frame and columns", () => {

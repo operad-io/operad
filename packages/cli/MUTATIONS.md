@@ -120,3 +120,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0311-M1 | packages/cli/src/main.ts | `rowLine` dropped every row's badge, so a plan list lost its auto level | `operad presentation commands > a row's badge prints after its state, and a row without one keeps its line` |
+
+## T-0325 — every plugin the CLI offers resolves from it
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0325-M1 | packages/cli/package.json | removed the `@operad-io/bot` dependency, so a fresh install links no `node_modules/@operad-io/bot` | `plugins the CLI offers > bot (@operad-io/bot) is a dependency of the CLI and resolves from it` |
