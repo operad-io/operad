@@ -59,6 +59,10 @@ describe("the models pi declares", () => {
     ]);
   });
 
+  test("pi's no-model sentence is not a model", () => {
+    expect(parsePiCatalogue("No models available. Check your installation or add models to models.json.\n")).toEqual([]);
+  });
+
   test("the list is pi's catalogue", async () => {
     const env = await fakePi(catalogueBody());
     const models = registryFor(env, {}).loadedModels().pi;

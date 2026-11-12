@@ -119,14 +119,20 @@ export const PI_LIST_CACHE_MS = 60_000;
 
 /**
  * The rows of `pi --list-models` as provider/id: the first two columns of each
- * row after the header. Anything that is not such a row is skipped.
+ * row after the header row. Anything that is not such a row is skipped.
  */
 export function parsePiCatalogue(output: string): readonly string[] {
   const found: string[] = [];
+  let header = false;
   for (const line of output.split("\n")) {
     const [provider, id] = line.trim().split(/\s+/);
     if (provider === undefined || id === undefined) continue;
-    if (provider === "provider" && id === "model") continue;
+    // Rows count only after the header; a status sentence has none.
+    if (provider === "provider" && id === "model") {
+      header = true;
+      continue;
+    }
+    if (!header) continue;
     const name = `${provider}/${id}`;
     if (!found.includes(name)) found.push(name);
   }

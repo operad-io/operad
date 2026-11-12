@@ -103,3 +103,4 @@ the row fields.
 | T-0365-M5 | packages/harness/pi/src/index.ts | asking pi had no timeout | `the models pi declares > a pi that does not answer in time gives an empty list` |
 | T-0365-M6 | packages/harness/pi/src/index.ts | the catalogue was not kept: pi was asked at every read | `the models pi declares > pi is not asked at load, and the answer is kept until it is old` |
 | T-0365-M7 | packages/harness/pi/src/index.ts | the step did not report a configured model pi does not list | `pi/agent with a configured model pi does not list > the step reports it once in its log; a listed model reports nothing` |
+| T-0365-M9 | packages/harness/pi/src/index.ts | rows were read before any header row, so pi's no-model sentence became a model | `the models pi declares > pi's no-model sentence is not a model` |
