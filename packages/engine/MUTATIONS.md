@@ -728,3 +728,4 @@ the row fields.
 | T-0361-M11 | packages/engine/src/views/presentation.ts | the size cap cut the tail instead of shortening the finished page | `presentation views > a tail larger than the cap stays whole (T-0361)` |
 | T-0361-M12 | packages/engine/src/views/presentation.ts | the cap counted neither the note nor a tail that no longer fits with it, so the answer went over the cap | `presentation views > the cap refuses when even the tail and the note do not fit (T-0361)` |
 | T-0358-M12 | packages/engine/src/plugin/registry.ts | the step context did not carry the caller's receiver | `a step's line receiver > the receiver a caller gives reaches the step, and a call without one has none` |
+| T-0368-M1 | packages/engine/src/views/presentation.ts | a row over the limit was an error on its first measure, with no second measure | `presentation views > a row slow once only is not an error: it is measured again (T-0368)` |

@@ -19,6 +19,8 @@ function linesBetween(from: number, to: number): string {
   ).join("\n");
 }
 const waiting = new Promise<never>(() => undefined);
+/** Objects whose "slow-once" row has already been slow. */
+const slowedOnce = new Set<string>();
 
 /**
  * The clock a test moves by hand. The slow row advances it instead of waiting
@@ -77,6 +79,10 @@ export default definePlugin({
           }) as unknown as ObjectRow;
         }
         if (mode === "slow") {
+          testClock.advance(80);
+        }
+        if (mode === "slow-once" && !slowedOnce.has(object.id)) {
+          slowedOnce.add(object.id);
           testClock.advance(80);
         }
         const note = object.data.note;
