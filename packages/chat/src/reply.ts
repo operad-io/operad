@@ -371,10 +371,9 @@ function entriesToRecord(
   options: { readonly finalText?: string | undefined; readonly stopped: boolean },
 ): readonly (FoldEntry | { readonly kind: "stopped"; readonly text: string })[] {
   const entries: (FoldEntry | { readonly kind: "stopped"; readonly text: string })[] = [...folded.entries];
-  if (folded.thinking.length > 0) entries.push({ kind: "thinking", text: folded.thinking });
-  if (folded.text.length > 0) {
-    entries.push(options.stopped ? { kind: "stopped", text: folded.text } : { kind: "text", text: folded.text });
-  }
+  // What is still only an increment is not an entry. A stopped run keeps the
+  // text it got half way through; finished text and thinking are already above.
+  if (options.stopped && folded.text.length > 0) entries.push({ kind: "stopped", text: folded.text });
   // The final reply is a chat.message of its own; its text is not an entry too.
   if (options.finalText !== undefined) {
     const final = options.finalText.trim();

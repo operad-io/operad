@@ -181,6 +181,20 @@ describe("chat entries", () => {
     expect(twice.filter((entry) => entry.kind === "text" || entry.kind === "thinking")).toHaveLength(2);
   });
 
+  test("increments with no end are not stored as entries", async () => {
+    const r = await rig((ctx) => {
+      const line = send(ctx);
+      line({ type: "thinking_delta", text: "not finished" });
+      line({ type: "text_delta", text: "not finished either" });
+      return reply("the finished reply");
+    });
+    const chat = await r.chat();
+    await r.say(chat, "go");
+    await r.round(chat);
+    expect(allEntries(r.store, chat)).toEqual([]);
+    expect((await transcript(r, chat)).markdown).toContain("the finished reply");
+  });
+
   test("a stopped run keeps its half-written reply", async () => {
     const r = await rig((ctx) => {
       send(ctx)({ type: "thinking_delta", text: "almost" });
@@ -191,6 +205,7 @@ describe("chat entries", () => {
     await r.say(chat, "go");
     expect((await r.round(chat)).result).toBe("interrupted");
     const entries = allEntries(r.store, chat);
+    expect(entries.map((entry) => entry.kind)).toEqual(["stopped"]);
     expect(entries.find((entry) => entry.kind === "stopped")).toMatchObject({
       runId: "run-1",
       text: "Half a thought",

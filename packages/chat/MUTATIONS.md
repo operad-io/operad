@@ -83,3 +83,4 @@ the row fields.
 | T-0362-M10 | packages/chat/src/views.ts | a radian chat showed its text and thinking entries | `chat entries > a radian chat shows the tool lines only` |
 | T-0362-M11 | packages/chat/src/views.ts | a tool line showed the call's output | `chat entries > the transcript shows done, failed, blocked and denied tool calls, and thinking as an unlabeled quote` |
 | T-0362-M12 | packages/chat/src/views.ts | thinking was shown with a label in front of it | `chat entries > the transcript shows done, failed, blocked and denied tool calls, and thinking as an unlabeled quote` |
+| T-0362-M13 | packages/chat/src/reply.ts | text and thinking increments with no end were stored as entries | `chat entries > increments with no end are not stored as entries` |
