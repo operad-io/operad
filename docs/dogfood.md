@@ -348,4 +348,4 @@ and `--effort <level>` from `args`; any other entry fails the step with
 
 The settings, the step's results and the model-error rules are in
 `packages/harness/claude/README.md`. The hand-run acceptance points are in
-`docs/backlog/operad-harness-claude.md`.
+the claude harness item under `docs/backlog/`.
