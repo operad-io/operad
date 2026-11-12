@@ -34,10 +34,13 @@ test("is quick", () => { expect(1).toBe(${failing ? 2 : 1}); });
   return { root, times: join(root, "times") };
 }
 
+const parallel = "3";
+
 function run(root: string, times: string, args: string[]): { code: number; out: string } {
   const result = Bun.spawnSync(["bash", "scripts/run-tests.sh", ...args], {
     cwd: root,
-    env: { ...process.env, OPERAD_TEST_TIMES: times },
+    // The parallel count is set here, not taken from the caller: a check runs with its own.
+    env: { ...process.env, OPERAD_TEST_TIMES: times, OPERAD_TEST_PARALLEL: parallel },
     stdin: "ignore",
   });
   return { code: result.exitCode, out: `${result.stdout}${result.stderr}` };
@@ -54,7 +57,7 @@ describe("run-tests.sh", () => {
     const lines = readFileSync(times, "utf8").trim().split("\n");
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatch(
-      /^date=\d{4}-\d\d-\d\dT[\d:]+Z commit=\S+ tests=3 together=\d+ total=\d+ parallel=2 result=pass$/,
+      new RegExp(String.raw`^date=\d{4}-\d\d-\d\dT[\d:]+Z commit=\S+ tests=3 together=\d+ total=\d+ parallel=${parallel} result=pass$`),
     );
   });
 
