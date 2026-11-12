@@ -138,8 +138,7 @@ describe("plugin registry validation", () => {
     expect((await registry.runCommand(["a", "run"]))?.value).toBe("from a");
     expect((await registry.runCommand(["b", "run"]))?.value).toBe("from b");
     expect(registry.resolveCommand(["run"])).toBeUndefined();
-    expect(logs).toHaveLength(1);
-    expect(logs[0]).toContain('command "run"');
+    expect(logs).toEqual([]);
   });
 
   test("rejects a plugin flow that uses a step of a plugin that is not loaded", () => {
@@ -418,8 +417,8 @@ describe("plugin registry validation", () => {
     );
     expect(registry.resolveCommand(["run"])).toBeUndefined();
     expect((await registry.runCommand(["a", "run"]))?.value).toBe("from a");
-    expect(logs).toHaveLength(1);
-    expect(logs[0]).toContain("kernel verb");
+    // No line: a line printed at load reads as a load problem to serve's reload probe.
+    expect(logs).toEqual([]);
   });
 
   test("pending keeps a waiting run whose object is missing from the store", async () => {

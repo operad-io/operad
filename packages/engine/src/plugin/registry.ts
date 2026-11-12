@@ -1222,8 +1222,8 @@ export class PluginRegistry {
 
   /**
    * The short form `<command>`: offered only when exactly one plugin declares
-   * the name and it is not a kernel verb. One log line names each command
-   * left without a short form; `<plugin> <command>` still reaches it.
+   * the name and it is not a kernel verb. A command left without a short form
+   * logs nothing; `<plugin> <command>` still reaches it.
    */
   private resolveShortCommands(): ReadonlyMap<
     string,
@@ -1243,14 +1243,12 @@ export class PluginRegistry {
     >();
     for (const [name, list] of owners) {
       const [only] = list;
-      if (this.kernelVerbs.has(name)) {
-        this.log(
-          `command "${name}": plugin ${list.map((p) => `"${p.name}"`).join(", ")} declares it, but "${name}" is a kernel verb; use "<plugin> ${name}"`,
-        );
-      } else if (list.length > 1 || only === undefined) {
-        this.log(
-          `command "${name}": declared by plugins ${list.map((p) => `"${p.name}"`).join(", ")}; use "<plugin> ${name}"`,
-        );
+      // A name a kernel verb or another plugin also has gets no short form and
+      // no log line: every command and serve's reload probe load the plugins,
+      // and a line printed there reads as a load problem (serve then refuses
+      // the new code). `<plugin> <command>` still reaches it.
+      if (this.kernelVerbs.has(name) || list.length > 1 || only === undefined) {
+        continue;
       } else {
         const command = only.commands.find((item) => item.name === name);
         if (command !== undefined) result.set(name, { plugin: only, command });

@@ -70,7 +70,8 @@ describe("plugin commands named like kernel verbs or each other", () => {
     const kernel = await operad(home, ["pending"]);
     expect(kernel.code).toBe(0);
     expect(kernel.out).not.toContain("one pending");
-    expect(kernel.err).not.toContain("clashes");
+    // Nothing on stderr: serve's reload probe reads any load line as a problem.
+    expect(kernel.err).toBe("");
 
     const viaPlugin = await operad(home, ["one", "pending"]);
     expect(viaPlugin.code).toBe(0);
