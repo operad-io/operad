@@ -45,6 +45,7 @@
    - API 加两个调用：`settings [scope]` 列出设置（名字、当前值、默认值、schema 的说明、能不能改）；`set <名字> <值> [scope]` 改一个设置。内核按 schema 校验，不合法就拒绝并给出 schema 的理由，什么都不写；合法就原子写回文件（写临时文件再改名），保留文件里别的内容，然后像文件被手改一样让插件重新读。
    - 命令行、TUI 的 `:` 面板、iOS 的设置页都走这两个调用。秘密不在这里，仍然只用 `operad secret`。
    - 用户看到的新词（2026-11-08 owner 同意）：“设置”（settings，命令 `operad settings`、`operad settings set`）；TUI `:` 面板的分组名 actions、tui、settings。
+12. **一个动作新建了对象，就打开它。**（2026-11-12 owner 定：dev 界面上新建 chat 之后要跳到那个 chat。）动作的结果除了给人看的一行字，还可以说出它新建的对象（`opens: <类型:id>`），插件自己决定说不说；内核、客户端 API 和 HTTP 原样透传。iOS 和 TUI 收到就打开那个对象的页面，命令行照旧只打印那一行字。`dev:chat`、`bot:chat` 这类新建 chat 的动作都要说。
 
 ## 样子
 
