@@ -232,6 +232,12 @@ describe("bot:chat and the model", () => {
     await expect(r.open("default", { agent: "pi", model: "claude-b" })).rejects.toThrow("claude-b");
   });
 
+  test("a configured bot model its agent does not list is refused by name, not replaced by the default", async () => {
+    const r = await rig({ odd: { harness: "pi", model: "huge" } }, ["claude", "pi"]);
+    await syncBots(r.store, r.home, r.registry.settingsFor("bot"));
+    await expect(r.open("odd")).rejects.toThrow("huge");
+  });
+
   test("the model argument is an enum of the loaded agents' models", async () => {
     const r = await rig({}, ["claude", "pi"]);
     await syncBots(r.store, r.home, {});

@@ -111,11 +111,10 @@ export async function openChat(input: OpenChat): Promise<string> {
       `agent "${harness}" is not loaded; the loaded ones are: ${input.harnesses.join(", ") || "none"}`,
     );
   }
-  // The bot's own model counts only for an agent that lists it; a model asked for must be listed.
-  const configured = bot.model !== null && input.models?.[harness]?.list.includes(bot.model) === true ? bot.model : undefined;
+  // The bot's configured model must be one the agent lists; an unlisted one is refused by name.
   let model: string | undefined;
   try {
-    model = startingModel(harness, input.models?.[harness], input.model, configured);
+    model = startingModel(harness, input.models?.[harness], input.model, bot.model ?? undefined);
   } catch (error) {
     throw new BotError(error instanceof Error ? error.message : String(error));
   }
