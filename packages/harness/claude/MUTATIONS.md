@@ -122,3 +122,17 @@ setup it depends on, in the order they were recorded. The root
 | T-0327-M14 | packages/harness/claude/src/worker.ts | claude was not given a bot's MCP servers | `a bot's servers are given to claude beside operad's, by name, as the commands the input names` |
 | T-0339-M18 | packages/harness/claude/src/worker.ts | claude's prompt went as text only, dropping the images | `images are sent with the prompt as image blocks of the one user message` |
 | T-0358-M9 | packages/harness/claude/src/index.ts | the step did not hand its lines to the receiver | `claude/agent > a receiver gets each line the step writes to its log; without one the log is the same` |
+
+## T-0359 — the live increment lines, full ends and tool output
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0359-M1 | packages/harness/claude/src/worker.ts | a streamed text delta was added to the block but no `text_delta` line was written | `assistant text and thinking stream as increments, and finished blocks write their full text` |
+| T-0359-M2 | packages/harness/claude/src/worker.ts | a streamed thinking delta was added to the block but no `thinking_delta` line was written | `assistant text and thinking stream as increments, and finished blocks write their full text` |
+| T-0359-M3 | packages/harness/claude/src/worker.ts | `text_end` carried only the first 300 characters instead of the full message | `an assistant message logs its first 300 characters as one paragraph, without thinking` |
+| T-0359-M4 | packages/harness/claude/src/worker.ts | `thinking_end` carried only the first 3 characters instead of the full block | `assistant text and thinking stream as increments, and finished blocks write their full text` |
+| T-0359-M5 | packages/harness/claude/src/worker.ts | the increment group interval was 0, so every token wrote a line | `increments are grouped to one line per 100 ms for text and for thinking` |
+| T-0359-M6 | packages/harness/claude/src/worker.ts | a tool's output produced no `tool_output` line | `tool output is written with its call id, cut at the shared cap` |
+| T-0359-M7 | packages/harness/claude/src/worker.ts | the tool output was not cut at the shared cap and never said `truncated` | `tool output is written with its call id, cut at the shared cap` |
+| T-0359-M8 | packages/harness/claude/src/worker.ts | the new lines were written without masking `secretValues` | `a secret value is masked in every new line` |
+| T-0359-M9 | packages/harness/claude/src/worker.ts | `includePartialMessages` was not set, so claude sent no increments | `claude asks for partial messages so the increments can be written` |

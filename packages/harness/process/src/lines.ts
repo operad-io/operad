@@ -51,17 +51,17 @@ export type SharedLine =
       readonly session: string | null;
     }
   | { readonly type: "ask_resolved"; readonly id: number }
-  /** New assistant text only, not the text so far. No harness writes it yet. */
+  /** New assistant text only, not the text so far. */
   | { readonly type: "text_delta"; readonly text: string }
-  /** New thinking only, not the thinking so far. No harness writes it yet. */
+  /** New thinking only, not the thinking so far. */
   | { readonly type: "thinking_delta"; readonly text: string }
-  /** The full text of a finished assistant message. No harness writes it yet. */
+  /** The full text of a finished assistant message. */
   | { readonly type: "text_end"; readonly text: string }
-  /** The full text of a finished thinking block. No harness writes it yet. */
+  /** The full text of a finished thinking block. */
   | { readonly type: "thinking_end"; readonly text: string }
   /**
    * What a tool call printed, as text cut to `TOOL_OUTPUT_CAP_BYTES`;
-   * `truncated` is true when it was cut. No harness writes it yet.
+   * `truncated` is true when it was cut.
    */
   | {
       readonly type: "tool_output";

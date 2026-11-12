@@ -269,6 +269,33 @@ export function systemInit(session = SESSION): Json {
   };
 }
 
+/** One partial-message event, as `includePartialMessages` delivers it. */
+export function streamEvent(event: Record<string, unknown>, session = SESSION): Json {
+  return {
+    type: "stream_event",
+    session_id: session,
+    uuid: "00000000-0000-4000-8000-0000000000cc",
+    parent_tool_use_id: null,
+    event,
+  };
+}
+
+/** A streamed text or thinking block with its increments. */
+export function streamBlock(
+  kind: "text" | "thinking",
+  text: string,
+  index = 0,
+): Array<{ readonly say: Record<string, unknown> }> {
+  const field = kind === "thinking" ? "thinking" : "text";
+  return [
+    { say: streamEvent({ type: "content_block_start", index, content_block: { type: kind, [field]: "" } }) },
+    ...Array.from(text).map((part) => ({
+      say: streamEvent({ type: "content_block_delta", index, delta: { type: `${kind}_delta`, [field]: part } }),
+    })),
+    { say: streamEvent({ type: "content_block_stop", index }) },
+  ];
+}
+
 export function assistant(id: string, text: string, usage: Json = {}, session = SESSION): Json {
   return {
     type: "assistant",

@@ -24,7 +24,14 @@ import {
   type AccessProfile,
 } from "@operad-io/access-match";
 import { decideAccess, hasRules, translate, type CallAnswer } from "./access.ts";
-import { messageText, OPERAD_SERVER, readImage, serverCommand } from "@operad-io/harness-process";
+import {
+  capToolOutput,
+  maskSecrets,
+  messageText,
+  OPERAD_SERVER,
+  readImage,
+  serverCommand,
+} from "@operad-io/harness-process";
 import { findClaude } from "./claude-install.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
@@ -41,6 +48,61 @@ import {
 export const EXIT_FAILED = 1;
 export const EXIT_INVALID_INPUT = 2;
 export const EXIT_CANCELLED = 143;
+
+/** The shortest time between two increment lines of one stream, in milliseconds. */
+export const STREAM_GROUP_MS = 100;
+
+type StreamKind = "text" | "thinking";
+
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function stringOf(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function numberOf(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+/**
+ * The text a tool printed, from the shapes claude's tools return: a string, a
+ * text block, Bash's stdout and stderr, a file's content, or a list of names.
+ * Undefined when the response holds no output; the program never invents one.
+ */
+export function toolOutputText(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((part) => toolOutputText(part))
+      .filter((part): part is string => part !== undefined && part.length > 0);
+    return parts.length === 0 ? undefined : parts.join("\n");
+  }
+  const record = recordOf(value);
+  if (record === undefined) return undefined;
+  const stdout = stringOf(record["stdout"]);
+  const stderr = stringOf(record["stderr"]);
+  if (stdout !== undefined || stderr !== undefined) {
+    const parts = [stdout ?? "", stderr ?? ""].filter((part) => part.length > 0);
+    return parts.length === 0 ? undefined : parts.join("\n");
+  }
+  for (const key of ["content", "output", "text", "message"]) {
+    const text = toolOutputText(record[key]);
+    if (text !== undefined) return text;
+  }
+  const file = recordOf(record["file"]);
+  const content = file === undefined ? undefined : stringOf(file["content"]);
+  if (content !== undefined) return content;
+  const names = record["filenames"];
+  if (Array.isArray(names)) {
+    const text = names.filter((name): name is string => typeof name === "string").join("\n");
+    if (text.length > 0) return text;
+  }
+  return undefined;
+}
 
 /**
  * What the program sets for the `claude` it starts, so that it does not
@@ -182,6 +244,92 @@ export async function runWorker(
   const read = readProfile(input.access ?? {});
   const profile: AccessProfile = read.ok ? read.profile : {};
   const now = hooks.now ?? Date.now;
+  const secrets = input.secretValues ?? [];
+
+  // Increments are grouped: one line per stream at most every 100 ms, with the
+  // part still open written before the next line of any kind.
+  let deltaKind: StreamKind | undefined;
+  let deltaText = "";
+  let deltaAt = 0;
+  const flushDelta = (): void => {
+    if (deltaKind === undefined || deltaText.length === 0) {
+      deltaKind = undefined;
+      deltaText = "";
+      return;
+    }
+    const kind = deltaKind;
+    const text = deltaText;
+    deltaKind = undefined;
+    deltaText = "";
+    io.line({ type: kind === "text" ? "text_delta" : "thinking_delta", text: maskSecrets(text, secrets) });
+  };
+  const writeLine = (line: WorkerLine): void => {
+    flushDelta();
+    io.line(line);
+  };
+  const addDelta = (kind: StreamKind, text: string): void => {
+    if (text.length === 0) return;
+    const at = now();
+    if (deltaKind === kind && at - deltaAt < STREAM_GROUP_MS) {
+      deltaText += text;
+      return;
+    }
+    flushDelta();
+    deltaKind = kind;
+    deltaText = text;
+    deltaAt = at;
+  };
+
+  // The blocks of the response being streamed, by their index. A block's end
+  // line is written from the finished assistant message, which carries the
+  // whole text even when the stream gave only a summary.
+  const streamBlocks = new Map<number, { readonly kind: StreamKind; text: string }>();
+  const streamEvent = (value: unknown): void => {
+    const event = recordOf(value);
+    if (event === undefined) return;
+    const type = stringOf(event["type"]);
+    if (type === "content_block_start") {
+      const index = numberOf(event["index"]);
+      const block = recordOf(event["content_block"]);
+      if (index === undefined || block === undefined) return;
+      const blockType = stringOf(block["type"]);
+      if (blockType === "text") {
+        const text = stringOf(block["text"]) ?? "";
+        streamBlocks.set(index, { kind: "text", text });
+        addDelta("text", text);
+      } else if (blockType === "thinking") {
+        const text = stringOf(block["thinking"]) ?? "";
+        streamBlocks.set(index, { kind: "thinking", text });
+        addDelta("thinking", text);
+      }
+    } else if (type === "content_block_delta") {
+      const index = numberOf(event["index"]);
+      const block = index === undefined ? undefined : streamBlocks.get(index);
+      const delta = recordOf(event["delta"]);
+      if (block === undefined || delta === undefined) return;
+      const deltaType = stringOf(delta["type"]);
+      if (block.kind === "text" && deltaType === "text_delta") {
+        const text = stringOf(delta["text"]);
+        if (text !== undefined) {
+          block.text += text;
+          addDelta("text", text);
+        }
+      } else if (block.kind === "thinking" && deltaType === "thinking_delta") {
+        const text = stringOf(delta["thinking"]);
+        if (text !== undefined) {
+          block.text += text;
+          addDelta("thinking", text);
+        }
+      }
+    } else if (type === "content_block_stop") {
+      const index = numberOf(event["index"]);
+      if (index !== undefined && streamBlocks.delete(index)) flushDelta();
+    }
+  };
+  const writeEnd = (kind: StreamKind, text: string): void => {
+    if (text.length === 0) return;
+    io.line({ type: kind === "text" ? "text_end" : "thinking_end", text: maskSecrets(text, secrets) });
+  };
 
   // Tool calls that have started and not ended; a refused call ends here too,
   // so the host never sees a call stay open.
@@ -208,7 +356,7 @@ export async function runWorker(
     const summary = denied !== undefined
       ? `${name} denied by the access profile${denied.rule === undefined ? "" : ` (rule: ${denied.rule.replace(/\s+/g, " ").slice(0, 300)})`}`
       : summarizeCall(profile, name, toolInput, input.cwd, { secrets: input.secretValues, keepLines: true });
-    io.line({
+    writeLine({
       type: "tool_execution_start",
       toolCallId: id,
       toolName: name,
@@ -216,12 +364,22 @@ export async function runWorker(
       ...(summary === undefined ? {} : { input: summary }),
     });
   };
-  const endCall = (id: string, name: string, isError: boolean, error?: unknown): void => {
+  const endCall = (id: string, name: string, isError: boolean, error?: unknown, output?: unknown): void => {
     const call = open.get(id);
     if (call === undefined) return;
     open.delete(id);
+    const text = isError ? undefined : toolOutputText(output);
+    if (text !== undefined && text.length > 0) {
+      const capped = capToolOutput(maskSecrets(text, secrets));
+      writeLine({
+        type: "tool_output",
+        toolCallId: id,
+        text: capped.text,
+        ...(capped.truncated ? { truncated: true as const } : {}),
+      });
+    }
     const firstLine = isError ? firstErrorLine(error, { secrets: input.secretValues }) : undefined;
-    io.line({
+    writeLine({
       type: "tool_execution_end",
       toolCallId: id,
       toolName: name,
@@ -236,7 +394,7 @@ export async function runWorker(
       if (event.hook_event_name === "PreToolUse" && kind === "start") {
         startCall(event.tool_use_id, event.tool_name, event.tool_input);
       } else if (event.hook_event_name === "PostToolUse" && kind === "end") {
-        endCall(event.tool_use_id, event.tool_name, false);
+        endCall(event.tool_use_id, event.tool_name, false, undefined, event.tool_response);
       } else if (event.hook_event_name === "PostToolUseFailure" && kind === "failed") {
         endCall(event.tool_use_id, event.tool_name, true, event.error);
       }
@@ -276,7 +434,7 @@ export async function runWorker(
       endCall(options.toolUseID, toolName, true, REFUSED_IN_LOG);
       return { behavior: "deny", message: verdict.reason, interrupt: true };
     }
-    io.line({ type: "blocked", toolName, reason: REFUSED_IN_LOG });
+    writeLine({ type: "blocked", toolName, reason: REFUSED_IN_LOG });
     endCall(options.toolUseID, toolName, true, REFUSED_IN_LOG);
     return { behavior: "deny", message: verdict.reason };
   };
@@ -298,6 +456,7 @@ export async function runWorker(
     settingSources: [],
     permissionMode: "default",
     permissionPrompts: "host",
+    includePartialMessages: true,
     systemPrompt: { type: "preset", preset: "claude_code" },
     canUseTool,
     abortController: controller,
@@ -402,7 +561,7 @@ export async function runWorker(
           }
           if (message.subtype === "init") {
             io.log(`claude ${message.claude_code_version}`);
-            io.line({
+            writeLine({
               type: "session",
               claudeVersion: message.claude_code_version,
               apiKeySource: message.apiKeySource,
@@ -410,7 +569,19 @@ export async function runWorker(
             });
           }
           break;
+        case "stream_event": {
+          streamEvent(message.event);
+          break;
+        }
         case "assistant": {
+          flushDelta();
+          const texts: string[] = [];
+          for (const block of message.message.content) {
+            if (block.type === "text") texts.push(block.text);
+            else if (block.type === "thinking") writeEnd("thinking", block.thinking);
+          }
+          if (texts.length > 0) writeEnd("text", texts.join(""));
+
           const id = message.message.id;
           if (seenMessages.has(id)) break;
           seenMessages.add(id);
@@ -433,7 +604,7 @@ export async function runWorker(
           const info = message.rate_limit_info;
           const rateLimitType = info.rateLimitType ?? null;
           const resetsAt = info.resetsAt ?? null;
-          io.line({ type: "rate_limit", status: info.status, rateLimitType, resetsAt });
+          writeLine({ type: "rate_limit", status: info.status, rateLimitType, resetsAt });
           if (info.status === "rejected") {
             modelError = {
               kind: "usage_limit",
@@ -462,7 +633,7 @@ export async function runWorker(
   }
 
   if (cancelled) {
-    io.line({
+    writeLine({
       type: "result",
       result: "cancelled",
       sessionId,
@@ -476,7 +647,7 @@ export async function runWorker(
 
   if (final === undefined) {
     const message = thrown ?? "claude ended without a result";
-    io.line({ ...failure(isSessionMissing(message) ? "session_missing" : "model_error", message), sessionId });
+    writeLine({ ...failure(isSessionMissing(message) ? "session_missing" : "model_error", message), sessionId });
     return EXIT_FAILED;
   }
 
@@ -499,7 +670,7 @@ export async function runWorker(
   } as const;
 
   if (continued) {
-    io.line({
+    writeLine({
       ...base,
       result: "failed",
       reason: "model_error",
@@ -509,7 +680,7 @@ export async function runWorker(
     return EXIT_FAILED;
   }
   if (final.subtype === "success" && !final.is_error) {
-    io.line({ ...base, result: "done" });
+    writeLine({ ...base, result: "done" });
     return 0;
   }
   // An error result carries its text in `errors` (an unknown session says
@@ -523,7 +694,7 @@ export async function runWorker(
         ? text
         : `claude stopped: ${final.subtype}`);
   const reason: FailureReason = isSessionMissing(message) ? "session_missing" : "model_error";
-  io.line({
+  writeLine({
     ...base,
     result: "failed",
     reason,

@@ -67,8 +67,13 @@ One JSON object per line, flushed per line, each with a `type`:
 |---|---|---|
 | `session` | `claudeVersion`, `apiKeySource`, `model` | claude started a session; written once, first. `apiKeySource` says which credential it uses: `none` for a subscription login, `ANTHROPIC_API_KEY` when that variable is set in the environment |
 | `message_end` | `role` (`"assistant"`), `text` (optional: the first 300 characters of the message's text as one paragraph; thinking and tool calls left out), `stopReason` (string or null), `usage` (`{input, output, cache_read, cache_write}`), `cost` (always `null`: claude prices a run, not a message) | an assistant message finished; written once per message |
+| `text_delta` | `text` | new assistant text only, not the text so far; increments are grouped into at most one line per 100 ms and the last part is written when the block or message ends |
+| `thinking_delta` | `text` | new thinking only, not the thinking so far; grouped like `text_delta`. Claude gives only what its thinking display gives; when there is no thinking text, no line is written |
+| `text_end` | `text` | the full text of a finished assistant message, after its `text_delta` lines |
+| `thinking_end` | `text` | the full text of a finished thinking block, after its `thinking_delta` lines |
 | `tool_execution_start` | `toolCallId`, `toolName`, `at`, `input` (optional) | a tool call began (the `PreToolUse` hook). `at` is the start time in epoch milliseconds. `input` says what ran: for `Bash` the command (one line, first 500 characters), for `Read`, `Edit` and `Write` the path, for another tool its main argument (path, pattern, query, URL or description) when it has one; absent otherwise. Never file contents or tool output. A command shows the values of leading environment assignments (`NAME=value`) as `NAME=***`, masks any value of the operad secret store or of a secret-named environment variable (`KEY`, `TOKEN`, `SECRET`, `PASS`, `PASSWORD`, `AUTH`, `CREDENTIAL`; 6 characters or more) as `***`, and shows `<command not shown: could not read it safely>` for a command it cannot read (an open quote, or a command or process substitution, heredoc or arithmetic in a leading assignment). A call the access profile denies shows `<tool> denied by the access profile`, never its arguments |
-| `tool_execution_end` | `toolCallId`, `toolName`, `isError`, `durationMs`, `error` (optional) | a tool call ended (`PostToolUse`, `PostToolUseFailure`, or a refusal). `durationMs` is how long the call took, measured from its start line. `error` is the first line of the error (at most 300 characters) when `isError` is true; the rest of the error and every successful result stay out of the log |
+| `tool_execution_end` | `toolCallId`, `toolName`, `isError`, `durationMs`, `error` (optional) | a tool call ended (`PostToolUse`, `PostToolUseFailure`, or a refusal). `durationMs` is how long the call took, measured from its start line. `error` is the first line of the error (at most 300 characters) when `isError` is true; the rest of the error stays out of the log |
+| `tool_output` | `toolCallId`, `text`, `truncated` (optional `true`) | what a successful tool call printed, written before its `tool_execution_end`: Bash's stdout and stderr, a Read file's content, or another tool's text result. `text` is cut to 64 KiB of UTF-8 and `truncated` says it was cut. A failed call writes no `tool_output`; its `error` is on the end line |
 | `blocked` | `toolName`, `reason` | `canUseTool` refused a call; its `tool_execution_end` has `isError: true`; the run continues |
 | `rate_limit` | `status`, `rateLimitType` (or null), `resetsAt` (or null) | claude reported its rate limit state |
 | `grant_use` | `id`, `waitId` | asks the host to use up a one-time permission; answered on stdin by `{"type":"grant_ack","id":n,"used":true\|false}` |
@@ -93,6 +98,10 @@ One JSON object per line, flushed per line, each with a `type`:
 
 A result with `is_error`, or any subtype but `success` (`error_max_turns`,
 `error_max_budget_usd`, ...), is `failed` with reason `model_error`.
+
+Every text of a new line (`text_delta`, `thinking_delta`, `text_end`,
+`thinking_end`, `tool_output`) has each value of `secretValues` replaced with
+`***`, as the existing command and error lines do.
 
 ## Exit codes
 

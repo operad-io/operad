@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { EFFORT_LEVELS, parseInput } from "../src/protocol.ts";
-import { serveWorker } from "../src/worker.ts";
+import { STREAM_GROUP_MS, serveWorker } from "../src/worker.ts";
+import { TOOL_OUTPUT_CAP_BYTES } from "@operad-io/harness-process";
 import { fakeHooks } from "./fake-hooks.ts";
 import { TOOL_TABLE } from "../src/access.ts";
 import {
@@ -12,6 +13,7 @@ import {
   assistant,
   rateLimit,
   result,
+  streamBlock,
   systemInit,
   type FakeScript,
   type FakeStep,
@@ -325,8 +327,8 @@ test("a prompt that ends writes the lines in order and a Result with usage, cost
   const run = await runFake(s, { steps: done });
 
   expect(run.exitCode).toBe(0);
-  expect(kinds(run)).toEqual(["message_end", "result"]);
-  expect(run.lines[0]).toMatchObject({
+  expect(kinds(run)).toEqual(["text_end", "message_end", "result"]);
+  expect(run.lines.find((line) => line["type"] === "message_end")).toMatchObject({
     role: "assistant",
     stopReason: "end_turn",
     usage: { input: 1, output: 1, cache_read: 0, cache_write: 0 },
@@ -650,7 +652,8 @@ test("several content blocks of one assistant message write one message_end", as
     ],
   });
 
-  expect(kinds(run)).toEqual(["message_end", "message_end", "result"]);
+  expect(kinds(run).filter((kind) => kind === "message_end")).toEqual(["message_end", "message_end"]);
+  expect(kinds(run).filter((kind) => kind === "text_end")).toEqual(["text_end", "text_end", "text_end"]);
 });
 
 // Access profile and one-time grants.
@@ -689,7 +692,7 @@ test("a Bash command that denyCommands refuses is denied with the reason, logged
       error: "refused by the access profile",
     },
   ]);
-  expect(kinds(run).slice(3)).toEqual(["message_end", "result"]);
+  expect(kinds(run).slice(3)).toEqual(["text_end", "message_end", "result"]);
   expect(last(run)).toMatchObject({ result: "done" });
 });
 
@@ -945,7 +948,7 @@ test("a second session after the result is not accepted as a second turn", async
 
   expect(run.exitCode).toBe(1);
   expect(run.session.length).toBe(1);
-  expect(kinds(run)).toEqual(["message_end", "result"]);
+  expect(kinds(run)).toEqual(["text_end", "message_end", "result"]);
   expect(last(run)).toMatchObject({
     result: "failed",
     reason: "model_error",
@@ -975,7 +978,7 @@ test("a Bash call logs its command, its start time and its duration", async () =
       steps: [
         { say: systemInit() },
         { hook: "PreToolUse", toolName: "Bash", toolUseId: "b1", input: { command: "xcodebuild test\n  -only-testing A/B" } },
-        { hook: "PostToolUse", toolName: "Bash", toolUseId: "b1", input: {}, output: "TOOL OUTPUT MUST NOT APPEAR" },
+        { hook: "PostToolUse", toolName: "Bash", toolUseId: "b1", input: {} },
         { say: result() },
       ],
     },
@@ -984,7 +987,6 @@ test("a Bash call logs its command, its start time and its duration", async () =
   const { start, end } = toolLines(run);
   expect(start[0]).toMatchObject({ toolName: "Bash", at: BASE, input: "xcodebuild test\n-only-testing A/B" });
   expect(end[0]).toMatchObject({ toolCallId: "b1", isError: false, durationMs: 72000 });
-  expect(run.stdout).not.toContain("TOOL OUTPUT MUST NOT APPEAR");
 });
 
 test("a long command is cut at 500 characters", async () => {
@@ -1000,7 +1002,7 @@ test("a long command is cut at 500 characters", async () => {
   expect(text.startsWith("echo xxx")).toBe(true);
 });
 
-test("a Read and a Write log their path and never the file content", async () => {
+test("a Read and a Write log their path, and a successful Read logs its output", async () => {
   const run = await runFake(setup(), {
     steps: [
       { say: systemInit() },
@@ -1019,7 +1021,11 @@ test("a Read and a Write log their path and never the file content", async () =>
   });
   const { start } = toolLines(run);
   expect(start.map((line) => line["input"])).toEqual(["/w/a.ts", "/w/b.ts", "/w", undefined]);
-  expect(run.stdout).not.toContain("FILE BODY");
+  expect(run.lines.find((line) => line["type"] === "tool_output")).toMatchObject({
+    toolCallId: "r1",
+    text: "FILE BODY",
+  });
+  expect(run.stdout).not.toContain("NEW FILE BODY");
 });
 
 test("a tool error logs its first line only", async () => {
@@ -1061,7 +1067,135 @@ test("an assistant message logs its first 300 characters as one paragraph, witho
   const line = run.lines.find((l) => l["type"] === "message_end");
   expect(String(line?.["text"]).length).toBe(300);
   expect(String(line?.["text"]).startsWith("first second yyy")).toBe(true);
-  expect(run.stdout).not.toContain("PRIVATE THOUGHT");
+  expect(String(line?.["text"])).not.toContain("PRIVATE THOUGHT");
+  expect(run.lines.find((l) => l["type"] === "thinking_end")).toMatchObject({ text: "PRIVATE THOUGHT" });
+  expect(run.lines.find((l) => l["type"] === "text_end")).toMatchObject({
+    text: `first\n\nsecond ${"y".repeat(400)}`,
+  });
+});
+
+test("assistant text and thinking stream as increments, and finished blocks write their full text", async () => {
+  const message = assistant("m1", "Hello world");
+  const inner = message["message"] as Record<string, unknown>;
+  inner["content"] = [
+    { type: "thinking", thinking: "Let me" },
+    { type: "text", text: "Hello world" },
+  ];
+  const run = await runFake(
+    setup(),
+    {
+      steps: [
+        { say: systemInit() },
+        ...streamBlock("thinking", "Let me", 0),
+        ...streamBlock("text", "Hello world", 1),
+        { say: message },
+        { say: result() },
+      ],
+    },
+    { FAKE_CLOCK_STEP: "1" },
+  );
+
+  expect(run.exitCode).toBe(0);
+  expect(kinds(run)).toEqual([
+    "thinking_delta",
+    "text_delta",
+    "thinking_end",
+    "text_end",
+    "message_end",
+    "result",
+  ]);
+  expect(run.lines.find((line) => line["type"] === "thinking_delta")).toMatchObject({ text: "Let me" });
+  expect(run.lines.find((line) => line["type"] === "text_delta")).toMatchObject({ text: "Hello world" });
+  expect(run.lines.find((line) => line["type"] === "thinking_end")).toMatchObject({ text: "Let me" });
+  expect(run.lines.find((line) => line["type"] === "text_end")).toMatchObject({ text: "Hello world" });
+});
+
+test("increments are grouped to one line per 100 ms for text and for thinking", async () => {
+  const message = assistant("m1", "abcd");
+  const inner = message["message"] as Record<string, unknown>;
+  inner["content"] = [
+    { type: "text", text: "abcd" },
+    { type: "thinking", thinking: "wxyz" },
+  ];
+  const run = await runFake(
+    setup(),
+    {
+      steps: [
+        { say: systemInit() },
+        ...streamBlock("text", "abcd", 0),
+        ...streamBlock("thinking", "wxyz", 1),
+        { say: message },
+        { say: result() },
+      ],
+    },
+    // Each reading of the clock is 50 ms after the one before, so two
+    // increments of a stream fit in one line and the third starts a new one.
+    { FAKE_CLOCK_STEP: String(STREAM_GROUP_MS / 2) },
+  );
+
+  const deltas = (type: string): unknown[] =>
+    run.lines.filter((line) => line["type"] === type).map((line) => line["text"]);
+  expect(deltas("text_delta")).toEqual(["ab", "cd"]);
+  expect(deltas("thinking_delta")).toEqual(["wx", "yz"]);
+});
+
+test("tool output is written with its call id, cut at the shared cap", async () => {
+  const output = `${"x".repeat(TOOL_OUTPUT_CAP_BYTES)}tail`;
+  const run = await runFake(setup(), {
+    steps: [
+      { say: systemInit() },
+      { hook: "PreToolUse", toolName: "Bash", toolUseId: "b1", input: { command: "make test" } },
+      { hook: "PostToolUse", toolName: "Bash", toolUseId: "b1", output },
+      { say: result() },
+    ],
+  });
+
+  const line = run.lines.find((item) => item["type"] === "tool_output");
+  expect(line).toMatchObject({ toolCallId: "b1", truncated: true });
+  const text = String(line?.["text"]);
+  expect(text.endsWith("tail")).toBe(false);
+  expect(new TextEncoder().encode(text).length).toBeLessThanOrEqual(TOOL_OUTPUT_CAP_BYTES);
+  expect(kinds(run).indexOf("tool_output")).toBeLessThan(kinds(run).indexOf("tool_execution_end"));
+});
+
+test("a secret value is masked in every new line", async () => {
+  const secret = "store-secret-9";
+  const message = assistant("m1", `the key is ${secret}`);
+  const inner = message["message"] as Record<string, unknown>;
+  inner["content"] = [
+    { type: "thinking", thinking: `think ${secret}` },
+    { type: "text", text: `the key is ${secret}` },
+  ];
+  const s = setup();
+  s.input["secretValues"] = [secret];
+  const run = await runFake(
+    s,
+    {
+      steps: [
+        { say: systemInit() },
+        ...streamBlock("text", `the key is ${secret}`, 0),
+        ...streamBlock("thinking", `think ${secret}`, 1),
+        { hook: "PreToolUse", toolName: "Bash", toolUseId: "b1", input: { command: "make test" } },
+        { hook: "PostToolUse", toolName: "Bash", toolUseId: "b1", output: `out ${secret}` },
+        { say: message },
+        { say: result() },
+      ],
+    },
+    { FAKE_CLOCK_STEP: "1" },
+  );
+
+  for (const type of ["text_delta", "thinking_delta", "text_end", "thinking_end", "tool_output"]) {
+    const lines = run.lines.filter((line) => line["type"] === type);
+    expect(lines.length).toBe(1);
+    expect(String(lines[0]?.["text"])).toContain("***");
+    expect(String(lines[0]?.["text"])).not.toContain(secret);
+  }
+});
+
+test("claude asks for partial messages so the increments can be written", async () => {
+  const run = await runFake(setup(), { steps: done });
+  const args = (run.record.find((entry) => "spawn" in entry)?.["spawn"] as { args: string[] }).args;
+  expect(args).toContain("--include-partial-messages");
 });
 
 test("a secret of the operad store sent as secretValues is masked in the logged command", async () => {
